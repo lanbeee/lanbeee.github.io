@@ -261,7 +261,7 @@
   transition:border-color var(--dur-fast) ease,background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight);
 }
 .overview-open-chip:active{transform:scale(0.97);}
-.overview-open-chip span{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;color:var(--text3);}
+.overview-open-chip > .overview-open-day{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;color:var(--text3);}
 .overview-open-chip b{font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
 .overview-open-chip.open{
   border-color:color-mix(in srgb,var(--teal-icon) 55%,var(--border));

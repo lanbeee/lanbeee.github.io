@@ -37,6 +37,7 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
     attachDroppedIndicator(header,list,todayHids);
   }
   list.appendChild(header);
+  fitDayHeaderChips(header);
 }
 
 function dayHeaderContextHost(header){
@@ -48,6 +49,105 @@ function dayHeaderContextHost(header){
   header.classList.add('has-context');
   header.appendChild(host);
   return host;
+}
+
+// Day-header chips (free / weather / missed) are unsqueezable single-line
+// buttons. When their natural widths don't fit next to the label, degrade the
+// weather cue stepwise (drop temp range → emoji only) while keeping the row
+// intact. A deliberate second row, and then wrapping that row, are last-resort
+// fallbacks. This keeps the day label whole without routinely making headers
+// taller.
+//
+// One measurement at construction time is not enough: icon/text fonts finish
+// loading after the first paint (Tabler cue glyphs come from a CDN stylesheet),
+// chips can be attached or re-rendered late, and panes resize or become
+// visible later. So the label and every context button are observed — any box
+// change re-runs the fit. Each refit re-derives the layout from scratch, so
+// applying it changes sizes once and the observer settles instead of looping.
+const _headerFitTargets = typeof ResizeObserver !== 'undefined'
+  ? new ResizeObserver(entries=>{
+    let dirty = false;
+    for(const entry of entries){
+      if(!entry.target.isConnected){ _headerFitTargets.unobserve(entry.target); continue; }
+      dirty = true;
+    }
+    if(dirty)refitDayHeaderChips();
+  })
+  : null;
+
+function fitDayHeaderChips(header){
+  if(!header || !header.isConnected)return;
+  const label = header.querySelector('.section-header-label');
+  const button = header.querySelector('.weather-day-button');
+  const host = header.querySelector('.day-header-context');
+  if(!label || !host)return;
+  if(_headerFitTargets){
+    _headerFitTargets.observe(label);
+    host.querySelectorAll('button').forEach(chip=>_headerFitTargets.observe(chip));
+  }
+  header.classList.remove('context-below','context-wrapped');
+  if(button)button.classList.remove('cue-slim','cue-emoji');
+
+  const css = getComputedStyle(header);
+  const gap = Number.parseFloat(css.columnGap || css.gap) || 0;
+  const availableWidth = header.clientWidth
+    - (Number.parseFloat(css.paddingLeft) || 0)
+    - (Number.parseFloat(css.paddingRight) || 0);
+  const chips = [...host.querySelectorAll(':scope > button')];
+  const hostCss = getComputedStyle(host);
+  const chipGap = Number.parseFloat(hostCss.columnGap || hostCss.gap) || 0;
+  const contextWidth = ()=>chips.reduce((sum,chip)=>sum + chip.getBoundingClientRect().width,0)
+    + Math.max(0,chips.length - 1) * chipGap;
+  const cue = button?.querySelector('.weather-day-cue');
+  const cueIsClipped = ()=>Boolean(cue) && cue.scrollWidth > cue.clientWidth + 1;
+  const inlineFits = ()=>label.scrollWidth + contextWidth() + gap <= availableWidth + 1
+    && !cueIsClipped();
+  if(!button && inlineFits())return;
+  let level = 0;
+  while(button){
+    button.classList.toggle('cue-slim', level >= 1);
+    button.classList.toggle('cue-emoji', level >= 2);
+    if(inlineFits())return;
+    if(level >= 2)break;
+    level += 1;
+  }
+
+  // The label plus emoji-only context genuinely cannot fit on one line. Give
+  // the chips their own row and restore as much forecast detail as it can hold.
+  header.classList.add('context-below');
+  if(button)button.classList.remove('cue-slim','cue-emoji');
+  level = 0;
+  while(button){
+    const rowClipped = contextWidth() > host.clientWidth + 1 || cueIsClipped();
+    if(!rowClipped)break;
+    level += 1;
+    button.classList.toggle('cue-slim', level >= 1);
+    button.classList.toggle('cue-emoji', level >= 2);
+    if(level >= 2)break;
+  }
+  if(contextWidth() > host.clientWidth + 1 || cueIsClipped()){
+    header.classList.add('context-wrapped');
+  }
+}
+
+let _headerFitRaf = false;
+function refitDayHeaderChips(){
+  if(_headerFitRaf)return;
+  _headerFitRaf = true;
+  requestAnimationFrame(()=>{
+    _headerFitRaf = false;
+    document.querySelectorAll('.section-header').forEach(fitDayHeaderChips);
+  });
+}
+window.addEventListener('resize',refitDayHeaderChips,{passive:true});
+// Web fonts (Tabler icons, system text swaps) often land after the headers
+// have already been fitted; refit when the loading set drains or a late swap
+// changes glyph widths.
+if(typeof document !== 'undefined' && document.fonts){
+  document.fonts.ready.then(refitDayHeaderChips);
+  if(typeof document.fonts.addEventListener === 'function'){
+    document.fonts.addEventListener('loadingdone',refitDayHeaderChips);
+  }
 }
 
 function attachWeatherIndicator(header,day){
@@ -74,7 +174,7 @@ function missedPlannerFingerprint(data,settings){
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
     h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
-    h.scheduleLinks,h.scheduleOptions
+    h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
   ]);
   const plannerSettings = {
     blockedTimes:settings?.blockedTimes,
@@ -489,6 +589,11 @@ function renderFreeDayStrip(info,onPick){
     `${formatFreeDuration(info.totalFreeMinutes)} open · ${formatFreeDuration(info.largestGapMinutes)} biggest stretch`
   );
 
+  const head = document.createElement('div');
+  head.className = 'free-day-head';
+  head.innerHTML = '<span><i class="ti ti-layout-dashboard" aria-hidden="true"></i>day map</span><span class="free-day-focus"><b>tap a block</b><small>or drag a window</small></span>';
+  wrap.appendChild(head);
+
   const track = document.createElement('div');
   track.className = 'free-day-track';
   if(!pieces.length){
@@ -511,6 +616,11 @@ function renderFreeDayStrip(info,onPick){
       track.appendChild(seg);
     });
   }
+  const selection = document.createElement('span');
+  selection.className = 'free-day-selection';
+  selection.setAttribute('aria-hidden','true');
+  selection.innerHTML = '<i></i><i></i>';
+  track.appendChild(selection);
   wrap.appendChild(track);
 
   const ticks = document.createElement('div');
@@ -526,8 +636,179 @@ function renderFreeDayStrip(info,onPick){
 
   const legend = document.createElement('div');
   legend.className = 'free-day-legend';
-  legend.innerHTML = '<span><i class="busy" aria-hidden="true"></i>busy</span><span><i class="open" aria-hidden="true"></i>open</span>';
+  legend.innerHTML = '<span><i class="busy" aria-hidden="true"></i>busy</span><span><i class="open" aria-hidden="true"></i>open</span><span><i class="ti ti-arrows-horizontal" aria-hidden="true"></i>drag edges to stretch</span>';
   wrap.appendChild(legend);
+
+  const focusCopy = head.querySelector('.free-day-focus');
+  let sel = null; // live selection mirrored here so gestures can find its edges
+  wrap.setSelection = (start,end,tone='active')=>{
+    const clippedStart = Math.max(winStart,Number(start));
+    const clippedEnd = Math.min(winEnd,Number(end));
+    if(!Number.isFinite(clippedStart) || !Number.isFinite(clippedEnd) || clippedEnd <= clippedStart){
+      sel = null;
+      wrap.classList.remove('has-selection');
+      wrap.removeAttribute('data-selection-tone');
+      selection.style.left = '';
+      selection.style.width = '';
+      focusCopy.innerHTML = '<b>tap a block</b><small>or drag a window</small>';
+      return;
+    }
+    const duration = Math.max(1,Math.round((clippedEnd-clippedStart)/60000));
+    const openMinutes = freeWindowOverlapMinutes(info.gaps,clippedStart,clippedEnd);
+    const busyMinutes = Math.max(0,duration-openMinutes);
+    const range = `${freeDayClockLabel(clippedStart)}–${freeDayClockLabel(clippedEnd)}`;
+    sel = {start:clippedStart,end:clippedEnd};
+    wrap.classList.add('has-selection');
+    wrap.dataset.selectionTone = tone || 'active';
+    selection.style.left = `${((clippedStart-winStart)/span)*100}%`;
+    selection.style.width = `${((clippedEnd-clippedStart)/span)*100}%`;
+    focusCopy.innerHTML = `<b>${escapeHtml(range)}</b><small>${escapeHtml(formatFreeDuration(openMinutes))} open${busyMinutes ? ` · ${escapeHtml(formatFreeDuration(busyMinutes))} busy` : ''}</small>`;
+    wrap.setAttribute('aria-label',`${range} selected · ${formatFreeDuration(openMinutes)} open${busyMinutes ? ` · ${formatFreeDuration(busyMinutes)} busy` : ''}`);
+  };
+
+  // The day map behaves like a range control. A press is classified once, at
+  // pointerdown, so gestures can't be misread mid-drag: within a handle's grab
+  // zone it stretches that edge alone, inside the window it slides the whole
+  // window, and anywhere else it draws a fresh window. A press that never
+  // moves is a tap — except on a handle, where it must never fall through to
+  // the segment click (that fall-through read as "both ends jumped").
+  if(typeof onPick === 'function'){
+    const snapMs = 15*60000;
+    const EDGE_GRAB_PX = 14;
+    let drag = null;
+    let suppressTap = false;
+    const rectAt = ()=>{
+      const rect = track.getBoundingClientRect();
+      return rect.width ? rect : null;
+    };
+    const rawTimeAt = clientX=>{
+      const rect = rectAt();
+      const ratio = rect ? Math.max(0,Math.min(1,(clientX-rect.left)/rect.width)) : 0;
+      return winStart + ratio*span;
+    };
+    const timeAt = clientX=>Math.max(winStart,Math.min(winEnd,Math.round(rawTimeAt(clientX)/snapMs)*snapMs));
+    const edgeAt = clientX=>{
+      if(!sel)return null;
+      const rect = rectAt();
+      if(!rect)return null;
+      const startX = rect.left + ((sel.start-winStart)/span)*rect.width;
+      const endX = rect.left + ((sel.end-winStart)/span)*rect.width;
+      const dStart = Math.abs(clientX-startX);
+      const dEnd = Math.abs(clientX-endX);
+      if(dStart <= EDGE_GRAB_PX && dEnd <= EDGE_GRAB_PX)return dStart <= dEnd ? 'start' : 'end';
+      if(dStart <= EDGE_GRAB_PX)return 'start';
+      if(dEnd <= EDGE_GRAB_PX)return 'end';
+      return null;
+    };
+    const insideSel = clientX=>{
+      if(!sel)return false;
+      const t = rawTimeAt(clientX);
+      return t > sel.start && t < sel.end;
+    };
+    track.addEventListener('pointermove',event=>{
+      if(drag || event.pointerType !== 'mouse')return;
+      const edge = edgeAt(event.clientX);
+      track.classList.toggle('is-over-edge',!!edge);
+      track.classList.toggle('is-over-move',!edge && insideSel(event.clientX));
+    });
+    track.addEventListener('pointerleave',()=>track.classList.remove('is-over-edge','is-over-move'));
+    track.addEventListener('pointerdown',event=>{
+      if(event.button !== 0)return;
+      const edge = edgeAt(event.clientX);
+      drag = {
+        id:event.pointerId,x:event.clientX,y:event.clientY,moved:false,
+        mode:edge ? 'stretch' : !insideSel(event.clientX) ? 'draw' : 'slide',
+        edge,start:timeAt(event.clientX)
+      };
+      if(drag.mode === 'slide' && sel){
+        drag.grabOffset = rawTimeAt(event.clientX) - sel.start;
+        drag.duration = sel.end - sel.start;
+      }
+      if(drag.mode === 'stretch' && sel)drag.fixed = edge === 'start' ? sel.end : sel.start;
+    });
+    track.addEventListener('pointermove',event=>{
+      if(!drag || drag.id !== event.pointerId)return;
+      const dx = event.clientX-drag.x;
+      const dy = event.clientY-drag.y;
+      if(!drag.moved && Math.abs(dx) < 6)return;
+      if(!drag.moved && Math.abs(dy) > Math.abs(dx)){
+        // Vertical intent: cancel. A press aimed at the window (handle/slide)
+        // still swallows the click so the segment beneath never hijacks it.
+        if(drag.mode !== 'draw')suppressNextTap();
+        drag = null;
+        return;
+      }
+      drag.moved = true;
+      track.classList.add('is-dragging');
+      try{track.setPointerCapture(event.pointerId);}catch(_){/* synthetic pointers cannot capture */}
+      if(drag.mode === 'slide'){
+        const start = Math.max(winStart,Math.min(winEnd - drag.duration,rawTimeAt(event.clientX) - drag.grabOffset));
+        wrap.setSelection(start,start + drag.duration,'active');
+      }else if(drag.mode === 'stretch'){
+        const t = timeAt(event.clientX);
+        if(drag.edge === 'start')wrap.setSelection(Math.max(winStart,Math.min(t,drag.fixed - snapMs)),drag.fixed,'active');
+        else wrap.setSelection(drag.fixed,Math.min(winEnd,Math.max(t,drag.fixed + snapMs)),'active');
+      }else{
+        let start = Math.min(drag.start,timeAt(event.clientX));
+        let end = Math.max(drag.start,timeAt(event.clientX));
+        if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
+        wrap.setSelection(start,end,'active');
+      }
+      event.preventDefault();
+    });
+    const suppressNextTap = ()=>{
+      // The trailing click can arrive a task or two after pointerup (pointer
+      // capture retargeting), so a zero timeout would clear the flag too early.
+      // Consume it on the first suppressed click; the timer is the fallback for
+      // gestures whose click never comes.
+      suppressTap = true;
+      setTimeout(()=>{ suppressTap = false; },400);
+    };
+    const finishDrag = event=>{
+      if(!drag || drag.id !== event.pointerId)return;
+      const moved = drag.moved;
+      const mode = drag.mode;
+      const edge = drag.edge;
+      const anchor = drag.start;
+      const fixed = drag.fixed;
+      const grabOffset = drag.grabOffset;
+      const duration = drag.duration;
+      drag = null;
+      track.classList.remove('is-dragging');
+      if(!moved){
+        if(edge)suppressNextTap(); // a press on a handle is never a segment tap
+        return;
+      }
+      let start,end;
+      if(mode === 'slide'){
+        start = Math.max(winStart,Math.min(winEnd - duration,rawTimeAt(event.clientX) - grabOffset));
+        end = start + duration;
+      }else if(mode === 'stretch'){
+        const t = timeAt(event.clientX);
+        if(edge === 'start'){ end = fixed; start = Math.max(winStart,Math.min(t,end - snapMs)); }
+        else{ start = fixed; end = Math.min(winEnd,Math.max(t,start + snapMs)); }
+      }else{
+        start = Math.min(anchor,timeAt(event.clientX));
+        end = Math.max(anchor,timeAt(event.clientX));
+        if(end-start < snapMs)end = Math.min(winEnd,start+snapMs);
+      }
+      suppressNextTap();
+      onPick(start,end,selection);
+      event.preventDefault();
+    };
+    track.addEventListener('pointerup',finishDrag);
+    track.addEventListener('pointercancel',event=>{
+      if(!drag || drag.id !== event.pointerId)return;
+      drag = null;
+      track.classList.remove('is-dragging');
+    });
+    track.addEventListener('click',event=>{
+      if(!suppressTap)return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      suppressTap = false;
+    },true);
+  }
   return wrap;
 }
 
@@ -686,7 +967,7 @@ async function analyzeFreeWindow(info,start,end){
   return {tone:'spill',icon:'calendar-off',title:'Doesn’t fit cleanly',copy:`Making this space would push ${unscheduled.slice(0,2).join(' and ') || 'planned work'} out of this day.`};
 }
 
-function renderFreeWindowChecker(info){
+function renderFreeWindowChecker(info,onRangeChange){
   const checker = document.createElement('section');
   checker.className = 'free-fit-checker';
   checker.setAttribute('aria-label','check whether a time can be made open');
@@ -699,9 +980,9 @@ function renderFreeWindowChecker(info){
     </button>
     <div class="free-fit-body" id="free-fit-body" hidden>
       <div class="free-fit-fields">
-        <label><span>from</span><input class="free-fit-start" type="time" step="900" value="${freeWindowInputValue(initial.start)}" /></label>
+        <label><span>from</span><input class="free-fit-start" type="time" step="300" value="${freeWindowInputValue(initial.start)}" /></label>
         <i class="ti ti-arrow-right" aria-hidden="true"></i>
-        <label><span>to</span><input class="free-fit-end" type="time" step="900" value="${freeWindowInputValue(initial.end)}" /></label>
+        <label><span>to</span><input class="free-fit-end" type="time" step="300" value="${freeWindowInputValue(initial.end)}" /></label>
         <button type="button" class="free-fit-run">check</button>
       </div>
       <div class="free-fit-result" role="status" aria-live="polite"><i class="ti ti-pointer" aria-hidden="true"></i><span><b>Choose a time</b><small>Or tap a section of the timeline above.</small></span></div>
@@ -721,11 +1002,22 @@ function renderFreeWindowChecker(info){
   };
   toggle.addEventListener('click',()=>setExpanded(toggle.getAttribute('aria-expanded') !== 'true'));
   let request = 0;
-  const check = async()=>{
+  const selectedRange = ()=>{
     const start = freeWindowTimestamp(info,startInput.value);
     let end = freeWindowTimestamp(info,endInput.value);
     if(start != null && end != null && end <= start && endInput.value === '00:00')end += 86400000;
-    if(start == null || end == null || end <= start){
+    return {start,end,valid:start != null && end != null && end > start};
+  };
+  const showRange = tone=>{
+    const range = selectedRange();
+    if(typeof onRangeChange === 'function')onRangeChange(range.valid ? range.start : null,range.valid ? range.end : null,tone);
+    return range;
+  };
+  const check = async()=>{
+    const range = showRange('checking');
+    const {start,end} = range;
+    if(!range.valid){
+      if(typeof onRangeChange === 'function')onRangeChange(null,null,'blocked');
       result.className = 'free-fit-result blocked';
       result.innerHTML = '<i class="ti ti-alert-circle" aria-hidden="true"></i><span><b>Check the times</b><small>The end needs to be after the start.</small></span>';
       return;
@@ -737,10 +1029,12 @@ function renderFreeWindowChecker(info){
     try{
       const answer = await analyzeFreeWindow(info,start,end);
       if(token !== request)return;
+      if(typeof onRangeChange === 'function')onRangeChange(start,end,answer.tone);
       result.className = `free-fit-result ${answer.tone}`;
       result.innerHTML = `<i class="ti ti-${answer.icon}" aria-hidden="true"></i><span><b>${escapeHtml(answer.title)}</b><small>${escapeHtml(answer.copy)}</small></span>`;
     }catch(_){
       if(token !== request)return;
+      if(typeof onRangeChange === 'function')onRangeChange(start,end,'blocked');
       result.className = 'free-fit-result blocked';
       result.innerHTML = '<i class="ti ti-alert-circle" aria-hidden="true"></i><span><b>Couldn’t check this window</b><small>Your current open stretches are still shown above.</small></span>';
     }finally{
@@ -748,11 +1042,21 @@ function renderFreeWindowChecker(info){
     }
   };
   run.addEventListener('click',check);
-  [startInput,endInput].forEach(input=>input.addEventListener('change',()=>{ result.className = 'free-fit-result'; result.innerHTML = '<i class="ti ti-arrow-right" aria-hidden="true"></i><span><b>Ready to check</b><small>This won’t change your plan.</small></span>'; }));
+  [startInput,endInput].forEach(input=>{
+    const update=()=>{
+      request += 1;
+      showRange('active');
+      result.className = 'free-fit-result';
+      result.innerHTML = '<i class="ti ti-arrow-right" aria-hidden="true"></i><span><b>Ready to check</b><small>The chosen window is highlighted above.</small></span>';
+    };
+    input.addEventListener('input',update);
+    input.addEventListener('change',update);
+  });
   checker.pickWindow = (start,end)=>{
     setExpanded(true);
     startInput.value = freeWindowInputValue(start);
     endInput.value = freeWindowInputValue(end);
+    if(typeof onRangeChange === 'function')onRangeChange(start,end,'checking');
     void check();
   };
   return checker;
@@ -765,8 +1069,19 @@ function renderFreePanel(info){
   summary.className = 'free-panel-row free-panel-hero';
   summary.innerHTML = `<span class="free-panel-metric"><small>total room</small><b>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</b></span><span class="free-panel-metric"><small>biggest stretch</small><b>${escapeHtml(formatFreeDuration(info.largestGapMinutes))}</b></span>`;
   panel.appendChild(summary);
-  const checker = renderFreeWindowChecker(info);
-  panel.appendChild(renderFreeDayStrip(info,(start,end)=>checker.pickWindow(start,end)));
+  let strip = null;
+  let weather = null;
+  const syncRange = (start,end,tone)=>{
+    strip?.setSelection?.(start,end,tone);
+    weather?.setSelection?.(start,end,tone);
+  };
+  const checker = renderFreeWindowChecker(info,syncRange);
+  strip = renderFreeDayStrip(info,(start,end)=>checker.pickWindow(start,end));
+  panel.appendChild(strip);
+  if(typeof renderFreeTimeWeatherContext === 'function'){
+    weather = renderFreeTimeWeatherContext(info);
+    if(weather)panel.appendChild(weather);
+  }
   panel.appendChild(checker);
   const bigGaps = info.gaps.filter(g=>Math.round((g.end - g.start) / 60000) >= 30);
   const shortMinutes = info.totalFreeMinutes - bigGaps.reduce((s,g)=>s + Math.round((g.end - g.start) / 60000),0);
@@ -851,7 +1166,7 @@ function render(opts){
   // the full-dataset JSON.stringify it costs per keystroke render.
   const searching = Boolean(searchQuery.trim());
   if(!searching)updateQuotaBar(sizeKb(data));
-  updateSortButton();
+  updateSortButton(false);
   updateSearchUi();
 
   // One shared sort pass: empty-state logic, the filter sheet counts, and the
@@ -902,6 +1217,7 @@ function render(opts){
       };
     }
     _homeListFingerprint = homeListFingerprint();
+    updateSortButton(true);
     restoreHomeReadingPosition(readingPosition,list);
     return;
   }
@@ -1023,7 +1339,10 @@ function render(opts){
         ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
-    const snoozeAction = minimal ? '' : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`;
+    const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+    const snoozeAction = minimal ? '' : (snoozed
+      ? `<button class="swipe-action sa-snooze" data-action="unsnooze" aria-label="show"><i class="ti ti-moon-off" aria-hidden="true"></i>show</button>`
+      : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`);
     const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
@@ -1043,6 +1362,9 @@ function render(opts){
     }
     if(canDrag)row.dataset.agendaDraggable = '1';
     if(h.hid)row.dataset.hid = h.hid;
+    if(agendaRow && agendaRow.occurrenceKey)row.dataset.occurrenceKey = agendaRow.occurrenceKey;
+    if(agendaRow && agendaRow.scheduleOptionId)row.dataset.scheduleOptionId = agendaRow.scheduleOptionId;
+    if(agendaRow && agendaRow.scheduledDay)row.dataset.scheduledDay = agendaRow.scheduledDay;
     if(agendaRow && Number.isFinite(agendaRow.chunkMinutes)){
       row.dataset.chunkMinutes = String(Math.round(agendaRow.chunkMinutes));
     }
@@ -1084,7 +1406,7 @@ function render(opts){
         </div>
         ${minimal || isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
-          <button class="card-action-btn" data-action="snooze" aria-label="snooze" title="snooze"><i class="ti ti-moon" aria-hidden="true"></i></button>
+          <button class="card-action-btn" data-action="${snoozed ? 'unsnooze' : 'snooze'}" aria-label="${snoozed ? 'show' : 'snooze'}" title="${snoozed ? 'show' : 'snooze'}"><i class="ti ${snoozed ? 'ti-moon-off' : 'ti-moon'}" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>`}
       </div>`;
@@ -1155,14 +1477,28 @@ function render(opts){
       // chain around still-due habits. A partially-logged breakable is NOT
       // completedOnDay (progress < total), so it correctly stays due.
       const rawTimeline = Array.isArray(day.timeline) ? day.timeline : [];
-      const displayTimeline = (typeof completedOnDay === 'function')
-        ? rawTimeline.filter(r=>{
-            if(r.kind !== 'fill' && r.kind !== 'scheduled')return true;
-            if(r.i == null)return true;
-            const h = data[r.i];
-            return !(h && completedOnDay(h,day.dayBase));
-          })
-        : rawTimeline;
+      let displayTimeline = rawTimeline;
+      if(typeof agendaRowsAfterCompletions === 'function'){
+        const kept = new Set();
+        const byIndex = new Map();
+        rawTimeline.forEach(row=>{
+          if((row.kind !== 'fill' && row.kind !== 'scheduled') || row.i == null)return;
+          if(!byIndex.has(row.i))byIndex.set(row.i,[]);
+          byIndex.get(row.i).push(row);
+        });
+        for(const [idx,rows] of byIndex){
+          for(const row of agendaRowsAfterCompletions(data[idx],rows,day.dayBase))kept.add(row);
+        }
+        displayTimeline = rawTimeline.filter(row=>
+          (row.kind !== 'fill' && row.kind !== 'scheduled') || row.i == null || kept.has(row));
+      }else if(typeof completedOnDay === 'function'){
+        displayTimeline = rawTimeline.filter(r=>{
+          if(r.kind !== 'fill' && r.kind !== 'scheduled')return true;
+          if(r.i == null)return true;
+          const h = data[r.i];
+          return !(h && completedOnDay(h,day.dayBase));
+        });
+      }
       const seq = homeDaySequence(
         displayTimeline === rawTimeline ? day : { ...day, timeline: displayTimeline },
         sortSettings, { visibleSet }
@@ -1390,8 +1726,8 @@ function render(opts){
         }
       }
 
-      // Breakable tasks placed in the today section expand to one card per
-      // chunk so each time block is visible on the timeline.
+      // Every independently scheduled occurrence (and every breakable chunk)
+      // gets its own natural timeline card. The pinned pre-pass remains one.
       if(inTodaySection){
         const chunkRows = chunksByIndex.get(realIdx);
         if(chunkRows && chunkRows.length > 1){
@@ -1464,7 +1800,10 @@ function render(opts){
           attachWeatherIndicator(header,dayContext);
           attachFreeTimeIndicator(header,dayContext);
           attachDroppedIndicator(header,list,todayHids);
-          if(header.classList.contains('has-dropped') || header.classList.contains('has-pill'))list.prepend(header);
+          if(header.classList.contains('has-dropped') || header.classList.contains('has-pill')){
+            list.prepend(header);
+            fitDayHeaderChips(header);
+          }
         }
       }
     }
@@ -1500,6 +1839,7 @@ function render(opts){
       }
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
+      if(btn.dataset.action === 'unsnooze')doUnsnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
       if(btn.dataset.action === 'timer'){
         if(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === idx){
@@ -1516,6 +1856,7 @@ function render(opts){
       const idx = +btn.closest('.swipe-row').dataset.realIdx;
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
+      if(btn.dataset.action === 'unsnooze')doUnsnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
     });
   });
@@ -1524,6 +1865,7 @@ function render(opts){
     scheduleHouseholdAgendaPublish(_homeRenderedWeek);
   }
   _homeListFingerprint = homeListFingerprint();
+  updateSortButton(true);
   restoreHomeReadingPosition(readingPosition,list);
   return true;
 }

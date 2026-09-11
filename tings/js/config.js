@@ -32,6 +32,7 @@ const GEOCODE_FETCH_TIMEOUT_MS = 8000;             // address search / reverse c
 const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
+const ESRI_WORLD_IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 // ── Weather guidance (Open-Meteo; no API key) ──
 const WEATHER_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -45,7 +46,7 @@ const WEATHER_NEAR_AFTER_END_MS = 30 * 60 * 1000;
 const WEATHER_NEAR_MAX_HORIZON_MS = 4 * 60 * 60 * 1000;
 const WEATHER_SAME_PLACE_M = 40000;               // reuse home/other forecast inside ~25 miles
 const MAX_WEATHER_PROFILES = 4;
-const MAX_WEATHER_EXTRA_PLACES = 4;               // far-away habit overrides besides home
+const WEATHER_FETCH_BATCH_SIZE = 8;               // provider-supported multi-coordinate request chunk
 const WEATHER_PERIOD_RANGE_MIN_MS = 2 * 60 * 60 * 1000; // range on a card only after ~2h
 const WEATHER_PERIOD_RANGE_DELTA_C = 2;                 // and only when feels-like actually moves
 const WEATHER_STABLE_MARGINS = {
@@ -104,7 +105,8 @@ const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_MIN_CHUNK_MINUTES = 30;
 const DEFAULT_EARLY_WINDOW_DAYS = 1;
 const DEFAULT_DELAY_ALLOWANCE_DAYS = 0;
-const TIME_PICKER_STEP_MINUTES = 15;
+const TIME_PICKER_STEP_MINUTES = 5;
+const MIN_BREAKABLE_CHUNK_MINUTES = 15;
 const MAX_NOTE_CHARS = 200;
 /** Soft location preference among allowed places. */
 const LOCATION_PREF_LEVELS = ['avoid','little','high'];
@@ -176,6 +178,7 @@ const DEFAULT_SORT_SETTINGS = {
   // Exact ILP packer for tight windows (lazy-loads GLPK). This is the default
   // planner; the scarcity-first heuristic remains the explicit fast fallback.
   agendaOptimizer:true,
+  mapBaseLayer:'street',
   // Unified agenda placement score (lower = better). All soft signals share
   // one comparable scale — no special-case overrides for due/near/tonight.
   //   travel       — per second of commute for this placement
@@ -249,13 +252,28 @@ const DEFAULT_SORT_SETTINGS = {
   weatherProfiles:[],
   // Keep ambient forecast chrome icon-only unless the user explicitly wants
   // the low/high range beside each day.
-  showWeatherTemperatureRanges:false,
+  showWeatherTemperatureRanges:true,
   // Optional interval forecasts on busy/travel agenda surfaces. Habit and
   // task cards opt in per item (`showWeather`). These are presentation only:
   // they never opt an item into weather-guided placement. Travel keeps its
   // forecast on by default because conditions directly affect the leg.
   showWeatherOnBusyTimes:false,
   showWeatherOnTravel:true,
+  // Temperature unit for weather display: 'auto' infers from the home city's
+  // country (Fahrenheit countries → °F, else °C); 'c'/'f' override. Forecast
+  // data and rule bounds are always stored in °C — this is display-only.
+  weatherTempUnit:'auto',
+  // Precipitation (and snowfall) display unit: 'auto' infers from the home
+  // city's country (US-aligned measure countries → in, else mm); 'mm'/'in'
+  // override. Forecast data and rule bounds are always stored in mm/cm.
+  weatherPrecipUnit:'auto',
+  // Wind display unit (speeds and gusts): 'auto' infers from the home city's
+  // country ('mph' regions, else km/h); 'kmh'/'mph' override. Forecast data
+  // and rule bounds are always stored in km/h.
+  weatherWindUnit:'auto',
+  // Two-letter country code of the home city, captured from the geocoder when
+  // the city is set (and backfilled once for existing cities) to drive 'auto'.
+  homeCityCountry:'',
   prayerIslamicNames:false,
 
   topics:[],

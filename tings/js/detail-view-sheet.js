@@ -39,6 +39,7 @@ function openDetail(i){
   $('detail-days').value = h.target || '';
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
+  if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
   setDetailSharedDisplayMode(sharedDisplayModeForHabit(h));
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
   $('detail-early-window').value = habitEarlyWindowDays(h);
@@ -51,7 +52,8 @@ function openDetail(i){
   renderDetailLinkRows(normalizeLinks(h.links));
   renderTagChips('detail-place-chips',[],h.locationIds,h.preferredLocationId,h.locationPrefs,h.anywhereAllowed);
   renderTagChips('detail-topic-chips',h.topics,[]);
-  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',h.weatherProfileId || '');
+  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',
+    typeof weatherProfileSelectValue==='function' ? weatherProfileSelectValue(h.weatherProfileMode,h.weatherProfileId) : (h.weatherProfileId || ''));
   if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('detail-weather-location',h.weatherLocationId || '');
   if($('detail-show-weather'))$('detail-show-weather').setAttribute('aria-pressed',h.showWeather ? 'true' : 'false');
   if($('detail-show-weather-location'))$('detail-show-weather-location').setAttribute('aria-pressed',h.showWeatherAtLocation ? 'true' : 'false');
@@ -82,6 +84,8 @@ function openDetail(i){
     anywhereAllowed:Boolean(h.anywhereAllowed),
     locationPrefs:normalizeLocationPrefs(h.locationPrefs,typeof habitPrefLocationIds === 'function' ? habitPrefLocationIds(h) : h.locationIds,h.preferredLocationId),
     preferredLocationId:h.preferredLocationId || null,
+    weatherProfileMode:typeof normalizeWeatherProfileMode==='function'
+      ? normalizeWeatherProfileMode(h.weatherProfileMode,h.weatherProfileId) : (h.weatherProfileId?'profile':'inherit'),
     weatherProfileId:cleanWeatherProfileId(h.weatherProfileId) || null,
     weatherLocationId:(typeof cleanLocationId === 'function' ? cleanLocationId(h.weatherLocationId) : '') || null,
     showWeather:Boolean(h.showWeather),

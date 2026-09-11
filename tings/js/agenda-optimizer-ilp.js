@@ -1789,6 +1789,20 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     // The "unavailable" toast is reserved for GLPK failing to load.
     return buildWeekAgenda(data,settings,numDays,opts);
   }
+  const additionalOpts = reuseFarDays ? {
+    horizonDays:dayStates.length,
+    horizonStart:dayStates[0] && dayStates[0].dayBase,
+    horizonEnd:dayStates[dayStates.length - 1] && (dayStates[dayStates.length - 1].dayBase + 86400000),
+    extraPlannedFor:c=>{
+      const memoDays = _plannerWeekDayMemo && Array.isArray(_plannerWeekDayMemo.days)
+        ? _plannerWeekDayMemo.days : [];
+      return memoDays.slice(1).reduce((sum,day)=>sum + (day.timeline || []).filter(row=>
+        row && row.kind === 'fill' && row.i === c.i && row.chunkMinutes == null
+      ).length,0);
+    }
+  } : null;
+  placeAdditionalSameDayOccurrences(candidates,solveStates,settings,additionalOpts);
+  annotateAgendaOccurrenceKeys(candidates,solveStates);
 
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){

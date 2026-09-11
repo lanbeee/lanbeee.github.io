@@ -95,7 +95,7 @@ function clampTimes(value){
   return Math.max(1,Math.min(30,parseInt(value,10) || 1));
 }
 function clampMinChunk(value){
-  return Math.max(TIME_PICKER_STEP_MINUTES,Math.min(720,parseInt(value,10) || DEFAULT_MIN_CHUNK_MINUTES));
+  return Math.max(MIN_BREAKABLE_CHUNK_MINUTES,Math.min(720,parseInt(value,10) || DEFAULT_MIN_CHUNK_MINUTES));
 }
 function normalizeTimerAutoStop(value){
   if(value === null || value === undefined || value === '')return null;

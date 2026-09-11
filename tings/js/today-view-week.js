@@ -786,6 +786,145 @@ function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday,completionOffset = 0){
     && rhythmFillsEveryEligibleDay(h))return ageDays > 0;
   return ageDays >= target;
 }
+
+// MUTATE: a legacy schedule row is an alternative for the day's ordinary
+// occurrence. Each explicitly separate row contributes one additional usable
+// opportunity on that day. This bounded fill pass runs after either planner's
+// normal packing, so travel, reservations, and order ceilings still flow
+// through tryPlaceOnDay/commitPlacement while both engines share semantics.
+function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates) || !dayStates.length)return 0;
+  let added = 0;
+  const options = opts && typeof opts === 'object' ? opts : {};
+  const horizonDays = Math.max(1,Number(options.horizonDays) || dayStates.length);
+  const extraPlannedFor = typeof options.extraPlannedFor === 'function'
+    ? options.extraPlannedFor : ()=>0;
+  const horizonStart = Number.isFinite(options.horizonStart)
+    ? options.horizonStart : dayStates[0].dayBase;
+  const horizonEnd = Number.isFinite(options.horizonEnd)
+    ? options.horizonEnd : dayStates[dayStates.length - 1].dayBase + 86400000;
+  for(const c of candidates){
+    if(!c || !c.h || c.h.type === 'task' || c.h.breakable)continue;
+    const allOptions = normalizeHabitScheduleOptions(c.h.scheduleOptions);
+    if(!allOptions.some(o=>habitScheduleOptionSameDayMode(o) === 'separate'))continue;
+    const parts = rhythmParts(c.h.target);
+    const wanted = Math.max(1,Math.ceil(parts.times * horizonDays / parts.days));
+    let planned = dayStates.reduce((sum,state)=>sum + state.fills.filter(entry=>
+      entry && entry.fill && entry.fill.i === c.i && !entry.fill.chunkMinutes
+    ).length,0) + extraPlannedFor(c);
+    const logged = normalizeLogs(c.h.logs).filter(log=>{
+      if(isPlanLog(log))return false;
+      const ts = logTime(log);
+      return ts >= horizonStart && ts < horizonEnd;
+    }).length;
+    let remaining = Math.max(0,wanted - logged - planned);
+    if(!remaining)continue;
+
+    for(const state of dayStates){
+      if(!remaining)break;
+      const dayKey = dateKey(state.dayBase);
+      const dayLogs = normalizeLogs(c.h.logs).filter(log=>!isPlanLog(log)
+        && dateKey(logTime(log)) === dayKey);
+      const loggedIds = new Set(dayLogs.map(log=>String(log.scheduleOptionId || '')).filter(Boolean));
+      const usedIds = new Set(state.fills
+        .filter(entry=>entry && entry.fill && entry.fill.i === c.i)
+        .map(entry=>entry.fit && entry.fit.scheduleOptionId)
+        .filter(Boolean));
+      const dayOptions = habitScheduleOptionsForDay(c.h,state.dayBase);
+      if(!dayOptions.length)continue;
+      const alternatives = dayOptions
+        .filter(option=>habitScheduleOptionSameDayMode(option) !== 'separate');
+      const existingOrdinary = state.fills.some(entry=>entry && entry.fill && entry.fill.i === c.i
+        && (!entry.fit || entry.fit.scheduleOptionSameDayMode !== 'separate'));
+      const loggedOrdinary = dayLogs.some(log=>{
+        const id = String(log.scheduleOptionId || '');
+        if(!id)return true;
+        const option = dayOptions.find(item=>item.id === id);
+        return !option || habitScheduleOptionSameDayMode(option) !== 'separate';
+      });
+      const opportunities = [];
+      if(!existingOrdinary && !loggedOrdinary && alternatives.length){
+        opportunities.push(alternatives[0]);
+      }
+      opportunities.push(...dayOptions
+        .filter(option=>habitScheduleOptionSameDayMode(option) === 'separate'
+          && !usedIds.has(option.id) && !loggedIds.has(option.id)));
+      for(const option of opportunities){
+        if(!remaining)break;
+        const occurrenceKey = `${c.h.hid || c.i}:${dateKey(state.dayBase)}:${option.id}`;
+        const boundHabit = habitBoundToScheduleOption(c.h,option);
+        const fill = {
+          h:boundHabit,
+          i:c.i,
+          priority:c.priority,
+          scarcity:c.scarcity,
+          placeKey:occurrenceKey,
+          occurrenceKey,
+          _scheduleOptionBound:true,
+          _scheduleOptionId:option.id,
+          _scheduleOptionSameDayMode:habitScheduleOptionSameDayMode(option),
+          locationId:option.locationId
+        };
+        const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
+        if(!fit)continue;
+        // Publish the canonical Ting, not the bound planner clone, so card
+        // actions and detail navigation continue to use the stored record.
+        fill.h = c.h;
+        commitPlacement(state,fill,fit);
+        state.day.agendaItems.push({
+          h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+          locationId:fit.locId,occurrenceKey,scheduleOptionId:option.id,
+          scheduledDay:dateKey(state.dayBase)
+        });
+        usedIds.add(option.id);
+        planned += 1;
+        remaining -= 1;
+        added += 1;
+      }
+    }
+    c.unplacedOccurrenceCount = remaining;
+  }
+  return added;
+}
+
+// MUTATE: stamp every published non-chunk row with a stable day/option-aware
+// key. Existing single-occurrence cards gain metadata without changing their
+// visual identity; multiple rows no longer collapse to the habit index.
+function annotateAgendaOccurrenceKeys(candidates,dayStates){
+  for(const state of dayStates || []){
+    const ordinals = new Map();
+    const rows = (state.rows || []).filter(row=>row && row.kind === 'fill' && row.i != null)
+      .sort((a,b)=>(a.start || 0) - (b.start || 0));
+    for(const row of rows){
+      if(row.chunkIndex != null)continue;
+      const optionId = row.scheduleOptionId || 'general';
+      const base = `${row.h && row.h.hid || row.i}:${dateKey(state.dayBase)}:${optionId}`;
+      const ordinal = (ordinals.get(base) || 0) + 1;
+      ordinals.set(base,ordinal);
+      row.occurrenceKey = row.occurrenceKey || (ordinal === 1 ? base : `${base}:${ordinal}`);
+      row.scheduledDay = dateKey(state.dayBase);
+    }
+    for(const entry of state.fills || []){
+      const matching = rows.find(row=>row.i === entry.fill.i
+        && row.start === entry.fit.placeStart && row.end === entry.fit.placeEnd);
+      if(!matching)continue;
+      entry.fill.occurrenceKey = matching.occurrenceKey;
+      entry.fit.occurrenceKey = matching.occurrenceKey;
+    }
+    const usedRows = new Set();
+    for(const item of state.day && state.day.agendaItems || []){
+      if(!item || item.i == null || item.chunkIndex != null)continue;
+      let matching = item.occurrenceKey
+        ? rows.find(row=>row.occurrenceKey === item.occurrenceKey)
+        : rows.find(row=>row.i === item.i && !usedRows.has(row));
+      if(!matching)continue;
+      usedRows.add(matching);
+      item.occurrenceKey = matching.occurrenceKey;
+      item.scheduleOptionId = matching.scheduleOptionId || null;
+      item.scheduledDay = matching.scheduledDay;
+    }
+  }
+}
 function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints){
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);

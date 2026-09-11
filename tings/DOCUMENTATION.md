@@ -57,8 +57,8 @@ Everything below is covered in this skeleton:
 - Schedule Links: scheduleLinks array
 - Topics: topics array
 - Locations: locationIds, anywhereAllowed, locationPrefs, preferredLocationId
-- Weather guidance: weatherProfileId (optional named settings profile), weatherLocationId (optional far-away place override), showWeather / showWeatherAtLocation (per-item forecast pill)
-- Time/place alternatives: scheduleOptions (specific extra weekday + time + location rows, optional per-row preference)
+- Weather guidance: weatherProfileMode + weatherProfileId (inherit the scheduled place, choose a named profile, or opt out), weatherLocationId (anywhere-placement forecast override), showWeather / showWeatherAtLocation (per-item forecast pill)
+- Time/place/weather sessions: scheduleOptions (stable row id, weekday/time/place window, same-day alternative/separate mode, optional per-row preference and weather override)
 - Links: links array (kind, value)
 - Task-specific: dueDate, eventTime, hardDue, earlyWindowDays, delayAllowanceDays
 - Calendar import: externalId, source, importedAt
@@ -416,8 +416,9 @@ else:
   anywhereAllowed: boolean,   // 👨‍💻 Legacy: may be done anywhere
   locationPrefs: Object<string, 'avoid'|'little'|'high'>, // 👤 Soft preferences
   preferredLocationId: string|null, // 👤 Legacy preferred location
-  weatherProfileId: string|null, // 👤 Optional weather profile
-  weatherLocationId: string|null, // 👤 Optional forecast place (far from home)
+  weatherProfileMode: 'inherit'|'profile'|'none', // 👤 Place default, named profile, or explicit opt-out
+  weatherProfileId: string|null, // 👤 Named profile when mode = profile
+  weatherLocationId: string|null, // 👤 Anywhere-placement forecast fallback
   showWeather: boolean,       // 👤 Show interval forecast on this item's agenda card
   showWeatherAtLocation: boolean, // 👤 When showWeather is on, use this item's place (off = home city)
   scheduleOptions: {             // 👤 Specific extra time/place windows
@@ -435,7 +436,9 @@ else:
     // endAnchor/endOffsetMin/endCombine/endAnchor2/endOffsetMin2/
     // endFixedMin2/endDayOffset/endDayOffset2 mirror the start fields.
     locationId: string|null,     // Saved place, or null = anywhere
-    pref?: 'avoid'|'little'|'high' // 👤 Overrides place ranking for this instance
+    pref?: 'avoid'|'little'|'high', // 👤 Overrides place ranking for this instance
+    weatherProfileMode: 'inherit'|'profile'|'none', // 👤 Option-specific guidance choice
+    weatherProfileId: string|null // 👤 Named profile when mode = profile
   }[],
   
   // ─── LINKS & ACTIONS ─────────────────────────────────────
@@ -553,6 +556,7 @@ topics: string[],           // 👤 Master topic registry
 locations: Location[],    // 👤 Location registry
 travel: { [key: string]: TravelEdge },  // 👤 Cached travel times
 defaultTravelMode: 'driving'|'walking'|'bicycling'|'transit',
+mapBaseLayer: 'street'|'satellite', // last successfully loaded picker layer
 lastKnownLocationId: string|null,  // Auto-detected location
 locationOptIn: boolean,     // 👤 Geolocation permission
 pinnedLocationId: string|null,    // Manual location pin
@@ -579,22 +583,32 @@ homeCityLng: number|null,       // 👤 Longitude
 prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
-weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles
-showWeatherTemperatureRanges: boolean, // Add feels-like low–high °C beside full-mode day forecast icons (default off)
+weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles shared by items, options, and places
+showWeatherTemperatureRanges: boolean, // Add feels-like low–high beside full-mode day forecast icons (default off)
 showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
 showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
+weatherTempUnit: 'auto'|'c'|'f',  // Display unit; 'auto' infers from the home city's country (default 'auto')
+weatherPrecipUnit: 'auto'|'mm'|'in', // Display unit for precipitation (snowfall follows); 'auto' infers from the home city's country (default 'auto')
+weatherWindUnit: 'auto'|'kmh'|'mph', // Display unit for wind and gusts; 'auto' infers from the home city's country (default 'auto')
+homeCityCountry: string,          // Two-letter country code from the geocoder; drives 'auto' inference
 ```
 
 #### 4.3.8a Weather Guidance 👤👨‍💻
-- Uses Open-Meteo without an API key. The default forecast is the saved
-  home-city coordinate. An item can optionally pick a saved place when that
-  item happens far from home (`weatherLocationId`). Nearby places (about 40 km)
-  reuse the home forecast instead of a second request.
+- Uses Open-Meteo without an API key. Guidance resolves for every placement in
+  this order: specific option → item → selected location. Both options and
+  items can explicitly choose **no weather**, which stops inheritance at that
+  layer. A legacy item with a profile becomes an explicit item profile; an item
+  without one inherits its selected place. Missing/dangling profiles fail open.
+- The forecast always comes from the selected scheduled place. Anywhere
+  placements use `weatherLocationId` when set, then the saved home city. Nearby
+  places (about 40 km) reuse the home forecast instead of a second request.
 - The seven-day hourly forecast and normalized daily condition/temperature/
   precipitation/wind summaries refresh together every six hours per distinct place.
   A fresh legacy cache without daily summaries is refreshed automatically.
-  Extra places are fetched only for weather-linked items or visible period
-  cards that need them, capped at four far places besides home.
+  Extra places are discovered from all effectively guided items, options, and
+  locations plus visible period cards that need them. Far coordinates are
+  fetched in bounded multi-coordinate batches; each place keeps its own cache
+  and freshness timestamps.
 - When a weather-linked planned item is active or starts within 90 minutes, a
   15-minute forecast can refresh every 15 minutes while the app is visible. It
   covers at least two hours and 30 minutes after the item, capped at four hours.
@@ -602,14 +616,16 @@ showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default t
   decisive — for example 0% rain and snow, or values comfortably away from every
   rule threshold. Borderline precipitation still refreshes.
 - Near-term samples replace hourly samples where they overlap; the weekly
-  forecast fills later or missing times. AQI is fetched separately only when a
-  profile uses US or EU AQI (home: any such profile; a far place: only if an
-  item there uses one).
+  forecast fills later or missing times. AQI is fetched separately only when an
+  effective profile uses US or EU AQI, including option and location defaults.
 - Weather stays supporting context: full-mode Home agenda-day headers show a
   compact, tinted pill with an intuitive condition emoji and precipitation
   chance when it is raining or snowing. Long WMO labels stay in the tooltip and
-  detail sheet. The Overview seven-day open-time strip uses the same compact
-  form. Optional feels-like low–high Celsius ranges are off by default and add
+  detail sheet. The Overview seven-day open-time strip shows the condition as an
+  emoji-only cue (full intensity emoji centered between the day label and the
+  open-minutes figure; the wet chance stays in the tooltip) so open time remains
+  the chip's only number.
+  Optional feels-like low–high Celsius ranges are off by default and add
   to both persistent surfaces. The Overview calendar grid is unchanged.
 - Busy-time and travel cards can show period weather from Settings. Habits and
   tasks opt in per item (`showWeather`). Each compact pill covers the row's
@@ -627,7 +643,32 @@ showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default t
   item icon, or that forecast opens one shared detail sheet with conditions,
   full temperature range, precipitation, wind, forecast age, and chronological
   guided-item explanations. Displayed temperatures are feels-like values. A
-  far-away item names its saved place and uses that place's forecast.
+  far-away item names its saved place and uses that place's forecast. Tapping a
+  summary card (feels like, precipitation, wind, UV) opens an interactive hourly
+  trend chart of that metric for the same day on top of the sheet. The chart
+  always spans the whole day — a near-term refresh cannot truncate it — and
+  drag or arrow keys read any hour: feels like pairs with actual temperature,
+  wind with gusts inside one shared frame, precipitation chance renders as bars
+  on the natural 0–100% scale with snowfall hours tinted and read in
+  centimetres (the summary card adds the day's snow total). Faint dashed
+  reference lines name the thresholds that matter per metric — freezing and
+  hot, even-chance 50%, strong/gale breeze, moderate→extreme UV — and UV and
+  feels-like shade the night and mark sunrise/sunset (feels-like with a
+  daylight figure); stat chips summarize the extremes. When that day has timed
+  agenda items, **day × weather** opens a separate, full-height comparison
+  instead of compressing the agenda into the hourly chart. Time runs downward:
+  every scheduled habit/task keeps its proportional start/end position in a
+  wide agenda lane, while the selected weather measure runs beside it on the
+  exact same time axis. Each block directly prints its name, exact interval,
+  and the weather across that interval, so a fully booked day is readable by
+  scrolling and never requires selecting tiny marks. Rain uses aligned hourly
+  probability bands and accumulation labels; feels-like, wind, and UV use
+  vertical traces with hourly values. Those traces use compact semantic colour
+  ramps and faint value zones (cool→hot, calm→strong, low→extreme UV), so a
+  narrow weather lane communicates intensity without needing another axis or
+  legend. Four always-visible measure buttons swap the comparison in place.
+  Items with no weather guidance are included. The comparison is visual only
+  and does not infer that an item is outdoors or change its placement.
 - Minimal mode hides ordinary and unavailable forecast cues and all temperature
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
@@ -641,17 +682,21 @@ showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default t
   (UV 0–2 low … 8+ very high, US AQI 0–50 good … 101+ unhealthy, wind and
   precipitation bands) and uses them as min/max placeholders. Missing data
   always fails open.
-- Home cards for a weather-guided item show a compact icon-only status chip in
+- Home cards with explicit item/option guidance show a compact icon-only status chip in
   the card's second-row pill stack (never in the title row): quiet teal sun =
   good, amber rain cloud = caution, red shield = override, gray question cloud
-  = unknown. Tapping it shows a one-line reason naming the deciding or failing
-  metric values.
+  = unknown. Guidance inherited solely from a location adds no automatic badge;
+  the item/option and location editors explain that inheritance, and manually
+  enabled ambient weather display is unchanged. Tapping a visible status shows
+  a one-line reason naming the deciding or failing metric values.
 - Relative preferences compare the exact habit interval and its whole day with
   equal weight. Forecast cache is stored under `tings_weather_cache_v1`, outside
   backup data. Far-place payloads live in `places` on that cache.
 - Forecast transparency: the weather settings section shows each profile's
-  attached items ("used by …"), and a forecast panel below the status line with
-  the exact rows the planner scores — the next 24 hours of the stored home
+  attached items, specific options, and places ("used by …"). Referenced
+  profiles cannot be deleted until those uses are changed. A forecast panel
+  below the status line shows the exact rows the planner scores — the next 24
+  hours of the stored home
   forecast, one row per step (hourly, or 15-minute inside the near-term
   horizon, shaded, where the detail supersedes the hourly value), with fetch
   ages and the detail horizon in the header line. It reads the stored cache
@@ -711,6 +756,7 @@ lastRetentionCleanupAt: number,     // Timestamp of last cleanup
   lng: number,             // WGS84 longitude (-180 to 180)
   radiusM: number,         // 👤 Geofence radius (default 75m)
   emoji: string,           // 👤 Optional pin emoji
+  weatherProfileId: string|null, // 👤 Default guidance inherited by placements here
   
   // Hours (optional, default = 24/7)
   allowedTimeStart: number|null,  // Minutes from midnight
@@ -838,7 +884,7 @@ Placed on:
 - Detail → share item (encrypted Cloudflare relay)
 - Locations / city / address search (Photon + Nominatim)
 - Travel time estimate (OSRM)
-- Location map picker (OpenStreetMap tiles)
+- Location map picker (OpenStreetMap Street or Esri World Imagery Satellite tiles)
 - About → send feedback (Google Form in a new browser tab)
 
 ### 5.15 Status Display 👤
@@ -907,7 +953,11 @@ Minimal mode (always):
 ├── The Rest
 ```
 
-Each day section header can have two dynamic **pills**:
+Each day section header can have dynamic **pills** for open time, weather, and
+missed items. On a tight header, the weather pill progressively hides its
+temperature and precipitation text before the day label or action pills are
+allowed to clip. Only exceptionally narrow layouts move the pills to a tidy
+second row.
 
 ### 6.2 Missed Pills (🔴 "N missed")
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
@@ -950,6 +1000,12 @@ Each day section header can have two dynamic **pills**:
 - Case-insensitive
 - Searches: habit names, topics, location names
 - Clears with ✕ button
+- Search is available when the settled, unsearched Home view contains at least
+  10 visible Ting cards across its sections. Pinned copies and separate-session
+  cards count because they are visible/searchable; travel and busy cards do not.
+- While Search is open, the last unsearched count is retained so a narrow result
+  set cannot hide Search. Completed tasks remain searchable through the archive
+  exception even below the card threshold.
 
 ### 7.2 Topic Filter
 - Chip row above habit list
@@ -1027,7 +1083,7 @@ Visible when type = habit (keepup):
 ### 8.6 Field: Task Due Date 👤
 Visible when type = task:
 - **Date input:** Calendar picker (day-level)
-- **Time input:** Time picker (makes it a fixed-time event)
+- **Time input:** Time picker (makes it a fixed-time event). Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
 - Hint: "add a time to make this a fixed appointment"
 - Default time: Next clean hour
 
@@ -1264,7 +1320,7 @@ shortcuts can be stored on one item.
 - The standalone shared display shows the current time in its header. Swiping left (or "hide agenda") covers the agenda with a near-black night clock; three taps within 900ms bring it back — a swipe never restores it, so a stray brush of the frame can't flash the agenda. Marking an item done shows an undo toast for a few seconds: the row reads as done immediately, but the completion is only pushed to the owner's feed when the toast expires, and tapping undo restores the row without any request. Only one mark waits at a time — marking another item pushes the previous one at once; a refresh that pauses the display or drops the row cancels the pending mark instead of pushing it, and de-pairing mid-push never writes the old authorization back. The ⋯ menu holds the fullscreen toggle, light/dark/system theme (dark is the default), a − / + text-size stepper (70–200%), and a "screen fit" − / + control that pre-squashes the page vertically (85–100%) to cancel frames that stretch their panel. Everything persists per display.
 - **Export to calendar:** Tasks with a due date or fixed time (regular mode only)
 - **Share item:** Sends an encrypted invitation for another person to track it
-- **Snooze:** Temporarily hides the item
+- **Snooze:** Temporarily hides the item. When it is already hidden, Home swipe/card **show** brings it back immediately; Detail **show** opens the snooze sheet so you can unsnooze or hide it longer.
 - **Remove:** Deletes with an undo path
 
 ### 9.8 Value Logging 👤
@@ -1408,7 +1464,20 @@ Tracks the currently active habit session:
 - Visual timeline of free vs busy blocks
 - `formatFreeDuration` shows total free time ("3h" / "45m")
 - Largest gap highlighted
-- Free blocks can be selected to schedule a habit/task into that window
+- Free blocks can be selected to schedule a habit/task into that window. The
+  timeline also supports horizontal drag selection in 15-minute steps. Any
+  chosen or manually entered range is drawn directly over the day map, with
+  its exact times and open/busy split, and changes colour with the what-if
+  result (open, rearrangeable, spill, or fixed conflict).
+- When a fresh forecast exists, only a quiet `add weather` affordance appears
+  under the free/busy strip. Tapping it reveals feels-like, rain, wind, and UV
+  choices; the user can add or remove up to two charts. Removing the final chart
+  folds the module back to the compact affordance. Every mini chart shares the
+  strip's time range and shades already-busy spans. When a time window is
+  selected, both weather charts highlight that same interval, dim everything
+  outside it, and summarize only the weather touching the selected window, so
+  weather and room can be compared without extra taps. This is visual context
+  only and does not change the planner.
 
 ### 10.3 Snooze Sheet 👤
 
@@ -1417,17 +1486,23 @@ Tracks the currently active habit session:
 │ Habit Name                         │
 │ Choose how long to hide this habit. │
 ├─────────────────────────────────────┤
+│ [show now]          ← if already hidden
+│ [1h] [3h] [8h] [today]             │
 │ [1d] [3d] [7d] [14d]               │
 │ [1 time] [2 times]                 │
+│ [  hours  ] [hide]                 │
 ├─────────────────────────────────────┤
 │ [cancel]                           │
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Left-swipe card → snooze, or from card actions
+- **Access:** Left-swipe card → snooze, or from card actions / Detail
+- Hour-based snooze: 1h, 3h, 8h, or a custom 1–72 hours
+- **today:** hide until midnight tonight
 - Time-based snooze: 1d, 3d, 7d, 14d
-- Repetition-based snooze: 1 time, 2 times (hides for N completions of another habit)
-- Hidden from list but still appears in search
+- Repetition-based snooze: 1 time, 2 times (hides until N more due dates pass)
+- **show now:** clears an active snooze (also available as swipe/card **show**)
+- Hidden from list but still appears in search; Settings → show hidden habits fades them on Home
 
 ### 10.4 Value Log Sheet 👤
 
@@ -1536,6 +1611,7 @@ Tracks the currently active habit session:
 │ [search address _______] [search]   │
 │                                     │
 │           [🗺️ MAP WITH PIN]        │
+│           [Street | Satellite]      │
 │              [My location]          │
 │                                     │
 │           [enter coordinates ▼]    │
@@ -1549,6 +1625,9 @@ Tracks the currently active habit session:
 - Saved places are shown in alphabetical/natural order across settings, habit forms, presence, and filters
 - A place created from a new/edit habit returns to that form already selected
 - Drag map to position pin (stays centered)
+- Street is the default base layer. Satellite uses Esri World Imagery with its
+  provider attribution. A successful choice is remembered; a tile failure
+  returns to Street without moving the map or pin and does not save the failed choice.
 - GPS button: "My location"
 - Coordinate input (lat/lng) via details disclosure
 - Save or cancel
@@ -1590,7 +1669,7 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Settings → Busy Times → "add busy time", or tap existing block
-- Set start/end time (15-min increments)
+- Set start/end time (five-minute picker steps; iOS uses Clock-style wheels because Safari ignores `step`. Exact valid typed minutes are preserved until a wheel choice is confirmed)
 - Choose days of week
 - "Save this date" vs "Update recurring" (modifies one instance vs the series)
 
@@ -1808,7 +1887,8 @@ Toasts appear after:
   reference; Privacy is the full explainer.
 - **Privacy** explains that Tings is open source, with no account; habits live
   in this browser’s `localStorage`; the site owner cannot see them. It lists
-  third-party services (Photon, Nominatim, OSRM, OpenStreetMap tiles, jsDelivr /
+  third-party services (Photon, Nominatim, OSRM, OpenStreetMap Street tiles,
+  Esri World Imagery Satellite tiles, jsDelivr /
   unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
   the encrypted Cloudflare relay used by shared display and
   share item, and optional send feedback via Google Forms. Map lookups are
@@ -2168,7 +2248,8 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `DEFAULT_MIN_CHUNK_MINUTES` | 30 | Default min chunk when breakable |
 | `DEFAULT_EARLY_WINDOW_DAYS` | 1 | Default number of days an item may be brought forward |
 | `DEFAULT_DELAY_ALLOWANCE_DAYS` | 0 | Default permission to place an occurrence after its due day |
-| `TIME_PICKER_STEP_MINUTES` | 15 | Time picker granularity |
+| `TIME_PICKER_STEP_MINUTES` | 5 | Time-picker granularity (12 minute stops). Android uses the native `step` picker; iOS Safari ignores `step`, so iPhone/iPad get Clock-style hour / 5-minute / AM-PM wheels. Typed valid `HH:mm` values remain exact until a wheel choice is confirmed |
+| `MIN_BREAKABLE_CHUNK_MINUTES` | 15 | Hard minimum for breakable chunks, independent of picker steps |
 | `MAX_NOTE_CHARS` | 200 | Max free-form notes |
 | `DEFAULT_PRIORITY` | 2 | Default priority (P2) |
 | `DEFAULT_PRAYER_METHOD` | `'NorthAmerica'` | Islamic prayer method |
@@ -2293,7 +2374,8 @@ When you swipe a card left or right, the following action buttons appear:
 
 | Icon | Action | Key | Condition | Description |
 |------|--------|-----|-----------|-------------|
-| 🌙 | Snooze | `snooze` | Non-minimal mode | Hide until chosen time |
+| 🌙 | Snooze | `snooze` | Non-minimal mode, not currently hidden | Hide until chosen time |
+| 🌙 | Show | `unsnooze` | Non-minimal mode, currently snoozed | Clear the snooze immediately |
 | 🗑️ | Remove | `nuke` | Always | Delete habit (with confirm) |
 
 **Minimal Mode Differences:**
@@ -2546,6 +2628,7 @@ Same agenda logic, but simplified display:
 | `locations` | Location[] | [] | Location registry |
 | `travel` | object | {} | Cached travel time edges |
 | `defaultTravelMode` | string | 'driving' | Default routing mode |
+| `mapBaseLayer` | string | 'street' | Last successfully loaded location-picker base layer |
 | `lastKnownLocationId` | string\|null | null | Auto-detected location ID |
 | `locationOptIn` | boolean | false | Geolocation permission granted |
 | `pinnedLocationId` | string\|null | null | Manually pinned location |
@@ -2556,10 +2639,14 @@ Same agenda logic, but simplified display:
 | `homeCityName` | string | '' | City name for prayer times |
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
-| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather rule profiles |
-| `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high °C beside full-mode Home and Overview week-strip weather icons |
+| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather profiles shared by items, options, and places |
+| `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high beside full-mode Home and Overview week-strip weather icons |
 | `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
 | `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
+| `weatherTempUnit` | 'auto'\|'c'\|'f' | 'auto' | Temperature display unit. 'auto' infers °F vs °C from the home city's country (°F regions: US and territories, BS, KY, TC, PW, FM, MH, LR, MM; unknown → °C). Display-only: forecast data and weather-rule bounds are always stored in °C. Settings → weather guidance → temperature unit |
+| `weatherPrecipUnit` | 'auto'\|'mm'\|'in' | 'auto' | Precipitation display unit; snowfall follows it (cm ↔ in). 'auto' infers mm vs in from the home city's country (measure regions: US and territories, BS, KY, TC, PW, FM, MH; unknown → mm). Display-only: forecast data and weather-rule bounds are always stored in mm/cm. Settings → weather guidance → precipitation unit |
+| `weatherWindUnit` | 'auto'\|'kmh'\|'mph' | 'auto' | Wind display unit (speeds and gusts). 'auto' infers km/h vs mph from the home city's country (same measure regions as precipitation; unknown → km/h). Display-only: forecast data and weather-rule bounds are always stored in km/h. Settings → weather guidance → wind unit |
+| `homeCityCountry` | string | '' | Two-letter country code of the home city, captured from the geocoder when the city is set (one-time reverse-geocode backfill for cities set before this field existed) |
 | `prayerMethod` | string | 'NorthAmerica' | Calculation method |
 | `prayerMadhab` | string | 'shafi' | Asr calculation school |
 | `prayerIslamicNames` | boolean | false | Use Islamic name labels |
@@ -2707,28 +2794,44 @@ Same agenda logic, but simplified display:
 | `locationPrefs` | object | Per-location preference (avoid/little/high) |
 | `anywhereAllowed` | boolean | Can be done anywhere |
 | `preferredLocationId` | string\|null | Preferred single location |
-| `weatherProfileId` | string\|null | Named weather profile used by the planner |
-| `weatherLocationId` | string\|null | Optional saved place whose forecast overrides home when far away |
+| `weatherProfileMode` | inherit\|profile\|none | Use the selected place default, a named profile, or no weather |
+| `weatherProfileId` | string\|null | Named weather profile when `weatherProfileMode` is `profile` |
+| `weatherLocationId` | string\|null | Optional saved-place forecast fallback for anywhere placements |
 | `showWeather` | boolean | Show an interval forecast pill on this item's agenda card |
 | `showWeatherAtLocation` | boolean | When `showWeather` is on, use this item's place instead of the home city |
-| `scheduleOptions` | array | Specific extra weekday/time/place windows; optional per-row preference overrides the place ranking for that instance |
+| `scheduleOptions` | array | Specific weekday/time/place/weather windows with stable `id`; `sameDayMode` is `alternative` (legacy default) or `separate`; optional preference and weather choices override the item |
 
-### 25.3.1 Time & Place Options 👤👨‍💻
+### 25.3.1 Time, Place & Weather Options 👤👨‍💻
 
-- Add these under an item's **Schedule → Allowed → specific times & places**.
+- Add these under an item's **Schedule → Allowed → specific times, places & weather**.
 - The general days, time window, and allowed places still apply at every
   allowed place. Each option row is an extra specific case.
 - Many items only need the specific rows. Leave the general time blank then.
 - Each row couples its own weekdays, start/end window, and location, plus an
   optional preference (`little` / `high` / `avoid`) that overrides the place
-  ranking for that instance.
-- Rows are alternatives for one occurrence. If a general window and two rows
-  fit, the planner chooses one; it does not schedule or count the habit three
-  times.
+  ranking for that instance. Its compact weather choice can inherit, select a
+  named profile, or explicitly opt out. The row explains the resolved source,
+  such as “Outdoor from Park.”
+- Legacy rows and rows marked `alternative` are alternatives for the day's
+  ordinary occurrence. When weekdays overlap, a newly added row must be
+  classified as **alternative time** or **separate session** before saving.
+- A `separate` row contributes one additional same-day opportunity. Rhythm is
+  an occurrence quota: for example, 4×/7d can use four valid windows across
+  three days by placing two sessions on an explicitly separate day, while
+  3×/7d chooses only three. General allowed windows can fill remaining quota,
+  at most once per day. The planner never invents a time outside hard windows;
+  infeasible remainder stays unplaced for agenda diagnostics.
+- Each planned session carries an occurrence key, schedule-option id, and day.
+  Completing one same-day card removes only that session. An ordinary log still
+  counts toward the rhythm quota, after which replanning chooses the remaining
+  opportunities. Names and rhythm statistics remain Ting-level.
 - The same location may be used in any number of rows at different times.
 - Preferred days, time, and place levels remain soft hints. They rank feasible
   general and specific windows but never make an otherwise valid window
   invalid. A place's own opening hours still apply as an outer constraint.
+- A place can have optional weather guidance under **More**. It applies only
+  when the option and item both inherit, so more-specific choices remain
+  predictable and visible in the relevant editor.
 - `locationIds` is the general allowed-place list. Option rows may name extra
   places that are valid only inside that row's window.
 - The Fast and GLPK planners both enumerate the general window and the rows

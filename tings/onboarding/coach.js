@@ -595,7 +595,8 @@
     const droppedPill = true;  // demo state always seeds a missed habit
     const freePill = Boolean(firstTarget(['.free-pill'])) || true;   // demo state keeps free time
     const searchBtn = $('open-search');
-    const searchReady = true;  // demo state adds enough habits for search
+    const searchReady = Boolean(searchBtn) && !searchBtn.disabled
+      && !searchBtn.classList.contains('is-hidden');
     const calReady = Boolean(document.querySelector('#overview-calendar .cal-day.pickable'));
     if(stage === 'aIntro' || !advancedChapter()){
       const hasHabits = habits().length > 0;
@@ -632,7 +633,7 @@
       aGeneralSchedule:{title:'General time & place',copy:'The general time window applies at every general place you select. Clock uses a time of day; Relative can follow sunrise, sunset, a prayer, or another Ting. If one place needs different hours, that belongs in a specific option below.',target:['#detail-simple-allowed-fields','.detail-schedule-places'],action:'Next',next:'aScheduleOrder',back:'aSchedulePreferences'},
       aScheduleOrder:{title:'Link items that belong together',copy:'Item order can place this before, after, or directly beside another Ting. “Must do on days with” couples their days; dragging Home rows creates a today-only version.',target:['#detail-schedule-order'],action:'Next',next:'aTimesPlaces',back:'aGeneralSchedule'},
       aTimesPlaces:{title:'Add a specific time & place option',copy:'Use a specific option only when a place needs its own days or hours — for example, the park in daylight or the mosque after a prayer. The general schedule remains the fallback.',target:['#detail-habit-option-add'],hint:'Tap add option',locked:true,back:'aScheduleOrder'},
-      aOptionRow:{title:'Specific options are alternatives',copy:'Each row is a complete alternative with its own place, days, preference, and window; the planner chooses one option for an occurrence, never all of them. Tap Relative to give this option a sun, prayer, or Ting anchor.',target:['.habit-option-row .time-mode-toggle [data-time-mode="relative"]','.habit-option-row'],hint:'Tap relative',locked:true,back:'aTimesPlaces'},
+      aOptionRow:{title:'Specific options are alternatives',copy:'Each row is a complete window with its own place, days, preference, and time. Overlapping weekdays can be an alternative time or a separate session; otherwise the planner still chooses one option for an occurrence. Tap Relative to give this option a sun, prayer, or Ting anchor.',target:['.habit-option-row .time-mode-toggle [data-time-mode="relative"]','.habit-option-row'],hint:'Tap relative',locked:true,back:'aTimesPlaces'},
       aTaskRules:{title:'Tasks use the same planner differently',copy:'A date is a deadline; adding a time makes a fixed appointment. Flexibility lets work surface early. From a future calendar day you can plan a habit by that date, while dated tasks can also export to your phone calendar.',target:['[data-detail-nav="schedule"]'],action:'Finish chapter',command:'chapterDone',back:'aOptionRow'},
 
       aProgressHistory:{title:'See patterns, not just streaks',copy:'History shows a two-week activity and plan strip, full-history totals, pace, and recent gaps. Switch to Gaps to see the spacing between entries.',target:['[data-detail-viz="gaps"]'],hint:'Tap gaps',locked:true,back:'aIntro'},
@@ -642,7 +643,7 @@
       aIdentity:{title:'Say what kind of Ting it is',copy:'Change the name and emoji here. Habits can build, limit, or stop; tasks finish once. Priority decides what claims scarce time first, and topics power search and filters.',target:['#detail-emoji-preview','#detail-habit-message'],hint:'Tap the emoji',locked:true,back:'aEffortTools'},
       aLifecycle:{title:'Actions are the item’s toolbox',copy:'Add calls, links, or app shortcuts and star the one a double-tap opens. Choose shared-display access, export dated tasks, share one encrypted item, snooze, or remove with Undo. Pin holds the item above automatic order — tap it to finish.',target:['#detail-pinned'],hint:'Tap pin',locked:true,back:'aIdentity'},
 
-      aSearch:{title:'Search and filters',copy:'Search and topic or place filters change what you see — never what is due or planned.',target:['#open-search','#bar-open-search'],hint:'Tap search',locked:true,back:'aIntro'},
+      aSearch:{title:'Search and filters',copy:'Search and topic or place filters change what you see — never what is due or planned.',target:['#open-search','#bar-open-search'],hint:'Tap search',locked:searchReady,back:'aIntro'},
       aSearchTools:{title:'Find without changing the plan',copy:'Type a name, topic, or place. On a keyboard, / jumps here. Home’s filter button can hold one topic and one place; Current Place sets where today’s travel starts.',target:['#habit-search','#nav-search input'],action:calendarBtn ? 'Open calendar' : 'Next',next:calendarBtn ? 'aCalendar' : 'aOverview',back:'aSearch'},
       aCalendar:{title:'The calendar is the bigger picture',copy:'The month shows where the week has room, upcoming work, and anything that needs attention.',target:['#open-overview','#bar-open-overview'],hint:'Tap calendar',locked:true,back:'aSearch'},
       aOverview:calReady
@@ -851,8 +852,10 @@
       closeGuidedSheet('settings-sheet');
       closeGuidedSheet('add-sheet');
       closeGuidedSheet('about-sheet');
-      closeGuidedSheet('slipped-sheet');
-      closeGuidedSheet('free-time-sheet');
+      // Reverting from the sheet-open step must not close a pill sheet that is
+      // still mounting; reconcile will advance once the class is present.
+      if(next !== 'aMissed')closeGuidedSheet('slipped-sheet');
+      if(next !== 'aOpenTime')closeGuidedSheet('free-time-sheet');
       if(next !== 'eSampleAdd')closeGuidedSheet('sample-habits-sheet');
     }
     if(next === 'eOverviewPast' || next === 'eOverviewFuture')closeGuidedDayLogs();
@@ -1022,7 +1025,7 @@
     const demoHabit = {
       hid: DEMO_HID,
       message: '🏃 Morning Run (demo)',
-      type: 'habit',
+      type: 'keepup',
       target: 1,
       duration: 30,
       breakable: false,
@@ -1072,7 +1075,7 @@
       extras.push({
         hid:`__coach_extra_${i}__`,
         message:`${emoji} ${msg} (demo)`,
-        type:'habit', target:1, duration:20, breakable:false, priority:1,
+        type:'keepup', target:1, duration:20, breakable:false, priority:1,
         pinned:false, emoji, topics:[topic],
         logs:[{ts: now - (i % 3 + 1) * 86400000, kind:'actual', value:1}]
       });
@@ -1136,7 +1139,10 @@
 
     // 6. Reload app data from the just-written localStorage so the UI reflects
     //    the demo state immediately.  render() is the global home-view refresh.
-    try{if(typeof render === 'function')render();}catch(_){}
+    try{
+      if(typeof render === 'function')render();
+      if(typeof updateSortButton === 'function')updateSortButton(true);
+    }catch(_){}
 
     // 7. Set trackedHid so detail-surface chapters open the demo item.
     trackedHid = DEMO_HID;
@@ -1398,10 +1404,10 @@
       setTimeout(()=>setStage('aLifecycle'),150);
     }
     if(stage === 'aMissed' && event.target.closest('.dropped-pill')){
-      setTimeout(()=>setStage('aMissedList'),150);
+      setTimeout(()=>{ if(sheetOpen('slipped-sheet'))setStage('aMissedList'); },150);
     }
     if(stage === 'aOpenTime' && event.target.closest('.free-pill')){
-      setTimeout(()=>setStage('aOpenStrip'),150);
+      setTimeout(()=>{ if(sheetOpen('free-time-sheet'))setStage('aOpenStrip'); },150);
     }
     // $ takes a bare id — $('#open-search') would look up an element whose id
     // is literally "#open-search" and never find it.
@@ -1513,8 +1519,16 @@
       setStage('aIntro');
       return;
     }
+    if(stage === 'aMissed' && sheetOpen('slipped-sheet')){
+      setStage('aMissedList');
+      return;
+    }
     if(stage === 'aMissedList' && !sheetOpen('slipped-sheet')){
       setStage('aMissed');
+      return;
+    }
+    if(stage === 'aOpenTime' && sheetOpen('free-time-sheet')){
+      setStage('aOpenStrip');
       return;
     }
     if(stage === 'aOpenStrip' && !sheetOpen('free-time-sheet')){

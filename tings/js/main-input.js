@@ -548,6 +548,8 @@ $('picker-results')?.addEventListener('click',e=>{
   if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
 });
 $('picker-gps')?.addEventListener('click',centerPickerOnGps);
+$('picker-layer-street')?.addEventListener('click',()=>setPickerBaseLayer('street'));
+$('picker-layer-satellite')?.addEventListener('click',()=>setPickerBaseLayer('satellite',{persist:true}));
 $('picker-apply-coords')?.addEventListener('click',applyPickerCoordsInputs);
 $('picker-save')?.addEventListener('click',saveLocationPicker);
 $('picker-cancel')?.addEventListener('click',closeLocationPicker);
@@ -570,6 +572,13 @@ $('location-list')?.addEventListener('change',e=>{
       ? Math.max(10,Math.min(2000,Math.round(raw)))
       : DEFAULT_LOCATION_RADIUS_M;
     saveLocationPatch(idx,{radiusM});
+    return;
+  }
+  const weather = e.target.closest('[data-loc-weather]');
+  if(weather){
+    saveLocationPatch(parseInt(weather.dataset.locWeather,10),{
+      weatherProfileId:typeof cleanWeatherProfileId==='function' ? cleanWeatherProfileId(weather.value) || null : null
+    });
     return;
   }
   const ps = e.target.closest('[data-loc-pref-start]');
@@ -649,6 +658,28 @@ $('theme-mode-seg')?.addEventListener('click',e=>{
   updateSortSetting({themeMode:opt.dataset.segValue});
   applyAppearanceSettings();
 });
+// Weather display-unit segs (temperature / precipitation / wind). Tapping a
+// unit is display-only: reflect the tap and refresh weather surfaces without
+// entering the planner (same presentation-only pattern as homeExtraMode).
+function bindWeatherUnitSeg(segId,normalize,settingKey){
+  $(segId)?.addEventListener('click',e=>{
+    const opt = e.target.closest('[data-seg-value]');
+    if(!opt)return;
+    const unit = normalize(opt.dataset.segValue);
+    if(unit === normalize(sortSettings && sortSettings[settingKey]))return;
+    document.querySelectorAll(`#${segId} .seg-opt`).forEach(btn=>{
+      btn.classList.toggle('on',btn.dataset.segValue === unit);
+    });
+    updateSortSetting({[settingKey]:unit},{sync:false,renderNow:false});
+    if(typeof renderWeatherControls === 'function')renderWeatherControls();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    else render();
+    if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
+  });
+}
+bindWeatherUnitSeg('weather-temp-unit-seg',normalizeWeatherTempUnit,'weatherTempUnit');
+bindWeatherUnitSeg('weather-precip-unit-seg',normalizeWeatherPrecipUnit,'weatherPrecipUnit');
+bindWeatherUnitSeg('weather-wind-unit-seg',normalizeWeatherWindUnit,'weatherWindUnit');
 $('home-city-set')?.addEventListener('click',setHomeCity);
 $('home-city-input')?.addEventListener('keydown',e=>{if(e.key === 'Enter')setHomeCity();});
 $('home-city-clear')?.addEventListener('click',clearHomeCity);

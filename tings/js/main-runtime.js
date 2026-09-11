@@ -1,7 +1,8 @@
 let valueLogIdx = null;
 let valueLogAfter = null;
 let valueLogMinutes = null;
-function openValueLogSheet(idx,after,sessionMinutes){
+let valueLogContext = null;
+function openValueLogSheet(idx,after,sessionMinutes,context = null){
   const incomingSession = Number.isFinite(sessionMinutes) && sessionMinutes > 0;
   // Session confirm owns the sheet — don't silently overwrite it with a
   // plain value prompt (or another habit's session).
@@ -18,6 +19,7 @@ function openValueLogSheet(idx,after,sessionMinutes){
   valueLogIdx = idx;
   valueLogAfter = after || null;
   valueLogMinutes = incomingSession ? sessionMinutes : null;
+  valueLogContext = context;
   const h = load()[idx];
   const sheet = $('value-log-sheet');
   const copy = $('value-log-copy');
@@ -56,10 +58,12 @@ function finishValueLog(opts){
   const idx = valueLogIdx;
   const after = valueLogAfter;
   const minutes = valueLogMinutes;
+  const context = valueLogContext;
   const wasSession = minutes != null;
   valueLogIdx = null;
   valueLogAfter = null;
   valueLogMinutes = null;
+  valueLogContext = null;
   closeSheet('value-log-sheet');
   if(idx == null)return;
   const h = typeof load === 'function' ? load()[idx] : null;
@@ -70,7 +74,7 @@ function finishValueLog(opts){
     if(typeof render === 'function')render();
     return;
   }
-  const full = {...(opts || {})};
+  const full = {...(context || {}),...(opts || {})};
   if(minutes != null)full.minutes = minutes;
   if(!logTing(idx,full))return;
   if(typeof after === 'function')after();
@@ -94,6 +98,7 @@ function discardValueLogSheet(){
   valueLogIdx = null;
   valueLogAfter = null;
   valueLogMinutes = null;
+  valueLogContext = null;
   closeSheet('value-log-sheet');
   if(wasSession){
     const h = idx != null && typeof load === 'function' ? load()[idx] : null;
@@ -112,7 +117,7 @@ function requestLogTing(idx,after,opts){
   const h = load()[idx];
   if(!h)return;
   if(h.trackValue){
-    openValueLogSheet(idx,after,opts && opts.minutes);
+    openValueLogSheet(idx,after,opts && opts.minutes,opts || null);
     return;
   }
   if(!logTing(idx,opts || {}))return;
@@ -773,19 +778,43 @@ $('day-logs-sheet').addEventListener('pointerup',e=>{
   }
 });
 
+function applySnoozeSheetChoice(kind,value){
+  if(snoozeIdx === null)return false;
+  if(kind === 'days')doSnooze(snoozeIdx,value);
+  else if(kind === 'hours'){
+    if(!doSnoozeHours(snoozeIdx,value))return false;
+  }else if(kind === 'eod')doSnoozeEndOfDay(snoozeIdx);
+  else if(kind === 'repetitions')doSnoozeRepetitions(snoozeIdx,value);
+  else if(kind === 'show')doUnsnooze(snoozeIdx);
+  else return false;
+  closeSnoozeSheet(kind !== 'show');
+  return true;
+}
 $('snooze-sheet').addEventListener('click',e=>{
-  const opt = e.target.closest('[data-snooze-days]');
-  const repeatOpt = e.target.closest('[data-snooze-repetitions]');
-  if((!opt && !repeatOpt) || snoozeIdx === null)return;
-  if(opt)doSnooze(snoozeIdx,parseInt(opt.dataset.snoozeDays,10));
-  if(repeatOpt)doSnoozeRepetitions(snoozeIdx,parseInt(repeatOpt.dataset.snoozeRepetitions,10));
-  if(snoozeFromDetail)closeDetail();
-  snoozeIdx = null;
-  snoozeFromDetail = false;
-  closeSheet('snooze-sheet');
+  if(e.target === e.currentTarget){
+    closeSnoozeSheet(false);
+    return;
+  }
+  const days = e.target.closest('[data-snooze-days]');
+  const hours = e.target.closest('[data-snooze-hours]');
+  const until = e.target.closest('[data-snooze-until]');
+  const reps = e.target.closest('[data-snooze-repetitions]');
+  const showNow = e.target.closest('#snooze-show-now');
+  const hoursApply = e.target.closest('#snooze-hours-apply');
+  if(!days && !hours && !until && !reps && !showNow && !hoursApply)return;
+  if(days)applySnoozeSheetChoice('days',parseInt(days.dataset.snoozeDays,10));
+  else if(hours)applySnoozeSheetChoice('hours',parseInt(hours.dataset.snoozeHours,10));
+  else if(until && until.dataset.snoozeUntil === 'eod')applySnoozeSheetChoice('eod');
+  else if(reps)applySnoozeSheetChoice('repetitions',parseInt(reps.dataset.snoozeRepetitions,10));
+  else if(showNow)applySnoozeSheetChoice('show');
+  else if(hoursApply)applySnoozeSheetChoice('hours',$('snooze-hours')?.value);
 });
-$('snooze-cancel').addEventListener('click',()=>{snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');});
-$('snooze-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget){snoozeIdx = null;snoozeFromDetail = false;closeSheet('snooze-sheet');}});
+$('snooze-hours')?.addEventListener('keydown',e=>{
+  if(e.key !== 'Enter')return;
+  e.preventDefault();
+  applySnoozeSheetChoice('hours',$('snooze-hours').value);
+});
+$('snooze-cancel').addEventListener('click',()=>closeSnoozeSheet(false));
 
 $('activity-close').addEventListener('click',()=>{activityIdx = null;closeSheet('activity-sheet');});
 $('activity-calendar').addEventListener('click',()=>{
@@ -865,6 +894,10 @@ plannerPerfMark('app-boot-render');
 if(typeof render === 'function')render();
 plannerPerfMark('app-first-render-returned');
 if(typeof startWeatherLifecycle === 'function')setTimeout(startWeatherLifecycle,0);
+// Pre-homeCityCountry installs: resolve the home city's country once so the
+// 'auto' temperature unit can infer. Deferred: never competes with first
+// paint, and installs without a home city bail out before any request.
+if(typeof maybeBackfillHomeCityCountry === 'function')setTimeout(maybeBackfillHomeCityCountry,1200);
 // First-run coach: defer until the real home UI has painted. A dismissal is
 // versioned, so it stays quiet until a future coach intentionally opts in.
 if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){

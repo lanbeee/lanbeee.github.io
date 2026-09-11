@@ -58,7 +58,7 @@ function blockedEndpointHtml(block, i, field){
   const resolved = isDyn ? blockedResolvedLabel(block, field) : '';
   const aria = escapeHtml(block.label) + ' ' + field;
   return `<div class="time-endpoint blocked-endpoint${isDyn ? ' is-dynamic' : ''}" data-blocked-field="${field}" data-blocked-index="${i}">
-    <input type="time" class="time-fixed" step="900" data-blocked-${field}="${i}" aria-label="${aria}" value="${fixedVal}"${isDyn ? ' hidden' : ''} />
+    <input type="time" class="time-fixed" step="300" data-blocked-${field}="${i}" aria-label="${aria}" value="${fixedVal}"${isDyn ? ' hidden' : ''} />
     <div class="time-dynamic"${isDyn ? '' : ' hidden'}>
       <div class="time-expr">
         <select class="time-anchor mini-select" data-blocked-${field}-anchor="${i}" aria-label="${aria} anchor">${blockedAnchorOptions(anchor)}</select>
@@ -70,7 +70,7 @@ function blockedEndpointHtml(block, i, field){
       <select class="time-combine mini-select" data-blocked-${field}-combine="${i}" aria-label="${aria} combine">${blockedCombineOptions(combine)}</select>
       <div class="time-expr time-expr2"${combine ? '' : ' hidden'}>
         <select class="time-anchor2 mini-select" data-blocked-${field}-anchor2="${i}" aria-label="${aria} second anchor">${blockedAnchorOptions(anchor2, true)}</select>
-        <input type="time" class="time-fixed2" step="900" data-blocked-${field}-fixed2="${i}" aria-label="${aria} clock time" value="${fixed2Val}"${isFixed2 ? '' : ' hidden'} />
+        <input type="time" class="time-fixed2" step="300" data-blocked-${field}-fixed2="${i}" aria-label="${aria} clock time" value="${fixed2Val}"${isFixed2 ? '' : ' hidden'} />
         <input type="number" class="time-offset2 mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset2="${i}" aria-label="${aria} second offset minutes" value="${Math.abs(offset2Val)}"${isFixed2 ? ' hidden' : ''} />
         <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offset2Val < 0 ? '-' : '+'}" aria-label="${offset2Val < 0 ? 'minutes before' : 'minutes after'}"${isFixed2 ? ' hidden' : ''}>${timeOffsetSignWord(offset2Val < 0 ? '-' : '+')}</button>
         <span class="time-offset-unit"${isFixed2 ? ' hidden' : ''}>min</span>

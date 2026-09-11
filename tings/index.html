@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -152,7 +152,7 @@
         <div class="plan-field-main">
           <label class="plan-date-label" for="ting-due-date">due</label>
           <input type="date" id="ting-due-date" class="plan-date-input" />
-          <input type="time" id="ting-due-time" class="plan-time-input" title="add a time to make this a fixed appointment" />
+          <input type="time" id="ting-due-time" class="plan-time-input" step="300" title="add a time to make this a fixed appointment" />
         </div>
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
@@ -195,11 +195,12 @@
         </label>
         <p class="field-hint" id="ting-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
         <label class="field-label" for="ting-weather-profile">weather guidance</label>
-        <select id="ting-weather-profile" class="settings-select"><option value="">none</option></select>
+        <select id="ting-weather-profile" class="settings-select"><option value="">use place default</option><option value="__none__">no weather</option></select>
+        <p class="field-hint" id="ting-weather-guidance-hint">Uses a saved place’s weather guidance when available.</p>
         <div id="ting-weather-location-wrap" class="weather-habit-location" hidden>
-          <label class="field-label" for="ting-weather-location">forecast place</label>
+          <label class="field-label" for="ting-weather-location">anywhere forecast</label>
           <select id="ting-weather-location" class="settings-select"><option value="">home city</option></select>
-          <p class="field-hint">Rare. Pick a saved place when this happens far from home.</p>
+          <p class="field-hint">Used only when the item can happen anywhere; a scheduled place uses its own forecast.</p>
         </div>
       </div>
 
@@ -270,7 +271,7 @@
             <div class="plan-field-main">
               <label class="plan-date-label" for="detail-due-date">due</label>
               <input type="date" id="detail-due-date" class="plan-date-input" />
-              <input type="time" id="detail-due-time" class="plan-time-input" title="add a time to make this a fixed appointment" />
+              <input type="time" id="detail-due-time" class="plan-time-input" step="300" title="add a time to make this a fixed appointment" />
             </div>
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
@@ -372,18 +373,19 @@
             </label>
             <p class="field-hint" id="detail-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
             <label class="settings-sublabel" for="detail-weather-profile">weather guidance</label>
-            <select id="detail-weather-profile" class="settings-select"><option value="">none</option></select>
+            <select id="detail-weather-profile" class="settings-select"><option value="">use place default</option><option value="__none__">no weather</option></select>
+            <p class="field-hint" id="detail-weather-guidance-hint">Uses a saved place’s weather guidance when available.</p>
             <div id="detail-weather-location-wrap" class="weather-habit-location" hidden>
-              <label class="settings-sublabel" for="detail-weather-location">forecast place</label>
+              <label class="settings-sublabel" for="detail-weather-location">anywhere forecast</label>
               <select id="detail-weather-location" class="settings-select"><option value="">home city</option></select>
             </div>
-            <p class="field-hint">Guidance uses your home-city forecast unless this item is far away.</p>
+            <p class="field-hint">Location-bound guidance uses the place where the planner schedules this item.</p>
           </div>
           <div class="habit-options-block detail-full-only" id="detail-habit-options">
             <div class="habit-options-heading">
-              <span class="settings-sublabel">specific times &amp; places
+              <span class="settings-sublabel">specific times, places &amp; weather
                 <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, and places above apply everywhere. Add an option when one place needs its own time — for example 30 min after Sunrise at the mosque. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference on a row overrides the place ranking. Options are alternatives: the planner picks one per occurrence.</span>
+                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, places, and weather above apply generally. Add an option when one place needs its own time or weather guidance. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference and weather on a row override the item and place defaults. Options are alternatives: the planner picks one per occurrence.</span>
               </span>
               <button type="button" class="mini-text-btn" id="detail-habit-option-add">add option</button>
             </div>
@@ -546,7 +548,7 @@
             </div>
             <button class="habit-action detail-full-only" id="detail-snooze" type="button">
               <i class="ti ti-moon" aria-hidden="true"></i>
-              <span><b>snooze</b><small>Hide for a few days</small></span>
+              <span><b>snooze</b><small>Hide for a few hours or days</small></span>
             </button>
             <button class="habit-action danger" id="detail-delete" type="button">
               <i class="ti ti-trash" aria-hidden="true"></i>
@@ -742,6 +744,27 @@
           <div class="settings-collapse-body" id="settings-weather-body" hidden>
             <p class="field-hint">Create up to four profiles, then attach one to an outdoor habit. Rules combine: prefer lower/higher steers the time, min/max set bounds, and hard rejects flexible times outside them. Each rule shows its metric's scale; a rule with no preference and no bounds stays inactive until you set one.</p>
             <div class="settings-grid weather-display-settings" data-ui-toggles="weather"></div>
+            <span class="settings-sublabel" id="weather-temp-unit-label">temperature unit</span>
+            <div class="seg weather-unit-seg" id="weather-temp-unit-seg" data-setting-seg="weatherTempUnit" role="group" aria-labelledby="weather-temp-unit-label">
+              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+              <button type="button" class="seg-opt" data-seg-value="c">°C</button>
+              <button type="button" class="seg-opt" data-seg-value="f">°F</button>
+            </div>
+            <p class="field-hint" id="weather-temp-unit-hint" aria-live="polite"></p>
+            <span class="settings-sublabel" id="weather-precip-unit-label">precipitation unit</span>
+            <div class="seg weather-unit-seg" id="weather-precip-unit-seg" data-setting-seg="weatherPrecipUnit" role="group" aria-labelledby="weather-precip-unit-label">
+              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+              <button type="button" class="seg-opt" data-seg-value="mm">mm</button>
+              <button type="button" class="seg-opt" data-seg-value="in">in</button>
+            </div>
+            <p class="field-hint" id="weather-precip-unit-hint" aria-live="polite"></p>
+            <span class="settings-sublabel" id="weather-wind-unit-label">wind unit</span>
+            <div class="seg weather-unit-seg" id="weather-wind-unit-seg" data-setting-seg="weatherWindUnit" role="group" aria-labelledby="weather-wind-unit-label">
+              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+              <button type="button" class="seg-opt" data-seg-value="kmh">km/h</button>
+              <button type="button" class="seg-opt" data-seg-value="mph">mph</button>
+            </div>
+            <p class="field-hint" id="weather-wind-unit-hint" aria-live="polite"></p>
             <div id="weather-profile-list" class="weather-profile-list"></div>
             <div class="btn-row weather-actions">
               <button class="btn" id="weather-profile-add" type="button">add profile</button>
@@ -749,7 +772,7 @@
             </div>
             <p class="field-hint" id="weather-status" aria-live="polite"></p>
             <div id="weather-forecast-data" class="weather-forecast-data"></div>
-            <p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away place you attach to an item, are sent only to retrieve forecasts; no API key or account is used.</p>
+            <p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away place you attach to an item, are sent only to retrieve forecasts (and, once, to infer your display units); no API key or account is used.</p>
           </div>
         </section>
         <section class="settings-block settings-collapsible">
@@ -1112,14 +1135,30 @@
   <div class="sheet-wrap" id="snooze-sheet">
     <div class="sheet">
       <p class="sheet-name" id="snooze-name"></p>
-      <p class="sheet-sub">Choose how long to hide this habit.</p>
+      <p class="sheet-sub" id="snooze-sub">Choose how long to hide this habit.</p>
+      <button class="btn primary" id="snooze-show-now" type="button" hidden>show now</button>
+      <div class="snooze-options snooze-options-hours">
+        <button class="btn" data-snooze-hours="1">1h</button>
+        <button class="btn" data-snooze-hours="3">3h</button>
+        <button class="btn" data-snooze-hours="8">8h</button>
+        <button class="btn" data-snooze-until="eod">today</button>
+      </div>
       <div class="snooze-options">
         <button class="btn" data-snooze-days="1">1d</button>
         <button class="btn" data-snooze-days="3">3d</button>
         <button class="btn" data-snooze-days="7">7d</button>
         <button class="btn" data-snooze-days="14">14d</button>
+      </div>
+      <div class="snooze-options snooze-options-reps">
         <button class="btn" data-snooze-repetitions="1">1 time</button>
         <button class="btn" data-snooze-repetitions="2">2 times</button>
+      </div>
+      <div class="snooze-hours-row">
+        <label class="snooze-hours-field">
+          <input id="snooze-hours" type="number" min="1" max="72" step="1" inputmode="numeric" aria-label="hours to hide">
+          <span>hours</span>
+        </label>
+        <button class="btn" id="snooze-hours-apply" type="button">hide</button>
       </div>
       <div class="btn-row">
         <button class="btn" id="snooze-cancel">cancel</button>
@@ -1211,6 +1250,51 @@
     </div>
   </div>
 
+  <!-- weather metric drill-down sheet (hourly detail for one summary card) -->
+  <div class="sheet-wrap" id="weather-metric-sheet" role="dialog" aria-modal="true" aria-labelledby="weather-metric-title">
+    <div class="sheet context-sheet weather-metric-sheet">
+      <div class="context-sheet-head">
+        <span class="context-sheet-icon weather" id="weather-metric-icon"><i class="ti ti-temperature" aria-hidden="true"></i></span>
+        <div class="context-sheet-copy">
+          <span class="sheet-eyebrow" id="weather-metric-eyebrow">hourly forecast</span>
+          <p class="sheet-name" id="weather-metric-title">forecast</p>
+          <p class="sheet-sub" id="weather-metric-sub"></p>
+        </div>
+        <button class="mini-nav" id="weather-metric-close" type="button" aria-label="close hourly forecast">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div id="weather-metric-content"></div>
+      <div class="btn-row weather-context-actions">
+        <button class="btn" id="weather-metric-agenda" type="button" hidden><i class="ti ti-calendar-time" aria-hidden="true"></i> day × weather</button>
+        <button class="btn primary" id="weather-metric-done" type="button">done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- full-height agenda/weather comparison opened from an hourly metric -->
+  <div class="sheet-wrap" id="weather-agenda-sheet" role="dialog" aria-modal="true" aria-labelledby="weather-agenda-title">
+    <div class="sheet context-sheet weather-agenda-sheet">
+      <div class="context-sheet-head">
+        <span class="context-sheet-icon weather" id="weather-agenda-icon"><i class="ti ti-calendar-time" aria-hidden="true"></i></span>
+        <div class="context-sheet-copy">
+          <span class="sheet-eyebrow">day comparison</span>
+          <p class="sheet-name" id="weather-agenda-title">agenda × weather</p>
+          <p class="sheet-sub" id="weather-agenda-sub"></p>
+        </div>
+        <button class="mini-nav" id="weather-agenda-close" type="button" aria-label="back to hourly forecast">
+          <i class="ti ti-arrow-left" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="weather-agenda-metrics" id="weather-agenda-metrics" aria-label="Weather metric"></div>
+      <div id="weather-agenda-content"></div>
+      <div class="btn-row weather-context-actions weather-agenda-actions">
+        <button class="btn" id="weather-agenda-home" type="button"><i class="ti ti-home" aria-hidden="true"></i> home</button>
+        <button class="btn primary" id="weather-agenda-done" type="button">back to chart</button>
+      </div>
+    </div>
+  </div>
+
   <!-- free time sheet -->
   <div class="sheet-wrap" id="free-time-sheet" role="dialog" aria-modal="true" aria-labelledby="free-time-title">
     <div class="sheet context-sheet free-time-sheet">
@@ -1221,6 +1305,9 @@
           <p class="sheet-name" id="free-time-title">open time</p>
           <p class="sheet-sub">See the stretches that can still hold a habit or task.</p>
         </div>
+        <button class="mini-nav" id="free-time-weather" type="button" hidden aria-expanded="false" aria-label="add weather context">
+          <i class="ti ti-cloud-plus" aria-hidden="true"></i>
+        </button>
         <button class="mini-nav" id="free-time-close" type="button" aria-label="close open time">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
@@ -1315,6 +1402,10 @@
         </div>
       </div>
       <div class="picker-map-actions">
+        <div class="seg-control picker-layer-control" role="group" aria-label="map view">
+          <button type="button" class="seg-opt on" id="picker-layer-street" data-picker-layer="street" aria-pressed="true">Street</button>
+          <button type="button" class="seg-opt" id="picker-layer-satellite" data-picker-layer="satellite" aria-pressed="false">Satellite</button>
+        </div>
         <button type="button" class="btn" id="picker-gps">
           <i class="ti ti-current-location" aria-hidden="true"></i>
           My location
@@ -1472,6 +1563,18 @@
     </div>
   </div>
 </div>
+<div id="time-step-picker" role="dialog" aria-modal="true" aria-label="Time">
+  <div class="time-step-picker-panel">
+    <div class="time-step-picker-bar">
+      <button type="button" class="time-step-picker-clear" id="time-step-picker-clear" hidden>Clear</button>
+      <button type="button" class="time-step-picker-done" id="time-step-picker-done">Done</button>
+    </div>
+    <div class="time-step-picker-frame">
+      <div class="time-step-picker-highlight" aria-hidden="true"></div>
+      <div class="time-step-picker-wheels" id="time-step-picker-wheels"></div>
+    </div>
+  </div>
+</div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="action-toast" role="status" aria-live="polite">
   <span id="action-text"></span>
@@ -1528,6 +1631,7 @@
 <script src="./js/push-client.js" defer></script>
 <script src="./js/reminders.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
+<script src="./js/time-picker.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings-core.js" defer></script>
 <script src="./js/settings-weather.js" defer></script>

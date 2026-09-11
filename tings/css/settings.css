@@ -312,8 +312,23 @@ select{
 .priority-seg .seg-opt[data-priority="3"].on{--prio-accent:var(--text2);}
 .priority-seg .seg-opt[data-priority="4"].on{--prio-accent:var(--text3);}
 .priority-seg .seg-opt[data-priority="5"].on{--prio-accent:transparent;}
-.snooze-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+.snooze-options{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;}
+.snooze-options-reps{grid-template-columns:repeat(2,1fr);}
 .snooze-options .btn{padding:12px 0;}
+.snooze-hours-row{display:flex;gap:8px;align-items:stretch;margin:4px 0 12px;}
+.snooze-hours-field{
+  flex:1;display:flex;align-items:center;gap:8px;padding:0 12px;
+  border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:transparent;
+}
+.snooze-hours-field input{
+  flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--text);
+  font:inherit;font-size:16px;font-weight:650;padding:12px 0;
+}
+.snooze-hours-field input::-webkit-inner-spin-button,
+.snooze-hours-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.snooze-hours-field span{color:var(--text3);font-size:13px;font-weight:650;flex:0 0 auto;}
+.snooze-hours-row .btn{flex:0 0 auto;padding:12px 18px;}
+#snooze-show-now{width:100%;margin-bottom:12px;}
 .agenda-pair-approval{
   position:fixed;inset:0;z-index:10000;display:grid;place-items:center;
   padding:20px;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);

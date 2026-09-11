@@ -753,7 +753,12 @@ function logTing(i,opts = {}){
   // habit logged late still counts as "done today" by rhythm math the next
   // time its window opens. See snapLogTimestamp in data.js.
   const entryTs = (typeof snapLogTimestamp === 'function') ? snapLogTimestamp(h,now) : now;
-  const entry = makeActualLog(entryTs,{value:opts.value,minutes,note:opts.note});
+  const entry = makeActualLog(entryTs,{
+    value:opts.value,minutes,note:opts.note,
+    occurrenceKey:opts.occurrenceKey,
+    scheduleOptionId:opts.scheduleOptionId,
+    scheduledDay:opts.scheduledDay
+  });
   const action = withEntryToastAction({
     type:'entry',
     idx:i,
@@ -1217,6 +1222,12 @@ function quickLog(i,card){
   };
   const data = load();
   const h = data[i];
+  const row = card && card.closest('.swipe-row');
+  const occurrenceOpts = row && row.dataset.occurrenceKey ? {
+    occurrenceKey:row.dataset.occurrenceKey,
+    scheduleOptionId:row.dataset.scheduleOptionId || undefined,
+    scheduledDay:row.dataset.scheduledDay || undefined
+  } : {};
   if(h && h.breakable){
     if(h.trackValue && typeof requestLogTing === 'function'){
       const intent = breakableCardIntent(h,card);
@@ -1237,10 +1248,10 @@ function quickLog(i,card){
     return;
   }
   if(typeof requestLogTing === 'function'){
-    requestLogTing(i,go);
+    requestLogTing(i,go,occurrenceOpts);
     return;
   }
-  if(!logTing(i))return;
+  if(!logTing(i,occurrenceOpts))return;
   go();
 }
 

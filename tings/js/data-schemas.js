@@ -127,11 +127,12 @@
  * @property {boolean} anywhereAllowed         — may also be done outside selected places
  * @property {Object<string,'avoid'|'little'|'high'>} locationPrefs — soft preference among allowed ids
  * @property {string|null} preferredLocationId — legacy single preferred (migrated into locationPrefs.high); kept for reads
- * @property {string|null} weatherProfileId — optional weather-guidance profile id; forecast failure never blocks planning
- * @property {string|null} weatherLocationId — optional saved-place id whose forecast overrides home city when far away; null uses home
+ * @property {'inherit'|'profile'|'none'} weatherProfileMode — inherit selected-place guidance, use weatherProfileId, or explicitly opt out
+ * @property {string|null} weatherProfileId — explicit weather-guidance profile id when weatherProfileMode is profile; forecast failure never blocks planning
+ * @property {string|null} weatherLocationId — optional saved-place forecast for anywhere placements; location-bound fits use their actual place
  * @property {boolean} showWeather — show an interval forecast pill on this item's agenda card in regular mode
  * @property {boolean} showWeatherAtLocation — when showWeather is on, use this item's place instead of the home-city forecast
- * @property {{weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high'}[]} scheduleOptions — specific extra weekday/time/place windows; fixed or prayer-relative endpoints extend the general allowed schedule. Duplicate locations are allowed. Optional pref overrides locationPrefs for that instance.
+ * @property {{id:string,sameDayMode:'alternative'|'separate',weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high',weatherProfileMode:'inherit'|'profile'|'none',weatherProfileId:string|null}[]} scheduleOptions — specific weekday/time/place/weather windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
  *
  * — LinkFields (optional, on every type) —
  * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and fires on card double tap
@@ -221,9 +222,13 @@
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
  * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
- * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high °C to full-mode home/overview weather cues (default false)
+ * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high to full-mode home/overview weather cues (default false)
  * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/feels-like pills on busy-time cards in regular mode
  * @property {boolean} showWeatherOnTravel                     — show interval condition/feels-like pills on travel cards in regular mode (default true)
+ * @property {'auto'|'c'|'f'} weatherTempUnit                  — display unit for temperatures; 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay °C.
+ * @property {'auto'|'mm'|'in'} weatherPrecipUnit              — display unit for precipitation (snowfall follows it); 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay mm/cm.
+ * @property {'auto'|'kmh'|'mph'} weatherWindUnit              — display unit for wind speeds and gusts; 'auto' infers from homeCityCountry (default 'auto'). Forecast data and rule bounds stay km/h.
+ * @property {string} homeCityCountry                          — two-letter country code of the home city, from the geocoder; drives 'auto' unit inference
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
@@ -262,6 +267,7 @@
  * @property {number} lng                   — WGS84 longitude, -180..180
  * @property {number} radiusM               — geofence radius in metres for "you are here" matching
  * @property {string} emoji                 — optional pin emoji ('' when none)
+ * @property {string|null} weatherProfileId — optional default weather profile inherited by placements at this location
  * @property {number|null} allowedTimeStart — minutes-from-midnight, open-window start (null = no window / 24h)
  * @property {number|null} allowedTimeEnd   — minutes-from-midnight, open-window end (null = no window / 24h)
  * @property {number|null} preferredTimeStart — soft hint: best arrival-time start

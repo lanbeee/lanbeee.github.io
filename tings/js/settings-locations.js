@@ -81,9 +81,16 @@ function locationRowMarkup(loc,i){
   const moreOpen = expandedLocationMores.has(i);
   const radius = Number.isFinite(loc.radiusM) ? Math.round(loc.radiusM) : DEFAULT_LOCATION_RADIUS_M;
   const closedCount = closedSet.size;
+  const weatherProfiles=typeof normalizeWeatherProfiles==='function'
+    ? normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles) : [];
+  const weatherProfile=weatherProfiles.find(profile=>profile.id===loc.weatherProfileId) || null;
+  const weatherOptions='<option value="">none</option>'+weatherProfiles.map(profile=>
+    `<option value="${escapeHtml(profile.id)}"${profile.id===loc.weatherProfileId?' selected':''}>${escapeHtml(profile.name)}</option>`
+  ).join('');
   const moreSummary = [
     closedCount ? `closed ${closedCount}d` : null,
-    prefSet ? 'preferred time' : null
+    prefSet ? 'preferred time' : null,
+    weatherProfile ? `${weatherProfile.name} weather` : null
   ].filter(Boolean).join(' · ');
   return `<div class="location-row" data-location-row="${i}">
     <div class="location-row-head">
@@ -99,9 +106,9 @@ function locationRowMarkup(loc,i){
     </div>
     <div class="location-hours">
       <span class="loc-field-label">hours</span>
-      <input type="time" step="900" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <input type="time" step="300" data-loc-start="${i}" aria-label="open from" value="${startVal}" ${hoursOpenUI ? '' : 'disabled'} />
       <span class="loc-sep">–</span>
-      <input type="time" step="900" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
+      <input type="time" step="300" data-loc-end="${i}" aria-label="open until" value="${endVal}" ${hoursOpenUI ? '' : 'disabled'} />
       <button type="button" class="loc-allday ${hoursOpenUI ? '' : 'on'}" data-loc-allday="${i}" aria-pressed="${hoursOpenUI ? 'false' : 'true'}">All day</button>
     </div>
     <div class="location-radius">
@@ -112,6 +119,11 @@ function locationRowMarkup(loc,i){
     </div>
     <button class="mini-text-btn loc-more-toggle" type="button" data-loc-more="${i}" aria-expanded="${moreOpen}">${moreOpen ? '▾' : '▸'} more options${moreSummary ? ` · ${moreSummary}` : ''}</button>
     <div class="location-more" data-location-more="${i}" ${moreOpen ? '' : 'hidden'}>
+      <label class="loc-weather habit-option-field">
+        <span class="loc-field-label">weather guidance</span>
+        <select class="settings-select" data-loc-weather="${i}" aria-label="weather guidance for ${escapeHtml(loc.name)}">${weatherOptions}</select>
+        <span class="field-hint">Applies automatically to items scheduled here unless an item or option overrides it.</span>
+      </label>
       <div class="location-days">
         <span class="loc-field-label">closed</span>
         ${WEEKDAY_LABELS.map((label,day)=>{
@@ -121,9 +133,9 @@ function locationRowMarkup(loc,i){
       </div>
       <div class="loc-pref">
         <span class="loc-field-label">prefer</span>
-        <input type="time" step="900" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}" />
+        <input type="time" step="300" data-loc-pref-start="${i}" aria-label="prefer from" value="${prefStart}" />
         <span class="loc-sep">–</span>
-        <input type="time" step="900" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}" />
+        <input type="time" step="300" data-loc-pref-end="${i}" aria-label="prefer until" value="${prefEnd}" />
         <button class="mini-text-btn" type="button" data-loc-pref-clear="${i}">clear</button>
       </div>
       <div class="loc-perday">
@@ -135,9 +147,9 @@ function locationRowMarkup(loc,i){
           const de = hd && Number.isFinite(hd.end) ? minutesToTimeInput(hd.end) : '';
           return `<div class="perday-row">
             <span class="perday-label">${label}</span>
-            <input type="time" step="900" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="300" data-loc-day-start="${day}" data-loc-day-idx="${i}" value="${ds}" ${isClosed ? 'disabled' : ''} />
             <span class="loc-sep">–</span>
-            <input type="time" step="900" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
+            <input type="time" step="300" data-loc-day-end="${day}" data-loc-day-idx="${i}" value="${de}" ${isClosed ? 'disabled' : ''} />
             <label class="perday-closed"><input type="checkbox" data-loc-day-closed="${day}" data-loc-day-idx="${i}" ${isClosed ? 'checked' : ''} /> closed</label>
           </div>`;
         }).join('')}
@@ -154,11 +166,18 @@ function saveLocationPatch(index,patch){
   if(!locations[index])return;
   locations[index] = {...locations[index],...patch};
   updateSortSetting({locations},{renderNow:false});
+  const weatherChanged=Object.prototype.hasOwnProperty.call(patch,'weatherProfileId');
+  if(weatherChanged && typeof bumpPlannerDataRevision==='function')bumpPlannerDataRevision();
   // A renamed row may move alphabetically. `change` fires after editing is
   // complete, so a full list rebuild is safe and makes the order immediate.
   if(Object.prototype.hasOwnProperty.call(patch,'name'))renderLocationControls();
   else rerenderLocationRow(index);
   render();
+  if(weatherChanged){
+    if(typeof renderWeatherControls==='function')renderWeatherControls();
+    if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
+    if(typeof refreshWeatherForecast==='function')void refreshWeatherForecast();
+  }
 }
 
 // HYBRID: add a location to the registry (called by the geocode pick, GPS, or a
@@ -178,7 +197,8 @@ function addLocation({name,address,lat,lng,emoji}){
     address:String(address || '').trim().slice(0,120),
     lat, lng,
     emoji:String(emoji || '').slice(0,4),
-    radiusM:DEFAULT_LOCATION_RADIUS_M
+    radiusM:DEFAULT_LOCATION_RADIUS_M,
+    weatherProfileId:null
   });
   updateSortSetting({locations},{renderNow:false});
   renderLocationControls();
@@ -202,6 +222,7 @@ function habitsUsingLocationId(locId, data){
       return true;
     }
     if(cleanLocationId(h.weatherLocationId) === id)return true;
+    if(Array.isArray(h.scheduleOptions) && h.scheduleOptions.some(option=>cleanLocationId(option && option.locationId)===id))return true;
     return false;
   });
 }
@@ -298,6 +319,10 @@ function toggleLocationMore(index){
 // ── Location map picker (Leaflet) ───────────────────────────────────────
 let pickerMap = null;
 let pickerMarker = null;
+let pickerStreetLayer = null;
+let pickerSatelliteLayer = null;
+let pickerBaseLayer = 'street';
+let pickerSatelliteLoaded = false;
 let pickerEditIndex = null;
 let pickerReverseTimer = null;
 let pickerSuppressReverse = false;
@@ -318,12 +343,53 @@ function destroyLocationPickerMap(){
     }catch{ /* ignore */ }
     pickerMap = null;
     pickerMarker = null;
+    pickerStreetLayer = null;
+    pickerSatelliteLayer = null;
+    pickerSatelliteLoaded = false;
   }
   const el = $('picker-map');
   if(el){
     el.innerHTML = '';
     if(el._leaflet_id)delete el._leaflet_id;
   }
+}
+
+function syncPickerBaseLayerButtons(){
+  document.querySelectorAll('[data-picker-layer]').forEach(btn=>{
+    const active = btn.dataset.pickerLayer === pickerBaseLayer;
+    btn.classList.toggle('on',active);
+    btn.setAttribute('aria-pressed',String(active));
+  });
+}
+
+function setPickerBaseLayer(mode,{persist = true} = {}){
+  if(!pickerMap)return;
+  const next = mode === 'satellite' ? 'satellite' : 'street';
+  const layer = next === 'satellite' ? pickerSatelliteLayer : pickerStreetLayer;
+  const old = pickerBaseLayer === 'satellite' ? pickerSatelliteLayer : pickerStreetLayer;
+  if(!layer)return;
+  try{
+    if(old && old !== layer && pickerMap.hasLayer(old))pickerMap.removeLayer(old);
+    if(!pickerMap.hasLayer(layer))layer.addTo(pickerMap);
+  }catch{return;}
+  pickerBaseLayer = next;
+  syncPickerBaseLayerButtons();
+  if(persist && next === 'street')saveSortSettings({...sortSettings,mapBaseLayer:'street'});
+  if(persist && next === 'satellite' && pickerSatelliteLoaded){
+    saveSortSettings({...sortSettings,mapBaseLayer:'satellite'});
+  }
+}
+
+function pickerSatelliteTileLoaded(){
+  if(pickerBaseLayer !== 'satellite' || pickerSatelliteLoaded)return;
+  pickerSatelliteLoaded = true;
+  saveSortSettings({...sortSettings,mapBaseLayer:'satellite'});
+}
+
+function pickerSatelliteTileFailed(){
+  if(pickerBaseLayer !== 'satellite' || pickerSatelliteLoaded)return;
+  setPickerBaseLayer('street',{persist:true});
+  showToast('satellite view unavailable — showing Street');
 }
 
 function pickerPanTo(lat,lng,zoom){
@@ -392,10 +458,18 @@ function ensureLocationPickerMap(lat,lng){
       fadeAnimation:false,
       markerZoomAnimation:false
     }).setView([startLat,startLng],15,{animate:false});
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    pickerStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
       maxZoom:19,
       attribution:'&copy; OpenStreetMap'
-    }).addTo(pickerMap);
+    });
+    pickerSatelliteLayer = L.tileLayer(ESRI_WORLD_IMAGERY_TILES,{
+      maxZoom:19,
+      attribution:'Tiles &copy; Esri — Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+    });
+    pickerSatelliteLayer.on('tileload',pickerSatelliteTileLoaded);
+    pickerSatelliteLayer.on('tileerror',pickerSatelliteTileFailed);
+    pickerBaseLayer = (sortSettings && sortSettings.mapBaseLayer) === 'satellite' ? 'satellite' : 'street';
+    (pickerBaseLayer === 'satellite' ? pickerSatelliteLayer : pickerStreetLayer).addTo(pickerMap);
     // The fixed center target is the one pin the user positions. Keep an
     // invisible marker only as a lightweight coordinate holder for existing
     // map-sync code; showing both produced two competing pins on small maps.
@@ -409,6 +483,7 @@ function ensureLocationPickerMap(lat,lng){
     pickerPanTo(startLat,startLng,pickerMap.getZoom() || 15);
     try{ if(pickerMarker)pickerMarker.setLatLng([startLat,startLng]); }catch{ /* ignore */ }
   }
+  syncPickerBaseLayerButtons();
   const gen = pickerMapGen;
   setTimeout(()=>{ try{ if(pickerMap && gen === pickerMapGen)pickerMap.invalidateSize(); }catch{ /* ignore */ } },80);
   setTimeout(()=>{ try{ if(pickerMap && gen === pickerMapGen)pickerMap.invalidateSize(); }catch{ /* ignore */ } },320);

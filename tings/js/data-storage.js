@@ -112,6 +112,7 @@ function loadSortSettings(){
     merged.locations = normalizeLocationRegistry(merged.locations);
     merged.travel = normalizeTravelCache(merged.travel);
     merged.defaultTravelMode = normalizeTravelMode(merged.defaultTravelMode);
+    merged.mapBaseLayer = merged.mapBaseLayer === 'satellite' ? 'satellite' : 'street';
     merged.prayerMethod = normalizePrayerMethod(merged.prayerMethod);
     merged.prayerMadhab = normalizePrayerMadhab(merged.prayerMadhab);
     merged.lastKnownLocationId = cleanLocationId(merged.lastKnownLocationId) || null;
@@ -166,6 +167,14 @@ function loadSortSettings(){
     merged.homeCityName = typeof merged.homeCityName === 'string' ? merged.homeCityName.trim() : '';
     merged.homeCityLat = Number.isFinite(merged.homeCityLat) ? merged.homeCityLat : null;
     merged.homeCityLng = Number.isFinite(merged.homeCityLng) ? merged.homeCityLng : null;
+    merged.homeCityCountry = typeof merged.homeCityCountry === 'string'
+      ? merged.homeCityCountry.trim().toUpperCase().slice(0,2) : '';
+    merged.weatherTempUnit = typeof normalizeWeatherTempUnit === 'function'
+      ? normalizeWeatherTempUnit(merged.weatherTempUnit) : 'auto';
+    merged.weatherPrecipUnit = typeof normalizeWeatherPrecipUnit === 'function'
+      ? normalizeWeatherPrecipUnit(merged.weatherPrecipUnit) : 'auto';
+    merged.weatherWindUnit = typeof normalizeWeatherWindUnit === 'function'
+      ? normalizeWeatherWindUnit(merged.weatherWindUnit) : 'auto';
     merged.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
       ? normalizeWeatherProfiles(merged.weatherProfiles) : [];
     merged.showWeatherTemperatureRanges = Boolean(merged.showWeatherTemperatureRanges);
@@ -222,6 +231,7 @@ function saveSortSettings(settings){
   next.locations = normalizeLocationRegistry(next.locations);
   next.travel = normalizeTravelCache(next.travel);
   next.defaultTravelMode = normalizeTravelMode(next.defaultTravelMode);
+  next.mapBaseLayer = next.mapBaseLayer === 'satellite' ? 'satellite' : 'street';
   next.prayerMethod = normalizePrayerMethod(next.prayerMethod);
   next.prayerMadhab = normalizePrayerMadhab(next.prayerMadhab);
   next.lastKnownLocationId = cleanLocationId(next.lastKnownLocationId) || null;
@@ -262,6 +272,14 @@ function saveSortSettings(settings){
   next.homeCityName = typeof next.homeCityName === 'string' ? next.homeCityName.trim() : '';
   next.homeCityLat = Number.isFinite(next.homeCityLat) ? next.homeCityLat : null;
   next.homeCityLng = Number.isFinite(next.homeCityLng) ? next.homeCityLng : null;
+  next.homeCityCountry = typeof next.homeCityCountry === 'string'
+    ? next.homeCityCountry.trim().toUpperCase().slice(0,2) : '';
+  next.weatherTempUnit = typeof normalizeWeatherTempUnit === 'function'
+    ? normalizeWeatherTempUnit(next.weatherTempUnit) : 'auto';
+  next.weatherPrecipUnit = typeof normalizeWeatherPrecipUnit === 'function'
+    ? normalizeWeatherPrecipUnit(next.weatherPrecipUnit) : 'auto';
+  next.weatherWindUnit = typeof normalizeWeatherWindUnit === 'function'
+    ? normalizeWeatherWindUnit(next.weatherWindUnit) : 'auto';
   next.weatherProfiles = typeof normalizeWeatherProfiles === 'function'
     ? normalizeWeatherProfiles(next.weatherProfiles) : [];
   next.showWeatherTemperatureRanges = Boolean(next.showWeatherTemperatureRanges);

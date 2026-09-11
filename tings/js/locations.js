@@ -510,7 +510,9 @@ function formatCityLabel(locality,country){
 
 // ASYNC: reverse-geocode coords into a general city label for homeCity*.
 // Prefers city/town/village over street-level place names. Returns
-// {name,lat,lng} or null when neither Photon nor Nominatim yields a locality.
+// {name,lat,lng,countryCode} or null when neither Photon nor Nominatim yields
+// a locality. countryCode (ISO 3166-1 alpha-2) feeds the temperature-unit
+// inference; both geocoders provide it without an extra request.
 async function reverseGeocodeCity(lat,lng){
   if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
   try{
@@ -520,7 +522,7 @@ async function reverseGeocodeCity(lat,lng){
     const props = (f && f.properties) || {};
     const locality = props.city || props.town || props.village || props.municipality || props.county || props.state || '';
     const name = formatCityLabel(locality, props.country);
-    if(name)return { name, lat, lng };
+    if(name)return { name, lat, lng, countryCode: String(props.countrycode || '').trim().toUpperCase().slice(0,2) };
   }catch{ /* try Nominatim */ }
   try{
     const url = `${NOMINATIM_BASE}/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
@@ -528,7 +530,7 @@ async function reverseGeocodeCity(lat,lng){
     const addr = (json && json.address) || {};
     const locality = addr.city || addr.town || addr.village || addr.municipality || addr.county || addr.state || '';
     const name = formatCityLabel(locality, addr.country);
-    if(name)return { name, lat, lng };
+    if(name)return { name, lat, lng, countryCode: String(addr.country_code || '').trim().toUpperCase().slice(0,2) };
   }catch{ /* fall through */ }
   return null;
 }

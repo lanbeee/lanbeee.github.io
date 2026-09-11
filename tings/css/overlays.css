@@ -44,20 +44,29 @@
 .overview-insight-cue{font-size:11.5px;}
 .overview-open-chips{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;overflow:visible;padding:0;}
 .overview-open-chip{
-  width:100%;min-width:0;min-height:62px;padding:6px 3px;align-items:center;justify-content:center;gap:2px;border-radius:12px;
+  width:100%;min-width:0;min-height:62px;padding:6px 2px;align-items:center;justify-content:center;gap:2px;border-radius:12px;
 }
-.overview-open-chip .overview-open-day{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:8px;text-align:center;}
-.overview-open-chip b{font-size:11px;}
-.overview-open-chip .overview-weather-cue{min-height:18px;gap:2px;color:var(--text2);}
+.overview-open-chip:has(.overview-weather-cue){min-height:74px;}
+.overview-open-chip .overview-open-day{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:8px;letter-spacing:0;text-align:center;}
+.overview-open-chip b{margin-top:auto;font-size:11px;}
+/* Compact cue is emoji-only — the wet chance stays in the tooltip so the
+   open-minutes figure remains the chip's only number. Auto side margins float
+   the intensity emoji (e.g. 🌧️🌧️) dead-center between label and minutes. */
+.overview-open-chip .overview-weather-cue{
+  display:inline-flex;flex-direction:column;gap:1px;align-items:center;justify-content:center;
+  margin:auto 0;flex:0 0 auto;max-width:100%;overflow:hidden;color:var(--text2);
+}
 .overview-open-chip .overview-weather-cue.weather-tone-sun{color:var(--amber-icon);}
 .overview-open-chip .overview-weather-cue.weather-tone-rain{color:var(--blue-icon);}
 .overview-open-chip .overview-weather-cue.weather-tone-snow,.overview-open-chip .overview-weather-cue.weather-tone-ice{color:var(--purple-icon);}
 .overview-open-chip .overview-weather-cue.weather-tone-storm{color:var(--red-icon);}
-.overview-open-chip .overview-weather-cue .weather-condition-emoji{font-size:15px;}
-.overview-open-chip .overview-weather-cue > span{font-size:8px;font-weight:750;letter-spacing:-0.02em;}
-.overview-open-chip .overview-weather-cue .weather-signal{gap:0;}
-.overview-open-chip .overview-weather-cue .weather-signal i{display:none;}
-.overview-open-chip .overview-weather-cue .weather-temperature{padding-left:2px;border-left:0;}
+.overview-open-chip .overview-weather-cue > span{
+  font-size:8px;font-weight:750;letter-spacing:0;text-transform:none;color:inherit;
+}
+.overview-open-chip .overview-weather-cue .weather-condition-emoji{
+  font-size:13px;line-height:1;max-width:100%;
+}
+.overview-open-chip .overview-weather-cue .weather-temperature{padding:0;border:0;}
 .overview-open-chips.weather-only{display:flex;justify-content:flex-start;gap:7px;}
 .overview-open-chip.weather-only{width:auto;min-width:58px;min-height:50px;padding:7px 9px;}
 .overview-card{
@@ -450,5 +459,95 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .travel-minute-field input::-webkit-inner-spin-button,
 .travel-minute-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
 .travel-minute-field .travel-edit-unit{grid-row:2;justify-self:center;line-height:1;}
+
+/* iOS Clock-style time picker — keyboard slot, not a Tings sheet. Safari
+   ignores step on <input type="time">, so iPhone/iPad get hour / 5-minute /
+   AM-PM wheels here. Android keeps the native picker.
+   No CSS scroll-snap: snap-stop kills flick inertia on iOS. Wheels coast
+   with native overflow, then JS seats the nearest 5-minute row. */
+#time-step-picker{
+  position:fixed;inset:0;z-index:160;
+  display:flex;align-items:flex-end;justify-content:center;
+  pointer-events:none;visibility:hidden;
+}
+#time-step-picker.open{pointer-events:auto;visibility:visible;}
+.time-step-picker-panel{
+  width:100%;max-width:100%;
+  background:var(--glass-bg);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+  border-top:0.5px solid var(--border);
+  padding:0 0 env(safe-area-inset-bottom);
+  transform:translateY(110%);
+  transition:transform 400ms cubic-bezier(.32,.72,0,1);
+  box-shadow:0 -8px 28px rgba(20,30,26,0.08);
+}
+#time-step-picker.open .time-step-picker-panel{transform:translateY(0);}
+.time-step-picker-bar{
+  display:flex;align-items:center;gap:8px;
+  min-height:44px;padding:0 4px 0 8px;
+  border-bottom:0.5px solid color-mix(in srgb,var(--border) 70%,transparent);
+}
+.time-step-picker-clear,
+.time-step-picker-done{
+  border:0;background:none;font:inherit;cursor:pointer;
+  min-height:44px;padding:0 14px;
+  font-size:17px;font-weight:600;letter-spacing:-0.022em;
+  -webkit-tap-highlight-color:transparent;
+}
+.time-step-picker-clear{color:var(--text2);}
+.time-step-picker-done{margin-left:auto;color:var(--teal-text);}
+.time-step-picker-clear:active,
+.time-step-picker-done:active{opacity:0.45;}
+.time-step-picker-frame{
+  position:relative;height:calc(44px * 5);
+  overflow:hidden;isolation:isolate;
+}
+.time-step-picker-highlight{
+  position:absolute;left:50%;top:50%;
+  width:min(376px, calc(100% - 24px));
+  height:36px;margin:0;border-radius:8px;
+  transform:translate(-50%, -50%);
+  background:color-mix(in srgb,var(--text) 7%,transparent);
+  pointer-events:none;z-index:0;
+}
+.time-step-picker-wheels{
+  position:relative;z-index:1;
+  display:flex;align-items:stretch;justify-content:center;height:100%;
+  width:100%;max-width:400px;margin:0 auto;padding:0 8px;
+  mask-image:linear-gradient(to bottom, transparent 0%, #000 20%, #000 80%, transparent 100%);
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 20%, #000 80%, transparent 100%);
+}
+.time-step-picker-col{
+  flex:1 1 0;min-width:0;max-width:118px;height:100%;
+  overflow-x:hidden;overflow-y:scroll;
+  overscroll-behavior:contain;
+  overflow-anchor:none;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+  scrollbar-width:none;
+  padding:88px 0;
+  outline:none;
+  contain:layout style;
+  will-change:scroll-position;
+}
+.time-step-picker-col[data-col="period"]{flex:0.78 1 0;max-width:92px;}
+.time-step-picker-wheels.is-24h .time-step-picker-col[data-col="period"]{display:none;}
+.time-step-picker-col::-webkit-scrollbar{display:none;}
+.time-step-picker-item{
+  height:44px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text);font-size:23px;font-weight:500;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-0.03em;line-height:1;
+  contain:layout style paint;
+  user-select:none;-webkit-user-select:none;
+}
+.time-step-picker-item.is-on{color:var(--text);}
+input[type="time"].time-step-picker-target{
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--teal-icon) 70%,transparent);
+}
+@media (prefers-reduced-motion:reduce){
+  .time-step-picker-panel{transition:none;}
+}
 
 /* Open-time and missed-item menus */

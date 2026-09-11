@@ -181,6 +181,10 @@ function tryPlaceOnDay(state,fill,opts = {}){
         preferredHit:false,
         prevLocId:anchor,
         placeKey,
+        occurrenceKey:fill.occurrenceKey || null,
+        scheduleOptionId:fill._scheduleOptionId || (fill.h && fill.h._scheduleOptionId) || null,
+        scheduleOptionSameDayMode:fill._scheduleOptionSameDayMode
+          || (fill.h && fill.h._scheduleOptionSameDayMode) || 'alternative',
         schedulePrefLevel:typeof locationPrefLevel === 'function' ? locationPrefLevel(fill.h,locId) : null
       };
       fits.push(baseFit);
@@ -193,7 +197,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
       if(typeof weatherCandidateAnchors === 'function'){
         const weatherStarts = weatherCandidateAnchors(
           fill,state,placeStart,Math.min(cap,gap.end),cost,
-          opts.settings || state.settings || (typeof sortSettings !== 'undefined' ? sortSettings : null)
+          opts.settings || state.settings || (typeof sortSettings !== 'undefined' ? sortSettings : null),
+          baseFit
         );
         for(const weatherStart of weatherStarts){
           if(weatherStart <= placeStart || weatherStart + cost > cap || weatherStart + cost > gap.end)continue;
@@ -992,9 +997,16 @@ function committedFillLocationChoices(entry,state){
   const fit = entry && entry.fit;
   if(!h || !fit)return [];
   const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h);
-  const ids = optionMode
-    ? habitLocationIdsForDay(h,state.dayBase,state.registry)
-    : normalizeLocationIds(h.locationIds,state.registry);
+  const scheduleOptionId = fit.scheduleOptionId || entry.fill._scheduleOptionId || null;
+  if(optionMode && scheduleOptionId && scheduleOptionId !== 'general'){
+    const option = normalizeHabitScheduleOptions(h.scheduleOptions,state.registry)
+      .find(item=>item.id === scheduleOptionId);
+    // A specific row is a coupled time/place/weather decision. Once selected,
+    // route reconciliation may change its commute but must not silently move
+    // the row to another allowed place (which could carry different guidance).
+    return option ? [option.locationId || null] : [fit.locId || null];
+  }
+  const ids = normalizeLocationIds(h.locationIds,state.registry);
   if(Object.prototype.hasOwnProperty.call(entry.fill,'locationId')
     && entry.fill.locationId !== undefined){
     // Explicit null is legal only for genuinely anywhere/locationless work.
@@ -1010,22 +1022,25 @@ function committedFillLocationChoices(entry,state){
   // Preserve an explicitly committed legacy/synthetic fit even when its habit
   // record has no locationIds. Normal planner fills derive choices from the
   // habit and therefore still expose every allowed location to the route DP.
-  const anywhereAllowed = typeof habitHasAnywhereForDay === 'function'
-    ? habitHasAnywhereForDay(h,state.dayBase,state.registry)
-    : (optionMode ? habitHasAnywhereScheduleOptionForDay(h,state.dayBase) : h.anywhereAllowed);
+  const anywhereAllowed = Boolean(h.anywhereAllowed);
   const choices = anywhereAllowed
     ? [null,...ids]
     : (ids.length ? ids : (fit.locId ? [fit.locId] : [null]));
   return choices.filter(locId=>{
-    if(!locId)return true;
-    const loc = state.registryById
-      ? state.registryById.get(locId)
-      : state.registry.find(item=>item.id === locId);
-    if(!loc)return false;
-    const intervals = effectiveLocationWindow(h,loc,state.weekday,state.dayBase);
-    const startMin = (fit.placeStart - state.dayBase) / 60000;
-    const endMin = (fit.placeEnd - state.dayBase) / 60000;
-    return intervals.some(iv=>startMin >= iv.start && endMin <= iv.end);
+    if(locId){
+      const loc = state.registryById
+        ? state.registryById.get(locId)
+        : state.registry.find(item=>item.id === locId);
+      if(!loc)return false;
+      const intervals = effectiveLocationWindow(h,loc,state.weekday,state.dayBase);
+      const startMin = (fit.placeStart - state.dayBase) / 60000;
+      const endMin = (fit.placeEnd - state.dayBase) / 60000;
+      if(!intervals.some(iv=>startMin >= iv.start && endMin <= iv.end))return false;
+    }
+    const weather = typeof weatherFitAssessment === 'function'
+      ? weatherFitAssessment(entry.fill,{...fit,locId},state,state.settings)
+      : null;
+    return !(weather && weather.hardFail);
   });
 }
 
@@ -1100,14 +1115,20 @@ function optimalCommittedLocationRoute(state,chron){
         if(route.end + travelSeconds * 1000 > event.start)continue;
 
         let cost = route.cost + travelSeconds;
-        if(event.kind === 'fill' && choice){
+        if(event.kind === 'fill'){
           const h = event.entry.fill.h;
           const fit = event.entry.fit;
-          const level = fit && choice === fit.locId && fit.schedulePrefLevel !== undefined
-            ? fit.schedulePrefLevel
-            : locationPrefLevel(h,choice);
-          cost += -locationPrefScore(level) * 30;
-          if(route.loc && route.loc === choice)cost -= 60;
+          if(choice){
+            const level = fit && choice === fit.locId && fit.schedulePrefLevel !== undefined
+              ? fit.schedulePrefLevel
+              : locationPrefLevel(h,choice);
+            cost += -locationPrefScore(level) * 30;
+            if(route.loc && route.loc === choice)cost -= 60;
+          }
+          const weather = typeof weatherFitAssessment === 'function'
+            ? weatherFitAssessment(event.entry.fill,{...fit,locId:choice},state,state.settings)
+            : null;
+          if(weather)cost += Math.max(0,Number(weather.penalty) || 0);
         }
         const assignments = new Map(route.assignments);
         if(event.kind === 'fill')assignments.set(event.entry,choice);
@@ -1164,6 +1185,9 @@ function optimizeCommittedRouteLocations(state,chron){
   for(const entry of chron){
     if(!entry || !entry.fit || !route.assignments.has(entry))continue;
     entry.fit.locId = route.assignments.get(entry);
+    entry.fit.weather = typeof weatherFitAssessment === 'function'
+      ? weatherFitAssessment(entry.fill,entry.fit,state,state.settings)
+      : null;
     const arrival = route.arrivals.get(entry);
     if(arrival){
       entry.fit.prevLocId = arrival.from;
@@ -1195,21 +1219,32 @@ function reconcileCommittedTravel(state){
   let prevEndMs = null;
 
   const patchFillRow = (entry,fit)=>{
+    const guidance=fit.weather?.guidance || (typeof weatherGuidanceForFit==='function'
+      ? weatherGuidanceForFit(entry.fill,fit,state.settings) : null);
     const entryChunk = entry.fill && entry.fill.chunkIndex != null
       ? entry.fill.chunkIndex : null;
+    const entryOccurrence = entry.fill && entry.fill.occurrenceKey || null;
     for(const r of state.rows || []){
       const rowChunk = r && r.chunkIndex != null ? r.chunkIndex : null;
+      const rowOccurrence = r && r.occurrenceKey || null;
       if(r && r.kind === 'fill'
         && r.i === (entry.fill && entry.fill.i)
-        && rowChunk === entryChunk){
+        && rowChunk === entryChunk
+        && (entryOccurrence || rowOccurrence ? entryOccurrence === rowOccurrence : true)){
         r.locationId = fit.locId;
         r.start = fit.placeStart;
         r.end = fit.placeEnd;
+        r.weatherProfileId = guidance?.profileId || null;
+        r.weatherProfileSource = guidance?.source || null;
+        r.weatherForecastLocationId = guidance?.forecastLocationId || null;
+        r.weatherOptOut = Boolean(guidance?.disabled);
       }
     }
     for(const item of state.day && state.day.agendaItems || []){
       const itemChunk = item && item.chunkIndex != null ? item.chunkIndex : null;
-      if(item && item.i === (entry.fill && entry.fill.i) && itemChunk === entryChunk){
+      const itemOccurrence = item && item.occurrenceKey || null;
+      if(item && item.i === (entry.fill && entry.fill.i) && itemChunk === entryChunk
+        && (entryOccurrence || itemOccurrence ? entryOccurrence === itemOccurrence : true)){
         item.locationId = fit.locId;
       }
     }
@@ -1325,6 +1360,8 @@ function reconcileCommittedTravel(state){
 // MUTATE: commit a successful fit into day state (travel row + fill row + budgets).
 function commitPlacement(state,fill,fit){
   if(!fit)return;
+  const guidance=fit.weather?.guidance || (typeof weatherGuidanceForFit==='function'
+    ? weatherGuidanceForFit(fill,fit,state.settings) : null);
   // Most placements append after the existing fills. Preserve the original
   // O(1) commit for that common path; a full route reconciliation is only
   // needed when this fit was inserted before something already committed, or
@@ -1359,13 +1396,20 @@ function commitPlacement(state,fill,fit){
     locationId:fit.locId,
     chunkMinutes:fit.durMin,
     chunkIndex:fill.chunkIndex != null ? fill.chunkIndex : null,
+    occurrenceKey:fill.occurrenceKey || fit.occurrenceKey || null,
+    scheduleOptionId:fit.scheduleOptionId || fill._scheduleOptionId || null,
+    scheduledDay:dateKey(state.dayBase),
     plannerScore:Number.isFinite(fit.score) ? fit.score : null,
     plannerScoreTerms:fit.scoreTerms || null,
     optimizerWeight:Number.isFinite(fit.optimizerWeight) ? fit.optimizerWeight : null,
     optimizerCandidateWeight:Number.isFinite(fit.optimizerCandidateWeight)
       ? fit.optimizerCandidateWeight : null,
     optimizerDelayMinutes:Number.isFinite(fit.optimizerDelayMinutes)
-      ? fit.optimizerDelayMinutes : null
+      ? fit.optimizerDelayMinutes : null,
+    weatherProfileId:guidance?.profileId || null,
+    weatherProfileSource:guidance?.source || null,
+    weatherForecastLocationId:guidance?.forecastLocationId || null,
+    weatherOptOut:Boolean(guidance?.disabled)
   });
   state.fills.push({ fill, fit, slotStart:fit.slotStart });
   state.placed.add(fit.placeKey != null ? fit.placeKey : fill.i);

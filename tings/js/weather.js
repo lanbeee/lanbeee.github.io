@@ -1,6 +1,6 @@
 // Keyless Open-Meteo forecasts and pure weather placement guidance.
 // Forecast data is cached separately from personal backups. Open-Meteo receives
-// the home-city coordinate plus any rare far-away place a habit opts into.
+// the home-city coordinate plus the effectively guided scheduled places.
 
 const WEATHER_METRICS = {
   temperature_2m:{label:'temperature',unit:'°C',aggregate:'mean',range:'−20–40',hint:'°C · 0 freezes · 20 mild · 30+ hot'},
@@ -15,6 +15,190 @@ const WEATHER_METRICS = {
   european_aqi:{label:'EU AQI',unit:'',aggregate:'max',air:true,range:'0–100',hint:'air quality · 0–20 good · 21–40 fair · 41–60 moderate · 61+ poor'}
 };
 let _weatherRefreshLocks=[];
+
+// ── Temperature display unit ────────────────────────────────────────────
+// Forecast payloads, rule bounds, and margins are always °C (what Open-Meteo
+// returns and what the planner scores). These helpers convert only at the
+// last formatting step, so flipping the unit needs no refetch or replan.
+const WEATHER_FAHRENHEIT_COUNTRY_CODES = new Set([
+  'US','AS','GU','MP','PR','VI', // United States + territories
+  'BS','KY','TC','PW','FM','MH','LR','MM'
+]);
+
+function normalizeWeatherTempUnit(value){
+  return value === 'c' || value === 'f' ? value : 'auto';
+}
+
+function weatherTempUnitForCountry(countryCode){
+  return WEATHER_FAHRENHEIT_COUNTRY_CODES.has(String(countryCode || '').trim().toUpperCase()) ? 'f' : 'c';
+}
+
+//PURE: effective unit for the given settings ('auto' resolves via the home
+// city's country; unknown country defaults to Celsius).
+function weatherEffectiveTempUnit(settings){
+  const mode=normalizeWeatherTempUnit(settings && settings.weatherTempUnit);
+  return mode === 'auto' ? weatherTempUnitForCountry(settings && settings.homeCityCountry) : mode;
+}
+
+function weatherUsesFahrenheit(settings){
+  const s=settings || weatherSettings();
+  return weatherEffectiveTempUnit(s)==='f';
+}
+
+//PURE: raw °C → display-unit number (unrounded; callers round as before).
+function weatherTempConverted(celsius){
+  const c=Number(celsius);
+  if(!Number.isFinite(c))return c;
+  return weatherUsesFahrenheit() ? c*9/5+32 : c;
+}
+
+function weatherTempDisplay(celsius){
+  return Math.round(weatherTempConverted(celsius));
+}
+
+function weatherTempUnitLabel(){
+  return weatherUsesFahrenheit() ? '°F' : '°C';
+}
+
+function weatherTempUnitWord(){
+  return weatherUsesFahrenheit() ? 'Fahrenheit' : 'Celsius';
+}
+
+// ── Precipitation + wind display units ──────────────────────────────────
+// Same contract as temperature: forecast payloads and rule bounds stay in
+// the API's metric units (mm, cm, km/h); these helpers convert only at the
+// last formatting step. Snowfall follows the precipitation setting (cm↔in).
+// The measure country set drops Liberia and Myanmar from the Fahrenheit list:
+// both use °F for temperature but officially use metric distance and precipitation.
+const WEATHER_IMPERIAL_MEASURE_COUNTRY_CODES = new Set([
+  'US','AS','GU','MP','PR','VI', // United States + territories
+  'BS','KY','TC','PW','FM','MH'
+]);
+
+function normalizeWeatherPrecipUnit(value){
+  return value === 'mm' || value === 'in' ? value : 'auto';
+}
+
+function normalizeWeatherWindUnit(value){
+  return value === 'kmh' || value === 'mph' ? value : 'auto';
+}
+
+function weatherMeasureUnitForCountry(countryCode){
+  return WEATHER_IMPERIAL_MEASURE_COUNTRY_CODES.has(String(countryCode || '').trim().toUpperCase()) ? 'imperial' : 'metric';
+}
+
+//PURE: effective units for the given settings ('auto' resolves via the home
+// city's country; unknown countries default to metric).
+function weatherEffectivePrecipUnit(settings){
+  const mode=normalizeWeatherPrecipUnit(settings && settings.weatherPrecipUnit);
+  if(mode !== 'auto')return mode;
+  return weatherMeasureUnitForCountry(settings && settings.homeCityCountry) === 'imperial' ? 'in' : 'mm';
+}
+
+function weatherEffectiveWindUnit(settings){
+  const mode=normalizeWeatherWindUnit(settings && settings.weatherWindUnit);
+  if(mode !== 'auto')return mode;
+  return weatherMeasureUnitForCountry(settings && settings.homeCityCountry) === 'imperial' ? 'mph' : 'kmh';
+}
+
+function weatherSettings(){
+  return (typeof sortSettings!=='undefined' && sortSettings ? sortSettings : null)
+    || (typeof loadSortSettings==='function' ? loadSortSettings() : {});
+}
+
+function weatherUsesInches(settings){
+  const s=settings || weatherSettings();
+  return weatherEffectivePrecipUnit(s)==='in';
+}
+
+function weatherWindUsesMph(settings){
+  const s=settings || weatherSettings();
+  return weatherEffectiveWindUnit(s)==='mph';
+}
+
+//PURE: metric display values → display-unit numbers (unrounded; callers
+// round exactly as they did before).
+function weatherPrecipConverted(mm){
+  const value=Number(mm);
+  if(!Number.isFinite(value))return value;
+  return weatherUsesInches() ? value/25.4 : value;
+}
+
+function weatherSnowConverted(cm){
+  const value=Number(cm);
+  if(!Number.isFinite(value))return value;
+  return weatherUsesInches() ? value/2.54 : value;
+}
+
+function weatherWindConverted(kmh){
+  const value=Number(kmh);
+  if(!Number.isFinite(value))return value;
+  return weatherWindUsesMph() ? value*0.621371 : value;
+}
+
+function weatherPrecipUnitLabel(){
+  return weatherUsesInches() ? 'in' : 'mm';
+}
+
+function weatherSnowUnitLabel(){
+  return weatherUsesInches() ? 'in' : 'cm';
+}
+
+function weatherWindUnitLabel(){
+  return weatherWindUsesMph() ? 'mph' : 'km/h';
+}
+
+//PURE: one metric sample in raw API units → the display-unit number for its
+// class, so rule summaries and cards convert the same way per metric.
+function weatherMetricValueConverted(metric,value){
+  if(metric==='temperature_2m' || metric==='apparent_temperature')return weatherTempConverted(value);
+  if(metric==='wind_speed_10m' || metric==='wind_gusts_10m')return weatherWindConverted(value);
+  if(metric==='precipitation')return weatherPrecipConverted(value);
+  if(metric==='snowfall')return weatherSnowConverted(value);
+  return Number(value);
+}
+
+function weatherMetricUnitLabel(metric){
+  if(metric==='temperature_2m' || metric==='apparent_temperature')return weatherTempUnitLabel();
+  if(metric==='wind_speed_10m' || metric==='wind_gusts_10m')return weatherWindUnitLabel();
+  if(metric==='precipitation')return weatherPrecipUnitLabel();
+  if(metric==='snowfall')return weatherSnowUnitLabel();
+  return WEATHER_METRICS[metric]?.unit || '';
+}
+
+// Home cities set before homeCityCountry existed have no stored country, so
+// 'auto' cannot infer. Reverse-geocode the home coords once per session
+// (offline-safe: failure just leaves the metric defaults until next boot).
+// Runs on the boot-time settings snapshot: installs without a home city bail
+// out before any request, and tests seed cities only after page load.
+let _homeCityCountryBackfillAttempted=false;
+async function maybeBackfillHomeCityCountry(){
+  if(_homeCityCountryBackfillAttempted)return;
+  _homeCityCountryBackfillAttempted=true;
+  if(typeof reverseGeocodeCity!=='function')return;
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const anyAuto=normalizeWeatherTempUnit(settings.weatherTempUnit)==='auto'
+    || normalizeWeatherPrecipUnit(settings.weatherPrecipUnit)==='auto'
+    || normalizeWeatherWindUnit(settings.weatherWindUnit)==='auto';
+  if(!anyAuto)return;
+  if(String(settings.homeCityCountry || '').trim())return;
+  // Number.isFinite on the raw fields: Number(null) is 0, and a home city is
+  // genuinely required here — never infer from (0, 0).
+  if(!Number.isFinite(settings.homeCityLat) || !Number.isFinite(settings.homeCityLng))return;
+  try{
+    const city=await reverseGeocodeCity(settings.homeCityLat,settings.homeCityLng);
+    const code=String(city && city.countryCode || '').trim().toUpperCase().slice(0,2);
+    if(!code || code===String(settings.homeCityCountry || '').toUpperCase())return;
+    if(typeof updateSortSetting==='function'){
+      updateSortSetting({homeCityCountry:code},{sync:false,renderNow:false});
+    }else{
+      saveSortSettings({...loadSortSettings(),homeCityCountry:code});
+    }
+    // Presentation-only change: refresh the mounted surfaces without a replan.
+    if(typeof renderHomePresentationOnly==='function')renderHomePresentationOnly();
+    else if(typeof render==='function')render();
+  }catch{ /* stays Celsius until a later session */ }
+}
 
 function cleanWeatherProfileId(value){
   return typeof value === 'string' ? value.trim().slice(0,48) : '';
@@ -328,6 +512,63 @@ function weatherContextForLocation(locationId,settings){
   return (root.places && root.places[coords.locationId]) || null;
 }
 
+// PURE: resolve one placement's weather policy. The schedule-option fields are
+// stamped onto bound planner variants by habitBoundToScheduleOption; callers
+// inspecting a published/original row may instead pass scheduleOptionId.
+function effectiveWeatherGuidance(h,locationId,settings,opts={}){
+  if(!h)return {profile:null,profileId:null,source:null,disabled:false,forecastLocationId:null,inherited:false};
+  const cfg=settings || (typeof loadSortSettings==='function'
+    ? loadSortSettings()
+    : (typeof sortSettings!=='undefined' ? sortSettings : {}));
+  const chosenLocationId=typeof cleanLocationId==='function' ? cleanLocationId(locationId) || null : (locationId || null);
+  let optionMode=h._scheduleOptionWeatherProfileMode;
+  let optionProfileId=h._scheduleOptionWeatherProfileId;
+  if(optionMode==null && opts.scheduleOptionId && Array.isArray(h.scheduleOptions)){
+    const option=normalizeHabitScheduleOptions(h.scheduleOptions,cfg.locations)
+      .find(item=>item.id===opts.scheduleOptionId);
+    if(option){optionMode=option.weatherProfileMode;optionProfileId=option.weatherProfileId;}
+  }
+  const finish=(profileId,source,disabled=false)=>{
+    const clean=cleanWeatherProfileId(profileId);
+    const forecastLocationId=chosenLocationId || (typeof cleanLocationId==='function' ? cleanLocationId(h.weatherLocationId) || null : null);
+    return {
+      profile:clean?weatherProfileById(clean,cfg):null,
+      profileId:clean || null,
+      source,
+      disabled,
+      forecastLocationId,
+      inherited:source==='location'
+    };
+  };
+  if(optionMode!=null){
+    const mode=normalizeWeatherProfileMode(optionMode,optionProfileId);
+    if(mode==='none')return finish(null,'option',true);
+    if(mode==='profile')return finish(optionProfileId,'option');
+  }
+  const itemMode=normalizeWeatherProfileMode(h.weatherProfileMode,h.weatherProfileId);
+  if(itemMode==='none')return finish(null,'item',true);
+  if(itemMode==='profile')return finish(h.weatherProfileId,'item');
+  const loc=chosenLocationId?weatherLocationById(chosenLocationId,cfg):null;
+  if(loc && cleanWeatherProfileId(loc.weatherProfileId))return finish(loc.weatherProfileId,'location');
+  return finish(null,null,false);
+}
+
+function weatherGuidanceForFit(fill,fit,settings){
+  const locationId=fit && Object.prototype.hasOwnProperty.call(fit,'locId')
+    ? fit.locId
+    : (fill && Object.prototype.hasOwnProperty.call(fill,'locationId') ? fill.locationId : null);
+  return effectiveWeatherGuidance(fill && fill.h,locationId,settings,{
+    scheduleOptionId:(fit && fit.scheduleOptionId) || fill?._scheduleOptionId || fill?.h?._scheduleOptionId || null
+  });
+}
+
+function weatherContextForGuidance(guidance,settings){
+  if(!guidance)return null;
+  return guidance.forecastLocationId
+    ? weatherContextForLocation(guidance.forecastLocationId,settings)
+    : settings && settings._weatherContext;
+}
+
 function weatherAggregate(samples,metric){
   const values = (samples || []).map(sample=>Number(sample && sample[metric])).filter(Number.isFinite);
   if(!values.length)return null;
@@ -474,30 +715,32 @@ function weatherCommitmentOverride(fill,state){
 }
 
 function weatherFitAssessment(fill,fit,state,settings){
-  const profile = weatherProfileById(fill?.h?.weatherProfileId,settings);
+  const guidance=weatherGuidanceForFit(fill,fit,settings);
+  const profile = guidance.profile;
   const activeRules = (profile && Array.isArray(profile.rules) ? profile.rules : []).filter(weatherRuleActive);
-  const context = typeof weatherContextForHabit === 'function'
-    ? weatherContextForHabit(fill?.h,settings)
-    : (settings && settings._weatherContext);
+  const context = weatherContextForGuidance(guidance,settings);
   if(!activeRules.length)return null;
-  if(!context)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable · planned normally'};
+  if(!context)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable · planned normally'};
   const samples = weatherSamplesForInterval(context,fit.placeStart,fit.placeEnd);
-  if(!samples.length)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable for this time · planned normally'};
+  if(!samples.length)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable for this time · planned normally'};
   const results = activeRules.map(rule=>({rule,...weatherRuleResult(rule,samples,context,fit.placeStart)}));
   const known = results.filter(result=>result.known);
-  if(!known.length)return {profile,status:'unknown',hardFail:false,penalty:0,summary:'forecast metrics unavailable · planned normally'};
+  if(!known.length)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast metrics unavailable · planned normally'};
   const failing = known.filter(result=>!result.pass);
   const hardFail = failing.some(result=>result.rule.hard);
   const overridden = hardFail && weatherCommitmentOverride(fill,state);
   const describe = result=>{
     const meta = WEATHER_METRICS[result.rule.metric];
-    return `${meta.label} ${Math.round(result.value * 10) / 10}${meta.unit}`;
+    const value = weatherMetricValueConverted(result.rule.metric,result.value);
+    const unit = weatherMetricUnitLabel(result.rule.metric);
+    return `${meta.label} ${Math.round(value * 10) / 10}${unit}`;
   };
   const summary = failing.length
     ? `${overridden ? 'weather override' : 'weather caution'} · ${failing.map(describe).join(' · ')}`
     : `good for ${profile.name} · ${known.slice(0,2).map(describe).join(' · ')}`;
   return {
     profile,
+    guidance,
     status:overridden ? 'override' : (hardFail ? 'blocked' : (failing.length ? 'caution' : 'good')),
     hardFail:hardFail && !overridden,
     // Weather guidance outranks ordinary ASAP/preference tie-breaking, while
@@ -508,17 +751,20 @@ function weatherFitAssessment(fill,fit,state,settings){
   };
 }
 
-function weatherCandidateAnchors(fill,state,start,end,durationMs,settings){
+function weatherCandidateAnchors(fill,state,start,end,durationMs,settings,fit=null){
   const lock=weatherLockedPlacement(fill,state,settings);
   if(lock)return lock.start>=start && lock.start+durationMs<=end ? [lock.start] : [];
-  const profile = weatherProfileById(fill?.h?.weatherProfileId,settings);
-  const context = weatherContextForHabit(fill?.h,settings);
+  const guidance=weatherGuidanceForFit(fill,fit,settings);
+  const profile = guidance.profile;
+  const context = weatherContextForGuidance(guidance,settings);
   if(!profile || !context)return [];
   const candidates = context.samples
     .map(sample=>sample.ts)
     .filter(ts=>ts >= start && ts + durationMs <= end)
     .map(ts=>{
-      const assessment = weatherFitAssessment(fill,{placeStart:ts,placeEnd:ts+durationMs},state,settings);
+      const assessment = weatherFitAssessment(fill,{
+        ...(fit || {}),placeStart:ts,placeEnd:ts+durationMs
+      },state,settings);
       return {ts,score:assessment ? assessment.penalty + (assessment.hardFail ? 100000 : 0) : 0};
     })
     .sort((a,b)=>a.score-b.score || a.ts-b.ts);
@@ -532,20 +778,19 @@ function weatherPenaltyForFit(fill,fit,state,settings){
 }
 
 function weatherBestPenaltyForDay(candidate,state,settings){
-  const context=weatherContextForHabit(candidate?.h,settings);
-  const profile=weatherProfileById(candidate?.h?.weatherProfileId,settings);
-  if(!context || !profile || !state)return null;
+  if(!state)return null;
   if(typeof tryPlaceOnDay==='function' && typeof clonePlacementState==='function'){
     const fill={h:candidate.h,i:candidate.i,priority:candidate.priority,scarcity:candidate.scarcity};
     const fit=tryPlaceOnDay(clonePlacementState(state),fill,{settings,allowNetwork:false});
     if(!fit)return null;
-    return weatherPenaltyForFit(fill,fit,state,settings);
+    const assessment=fit.weather || weatherFitAssessment(fill,fit,state,settings);
+    return assessment ? weatherPenaltyForFit(fill,fit,state,settings) : null;
   }
   return null;
 }
 
 function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
-  if(!candidate?.h?.weatherProfileId || candidate.pinned===true)return false;
+  if(!candidate?.h || candidate.pinned===true)return false;
   if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate))return false;
   if(candidate.h.hid && typeof plannerOrderConstraintsForDay==='function'
     && plannerOrderConstraintsForDay(state.dayBase).some(edge=>edge && edge.adjacency==='direct'
@@ -577,10 +822,10 @@ function weatherConditionEmoji(status){
 }
 
 function weatherStatusForRow(h,row,settings){
-  if(!h || !row || !h.weatherProfileId)return null;
+  if(!h || !row)return null;
   const state = {dayBase:typeof dayStart === 'function' ? dayStart(row.start) : row.start, fills:[]};
   return weatherFitAssessment({h,i:row.i,pinned:Boolean(h.pinned) || row.kind === 'scheduled'},
-    {placeStart:row.start,placeEnd:row.end},state,settings || sortSettings || loadSortSettings());
+    {placeStart:row.start,placeEnd:row.end,locId:row.locationId,scheduleOptionId:row.scheduleOptionId},state,settings || sortSettings || loadSortSettings());
 }
 
 function weatherCodePresentation(value){
@@ -716,10 +961,12 @@ function weatherGuidedItemsForDay(dayBase,dayContext,settings,data=null){
   return weatherContextDayRows(dayBase,dayContext).map(row=>{
     if(row.kind!=='fill' && row.kind!=='scheduled')return null;
     const h=row.h || (row.i!=null ? list[row.i] : null);
-    if(!h?.weatherProfileId)return null;
+    if(!h)return null;
     const assessment=weatherStatusForRow(h,row,settings);
-    if(!assessment)return null;
-    const coords=weatherCoordsForHabit(h,settings);
+    if(!assessment || assessment.guidance?.source==='location')return null;
+    const coords=assessment.guidance?.forecastLocationId
+      ? weatherCoordsForLocation(assessment.guidance.forecastLocationId,settings)
+      : weatherHomeCoords(settings);
     const loc=coords?.locationId ? weatherLocationById(coords.locationId,settings) : null;
     return {h,row,assessment,locationName:loc?.name || String(settings?.homeCityName || '').trim() || 'home city'};
   }).filter(Boolean).sort((a,b)=>Number(a.row.start)-Number(b.row.start));
@@ -745,18 +992,26 @@ function weatherFeelsBounds(summary){
 function weatherTemperatureRange(summary){
   const bounds=weatherFeelsBounds(summary);
   if(!bounds)return '';
-  return bounds.low===bounds.high ? `${bounds.low}°` : `${bounds.low}–${bounds.high}°`;
+  const low=weatherTempDisplay(bounds.low);
+  const high=weatherTempDisplay(bounds.high);
+  return low===high ? `${low}°` : `${low}–${high}°`;
 }
 
 function weatherPeriodTemperatureRange(summary){
   const bounds=weatherFeelsBounds(summary);
   if(!bounds)return '';
+  // Range-vs-single is decided in °C so WEATHER_PERIOD_RANGE_DELTA_C keeps its
+  // meaning; only the rendered numbers are converted.
   const duration=Number(summary && summary.end)-Number(summary && summary.start);
   const longEnough=duration>=WEATHER_PERIOD_RANGE_MIN_MS;
   const varied=bounds.high-bounds.low>=WEATHER_PERIOD_RANGE_DELTA_C;
-  if(longEnough && varied)return `${bounds.low}–${bounds.high}°`;
-  if(Number.isFinite(Number(summary.apparentMean)))return `${Math.round(Number(summary.apparentMean))}°`;
-  return `${bounds.low}°`;
+  if(longEnough && varied){
+    const low=weatherTempDisplay(bounds.low);
+    const high=weatherTempDisplay(bounds.high);
+    return low===high ? `${low}°` : `${low}–${high}°`;
+  }
+  if(Number.isFinite(Number(summary.apparentMean)))return `${weatherTempDisplay(Number(summary.apparentMean))}°`;
+  return `${weatherTempDisplay(bounds.low)}°`;
 }
 
 // PURE: summarize only the clock interval occupied by a card. The most
@@ -810,7 +1065,7 @@ function weatherPeriodPillHtml(start,end,settings,options={}){
   if(!summary)return '';
   const temp=weatherPeriodTemperatureRange(summary);
   const wet=['rain','ice','snow','storm'].includes(summary.condition.tone);
-  const snow=summary.snowfall>0 ? `${Math.round(summary.snowfall*10)/10}cm` : '';
+  const snow=summary.snowfall>0 ? `${Math.round(weatherSnowConverted(summary.snowfall)*10)/10}${weatherSnowUnitLabel()}` : '';
   const chance=wet && summary.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
   const signal=snow || chance;
   const assessment=options.assessment || null;
@@ -818,10 +1073,10 @@ function weatherPeriodPillHtml(start,end,settings,options={}){
     ? `<i class="ti ${assessment.status==='override'?'ti-shield-exclamation':'ti-alert-triangle'} weather-guidance-mark" aria-hidden="true"></i>` : '';
   const detail=[
     `${summary.condition.label} in ${summary.placeName}`,
-    temp?`feels like ${temp} Celsius`:'',
+    temp?`feels like ${temp} ${weatherTempUnitWord()}`:'',
     summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}% precipitation`,
-    summary.snowfall>0?`${Math.round(summary.snowfall*10)/10} cm snow`:'',
-    summary.wind==null?'':`${Math.round(summary.wind)} km/h wind`,
+    summary.snowfall>0?`${Math.round(weatherSnowConverted(summary.snowfall)*10)/10} ${weatherSnowUnitLabel()} snow`:'',
+    summary.wind==null?'':`${Math.round(weatherWindConverted(summary.wind))} ${weatherWindUnitLabel()} wind`,
     assessment?.summary || '',weatherFreshnessText(summary.fetchedAt,options.now || Date.now())
   ].filter(Boolean).join(', ');
   const cls=`context-pill weather-period-pill weather-tone-${summary.condition.tone}${assessment?` guidance-${assessment.status || 'unknown'}`:''}${options.className?` ${options.className}`:''}`;
@@ -855,6 +1110,7 @@ function weatherDayPresentation(dayBase,dayContext,settings,data=null){
 function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
   const presentation=weatherDayPresentation(dayBase,dayContext,settings,options.data || null);
   if(!presentation)return '';
+  const compact=Boolean(options.compact);
   const minimal=presentation.status!=='forecast';
   const temp=presentation.showTemperature ? weatherTemperatureRange(presentation.summary) : '';
   const summary=presentation.summary;
@@ -862,14 +1118,19 @@ function weatherDayCueHtml(dayBase,dayContext,settings,options={}){
   const chance=!minimal && wet && summary.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
   const detail=[
     presentation.label,
-    temp ? `feels like ${temp} Celsius` : '',
+    temp ? `feels like ${temp} ${weatherTempUnitWord()}` : '',
     summary.precipitationChance==null ? '' : `${Math.round(summary.precipitationChance)}% precipitation`,
-    summary.wind==null ? '' : `${Math.round(summary.wind)} km/h wind`,
+    summary.wind==null ? '' : `${Math.round(weatherWindConverted(summary.wind))} ${weatherWindUnitLabel()} wind`,
     weatherFreshnessText(summary.fetchedAt)
   ].filter(Boolean).join(', ');
   const tone=presentation.tone || presentation.status;
-  const cls=options.className ? ` ${options.className}` : '';
-  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(presentation.emoji || '☁️')}</span>${chance?`<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`:''}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
+  const cls=`${options.className ? ` ${options.className}` : ''}${compact?' is-compact':''}`;
+  const emoji=presentation.emoji || '☁️';
+  // Compact cues (Overview strip) stay emoji-only: the chip already carries an
+  // open-minutes figure, so the wet chance lives in the tooltip, not as a
+  // second number competing with it. Day headers keep the droplet + chance.
+  const signal=compact || !chance ? '' : `<span class="weather-signal"><i class="ti ti-droplet" aria-hidden="true"></i>${escapeHtml(chance)}</span>`;
+  return `<span class="weather-day-cue${cls} ${escapeHtml(presentation.status)} weather-tone-${escapeHtml(tone)}" data-weather-tone="${escapeHtml(tone)}" title="${escapeHtml(detail)}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(emoji)}</span>${signal}${temp?`<span class="weather-temperature">${escapeHtml(temp)}</span>`:''}</span>`;
 }
 
 function weatherFreshnessText(ts,now=Date.now()){
@@ -879,16 +1140,604 @@ function weatherFreshnessText(ts,now=Date.now()){
   return `updated ${Math.round(mins/60)}h ago`;
 }
 
-function weatherMetricCard(icon,label,value){
+// Hourly drill-down behind the context sheet's summary cards: the sample
+// field each card summarises (primary is required for a row, secondary is
+// shown as the dim right-hand detail).
+const WEATHER_METRIC_DETAILS={
+  temp:{icon:'ti-temperature',label:'feels like',primary:'apparent_temperature',secondary:'temperature_2m'},
+  precip:{icon:'ti-umbrella',label:'precipitation',primary:'precipitation_probability',secondary:'precipitation',snow:'snowfall'},
+  wind:{icon:'ti-wind',label:'wind',primary:'wind_speed_10m',secondary:'wind_gusts_10m'},
+  uv:{icon:'ti-sun-high',label:'UV',primary:'uv_index'}
+};
+
+// Horizontal context lines per metric: thresholds that give the curve meaning
+// without a y-axis. Only thresholds strictly inside the day's domain draw.
+const WEATHER_METRIC_REF_LINES={
+  temp:[{v:0,label:'freezing'},{v:30,label:'hot'}],
+  precip:[{v:50,label:'even 50%'}],
+  // Thresholds stay in the plotted km/h domain; the label's number converts.
+  wind:[{v:39,label:'strong'},{v:62,label:'gale'}],
+  uv:[{v:3,label:'moderate 3'},{v:6,label:'high 6'},{v:8,label:'very high 8'},{v:11,label:'extreme 11'}]
+};
+
+function weatherMetricRefText(metricKey,ref){
+  if(metricKey==='temp')return `${ref.label} ${weatherTempDisplay(ref.v)}°`;
+  if(metricKey==='wind')return `${ref.label} ${Math.round(weatherWindConverted(ref.v))}`;
+  return ref.label;
+}
+
+// Cards with a metricKey render as buttons that open the hourly detail sheet;
+// pass metricKey only when hourly data exists for that metric.
+function weatherMetricCard(icon,label,value,metricKey=null){
   if(value==null || value==='')return '';
-  return `<div class="weather-context-metric"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
+  const tag=metricKey ? 'button' : 'div';
+  const attrs=metricKey ? ` type="button" data-weather-metric="${escapeHtml(metricKey)}"` : '';
+  return `<${tag}${attrs} class="weather-context-metric"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></${tag}>`;
+}
+
+// Catmull-Rom → cubic Bézier: a gentle curve through every sample.
+function weatherSmoothPath(points){
+  if(points.length<3)return `M${points.map(p=>`${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('L')}`;
+  let d=`M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+  for(let i=0;i<points.length-1;i++){
+    const p0=points[Math.max(0,i-1)],p1=points[i],p2=points[i+1],p3=points[Math.min(points.length-1,i+2)];
+    d+=`C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)} ${(p1[1]+(p2[1]-p0[1])/6).toFixed(1)} ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)} ${(p2[1]-(p3[1]-p1[1])/6).toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+function weatherMetricMarkText(metricKey,value){
+  if(metricKey==='temp')return `${weatherTempDisplay(value)}°`;
+  if(metricKey==='precip')return `${Math.round(value)}%`;
+  if(metricKey==='wind')return String(Math.round(weatherWindConverted(value)));
+  return String(Math.round(value));
+}
+
+// Daylight bounds for the charted day, from the shared adhan computation.
+// Null when adhan or home coords are unavailable — the chart stays clean.
+function weatherSunTimesFor(summary){
+  try{
+    if(!summary || typeof prayerTimesFor!=='function' || typeof prayerParams!=='function')return null;
+    const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+    const lat=Number(settings.homeCityLat),lng=Number(settings.homeCityLng);
+    if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
+    const times=prayerTimesFor({latitude:lat,longitude:lng},new Date(summary.dayBase),prayerParams(settings));
+    const rise=times && times.sunrise instanceof Date ? times.sunrise.getTime() : NaN;
+    const set=times && times.sunset instanceof Date ? times.sunset.getTime() : NaN;
+    return Number.isFinite(rise) && Number.isFinite(set) ? {sunrise:rise,sunset:set} : null;
+  }catch{ return null; }
+}
+
+// Hero chart for the hourly drill-down: hand-rolled SVG (no chart library),
+// one smooth accent line with a soft gradient fill, min/max callouts, an hour
+// axis, and a 'now' line when the day is today. Precipitation renders as
+// 0–100% bars instead of a line. Temp/wind draw their secondary series
+// (actual temperature / gusts) as a dashed background line; UV overlays
+// night shading and sunrise/sunset. The scrub group + _weatherChartMeta back
+// the pointer/keyboard readout bound in weatherBindMetricChartScrub.
+let _weatherChartMeta=null;
+
+function weatherMetricReadoutHtml(meta,idx){
+  const hour=meta.labels[idx] || '';
+  const v=meta.primary[idx];
+  let value='',extra='';
+  if(meta.metricKey==='temp'){
+    value=`feels ${weatherTempDisplay(v)}°${weatherUsesFahrenheit() ? 'F' : 'C'}`;
+    if(Number.isFinite(meta.secondary[idx]))extra=`actual ${weatherTempDisplay(meta.secondary[idx])}°`;
+  }else if(meta.metricKey==='wind'){
+    value=`${Math.round(weatherWindConverted(v))} ${weatherWindUnitLabel()}`;
+    if(Number.isFinite(meta.secondary[idx]))extra=`gusts ${Math.round(weatherWindConverted(meta.secondary[idx]))}`;
+  }else if(meta.metricKey==='precip'){
+    value=`${Math.round(v)}%`;
+    // Snow hours lead with the snow unit; a 0 mm liquid figure is noise there.
+    const mm=meta.secondary[idx],cm=meta.snow ? meta.snow[idx] : NaN;
+    const parts=[];
+    if(Number.isFinite(mm) && (mm>0 || !(cm>0)))parts.push(`${Math.round(weatherPrecipConverted(mm)*10)/10} ${weatherPrecipUnitLabel()}`);
+    if(Number.isFinite(cm) && cm>0)parts.push(`${Math.round(weatherSnowConverted(cm)*10)/10} ${weatherSnowUnitLabel()} snow`);
+    extra=parts.join(' · ');
+  }else{
+    value=`UV ${Math.round(v)}`;
+    if(meta.sun)extra=meta.ts[idx]<meta.sun.sunrise || meta.ts[idx]>meta.sun.sunset ? 'night' : '';
+  }
+  return `<b>${escapeHtml(hour)}</b><span>${escapeHtml(value)}</span>${extra?`<span class="dim">${escapeHtml(extra)}</span>`:''}`;
+}
+
+function weatherMetricChartHtml(metricKey,rows,summary){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  const W=340,H=152,top=24,bottom=128,left=8,right=8;
+  const pts=rows.map(row=>({ts:Number(row.ts),v:Number(row[detail.primary]),s:Number(row[detail.secondary]),
+    w:detail.snow ? Number(row[detail.snow]) : NaN}))
+    .filter(p=>Number.isFinite(p.v)).sort((a,b)=>a.ts-b.ts);
+  if(pts.length<2){_weatherChartMeta=null;return '';}
+  const zeroBased=metricKey==='precip' || metricKey==='uv';
+  let vMin=Math.min(...pts.map(p=>p.v)),vMax=Math.max(...pts.map(p=>p.v));
+  // The dashed background series must stay inside the frame too, so the
+  // domain spans both series whenever that line is actually drawn.
+  if((metricKey==='temp' || metricKey==='wind') && detail.secondary){
+    const secs=pts.map(p=>p.s).filter(Number.isFinite);
+    if(secs.length>1){vMin=Math.min(vMin,...secs);vMax=Math.max(vMax,...secs);}
+  }
+  if(zeroBased)vMin=0;
+  // Probability has a natural 0–100 scale; scaling to the day's max would
+  // render a 3% chance as a near-full-height bar.
+  if(metricKey==='precip')vMax=100;
+  if(vMax<=vMin)vMax=vMin+1;
+  const pad=metricKey==='precip' ? 0 : (vMax-vMin)*0.18;
+  vMax+=pad;
+  // Lift the floor to 0 only for all-positive data; clamping a sub-zero day
+  // to 0 would push its whole curve below the plot.
+  if(!zeroBased)vMin=vMin<0 ? vMin-pad : Math.max(0,vMin-pad);
+  const positiveSteps=pts.slice(1).map((p,i)=>p.ts-pts[i].ts).filter(step=>step>0).sort((a,b)=>a-b);
+  const finalStep=positiveSteps.length ? positiveSteps[Math.floor(positiveSteps.length/2)] : 3600000;
+  const domainStart=pts[0].ts,domainEnd=pts[pts.length-1].ts+finalStep;
+  const xOfTs=ts=>left+Math.max(0,Math.min(1,(Number(ts)-domainStart)/Math.max(1,domainEnd-domainStart)))*(W-left-right);
+  const yAt=v=>bottom-((v-vMin)/(vMax-vMin))*(bottom-top);
+  const xs=pts.map(p=>xOfTs(p.ts));
+  const maxIdx=pts.reduce((best,p,i)=>p.v>pts[best].v?i:best,0);
+  const minIdx=pts.reduce((best,p,i)=>p.v<pts[best].v?i:best,0);
+  const hourShort=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',hour12:false});
+  const hourFull=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
+  // The readout starts at "now" on today, else on the day's peak.
+  let idx0=maxIdx;
+  if(weatherRequestedDayKey(Date.now())===summary.key){
+    const now=Date.now();
+    if(now>=domainStart && now<=domainEnd){
+      idx0=pts.reduce((best,p,i)=>Math.abs(p.ts-now)<Math.abs(pts[best].ts-now)?i:best,0);
+    }
+  }
+  // Sun context on UV (its whole scale is daylight) and temp (overnight lows
+  // read against the night); wind/precip stay clean.
+  const sun=metricKey==='uv' || metricKey==='temp' ? weatherSunTimesFor(summary) : null;
+  _weatherChartMeta={metricKey,ts:pts.map(p=>p.ts),xs,
+    labels:pts.map(p=>hourFull.format(p.ts)),
+    primary:pts.map(p=>p.v),secondary:pts.map(p=>p.s),snow:detail.snow ? pts.map(p=>p.w) : null,
+    geom:{W,H,top,bottom,left,right,yMin:vMin,yMax:vMax,domainStart,domainEnd},idx0,idx:idx0,sun,
+  };
+  let inner='';
+  if(sun){
+    // Shade the night bookends and mark sunrise/sunset with their times.
+    const riseX=xOfTs(sun.sunrise),setX=xOfTs(sun.sunset);
+    if(riseX-left>1)inner+=`<rect class="night" x="${left}" y="${top-4}" width="${(riseX-left).toFixed(1)}" height="${bottom-top+4}"/>`;
+    if(W-right-setX>1)inner+=`<rect class="night" x="${setX.toFixed(1)}" y="${top-4}" width="${(W-right-setX).toFixed(1)}" height="${bottom-top+4}"/>`;
+    for(const [x,arrow] of [[riseX,'↑'],[setX,'↓']]){
+      const anchor=x<52 ? 'start' : x>W-52 ? 'end' : 'middle';
+      const label=`${arrow} ${hourFull.format(arrow==='↑' ? sun.sunrise : sun.sunset)}`;
+      // Inside the plot (below the top edge) so it never collides with the
+      // 'now' label, which owns the strip above the chart.
+      inner+=`<line class="sunline" x1="${x.toFixed(1)}" y1="${top-4}" x2="${x.toFixed(1)}" y2="${bottom}"/><text class="sunmark" x="${x.toFixed(1)}" y="${top+11}" text-anchor="${anchor}">${escapeHtml(label)}</text>`;
+    }
+  }
+  if(metricKey==='precip'){
+    const step=(W-left-right)/pts.length;
+    pts.forEach((p,i)=>{
+      const h=((p.v-vMin)/(vMax-vMin))*(bottom-top);
+      if(h<1.5)return; // 0% hours stay silent instead of stubbing the baseline
+      const snowing=p.w>0; // snow hours get their own tint and a snow-unit readout
+      const barW=Math.min(12,Math.max(3,step*0.6));
+      inner+=`<rect class="bar${snowing?' snow':''}" x="${(xs[i]-barW/2).toFixed(1)}" y="${(bottom-h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3"><title>${escapeHtml(`${hourFull.format(p.ts)} · ${Math.round(p.v)}%${snowing ? ` · ${Math.round(weatherSnowConverted(p.w)*10)/10} ${weatherSnowUnitLabel()} snow` : ''}`)}</title></rect>`;
+    });
+  }else{
+    const line=weatherSmoothPath(pts.map((p,i)=>[xs[i],yAt(p.v)]));
+    inner+=`<path class="area" fill="url(#weather-grad-${escapeHtml(metricKey)})" d="${line}L${(W-right).toFixed(1)} ${bottom}L${left} ${bottom}Z"/>`;
+    inner+=`<path class="line" d="${line}"/>`;
+    if((metricKey==='temp' || metricKey==='wind') && detail.secondary){
+      const secPts=pts.map((p,i)=>Number.isFinite(p.s) ? [xs[i],yAt(p.s)] : null).filter(Boolean);
+      if(secPts.length>1)inner+=`<path class="line secondary" d="${weatherSmoothPath(secPts)}"/>`;
+    }
+  }
+  // Threshold context lines (freezing / UV levels / breeze strength / even
+  // chance): dashed, labelled at the left edge (the right corner is the now
+  // line's and sunset mark's), skipped outside the domain.
+  for(const ref of WEATHER_METRIC_REF_LINES[metricKey] || []){
+    if(ref.v<=vMin || ref.v>=vMax)continue;
+    const ry=yAt(ref.v).toFixed(1);
+    inner+=`<g class="ref"><line class="refline" x1="${left}" y1="${ry}" x2="${W-right}" y2="${ry}"/>`
+      +`<text class="reflabel" x="${left+3}" y="${(yAt(ref.v)-2.5).toFixed(1)}" text-anchor="start">${escapeHtml(weatherMetricRefText(metricKey,ref))}</text></g>`;
+  }
+  const mark=(idx,cls,dy)=>{
+    const px=xs[idx],py=yAt(pts[idx].v);
+    const anchor=px<32 ? 'start' : px>W-32 ? 'end' : 'middle';
+    return `<circle class="dot" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.2"><title>${escapeHtml(`${hourFull.format(pts[idx].ts)} · ${weatherMetricMarkText(metricKey,pts[idx].v)}`)}</title></circle>`
+      +`<text class="mark ${cls}" x="${px.toFixed(1)}" y="${(py+dy).toFixed(1)}" text-anchor="${anchor}">${escapeHtml(weatherMetricMarkText(metricKey,pts[idx].v))}</text>`;
+  };
+  inner+=mark(maxIdx,'max',-7);
+  if(minIdx!==maxIdx && (metricKey==='temp' || metricKey==='wind'))inner+=mark(minIdx,'min',13);
+  // Hour axis: every 3rd hour plus the final hour, so the chart's extent is
+  // explicit even when the last sample falls between ticks (23:00 does).
+  let hourIdxs=pts.map((p,i)=>Number(hourShort.format(p.ts))%3===0?i:-1).filter(i=>i>=0);
+  const lastIdx=pts.length-1;
+  if(!hourIdxs.includes(lastIdx)){
+    hourIdxs=hourIdxs.filter(i=>Math.abs(xs[i]-xs[lastIdx])>=24);
+    hourIdxs.push(lastIdx);
+  }
+  for(const i of hourIdxs){
+    const px=xs[i];
+    const anchor=px<32?'start':px>W-32?'end':'middle';
+    inner+=`<text class="hour" x="${px.toFixed(1)}" y="${H-8}" text-anchor="${anchor}">${escapeHtml(hourShort.format(pts[i].ts))}</text>`;
+  }
+  if(weatherRequestedDayKey(Date.now())===summary.key){
+    const t=(Date.now()-domainStart)/Math.max(1,domainEnd-domainStart);
+    if(t>=0 && t<=1){
+      const nx=left+t*(W-left-right);
+      inner+=`<line class="nowline" x1="${nx.toFixed(1)}" y1="${top-4}" x2="${nx.toFixed(1)}" y2="${bottom}"/><text class="now" x="${nx.toFixed(1)}" y="${top-9}" text-anchor="${nx>W-40 ? 'end' : 'middle'}">now</text>`;
+    }
+  }
+  const sVal=pts[idx0].s;
+  inner+=`<g class="scrub"><line class="scrubline" x1="${xs[idx0].toFixed(1)}" y1="${top-4}" x2="${xs[idx0].toFixed(1)}" y2="${bottom}"/>`
+    +`<circle class="scrubdot" cx="${xs[idx0].toFixed(1)}" cy="${yAt(pts[idx0].v).toFixed(1)}" r="3.6"/>`
+    +(Number.isFinite(sVal) && metricKey!=='precip' && metricKey!=='uv' ? `<circle class="scrubdot secondary" cx="${xs[idx0].toFixed(1)}" cy="${yAt(sVal).toFixed(1)}" r="3"/>` : `<circle class="scrubdot secondary" r="3" style="display:none"/>`)
+    +`</g>`;
+  return `<svg class="weather-metric-chart metric-${escapeHtml(metricKey)}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(`${detail.label} by hour, drag or use arrow keys to read a specific hour`)}"><defs><linearGradient id="weather-grad-${escapeHtml(metricKey)}" x1="0" y1="0" x2="0" y2="1"><stop class="a" offset="0"/><stop class="b" offset="1"/></linearGradient></defs>${inner}</svg>`;
+}
+
+function weatherAgendaMetricSummary(row,metricKey,weatherRows){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  if(!detail)return '';
+  const ordered=(weatherRows || []).slice().sort((a,b)=>Number(a.ts)-Number(b.ts));
+  let samples=ordered.map((sample,index)=>{
+    const start=Number(sample.ts);
+    const next=Number(ordered[index+1]?.ts);
+    const end=Number.isFinite(next) && next>start ? next : start+3600000;
+    const overlap=Math.max(0,Math.min(row.end,end)-Math.max(row.start,start));
+    return {sample,weight:overlap/Math.max(1,end-start)};
+  }).filter(entry=>entry.weight>0);
+  if(!samples.length && weatherRows?.length){
+    const mid=row.start+(row.end-row.start)/2;
+    const nearest=weatherRows.reduce((best,sample)=>Math.abs(Number(sample.ts)-mid)<Math.abs(Number(best.ts)-mid)?sample:best,weatherRows[0]);
+    if(Math.abs(Number(nearest.ts)-mid)<=3600000)samples=[{sample:nearest,weight:1}];
+  }
+  const values=field=>samples.map(entry=>Number(entry.sample[field])).filter(Number.isFinite);
+  const primary=values(detail.primary);
+  if(!primary.length)return 'forecast unavailable in this window';
+  const low=Math.min(...primary),high=Math.max(...primary);
+  if(metricKey==='temp'){
+    const range=weatherTempDisplay(low)===weatherTempDisplay(high)
+      ? `${weatherTempDisplay(low)}°` : `${weatherTempDisplay(low)}–${weatherTempDisplay(high)}°`;
+    return `feels ${range}${weatherUsesFahrenheit()?'F':'C'}`;
+  }
+  if(metricKey==='precip'){
+    const weightedTotal=field=>samples.reduce((sum,entry)=>{
+      const value=Number(entry.sample[field]);
+      return sum+(Number.isFinite(value)?value*entry.weight:0);
+    },0);
+    const amount=weightedTotal(detail.secondary);
+    const snow=weightedTotal(detail.snow);
+    return [`rain ${Math.round(high)}%`,snow>0?`${Math.round(weatherSnowConverted(snow)*10)/10} ${weatherSnowUnitLabel()} snow`:(amount>0?`${Math.round(weatherPrecipConverted(amount)*10)/10} ${weatherPrecipUnitLabel()}`:'')].filter(Boolean).join(' · ');
+  }
+  if(metricKey==='wind'){
+    const gusts=values(detail.secondary);
+    return [`up to ${Math.round(weatherWindConverted(high))} ${weatherWindUnitLabel()}`,gusts.length?`gusts ${Math.round(weatherWindConverted(Math.max(...gusts)))}`:''].filter(Boolean).join(' · ');
+  }
+  return `UV up to ${Math.round(high)}`;
+}
+
+// Lanes split overlapping blocks into side-by-side columns. `gapAfter(row)`
+// lets a row claim extra room past its end: a short block grows to a readable
+// height, so the next block in its lane must start below that growth or take
+// the next lane — otherwise the grown block is painted over and its name lost.
+function weatherAgendaAssignLanes(rows,gapAfter){
+  const laneEnds=[];
+  const placed=rows.map(row=>{
+    let lane=laneEnds.findIndex(end=>end<=row.start);
+    if(lane<0)lane=laneEnds.length;
+    laneEnds[lane]=row.end+(typeof gapAfter==='function'?gapAfter(row):0);
+    return {...row,lane};
+  });
+  return {rows:placed,count:Math.max(1,laneEnds.length)};
+}
+
+function weatherAgendaTraceLabel(metricKey,value){
+  if(metricKey==='temp')return `${weatherTempDisplay(value)}°`;
+  if(metricKey==='wind')return String(Math.round(weatherWindConverted(value)));
+  if(metricKey==='uv')return `UV ${Math.round(value)}`;
+  return `${Math.round(value)}%`;
+}
+
+// Semantic colour ramps shared by the narrow agenda trace and the compact
+// charts in the open-time sheet. Values stay in the API's native units
+// (temperature °C, wind km/h); the units display setting converts labels.
+function weatherMetricToneStops(metricKey){
+  if(metricKey==='temp')return [
+    {from:-Infinity,tone:'blue'},{from:0,tone:'cyan'},{from:10,tone:'green'},
+    {from:26,tone:'amber'},{from:32,tone:'red'}
+  ];
+  if(metricKey==='wind')return [
+    {from:-Infinity,tone:'green'},{from:20,tone:'amber'},
+    {from:39,tone:'orange'},{from:62,tone:'red'}
+  ];
+  if(metricKey==='uv')return [
+    {from:-Infinity,tone:'green'},{from:3,tone:'amber'},{from:6,tone:'orange'},
+    {from:8,tone:'red'},{from:11,tone:'purple'}
+  ];
+  return [
+    {from:-Infinity,tone:'blue'},{from:30,tone:'purple'},
+    {from:60,tone:'orange'},{from:80,tone:'red'}
+  ];
+}
+
+function weatherMetricTone(metricKey,value){
+  const stops=weatherMetricToneStops(metricKey);
+  let tone=stops[0].tone;
+  for(const stop of stops){
+    if(Number(value)>=stop.from)tone=stop.tone;
+    else break;
+  }
+  return tone;
+}
+
+function weatherMetricVisualDomain(metricKey,values){
+  let min=Math.min(...values),max=Math.max(...values);
+  if(metricKey==='uv')return {min:0,max:Math.max(11,max)};
+  if(metricKey==='wind')return {min:0,max:Math.max(30,max*1.08)};
+  if(metricKey==='precip')return {min:0,max:100};
+  const spread=Math.max(4,max-min);
+  return {min:min-spread*.18,max:max+spread*.18};
+}
+
+function weatherMetricGradientStopsHtml(metricKey,min,max){
+  const range=Math.max(.0001,max-min);
+  const stops=weatherMetricToneStops(metricKey);
+  let active=weatherMetricTone(metricKey,min);
+  const html=[`<stop class="tone-${active}" offset="0%"/>`];
+  for(const stop of stops){
+    if(!Number.isFinite(stop.from) || stop.from<=min || stop.from>=max)continue;
+    const offset=((stop.from-min)/range*100).toFixed(2);
+    html.push(`<stop class="tone-${active}" offset="${offset}%"/><stop class="tone-${stop.tone}" offset="${offset}%"/>`);
+    active=stop.tone;
+  }
+  html.push(`<stop class="tone-${active}" offset="100%"/>`);
+  return html.join('');
+}
+
+function weatherMetricZoneRectsHtml(metricKey,min,max,left,right,height){
+  const range=Math.max(.0001,max-min);
+  const boundaries=[min,...weatherMetricToneStops(metricKey).map(stop=>stop.from)
+    .filter(value=>Number.isFinite(value) && value>min && value<max),max];
+  return boundaries.slice(0,-1).map((start,index)=>{
+    const end=boundaries[index+1];
+    const x=left+(start-min)/range*(right-left);
+    const width=Math.max(0,(end-start)/range*(right-left));
+    return `<rect class="trace-zone tone-${weatherMetricTone(metricKey,(start+end)/2)}" x="${x.toFixed(2)}" y="0" width="${width.toFixed(2)}" height="${height}"/>`;
+  }).join('');
+}
+
+function weatherAgendaTraceHtml(metricKey,weatherRows,domainStart,domainEnd,height){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  const span=Math.max(1,domainEnd-domainStart);
+  const hourly=(weatherRows || []).map(row=>({
+    ts:Number(row.ts),value:Number(row[detail.primary]),amount:Number(row[detail.secondary]),snow:Number(row[detail.snow])
+  })).filter(point=>Number.isFinite(point.ts) && Number.isFinite(point.value)
+    && point.ts<domainEnd && point.ts+3600000>domainStart).sort((a,b)=>a.ts-b.ts);
+  if(!hourly.length)return '<p class="weather-context-empty">No forecast in this part of the day.</p>';
+  if(metricKey==='precip'){
+    return hourly.map(point=>{
+      const start=Math.max(point.ts,domainStart),end=Math.min(point.ts+3600000,domainEnd);
+      const top=(start-domainStart)/span*height;
+      const cellHeight=Math.max(1,(end-start)/span*height);
+      const amount=point.snow>0 ? `${Math.round(weatherSnowConverted(point.snow)*10)/10} ${weatherSnowUnitLabel()}` : (point.amount>0 ? `${Math.round(weatherPrecipConverted(point.amount)*10)/10} ${weatherPrecipUnitLabel()}` : 'dry');
+      const tone=weatherMetricTone(metricKey,point.value);
+      return `<div class="weather-agenda-rain-hour tone-${tone}" style="top:${top.toFixed(1)}px;height:${cellHeight.toFixed(1)}px" aria-label="${escapeHtml(`${Math.round(point.value)}% rain, ${amount}`)}"><span class="weather-agenda-rain-fill" style="width:${Math.max(1,Math.min(100,point.value)).toFixed(1)}%"></span><b>${Math.round(point.value)}%</b><small>${escapeHtml(amount)}</small></div>`;
+    }).join('');
+  }
+  const values=hourly.map(point=>point.value);
+  const domain=weatherMetricVisualDomain(metricKey,values);
+  const min=domain.min,max=domain.max,left=8,right=92;
+  const x=value=>left+(value-min)/(max-min)*(right-left);
+  const y=ts=>(Math.max(domainStart,Math.min(domainEnd,ts+1800000))-domainStart)/span*height;
+  const points=hourly.map(point=>[x(point.value),y(point.ts)]);
+  const path=weatherSmoothPath(points);
+  const gradientId=`weather-agenda-gradient-${metricKey}`;
+  const zones=weatherMetricZoneRectsHtml(metricKey,min,max,left,right,height);
+  const mid=(left+right)/2;
+  const area=`${path}L${left} ${points[points.length-1][1].toFixed(1)}L${left} ${points[0][1].toFixed(1)}Z`;
+  const marks=hourly.map(point=>{
+    const px=x(point.value),py=y(point.ts),right=px>64;
+    const tone=weatherMetricTone(metricKey,point.value);
+    return `<circle class="trace-dot tone-${tone}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.8"/><text class="trace-label" x="${(px+(right?-5:5)).toFixed(1)}" y="${(py+3).toFixed(1)}" text-anchor="${right?'end':'start'}">${escapeHtml(weatherAgendaTraceLabel(metricKey,point.value))}</text>`;
+  }).join('');
+  return `<svg class="weather-agenda-weather-svg metric-${escapeHtml(metricKey)}" viewBox="0 0 100 ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(`${detail.label} changing down the day; colour indicates low to high conditions`)}"><defs><linearGradient id="${gradientId}" x1="0" y1="0" x2="1" y2="0">${weatherMetricGradientStopsHtml(metricKey,min,max)}</linearGradient></defs>${zones}<line class="scale-line" x1="${mid}" y1="0" x2="${mid}" y2="${height}"/><path class="trace-area" d="${area}" fill="url(#${gradientId})"/><path class="trace-halo" d="${path}" vector-effect="non-scaling-stroke"/><path class="trace" d="${path}" stroke="url(#${gradientId})" vector-effect="non-scaling-stroke"/>${marks}</svg>`;
+}
+
+function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows,nowTs){
+  if(!Array.isArray(rows) || !rows.length)return '<p class="weather-context-empty">No timed agenda or busy times are available for this day.</p>';
+  const HOUR=3600000;
+  // Give the shortest item enough vertical room for its name and direct
+  // time/weather line, without making a day of ordinary 30–60 minute blocks
+  // unnecessarily long.
+  const shortestHours=Math.max(1/12,Math.min(...rows.map(row=>(row.end-row.start)/HOUR)));
+  const PX_PER_HOUR=Math.min(112,Math.max(72,28/shortestHours));
+  const time=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
+  let domainStart=Math.floor(Math.min(...rows.map(row=>row.start))/HOUR)*HOUR;
+  let domainEnd=Math.ceil(Math.max(...rows.map(row=>row.end))/HOUR)*HOUR;
+  // Today's comparison is anchored to the current time, so the domain grows
+  // to reach it even when the agenda has already ended (or not yet begun).
+  const nowActive=Number.isFinite(nowTs);
+  if(nowActive){
+    domainStart=Math.min(domainStart,Math.floor(nowTs/HOUR)*HOUR);
+    domainEnd=Math.max(domainEnd,Math.ceil(nowTs/HOUR)*HOUR);
+  }
+  const span=Math.max(1,domainEnd-domainStart);
+  const height=Math.max(240,Math.round(span/HOUR*PX_PER_HOUR));
+  const pxPerMs=height/span;
+  // Very short items (a 5-minute coffee) would render as a clipped sliver, so
+  // each block grows to this minimum readable height — capped at the next
+  // block in the same lane, which lane assignment guarantees starts below.
+  const MIN_BLOCK_PX=22;
+  const {rows:placed,count:laneCount}=weatherAgendaAssignLanes(rows,row=>
+    Math.max(0,MIN_BLOCK_PX-(row.end-row.start)*pxPerMs)/pxPerMs);
+  const hours=[];
+  for(let ts=domainStart;ts<=domainEnd;ts+=HOUR)hours.push(ts);
+  const hourLabels=hours.map(ts=>{
+    const top=(ts-domainStart)/span*height;
+    return `<span class="weather-agenda-hour" style="top:${top.toFixed(1)}px">${escapeHtml(time.format(ts))}</span>`;
+  }).join('');
+  const hourLines=hours.map(ts=>{
+    const top=(ts-domainStart)/span*height;
+    return `<span class="weather-agenda-hour-line" style="top:${top.toFixed(1)}px"></span>`;
+  }).join('');
+  const nextStartInLane=new Array(placed.length).fill(null);
+  const laneLast=new Map();
+  placed.forEach((row,i)=>{
+    if(laneLast.has(row.lane))nextStartInLane[laneLast.get(row.lane)]=row.start;
+    laneLast.set(row.lane,i);
+  });
+  const tops=placed.map(row=>(row.start-domainStart)/span*height);
+  const heights=placed.map((row,i)=>{
+    const blockHeight=Math.max(1,(row.end-row.start)/span*height);
+    const capPx=nextStartInLane[i]!=null ? (nextStartInLane[i]-row.start)/span*height : Infinity;
+    return Math.max(blockHeight,Math.min(Number.isFinite(capPx)?capPx-1:Infinity,MIN_BLOCK_PX));
+  });
+  // A block stretches right across lanes that are empty over its painted
+  // extent (grown short blocks included) — one overlap elsewhere in the day
+  // must not shrink unrelated blocks to a slice of the column.
+  const spans=placed.map((row,i)=>{
+    const top=tops[i],bottom=top+heights[i];
+    let spanCols=1;
+    for(let lane=row.lane+1;lane<laneCount;lane++){
+      const taken=placed.some((other,j)=>other.lane===lane && tops[j]<bottom && tops[j]+heights[j]>top);
+      if(taken)break;
+      spanCols++;
+    }
+    return spanCols;
+  });
+  const items=placed.map((row,i)=>{
+    const colWidth=100/laneCount,left=row.lane*colWidth;
+    const current=nowActive && nowTs>=row.start && nowTs<row.end;
+    const cls=(heights[i]<25?' tiny':heights[i]<39?' compact':'')+(row.blocked?' blocked':'')+(current?' current':'');
+    const weather=weatherAgendaMetricSummary(row,metricKey,weatherRows);
+    const exact=`${time.format(row.start)}–${time.format(row.end)}`;
+    const spoken=`${row.blocked?'busy time ':''}${row.label}, ${exact}, ${weather}${current?', happening now':''}`;
+    return `<div class="weather-agenda-item${cls}" style="top:${tops[i].toFixed(1)}px;height:${heights[i].toFixed(1)}px;left:calc(${left.toFixed(3)}% + ${row.lane?2:0}px);right:auto;width:calc(${(spans[i]*colWidth).toFixed(3)}% - ${laneCount>1?2:0}px)" aria-label="${escapeHtml(spoken)}"><b>${escapeHtml(row.label)}</b><small>${escapeHtml(`${exact} · ${weather}`)}</small></div>`;
+  }).join('');
+  const nowHtml=nowActive
+    ? `<div class="weather-agenda-now" style="top:${((nowTs-domainStart)/span*height).toFixed(1)}px" aria-hidden="true"><span>${escapeHtml(`now · ${time.format(nowTs)}`)}</span></div>`
+    : '';
+  const first=time.format(Math.min(...rows.map(row=>row.start)));
+  const last=time.format(Math.max(...rows.map(row=>row.end)));
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  const weatherValues=(weatherRows || []).map(row=>Number(row[detail.primary])).filter(Number.isFinite);
+  const scale=metricKey==='precip' ? '0–100% chance'
+    : metricKey==='uv' && weatherValues.length ? `${Math.round(Math.min(...weatherValues))}–${Math.round(Math.max(...weatherValues))}`
+    : weatherValues.length ? `${weatherAgendaTraceLabel(metricKey,Math.min(...weatherValues))}–${weatherAgendaTraceLabel(metricKey,Math.max(...weatherValues))}` : '';
+  const busyCount=rows.filter(row=>row.blocked).length;
+  const itemCount=rows.length-busyCount;
+  const countLabel=[`${itemCount} ${itemCount===1?'item':'items'}`,busyCount?`${busyCount} busy ${busyCount===1?'time':'times'}`:''].filter(Boolean).join(' · ');
+  return `<div class="weather-agenda-overview"><b>${escapeHtml(countLabel)}</b><span>${escapeHtml(`${first}–${last}`)}</span></div>
+    <div class="weather-agenda-column-head" aria-hidden="true"><span>time</span><span>agenda</span><span>${escapeHtml(`${detail.label} ${scale}`)}</span></div>
+    <div class="weather-agenda-vertical" style="height:${height}px" role="group" aria-label="${escapeHtml(`${itemCount} agenda items${busyCount?` and ${busyCount} busy ${busyCount===1?'time':'times'}`:''} aligned vertically with ${detail.label} from ${first} to ${last}`)}">
+      <div class="weather-agenda-hour-lines" aria-hidden="true">${hourLines}</div>
+      <div class="weather-agenda-hours" aria-hidden="true">${hourLabels}</div>
+      <div class="weather-agenda-items">${items}${nowHtml}</div>
+      <div class="weather-agenda-weather">${weatherAgendaTraceHtml(metricKey,weatherRows,domainStart,domainEnd,height)}</div>
+    </div>
+  `;
+}
+
+// Wire the open chart's scrub layer: pointer drag/hover and arrow keys move
+// the crosshair and update the readout line. Bound once per render.
+function weatherBindMetricChartScrub(){
+  const meta=_weatherChartMeta;
+  const svg=document.querySelector('#weather-metric-content svg.weather-metric-chart');
+  const readout=document.getElementById('weather-metric-readout');
+  if(!meta || !svg || !readout)return;
+  const {geom}=meta;
+  const yAt=v=>geom.bottom-((v-geom.yMin)/(geom.yMax-geom.yMin))*(geom.bottom-geom.top);
+  const setIdx=idx=>{
+    meta.idx=Math.max(0,Math.min(meta.xs.length-1,idx));
+    const x=meta.xs[meta.idx].toFixed(1);
+    svg.querySelector('.scrubline').setAttribute('x1',x);
+    svg.querySelector('.scrubline').setAttribute('x2',x);
+    const dot=svg.querySelector('.scrubdot');
+    dot.setAttribute('cx',x);
+    dot.setAttribute('cy',yAt(meta.primary[meta.idx]).toFixed(1));
+    // Only temp/wind draw a secondary series on the chart; precip/uv carry
+    // their second value in the readout alone.
+    const sdot=svg.querySelector('.scrubdot.secondary');
+    if(sdot && (meta.metricKey==='temp' || meta.metricKey==='wind')){
+      const s=meta.secondary[meta.idx];
+      if(Number.isFinite(s)){
+        sdot.style.display='';
+        sdot.setAttribute('cx',x);
+        sdot.setAttribute('cy',yAt(s).toFixed(1));
+      }else sdot.style.display='none';
+    }
+    readout.innerHTML=weatherMetricReadoutHtml(meta,meta.idx);
+  };
+  setIdx(meta.idx0);
+  svg.tabIndex=0;
+  const idxFromEvent=event=>{
+    const rect=svg.getBoundingClientRect();
+    if(!rect.width)return meta.idx;
+    const x=(event.clientX-rect.left)/rect.width*geom.W;
+    return meta.xs.reduce((best,point,i)=>Math.abs(point-x)<Math.abs(meta.xs[best]-x)?i:best,0);
+  };
+  let scrubbing=false;
+  svg.addEventListener('pointerdown',event=>{
+    scrubbing=true;
+    try{svg.setPointerCapture(event.pointerId);}catch{ /* synthetic events carry no active pointer */ }
+    setIdx(idxFromEvent(event));
+  });
+  svg.addEventListener('pointermove',event=>{
+    if(scrubbing || event.pointerType==='mouse')setIdx(idxFromEvent(event));
+  });
+  const stop=()=>{scrubbing=false;};
+  svg.addEventListener('pointerup',stop);
+  svg.addEventListener('pointercancel',stop);
+  svg.addEventListener('keydown',event=>{
+    if(event.key==='ArrowLeft' || event.key==='ArrowRight'){
+      event.preventDefault();
+      setIdx(meta.idx+(event.key==='ArrowLeft' ? -1 : 1));
+    }
+  });
+}
+
+// A few glanceable facts instead of a full table: the extremes (with their
+// hour) and per-metric totals, formatted like the summary card above.
+function weatherMetricStatsHtml(metricKey,rows,summary){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  const hourFull=new Intl.DateTimeFormat('en-GB',{timeZone:summary.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
+  const pick=field=>rows.map(row=>({ts:Number(row.ts),v:Number(row[field])}))
+    .filter(p=>Number.isFinite(p.v)).sort((a,b)=>a.ts-b.ts);
+  const primary=pick(detail.primary);
+  if(!primary.length)return '';
+  const chip=(label,value)=>`<div class="weather-metric-stat"><small>${escapeHtml(label)}</small><b>${escapeHtml(value)}</b></div>`;
+  const at=p=>` · ${hourFull.format(p.ts)}`;
+  const peakOf=list=>list.reduce((a,p)=>p.v>a.v?p:a);
+  const lowOf=list=>list.reduce((a,p)=>p.v<a.v?p:a);
+  let chips='';
+  if(metricKey==='temp'){
+    const low=lowOf(primary),high=peakOf(primary);
+    chips=chip('coolest',`${weatherTempDisplay(low.v)}°${at(low)}`)+chip('warmest',`${weatherTempDisplay(high.v)}°${at(high)}`);
+  }else if(metricKey==='precip'){
+    const chance=peakOf(primary);
+    const total=pick(detail.secondary).reduce((sum,p)=>sum+p.v,0);
+    chips=chip('chance up to',`${Math.round(chance.v)}%`)+chip('total',`${Math.round(weatherPrecipConverted(total)*10)/10} ${weatherPrecipUnitLabel()}`);
+    const snowTotal=pick(detail.snow).reduce((sum,p)=>sum+p.v,0);
+    if(snowTotal>0)chips+=chip('snow',`${Math.round(weatherSnowConverted(snowTotal)*10)/10} ${weatherSnowUnitLabel()}`);
+  }else if(metricKey==='wind'){
+    const peak=peakOf(primary);
+    const gusts=pick(detail.secondary);
+    chips=chip('wind up to',`${Math.round(weatherWindConverted(peak.v))} ${weatherWindUnitLabel()}${at(peak)}`);
+    if(gusts.length)chips+=chip('gusts up to',`${Math.round(weatherWindConverted(peakOf(gusts).v))} ${weatherWindUnitLabel()}`);
+  }else{
+    const peak=peakOf(primary);
+    chips=chip('peak',`${Math.round(peak.v)}${at(peak)}`);
+    const sun=weatherSunTimesFor(summary);
+    if(sun){
+      const mins=Math.max(0,Math.round((sun.sunset-sun.sunrise)/60000));
+      chips+=chip('daylight',`${Math.floor(mins/60)}h ${String(mins%60).padStart(2,'0')}m`);
+    }
+  }
+  return `<div class="weather-metric-stats">${chips}</div>`;
 }
 
 function weatherContextSheetModel(dayBase,dayContext=null,focusHid=''){
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
   const summary=weatherDaySummary(settings?._weatherContext,dayBase,settings);
   if(!summary)return null;
-  return {summary,items:weatherGuidedItemsForDay(dayBase,dayContext,settings),focusHid:String(focusHid || '')};
+  return {summary,
+    dayRows:weatherDayRows(settings?._weatherContext,summary.dayBase),
+    items:weatherGuidedItemsForDay(dayBase,dayContext,settings),focusHid:String(focusHid || '')};
 }
 
 function weatherContextItemHtml(item,focusHid){
@@ -904,7 +1753,7 @@ function weatherContextItemHtml(item,focusHid){
 
 function renderWeatherContextSheet(model){
   if(!model)return false;
-  const {summary,items,focusHid}=model;
+  const {summary,items,focusHid,dayRows=[]}=model;
   const date=new Date(summary.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   const title=document.getElementById('weather-context-title');
   const sub=document.getElementById('weather-context-sub');
@@ -917,19 +1766,24 @@ function renderWeatherContextSheet(model){
   if(icon)icon.innerHTML=`<span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(summary.condition.emoji || '☁️')}</span>`;
   if(content){
     const range=weatherTemperatureRange(summary);
+    const snowCm=Number(summary.snowfall);
     const precipitation=[
       summary.precipitationChance==null?'':`${Math.round(summary.precipitationChance)}%`,
-      summary.precipitation==null?'':`${Math.round(summary.precipitation*10)/10} mm`
+      summary.precipitation==null?'':`${Math.round(weatherPrecipConverted(summary.precipitation)*10)/10} ${weatherPrecipUnitLabel()}`,
+      Number.isFinite(snowCm) && snowCm>0 ? `${Math.round(weatherSnowConverted(snowCm)*10)/10} ${weatherSnowUnitLabel()} snow` : ''
     ].filter(Boolean).join(' · ');
     const wind=[
-      summary.wind==null?'':`${Math.round(summary.wind)} km/h`,
-      summary.gusts==null?'':`gusts ${Math.round(summary.gusts)}`
+      summary.wind==null?'':`${Math.round(weatherWindConverted(summary.wind))} ${weatherWindUnitLabel()}`,
+      summary.gusts==null?'':`gusts ${Math.round(weatherWindConverted(summary.gusts))}`
     ].filter(Boolean).join(' · ');
+    // The drill-down prefers the weekly forecast's hourly grid and falls back
+    // to near detail per hour, so any row with the field makes it tappable.
+    const hasHourly=field=>dayRows.some(row=>Number.isFinite(Number(row[field])));
     const metrics=[
-      weatherMetricCard('ti-temperature', 'feels like', range ? `${range}C` : ''),
-      weatherMetricCard('ti-umbrella', 'precipitation', precipitation),
-      weatherMetricCard('ti-wind', 'wind', wind),
-      weatherMetricCard('ti-sun-high', 'UV', summary.uv==null?'':String(Math.round(summary.uv)))
+      weatherMetricCard('ti-temperature', 'feels like', range ? `${range}${weatherUsesFahrenheit() ? 'F' : 'C'}` : '', hasHourly(WEATHER_METRIC_DETAILS.temp.primary)?'temp':null),
+      weatherMetricCard('ti-umbrella', 'precipitation', precipitation, hasHourly(WEATHER_METRIC_DETAILS.precip.primary)?'precip':null),
+      weatherMetricCard('ti-wind', 'wind', wind, hasHourly(WEATHER_METRIC_DETAILS.wind.primary)?'wind':null),
+      weatherMetricCard('ti-sun-high', 'UV', summary.uv==null?'':String(Math.round(summary.uv)), hasHourly(WEATHER_METRIC_DETAILS.uv.primary)?'uv':null)
     ].filter(Boolean).join('');
     const itemHtml=items.map(item=>weatherContextItemHtml(item,focusHid)).join('');
     content.innerHTML=`<div class="weather-context-metrics">${metrics}</div>
@@ -938,12 +1792,329 @@ function renderWeatherContextSheet(model){
   return true;
 }
 
+// The day the forecast context sheet is showing; the metric drill-down reads
+// it so it always describes the same day as the summary cards.
+let _weatherContextDay=null;
+let _weatherContextAgendaRows=[];
+let _weatherMetricKey='';
+
+// Timed habit/task rows shown in the day's agenda, regardless of whether the
+// item opted into weather guidance. Blocked (busy) times are included so the
+// chart spans the whole day — sleep anchored at midnight must be visible and
+// the time domain must reach it. Blocked rows live outside the planner week
+// timelines (Home's displayed timeline intentionally drops them), so when the
+// day's rows carry none they are resolved here from settings. This is
+// intentionally presentation-only: it lets a person spot a rainy walk or windy
+// errand without changing planner eligibility or inferring that an item is
+// outdoors.
+function weatherAgendaComparisonRows(dayBase,dayContext=null,data=null){
+  const list=Array.isArray(data) ? data : (typeof load==='function' ? load() : []);
+  const rows=weatherContextDayRows(dayBase,dayContext).map((row,index)=>{
+    const blocked=row.kind==='blocked';
+    if(!blocked && row.kind!=='fill' && row.kind!=='scheduled')return null;
+    const start=Number(row.start),end=Number(row.end);
+    if(!Number.isFinite(start) || !Number.isFinite(end) || end<=start)return null;
+    const h=blocked ? null : (row.h || (row.i!=null ? list[row.i] : null));
+    const label=String(h?.name || row.label || (blocked?'busy time':'agenda item')).trim() || (blocked?'busy time':'agenda item');
+    return {start,end,label,hid:String(h?.hid || ''),kind:row.kind,blocked,index};
+  }).filter(Boolean);
+  const ts=weatherDayTimestamp(dayBase);
+  if(ts!=null && typeof blockedTimelineRows==='function' && !rows.some(row=>row.blocked)){
+    const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings
+      : (typeof loadSortSettings==='function' ? loadSortSettings() : null);
+    const key=settings && typeof dateKey==='function' ? dateKey(ts) : '';
+    // No clipAfter: the comparison describes the whole day, so a block that
+    // already ran (last night's sleep side) still bounds the chart.
+    const blocked=key ? blockedTimelineRows(key,settings,ts,{clipAfter:null}) : [];
+    for(const row of blocked){
+      const start=Number(row.start),end=Number(row.end);
+      if(!Number.isFinite(start) || !Number.isFinite(end) || end<=start)continue;
+      rows.push({start,end,label:String(row.label || '').trim() || 'busy time',hid:'',kind:'blocked',blocked:true,index:rows.length});
+    }
+  }
+  return rows.sort((a,b)=>a.start-b.start || a.end-b.end || a.index-b.index);
+}
+
+function syncWeatherAgendaCompareButton(){
+  const button=document.getElementById('weather-metric-agenda');
+  if(!button)return;
+  const count=_weatherContextAgendaRows.length;
+  button.hidden=!count;
+  button.disabled=!count;
+  button.innerHTML=`<i class="ti ti-calendar-time" aria-hidden="true"></i> day × weather${count>1?` (${count})`:''}`;
+}
+
 function openWeatherContextSheet(dayBase,dayContext=null,focusHid=''){
   const model=weatherContextSheetModel(dayBase,dayContext,focusHid);
   if(!renderWeatherContextSheet(model))return false;
+  _weatherContextDay=model.summary.dayBase;
+  _weatherContextAgendaRows=weatherAgendaComparisonRows(model.summary.dayBase,dayContext);
+  _weatherMetricKey='';
   if(typeof openSheet==='function')openSheet('weather-context-sheet');
   if(typeof armSheetBackdropGuard==='function')armSheetBackdropGuard('weather-context-sheet');
   if(focusHid)requestAnimationFrame(()=>document.querySelector(`#weather-context-content [data-weather-context-hid="${CSS.escape(focusHid)}"]`)?.scrollIntoView({block:'nearest'}));
+  return true;
+}
+
+function weatherHourlyRowsForDayMetric(dayBase,metricKey,settings){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  if(!detail || dayBase==null)return [];
+  // Prefer the weekly hourly sample over the near-term refresh when both
+  // represent the same hour; this keeps the comparison's day coverage whole.
+  const byHour=new Map();
+  for(const row of (weatherDayRows(settings?._weatherContext,dayBase) || [])){
+    if(!Number.isFinite(Number(row[detail.primary])))continue;
+    const bucket=Math.floor(Number(row.ts)/3600000);
+    const prev=byHour.get(bucket);
+    if(!prev || (prev.source==='near' && row.source!=='near'))byHour.set(bucket,row);
+  }
+  return [...byHour.values()].sort((a,b)=>a.ts-b.ts);
+}
+
+function weatherHourlyRowsForMetric(metricKey,settings){
+  return weatherHourlyRowsForDayMetric(_weatherContextDay,metricKey,settings);
+}
+
+function weatherFreeTimeMetricSummary(metricKey,rows){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  const values=(rows || []).map(row=>Number.isFinite(Number(row?.value)) ? Number(row.value) : Number(row?.[detail.primary])).filter(Number.isFinite);
+  if(!values.length)return '';
+  const low=Math.min(...values),high=Math.max(...values);
+  if(metricKey==='temp'){
+    const a=weatherTempDisplay(low),b=weatherTempDisplay(high);
+    return `${a===b?a:`${a}–${b}`}°${weatherUsesFahrenheit()?'F':'C'}`;
+  }
+  if(metricKey==='precip')return `up to ${Math.round(high)}%`;
+  if(metricKey==='wind')return `up to ${Math.round(weatherWindConverted(high))} ${weatherWindUnitLabel()}`;
+  return `up to ${Math.round(high)}`;
+}
+
+// A 64px shared-time-axis weather strip for the open-time sheet. Busy spans
+// sit behind the weather marks, so the chart answers both "what is it doing?"
+// and "is this time already occupied?" without another interaction.
+function weatherFreeTimeChartHtml(metricKey,rows,info,selection=null){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  if(!detail || !(info.windowEnd>info.windowStart))return '';
+  // left/right stay 0: the time domain spans the whole viewBox because the
+  // svg is stretched (preserveAspectRatio="none") to exactly the day map's
+  // track width, so busy spans and selection edges must land on the same x.
+  const W=320,H=64,left=0,right=0,top=5,bottom=48;
+  const visible=(rows || []).map(row=>({
+    ts:Number(row.ts),value:Number(row[detail.primary]),amount:Number(row[detail.secondary]),snow:Number(row[detail.snow])
+  })).filter(point=>Number.isFinite(point.ts) && Number.isFinite(point.value)
+    && point.ts<info.windowEnd && point.ts+3600000>info.windowStart).sort((a,b)=>a.ts-b.ts);
+  if(!visible.length)return '';
+  const focus=selection && selection.end>selection.start
+    ? visible.filter(point=>point.ts<selection.end && point.ts+3600000>selection.start)
+    : [];
+  const values=visible.map(point=>point.value);
+  const domain=weatherMetricVisualDomain(metricKey,values);
+  const x=ts=>left+Math.max(0,Math.min(1,(ts-info.windowStart)/(info.windowEnd-info.windowStart)))*(W-left-right);
+  const y=value=>bottom-(value-domain.min)/(domain.max-domain.min)*(bottom-top);
+  const gradientId=`free-weather-gradient-${metricKey}`;
+  const busy=(info.busy || []).map(block=>{
+    const start=Math.max(info.windowStart,block.start),end=Math.min(info.windowEnd,block.end);
+    if(end<=start)return '';
+    return `<rect class="free-weather-busy" x="${x(start).toFixed(1)}" y="${top}" width="${Math.max(1,x(end)-x(start)).toFixed(1)}" height="${bottom-top}"/>`;
+  }).join('');
+  let selectionBack='',selectionFront='';
+  if(selection && selection.end>selection.start){
+    const start=Math.max(info.windowStart,selection.start),end=Math.min(info.windowEnd,selection.end);
+    if(end>start){
+      const sx=x(start),ex=x(end),width=Math.max(1,ex-sx);
+      selectionBack=`<rect class="free-weather-selection-band" x="${sx.toFixed(1)}" y="${top}" width="${width.toFixed(1)}" height="${bottom-top}" rx="2"/>`;
+      selectionFront=`${sx>left?`<rect class="free-weather-selection-shade" x="${left}" y="${top}" width="${(sx-left).toFixed(1)}" height="${bottom-top}"/>`:''}${ex<W-right?`<rect class="free-weather-selection-shade" x="${ex.toFixed(1)}" y="${top}" width="${(W-right-ex).toFixed(1)}" height="${bottom-top}"/>`:''}<line class="free-weather-selection-edge" x1="${sx.toFixed(1)}" y1="${top}" x2="${sx.toFixed(1)}" y2="${bottom}"/><line class="free-weather-selection-edge" x1="${ex.toFixed(1)}" y1="${top}" x2="${ex.toFixed(1)}" y2="${bottom}"/>`;
+    }
+  }
+  let marks='';
+  if(metricKey==='precip'){
+    const hourWidth=(W-left-right)/Math.max(1,(info.windowEnd-info.windowStart)/3600000);
+    marks=visible.map(point=>{
+      const start=Math.max(info.windowStart,point.ts),end=Math.min(info.windowEnd,point.ts+3600000);
+      const bx=x(start),bw=Math.max(2,Math.min(hourWidth*.78,x(end)-bx));
+      const by=y(point.value),tone=weatherMetricTone(metricKey,point.value);
+      return `<rect class="free-weather-bar tone-${tone}" x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,bottom-by).toFixed(1)}" rx="2"/>`;
+    }).join('');
+  }else{
+    const points=visible.map(point=>[x(Math.max(info.windowStart,Math.min(info.windowEnd,point.ts+1800000))),y(point.value)]);
+    if(points.length===1){
+      const tone=weatherMetricTone(metricKey,visible[0].value);
+      marks=`<circle class="free-weather-dot tone-${tone}" cx="${points[0][0].toFixed(1)}" cy="${points[0][1].toFixed(1)}" r="3"/>`;
+    }else{
+      const path=weatherSmoothPath(points);
+      const area=`${path}L${points[points.length-1][0].toFixed(1)} ${bottom}L${points[0][0].toFixed(1)} ${bottom}Z`;
+      marks=`<path class="free-weather-area" d="${area}" fill="url(#${gradientId})"/><path class="free-weather-line-halo" d="${path}"/><path class="free-weather-line" d="${path}" stroke="url(#${gradientId})"/>`;
+    }
+  }
+  const startLabel=freeDayClockLabel(info.windowStart),endLabel=freeDayClockLabel(info.windowEnd);
+  const selectionLabel=selection && selection.end>selection.start
+    ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)}`
+    : '';
+  const summary=weatherFreeTimeMetricSummary(metricKey,focus.length ? focus : visible);
+  const ariaSelection=selectionLabel ? `; ${selectionLabel} is selected` : '';
+  return `<figure class="free-weather-chart metric-${escapeHtml(metricKey)}${selectionLabel?' has-selection':''}"${selection?.tone?` data-selection-tone="${escapeHtml(selection.tone)}"`:''}><figcaption><span><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(detail.label)}</span><b${selectionLabel?` title="${escapeHtml(selectionLabel)} selected"`:''}>${escapeHtml(summary)}</b></figcaption><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(`${detail.label} from ${startLabel} to ${endLabel}; shaded spans are busy${ariaSelection}`)}"><defs><linearGradient id="${gradientId}" x1="0" y1="1" x2="0" y2="0">${weatherMetricGradientStopsHtml(metricKey,domain.min,domain.max)}</linearGradient></defs><line class="free-weather-baseline" x1="${left}" y1="${bottom}" x2="${W-right}" y2="${bottom}"/>${busy}${selectionBack}${marks}${selectionFront}<text class="free-weather-time" x="${left}" y="${H-3}" text-anchor="start">${escapeHtml(startLabel)}</text><text class="free-weather-time" x="${W-right}" y="${H-3}" text-anchor="end">${escapeHtml(endLabel)}</text></svg></figure>`;
+}
+
+// RENDER: optional weather context inside the free-time sheet. It starts off;
+// the cloud button in the sheet header adds/removes up to two charts so dense
+// free-time details remain compact until the person explicitly asks for
+// forecast context. The header button is the single toggle: hidden when no
+// forecast exists, pressed while the section is open.
+function renderFreeTimeWeatherContext(info){
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const dayBase=typeof dayStart==='function' ? dayStart(info?.windowStart) : null;
+  const summary=dayBase==null ? null : weatherDaySummary(settings?._weatherContext,dayBase,settings);
+  const headerButton=document.getElementById('free-time-weather');
+  const syncHeader=active=>{
+    if(!headerButton)return;
+    headerButton.hidden=!summary;
+    headerButton.setAttribute('aria-expanded',active?'true':'false');
+    headerButton.setAttribute('aria-label',active?'hide weather context':'add weather context');
+    headerButton.innerHTML=`<i class="ti ${active?'ti-cloud':'ti-cloud-plus'}" aria-hidden="true"></i>`;
+  };
+  if(!summary){syncHeader(false);return null;}
+  const available=Object.keys(WEATHER_METRIC_DETAILS).filter(key=>weatherHourlyRowsForDayMetric(dayBase,key,settings).length);
+  if(!available.length){syncHeader(false);return null;}
+  const section=document.createElement('section');
+  section.className='free-weather-context';
+  section.setAttribute('aria-label','weather context for open time');
+  let selected=[];
+  let choosing=false;
+  let selection=null;
+  const shortLabel={temp:'feels',precip:'rain',wind:'wind',uv:'UV'};
+  const draw=()=>{
+    const active=choosing || selected.length>0;
+    syncHeader(active);
+    section.hidden=!active;
+    if(!active){section.innerHTML='';return;}
+    const focusCopy=selection ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)} selected` : 'busy time is shaded';
+    section.innerHTML=`<div class="free-weather-head"><span><b>weather</b><small>${escapeHtml(focusCopy)}</small></span><em>${selected.length}/2</em></div><div class="free-weather-picker" aria-label="weather charts">${available.map(key=>{
+      const detail=WEATHER_METRIC_DETAILS[key],on=selected.includes(key),locked=!on && selected.length>=2;
+      return `<button type="button" data-free-weather-metric="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${locked?' disabled':''}><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(shortLabel[key])}</button>`;
+    }).join('')}</div><div class="free-weather-charts">${selected.map(key=>weatherFreeTimeChartHtml(key,weatherHourlyRowsForDayMetric(dayBase,key,settings),info,selection)).join('')}</div>`;
+    section.querySelectorAll('[data-free-weather-metric]').forEach(button=>button.addEventListener('click',()=>{
+      const key=button.dataset.freeWeatherMetric;
+      if(selected.includes(key))selected=selected.filter(item=>item!==key);
+      else if(selected.length<2)selected=[...selected,key];
+      if(!selected.length)choosing=false;
+      draw();
+    }));
+  };
+  if(headerButton)headerButton.onclick=()=>{
+    if(choosing || selected.length){choosing=false;selected=[];}
+    else choosing=true;
+    draw();
+  };
+  section.setSelection=(start,end,tone='active')=>{
+    selection=Number.isFinite(start) && Number.isFinite(end) && end>start ? {start,end,tone} : null;
+    draw();
+  };
+  draw();
+  return section;
+}
+
+function renderWeatherMetricSheet(metricKey){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  if(!detail || !_weatherContextDay)return false;
+  _weatherMetricKey=metricKey;
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const summary=weatherDaySummary(settings?._weatherContext,_weatherContextDay,settings);
+  if(!summary)return false;
+  const rows=weatherHourlyRowsForMetric(metricKey,settings);
+  const title=document.getElementById('weather-metric-title');
+  const sub=document.getElementById('weather-metric-sub');
+  const eyebrow=document.getElementById('weather-metric-eyebrow');
+  const icon=document.getElementById('weather-metric-icon');
+  const content=document.getElementById('weather-metric-content');
+  if(title)title.textContent=detail.label;
+  if(eyebrow)eyebrow.textContent='hourly forecast';
+  if(icon)icon.innerHTML=`<i class="ti ${detail.icon}" aria-hidden="true"></i>`;
+  const date=new Date(summary.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  if(sub)sub.textContent=`${date} · ${summary.cityName} · ${weatherFreshnessText(summary.fetchedAt)}`;
+  if(content){
+    if(!rows.length){
+      content.innerHTML='<p class="weather-context-empty">No hourly forecast is available for this day.</p>';
+    }else{
+      const stats=weatherMetricStatsHtml(metricKey,rows,summary);
+      const chart=weatherMetricChartHtml(metricKey,rows,summary);
+      const dual=metricKey==='temp' ? ['feels like','actual']
+        : metricKey==='wind' ? ['wind','gusts'] : null;
+      const dualReady=dual && chart
+        && rows.filter(row=>Number.isFinite(Number(row[WEATHER_METRIC_DETAILS[metricKey].secondary]))).length>1;
+      const legend=dualReady ? `<p class="weather-metric-legend"><span class="key solid"></span>${dual[0]}<span class="key dash"></span>${dual[1]}</p>` : '';
+      content.innerHTML=`${stats}<div class="weather-metric-readout" id="weather-metric-readout"></div>${chart || '<p class="weather-context-empty">Not enough hourly data to chart this day.</p>'}${legend}`;
+      weatherBindMetricChartScrub();
+    }
+  }
+  syncWeatherAgendaCompareButton();
+  return true;
+}
+
+function renderWeatherAgendaSheet(metricKey){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  if(!detail || !_weatherContextDay || !_weatherContextAgendaRows.length)return false;
+  _weatherMetricKey=metricKey;
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const summary=weatherDaySummary(settings?._weatherContext,_weatherContextDay,settings);
+  if(!summary)return false;
+  const rows=weatherHourlyRowsForMetric(metricKey,settings);
+  const title=document.getElementById('weather-agenda-title');
+  const sub=document.getElementById('weather-agenda-sub');
+  const icon=document.getElementById('weather-agenda-icon');
+  const metrics=document.getElementById('weather-agenda-metrics');
+  const content=document.getElementById('weather-agenda-content');
+  if(title)title.textContent=`agenda × ${detail.label}`;
+  if(icon)icon.innerHTML=`<i class="ti ${detail.icon}" aria-hidden="true"></i>`;
+  const date=new Date(summary.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  if(sub)sub.textContent=`${date} · ${summary.cityName}`;
+  if(metrics){
+    metrics.innerHTML=Object.entries(WEATHER_METRIC_DETAILS).map(([key,value])=>{
+      const available=weatherHourlyRowsForMetric(key,settings).length>0;
+      return `<button type="button" data-weather-agenda-metric="${escapeHtml(key)}" aria-pressed="${key===metricKey?'true':'false'}"${available?'':' disabled'}>${escapeHtml(value.label)}</button>`;
+    }).join('');
+  }
+  if(content){
+    const nowTs=todayIso()===dateKey(_weatherContextDay) ? Date.now() : null;
+    content.innerHTML=weatherAgendaTimelineHtml(_weatherContextAgendaRows,summary,metricKey,rows,nowTs);
+    content.scrollTop=0;
+    if(nowTs!=null)weatherScrollAgendaToNow(content);
+  }
+  return true;
+}
+
+// Today's comparison opens anchored to the current time: the now line lands
+// just below the sticky column head rather than at the top of the day.
+function weatherScrollAgendaToNow(content){
+  requestAnimationFrame(()=>{
+    const line=content.querySelector('.weather-agenda-now');
+    if(!line)return;
+    const head=content.querySelector('.weather-agenda-column-head');
+    const headH=head?head.getBoundingClientRect().height:28;
+    const target=line.getBoundingClientRect().top-content.getBoundingClientRect().top
+      +content.scrollTop-headH-6;
+    content.scrollTop=Math.max(0,Math.round(target));
+  });
+}
+
+function openWeatherAgendaSheet(metricKey){
+  if(!renderWeatherAgendaSheet(String(metricKey || _weatherMetricKey || 'precip')))return false;
+  const wrap=document.getElementById('weather-agenda-sheet');
+  if(wrap)wrap.style.zIndex='150';
+  if(typeof openSheet==='function')openSheet('weather-agenda-sheet');
+  if(typeof armSheetBackdropGuard==='function')armSheetBackdropGuard('weather-agenda-sheet');
+  return true;
+}
+
+function openWeatherMetricSheet(metricKey){
+  if(!renderWeatherMetricSheet(String(metricKey || '')))return false;
+  // Inline fallback for the stylesheet rule: a stale service-worker cache
+  // could serve sheets.css without the new z-index tier, leaving this sheet
+  // painted behind the context sheet it drills into. The style travels with
+  // this JS, so the stacking can't decouple from the feature.
+  const wrap=document.getElementById('weather-metric-sheet');
+  if(wrap)wrap.style.zIndex='140';
+  if(typeof openSheet==='function')openSheet('weather-metric-sheet');
+  if(typeof armSheetBackdropGuard==='function')armSheetBackdropGuard('weather-metric-sheet');
   return true;
 }
 
@@ -957,6 +2128,58 @@ if(typeof document!=='undefined')document.addEventListener('click',event=>{
   }
   if(event.target.closest('#weather-context-close,#weather-context-done')){
     if(typeof closeSheet==='function')closeSheet('weather-context-sheet');
+    return;
+  }
+  const metricCard=event.target.closest('[data-weather-metric]');
+  if(metricCard){
+    event.preventDefault();
+    event.stopPropagation();
+    openWeatherMetricSheet(metricCard.dataset.weatherMetric);
+    return;
+  }
+  if(event.target.closest('#weather-metric-agenda')){
+    if(!_weatherContextAgendaRows.length || !_weatherMetricKey)return;
+    openWeatherAgendaSheet(_weatherMetricKey);
+    return;
+  }
+  const agendaMetric=event.target.closest('[data-weather-agenda-metric]');
+  if(agendaMetric){
+    renderWeatherAgendaSheet(agendaMetric.dataset.weatherAgendaMetric);
+    return;
+  }
+  if(event.target.closest('#weather-agenda-close,#weather-agenda-done')){
+    if(typeof closeSheet==='function')closeSheet('weather-agenda-sheet');
+    return;
+  }
+  // Home exits the whole weather drill-down (comparison → hourly → context) and
+  // puts the user back at the top of the home list, like the day sheet's home.
+  if(event.target.closest('#weather-agenda-home')){
+    if(typeof closeSheet==='function'){
+      closeSheet('weather-agenda-sheet');
+      closeSheet('weather-metric-sheet');
+      closeSheet('weather-context-sheet');
+    }
+    requestAnimationFrame(()=>{
+      const pane=document.querySelector('.pane-list');
+      if(pane)pane.scrollTop=0;
+      window.scrollTo({top:0,left:0,behavior:'auto'});
+    });
+    return;
+  }
+  const agendaWrap=event.target.closest('#weather-agenda-sheet');
+  if(agendaWrap && event.target===agendaWrap){
+    if(typeof sheetBackdropArmed==='function' && sheetBackdropArmed('weather-agenda-sheet'))return;
+    if(typeof closeSheet==='function')closeSheet('weather-agenda-sheet');
+    return;
+  }
+  if(event.target.closest('#weather-metric-close,#weather-metric-done')){
+    if(typeof closeSheet==='function')closeSheet('weather-metric-sheet');
+    return;
+  }
+  const metricWrap=event.target.closest('#weather-metric-sheet');
+  if(metricWrap && event.target===metricWrap){
+    if(typeof sheetBackdropArmed==='function' && sheetBackdropArmed('weather-metric-sheet'))return;
+    if(typeof closeSheet==='function')closeSheet('weather-metric-sheet');
     return;
   }
   if(event.target.closest('#weather-context-settings')){
@@ -979,23 +2202,39 @@ function weatherProfileNeedsAir(profile){
   return Boolean(profile && profile.rules && profile.rules.some(rule=>weatherRuleActive(rule) && WEATHER_METRICS[rule.metric]?.air));
 }
 
-function weatherNeedsAir(settings,locationId){
-  const profiles = normalizeWeatherProfiles(settings && settings.weatherProfiles);
-  if(!locationId)return profiles.some(weatherProfileNeedsAir);
-  const data = typeof load === 'function' ? load() : [];
-  return data.some(h=>{
-    if(!h || !h.weatherProfileId)return false;
-    const coords = weatherCoordsForHabit(h,settings);
-    if(!coords || coords.locationId !== locationId)return false;
-    return weatherProfileNeedsAir(weatherProfileById(h.weatherProfileId,settings));
-  });
+function weatherPotentialGuidancesForHabit(h,settings){
+  if(!h)return [];
+  const registry=normalizeLocationRegistry(settings && settings.locations);
+  const out=[];
+  const seen=new Set();
+  const add=(locationId,scheduleOptionId=null)=>{
+    const guidance=effectiveWeatherGuidance(h,locationId,settings,{scheduleOptionId});
+    if(!guidance.profile)return;
+    const key=`${guidance.profileId}:${guidance.forecastLocationId || 'home'}:${guidance.source}`;
+    if(seen.has(key))return;
+    seen.add(key);
+    out.push(guidance);
+  };
+  const generalIds=normalizeLocationIds(h.locationIds,registry);
+  generalIds.forEach(id=>add(id));
+  if(Boolean(h.anywhereAllowed) || !generalIds.length)add(null);
+  for(const option of normalizeHabitScheduleOptions(h.scheduleOptions,registry))add(option.locationId,option.id);
+  return out;
 }
 
-function weatherLinkedUpcomingRows(now = Date.now()){
+function weatherNeedsAir(settings,locationId){
+  const data = typeof load === 'function' ? load() : [];
+  return data.some(h=>weatherPotentialGuidancesForHabit(h,settings).some(guidance=>
+    (guidance.forecastLocationId || null)===(locationId || null)
+      && weatherProfileNeedsAir(guidance.profile)));
+}
+
+function weatherLinkedUpcomingRows(now = Date.now(),settings=sortSettings || loadSortSettings()){
   const data = typeof load === 'function' ? load() : [];
   return weatherAgendaRows().filter(row=>{
-    const h = row && row.i != null ? data[row.i] : null;
-    return h && h.weatherProfileId && (row.kind === 'fill' || row.kind === 'scheduled')
+    const h = row?.h || (row && row.i != null ? data[row.i] : null);
+    const guidance=h?effectiveWeatherGuidance(h,row.locationId,settings,{scheduleOptionId:row.scheduleOptionId}):null;
+    return guidance?.profile && (row.kind === 'fill' || row.kind === 'scheduled')
       && Number(row.end) >= now && Number(row.start) <= now + WEATHER_NEAR_TRIGGER_MS;
   });
 }
@@ -1004,7 +2243,6 @@ function weatherNeededExtraPlaces(settings,data){
   const out = [];
   const seen = new Set();
   const addLocation=id=>{
-    if(out.length>=MAX_WEATHER_EXTRA_PLACES)return;
     const coords=weatherCoordsForLocation(id,settings);
     if(!coords || !coords.locationId || seen.has(coords.locationId))return;
     seen.add(coords.locationId);
@@ -1012,12 +2250,10 @@ function weatherNeededExtraPlaces(settings,data){
   };
   const list=Array.isArray(data) ? data : [];
   for(const h of list){
-    if(!h || !h.weatherProfileId)continue;
-    addLocation(h.weatherLocationId);
+    for(const guidance of weatherPotentialGuidancesForHabit(h,settings))addLocation(guidance.forecastLocationId);
   }
   if(weatherAmbientEnabled(settings,list)){
     for(const row of weatherAgendaRows()){
-      if(out.length>=MAX_WEATHER_EXTRA_PLACES)break;
       if(row.kind==='fill' || row.kind==='scheduled'){
         const h=row.h || (row.i!=null ? list[row.i] : null);
         if(weatherItemShowsAmbient(h))addLocation(weatherDisplayLocationId(h,row));
@@ -1123,8 +2359,8 @@ function weatherNearRefreshNeeded(rows,data,settings,context,now = Date.now()){
   if(!Array.isArray(rows) || !rows.length)return false;
   if(!context || !Array.isArray(context.samples) || !context.samples.length)return true;
   for(const row of rows){
-    const h = row && row.i != null && Array.isArray(data) ? data[row.i] : (row && row.h) || null;
-    const profile = weatherProfileById(h && h.weatherProfileId,settings);
+    const h = (row && row.h) || (row && row.i != null && Array.isArray(data) ? data[row.i] : null);
+    const profile = h?effectiveWeatherGuidance(h,row.locationId,settings,{scheduleOptionId:row.scheduleOptionId}).profile:null;
     if(!profile)continue;
     if(!weatherForecastIsDecisive(profile,context.samples,Number(row.start),Number(row.end),now,context.timezone))return true;
   }
@@ -1137,6 +2373,15 @@ function weatherFetchJson(url,timeoutMs = 10000){
   return fetch(url,{credentials:'omit',cache:'no-store',signal:controller?.signal})
     .then(response=>{if(!response.ok)throw new Error(`weather ${response.status}`);return response.json();})
     .finally(()=>{if(timer)clearTimeout(timer);});
+}
+
+async function weatherFetchPlaceBatches(base,places,params,apply,batchSize=WEATHER_FETCH_BATCH_SIZE){
+  for(let index=0;index<places.length;index+=batchSize){
+    const batch=places.slice(index,index+batchSize);
+    const payload=await weatherFetchJson(weatherUrl(base,batch.map(place=>place.lat),batch.map(place=>place.lng),params));
+    const rows=Array.isArray(payload)?payload:[payload];
+    batch.forEach((place,offset)=>{if(rows[offset])apply(place,rows[offset]);});
+  }
 }
 
 function weatherUrl(base,lat,lng,params){
@@ -1199,16 +2444,39 @@ async function refreshWeatherForecast(options = {}){
     };
     await fetchWeekly(cache,home.lat,home.lng);
     await fetchAir(cache,home.lat,home.lng,weatherNeedsAir(settings));
-    for(const place of extras){
-      const bucket = weatherEnsurePlaceBucket(cache,place.locationId);
-      await fetchWeekly(bucket,place.lat,place.lng);
-      await fetchAir(bucket,place.lat,place.lng,weatherNeedsAir(settings,place.locationId));
-    }
-    const upcoming = weatherLinkedUpcomingRows(now);
+    const weeklyExtras=extras.filter(place=>{
+      const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+      const displayReady=Array.isArray(bucket.weekly?.days) && bucket.weekly.days.some(day=>Number.isFinite(Number(day?.weather_code)));
+      return force || !displayReady || !weatherSameCoords(bucket.weekly,place.lat,place.lng)
+        || now-Number(bucket.weekly?.fetchedAt)>=WEATHER_WEEKLY_TTL_MS;
+    });
+    await weatherFetchPlaceBatches(WEATHER_FORECAST_URL,weeklyExtras,{hourly:common,daily,forecast_days:7},(place,payload)=>{
+      const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+      bucket.weekly={...weatherNormalizePayload(payload,'weekly',now),lat:place.lat,lng:place.lng};
+      changed=true;
+    });
+    const airExtras=extras.filter(place=>{
+      if(!weatherNeedsAir(settings,place.locationId))return false;
+      const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+      return force || !weatherSameCoords(bucket.air,place.lat,place.lng)
+        || now-Number(bucket.air?.fetchedAt)>=WEATHER_WEEKLY_TTL_MS;
+    });
+    try{
+      await weatherFetchPlaceBatches(WEATHER_AIR_URL,airExtras,{hourly:'us_aqi,european_aqi',forecast_days:7},(place,payload)=>{
+        const bucket=weatherEnsurePlaceBucket(cache,place.locationId);
+        bucket.air={...weatherNormalizePayload(payload,'weekly',now),lat:place.lat,lng:place.lng};
+        changed=true;
+      });
+    }catch(error){cache.lastError=String(error && error.message || error);}
+    const upcoming = weatherLinkedUpcomingRows(now,settings);
     const groups = new Map();
     for(const row of upcoming){
-      const h = data[row.i];
-      const coords = weatherCoordsForHabit(h,settings) || home;
+      const h = row.h || data[row.i];
+      const guidance=effectiveWeatherGuidance(h,row.locationId,settings,{scheduleOptionId:row.scheduleOptionId});
+      const coords = guidance.forecastLocationId
+        ? weatherCoordsForLocation(guidance.forecastLocationId,settings)
+        : home;
+      if(!coords)continue;
       const key = coords.locationId || 'home';
       if(!groups.has(key))groups.set(key,{coords,rows:[]});
       groups.get(key).rows.push(row);
