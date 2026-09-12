@@ -28,7 +28,7 @@
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon
  * @property {string} emojiBgColor            — curated token for emoji icon background: ''|teal|amber|red|purple|blue|green
- * @property {boolean} pinned                 — stays above auto-sorted habits
+ * @property {boolean} pinned                 — visual home pin only; does not constrain the planner
  * @property {boolean} showOnSharedDisplay     — false keeps this item out of the encrypted shared-display projection; missing defaults true
  * @property {boolean} allowSharedDisplayCompletion — false makes the item view-only on a shared display; missing defaults true
  * @property {boolean} sample                 — true if created by the sort-lab sample builder
@@ -141,7 +141,7 @@
 /**
  * A named set of AND-combined weather rules stored in Settings. `relative`
  * compares both the exact interval and its whole day (50/50). Hard rules only
- * reject flexible placements; active/pinned/critical/direct-linked rows may
+ * reject flexible placements; planned, active, critical, and direct-linked rows may
  * override them. Forecast payloads live separately under WEATHER_CACHE_KEY.
  * @typedef {Object} WeatherProfile
  * @property {string} id

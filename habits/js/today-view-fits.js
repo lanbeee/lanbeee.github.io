@@ -1385,7 +1385,7 @@ function buildPlannerDecisionTrace(data,settings,context){
     const attention = typeof attentionScore === 'function'
       ? attentionScore(h,i,settings) : null;
     const pinned = typeof isWeekPinnedToday === 'function'
-      ? isWeekPinnedToday(h,settings) : Boolean(h.pinned);
+      ? isWeekPinnedToday(h,settings) : false;
     const orderInputs = [];
     if(h.hid){
       for(const edge of constraints){
@@ -1442,7 +1442,7 @@ function buildPlannerDecisionTrace(data,settings,context){
       `urgency ${Math.round(urgency)}`,
       Number.isFinite(attention) ? `attention ${attention.toFixed(2)}` : '',
       plannerTraceScarcityInput(meta.scarcity),
-      pinned ? 'pinned to today' : 'not pinned',
+      pinned ? 'planned for today' : 'not a day plan',
       hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
       preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
       locationNames.length
@@ -1651,7 +1651,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const assignmentLabel = (i)=>{
     const h = data[i];
     const pinned = typeof isWeekPinnedToday === 'function'
-      ? isWeekPinnedToday(h,settings) : Boolean(h && h.pinned);
+      ? isWeekPinnedToday(h,settings) : false;
     // A later row is meaningful for a one-shot/sparse occurrence even after
     // its delay allowance expired: at that point it is catch-up evidence, not
     // proof that today's due occurrence was legitimately postponed. Daily
@@ -2445,14 +2445,13 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       orderPenalty:orderConstraintPenalty(fill,fit,state)
     };
     const score = scoreAgendaPlacement(terms,weights);
-    // Weather guidance outranks ordinary ASAP/preference tie-breaking.
-    // Bound failures already swamp a 90-minute ASAP cap, but a relative
-    // "prefer lower rain" gap is only a few hundred points — Fast then kept
-    // 9am in the wet while GLPK still had the dry afternoon as its own
-    // start-clock option. Rank travel/day/scarce/weather/order first; use the
-    // full score (ASAP + place/time preference) only when that core ties.
+    // Weather guidance outranks ordinary ASAP/preference and scarce-window
+    // overlap. Scarce overlap is milliseconds × 0.05, so a 30-minute overlap
+    // (~90k) used to bury a relative "prefer lower rain" gap (~a few hundred).
+    // Travel, day-offset and order still compete with weather. Use the full
+    // score (ASAP + preference + scarce) only when that core ties.
     const coreScore = scoreAgendaPlacement({
-      ...terms,asapDelayMin:0,preferencePenalty:0
+      ...terms,asapDelayMin:0,preferencePenalty:0,scarceOverlapMs:0
     },weights);
     fit.score = score;
     fit.coreScore = coreScore;

@@ -201,7 +201,7 @@ function missedPlannerFingerprint(data,settings){
   const habits = (data || []).map(h=>[
     h.hid,h.type,h.target,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
     h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,
-    habitEarlyWindowDays(h),habitDelayAllowanceDays(h),h.pinned,
+    habitEarlyWindowDays(h),habitDelayAllowanceDays(h),
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
     h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,

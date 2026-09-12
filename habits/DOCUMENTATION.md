@@ -675,7 +675,7 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   are never shown as day weather.
 - Rules in one profile are AND-combined. `prefer lower`/`prefer higher` steers
   placement; min/max set absolute bounds; `hard` rejects flexible times outside
-  the bounds, while active, pinned, critical, and direct-linked commitments
+  const bounds, while active, planned, critical, and direct-linked commitments
   remain and show an override. Selecting "no preference" never deletes a rule —
   a rule with no bounds and no preference is kept but inactive (the editor
   labels it). The rule editor shows each metric's scale and typical bands
@@ -2054,6 +2054,12 @@ Actions when habit is done:
 
 ## XIV. AGENDA & PLANNING ALGORITHMS
 
+The production planner is the GLPK ILP optimizer (`agendaOptimizer` on, the
+default). It is slower than the Fast graph, but it is the engine users get
+because it better respects constraints and preferences. Fast (`?planner=fast`,
+optimizer off, previews, and fallback) is the quality-parity track: it becomes
+the main engine only when it can replicate those results.
+
 ### 14.1 Attention Score Calculation 👨‍💻
 Primary ranking algorithm:
 
@@ -2083,8 +2089,11 @@ baseScore =
 
 ### 14.3 Fast planner: bounded day and week graph search 👨‍💻
 
-Fast mode (`?planner=fast`, or optimizer off) uses two graph searches in
-`js/agenda-fast-graph.js`. Neither requires GLPK.
+Fast is not the production default. It is the preview, optimizer-off, and
+fallback path, and the quality-parity track toward replacing GLPK once it
+matches constraint and preference results. Fast mode (`?planner=fast`, or
+optimizer off) uses two graph searches in `js/agenda-fast-graph.js`. Neither
+requires GLPK.
 
 `tryPlaceOnDay` enumerates every unforced allowed venue (and the anywhere
 option, when the habit allows it) and keeps the shared score pick. That is the
@@ -2092,11 +2101,16 @@ same feasible location set GLPK builds with `optimizerLocationVariants`. A
 single travel/preference pick used to drop short multi-location dailies when
 the nearest venue was closed.
 
-Within a day, weather guidance outranks ordinary ASAP and place/time
-preference so a relative "prefer lower rain" slot is not discarded for a wet
-morning. Travel, day-offset, scarce-window and order costs still compete with
-weather. Movables that can wait skip a much wetter day the same way GLPK's
-`weatherShouldDeferCandidate` does.
+Within a day, weather guidance outranks ordinary ASAP, place/time
+preference, and scarce-window overlap so a relative "prefer lower rain" slot is
+not discarded for a wet morning or a later scarce window. Travel, day-offset
+and order costs still compete with weather. The visual 📌 pin is display-only
+and never overrides weather or day choice; an untimed plan log is an almost-hard
+day lock (and a weather override on that day). Leftover plan entries after a
+completion do not keep the item on that day's agenda. A later catch-up plan
+does not erase a due/overdue miss whose window already closed. Movables that
+can wait skip a much wetter day the same way GLPK's `weatherShouldDeferCandidate`
+does.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked
@@ -2675,7 +2689,7 @@ Same agenda logic, but simplified display:
 #### Agenda Settings 👤
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `agendaOptimizer` | boolean | true | Use ILP optimizer. Off uses the Fast graph planner. |
+| `agendaOptimizer` | boolean | true | Use the production ILP optimizer. Off uses the Fast graph (preview / quality-parity track). |
 | `showScheduledTasksInAgenda` | boolean | true | Show event-timed tasks in agenda |
 | `showDueTasksInAgenda` | boolean | true | Show due-date tasks in agenda |
 | `showPlannedItemsInAgenda` | boolean | true | Show planned future logs |

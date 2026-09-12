@@ -762,7 +762,9 @@ function weatherRuleResult(rule,intervalSamples,context,start){
 
 function weatherCommitmentOverride(fill,state){
   if(!fill || !fill.h)return false;
-  if(fill.pinned === true || fill.h.pinned)return true;
+  if(fill.pinned === true)return true;
+  if(state && typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(fill.h,state.dayBase,state.settings))return true;
   if(typeof mustPlaceCriticalOccurrence === 'function' && mustPlaceCriticalOccurrence(fill))return true;
   if(typeof doingNowForDay === 'function'){
     const doing = doingNowForDay(state);
@@ -805,7 +807,7 @@ function weatherFitAssessment(fill,fit,state,settings){
     status:overridden ? 'override' : (hardFail ? 'blocked' : (failing.length ? 'caution' : 'good')),
     hardFail:hardFail && !overridden,
     // Weather guidance outranks ordinary ASAP/preference tie-breaking, while
-    // all critical/pinned/order guarantees remain hard constraints upstream.
+    // all planned/critical/order guarantees remain hard constraints upstream.
     penalty:results.reduce((sum,result)=>sum+result.penalty,0) * 10,
     summary,
     results
@@ -880,6 +882,8 @@ function weatherHabitHasActiveGuidance(h,settings){
 
 function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
   if(!candidate?.h || candidate.pinned===true)return false;
+  if(state && typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(candidate.h,state.dayBase,settings))return false;
   if(!settings || !settings._weatherContext || !weatherHabitHasActiveGuidance(candidate.h,settings))return false;
   if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate))return false;
   if(candidate.h.hid && typeof plannerOrderConstraintsForDay==='function'
@@ -913,8 +917,11 @@ function weatherConditionEmoji(status){
 
 function weatherStatusForRow(h,row,settings){
   if(!h || !row)return null;
-  const state = {dayBase:typeof dayStart === 'function' ? dayStart(row.start) : row.start, fills:[]};
-  return weatherFitAssessment({h,i:row.i,pinned:Boolean(h.pinned) || row.kind === 'scheduled'},
+  const dayBase = typeof dayStart === 'function' ? dayStart(row.start) : row.start;
+  const state = {dayBase,fills:[]};
+  const planned = row.kind === 'scheduled'
+    || (typeof fillIsPlannedOnDay === 'function' && fillIsPlannedOnDay(h,dayBase,settings));
+  return weatherFitAssessment({h,i:row.i,pinned:planned},
     {placeStart:row.start,placeEnd:row.end,locId:row.locationId,scheduleOptionId:row.scheduleOptionId},state,settings || sortSettings || loadSortSettings());
 }
 

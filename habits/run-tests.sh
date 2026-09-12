@@ -2,8 +2,10 @@
 
 # Tings test runner. The default "smart" matrix runs every regression test once
 # and repeats only tests whose rendered behavior genuinely depends on the page's
-# planner mode. Full child-process output is saved under test-results/; normal
-# terminal output stays deliberately compact for humans and coding agents.
+# planner mode. The live page defaults to GLPK (the production planner). Fast
+# graph is fallback, preview, and a quality-parity target — use --mode fast when
+# iterating on it. Full child-process output is saved under test-results/;
+# normal terminal output stays compact.
 
 PORT="${PORT:-4181}"
 MANIFEST="tests/test-suites.tsv"
@@ -47,7 +49,7 @@ Options:
 
 Examples:
   ./run-tests.sh                    # smart full regression matrix
-  ./run-tests.sh planner            # planner coverage, including both engines
+  ./run-tests.sh planner            # production GLPK page; Fast via page-both / --mode fast
   ./run-tests.sh ui data            # two focused suites
   ./run-tests.sh --changed          # suites affected by working-tree changes
   ./run-tests.sh planner --test '*deferral*'
@@ -237,6 +239,8 @@ while IFS=$'\t' read -r name suite policy; do
   esac
   case "$MODE" in
     smart)
+      # Production default is GLPK. Fast is a second pass only when the live
+      # page mode itself matters (page-both). Use --mode fast to isolate Fast.
       task_files+=("tests/$name"); task_suites+=("$suite"); task_modes+=("default")
       if [ "$policy" = "page-both" ]; then
         task_files+=("tests/$name"); task_suites+=("$suite"); task_modes+=("fast")

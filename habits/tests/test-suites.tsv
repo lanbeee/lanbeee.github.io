@@ -1,9 +1,9 @@
 # file	suite	mode
 #
 # mode controls the smart matrix used by ./run-tests.sh:
-#   once          run once on the default page (the test may call either/both engines)
-#   page-both     run on both the default and ?planner=fast pages
-#   default-only  skip when a forced-fast run would make the test meaningless
+#   once          run once on the production default page (GLPK)
+#   page-both     run on both pages (default/GLPK first, then Fast)
+#   default-only  GLPK page only; skipped by --mode fast
 agenda-optimizer-test.js	planner	default-only
 agenda-order-constraints-test.js	planner	once
 agenda-scenarios.js	planner	once

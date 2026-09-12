@@ -3,7 +3,7 @@
 // load failures use the bounded Fast graph in today-view / agenda-fast-graph.
 //
 // Lex objective across the week (hours first, then soft score):
-//   1. HARD CONSTRAINTS — capacity, blocks, windows, pinned items
+//   1. HARD CONSTRAINTS — capacity, blocks, windows, planned items
 //   2. MAXIMIZE PLACED HOURS / doability (week-holistic repair)
 //   3. MIN TRAVEL / cluster
 //   4. ASAP / HIGH-PRIORITY
@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v110';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v112';
 const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;

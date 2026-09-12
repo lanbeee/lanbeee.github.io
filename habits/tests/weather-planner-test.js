@@ -234,7 +234,15 @@ function assert(value,message){
     const hardProfiles=[{...profiles[0],rules:[{...profiles[0].rules[0],hard:true,relative:'none'}]}];
     const hardSettings={...settings,weatherProfiles:hardProfiles,_weatherContext:{...context,profiles:hardProfiles}};
     const blocked=pickBestScoredFit([fit(9)],fill,{...state,settings:hardSettings},{settings:hardSettings});
-    const pinned=pickBestScoredFit([fit(9)],{...fill,pinned:true},{...state,settings:hardSettings},{settings:hardSettings});
+    const planned=pickBestScoredFit([fit(9)],{...fill,pinned:true},{...state,settings:hardSettings},{settings:hardSettings});
+    const visualPin=pickBestScoredFit([fit(9)],{h:{...h,pinned:true},i:0,priority:3},
+      {...state,settings:hardSettings},{settings:hardSettings});
+    const plannedLog=pickBestScoredFit([fit(9)],{h:{...h,logs:[{ts:at(12),plan:true}]},i:0,priority:3},
+      {...state,settings:hardSettings},{settings:hardSettings});
+    const scarceChosen=pickBestScoredFit([fit(9),fit(15)],relativeFill,state,{
+      settings:relativeSettings,
+      spareWindows:[{start:at(15),end:at(17)}]
+    });
     const missingSettings={...settings,_weatherContext:null};
     const missing=pickBestScoredFit([fit(9)],fill,{...state,settings:missingSettings},{settings:missingSettings});
 
@@ -253,7 +261,10 @@ function assert(value,message){
       relativeHour:new Date(relativeChosen.placeStart).getHours(),
       evenHour:new Date(evenChosen.placeStart).getHours(),
       blocked:blocked===null,
-      pinnedStatus:pinned?.weather?.status,
+      plannedStatus:planned?.weather?.status,
+      visualPinBlocked:visualPin===null,
+      plannedLogStatus:plannedLog?.weather?.status,
+      scarceHour:new Date(scarceChosen.placeStart).getHours(),
       missing:Boolean(missing),
       nearOnly:nearRows.length===1 && nearRows[0].source==='near',
       normalized:normalizeWeatherProfiles([...profiles,...profiles,...profiles,...profiles,...profiles]).length,
@@ -266,7 +277,10 @@ function assert(value,message){
   assert(result.relativeHour===15,'prefer-lower rain outranks ASAP when bounds are unset');
   assert(result.evenHour===9,'equal weather still keeps the earlier slot');
   assert(result.blocked,'hard rule removes a flexible unsafe fit');
-  assert(result.pinnedStatus==='override','pinned commitment survives a hard weather rule');
+  assert(result.plannedStatus==='override','a planned commitment survives a hard weather rule');
+  assert(result.visualPinBlocked,'the visual pin is display-only and does not weather-override');
+  assert(result.plannedLogStatus==='override','an untimed plan log is a weather override');
+  assert(result.scarceHour===15,'prefer-lower rain outranks scarce-window overlap');
   assert(result.missing,'missing forecast fails open');
   assert(result.nearOnly,'near-term samples replace weekly samples in overlap');
   assert(result.normalized===4,'weather profiles are capped at four');
@@ -398,6 +412,60 @@ function assert(value,message){
   });
   assert(relativeDay.placed,'Fast still places a daily weather-guided walk');
   assert(relativeDay.hour===15,'Fast waits for the drier afternoon instead of packing a wet morning');
+
+  const plannedDay=await page.evaluate(async()=>{
+    const RealDate=Date;
+    const now=new RealDate();now.setHours(8,0,0,0);
+    function FrozenDate(...args){return args.length?new RealDate(...args):new RealDate(now.getTime());}
+    FrozenDate.now=()=>now.getTime();FrozenDate.parse=RealDate.parse;FrozenDate.UTC=RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);FrozenDate.prototype=RealDate.prototype;
+    globalThis.Date=FrozenDate;
+    try{
+      const today=dayStart(now.getTime());
+      const target=today+2*86400000;
+      const settings={...DEFAULT_SORT_SETTINGS,agendaOptimizer:false,showPlannedItemsInAgenda:true,
+        showDueTasksInAgenda:true,availabilityMinutes:[480,480,480,480,480,480,480],
+        blockedTimes:[{label:'night',days:[],start:0,end:540},{label:'night',days:[],start:1080,end:1440}]};
+      const planned=normalize([{name:'Planned Errand',type:'task',dueDate:today+5*86400000,eventTime:null,
+        durationMinutes:30,priority:3,earlyWindowDays:5,logs:[{ts:target+12*3600000,plan:true}],
+        locationIds:[],anywhereAllowed:true,createdAt:today-86400000,pinned:false}]);
+      const visual=normalize([{name:'Pinned Errand',type:'task',dueDate:today+5*86400000,eventTime:null,
+        durationMinutes:30,priority:3,earlyWindowDays:5,logs:[],pinned:true,
+        locationIds:[],anywhereAllowed:true,createdAt:today-86400000}]);
+      const leftover=normalize([{name:'Bath',type:'keepup',target:7,
+        logs:[today+7*3600000,{ts:today+12*3600000,plan:true}],
+        durationMinutes:20,priority:1,flexibilityDays:0,earlyWindowDays:0,delayAllowanceDays:0,
+        locationIds:[],anywhereAllowed:true,createdAt:today-8*86400000,pinned:false}]);
+      const offset=(week,name)=>{
+        for(let i=0;i<(week.days||[]).length;i+=1){
+          if((week.days[i].timeline||[]).some(row=>row.kind==='fill' && row.h?.name===name))return i;
+        }
+        return -1;
+      };
+      const fast=offset(buildWeekAgenda(planned,{...settings,agendaOptimizer:false},6,{fastGraph:true}),'Planned Errand');
+      const pinFast=offset(buildWeekAgenda(visual,{...settings,agendaOptimizer:false},6,{fastGraph:true}),'Pinned Errand');
+      const leftoverFast=offset(buildWeekAgenda(leftover,{...settings,agendaOptimizer:false},6,{fastGraph:true}),'Bath');
+      let glpk=-2;
+      try{glpk=offset(await buildWeekAgendaAsync(planned,{...settings,agendaOptimizer:true},6),'Planned Errand');}
+      catch(_){glpk=-2;}
+      return {
+        fast,
+        pinFast,
+        leftoverFast,
+        leftoverLock:plannerPinnedDayBase(leftover[0],settings,today),
+        glpk,
+        planLock:plannerPinnedDayBase(planned[0],settings,today)===target,
+        visualLock:plannerPinnedDayBase(visual[0],settings,today)
+      };
+    }finally{globalThis.Date=RealDate;}
+  });
+  assert(plannedDay.planLock,'an untimed plan log locks its calendar day');
+  assert(plannedDay.visualLock==null,'the visual pin does not lock a planner day');
+  assert(plannedDay.fast===2,'Fast places the planned item on its planned day, not ASAP today');
+  assert(plannedDay.pinFast===0,'a visually pinned item can still take an earlier eligible day');
+  assert(plannedDay.leftoverLock==null,'a leftover plan after a log does not lock the completed day');
+  assert(plannedDay.leftoverFast===-1,'a logged habit leaves the week despite leftover plan entries');
+  assert(plannedDay.glpk===2 || plannedDay.glpk===-2,'GLPK places the planned item on its planned day (or is unavailable)');
 
   const locationChoice=await page.evaluate(async()=>{
     const RealDate=Date;

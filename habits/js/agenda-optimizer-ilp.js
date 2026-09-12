@@ -1862,7 +1862,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     const dayCands = [];
     for(const c of candidates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
-      if(c.pinned && !state.isTodayDay)continue;
+      if(typeof candidateMatchesPinnedDay === 'function'
+        ? !candidateMatchesPinnedDay(c,state) : (c.pinned && !state.isTodayDay))continue;
       if(c.h && c.h.type === 'task' && oneShotPlaced.has(c.i))continue;
       const rhythmHabit = !!(c.h && c.h.type !== 'task'
         && Number.isFinite(Number(c.h && c.h.target)));
@@ -2231,7 +2232,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
       let rhythmPlacementCount = 0;
       for(const state of dayStates){
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
-        if(c.pinned && !state.isTodayDay)continue;
+        if(typeof candidateMatchesPinnedDay === 'function'
+        ? !candidateMatchesPinnedDay(c,state) : (c.pinned && !state.isTodayDay))continue;
         if(state.placed.has(c.i)){
           vLog = state.dayBase;
           rhythmPlacementCount += 1;
@@ -2366,12 +2368,18 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     if(seen.has(i))continue;
     const h = data[i];
     if(h.type === 'task' && h.eventTime !== null)continue;
-    const pinned = isWeekPinnedToday(h,settings);
+    const pinnedDay = typeof plannerPinnedDayBase === 'function'
+      ? plannerPinnedDayBase(h,settings,todayBase) : (isWeekPinnedToday(h,settings) ? todayBase : null);
+    const pinned = pinnedDay != null;
     const eligible = new Set();
     for(const day of days){
-      if(pinned && !day.isToday)continue;
-      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
-      if(isWeekCandidate(h,settings,day.dayBase,day.weekday) || (pinned && day.isToday)){
+      if(typeof weekFillEligibleOnDay === 'function'
+        ? weekFillEligibleOnDay(h,settings,day.dayBase,day.weekday,pinnedDay)
+        : ((pinnedDay == null || day.dayBase === pinnedDay)
+          && !(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))
+          && !(typeof completedOnDay === 'function' && completedOnDay(h,day.dayBase))
+          && (isWeekCandidate(h,settings,day.dayBase,day.weekday)
+            || (pinned && day.dayBase === pinnedDay)))){
         eligible.add(day.dayBase);
       }
     }
@@ -2391,7 +2399,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     if(!eligible.size && !hasSameDayLinks && !isSameDayAnchor)continue;
     seen.add(i);
     candidates.push({
-      h,i,pinned,
+      h,i,pinned,pinnedDay,
       priority:effectivePriority(h),
       score:attentionScore(h,i,settings),
       urgency:pinned ? Math.max(200,weekUrgency(h)) : weekUrgency(h),

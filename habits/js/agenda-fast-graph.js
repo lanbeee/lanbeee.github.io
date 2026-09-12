@@ -102,9 +102,8 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
         ).sort().join('|');
         if(seen.has(key))continue;
         seen.add(key);
-        // ASAP with travel charged in minutes. tryPlaceOnDay already applied
-        // weather/preference to each edge's clock; fold weather into the beam
-        // so a rearrangement cannot rank a wet packing above a dry one.
+        // Weather + travel rank rearrangements; uncapped ASAP is only a
+        // tie-break so a wet 9am cannot beat a dry afternoon.
         const contextCost = trial.fills.reduce((sum,entry)=>{
           const c = byIndex.get(entry.fill.i);
           const importance = 6 - Math.max(0,Math.min(5,Number(c && c.priority) || 0))
@@ -112,7 +111,6 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
           return sum + importance * (entry.fit.placeStart - trial.startClock) / 60000;
         },0);
         const cost = trial.fills.reduce((sum,entry)=>sum
-          + (entry.fit.placeEnd - trial.startClock) / 60000
           + (typeof weatherPenaltyForFit === 'function'
             ? weatherPenaltyForFit(entry.fill,entry.fit,trial,opts.settings) : 0),0)
           + dayTravelSecondsFromState(trial) / 60;
@@ -289,7 +287,7 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
       // Within-day clock pressure is smaller than a whole-day postponement.
       // Otherwise moving a late-afternoon item to tomorrow morning looks ASAP.
       const delay = (weights.day || 0) * flexAwareDayPenalty(c.h,
-        Math.round((state.dayBase-origin)/86400000),c.urgency,c.pinned)
+        Math.round((state.dayBase-origin)/86400000),c.urgency,c.pinned,c.pinnedDay,state.dayBase)
         + (weights.asap || 0) / 8 * (entry.fit.placeEnd-state.startClock)/3600000;
       // Splitting work must not multiply its completion/day cost.
       const portion = c.h.breakable ? duration / Math.max(1,Number(c.h.durationMinutes) || duration) : 1;

@@ -210,7 +210,7 @@ function homeAgendaRefinementQuality(week,data,settings){
         ? effectivePriority(h) : Math.max(0,Math.min(5,Number(h.priority) || 2));
       if(dayOffset === 0 && priority === 0 && h.breakable)p0BreakableMinutes += minutes;
       const pinned = typeof isWeekPinnedToday === 'function'
-        ? isWeekPinnedToday(h,settings || {}) : Boolean(h.pinned);
+        ? isWeekPinnedToday(h,settings || {}) : false;
       if((priority === 0 && !h.breakable) || pinned){
         const ordinal = (occurrenceOrdinals.get(row.i) || 0) + 1;
         occurrenceOrdinals.set(row.i,ordinal);
@@ -676,7 +676,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 16;
+const HOME_PLANNER_ALGORITHM_VERSION = 18;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.

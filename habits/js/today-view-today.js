@@ -29,12 +29,13 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     if(seen.has(i))continue;
     const h = data[i];
     if(h.type === 'task' && h.eventTime !== null)continue; // timed → scheduled rows
-    const pinned = isWeekPinnedToday(h,settings);
+    const pinnedDay = typeof plannerPinnedDayBase === 'function'
+      ? plannerPinnedDayBase(h,settings,todayBase,opts.fullToday ? {keepDueTodayForMissed:true} : null)
+      : (isWeekPinnedToday(h,settings) ? todayBase : null);
+    const pinned = pinnedDay != null;
     const eligible = new Set();
     for(const day of days){
-      if(pinned && !day.isToday)continue;
-      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
-      if(isWeekCandidate(h,settings,day.dayBase,day.weekday) || (pinned && day.isToday)){
+      if(weekFillEligibleOnDay(h,settings,day.dayBase,day.weekday,pinnedDay)){
         eligible.add(day.dayBase);
       }
     }
@@ -55,6 +56,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     candidates.push({
       h, i,
       pinned,
+      pinnedDay,
       priority:effectivePriority(h),
       score:attentionScore(h,i,settings),
       urgency:pinned ? Math.max(200,weekUrgency(h)) : weekUrgency(h),

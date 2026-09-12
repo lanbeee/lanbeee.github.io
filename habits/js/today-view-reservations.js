@@ -4,9 +4,14 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
-  // Untimed day pins store locationId on the plan log. That override wins over
+  // Untimed day plans store locationId on the plan log. That override wins over
   // reorder/pick defaults stamped onto the fill (preferred location, travel
   // clustering), since the user explicitly chose the place for this day.
+  // Visual habit.pinned is display-only; only a plan log locks the occurrence.
+  if(typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(fill.h,dayBase,opts.settings || state.settings)){
+    fill.pinned = true;
+  }
   if(typeof dayPlanLocationId === 'function'){
     const planLoc = dayPlanLocationId(fill.h,dateKey(dayBase));
     if(planLoc)fill.locationId = planLoc;

@@ -7,10 +7,13 @@ test twice. A normal full run is now:
 ./run-tests.sh
 ```
 
-Most tests run once. Planner parity/regression tests call both
-`buildWeekAgenda` and `buildWeekAgendaAsync` in the same browser session. Only
-tests tagged `page-both` in `tests/test-suites.tsv` are repeated with
-`?planner=fast`, because those tests verify behavior selected by the page URL.
+Most tests run once on the production default page (GLPK on). Fast graph is
+fallback, preview, and a quality-parity target — not the user-facing default
+until it can match GLPK on constraints and preferences. Tag a test `page-both`
+when the live page mode itself matters, or `default-only` when Fast must not
+run it. Use `--mode fast` to isolate Fast. Dual-engine helpers (`runPlannerPair`,
+`useGlpk` loops) still call `buildWeekAgenda` and `buildWeekAgendaAsync` in one
+session when the page is not Fast-only.
 
 ## Focused suites
 
@@ -22,8 +25,8 @@ tests tagged `page-both` in `tests/test-suites.tsv` are repeated with
 ./run-tests.sh ui data
 ```
 
-- `planner`: agenda packing, Fast/GLPK parity, breakables, links, capacity,
-  deferral, and worker/refinement behavior.
+- `planner`: production GLPK packing, plus Fast via `page-both` and `--mode fast`.
+  Breakables, links, capacity, deferral, worker/refinement.
 - `ui`: general rendering, sheets, navigation, gestures, and card behavior.
 - `data`: persistence, backups, normalization, retention, and blocked-time data.
 - `integrations`: calendars, locations/maps, prayer times, and offline behavior.
@@ -54,8 +57,9 @@ local iteration, not a substitute for the full matrix before a risky release.
 ./run-tests.sh --list
 ```
 
-`smart` is the default mode. A forced mode is useful for isolating a failure,
-but the planner suite in smart mode is the normal parity check. The legacy
+`smart` is the default mode and opens the production GLPK page. Use
+`--mode fast` for a Fast-only run that skips `default-only` files, or
+`--mode default` to force GLPK even for `page-both` files. The legacy
 `PLANNER_MODE=fast ./run-tests.sh` form still works as a forced-fast run.
 
 ## Output
