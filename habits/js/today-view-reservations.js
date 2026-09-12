@@ -388,6 +388,57 @@ function isMovableWeekCandidate(c,dayBase = dayStart(Date.now()),lastLogTs,compl
   return !mustPlaceOccurrenceByDay(c,dayBase,lastLogTs,completionOffset);
 }
 
+// PURE: Friday-only P0 (Juma) and other one-eligible-day criticals. Slack
+// daily prayers have many days and must not outrank a last-day 4h visit.
+function weekFillIsScarceCritical(c){
+  return typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(c)
+    && c && c.eligible && c.eligible.size <= 1;
+}
+
+// PURE: a one-shot non-breakable whose last on-time day (or weekday-clipped
+// last chance) falls in this week, plus untimed plan locks. Breakable tasks
+// still fill after daily seats so a Friday-due report cannot eat a whole day
+// before stretch. All due-this-week non-breakable tasks share this tier so
+// packing order among them stays scarcity/priority.
+function weekFillClaimsHorizonDay(c,dayStates){
+  if(!c || !c.h || c.h.breakable)return false;
+  if(c.pinned === true)return true;
+  if(c.h.type !== 'task')return false;
+  const states = Array.isArray(dayStates) ? dayStates : [];
+  if(!states.length)return false;
+  const lastOnTime = typeof candidateOccurrenceLastOnTimeDay === 'function'
+    ? candidateOccurrenceLastOnTimeDay(c) : null;
+  if(lastOnTime == null)return false;
+  const eligibleStates = states.filter(state=>state
+    && (!c.eligible || c.eligible.has(state.dayBase)));
+  if(!eligibleStates.length)return false;
+  const todayBase = states[0].dayBase;
+  if(lastOnTime < todayBase)return true;
+  return lastOnTime <= states[states.length - 1].dayBase
+    && eligibleStates.some(state=>state.dayBase <= lastOnTime);
+}
+
+// PURE: Fast assignment order. Scarce one-day P0 first, then planned/last-day
+// non-breakable tasks, then slack daily P0 (Zuhr can slide), then remaining pins.
+function compareWeekClaimPriority(a,b,dayStates){
+  const scarceA = weekFillIsScarceCritical(a);
+  const scarceB = weekFillIsScarceCritical(b);
+  if(scarceA !== scarceB)return scarceA ? -1 : 1;
+  const claimA = weekFillClaimsHorizonDay(a,dayStates);
+  const claimB = weekFillClaimsHorizonDay(b,dayStates);
+  if(claimA !== claimB)return claimA ? -1 : 1;
+  const criticalA = typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(a);
+  const criticalB = typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(b);
+  if(criticalA !== criticalB)return criticalA ? -1 : 1;
+  const pinA = a && a.pinned === true;
+  const pinB = b && b.pinned === true;
+  if(pinA !== pinB)return pinA ? -1 : 1;
+  return 0;
+}
+
 // PURE: may a last-day occurrence become a hard selection on this concrete
 // day without violating the daily-breakable policy? Due work claims ordinary
 // open time and protected-window spare. It may displace the reservation only

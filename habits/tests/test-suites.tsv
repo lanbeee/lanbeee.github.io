@@ -94,3 +94,4 @@ zz-pager-drag.js	diagnostics	once
 zz-scroll-cap.js	diagnostics	once
 zz-verify-scroll-guard.js	ui	once
 fast-graph-planner-test.js	planner	once
+last-day-due-pair-test.js	planner	once

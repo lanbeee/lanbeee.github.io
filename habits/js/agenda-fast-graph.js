@@ -237,7 +237,6 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
   const frozen = c=>frozenIds.has(c.i);
   const choices = candidates.filter(c=>isDayChoosingWeekCandidate(c)
     && c.eligible.size > 1 && !frozen(c));
-  if(!choices.length)return diagnostics;
   // Whole-week rebuilds are for recovering an unplaced day-choice, not for
   // retiming work that already has a feasible home. On a full backup the 24
   // rebuilds cost ~2s and accept nothing once venues are enumerated.
@@ -247,15 +246,16 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
       if(entry && entry.fill && entry.fill.i != null)placedIds.add(entry.fill.i);
     }
   }
+  const unplacedPinned = candidates.filter(c=>c && c.pinned && !placedIds.has(c.i));
   const unplacedChoices = choices.filter(c=>!placedIds.has(c.i));
-  if(!unplacedChoices.length)return diagnostics;
+  if(!unplacedChoices.length && !unplacedPinned.length)return diagnostics;
   // Residual whole-week rebuilds only run when a cheap insert/eject left a
   // day-choice unplaced. Eight evaluations keep a large week under a second.
   const maxEvaluations = Math.max(0,Math.min(8,options.maxEvaluations ?? 8));
   if(maxEvaluations <= 0)return diagnostics;
   const insertBudget = {remaining:192,searches:0,accepted:0};
   diagnostics.accepted += insertUnplacedFastGraphChoices(
-    unplacedChoices,candidates,states,settings,frozen,insertBudget);
+    unplacedPinned.concat(unplacedChoices),candidates,states,settings,frozen,insertBudget);
   const stillUnplaced = unplacedChoices.filter(c=>
     !states.some(state=>(state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i)));
   if(!stillUnplaced.length)return diagnostics;

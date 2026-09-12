@@ -2068,6 +2068,11 @@ function habitMatchesSequencingLocation(h, locId){
 // hard window that GLPK would keep via a later option (soft travel penalty).
 function sequencingAwayCanWait(awayC, atC, state){
   if(!awayC || !awayC.h || !state)return true;
+  // A plan-locked away item cannot wait behind at-location sequencing.
+  // Ordinary due-today tasks still can — that is the grocery-vs-lunch case.
+  if(awayC.pinned === true)return false;
+  if(typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(awayC.h,state.dayBase,state.settings))return false;
   const now = Number(state.startClock) || Date.now();
   const atDur = typeof clampDuration === 'function'
     ? clampDuration(atC && atC.h && atC.h.durationMinutes)

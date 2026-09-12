@@ -2106,24 +2106,29 @@ preference, and scarce-window overlap so a relative "prefer lower rain" slot is
 not discarded for a wet morning or a later scarce window. Travel, day-offset
 and order costs still compete with weather. The visual 📌 pin is display-only
 and never overrides weather or day choice; an untimed plan log is an almost-hard
-day lock (and a weather override on that day). Leftover plan entries after a
+day preference (and a weather override on that day). The last on-time day stays
+eligible, so a Saturday plan that cannot fit still has Sunday if that is the due
+date. Leftover plan entries after a
 completion do not keep the item on that day's agenda. A later catch-up plan
 does not erase a due/overdue miss whose window already closed. Movables that
 can wait skip a much wetter day the same way GLPK's `weatherShouldDeferCandidate`
-does.
+does. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
+planned/last-day tasks, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only contiguous 4h slot a due visit needs.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked
 insertion reopens up to seven placements and retains six alternative schedules
-per depth. Complete paths retain all existing occurrences. This search has a
-192-probe insertion limit and a 768-probe seed-week budget shared across the
-initial placement and location-clustering passes.
+per depth. Search has a 192-probe insertion limit and a 768-probe seed-week
+budget shared across the initial placement and location-clustering passes.
+Planned items also outrank at-location sequencing, so a Home lunch cannot claim
+the only contiguous 4h slot a Zoo plan needs.
 
 The **week graph compares complete schedules across the entire requested
-horizon**, but only after the seed left a day-choosing task or sparse rhythm
-unplaced. Each cheap edge inserts that leftover (rearranging the day, or
-ejecting one movable to another eligible day). Residual edges change the
-preferred first day of one candidate and rebuild the whole week. Eligibility
+horizon**, but only after the seed left a planned/pinned item or a day-choosing
+task or sparse rhythm unplaced. Each cheap edge inserts that
+leftover (rearranging the day, or ejecting one movable to another eligible
+day). Residual edges change the preferred first day of one candidate and rebuild the whole week. Eligibility
 sets are unchanged: the normal fitter, latest-day guard, cadence progression,
 reservations, split-work allocation, links and additional same-day occurrence
 pass all run again. Choosing a different first rhythm day can also change its
@@ -2175,7 +2180,10 @@ counters describe search work, not global optimality.
 `tests/fast-graph-planner-test.js` covers a two-move day chain, a five-task day
 where direct insertion fits four, a seven-task week where the day-local seed
 fits six, and a multi-location daily that still places when the nearest venue
-is closed. Packed weeks with no leftover day-choice skip the whole-week search.
+is closed. `tests/last-day-due-pair-test.js` covers two 4h tasks that share a
+due date: a Saturday plan claims Saturday, the other last-day visit takes
+Sunday, and a blocked Saturday plan still lands on the Sunday due date. Packed
+weeks with no leftover day-choice skip the whole-week search.
 It checks hard windows, day eligibility, unique one-shot tasks, determinism,
 rollback and exhausted budgets. The old scarcity repair also checks week-wide
 task uniqueness and sparse cadence before adding an occurrence.

@@ -197,18 +197,23 @@ shared primitive OR landing it in both engines.**
 The fast engine uses movables first (ASAP + reservation steering), breakables
 last, with `fastPathDefersMovable` as the gate. Weather-guided movables also
 use `weatherShouldDeferCandidate` so a much drier later day wins the same way
-GLPK drops today's option weight. Untimed plan logs lock a day-choosing
-occurrence to that calendar day; the visual pin does not. Skip completed days
+GLPK drops today's option weight. Untimed plan logs strongly prefer that
+calendar day; the visual pin does not. The last on-time day stays eligible, so
+a failed Saturday plan cannot drop a Sunday due date. Skip completed days
 when reading leftover plans, and do not let a future catch-up plan erase a
 due/overdue today miss during `fullToday` reconstruction. Blocked fixed
 insertions use `fastGraphPlacement`: bounded beam search over partial day
 schedules, reopening up to seven existing non-linked/non-breakable placements.
-Search is transactional and preserves all existing occurrences. `tryPlaceOnDay` enumerates unforced
-venues so Fast sees the same location set as GLPK. `improveFastGraphWeek` only
-searches when a day-choosing item is still unplaced: cheap insert/eject first,
+Keep-all search is transactional. Fast packs scarce one-day P0 (Juma) first, then
+planned/last-day tasks, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only 4h slot a due visit needs. `tryPlaceOnDay` enumerates unforced
+venues so Fast sees the same location set as GLPK. Planned items outrank
+at-location sequencing. `improveFastGraphWeek` searches when a planned/pinned
+item or a day-choosing leftover is still unplaced: cheap insert/eject first,
 then at most eight whole-week rebuilds. Packed weeks skip that search. See
-DOCUMENTATION.md §14.3 for the ranking, budgets and limitations. Shared
-eligibility and GLPK policy are unchanged.
+DOCUMENTATION.md §14.3 for the ranking, budgets and limitations. A failed plan
+day still leaves the last on-time day eligible in both engines; GLPK's ILP
+rows and weights are otherwise unchanged.
 
 ### 5.4 The reserve model (why movables don't starve breakables)
 

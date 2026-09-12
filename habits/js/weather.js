@@ -886,6 +886,8 @@ function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
     && fillIsPlannedOnDay(candidate.h,state.dayBase,settings))return false;
   if(!settings || !settings._weatherContext || !weatherHabitHasActiveGuidance(candidate.h,settings))return false;
   if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate))return false;
+  if(typeof mustPlaceOccurrenceByDay==='function'
+    && mustPlaceOccurrenceByDay(candidate,state && state.dayBase))return false;
   if(candidate.h.hid && typeof plannerOrderConstraintsForDay==='function'
     && plannerOrderConstraintsForDay(state.dayBase).some(edge=>edge && edge.adjacency==='direct'
       && (edge.beforeHid===candidate.h.hid || edge.afterHid===candidate.h.hid)))return false;

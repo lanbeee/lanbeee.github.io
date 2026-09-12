@@ -41,8 +41,9 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
   return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday };
 }
 
-// PURE: untimed plan logs (not the visual 📌 pin) lock a day-choosing
-// occurrence to that calendar day. Timed plans are hard scheduled rows.
+// PURE: untimed plan logs (not the visual 📌 pin) strongly prefer that
+// calendar day. Timed plans are hard scheduled rows. The last on-time day
+// stays eligible so a failed Saturday plan cannot drop a Sunday due date.
 function fillIsPlannedOnDay(h,dayBase,settings){
   if(!h || dayBase == null)return false;
   if(settings && settings.showPlannedItemsInAgenda === false)return false;
@@ -103,8 +104,18 @@ function plannerPinnedDayBase(h,settings,todayBase,opts){
   return best;
 }
 
+// PURE: a plan lock may also use the last on-time day. mustPlaceOccurrenceByDay
+// is true for every later catch-up day, which would reopen the rest of the week.
+function plannerPinnedAllowsDay(h,dayBase,pinnedDay){
+  if(pinnedDay == null || dayBase == null)return true;
+  if(Number(dayBase) === Number(pinnedDay))return true;
+  if(typeof candidateOccurrenceLastOnTimeDay !== 'function')return false;
+  const lastOnTime = candidateOccurrenceLastOnTimeDay({h});
+  return lastOnTime != null && Number(dayBase) === Number(lastOnTime);
+}
+
 function weekFillEligibleOnDay(h,settings,dayBase,weekday,pinnedDay){
-  if(pinnedDay != null && dayBase !== pinnedDay)return false;
+  if(pinnedDay != null && !plannerPinnedAllowsDay(h,dayBase,pinnedDay))return false;
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   return isWeekCandidate(h,settings,dayBase,weekday)
@@ -115,7 +126,11 @@ function candidateMatchesPinnedDay(c,state){
   if(!c || !c.pinned)return true;
   if(!state)return false;
   const pinDay = c.pinnedDay != null ? Number(c.pinnedDay) : null;
-  if(Number.isFinite(pinDay))return Number(state.dayBase) === pinDay;
+  if(Number.isFinite(pinDay)){
+    return typeof plannerPinnedAllowsDay === 'function'
+      ? plannerPinnedAllowsDay(c.h,state.dayBase,pinDay)
+      : Number(state.dayBase) === pinDay;
+  }
   return Boolean(state.isTodayDay);
 }
 
@@ -1031,9 +1046,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
     ? sequencingAwayCanWait(awayC, atC, dayStates[0])
     : true;
   const compareWeekPlacement = (a,b)=>{
-    const pinA = a.pinned === true;
-    const pinB = b.pinned === true;
-    if(pinA !== pinB)return pinA ? -1 : 1;
+    const claim = typeof compareWeekClaimPriority === 'function'
+      ? compareWeekClaimPriority(a,b,dayStates) : 0;
+    if(claim)return claim;
     const dailyA = typeof isIndependentDailyOccurrence === 'function'
       && isIndependentDailyOccurrence(a);
     const dailyB = typeof isIndependentDailyOccurrence === 'function'
@@ -1072,6 +1087,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
       const bh = b && b.h && b.h.hid;
       if(doing && ah === doing.hid && bh !== doing.hid)return -1;
       if(doing && bh === doing.hid && ah !== doing.hid)return 1;
+      const claim = typeof compareWeekClaimPriority === 'function'
+        ? compareWeekClaimPriority(a,b,dayStates) : 0;
+      if(claim)return claim;
       if(seqLoc){
         const la = a.atLiveLocation === true;
         const lb = b.atLiveLocation === true;
@@ -1081,9 +1099,6 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
           if(awayCanWait(awayC, atC))return la ? -1 : 1;
         }
       }
-      const criticalA = mustPlaceCriticalOccurrence(a);
-      const criticalB = mustPlaceCriticalOccurrence(b);
-      if(criticalA !== criticalB)return criticalA ? -1 : 1;
       const wa = beforeBoost.get(ah) || 0;
       const wb = beforeBoost.get(bh) || 0;
       if(wa !== wb)return wb - wa;
@@ -1109,11 +1124,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
   for(const state of dayStates){
     ordered = reorderAgendaItemsByOrderConstraints(ordered,state.dayBase);
   }
-  // Topological order normally puts predecessors first. A critical successor
-  // such as Friday-only Juma must claim its one window first; tryPlaceOnDay can
-  // then backfill Shower/Exercise before the committed successor via the order
-  // ceiling. Otherwise a flexible predecessor chain can greedily consume the
-  // only Juma window before Juma is attempted.
+  // Topological order normally puts predecessors first. A scarce one-day
+  // successor such as Friday-only Juma must claim its window first. Planned
+  // and last-day tasks then pack before slack daily P0 so earliest-clock Zuhr
+  // cannot fragment the only 4h slot a due visit needs.
   ordered.sort((a,b)=>{
     const ah = a && a.h && a.h.hid;
     const bh = b && b.h && b.h.hid;
@@ -1123,9 +1137,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
     const lockedA=typeof weatherLockedPlacement==='function' && weatherLockedPlacement(a,lockState,settings);
     const lockedB=typeof weatherLockedPlacement==='function' && weatherLockedPlacement(b,lockState,settings);
     if(Boolean(lockedA)!==Boolean(lockedB))return lockedA?-1:1;
-    const criticalA = mustPlaceCriticalOccurrence(a);
-    const criticalB = mustPlaceCriticalOccurrence(b);
-    if(criticalA !== criticalB)return criticalA ? -1 : 1;
+    const claim = typeof compareWeekClaimPriority === 'function'
+      ? compareWeekClaimPriority(a,b,dayStates) : 0;
+    if(claim)return claim;
     const aNeedsB = clusterFlexDependsOnCandidate(a,b);
     const bNeedsA = clusterFlexDependsOnCandidate(b,a);
     if(aNeedsB !== bNeedsA)return aNeedsB ? 1 : -1;
