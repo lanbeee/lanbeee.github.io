@@ -2413,6 +2413,7 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
   const earliest = fits.reduce((m,f)=>Math.min(m,f.placeStart),fits[0].placeStart);
   let best = null;
   let bestScore = Infinity;
+  let bestCore = Infinity;
   let bestTerms = null;
   for(const fit of fits){
     const weatherSettings=opts.settings || (state && state.settings) || (typeof sortSettings !== 'undefined' ? sortSettings : null);
@@ -2444,9 +2445,26 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       orderPenalty:orderConstraintPenalty(fill,fit,state)
     };
     const score = scoreAgendaPlacement(terms,weights);
+    // Weather guidance outranks ordinary ASAP/preference tie-breaking.
+    // Bound failures already swamp a 90-minute ASAP cap, but a relative
+    // "prefer lower rain" gap is only a few hundred points — Fast then kept
+    // 9am in the wet while GLPK still had the dry afternoon as its own
+    // start-clock option. Rank travel/day/scarce/weather/order first; use the
+    // full score (ASAP + place/time preference) only when that core ties.
+    const coreScore = scoreAgendaPlacement({
+      ...terms,asapDelayMin:0,preferencePenalty:0
+    },weights);
     fit.score = score;
+    fit.coreScore = coreScore;
     if(weather)fit.weather = weather;
-    if(score < bestScore){ bestScore = score; best = fit; bestTerms = terms; }
+    if(!best
+      || coreScore < bestCore - 1e-6
+      || (Math.abs(coreScore - bestCore) <= 1e-6 && score < bestScore)){
+      bestScore = score;
+      bestCore = coreScore;
+      best = fit;
+      bestTerms = terms;
+    }
   }
   // These values were already calculated to choose the fit. Keeping them only
   // on the winning option makes the on-demand day audit explain the decision
@@ -2458,6 +2476,8 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
 // PURE: attempt to place a fill into this day's open slots under hard
 // constraints — availability budget, blocked/scheduled slots, travel time,
 // location hours ∩ habit allowed window. Soft choice among feasible fits
-// uses the unified agenda score (ASAP, scarce-window overlap, preferences).
+// uses the unified agenda score. Weather guidance outranks ASAP and
+// place/time preference; travel, day, scarce overlap and order stay in the
+// core rank.
 // opts.spareWindows: scarce windows to penalize overlapping (soft).
 // opts.urgency / opts.weights / opts.settings: scoring context.

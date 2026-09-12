@@ -161,8 +161,9 @@ shared primitive OR landing it in both engines.**
   breakable may occupy; movables are capped in these via
   `movable_breakable_reserve` (aggregate spare, ILP) and `fastPathDefersMovable`.
 - **Fit**: a feasible `{placeStart, placeEnd, locId, score}` for one item on one
-  day. `tryPlaceOnDay` returns the single best (ASAP) fit; `listPlaceFitsOnDay`
-  enumerates many for GLPK.
+  day. `tryPlaceOnDay` returns the single best scored fit (weather guidance
+  outranks ASAP/preference; travel/day/scarce/order stay in the core rank);
+  `listPlaceFitsOnDay` enumerates many for GLPK.
 - **Scarcity** (`scoring.js`): a packed integer encoding how tight an item's
   windows are (feasible slots × slack). Drives priority/urgency.
 - **Order constraints** (`agenda-order.js`): schedule links / drag reorder →
@@ -189,7 +190,9 @@ shared primitive OR landing it in both engines.**
    proved before the time limit.
 
 The fast engine uses movables first (ASAP + reservation steering), breakables
-last, with `fastPathDefersMovable` as the gate. Blocked fixed insertions use
+last, with `fastPathDefersMovable` as the gate. Weather-guided movables also
+use `weatherShouldDeferCandidate` so a much drier later day wins the same way
+GLPK drops today's option weight. Blocked fixed insertions use
 `fastGraphPlacement`: bounded beam search over partial day schedules, reopening
 up to seven existing non-linked/non-breakable placements. Search is transactional
 and preserves all existing occurrences. `tryPlaceOnDay` enumerates unforced

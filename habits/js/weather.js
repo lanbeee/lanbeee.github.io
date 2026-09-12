@@ -850,8 +850,37 @@ function weatherBestPenaltyForDay(candidate,state,settings){
   return null;
 }
 
+function weatherHabitHasActiveGuidance(h,settings){
+  if(!h || !settings || typeof effectiveWeatherGuidance !== 'function')return false;
+  const active = guidance=>guidance && guidance.profile
+    && (guidance.profile.rules || []).some(weatherRuleActive);
+  const locIds = [];
+  const seenLoc = new Set();
+  const addLoc = id=>{
+    const key = id || '';
+    if(seenLoc.has(key))return;
+    seenLoc.add(key);
+    locIds.push(id || null);
+  };
+  addLoc(null);
+  if(h.weatherLocationId)addLoc(h.weatherLocationId);
+  for(const id of h.locationIds || [])addLoc(id);
+  for(const option of h.scheduleOptions || []){
+    if(option && option.locationId)addLoc(option.locationId);
+  }
+  const optionIds = (h.scheduleOptions || []).map(option=>option && option.id).filter(Boolean);
+  if(!optionIds.length)optionIds.push(null);
+  for(const scheduleOptionId of optionIds){
+    for(const locationId of locIds){
+      if(active(effectiveWeatherGuidance(h,locationId,settings,{scheduleOptionId})))return true;
+    }
+  }
+  return false;
+}
+
 function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
   if(!candidate?.h || candidate.pinned===true)return false;
+  if(!settings || !settings._weatherContext || !weatherHabitHasActiveGuidance(candidate.h,settings))return false;
   if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate))return false;
   if(candidate.h.hid && typeof plannerOrderConstraintsForDay==='function'
     && plannerOrderConstraintsForDay(state.dayBase).some(edge=>edge && edge.adjacency==='direct'

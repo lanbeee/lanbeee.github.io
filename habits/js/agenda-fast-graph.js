@@ -102,8 +102,9 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
         ).sort().join('|');
         if(seen.has(key))continue;
         seen.add(key);
-        // ASAP with travel charged in minutes. Existing priority/urgency and
-        // preferences still choose each feasible edge's time and location.
+        // ASAP with travel charged in minutes. tryPlaceOnDay already applied
+        // weather/preference to each edge's clock; fold weather into the beam
+        // so a rearrangement cannot rank a wet packing above a dry one.
         const contextCost = trial.fills.reduce((sum,entry)=>{
           const c = byIndex.get(entry.fill.i);
           const importance = 6 - Math.max(0,Math.min(5,Number(c && c.priority) || 0))
@@ -111,7 +112,9 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
           return sum + importance * (entry.fit.placeStart - trial.startClock) / 60000;
         },0);
         const cost = trial.fills.reduce((sum,entry)=>sum
-          + (entry.fit.placeEnd - trial.startClock) / 60000,0)
+          + (entry.fit.placeEnd - trial.startClock) / 60000
+          + (typeof weatherPenaltyForFit === 'function'
+            ? weatherPenaltyForFit(entry.fill,entry.fit,trial,opts.settings) : 0),0)
           + dayTravelSecondsFromState(trial) / 60;
         next.push({state:trial,pending:rest,cost,contextCost,key});
       }
@@ -156,6 +159,8 @@ function insertUnplacedFastGraphChoices(unplaced,candidates,states,settings,froz
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     for(const state of states){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(typeof weatherShouldDeferCandidate === 'function'
+        && weatherShouldDeferCandidate(c,state,settings,states))continue;
       if(typeof clusterFlexPartnerPlacedForDay === 'function'
         && !clusterFlexPartnerPlacedForDay(c,state))continue;
       const proposal = fastGraphPlacement(state,fill,{settings,allowNetwork:true},

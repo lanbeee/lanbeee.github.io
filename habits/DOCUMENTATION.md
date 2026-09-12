@@ -2092,6 +2092,12 @@ same feasible location set GLPK builds with `optimizerLocationVariants`. A
 single travel/preference pick used to drop short multi-location dailies when
 the nearest venue was closed.
 
+Within a day, weather guidance outranks ordinary ASAP and place/time
+preference so a relative "prefer lower rain" slot is not discarded for a wet
+morning. Travel, day-offset, scarce-window and order costs still compete with
+weather. Movables that can wait skip a much wetter day the same way GLPK's
+`weatherShouldDeferCandidate` does.
+
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked
 insertion reopens up to seven placements and retains six alternative schedules

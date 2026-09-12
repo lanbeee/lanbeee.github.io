@@ -213,6 +213,23 @@ function assert(value,message){
     const state={dayBase:base.getTime(),settings,fills:[],registry:[]};
     const fit=hour=>({placeStart:at(hour),placeEnd:at(hour)+1800000,edge:{seconds:0}});
     const chosen=pickBestScoredFit([fit(9),fit(15)],fill,state,{settings});
+    const relativeProfiles=[{id:'outdoor',name:'Outdoor',rules:[{
+      metric:'precipitation_probability',min:null,max:null,hard:false,relative:'low'
+    }]}];
+    const relativeSettings={...settings,weatherProfiles:relativeProfiles,
+      _weatherContext:{...context,profiles:relativeProfiles}};
+    const relativeFill={h:{...h,weatherProfileId:'outdoor'},i:0,priority:3};
+    const relativeChosen=pickBestScoredFit([fit(9),fit(15)],relativeFill,
+      {...state,settings:relativeSettings},{settings:relativeSettings});
+    const evenChosen=pickBestScoredFit([fit(9),fit(15)],relativeFill,{
+      ...state,settings:{...relativeSettings,_weatherContext:{...context,profiles:relativeProfiles,samples:[
+        {ts:at(9),precipitation_probability:20,source:'weekly'},
+        {ts:at(15),precipitation_probability:20,source:'weekly'}
+      ]}}
+    },{settings:{...relativeSettings,_weatherContext:{...context,profiles:relativeProfiles,samples:[
+      {ts:at(9),precipitation_probability:20,source:'weekly'},
+      {ts:at(15),precipitation_probability:20,source:'weekly'}
+    ]}}});
 
     const hardProfiles=[{...profiles[0],rules:[{...profiles[0].rules[0],hard:true,relative:'none'}]}];
     const hardSettings={...settings,weatherProfiles:hardProfiles,_weatherContext:{...context,profiles:hardProfiles}};
@@ -233,6 +250,8 @@ function assert(value,message){
     const keptInert=normalizeWeatherProfiles([{...inertProfile}]);
     return {
       softHour:new Date(chosen.placeStart).getHours(),
+      relativeHour:new Date(relativeChosen.placeStart).getHours(),
+      evenHour:new Date(evenChosen.placeStart).getHours(),
       blocked:blocked===null,
       pinnedStatus:pinned?.weather?.status,
       missing:Boolean(missing),
@@ -244,6 +263,8 @@ function assert(value,message){
   });
 
   assert(result.softHour===15,'soft profile prefers the dry interval over ASAP');
+  assert(result.relativeHour===15,'prefer-lower rain outranks ASAP when bounds are unset');
+  assert(result.evenHour===9,'equal weather still keeps the earlier slot');
   assert(result.blocked,'hard rule removes a flexible unsafe fit');
   assert(result.pinnedStatus==='override','pinned commitment survives a hard weather rule');
   assert(result.missing,'missing forecast fails open');
@@ -343,6 +364,40 @@ function assert(value,message){
   });
   assert(weekChoice.fast===1,'Fast uses the weekly forecast to choose the drier day');
   assert(weekChoice.glpk===1 || weekChoice.glpk===-2,'GLPK uses the weekly forecast to choose the drier day (or is unavailable)');
+
+  const relativeDay=await page.evaluate(()=>{
+    const RealDate=Date;
+    const now=new RealDate();now.setHours(8,0,0,0);
+    function FrozenDate(...args){return args.length?new RealDate(...args):new RealDate(now.getTime());}
+    FrozenDate.now=()=>now.getTime();FrozenDate.parse=RealDate.parse;FrozenDate.UTC=RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);FrozenDate.prototype=RealDate.prototype;
+    globalThis.Date=FrozenDate;
+    try{
+      const day0=new RealDate(now);day0.setHours(0,0,0,0);
+      const profile={id:'outdoor',name:'Outdoor',rules:[{
+        metric:'precipitation_probability',min:null,max:null,hard:false,relative:'low'
+      }]};
+      const samples=[];
+      for(let hour=9;hour<=17;hour+=1){
+        samples.push({ts:day0.getTime()+hour*3600000,
+          precipitation_probability:hour===15?10:80,source:'weekly'});
+      }
+      const settings={...DEFAULT_SORT_SETTINGS,preset:'todayFirst',showWeekOnHome:true,
+        agendaOptimizer:false,availabilityMinutes:[480,480,480,480,480,480,480],
+        blockedTimes:[{label:'night',days:[],start:0,end:540},{label:'night',days:[],start:1080,end:1440}],
+        weatherProfiles:[profile],_weatherContext:{profiles:[profile],
+          timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,samples,locks:[]}};
+      const data=normalize([{name:'Walk',type:'keepup',target:1,earlyWindowDays:0,delayAllowanceDays:0,
+        durationMinutes:30,priority:3,weatherProfileId:'outdoor',logs:[],
+        locationIds:[],anywhereAllowed:true,allowedWeekdays:[],allowedMonthDays:[],
+        preferredWeekdays:[],preferredMonthDays:[],createdAt:now.getTime()-86400000}]);
+      const week=buildWeekAgenda(data,settings,1,{fastGraph:true});
+      const row=(week.days?.[0]?.timeline || []).find(item=>item.kind==='fill' && item.h?.name==='Walk');
+      return {hour:row ? new RealDate(row.start).getHours() : -1, placed:Boolean(row)};
+    }finally{globalThis.Date=RealDate;}
+  });
+  assert(relativeDay.placed,'Fast still places a daily weather-guided walk');
+  assert(relativeDay.hour===15,'Fast waits for the drier afternoon instead of packing a wet morning');
 
   const locationChoice=await page.evaluate(async()=>{
     const RealDate=Date;

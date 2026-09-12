@@ -1165,6 +1165,8 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
           && fastPathDefersMovable(
             c,state,candidates,dayStates,occurrenceReference,rhythmPlacementCount
           ))continue;
+        if(!requiredCanClaim && typeof weatherShouldDeferCandidate === 'function'
+          && weatherShouldDeferCandidate(c,state,settings,dayStates))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const resWindows = (typeof dailyBreakableReservations === 'function'
