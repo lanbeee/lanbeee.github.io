@@ -925,7 +925,8 @@ function annotateAgendaOccurrenceKeys(candidates,dayStates){
     }
   }
 }
-function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints){
+function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,graphBudget,preferredDays){
+  graphBudget = graphBudget || {remaining:768,searches:0,accepted:0};
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
   const registry = dayStates[0] ? dayStates[0].registry : normalizeLocationRegistry(settings.locations);
   const mode = dayStates[0] ? dayStates[0].mode : normalizeTravelMode(settings.defaultTravelMode);
@@ -1106,9 +1107,15 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           }
           continue;
         }
-        const fit = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
-        if(!fit)continue;
-        commitPlacement(state,fill,fit);
+        const proposal = fastGraphPlacement(state,fill,{...dayOpts,allowNetwork:true},
+          candidates,dayStates,graphBudget);
+        if(!proposal)continue;
+        const fit = proposal.fit;
+        if(proposal.replacement){
+          applyPlacementState(state,proposal.replacement);
+          state.day.agendaItems = state.day.agendaItems.filter(item=>item.i !== fill.i);
+        }
+        else commitPlacement(state,fill,fit);
         state.day.agendaItems.push({
           h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity, locationId:fit.locId
         });
@@ -1127,6 +1134,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       let dueBest = null;
       let earlyBest = null;
       let requiredBest = null;
+      let preferredBest = null;
       const rawTarget = rhythmHabit
         ? Math.max(1,Number(c.h && c.h.target) || 7) : null;
       for(const state of dayStates){
@@ -1179,6 +1187,11 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           if(spare.length)dayOpts.spareWindows = spare;
         }
         const consider = (cand,withLink,linkBonus)=>{
+          // Week graph edges change the first feasible day choice, never the
+          // eligibility set, cadence progression or latest-day guard below.
+          if(rhythmPlacementCount === 0 && preferredDays
+            && preferredDays.get(c.i) === state.dayBase
+            && (!preferredBest || cand.score < preferredBest.score))preferredBest = cand;
           if(occurrenceRequired){
             if(!requiredBest
               || cand.state.dayBase < requiredBest.state.dayBase
@@ -1249,9 +1262,13 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           consider(earlyCand,true,linkDayBonus);
           continue;
         }
-        const fitProbe = tryPlaceOnDay(state,fill,{...dayOpts, allowNetwork:true});
-        if(!fitProbe)continue;
-        const travel = fitProbe.edge.seconds || 0;
+        const proposal = fastGraphPlacement(state,fill,{...dayOpts,allowNetwork:true},
+          candidates,dayStates,graphBudget);
+        if(!proposal)continue;
+        const fitProbe = proposal.fit;
+        const travel = proposal.replacement
+          ? Math.max(0,dayTravelSecondsFromState(proposal.replacement) - dayTravelSecondsFromState(state))
+          : (fitProbe.edge.seconds || 0);
         const clusterBonus = travel <= 0 ? 600 : Math.max(0, 600 - travel * 2);
         const coLocHint = colocateHintBonus(state,fitProbe.locId,c.i,locHints,registry,mode);
         const linkDayBonus = scheduleLinkDayBonus(c.h,state.dayBase,candidates);
@@ -1269,11 +1286,11 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           urgency:c.urgency
         };
         const dueCand = {
-          state, fill, fit:fitProbe,
+          state, fill, fit:fitProbe, replacement:proposal.replacement,
           score:scoreAgendaPlacement({...scoreTerms,clusterBonus},weights)
         };
         const earlyCand = {
-          state, fill, fit:fitProbe,
+          state, fill, fit:fitProbe, replacement:proposal.replacement,
           score:scoreAgendaPlacement({
             ...scoreTerms,clusterBonus:clusterBonus + linkDayBonus
           },weights)
@@ -1289,6 +1306,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
       }else{
         best = dueBest || earlyBest;
       }
+      if(preferredBest)best = preferredBest;
       // Required is a latest-day guard, not a preference to wait until that
       // day. Keep an earlier winning placement; only replace a missing or
       // impermissibly later choice with the first required-day fit.
@@ -1310,7 +1328,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints)
           totalAssigned += 1;
         }
       }else{
-        commitPlacement(best.state,best.fill,best.fit);
+        if(best.replacement){
+          applyPlacementState(best.state,best.replacement);
+          best.state.day.agendaItems = best.state.day.agendaItems.filter(item=>item.i !== best.fill.i);
+        }else commitPlacement(best.state,best.fill,best.fit);
         best.state.day.agendaItems.push({
           h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity, locationId:best.fit.locId
         });
@@ -2590,7 +2611,17 @@ function rebalanceScarcePlacements(candidates,dayStates,_settings,_locHints){
     for(const state of dayStates){
       if(attempts >= MAX_ATTEMPTS)break;
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
-      if(state.placed.has(c.i))continue;
+      if(c.h.breakable)continue; // dedicated chunk/budget passes own split work
+      if(c.pinned && !state.isTodayDay)continue;
+      if(!clusterFlexPartnerPlacedForDay(c,state))continue;
+      const existing = dayStates.filter(day=>day.fills.some(entry=>entry.fill.i === c.i));
+      if(existing.includes(state))continue;
+      if(c.h.type === 'task' && existing.length)continue;
+      if(c.h.type !== 'task' && Number(c.h.target) > 1 && existing.length){
+        const last = existing[existing.length-1];
+        if(state.dayBase <= last.dayBase || !rhythmEligibleOnDay(c.h,last.dayBase,
+          state.dayBase,state.weekday,existing.length))continue;
+      }
       const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
       const earlyFit = tryPlaceOnDay(state,fill);
       if(earlyFit){
@@ -2698,11 +2729,11 @@ function collectLocationHints(dayStates){
 // PURE: build a 7-day agenda via placement-backed assignment. Every timed row
 // on a day satisfied hard constraints at commit time.
 //
-// Two passes: (1) a greedy placement to discover where each location tends to
+// Two passes: (1) graph-backed placement to discover where each location tends to
 // land, then (2) a fresh placement biased toward days that sent a co-located
 // partner. The second pass is what makes two far-from-home but close-together
 // errands share one trip even when one errand is day-pinned and the flexible
 // one is processed first — a single greedy pass cannot see a partner that has
 // not been placed yet. Pass 2 reuses the same eligibility/priority/feasibility
-// gates, only the day-preference score changes, so nothing gets placed that
-// wouldn't have been placeable before.
+// gates. Each pass can reopen blocked insertions through fastGraphPlacement;
+// both passes share a deterministic search budget.

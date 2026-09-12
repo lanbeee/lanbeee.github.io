@@ -2081,6 +2081,71 @@ baseScore =
 
 ---
 
+### 14.3 Fast planner: bounded day and week graph search 👨‍💻
+
+Fast mode (`?planner=fast`, or optimizer off) uses two graph searches in
+`js/agenda-fast-graph.js`. Neither requires GLPK.
+
+The day graph contains partial schedules. Each edge inserts one occurrence
+through the shared hours, location, travel and ordering checks. A blocked
+insertion reopens up to seven placements and retains six alternative schedules
+per depth. Complete paths retain all existing occurrences. This search has a
+192-probe insertion limit and a 768-probe seed-week budget shared across the
+initial placement and location-clustering passes.
+
+The **week graph compares complete schedules across the entire requested
+horizon**. Each edge changes the preferred first day of one task or sparse
+rhythm, then rebuilds the whole week. Eligibility sets are unchanged: the normal
+fitter, latest-day guard, cadence progression, reservations, split-work allocation,
+links and additional same-day occurrence pass all run again. Choosing a different
+first rhythm day can also change its later occurrences. Location hints come from
+the parent week; scoring uses actual reconciled travel across all days.
+
+Week search retains three alternative weeks and explores up to three combined
+day choices, with eight evaluations per depth (24 complete-week evaluations
+maximum). Each rebuild has a separate 96-probe day-graph budget. Intermediate
+weeks may be worse or neutral; only a strictly improved complete result is
+published. The deterministic work budget does not depend on machine speed.
+
+A replacement must retain each previously placed task/sparse occurrence and
+its breakable minutes. Daily obligations retain their minutes/count on the same
+date. Pinned, linked, active and weather-locked rows retain their exact clocks
+and locations. The week ranking is lexicographic:
+
+1. More non-breakable occurrences.
+2. More scheduled work minutes.
+3. Lower total day-delay, within-day completion, travel and weather cost.
+4. Priority, urgency and location/time preferences as context tie-breakers.
+
+The third term uses existing directional day penalties, whole-week travel in
+minutes, and within-day completion delay in hours (scaled by `asap / 8`). The
+smaller within-day term prevents treating tomorrow morning as earlier than
+this afternoon. Existing day/travel/asap weights and weather guidance apply;
+preference weights apply to the context tie-breaker. These are explicit heuristic
+tradeoffs, not a claimed optimal objective. Location clustering helps by reducing
+actual travel; hypothetical clustering bonuses are not counted as saved travel.
+
+Direct week-search decisions currently cover non-breakable tasks and sparse
+rhythms. Breakable allocation is recomputed and evaluated as part of each whole
+week. Arbitrary linked-group moves and independent branching on every later
+rhythm occurrence are outside this bounded neighborhood. The beam can miss a
+better solution. Fast previews and whole-week fallbacks use this path; GLPK's
+own per-day heuristic fallback is unchanged.
+
+`buildWeekAgenda` returns `fastPlannerAlgorithm: 'bounded-state-graph'`,
+`fastGraphDiagnostics` for the seed day search, and `fastWeekGraphDiagnostics`
+with evaluated complete weeks, accepted improvements, reached depth and budget
+exhaustion. Accepted improvements may be superseded by a better branch. These
+counters describe search work, not global optimality.
+
+`tests/fast-graph-planner-test.js` covers a two-move day chain, a five-task day
+where direct insertion fits four, and a seven-task week where the day-local seed
+fits six. It checks hard windows, day eligibility, unique one-shot tasks,
+determinism, rollback and exhausted budgets. The old scarcity repair also checks
+week-wide task uniqueness and sparse cadence before adding an occurrence.
+
+---
+
 ## XV. MINIMAL MODE vs REGULAR MODE
 
 ### 15.1 Minimal Mode (Default for New Users) 👤

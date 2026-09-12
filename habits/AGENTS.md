@@ -97,6 +97,7 @@ own a clear area; jump to these first.
 |---|---|--:|---|
 | `js/data-*.js` | 50–939 each | Persistence (`tings_v2` key), normalization, eligibility, schedules, logs, backups, and planner state |
 | `js/today-view-{fits,reservations,week,today}.js` | 118–2329 each | **FAST planner engine**: fitting, reservations, week packing, and today rendering |
+| `js/agenda-fast-graph.js` | ~280 | Bounded day and whole-week graph search; shared feasibility checks |
 | `js/agenda-optimizer.js` + `agenda-optimizer-ilp.js` | 313 + 1624 | **GLPK ILP planner engine**: loader/worker entry, fits, constraints, and optimized week orchestration |
 | `js/list-view-{home,sections,planner,actions}.js` | 908–2513 each | Home/dashboard, day sections, background planning/cache, and card actions |
 | `js/main-{boot,input,runtime}.js` | 909–1364 each | Initialization/bindings, input sheets, timers/visibility/refresh loop |
@@ -138,7 +139,7 @@ windowStillDoableToday(habit, now)     today-view-* — can it still fit today?
 | Engine | File | Entry | When used | Placement order |
 |---|---|---|---|---|
 | **GLPK ILP optimizer** (default) | `agenda-optimizer*.js` | `buildWeekAgendaAsync` | `?planner=` not `fast`; tests `PLANNER_MODE=default` | fixed items first (ILP), daily breakables after, rescue pass, breakable gap-fill |
-| **Fast scarcity heuristic** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`; initial home "preview" | **movables first**, daily breakables last |
+| **Fast bounded graph planner** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`; initial home "preview" | **movables first**, daily breakables last |
 
 Both call the same primitives: `tryPlaceOnDay`, `auditFillFitInGap`,
 `freeSegmentsInWindow`, `commitPlacement`, `dailyBreakableReservations`,
@@ -187,8 +188,16 @@ shared primitive OR landing it in both engines.**
    infeasible/timeout-before-feasible), not merely because optimality was not
    proved before the time limit.
 
-The fast engine does the same intent but greedily: movables first (ASAP +
-reservation steering), breakables last, with `fastPathDefersMovable` as the gate.
+The fast engine uses movables first (ASAP + reservation steering), breakables
+last, with `fastPathDefersMovable` as the gate. Blocked fixed insertions use
+`fastGraphPlacement`: bounded beam search over partial day schedules, reopening
+up to seven existing non-linked/non-breakable placements. Search is transactional
+and preserves all existing occurrences. `improveFastGraphWeek` then searches
+complete weeks by changing first-day choices and rebuilding all days, including
+cadence and breakable allocation. Its three-wide beam explores up to three
+combined choices and 24 complete weeks; only improvements preserving incumbent
+obligations and frozen rows are published. See DOCUMENTATION.md §14.3 for the
+ranking, budgets and limitations. Shared eligibility and GLPK policy are unchanged.
 
 ### 5.4 The reserve model (why movables don't starve breakables)
 

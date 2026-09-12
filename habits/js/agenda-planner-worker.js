@@ -48,6 +48,7 @@ importScripts(
   './agenda-order.js',
   './today-view-fits.js',
   './today-view-reservations.js',
+  './agenda-fast-graph.js',
   './today-view-week.js',
   './today-view-today.js',
   './agenda-optimizer.js',

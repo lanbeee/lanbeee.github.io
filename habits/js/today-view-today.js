@@ -80,8 +80,10 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
 
-  // Pass 1 — greedy discovery of each location's natural day.
-  assignWeekCandidatesByPlacement(candidates,dayStates,settings,null);
+  const graphSeeds = dayStates.map(cloneFastGraphState);
+  const graphBudget = {remaining:768,searches:0,accepted:0};
+  // Pass 1 — graph placement discovery of each location's natural day.
+  assignWeekCandidatesByPlacement(candidates,dayStates,settings,null,graphBudget);
   const locHints = collectLocationHints(dayStates);
 
   // Pass 2 — re-place from clean states, pulled toward co-located partners.
@@ -95,10 +97,11 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   if(distinctLocs.size > 1){
     days.forEach(d=>{ d.agendaItems = []; });
     dayStates = makeStates();
-    assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints);
+    assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,graphBudget);
   }
 
   placeAdditionalSameDayOccurrences(candidates,dayStates,settings);
+  const weekGraphDiagnostics = improveFastGraphWeek(candidates,dayStates,graphSeeds,settings);
   annotateAgendaOccurrenceKeys(candidates,dayStates);
 
   let totalTravelSeconds = 0;
@@ -118,7 +121,11 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     totalTravelSeconds += day.travelSeconds;
   }
   if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
-  return { days, totalTravelSeconds, candidateCount:candidates.length };
+  return { days, totalTravelSeconds, candidateCount:candidates.length,
+    fastPlannerAlgorithm:'bounded-state-graph',
+    fastWeekGraphDiagnostics:weekGraphDiagnostics,
+    fastGraphDiagnostics:{searches:graphBudget.searches,accepted:graphBudget.accepted,
+      probes:768 - graphBudget.remaining,budgetExhausted:graphBudget.remaining === 0} };
 }
 
 // PURE: format a timestamp as a short clock label

@@ -1816,7 +1816,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
           : (solveStatus === 'fallback'
             ? 'GLPK requested; heuristic day fallback + complete-day route'
             : 'GLPK optimal fixed-item pack + complete-day route')))
-      : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner'))
+      : (week.fastPlannerAlgorithm === 'bounded-state-graph'
+        ? (plannerIsPreview ? 'fast graph preview/fallback' : 'fast bounded graph planner')
+        : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner')))
     : 'fast day planner';
   const placeNameById = new Map((settings && settings.locations || [])
     .filter(location=>location && location.id)
