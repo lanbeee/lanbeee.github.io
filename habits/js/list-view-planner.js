@@ -85,7 +85,7 @@ function homePlannerRuntimeState(week = _homeRenderedWeek){
     || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const exact = Boolean(settings && settings.agendaOptimizer)
     && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast());
-  if(!exact)return {state:'hidden',label:'',detail:'Fast planner selected',running:false};
+  if(!exact)return {state:'hidden',label:'',detail:'Fast graph planner selected',running:false};
   if(_optimizerHomeRequestKey){
     return {
       state:'planning',label:'planning',running:true,
@@ -676,7 +676,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 14;
+const HOME_PLANNER_ALGORITHM_VERSION = 15;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -1085,6 +1085,7 @@ function queueOptimizedHomeRender(data,opts){
       ? memoDaysFromWeek(sourceWeek)
       : []
   };
+  if(!exactMode)buildOpts.fastGraph = true;
   const optimizerBuild = typeof buildWeekAgendaOffMain === 'function'
     ? buildWeekAgendaOffMain(data,settings,7,exactMode ? 'exact' : 'fast',buildOpts)
     : buildWeekAgendaAsync(data,settings,7,buildOpts);
@@ -1346,7 +1347,7 @@ function renderHomeIfChanged(force,opts = {}){
       const token = ++_fastHomeRefreshToken;
       const requestedFingerprint = fp;
       const settingsSnapshot = {...settings};
-      void buildWeekAgendaOffMain(data,settingsSnapshot,7,'fast').then(week=>{
+      void buildWeekAgendaOffMain(data,settingsSnapshot,7,'fast',{fastGraph:true}).then(week=>{
         if(token !== _fastHomeRefreshToken || !week || !Array.isArray(week.days))return;
         const liveData = load();
         // A real edit/location update arrived while the worker was planning.

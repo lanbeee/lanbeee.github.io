@@ -199,11 +199,15 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const fastAfter = await page.evaluate(()=>({
     sameNode:window.__stableFastNode === document.querySelector('#list .swipe-row'),
     after:Number(window.__progressiveObs?.destructive || 0),
-    optimized:Boolean(_homeRenderedWeek?.optimized)
+    optimized:Boolean(_homeRenderedWeek?.optimized),
+    algorithm:_homeRenderedWeek && _homeRenderedWeek.fastPlannerAlgorithm
   }));
   check('fast identical background calculation keeps mounted cards',
     fastBefore.started && fastAfter.sameNode && fastAfter.after === fastBefore.before && !fastAfter.optimized,
     JSON.stringify({fastBefore,fastAfter}));
+  check('optimizer-off home uses the Fast graph planner',
+    fastAfter.algorithm === 'bounded-state-graph',
+    JSON.stringify({algorithm:fastAfter.algorithm}));
   await page.waitForFunction(()=>Boolean(
     typeof _homeRenderedWeek !== 'undefined'
     && _homeRenderedWeek?.days

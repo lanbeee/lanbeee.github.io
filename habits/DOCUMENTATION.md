@@ -715,7 +715,7 @@ showDueTasksInAgenda: boolean,         // Due date tasks in agenda
 showPlannedItemsInAgenda: boolean,     // Future planned logs in agenda
 showDueHabitsInAgenda: boolean,       // Habit due-rhythm items in agenda
 showWeekOnHome: boolean,             // Week plan strip on home
-agendaOptimizer: boolean,       // Use ILP planner
+agendaOptimizer: boolean,       // Use ILP planner (off = Fast graph)
 
 homeExtraMode: 'cards'|'cards12h'|'text12h',  // 👤 How blocked times appear on home
 reachAssist: boolean,           // 👤 Pull-down navigation enabled
@@ -2086,6 +2086,12 @@ baseScore =
 Fast mode (`?planner=fast`, or optimizer off) uses two graph searches in
 `js/agenda-fast-graph.js`. Neither requires GLPK.
 
+`tryPlaceOnDay` enumerates every unforced allowed venue (and the anywhere
+option, when the habit allows it) and keeps the shared score pick. That is the
+same feasible location set GLPK builds with `optimizerLocationVariants`. A
+single travel/preference pick used to drop short multi-location dailies when
+the nearest venue was closed.
+
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked
 insertion reopens up to seven placements and retains six alternative schedules
@@ -2094,18 +2100,24 @@ per depth. Complete paths retain all existing occurrences. This search has a
 initial placement and location-clustering passes.
 
 The **week graph compares complete schedules across the entire requested
-horizon**. Each edge changes the preferred first day of one task or sparse
-rhythm, then rebuilds the whole week. Eligibility sets are unchanged: the normal
-fitter, latest-day guard, cadence progression, reservations, split-work allocation,
-links and additional same-day occurrence pass all run again. Choosing a different
-first rhythm day can also change its later occurrences. Location hints come from
-the parent week; scoring uses actual reconciled travel across all days.
+horizon**, but only after the seed left a day-choosing task or sparse rhythm
+unplaced. Each cheap edge inserts that leftover (rearranging the day, or
+ejecting one movable to another eligible day). Residual edges change the
+preferred first day of one candidate and rebuild the whole week. Eligibility
+sets are unchanged: the normal fitter, latest-day guard, cadence progression,
+reservations, split-work allocation, links and additional same-day occurrence
+pass all run again. Choosing a different first rhythm day can also change its
+later occurrences. Location hints come from the parent week; scoring uses
+actual reconciled travel across all days.
 
 Week search retains three alternative weeks and explores up to three combined
-day choices, with eight evaluations per depth (24 complete-week evaluations
-maximum). Each rebuild has a separate 96-probe day-graph budget. Intermediate
-weeks may be worse or neutral; only a strictly improved complete result is
-published. The deterministic work budget does not depend on machine speed.
+day choices, with eight complete-week evaluations maximum on small leftover
+puzzles (16 or fewer week candidates). Each rebuild has a separate 48-probe
+day-graph budget. Packed weeks, and larger weeks whose cheap insert/eject
+pass could not place a leftover, skip the rebuild so a typical Fast plan stays
+under a second. Intermediate weeks may be worse or neutral; only a strictly
+improved complete result is published. The deterministic work budget does not
+depend on machine speed.
 
 A replacement must retain each previously placed task/sparse occurrence and
 its breakable minutes. Daily obligations retain their minutes/count on the same
@@ -2129,8 +2141,10 @@ Direct week-search decisions currently cover non-breakable tasks and sparse
 rhythms. Breakable allocation is recomputed and evaluated as part of each whole
 week. Arbitrary linked-group moves and independent branching on every later
 rhythm occurrence are outside this bounded neighborhood. The beam can miss a
-better solution. Fast previews and whole-week fallbacks use this path; GLPK's
-own per-day heuristic fallback is unchanged.
+better solution. Optimizer-off Home, `?planner=fast`, Fast previews, and
+whole-week fallbacks use this path; GLPK's own per-day heuristic fallback is
+unchanged. Worker and home-cache copies keep `fastPlannerAlgorithm` so the
+Day Agenda Audit still names the graph after the off-main round trip.
 
 `buildWeekAgenda` returns `fastPlannerAlgorithm: 'bounded-state-graph'`,
 `fastGraphDiagnostics` for the seed day search, and `fastWeekGraphDiagnostics`
@@ -2139,10 +2153,12 @@ exhaustion. Accepted improvements may be superseded by a better branch. These
 counters describe search work, not global optimality.
 
 `tests/fast-graph-planner-test.js` covers a two-move day chain, a five-task day
-where direct insertion fits four, and a seven-task week where the day-local seed
-fits six. It checks hard windows, day eligibility, unique one-shot tasks,
-determinism, rollback and exhausted budgets. The old scarcity repair also checks
-week-wide task uniqueness and sparse cadence before adding an occurrence.
+where direct insertion fits four, a seven-task week where the day-local seed
+fits six, and a multi-location daily that still places when the nearest venue
+is closed. Packed weeks with no leftover day-choice skip the whole-week search.
+It checks hard windows, day eligibility, unique one-shot tasks, determinism,
+rollback and exhausted budgets. The old scarcity repair also checks week-wide
+task uniqueness and sparse cadence before adding an occurrence.
 
 ---
 
@@ -2653,7 +2669,7 @@ Same agenda logic, but simplified display:
 #### Agenda Settings 👤
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `agendaOptimizer` | boolean | true | Use ILP optimizer |
+| `agendaOptimizer` | boolean | true | Use ILP optimizer. Off uses the Fast graph planner. |
 | `showScheduledTasksInAgenda` | boolean | true | Show event-timed tasks in agenda |
 | `showDueTasksInAgenda` | boolean | true | Show due-date tasks in agenda |
 | `showPlannedItemsInAgenda` | boolean | true | Show planned future logs |

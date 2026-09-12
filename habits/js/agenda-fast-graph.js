@@ -143,6 +143,77 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
   return null;
 }
 
+// Insert an unplaced day-choice without rebuilding the week from scratch.
+// Direct/graph insertion first; if the day is full, eject one movable to
+// another eligible day so the new item can claim the gap.
+function insertUnplacedFastGraphChoices(unplaced,candidates,states,settings,frozen,budget){
+  let accepted = 0;
+  const byIndex = new Map(candidates.map(c=>[c.i,c]));
+  const placed = (idx)=>states.some(state=>(state.fills || [])
+    .some(entry=>entry && entry.fill && entry.fill.i === idx));
+  for(const c of unplaced){
+    if(!c || placed(c.i))continue;
+    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    for(const state of states){
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(typeof clusterFlexPartnerPlacedForDay === 'function'
+        && !clusterFlexPartnerPlacedForDay(c,state))continue;
+      const proposal = fastGraphPlacement(state,fill,{settings,allowNetwork:true},
+        candidates,states,budget);
+      if(!proposal)continue;
+      if(proposal.replacement)applyPlacementState(state,proposal.replacement);
+      else commitPlacement(state,fill,proposal.fit);
+      state.day.agendaItems.push({
+        h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,locationId:proposal.fit.locId
+      });
+      accepted += 1;
+      break;
+    }
+    if(placed(c.i) || typeof rebuildDayFromFills !== 'function')continue;
+    let parked = false;
+    for(const state of states){
+      if(parked)break;
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      const victims = (state.fills || []).filter(entry=>{
+        const vc = byIndex.get(entry && entry.fill && entry.fill.i);
+        return vc && !frozen(vc) && typeof isMovableWeekCandidate === 'function'
+          && isMovableWeekCandidate(vc,state.dayBase);
+      }).slice(0,4);
+      for(const victim of victims){
+        const vc = byIndex.get(victim.fill.i);
+        if(!vc)continue;
+        const keep = (state.fills || []).filter(entry=>entry !== victim).map(entry=>({
+          h:entry.fill.h,i:entry.fill.i,priority:entry.fill.priority,scarcity:entry.fill.scarcity
+        }));
+        const rebuilt = rebuildDayFromFills(state,keep,candidates,{settings,allowNetwork:true});
+        if(!rebuilt)continue;
+        const uFit = tryPlaceOnDay(rebuilt,fill,{settings,allowNetwork:true});
+        if(!uFit)continue;
+        commitPlacement(rebuilt,fill,uFit);
+        const vFill = {h:vc.h,i:vc.i,priority:vc.priority,scarcity:vc.scarcity};
+        for(const other of states){
+          if(other === state)continue;
+          if(vc.eligible && !vc.eligible.has(other.dayBase))continue;
+          if(other.placed && other.placed.has(vc.i))continue;
+          const vFit = tryPlaceOnDay(other,vFill,{settings,allowNetwork:true});
+          if(!vFit)continue;
+          applyPlacementState(state,rebuilt);
+          if(typeof syncDayAgendaItemsFromFills === 'function')syncDayAgendaItemsFromFills(state);
+          commitPlacement(other,vFill,vFit);
+          other.day.agendaItems.push({
+            h:vc.h,i:vc.i,priority:vc.priority,scarcity:vc.scarcity,locationId:vFit.locId
+          });
+          accepted += 1;
+          parked = true;
+          break;
+        }
+        if(parked)break;
+      }
+    }
+  }
+  return accepted;
+}
+
 // Week graph: vertices are complete feasible weeks plus a set of day-choice
 // decisions. An edge changes one candidate's first day and rebuilds the WHOLE
 // week, including cadence, links, reservations, splits and travel. A small beam
@@ -164,6 +235,30 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
   const choices = candidates.filter(c=>isDayChoosingWeekCandidate(c)
     && c.eligible.size > 1 && !frozen(c));
   if(!choices.length)return diagnostics;
+  // Whole-week rebuilds are for recovering an unplaced day-choice, not for
+  // retiming work that already has a feasible home. On a full backup the 24
+  // rebuilds cost ~2s and accept nothing once venues are enumerated.
+  const placedIds = new Set();
+  for(const state of states){
+    for(const entry of state.fills || []){
+      if(entry && entry.fill && entry.fill.i != null)placedIds.add(entry.fill.i);
+    }
+  }
+  const unplacedChoices = choices.filter(c=>!placedIds.has(c.i));
+  if(!unplacedChoices.length)return diagnostics;
+  // Residual whole-week rebuilds only run when a cheap insert/eject left a
+  // day-choice unplaced. Eight evaluations keep a large week under a second.
+  const maxEvaluations = Math.max(0,Math.min(8,options.maxEvaluations ?? 8));
+  if(maxEvaluations <= 0)return diagnostics;
+  const insertBudget = {remaining:192,searches:0,accepted:0};
+  diagnostics.accepted += insertUnplacedFastGraphChoices(
+    unplacedChoices,candidates,states,settings,frozen,insertBudget);
+  const stillUnplaced = unplacedChoices.filter(c=>
+    !states.some(state=>(state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i)));
+  if(!stillUnplaced.length)return diagnostics;
+  // Full-week rebuilds recover tight crafted puzzles. On a real-sized week they
+  // replay the whole horizon and still miss infeasible leftovers; skip them.
+  if(candidates.length > 16)return diagnostics;
   const origin = states[0].dayBase;
   const weights = resolveAgendaScoreWeights(settings);
   const summarize = week=>{
@@ -210,9 +305,6 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
   let best = {states,summary:baseline,decisions:new Map()};
   let frontier = [best];
   const seen = new Set(['']);
-  // Fixed work budget: three layers, eight whole-week evaluations per layer.
-  // Rebuilds use their own 96-probe day repair budget, independent of the seed.
-  const maxEvaluations = Math.max(0,Math.min(24,options.maxEvaluations ?? 24));
   const maxDepth = Math.max(0,Math.min(3,options.maxDepth ?? 3));
   for(let depth=0;depth<maxDepth && diagnostics.evaluated<maxEvaluations;depth++){
     const next = [];
@@ -248,7 +340,7 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
         const trial = seeds.map(cloneFastGraphState);
         const trialCandidates = candidates.map(c=>({...c,eligible:new Set(c.eligible)}));
         assignWeekCandidatesByPlacement(trialCandidates,trial,settings,collectLocationHints(branch.node.states),
-          {remaining:96,searches:0,accepted:0},decisions);
+          {remaining:48,searches:0,accepted:0},decisions);
         placeAdditionalSameDayOccurrences(trialCandidates,trial,settings);
         const summary = summarize(trial);
         const node = {states:trial,summary,decisions,candidates:trialCandidates};

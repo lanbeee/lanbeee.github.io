@@ -80,8 +80,13 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
 
-  const graphSeeds = dayStates.map(cloneFastGraphState);
-  const graphBudget = {remaining:768,searches:0,accepted:0};
+  // Main-thread callers (missed-item projection, some audits) only need a
+  // feasible hid/day map. Skip the Fast week-graph search during render: even
+  // the cheap leftover pass is wasted work for a hid-per-day expectation map.
+  const useFastGraph = opts.fastGraph !== false;
+  const graphSeedBudget = useFastGraph ? 768 : 0;
+  const graphSeeds = useFastGraph ? dayStates.map(cloneFastGraphState) : [];
+  const graphBudget = {remaining:graphSeedBudget,searches:0,accepted:0};
   // Pass 1 — graph placement discovery of each location's natural day.
   assignWeekCandidatesByPlacement(candidates,dayStates,settings,null,graphBudget);
   const locHints = collectLocationHints(dayStates);
@@ -101,7 +106,9 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   }
 
   placeAdditionalSameDayOccurrences(candidates,dayStates,settings);
-  const weekGraphDiagnostics = improveFastGraphWeek(candidates,dayStates,graphSeeds,settings);
+  const weekGraphDiagnostics = useFastGraph
+    ? improveFastGraphWeek(candidates,dayStates,graphSeeds,settings)
+    : {evaluated:0,accepted:0,depth:0,budgetExhausted:false};
   annotateAgendaOccurrenceKeys(candidates,dayStates);
 
   let totalTravelSeconds = 0;
@@ -125,7 +132,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     fastPlannerAlgorithm:'bounded-state-graph',
     fastWeekGraphDiagnostics:weekGraphDiagnostics,
     fastGraphDiagnostics:{searches:graphBudget.searches,accepted:graphBudget.accepted,
-      probes:768 - graphBudget.remaining,budgetExhausted:graphBudget.remaining === 0} };
+      probes:graphSeedBudget - graphBudget.remaining,budgetExhausted:useFastGraph && graphBudget.remaining === 0} };
 }
 
 // PURE: format a timestamp as a short clock label

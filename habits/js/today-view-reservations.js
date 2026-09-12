@@ -44,6 +44,26 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const hasForcedLocation = hasLocationProperty
     && fill.locationId !== undefined
     && (fill.locationId !== null || anywhereToday || (!optionMode && !candidateLocIds.length));
+  // GLPK enumerates every allowed venue as its own option. Fast used to commit
+  // a single travel/preference pick even when that venue was closed, which
+  // dropped short multi-location dailies. Try each unforced location and keep
+  // the shared score pick so both engines see the same feasible set.
+  if(!hasForcedLocation && !fill._locationEnumBound){
+    const locChoices = [];
+    if(anywhereToday)locChoices.push(null);
+    for(const id of candidateLocIds){
+      if(id && !locChoices.includes(id))locChoices.push(id);
+    }
+    if(locChoices.length > 1){
+      const locationFits = [];
+      for(const locationId of locChoices){
+        const variant = Object.assign({},fill,{_locationEnumBound:true,locationId});
+        const fit = tryPlaceOnDay(state,variant,opts);
+        if(fit)locationFits.push(fit);
+      }
+      return locationFits.length ? pickBestScoredFit(locationFits,fill,state,opts) : null;
+    }
+  }
   const resolveLoc = (anchor)=>hasForcedLocation
     ? fill.locationId
     : pickHabitLocationId(fill.h,anchor,registry,mode,dayBase);

@@ -582,7 +582,11 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       criticalMustPlace:optSrc.includes('mustPlaceCriticalOccurrence(candidate)')
         && todaySrc.includes('function mustPlaceCriticalOccurrence'),
       noInterimUnordered:listSrc.includes('function showHomeAgendaLoading')
-        && listSrc.includes('showHomeAgendaLoading();')
+        && listSrc.includes('showHomeAgendaLoading();'),
+      fastGraphOffMain:workerSrc.includes('fastGraph:true')
+        && optSrc.includes('fastPlannerAlgorithm:week.fastPlannerAlgorithm')
+        && listSrc.includes("exactMode ? 'exact' : 'fast'")
+        && listSrc.includes('buildOpts.fastGraph = true')
     };
   })();
   check('source contracts: persisted revision, memo date, warm timeout, settingsSig, rehydrate',
@@ -601,7 +605,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.nativeSolveLimit
       && sourceContracts.backgroundRefinement
       && sourceContracts.criticalMustPlace
-      && sourceContracts.noInterimUnordered,
+      && sourceContracts.noInterimUnordered
+      && sourceContracts.fastGraphOffMain,
     JSON.stringify(sourceContracts));
 
   const refinementPolicy = await page.evaluate(()=>{
@@ -871,7 +876,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       }],
       totalTravelSeconds:0,
       candidateCount:1,
-      optimized:false
+      optimized:false,
+      fastPlannerAlgorithm:'bounded-state-graph',
+      fastGraphDiagnostics:{searches:1,accepted:0,probes:2,budgetExhausted:false},
+      fastWeekGraphDiagnostics:{evaluated:0,accepted:0,depth:0,budgetExhausted:false}
     };
     const leanLive = leanAgendaWeek(week);
     const leanRows = (leanLive.days[0].timeline || []).filter(row=>row && row.i != null);
@@ -899,7 +907,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       named,
       exportNames,
       fallbackNames,
-      rowCount:leanRows.length
+      rowCount:leanRows.length,
+      keptFastGraph:leanLive.fastPlannerAlgorithm === 'bounded-state-graph'
+        && leanLive.fastGraphDiagnostics && leanLive.fastGraphDiagnostics.searches === 1
+        && leanLive.fastWeekGraphDiagnostics && leanLive.fastWeekGraphDiagnostics.evaluated === 0
     };
   });
   check('lean week strips h; rehydrate and export data[i] fallback keep names',
@@ -907,7 +918,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && leanRehydrate.stripped
       && leanRehydrate.named
       && leanRehydrate.exportNames
-      && leanRehydrate.fallbackNames,
+      && leanRehydrate.fallbackNames
+      && leanRehydrate.keptFastGraph,
     JSON.stringify(leanRehydrate));
 
   const freshCacheGate = await page.evaluate(async()=>{

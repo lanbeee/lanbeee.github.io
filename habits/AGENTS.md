@@ -139,7 +139,7 @@ windowStillDoableToday(habit, now)     today-view-* — can it still fit today?
 | Engine | File | Entry | When used | Placement order |
 |---|---|---|---|---|
 | **GLPK ILP optimizer** (default) | `agenda-optimizer*.js` | `buildWeekAgendaAsync` | `?planner=` not `fast`; tests `PLANNER_MODE=default` | fixed items first (ILP), daily breakables after, rescue pass, breakable gap-fill |
-| **Fast bounded graph planner** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`; initial home "preview" | **movables first**, daily breakables last |
+| **Fast bounded graph planner** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`, optimizer off, GLPK fallback/preview | **movables first**, daily breakables last |
 
 Both call the same primitives: `tryPlaceOnDay`, `auditFillFitInGap`,
 `freeSegmentsInWindow`, `commitPlacement`, `dailyBreakableReservations`,
@@ -192,12 +192,12 @@ The fast engine uses movables first (ASAP + reservation steering), breakables
 last, with `fastPathDefersMovable` as the gate. Blocked fixed insertions use
 `fastGraphPlacement`: bounded beam search over partial day schedules, reopening
 up to seven existing non-linked/non-breakable placements. Search is transactional
-and preserves all existing occurrences. `improveFastGraphWeek` then searches
-complete weeks by changing first-day choices and rebuilding all days, including
-cadence and breakable allocation. Its three-wide beam explores up to three
-combined choices and 24 complete weeks; only improvements preserving incumbent
-obligations and frozen rows are published. See DOCUMENTATION.md §14.3 for the
-ranking, budgets and limitations. Shared eligibility and GLPK policy are unchanged.
+and preserves all existing occurrences. `tryPlaceOnDay` enumerates unforced
+venues so Fast sees the same location set as GLPK. `improveFastGraphWeek` only
+searches when a day-choosing item is still unplaced: cheap insert/eject first,
+then at most eight whole-week rebuilds. Packed weeks skip that search. See
+DOCUMENTATION.md §14.3 for the ranking, budgets and limitations. Shared
+eligibility and GLPK policy are unchanged.
 
 ### 5.4 The reserve model (why movables don't starve breakables)
 

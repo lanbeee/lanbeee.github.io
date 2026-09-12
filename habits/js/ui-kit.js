@@ -149,7 +149,7 @@ const UI_SETTING_TOGGLES = {
     {key:'prayerIslamicNames', title:'Islamic prayer names', hint:'Show Fajr, Dhuhr, Asr, Maghrib, Isha instead of Dawn, Noon, Afternoon, Sunset, Night.'}
   ],
   advanced:[
-    {key:'agendaOptimizer', title:'smarter packing', hint:'Takes longer, but packs tight days better and protects items with fewer open slots. Off = faster, simpler packing.'}
+    {key:'agendaOptimizer', title:'smarter packing', hint:'Takes longer, but packs tight days better and protects items with fewer open slots. Off = fast graph packing, usually under a second.'}
   ]
 };
 

@@ -1,6 +1,6 @@
 // Agenda option packer (ILP via GLPK). It is the default week-planning path and
-// lazy-loads on demand; the scarcity heuristic in today-view.js is the explicit
-// off-mode and the timeout/error fallback.
+// lazy-loads on demand. Optimizer off, `?planner=fast`, timeouts, and GLPK
+// load failures use the bounded Fast graph in today-view / agenda-fast-graph.
 //
 // Lex objective across the week (hours first, then soft score):
 //   1. HARD CONSTRAINTS — capacity, blocks, windows, pinned items
@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v106';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v109';
 const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;
@@ -195,6 +195,9 @@ function leanAgendaWeek(week){
     plannerSolveStatus:week.plannerSolveStatus,
     plannerDiagnostics:week.plannerDiagnostics,
     refined:Boolean(week.refined),
+    fastPlannerAlgorithm:week.fastPlannerAlgorithm || '',
+    fastGraphDiagnostics:week.fastGraphDiagnostics || null,
+    fastWeekGraphDiagnostics:week.fastWeekGraphDiagnostics || null,
     __lean:true
   };
 }

@@ -137,7 +137,7 @@ const {chromium,BASE,baseHabit,openEveningSettings} = require('./helpers/planner
     assert(holistic.legal,'whole-week result respects hours, weekdays, duration, early/deadline window and non-overlap');
     assert.deepStrictEqual(holistic.result,holistic.repeat,'whole-week graph is deterministic');
     assert.deepStrictEqual(holistic.seed,holistic.exhausted,'zero week-search budget preserves seed');
-    assert(holistic.diagnostics.evaluated<=24 && holistic.diagnostics.depth<=3,'whole-week search is bounded');
+    assert(holistic.diagnostics.evaluated<=8 && holistic.diagnostics.depth<=3,'whole-week search is bounded');
     const cadence = await page.evaluate(({base,settings})=>{
       const RealDate = Date;
       const now = new RealDate(2026,8,14,9).getTime();
@@ -165,6 +165,102 @@ const {chromium,BASE,baseHabit,openEveningSettings} = require('./helpers/planner
     assert(cadence.every(day=>day.filter(row=>row[0]===2).reduce((sum,row)=>sum+row[1],0)===60),
       'whole-week search retains the breakable budget on each day');
     console.log(`Week graph: 6 → 7 tasks, ${holistic.diagnostics.evaluated} complete weeks, ${holistic.elapsed.toFixed(1)}ms`);
+    const altVenue = await page.evaluate(({base})=>{
+      const RealDate = Date;
+      const now = new RealDate(2026,8,14,9).getTime();
+      globalThis.Date = class extends RealDate {
+        constructor(...args){super(...(args.length ? args : [now]));}
+        static now(){return now;}
+      };
+      try{
+        const locSettings = {
+          preset:'todayFirst', showWeekOnHome:true, agendaOptimizer:false, focus:'balanced',
+          availabilityMinutes:[1440,1440,1440,1440,1440,1440,1440], availabilityOverrides:{},
+          showScheduledTasksInAgenda:true, showDueTasksInAgenda:true,
+          showPlannedItemsInAgenda:true, showDueHabitsInAgenda:true,
+          defaultTravelMode:'walking',
+          blockedTimes:[
+            {label:'night',days:[],start:0,end:540},
+            {label:'end',days:[],start:720,end:1440}
+          ],
+          locations:[
+            {id:'near',name:'Near',lat:40.700,lng:-74.000,allowedTimeStart:540,allowedTimeEnd:720,closedDays:[1]},
+            {id:'far',name:'Far',lat:40.701,lng:-74.001,allowedTimeStart:540,allowedTimeEnd:720}
+          ]
+        };
+        const data = [{
+          ...base,hid:'multi-loc',name:'multi-loc',type:'keepup',target:1,priority:0,
+          durationMinutes:10,locationIds:['near','far'],anywhereAllowed:false
+        }];
+        const week = buildWeekAgenda(data,locSettings,1);
+        const fills = week.days[0].timeline.filter(row=>row.kind === 'fill');
+        return {count:fills.length, loc:fills[0] && fills[0].locationId};
+      }finally{globalThis.Date=RealDate;}
+    },{base:baseHabit({})});
+    assert.strictEqual(altVenue.count,1,'closed nearest venue still places via an open alternative');
+    assert.strictEqual(altVenue.loc,'far','open alternative venue is selected');
+    const missedPaint = await page.evaluate(({base,settings})=>{
+      const RealDate = Date;
+      const now = new RealDate(2026,8,14,9).getTime();
+      globalThis.Date = class extends RealDate {
+        constructor(...args){super(...(args.length ? args : [now]));}
+        static now(){return now;}
+      };
+      const graph = improveFastGraphWeek;
+      let weekGraphCalls = 0;
+      improveFastGraphWeek = (...args)=>{
+        weekGraphCalls += 1;
+        return graph(...args);
+      };
+      try{
+        const data = Array.from({length:8},(_,i)=>({
+          ...base,hid:`missed-${i}`,name:`missed-${i}`,type:'task',target:null,
+          dueDate:dayStart(now)+86400000,earlyWindowDays:1,durationMinutes:30,
+          allowedTimeStart:540,allowedTimeEnd:720,priority:2
+        }));
+        const projection = computePlannerExpectationMap(data,settings,7);
+        const skipped = buildWeekAgenda(data,settings,7,{fastGraph:false});
+        return {
+          weekGraphCalls,
+          hidCount:Object.values(projection).reduce((n,hids)=>n+(hids?hids.length:0),0),
+          skippedEvaluated:skipped.fastWeekGraphDiagnostics && skipped.fastWeekGraphDiagnostics.evaluated
+        };
+      }finally{globalThis.Date=RealDate;improveFastGraphWeek=graph;}
+    },{base:baseHabit({}),settings});
+    assert.strictEqual(missedPaint.weekGraphCalls,0,
+      'missed-item projection must not run the week-graph search on the UI thread');
+    assert.strictEqual(missedPaint.skippedEvaluated,0,'fastGraph:false skips whole-week search');
+    assert(missedPaint.hidCount>=0,'projection still returns a hid map');
+    const offMain = await page.evaluate(async({base,settings})=>{
+      const RealDate = Date;
+      const now = new RealDate(2026,8,14,9).getTime();
+      globalThis.Date = class extends RealDate {
+        constructor(...args){super(...(args.length ? args : [now]));}
+        static now(){return now;}
+      };
+      try{
+        const data = [{
+          ...base,hid:'off-main',name:'off-main',type:'task',target:null,
+          dueDate:dayStart(now),durationMinutes:30,allowedTimeStart:540,allowedTimeEnd:720
+        }];
+        const sync = buildWeekAgenda(data,{...settings,agendaOptimizer:false},7);
+        const lean = typeof leanAgendaWeek === 'function' ? leanAgendaWeek(sync) : null;
+        let worker = null;
+        if(typeof buildWeekAgendaOffMain === 'function'){
+          worker = await buildWeekAgendaOffMain(data,{...settings,agendaOptimizer:false},7,'fast');
+        }
+        return {
+          syncAlgo:sync.fastPlannerAlgorithm,
+          leanAlgo:lean && lean.fastPlannerAlgorithm,
+          workerAlgo:worker && worker.fastPlannerAlgorithm,
+          workerOptimized:Boolean(worker && worker.optimized)
+        };
+      }finally{globalThis.Date=RealDate;}
+    },{base:baseHabit({}),settings});
+    assert.strictEqual(offMain.syncAlgo,'bounded-state-graph','optimizer-off sync week uses the Fast graph');
+    assert.strictEqual(offMain.leanAlgo,'bounded-state-graph','lean cache keeps Fast graph provenance');
+    assert.strictEqual(offMain.workerAlgo,'bounded-state-graph','optimizer-off worker week uses the Fast graph');
+    assert.strictEqual(offMain.workerOptimized,false,'optimizer-off worker is not marked as GLPK');
     console.log('PASS day and week graphs: recovery, hard windows, uniqueness, determinism and exhausted budgets');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
