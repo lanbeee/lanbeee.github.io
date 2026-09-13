@@ -24,7 +24,10 @@
           </div>
         </div>
         <div class="agenda-side">
-          <time class="agenda-clock" id="agenda-clock" aria-label="Current time"></time>
+          <div class="agenda-clock-block">
+            <time class="agenda-clock" id="agenda-clock" aria-label="Current time"></time>
+            <p class="agenda-weather" id="agenda-weather" hidden></p>
+          </div>
           <div class="agenda-heading-actions">
             <button type="button" class="agenda-hide" id="agenda-hide" aria-label="Hide the agenda behind a night clock">
               <span aria-hidden="true">◐</span>
@@ -65,6 +68,13 @@
                 <button type="button" id="agenda-fit-plus" aria-label="Reduce vertical squash">+</button>
               </div>
             </div>
+            <div class="agenda-menu-row">
+              <span class="agenda-menu-label">privacy</span>
+              <div class="agenda-menu-options" role="group" aria-label="Agenda passcode">
+                <button type="button" id="agenda-passcode-set">add 4-digit passcode</button>
+                <button type="button" id="agenda-passcode-remove" hidden>remove</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -93,6 +103,24 @@
     <div class="agenda-wallpaper-clock">
       <time id="agenda-wallpaper-time"></time>
       <p id="agenda-wallpaper-date"></p>
+    </div>
+  </section>
+  <section class="agenda-passcode-modal" id="agenda-passcode-modal" role="dialog" aria-modal="true" aria-labelledby="agenda-passcode-title" hidden>
+    <div class="agenda-passcode-card">
+      <h2 id="agenda-passcode-title">Unlock agenda</h2>
+      <p id="agenda-passcode-status">Enter the 4-digit passcode.</p>
+      <label>
+        <span id="agenda-passcode-input-label">Passcode</span>
+        <input id="agenda-passcode-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-describedby="agenda-passcode-status" />
+      </label>
+      <label id="agenda-passcode-confirm-row" hidden>
+        <span>Confirm passcode</span>
+        <input id="agenda-passcode-confirm" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" />
+      </label>
+      <div class="agenda-passcode-actions">
+        <button type="button" id="agenda-passcode-cancel">cancel</button>
+        <button type="button" class="is-primary" id="agenda-passcode-submit">unlock</button>
+      </div>
     </div>
   </section>
   <script src="./js/agenda-display-boot.js"></script>

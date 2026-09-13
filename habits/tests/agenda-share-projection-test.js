@@ -65,9 +65,26 @@ function assert(cond,msg){
       ]
     };
     const feed = { feedId:'abcd'.repeat(8),title:'Family',lastRevision:3,scopeMode:'count',scopeValue:10 };
-    const projection = buildHouseholdAgendaProjection(week,{ feed,data,now,dayCount:7 });
-    const maxProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeValue:50 },data,now,dayCount:2 });
-    const hourProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeMode:'hours',scopeValue:2 },data,now,dayCount:2 });
+    const quietSettings = {
+      blockedTimes:[],locations:[],homeExtraMode:'cards',minimalMode:false,
+      showWeatherOnTravel:false,showWeatherOnBusyTimes:false,
+      homeCityName:'',homeCityLat:null,homeCityLng:null
+    };
+    const projection = buildHouseholdAgendaProjection(week,{ feed,data,now,dayCount:7,settings:quietSettings });
+    const maxProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeValue:50 },data,now,dayCount:2,settings:quietSettings });
+    const hourProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeMode:'hours',scopeValue:2 },data,now,dayCount:2,settings:quietSettings });
+    const labeledWeek = {
+      optimized:true,plannerSolveStatus:'optimal',days:[{
+        dayBase,dayKey:dateKey(dayBase),weekday:new Date(dayBase).getDay(),isToday:true,
+        usedMinutes:45,remainingMinutes:0,
+        timeline:[
+          { kind:'blocked',start:now + 20 * 60000,end:now + 50 * 60000,label:'Deep Work Session Project Alpha' },
+          { kind:'travel',start:now + 50 * 60000,end:now + 60 * 60000,fromName:'Home',toName:'Clinic' },
+          { kind:'scheduled',start:now + 60 * 60000,end:now + 90 * 60000,h:{ ...active },i:0 }
+        ]
+      }]
+    };
+    const labeledProjection = buildHouseholdAgendaProjection(labeledWeek,{ feed:{ ...feed,scopeValue:10 },data,now,settings:quietSettings });
     const json = JSON.stringify(projection);
     const firstItem = projection.days.flatMap(day=>day.rows).find(row=>row.kind === 'item');
     const viewOnlyItem = projection.days.flatMap(day=>day.rows).find(row=>row.title === 'Extra 1');
@@ -98,6 +115,7 @@ function assert(cond,msg){
       itemCount:projection.days.flatMap(day=>day.rows).filter(row=>row.kind === 'item').length,
       maxRows:maxProjection.days.reduce((sum,day)=>sum + day.rows.length,0),
       hourTitles:hourProjection.days.flatMap(day=>day.rows.map(row=>row.title)),
+      labeledTitles:labeledProjection.days.flatMap(day=>day.rows.map(row=>row.title)),
       json,provenance:projection.plannerProvenance,
       rowMapCount:Object.keys(projection._rowMap || {}).length,
       mappedHid:firstItem && projection._rowMap[firstItem.rowId] && projection._rowMap[firstItem.rowId].hid,
@@ -123,6 +141,8 @@ function assert(cond,msg){
   assert(!result.titles.includes('Already logged'),'fresh logs remove a stale completed planner row');
   assert(!result.titles.includes('Private appointment'),'an item-level privacy switch removes the item from the shared display');
   assert(!result.hourTitles.some(title=>title.startsWith('Extra')),'hours-ahead scope excludes later activity');
+  assert(result.labeledTitles.includes('Deep Work Session Project Alpha'),'busy times keep their labels on the shared display');
+  assert(result.labeledTitles.includes('Travel'),'travel rows stay in the published snapshot');
   assert(!result.json.includes('active-hid') && !result.json.includes('completed-hid'),'omits local habit ids');
   assert(result.rowMapCount > 0 && result.mappedHid === 'active-hid' && result.completable,'keeps the completion target only in the owner-side non-enumerable row map');
   assert(result.viewOnlyCompletable === false && !result.viewOnlyMapped,'view-only items are visible without a completion target or capability');
@@ -133,6 +153,86 @@ function assert(cond,msg){
   assert(result.crypto.transferMatches,'ECDH transfers the content key to the exact display key');
   assert(result.crypto.wrongDisplayRejected,'a different display private key cannot decrypt the transfer');
   assert(result.crypto.rawCredentialHidden,'display device credential is represented to the Worker only by its hash');
+
+  const weatherShare = await page.evaluate(() => {
+    const now = Date.now();
+    const dayBase = dayStart(now);
+    const walk = {
+      name:'Park walk',emoji:'🚶',hid:'walk-hid',type:'keepup',target:1,logs:[],
+      lastLog:null,breakable:false,durationMinutes:30,locationIds:['park'],
+      showWeather:true,showWeatherAtLocation:true
+    };
+    const quiet = {
+      name:'Desk stretch',emoji:'🧘',hid:'desk-hid',type:'keepup',target:1,logs:[],
+      lastLog:null,breakable:false,durationMinutes:15,locationIds:[],showWeather:false
+    };
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const sample = (ts,apparent,code)=>({
+      ts,temperature_2m:apparent,apparent_temperature:apparent,precipitation_probability:5,
+      precipitation:0,snowfall:0,wind_speed_10m:6,weather_code:code,source:'weekly'
+    });
+    const homeSamples = [-1,0,1,2].map(hour=>sample(now + hour * 3600000,18,0));
+    const parkSamples = [-1,0,1,2].map(hour=>sample(now + hour * 3600000,12,61));
+    const settings = {
+      ...DEFAULT_SORT_SETTINGS,
+      blockedTimes:[],
+      locations:[
+        { id:'home',name:'Home',lat:40.7128,lng:-74.006 },
+        { id:'park',name:'Park',lat:40.7829,lng:-73.9654 }
+      ],
+      homeExtraMode:'cards',minimalMode:false,weatherTempUnit:'c',
+      showWeatherOnTravel:true,showWeatherOnBusyTimes:true,
+      homeCityName:'New York',homeCityLat:40.7128,homeCityLng:-74.006,
+      _weatherContext:{
+        timezone:tz,weeklyFetchedAt:now - 60000,samples:homeSamples,days:[],
+        places:{ park:{ timezone:tz,weeklyFetchedAt:now - 60000,samples:parkSamples,days:[] } }
+      }
+    };
+    const week = {
+      optimized:false,days:[{
+        dayBase,dayKey:dateKey(dayBase),weekday:new Date(dayBase).getDay(),isToday:true,
+        usedMinutes:45,remainingMinutes:0,
+        timeline:[
+          { kind:'blocked',start:now + 30 * 60000,end:now + 75 * 60000,label:'Focus block',locationId:'home' },
+          { kind:'travel',start:now + 80 * 60000,end:now + 90 * 60000,fromName:'Home',toName:'Park',to:'park' },
+          { kind:'scheduled',start:now + 90 * 60000,end:now + 120 * 60000,h:walk,locationId:'park' },
+          { kind:'scheduled',start:now + 150 * 60000,end:now + 165 * 60000,h:quiet }
+        ]
+      }]
+    };
+    const feed = { feedId:'abcd'.repeat(8),title:'Family',lastRevision:1,scopeMode:'count',scopeValue:20 };
+    const projection = buildHouseholdAgendaProjection(week,{ feed,data:[walk,quiet],now,settings });
+    const json = JSON.stringify(projection);
+    const rows = projection.days.flatMap(day=>day.rows);
+    const busy = rows.find(row=>row.kind === 'busy');
+    const travel = rows.find(row=>row.kind === 'travel');
+    const walkRow = rows.find(row=>row.title === 'Park walk');
+    const quietRow = rows.find(row=>row.title === 'Desk stretch');
+    return {
+      json,
+      city:projection.currentWeather && projection.currentWeather.city,
+      currentEmoji:projection.currentWeather && projection.currentWeather.emoji,
+      currentTemp:projection.currentWeather && projection.currentWeather.temperature,
+      busyTitle:busy && busy.title,
+      busyLocation:busy && busy.locationLabel,
+      busyWeather:busy && busy.weather,
+      travelWeather:travel && travel.weather,
+      walkWeather:walkRow && walkRow.weather,
+      quietWeather:quietRow && quietRow.weather || null,
+      leakedCoords:/homeCityLat|homeCityLng|"lat"|"lng"|40\.7128|-74\.006|40\.7829|-73\.9654/.test(json),
+      leakedLocationId:/"locationId"/.test(json) || json.includes('walk-hid')
+    };
+  });
+  assert(weatherShare.city === 'New York' && weatherShare.currentEmoji && weatherShare.currentTemp,
+    `home-city current feels-like and condition emoji are published beside the clock (${JSON.stringify({city:weatherShare.city,emoji:weatherShare.currentEmoji,temp:weatherShare.currentTemp})})`);
+  assert(weatherShare.busyTitle === 'Focus block' && weatherShare.busyLocation === 'Home',
+    'busy times and their location names appear on the shared display');
+  assert(weatherShare.busyWeather && weatherShare.busyWeather.emoji && weatherShare.busyWeather.temperature,
+    'busy times that opt into weather receive the same emoji + feels-like cue');
+  assert(weatherShare.travelWeather && weatherShare.walkWeather && !weatherShare.quietWeather,
+    'travel and weather-opted items get interval weather; items that did not opt in stay plain');
+  assert(!weatherShare.leakedCoords && !weatherShare.leakedLocationId,
+    'the snapshot never includes coordinates, location ids, or habit ids');
 
   let createRequestBody = null;
   await page.route('**/v1/agendas',async route=>{
@@ -162,7 +262,8 @@ function assert(cond,msg){
   let completionGate = null;
   let completionResponseStatus = 201;
   let displayAuthorized = true;
-  let displayPaused = false;
+  let displayWaiting = false;
+  let displayAccessRevokes = 0;
   const workerUrl = await page.evaluate(()=>shareWorkerBaseUrl());
 
   await displayPage.route(`${workerUrl}/v1/agenda-pairings`,async route=>{
@@ -191,8 +292,9 @@ function assert(cond,msg){
       return;
     }
     route.fulfill({ status:200,contentType:'application/json',headers:{ ETag:'"1"' },body:JSON.stringify({
-      id:ownerFeed.feedId,status:'active',paused:displayPaused,revision:1,
-      sessionExpiresAt:Date.now() + 30 * 86400000,snapshot:publishedSnapshot,
+      id:ownerFeed.feedId,status:'active',revision:1,
+      sessionExpiresAt:Date.now() + 30 * 86400000,snapshot:displayWaiting ? null : publishedSnapshot,
+      pairingId:pairingRequest && pairingRequest.pairingId || null,
       completions:serverCompletions.map(envelope=>({ createdAt:Date.now(),envelope }))
     }) });
   });
@@ -208,6 +310,11 @@ function assert(cond,msg){
       rowId:completionRequest.completion.logId,
       createdAt:Date.now()
     }) });
+  });
+  await displayPage.route(`${workerUrl}/v1/agendas/${ownerFeed.feedId}/display-access`,route=>{
+    displayAccessRevokes += 1;
+    displayAuthorized = false;
+    route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({ revoked:true }) });
   });
   await displayPage.goto(new URL('agenda-display.html',baseUrl).href,{ waitUntil:'load' });
   await displayPage.waitForFunction(()=>document.getElementById('agenda-pair-code')?.textContent.length === 9);
@@ -235,12 +342,12 @@ function assert(cond,msg){
     if(route.request().method() === 'PUT'){
       publishedSnapshot = route.request().postDataJSON().snapshot;
       route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
-        id:ownerFeed.feedId,status:'active',paused:false,revision:publishedSnapshot.revision
+        id:ownerFeed.feedId,status:'active',revision:publishedSnapshot.revision
       }) });
       return;
     }
     route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
-      id:ownerFeed.feedId,status:'active',paused:false,revision:0,snapshot:null,sessionExpiresAt:null
+      id:ownerFeed.feedId,status:'active',revision:0,snapshot:null,sessionExpiresAt:null
     }) });
   });
 
@@ -316,6 +423,10 @@ function assert(cond,msg){
   await page.evaluate(() => {
     const now = Date.now();
     const base = dayStart(now);
+    const tomorrow = new Date(base);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowBase = tomorrow.getTime();
+    saveSortSettings({ ...loadSortSettings(), blockedTimes:[] });
     weekSnapshotForExport = () => ({ optimized:false,days:[{
       dayBase:base,dayKey:dateKey(base),isToday:true,usedMinutes:30,remainingMinutes:0,
       timeline:[
@@ -330,6 +441,16 @@ function assert(cond,msg){
         }},
         { kind:'scheduled',start:now + 6 * 3600000,end:now + 6 * 3600000 + 1800000,h:{
           name:'Stretch back',emoji:'🧘',hid:'stretch',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
+        }}
+      ]
+    },{
+      dayBase:tomorrowBase,dayKey:dateKey(tomorrowBase),isToday:false,usedMinutes:60,remainingMinutes:0,
+      timeline:[
+        { kind:'scheduled',start:tomorrowBase + 10 * 3600000,end:tomorrowBase + 10.5 * 3600000,h:{
+          name:'Pack tomorrow',emoji:'🎒',hid:'pack',type:'task',logs:[],lastLog:null,breakable:false,locationIds:[]
+        }},
+        { kind:'scheduled',start:tomorrowBase + 11 * 3600000,end:tomorrowBase + 11.5 * 3600000,h:{
+          name:'Tomorrow rhythm',emoji:'🔁',hid:'rhythm',type:'keepup',target:1,logs:[],breakable:false,locationIds:[]
         }}
       ]
     }] });
@@ -352,12 +473,61 @@ function assert(cond,msg){
   const displayState = await displayPage.evaluate(() => ({
     path:location.pathname,hash:location.hash,title:document.getElementById('agenda-title')?.textContent,
     appLoaded:Boolean(document.getElementById('app')),
-    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || ''
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4') || ''
   }));
   assert(displayState.path.endsWith('/agenda-display.html'),'canonical shared-display URL loads the standalone display');
   assert(displayState.hash === '','display address contains no enrollment secret');
-  assert(!displayState.enrollment.includes(displayCode.replace('-','')) && !displayState.enrollment.includes(pairingRequest.pairingId),'display retains neither visible code nor pairing id');
+  assert(!displayState.enrollment.includes(displayCode.replace('-','')),'display does not keep the visible confirmation code');
+  assert(JSON.parse(displayState.enrollment).pairingId === pairingRequest.pairingId,'display stores the pairing id so a later approval can detect rotation');
   assert(displayState.title === 'Secure family agenda' && !displayState.appLoaded,'standalone display decrypts the feed without loading the main app');
+  const tomorrowCompletionUi = await displayPage.evaluate(()=>{
+    const rows = [...document.querySelectorAll('.agenda-row')];
+    const task = rows.find(row=>row.textContent.includes('Pack tomorrow'));
+    const rhythm = rows.find(row=>row.textContent.includes('Tomorrow rhythm'));
+    return {
+      taskMarkable:Boolean(task && task.querySelector('[data-complete-row]:not([disabled])')),
+      rhythmMarkable:Boolean(rhythm && rhythm.querySelector('[data-complete-row]'))
+    };
+  });
+  assert(tomorrowCompletionUi.taskMarkable && !tomorrowCompletionUi.rhythmMarkable,
+    `tomorrow tasks can be marked done early while tomorrow recurring habits remain view-only (${JSON.stringify(tomorrowCompletionUi)})`);
+  const displayWeatherUi = await displayPage.evaluate(()=>{
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const now = Date.now();
+    renderDisplay({
+      title:'Family',
+      timezone:tz,
+      currentWeather:{ emoji:'☀️', temperature:'64°', city:'Boston' },
+      days:[{
+        dateKey:displayDateKey(now,tz),weekdayLabel:'today',dateLabel:'Sunday',
+        rows:[
+          { rowId:'aa'.repeat(8),kind:'busy',title:'Sleep',start:now,end:now + 3600000,locationLabel:'Home',weather:{ emoji:'☁️', temperature:'52°' } },
+          { rowId:'bb'.repeat(8),kind:'item',title:'Walk',completable:false,start:now + 3600000,end:now + 5400000,weather:{ emoji:'☀️', temperature:'64°' } }
+        ]
+      }]
+    },{ generatedAt:now },[]);
+    const weather = document.getElementById('agenda-weather');
+    const busy = document.querySelector('.agenda-row.busy');
+    const walk = [...document.querySelectorAll('.agenda-row.item')].find(row=>row.textContent.includes('Walk'));
+    return {
+      clockWeather:(weather && !weather.hidden && (weather.textContent || '').replace(/\s+/g,' ').trim()) || '',
+      clockLabel:weather && weather.getAttribute('aria-label') || '',
+      busyTitle:busy && busy.querySelector('b')?.textContent || '',
+      busyPlace:busy && busy.querySelector('small')?.textContent || '',
+      busyWeather:(busy && busy.querySelector('.agenda-weather-cue')?.textContent || '').replace(/\s+/g,' ').trim(),
+      walkWeather:(walk && walk.querySelector('.agenda-weather-cue')?.textContent || '').replace(/\s+/g,' ').trim()
+    };
+  });
+  assert(/☀️/.test(displayWeatherUi.clockWeather) && displayWeatherUi.clockWeather.includes('64°') && displayWeatherUi.clockWeather.includes('Boston'),
+    `the clock shows home-city current feels-like and the condition emoji (${displayWeatherUi.clockWeather})`);
+  assert(/feels like/.test(displayWeatherUi.clockLabel),'current weather is announced as feels-like');
+  assert(displayWeatherUi.busyTitle === 'Sleep' && displayWeatherUi.busyPlace === 'Home' && /☁️/.test(displayWeatherUi.busyWeather) && displayWeatherUi.busyWeather.includes('52°'),
+    'busy times render with their label, place name, and weather cue');
+  assert(/☀️/.test(displayWeatherUi.walkWeather) && displayWeatherUi.walkWeather.includes('64°'),
+    'opted-in items render the same emoji + feels-like cue');
+  await displayPage.evaluate(()=>refreshDisplay());
+  await displayPage.waitForFunction(()=>document.getElementById('agenda-title')?.textContent === 'Secure family agenda');
+
   const fullscreenControl = await displayPage.evaluate(()=>({
     standaloneButton:Boolean(document.getElementById('agenda-fullscreen')),
     menuRowHidden:document.getElementById('agenda-menu-fullscreen-row')?.hidden,
@@ -372,7 +542,7 @@ function assert(cond,msg){
     done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
     toastVisible:!document.getElementById('agenda-undo').hidden,
     toastText:document.getElementById('agenda-undo-text')?.textContent || '',
-    stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || 'null')?.completionRowIds || []
+    stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4') || 'null')?.completionRowIds || []
   }));
   assert(pendingUi.done && pendingUi.toastVisible && /Marked .+ done/.test(pendingUi.toastText)
     && !pendingUi.stored.length && !completionRequest,
@@ -394,11 +564,24 @@ function assert(cond,msg){
     done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
     label:document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')?.getAttribute('aria-label'),
     toastVisible:!document.getElementById('agenda-undo').hidden,
-    stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3') || 'null')?.completionRowIds || []
+    stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4') || 'null')?.completionRowIds || []
   }));
   assert(completionRequest && completionRequest.completion.recordKind === 'agenda_completion','the display submits only an encrypted completion envelope');
   assert(completionRequest.completion.revision === 1 && completionRequest.completion.logId.length === 16,'the completion is bound to the current snapshot and opaque displayed row');
   assert(completionUi.done && /is done/i.test(completionUi.label || '') && completionUi.stored.includes(completionRequest.completion.logId) && !completionUi.toastVisible,'once the undo window expires the display pushes the completion and keeps the row marked done');
+
+  const drainedQueue = serverCompletions.splice(0,serverCompletions.length);
+  await displayPage.evaluate(()=>refreshDisplay());
+  const keptAfterAckGap = await displayPage.evaluate(()=>{
+    const key = typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4';
+    return {
+      done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
+      stored:JSON.parse(localStorage.getItem(key) || 'null')?.completionRowIds || []
+    };
+  });
+  serverCompletions.push(...drainedQueue);
+  assert(keptAfterAckGap.done && keptAfterAckGap.stored.includes(completionRequest.completion.logId),
+    `a refresh after the queue is drained still keeps the row marked until a newer snapshot drops it (${JSON.stringify(keptAfterAckGap)})`);
 
   // The undo toast is position:fixed. The screen-fit squash transforms the
   // page content, and a transformed ancestor would otherwise become the
@@ -429,7 +612,7 @@ function assert(cond,msg){
   assert(squishedToast.squashed && squishedToast.visible && squishedToast.pinnedToViewport && squishedToast.unsquashed,
     `the undo toast stays pinned to the viewport at full height while screen fit squashes the page (${JSON.stringify(squishedToast)})`);
 
-  // --- Undo robustness: flush, refresh races, pause, and de-pair races. ---
+  // --- Undo robustness: flush, refresh races, unpublished snapshots, and de-pair races. ---
   completionRequests.length = 0;
   completionRequest = null;
   const waitForRoute = async condition => {
@@ -440,7 +623,7 @@ function assert(cond,msg){
     return false;
   };
   const enrollmentKey = await displayPage.evaluate(
-    "typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3'"
+    "typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4'"
   );
   const rowIds = await displayPage.evaluate(()=>[...document.querySelectorAll('[data-complete-row]')].map(b=>b.dataset.completeRow));
   const undoState = () => displayPage.evaluate(key=>({
@@ -477,22 +660,22 @@ function assert(cond,msg){
     && completionRequest.completion.revision === 1 && (await undoState()).stored.length === 3,
     'after a mid-window refresh the delayed push still carries the displayed row and snapshot revision');
 
-  // Pausing the display mid-window must drop the toast and never push.
+  // Clearing the published snapshot mid-window must drop the toast and never push.
   await displayPage.click('.agenda-day article.agenda-row:nth-of-type(3) [data-complete-row]');
   robustnessState = await undoState();
   assert(robustnessState.doneRows === 4 && robustnessState.toastVisible,'the unmarked row accepts a fresh pending mark');
-  displayPaused = true;
+  displayWaiting = true;
   await displayPage.evaluate(()=>refreshDisplay());
   robustnessState = await undoState();
-  // A paused display renders every row view-only, so the dropped mark must
-  // also take the optimistic done styling with it.
-  assert(!robustnessState.toastVisible && robustnessState.doneRows === 0,'pausing the display drops a pending mark, its toast, and the done styling');
+  // Waiting for a publish renders no rows, so the dropped mark must also take
+  // the optimistic done styling with it.
+  assert(!robustnessState.toastVisible && robustnessState.doneRows === 0,'an unpublished snapshot drops a pending mark, its toast, and the done styling');
   await displayPage.waitForTimeout(5600);
-  assert(completionRequests.length === 2,'a pending mark dropped by a pause is never pushed');
-  displayPaused = false;
+  assert(completionRequests.length === 2,'a pending mark dropped by an unpublished snapshot is never pushed');
+  displayWaiting = false;
   await displayPage.evaluate(()=>refreshDisplay());
   assert(await displayPage.evaluate(()=>Boolean(document.querySelector('.agenda-day article.agenda-row:nth-of-type(3) [data-complete-row]:not([disabled])'))),
-    'unpausing makes the dropped row markable again');
+    'republishing makes the dropped row markable again');
 
   // Authorization cleared while the push is in flight: neither a 201 nor a
   // failure may resurrect the cleared enrollment or repaint the agenda.
@@ -713,6 +896,190 @@ function assert(cond,msg){
   assert(inboundSync.changed && inboundSync.ack && inboundSync.done,'the owner turns an authenticated display completion into a real local task completion');
   assert(inboundSync.source === 'shared_display' && inboundSync.rowExcluded,`the imported log is idempotently tagged and its old displayed row is suppressed during republish (${JSON.stringify(inboundSync)})`);
 
+  const tomorrowTaskSync = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const tomorrow = new Date(dayStart(now));
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowBase = tomorrow.getTime();
+    const plannedAt = tomorrowBase + 10 * 3600000;
+    const contentKey = shareRandomHex(32);
+    const feedId = 'f00d'.repeat(8);
+    const ownerCredential = '44'.repeat(32);
+    const rowId = '55'.repeat(8);
+    const operationId = '66'.repeat(16);
+    const habit = normalize([{
+      hid:'tomorrow-task-hid',name:'Pack early',type:'task',logs:[{ ts:plannedAt,plan:true }],lastLog:null,
+      dueDate:tomorrowBase,durationMinutes:20,breakable:false,showOnSharedDisplay:true
+    }])[0];
+    save([habit]);
+    const feed = {
+      feedId,contentKey,ownerCredential,lastRevision:5,title:'Shared display',
+      rowMaps:[{ revision:5,rows:{ [rowId]:{ hid:habit.hid,dayBase:tomorrowBase,start:plannedAt,minutes:20 } } }]
+    };
+    saveAgendaFeedRecord(feed);
+    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const envelope = await shareEncrypt(contentKey,payload,{
+      schemaVersion:1,recordKind:'agenda_completion',objectId:feedId,revision:5,operationId,logId:rowId
+    });
+    const original = shareFetch;
+    shareFetch = async ()=>({ body:{ revision:5,completions:[{ createdAt:now,envelope }] } });
+    _agendaCompletionSyncAt = 0;
+    try{
+      const synced = await syncHouseholdAgendaCompletions(feed,{ force:true });
+      const saved = load()[0];
+      const logs = normalizeLogs(saved.logs);
+      return {
+        changed:synced.changed,
+        ack:synced.operationIds.includes(operationId),
+        done:isTaskDone(saved),
+        futurePlanKept:logs.some(log=>isPlanLog(log) && logTime(log) === plannedAt),
+        actualTime:logs.map(logTime).filter(ts=>ts <= now).sort((a,b)=>b-a)[0] || 0
+      };
+    }finally{
+      shareFetch = original;
+    }
+  });
+  assert(tomorrowTaskSync.changed && tomorrowTaskSync.ack && tomorrowTaskSync.done
+    && !tomorrowTaskSync.futurePlanKept && tomorrowTaskSync.actualTime > 0,
+  `a tomorrow task completion logs it early and consumes its future plan (${JSON.stringify(tomorrowTaskSync)})`);
+
+  const staleMapSync = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const contentKey = shareRandomHex(32);
+    const feedId = 'cafe'.repeat(8);
+    const ownerCredential = 'ef'.repeat(32);
+    const rowId = '9a'.repeat(8);
+    const operationId = 'bc'.repeat(16);
+    const habit = normalize([{
+      hid:'stale-map-hid',name:'Keep queued',type:'task',logs:[],lastLog:null,
+      durationMinutes:20,breakable:false,showOnSharedDisplay:true
+    }])[0];
+    save([habit]);
+    const feed = {
+      feedId,contentKey,ownerCredential,lastRevision:8,title:'Shared display',
+      rowMaps:[{ revision:8,rows:{ [rowId]:{ hid:habit.hid,dayBase:dayStart(now),start:now,minutes:20 } } }]
+    };
+    saveAgendaFeedRecord(feed);
+    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const envelope = await shareEncrypt(contentKey,payload,{
+      schemaVersion:1,recordKind:'agenda_completion',objectId:feedId,revision:4,operationId,logId:rowId
+    });
+    const original = shareFetch;
+    shareFetch = async ()=>({ body:{ revision:8,completions:[{ createdAt:now,envelope }] } });
+    _agendaCompletionSyncAt = 0;
+    try{
+      const synced = await syncHouseholdAgendaCompletions(feed,{ force:true });
+      return {
+        changed:synced.changed,
+        ack:synced.operationIds.includes(operationId),
+        done:isTaskDone(load()[0])
+      };
+    }finally{
+      shareFetch = original;
+    }
+  });
+  assert(!staleMapSync.changed && !staleMapSync.ack && !staleMapSync.done,
+    `completions bound to a dropped row-map revision stay queued instead of being acked unread (${JSON.stringify(staleMapSync)})`);
+
+  const forcedOpenSync = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const contentKey = shareRandomHex(32);
+    const feedId = 'd00d'.repeat(8);
+    const ownerCredential = '11'.repeat(32);
+    const rowId = '22'.repeat(8);
+    const operationId = '33'.repeat(16);
+    const habit = normalize([{
+      hid:'force-sync-hid',name:'Open phone',type:'task',logs:[],lastLog:null,
+      durationMinutes:20,breakable:false,showOnSharedDisplay:true
+    }])[0];
+    save([habit]);
+    const feed = {
+      feedId,contentKey,ownerCredential,lastRevision:4,title:'Shared display',
+      rowMaps:[{ revision:4,rows:{ [rowId]:{ hid:habit.hid,dayBase:dayStart(now),start:now,minutes:20 } } }]
+    };
+    saveAgendaFeedRecord(feed);
+    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const envelope = await shareEncrypt(contentKey,payload,{
+      schemaVersion:1,recordKind:'agenda_completion',objectId:feedId,revision:4,operationId,logId:rowId
+    });
+    const original = shareFetch;
+    let pulls = 0;
+    shareFetch = async ()=>{
+      pulls += 1;
+      return { body:{ revision:4,completions:[{ createdAt:now,envelope }] } };
+    };
+    _agendaCompletionSyncAt = Date.now();
+    try{
+      const throttled = await syncHouseholdAgendaCompletions(feed);
+      const forced = await syncHouseholdAgendaCompletions(feed,{ force:true });
+      return {
+        pulls,
+        throttledChanged:throttled.changed,
+        forcedChanged:forced.changed,
+        done:isTaskDone(load()[0])
+      };
+    }finally{
+      shareFetch = original;
+    }
+  });
+  assert(!forcedOpenSync.throttledChanged && forcedOpenSync.forcedChanged && forcedOpenSync.done && forcedOpenSync.pulls === 1,
+    `opening the phone forces a completion pull even inside the 30s poll window (${JSON.stringify(forcedOpenSync)})`);
+
+  const queuedPublish = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const base = dayStart(now);
+    const contentKey = shareRandomHex(32);
+    const feed = {
+      feedId:'abba'.repeat(8),contentKey,ownerCredential:'77'.repeat(32),lastRevision:0,
+      title:'Queue test',lastPublishedAt:null,scopeMode:'count',scopeValue:20,rowMaps:[]
+    };
+    const makeWeek = name=>({ optimized:false,days:[{
+      dayBase:base,dayKey:dateKey(base),isToday:true,usedMinutes:20,remainingMinutes:0,
+      timeline:[{ kind:'scheduled',start:now + 3600000,end:now + 4800000,h:{
+        hid:`${name}-hid`,name,type:'task',logs:[],lastLog:null,breakable:false,locationIds:[]
+      }}]
+    }] });
+    const originalFetch = shareFetch;
+    const originalFeed = agendaFeedRecord();
+    const published = [];
+    let revision = 0;
+    let releaseFirst;
+    const firstGate = new Promise(resolve=>{ releaseFirst = resolve; });
+    shareFetch = async (_path,opts={})=>{
+      if(opts.method === 'PUT'){
+        const projection = await shareDecrypt(contentKey,opts.body.snapshot);
+        published.push(projection.days.flatMap(day=>day.rows.map(row=>row.title)));
+        if(published.length === 1) await firstGate;
+        revision += 1;
+        return { body:{ revision,status:'active' } };
+      }
+      return { body:{ revision,completions:[] } };
+    };
+    saveAgendaFeedRecord(feed);
+    _agendaPublishInFlight = false;
+    _agendaPublishQueued = false;
+    _agendaPublishQueuedForce = false;
+    _pendingAgendaWeek = makeWeek('first');
+    startHouseholdAgendaPublish();
+    while(published.length < 1) await new Promise(resolve=>setTimeout(resolve,0));
+    _pendingAgendaWeek = makeWeek('latest');
+    startHouseholdAgendaPublish();
+    releaseFirst();
+    const deadline = Date.now() + 3000;
+    while((_agendaPublishInFlight || _agendaPublishQueued || _pendingAgendaWeek) && Date.now() < deadline){
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    const result = { published,revision,inFlight:_agendaPublishInFlight,pending:Boolean(_pendingAgendaWeek) };
+    shareFetch = originalFetch;
+    saveAgendaFeedRecord(originalFeed);
+    return result;
+  });
+  assert(queuedPublish.published.length === 2
+    && queuedPublish.published[0].includes('first')
+    && queuedPublish.published[1].includes('latest')
+    && queuedPublish.revision === 2 && !queuedPublish.inFlight && !queuedPublish.pending,
+  `a newer agenda queued during an in-flight publish is sent after it instead of being dropped (${JSON.stringify(queuedPublish)})`);
+
   const corruptInbound = await page.evaluate(async ()=>{
     const now = Date.now();
     const contentKey = shareRandomHex(32);
@@ -781,11 +1148,71 @@ function assert(cond,msg){
     && displayModes.stop.mode === 'view' && displayModes.stop.completionDisabled,
   'each item defaults to markable and can be changed to view-only or hidden from its detail Actions page');
 
+  await displayPage.click('#agenda-more');
+  await displayPage.click('#agenda-passcode-set');
+  await displayPage.fill('#agenda-passcode-input','2468');
+  await displayPage.fill('#agenda-passcode-confirm','2468');
+  await displayPage.click('#agenda-passcode-submit');
+  await displayPage.waitForFunction(()=>document.getElementById('agenda-passcode-modal')?.hidden);
+  const storedPasscode = await displayPage.evaluate(()=>localStorage.getItem('tings_agenda_passcode_v1') || '');
+  assert(/^[\s\S]+$/.test(storedPasscode) && !storedPasscode.includes('2468') && /^[0-9a-f]{64}$/.test(JSON.parse(storedPasscode).hash),
+    'the optional four-digit passcode is salted and hashed instead of stored as plaintext');
+
+  const openUnlock = () => displayPage.evaluate(()=>{
+    _displaySwipedAt = 0;
+    document.getElementById('agenda-hide').click();
+    const wallpaper = document.getElementById('agenda-wallpaper');
+    wallpaper.click();wallpaper.click();wallpaper.click();
+  });
+  await openUnlock();
+  const lockedAfterTripleTap = await displayPage.evaluate(()=>({
+    modal:!document.getElementById('agenda-passcode-modal').hidden,
+    wallpaper:!document.getElementById('agenda-wallpaper').hidden,
+    page:document.getElementById('agenda-page').hidden
+  }));
+  assert(lockedAfterTripleTap.modal && lockedAfterTripleTap.wallpaper && lockedAfterTripleTap.page,
+    `three taps request the passcode without revealing the agenda when the option is enabled (${JSON.stringify(lockedAfterTripleTap)})`);
+  await displayPage.fill('#agenda-passcode-input','2468');
+  await displayPage.click('#agenda-passcode-submit');
+  await displayPage.waitForFunction(()=>document.getElementById('agenda-wallpaper')?.hidden);
+  assert(await displayPage.evaluate(()=>JSON.parse(localStorage.getItem('tings_agenda_passcode_v1')).failures === 0),
+    'the correct passcode reveals the agenda and resets the attempt counter');
+
+  await openUnlock();
+  for(const [index,wrong] of ['1111','2222'].entries()){
+    await displayPage.fill('#agenda-passcode-input',wrong);
+    await displayPage.click('#agenda-passcode-submit');
+    await displayPage.waitForFunction(expected=>{
+      const stored = JSON.parse(localStorage.getItem('tings_agenda_passcode_v1') || 'null');
+      return stored && stored.failures === expected;
+    },index + 1);
+  }
+  const twoFailures = await displayPage.evaluate(()=>({
+    failures:JSON.parse(localStorage.getItem('tings_agenda_passcode_v1')).failures,
+    enrollment:Boolean(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4')),
+    status:document.getElementById('agenda-passcode-status').textContent || ''
+  }));
+  assert(twoFailures.failures === 2 && twoFailures.enrollment && /1 attempt remaining/.test(twoFailures.status),
+    'the first two wrong passcodes keep the display paired and show the remaining attempt');
+  await displayPage.fill('#agenda-passcode-input','3333');
+  await displayPage.click('#agenda-passcode-submit');
+  await displayPage.waitForFunction(key=>localStorage.getItem(key) === null,
+    typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4');
+  const passcodeLockout = await displayPage.evaluate(()=>({
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4'),
+    agendaHidden:document.getElementById('agenda-page').hidden,
+    pairingVisible:!document.getElementById('agenda-enroll').hidden,
+    failures:JSON.parse(localStorage.getItem('tings_agenda_passcode_v1')).failures
+  }));
+  assert(displayAccessRevokes === 1 && passcodeLockout.enrollment === null && !passcodeLockout.agendaHidden
+    && passcodeLockout.pairingVisible && passcodeLockout.failures === 3,
+  'the third wrong passcode revokes the Worker session, erases local access, and requires pairing again');
+
   displayAuthorized = false;
   await displayPage.evaluate(()=>refreshDisplay());
   const clearedState = await displayPage.evaluate(() => ({
     text:document.getElementById('agenda-root')?.textContent || '',
-    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v3'),
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4'),
     pairingVisible:!document.getElementById('agenda-enroll')?.hidden
   }));
   assert(clearedState.enrollment === null && !clearedState.text.includes('Medication'),'reauthorization failure erases the cached credential, key, and agenda');
@@ -814,7 +1241,7 @@ function assert(cond,msg){
   const displayHtml = fs.readFileSync(path.join(__dirname,'../agenda-display.html'),'utf8');
   assert(displayHtml.includes("frame-ancestors 'none'"),'display CSP forbids framing');
   assert(displayHtml.includes('agenda-display-boot.js'),'display loads the frame-bust first');
-  assert(await page.evaluate(()=>AGENDA_DISPLAY_KEY === 'tings_agenda_display_v3'),'active display storage key is v3');
+  assert(await page.evaluate(()=>AGENDA_DISPLAY_KEY === 'tings_agenda_display_v4'),'active display storage key is v4');
 
   const ownerHtml = fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   const ownerCsp = (ownerHtml.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
@@ -850,7 +1277,7 @@ function assert(cond,msg){
     }
     route.fulfill({
       status:200,contentType:'application/json',
-      body:JSON.stringify({ snapshot:null,revision:0,paused:false,status:'active',sessionExpiresAt:Date.now() + 86400000 })
+      body:JSON.stringify({ snapshot:null,revision:0,status:'active',sessionExpiresAt:Date.now() + 86400000 })
     });
   });
   await migratePage.goto(displayUrl,{ waitUntil:'load' });
@@ -861,29 +1288,33 @@ function assert(cond,msg){
     localStorage.setItem('tings_agenda_display_v2',JSON.stringify({
       feedId:'c'.repeat(32),contentKey:'d'.repeat(64),deviceCredential:'e'.repeat(64)
     }));
-    localStorage.removeItem('tings_agenda_display_v3');
+    localStorage.setItem('tings_agenda_display_v3',JSON.stringify({
+      feedId:'c'.repeat(32),contentKey:'d'.repeat(64),deviceCredential:'e'.repeat(64)
+    }));
+    localStorage.removeItem('tings_agenda_display_v4');
   });
   await migratePage.reload({ waitUntil:'load' });
   const migrated = await migratePage.evaluate(()=>({
     v1:localStorage.getItem('tings_agenda_display_v1'),
     v2:localStorage.getItem('tings_agenda_display_v2'),
-    v3:JSON.parse(localStorage.getItem('tings_agenda_display_v3') || 'null')
+    v3:localStorage.getItem('tings_agenda_display_v3'),
+    v4:JSON.parse(localStorage.getItem('tings_agenda_display_v4') || 'null')
   }));
-  assert(!migrated.v1 && !migrated.v2,'legacy display keys are deleted on boot');
-  assert(!migrated.v3,'ambiguous v2 sessions fail closed instead of migrating retired link credentials');
+  assert(!migrated.v1 && !migrated.v2 && !migrated.v3,'legacy display keys including v3 are deleted on boot');
+  assert(!migrated.v4,'stale v3 sessions fail closed instead of migrating a displaced display');
 
   await migratePage.evaluate(()=>{
     localStorage.setItem('tings_agenda_display_v2',JSON.stringify({
       feedId:'f'.repeat(32),contentKey:'g'.repeat(64),deviceCredential:'h'.repeat(64),viewerCredential:'link'
     }));
-    localStorage.removeItem('tings_agenda_display_v3');
+    localStorage.removeItem('tings_agenda_display_v4');
   });
   await migratePage.reload({ waitUntil:'load' });
   const rejectedLegacy = await migratePage.evaluate(()=>({
     v2:localStorage.getItem('tings_agenda_display_v2'),
-    v3:localStorage.getItem('tings_agenda_display_v3')
+    v4:localStorage.getItem('tings_agenda_display_v4')
   }));
-  assert(!rejectedLegacy.v2 && !rejectedLegacy.v3,'link-based v2 enrollments are not migrated');
+  assert(!rejectedLegacy.v2 && !rejectedLegacy.v4,'link-based v2 enrollments are not migrated');
 
   const framePage = await guardContext.newPage();
   await framePage.goto('about:blank');

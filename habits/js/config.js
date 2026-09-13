@@ -14,7 +14,7 @@ const SHARE_WORKER_URL = typeof location !== 'undefined' && ['localhost','127.0.
   ? SHARE_WORKER_STAGING_URL
   : SHARE_WORKER_PRODUCTION_URL;
 const SHARE_STATE_KEY = 'tings_share_v1';
-const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v3';
+const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v4';
 const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
 const FEEDBACK_FORM_URL = 'https://forms.gle/KNnXKCH55VfzCNeo8';
