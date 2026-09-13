@@ -4,9 +4,14 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
-  // Untimed day pins store locationId on the plan log. That override wins over
+  // Untimed day plans store locationId on the plan log. That override wins over
   // reorder/pick defaults stamped onto the fill (preferred location, travel
   // clustering), since the user explicitly chose the place for this day.
+  // Visual habit.pinned is display-only; only a plan log locks the occurrence.
+  if(typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(fill.h,dayBase,opts.settings || state.settings)){
+    fill.pinned = true;
+  }
   if(typeof dayPlanLocationId === 'function'){
     const planLoc = dayPlanLocationId(fill.h,dateKey(dayBase));
     if(planLoc)fill.locationId = planLoc;
@@ -44,6 +49,26 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const hasForcedLocation = hasLocationProperty
     && fill.locationId !== undefined
     && (fill.locationId !== null || anywhereToday || (!optionMode && !candidateLocIds.length));
+  // GLPK enumerates every allowed venue as its own option. Fast used to commit
+  // a single travel/preference pick even when that venue was closed, which
+  // dropped short multi-location dailies. Try each unforced location and keep
+  // the shared score pick so both engines see the same feasible set.
+  if(!hasForcedLocation && !fill._locationEnumBound){
+    const locChoices = [];
+    if(anywhereToday)locChoices.push(null);
+    for(const id of candidateLocIds){
+      if(id && !locChoices.includes(id))locChoices.push(id);
+    }
+    if(locChoices.length > 1){
+      const locationFits = [];
+      for(const locationId of locChoices){
+        const variant = Object.assign({},fill,{_locationEnumBound:true,locationId});
+        const fit = tryPlaceOnDay(state,variant,opts);
+        if(fit)locationFits.push(fit);
+      }
+      return locationFits.length ? pickBestScoredFit(locationFits,fill,state,opts) : null;
+    }
+  }
   const resolveLoc = (anchor)=>hasForcedLocation
     ? fill.locationId
     : pickHabitLocationId(fill.h,anchor,registry,mode,dayBase);
@@ -361,6 +386,57 @@ function isDayChoosingWeekCandidate(c){
 function isMovableWeekCandidate(c,dayBase = dayStart(Date.now()),lastLogTs,completionOffset = 0){
   if(!isDayChoosingWeekCandidate(c))return false;
   return !mustPlaceOccurrenceByDay(c,dayBase,lastLogTs,completionOffset);
+}
+
+// PURE: Friday-only P0 (Juma) and other one-eligible-day criticals. Slack
+// daily prayers have many days and must not outrank a last-day 4h visit.
+function weekFillIsScarceCritical(c){
+  return typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(c)
+    && c && c.eligible && c.eligible.size <= 1;
+}
+
+// PURE: a one-shot non-breakable whose last on-time day (or weekday-clipped
+// last chance) falls in this week, plus untimed plan locks. Breakable tasks
+// still fill after daily seats so a Friday-due report cannot eat a whole day
+// before stretch. All due-this-week non-breakable tasks share this tier so
+// packing order among them stays scarcity/priority.
+function weekFillClaimsHorizonDay(c,dayStates){
+  if(!c || !c.h || c.h.breakable)return false;
+  if(c.pinned === true)return true;
+  if(c.h.type !== 'task')return false;
+  const states = Array.isArray(dayStates) ? dayStates : [];
+  if(!states.length)return false;
+  const lastOnTime = typeof candidateOccurrenceLastOnTimeDay === 'function'
+    ? candidateOccurrenceLastOnTimeDay(c) : null;
+  if(lastOnTime == null)return false;
+  const eligibleStates = states.filter(state=>state
+    && (!c.eligible || c.eligible.has(state.dayBase)));
+  if(!eligibleStates.length)return false;
+  const todayBase = states[0].dayBase;
+  if(lastOnTime < todayBase)return true;
+  return lastOnTime <= states[states.length - 1].dayBase
+    && eligibleStates.some(state=>state.dayBase <= lastOnTime);
+}
+
+// PURE: Fast assignment order. Scarce one-day P0 first, then planned/last-day
+// non-breakable tasks, then slack daily P0 (Zuhr can slide), then remaining pins.
+function compareWeekClaimPriority(a,b,dayStates){
+  const scarceA = weekFillIsScarceCritical(a);
+  const scarceB = weekFillIsScarceCritical(b);
+  if(scarceA !== scarceB)return scarceA ? -1 : 1;
+  const claimA = weekFillClaimsHorizonDay(a,dayStates);
+  const claimB = weekFillClaimsHorizonDay(b,dayStates);
+  if(claimA !== claimB)return claimA ? -1 : 1;
+  const criticalA = typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(a);
+  const criticalB = typeof mustPlaceCriticalOccurrence === 'function'
+    && mustPlaceCriticalOccurrence(b);
+  if(criticalA !== criticalB)return criticalA ? -1 : 1;
+  const pinA = a && a.pinned === true;
+  const pinB = b && b.pinned === true;
+  if(pinA !== pinB)return pinA ? -1 : 1;
+  return 0;
 }
 
 // PURE: may a last-day occurrence become a hard selection on this concrete

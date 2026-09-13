@@ -977,7 +977,7 @@ document.addEventListener('visibilitychange',()=>{
   // Fast solve. Longer absences still get the normal freshness check.
   const hiddenFor = _homeHiddenAt ? Date.now() - _homeHiddenAt : Infinity;
   scheduleReopenRefresh(hiddenFor >= HOME_AGENDA_REFRESH_MS);
-  if(typeof scheduleHouseholdAgendaPublish === 'function') scheduleHouseholdAgendaPublish();
+  if(typeof scheduleHouseholdAgendaPublish === 'function') scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
 });
 window.addEventListener('pageshow',e=>{
   // bfcache restore (back/forward) — also refresh, since a lot of wall-clock

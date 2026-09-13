@@ -16,8 +16,8 @@ Open `index.html` via any static server. All state lives in `localStorage`.
 npx serve -l 4181 -s .          # serve locally (tests expect port 4181)
 # then open http://127.0.0.1:4181/
 
-./run-tests.sh                  # smart full matrix; both planners where relevant
-./run-tests.sh planner          # planner/optimizer suite only
+./run-tests.sh                  # smart full matrix (GLPK is the production page)
+./run-tests.sh planner          # planner suite; Fast via page-both / --mode fast
 ./run-tests.sh ui               # general rendering and interaction suite
 ./run-tests.sh --changed        # infer suites from current git changes
 ```
@@ -97,6 +97,7 @@ own a clear area; jump to these first.
 |---|---|--:|---|
 | `js/data-*.js` | 50–939 each | Persistence (`tings_v2` key), normalization, eligibility, schedules, logs, backups, and planner state |
 | `js/today-view-{fits,reservations,week,today}.js` | 118–2329 each | **FAST planner engine**: fitting, reservations, week packing, and today rendering |
+| `js/agenda-fast-graph.js` | ~280 | Bounded day and whole-week graph search; shared feasibility checks |
 | `js/agenda-optimizer.js` + `agenda-optimizer-ilp.js` | 313 + 1624 | **GLPK ILP planner engine**: loader/worker entry, fits, constraints, and optimized week orchestration |
 | `js/list-view-{home,sections,planner,actions}.js` | 908–2513 each | Home/dashboard, day sections, background planning/cache, and card actions |
 | `js/main-{boot,input,runtime}.js` | 909–1364 each | Initialization/bindings, input sheets, timers/visibility/refresh loop |
@@ -138,7 +139,12 @@ windowStillDoableToday(habit, now)     today-view-* — can it still fit today?
 | Engine | File | Entry | When used | Placement order |
 |---|---|---|---|---|
 | **GLPK ILP optimizer** (default) | `agenda-optimizer*.js` | `buildWeekAgendaAsync` | `?planner=` not `fast`; tests `PLANNER_MODE=default` | fixed items first (ILP), daily breakables after, rescue pass, breakable gap-fill |
-| **Fast scarcity heuristic** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`; initial home "preview" | **movables first**, daily breakables last |
+| **Fast bounded graph planner** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`, optimizer off, GLPK fallback/preview | **movables first**, daily breakables last |
+
+GLPK is the production planner: slower than Fast, but better at respecting
+constraints and preferences. Fast is the quality-parity track (preview,
+optimizer-off, fallback). It becomes the main engine only when it can replicate
+those results — do not switch the app default before then.
 
 Both call the same primitives: `tryPlaceOnDay`, `auditFillFitInGap`,
 `freeSegmentsInWindow`, `commitPlacement`, `dailyBreakableReservations`,
@@ -160,8 +166,9 @@ shared primitive OR landing it in both engines.**
   breakable may occupy; movables are capped in these via
   `movable_breakable_reserve` (aggregate spare, ILP) and `fastPathDefersMovable`.
 - **Fit**: a feasible `{placeStart, placeEnd, locId, score}` for one item on one
-  day. `tryPlaceOnDay` returns the single best (ASAP) fit; `listPlaceFitsOnDay`
-  enumerates many for GLPK.
+  day. `tryPlaceOnDay` returns the single best scored fit (weather guidance
+  outranks ASAP/preference/scarce overlap; travel/day/order stay in the core rank);
+  `listPlaceFitsOnDay` enumerates many for GLPK.
 - **Scarcity** (`scoring.js`): a packed integer encoding how tight an item's
   windows are (feasible slots × slack). Drives priority/urgency.
 - **Order constraints** (`agenda-order.js`): schedule links / drag reorder →
@@ -187,8 +194,26 @@ shared primitive OR landing it in both engines.**
    infeasible/timeout-before-feasible), not merely because optimality was not
    proved before the time limit.
 
-The fast engine does the same intent but greedily: movables first (ASAP +
-reservation steering), breakables last, with `fastPathDefersMovable` as the gate.
+The fast engine uses movables first (ASAP + reservation steering), breakables
+last, with `fastPathDefersMovable` as the gate. Weather-guided movables also
+use `weatherShouldDeferCandidate` so a much drier later day wins the same way
+GLPK drops today's option weight. Untimed plan logs strongly prefer that
+calendar day; the visual pin does not. The last on-time day stays eligible, so
+a failed Saturday plan cannot drop a Sunday due date. Skip completed days
+when reading leftover plans, and do not let a future catch-up plan erase a
+due/overdue today miss during `fullToday` reconstruction. Blocked fixed
+insertions use `fastGraphPlacement`: bounded beam search over partial day
+schedules, reopening up to seven existing non-linked/non-breakable placements.
+Keep-all search is transactional. Fast packs scarce one-day P0 (Juma) first, then
+planned/last-day tasks, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only 4h slot a due visit needs. `tryPlaceOnDay` enumerates unforced
+venues so Fast sees the same location set as GLPK. Planned items outrank
+at-location sequencing. `improveFastGraphWeek` searches when a planned/pinned
+item or a day-choosing leftover is still unplaced: cheap insert/eject first,
+then at most eight whole-week rebuilds. Packed weeks skip that search. See
+DOCUMENTATION.md §14.3 for the ranking, budgets and limitations. A failed plan
+day still leaves the last on-time day eligible in both engines; GLPK's ILP
+rows and weights are otherwise unchanged.
 
 ### 5.4 The reserve model (why movables don't starve breakables)
 
@@ -275,9 +300,10 @@ duration-spaced starts; overflow defers gracefully (verified for up to 8).
   GLPK when WASM can't load.
 - Fixture helpers worth copying: `base(props)` (full habit object with sane
   defaults), `openEveningSettings()` / `windowedSettings()` (blocked-time sets).
-- Run `./run-tests.sh planner` after planner changes. The smart matrix runs
-  Fast/GLPK parity tests once (they call both engines internally) and repeats
-  only page-mode-sensitive tests. Use `--mode fast` only to isolate Fast.
+- Run `./run-tests.sh planner` after planner changes. The smart matrix opens
+  the production GLPK page. `page-both` files add a Fast pass; use `--mode fast`
+  when iterating on Fast quality. Dual-engine helpers may still call both
+  `buildWeekAgenda` and `buildWeekAgendaAsync` in one session.
 - Put shared fixtures and pair-running helpers in
   `tests/helpers/planner-test-helpers.js` rather than copying them into a new
   file. Classify each new top-level test in `tests/test-suites.tsv`; the runner

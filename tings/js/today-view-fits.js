@@ -1385,7 +1385,7 @@ function buildPlannerDecisionTrace(data,settings,context){
     const attention = typeof attentionScore === 'function'
       ? attentionScore(h,i,settings) : null;
     const pinned = typeof isWeekPinnedToday === 'function'
-      ? isWeekPinnedToday(h,settings) : Boolean(h.pinned);
+      ? isWeekPinnedToday(h,settings) : false;
     const orderInputs = [];
     if(h.hid){
       for(const edge of constraints){
@@ -1442,7 +1442,7 @@ function buildPlannerDecisionTrace(data,settings,context){
       `urgency ${Math.round(urgency)}`,
       Number.isFinite(attention) ? `attention ${attention.toFixed(2)}` : '',
       plannerTraceScarcityInput(meta.scarcity),
-      pinned ? 'pinned to today' : 'not pinned',
+      pinned ? 'planned for today' : 'not a day plan',
       hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
       preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
       locationNames.length
@@ -1651,7 +1651,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const assignmentLabel = (i)=>{
     const h = data[i];
     const pinned = typeof isWeekPinnedToday === 'function'
-      ? isWeekPinnedToday(h,settings) : Boolean(h && h.pinned);
+      ? isWeekPinnedToday(h,settings) : false;
     // A later row is meaningful for a one-shot/sparse occurrence even after
     // its delay allowance expired: at that point it is catch-up evidence, not
     // proof that today's due occurrence was legitimately postponed. Daily
@@ -1816,7 +1816,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
           : (solveStatus === 'fallback'
             ? 'GLPK requested; heuristic day fallback + complete-day route'
             : 'GLPK optimal fixed-item pack + complete-day route')))
-      : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner'))
+      : (week.fastPlannerAlgorithm === 'bounded-state-graph'
+        ? (plannerIsPreview ? 'fast graph preview/fallback' : 'fast bounded graph planner')
+        : (plannerIsPreview ? 'fast preview/fallback' : 'fast scarcity planner')))
     : 'fast day planner';
   const placeNameById = new Map((settings && settings.locations || [])
     .filter(location=>location && location.id)
@@ -2066,6 +2068,11 @@ function habitMatchesSequencingLocation(h, locId){
 // hard window that GLPK would keep via a later option (soft travel penalty).
 function sequencingAwayCanWait(awayC, atC, state){
   if(!awayC || !awayC.h || !state)return true;
+  // A plan-locked away item cannot wait behind at-location sequencing.
+  // Ordinary due-today tasks still can — that is the grocery-vs-lunch case.
+  if(awayC.pinned === true)return false;
+  if(typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(awayC.h,state.dayBase,state.settings))return false;
   const now = Number(state.startClock) || Date.now();
   const atDur = typeof clampDuration === 'function'
     ? clampDuration(atC && atC.h && atC.h.durationMinutes)
@@ -2411,6 +2418,7 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
   const earliest = fits.reduce((m,f)=>Math.min(m,f.placeStart),fits[0].placeStart);
   let best = null;
   let bestScore = Infinity;
+  let bestCore = Infinity;
   let bestTerms = null;
   for(const fit of fits){
     const weatherSettings=opts.settings || (state && state.settings) || (typeof sortSettings !== 'undefined' ? sortSettings : null);
@@ -2442,9 +2450,25 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       orderPenalty:orderConstraintPenalty(fill,fit,state)
     };
     const score = scoreAgendaPlacement(terms,weights);
+    // Weather guidance outranks ordinary ASAP/preference and scarce-window
+    // overlap. Scarce overlap is milliseconds × 0.05, so a 30-minute overlap
+    // (~90k) used to bury a relative "prefer lower rain" gap (~a few hundred).
+    // Travel, day-offset and order still compete with weather. Use the full
+    // score (ASAP + preference + scarce) only when that core ties.
+    const coreScore = scoreAgendaPlacement({
+      ...terms,asapDelayMin:0,preferencePenalty:0,scarceOverlapMs:0
+    },weights);
     fit.score = score;
+    fit.coreScore = coreScore;
     if(weather)fit.weather = weather;
-    if(score < bestScore){ bestScore = score; best = fit; bestTerms = terms; }
+    if(!best
+      || coreScore < bestCore - 1e-6
+      || (Math.abs(coreScore - bestCore) <= 1e-6 && score < bestScore)){
+      bestScore = score;
+      bestCore = coreScore;
+      best = fit;
+      bestTerms = terms;
+    }
   }
   // These values were already calculated to choose the fit. Keeping them only
   // on the winning option makes the on-demand day audit explain the decision
@@ -2456,6 +2480,8 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
 // PURE: attempt to place a fill into this day's open slots under hard
 // constraints — availability budget, blocked/scheduled slots, travel time,
 // location hours ∩ habit allowed window. Soft choice among feasible fits
-// uses the unified agenda score (ASAP, scarce-window overlap, preferences).
+// uses the unified agenda score. Weather guidance outranks ASAP and
+// place/time preference; travel, day, scarce overlap and order stay in the
+// core rank.
 // opts.spareWindows: scarce windows to penalize overlapping (soft).
 // opts.urgency / opts.weights / opts.settings: scoring context.

@@ -24,8 +24,7 @@ function syncHouseholdAgendaSettings(){
   const status = $('settings-agenda-status');
   if(status){
     const provenance = feed.plannerProvenance || '—';
-    const paused = feed.paused ? 'paused' : 'publishing';
-    status.textContent = `${paused} · revision ${feed.lastRevision || 0} · ${provenance} · ${householdAgendaAgeLabel(feed.lastPublishedAt)}`;
+    status.textContent = `publishing · revision ${feed.lastRevision || 0} · ${provenance} · ${householdAgendaAgeLabel(feed.lastPublishedAt)}`;
   }
   const reauth = $('settings-agenda-reauth');
   if(reauth && reauth !== document.activeElement) reauth.value = Number(feed.reauthDays) === 7 ? '7' : '30';
@@ -41,8 +40,6 @@ function syncHouseholdAgendaSettings(){
   if(hint) hint.textContent = scopeMode === 'hours'
     ? '1–48 hours ahead, always cut off at the end of tomorrow; maximum 50 rows.'
     : '1–50 upcoming rows, never beyond tomorrow.';
-  const pause = $('settings-agenda-pause');
-  if(pause) pause.textContent = feed.paused ? 'resume publishing' : 'pause automatic publishing';
 }
 
 function toastShare(ok,good,bad){
@@ -97,17 +94,8 @@ function bindHouseholdAgendaSettings(){
       toastShare(true,'shared display updated','publish failed');
     }catch(_){ toastShare(false,'','publish failed'); }
   });
-  $('settings-agenda-pause')?.addEventListener('click',async ()=>{
-    const feed = agendaFeedRecord();
-    if(!feed) return;
-    try{
-      await pauseHouseholdAgendaFeed(!feed.paused);
-      const next = agendaFeedRecord();
-      toastShare(true,next && next.paused ? 'publishing paused' : 'publishing resumed','update failed');
-    }catch(_){ toastShare(false,'','update failed'); }
-  });
   $('settings-agenda-revoke')?.addEventListener('click',async ()=>{
-    if(!window.confirm('Revoke this feed and every enrolled display? Offline displays erase their cache when they reconnect.')) return;
+    if(!window.confirm('Revoke this display? It will sign out immediately. Scan a new QR to add a display again. Offline screens erase their cache when they reconnect.')) return;
     try{
       await revokeHouseholdAgendaFeed();
       toastShare(true,'display feed revoked','revoke failed');

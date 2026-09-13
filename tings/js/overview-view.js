@@ -307,7 +307,7 @@ function ensureOverviewWeekForDay(dayKey){
   const token = ++_overviewWeekFillToken;
   _overviewWeekFillInflightKey = dirty;
   _overviewWeekFillCoverDays = numDays;
-  buildWeekAgendaOffMain(data,sortSettings,numDays,'fast').then(week=>{
+  buildWeekAgendaOffMain(data,sortSettings,numDays,'fast',{fastGraph:true}).then(week=>{
     if(token !== _overviewWeekFillToken)return;
     const live = typeof load === 'function' ? load() : data;
     storeOverviewWeekSnapshot(week,live);

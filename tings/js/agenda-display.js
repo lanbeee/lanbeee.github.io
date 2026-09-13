@@ -3,9 +3,13 @@ const AGENDA_POLL_MS = 3 * 60 * 1000;
 const AGENDA_PAIR_POLL_MS = 4 * 1000;
 const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
   ? AGENDA_DISPLAY_KEY
-  : 'tings_agenda_display_v3';
+  : 'tings_agenda_display_v4';
 const AGENDA_WALLPAPER_STORAGE_KEY = 'tings_agenda_wallpaper_v1';
 const AGENDA_APPEARANCE_STORAGE_KEY = 'tings_agenda_appearance_v1';
+const AGENDA_PASSCODE_STORAGE_KEY = 'tings_agenda_passcode_v1';
+const AGENDA_PASSCODE_DIGITS = 4;
+const AGENDA_PASSCODE_MAX_FAILURES = 3;
+const AGENDA_PASSCODE_PBKDF2_ITERATIONS = 120000;
 // Dark is the deliberate default: these displays live on photo frames and are
 // read across the room at night. Light/system stay one tap away in the menu.
 // Text size is a percentage on a 5% ladder between 70 and 200 — the range is
@@ -41,6 +45,8 @@ let _displayTouchStart = null;
 let _displaySwipedAt = 0;
 let _displayWallpaperTaps = [];
 let _displayPendingCompletion = null;
+let _displayPasscodeMode = null;
+let _displayPasscodeBusy = false;
 const _displaySavingRowIds = new Set();
 
 function clampDisplayFont(value){
@@ -92,6 +98,53 @@ function displayWriteWallpaper(active){
   }catch(_){}
 }
 
+function displayNormalizePasscode(value){
+  return String(value || '').replace(/[^0-9]/g,'').slice(0,AGENDA_PASSCODE_DIGITS);
+}
+
+function readDisplayPasscode(){
+  let stored = null;
+  try{ stored = JSON.parse(localStorage.getItem(AGENDA_PASSCODE_STORAGE_KEY) || 'null'); }
+  catch(_){ stored = null; }
+  if(!stored || !/^[0-9a-f]{32}$/.test(String(stored.salt || '')) || !/^[0-9a-f]{64}$/.test(String(stored.hash || ''))) return null;
+  return {
+    salt:String(stored.salt),
+    hash:String(stored.hash),
+    iterations:AGENDA_PASSCODE_PBKDF2_ITERATIONS,
+    failures:Math.max(0,Math.min(AGENDA_PASSCODE_MAX_FAILURES,Math.round(Number(stored.failures) || 0)))
+  };
+}
+
+function writeDisplayPasscode(value){
+  try{
+    if(value) localStorage.setItem(AGENDA_PASSCODE_STORAGE_KEY,JSON.stringify(value));
+    else localStorage.removeItem(AGENDA_PASSCODE_STORAGE_KEY);
+  }catch(_){}
+  syncDisplayPasscodeUi();
+}
+
+function syncDisplayPasscodeUi(){
+  const configured = Boolean(readDisplayPasscode());
+  const set = $('agenda-passcode-set');
+  const remove = $('agenda-passcode-remove');
+  const wallpaper = $('agenda-wallpaper');
+  if(set) set.textContent = configured ? 'change passcode' : 'add 4-digit passcode';
+  if(remove) remove.hidden = !configured;
+  if(wallpaper) wallpaper.setAttribute('aria-label',configured
+    ? 'Agenda hidden. Tap three times, then enter the passcode to show it.'
+    : 'Agenda hidden. Tap three times to show it again.');
+}
+
+async function displayPasscodeHash(salt,passcode,iterations = AGENDA_PASSCODE_PBKDF2_ITERATIONS){
+  const material = await crypto.subtle.importKey(
+    'raw',new TextEncoder().encode(`tings-agenda-passcode-v1|${passcode}`),'PBKDF2',false,['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits({
+    name:'PBKDF2',hash:'SHA-256',salt:shareHexToBytes(salt),iterations
+  },material,256);
+  return shareBytesToHex(bits);
+}
+
 function readAgendaAppearance(){
   let stored = null;
   try{ stored = JSON.parse(localStorage.getItem(AGENDA_APPEARANCE_STORAGE_KEY) || 'null'); }
@@ -132,6 +185,7 @@ function syncAgendaMenuState(settings){
   if(fitMinus) fitMinus.disabled = settings.squish <= AGENDA_FIT_MIN;
   const fitPlus = $('agenda-fit-plus');
   if(fitPlus) fitPlus.disabled = settings.squish >= AGENDA_FIT_MAX;
+  syncDisplayPasscodeUi();
 }
 
 function applyAgendaAppearance(settings){
@@ -152,12 +206,16 @@ function setAgendaMenuOpen(open){
   button.setAttribute('aria-expanded',String(open));
 }
 
+function displayLongDateLabel(now){
+  return now.toLocaleDateString(undefined,{ weekday:'long',month:'long',day:'numeric' });
+}
+
 function updateDisplayNightClock(){
   const now = new Date();
   const time = $('agenda-wallpaper-time');
   const date = $('agenda-wallpaper-date');
   if(time) time.textContent = now.toLocaleTimeString(undefined,{ hour:'numeric',minute:'2-digit' });
-  if(date) date.textContent = now.toLocaleDateString(undefined,{ weekday:'long',month:'long',day:'numeric' });
+  if(date) date.textContent = displayLongDateLabel(now);
 }
 
 function updateDisplayClocks(){
@@ -169,6 +227,8 @@ function updateDisplayClocks(){
     const digits = parts.filter(part=>part.type !== 'dayPeriod').map(part=>part.value).join('').trim();
     clock.innerHTML = `${escapeDisplay(digits)}${dayPeriod ? `<span class="agenda-clock-mer">${escapeDisplay(dayPeriod)}</span>` : ''}`;
   }
+  const date = $('agenda-date');
+  if(date) date.textContent = displayLongDateLabel(now);
   updateDisplayNightClock();
 }
 
@@ -188,14 +248,163 @@ function setDisplayWallpaper(active,opts = {}){
   // by the "screen fit" squash stays invisible in every theme.
   document.documentElement.dataset.night = String(active);
   if(!active) _displayWallpaperTaps = [];
+  if(active) closeDisplayPasscodeModal({ focus:false });
   displayWriteWallpaper(active);
   if(active){
     updateDisplayNightClock();
     if(opts.focus !== false) wallpaper.focus({ preventScroll:true });
   }else{
     if(opts.focus !== false) $('agenda-hide')?.focus({ preventScroll:true });
-    if(document.visibilityState === 'visible') void refreshDisplay();
+    if(opts.refresh !== false && document.visibilityState === 'visible') void refreshDisplay();
   }
+}
+
+function openDisplayPasscodeModal(mode){
+  const modal = $('agenda-passcode-modal');
+  const title = $('agenda-passcode-title');
+  const status = $('agenda-passcode-status');
+  const input = $('agenda-passcode-input');
+  const confirmRow = $('agenda-passcode-confirm-row');
+  const confirm = $('agenda-passcode-confirm');
+  const submit = $('agenda-passcode-submit');
+  if(!modal || !title || !status || !input || !confirmRow || !confirm || !submit) return;
+  if(mode === 'unlock' && !readDisplayPasscode()){
+    setDisplayWallpaper(false);
+    return;
+  }
+  _displayPasscodeMode = mode === 'set' ? 'set' : 'unlock';
+  _displayPasscodeBusy = false;
+  setAgendaMenuOpen(false);
+  input.value = '';
+  confirm.value = '';
+  confirmRow.hidden = _displayPasscodeMode !== 'set';
+  title.textContent = _displayPasscodeMode === 'set'
+    ? (readDisplayPasscode() ? 'Change passcode' : 'Add passcode')
+    : 'Unlock agenda';
+  status.textContent = _displayPasscodeMode === 'set'
+    ? 'Choose a 4-digit passcode. You will need it after the three-tap privacy screen.'
+    : 'Enter the 4-digit passcode.';
+  submit.textContent = _displayPasscodeMode === 'set' ? 'save passcode' : 'unlock';
+  submit.disabled = false;
+  modal.hidden = false;
+  input.focus({ preventScroll:true });
+}
+
+function closeDisplayPasscodeModal(opts = {}){
+  const modal = $('agenda-passcode-modal');
+  if(modal) modal.hidden = true;
+  const mode = _displayPasscodeMode;
+  _displayPasscodeMode = null;
+  _displayPasscodeBusy = false;
+  if(opts.focus === false) return;
+  if(mode === 'unlock' && !$('agenda-wallpaper')?.hidden) $('agenda-wallpaper')?.focus({ preventScroll:true });
+  else $('agenda-more')?.focus({ preventScroll:true });
+}
+
+async function saveDisplayPasscode(){
+  const input = $('agenda-passcode-input');
+  const confirm = $('agenda-passcode-confirm');
+  const status = $('agenda-passcode-status');
+  const submit = $('agenda-passcode-submit');
+  const passcode = displayNormalizePasscode(input && input.value);
+  const repeated = displayNormalizePasscode(confirm && confirm.value);
+  if(passcode.length !== AGENDA_PASSCODE_DIGITS){
+    if(status) status.textContent = 'Enter exactly 4 digits.';
+    input?.focus({ preventScroll:true });
+    return;
+  }
+  if(passcode !== repeated){
+    if(status) status.textContent = 'The passcodes do not match.';
+    if(confirm) confirm.value = '';
+    confirm?.focus({ preventScroll:true });
+    return;
+  }
+  if(_displayPasscodeBusy) return;
+  _displayPasscodeBusy = true;
+  if(submit) submit.disabled = true;
+  try{
+    const salt = shareRandomHex(16);
+    const hash = await displayPasscodeHash(salt,passcode);
+    writeDisplayPasscode({ salt,hash,iterations:AGENDA_PASSCODE_PBKDF2_ITERATIONS,failures:0 });
+    closeDisplayPasscodeModal();
+  }catch(_){
+    _displayPasscodeBusy = false;
+    if(submit) submit.disabled = false;
+    if(status) status.textContent = 'Could not save the passcode on this display.';
+  }
+}
+
+async function revokeDisplayAfterPasscodeFailures(){
+  const enrolled = _displayFeed || displayReadEnrollment();
+  const status = $('agenda-passcode-status');
+  if(status) status.textContent = 'Three incorrect attempts. Access revoked; pair this display again.';
+  try{
+    if(enrolled && enrolled.feedId && enrolled.deviceCredential){
+      await shareFetch(`/v1/agendas/${enrolled.feedId}/display-access`,{
+        method:'DELETE',credential:enrolled.deviceCredential,timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
+      });
+    }
+  }catch(_){ /* Local credentials are erased even if the display is offline. */ }
+  closeDisplayPasscodeModal({ focus:false });
+  clearDisplayAuthorization('locked');
+  setDisplayWallpaper(false,{ focus:false,refresh:false });
+}
+
+async function unlockDisplayWithPasscode(){
+  const input = $('agenda-passcode-input');
+  const status = $('agenda-passcode-status');
+  const submit = $('agenda-passcode-submit');
+  const passcode = displayNormalizePasscode(input && input.value);
+  const stored = readDisplayPasscode();
+  if(!stored){
+    closeDisplayPasscodeModal({ focus:false });
+    setDisplayWallpaper(false);
+    return;
+  }
+  if(passcode.length !== AGENDA_PASSCODE_DIGITS){
+    if(status) status.textContent = 'Enter exactly 4 digits.';
+    input?.focus({ preventScroll:true });
+    return;
+  }
+  if(_displayPasscodeBusy) return;
+  _displayPasscodeBusy = true;
+  if(submit) submit.disabled = true;
+  let hash;
+  try{ hash = await displayPasscodeHash(stored.salt,passcode,stored.iterations); }
+  catch(_){
+    _displayPasscodeBusy = false;
+    if(submit) submit.disabled = false;
+    if(status) status.textContent = 'Could not check the passcode on this display.';
+    return;
+  }
+  if(hash === stored.hash){
+    writeDisplayPasscode({ ...stored,failures:0 });
+    closeDisplayPasscodeModal({ focus:false });
+    setDisplayWallpaper(false);
+    return;
+  }
+  const failures = stored.failures + 1;
+  writeDisplayPasscode({ ...stored,failures });
+  if(failures >= AGENDA_PASSCODE_MAX_FAILURES){
+    await revokeDisplayAfterPasscodeFailures();
+    return;
+  }
+  _displayPasscodeBusy = false;
+  if(submit) submit.disabled = false;
+  if(input) input.value = '';
+  const remaining = AGENDA_PASSCODE_MAX_FAILURES - failures;
+  if(status) status.textContent = `Incorrect passcode. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`;
+  input?.focus({ preventScroll:true });
+}
+
+function submitDisplayPasscode(){
+  if(_displayPasscodeMode === 'set') void saveDisplayPasscode();
+  else if(_displayPasscodeMode === 'unlock') void unlockDisplayWithPasscode();
+}
+
+function requestShowDisplayAgenda(){
+  if(readDisplayPasscode()) openDisplayPasscodeModal('unlock');
+  else setDisplayWallpaper(false);
 }
 
 function displaySwipeFromTouch(dx,dy){
@@ -237,10 +446,15 @@ document.addEventListener('touchend',event=>{
 },{ passive:true });
 
 function purgeLegacyDisplayEnrollments(){
-  // v2 was shared by the retired link/code enrollment and the first QR build.
-  // Those records have the same fields, so no client-side test can safely tell
-  // them apart. Fail closed and require one fresh QR pairing for the v3 key.
-  for(const legacyKey of ['tings_agenda_display_v1','tings_agenda_display_v2']){
+  // v2 mixed retired link/code enrollment with the first QR build. v3 stored a
+  // working session across browsers, so a laptop that was never re-paired could
+  // keep decrypting after a later tablet approval. Fail closed: every older key
+  // is deleted and the current display must complete one fresh QR pairing.
+  for(const legacyKey of [
+    'tings_agenda_display_v1',
+    'tings_agenda_display_v2',
+    'tings_agenda_display_v3'
+  ]){
     if(legacyKey === AGENDA_DISPLAY_STORAGE_KEY) continue;
     try{ localStorage.removeItem(legacyKey); }catch(_){}
   }
@@ -340,6 +554,60 @@ function displayRowMark(row,kind,canComplete,isComplete){
   return `<span class="agenda-mark is-view-only${displayEmojiBgClass(row.emojiBgColor)}" aria-hidden="true">${symbolHtml}</span>`;
 }
 
+function displayWeatherHtml(weather, withCity = false){
+  if(!weather || typeof weather !== 'object') return '';
+  const emoji = String(weather.emoji || '').slice(0,8);
+  const temperature = String(weather.temperature || '').slice(0,16);
+  const city = withCity ? String(weather.city || '').trim().slice(0,80) : '';
+  if(!emoji && !temperature && !city) return '';
+  const label = [emoji, temperature, city].filter(Boolean).join(' ');
+  return `<span class="agenda-weather-cue" title="${escapeDisplay(label)}" role="img" aria-label="${escapeDisplay(label)}">${emoji ? `<span class="agenda-weather-emoji" aria-hidden="true">${escapeDisplay(emoji)}</span>` : ''}${temperature ? `<span class="agenda-weather-temp">${escapeDisplay(temperature)}</span>` : ''}${city ? `<span class="agenda-weather-city">${escapeDisplay(city)}</span>` : ''}</span>`;
+}
+
+// The header's ambient line is emoji + feels-like only: the owner knows which
+// city they live in, so the location never renders even if an older published
+// snapshot still carries it.
+function renderDisplayCurrentWeather(weather){
+  const node = $('agenda-weather');
+  if(!node) return;
+  const emoji = weather && String(weather.emoji || '').slice(0,8);
+  const temperature = weather && String(weather.temperature || '').slice(0,16);
+  const ambient = node.closest('.agenda-ambient');
+  if(!emoji && !temperature){
+    node.hidden = true;
+    node.textContent = '';
+    node.removeAttribute('aria-label');
+    if(ambient) ambient.classList.remove('has-weather');
+    return;
+  }
+  const label = [emoji, temperature ? `feels like ${temperature}` : ''].filter(Boolean).join(' · ');
+  node.hidden = false;
+  node.setAttribute('aria-label',label);
+  node.innerHTML = `${emoji ? `<span class="agenda-weather-emoji" aria-hidden="true">${escapeDisplay(emoji)}</span>` : ''}${temperature ? `<span class="agenda-weather-temp">${escapeDisplay(temperature)}</span>` : ''}`;
+  if(ambient) ambient.classList.add('has-weather');
+}
+
+function displayKnownRowIds(projection){
+  const ids = new Set();
+  for(const day of (projection && projection.days) || []){
+    for(const row of (day && day.rows) || []){
+      const rowId = String(row && row.rowId || '');
+      if(/^[0-9a-f]{16}$/.test(rowId)) ids.add(rowId);
+    }
+  }
+  return ids;
+}
+
+function mergeDisplayCompletionRowIds(local, remote, projection, extras = []){
+  const known = displayKnownRowIds(projection);
+  const extra = new Set((extras || []).filter(id=>/^[0-9a-f]{16}$/.test(String(id || ''))));
+  return [...new Set([
+    ...(Array.isArray(local) ? local : []),
+    ...(Array.isArray(remote) ? remote : []),
+    ...extra
+  ].map(id=>String(id || '')).filter(id=>/^[0-9a-f]{16}$/.test(id) && (known.has(id) || extra.has(id))))].slice(-50);
+}
+
 function renderDisplay(projection,meta,completedRowIds = []){
   const now = Date.now();
   const root = $('agenda-root');
@@ -349,6 +617,9 @@ function renderDisplay(projection,meta,completedRowIds = []){
   if(meta && meta.error === 'revoked'){
     banner.hidden = false;
     banner.textContent = 'This display was revoked. Scan the fresh QR below from inside Tings on the owner phone to authorize it again.';
+  }else if(meta && meta.error === 'locked'){
+    banner.hidden = false;
+    banner.textContent = 'Three incorrect passcode attempts revoked this display. Scan the fresh QR below from inside Tings on the owner phone.';
   }else if(meta && meta.error === 'reauth'){
     banner.hidden = false;
     banner.textContent = 'Authorization expired or was rotated. Scan the fresh QR below from inside Tings on the owner phone.';
@@ -358,9 +629,6 @@ function renderDisplay(projection,meta,completedRowIds = []){
   }else if(meta && meta.error === 'error'){
     banner.hidden = false;
     banner.textContent = 'Could not load the agenda. Check the connection and retry.';
-  }else if(meta && meta.paused){
-    banner.hidden = false;
-    banner.textContent = 'This shared display is paused. Marking items done is unavailable until publishing resumes.';
   }else if(meta && meta.generatedAt && now - meta.generatedAt > AGENDA_STALE_MS){
     banner.hidden = false;
     banner.textContent = 'This plan is more than a day old. The owner’s app has not published a newer agenda.';
@@ -372,12 +640,14 @@ function renderDisplay(projection,meta,completedRowIds = []){
   if(!projection || !Array.isArray(projection.days)){
     _displayProjection = null;
     dropPendingDisplayCompletion();
+    renderDisplayCurrentWeather(null);
     root.innerHTML = '<p class="agenda-empty">No agenda on this display yet.</p>';
     return;
   }
   _displayProjection = projection;
+  renderDisplayCurrentWeather(projection.currentWeather);
   // The undo toast promises a push that must still be possible: if a refresh
-  // made the pending row unmarkable (paused, unpublished, day rolled over),
+  // made the pending row unmarkable (unpublished, day rolled over),
   // drop it here so the row and the toast can never disagree.
   if(_displayPendingCompletion && !displayMarkableRow(_displayPendingCompletion.rowId)){
     dropPendingDisplayCompletion();
@@ -400,23 +670,31 @@ function renderDisplay(projection,meta,completedRowIds = []){
       const extra = kind === 'travel'
         ? [row.travelFromLabel,row.travelToLabel].filter(Boolean).join(' → ')
         : row.locationLabel;
+      const weather = displayWeatherHtml(row.weather);
       const currentRow = current && row.start && row.end && now >= row.start && now < row.end;
       const nextRow = current && row.start && now < row.start;
-      const canComplete = !meta?.paused && kind === 'item' && row.completable === true && day.dateKey <= todayKey;
+      const canComplete = kind === 'item' && row.completable === true
+        && (day.dateKey <= todayKey || row.allowEarlyCompletion === true);
       const isComplete = canComplete && (completed.has(row.rowId)
         || (_displayPendingCompletion && _displayPendingCompletion.rowId === row.rowId)
         || _displaySavingRowIds.has(row.rowId));
       return `<article class="agenda-row ${kind}${currentRow ? ' is-now' : ''}${nextRow ? ' is-next' : ''}${isComplete ? ' is-complete' : ''}">
         ${displayRowMark(row,kind,canComplete,isComplete)}
         <div class="agenda-row-copy">
-          <b>${escapeDisplay(row.title)}</b>
+          <div class="agenda-row-title">
+            <b>${escapeDisplay(row.title)}</b>
+            ${weather}
+          </div>
           ${extra ? `<small>${escapeDisplay(extra)}</small>` : ''}
         </div>
         <time>${when}</time>
       </article>`;
     }).join('') || '<p class="agenda-empty">Nothing planned.</p>';
+    // The header's date line already shows today's date, so the today section
+    // header stays weekday-only; later days still carry their own date label.
+    const dayDate = current ? '' : `<p>${escapeDisplay(day.dateLabel)}</p>`;
     return `<section class="agenda-day${current ? ' is-today' : ''}">
-      <header><h2>${escapeDisplay(day.weekdayLabel || day.dateLabel)}</h2><p>${escapeDisplay(day.dateLabel)}</p></header>
+      <header><h2>${escapeDisplay(day.weekdayLabel || day.dateLabel)}</h2>${dayDate}</header>
       ${rows}
     </section>`;
   }).join('');
@@ -439,9 +717,8 @@ function displayMarkableRow(rowId){
   const enrolled = _displayFeed || displayReadEnrollment();
   const target = displayCompletionRow(key);
   if(!enrolled || !enrolled.deviceCredential || !target || target.row.completable !== true) return null;
-  if(enrolled.meta && enrolled.meta.paused) return null;
   const tz = displayTimezone(_displayProjection && _displayProjection.timezone);
-  if(String(target.day.dateKey || '') > displayDateKey(Date.now(),tz)) return null;
+  if(String(target.day.dateKey || '') > displayDateKey(Date.now(),tz) && target.row.allowEarlyCompletion !== true) return null;
   return target;
 }
 
@@ -633,6 +910,7 @@ async function beginDisplayPairing(reason = 'new'){
   if(section) section.hidden = false;
   const root = $('agenda-root');
   if(root) root.innerHTML = '';
+  renderDisplayCurrentWeather(null);
   const updated = $('agenda-updated');
   if(updated) updated.textContent = reason === 'new' ? 'Not paired' : 'Reauthorization required';
   const status = $('agenda-enroll-status');
@@ -689,10 +967,13 @@ async function pollDisplayPairing(){
       feedId,
       contentKey,
       deviceCredential:pairing.deviceCredential,
+      pairingId:pairing.pairingId,
       sessionExpiresAt:Number(result.body.sessionExpiresAt) || null
     };
     _displayFeed = enrolled;
     displayWriteEnrollment(enrolled);
+    const passcode = readDisplayPasscode();
+    if(passcode && passcode.failures) writeDisplayPasscode({ ...passcode,failures:0 });
     try{
       await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}/consume`,{
         method:'POST',credential:pairing.pollCredential
@@ -718,21 +999,36 @@ async function pollDisplayPairing(){
 async function refreshDisplay(opts = {}){
   const enrolled = _displayFeed || displayReadEnrollment();
   if(!enrolled || !enrolled.deviceCredential) return;
+  if(!enrolled.pairingId){
+    clearDisplayAuthorization('reauth');
+    return;
+  }
   if(enrolled.sessionExpiresAt && Number(enrolled.sessionExpiresAt) <= Date.now()){
     clearDisplayAuthorization('reauth');
     return;
   }
   try{
     const result = await shareFetch(`/v1/agendas/${enrolled.feedId}`,{ credential:enrolled.deviceCredential });
+    const remotePairingId = result.body && result.body.pairingId;
+    if(remotePairingId && remotePairingId !== enrolled.pairingId){
+      clearDisplayAuthorization('reauth');
+      return;
+    }
     if(!result.body || !result.body.snapshot){
       renderDisplay(null,{ error:'waiting' });
       return;
     }
-    const projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
+    let projection;
+    try{
+      projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
+    }catch(_){
+      // A rotated content key must not fall back to the previous plaintext cache.
+      renderDisplay(null,{ error:'waiting' });
+      return;
+    }
     const meta = {
       generatedAt:projection.generatedAt,
       revision:result.body.revision,
-      paused:result.body.paused,
       error:null
     };
     const next = {
@@ -741,10 +1037,17 @@ async function refreshDisplay(opts = {}){
       snapshot:result.body.snapshot,
       meta
     };
-    const completionRowIds = (Array.isArray(result.body.completions) ? result.body.completions : [])
+    const remoteCompletionRowIds = (Array.isArray(result.body.completions) ? result.body.completions : [])
       .map(record=>record && record.envelope && record.envelope.logId)
-      .filter(value=>/^[0-9a-f]{16}$/.test(String(value || '')))
-      .slice(-50);
+      .filter(value=>/^[0-9a-f]{16}$/.test(String(value || '')));
+    const extras = [..._displaySavingRowIds];
+    if(_displayPendingCompletion && _displayPendingCompletion.rowId) extras.push(_displayPendingCompletion.rowId);
+    const completionRowIds = mergeDisplayCompletionRowIds(
+      enrolled.completionRowIds,
+      remoteCompletionRowIds,
+      projection,
+      extras
+    );
     next.completionRowIds = completionRowIds;
     _displayFeed = next;
     displayWriteEnrollment(next);
@@ -755,8 +1058,10 @@ async function refreshDisplay(opts = {}){
     const reauth = error && error.status === 401;
     if(revoked || reauth || code === 'reauth_required'){
       clearDisplayAuthorization(revoked ? 'revoked' : 'reauth');
+    }else if(opts.offline){
+      await renderCachedDisplay(enrolled,'offline');
     }else{
-      await renderCachedDisplay(enrolled,opts.offline ? 'offline' : 'error');
+      renderDisplay(null,{ error:'error' });
     }
   }
 }
@@ -789,18 +1094,27 @@ function startDisplayPolling(){
 async function bootAgendaDisplay(){
   clearAgendaFragment();
   const stored = displayReadEnrollment();
-  if(stored && stored.deviceCredential){
+  if(stored && stored.deviceCredential && stored.pairingId){
     _displayFeed = stored;
-    if(stored.snapshot && stored.contentKey){
+    const passcode = readDisplayPasscode();
+    if(passcode && passcode.failures >= AGENDA_PASSCODE_MAX_FAILURES){
+      await revokeDisplayAfterPasscodeFailures();
+      return;
+    }
+    // Online boots must confirm the current pairing before painting. A cached
+    // snapshot is only shown when the device is already offline, and even then
+    // a later 401/410 still erases it.
+    if(navigator.onLine === false && stored.snapshot && stored.contentKey){
       try{
         const projection = await shareDecrypt(stored.contentKey,stored.snapshot);
-        renderDisplay(projection,stored.meta || { generatedAt:projection.generatedAt },stored.completionRowIds);
+        renderDisplay(projection,{ ...(stored.meta || { generatedAt:projection.generatedAt }),error:'offline' },stored.completionRowIds);
       }catch(_){}
     }
-    await refreshDisplay();
+    await refreshDisplay({ offline:navigator.onLine === false });
     startDisplayPolling();
     return;
   }
+  if(stored) displayWriteEnrollment(null);
   renderDisplay(null,{});
   await beginDisplayPairing();
 }
@@ -831,13 +1145,13 @@ document.addEventListener('DOMContentLoaded',()=>{
     _displayWallpaperTaps.push(now);
     if(_displayWallpaperTaps.length >= 3){
       _displayWallpaperTaps = [];
-      setDisplayWallpaper(false);
+      requestShowDisplayAgenda();
     }
   });
   $('agenda-wallpaper')?.addEventListener('keydown',event=>{
     if(event.key === 'Enter' || event.key === ' '){
       event.preventDefault();
-      setDisplayWallpaper(false);
+      requestShowDisplayAgenda();
     }
   });
   $('agenda-more')?.addEventListener('click',()=>{
@@ -871,14 +1185,34 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
     if(event.target.closest('#agenda-menu-fullscreen')) void toggleDisplayFullscreen();
   });
+  $('agenda-passcode-set')?.addEventListener('click',()=>openDisplayPasscodeModal('set'));
+  $('agenda-passcode-remove')?.addEventListener('click',()=>{
+    writeDisplayPasscode(null);
+    setAgendaMenuOpen(false);
+    $('agenda-more')?.focus({ preventScroll:true });
+  });
+  for(const input of [$('agenda-passcode-input'),$('agenda-passcode-confirm')]){
+    input?.addEventListener('input',()=>{ input.value = displayNormalizePasscode(input.value); });
+    input?.addEventListener('keydown',event=>{
+      if(event.key === 'Enter'){
+        event.preventDefault();
+        submitDisplayPasscode();
+      }
+    });
+  }
+  $('agenda-passcode-submit')?.addEventListener('click',submitDisplayPasscode);
+  $('agenda-passcode-cancel')?.addEventListener('click',()=>closeDisplayPasscodeModal());
   document.addEventListener('click',event=>{
     const menu = $('agenda-menu');
     if(!menu || menu.hidden) return;
-    if(event.target.closest && event.target.closest('.agenda-side')) return;
+    if(event.target.closest && event.target.closest('.agenda-heading-actions')) return;
     setAgendaMenuOpen(false);
   });
   document.addEventListener('keydown',event=>{
-    if(event.key === 'Escape') setAgendaMenuOpen(false);
+    if(event.key === 'Escape'){
+      if(!$('agenda-passcode-modal')?.hidden) closeDisplayPasscodeModal();
+      else setAgendaMenuOpen(false);
+    }
   });
   $('agenda-pair-new')?.addEventListener('click',()=>void beginDisplayPairing('new'));
   $('agenda-root')?.addEventListener('click',event=>{

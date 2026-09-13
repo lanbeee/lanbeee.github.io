@@ -29,12 +29,13 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     if(seen.has(i))continue;
     const h = data[i];
     if(h.type === 'task' && h.eventTime !== null)continue; // timed → scheduled rows
-    const pinned = isWeekPinnedToday(h,settings);
+    const pinnedDay = typeof plannerPinnedDayBase === 'function'
+      ? plannerPinnedDayBase(h,settings,todayBase,opts.fullToday ? {keepDueTodayForMissed:true} : null)
+      : (isWeekPinnedToday(h,settings) ? todayBase : null);
+    const pinned = pinnedDay != null;
     const eligible = new Set();
     for(const day of days){
-      if(pinned && !day.isToday)continue;
-      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
-      if(isWeekCandidate(h,settings,day.dayBase,day.weekday) || (pinned && day.isToday)){
+      if(weekFillEligibleOnDay(h,settings,day.dayBase,day.weekday,pinnedDay)){
         eligible.add(day.dayBase);
       }
     }
@@ -55,6 +56,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     candidates.push({
       h, i,
       pinned,
+      pinnedDay,
       priority:effectivePriority(h),
       score:attentionScore(h,i,settings),
       urgency:pinned ? Math.max(200,weekUrgency(h)) : weekUrgency(h),
@@ -80,8 +82,15 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     if(snoozed || !candidates[i].eligible || !candidates[i].eligible.size)candidates.splice(i,1);
   }
 
-  // Pass 1 — greedy discovery of each location's natural day.
-  assignWeekCandidatesByPlacement(candidates,dayStates,settings,null);
+  // Main-thread callers (missed-item projection, some audits) only need a
+  // feasible hid/day map. Skip the Fast week-graph search during render: even
+  // the cheap leftover pass is wasted work for a hid-per-day expectation map.
+  const useFastGraph = opts.fastGraph !== false;
+  const graphSeedBudget = useFastGraph ? 768 : 0;
+  const graphSeeds = useFastGraph ? dayStates.map(cloneFastGraphState) : [];
+  const graphBudget = {remaining:graphSeedBudget,searches:0,accepted:0};
+  // Pass 1 — graph placement discovery of each location's natural day.
+  assignWeekCandidatesByPlacement(candidates,dayStates,settings,null,graphBudget);
   const locHints = collectLocationHints(dayStates);
 
   // Pass 2 — re-place from clean states, pulled toward co-located partners.
@@ -95,10 +104,13 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   if(distinctLocs.size > 1){
     days.forEach(d=>{ d.agendaItems = []; });
     dayStates = makeStates();
-    assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints);
+    assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,graphBudget);
   }
 
   placeAdditionalSameDayOccurrences(candidates,dayStates,settings);
+  const weekGraphDiagnostics = useFastGraph
+    ? improveFastGraphWeek(candidates,dayStates,graphSeeds,settings)
+    : {evaluated:0,accepted:0,depth:0,budgetExhausted:false};
   annotateAgendaOccurrenceKeys(candidates,dayStates);
 
   let totalTravelSeconds = 0;
@@ -118,7 +130,11 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     totalTravelSeconds += day.travelSeconds;
   }
   if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
-  return { days, totalTravelSeconds, candidateCount:candidates.length };
+  return { days, totalTravelSeconds, candidateCount:candidates.length,
+    fastPlannerAlgorithm:'bounded-state-graph',
+    fastWeekGraphDiagnostics:weekGraphDiagnostics,
+    fastGraphDiagnostics:{searches:graphBudget.searches,accepted:graphBudget.accepted,
+      probes:graphSeedBudget - graphBudget.remaining,budgetExhausted:useFastGraph && graphBudget.remaining === 0} };
 }
 
 // PURE: format a timestamp as a short clock label

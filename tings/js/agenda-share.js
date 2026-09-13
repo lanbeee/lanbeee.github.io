@@ -1,7 +1,7 @@
 let _agendaPublishTimer = null;
 let _agendaPublishInFlight = false;
 let _lastAgendaProjectionSig = '';
-let _pendingAgendaSnapshot = null;
+let _pendingAgendaWeek = null;
 let _agendaPairApproval = null;
 let _agendaPairScannerStream = null;
 let _agendaPairScannerFrame = null;
@@ -16,7 +16,10 @@ const HOUSEHOLD_AGENDA_DEFAULT_HOURS = 24;
 const HOUSEHOLD_AGENDA_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const HOUSEHOLD_AGENDA_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const SHARED_DISPLAY_COMPLETION_POLL_MS = 30 * 1000;
-const SHARED_DISPLAY_ROW_MAP_REVISIONS = 3;
+const SHARED_DISPLAY_ROW_MAP_REVISIONS = 12;
+const HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS = 15 * 60 * 1000;
+let _agendaPublishQueued = false;
+let _agendaPublishQueuedForce = false;
 
 function householdAgendaTimezone(){
   try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
@@ -30,10 +33,105 @@ function householdPlannerProvenance(week){
   return 'glpk-feasible';
 }
 
-function householdLocationLabel(id){
-  if(!id || typeof locationById !== 'function') return '';
-  const loc = locationById(id);
+function householdLocationLabel(id,settings){
+  if(!id) return '';
+  const registry = settings && Array.isArray(settings.locations) ? settings.locations : undefined;
+  const loc = typeof locationById === 'function' ? locationById(id,registry) : null;
   return loc && loc.name ? String(loc.name) : '';
+}
+
+function householdAgendaSettings(opts = {}){
+  if(opts && opts.settings) return opts.settings;
+  if(typeof sortSettings !== 'undefined' && sortSettings) return sortSettings;
+  if(typeof loadSortSettings === 'function') return loadSortSettings();
+  return {};
+}
+
+// Display-safe weather only: emoji + already-converted feels-like text. No
+// place names — the owner knows which city they live in, and coordinates,
+// location ids, and forecast samples stay on the owner phone.
+function householdAgendaPublicWeather(summary){
+  if(!summary || !summary.condition) return null;
+  const emoji = String(summary.condition.emoji || '').slice(0,8);
+  const temperature = typeof weatherPeriodTemperatureRange === 'function'
+    ? String(weatherPeriodTemperatureRange(summary) || '').slice(0,16)
+    : '';
+  if(!emoji && !temperature) return null;
+  const cue = {};
+  if(emoji) cue.emoji = emoji;
+  if(temperature) cue.temperature = temperature;
+  return cue;
+}
+
+function householdAgendaWeatherCue(start,end,locationId,settings,now){
+  if(!settings || settings.minimalMode) return null;
+  if(typeof weatherPeriodSummary !== 'function') return null;
+  const from = Number(start);
+  const to = Number(end);
+  if(!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return null;
+  const summary = weatherPeriodSummary(from,to,settings,locationId || null,now);
+  return householdAgendaPublicWeather(summary);
+}
+
+function householdAgendaCurrentWeather(settings,now){
+  return householdAgendaWeatherCue(now,now + HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS,null,settings,now);
+}
+
+function householdAgendaRowWeather(row,habit,settings,now){
+  if(!row || !settings || settings.minimalMode) return null;
+  if(row.kind === 'fill' || row.kind === 'scheduled'){
+    const show = typeof weatherItemShowsAmbient === 'function'
+      ? weatherItemShowsAmbient(habit)
+      : Boolean(habit && habit.showWeather);
+    if(!show) return null;
+    const locationId = typeof weatherDisplayLocationId === 'function'
+      ? weatherDisplayLocationId(habit,row)
+      : null;
+    return householdAgendaWeatherCue(row.start,row.end,locationId,settings,now);
+  }
+  if(row.kind === 'travel'){
+    if(settings.showWeatherOnTravel === false) return null;
+    return householdAgendaWeatherCue(row.start,row.end,row.to || null,settings,now);
+  }
+  if(row.kind === 'blocked'){
+    if(!settings.showWeatherOnBusyTimes) return null;
+    return householdAgendaWeatherCue(row.start,row.end,row.locationId || null,settings,now);
+  }
+  return null;
+}
+
+// Busy times live in the home sequence, not the planner timeline. Skip the
+// live-GPS "from here" leg so the display never learns the phone's coordinates
+// or that the owner is away from a saved place.
+function householdAgendaSourceRows(day,settings){
+  const timeline = Array.isArray(day && day.timeline) ? day.timeline : [];
+  const seqSettings = { ...(settings || {}), homeExtraMode:'cards' };
+  let rows = typeof homeDaySequence === 'function'
+    ? homeDaySequence(day,seqSettings).filter(row=>{
+        if(!row) return false;
+        if(row.fromCurrentCoord) return false;
+        if(typeof CURRENT_COORD_ID !== 'undefined' && row.from === CURRENT_COORD_ID) return false;
+        return true;
+      })
+    : timeline.slice();
+  const seenBlocked = new Set(
+    rows.filter(row=>row && row.kind === 'blocked').map(row=>`${Number(row.start)}|${Number(row.end)}`)
+  );
+  for(const row of timeline){
+    if(!row || row.kind !== 'blocked') continue;
+    const key = `${Number(row.start)}|${Number(row.end)}`;
+    if(seenBlocked.has(key)) continue;
+    rows.push(row);
+    seenBlocked.add(key);
+  }
+  if(!rows.some(row=>row && row.kind === 'travel')){
+    for(const row of timeline){
+      if(!row || row.kind !== 'travel' || row.fromCurrentCoord) continue;
+      if(typeof CURRENT_COORD_ID !== 'undefined' && row.from === CURRENT_COORD_ID) continue;
+      rows.push(row);
+    }
+  }
+  return rows.sort((a,b)=>(a.start || 0) - (b.start || 0) || ((a.kind === 'blocked' ? 0 : 1) - (b.kind === 'blocked' ? 0 : 1)));
 }
 
 function householdRowStatus(row, habit){
@@ -65,7 +163,13 @@ function householdProjectionHabitActive(habit,dayBase,row = null){
   return true;
 }
 
-function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
+function householdProjectionAttachWeather(projected,row,habit,settings,now){
+  const weather = householdAgendaRowWeather(row,habit,settings,now);
+  if(weather) projected.weather = weather;
+  return projected;
+}
+
+function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys, settings, now){
   const habit = householdProjectionHabit(row,data);
   const durationMinutes = Math.max(0, Math.round(((row.end || 0) - (row.start || 0)) / 60000));
   const base = {
@@ -81,16 +185,21 @@ function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
     travelToLabel:''
   };
   if(row.kind === 'blocked'){
-    return { ...base, kind:'busy', title:'Busy' };
+    return householdProjectionAttachWeather({
+      ...base,
+      kind:'busy',
+      title:String(row.label || 'Busy').slice(0,80) || 'Busy',
+      locationLabel:householdLocationLabel(row.locationId,settings).slice(0,80)
+    },row,habit,settings,now);
   }
   if(row.kind === 'travel'){
-    return {
+    return householdProjectionAttachWeather({
       ...base,
       kind:'travel',
       title:'Travel',
-      travelFromLabel:row.fromName || householdLocationLabel(row.from) || '',
-      travelToLabel:row.toName || householdLocationLabel(row.to) || ''
-    };
+      travelFromLabel:row.fromName || householdLocationLabel(row.from,settings) || '',
+      travelToLabel:row.toName || householdLocationLabel(row.to,settings) || ''
+    },row,habit,settings,now);
   }
   if(row.kind === 'fill' || row.kind === 'scheduled'){
     if(!householdProjectionHabitActive(habit,dayBase,row)) return null;
@@ -107,16 +216,17 @@ function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys){
         scheduledDay:row.scheduledDay || (typeof dateKey === 'function' ? dateKey(dayBase) : '')
       };
     }
-    return {
+    return householdProjectionAttachWeather({
       ...base,
       kind:'item',
       completable,
+      allowEarlyCompletion:Boolean(completable && habit && habit.type === 'task'),
       title:habit && habit.name ? String(habit.name).slice(0,80) : 'Scheduled item',
       emoji:habit && habit.emoji ? String(habit.emoji).slice(0,8) : '',
       emojiBgColor:habit && typeof normalizeEmojiBgColor === 'function' ? normalizeEmojiBgColor(habit.emojiBgColor) : '',
       status:householdRowStatus(row, habit),
-      locationLabel:householdLocationLabel(row.locationId || (habit && habit.locationIds && habit.locationIds[0])).slice(0,80)
-    };
+      locationLabel:householdLocationLabel(row.locationId || (habit && habit.locationIds && habit.locationIds[0]),settings).slice(0,80)
+    },row,habit,settings,now);
   }
   return null;
 }
@@ -142,6 +252,8 @@ function buildHouseholdAgendaProjection(week, opts = {}){
   let totalRows = 0;
   const rowMap = {};
   const completedRowKeys = opts.completedRowKeys instanceof Set ? opts.completedRowKeys : new Set();
+  const settings = householdAgendaSettings(opts);
+  const currentWeather = householdAgendaCurrentWeather(settings,now);
   const projection = {
     schemaVersion:SHARE_SCHEMA_VERSION,
     feedId:feed && feed.feedId,
@@ -153,11 +265,11 @@ function buildHouseholdAgendaProjection(week, opts = {}){
     plannerProvenance:householdPlannerProvenance(week),
     scope:{ mode:scopeMode === 'hours' ? 'hours' : 'count', value:scopeValue },
     days:days.map(day=>{
-      const timeline = Array.isArray(day.timeline) ? day.timeline : [];
+      const timeline = householdAgendaSourceRows(day,settings);
       const rows = [];
       for(const row of timeline){
         if(rowsLeft <= 0) break;
-        const projected = householdProjectionRow(row,data,day.dayBase,rowMap,completedRowKeys);
+        const projected = householdProjectionRow(row,data,day.dayBase,rowMap,completedRowKeys,settings,now);
         if(!projected) continue;
         if(projected.end && projected.end <= now) continue;
         if(projected.start && projected.start >= horizon) continue;
@@ -192,6 +304,7 @@ function buildHouseholdAgendaProjection(week, opts = {}){
       };
     })
   };
+  if(currentWeather) projection.currentWeather = currentWeather;
   Object.defineProperty(projection,'_rowMap',{ value:rowMap,enumerable:false });
   return projection;
 }
@@ -201,6 +314,7 @@ function householdAgendaSignature(projection){
   const slim = {
     timezone:projection.timezone,
     provenance:projection.plannerProvenance,
+    currentWeather:projection.currentWeather || null,
     days:(projection.days || []).map(day=>({
       dateKey:day.dateKey,
       openMinutes:day.openMinutes,
@@ -214,10 +328,12 @@ function householdAgendaSignature(projection){
         emojiBgColor:row.emojiBgColor,
         status:row.status,
         completable:Boolean(row.completable),
+        allowEarlyCompletion:Boolean(row.allowEarlyCompletion),
         durationMinutes:row.durationMinutes,
         locationLabel:row.locationLabel,
         travelFromLabel:row.travelFromLabel,
-        travelToLabel:row.travelToLabel
+        travelToLabel:row.travelToLabel,
+        weather:row.weather || null
       }))
     }))
   };
@@ -242,7 +358,6 @@ async function createHouseholdAgendaFeed(title = 'Shared display'){
     lastRevision:0,
     lastPublishedAt:null,
     plannerProvenance:null,
-    paused:false,
     status:'active',
     reauthDays:30,
     scopeMode:'count',
@@ -423,13 +538,20 @@ async function openHouseholdAgendaPairingApproval(pairing){
     _agendaPairApproval = { ...pairing,expiresAt };
     input.disabled = false;
     approve.disabled = false;
-    status.textContent = 'Type the 8-digit code shown on the display. Approving revokes any previously paired display.';
+    status.textContent = 'Type the 8-digit code shown on the display. Approving signs out every previously paired display immediately — they keep neither the old link nor the old key.';
     input.focus();
   }catch(error){
     status.textContent = error && error.message === 'pairing_key_mismatch'
       ? 'Security check failed: the QR key does not match the Worker request. Do not approve it.'
       : 'This pairing request expired or is no longer available. Generate a fresh QR on the display.';
   }
+}
+
+function sharedDisplayCompletionRevisionKnown(feed,envelope){
+  const revision = Number(envelope && envelope.revision);
+  if(!Number.isInteger(revision) || revision < 1) return false;
+  const maps = Array.isArray(feed && feed.rowMaps) ? feed.rowMaps : [];
+  return maps.some(entry=>Number(entry && entry.revision) === revision);
 }
 
 function sharedDisplayCompletionMap(feed,envelope){
@@ -488,7 +610,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     if(!/^[0-9a-f]{32}$/.test(operationId) || !/^[0-9a-f]{16}$/.test(rowId)) continue;
     const mapped = sharedDisplayCompletionMap(nextFeed,envelope);
     if(!mapped){
-      safeToAck.push(operationId);
+      if(sharedDisplayCompletionRevisionKnown(nextFeed,envelope)) safeToAck.push(operationId);
       continue;
     }
     if(sharedDisplayCompletionAlreadyLogged(data,operationId)){
@@ -511,7 +633,14 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     const h = index >= 0 ? data[index] : null;
     const createdAt = Number(record && record.createdAt);
     const serverTime = Number.isFinite(createdAt) && createdAt > 0 ? Math.min(createdAt,Date.now()) : Date.now();
-    if(!h || h.type === 'zero' || mapped.dayBase > dayStart(serverTime)){
+    const todayBase = dayStart(serverTime);
+    const tomorrow = new Date(todayBase);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowBase = tomorrow.getTime();
+    const completingTomorrowTask = h && h.type === 'task'
+      && mapped.dayBase > todayBase
+      && mapped.dayBase <= tomorrowBase;
+    if(!h || h.type === 'zero' || (mapped.dayBase > todayBase && !completingTomorrowTask)){
       safeToAck.push(operationId);
       continue;
     }
@@ -523,8 +652,9 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       continue;
     }
     const logs = normalizeLogs(h.logs);
+    const planTargetTs = completingTomorrowTask ? (mapped.start || mapped.dayBase) : serverTime;
     const consumedPlanTs = typeof planToConsumeForEntry === 'function'
-      ? planToConsumeForEntry(logs,serverTime)
+      ? planToConsumeForEntry(logs,planTargetTs)
       : null;
     if(consumedPlanTs !== null && typeof findEntryByKind === 'function'){
       const pos = findEntryByKind(logs,consumedPlanTs,true);
@@ -630,7 +760,7 @@ async function approveHouseholdAgendaPairing(){
     status.textContent = 'Display authorized. Publishing a fresh encrypted agenda…';
     try{
       await publishHouseholdAgendaNow(null,{ manual:true });
-      status.textContent = `Display authorized for ${reauthDays} days. You can return to the display.`;
+      status.textContent = `Display authorized for ${reauthDays} days. Every earlier display is signed out.`;
     }catch(_){
       scheduleHouseholdAgendaPublish();
       status.textContent = 'Display authorized. The agenda will publish when this phone is online.';
@@ -657,12 +787,15 @@ async function approveHouseholdAgendaPairing(){
 async function publishHouseholdAgendaNow(week, opts = {}){
   let feed = agendaFeedRecord();
   if(!feed || !shareConfigured()) return null;
-  if(feed.paused && !opts.manual) return null;
   let completionSync = { feed,operationIds:[],completedRowKeys:new Set(),changed:false };
   try{
     completionSync = await syncHouseholdAgendaCompletions(feed,{ force:Boolean(opts.forceCompletionSync) });
     feed = completionSync.feed || feed;
   }catch(_){ /* Publishing remains available during a transient completion-read failure. */ }
+  if(completionSync.changed && typeof refreshOpenViews === 'function'){
+    try{ refreshOpenViews(); }
+    catch(_){ /* Local logs already saved; the next home render still republishes. */ }
+  }
   const source = week || (typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null);
   if(!source || !Array.isArray(source.days) || !source.days.length) return null;
   const projection = buildHouseholdAgendaProjection(source, {
@@ -678,7 +811,6 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     objectId:feed.feedId,
     revision:projection.revision
   });
-  _pendingAgendaSnapshot = { envelope, projection, sig };
   try{
     const result = await shareFetch(`/v1/agendas/${feed.feedId}`, {
       method:'PUT',
@@ -691,7 +823,6 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       lastRevision:result.body.revision,
       lastPublishedAt:projection.generatedAt,
       plannerProvenance:projection.plannerProvenance,
-      paused:Boolean(result.body.paused),
       status:result.body.status || feed.status,
       rowMaps:[
         { revision:Number(result.body.revision),rows:projection._rowMap || {} },
@@ -701,7 +832,6 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     };
     saveAgendaFeedRecord(next);
     _lastAgendaProjectionSig = sig;
-    _pendingAgendaSnapshot = null;
     if(completionSync.operationIds.length){
       try{ await acknowledgeHouseholdAgendaCompletions(next,completionSync.operationIds); }
       catch(_){ /* Encrypted operation ids make a later acknowledgement idempotent. */ }
@@ -722,32 +852,34 @@ async function publishHouseholdAgendaNow(week, opts = {}){
   }
 }
 
-function scheduleHouseholdAgendaPublish(week){
+function startHouseholdAgendaPublish(){
+  if(_agendaPublishInFlight){
+    _agendaPublishQueued = true;
+    return;
+  }
+  const week = _pendingAgendaWeek;
+  _pendingAgendaWeek = null;
+  const force = _agendaPublishQueuedForce;
+  _agendaPublishQueuedForce = false;
+  _agendaPublishQueued = false;
+  _agendaPublishInFlight = true;
+  Promise.resolve(publishHouseholdAgendaNow(week,{ forceCompletionSync:force }))
+    .catch(()=>{})
+    .finally(()=>{
+      _agendaPublishInFlight = false;
+      if(_agendaPublishQueued || _agendaPublishQueuedForce || _pendingAgendaWeek) startHouseholdAgendaPublish();
+    });
+}
+
+function scheduleHouseholdAgendaPublish(week, opts = {}){
   if(!agendaFeedRecord() || !shareConfigured()) return;
-  _pendingAgendaSnapshot = week || _pendingAgendaSnapshot;
+  if(week) _pendingAgendaWeek = week;
+  if(opts.forceCompletionSync) _agendaPublishQueuedForce = true;
   if(_agendaPublishTimer) clearTimeout(_agendaPublishTimer);
   _agendaPublishTimer = setTimeout(()=>{
     _agendaPublishTimer = null;
-    if(_agendaPublishInFlight) return;
-    _agendaPublishInFlight = true;
-    Promise.resolve(publishHouseholdAgendaNow(week))
-      .catch(()=>{})
-      .finally(()=>{ _agendaPublishInFlight = false; });
+    startHouseholdAgendaPublish();
   }, 1200);
-}
-
-async function pauseHouseholdAgendaFeed(paused){
-  const feed = agendaFeedRecord();
-  if(!feed) return null;
-  const result = await shareFetch(`/v1/agendas/${feed.feedId}/pause`, {
-    method:'POST',
-    credential:feed.ownerCredential,
-    body:{ paused:Boolean(paused) }
-  });
-  const next = { ...feed, paused:Boolean(result.body.paused), status:result.body.status };
-  saveAgendaFeedRecord(next);
-  if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
-  return next;
 }
 
 async function revokeHouseholdAgendaFeed(){
@@ -797,10 +929,14 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden && _agendaPairScannerStream) stopHouseholdAgendaQrScanner();
+  if(!document.hidden && agendaFeedRecord()) scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
+});
+window.addEventListener('pageshow',()=>{
+  if(agendaFeedRecord()) scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
 });
 window.addEventListener('pagehide',stopHouseholdAgendaQrScanner);
 window.addEventListener('online',()=>{
-  if(agendaFeedRecord()) scheduleHouseholdAgendaPublish();
+  if(agendaFeedRecord()) scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
 });
 window.addEventListener('keydown',event=>{
   if(event.key === 'Escape' && !$('agenda-pair-scanner')?.hidden) stopHouseholdAgendaQrScanner();

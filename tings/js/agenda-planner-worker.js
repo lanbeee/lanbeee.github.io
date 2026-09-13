@@ -48,6 +48,7 @@ importScripts(
   './agenda-order.js',
   './today-view-fits.js',
   './today-view-reservations.js',
+  './agenda-fast-graph.js',
   './today-view-week.js',
   './today-view-today.js',
   './agenda-optimizer.js',
@@ -138,7 +139,7 @@ async function runPlannerMessage(message){
     const data = load();
     const week = message.mode === 'exact' && typeof buildWeekAgendaAsync === 'function'
       ? await buildWeekAgendaAsync(data,sortSettings,count,buildOpts)
-      : buildWeekAgenda(data,sortSettings,count,buildOpts);
+      : buildWeekAgenda(data,sortSettings,count,{...buildOpts,fastGraph:true});
     self.postMessage({id,week:stripWeekHabitRefs(week)});
   }catch(error){
     self.postMessage({

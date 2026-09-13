@@ -201,7 +201,7 @@ function missedPlannerFingerprint(data,settings){
   const habits = (data || []).map(h=>[
     h.hid,h.type,h.target,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
     h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,
-    habitEarlyWindowDays(h),habitDelayAllowanceDays(h),h.pinned,
+    habitEarlyWindowDays(h),habitDelayAllowanceDays(h),
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
     h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
@@ -236,7 +236,11 @@ function missedPlannerFingerprint(data,settings){
 // candidate pool.
 function computePlannerExpectationMap(data,settings,numDays = 7){
   if(typeof buildWeekAgenda !== 'function')return {};
-  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true});
+  // This runs during home paint when the missed-item fingerprint changes.
+  // Skip the Fast week-graph search: it can rebuild the horizon dozens of
+  // times and freeze scrolling/taps. Hid-per-day expectations only need the
+  // ordinary greedy pack.
+  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true,fastGraph:false});
   const out = {};
   for(const day of week.days || []){
     const key = day.dayKey || dateKey(day.dayBase);
@@ -941,8 +945,9 @@ async function analyzeFreeWindow(info,start,end){
   const dayBase = dayStart(info.windowStart);
   let baseline = _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) ? _homeRenderedWeek : null;
   if(!baseline){
+    const mode = settings.agendaOptimizer ? 'exact' : 'fast';
     baseline = typeof buildWeekAgendaOffMain === 'function'
-      ? await buildWeekAgendaOffMain(data,settings,7,settings.agendaOptimizer ? 'exact' : 'fast')
+      ? await buildWeekAgendaOffMain(data,settings,7,mode,mode === 'fast' ? {fastGraph:true} : {})
       : buildWeekAgenda(data,settings,7);
     if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(baseline,data);
   }
@@ -964,7 +969,9 @@ async function analyzeFreeWindow(info,start,end){
   // already has the maximum number of recurring busy-time rules.
   const hypotheticalSettings = {...settings,blockedTimes:[whatIfBlock,...normalizeBlockedTimes(settings.blockedTimes)]};
   let hypothetical = typeof buildWeekAgendaOffMain === 'function'
-    ? await buildWeekAgendaOffMain(data,hypotheticalSettings,7,settings.agendaOptimizer ? 'exact' : 'fast')
+    ? await buildWeekAgendaOffMain(data,hypotheticalSettings,7,
+      settings.agendaOptimizer ? 'exact' : 'fast',
+      settings.agendaOptimizer ? {} : {fastGraph:true})
     : buildWeekAgenda(data,hypotheticalSettings,7);
   if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(hypothetical,data);
 
