@@ -542,6 +542,31 @@ function optimizerLocationVariants(fill,state){
   return anywhereAllowed ? [null,...ids] : ids;
 }
 
+// Location boundaries already committed before the fixed-item solve are just
+// as immutable as scheduled rows. Timed breakables use this path for their
+// exact first session, so omitting committed fills made the route objective
+// blind to an errand cluster split across that fixed start.
+function optimizerFixedLocationAnchors(state){
+  const anchors = [];
+  const seen = new Set();
+  const add = (start,end,locationId)=>{
+    const from = Number(start),to = Number(end);
+    if(!locationId || !Number.isFinite(from) || !Number.isFinite(to) || to <= from)return;
+    const key = `${from}:${to}:${locationId}`;
+    if(seen.has(key))return;
+    seen.add(key);
+    anchors.push({start:from,end:to,locationId});
+  };
+  for(const row of state && state.rows || []){
+    if(row && row.kind === 'scheduled')add(row.start,row.end,row.locationId);
+  }
+  for(const entry of state && state.fills || []){
+    const fit = entry && entry.fit;
+    if(fit)add(fit.placeStart,fit.placeEnd,fit.locId);
+  }
+  return anchors.sort((a,b)=>a.start-b.start || a.end-b.end);
+}
+
 function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
   const out = [];
   const seen = new Map();
@@ -655,7 +680,7 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         : (Array.isArray(placeFill.h.locationIds) ? placeFill.h.locationIds : []))
       : [];
     const routeAnchorDay = Boolean(routeLocationIds.length
-      && (state.rows || []).some(row=>row && row.kind === 'scheduled' && row.locationId));
+      && optimizerFixedLocationAnchors(state).length);
     if(linkedFill || doingFill){
       const step = 30 * 60000;
       // Cap the stepped grid by THIS fill's latest relevant window end — not
@@ -1372,9 +1397,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // crossing the anchor. This is generic route cost—no item/place names and no
   // post-solve relocation—and runs only after candidate selection is frozen.
   if(typeof travelEdgeBetweenIds === 'function'){
-    const hardAnchors = (state.rows || []).filter(row=>
-      row && row.kind === 'scheduled' && row.locationId
-      && Number.isFinite(Number(row.start)) && Number.isFinite(Number(row.end)));
+    const hardAnchors = optimizerFixedLocationAnchors(state);
     const SPLIT_ROUTE_NEAR_SECONDS = typeof CLUSTER_FLEX_NEAR_SECONDS !== 'undefined'
       ? CLUSTER_FLEX_NEAR_SECONDS : 15 * 60;
     // Bound each anchor's total route influence to the same scale as option

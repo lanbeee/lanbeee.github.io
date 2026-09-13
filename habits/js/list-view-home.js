@@ -2226,7 +2226,7 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
     'weather-deferred':'WEATHER DEFERRED',
     'assigned-elsewhere':'PLACED ELSEWHERE',
     'budget-capped':'BUDGET CAPPED',
-    'no-fit':'NO ELIGIBLE FIT'
+    'no-fit':'NO STATIC FIT'
   };
   for(const gap of report.placementGaps){
     push(`${capacityTimeLabel(gap.start)}-${capacityTimeLabel(gap.end)}`);
@@ -2433,7 +2433,7 @@ function renderDayCapacityScorecard(report){
         'weather-deferred':'weather deferred',
         'assigned-elsewhere':'placed elsewhere',
         'budget-capped':'budget capped',
-        'no-fit':'no eligible fit'
+        'no-fit':'no static fit'
       };
       return `
         <div class="capacity-gap ${escapeHtml(gap.status)}" data-capacity-gap-status="${escapeHtml(gap.status)}">

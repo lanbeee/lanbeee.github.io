@@ -1837,7 +1837,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       .slice(0,3)
       .map(i=>data[i] && data[i].name)
       .filter(Boolean);
-    let explanation = 'no remaining eligible item satisfies this gap';
+    let explanation = 'no unassigned eligible item fits without moving an existing agenda row';
     if(status === 'missed')explanation = `${candidateNames.join(', ')} can still fit with current constraints`;
     if(status === 'critical-miss'){
       const details = criticalAssigned.slice(0,3).map(i=>{
@@ -2395,14 +2395,18 @@ function fitOverlapWithWindows(fit,windows){
 
 // PURE: default + settings weights for the unified agenda score (lower = better).
 function resolveAgendaScoreWeights(settings){
+  const travelScale = typeof AGENDA_TRAVEL_COST_SCALE === 'number'
+    ? Math.max(0,AGENDA_TRAVEL_COST_SCALE) : 1;
   if(typeof normalizeAgendaScoreWeights === 'function'){
-    return normalizeAgendaScoreWeights(settings && settings.agendaScoreWeights);
+    const resolved = normalizeAgendaScoreWeights(settings && settings.agendaScoreWeights);
+    return {...resolved,travel:(Number(resolved.travel) || 0) * travelScale};
   }
   const w = settings && settings.agendaScoreWeights;
-  return {
+  const resolved = {
     travel:1, cluster:1, day:1, asap:8, scarce:0.05, preference:1,
     ...(w && typeof w === 'object' ? w : {})
   };
+  return {...resolved,travel:(Number(resolved.travel) || 0) * travelScale};
 }
 
 // PURE: single comparable placement score. Hard constraints are enforced

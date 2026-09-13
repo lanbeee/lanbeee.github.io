@@ -2365,6 +2365,7 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `DEFAULT_TRAVEL_MODE` | `'driving'` | Default travel mode |
 | `TRAVEL_TTL_MS` | 30 × 86400000 | Travel cache TTL (30 days) |
 | `TRAVEL_FETCH_TIMEOUT_MS` | 3000 | Routing call timeout |
+| `AGENDA_TRAVEL_COST_SCALE` | 1.2 | Modest global multiplier on the agenda's soft travel cost |
 | `GEOCODE_FETCH_TIMEOUT_MS` | 8000 | Geocoding timeout |
 | `MAX_RHYTHM_DAYS` | 183 | Max cycle length |
 | `MIN_RHYTHM_DAYS` | 0.5 | Min cycle length |
@@ -2723,7 +2724,7 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 #### Agenda Score Weights 👨‍💻
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `travel` | number | 1 | Per minute of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car). Overhead is objective-only and does not add clock minutes to travel cards. Travel competes with clock delay as a soft cost, so a saved short trip cannot justify an hours-long idle gap. |
+| `travel` | number | 1 | Per minute of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car), multiplied by the modest global `AGENDA_TRAVEL_COST_SCALE`. Overhead is objective-only and does not add clock minutes to travel cards. Travel competes with clock delay as a soft cost, so a saved short trip cannot justify an hours-long idle gap. Fixed-location anchors include both scheduled rows and already-committed exact-start sessions. |
 | `cluster` | number | 1 | Per unit of co-location savings |
 | `day` | number | 1 | Day-offset multiplier |
 | `asap` | number | 0.12 | Per minute of clock delay |

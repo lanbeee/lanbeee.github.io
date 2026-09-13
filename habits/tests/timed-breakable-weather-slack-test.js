@@ -142,17 +142,25 @@ function check(value,message,detail=''){
       const dueAuditWalk=deadlineWalk;
       const weatherFastAudit=auditSummary(weatherFastWeek,dueAuditWalk);
       const weatherGlpkAudit=weatherGlpkWeek ? auditSummary(weatherGlpkWeek,dueAuditWalk) : null;
+      const policyWeights=resolveAgendaScoreWeights({agendaScoreWeights:{
+        travel:1,cluster:0,day:0,asap:0.12,scarce:0,preference:0
+      }});
       const earlyTripCost=scoreAgendaPlacement({
         travelSeconds:2*60,fromLocId:'home',toLocId:'store',asapDelayMin:0,urgency:100
-      },{travel:1,cluster:0,day:0,asap:0.12,scarce:0,preference:0});
+      },policyWeights);
       const lateNoTripCost=scoreAgendaPlacement({
         travelSeconds:0,fromLocId:'home',toLocId:'home',asapDelayMin:120,urgency:100
-      },{travel:1,cluster:0,day:0,asap:0.12,scarce:0,preference:0});
+      },policyWeights);
+      const fixedAnchors=optimizerFixedLocationAnchors({
+        rows:[{kind:'scheduled',start:at(0,16),end:at(0,16,15),locationId:'appointment'}],
+        fills:[{fit:{placeStart:at(0,17,30),placeEnd:at(0,17,45),locId:'event'}}]
+      });
       globalThis.Date=RealDate;
       return {
         day,birthdayFast,birthdayGlpk,birthdayFastTrace,birthdayGlpkTrace,weatherFast,weatherGlpk,
         deadlineFast,deadlineGlpk,
         weatherFastAudit,weatherGlpkAudit,earlyTripCost,lateNoTripCost,
+        travelWeight:policyWeights.travel,fixedAnchors,
         adjacentRows:adjacentRows.map(row=>({start:row.start,end:row.end,minutes:row.chunkMinutes}))
       };
     },FAST_ONLY);
@@ -188,6 +196,14 @@ function check(value,message,detail=''){
     check(result.earlyTripCost < result.lateNoTripCost,
       'a short extra location-changing trip costs less than a two-hour idle delay',
       JSON.stringify({early:result.earlyTripCost,late:result.lateNoTripCost}));
+    check(result.travelWeight>1 && result.travelWeight<1.5,
+      'travel receives a modest global cost increase without becoming dominant',
+      String(result.travelWeight));
+    check(result.fixedAnchors.length===2
+      && result.fixedAnchors.some(anchor=>anchor.locationId==='appointment')
+      && result.fixedAnchors.some(anchor=>anchor.locationId==='event'),
+    'route optimization treats scheduled rows and committed exact-start sessions as fixed location anchors',
+    JSON.stringify(result.fixedAnchors));
     for(const [engine,audit] of [['Fast',result.weatherFastAudit],['GLPK',result.weatherGlpkAudit]]){
       if(!audit)continue;
       check(audit.missed===0 && audit.critical===0 && audit.intentional===1,

@@ -36,6 +36,9 @@ const ESRI_WORLD_IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/se
 // Parking, walking to the car, and starting the trip — charged in the
 // objective only, not as extra clock duration on the timeline.
 const TRAVEL_LEG_OVERHEAD_SECONDS = 5 * 60;
+// Slightly favor a coherent route over equivalent clock placements. Kept near
+// one so an ordinary short trip still beats leaving a useful multi-hour gap.
+const AGENDA_TRAVEL_COST_SCALE = 1.2;
 // While-open home loop: cheap clock-shift most minutes; a real re-solve only
 // when the next pending row is this close. Cold open keeps the existing
 // 4-second GLPK cap and never uses the imminent budget.
@@ -199,7 +202,7 @@ const DEFAULT_SORT_SETTINGS = {
   mapBaseLayer:'street',
   // Unified agenda placement score (lower = better). All soft signals share
   // one comparable scale — no special-case overrides for due/near/tonight.
-  //   travel       — per second of commute for this placement
+  //   travel       — per minute of commute for this placement
   //   cluster      — per unit of on-site / co-locate savings
   //   day          — multiplier on day-offset (ASAP / on-time) penalty
   //   asap         — per minute later than the earliest fit that day
