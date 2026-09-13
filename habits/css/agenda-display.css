@@ -175,18 +175,27 @@ header.agenda-chrome{margin-bottom:clamp(22px,3.2vw,42px);}
 .agenda-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;}
 .agenda-clock{
   margin:0;color:var(--text);min-width:0;
-  font-size:calc(clamp(50px,15vw,116px) * var(--font-scale));
+  /* The clock must never crowd the pills: "10:32 AM" renders at ~3.1em, so
+     cap the font by the width left once pills, page padding, the flex gap,
+     and a little air are reserved. Text size still scales it, but damped —
+     the clock already fills its line at 100%, so doubling the setting must
+     not double the hero. Pill widths are fixed px, padding is 8vw total. */
+  --clock-reserve:calc(217px + 8vw);
+  font-size:min(
+    calc(clamp(50px,15vw,116px) * (0.7 + 0.3 * var(--font-scale))),
+    calc((100vw - var(--clock-reserve)) / 3.3)
+  );
   font-weight:240;line-height:.95;letter-spacing:-.03em;white-space:nowrap;
   font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
 }
 .agenda-clock-mer{margin-left:.14em;font-size:.38em;font-weight:640;color:var(--now);letter-spacing:.02em;}
-.agenda-status{margin-top:6px;min-width:0;}
+.agenda-status{margin-top:10px;min-width:0;}
 .agenda-date{
   margin:0;color:var(--text);font-size:calc(clamp(17px,2.6vw,26px) * var(--font-scale));
   font-weight:600;line-height:1.3;letter-spacing:-.01em;
 }
 .agenda-ambient{
-  margin:5px 0 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 0;
+  margin:7px 0 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 0;
   color:var(--muted);font-size:calc(clamp(13px,1.8vw,17px) * var(--font-scale));
   font-weight:620;line-height:1.35;
 }
@@ -448,6 +457,8 @@ button.agenda-mark:disabled{cursor:default;transform:none;}
 @media (max-width:560px){
   .agenda-page{padding-left:16px;padding-right:16px;}
   .agenda-heading{gap:12px;}
+  /* Icon-only pills are much narrower, so the clock earns back width. */
+  .agenda-clock{--clock-reserve:158px;}
   /* Icon-only controls: the labels are said by aria-label, not printed. */
   .agenda-hide,.agenda-more{width:44px;padding:0;justify-content:center;}
   .agenda-hide-label{display:none;}
