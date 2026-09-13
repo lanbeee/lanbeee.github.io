@@ -22,7 +22,8 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
     for(const i of visibleIndices(data,settings)){
       const h = data[i];
       if(h.type === 'task' && isTaskDone(h))continue;
-      if(h.type === 'task' && h.eventTime !== null)continue;
+      if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+        : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
       if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
       const dueToday = includeInTodayAgenda(h,settings);
       const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
@@ -61,7 +62,8 @@ function occurrenceDueOrOverdueOnDay(h,dayBase){
   const base = dayStart(dayBase);
   if(h.type === 'task'){
     if(typeof isTaskDone === 'function' && isTaskDone(h))return false;
-    if(h.eventTime !== null || h.dueDate === null)return false;
+    if((typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     return dayStart(h.dueDate) <= base;
   }
   const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
@@ -140,7 +142,8 @@ function candidateMatchesPinnedDay(c,state){
 function isWeekPinnedToday(h,settings){
   if(!h || h.type === 'zero')return false;
   if(h.type === 'task' && isTaskDone(h))return false;
-  if(h.type === 'task' && h.eventTime !== null)return false;
+  if(h.type === 'task' && (typeof isFixedTimedTask === 'function'
+    ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable)))return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
   // Only an explicit plan log is a manual pin. hasPlannedToday also includes
@@ -217,7 +220,12 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(h.type === 'task'){
     if(isTaskDone(h))return false;
-    if(h.eventTime !== null)return false;         // timed → fixed to its day
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.eventTime !== null && !h.breakable))return false;
+    if(typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(h)
+      : (h.breakable && h.eventTime !== null)){
+      return dayStart(h.eventTime) === dayBase;
+    }
     if(h.dueDate === null)return false;            // someday → not week-planned
     if(settings.showDueTasksInAgenda === false)return false;
     if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
@@ -307,7 +315,8 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
     return true;
   }
   if(h.type === 'task'){
-    if(isTaskDone(h) || h.eventTime !== null || h.dueDate === null)return false;
+    if(isTaskDone(h) || (typeof isFixedTimedTask === 'function'
+      ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     const dueBase = dayStart(h.dueDate);
     const todayBase = dayStart(Date.now());
     if(dayBase > dueBase)return false;
@@ -529,7 +538,8 @@ function clusterNativeDueOnDay(p,dayBase,weekday,cfg){
   if(typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase))return true;
   if(h.type === 'task'){
     if(typeof isTaskDone === 'function' && isTaskDone(h))return false;
-    if(h.eventTime !== null || h.dueDate === null)return false;
+    if((typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     const dueBase = dayStart(h.dueDate);
     const todayBase = dayStart(Date.now());
     if(dayBase < todayBase || dayBase > dueBase)return false;
@@ -1254,7 +1264,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
           && mustPlaceOccurrenceByDay(
             c,state.dayBase,occurrenceReference,rhythmPlacementCount
           );
-        const requiredCanClaim = occurrenceRequired
+        const weatherDefers = typeof weatherShouldDeferCandidate === 'function'
+          && weatherShouldDeferCandidate(c,state,settings,dayStates);
+        const requiredCanClaim = occurrenceRequired && !weatherDefers
           && typeof requiredOccurrenceCanClaimDay === 'function'
           && requiredOccurrenceCanClaimDay(
             c,state,candidates,occurrenceReference,rhythmPlacementCount
@@ -1263,8 +1275,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
           && fastPathDefersMovable(
             c,state,candidates,dayStates,occurrenceReference,rhythmPlacementCount
           ))continue;
-        if(!requiredCanClaim && typeof weatherShouldDeferCandidate === 'function'
-          && weatherShouldDeferCandidate(c,state,settings,dayStates))continue;
+        if(!requiredCanClaim && weatherDefers)continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const resWindows = (typeof dailyBreakableReservations === 'function'

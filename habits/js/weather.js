@@ -880,14 +880,42 @@ function weatherHabitHasActiveGuidance(h,settings){
   return false;
 }
 
+// PURE: fractional rhythms have real short-term slack when their rolling
+// quota is already satisfied. Weather may spend that slack even when the
+// alternating cadence's nominal due day has arrived; once an old completion
+// falls out of the window, the occurrence becomes mandatory again.
+function weatherRollingRhythmQuotaSatisfied(candidate,state,dayStates=[]){
+  const h=candidate && candidate.h;
+  if(!h || h.type==='task' || h.breakable || state?.dayBase==null)return false;
+  const parts=typeof rhythmParts==='function' ? rhythmParts(h.target) : null;
+  if(!parts || parts.times<=1 || parts.days<=1)return false;
+  const end=dayStart(state.dayBase);
+  const start=end-(parts.days-1)*86400000;
+  const completionDays=new Set();
+  if(typeof actualLogs==='function'){
+    for(const ts of actualLogs(h.logs || [])){
+      const base=dayStart(ts);
+      if(base>=start && base<=end)completionDays.add(base);
+    }
+  }
+  for(const other of dayStates || []){
+    if(!other || other.dayBase<start || other.dayBase>end)continue;
+    if((other.fills || []).some(entry=>entry && entry.fill && entry.fill.i===candidate.i)){
+      completionDays.add(dayStart(other.dayBase));
+    }
+  }
+  return completionDays.size>=parts.times;
+}
+
 function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
   if(!candidate?.h || candidate.pinned===true)return false;
   if(state && typeof fillIsPlannedOnDay === 'function'
     && fillIsPlannedOnDay(candidate.h,state.dayBase,settings))return false;
   if(!settings || !settings._weatherContext || !weatherHabitHasActiveGuidance(candidate.h,settings))return false;
-  if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate))return false;
+  const rollingSlack=weatherRollingRhythmQuotaSatisfied(candidate,state,dayStates);
+  if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate) && !rollingSlack)return false;
   if(typeof mustPlaceOccurrenceByDay==='function'
-    && mustPlaceOccurrenceByDay(candidate,state && state.dayBase))return false;
+    && mustPlaceOccurrenceByDay(candidate,state && state.dayBase) && !rollingSlack)return false;
   if(candidate.h.hid && typeof plannerOrderConstraintsForDay==='function'
     && plannerOrderConstraintsForDay(state.dayBase).some(edge=>edge && edge.adjacency==='direct'
       && (edge.beforeHid===candidate.h.hid || edge.afterHid===candidate.h.hid)))return false;

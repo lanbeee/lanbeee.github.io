@@ -119,7 +119,7 @@
  *
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
- * @property {number|null} eventTime          — ms timestamp at the exact minute when this task is scheduled; null = no fixed time (dated or someday)
+ * @property {number|null} eventTime          — task clock: fixed appointment when unbreakable; earliest anchored start when breakable; null = dated/someday
  * @property {boolean} hardDue                — computed: true when dueDate is set and delayAllowanceDays is 0
  *
  * — LocationFields (optional, on every type) —

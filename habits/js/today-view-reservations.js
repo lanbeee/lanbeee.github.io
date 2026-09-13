@@ -157,6 +157,11 @@ function tryPlaceOnDay(state,fill,opts = {}){
       if(durMin + travelMin > remaining && usedMinutes > 0)continue;
 
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
+      if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
+        : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
+        && dayStart(fill.h.eventTime) === dayBase){
+        placeStart=Math.max(placeStart,Number(fill.h.eventTime));
+      }
       let cap = gap.end;
       if(locId || optionMode){
         const loc = locId ? registryLookup(locId) : null;
@@ -930,6 +935,11 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
       const travelMin = Math.ceil((edge.seconds || 0) / 60);
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
+      if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
+        : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
+        && dayStart(fill.h.eventTime) === dayBase){
+        placeStart=Math.max(placeStart,Number(fill.h.eventTime));
+      }
       let cap = gap.end;
       if(locId || optionMode){
         const loc = locId ? registry.find(l=>l.id === locId) : null;

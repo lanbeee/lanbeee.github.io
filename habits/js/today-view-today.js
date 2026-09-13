@@ -28,7 +28,8 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   for(let i = 0;i < data.length;i += 1){
     if(seen.has(i))continue;
     const h = data[i];
-    if(h.type === 'task' && h.eventTime !== null)continue; // timed → scheduled rows
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h,settings,todayBase,opts.fullToday ? {keepDueTodayForMissed:true} : null)
       : (isWeekPinnedToday(h,settings) ? todayBase : null);

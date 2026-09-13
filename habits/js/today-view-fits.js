@@ -40,7 +40,8 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
   const showPlanned = !settings || settings.showPlannedItemsInAgenda !== false;
   (data || []).forEach((h,i)=>{
     if(!h)return;
-    if(showTasks && h.type === 'task' && h.eventTime !== null
+    if(showTasks && (typeof isFixedTimedTask === 'function'
+      ? isFixedTimedTask(h) : (h.type === 'task' && h.eventTime !== null && !h.breakable))
       && (typeof isTaskDone !== 'function' || !isTaskDone(h))
       && dateKey(h.eventTime) === dayKey){
       out.push({h,i,eventTime:h.eventTime});
@@ -77,7 +78,8 @@ function buildTodayAgenda(data,settings){
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
     if(h.type === 'task' && isTaskDone(h))continue;
-    if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
     const dueToday = includeInTodayAgenda(h,settings);
     const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
@@ -167,6 +169,16 @@ function includeInTodayAgenda(h,settings){
 // anchor so "anywhere" habits resolve their prayer times against the last
 // location before the task; absent it they fall back to lastKnown/registry.
 function fillTimeWindow(h,dayBase,contextLocId){
+  const breakableStart = (typeof isBreakableTimedTask === 'function'
+    ? isBreakableTimedTask(h) : (h && h.type === 'task' && h.breakable && h.eventTime !== null))
+    && dayStart(h.eventTime) === dayBase ? Number(h.eventTime) : null;
+  // A start time on a breakable task is an anchor, not a duration-wide hard
+  // block. With no explicit allowed end, the day's open slots are the ceiling.
+  if(Number.isFinite(breakableStart) && !hasTimeWindow(h)){
+    const explicitEnd = Number.isFinite(Number(h.allowedTimeEnd))
+      ? dayBase + Number(h.allowedTimeEnd) * 60000 : dayBase + 24 * 3600000;
+    return {start:breakableStart,end:explicitEnd <= breakableStart ? explicitEnd + 24 * 3600000 : explicitEnd};
+  }
   if(!hasTimeWindow(h))return null;
   if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
     const windows = fillDayWindows(h,dayBase,contextLocId);
@@ -240,6 +252,15 @@ function fillOptionDayWindows(h,dayBase,contextLocId){
 }
 
 function fillDayWindows(h,dayBase,contextLocId){
+  if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(h)
+    : (h && h.type === 'task' && h.breakable && h.eventTime !== null))
+    && dayStart(h.eventTime) === dayBase && !hasTimeWindow(h)){
+    const start=Number(h.eventTime);
+    const rawEnd=Number(h.allowedTimeEnd);
+    let end=Number.isFinite(rawEnd) ? dayBase+rawEnd*60000 : dayBase+24*3600000;
+    if(end<=start)end+=24*3600000;
+    return [{start,end}];
+  }
   if(!hasTimeWindow(h))return null;
   const intervals = [];
   if(typeof hasGeneralAllowedSchedule === 'function'
@@ -646,7 +667,9 @@ function scheduleAnchorCommitForDay(hid,dayBase,data = null){
         const start = Number(doing.startedAt) || Date.now();
         const end = Number(doing.targetAt) || start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000;
         result = {start,end,kind:'active'};
-      }else if(h.type === 'task' && h.eventTime != null && dayStart(h.eventTime) === base){
+      }else if((typeof isFixedTimedTask === 'function'
+        ? isFixedTimedTask(h) : (h.type === 'task' && h.eventTime != null && !h.breakable))
+        && dayStart(h.eventTime) === base){
         result = {start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
       }else if(typeof timedPlanLogForDay === 'function'){
         const plan = timedPlanLogForDay(h,dateKey(base));
@@ -1151,7 +1174,8 @@ function diagnosticsFromRenderedDay(data,settings,day){
   const candidates = [];
   for(let i = 0;i < data.length;i += 1){
     const h = data[i];
-    if(!h || (h.type === 'task' && h.eventTime !== null))continue;
+    if(!h || (typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable)))continue;
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
     const pinned = isWeekPinnedToday(h,settings);
     if((pinned && day.isToday) || (!pinned && isWeekCandidate(h,settings,day.dayBase,day.weekday))){
@@ -1629,7 +1653,8 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const eligible = visibleIndices(data,settings).filter(i=>{
     const h = data[i];
     if(!h || h.type === 'zero')return false;
-    if(h.type === 'task' && (isTaskDone(h) || h.eventTime !== null))return false;
+    if(h.type === 'task' && (isTaskDone(h) || (typeof isFixedTimedTask === 'function'
+      ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable))))return false;
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
     if(!isToday && opts.weekMode){
       return isWeekCandidate(h,settings,dayBase,new Date(dayBase).getDay());

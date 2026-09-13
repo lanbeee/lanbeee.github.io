@@ -1811,7 +1811,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     for(const c of fixedCands){
       const reference = virtualLogs.has(c.i) ? virtualLogs.get(c.i) : undefined;
       const completionOffset = virtualCompletionCounts.get(c.i) || 0;
-      if(!isMovableWeekCandidate(c,state.dayBase,reference,completionOffset))continue;
+      const rollingWeatherSlack=typeof weatherRollingRhythmQuotaSatisfied==='function'
+        && weatherRollingRhythmQuotaSatisfied(c,state,dayStates);
+      if(!isMovableWeekCandidate(c,state.dayBase,reference,completionOffset) && !rollingWeatherSlack)continue;
       if(!c.eligible)continue;
       const dur = clampDuration(c.h.durationMinutes);
       for(let j = 0;j < dayStates.length;j += 1){
@@ -1907,6 +1909,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         const hasVirtual = virtualLogs.has(c.i);
         const reference = hasVirtual ? virtualLogs.get(c.i) : undefined;
         const completionOffset = virtualCompletionCounts.get(c.i) || 0;
+        if(typeof weatherShouldDeferCandidate === 'function'
+          && weatherShouldDeferCandidate(c,state,settings,dayStates))continue;
         if((typeof requiredOccurrenceCanClaimDay === 'function'
           && requiredOccurrenceCanClaimDay(c,state,candidates,reference,completionOffset))
           || (typeof requiredOccurrenceCanClaimDay !== 'function'
@@ -2367,7 +2371,8 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   for(let i = 0;i < data.length;i += 1){
     if(seen.has(i))continue;
     const h = data[i];
-    if(h.type === 'task' && h.eventTime !== null)continue;
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h,settings,todayBase) : (isWeekPinnedToday(h,settings) ? todayBase : null);
     const pinned = pinnedDay != null;

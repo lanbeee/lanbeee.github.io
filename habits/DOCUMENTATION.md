@@ -309,7 +309,7 @@ if days < 4: score += red (keep going)
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
 | `dueDate` | number\|null | null | Soft deadline (day-level) |
-| `eventTime` | number\|null | null | Fixed time appointment |
+| `eventTime` | number\|null | null | Fixed appointment when unbreakable; anchored start when breakable |
 | `hardDue` | boolean | false | Hard deadline (escalates urgency) |
 | `earlyWindowDays` | number | 1 | Days before the due date it may start surfacing |
 | `delayAllowanceDays` | number | 0 | Days after the due date it may remain on time |
@@ -446,7 +446,7 @@ else:
   
   // ─── TASK & IMPORT FIELDS ───────────────────────────────
   dueDate: number|null,      // 👤 Task only: deadline
-  eventTime: number|null,    // 👤 Task only: fixed time
+  eventTime: number|null,    // 👤 Task: fixed time, or earliest start when breakable
   hardDue: boolean,          // 👤 Task only: hard deadline
   externalId: string|null,   // 👤 Imported from calendar
   source: 'pdf'|'msgraph'|'gcal'|null, // 👤 Import source
@@ -1083,8 +1083,8 @@ Visible when type = habit (keepup):
 ### 8.6 Field: Task Due Date 👤
 Visible when type = task:
 - **Date input:** Calendar picker (day-level)
-- **Time input:** Time picker (makes it a fixed-time event). Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
-- Hint: "add a time to make this a fixed appointment"
+- **Time input:** Time picker. Unbreakable tasks become fixed-time events; breakable tasks start at this time and may pause/resume. Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
+- Hint: "add a start time; breakable tasks may pause and resume"
 - Default time: Next clean hour
 
 ### 8.7 More Options Fields 👤
@@ -1156,7 +1156,7 @@ Fields shown (always visible, even in minimal mode):
 #### Task Timing Section
 - For `task` type only
 - **Due date:** Date picker (`detail-due-date`)
-- **Due time:** Time picker (`detail-due-time`, makes it a fixed appointment)
+- **Due time:** Time picker (`detail-due-time`); fixed for unbreakable tasks, an anchored start for breakable tasks
 - Tasks open on Schedule by default so deadline and placement controls are the
   first editable fields.
 
@@ -2112,7 +2112,9 @@ date. Leftover plan entries after a
 completion do not keep the item on that day's agenda. A later catch-up plan
 does not erase a due/overdue miss whose window already closed. Movables that
 can wait skip a much wetter day the same way GLPK's `weatherShouldDeferCandidate`
-does. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
+does. A fractional rhythm may also spend weather slack when its rolling quota
+is already satisfied; it becomes mandatory on the next day where an older
+completion falls out of that window. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
 planned/last-day tasks, then slack daily P0 so earliest-clock Zuhr cannot
 fragment the only contiguous 4h slot a due visit needs.
 
