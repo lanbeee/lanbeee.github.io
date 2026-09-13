@@ -206,12 +206,16 @@ function setAgendaMenuOpen(open){
   button.setAttribute('aria-expanded',String(open));
 }
 
+function displayLongDateLabel(now){
+  return now.toLocaleDateString(undefined,{ weekday:'long',month:'long',day:'numeric' });
+}
+
 function updateDisplayNightClock(){
   const now = new Date();
   const time = $('agenda-wallpaper-time');
   const date = $('agenda-wallpaper-date');
   if(time) time.textContent = now.toLocaleTimeString(undefined,{ hour:'numeric',minute:'2-digit' });
-  if(date) date.textContent = now.toLocaleDateString(undefined,{ weekday:'long',month:'long',day:'numeric' });
+  if(date) date.textContent = displayLongDateLabel(now);
 }
 
 function updateDisplayClocks(){
@@ -223,6 +227,8 @@ function updateDisplayClocks(){
     const digits = parts.filter(part=>part.type !== 'dayPeriod').map(part=>part.value).join('').trim();
     clock.innerHTML = `${escapeDisplay(digits)}${dayPeriod ? `<span class="agenda-clock-mer">${escapeDisplay(dayPeriod)}</span>` : ''}`;
   }
+  const date = $('agenda-date');
+  if(date) date.textContent = displayLongDateLabel(now);
   updateDisplayNightClock();
 }
 
@@ -558,22 +564,27 @@ function displayWeatherHtml(weather, withCity = false){
   return `<span class="agenda-weather-cue" title="${escapeDisplay(label)}" role="img" aria-label="${escapeDisplay(label)}">${emoji ? `<span class="agenda-weather-emoji" aria-hidden="true">${escapeDisplay(emoji)}</span>` : ''}${temperature ? `<span class="agenda-weather-temp">${escapeDisplay(temperature)}</span>` : ''}${city ? `<span class="agenda-weather-city">${escapeDisplay(city)}</span>` : ''}</span>`;
 }
 
+// The header's ambient line is emoji + feels-like only: the owner knows which
+// city they live in, so the location never renders even if an older published
+// snapshot still carries it.
 function renderDisplayCurrentWeather(weather){
   const node = $('agenda-weather');
   if(!node) return;
   const emoji = weather && String(weather.emoji || '').slice(0,8);
   const temperature = weather && String(weather.temperature || '').slice(0,16);
-  const city = weather && String(weather.city || '').trim().slice(0,80);
+  const ambient = node.closest('.agenda-ambient');
   if(!emoji && !temperature){
     node.hidden = true;
     node.textContent = '';
     node.removeAttribute('aria-label');
+    if(ambient) ambient.classList.remove('has-weather');
     return;
   }
-  const label = [emoji, temperature ? `feels like ${temperature}` : '', city].filter(Boolean).join(' · ');
+  const label = [emoji, temperature ? `feels like ${temperature}` : ''].filter(Boolean).join(' · ');
   node.hidden = false;
   node.setAttribute('aria-label',label);
-  node.innerHTML = `${emoji ? `<span class="agenda-weather-emoji" aria-hidden="true">${escapeDisplay(emoji)}</span>` : ''}${temperature ? `<span class="agenda-weather-temp">${escapeDisplay(temperature)}</span>` : ''}${city ? `<span class="agenda-weather-city">${escapeDisplay(city)}</span>` : ''}`;
+  node.innerHTML = `${emoji ? `<span class="agenda-weather-emoji" aria-hidden="true">${escapeDisplay(emoji)}</span>` : ''}${temperature ? `<span class="agenda-weather-temp">${escapeDisplay(temperature)}</span>` : ''}`;
+  if(ambient) ambient.classList.add('has-weather');
 }
 
 function displayKnownRowIds(projection){
@@ -679,8 +690,11 @@ function renderDisplay(projection,meta,completedRowIds = []){
         <time>${when}</time>
       </article>`;
     }).join('') || '<p class="agenda-empty">Nothing planned.</p>';
+    // The header's date line already shows today's date, so the today section
+    // header stays weekday-only; later days still carry their own date label.
+    const dayDate = current ? '' : `<p>${escapeDisplay(day.dateLabel)}</p>`;
     return `<section class="agenda-day${current ? ' is-today' : ''}">
-      <header><h2>${escapeDisplay(day.weekdayLabel || day.dateLabel)}</h2><p>${escapeDisplay(day.dateLabel)}</p></header>
+      <header><h2>${escapeDisplay(day.weekdayLabel || day.dateLabel)}</h2>${dayDate}</header>
       ${rows}
     </section>`;
   }).join('');
@@ -1191,7 +1205,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.addEventListener('click',event=>{
     const menu = $('agenda-menu');
     if(!menu || menu.hidden) return;
-    if(event.target.closest && event.target.closest('.agenda-side')) return;
+    if(event.target.closest && event.target.closest('.agenda-heading-actions')) return;
     setAgendaMenuOpen(false);
   });
   document.addEventListener('keydown',event=>{

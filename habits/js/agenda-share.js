@@ -47,9 +47,9 @@ function householdAgendaSettings(opts = {}){
   return {};
 }
 
-// Display-safe weather only: emoji + already-converted feels-like text, and
-// optionally the home city name. Coordinates, location ids, and forecast
-// samples stay on the owner phone.
+// Display-safe weather only: emoji + already-converted feels-like text. No
+// place names — the owner knows which city they live in, and coordinates,
+// location ids, and forecast samples stay on the owner phone.
 function householdAgendaPublicWeather(summary){
   if(!summary || !summary.condition) return null;
   const emoji = String(summary.condition.emoji || '').slice(0,8);
@@ -74,11 +74,7 @@ function householdAgendaWeatherCue(start,end,locationId,settings,now){
 }
 
 function householdAgendaCurrentWeather(settings,now){
-  const cue = householdAgendaWeatherCue(now,now + HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS,null,settings,now);
-  if(!cue) return null;
-  const city = String((settings && settings.homeCityName) || '').trim().slice(0,80);
-  if(city) cue.city = city;
-  return cue;
+  return householdAgendaWeatherCue(now,now + HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS,null,settings,now);
 }
 
 function householdAgendaRowWeather(row,habit,settings,now){

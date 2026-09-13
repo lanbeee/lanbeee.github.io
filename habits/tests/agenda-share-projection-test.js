@@ -210,7 +210,7 @@ function assert(cond,msg){
     const quietRow = rows.find(row=>row.title === 'Desk stretch');
     return {
       json,
-      city:projection.currentWeather && projection.currentWeather.city,
+      city:projection.currentWeather && projection.currentWeather.city || null,
       currentEmoji:projection.currentWeather && projection.currentWeather.emoji,
       currentTemp:projection.currentWeather && projection.currentWeather.temperature,
       busyTitle:busy && busy.title,
@@ -223,8 +223,8 @@ function assert(cond,msg){
       leakedLocationId:/"locationId"/.test(json) || json.includes('walk-hid')
     };
   });
-  assert(weatherShare.city === 'New York' && weatherShare.currentEmoji && weatherShare.currentTemp,
-    `home-city current feels-like and condition emoji are published beside the clock (${JSON.stringify({city:weatherShare.city,emoji:weatherShare.currentEmoji,temp:weatherShare.currentTemp})})`);
+  assert(weatherShare.currentEmoji && weatherShare.currentTemp && !weatherShare.city,
+    `current feels-like and condition emoji are published beside the clock, with no home city name (${JSON.stringify({city:weatherShare.city,emoji:weatherShare.currentEmoji,temp:weatherShare.currentTemp})})`);
   assert(weatherShare.busyTitle === 'Focus block' && weatherShare.busyLocation === 'Home',
     'busy times and their location names appear on the shared display');
   assert(weatherShare.busyWeather && weatherShare.busyWeather.emoji && weatherShare.busyWeather.temperature,
@@ -518,8 +518,8 @@ function assert(cond,msg){
       walkWeather:(walk && walk.querySelector('.agenda-weather-cue')?.textContent || '').replace(/\s+/g,' ').trim()
     };
   });
-  assert(/☀️/.test(displayWeatherUi.clockWeather) && displayWeatherUi.clockWeather.includes('64°') && displayWeatherUi.clockWeather.includes('Boston'),
-    `the clock shows home-city current feels-like and the condition emoji (${displayWeatherUi.clockWeather})`);
+  assert(/☀️/.test(displayWeatherUi.clockWeather) && displayWeatherUi.clockWeather.includes('64°') && !displayWeatherUi.clockWeather.includes('Boston'),
+    `the clock shows current feels-like and the condition emoji, never the city name (${displayWeatherUi.clockWeather})`);
   assert(/feels like/.test(displayWeatherUi.clockLabel),'current weather is announced as feels-like');
   assert(displayWeatherUi.busyTitle === 'Sleep' && displayWeatherUi.busyPlace === 'Home' && /☁️/.test(displayWeatherUi.busyWeather) && displayWeatherUi.busyWeather.includes('52°'),
     'busy times render with their label, place name, and weather cue');
