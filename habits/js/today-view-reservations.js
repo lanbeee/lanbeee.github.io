@@ -1517,7 +1517,39 @@ function finalizePlacementRows(state){
   // every published timeline receives the same whole-day route optimization
   // and invariant check, independent of candidate commit order.
   reconcileCommittedTravel(state);
-  return state.rows.slice().sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
+  const rows = state.rows.slice().sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
+  return coalesceAdjacentBreakableRows(rows);
+}
+
+// PURE: placement passes can meet at an internal phase boundary and publish
+// two pieces of the same breakable session with no real interruption. That is
+// one continuous session to the user (and for auto-log), so collapse it at the
+// final timeline boundary. Genuine splits retain separate rows whenever time,
+// place, occurrence, or schedule option changes.
+function coalesceAdjacentBreakableRows(rows){
+  const out = [];
+  const sameNullable = (a,b)=>(a || null) === (b || null);
+  for(const source of rows || []){
+    if(!source){ continue; }
+    const row = {...source};
+    const prior = out[out.length - 1];
+    const contiguous = prior && Number.isFinite(Number(prior.end))
+      && Number.isFinite(Number(row.start))
+      && Math.abs(Number(row.start) - Number(prior.end)) <= 1000;
+    const sameSession = contiguous
+      && prior.kind === 'fill' && row.kind === 'fill'
+      && prior.i != null && prior.i === row.i
+      && Boolean((prior.h || row.h) && (prior.h || row.h).breakable)
+      && sameNullable(prior.locationId,row.locationId)
+      && sameNullable(prior.occurrenceKey,row.occurrenceKey)
+      && sameNullable(prior.scheduleOptionId,row.scheduleOptionId)
+      && sameNullable(prior.scheduledDay,row.scheduledDay);
+    if(!sameSession){ out.push(row); continue; }
+    prior.end = Math.max(Number(prior.end),Number(row.end));
+    prior.chunkMinutes = Math.max(0,Math.round((prior.end - prior.start) / 60000));
+    if(prior.chunkIndex == null && row.chunkIndex != null)prior.chunkIndex = row.chunkIndex;
+  }
+  return out;
 }
 
 // PURE: the location the user is already commited to at a given minute within

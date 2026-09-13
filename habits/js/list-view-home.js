@@ -2142,14 +2142,18 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
     ? `${report.criticalMissCount} critical placement miss${report.criticalMissCount === 1 ? '' : 'es'}`
     : report.missedOpportunityCount > 0
     ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
-    : 'no unexplained placement gaps');
+    : (report.intentionalDeferralCount > 0
+      ? `no misses · ${report.intentionalDeferralCount} intentional weather deferral${report.intentionalDeferralCount === 1 ? '' : 's'}`
+      : 'no unexplained placement gaps'));
   push(report.criticalMissCount > 0
     ? 'due or linked work can be inserted today without moving any committed row'
     : report.missedOpportunityCount > 0
     ? 'eligible work still fits under the scheduler\'s current constraints'
     : (report.budgetCappedGapCount > 0
       ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
-      : 'remaining gaps cannot take the outstanding candidates'));
+      : (report.intentionalDeferralCount > 0
+        ? 'the open gap is usable, but the rolling weekly plan chose a better forecast while preserving the rhythm quota'
+        : 'remaining gaps cannot take the outstanding candidates')));
   push('');
   push(`open scheduler time\n${capacityMinutesLabel(report.schedulerOpenMinutes)}`);
   push(`budget remaining\n${capacityMinutesLabel(report.placementBudgetRemaining)}`);
@@ -2219,6 +2223,7 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
   const gapLabels = {
     missed:'COULD PLACE',
     'critical-miss':'CRITICAL MISS',
+    'weather-deferred':'WEATHER DEFERRED',
     'assigned-elsewhere':'PLACED ELSEWHERE',
     'budget-capped':'BUDGET CAPPED',
     'no-fit':'NO ELIGIBLE FIT'
@@ -2401,6 +2406,8 @@ function renderDayCapacityScorecard(report){
     ? `${report.criticalMissCount} critical placement miss${report.criticalMissCount === 1 ? '' : 'es'}`
     : report.missedOpportunityCount > 0
     ? `${report.missedOpportunityCount} usable gap${report.missedOpportunityCount === 1 ? '' : 's'} missed`
+    : report.intentionalDeferralCount > 0
+    ? `no misses · ${report.intentionalDeferralCount} intentional weather deferral${report.intentionalDeferralCount === 1 ? '' : 's'}`
     : 'no unexplained placement gaps';
   const auditDetail = report.criticalMissCount > 0
     ? 'due or linked work can be inserted today without moving any committed row'
@@ -2408,7 +2415,9 @@ function renderDayCapacityScorecard(report){
     ? 'eligible work still fits under the scheduler\'s current constraints'
     : (report.budgetCappedGapCount > 0
       ? `${report.budgetCappedGapCount} open gap${report.budgetCappedGapCount === 1 ? '' : 's'} left by the agenda budget cap`
-      : 'remaining gaps cannot take the outstanding candidates');
+      : (report.intentionalDeferralCount > 0
+        ? 'the open gap is usable, but the rolling weekly plan chose a better forecast while preserving the rhythm quota'
+        : 'remaining gaps cannot take the outstanding candidates'));
   const agendaRows = report.agendaRows.length
     ? report.agendaRows.map(row=>`
       <div class="capacity-agenda-row ${escapeHtml(row.kind)}">
@@ -2421,6 +2430,7 @@ function renderDayCapacityScorecard(report){
       const labels = {
         missed:'could place',
         'critical-miss':'critical miss',
+        'weather-deferred':'weather deferred',
         'assigned-elsewhere':'placed elsewhere',
         'budget-capped':'budget capped',
         'no-fit':'no eligible fit'

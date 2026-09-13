@@ -982,6 +982,11 @@ second row.
 - Triple-tap any day section header (regular mode only)
 - Opens the **Day Agenda Audit** sheet (see §IX.B)
 - Shows detailed capacity planning: clock/blocked/net minutes, eligible work, work placed, missed gaps, scheduler time
+- Uses the exact mounted Home snapshot. Adjacent pieces of one uninterrupted
+  breakable session are shown as one row; real interruptions remain separate.
+- Distinguishes a genuine due/linked placement miss from an intentional
+  rolling-rhythm weather deferral, including the better-forecast and quota
+  explanation. Timed breakable traces show their anchored start explicitly.
 - Copy or export week placement data
 - For developer/debugging use
 
@@ -1415,8 +1420,13 @@ Tracks the currently active habit session:
 
 ### Features
 - Copy week placements (to clipboard)
-- Download week placements (as JSON file)
-- Shows all agenda item placements for debugging
+- Download week placements (as a text file)
+- Shows all agenda item placements, final-gap feasibility, planner inputs,
+  selected clocks, route provenance, and solve/refinement status for debugging
+- A usable gap is not automatically a miss: work assigned to another day is
+  labeled separately, and a weather-guided assignment is reported as
+  **weather deferred** only when the rolling quota is already satisfied and
+  the mounted future placement has a materially better forecast
 
 ---
 

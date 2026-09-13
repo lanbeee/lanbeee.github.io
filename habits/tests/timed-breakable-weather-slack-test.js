@@ -58,6 +58,15 @@ function check(value,message,detail=''){
       const birthdayFast=summarizeBirthday(buildWeekAgenda(birthdayData,{...settings,agendaOptimizer:false},1,{fullToday:true}));
       let birthdayGlpk=null;
       if(!fastOnly)birthdayGlpk=summarizeBirthday(await buildWeekAgendaAsync(birthdayData,settings,1,{fullToday:true,nativeLimitSeconds:4}));
+      const birthdayTrace=week=>{
+        const report=buildDayCapacityScorecard(birthdayData,settings,day,now,{weekMode:true,weekSnapshot:week});
+        const item=report.plannerTrace.find(entry=>entry.name==='Birthday');
+        return item ? {earliest:item.earliestClockFit,inputs:item.inputs,decision:item.decision} : null;
+      };
+      const birthdayFastWeek=buildWeekAgenda(birthdayData,{...settings,agendaOptimizer:false},1,{fullToday:true});
+      const birthdayFastTrace=birthdayTrace(birthdayFastWeek);
+      const birthdayGlpkWeek=fastOnly ? null : await buildWeekAgendaAsync(birthdayData,settings,1,{fullToday:true,nativeLimitSeconds:4});
+      const birthdayGlpkTrace=birthdayGlpkWeek ? birthdayTrace(birthdayGlpkWeek) : null;
 
       const profile={id:'comfy',name:'Comfy',rules:[
         {metric:'apparent_temperature',min:10,max:26.6666666667,hard:false,relative:'high'},
@@ -80,11 +89,44 @@ function check(value,message,detail=''){
         const row=week.days.flatMap(item=>item.timeline).find(item=>item.kind==='fill' && item.h.name==='Walk');
         return row ? {day:dateKey(row.start),start:row.start} : null;
       };
-      const weatherFast=firstWalk(buildWeekAgenda([walk],{...weatherSettings,agendaOptimizer:false},3,{fullToday:true}));
+      const weatherFastWeek=buildWeekAgenda([walk],{...weatherSettings,agendaOptimizer:false},3,{fullToday:true});
+      const weatherFast=firstWalk(weatherFastWeek);
       let weatherGlpk=null;
-      if(!fastOnly)weatherGlpk=firstWalk(await buildWeekAgendaAsync([walk],weatherSettings,3,{fullToday:true,nativeLimitSeconds:4}));
+      let weatherGlpkWeek=null;
+      if(!fastOnly){
+        weatherGlpkWeek=await buildWeekAgendaAsync([walk],weatherSettings,3,{fullToday:true,nativeLimitSeconds:4});
+        weatherGlpk=firstWalk(weatherGlpkWeek);
+      }
+      const auditSummary=(week,auditHabit=walk)=>{
+        const report=buildDayCapacityScorecard([auditHabit],weatherSettings,day,now,{
+          weekMode:true,weekSnapshot:week
+        });
+        return {
+          missed:report.missedOpportunityCount,
+          critical:report.criticalMissCount,
+          intentional:report.intentionalDeferralCount,
+          statuses:report.placementGaps.map(gap=>gap.status),
+          reason:report.unplacedItems.find(item=>item.i===0)?.reason || '',
+          text:formatDayCapacityScorecardText(report,'today','test audit')
+        };
+      };
+      const adjacentRows=coalesceAdjacentBreakableRows([
+        {kind:'fill',h:birthday,i:0,start:at(0,17,30),end:at(0,18),locationId:'party',chunkMinutes:30,chunkIndex:0,scheduledDay:'2026-09-13'},
+        {kind:'fill',h:birthday,i:0,start:at(0,18),end:at(0,18,45),locationId:'party',chunkMinutes:45,chunkIndex:1,scheduledDay:'2026-09-13'},
+        {kind:'fill',h:birthday,i:0,start:at(0,19),end:at(0,19,30),locationId:'party',chunkMinutes:30,chunkIndex:2,scheduledDay:'2026-09-13'}
+      ]);
+      // The final audit must classify from the mounted week plus current item
+      // state. A new due boundary can appear after that week was computed;
+      // rolling quota + better forecast still explains the existing assignment.
+      const dueAuditWalk={...walk,lastLog:at(-2,12)};
+      const weatherFastAudit=auditSummary(weatherFastWeek,dueAuditWalk);
+      const weatherGlpkAudit=weatherGlpkWeek ? auditSummary(weatherGlpkWeek,dueAuditWalk) : null;
       globalThis.Date=RealDate;
-      return {day,birthdayFast,birthdayGlpk,weatherFast,weatherGlpk};
+      return {
+        day,birthdayFast,birthdayGlpk,birthdayFastTrace,birthdayGlpkTrace,weatherFast,weatherGlpk,
+        weatherFastAudit,weatherGlpkAudit,
+        adjacentRows:adjacentRows.map(row=>({start:row.start,end:row.end,minutes:row.chunkMinutes}))
+      };
     },FAST_ONLY);
 
     for(const [engine,value] of [['Fast',result.birthdayFast],['GLPK',result.birthdayGlpk]]){
@@ -94,9 +136,30 @@ function check(value,message,detail=''){
       check(Boolean(value.prayer) && !value.overlaps,`${engine}: Maghrib interrupts without overlap`,JSON.stringify(value));
       check(!value.scheduledBirthday,`${engine}: timed breakable is not a fixed scheduled block`,JSON.stringify(value));
     }
+    for(const [engine,trace] of [['Fast',result.birthdayFastTrace],['GLPK',result.birthdayGlpkTrace]]){
+      if(!trace)continue;
+      check(trace.earliest>=result.day+(17*60+30)*60000
+        && trace.inputs.some(input=>input.includes('anchored start 5:30 PM')),
+      `${engine}: audit honors and explains the timed breakable anchor`,JSON.stringify(trace));
+    }
     for(const [engine,value] of [['Fast',result.weatherFast],['GLPK',result.weatherGlpk]]){
       if(!value)continue;
       check(value.day==='2026-09-14',`${engine}: rolling 5x/8d slack defers poor weather only to the next required day`,JSON.stringify(value));
+    }
+    check(result.adjacentRows.length===2
+      && result.adjacentRows[0].minutes===75
+      && result.adjacentRows[1].minutes===30,
+    'adjacent breakable pieces publish as one session while a real gap stays split',JSON.stringify(result.adjacentRows));
+    for(const [engine,audit] of [['Fast',result.weatherFastAudit],['GLPK',result.weatherGlpkAudit]]){
+      if(!audit)continue;
+      check(audit.missed===0 && audit.critical===0 && audit.intentional===1,
+        `${engine}: audit treats better-weather assignment as intentional, not a critical miss`,JSON.stringify(audit));
+      check(audit.statuses.includes('weather-deferred'),
+        `${engine}: remaining-gap audit labels the weather deferral`,JSON.stringify(audit));
+      check(audit.reason.includes('better weather') && audit.reason.includes('5×/8-day'),
+        `${engine}: unplaced explanation includes forecast choice and rolling quota`,audit.reason);
+      check(audit.text.includes('WEATHER DEFERRED') && audit.text.includes('no misses'),
+        `${engine}: copied audit is explicit about the explained gap`,audit.text);
     }
     check(errors.length===0,'no page errors',errors.join(' | '));
   }finally{await browser.close();}
