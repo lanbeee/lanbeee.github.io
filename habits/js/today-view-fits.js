@@ -1260,7 +1260,7 @@ function plannerTraceScarcityInput(score){
 // delays visible while keeping the trace cheap and honest.
 function plannerTraceEarliestClockFit(h,i,dayBase,dayEnd,rangeStart,rawBlocks,agendaRows,neededMinutes){
   if(!h || neededMinutes <= 0)return null;
-  // fillDayWindows also resolves a timed breakable task's anchored start even
+  // fillDayWindows also resolves a timed breakable task's fixed first start even
   // though that task has no explicit start/end window fields.
   const resolvedWindows = typeof fillDayWindows === 'function'
     ? (fillDayWindows(h,dayBase,null) || []) : [];
@@ -1481,8 +1481,10 @@ function buildPlannerDecisionTrace(data,settings,context){
       Number.isFinite(attention) ? `attention ${attention.toFixed(2)}` : '',
       plannerTraceScarcityInput(meta.scarcity),
       pinned ? 'planned for today' : 'not a day plan',
-      timedBreakable ? `anchored start ${agendaTimeLabel(h.eventTime)}; may pause and resume after that` : '',
-      hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
+      timedBreakable ? `fixed first start ${agendaTimeLabel(h.eventTime)}; may pause and resume after that` : '',
+      timedBreakable
+        ? `remaining sessions may use ${hardLabels.join('; ')}`
+        : (hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time'),
       preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
       locationNames.length
         ? `locations ${locationIds.map((id,k)=>{
@@ -1800,8 +1802,13 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     // planner deliberately spent rolling rhythm slack on a better forecast.
     // That is an explained cross-day choice, not a due-placement failure.
     if(weatherAssignmentByIndex.has(i))return '';
-    const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
-    if(Number(urgency) >= 100)return 'due work';
+    const candidate = {h,i,priority:effectivePriority(h)};
+    const mustPlace = typeof mustPlaceOccurrenceByDay === 'function'
+      ? mustPlaceOccurrenceByDay(candidate,dayBase)
+      : ((h.type === 'task' && h.dueDate != null) ? dayBase >= dayStart(h.dueDate) : false);
+    const pinnedToday = typeof isWeekPinnedToday === 'function'
+      && isWeekPinnedToday(h,settings);
+    if(mustPlace || pinnedToday)return pinnedToday ? 'planned-today work' : 'due work';
     if(h.hid && auditOrderEdges.some(edge=>edge
       && (edge.beforeHid === h.hid || edge.afterHid === h.hid)
       && placedTodayHids.has(edge.beforeHid === h.hid ? edge.afterHid : edge.beforeHid))){
@@ -2408,8 +2415,12 @@ function scoreAgendaPlacement(terms,weights){
   const W = weights || resolveAgendaScoreWeights(null);
   const t = terms || {};
   const drive = Number(t.travelSeconds) || 0;
-  const travel = typeof travelLegCostSeconds === 'function'
+  const travelSeconds = typeof travelLegCostSeconds === 'function'
     ? travelLegCostSeconds(drive,t.fromLocId,t.toLocId) : drive;
+  // Compare like with like: ASAP is measured in minutes, so route cost must be
+  // minutes too. Treating travel as raw seconds made a short saved trip worth
+  // hours of idle delay and over-clustered otherwise useful agenda gaps.
+  const travel = travelSeconds / 60;
   const cluster = (Number(t.clusterBonus) || 0) + (Number(t.coLocHint) || 0);
   const dayPen = Number(t.dayOffsetPenalty) || 0;
   const urgency = Number(t.urgency) || 0;
@@ -2555,10 +2566,9 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
     };
     const score = scoreAgendaPlacement(terms,weights);
     // Weather guidance outranks ordinary ASAP/preference and scarce-window
-    // overlap. Scarce overlap is milliseconds × 0.05, so a 30-minute overlap
-    // (~90k) used to bury a relative "prefer lower rain" gap (~a few hundred).
-    // Travel, day-offset and order still compete with weather. Use the full
-    // score (ASAP + preference + scarce) only when that core ties.
+    // overlap. Travel remains a core route signal, but is minute-scaled above
+    // so it cannot overpower the later full-score clock comparison by a 60×
+    // unit mismatch. Use the full score only when that core ties.
     const coreScore = scoreAgendaPlacement({
       ...terms,asapDelayMin:0,preferencePenalty:0,scarceOverlapMs:0
     },weights);

@@ -922,11 +922,24 @@ function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
   const today=weatherBestPenaltyForDay(candidate,state,settings);
   if(today==null)return false;
   let future=Infinity;
-  for(const other of dayStates){
-    if(!other || other.dayBase<=state.dayBase)continue;
-    if(candidate.eligible && !candidate.eligible.has(other.dayBase))continue;
-    const penalty=weatherBestPenaltyForDay(candidate,other,settings);
-    if(penalty!=null)future=Math.min(future,penalty);
+  // A rolling quota's current slack is permission to wait only until the
+  // first day on which that quota would become short without this occurrence.
+  // Compare weather only across that reachable horizon. Looking past the
+  // deadline can claim "better weather later" even though cadence forces the
+  // planner to place the item sooner on a barely different day.
+  const historyAtDecision=(dayStates || []).filter(other=>other
+    && other.dayBase<=state.dayBase);
+  const futureStates=(dayStates || []).filter(other=>other
+    && other.dayBase>state.dayBase).sort((a,b)=>a.dayBase-b.dayBase);
+  for(const other of futureStates){
+    const quotaStillSatisfied=!rollingSlack
+      || weatherRollingRhythmQuotaSatisfied(candidate,other,historyAtDecision);
+    const eligible=!candidate.eligible || candidate.eligible.has(other.dayBase);
+    if(eligible){
+      const penalty=weatherBestPenaltyForDay(candidate,other,settings);
+      if(penalty!=null)future=Math.min(future,penalty);
+    }
+    if(rollingSlack && !quotaStillSatisfied)break;
   }
   return Number.isFinite(future) && future+100<today;
 }

@@ -81,6 +81,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
   // whose window opens earlier than a previously-placed one can still land
   // in its own gap instead of being pushed past the slot's end.
   const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+  const exactTimedStart = timedBreakableExactStartForFill(state,fill);
 
   // Temporary day-order: never start before a placed predecessor finishes.
   let orderFloor = 0;
@@ -157,7 +158,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
       if(durMin + travelMin > remaining && usedMinutes > 0)continue;
 
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
-      if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
+      if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
+      else if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
         : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
         && dayStart(fill.h.eventTime) === dayBase){
         placeStart=Math.max(placeStart,Number(fill.h.eventTime));
@@ -189,6 +191,10 @@ function tryPlaceOnDay(state,fill,opts = {}){
       }
       // Placement must stay inside this open gap (blocks/scheduled already carved).
       placeStart = Math.max(placeStart,gap.start);
+      // A clock entered on a breakable event fixes the first session's start.
+      // It is not an allowed-window lower bound. Later sessions may resume in
+      // any valid gap after the event time.
+      if(exactTimedStart != null && Math.abs(placeStart - exactTimedStart) > 1000)continue;
       if(placeStart >= gap.end)continue;
       // Reserve outbound commute to the next different-location hard/fill row
       // so placeEnd cannot overlap the leave-by window homeDaySequence draws.
@@ -848,6 +854,57 @@ function breakableMinutesLeft(h,habitIndex,stateOrStates){
   return Math.max(0,totalLeft - placed);
 }
 
+// PURE: the first scheduled session of a timed breakable task must begin at
+// eventTime exactly. Once any session for this occurrence is committed, the
+// remaining work is flexible and may resume later around hard obligations.
+function timedBreakableExactStartForFill(state,fill){
+  if(!state || !fill || !fill.h)return null;
+  const timed = typeof isBreakableTimedTask === 'function'
+    ? isBreakableTimedTask(fill.h)
+    : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null);
+  if(!timed || dayStart(fill.h.eventTime) !== state.dayBase)return null;
+  const alreadyStarted = (state.fills || []).some(entry=>entry && entry.fill
+    && entry.fill.i === fill.i);
+  return alreadyStarted ? null : Number(fill.h.eventTime);
+}
+
+// MUTATE: claim one minimum-sized first session for each timed breakable task
+// before flexible/fixed packing. This turns the event clock into a real hard
+// boundary for both planner engines, while leaving the rest of the duration to
+// the normal continuous-first breakable pass.
+function preplaceTimedBreakableStarts(candidates,dayStates,settings){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
+  let placed = 0;
+  for(const c of candidates){
+    if(!c || !c.h || !(typeof isBreakableTimedTask === 'function'
+      ? isBreakableTimedTask(c.h)
+      : (c.h.type === 'task' && c.h.breakable && c.h.eventTime !== null)))continue;
+    const state = dayStates.find(item=>item && item.dayBase === dayStart(c.h.eventTime));
+    if(!state || (c.eligible && !c.eligible.has(state.dayBase)))continue;
+    if((state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i))continue;
+    const left = breakableMinutesLeft(c.h,c.i,dayStates);
+    if(left <= 0)continue;
+    const min = typeof clampMinChunk === 'function'
+      ? clampMinChunk(c.h.minChunkMinutes)
+      : Math.max(15,Number(c.h.minChunkMinutes) || 30);
+    const chunkMinutes = Math.min(left,min);
+    const fill = {
+      h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+      chunkMinutes,chunkIndex:0,placeKey:`${c.i}:0`
+    };
+    const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
+    if(!fit || Math.abs(fit.placeStart - Number(c.h.eventTime)) > 1000)continue;
+    commitPlacement(state,fill,fit);
+    state.placed.add(c.i);
+    state.day.agendaItems.push({
+      h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+      locationId:fit.locId,chunkMinutes:fit.durMin,chunkIndex:0
+    });
+    placed += 1;
+  }
+  return placed;
+}
+
 /**
  * PURE: largest valid breakable session that fits a gap on this day.
  * Prefers bigger sessions (continuous as possible), then soft agenda score.
@@ -880,6 +937,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     : pickHabitLocationId(fill.h,anchor,registry,mode,dayBase);
   const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   const candidates = [];
+  const exactTimedStart = timedBreakableExactStartForFill(state,fill);
 
   let orderFloor = 0;
   let orderCeiling = Infinity;
@@ -935,7 +993,8 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
       const travelMin = Math.ceil((edge.seconds || 0) / 60);
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
-      if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
+      if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
+      else if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
         : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
         && dayStart(fill.h.eventTime) === dayBase){
         placeStart=Math.max(placeStart,Number(fill.h.eventTime));
@@ -966,6 +1025,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         }
       }
       placeStart = Math.max(placeStart,gap.start);
+      if(exactTimedStart != null && Math.abs(placeStart - exactTimedStart) > 1000)continue;
       if(placeStart >= gap.end || placeStart >= cap)continue;
       // Reserve outbound commute to the next different-location hard/fill row.
       const presenceLocId = locId || anchor;

@@ -1272,8 +1272,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
   // route term is activated only in the frozen-selection pass below, so it can
   // reorder but cannot drop a placeable task; hard windows and pins remain
-  // structural constraints. Per the documented lex order this makes MINIMUM
-  // TRAVEL outrank ASAP/PRIORITY once the work set is fixed.
+  // structural constraints. Inside that fixed work set, travel and clock delay
+  // remain comparable soft costs: an extra short trip may be worthwhile when it
+  // prevents a much larger idle gap.
   // Today's start place — pin, geofence, lastKnown seed, or closest saved
   // place when the seed is the ephemeral GPS coordinate. Future days keep
   // null so the committed-route DP is not perturbed. Requiring liveLocationId
@@ -1295,14 +1296,20 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // what makes "never drop work merely to save a trip" a structural guarantee
   // instead of relying on a fragile coefficient cap.
   const routeObjectiveVars = [];
+  const routeWeights = typeof resolveAgendaScoreWeights === 'function'
+    ? resolveAgendaScoreWeights(state.settings || null)
+    : {travel:1};
+  // Option fit scores enter the maximization objective at ×0.01 above. Route
+  // interaction terms must use that same scale and the same minute units, or
+  // a single saved location change overwhelms hours of clock-delay cost.
+  const routePenaltyForSeconds = seconds=>Math.max(0,Number(seconds) || 0)
+    / 60 * Math.max(0,Number(routeWeights.travel) || 0) * 0.01;
   const seedLoc = (typeof todaySequencingLocationId === 'function'
     ? todaySequencingLocationId(state)
     : ((state.liveLocId && state.seedLocId === state.liveLocId)
       ? state.seedLocId : null)) || null;
   if(seedLoc && typeof travelEdgeBetweenIds === 'function'){
-    const TRAVEL_PAIR_COEF = 0.1;    // 1s of saved commute ≈ 0.1 objective weight
-    const TRAVEL_PAIR_CAP = 80;      // bound route vs same-item clock preferences
-    const TRAVEL_PAIR_FLOOR = 12;    // still decisive over priority/ASAP deltas
+    const TRAVEL_PAIR_CAP = 10;      // same cap as a bounded option fit score
     let tpIdx = 0;
     // One z per (away option × seed candidate), not per seed clock option.
     // At most one option per candidate is selected, so pairing every Breakfast
@@ -1326,8 +1333,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       const savedSec = typeof travelLegCostSeconds === 'function'
         ? travelLegCostSeconds(driveSec,seedLoc,aLoc) : driveSec;
       if(savedSec <= 0)continue;                         // co-located: no away-and-back risk
-      const pen = Math.max(TRAVEL_PAIR_FLOOR,
-        Math.min(TRAVEL_PAIR_CAP,savedSec * TRAVEL_PAIR_COEF));
+      const pen = Math.min(TRAVEL_PAIR_CAP,routePenaltyForSeconds(savedSec));
+      if(pen <= 0)continue;
       for(const [candI,seedOpts] of seedOptionsByCandidate){
         if(candI === A.c.i)continue;
         const later = seedOpts.filter(B=>A.fit.placeStart < B.fit.placeStart);
@@ -1370,10 +1377,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       && Number.isFinite(Number(row.start)) && Number.isFinite(Number(row.end)));
     const SPLIT_ROUTE_NEAR_SECONDS = typeof CLUSTER_FLEX_NEAR_SECONDS !== 'undefined'
       ? CLUSTER_FLEX_NEAR_SECONDS : 15 * 60;
-    const SPLIT_ROUTE_COEF = 0.1;
-    // Bound each anchor's route influence relative to same-item clock hints.
-    const splitRouteCap = Math.max(1,80 / Math.max(1,hardAnchors.length));
-    const splitRouteFloor = Math.min(12,splitRouteCap);
+    // Bound each anchor's total route influence to the same scale as option
+    // fit scores; there is deliberately no artificial minimum penalty.
+    const splitRouteCap = 10 / Math.max(1,hardAnchors.length);
     let splitIdx = 0;
     for(const hard of hardAnchors){
       const located = opts.map((option,index)=>({
@@ -1437,8 +1443,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
           }
         }
         if(!Number.isFinite(minimumExtraSeconds) || minimumExtraSeconds <= 0)continue;
-        const penalty = Math.max(splitRouteFloor,
-          Math.min(splitRouteCap,minimumExtraSeconds * SPLIT_ROUTE_COEF));
+        const penalty = Math.min(splitRouteCap,
+          routePenaltyForSeconds(minimumExtraSeconds));
         if(penalty <= 0)continue;
         const beforeVar = `split_before_${splitIdx}`;
         const afterVar = `split_after_${splitIdx}`;
@@ -1858,6 +1864,14 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     }
     return added.length;
   };
+
+  // Timed breakables participate in fixed-pack geometry through a committed
+  // minimum first session. The ILP must see that hard 5:30-style boundary
+  // before choosing flexible errands; the remaining duration still fills
+  // continuously around prayers and other obligations afterward.
+  if(typeof preplaceTimedBreakableStarts === 'function'){
+    total += preplaceTimedBreakableStarts(candidates,dayStates,settings);
+  }
 
   for(let dayOffset = 0;dayOffset < dayStates.length;dayOffset += 1){
     const state = dayStates[dayOffset];

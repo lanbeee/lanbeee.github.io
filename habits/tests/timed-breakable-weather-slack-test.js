@@ -1,5 +1,5 @@
 // Regression coverage for two coupled agenda semantics:
-// 1) a timed breakable task anchors its first session instead of reserving its
+// 1) a timed breakable task fixes its first session start instead of reserving its
 //    entire duration as one fixed event; critical rows may interrupt it;
 // 2) weather may spend a fractional rhythm's already-earned rolling slack,
 //    but must place it on the next day once that quota would fall short.
@@ -97,6 +97,27 @@ function check(value,message,detail=''){
         weatherGlpkWeek=await buildWeekAgendaAsync([walk],weatherSettings,3,{fullToday:true,nativeLimitSeconds:4});
         weatherGlpk=firstWalk(weatherGlpkWeek);
       }
+      const deadlineSamples=[];
+      for(let offset=0;offset<3;offset+=1){
+        for(let hour=12;hour<=22;hour+=1)deadlineSamples.push({
+          ts:at(offset,hour),apparent_temperature:offset===2?20:(offset===1?35:30),
+          uv_index:offset===2?0:(offset===1?10:8),precipitation_probability:0,source:'weekly'
+        });
+      }
+      const deadlineWeatherSettings={...weatherSettings,_weatherContext:{
+        ...weatherSettings._weatherContext,samples:deadlineSamples,revision:'deadline-test'
+      }};
+      const deadlineWalk={...walk,
+        logs:[at(-7,12),at(-6,12),at(-5,12),at(-3,12),at(-2,12)],
+        lastLog:at(-2,12)
+      };
+      const deadlineFast=firstWalk(buildWeekAgenda(
+        [deadlineWalk],{...deadlineWeatherSettings,agendaOptimizer:false},3,{fullToday:true}
+      ));
+      let deadlineGlpk=null;
+      if(!fastOnly)deadlineGlpk=firstWalk(await buildWeekAgendaAsync(
+        [deadlineWalk],deadlineWeatherSettings,3,{fullToday:true,nativeLimitSeconds:4}
+      ));
       const auditSummary=(week,auditHabit=walk)=>{
         const report=buildDayCapacityScorecard([auditHabit],weatherSettings,day,now,{
           weekMode:true,weekSnapshot:week
@@ -118,13 +139,20 @@ function check(value,message,detail=''){
       // The final audit must classify from the mounted week plus current item
       // state. A new due boundary can appear after that week was computed;
       // rolling quota + better forecast still explains the existing assignment.
-      const dueAuditWalk={...walk,lastLog:at(-2,12)};
+      const dueAuditWalk=deadlineWalk;
       const weatherFastAudit=auditSummary(weatherFastWeek,dueAuditWalk);
       const weatherGlpkAudit=weatherGlpkWeek ? auditSummary(weatherGlpkWeek,dueAuditWalk) : null;
+      const earlyTripCost=scoreAgendaPlacement({
+        travelSeconds:2*60,fromLocId:'home',toLocId:'store',asapDelayMin:0,urgency:100
+      },{travel:1,cluster:0,day:0,asap:0.12,scarce:0,preference:0});
+      const lateNoTripCost=scoreAgendaPlacement({
+        travelSeconds:0,fromLocId:'home',toLocId:'home',asapDelayMin:120,urgency:100
+      },{travel:1,cluster:0,day:0,asap:0.12,scarce:0,preference:0});
       globalThis.Date=RealDate;
       return {
         day,birthdayFast,birthdayGlpk,birthdayFastTrace,birthdayGlpkTrace,weatherFast,weatherGlpk,
-        weatherFastAudit,weatherGlpkAudit,
+        deadlineFast,deadlineGlpk,
+        weatherFastAudit,weatherGlpkAudit,earlyTripCost,lateNoTripCost,
         adjacentRows:adjacentRows.map(row=>({start:row.start,end:row.end,minutes:row.chunkMinutes}))
       };
     },FAST_ONLY);
@@ -138,18 +166,28 @@ function check(value,message,detail=''){
     }
     for(const [engine,trace] of [['Fast',result.birthdayFastTrace],['GLPK',result.birthdayGlpkTrace]]){
       if(!trace)continue;
-      check(trace.earliest>=result.day+(17*60+30)*60000
-        && trace.inputs.some(input=>input.includes('anchored start 5:30 PM')),
-      `${engine}: audit honors and explains the timed breakable anchor`,JSON.stringify(trace));
+      check(trace.earliest===result.day+(17*60+30)*60000
+        && trace.inputs.some(input=>input.includes('fixed first start 5:30 PM'))
+        && trace.inputs.some(input=>input.includes('remaining sessions may use')),
+      `${engine}: audit distinguishes the fixed first start from resumable time`,JSON.stringify(trace));
     }
     for(const [engine,value] of [['Fast',result.weatherFast],['GLPK',result.weatherGlpk]]){
       if(!value)continue;
       check(value.day==='2026-09-14',`${engine}: rolling 5x/8d slack defers poor weather only to the next required day`,JSON.stringify(value));
     }
+    for(const [engine,value] of [['Fast',result.deadlineFast],['GLPK',result.deadlineGlpk]]){
+      if(!value)continue;
+      check(value.day==='2026-09-13',
+        `${engine}: a distant good forecast cannot justify deferral past the rolling-quota deadline`,
+        JSON.stringify(value));
+    }
     check(result.adjacentRows.length===2
       && result.adjacentRows[0].minutes===75
       && result.adjacentRows[1].minutes===30,
     'adjacent breakable pieces publish as one session while a real gap stays split',JSON.stringify(result.adjacentRows));
+    check(result.earlyTripCost < result.lateNoTripCost,
+      'a short extra location-changing trip costs less than a two-hour idle delay',
+      JSON.stringify({early:result.earlyTripCost,late:result.lateNoTripCost}));
     for(const [engine,audit] of [['Fast',result.weatherFastAudit],['GLPK',result.weatherGlpkAudit]]){
       if(!audit)continue;
       check(audit.missed===0 && audit.critical===0 && audit.intentional===1,

@@ -137,7 +137,7 @@ function aboutText(h){
   if(h.type === 'task'){
     if(h.lastLog !== null)return `Done. Logged ${entryWhen(h.lastLog)}.`;
     if(h.eventTime !== null)return h.breakable
-      ? `Starts ${scheduledWhenLabel(h.eventTime)}. Breakable — may pause and resume around other obligations.`
+      ? `Starts exactly ${scheduledWhenLabel(h.eventTime)}. Breakable — may pause and resume around other obligations.`
       : `Scheduled ${scheduledWhenLabel(h.eventTime)}. Fixed time — never rescheduled.`;
     if(h.dueDate === null)return 'A someday task. Pin it or add a due date to bring it forward.';
     const left = daysUntil(h.dueDate);
@@ -270,7 +270,7 @@ function renderGraph(h){
 function graphRule(h){
   if(h.type === 'keepup')return 'shorter is better';
   if(h.type === 'reduce')return 'longer is better';
-  if(h.type === 'task')return h.eventTime !== null ? (h.breakable ? 'anchored start' : 'fixed time') : 'one-off';
+  if(h.type === 'task')return h.eventTime !== null ? (h.breakable ? 'fixed first start' : 'fixed time') : 'one-off';
   return 'longer is better';
 }
 

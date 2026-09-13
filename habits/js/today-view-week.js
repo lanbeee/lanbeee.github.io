@@ -1115,7 +1115,12 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
       return compareWeekPlacement(a,b);
     });
   }
-  let totalAssigned = 0;
+  // A breakable event's entered clock is a hard first-start promise. Claim its
+  // minimum first session before movable placement so errands cannot consume
+  // the arrival/start boundary and silently push the event later.
+  let totalAssigned = typeof preplaceTimedBreakableStarts === 'function'
+    ? preplaceTimedBreakableStarts(candidates,dayStates,settings)
+    : 0;
   // Daily recurring breakables (e.g. "Work 6h every weekday") fill LAST so that
   // movable candidates (plan-by errands, one-shot tasks, sparse rhythms) can
   // claim a gap on a quiet day before the breakable greedy-splits the window
@@ -1488,7 +1493,10 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
   let left = Math.max(0,breakableMinutesLeft(c.h,c.i,dayStates)
     - Math.max(0,Number(ctx.preplannedMinutes) || 0));
   let chunkIndex = 0;
-  let preferredState = null;
+  while(dayStates.some(state=>state && state.placed
+    && state.placed.has(`${c.i}:${chunkIndex}`)))chunkIndex += 1;
+  let preferredState = dayStates.find(state=>(state.fills || []).some(entry=>
+    entry && entry.fill && entry.fill.i === c.i)) || null;
   let gained = 0;
   while(left > 0){
     // Keep chunks chronological. Once a larger valid session has been placed

@@ -309,7 +309,7 @@ if days < 4: score += red (keep going)
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
 | `dueDate` | number\|null | null | Soft deadline (day-level) |
-| `eventTime` | number\|null | null | Fixed appointment when unbreakable; anchored start when breakable |
+| `eventTime` | number\|null | null | Fixed appointment when unbreakable; exact first-session start when breakable |
 | `hardDue` | boolean | false | Hard deadline (escalates urgency) |
 | `earlyWindowDays` | number | 1 | Days before the due date it may start surfacing |
 | `delayAllowanceDays` | number | 0 | Days after the due date it may remain on time |
@@ -446,7 +446,7 @@ else:
   
   // ─── TASK & IMPORT FIELDS ───────────────────────────────
   dueDate: number|null,      // 👤 Task only: deadline
-  eventTime: number|null,    // 👤 Task: fixed time, or earliest start when breakable
+  eventTime: number|null,    // 👤 Task: fixed time, or exact first start when breakable
   hardDue: boolean,          // 👤 Task only: hard deadline
   externalId: string|null,   // 👤 Imported from calendar
   source: 'pdf'|'msgraph'|'gcal'|null, // 👤 Import source
@@ -986,7 +986,10 @@ second row.
   breakable session are shown as one row; real interruptions remain separate.
 - Distinguishes a genuine due/linked placement miss from an intentional
   rolling-rhythm weather deferral, including the better-forecast and quota
-  explanation. Timed breakable traces show their anchored start explicitly.
+  explanation. Timed breakable traces show their fixed first start explicitly.
+- Weather deferral for fractional rhythms is bounded by the next rolling-quota
+  deadline. A better forecast after that deadline cannot justify waiting when
+  the habit would actually have to be scheduled sooner.
 - Copy or export week placement data
 - For developer/debugging use
 
@@ -1161,7 +1164,7 @@ Fields shown (always visible, even in minimal mode):
 #### Task Timing Section
 - For `task` type only
 - **Due date:** Date picker (`detail-due-date`)
-- **Due time:** Time picker (`detail-due-time`); fixed for unbreakable tasks, an anchored start for breakable tasks
+- **Due time:** Time picker (`detail-due-time`); fixed for unbreakable tasks, the exact first-session start for breakable tasks
 - Tasks open on Schedule by default so deadline and placement controls are the
   first editable fields.
 
@@ -2720,7 +2723,7 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 #### Agenda Score Weights 👨‍💻
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `travel` | number | 1 | Per second of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car). Overhead is objective-only and does not add clock minutes to travel cards. |
+| `travel` | number | 1 | Per minute of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car). Overhead is objective-only and does not add clock minutes to travel cards. Travel competes with clock delay as a soft cost, so a saved short trip cannot justify an hours-long idle gap. |
 | `cluster` | number | 1 | Per unit of co-location savings |
 | `day` | number | 1 | Day-offset multiplier |
 | `asap` | number | 0.12 | Per minute of clock delay |
