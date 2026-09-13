@@ -451,6 +451,94 @@ function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
 // cascades: only partners that are due by their own raw rhythm/schedule/plan
 // unlock it (not partners that only exist via another flex pull).
 const CLUSTER_FLEX_NEAR_SECONDS = 15 * 60;
+// Neighborhood vs a real trip. A 2-minute locker run sits in the seed cluster;
+// an 8+ minute later appointment is far enough that splitting the cluster
+// across it (go, come back for an errand, go again) is the expensive route.
+const NEAR_SEED_ERRAND_SECONDS = 8 * 60;
+
+function nearSeedErrandSeconds(){
+  return typeof NEAR_SEED_ERRAND_SECONDS === 'number' ? NEAR_SEED_ERRAND_SECONDS : 8 * 60;
+}
+
+function candidateLocationIdsForState(c,state){
+  const h = c && c.h;
+  if(!h || !state)return [];
+  if(typeof habitLocationIdsForDay === 'function'){
+    return habitLocationIdsForDay(h,state.dayBase,state.registry || []) || [];
+  }
+  return Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : [];
+}
+
+function minTravelSecondsBetween(fromId,toIds,state){
+  if(!fromId || !Array.isArray(toIds) || !toIds.length)return Infinity;
+  if(typeof travelEdgeBetweenIds !== 'function')return Infinity;
+  let best = Infinity;
+  for(const toId of toIds){
+    if(!toId)continue;
+    if(fromId === toId)return 0;
+    const sec = Math.max(0,Number(travelEdgeBetweenIds(
+      fromId,toId,state.registry,state.mode,{allowNetwork:false}
+    ).seconds) || 0);
+    if(sec < best)best = sec;
+  }
+  return best;
+}
+
+// PURE: next committed location after startClock whose seed commute is a real
+// trip. Timed-breakable first sessions and scheduled rows both qualify, so a
+// 5:30 far event is visible to ranking and ILP option chaining before the
+// remaining duration is gap-filled.
+function nextFarLocationPin(state){
+  if(!state)return null;
+  const seed = (typeof todaySequencingLocationId === 'function'
+    ? todaySequencingLocationId(state) : null) || state.seedLocId || null;
+  const anchors = typeof optimizerFixedLocationAnchors === 'function'
+    ? optimizerFixedLocationAnchors(state)
+    : [];
+  const farSec = nearSeedErrandSeconds();
+  const startClock = Number(state.startClock) || Number(state.dayBase) || 0;
+  for(const anchor of anchors){
+    if(!anchor || !anchor.locationId)continue;
+    if(Number(anchor.start) < startClock)continue;
+    if(seed && anchor.locationId === seed)continue;
+    if(!seed)return anchor;
+    const sec = minTravelSecondsBetween(seed,[anchor.locationId],state);
+    if(Number.isFinite(sec) && sec > farSec)return anchor;
+  }
+  return null;
+}
+
+// PURE: a day-choosing errand in the seed neighborhood that can finish before
+// a later far pin. Pack these before slack daily P0 so a short at-seed window
+// cannot consume the only pre-pin gap the neighborhood cluster needed.
+function weekFillIsNearClusterBeforeFarPin(c,dayStates){
+  if(typeof isDayChoosingWeekCandidate !== 'function' || !isDayChoosingWeekCandidate(c))return false;
+  if(typeof mustPlaceCriticalOccurrence === 'function' && mustPlaceCriticalOccurrence(c))return false;
+  const state = Array.isArray(dayStates) ? dayStates[0] : null;
+  if(!state)return false;
+  const pin = nextFarLocationPin(state);
+  if(!pin)return false;
+  const seed = (typeof todaySequencingLocationId === 'function'
+    ? todaySequencingLocationId(state) : null) || state.seedLocId || null;
+  if(!seed)return false;
+  const locIds = candidateLocationIdsForState(c,state).filter(Boolean);
+  if(!locIds.length || locIds.includes(pin.locationId))return false;
+  const nearSec = nearSeedErrandSeconds();
+  const fromSeed = minTravelSecondsBetween(seed,locIds,state);
+  if(!Number.isFinite(fromSeed) || fromSeed > nearSec)return false;
+  const durMin = typeof clampDuration === 'function'
+    ? clampDuration(c.h && c.h.durationMinutes)
+    : Math.max(0,Number(c.h && c.h.durationMinutes) || 0);
+  let toPinSec = Infinity;
+  for(const locId of locIds){
+    const sec = minTravelSecondsBetween(locId,[pin.locationId],state);
+    if(sec < toPinSec)toPinSec = sec;
+  }
+  if(!Number.isFinite(toPinSec))toPinSec = 0;
+  const earliestEnd = (Number(state.startClock) || 0) + fromSeed * 1000 + durMin * 60000;
+  return earliestEnd + toPinSec * 1000 <= Number(pin.start);
+}
+
 function locationsShareCluster(aIds,bIds,registry,mode){
   if(!Array.isArray(aIds) || !Array.isArray(bIds) || !aIds.length || !bIds.length)return false;
   for(const a of aIds){

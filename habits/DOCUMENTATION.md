@@ -2128,8 +2128,12 @@ can wait skip a much wetter day the same way GLPK's `weatherShouldDeferCandidate
 does. A fractional rhythm may also spend weather slack when its rolling quota
 is already satisfied; it becomes mandatory on the next day where an older
 completion falls out of that window. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
-planned/last-day tasks, then slack daily P0 so earliest-clock Zuhr cannot
-fragment the only contiguous 4h slot a due visit needs.
+planned/last-day tasks, then seed-neighborhood errands that can still finish
+before a later far location pin, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only contiguous 4h slot a due visit needs. Neighborhood hops (a
+few minutes from the day's start place) are not treated as away-and-back
+commutes; GLPK chains those errands on the same side of the far pin instead of
+leaving for the pin, returning for a store, and going back.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked

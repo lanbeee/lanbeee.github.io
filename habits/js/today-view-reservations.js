@@ -431,7 +431,8 @@ function weekFillClaimsHorizonDay(c,dayStates){
 }
 
 // PURE: Fast assignment order. Scarce one-day P0 first, then planned/last-day
-// non-breakable tasks, then slack daily P0 (Zuhr can slide), then remaining pins.
+// non-breakable tasks, then seed-neighborhood errands that still fit before a
+// later far location pin, then slack daily P0 (Zuhr can slide), then pins.
 function compareWeekClaimPriority(a,b,dayStates){
   const scarceA = weekFillIsScarceCritical(a);
   const scarceB = weekFillIsScarceCritical(b);
@@ -439,6 +440,11 @@ function compareWeekClaimPriority(a,b,dayStates){
   const claimA = weekFillClaimsHorizonDay(a,dayStates);
   const claimB = weekFillClaimsHorizonDay(b,dayStates);
   if(claimA !== claimB)return claimA ? -1 : 1;
+  const clusterA = typeof weekFillIsNearClusterBeforeFarPin === 'function'
+    && weekFillIsNearClusterBeforeFarPin(a,dayStates);
+  const clusterB = typeof weekFillIsNearClusterBeforeFarPin === 'function'
+    && weekFillIsNearClusterBeforeFarPin(b,dayStates);
+  if(clusterA !== clusterB)return clusterA ? -1 : 1;
   const criticalA = typeof mustPlaceCriticalOccurrence === 'function'
     && mustPlaceCriticalOccurrence(a);
   const criticalB = typeof mustPlaceCriticalOccurrence === 'function'

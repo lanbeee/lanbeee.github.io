@@ -20,6 +20,7 @@ calendar-scroll-test.js	integrations	once
 cancel-blocked-capacity-test.js	planner	once
 cluster-flex-pull-test.js	planner	default-only
 cluster-objective-test.js	planner	once
+cluster-same-side-far-pin-test.js	planner	once
 completed-link-agenda-test.js	planner	once
 constrained-weekly-agenda-test.js	planner	once
 day-capacity-scorecard-e2e.js	planner	page-both
