@@ -350,7 +350,7 @@ function syncTaskDueUi(){
   const hint = $('task-due-hint');
   if(hint){
     if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
-    else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
+    else if(hasTime)hint.textContent = 'Starts at this time. It is a fixed appointment unless you mark it breakable in details.';
     else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
   }
 }

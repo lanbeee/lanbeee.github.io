@@ -880,25 +880,66 @@ function weatherHabitHasActiveGuidance(h,settings){
   return false;
 }
 
+// PURE: fractional rhythms have real short-term slack when their rolling
+// quota is already satisfied. Weather may spend that slack even when the
+// alternating cadence's nominal due day has arrived; once an old completion
+// falls out of the window, the occurrence becomes mandatory again.
+function weatherRollingRhythmQuotaSatisfied(candidate,state,dayStates=[]){
+  const h=candidate && candidate.h;
+  if(!h || h.type==='task' || h.breakable || state?.dayBase==null)return false;
+  const parts=typeof rhythmParts==='function' ? rhythmParts(h.target) : null;
+  if(!parts || parts.times<=1 || parts.days<=1)return false;
+  const end=dayStart(state.dayBase);
+  const start=end-(parts.days-1)*86400000;
+  const completionDays=new Set();
+  if(typeof actualLogs==='function'){
+    for(const ts of actualLogs(h.logs || [])){
+      const base=dayStart(ts);
+      if(base>=start && base<=end)completionDays.add(base);
+    }
+  }
+  for(const other of dayStates || []){
+    if(!other || other.dayBase<start || other.dayBase>end)continue;
+    if((other.fills || []).some(entry=>entry && entry.fill && entry.fill.i===candidate.i)){
+      completionDays.add(dayStart(other.dayBase));
+    }
+  }
+  return completionDays.size>=parts.times;
+}
+
 function weatherShouldDeferCandidate(candidate,state,settings,dayStates=[]){
   if(!candidate?.h || candidate.pinned===true)return false;
   if(state && typeof fillIsPlannedOnDay === 'function'
     && fillIsPlannedOnDay(candidate.h,state.dayBase,settings))return false;
   if(!settings || !settings._weatherContext || !weatherHabitHasActiveGuidance(candidate.h,settings))return false;
-  if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate))return false;
+  const rollingSlack=weatherRollingRhythmQuotaSatisfied(candidate,state,dayStates);
+  if(typeof mustPlaceCriticalOccurrence==='function' && mustPlaceCriticalOccurrence(candidate) && !rollingSlack)return false;
   if(typeof mustPlaceOccurrenceByDay==='function'
-    && mustPlaceOccurrenceByDay(candidate,state && state.dayBase))return false;
+    && mustPlaceOccurrenceByDay(candidate,state && state.dayBase) && !rollingSlack)return false;
   if(candidate.h.hid && typeof plannerOrderConstraintsForDay==='function'
     && plannerOrderConstraintsForDay(state.dayBase).some(edge=>edge && edge.adjacency==='direct'
       && (edge.beforeHid===candidate.h.hid || edge.afterHid===candidate.h.hid)))return false;
   const today=weatherBestPenaltyForDay(candidate,state,settings);
   if(today==null)return false;
   let future=Infinity;
-  for(const other of dayStates){
-    if(!other || other.dayBase<=state.dayBase)continue;
-    if(candidate.eligible && !candidate.eligible.has(other.dayBase))continue;
-    const penalty=weatherBestPenaltyForDay(candidate,other,settings);
-    if(penalty!=null)future=Math.min(future,penalty);
+  // A rolling quota's current slack is permission to wait only until the
+  // first day on which that quota would become short without this occurrence.
+  // Compare weather only across that reachable horizon. Looking past the
+  // deadline can claim "better weather later" even though cadence forces the
+  // planner to place the item sooner on a barely different day.
+  const historyAtDecision=(dayStates || []).filter(other=>other
+    && other.dayBase<=state.dayBase);
+  const futureStates=(dayStates || []).filter(other=>other
+    && other.dayBase>state.dayBase).sort((a,b)=>a.dayBase-b.dayBase);
+  for(const other of futureStates){
+    const quotaStillSatisfied=!rollingSlack
+      || weatherRollingRhythmQuotaSatisfied(candidate,other,historyAtDecision);
+    const eligible=!candidate.eligible || candidate.eligible.has(other.dayBase);
+    if(eligible){
+      const penalty=weatherBestPenaltyForDay(candidate,other,settings);
+      if(penalty!=null)future=Math.min(future,penalty);
+    }
+    if(rollingSlack && !quotaStillSatisfied)break;
   }
   return Number.isFinite(future) && future+100<today;
 }

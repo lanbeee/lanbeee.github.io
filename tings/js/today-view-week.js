@@ -22,7 +22,8 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
     for(const i of visibleIndices(data,settings)){
       const h = data[i];
       if(h.type === 'task' && isTaskDone(h))continue;
-      if(h.type === 'task' && h.eventTime !== null)continue;
+      if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+        : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
       if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
       const dueToday = includeInTodayAgenda(h,settings);
       const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
@@ -61,7 +62,8 @@ function occurrenceDueOrOverdueOnDay(h,dayBase){
   const base = dayStart(dayBase);
   if(h.type === 'task'){
     if(typeof isTaskDone === 'function' && isTaskDone(h))return false;
-    if(h.eventTime !== null || h.dueDate === null)return false;
+    if((typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     return dayStart(h.dueDate) <= base;
   }
   const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
@@ -140,7 +142,8 @@ function candidateMatchesPinnedDay(c,state){
 function isWeekPinnedToday(h,settings){
   if(!h || h.type === 'zero')return false;
   if(h.type === 'task' && isTaskDone(h))return false;
-  if(h.type === 'task' && h.eventTime !== null)return false;
+  if(h.type === 'task' && (typeof isFixedTimedTask === 'function'
+    ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable)))return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
   // Only an explicit plan log is a manual pin. hasPlannedToday also includes
@@ -217,7 +220,12 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(h.type === 'task'){
     if(isTaskDone(h))return false;
-    if(h.eventTime !== null)return false;         // timed → fixed to its day
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.eventTime !== null && !h.breakable))return false;
+    if(typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(h)
+      : (h.breakable && h.eventTime !== null)){
+      return dayStart(h.eventTime) === dayBase;
+    }
     if(h.dueDate === null)return false;            // someday → not week-planned
     if(settings.showDueTasksInAgenda === false)return false;
     if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
@@ -307,7 +315,8 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
     return true;
   }
   if(h.type === 'task'){
-    if(isTaskDone(h) || h.eventTime !== null || h.dueDate === null)return false;
+    if(isTaskDone(h) || (typeof isFixedTimedTask === 'function'
+      ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     const dueBase = dayStart(h.dueDate);
     const todayBase = dayStart(Date.now());
     if(dayBase > dueBase)return false;
@@ -442,6 +451,94 @@ function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
 // cascades: only partners that are due by their own raw rhythm/schedule/plan
 // unlock it (not partners that only exist via another flex pull).
 const CLUSTER_FLEX_NEAR_SECONDS = 15 * 60;
+// Neighborhood vs a real trip. A 2-minute locker run sits in the seed cluster;
+// an 8+ minute later appointment is far enough that splitting the cluster
+// across it (go, come back for an errand, go again) is the expensive route.
+const NEAR_SEED_ERRAND_SECONDS = 8 * 60;
+
+function nearSeedErrandSeconds(){
+  return typeof NEAR_SEED_ERRAND_SECONDS === 'number' ? NEAR_SEED_ERRAND_SECONDS : 8 * 60;
+}
+
+function candidateLocationIdsForState(c,state){
+  const h = c && c.h;
+  if(!h || !state)return [];
+  if(typeof habitLocationIdsForDay === 'function'){
+    return habitLocationIdsForDay(h,state.dayBase,state.registry || []) || [];
+  }
+  return Array.isArray(h.locationIds) ? h.locationIds.filter(Boolean) : [];
+}
+
+function minTravelSecondsBetween(fromId,toIds,state){
+  if(!fromId || !Array.isArray(toIds) || !toIds.length)return Infinity;
+  if(typeof travelEdgeBetweenIds !== 'function')return Infinity;
+  let best = Infinity;
+  for(const toId of toIds){
+    if(!toId)continue;
+    if(fromId === toId)return 0;
+    const sec = Math.max(0,Number(travelEdgeBetweenIds(
+      fromId,toId,state.registry,state.mode,{allowNetwork:false}
+    ).seconds) || 0);
+    if(sec < best)best = sec;
+  }
+  return best;
+}
+
+// PURE: next committed location after startClock whose seed commute is a real
+// trip. Timed-breakable first sessions and scheduled rows both qualify, so a
+// 5:30 far event is visible to ranking and ILP option chaining before the
+// remaining duration is gap-filled.
+function nextFarLocationPin(state){
+  if(!state)return null;
+  const seed = (typeof todaySequencingLocationId === 'function'
+    ? todaySequencingLocationId(state) : null) || state.seedLocId || null;
+  const anchors = typeof optimizerFixedLocationAnchors === 'function'
+    ? optimizerFixedLocationAnchors(state)
+    : [];
+  const farSec = nearSeedErrandSeconds();
+  const startClock = Number(state.startClock) || Number(state.dayBase) || 0;
+  for(const anchor of anchors){
+    if(!anchor || !anchor.locationId)continue;
+    if(Number(anchor.start) < startClock)continue;
+    if(seed && anchor.locationId === seed)continue;
+    if(!seed)return anchor;
+    const sec = minTravelSecondsBetween(seed,[anchor.locationId],state);
+    if(Number.isFinite(sec) && sec > farSec)return anchor;
+  }
+  return null;
+}
+
+// PURE: a day-choosing errand in the seed neighborhood that can finish before
+// a later far pin. Pack these before slack daily P0 so a short at-seed window
+// cannot consume the only pre-pin gap the neighborhood cluster needed.
+function weekFillIsNearClusterBeforeFarPin(c,dayStates){
+  if(typeof isDayChoosingWeekCandidate !== 'function' || !isDayChoosingWeekCandidate(c))return false;
+  if(typeof mustPlaceCriticalOccurrence === 'function' && mustPlaceCriticalOccurrence(c))return false;
+  const state = Array.isArray(dayStates) ? dayStates[0] : null;
+  if(!state)return false;
+  const pin = nextFarLocationPin(state);
+  if(!pin)return false;
+  const seed = (typeof todaySequencingLocationId === 'function'
+    ? todaySequencingLocationId(state) : null) || state.seedLocId || null;
+  if(!seed)return false;
+  const locIds = candidateLocationIdsForState(c,state).filter(Boolean);
+  if(!locIds.length || locIds.includes(pin.locationId))return false;
+  const nearSec = nearSeedErrandSeconds();
+  const fromSeed = minTravelSecondsBetween(seed,locIds,state);
+  if(!Number.isFinite(fromSeed) || fromSeed > nearSec)return false;
+  const durMin = typeof clampDuration === 'function'
+    ? clampDuration(c.h && c.h.durationMinutes)
+    : Math.max(0,Number(c.h && c.h.durationMinutes) || 0);
+  let toPinSec = Infinity;
+  for(const locId of locIds){
+    const sec = minTravelSecondsBetween(locId,[pin.locationId],state);
+    if(sec < toPinSec)toPinSec = sec;
+  }
+  if(!Number.isFinite(toPinSec))toPinSec = 0;
+  const earliestEnd = (Number(state.startClock) || 0) + fromSeed * 1000 + durMin * 60000;
+  return earliestEnd + toPinSec * 1000 <= Number(pin.start);
+}
+
 function locationsShareCluster(aIds,bIds,registry,mode){
   if(!Array.isArray(aIds) || !Array.isArray(bIds) || !aIds.length || !bIds.length)return false;
   for(const a of aIds){
@@ -529,7 +626,8 @@ function clusterNativeDueOnDay(p,dayBase,weekday,cfg){
   if(typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase))return true;
   if(h.type === 'task'){
     if(typeof isTaskDone === 'function' && isTaskDone(h))return false;
-    if(h.eventTime !== null || h.dueDate === null)return false;
+    if((typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     const dueBase = dayStart(h.dueDate);
     const todayBase = dayStart(Date.now());
     if(dayBase < todayBase || dayBase > dueBase)return false;
@@ -1105,7 +1203,12 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
       return compareWeekPlacement(a,b);
     });
   }
-  let totalAssigned = 0;
+  // A breakable event's entered clock is a hard first-start promise. Claim its
+  // minimum first session before movable placement so errands cannot consume
+  // the arrival/start boundary and silently push the event later.
+  let totalAssigned = typeof preplaceTimedBreakableStarts === 'function'
+    ? preplaceTimedBreakableStarts(candidates,dayStates,settings)
+    : 0;
   // Daily recurring breakables (e.g. "Work 6h every weekday") fill LAST so that
   // movable candidates (plan-by errands, one-shot tasks, sparse rhythms) can
   // claim a gap on a quiet day before the breakable greedy-splits the window
@@ -1254,7 +1357,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
           && mustPlaceOccurrenceByDay(
             c,state.dayBase,occurrenceReference,rhythmPlacementCount
           );
-        const requiredCanClaim = occurrenceRequired
+        const weatherDefers = typeof weatherShouldDeferCandidate === 'function'
+          && weatherShouldDeferCandidate(c,state,settings,dayStates);
+        const requiredCanClaim = occurrenceRequired && !weatherDefers
           && typeof requiredOccurrenceCanClaimDay === 'function'
           && requiredOccurrenceCanClaimDay(
             c,state,candidates,occurrenceReference,rhythmPlacementCount
@@ -1263,8 +1368,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
           && fastPathDefersMovable(
             c,state,candidates,dayStates,occurrenceReference,rhythmPlacementCount
           ))continue;
-        if(!requiredCanClaim && typeof weatherShouldDeferCandidate === 'function'
-          && weatherShouldDeferCandidate(c,state,settings,dayStates))continue;
+        if(!requiredCanClaim && weatherDefers)continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const resWindows = (typeof dailyBreakableReservations === 'function'
@@ -1457,8 +1561,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
   pullStrictDueMovablesForward(candidates,dayStates,settings);
   compactFastTravelRoutes(dayStates,candidates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
-  // Rebuild/link cleanup can uncover a gap after the normal rescue already
-  // ran. Give fixed daily obligations one final exact-gap chance.
+  // Rebuild/link cleanup can uncover gaps after the normal rescue already ran.
+  // Give daily breakables and fixed obligations one final exact-gap chance.
+  totalAssigned += rescueDailyBreakableGapFits(candidates,dayStates,settings);
   totalAssigned += rescueDailyGapFits(candidates,dayStates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
   return totalAssigned;
@@ -1477,7 +1582,10 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
   let left = Math.max(0,breakableMinutesLeft(c.h,c.i,dayStates)
     - Math.max(0,Number(ctx.preplannedMinutes) || 0));
   let chunkIndex = 0;
-  let preferredState = null;
+  while(dayStates.some(state=>state && state.placed
+    && state.placed.has(`${c.i}:${chunkIndex}`)))chunkIndex += 1;
+  let preferredState = dayStates.find(state=>(state.fills || []).some(entry=>
+    entry && entry.fill && entry.fill.i === c.i)) || null;
   let gained = 0;
   while(left > 0){
     // Keep chunks chronological. Once a larger valid session has been placed
@@ -1800,6 +1908,55 @@ function rescueDailyGapFits(candidates,dayStates,settings){
         });
         gained += 1;
         break;
+      }
+    }
+  }
+  return gained;
+}
+
+// MUTATE: final min-chunk-aware rescue for daily recurring breakables. The
+// normal placement pass can be followed by route, hours, and order-link
+// rebuilds that expose new usable gaps. It can also inherit a stale `placed`
+// marker from an earlier partial attempt. Measure committed minutes directly
+// and let the shared adaptive splitter reclaim every compatible chunk.
+function rescueDailyBreakableGapFits(candidates,dayStates,settings){
+  let gained = 0;
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return gained;
+  const daily = candidates.filter(c=>{
+    if(!c || !c.h || !c.h.breakable || c.h.type === 'task')return false;
+    const target = Number(c.h.target);
+    return (Number.isFinite(target) && target <= 1)
+      || (typeof rhythmFillsEveryEligibleDay === 'function'
+        && rhythmFillsEveryEligibleDay(c.h));
+  });
+  for(const state of dayStates){
+    if(!state)continue;
+    for(const c of daily){
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(!candidateMatchesPinnedDay(c,state))continue;
+      const left = typeof breakableMinutesLeft === 'function'
+        ? breakableMinutesLeft(c.h,c.i,state)
+        : 0;
+      if(left <= 0)continue;
+      const before = state.fills.length;
+      const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+      if(!placeBreakableSessions(state,fill,{
+        settings,
+        allowNetwork:true,
+        weights:typeof resolveAgendaScoreWeights === 'function'
+          ? resolveAgendaScoreWeights(settings) : null
+      }))continue;
+      const added = state.fills.slice(before).filter(entry=>
+        entry && entry.fill && entry.fill.i === c.i
+      );
+      for(const entry of added){
+        state.day.agendaItems.push({
+          h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+          locationId:entry.fit.locId,
+          chunkMinutes:entry.fit.durMin,
+          chunkIndex:entry.fill.chunkIndex != null ? entry.fill.chunkIndex : null
+        });
+        gained += 1;
       }
     }
   }

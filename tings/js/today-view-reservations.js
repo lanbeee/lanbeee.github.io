@@ -81,6 +81,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
   // whose window opens earlier than a previously-placed one can still land
   // in its own gap instead of being pushed past the slot's end.
   const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+  const exactTimedStart = timedBreakableExactStartForFill(state,fill);
 
   // Temporary day-order: never start before a placed predecessor finishes.
   let orderFloor = 0;
@@ -157,6 +158,12 @@ function tryPlaceOnDay(state,fill,opts = {}){
       if(durMin + travelMin > remaining && usedMinutes > 0)continue;
 
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
+      if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
+      else if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
+        : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
+        && dayStart(fill.h.eventTime) === dayBase){
+        placeStart=Math.max(placeStart,Number(fill.h.eventTime));
+      }
       let cap = gap.end;
       if(locId || optionMode){
         const loc = locId ? registryLookup(locId) : null;
@@ -184,6 +191,10 @@ function tryPlaceOnDay(state,fill,opts = {}){
       }
       // Placement must stay inside this open gap (blocks/scheduled already carved).
       placeStart = Math.max(placeStart,gap.start);
+      // A clock entered on a breakable event fixes the first session's start.
+      // It is not an allowed-window lower bound. Later sessions may resume in
+      // any valid gap after the event time.
+      if(exactTimedStart != null && Math.abs(placeStart - exactTimedStart) > 1000)continue;
       if(placeStart >= gap.end)continue;
       // Reserve outbound commute to the next different-location hard/fill row
       // so placeEnd cannot overlap the leave-by window homeDaySequence draws.
@@ -420,7 +431,8 @@ function weekFillClaimsHorizonDay(c,dayStates){
 }
 
 // PURE: Fast assignment order. Scarce one-day P0 first, then planned/last-day
-// non-breakable tasks, then slack daily P0 (Zuhr can slide), then remaining pins.
+// non-breakable tasks, then seed-neighborhood errands that still fit before a
+// later far location pin, then slack daily P0 (Zuhr can slide), then pins.
 function compareWeekClaimPriority(a,b,dayStates){
   const scarceA = weekFillIsScarceCritical(a);
   const scarceB = weekFillIsScarceCritical(b);
@@ -428,6 +440,11 @@ function compareWeekClaimPriority(a,b,dayStates){
   const claimA = weekFillClaimsHorizonDay(a,dayStates);
   const claimB = weekFillClaimsHorizonDay(b,dayStates);
   if(claimA !== claimB)return claimA ? -1 : 1;
+  const clusterA = typeof weekFillIsNearClusterBeforeFarPin === 'function'
+    && weekFillIsNearClusterBeforeFarPin(a,dayStates);
+  const clusterB = typeof weekFillIsNearClusterBeforeFarPin === 'function'
+    && weekFillIsNearClusterBeforeFarPin(b,dayStates);
+  if(clusterA !== clusterB)return clusterA ? -1 : 1;
   const criticalA = typeof mustPlaceCriticalOccurrence === 'function'
     && mustPlaceCriticalOccurrence(a);
   const criticalB = typeof mustPlaceCriticalOccurrence === 'function'
@@ -843,6 +860,57 @@ function breakableMinutesLeft(h,habitIndex,stateOrStates){
   return Math.max(0,totalLeft - placed);
 }
 
+// PURE: the first scheduled session of a timed breakable task must begin at
+// eventTime exactly. Once any session for this occurrence is committed, the
+// remaining work is flexible and may resume later around hard obligations.
+function timedBreakableExactStartForFill(state,fill){
+  if(!state || !fill || !fill.h)return null;
+  const timed = typeof isBreakableTimedTask === 'function'
+    ? isBreakableTimedTask(fill.h)
+    : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null);
+  if(!timed || dayStart(fill.h.eventTime) !== state.dayBase)return null;
+  const alreadyStarted = (state.fills || []).some(entry=>entry && entry.fill
+    && entry.fill.i === fill.i);
+  return alreadyStarted ? null : Number(fill.h.eventTime);
+}
+
+// MUTATE: claim one minimum-sized first session for each timed breakable task
+// before flexible/fixed packing. This turns the event clock into a real hard
+// boundary for both planner engines, while leaving the rest of the duration to
+// the normal continuous-first breakable pass.
+function preplaceTimedBreakableStarts(candidates,dayStates,settings){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
+  let placed = 0;
+  for(const c of candidates){
+    if(!c || !c.h || !(typeof isBreakableTimedTask === 'function'
+      ? isBreakableTimedTask(c.h)
+      : (c.h.type === 'task' && c.h.breakable && c.h.eventTime !== null)))continue;
+    const state = dayStates.find(item=>item && item.dayBase === dayStart(c.h.eventTime));
+    if(!state || (c.eligible && !c.eligible.has(state.dayBase)))continue;
+    if((state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i))continue;
+    const left = breakableMinutesLeft(c.h,c.i,dayStates);
+    if(left <= 0)continue;
+    const min = typeof clampMinChunk === 'function'
+      ? clampMinChunk(c.h.minChunkMinutes)
+      : Math.max(15,Number(c.h.minChunkMinutes) || 30);
+    const chunkMinutes = Math.min(left,min);
+    const fill = {
+      h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+      chunkMinutes,chunkIndex:0,placeKey:`${c.i}:0`
+    };
+    const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
+    if(!fit || Math.abs(fit.placeStart - Number(c.h.eventTime)) > 1000)continue;
+    commitPlacement(state,fill,fit);
+    state.placed.add(c.i);
+    state.day.agendaItems.push({
+      h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+      locationId:fit.locId,chunkMinutes:fit.durMin,chunkIndex:0
+    });
+    placed += 1;
+  }
+  return placed;
+}
+
 /**
  * PURE: largest valid breakable session that fits a gap on this day.
  * Prefers bigger sessions (continuous as possible), then soft agenda score.
@@ -875,6 +943,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     : pickHabitLocationId(fill.h,anchor,registry,mode,dayBase);
   const chron = state.fills.slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   const candidates = [];
+  const exactTimedStart = timedBreakableExactStartForFill(state,fill);
 
   let orderFloor = 0;
   let orderCeiling = Infinity;
@@ -930,6 +999,12 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
       const travelMin = Math.ceil((edge.seconds || 0) / 60);
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
+      if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
+      else if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
+        : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
+        && dayStart(fill.h.eventTime) === dayBase){
+        placeStart=Math.max(placeStart,Number(fill.h.eventTime));
+      }
       let cap = gap.end;
       if(locId || optionMode){
         const loc = locId ? registry.find(l=>l.id === locId) : null;
@@ -956,6 +1031,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         }
       }
       placeStart = Math.max(placeStart,gap.start);
+      if(exactTimedStart != null && Math.abs(placeStart - exactTimedStart) > 1000)continue;
       if(placeStart >= gap.end || placeStart >= cap)continue;
       // Reserve outbound commute to the next different-location hard/fill row.
       const presenceLocId = locId || anchor;
@@ -1507,7 +1583,39 @@ function finalizePlacementRows(state){
   // every published timeline receives the same whole-day route optimization
   // and invariant check, independent of candidate commit order.
   reconcileCommittedTravel(state);
-  return state.rows.slice().sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
+  const rows = state.rows.slice().sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
+  return coalesceAdjacentBreakableRows(rows);
+}
+
+// PURE: placement passes can meet at an internal phase boundary and publish
+// two pieces of the same breakable session with no real interruption. That is
+// one continuous session to the user (and for auto-log), so collapse it at the
+// final timeline boundary. Genuine splits retain separate rows whenever time,
+// place, occurrence, or schedule option changes.
+function coalesceAdjacentBreakableRows(rows){
+  const out = [];
+  const sameNullable = (a,b)=>(a || null) === (b || null);
+  for(const source of rows || []){
+    if(!source){ continue; }
+    const row = {...source};
+    const prior = out[out.length - 1];
+    const contiguous = prior && Number.isFinite(Number(prior.end))
+      && Number.isFinite(Number(row.start))
+      && Math.abs(Number(row.start) - Number(prior.end)) <= 1000;
+    const sameSession = contiguous
+      && prior.kind === 'fill' && row.kind === 'fill'
+      && prior.i != null && prior.i === row.i
+      && Boolean((prior.h || row.h) && (prior.h || row.h).breakable)
+      && sameNullable(prior.locationId,row.locationId)
+      && sameNullable(prior.occurrenceKey,row.occurrenceKey)
+      && sameNullable(prior.scheduleOptionId,row.scheduleOptionId)
+      && sameNullable(prior.scheduledDay,row.scheduledDay);
+    if(!sameSession){ out.push(row); continue; }
+    prior.end = Math.max(Number(prior.end),Number(row.end));
+    prior.chunkMinutes = Math.max(0,Math.round((prior.end - prior.start) / 60000));
+    if(prior.chunkIndex == null && row.chunkIndex != null)prior.chunkIndex = row.chunkIndex;
+  }
+  return out;
 }
 
 // PURE: the location the user is already commited to at a given minute within

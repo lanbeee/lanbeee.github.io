@@ -473,6 +473,15 @@ function taskWhen(h){
 function isTimedTask(h){
   return h.type === 'task' && h.eventTime !== null;
 }
+// PURE: a timed non-breakable task is a literal appointment. A breakable task
+// starts its first session exactly at eventTime, then lets the planner split
+// the remaining duration around higher-priority obligations.
+function isFixedTimedTask(h){
+  return isTimedTask(h) && !h.breakable;
+}
+function isBreakableTimedTask(h){
+  return isTimedTask(h) && h.breakable;
+}
 // PURE: one-off soft "plan by" date on a rhythm habit (keepup/reduce).
 function habitPlanByDate(h){
   if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return null;

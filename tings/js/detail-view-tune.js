@@ -528,7 +528,12 @@ function syncDetailDueUi(){
   const hint = $('detail-due-hint');
   if(hint){
     if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
-    else if(hasTime)hint.textContent = 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
+    else if(hasTime){
+      const breakable=$('detail-breakable')?.getAttribute('aria-pressed') === 'true';
+      hint.textContent = breakable
+        ? 'Anchored start — begins at this time and may split around other agenda obligations.'
+        : 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
+    }
     else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
   }
 }

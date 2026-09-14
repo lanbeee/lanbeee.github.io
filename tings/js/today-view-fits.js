@@ -40,7 +40,8 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
   const showPlanned = !settings || settings.showPlannedItemsInAgenda !== false;
   (data || []).forEach((h,i)=>{
     if(!h)return;
-    if(showTasks && h.type === 'task' && h.eventTime !== null
+    if(showTasks && (typeof isFixedTimedTask === 'function'
+      ? isFixedTimedTask(h) : (h.type === 'task' && h.eventTime !== null && !h.breakable))
       && (typeof isTaskDone !== 'function' || !isTaskDone(h))
       && dateKey(h.eventTime) === dayKey){
       out.push({h,i,eventTime:h.eventTime});
@@ -77,7 +78,8 @@ function buildTodayAgenda(data,settings){
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
     if(h.type === 'task' && isTaskDone(h))continue;
-    if(h.type === 'task' && h.eventTime !== null)continue; // timed tasks are fixed blocks, not soft fills
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
     const dueToday = includeInTodayAgenda(h,settings);
     const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
@@ -167,6 +169,16 @@ function includeInTodayAgenda(h,settings){
 // anchor so "anywhere" habits resolve their prayer times against the last
 // location before the task; absent it they fall back to lastKnown/registry.
 function fillTimeWindow(h,dayBase,contextLocId){
+  const breakableStart = (typeof isBreakableTimedTask === 'function'
+    ? isBreakableTimedTask(h) : (h && h.type === 'task' && h.breakable && h.eventTime !== null))
+    && dayStart(h.eventTime) === dayBase ? Number(h.eventTime) : null;
+  // A start time on a breakable task is an anchor, not a duration-wide hard
+  // block. With no explicit allowed end, the day's open slots are the ceiling.
+  if(Number.isFinite(breakableStart) && !hasTimeWindow(h)){
+    const explicitEnd = Number.isFinite(Number(h.allowedTimeEnd))
+      ? dayBase + Number(h.allowedTimeEnd) * 60000 : dayBase + 24 * 3600000;
+    return {start:breakableStart,end:explicitEnd <= breakableStart ? explicitEnd + 24 * 3600000 : explicitEnd};
+  }
   if(!hasTimeWindow(h))return null;
   if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
     const windows = fillDayWindows(h,dayBase,contextLocId);
@@ -240,6 +252,15 @@ function fillOptionDayWindows(h,dayBase,contextLocId){
 }
 
 function fillDayWindows(h,dayBase,contextLocId){
+  if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(h)
+    : (h && h.type === 'task' && h.breakable && h.eventTime !== null))
+    && dayStart(h.eventTime) === dayBase && !hasTimeWindow(h)){
+    const start=Number(h.eventTime);
+    const rawEnd=Number(h.allowedTimeEnd);
+    let end=Number.isFinite(rawEnd) ? dayBase+rawEnd*60000 : dayBase+24*3600000;
+    if(end<=start)end+=24*3600000;
+    return [{start,end}];
+  }
   if(!hasTimeWindow(h))return null;
   const intervals = [];
   if(typeof hasGeneralAllowedSchedule === 'function'
@@ -646,7 +667,9 @@ function scheduleAnchorCommitForDay(hid,dayBase,data = null){
         const start = Number(doing.startedAt) || Date.now();
         const end = Number(doing.targetAt) || start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000;
         result = {start,end,kind:'active'};
-      }else if(h.type === 'task' && h.eventTime != null && dayStart(h.eventTime) === base){
+      }else if((typeof isFixedTimedTask === 'function'
+        ? isFixedTimedTask(h) : (h.type === 'task' && h.eventTime != null && !h.breakable))
+        && dayStart(h.eventTime) === base){
         result = {start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
       }else if(typeof timedPlanLogForDay === 'function'){
         const plan = timedPlanLogForDay(h,dateKey(base));
@@ -1011,19 +1034,28 @@ function buildPlacementGapAudit(ordered,state,items){
   const gaps = remainingPlacementGaps(state).map(gap=>{
     const minutes = Math.max(0,Math.floor((gap.end - gap.start) / 60000));
     const feasibleCandidateIndices = [];
+    const feasibleCandidates = [];
     const budgetLimitedCandidateIndices = [];
     for(const item of remaining){
       const fill = byIndex.get(item.i);
       if(!fill)continue;
-      if(auditFillFitInGap(state,fill,gap,item.remainingMinutes,false)){
+      const fit = auditFillFitInGap(state,fill,gap,item.remainingMinutes,false);
+      if(fit){
         feasibleCandidateIndices.push(item.i);
+        feasibleCandidates.push({
+          i:item.i,
+          start:fit.placeStart,
+          end:fit.placeEnd,
+          locationId:fit.locId || null,
+          scheduleOptionId:fit.scheduleOptionId || null
+        });
         continue;
       }
       if(auditFillFitInGap(state,fill,gap,item.remainingMinutes,true)){
         budgetLimitedCandidateIndices.push(item.i);
       }
     }
-    return {start:gap.start,end:gap.end,minutes,feasibleCandidateIndices,budgetLimitedCandidateIndices};
+    return {start:gap.start,end:gap.end,minutes,feasibleCandidateIndices,feasibleCandidates,budgetLimitedCandidateIndices};
   }).filter(gap=>gap.minutes > 0);
   return {
     openSlotMinutes:(state.slots || []).reduce((sum,slot)=>sum + Math.max(0,Math.floor((slot.end - Math.max(slot.start,state.startClock)) / 60000)),0),
@@ -1151,7 +1183,8 @@ function diagnosticsFromRenderedDay(data,settings,day){
   const candidates = [];
   for(let i = 0;i < data.length;i += 1){
     const h = data[i];
-    if(!h || (h.type === 'task' && h.eventTime !== null))continue;
+    if(!h || (typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable)))continue;
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
     const pinned = isWeekPinnedToday(h,settings);
     if((pinned && day.isToday) || (!pinned && isWeekCandidate(h,settings,day.dayBase,day.weekday))){
@@ -1227,9 +1260,12 @@ function plannerTraceScarcityInput(score){
 // delays visible while keeping the trace cheap and honest.
 function plannerTraceEarliestClockFit(h,i,dayBase,dayEnd,rangeStart,rawBlocks,agendaRows,neededMinutes){
   if(!h || neededMinutes <= 0)return null;
-  const windows = (typeof hasTimeWindow === 'function' && hasTimeWindow(h))
-    ? (fillDayWindows(h,dayBase,null) || [])
-    : [{start:dayBase,end:dayEnd}];
+  // fillDayWindows also resolves a timed breakable task's fixed first start even
+  // though that task has no explicit start/end window fields.
+  const resolvedWindows = typeof fillDayWindows === 'function'
+    ? (fillDayWindows(h,dayBase,null) || []) : [];
+  const windows = resolvedWindows.length
+    ? resolvedWindows : [{start:dayBase,end:dayEnd}];
   if(!windows.length)return null;
   const occupied = [];
   for(const block of rawBlocks || []){
@@ -1368,7 +1404,9 @@ function buildPlannerDecisionTrace(data,settings,context){
     const minChunk = h.breakable
       ? (typeof clampMinChunk === 'function' ? clampMinChunk(h.minChunkMinutes) : Math.max(1,h.minChunkMinutes || 30))
       : duration;
-    const hardWindows = (typeof hasTimeWindow === 'function' && hasTimeWindow(h))
+    const timedBreakable = typeof isBreakableTimedTask === 'function'
+      && isBreakableTimedTask(h) && dayStart(h.eventTime) === dayBase;
+    const hardWindows = ((typeof hasTimeWindow === 'function' && hasTimeWindow(h)) || timedBreakable)
       ? (fillDayWindows(h,dayBase,null) || []) : [];
     const preferredWindow = (typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(h))
       ? fillPreferredWindow(h,dayBase,null) : null;
@@ -1443,7 +1481,10 @@ function buildPlannerDecisionTrace(data,settings,context){
       Number.isFinite(attention) ? `attention ${attention.toFixed(2)}` : '',
       plannerTraceScarcityInput(meta.scarcity),
       pinned ? 'planned for today' : 'not a day plan',
-      hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time',
+      timedBreakable ? `fixed first start ${agendaTimeLabel(h.eventTime)}; may pause and resume after that` : '',
+      timedBreakable
+        ? `remaining sessions may use ${hardLabels.join('; ')}`
+        : (hardLabels.length ? `allowed ${hardLabels.join('; ')}` : 'allowed any open scheduler time'),
       preferredLabels.length ? `preferred ${preferredLabels.join('; ')}` : '',
       locationNames.length
         ? `locations ${locationIds.map((id,k)=>{
@@ -1629,7 +1670,8 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const eligible = visibleIndices(data,settings).filter(i=>{
     const h = data[i];
     if(!h || h.type === 'zero')return false;
-    if(h.type === 'task' && (isTaskDone(h) || h.eventTime !== null))return false;
+    if(h.type === 'task' && (isTaskDone(h) || (typeof isFixedTimedTask === 'function'
+      ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable))))return false;
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
     if(!isToday && opts.weekMode){
       return isWeekCandidate(h,settings,dayBase,new Date(dayBase).getDay());
@@ -1667,6 +1709,50 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       offset:Math.round((elsewhere - dayStart(now)) / 86400000)
     },now).toLowerCase();
   };
+  const gapAudit = diagnostics.gapAudit || {openSlotMinutes:0,openGapMinutes:0,largestGapMinutes:0,gaps:[]};
+  const weatherDayStates = week && Array.isArray(week.days)
+    ? week.days.map(day=>({
+        dayBase:day.dayBase,
+        fills:(day.timeline || []).filter(row=>row && row.kind === 'fill' && row.i != null)
+          .map(row=>({fill:{i:row.i}}))
+      }))
+    : [];
+  const weatherAssignmentByIndex = new Map();
+  if(week && typeof weatherRollingRhythmQuotaSatisfied === 'function'
+    && typeof weatherFitAssessment === 'function'){
+    for(const i of eligible){
+      const h = data[i];
+      const label = assignmentLabel(i);
+      if(!h || !label)continue;
+      const candidate = {h,i,priority:effectivePriority(h)};
+      if(!weatherRollingRhythmQuotaSatisfied(candidate,{dayBase},weatherDayStates))continue;
+      const currentFits = (gapAudit.gaps || []).flatMap(gap=>(gap.feasibleCandidates || []))
+        .filter(item=>item.i === i);
+      const futureRows = (week.days || []).flatMap(day=>(day.timeline || [])
+        .filter(row=>row && row.kind === 'fill' && row.i === i && day.dayBase > dayBase)
+        .map(row=>({row,dayBase:day.dayBase})))
+        .sort((a,b)=>a.row.start - b.row.start);
+      if(!currentFits.length || !futureRows.length)continue;
+      const assess = (fit,base)=>weatherFitAssessment(candidate,{
+        placeStart:fit.start,
+        placeEnd:fit.end,
+        locId:fit.locationId || null,
+        scheduleOptionId:fit.scheduleOptionId || null
+      },{dayBase:base,settings,fills:[]},settings);
+      const current = currentFits.map(fit=>assess(fit,dayBase)).filter(Boolean)
+        .sort((a,b)=>(Number(a.penalty) || 0) - (Number(b.penalty) || 0))[0];
+      const futureEntry = futureRows[0];
+      const future = assess(futureEntry.row,futureEntry.dayBase);
+      if(!current || !future || (Number(future.penalty) || 0) + 100 >= (Number(current.penalty) || 0))continue;
+      const parts = typeof rhythmParts === 'function' ? rhythmParts(h.target) : null;
+      const quota = parts ? `${parts.times}×/${parts.days}-day rolling quota already satisfied` : 'rolling quota already satisfied';
+      weatherAssignmentByIndex.set(i,{
+        label,
+        reason:`assigned ${label} for better weather; ${quota}`,
+        explanation:`${h.name} was intentionally assigned ${label}: ${quota}; ${future.summary}, versus ${current.summary} in this open gap`
+      });
+    }
+  }
   const unplacedItems = eligible.map(i=>{
     const h = data[i];
     const loadMinutes = todayCandidateLoadMinutes(h,dayBase);
@@ -1674,6 +1760,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     const placedMinutes = Math.min(loadMinutes,Math.max(0,diag.placedMinutes || 0));
     const remainingMinutes = Math.max(0,loadMinutes - placedMinutes);
     const elsewhereLabel = assignmentLabel(i);
+    const weatherAssignment = weatherAssignmentByIndex.get(i);
     return {
       i,
       name:h.name,
@@ -1682,7 +1769,9 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
       loadMinutes,
       placedMinutes,
       remainingMinutes,
-      reason:elsewhereLabel
+      reason:weatherAssignment
+        ? weatherAssignment.reason
+        : elsewhereLabel
         ? `assigned ${elsewhereLabel}`
         : (linkReasonByHid.get(h.hid) || diag.reason || (remainingMinutes > 0 ? 'not committed by the placement pass' : '')),
       window:typeof timeWindowSummary === 'function' && hasTimeWindow(h) ? timeWindowSummary(h) : ''
@@ -1709,8 +1798,17 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const criticalElsewhereReason = i=>{
     const h = data[i];
     if(!h)return '';
-    const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
-    if(Number(urgency) >= 100)return 'due work';
+    // The final-gap probe proves that the item could fit today, but the week
+    // planner deliberately spent rolling rhythm slack on a better forecast.
+    // That is an explained cross-day choice, not a due-placement failure.
+    if(weatherAssignmentByIndex.has(i))return '';
+    const candidate = {h,i,priority:effectivePriority(h)};
+    const mustPlace = typeof mustPlaceOccurrenceByDay === 'function'
+      ? mustPlaceOccurrenceByDay(candidate,dayBase)
+      : ((h.type === 'task' && h.dueDate != null) ? dayBase >= dayStart(h.dueDate) : false);
+    const pinnedToday = typeof isWeekPinnedToday === 'function'
+      && isWeekPinnedToday(h,settings);
+    if(mustPlace || pinnedToday)return pinnedToday ? 'planned-today work' : 'due work';
     if(h.hid && auditOrderEdges.some(edge=>edge
       && (edge.beforeHid === h.hid || edge.afterHid === h.hid)
       && placedTodayHids.has(edge.beforeHid === h.hid ? edge.afterHid : edge.beforeHid))){
@@ -1718,25 +1816,28 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     }
     return '';
   };
-  const gapAudit = diagnostics.gapAudit || {openSlotMinutes:0,openGapMinutes:0,largestGapMinutes:0,gaps:[]};
   const placementGaps = (gapAudit.gaps || []).map(gap=>{
     const feasible = (gap.feasibleCandidateIndices || []).filter(i=>eligibleSet.has(i));
     const budgetLimited = (gap.budgetLimitedCandidateIndices || []).filter(i=>eligibleSet.has(i));
     const unassignedFeasible = feasible.filter(i=>!assignmentLabel(i));
     const criticalAssigned = feasible.filter(i=>assignmentLabel(i) && criticalElsewhereReason(i));
+    const weatherAssigned = feasible.filter(i=>assignmentLabel(i) && weatherAssignmentByIndex.has(i));
     const status = unassignedFeasible.length
       ? 'missed'
       : (criticalAssigned.length
         ? 'critical-miss'
-        : (feasible.length ? 'assigned-elsewhere' : (budgetLimited.length ? 'budget-capped' : 'no-fit')));
+        : (weatherAssigned.length
+          ? 'weather-deferred'
+          : (feasible.length ? 'assigned-elsewhere' : (budgetLimited.length ? 'budget-capped' : 'no-fit'))));
     const namedIndices = status === 'budget-capped'
       ? budgetLimited
-      : (status === 'critical-miss' ? criticalAssigned : feasible);
+      : (status === 'critical-miss' ? criticalAssigned
+        : (status === 'weather-deferred' ? weatherAssigned : feasible));
     const candidateNames = namedIndices
       .slice(0,3)
       .map(i=>data[i] && data[i].name)
       .filter(Boolean);
-    let explanation = 'no remaining eligible item satisfies this gap';
+    let explanation = 'no unassigned eligible item fits without moving an existing agenda row';
     if(status === 'missed')explanation = `${candidateNames.join(', ')} can still fit with current constraints`;
     if(status === 'critical-miss'){
       const details = criticalAssigned.slice(0,3).map(i=>{
@@ -1745,6 +1846,11 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
         return `${data[i] && data[i].name || 'item'} is ${reason}${label ? ` but was assigned ${label}` : ''}`;
       });
       explanation = `${details.join('; ')}; it fits here without moving any committed row`;
+    }
+    if(status === 'weather-deferred'){
+      explanation = weatherAssigned.slice(0,3)
+        .map(i=>weatherAssignmentByIndex.get(i)?.explanation)
+        .filter(Boolean).join('; ');
     }
     if(status === 'assigned-elsewhere')explanation = `${candidateNames.join(', ')} fits here but was assigned to another day`;
     if(status === 'budget-capped')explanation = `${candidateNames.join(', ')} fits the clock gap, but not the remaining agenda budget`;
@@ -1755,6 +1861,10 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
   const criticalMissCount = new Set(placementGaps
     .filter(gap=>gap.status === 'critical-miss')
     .flatMap(gap=>gap.criticalCandidateIndices || [])).size;
+  const intentionalDeferralCount = new Set(placementGaps
+    .filter(gap=>gap.status === 'weather-deferred')
+    .flatMap(gap=>gap.feasibleCandidateIndices || [])
+    .filter(i=>weatherAssignmentByIndex.has(i))).size;
   const budgetCappedGapCount = placementGaps.filter(gap=>gap.status === 'budget-capped').length;
   const homeTimeline = Array.isArray(agenda.homeDisplayedTimeline)
     ? agenda.homeDisplayedTimeline
@@ -1881,6 +1991,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     largestGapMinutes:Math.max(0,Math.round(gapAudit.largestGapMinutes || 0)),
     missedOpportunityCount,
     criticalMissCount,
+    intentionalDeferralCount,
     budgetCappedGapCount,
     placementGaps,
     agendaRows,
@@ -2284,14 +2395,18 @@ function fitOverlapWithWindows(fit,windows){
 
 // PURE: default + settings weights for the unified agenda score (lower = better).
 function resolveAgendaScoreWeights(settings){
+  const travelScale = typeof AGENDA_TRAVEL_COST_SCALE === 'number'
+    ? Math.max(0,AGENDA_TRAVEL_COST_SCALE) : 1;
   if(typeof normalizeAgendaScoreWeights === 'function'){
-    return normalizeAgendaScoreWeights(settings && settings.agendaScoreWeights);
+    const resolved = normalizeAgendaScoreWeights(settings && settings.agendaScoreWeights);
+    return {...resolved,travel:(Number(resolved.travel) || 0) * travelScale};
   }
   const w = settings && settings.agendaScoreWeights;
-  return {
+  const resolved = {
     travel:1, cluster:1, day:1, asap:8, scarce:0.05, preference:1,
     ...(w && typeof w === 'object' ? w : {})
   };
+  return {...resolved,travel:(Number(resolved.travel) || 0) * travelScale};
 }
 
 // PURE: single comparable placement score. Hard constraints are enforced
@@ -2304,8 +2419,12 @@ function scoreAgendaPlacement(terms,weights){
   const W = weights || resolveAgendaScoreWeights(null);
   const t = terms || {};
   const drive = Number(t.travelSeconds) || 0;
-  const travel = typeof travelLegCostSeconds === 'function'
+  const travelSeconds = typeof travelLegCostSeconds === 'function'
     ? travelLegCostSeconds(drive,t.fromLocId,t.toLocId) : drive;
+  // Compare like with like: ASAP is measured in minutes, so route cost must be
+  // minutes too. Treating travel as raw seconds made a short saved trip worth
+  // hours of idle delay and over-clustered otherwise useful agenda gaps.
+  const travel = travelSeconds / 60;
   const cluster = (Number(t.clusterBonus) || 0) + (Number(t.coLocHint) || 0);
   const dayPen = Number(t.dayOffsetPenalty) || 0;
   const urgency = Number(t.urgency) || 0;
@@ -2451,10 +2570,9 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
     };
     const score = scoreAgendaPlacement(terms,weights);
     // Weather guidance outranks ordinary ASAP/preference and scarce-window
-    // overlap. Scarce overlap is milliseconds × 0.05, so a 30-minute overlap
-    // (~90k) used to bury a relative "prefer lower rain" gap (~a few hundred).
-    // Travel, day-offset and order still compete with weather. Use the full
-    // score (ASAP + preference + scarce) only when that core ties.
+    // overlap. Travel remains a core route signal, but is minute-scaled above
+    // so it cannot overpower the later full-score clock comparison by a 60×
+    // unit mismatch. Use the full score only when that core ties.
     const coreScore = scoreAgendaPlacement({
       ...terms,asapDelayMin:0,preferencePenalty:0,scarceOverlapMs:0
     },weights);

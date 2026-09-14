@@ -512,6 +512,7 @@ $('detail-breakable')?.addEventListener('click',function(){
   const pressed = this.getAttribute('aria-pressed') === 'true';
   this.setAttribute('aria-pressed',String(!pressed));
   syncBreakableUi();
+  if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
   setDetailDirty();
 });
 $('detail-min-chunk')?.addEventListener('input',()=>setDetailDirty());

@@ -542,6 +542,100 @@ function optimizerLocationVariants(fill,state){
   return anywhereAllowed ? [null,...ids] : ids;
 }
 
+// Starts that let GLPK chain a neighborhood errand after another item (or
+// after a far pin) instead of only the independent ASAP probe. Without these,
+// two nearby stores each get the same post-window start and the second is
+// forced onto the far side of a later location pin.
+function optimizerClusterChainEdges(state,fill,dayCandidates){
+  const edges = [];
+  const push = ts=>{ if(Number.isFinite(Number(ts)))edges.push(Number(ts)); };
+  const fillLoc = fill && (Object.prototype.hasOwnProperty.call(fill,'locationId')
+    ? fill.locationId : fill.locId);
+  const travelMs = (fromId,toId)=>{
+    if(!fromId || !toId || fromId === toId)return 0;
+    if(typeof travelEdgeBetweenIds !== 'function')return 0;
+    return Math.max(0,Number(travelEdgeBetweenIds(
+      fromId,toId,state.registry,state.mode,{allowNetwork:false}
+    ).seconds) || 0) * 1000;
+  };
+  for(const entry of state && state.fills || []){
+    const fit = entry && entry.fit;
+    if(!fit || !Number.isFinite(Number(fit.placeEnd)))continue;
+    push(fit.placeEnd);
+    if(fillLoc)push(Number(fit.placeEnd) + travelMs(fit.locId,fillLoc));
+  }
+  const others = (dayCandidates || []).filter(c=>c && c.h && !(fill && fill.h && (
+    c.h === fill.h || (c.h.hid && fill.h.hid && c.h.hid === fill.h.hid)
+  )) && !c.h.breakable);
+  others.sort((a,b)=>{
+    const da = typeof clampDuration === 'function' ? clampDuration(a.h.durationMinutes) : 0;
+    const db = typeof clampDuration === 'function' ? clampDuration(b.h.durationMinutes) : 0;
+    return da - db;
+  });
+  const seeds = [Number(state && state.startClock) || 0];
+  const pin = typeof nextFarLocationPin === 'function' ? nextFarLocationPin(state) : null;
+  if(pin){
+    if(Number.isFinite(Number(pin.start)))seeds.push(Number(pin.start),Number(pin.start) - 1);
+    if(Number.isFinite(Number(pin.end)))seeds.push(Number(pin.end));
+  }
+  for(const c of others){
+    const windows = optimizerWindowsForCandidate(c,state);
+    const durMs = (typeof clampDuration === 'function'
+      ? clampDuration(c.h.durationMinutes) : Math.max(0,Number(c.h.durationMinutes) || 0)) * 60000;
+    for(const win of windows){
+      if(Number.isFinite(Number(win.start))){
+        seeds.push(Number(win.start));
+        seeds.push(Number(win.start) + durMs);
+      }
+      if(Number.isFinite(Number(win.end)))seeds.push(Number(win.end));
+    }
+  }
+  const uniqueSeeds = [...new Set(seeds.filter(ts=>Number.isFinite(ts)))].sort((a,b)=>a-b).slice(0,12);
+  if(typeof tryPlaceOnDay !== 'function' || typeof clonePlacementState !== 'function')return edges;
+  let probes = 0;
+  const MAX_PROBES = 24;
+  for(const seed of uniqueSeeds){
+    for(const c of others){
+      if(probes >= MAX_PROBES)return edges;
+      const clone = clonePlacementState(state);
+      clone.startClock = Math.max(Number(state.startClock) || 0,seed);
+      probes += 1;
+      const probe = tryPlaceOnDay(clone,{
+        h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity
+      },{allowNetwork:false});
+      if(!probe || !Number.isFinite(Number(probe.placeEnd)))continue;
+      push(probe.placeEnd);
+      if(fillLoc)push(Number(probe.placeEnd) + travelMs(probe.locId,fillLoc));
+    }
+  }
+  return edges;
+}
+
+// Location boundaries already committed before the fixed-item solve are just
+// as immutable as scheduled rows. Timed breakables use this path for their
+// exact first session, so omitting committed fills made the route objective
+// blind to an errand cluster split across that fixed start.
+function optimizerFixedLocationAnchors(state){
+  const anchors = [];
+  const seen = new Set();
+  const add = (start,end,locationId)=>{
+    const from = Number(start),to = Number(end);
+    if(!locationId || !Number.isFinite(from) || !Number.isFinite(to) || to <= from)return;
+    const key = `${from}:${to}:${locationId}`;
+    if(seen.has(key))return;
+    seen.add(key);
+    anchors.push({start:from,end:to,locationId});
+  };
+  for(const row of state && state.rows || []){
+    if(row && row.kind === 'scheduled')add(row.start,row.end,row.locationId);
+  }
+  for(const entry of state && state.fills || []){
+    const fit = entry && entry.fit;
+    if(fit)add(fit.placeStart,fit.placeEnd,fit.locId);
+  }
+  return anchors.sort((a,b)=>a.start-b.start || a.end-b.end);
+}
+
 function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
   const out = [];
   const seen = new Map();
@@ -655,7 +749,10 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         : (Array.isArray(placeFill.h.locationIds) ? placeFill.h.locationIds : []))
       : [];
     const routeAnchorDay = Boolean(routeLocationIds.length
-      && (state.rows || []).some(row=>row && row.kind === 'scheduled' && row.locationId));
+      && optimizerFixedLocationAnchors(state).length);
+    if(routeAnchorDay){
+      windowEdges.push(...optimizerClusterChainEdges(state,placeFill,dayCandidates));
+    }
     if(linkedFill || doingFill){
       const step = 30 * 60000;
       // Cap the stepped grid by THIS fill's latest relevant window end — not
@@ -722,6 +819,16 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
       if(routeAnchorDay){
         const step = 30 * 60000;
         for(let n = 0;n < 8;n += 1)routeAnchors.push(slot.start + n * step);
+        const pin = typeof nextFarLocationPin === 'function' ? nextFarLocationPin(state) : null;
+        const pinStart = pin && Number(pin.start);
+        if(Number.isFinite(pinStart)){
+          const denseFrom = Math.max(slot.start,Number(state.startClock) || 0);
+          const denseTo = Math.min(slot.end,pinStart);
+          if(denseTo > denseFrom && denseTo - denseFrom <= 3 * 3600000){
+            const denseStep = 10 * 60000;
+            for(let t = denseFrom;t < denseTo;t += denseStep)routeAnchors.push(t);
+          }
+        }
       }
       const anchors = [slot.start,state.startClock,...windowEdges,...routeAnchors]
         .filter(ts=>Number.isFinite(ts) && ts < slot.end)
@@ -1272,8 +1379,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
   // route term is activated only in the frozen-selection pass below, so it can
   // reorder but cannot drop a placeable task; hard windows and pins remain
-  // structural constraints. Per the documented lex order this makes MINIMUM
-  // TRAVEL outrank ASAP/PRIORITY once the work set is fixed.
+  // structural constraints. Inside that fixed work set, travel and clock delay
+  // remain comparable soft costs: an extra short trip may be worthwhile when it
+  // prevents a much larger idle gap.
   // Today's start place — pin, geofence, lastKnown seed, or closest saved
   // place when the seed is the ephemeral GPS coordinate. Future days keep
   // null so the committed-route DP is not perturbed. Requiring liveLocationId
@@ -1295,14 +1403,20 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // what makes "never drop work merely to save a trip" a structural guarantee
   // instead of relying on a fragile coefficient cap.
   const routeObjectiveVars = [];
+  const routeWeights = typeof resolveAgendaScoreWeights === 'function'
+    ? resolveAgendaScoreWeights(state.settings || null)
+    : {travel:1};
+  // Option fit scores enter the maximization objective at ×0.01 above. Route
+  // interaction terms must use that same scale and the same minute units, or
+  // a single saved location change overwhelms hours of clock-delay cost.
+  const routePenaltyForSeconds = seconds=>Math.max(0,Number(seconds) || 0)
+    / 60 * Math.max(0,Number(routeWeights.travel) || 0) * 0.01;
   const seedLoc = (typeof todaySequencingLocationId === 'function'
     ? todaySequencingLocationId(state)
     : ((state.liveLocId && state.seedLocId === state.liveLocId)
       ? state.seedLocId : null)) || null;
   if(seedLoc && typeof travelEdgeBetweenIds === 'function'){
-    const TRAVEL_PAIR_COEF = 0.1;    // 1s of saved commute ≈ 0.1 objective weight
-    const TRAVEL_PAIR_CAP = 80;      // bound route vs same-item clock preferences
-    const TRAVEL_PAIR_FLOOR = 12;    // still decisive over priority/ASAP deltas
+    const TRAVEL_PAIR_CAP = 10;      // same cap as a bounded option fit score
     let tpIdx = 0;
     // One z per (away option × seed candidate), not per seed clock option.
     // At most one option per candidate is selected, so pairing every Breakfast
@@ -1323,11 +1437,31 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       const driveSec = Math.max(0,Number(travelEdgeBetweenIds(
         seedLoc,aLoc,state.registry,state.mode,{allowNetwork:false}
       ).seconds) || 0);
+      // Neighborhood hops are still away-and-back relative to a later Home
+      // activity (stores → Home shower → stores). Skip that penalty only when
+      // the hop can finish before a later FAR pin; otherwise the cheap Home
+      // bounce is dominated by splitting the cluster across that pin.
+      const nearSec = typeof nearSeedErrandSeconds === 'function'
+        ? nearSeedErrandSeconds()
+        : (typeof NEAR_SEED_ERRAND_SECONDS === 'number' ? NEAR_SEED_ERRAND_SECONDS : 8 * 60);
+      if(driveSec <= nearSec){
+        const pin = typeof nextFarLocationPin === 'function' ? nextFarLocationPin(state) : null;
+        const pinStart = pin && Number(pin.start);
+        const hopEnd = A && A.fit && Number(A.fit.placeEnd);
+        let skipNeighborhoodPenalty = false;
+        if(pin && pin.locationId && Number.isFinite(pinStart) && Number.isFinite(hopEnd)){
+          const toPinSec = Math.max(0,Number(travelEdgeBetweenIds(
+            aLoc,pin.locationId,state.registry,state.mode,{allowNetwork:false}
+          ).seconds) || 0);
+          skipNeighborhoodPenalty = hopEnd + toPinSec * 1000 <= pinStart;
+        }
+        if(skipNeighborhoodPenalty)continue;
+      }
       const savedSec = typeof travelLegCostSeconds === 'function'
         ? travelLegCostSeconds(driveSec,seedLoc,aLoc) : driveSec;
       if(savedSec <= 0)continue;                         // co-located: no away-and-back risk
-      const pen = Math.max(TRAVEL_PAIR_FLOOR,
-        Math.min(TRAVEL_PAIR_CAP,savedSec * TRAVEL_PAIR_COEF));
+      const pen = Math.min(TRAVEL_PAIR_CAP,routePenaltyForSeconds(savedSec));
+      if(pen <= 0)continue;
       for(const [candI,seedOpts] of seedOptionsByCandidate){
         if(candI === A.c.i)continue;
         const later = seedOpts.filter(B=>A.fit.placeStart < B.fit.placeStart);
@@ -1365,15 +1499,12 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // crossing the anchor. This is generic route cost—no item/place names and no
   // post-solve relocation—and runs only after candidate selection is frozen.
   if(typeof travelEdgeBetweenIds === 'function'){
-    const hardAnchors = (state.rows || []).filter(row=>
-      row && row.kind === 'scheduled' && row.locationId
-      && Number.isFinite(Number(row.start)) && Number.isFinite(Number(row.end)));
+    const hardAnchors = optimizerFixedLocationAnchors(state);
     const SPLIT_ROUTE_NEAR_SECONDS = typeof CLUSTER_FLEX_NEAR_SECONDS !== 'undefined'
       ? CLUSTER_FLEX_NEAR_SECONDS : 15 * 60;
-    const SPLIT_ROUTE_COEF = 0.1;
-    // Bound each anchor's route influence relative to same-item clock hints.
-    const splitRouteCap = Math.max(1,80 / Math.max(1,hardAnchors.length));
-    const splitRouteFloor = Math.min(12,splitRouteCap);
+    // Bound each anchor's total route influence to the same scale as option
+    // fit scores; there is deliberately no artificial minimum penalty.
+    const splitRouteCap = 10 / Math.max(1,hardAnchors.length);
     let splitIdx = 0;
     for(const hard of hardAnchors){
       const located = opts.map((option,index)=>({
@@ -1437,8 +1568,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
           }
         }
         if(!Number.isFinite(minimumExtraSeconds) || minimumExtraSeconds <= 0)continue;
-        const penalty = Math.max(splitRouteFloor,
-          Math.min(splitRouteCap,minimumExtraSeconds * SPLIT_ROUTE_COEF));
+        const penalty = Math.min(splitRouteCap,
+          routePenaltyForSeconds(minimumExtraSeconds));
         if(penalty <= 0)continue;
         const beforeVar = `split_before_${splitIdx}`;
         const afterVar = `split_after_${splitIdx}`;
@@ -1679,7 +1810,12 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOp
   const byWeight = orderAwareOptimizerSort(state.dayBase);
   const requiredOccurrenceIndices = packOptions.requiredOccurrenceIndices instanceof Set
     ? packOptions.requiredOccurrenceIndices : new Set();
+  const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
+  const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
   const ordered = dayCandidates.slice().sort((a,b)=>{
+    const claim = typeof compareWeekClaimPriority === 'function'
+      ? compareWeekClaimPriority(a,b,states) : 0;
+    if(claim)return claim;
     const dailyA = typeof isIndependentDailyOccurrence === 'function'
       && isIndependentDailyOccurrence(a);
     const dailyB = typeof isIndependentDailyOccurrence === 'function'
@@ -1706,8 +1842,6 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOp
     if(aNeedsB !== bNeedsA)return aNeedsB ? 1 : -1;
     return byWeight(a,b);
   });
-  const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
-  const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
   const chosen = [];
   const reservationWindows = (typeof dailyBreakableReservations === 'function'
     && typeof breakableReservationWindows === 'function')
@@ -1811,7 +1945,9 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     for(const c of fixedCands){
       const reference = virtualLogs.has(c.i) ? virtualLogs.get(c.i) : undefined;
       const completionOffset = virtualCompletionCounts.get(c.i) || 0;
-      if(!isMovableWeekCandidate(c,state.dayBase,reference,completionOffset))continue;
+      const rollingWeatherSlack=typeof weatherRollingRhythmQuotaSatisfied==='function'
+        && weatherRollingRhythmQuotaSatisfied(c,state,dayStates);
+      if(!isMovableWeekCandidate(c,state.dayBase,reference,completionOffset) && !rollingWeatherSlack)continue;
       if(!c.eligible)continue;
       const dur = clampDuration(c.h.durationMinutes);
       for(let j = 0;j < dayStates.length;j += 1){
@@ -1857,6 +1993,14 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     return added.length;
   };
 
+  // Timed breakables participate in fixed-pack geometry through a committed
+  // minimum first session. The ILP must see that hard 5:30-style boundary
+  // before choosing flexible errands; the remaining duration still fills
+  // continuously around prayers and other obligations afterward.
+  if(typeof preplaceTimedBreakableStarts === 'function'){
+    total += preplaceTimedBreakableStarts(candidates,dayStates,settings);
+  }
+
   for(let dayOffset = 0;dayOffset < dayStates.length;dayOffset += 1){
     const state = dayStates[dayOffset];
     const dayCands = [];
@@ -1889,7 +2033,6 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         continue;
       }
       if(breakableRhythm){
-        if(state.placed.has(c.i))continue;
         const left = typeof breakableMinutesLeft === 'function'
           ? breakableMinutesLeft(c.h,c.i,state)
           : (typeof breakableBudgetMinutes === 'function'
@@ -1907,6 +2050,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         const hasVirtual = virtualLogs.has(c.i);
         const reference = hasVirtual ? virtualLogs.get(c.i) : undefined;
         const completionOffset = virtualCompletionCounts.get(c.i) || 0;
+        if(typeof weatherShouldDeferCandidate === 'function'
+          && weatherShouldDeferCandidate(c,state,settings,dayStates))continue;
         if((typeof requiredOccurrenceCanClaimDay === 'function'
           && requiredOccurrenceCanClaimDay(c,state,candidates,reference,completionOffset))
           || (typeof requiredOccurrenceCanClaimDay !== 'function'
@@ -2234,7 +2379,15 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(typeof candidateMatchesPinnedDay === 'function'
         ? !candidateMatchesPinnedDay(c,state) : (c.pinned && !state.isTodayDay))continue;
-        if(state.placed.has(c.i)){
+        const alreadyPlacedMinutes = typeof placedBreakableMinutes === 'function'
+          ? placedBreakableMinutes(state,c.i) : 0;
+        const remainingMinutes = typeof breakableMinutesLeft === 'function'
+          ? breakableMinutesLeft(c.h,c.i,state) : 0;
+        // `placed` is a collision/attempt guard, not proof that a breakable's
+        // daily budget was satisfied. A staged or repaired chunk can set the
+        // marker while Work still has hours left; keep filling until the real
+        // minute deficit reaches zero.
+        if(alreadyPlacedMinutes > 0 && remainingMinutes <= 0){
           vLog = state.dayBase;
           rhythmPlacementCount += 1;
           continue;
@@ -2252,7 +2405,14 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         }
         const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
         const before = state.fills.length;
-        if(!placeBreakableSessions(state,fill,{settings,weights,allowNetwork:true}))continue;
+        if(!placeBreakableSessions(state,fill,{settings,weights,allowNetwork:true})){
+          if(alreadyPlacedMinutes > 0){
+            vLog = state.dayBase;
+            virtualLogs.set(c.i,state.dayBase);
+            rhythmPlacementCount += 1;
+          }
+          continue;
+        }
         const added = state.fills.slice(before);
         for(const entry of added){
           state.day.agendaItems.push({
@@ -2281,6 +2441,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  }
+  // Link/route/hour repair can leave or expose valid minimum-sized chunks for
+  // a daily breakable. Reclaim them before the final invariant check; do not
+  // trust state.placed, which only says that some placement key was seen.
+  if(typeof rescueDailyBreakableGapFits === 'function'){
+    total += rescueDailyBreakableGapFits(candidates,dayStates,settings);
   }
   // Route/hours/link repair can expose a usable gap after the first rescue.
   if(typeof rescueDailyGapFits === 'function'){
@@ -2367,7 +2533,8 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   for(let i = 0;i < data.length;i += 1){
     if(seen.has(i))continue;
     const h = data[i];
-    if(h.type === 'task' && h.eventTime !== null)continue;
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h,settings,todayBase) : (isWeekPinnedToday(h,settings) ? todayBase : null);
     const pinned = pinnedDay != null;

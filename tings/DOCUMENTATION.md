@@ -309,7 +309,7 @@ if days < 4: score += red (keep going)
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
 | `dueDate` | number\|null | null | Soft deadline (day-level) |
-| `eventTime` | number\|null | null | Fixed time appointment |
+| `eventTime` | number\|null | null | Fixed appointment when unbreakable; exact first-session start when breakable |
 | `hardDue` | boolean | false | Hard deadline (escalates urgency) |
 | `earlyWindowDays` | number | 1 | Days before the due date it may start surfacing |
 | `delayAllowanceDays` | number | 0 | Days after the due date it may remain on time |
@@ -446,7 +446,7 @@ else:
   
   // ─── TASK & IMPORT FIELDS ───────────────────────────────
   dueDate: number|null,      // 👤 Task only: deadline
-  eventTime: number|null,    // 👤 Task only: fixed time
+  eventTime: number|null,    // 👤 Task: fixed time, or exact first start when breakable
   hardDue: boolean,          // 👤 Task only: hard deadline
   externalId: string|null,   // 👤 Imported from calendar
   source: 'pdf'|'msgraph'|'gcal'|null, // 👤 Import source
@@ -982,6 +982,14 @@ second row.
 - Triple-tap any day section header (regular mode only)
 - Opens the **Day Agenda Audit** sheet (see §IX.B)
 - Shows detailed capacity planning: clock/blocked/net minutes, eligible work, work placed, missed gaps, scheduler time
+- Uses the exact mounted Home snapshot. Adjacent pieces of one uninterrupted
+  breakable session are shown as one row; real interruptions remain separate.
+- Distinguishes a genuine due/linked placement miss from an intentional
+  rolling-rhythm weather deferral, including the better-forecast and quota
+  explanation. Timed breakable traces show their fixed first start explicitly.
+- Weather deferral for fractional rhythms is bounded by the next rolling-quota
+  deadline. A better forecast after that deadline cannot justify waiting when
+  the habit would actually have to be scheduled sooner.
 - Copy or export week placement data
 - For developer/debugging use
 
@@ -1083,8 +1091,8 @@ Visible when type = habit (keepup):
 ### 8.6 Field: Task Due Date 👤
 Visible when type = task:
 - **Date input:** Calendar picker (day-level)
-- **Time input:** Time picker (makes it a fixed-time event). Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
-- Hint: "add a time to make this a fixed appointment"
+- **Time input:** Time picker. Unbreakable tasks become fixed-time events; breakable tasks start at this time and may pause/resume. Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
+- Hint: "add a start time; breakable tasks may pause and resume"
 - Default time: Next clean hour
 
 ### 8.7 More Options Fields 👤
@@ -1156,7 +1164,7 @@ Fields shown (always visible, even in minimal mode):
 #### Task Timing Section
 - For `task` type only
 - **Due date:** Date picker (`detail-due-date`)
-- **Due time:** Time picker (`detail-due-time`, makes it a fixed appointment)
+- **Due time:** Time picker (`detail-due-time`); fixed for unbreakable tasks, the exact first-session start for breakable tasks
 - Tasks open on Schedule by default so deadline and placement controls are the
   first editable fields.
 
@@ -1415,8 +1423,13 @@ Tracks the currently active habit session:
 
 ### Features
 - Copy week placements (to clipboard)
-- Download week placements (as JSON file)
-- Shows all agenda item placements for debugging
+- Download week placements (as a text file)
+- Shows all agenda item placements, final-gap feasibility, planner inputs,
+  selected clocks, route provenance, and solve/refinement status for debugging
+- A usable gap is not automatically a miss: work assigned to another day is
+  labeled separately, and a weather-guided assignment is reported as
+  **weather deferred** only when the rolling quota is already satisfied and
+  the mounted future placement has a materially better forecast
 
 ---
 
@@ -2112,9 +2125,15 @@ date. Leftover plan entries after a
 completion do not keep the item on that day's agenda. A later catch-up plan
 does not erase a due/overdue miss whose window already closed. Movables that
 can wait skip a much wetter day the same way GLPK's `weatherShouldDeferCandidate`
-does. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
-planned/last-day tasks, then slack daily P0 so earliest-clock Zuhr cannot
-fragment the only contiguous 4h slot a due visit needs.
+does. A fractional rhythm may also spend weather slack when its rolling quota
+is already satisfied; it becomes mandatory on the next day where an older
+completion falls out of that window. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
+planned/last-day tasks, then seed-neighborhood errands that can still finish
+before a later far location pin, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only contiguous 4h slot a due visit needs. Neighborhood hops (a
+few minutes from the day's start place) are not treated as away-and-back
+commutes; GLPK chains those errands on the same side of the far pin instead of
+leaving for the pin, returning for a store, and going back.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked
@@ -2350,6 +2369,7 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `DEFAULT_TRAVEL_MODE` | `'driving'` | Default travel mode |
 | `TRAVEL_TTL_MS` | 30 × 86400000 | Travel cache TTL (30 days) |
 | `TRAVEL_FETCH_TIMEOUT_MS` | 3000 | Routing call timeout |
+| `AGENDA_TRAVEL_COST_SCALE` | 1.2 | Modest global multiplier on the agenda's soft travel cost |
 | `GEOCODE_FETCH_TIMEOUT_MS` | 8000 | Geocoding timeout |
 | `MAX_RHYTHM_DAYS` | 183 | Max cycle length |
 | `MIN_RHYTHM_DAYS` | 0.5 | Min cycle length |
@@ -2708,7 +2728,7 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 #### Agenda Score Weights 👨‍💻
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `travel` | number | 1 | Per second of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car). Overhead is objective-only and does not add clock minutes to travel cards. |
+| `travel` | number | 1 | Per minute of travel time, plus a fixed per-leg overhead (`TRAVEL_LEG_OVERHEAD_SECONDS`, parking / getting in and out of the car), multiplied by the modest global `AGENDA_TRAVEL_COST_SCALE`. Overhead is objective-only and does not add clock minutes to travel cards. Travel competes with clock delay as a soft cost, so a saved short trip cannot justify an hours-long idle gap. Fixed-location anchors include both scheduled rows and already-committed exact-start sessions. |
 | `cluster` | number | 1 | Per unit of co-location savings |
 | `day` | number | 1 | Day-offset multiplier |
 | `asap` | number | 0.12 | Per minute of clock delay |

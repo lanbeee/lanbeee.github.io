@@ -205,8 +205,10 @@ due/overdue today miss during `fullToday` reconstruction. Blocked fixed
 insertions use `fastGraphPlacement`: bounded beam search over partial day
 schedules, reopening up to seven existing non-linked/non-breakable placements.
 Keep-all search is transactional. Fast packs scarce one-day P0 (Juma) first, then
-planned/last-day tasks, then slack daily P0 so earliest-clock Zuhr cannot
-fragment the only 4h slot a due visit needs. `tryPlaceOnDay` enumerates unforced
+planned/last-day tasks, then seed-neighborhood errands that still fit before a
+later far location pin, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only 4h slot a due visit needs — and so a short at-seed window
+cannot consume the only pre-pin gap those nearby errands needed. `tryPlaceOnDay` enumerates unforced
 venues so Fast sees the same location set as GLPK. Planned items outrank
 at-location sequencing. `improveFastGraphWeek` searches when a planned/pinned
 item or a day-choosing leftover is still unplaced: cheap insert/eject first,
