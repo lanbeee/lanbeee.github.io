@@ -20,6 +20,8 @@
  *      - partial log keeps includeInTodayAgenda / isWeekCandidate / todayCategory
  *      - non-breakable cards unchanged (trail, instant full log)
  *      - slider touch target is phone-friendly (≥40px)
+ *   J. Final route/link rescue fills the real daily deficit in both engines,
+ *      even when a stale placement marker exists and gaps require splitting
  *
  * Run:
  *   python3 -m http.server 4181   (from habits/)
@@ -342,6 +344,92 @@ async function breakableFillRows(page, name){
   assert(helpers.rewriteKeptPlan === true, 'rewrite must keep plan logs');
   assert(helpers.rewriteNoopMode === 'noop', `equal target → noop, got ${helpers.rewriteNoopMode}`);
   console.log('  pure helpers: OK');
+
+  // A stale/partial placement marker must never suppress a daily breakable's
+  // real minute deficit. This mirrors a routed day with several fixed rows:
+  // no single gap holds 6h, but the valid 45m+ chunks do.
+  const dailyRescue = await page.evaluate(async () => {
+    const dayBase = dayStart(Date.now());
+    const atMinute = minute => dayBase + minute * 60000;
+    const rescuedSlots = () => [[588,605],[632,716],[734,789],[812,1001],[1066,1200],[1205,1230],[1300,1373]]
+      .map(([start,end])=>({start:atMinute(start),end:atMinute(end)}));
+    const work = {
+      hid:'daily-rescue-work',name:'Daily rescue work',type:'keepup',target:1,
+      durationMinutes:360,breakable:true,minChunkMinutes:45,priority:0,
+      allowedTimeStart:510,allowedTimeEnd:1200,allowedWeekdays:[],
+      locationIds:[],anywhereAllowed:true,logs:[],lastLog:dayBase - 86400000
+    };
+    const settings = {
+      preset:'todayFirst',focus:'balanced',availabilityMinutes:Array(7).fill(1440),
+      availabilityOverrides:{},blockedTimes:[],locations:[],travel:{},
+      defaultTravelMode:'walking'
+    };
+    const makeState = slots => {
+      const day = {
+        dayBase,weekday:new Date(dayBase).getDay(),isToday:true,isTodayDay:true,
+        totalMinutes:785,slots,scheduled:[],agendaItems:[]
+      };
+      return createDayPlacementState(day,settings,{
+        dayBase,weekday:day.weekday,weekMode:true,startClock:atMinute(588)
+      });
+    };
+    const makeCandidate = () => ({
+      h:work,i:0,priority:0,scarcity:0,pinned:false,eligible:new Set([dayBase])
+    });
+    const summarize = state => {
+      const rows = state.fills.filter(entry=>entry.fill.i === 0);
+      return {
+        total:rows.reduce((sum,entry)=>sum + entry.fit.durMin,0),
+        chunks:rows.map(entry=>entry.fit.durMin)
+      };
+    };
+
+    // GLPK orchestration: routed/fixed rows have already left several usable
+    // gaps, but an earlier phase retained only the candidate marker.
+    const glpkState = makeState(rescuedSlots());
+    glpkState.placed.add(0);
+    const optimized = await assignWeekCandidatesOptimized(
+      [makeCandidate()],[glpkState],settings,{}
+    );
+
+    // Fast orchestration: its normal Work pass sees only sub-minimum slivers.
+    // Route compaction then exposes the real gaps immediately before the final
+    // rescue. This proves the rescue is wired into the public Fast assignment,
+    // not merely that the helper works in isolation.
+    const fastState = makeState([
+      {start:atMinute(588),end:atMinute(605)},
+      {start:atMinute(1205),end:atMinute(1230)}
+    ]);
+    fastState.placed.add(0);
+    const realCompact = compactFastTravelRoutes;
+    let compacted = false;
+    try{
+      compactFastTravelRoutes = states => {
+        compacted = true;
+        states[0].slots = rescuedSlots();
+        return 0;
+      };
+      assignWeekCandidatesByPlacement(
+        [makeCandidate()],[fastState],settings,null,
+        {remaining:768,searches:0,accepted:0}
+      );
+    }finally{
+      compactFastTravelRoutes = realCompact;
+    }
+    return {
+      glpk:{ok:optimized && optimized.ok,...summarize(glpkState)},
+      fast:{compacted,...summarize(fastState)}
+    };
+  });
+  for(const [engine,result] of Object.entries(dailyRescue)){
+    assert((engine !== 'glpk' || result.ok) && result.total === 360,
+      `${engine} daily rescue should recover all 360m, got ${JSON.stringify(result)}`);
+    assert(result.chunks.length >= 2 && result.chunks.every(minutes=>minutes >= 45),
+      `${engine} daily rescue should use valid split chunks, got ${JSON.stringify(result)}`);
+  }
+  assert(dailyRescue.fast.compacted,
+    `Fast fixture must expose gaps only during route compaction: ${JSON.stringify(dailyRescue.fast)}`);
+  console.log('  daily breakable final rescue (GLPK + Fast): OK');
 
   // ═══════════════════════════════════════════════════════════
   // A. Continuous wins

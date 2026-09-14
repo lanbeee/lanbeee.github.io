@@ -1561,8 +1561,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
   pullStrictDueMovablesForward(candidates,dayStates,settings);
   compactFastTravelRoutes(dayStates,candidates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
-  // Rebuild/link cleanup can uncover a gap after the normal rescue already
-  // ran. Give fixed daily obligations one final exact-gap chance.
+  // Rebuild/link cleanup can uncover gaps after the normal rescue already ran.
+  // Give daily breakables and fixed obligations one final exact-gap chance.
+  totalAssigned += rescueDailyBreakableGapFits(candidates,dayStates,settings);
   totalAssigned += rescueDailyGapFits(candidates,dayStates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
   return totalAssigned;
@@ -1907,6 +1908,55 @@ function rescueDailyGapFits(candidates,dayStates,settings){
         });
         gained += 1;
         break;
+      }
+    }
+  }
+  return gained;
+}
+
+// MUTATE: final min-chunk-aware rescue for daily recurring breakables. The
+// normal placement pass can be followed by route, hours, and order-link
+// rebuilds that expose new usable gaps. It can also inherit a stale `placed`
+// marker from an earlier partial attempt. Measure committed minutes directly
+// and let the shared adaptive splitter reclaim every compatible chunk.
+function rescueDailyBreakableGapFits(candidates,dayStates,settings){
+  let gained = 0;
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return gained;
+  const daily = candidates.filter(c=>{
+    if(!c || !c.h || !c.h.breakable || c.h.type === 'task')return false;
+    const target = Number(c.h.target);
+    return (Number.isFinite(target) && target <= 1)
+      || (typeof rhythmFillsEveryEligibleDay === 'function'
+        && rhythmFillsEveryEligibleDay(c.h));
+  });
+  for(const state of dayStates){
+    if(!state)continue;
+    for(const c of daily){
+      if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      if(!candidateMatchesPinnedDay(c,state))continue;
+      const left = typeof breakableMinutesLeft === 'function'
+        ? breakableMinutesLeft(c.h,c.i,state)
+        : 0;
+      if(left <= 0)continue;
+      const before = state.fills.length;
+      const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+      if(!placeBreakableSessions(state,fill,{
+        settings,
+        allowNetwork:true,
+        weights:typeof resolveAgendaScoreWeights === 'function'
+          ? resolveAgendaScoreWeights(settings) : null
+      }))continue;
+      const added = state.fills.slice(before).filter(entry=>
+        entry && entry.fill && entry.fill.i === c.i
+      );
+      for(const entry of added){
+        state.day.agendaItems.push({
+          h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+          locationId:entry.fit.locId,
+          chunkMinutes:entry.fit.durMin,
+          chunkIndex:entry.fill.chunkIndex != null ? entry.fill.chunkIndex : null
+        });
+        gained += 1;
       }
     }
   }

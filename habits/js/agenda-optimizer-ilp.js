@@ -2033,7 +2033,6 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         continue;
       }
       if(breakableRhythm){
-        if(state.placed.has(c.i))continue;
         const left = typeof breakableMinutesLeft === 'function'
           ? breakableMinutesLeft(c.h,c.i,state)
           : (typeof breakableBudgetMinutes === 'function'
@@ -2380,7 +2379,15 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(typeof candidateMatchesPinnedDay === 'function'
         ? !candidateMatchesPinnedDay(c,state) : (c.pinned && !state.isTodayDay))continue;
-        if(state.placed.has(c.i)){
+        const alreadyPlacedMinutes = typeof placedBreakableMinutes === 'function'
+          ? placedBreakableMinutes(state,c.i) : 0;
+        const remainingMinutes = typeof breakableMinutesLeft === 'function'
+          ? breakableMinutesLeft(c.h,c.i,state) : 0;
+        // `placed` is a collision/attempt guard, not proof that a breakable's
+        // daily budget was satisfied. A staged or repaired chunk can set the
+        // marker while Work still has hours left; keep filling until the real
+        // minute deficit reaches zero.
+        if(alreadyPlacedMinutes > 0 && remainingMinutes <= 0){
           vLog = state.dayBase;
           rhythmPlacementCount += 1;
           continue;
@@ -2398,7 +2405,14 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         }
         const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
         const before = state.fills.length;
-        if(!placeBreakableSessions(state,fill,{settings,weights,allowNetwork:true}))continue;
+        if(!placeBreakableSessions(state,fill,{settings,weights,allowNetwork:true})){
+          if(alreadyPlacedMinutes > 0){
+            vLog = state.dayBase;
+            virtualLogs.set(c.i,state.dayBase);
+            rhythmPlacementCount += 1;
+          }
+          continue;
+        }
         const added = state.fills.slice(before);
         for(const entry of added){
           state.day.agendaItems.push({
@@ -2427,6 +2441,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  }
+  // Link/route/hour repair can leave or expose valid minimum-sized chunks for
+  // a daily breakable. Reclaim them before the final invariant check; do not
+  // trust state.placed, which only says that some placement key was seen.
+  if(typeof rescueDailyBreakableGapFits === 'function'){
+    total += rescueDailyBreakableGapFits(candidates,dayStates,settings);
   }
   // Route/hours/link repair can expose a usable gap after the first rescue.
   if(typeof rescueDailyGapFits === 'function'){
