@@ -17,10 +17,10 @@ const HOUSEHOLD_AGENDA_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const HOUSEHOLD_AGENDA_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const SHARED_DISPLAY_COMPLETION_POLL_MS = 30 * 1000;
 const SHARED_DISPLAY_ROW_MAP_REVISIONS = 12;
-// The Worker accepts 128 KiB of encrypted snapshot bytes. Keep headroom for
+// The Worker accepts 256 KiB of encrypted snapshot bytes. Keep headroom for
 // AES-GCM metadata while sizing the complete UTF-8 projection, not just the
 // replica subsection.
-const SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES = 120 * 1024;
+const SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES = 248 * 1024;
 const HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS = 15 * 60 * 1000;
 let _agendaPublishQueued = false;
 let _agendaPublishQueuedForce = false;

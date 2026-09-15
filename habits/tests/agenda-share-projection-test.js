@@ -114,7 +114,14 @@ function assert(cond,msg){
       await shareAgendaPairDecrypt(transfer,other.privateKey,projection.feedId,pairing.pairingId);
     }catch(_){ wrongDisplayRejected = true; }
 
-    const historyHeavy = Array.from({length:100},(_,index)=>({
+    const expandedLibrary = Array.from({length:52},(_,index)=>({
+      ...active,hid:`expanded-${index}`,name:`Expanded ${index}`,
+      notes:'x'.repeat(2500),logs:[]
+    }));
+    const expandedProjection = buildHouseholdAgendaProjection({ days:[{
+      dayBase,dayKey:dateKey(dayBase),usedMinutes:0,remainingMinutes:0,timeline:[]
+    }] },{ feed,data:expandedLibrary,now,settings:quietSettings });
+    const historyHeavy = Array.from({length:220},(_,index)=>({
       ...active,hid:`history-heavy-${index}`,name:`History heavy ${index}`,
       logs:Array.from({length:80},(__,logIndex)=>now - (80 - logIndex) * 60000)
     }));
@@ -126,7 +133,7 @@ function assert(cond,msg){
       buildHouseholdAgendaProjection({ days:[{
         dayBase,dayKey:dateKey(dayBase),usedMinutes:0,remainingMinutes:0,timeline:[]
       }] },{
-        feed,data:[{ ...active,hid:'oversized-definition',notes:'x'.repeat(130 * 1024) }],now,settings:quietSettings
+        feed,data:[{ ...active,hid:'oversized-definition',notes:'x'.repeat(260 * 1024) }],now,settings:quietSettings
       });
     }catch(error){ oversizedRejected = error && error.message === 'replica_too_large'; }
 
@@ -145,6 +152,8 @@ function assert(cond,msg){
         const next = stableRowProjection.replica.items.find(candidate=>candidate.habit.hid === item.habit.hid);
         return next && next.rowId === item.rowId;
       }),
+      expandedItemCount:expandedProjection.replica.items.length,
+      expandedBytes:householdProjectionByteSize(expandedProjection),
       historyItemCount:historyProjection.replica.items.length,
       historyTrimmed:Boolean(historyProjection.replica.historyTruncated),
       oversizedRejected,
@@ -177,7 +186,9 @@ function assert(cond,msg){
   assert(!result.agendaJson.includes('active-hid') && !result.agendaJson.includes('completed-hid'),'omits local habit ids from the compatibility agenda');
   assert(result.replicaCount > 0 && result.replicaHasOwner,'adds an encrypted full-app personal clone with multi-device definition ownership');
   assert(result.stableSignature && result.stableReplicaRows,'keeps unchanged replica content and per-habit identities stable across refreshes');
-  assert(result.historyItemCount === 100 && result.historyTrimmed,'shortens history without silently removing any task or habit');
+  assert(result.expandedItemCount === 52 && result.expandedBytes > 120 * 1024,
+    'accepts a realistic complete library that exceeded the former 120 KiB ceiling');
+  assert(result.historyItemCount === 220 && result.historyTrimmed,'shortens history without silently removing any task or habit');
   assert(result.oversizedRejected,'rejects an unrepresentable full clone instead of publishing a partial deletion-shaped snapshot');
   assert(result.rowMapCount > 0 && result.mappedHid === 'active-hid' && result.completable,'keeps the completion target only in the owner-side non-enumerable row map');
   assert(result.viewOnlyCompletable === false && !result.viewOnlyMapped,'view-only items are visible without a completion target or capability');
