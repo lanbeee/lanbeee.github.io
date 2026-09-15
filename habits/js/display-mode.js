@@ -660,10 +660,19 @@ function setReplicaLocked(locked){
   }catch(_){ }
 }
 
+// A glance display is paired but never installs a replica, so it has neither a
+// replicaMode nor any replicaRows. An installed PWA start_url or a stale
+// bookmark can still land it here; send it back rather than mounting clone
+// chrome (and a week planner) over an empty local database.
+function replicaEnrollmentIsGlance(enrolled){
+  return Boolean(enrolled) && !enrolled.replicaMode && !enrolled.replicaRows;
+}
+
 function mountReplicaDisplayMode(){
   const enrolled = replicaEnrollment();
   if(!replicaEnrollmentActive() && !replicaDisplayQueryRequested()) return;
   if(!enrolled || !enrolled.deviceCredential){ location.replace('agenda-display.html'); return; }
+  if(replicaEnrollmentIsGlance(enrolled)){ location.replace('agenda-display.html'); return; }
   ensureReplicaDisplayQuery();
   document.body.classList.add('replica-display-mode');
   document.body.classList.add(enrolled.replicaMode === 'selected' ? 'replica-mode-selected' : 'replica-mode-clone');

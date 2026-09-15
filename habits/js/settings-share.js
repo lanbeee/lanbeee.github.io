@@ -32,12 +32,21 @@ function syncHouseholdAgendaSettings(){
   }
   const reauth = $('settings-agenda-reauth');
   if(reauth && reauth !== document.activeElement) reauth.value = Number(feed.reauthDays) === 7 ? '7' : '30';
+  const style = householdAgendaSyncMode(feed);
   const syncMode = $('settings-agenda-sync-mode');
-  if(syncMode && syncMode !== document.activeElement) syncMode.value = feed.syncMode === 'selected' ? 'selected' : 'clone';
+  if(syncMode && syncMode !== document.activeElement) syncMode.value = style;
   const syncHint = $('settings-agenda-sync-hint');
-  if(syncHint) syncHint.textContent = feed.syncMode === 'selected'
-    ? 'Only items set to view or mark done are copied. This device keeps its own planner settings and agenda.'
-    : 'Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.';
+  if(syncHint){
+    if(style === 'selected'){
+      syncHint.textContent = 'Only items set to view or mark done are copied. This device keeps its own planner settings and agenda.';
+    }else if(style === 'glance'){
+      syncHint.textContent = 'Shows an agenda you can read across the room and mark done. The display does not run the full app, so it stays fast on older screens.';
+    }else{
+      syncHint.textContent = 'Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.';
+    }
+  }
+  const scopeLabel = $('settings-agenda-scope-label');
+  if(scopeLabel) scopeLabel.textContent = style === 'glance' ? 'how much to show' : 'glance-view compatibility';
   const mode = $('settings-agenda-scope-mode');
   const scopeMode = feed.scopeMode === 'hours' ? 'hours' : 'count';
   if(mode && mode !== document.activeElement) mode.value = scopeMode;
@@ -47,9 +56,14 @@ function syncHouseholdAgendaSettings(){
     value.value = String(Number(feed.scopeValue) || (scopeMode === 'hours' ? 24 : 20));
   }
   const hint = $('settings-agenda-scope-hint');
-  if(hint) hint.textContent = scopeMode === 'hours'
-    ? '1–48 hours ahead, always cut off at the end of tomorrow; maximum 50 rows.'
-    : '1–50 upcoming rows, never beyond tomorrow.';
+  if(hint){
+    const range = scopeMode === 'hours'
+      ? '1–48 hours ahead, always cut off at the end of tomorrow; maximum 50 rows.'
+      : '1–50 upcoming rows, never beyond tomorrow.';
+    hint.textContent = style === 'glance'
+      ? `How much of the agenda this display shows. ${range}`
+      : `Older display builds receive at most 50 upcoming rows. ${range}`;
+  }
 }
 
 function toastShare(ok,good,bad){
@@ -99,7 +113,7 @@ function bindHouseholdAgendaSettings(){
   $('settings-agenda-sync-mode')?.addEventListener('change',()=>{
     const feed = agendaFeedRecord();
     if(!feed) return;
-    feed.syncMode = $('settings-agenda-sync-mode').value === 'selected' ? 'selected' : 'clone';
+    feed.syncMode = householdAgendaSyncMode({ syncMode:$('settings-agenda-sync-mode').value });
     saveAgendaFeedRecord(feed);
     syncHouseholdAgendaSettings();
     scheduleHouseholdAgendaPublish(null,{ forceCompletionSync:true });

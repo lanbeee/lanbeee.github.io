@@ -289,15 +289,50 @@ function assert(cond,msg){
     saveAgendaFeedRecord(null);
     return createHouseholdAgendaFeed('Secure family agenda');
   });
-  // The remainder of this file exercises the legacy glance renderer. New
-  // feeds default to full-app clone mode and have their replica contract
-  // asserted above.
-  ownerFeed.syncMode = 'legacy';
-  await page.evaluate(()=>{
+  // The remainder of this file exercises the glance display sync style, where
+  // the phone deliberately withholds the replica so the screen keeps rendering
+  // agenda-display.html. New feeds default to full-app clone mode and have
+  // their replica contract asserted above.
+  ownerFeed.syncMode = 'glance';
+  const glanceContract = await page.evaluate(()=>{
     const feed = agendaFeedRecord();
-    feed.syncMode = 'legacy';
+    feed.syncMode = 'glance';
     saveAgendaFeedRecord(feed);
+    const now = Date.now();
+    const dayBase = dayStart(now);
+    const habit = {
+      name:'Medication',emoji:'💊',hid:'glance-hid',type:'keepup',target:1,
+      logs:[],lastLog:null,breakable:false,durationMinutes:30,locationIds:[]
+    };
+    const week = { optimized:true,plannerSolveStatus:'optimal',days:[{
+      dayBase,dayKey:dateKey(dayBase),weekday:new Date(dayBase).getDay(),isToday:true,
+      usedMinutes:30,remainingMinutes:60,
+      timeline:[{ kind:'scheduled',start:now + 60 * 60000,end:now + 90 * 60000,h:habit,i:0 }]
+    }] };
+    const projection = buildHouseholdAgendaProjection(week,{ feed,data:[habit],now });
+    return {
+      normalized:[
+        householdAgendaSyncMode({ syncMode:'glance' }),
+        householdAgendaSyncMode({ syncMode:'legacy' }),
+        householdAgendaSyncMode({ syncMode:'selected' }),
+        householdAgendaSyncMode({ syncMode:'clone' }),
+        householdAgendaSyncMode(null)
+      ].join(','),
+      hasReplica:'replica' in projection,
+      dayCount:(projection.days || []).length,
+      rowCount:(projection.days || []).reduce((sum,day)=>sum + (day.rows || []).length,0),
+      rowMapCount:Object.keys(projection._rowMap || {}).length,
+      signs:typeof householdAgendaSignature(projection) === 'string'
+    };
   });
+  assert(glanceContract.normalized === 'glance,glance,selected,clone,clone',
+    'glance is a first-class sync style and the old legacy value normalizes onto it');
+  assert(!glanceContract.hasReplica,
+    'a glance feed publishes no replica block, so the display never installs a Tings library');
+  assert(glanceContract.dayCount > 0 && glanceContract.rowCount > 0,
+    'a glance feed still publishes the readable agenda projection');
+  assert(glanceContract.rowMapCount > 0 && glanceContract.signs,
+    'glance rows keep their completion row map, so marking done on the display still reaches the phone');
   assert(createRequestBody && !('viewerCredential' in createRequestBody),'feed creation never registers a permanent viewer credential');
   assert(ownerFeed.currentInvite === undefined,'owner creates no enrollment link or fallback code');
   assert(ownerFeed.reauthDays === 30,'display reauthorization defaults to 30 days');

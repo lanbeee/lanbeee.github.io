@@ -351,14 +351,25 @@ function buildHouseholdAgendaProjection(week, opts = {}){
   return projection;
 }
 
+// The three published sync styles. `glance` deliberately withholds the replica
+// so the paired screen keeps rendering the lightweight agenda page instead of
+// installing (and planning) a whole Tings library — the only workable mode on
+// low-power photo frames. `legacy` is the same suppression under its old name.
+function householdAgendaSyncMode(feed){
+  const raw = feed && feed.syncMode;
+  if(raw === 'selected') return 'selected';
+  if(raw === 'glance' || raw === 'legacy') return 'glance';
+  return 'clone';
+}
+
 // A paired display is a real Tings installation, not merely a renderer. The
 // latest-state agenda envelope doubles as an encrypted replication snapshot so
 // the existing zero-knowledge transport and QR authorization remain useful.
 // Keeping `days` beside it lets older display builds continue to work.
 function buildHouseholdReplica(data,settings,feed,rowMap,now = Date.now()){
-  if(feed && feed.syncMode === 'legacy') return null;
+  const mode = householdAgendaSyncMode(feed);
+  if(mode === 'glance') return null;
   const source = Array.isArray(data) ? data : [];
-  const mode = feed && feed.syncMode === 'selected' ? 'selected' : 'clone';
   const previousRowIds = feed && feed.replicaRowIds && typeof feed.replicaRowIds === 'object'
     ? feed.replicaRowIds
     : {};

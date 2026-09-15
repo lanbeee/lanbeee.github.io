@@ -496,6 +496,46 @@ function assert(value,message){
   assert(result.chrome && result.clock,'display mode shows a live current-time chrome');
   assert(result.addVisible,'personal clone keeps the normal add-task and add-habit action available');
   assert(result.unlocked,'three taps dismiss the display lock screen');
+
+  // Glance display: the phone publishes no replica, so the screen must never
+  // install a library or mount the full-app planner.
+  const glanceContext = await browser.newContext({serviceWorkers:'block'});
+  const glancePage = await glanceContext.newPage();
+  await glancePage.goto(baseUrl,{waitUntil:'load'});
+  const glanceClassify = await glancePage.evaluate(()=>{
+    const base = {
+      feedId:shareRandomHex(16),
+      deviceCredential:shareRandomHex(32),
+      contentKey:shareRandomHex(32),
+      pairingId:shareRandomHex(16)
+    };
+    localStorage.setItem(AGENDA_DISPLAY_KEY,JSON.stringify(base));
+    return {
+      glanceDetected:replicaEnrollmentIsGlance(base),
+      cloneNotGlance:replicaEnrollmentIsGlance({...base,replicaMode:'clone',replicaRows:{}}),
+      selectedNotGlance:replicaEnrollmentIsGlance({...base,replicaMode:'selected',replicaRows:{}})
+    };
+  });
+  await glancePage.goto(`${baseUrl}index.html?display=1`,{waitUntil:'load'});
+  await glancePage.waitForLoadState('load');
+  const glanceLanding = await glancePage.evaluate(()=>({
+    path:location.pathname,
+    replicaChrome:Boolean(document.querySelector('.replica-display-bar')),
+    // agenda-display.js is only loaded on the kiosk page, so reaching it here
+    // also proves the redirect landed.
+    stayedOnKiosk:typeof installDisplayReplica === 'function'
+      && installDisplayReplica({generatedAt:Date.now(),days:[]},displayReadEnrollment()),
+    stillEnrolled:Boolean(displayReadEnrollment())
+  }));
+  assert(glanceClassify.glanceDetected
+    && !glanceClassify.cloneNotGlance
+    && !glanceClassify.selectedNotGlance,
+    'an enrollment that never installed a replica is recognized as a glance display');
+  assert(glanceLanding.path.endsWith('/agenda-display.html') && !glanceLanding.replicaChrome,
+    'a glance display opening index.html is sent back to the kiosk instead of mounting the full app');
+  assert(glanceLanding.stayedOnKiosk === false && glanceLanding.stillEnrolled,
+    'a snapshot without a replica block keeps the paired kiosk in place instead of installing a library');
+  await glanceContext.close();
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

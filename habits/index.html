@@ -1053,7 +1053,7 @@
             <span data-ui-leave="agenda"></span>
           </div>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Pair a fridge, tablet, or second device as its own offline-capable Tings installation. Personal clone copies every task and habit and lets either device add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages and keeps owner-managed schedules. Only one display can be signed in. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it.</p>
+            <p class="field-hint">Pair a fridge, tablet, or second device. Personal clone makes it its own offline-capable Tings installation: every task and habit is copied and either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages and keeps owner-managed schedules. Glance display does not install the app at all — the screen shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower display. Only one display can be signed in. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it.</p>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
@@ -1065,6 +1065,7 @@
               <select id="settings-agenda-sync-mode" class="mini-select">
                 <option value="clone">personal clone</option>
                 <option value="selected">shared items only</option>
+                <option value="glance">glance display</option>
               </select>
               <p class="field-hint" id="settings-agenda-sync-hint">Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.</p>
               <span class="settings-sublabel">display reauthorization</span>
@@ -1073,7 +1074,7 @@
                 <option value="7">every 7 days</option>
               </select>
               <p class="field-hint">No silent refresh or fallback link: the display must show a new QR and be scanned again when access expires.</p>
-              <span class="settings-sublabel">glance-view compatibility</span>
+              <span class="settings-sublabel" id="settings-agenda-scope-label">glance-view compatibility</span>
               <div class="btn-row">
                 <select id="settings-agenda-scope-mode" class="mini-select">
                   <option value="count">next activities</option>
