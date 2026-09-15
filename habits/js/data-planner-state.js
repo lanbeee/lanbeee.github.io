@@ -847,7 +847,7 @@ function sweepAutoMarkedBreakableChunks(now = Date.now(),opts = {}){
       const done = breakableProgressMinutes(h,dayBase);
       const target = Math.max(0,Math.min(breakableTotalMinutes(h),Math.round(Number(row.targetMinutes) || 0)));
       const delta = Math.max(0,target - done);
-      if(delta > 0){
+      if(delta > 0 && !(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(h.hid))){
         const rawLogTs = Math.min(now,Math.max(1,Number(row.end) || dueAt));
         const logTs = h.type === 'task' ? rawLogTs : snapLogTimestamp(h,rawLogTs);
         h.logs = normalizeLogs([...normalizeLogs(h.logs),makeActualLog(logTs,{minutes:delta,note:'agenda auto-log'})]);
@@ -927,6 +927,10 @@ function sweepDoingNowOneShot(now = Date.now(),opts = {}){
     clearDoingNow(h.hid);
     return 0;
   }
+  if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(h.hid)){
+    clearDoingNow(h.hid);
+    return 0;
+  }
 
   let changed = false;
   const sessionMins = Math.max(1,Number(doing.sessionMinutes) || 30);
@@ -991,6 +995,7 @@ function sweepAutoDoneTasks(){
     // Doing-now one-shot is handled above; still allow normal auto-mark path
     // for habits that already have autoMarkMinutes set.
     if(h.autoMarkMinutes === null)return;
+    if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(h.hid))return;
     if(h.breakable)return; // breakables are reconciled against placed chunks above
     if(h.type === 'task'){
       // Trigger: auto-completing doing-now override, fixed time, or when the

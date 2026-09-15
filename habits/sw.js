@@ -1,4 +1,4 @@
-const CACHE = 'tings-v347';
+const CACHE = 'tings-v360';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -64,6 +64,7 @@ const PRECACHE = [
   './css/agenda.css',
   './css/sweeps.css',
   './css/agenda-display.css',
+  './css/display-mode.css',
   './favicon.svg',
   './js/config.js',
   './js/storage.js',
@@ -128,6 +129,7 @@ const PRECACHE = [
   './js/settings-appearance.js',
   './js/settings-share.js',
   './js/agenda-display.js',
+  './js/display-mode.js',
   './js/agenda-display-boot.js',
   './js/main-boot.js',
   './js/main-input.js',

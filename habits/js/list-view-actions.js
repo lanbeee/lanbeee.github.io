@@ -704,6 +704,10 @@ function planToConsumeForEntry(logs,entryTs){
 function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   const data = load();
   if(!data[idx])return false;
+  if(!toPlan && typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(data[idx].hid)){
+    if(typeof showToast === 'function') showToast('view only on this display');
+    return false;
+  }
   // Never turn a stop habit's entry into a plan — stop habits aren't plannable.
   if(toPlan && data[idx].type === 'zero')return false;
   const logs = normalizeLogs(data[idx].logs);
@@ -739,6 +743,10 @@ function logTing(i,opts = {}){
   const now = Date.now();
   if(!data[i])return false;
   const h = data[i];
+  if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(h.hid)){
+    if(typeof showToast === 'function') showToast('view only on this display');
+    return false;
+  }
   const logs = normalizeLogs(h.logs);
   const consumedPlanTs = planToConsumeForEntry(logs,now);
   let minutes = opts.minutes;
@@ -806,6 +814,10 @@ function logTing(i,opts = {}){
 function logTingAt(i,ts){
   const data = load();
   if(!data[i])return false;
+  if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(data[i].hid)){
+    if(typeof showToast === 'function') showToast('view only on this display');
+    return false;
+  }
   // Calendar day logs are for today and past days only — future days use plans.
   if(dateKey(ts) > todayIso())return false;
   const entryTs = dateKey(ts) <= dateKey(Date.now()) && ts > Date.now() ? Date.now() : ts;

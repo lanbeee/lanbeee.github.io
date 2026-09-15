@@ -71,6 +71,10 @@ function assert(cond,msg){
       homeCityName:'',homeCityLat:null,homeCityLng:null
     };
     const projection = buildHouseholdAgendaProjection(week,{ feed,data,now,dayCount:7,settings:quietSettings });
+    const repeatedProjection = buildHouseholdAgendaProjection(week,{ feed,data,now:now + 1000,dayCount:7,settings:quietSettings });
+    const stableRowProjection = buildHouseholdAgendaProjection(week,{
+      feed:{ ...feed,replicaRowIds:projection._replicaRowIds },data,now:now + 1000,dayCount:7,settings:quietSettings
+    });
     const maxProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeValue:50 },data,now,dayCount:2,settings:quietSettings });
     const hourProjection = buildHouseholdAgendaProjection(week,{ feed:{ ...feed,scopeMode:'hours',scopeValue:2 },data,now,dayCount:2,settings:quietSettings });
     const labeledWeek = {
@@ -86,6 +90,7 @@ function assert(cond,msg){
     };
     const labeledProjection = buildHouseholdAgendaProjection(labeledWeek,{ feed:{ ...feed,scopeValue:10 },data,now,settings:quietSettings });
     const json = JSON.stringify(projection);
+    const agendaJson = JSON.stringify(projection.days);
     const firstItem = projection.days.flatMap(day=>day.rows).find(row=>row.kind === 'item');
     const viewOnlyItem = projection.days.flatMap(day=>day.rows).find(row=>row.title === 'Extra 1');
 
@@ -109,6 +114,22 @@ function assert(cond,msg){
       await shareAgendaPairDecrypt(transfer,other.privateKey,projection.feedId,pairing.pairingId);
     }catch(_){ wrongDisplayRejected = true; }
 
+    const historyHeavy = Array.from({length:100},(_,index)=>({
+      ...active,hid:`history-heavy-${index}`,name:`History heavy ${index}`,
+      logs:Array.from({length:80},(__,logIndex)=>now - (80 - logIndex) * 60000)
+    }));
+    const historyProjection = buildHouseholdAgendaProjection({ days:[{
+      dayBase,dayKey:dateKey(dayBase),usedMinutes:0,remainingMinutes:0,timeline:[]
+    }] },{ feed,data:historyHeavy,now,settings:quietSettings });
+    let oversizedRejected = false;
+    try{
+      buildHouseholdAgendaProjection({ days:[{
+        dayBase,dayKey:dateKey(dayBase),usedMinutes:0,remainingMinutes:0,timeline:[]
+      }] },{
+        feed,data:[{ ...active,hid:'oversized-definition',notes:'x'.repeat(130 * 1024) }],now,settings:quietSettings
+      });
+    }catch(error){ oversizedRejected = error && error.message === 'replica_too_large'; }
+
     return {
       dayCount:projection.days.length,
       titles:projection.days.flatMap(day=>day.rows.map(row=>row.title)),
@@ -116,7 +137,17 @@ function assert(cond,msg){
       maxRows:maxProjection.days.reduce((sum,day)=>sum + day.rows.length,0),
       hourTitles:hourProjection.days.flatMap(day=>day.rows.map(row=>row.title)),
       labeledTitles:labeledProjection.days.flatMap(day=>day.rows.map(row=>row.title)),
-      json,provenance:projection.plannerProvenance,
+      json,agendaJson,provenance:projection.plannerProvenance,
+      replicaCount:projection.replica && projection.replica.items.length,
+      replicaHasOwner:projection.replica && projection.replica.ownershipPolicy === 'personal-clone-multi-writer-definition_additive-completions',
+      stableSignature:householdAgendaSignature(projection) === householdAgendaSignature(repeatedProjection),
+      stableReplicaRows:projection.replica.items.every(item=>{
+        const next = stableRowProjection.replica.items.find(candidate=>candidate.habit.hid === item.habit.hid);
+        return next && next.rowId === item.rowId;
+      }),
+      historyItemCount:historyProjection.replica.items.length,
+      historyTrimmed:Boolean(historyProjection.replica.historyTruncated),
+      oversizedRejected,
       rowMapCount:Object.keys(projection._rowMap || {}).length,
       mappedHid:firstItem && projection._rowMap[firstItem.rowId] && projection._rowMap[firstItem.rowId].hid,
       completable:firstItem && firstItem.completable,
@@ -143,7 +174,11 @@ function assert(cond,msg){
   assert(!result.hourTitles.some(title=>title.startsWith('Extra')),'hours-ahead scope excludes later activity');
   assert(result.labeledTitles.includes('Deep Work Session Project Alpha'),'busy times keep their labels on the shared display');
   assert(result.labeledTitles.includes('Travel'),'travel rows stay in the published snapshot');
-  assert(!result.json.includes('active-hid') && !result.json.includes('completed-hid'),'omits local habit ids');
+  assert(!result.agendaJson.includes('active-hid') && !result.agendaJson.includes('completed-hid'),'omits local habit ids from the compatibility agenda');
+  assert(result.replicaCount > 0 && result.replicaHasOwner,'adds an encrypted full-app personal clone with multi-device definition ownership');
+  assert(result.stableSignature && result.stableReplicaRows,'keeps unchanged replica content and per-habit identities stable across refreshes');
+  assert(result.historyItemCount === 100 && result.historyTrimmed,'shortens history without silently removing any task or habit');
+  assert(result.oversizedRejected,'rejects an unrepresentable full clone instead of publishing a partial deletion-shaped snapshot');
   assert(result.rowMapCount > 0 && result.mappedHid === 'active-hid' && result.completable,'keeps the completion target only in the owner-side non-enumerable row map');
   assert(result.viewOnlyCompletable === false && !result.viewOnlyMapped,'view-only items are visible without a completion target or capability');
   assert(!result.json.includes('stale private row'),'omits private local row fields');
@@ -202,7 +237,7 @@ function assert(cond,msg){
     };
     const feed = { feedId:'abcd'.repeat(8),title:'Family',lastRevision:1,scopeMode:'count',scopeValue:20 };
     const projection = buildHouseholdAgendaProjection(week,{ feed,data:[walk,quiet],now,settings });
-    const json = JSON.stringify(projection);
+    const json = JSON.stringify(projection.days);
     const rows = projection.days.flatMap(day=>day.rows);
     const busy = rows.find(row=>row.kind === 'busy');
     const travel = rows.find(row=>row.kind === 'travel');
@@ -232,7 +267,7 @@ function assert(cond,msg){
   assert(weatherShare.travelWeather && weatherShare.walkWeather && !weatherShare.quietWeather,
     'travel and weather-opted items get interval weather; items that did not opt in stay plain');
   assert(!weatherShare.leakedCoords && !weatherShare.leakedLocationId,
-    'the snapshot never includes coordinates, location ids, or habit ids');
+    'the compatibility agenda never includes coordinates, location ids, or habit ids');
 
   let createRequestBody = null;
   await page.route('**/v1/agendas',async route=>{
@@ -242,6 +277,15 @@ function assert(cond,msg){
   const ownerFeed = await page.evaluate(async () => {
     saveAgendaFeedRecord(null);
     return createHouseholdAgendaFeed('Secure family agenda');
+  });
+  // The remainder of this file exercises the legacy glance renderer. New
+  // feeds default to full-app clone mode and have their replica contract
+  // asserted above.
+  ownerFeed.syncMode = 'legacy';
+  await page.evaluate(()=>{
+    const feed = agendaFeedRecord();
+    feed.syncMode = 'legacy';
+    saveAgendaFeedRecord(feed);
   });
   assert(createRequestBody && !('viewerCredential' in createRequestBody),'feed creation never registers a permanent viewer credential');
   assert(ownerFeed.currentInvite === undefined,'owner creates no enrollment link or fallback code');
@@ -1079,6 +1123,58 @@ function assert(cond,msg){
     && queuedPublish.published[1].includes('latest')
     && queuedPublish.revision === 2 && !queuedPublish.inFlight && !queuedPublish.pending,
   `a newer agenda queued during an in-flight publish is sent after it instead of being dropped (${JSON.stringify(queuedPublish)})`);
+
+  const unchangedPublish = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const base = dayStart(now);
+    const contentKey = shareRandomHex(32);
+    const habit = normalize([{
+      hid:generateHabitId(),name:'Stable sync',type:'task',logs:[],lastLog:null,
+      durationMinutes:20,breakable:false,locationIds:[]
+    }])[0];
+    const week = { optimized:false,days:[{
+      dayBase:base,dayKey:dateKey(base),isToday:true,usedMinutes:20,remainingMinutes:0,
+      timeline:[{kind:'scheduled',start:now + 3600000,end:now + 4800000,h:habit}]
+    }] };
+    const feed = {
+      feedId:'faded00dfaded00dfaded00dfaded00d',contentKey,ownerCredential:'88'.repeat(32),ownerId:'99'.repeat(8),
+      lastRevision:0,title:'Stable test',lastPublishedAt:null,scopeMode:'count',scopeValue:20,syncMode:'clone',rowMaps:[]
+    };
+    const originalFetch = shareFetch;
+    const originalFeed = agendaFeedRecord();
+    let revision = 0;
+    let puts = 0;
+    shareFetch = async (_path,opts={})=>{
+      if(opts.method === 'PUT'){
+        puts += 1;
+        revision += 1;
+        return {body:{revision,status:'active'}};
+      }
+      return {body:{revision,completions:[]}};
+    };
+    saveAgendaFeedRecord(feed);
+    _lastAgendaProjectionSig = '';
+    _agendaCompletionSyncAt = 0;
+    try{
+      const first = await publishHouseholdAgendaNow(week,{data:[habit],forceCompletionSync:true});
+      _lastAgendaProjectionSig = '';
+      _agendaCompletionSyncAt = 0;
+      const second = await publishHouseholdAgendaNow(week,{data:[habit],forceCompletionSync:true});
+      return {
+        puts,
+        revision:Number(second && second.lastRevision),
+        persistedDigest:/^[0-9a-f]{64}$/.test(String(first && first.lastProjectionSig || '')),
+        stableRowId:first && second && first.replicaRowIds[habit.hid] === second.replicaRowIds[habit.hid]
+      };
+    }finally{
+      shareFetch = originalFetch;
+      saveAgendaFeedRecord(originalFeed);
+      _lastAgendaProjectionSig = '';
+    }
+  });
+  assert(unchangedPublish.puts === 1 && unchangedPublish.revision === 1
+    && unchangedPublish.persistedDigest && unchangedPublish.stableRowId,
+  `an unchanged periodic check reuses its persisted digest and does not upload another snapshot (${JSON.stringify(unchangedPublish)})`);
 
   const corruptInbound = await page.evaluate(async ()=>{
     const now = Date.now();

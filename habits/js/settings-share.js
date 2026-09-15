@@ -23,11 +23,21 @@ function syncHouseholdAgendaSettings(){
   if(title && title !== document.activeElement) title.value = feed.title || '';
   const status = $('settings-agenda-status');
   if(status){
-    const provenance = feed.plannerProvenance || '—';
-    status.textContent = `publishing · revision ${feed.lastRevision || 0} · ${provenance} · ${householdAgendaAgeLabel(feed.lastPublishedAt)}`;
+    if(feed.lastSyncError === 'replica_too_large'){
+      status.textContent = `sync paused · this Tings library is too large for one encrypted update · last complete sync ${householdAgendaAgeLabel(feed.lastPublishedAt)}`;
+    }else{
+      const provenance = feed.plannerProvenance || '—';
+      status.textContent = `syncing · revision ${feed.lastRevision || 0} · ${provenance} · ${householdAgendaAgeLabel(feed.lastPublishedAt)}`;
+    }
   }
   const reauth = $('settings-agenda-reauth');
   if(reauth && reauth !== document.activeElement) reauth.value = Number(feed.reauthDays) === 7 ? '7' : '30';
+  const syncMode = $('settings-agenda-sync-mode');
+  if(syncMode && syncMode !== document.activeElement) syncMode.value = feed.syncMode === 'selected' ? 'selected' : 'clone';
+  const syncHint = $('settings-agenda-sync-hint');
+  if(syncHint) syncHint.textContent = feed.syncMode === 'selected'
+    ? 'Only items set to view or mark done are copied. This device keeps its own planner settings and agenda.'
+    : 'Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.';
   const mode = $('settings-agenda-scope-mode');
   const scopeMode = feed.scopeMode === 'hours' ? 'hours' : 'count';
   if(mode && mode !== document.activeElement) mode.value = scopeMode;
@@ -86,13 +96,25 @@ function bindHouseholdAgendaSettings(){
     toastShare(true,'reauthorization period saved for the next QR approval','update failed');
     syncHouseholdAgendaSettings();
   });
+  $('settings-agenda-sync-mode')?.addEventListener('change',()=>{
+    const feed = agendaFeedRecord();
+    if(!feed) return;
+    feed.syncMode = $('settings-agenda-sync-mode').value === 'selected' ? 'selected' : 'clone';
+    saveAgendaFeedRecord(feed);
+    syncHouseholdAgendaSettings();
+    scheduleHouseholdAgendaPublish(null,{ forceCompletionSync:true });
+  });
   $('settings-agenda-scope-mode')?.addEventListener('change',updateHouseholdScope);
   $('settings-agenda-scope-value')?.addEventListener('change',updateHouseholdScope);
   $('settings-agenda-publish')?.addEventListener('click',async ()=>{
     try{
       await publishHouseholdAgendaNow(null,{ manual:true,forceCompletionSync:true });
-      toastShare(true,'shared display updated','publish failed');
-    }catch(_){ toastShare(false,'','publish failed'); }
+      toastShare(true,'shared display synced','sync failed');
+    }catch(error){
+      toastShare(false,'',error && error.message === 'replica_too_large'
+        ? 'sync paused: the library is too large for one encrypted update'
+        : 'sync failed');
+    }
   });
   $('settings-agenda-revoke')?.addEventListener('click',async ()=>{
     if(!window.confirm('Revoke this display? It will sign out immediately. Scan a new QR to add a display again. Offline screens erase their cache when they reconnect.')) return;

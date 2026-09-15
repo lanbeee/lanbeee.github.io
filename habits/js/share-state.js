@@ -25,6 +25,12 @@ function saveShareState(state){
 function agendaFeedRecord(){
   const state = loadShareState();
   const feed = state.feeds && state.feeds.agenda ? state.feeds.agenda : null;
+  if(feed && !/^[0-9a-f]{16}$/.test(String(feed.ownerId || ''))){
+    feed.ownerId = typeof shareRandomHex === 'function'
+      ? shareRandomHex(8)
+      : Array.from(crypto.getRandomValues(new Uint8Array(8)),b=>b.toString(16).padStart(2,'0')).join('');
+    saveShareState(state);
+  }
   if(feed && Object.prototype.hasOwnProperty.call(feed,'viewerCredential')){
     delete feed.viewerCredential;
     saveShareState(state);

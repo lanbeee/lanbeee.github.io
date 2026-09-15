@@ -44,6 +44,7 @@ Configure:
 - A 256 KiB item-definition limit.
 - A 64 KiB individual activity-operation limit.
 - A 128 KiB encrypted agenda-snapshot limit plus a client-side 50-row cap.
+- A 4 KiB encrypted agenda-completion limit and a 64 KiB encrypted clone-definition limit on the same 50-deep display queue.
 - A 5 MiB total limit per share/feed.
 - Creation rate limiting by source IP and authenticated limits by credential/feed.
 - Seven-day expiry for unclaimed item invitations.
@@ -298,7 +299,7 @@ If offline, retain only the newest pending agenda snapshot; older unsent snapsho
 ### Agenda feeds
 
 - `POST /v1/agendas` — create feed and register the owner credential hash.
-- `GET /v1/agendas/:id` — owner/device-authorized latest encrypted snapshot.
+- `GET /v1/agendas/:id` — owner/device-authorized latest encrypted snapshot. `completions` holds 4 KiB completion envelopes only; clone definition ops are a separate `definitions` array so older owner apps cannot ACK them unread.
 - `PUT /v1/agendas/:id` — owner-only conditional snapshot publication.
 - `POST /v1/agendas/:id/completions` — paired-display-only encrypted completion for an opaque row in the current snapshot revision.
 - `POST /v1/agendas/:id/completion-acks` — owner-only acknowledgement after the local log and replacement snapshot are saved.

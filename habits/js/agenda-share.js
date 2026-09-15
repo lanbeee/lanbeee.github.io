@@ -17,6 +17,10 @@ const HOUSEHOLD_AGENDA_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const HOUSEHOLD_AGENDA_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const SHARED_DISPLAY_COMPLETION_POLL_MS = 30 * 1000;
 const SHARED_DISPLAY_ROW_MAP_REVISIONS = 12;
+// The Worker accepts 128 KiB of encrypted snapshot bytes. Keep headroom for
+// AES-GCM metadata while sizing the complete UTF-8 projection, not just the
+// replica subsection.
+const SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES = 120 * 1024;
 const HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS = 15 * 60 * 1000;
 let _agendaPublishQueued = false;
 let _agendaPublishQueuedForce = false;
@@ -75,6 +79,38 @@ function householdAgendaWeatherCue(start,end,locationId,settings,now){
 
 function householdAgendaCurrentWeather(settings,now){
   return householdAgendaWeatherCue(now,now + HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS,null,settings,now);
+}
+
+function replicaStableValue(value){
+  if(Array.isArray(value)) return value.map(replicaStableValue);
+  if(value && typeof value === 'object'){
+    return Object.keys(value).sort().reduce((out,key)=>{
+      out[key] = replicaStableValue(value[key]);
+      return out;
+    },{});
+  }
+  return value;
+}
+
+// Definition identity deliberately excludes activity and short-lived planner
+// state. It is used as an optimistic-concurrency token when a personal clone
+// edits a task or habit from an older encrypted snapshot.
+function replicaHabitDefinition(habit){
+  const copy = JSON.parse(JSON.stringify(habit || {}));
+  delete copy.logs;
+  delete copy.lastLog;
+  delete copy.snoozedUntil;
+  return replicaStableValue(copy);
+}
+
+function replicaHabitDefinitionHash(habit){
+  const text = JSON.stringify(replicaHabitDefinition(habit));
+  let hash = 2166136261;
+  for(let i=0;i<text.length;i++){
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash,16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8,'0');
 }
 
 function householdAgendaRowWeather(row,habit,settings,now){
@@ -304,19 +340,141 @@ function buildHouseholdAgendaProjection(week, opts = {}){
       };
     })
   };
+  const replica = buildHouseholdReplica(data,settings,feed,rowMap,now);
+  if(replica){
+    projection.replica = replica;
+    Object.defineProperty(projection,'_replicaRowIds',{ value:replica._rowIds || {},enumerable:false });
+  }
   if(currentWeather) projection.currentWeather = currentWeather;
+  fitHouseholdProjectionPayload(projection);
   Object.defineProperty(projection,'_rowMap',{ value:rowMap,enumerable:false });
   return projection;
+}
+
+// A paired display is a real Tings installation, not merely a renderer. The
+// latest-state agenda envelope doubles as an encrypted replication snapshot so
+// the existing zero-knowledge transport and QR authorization remain useful.
+// Keeping `days` beside it lets older display builds continue to work.
+function buildHouseholdReplica(data,settings,feed,rowMap,now = Date.now()){
+  if(feed && feed.syncMode === 'legacy') return null;
+  const source = Array.isArray(data) ? data : [];
+  const mode = feed && feed.syncMode === 'selected' ? 'selected' : 'clone';
+  const previousRowIds = feed && feed.replicaRowIds && typeof feed.replicaRowIds === 'object'
+    ? feed.replicaRowIds
+    : {};
+  const nextRowIds = {};
+  const items = source.filter(h=>h && (mode === 'clone' || h.showOnSharedDisplay !== false)).map(h=>{
+    const previousRowId = String(previousRowIds[h.hid] || '');
+    const rowId = /^[0-9a-f]{16}$/.test(previousRowId) ? previousRowId : shareRandomHex(8);
+    nextRowIds[h.hid] = rowId;
+    rowMap[rowId] = {
+      hid:h.hid,
+      dayBase:typeof dayStart === 'function' ? dayStart(now) : now,
+      start:0,
+      minutes:Math.max(1,Math.min(720,Math.round(Number(h.durationMinutes) || 30))),
+      occurrenceKey:'',scheduleOptionId:'',scheduledDay:'',replica:true
+    };
+    const copy = JSON.parse(JSON.stringify(h));
+    copy.logs = normalizeLogs(copy.logs).slice(mode === 'clone' ? -80 : -30);
+    return {
+      rowId,habit:copy,
+      access:mode === 'clone' || h.allowSharedDisplayCompletion !== false ? 'complete' : 'view',
+      definitionOwnerId:feed && feed.ownerId,
+      definitionRevision:(feed && Number(feed.lastRevision) || 0) + 1,
+      definitionHash:replicaHabitDefinitionHash(h)
+    };
+  });
+  const replicaSettings = mode === 'clone' ? JSON.parse(JSON.stringify(settings || {})) : null;
+  if(replicaSettings){
+    delete replicaSettings._plannerCurrentCoord;
+    delete replicaSettings._plannerLiveLocationId;
+    delete replicaSettings._weatherContext;
+  }
+  const replica = {
+    schemaVersion:1,mode,generatedAt:now,
+    definitionOwnerId:feed && feed.ownerId,
+    ownershipPolicy:mode === 'clone'
+      ? 'personal-clone-multi-writer-definition_additive-completions'
+      : 'single-writer-definition_additive-completions',
+    definitionReceipts:Array.isArray(feed && feed.definitionReceipts)
+      ? feed.definitionReceipts.slice(-50)
+      : [],
+    completionReceipts:Array.isArray(feed && feed.completionReceipts)
+      ? feed.completionReceipts.slice(-50)
+      : [],
+    items,settings:replicaSettings,truncated:false
+  };
+  Object.defineProperty(replica,'_rowIds',{ value:nextRowIds,enumerable:false });
+  return replica;
+}
+
+function householdProjectionByteSize(projection){
+  return new TextEncoder().encode(JSON.stringify(projection)).byteLength;
+}
+
+// History is the only lossy part of a bounded latest-state snapshot. Never
+// remove a task or habit to make the payload fit: a clone interprets absence as
+// deletion. If definitions alone exceed the transport budget, keep the last
+// complete cloud snapshot and surface a useful sync error instead.
+function fitHouseholdProjectionPayload(projection){
+  const replica = projection && projection.replica;
+  if(!replica || !Array.isArray(replica.items)) return projection;
+  let bytes = householdProjectionByteSize(projection);
+  while(bytes > SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES){
+    let trimmed = false;
+    for(const item of replica.items){
+      const logs = item && item.habit && item.habit.logs;
+      if(Array.isArray(logs) && logs.length){ logs.shift(); trimmed = true; }
+    }
+    if(!trimmed) break;
+    replica.truncated = true;
+    replica.historyTruncated = true;
+    bytes = householdProjectionByteSize(projection);
+  }
+  if(bytes > SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES){
+    const error = new Error('replica_too_large');
+    error.code = 'replica_too_large';
+    error.payloadBytes = bytes;
+    throw error;
+  }
+  return projection;
+}
+
+function householdReplicaSignature(replica){
+  if(!replica) return null;
+  return {
+    schemaVersion:replica.schemaVersion,
+    mode:replica.mode,
+    definitionOwnerId:replica.definitionOwnerId || null,
+    ownershipPolicy:replica.ownershipPolicy,
+    definitionReceipts:replica.definitionReceipts || [],
+    completionReceipts:replica.completionReceipts || [],
+    items:(replica.items || []).map(item=>({
+      habit:item.habit,
+      access:item.access,
+      definitionOwnerId:item.definitionOwnerId || null,
+      definitionHash:item.definitionHash || ''
+    })),
+    settings:replica.settings || null,
+    truncated:Boolean(replica.truncated),
+    historyTruncated:Boolean(replica.historyTruncated)
+  };
 }
 
 function householdAgendaSignature(projection){
   if(!projection) return '';
   const slim = {
+    title:projection.title,
     timezone:projection.timezone,
+    rangeStart:projection.rangeStart,
     provenance:projection.plannerProvenance,
+    scope:projection.scope,
     currentWeather:projection.currentWeather || null,
+    replica:householdReplicaSignature(projection.replica),
     days:(projection.days || []).map(day=>({
       dateKey:day.dateKey,
+      weekdayLabel:day.weekdayLabel,
+      dateLabel:day.dateLabel,
       openMinutes:day.openMinutes,
       plannedMinutes:day.plannedMinutes,
       rows:(day.rows || []).map(row=>({
@@ -337,7 +495,7 @@ function householdAgendaSignature(projection){
       }))
     }))
   };
-  return JSON.stringify(slim);
+  return JSON.stringify(replicaStableValue(slim));
 }
 
 async function createHouseholdAgendaFeed(title = 'Shared display'){
@@ -354,6 +512,7 @@ async function createHouseholdAgendaFeed(title = 'Shared display'){
     feedId:secrets.id,
     contentKey:secrets.contentKey,
     ownerCredential:secrets.ownerCredential,
+    ownerId:shareRandomHex(8),
     title:title || 'Shared display',
     lastRevision:0,
     lastPublishedAt:null,
@@ -362,6 +521,7 @@ async function createHouseholdAgendaFeed(title = 'Shared display'){
     reauthDays:30,
     scopeMode:'count',
     scopeValue:HOUSEHOLD_AGENDA_DEFAULT_ROWS,
+    syncMode:'clone',
     rowMaps:[]
   };
   saveAgendaFeedRecord(feed);
@@ -568,7 +728,57 @@ function sharedDisplayCompletionMap(feed,envelope){
     minutes:Math.max(0,Math.min(720,Math.round(Number(mapped.minutes) || 0))),
     occurrenceKey:String(mapped.occurrenceKey || '').slice(0,160),
     scheduleOptionId:String(mapped.scheduleOptionId || '').slice(0,64),
-    scheduledDay:/^\d{4}-\d{2}-\d{2}$/.test(String(mapped.scheduledDay || '')) ? String(mapped.scheduledDay) : ''
+    scheduledDay:/^\d{4}-\d{2}-\d{2}$/.test(String(mapped.scheduledDay || '')) ? String(mapped.scheduledDay) : '',
+    replica:Boolean(mapped.replica)
+  };
+}
+
+function adoptReplicaDefinitionRow(feed,hid,rowId){
+  if(!feed || cleanHabitId(hid) !== hid || !/^[0-9a-f]{16}$/.test(String(rowId || ''))) return feed;
+  const replicaRowIds = { ...(feed.replicaRowIds && typeof feed.replicaRowIds === 'object' ? feed.replicaRowIds : {}) };
+  if(!replicaRowIds[hid]) replicaRowIds[hid] = rowId;
+  const adopted = replicaRowIds[hid];
+  const maps = (Array.isArray(feed.rowMaps) ? feed.rowMaps : []).map(entry=>{
+    if(!entry || !entry.rows || typeof entry.rows !== 'object' || entry.rows[adopted]) return entry;
+    return {
+      ...entry,
+      rows:{
+        ...entry.rows,
+        [adopted]:{
+          hid,
+          dayBase:typeof dayStart === 'function' ? dayStart(Date.now()) : Date.now(),
+          start:0,
+          minutes:30,
+          occurrenceKey:'',
+          scheduleOptionId:'',
+          scheduledDay:'',
+          replica:true
+        }
+      }
+    };
+  });
+  return { ...feed,replicaRowIds,rowMaps:maps };
+}
+
+function replicaCompletionFallbackMap(feed,payload,record){
+  const hid = payload && cleanHabitId(payload.hid);
+  const rowId = String((payload && payload.rowId) || '');
+  let mappedHid = hid === (payload && payload.hid) ? hid : '';
+  if(!mappedHid && feed && feed.replicaRowIds && typeof feed.replicaRowIds === 'object'){
+    mappedHid = Object.keys(feed.replicaRowIds).find(id=>feed.replicaRowIds[id] === rowId) || '';
+  }
+  if(cleanHabitId(mappedHid) !== mappedHid) return null;
+  const createdAt = Number(record && record.createdAt);
+  const serverTime = Number.isFinite(createdAt) && createdAt > 0 ? Math.min(createdAt,Date.now()) : Date.now();
+  return {
+    hid:mappedHid,
+    dayBase:typeof dayStart === 'function' ? dayStart(serverTime) : serverTime,
+    start:0,
+    minutes:Math.max(0,Math.min(720,Math.round(Number(payload && payload.minutes) || 0))),
+    occurrenceKey:'',
+    scheduleOptionId:'',
+    scheduledDay:'',
+    replica:true
   };
 }
 
@@ -578,6 +788,16 @@ function sharedDisplayCompletionAlreadyLogged(data,operationId){
       && log.source === 'shared_display'
       && log.operationId === operationId
   ));
+}
+
+function householdAgendaQueueRecords(body){
+  const completions = Array.isArray(body && body.completions) ? body.completions : [];
+  const listedDefinitions = Array.isArray(body && body.definitions) ? body.definitions : [];
+  const isDefinition = record=>Boolean(record && record.envelope && record.envelope.recordKind === 'agenda_definition');
+  return {
+    definitions:[...listedDefinitions,...completions.filter(isDefinition)].slice(0,50),
+    completions:completions.filter(record=>!isDefinition(record)).slice(0,50)
+  };
 }
 
 async function syncHouseholdAgendaCompletions(feed,opts = {}){
@@ -590,26 +810,120 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
   _agendaCompletionSyncAt = now;
   const result = await shareFetch(`/v1/agendas/${base.feedId}`,{ credential:base.ownerCredential });
   const remoteRevision = Number(result.body && result.body.revision);
-  const nextFeed = Number.isInteger(remoteRevision) && remoteRevision >= 0
+  let nextFeed = Number.isInteger(remoteRevision) && remoteRevision >= 0
     ? { ...base,lastRevision:remoteRevision }
     : base;
-  const pending = Array.isArray(result.body && result.body.completions)
-    ? result.body.completions.slice(0,50)
-    : [];
-  if(!pending.length) return { feed:nextFeed,operationIds:[],completedRowKeys:new Set(),changed:false };
+  const queued = householdAgendaQueueRecords(result.body);
+  const pendingDefinitions = queued.definitions;
+  const pending = queued.completions;
+  if(!pendingDefinitions.length && !pending.length) return { feed:nextFeed,operationIds:[],completedRowKeys:new Set(),changed:false };
 
   const data = load();
   const safeToAck = [];
   const applied = [];
   const completedRowKeys = new Set();
   let changed = false;
+  const decrypted = new Map();
+  const definitionOps = new Map();
+  const definitionOperationIds = new Set();
+  const definitionChains = nextFeed.cloneDefinitionChains && typeof nextFeed.cloneDefinitionChains === 'object'
+    ? {...nextFeed.cloneDefinitionChains}
+    : {};
+  for(const record of pendingDefinitions){
+    const envelope = record && record.envelope;
+    const operationId = String(envelope && envelope.operationId || '');
+    if(!/^[0-9a-f]{32}$/.test(operationId)) continue;
+    let payload;
+    try{ payload = await shareDecrypt(nextFeed.contentKey,envelope); }
+    catch(_){ continue; }
+    decrypted.set(operationId,payload);
+    if(!payload || payload.schemaVersion !== 1 || payload.operationId !== operationId
+      || !['upsert','delete'].includes(payload.action)
+      || cleanHabitId(payload.hid) !== payload.hid) continue;
+    safeToAck.push(operationId);
+    definitionOperationIds.add(operationId);
+    if(nextFeed.syncMode !== 'clone') continue;
+    const prior = definitionOps.get(payload.hid);
+    const createdAt = Number(record && record.createdAt) || 0;
+    if(!prior || createdAt >= prior.createdAt) definitionOps.set(payload.hid,{record,payload,createdAt});
+  }
+  if(nextFeed.syncMode === 'clone'){
+    const receipts = [];
+    for(const {payload} of definitionOps.values()){
+      const index = data.findIndex(h=>h && h.hid === payload.hid);
+      const current = index >= 0 ? data[index] : null;
+      const baseHash = String(payload.baseDefinitionHash || '');
+      const currentHash = current ? replicaHabitDefinitionHash(current) : '';
+      const priorChain = definitionChains[payload.hid];
+      const chained = priorChain
+        && String(priorChain.baseHash || '') === baseHash
+        && String(priorChain.resultHash || '') === currentHash;
+      const accepts = (current ? currentHash === baseHash : !baseHash) || chained;
+      let accepted = false;
+      let resultHash = currentHash;
+      if(accepts && payload.action === 'delete'){
+        if(index >= 0) data.splice(index,1);
+        accepted = true;
+        resultHash = '';
+        changed = true;
+      }else if(accepts && payload.action === 'upsert' && payload.habit
+        && cleanHabitId(payload.habit.hid) === payload.hid){
+        const candidate = normalize([{
+          ...payload.habit,
+          hid:payload.hid,
+          logs:current ? normalizeLogs(current.logs) : []
+        }])[0];
+        if(candidate){
+          if(index >= 0) data[index] = candidate;
+          else data.push(candidate);
+          accepted = true;
+          resultHash = replicaHabitDefinitionHash(candidate);
+          changed = true;
+          nextFeed = adoptReplicaDefinitionRow(nextFeed,payload.hid,payload.rowId);
+        }
+      }
+      if(accepted) definitionChains[payload.hid] = {baseHash,resultHash};
+      receipts.push({operationId:payload.operationId,hid:payload.hid,accepted});
+    }
+    if(receipts.length){
+      const ids = new Set(receipts.map(item=>item.operationId));
+      nextFeed = {
+        ...nextFeed,
+        cloneDefinitionChains:definitionChains,
+        definitionReceipts:[
+          ...(Array.isArray(nextFeed.definitionReceipts) ? nextFeed.definitionReceipts : [])
+            .filter(item=>item && !ids.has(item.operationId)),
+          ...receipts
+        ].slice(-50)
+      };
+    }
+  }
   for(const record of pending){
     const envelope = record && record.envelope;
     const operationId = String(envelope && envelope.operationId || '');
     const rowId = String(envelope && envelope.logId || '');
     if(!/^[0-9a-f]{32}$/.test(operationId) || !/^[0-9a-f]{16}$/.test(rowId)) continue;
-    const mapped = sharedDisplayCompletionMap(nextFeed,envelope);
+    let payload = decrypted.get(operationId);
+    if(!payload){
+      try{ payload = await shareDecrypt(nextFeed.contentKey,envelope); }
+      catch(_){ continue; }
+    }
+    if(payload && ['upsert','delete'].includes(payload.action)) continue;
+    let mapped = sharedDisplayCompletionMap(nextFeed,envelope);
+    if(!mapped && payload && payload.action === 'complete'){
+      mapped = replicaCompletionFallbackMap(nextFeed,payload,record);
+      if(mapped && !data.some(h=>h && h.hid === mapped.hid)){
+        if((nextFeed.replicaRowIds && nextFeed.replicaRowIds[mapped.hid]) || nextFeed.syncMode === 'selected'){
+          safeToAck.push(operationId);
+        }
+        continue;
+      }
+    }
     if(!mapped){
+      if(payload && payload.action === 'complete' && cleanHabitId(payload.hid) === payload.hid){
+        if(nextFeed.syncMode === 'selected') safeToAck.push(operationId);
+        continue;
+      }
       if(sharedDisplayCompletionRevisionKnown(nextFeed,envelope)) safeToAck.push(operationId);
       continue;
     }
@@ -618,9 +932,6 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       safeToAck.push(operationId);
       continue;
     }
-    let payload;
-    try{ payload = await shareDecrypt(nextFeed.contentKey,envelope); }
-    catch(_){ continue; }
     if(!payload
       || payload.schemaVersion !== 1
       || payload.action !== 'complete'
@@ -633,6 +944,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     const h = index >= 0 ? data[index] : null;
     const createdAt = Number(record && record.createdAt);
     const serverTime = Number.isFinite(createdAt) && createdAt > 0 ? Math.min(createdAt,Date.now()) : Date.now();
+    if(mapped.replica) mapped.dayBase = dayStart(serverTime);
     const todayBase = dayStart(serverTime);
     const tomorrow = new Date(todayBase);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -640,7 +952,9 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     const completingTomorrowTask = h && h.type === 'task'
       && mapped.dayBase > todayBase
       && mapped.dayBase <= tomorrowBase;
-    if(!h || h.type === 'zero' || (mapped.dayBase > todayBase && !completingTomorrowTask)){
+    if(!h || h.type === 'zero'
+      || (nextFeed.syncMode === 'selected' && mapped.replica && h.allowSharedDisplayCompletion === false)
+      || (mapped.dayBase > todayBase && !completingTomorrowTask)){
       safeToAck.push(operationId);
       continue;
     }
@@ -662,10 +976,11 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     }
     let minutes = null;
     if(h.breakable){
+      const replicaMinutes = mapped.replica ? Math.round(Number(payload.minutes) || 0) : 0;
       const remaining = typeof breakableBudgetMinutes === 'function'
         ? breakableBudgetMinutes(h,mapped.dayBase)
         : mapped.minutes;
-      minutes = Math.max(0,Math.min(mapped.minutes,Math.round(Number(remaining) || 0)));
+      minutes = Math.max(0,Math.min(replicaMinutes || mapped.minutes,Math.round(Number(remaining) || 0)));
       if(minutes <= 0){
         safeToAck.push(operationId);
         continue;
@@ -688,16 +1003,38 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     changed = true;
   }
   if(changed && !save(data)){
-    return { feed:nextFeed,operationIds:safeToAck,completedRowKeys:new Set(),changed:false };
+    // Do not publish acceptance receipts or acknowledge definition operations
+    // whose data never reached durable local storage. Returning the pre-fold
+    // feed makes the Worker retain and retry them on the next sync. Completion
+    // operations already known to be invalid/no-ops remain safe to discard.
+    return {
+      feed:{ ...base,lastRevision:nextFeed.lastRevision },
+      operationIds:safeToAck.filter(id=>!definitionOperationIds.has(id)),
+      completedRowKeys:new Set(),
+      changed:false
+    };
   }
   if(changed && typeof cancelPush === 'function' && typeof reminderSignature === 'function'){
     data.forEach(h=>{
       if(h && h.type === 'task' && isTaskDone(h)) cancelPush(reminderSignature(h));
     });
   }
+  const operationIds = [...new Set([...safeToAck,...applied])];
+  const completionReceipts = operationIds.filter(id=>!definitionOperationIds.has(id));
+  if(completionReceipts.length){
+    const ids = new Set(completionReceipts);
+    nextFeed = {
+      ...nextFeed,
+      completionReceipts:[
+        ...(Array.isArray(nextFeed.completionReceipts) ? nextFeed.completionReceipts : [])
+          .filter(id=>!ids.has(id)),
+        ...completionReceipts
+      ].slice(-50)
+    };
+  }
   return {
     feed:nextFeed,
-    operationIds:[...new Set([...safeToAck,...applied])],
+    operationIds,
     completedRowKeys,
     changed
   };
@@ -715,7 +1052,7 @@ async function acknowledgeHouseholdAgendaCompletions(feed,operationIds){
 
 async function approveHouseholdAgendaPairing(){
   const pairing = _agendaPairApproval;
-  const feed = agendaFeedRecord();
+  let feed = agendaFeedRecord();
   const status = $('agenda-pair-approval-status');
   const input = $('agenda-pair-approval-code');
   const approve = $('agenda-pair-approval-confirm');
@@ -734,8 +1071,18 @@ async function approveHouseholdAgendaPairing(){
   status.textContent = 'Authorizing this exact display…';
   const nextContentKey = shareRandomHex(SHARE_KEY_BYTES);
   try{
-    try{ await syncHouseholdAgendaCompletions(feed,{ force:true }); }
+    try{
+      const completionSync = await syncHouseholdAgendaCompletions(feed,{ force:true });
+      feed = completionSync.feed || feed;
+    }
     catch(_){ /* A fresh snapshot below reflects any completion that was reachable. */ }
+    // Pair approval revokes the previous display and clears the old ciphertext.
+    // Verify that a complete replacement snapshot fits before making that
+    // irreversible session rotation.
+    const preflightSource = typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null;
+    if(preflightSource && Array.isArray(preflightSource.days) && preflightSource.days.length){
+      buildHouseholdAgendaProjection(preflightSource,{ feed,data:load() });
+    }
     const transfer = await shareAgendaPairEncrypt(
       nextContentKey,
       feed.feedId,
@@ -768,7 +1115,9 @@ async function approveHouseholdAgendaPairing(){
     approve.hidden = true;
     return true;
   }catch(error){
-    if(error && error.message === 'invalid_confirmation'){
+    if(error && error.message === 'replica_too_large'){
+      status.textContent = 'This Tings library is too large for one encrypted update, so no display access was changed. Shorten unusually large notes or history, then try again.';
+    }else if(error && error.message === 'invalid_confirmation'){
       status.textContent = 'That code did not match. Check the display carefully; five wrong attempts destroy the request.';
     }else if(error && (error.status === 410 || error.message === 'pairing_unavailable')){
       status.textContent = 'This pairing request expired or was destroyed. Generate a fresh QR on the display.';
@@ -798,13 +1147,24 @@ async function publishHouseholdAgendaNow(week, opts = {}){
   }
   const source = week || (typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null);
   if(!source || !Array.isArray(source.days) || !source.days.length) return null;
-  const projection = buildHouseholdAgendaProjection(source, {
-    feed,
-    data:completionSync.changed ? load() : opts.data,
-    completedRowKeys:completionSync.completedRowKeys
-  });
-  const sig = householdAgendaSignature(projection);
-  if(!opts.manual && !completionSync.operationIds.length && sig === _lastAgendaProjectionSig && feed.lastPublishedAt) return feed;
+  let projection;
+  try{
+    projection = buildHouseholdAgendaProjection(source, {
+      feed,
+      data:completionSync.changed ? load() : opts.data,
+      completedRowKeys:completionSync.completedRowKeys
+    });
+  }catch(error){
+    if(error && error.message === 'replica_too_large'){
+      const failed = { ...feed,lastSyncError:'replica_too_large',lastSyncErrorAt:Date.now() };
+      saveAgendaFeedRecord(failed);
+      if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
+    }
+    throw error;
+  }
+  const sig = await shareSha256Hex(householdAgendaSignature(projection));
+  const priorSig = _lastAgendaProjectionSig || String(feed.lastProjectionSig || '');
+  if(!opts.manual && !completionSync.operationIds.length && sig === priorSig && feed.lastPublishedAt) return feed;
   const envelope = await shareEncrypt(feed.contentKey, projection, {
     schemaVersion:SHARE_SCHEMA_VERSION,
     recordKind:'agenda_snapshot',
@@ -822,14 +1182,18 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       ...feed,
       lastRevision:result.body.revision,
       lastPublishedAt:projection.generatedAt,
+      lastProjectionSig:sig,
       plannerProvenance:projection.plannerProvenance,
       status:result.body.status || feed.status,
+      replicaRowIds:projection._replicaRowIds || {},
       rowMaps:[
         { revision:Number(result.body.revision),rows:projection._rowMap || {} },
         ...(Array.isArray(feed.rowMaps) ? feed.rowMaps : [])
           .filter(entry=>Number(entry && entry.revision) !== Number(result.body.revision))
       ].slice(0,SHARED_DISPLAY_ROW_MAP_REVISIONS)
     };
+    delete next.lastSyncError;
+    delete next.lastSyncErrorAt;
     saveAgendaFeedRecord(next);
     _lastAgendaProjectionSig = sig;
     if(completionSync.operationIds.length){

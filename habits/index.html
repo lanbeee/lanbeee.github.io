@@ -45,6 +45,7 @@
 <link rel="stylesheet" href="./css/progress.css" />
 <link rel="stylesheet" href="./css/agenda.css" />
 <link rel="stylesheet" href="./css/sweeps.css" />
+<link rel="stylesheet" href="./css/display-mode.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
@@ -1052,7 +1053,7 @@
             <span data-ui-leave="agenda"></span>
           </div>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Publish a limited view of today and tomorrow to a fridge or tablet. Today’s items and tomorrow’s tasks can be marked done there; each item can opt out from its detail page. Only one display can be signed in. Pairing is QR-only: the owner phone must scan the display, type its separate 8-digit code, and explicitly approve it. Approving a new display immediately signs out every previous one, even if that page is still open. Revoke signs the current display out; scan a new QR to add one back.</p>
+            <p class="field-hint">Pair a fridge, tablet, or second device as its own offline-capable Tings installation. Personal clone copies every task and habit and lets either device add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages and keeps owner-managed schedules. Only one display can be signed in. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it.</p>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
@@ -1060,13 +1061,19 @@
               <span class="settings-sublabel">feed title</span>
               <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Shared display" autocomplete="off" />
               <p class="field-hint" id="settings-agenda-status"></p>
+              <span class="settings-sublabel">sync style</span>
+              <select id="settings-agenda-sync-mode" class="mini-select">
+                <option value="clone">personal clone</option>
+                <option value="selected">shared items only</option>
+              </select>
+              <p class="field-hint" id="settings-agenda-sync-hint">Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.</p>
               <span class="settings-sublabel">display reauthorization</span>
               <select id="settings-agenda-reauth" class="mini-select">
                 <option value="30">every 30 days</option>
                 <option value="7">every 7 days</option>
               </select>
               <p class="field-hint">No silent refresh or fallback link: the display must show a new QR and be scanned again when access expires.</p>
-              <span class="settings-sublabel">publish scope</span>
+              <span class="settings-sublabel">glance-view compatibility</span>
               <div class="btn-row">
                 <select id="settings-agenda-scope-mode" class="mini-select">
                   <option value="count">next activities</option>
@@ -1074,12 +1081,12 @@
                 </select>
                 <input id="settings-agenda-scope-value" class="settings-text-input" type="number" min="1" max="50" step="1" value="20" aria-label="agenda publish scope value" />
               </div>
-              <p class="field-hint" id="settings-agenda-scope-hint">Maximum 50 upcoming rows, never beyond tomorrow.</p>
+              <p class="field-hint" id="settings-agenda-scope-hint">Older display builds receive at most 50 upcoming rows, never beyond tomorrow.</p>
               <span class="settings-sublabel">pair a display</span>
               <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR signs out the laptop, tablet, or frame that was paired before. Requests work once and expire after 30 seconds.</p>
               <div class="btn-row" style="flex-wrap:wrap">
                 <button type="button" class="btn primary" id="settings-agenda-scan-qr"><i class="ti ti-scan" aria-hidden="true"></i> scan display QR</button>
-                <button type="button" class="btn" id="settings-agenda-publish">publish now</button>
+                <button type="button" class="btn" id="settings-agenda-publish">sync now</button>
                 <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke</button>
               </div>
             </div>
@@ -1646,6 +1653,7 @@
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/main-input.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
+<script src="./js/display-mode.js" defer></script>
 <script src="./js/sw-register.js" defer></script>
 </body>
 </html>

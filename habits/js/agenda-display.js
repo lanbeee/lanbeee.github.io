@@ -472,6 +472,73 @@ function displayWriteEnrollment(value){
   }catch(_){}
 }
 
+function displayLogIdentity(log){
+  if(typeof log === 'number') return `n:${log}`;
+  if(!log || typeof log !== 'object') return '';
+  const operationId = String(log.operationId || '');
+  if(/^[0-9a-f]{32}$/.test(operationId)) return `op:${operationId}`;
+  return `o:${Number(log.ts) || 0}|${Number(log.minutes) || ''}|${Number(log.value) || ''}|${String(log.note || '')}`;
+}
+
+// Install a replica snapshot into the normal app's local store. Pending local
+// logs are merged additively so an offline completion is never erased by an
+// older owner snapshot while it is waiting to be consumed.
+function installDisplayReplica(projection,enrollment){
+  const replica = projection && projection.replica;
+  if(!replica || replica.schemaVersion !== 1 || !Array.isArray(replica.items)) return false;
+  let local = [];
+  try{ local = JSON.parse(localStorage.getItem(KEY) || '[]'); }
+  catch(_){ local = []; }
+  if(!Array.isArray(local)) local = [];
+  const localById = new Map(local.filter(h=>h && h.hid).map(h=>[h.hid,h]));
+  const incomingIds = new Set();
+  const replicaRows = {};
+  const incoming = replica.items.flatMap(item=>{
+    const habit = item && item.habit;
+    if(!habit || !habit.hid || !/^[0-9a-f]{16}$/.test(String(item.rowId || ''))) return [];
+    incomingIds.add(habit.hid);
+    replicaRows[habit.hid] = {
+      rowId:item.rowId,
+      access:item.access === 'view' ? 'view' : 'complete',
+      definitionHash:String(item.definitionHash || '')
+    };
+    const previous = localById.get(habit.hid);
+    const mergedLogs = [...(Array.isArray(habit.logs) ? habit.logs : [])];
+    const known = new Set(mergedLogs.map(displayLogIdentity));
+    for(const log of (previous && Array.isArray(previous.logs) ? previous.logs : [])){
+      const key = displayLogIdentity(log);
+      if(key && !known.has(key)){ mergedLogs.push(log); known.add(key); }
+    }
+    mergedLogs.sort((a,b)=>(Number(a && a.ts != null ? a.ts : a) || 0) - (Number(b && b.ts != null ? b.ts : b) || 0));
+    return [{
+      ...habit,logs:mergedLogs,
+      showOnSharedDisplay:replica.mode === 'clone' ? habit.showOnSharedDisplay : true,
+      allowSharedDisplayCompletion:replica.mode === 'clone'
+        ? habit.allowSharedDisplayCompletion
+        : item.access !== 'view'
+    }];
+  });
+  const previouslyShared = new Set(Object.keys(enrollment && enrollment.replicaRows || {}));
+  const keptLocal = replica.mode === 'selected'
+    ? local.filter(h=>h && !incomingIds.has(h.hid) && !previouslyShared.has(h.hid))
+    : [];
+  try{
+    localStorage.setItem(KEY,JSON.stringify([...keptLocal,...incoming]));
+    if(replica.mode === 'clone' && replica.settings){
+      localStorage.setItem(SORT_SETTINGS_KEY,JSON.stringify(replica.settings));
+    }
+    displayWriteEnrollment({
+      ...enrollment,replicaRows,replicaMode:replica.mode,
+      definitionOwnerId:replica.definitionOwnerId || null,
+      replicaTruncated:Boolean(replica.truncated)
+    });
+    const target = new URL('index.html',location.href);
+    target.searchParams.set('display','1');
+    location.replace(target.href);
+    return true;
+  }catch(_){ return false; }
+}
+
 function clearAgendaFragment(){
   try{ history.replaceState(null,'',location.pathname + location.search); }
   catch(_){}
@@ -1051,6 +1118,7 @@ async function refreshDisplay(opts = {}){
     next.completionRowIds = completionRowIds;
     _displayFeed = next;
     displayWriteEnrollment(next);
+    if(installDisplayReplica(projection,next)) return;
     renderDisplay(projection,meta,completionRowIds);
   }catch(error){
     const code = error && error.payload && error.payload.error;

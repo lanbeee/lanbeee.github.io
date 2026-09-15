@@ -181,6 +181,9 @@ function json(route,status,body){
     }] });
     saveAgendaFeedRecord(null);
     await createHouseholdAgendaFeed('Kitchen tablet');
+    const feed = agendaFeedRecord();
+    feed.syncMode = 'legacy';
+    saveAgendaFeedRecord(feed);
   });
 
   const displayUrl = new URL('agenda-display.html',baseUrl).href;
