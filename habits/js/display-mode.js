@@ -645,7 +645,13 @@ async function refreshReplicaDevice(){
   try{
     const replica = await pullReplicaSnapshot();
     await flushReplicaOutbox();
-    const truncated = Boolean(replica && replica.truncated);
+    if(!replica){
+      updateReplicaSyncStatus(replicaEnrollment() && replicaEnrollment().replicaMode
+        ? 'synced'
+        : 'waiting for library…');
+      return;
+    }
+    const truncated = Boolean(replica.truncated);
     updateReplicaSyncStatus(truncated ? 'synced · recent history' : 'synced');
   }catch(error){
     if(error && (error.status === 401 || error.status === 410)) location.replace('agenda-display.html');
@@ -688,11 +694,28 @@ function setReplicaLocked(locked){
 // A glance display is paired but never installs a replica, so it has neither a
 // replicaMode nor any replicaRows. An installed PWA start_url or a stale
 // bookmark can still land it here; send it back rather than mounting clone
-// chrome (and a week planner) over an empty local database.
+// chrome (and a week planner) over an empty local database. A clone that just
+// paired already has syncMode/replicaKey, even before the first library
+// snapshot arrives, and must stay on the full app.
 function replicaEnrollmentIsGlance(enrolled){
   if(!enrolled) return false;
+  if(typeof sharedDisplayWantsFullApp === 'function' && sharedDisplayWantsFullApp(enrolled)) return false;
   if(enrolled.syncMode === 'glance' || enrolled.syncMode === 'legacy') return true;
   return !enrolled.replicaMode && !enrolled.replicaRows;
+}
+
+function replicaDisplayIsSelected(enrolled){
+  return Boolean(enrolled && (enrolled.replicaMode === 'selected' || enrolled.syncMode === 'selected'));
+}
+
+async function bootstrapReplicaLibrary(){
+  for(let attempt = 0; attempt < 20; attempt++){
+    const enrolled = replicaEnrollment();
+    if(enrolled && enrolled.replicaMode) return;
+    await refreshReplicaDevice();
+    if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+    await new Promise(resolve=>setTimeout(resolve,1500));
+  }
 }
 
 function replicaOwnOperationIds(enrolled){
@@ -817,12 +840,12 @@ function mountReplicaDisplayMode(){
   if(replicaEnrollmentIsGlance(enrolled)){ location.replace('agenda-display.html'); return; }
   ensureReplicaDisplayQuery();
   document.body.classList.add('replica-display-mode');
-  document.body.classList.add(enrolled.replicaMode === 'selected' ? 'replica-mode-selected' : 'replica-mode-clone');
+  document.body.classList.add(replicaDisplayIsSelected(enrolled) ? 'replica-mode-selected' : 'replica-mode-clone');
   if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
   const bar = document.createElement('aside');
   bar.className = 'replica-display-bar';
-  const ownershipLabel = enrolled.replicaMode === 'clone' ? 'editable personal clone' : 'owner-managed schedules';
-  bar.innerHTML = `<div><time data-replica-time></time><span data-replica-weather></span></div><div class="replica-display-actions"><span class="replica-owner-label">${ownershipLabel}</span><span id="replica-sync-status">local · ready</span><button type="button" id="replica-sync-now">sync</button><button type="button" id="replica-lock-button">lock</button><button type="button" id="replica-fullscreen">full screen</button></div>`;
+  const ownershipLabel = replicaDisplayIsSelected(enrolled) ? 'owner-managed schedules' : 'editable personal clone';
+  bar.innerHTML = `<div><time data-replica-time></time><span data-replica-weather></span></div><div class="replica-display-actions"><span class="replica-owner-label">${ownershipLabel}</span><span id="replica-sync-status">${enrolled.replicaMode ? 'local · ready' : 'waiting for library…'}</span><button type="button" id="replica-sync-now">sync</button><button type="button" id="replica-lock-button">lock</button><button type="button" id="replica-fullscreen">full screen</button></div>`;
   document.body.appendChild(bar);
   const lock = document.createElement('section');
   lock.id = 'replica-lock';
@@ -849,7 +872,7 @@ function mountReplicaDisplayMode(){
   updateReplicaChrome();
   _replicaClockTimer = setInterval(updateReplicaChrome,10 * 1000);
   try{ if(localStorage.getItem('tings_replica_locked_v1') === '1') setReplicaLocked(true); }catch(_){ }
-  void refreshReplicaDevice();
+  void bootstrapReplicaLibrary();
   setInterval(()=>{ if(document.visibilityState === 'visible') void refreshReplicaDevice(); },REPLICA_DISPLAY_POLL_MS);
   window.addEventListener('online',()=>void refreshReplicaDevice());
   window.addEventListener('focus',()=>void refreshReplicaDevice());

@@ -540,11 +540,26 @@ async function installDisplayReplica(projection,enrollment){
       definitionOwnerId:replica.definitionOwnerId || null,
       replicaTruncated:Boolean(replica.truncated)
     });
-    const target = new URL('index.html',location.href);
-    target.searchParams.set('display','1');
-    location.replace(target.href);
+    openDisplayFullApp();
     return true;
   }catch(_){ return false; }
+}
+
+function displayEnrollmentWantsFullApp(enrollment){
+  return typeof sharedDisplayWantsFullApp === 'function'
+    ? sharedDisplayWantsFullApp(enrollment)
+    : Boolean(enrollment && (enrollment.syncMode === 'clone' || enrollment.syncMode === 'selected'
+      || /^[0-9a-f]{64}$/.test(String(enrollment.replicaKey || ''))
+      || enrollment.replicaMode || enrollment.replicaRows));
+}
+
+function openDisplayFullApp(){
+  const href = typeof sharedDisplayFullAppHref === 'function'
+    ? sharedDisplayFullAppHref()
+    : (()=>{ const target = new URL('index.html',location.href); target.searchParams.set('display','1'); return target.href; })();
+  const status = $('agenda-enroll-status') || $('agenda-updated');
+  if(status) status.textContent = 'Opening the full Tings app…';
+  location.replace(href);
 }
 
 function clearAgendaFragment(){
@@ -1275,6 +1290,10 @@ async function pollDisplayPairing(){
     }catch(_){}
     stopDisplayPairing();
     $('agenda-enroll').hidden = true;
+    if(displayEnrollmentWantsFullApp(enrolled)){
+      openDisplayFullApp();
+      return;
+    }
     $('agenda-enroll-status').textContent = '';
     await refreshDisplay();
     startDisplayPolling();
@@ -1358,6 +1377,10 @@ async function refreshDisplay(opts = {}){
     _displayFeed = stored;
     displayWriteEnrollment(stored);
     if(await installDisplayReplica(projection,stored)) return;
+    if(displayEnrollmentWantsFullApp(stored)){
+      openDisplayFullApp();
+      return;
+    }
     renderDisplay(projection,meta,completionRowIds);
   }catch(error){
     const code = error && error.payload && error.payload.error;
@@ -1402,6 +1425,10 @@ async function bootAgendaDisplay(){
   clearAgendaFragment();
   const stored = displayReadEnrollment();
   if(stored && stored.deviceCredential && stored.pairingId){
+    if(displayEnrollmentWantsFullApp(stored)){
+      openDisplayFullApp();
+      return;
+    }
     _displayFeed = stored;
     const passcode = readDisplayPasscode();
     if(passcode && passcode.failures >= AGENDA_PASSCODE_MAX_FAILURES){

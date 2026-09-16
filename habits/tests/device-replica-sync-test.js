@@ -517,7 +517,17 @@ function assert(value,message){
     return {
       glanceDetected:replicaEnrollmentIsGlance(base),
       cloneNotGlance:replicaEnrollmentIsGlance({...base,replicaMode:'clone',replicaRows:{}}),
-      selectedNotGlance:replicaEnrollmentIsGlance({...base,replicaMode:'selected',replicaRows:{}})
+      selectedNotGlance:replicaEnrollmentIsGlance({...base,replicaMode:'selected',replicaRows:{}}),
+      clonePendingNotGlance:replicaEnrollmentIsGlance({
+        ...base,syncMode:'clone',replicaKey:shareRandomHex(32)
+      }),
+      selectedPendingNotGlance:replicaEnrollmentIsGlance({
+        ...base,syncMode:'selected',replicaKey:shareRandomHex(32)
+      }),
+      replicaKeyWantsApp:typeof sharedDisplayWantsFullApp === 'function'
+        && sharedDisplayWantsFullApp({...base,replicaKey:shareRandomHex(32)}),
+      glanceKeepsKiosk:typeof sharedDisplayWantsFullApp === 'function'
+        && sharedDisplayWantsFullApp({...base,syncMode:'glance'}) === false
     };
   });
   await glancePage.goto(`${baseUrl}index.html?display=1`,{waitUntil:'load'});
@@ -535,10 +545,53 @@ function assert(value,message){
     && !glanceClassify.cloneNotGlance
     && !glanceClassify.selectedNotGlance,
     'an enrollment that never installed a replica is recognized as a glance display');
+  assert(glanceClassify.clonePendingNotGlance === false
+    && glanceClassify.selectedPendingNotGlance === false
+    && glanceClassify.replicaKeyWantsApp
+    && glanceClassify.glanceKeepsKiosk,
+    'a just-paired clone is not treated as a glance while it waits for the library snapshot');
   assert(glanceLanding.path.endsWith('/agenda-display.html') && !glanceLanding.replicaChrome,
     'a glance display opening index.html is sent back to the kiosk instead of mounting the full app');
   assert(glanceLanding.stayedOnKiosk === false && glanceLanding.stillEnrolled,
     'a snapshot without a replica block keeps the paired kiosk in place instead of installing a library');
+
+  const clonePendingContext = await browser.newContext({serviceWorkers:'block'});
+  const clonePendingPage = await clonePendingContext.newPage();
+  const displayUrl = new URL('agenda-display.html',baseUrl).href;
+  await clonePendingPage.goto(baseUrl,{waitUntil:'load'});
+  await clonePendingPage.evaluate(()=>{
+    localStorage.setItem(AGENDA_DISPLAY_KEY,JSON.stringify({
+      feedId:shareRandomHex(16),
+      deviceCredential:shareRandomHex(32),
+      contentKey:shareRandomHex(32),
+      replicaKey:shareRandomHex(32),
+      pairingId:shareRandomHex(16),
+      syncMode:'clone'
+    }));
+  });
+  await clonePendingPage.route(/habits-share/,route=>route.fulfill({
+    status:200,contentType:'application/json',
+    body:JSON.stringify({ revision:0,snapshot:null })
+  }));
+  await clonePendingPage.goto(displayUrl,{waitUntil:'load'});
+  await clonePendingPage.waitForURL(/index\.html/,{timeout:10000});
+  const clonePendingLanding = await clonePendingPage.evaluate(()=>({
+    path:location.pathname,
+    displayQuery:new URLSearchParams(location.search).get('display'),
+    replicaChrome:Boolean(document.querySelector('.replica-display-bar')),
+    bouncedToKiosk:typeof installDisplayReplica === 'function',
+    wantsFullApp:typeof sharedDisplayWantsFullApp === 'function'
+      && sharedDisplayWantsFullApp(replicaEnrollment()),
+    glance:replicaEnrollmentIsGlance(replicaEnrollment())
+  }));
+  assert(clonePendingLanding.path.endsWith('/index.html')
+    && clonePendingLanding.displayQuery === '1'
+    && clonePendingLanding.replicaChrome
+    && !clonePendingLanding.bouncedToKiosk
+    && clonePendingLanding.wantsFullApp
+    && clonePendingLanding.glance === false,
+    'a clone enrollment on the kiosk URL opens the full app before a replica snapshot exists');
+  await clonePendingContext.close();
   await glanceContext.close();
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

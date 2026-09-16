@@ -459,7 +459,10 @@ function assert(cond,msg){
       return;
     }
     route.fulfill({ status:200,contentType:'application/json',body:JSON.stringify({
-      pairingId:pairingRequest.pairingId,displayPublicKey:pairingRequest.displayPublicKey,expiresAt:Date.now() + 60000
+      pairingId:pairingRequest.pairingId,
+      displayPublicKey:pairingRequest.displayPublicKey,
+      protocolVersion:Number(pairingRequest.protocolVersion) || 2,
+      expiresAt:Date.now() + 60000
     }) });
   });
   await page.route(`${workerUrl}/v1/agendas/${ownerFeed.feedId}`,route=>{

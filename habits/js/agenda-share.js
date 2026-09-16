@@ -833,7 +833,11 @@ async function openHouseholdAgendaPairingApproval(pairing){
     _agendaPairApproval = { ...pairing,expiresAt,protocolVersion };
     input.disabled = false;
     approve.disabled = false;
-    status.textContent = 'Type the 8-digit code shown on the display. Approving adds this screen and does not sign out the other one.';
+    const style = householdAgendaSyncMode(feed);
+    const styleLabel = style === 'selected'
+      ? 'shared-items display'
+      : (style === 'glance' ? 'glance display' : 'personal clone');
+    status.textContent = `This QR will sign in a ${styleLabel}. Type the 8-digit code shown on the display. Approving adds this screen and does not sign out the other one.`;
     input.focus();
   }catch(error){
     status.textContent = error && error.message === 'pairing_key_mismatch'

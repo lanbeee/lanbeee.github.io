@@ -42,6 +42,24 @@ function isAgendaDisplayPage(){
   return /\/agenda-display\.html$/.test(location.pathname);
 }
 
+// Glance enrollments stay on agenda-display.html. Clone / shared-items must
+// open the full app as soon as pairing transfers the replica key — the live
+// snapshot may still be glance-only until the owner finishes publishing.
+function sharedDisplayWantsFullApp(enrolled){
+  if(!enrolled) return false;
+  const mode = enrolled.syncMode;
+  if(mode === 'glance' || mode === 'legacy') return false;
+  if(mode === 'clone' || mode === 'selected') return true;
+  if(/^[0-9a-f]{64}$/.test(String(enrolled.replicaKey || ''))) return true;
+  return Boolean(enrolled.replicaMode) || Boolean(enrolled.replicaRows);
+}
+
+function sharedDisplayFullAppHref(){
+  const target = new URL('index.html',location.href);
+  target.searchParams.set('display','1');
+  return target.href;
+}
+
 async function shareFetch(path, opts = {}){
   if(!shareConfigured()) throw new Error('share_unconfigured');
   const headers = { 'Content-Type':'application/json' };

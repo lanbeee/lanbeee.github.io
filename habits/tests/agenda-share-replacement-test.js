@@ -395,6 +395,9 @@ function json(route,status,body){
     'clone-only data is not sealed with the agenda key known to the glance display');
   assert(laptop.enrollment.deviceCredential !== frameCredential,'the second display receives its own device credential');
   assert(laptop.enrollment.syncMode === 'clone','pairing transfer stamps clone onto the second enrollment');
+  const laptopUrl = new URL(extraPage.url());
+  assert(laptopUrl.pathname.endsWith('/index.html') && laptopUrl.searchParams.get('display') === '1',
+    'personal clone leaves agenda-display.html for the full Tings app');
   assert(server.sessions.size === 2,'worker keeps both viewer sessions');
   assert([...server.sessions.keys()].includes(frame.pairingId)
     && [...server.sessions.keys()].includes(laptop.pairingId),'worker session ids match both pairing ids');
