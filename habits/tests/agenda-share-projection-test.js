@@ -104,10 +104,27 @@ function assert(cond,msg){
     catch(_){ tamperRejected = true; }
 
     const pairing = await shareNewAgendaPairingRequest();
-    const transfer = await shareAgendaPairEncrypt(key,projection.feedId,pairing.pairingId,pairing.displayPublicKey);
+    const replicaKey = shareRandomHex(32);
+    const transfer = await shareAgendaPairEncrypt(
+      key,projection.feedId,pairing.pairingId,pairing.displayPublicKey,'clone',replicaKey
+    );
     const transferredKey = await shareAgendaPairDecrypt(
       transfer,pairing.privateKey,projection.feedId,pairing.pairingId
     );
+    const glancePairing = await shareNewAgendaPairingRequest();
+    const glanceTransfer = await shareAgendaPairEncrypt(
+      key,projection.feedId,glancePairing.pairingId,glancePairing.displayPublicKey,'glance',replicaKey
+    );
+    const glanceTransferred = await shareAgendaPairDecrypt(
+      glanceTransfer,glancePairing.privateKey,projection.feedId,glancePairing.pairingId
+    );
+    const sealed = await householdAgendaTransportProjection({ ...projection },{
+      feedId:projection.feedId,replicaKey
+    });
+    let glanceOpenedReplica = false;
+    try{ await shareDecrypt(key,sealed.replicaEnvelope); glanceOpenedReplica = true; }
+    catch(_){ glanceOpenedReplica = false; }
+    const cloneOpenedReplica = await shareDecrypt(replicaKey,sealed.replicaEnvelope);
     let wrongDisplayRejected = false;
     try{
       const other = await shareNewAgendaPairingRequest();
@@ -166,7 +183,15 @@ function assert(cond,msg){
         title:back.title,tamperRejected,
         codeLength:shareNormalizeAgendaPairCode(pairing.confirmationCode).length,
         proofLooksHashed:/^[0-9a-f]{64}$/.test(pairing.confirmationProof),
-        transferMatches:transferredKey === key,
+        transferMatches:transferredKey.contentKey === key
+          && transferredKey.replicaKey === replicaKey
+          && transferredKey.syncMode === 'clone',
+        glanceOmitsReplicaKey:glanceTransferred.replicaKey == null
+          && glanceTransferred.syncMode === 'glance',
+        sealedHasPlainReplica:Boolean(sealed.replica),
+        sealedHasEnvelope:Boolean(sealed.replicaEnvelope && sealed.replicaEnvelope.ciphertext),
+        glanceOpenedReplica,
+        cloneOpenedMode:cloneOpenedReplica && cloneOpenedReplica.mode,
         wrongDisplayRejected,
         rawCredentialHidden:pairing.deviceCredentialHash !== pairing.deviceCredential
       }
@@ -183,7 +208,8 @@ function assert(cond,msg){
   assert(!result.hourTitles.some(title=>title.startsWith('Extra')),'hours-ahead scope excludes later activity');
   assert(result.labeledTitles.includes('Deep Work Session Project Alpha'),'busy times keep their labels on the shared display');
   assert(result.labeledTitles.includes('Travel'),'travel rows stay in the published snapshot');
-  assert(!result.agendaJson.includes('active-hid') && !result.agendaJson.includes('completed-hid'),'omits local habit ids from the compatibility agenda');
+  assert(result.agendaJson.includes('"hid":"active-hid"') && !result.agendaJson.includes('completed-hid'),
+    'completable glance rows publish hid for live dones; completed local ids stay off the compatibility agenda');
   assert(result.replicaCount > 0 && result.replicaHasOwner,'adds an encrypted full-app personal clone with multi-device definition ownership');
   assert(result.stableSignature && result.stableReplicaRows,'keeps unchanged replica content and per-habit identities stable across refreshes');
   assert(result.expandedItemCount === 52 && result.expandedBytes > 120 * 1024,
@@ -197,6 +223,10 @@ function assert(cond,msg){
   assert(result.crypto.tamperRejected,'tampered agenda ciphertext is rejected');
   assert(result.crypto.codeLength === 8 && result.crypto.proofLooksHashed,'uses a separate 8-digit display code and stores only its proof');
   assert(result.crypto.transferMatches,'ECDH transfers the content key to the exact display key');
+  assert(result.crypto.glanceOmitsReplicaKey,'glance pairing transfer never includes the clone-only replica key');
+  assert(!result.crypto.sealedHasPlainReplica && result.crypto.sealedHasEnvelope
+    && !result.crypto.glanceOpenedReplica && result.crypto.cloneOpenedMode === 'clone',
+    'published snapshots nest the clone library under a replica key the glance display cannot open');
   assert(result.crypto.wrongDisplayRejected,'a different display private key cannot decrypt the transfer');
   assert(result.crypto.rawCredentialHidden,'display device credential is represented to the Worker only by its hash');
 
@@ -266,7 +296,8 @@ function assert(cond,msg){
       walkWeather:walkRow && walkRow.weather,
       quietWeather:quietRow && quietRow.weather || null,
       leakedCoords:/homeCityLat|homeCityLng|"lat"|"lng"|40\.7128|-74\.006|40\.7829|-73\.9654/.test(json),
-      leakedLocationId:/"locationId"/.test(json) || json.includes('walk-hid')
+      leakedLocationId:/"locationId"/.test(json),
+      walkHid:walkRow && walkRow.hid
     };
   });
   assert(weatherShare.currentEmoji && weatherShare.currentTemp && !weatherShare.city,
@@ -278,7 +309,8 @@ function assert(cond,msg){
   assert(weatherShare.travelWeather && weatherShare.walkWeather && !weatherShare.quietWeather,
     'travel and weather-opted items get interval weather; items that did not opt in stay plain');
   assert(!weatherShare.leakedCoords && !weatherShare.leakedLocationId,
-    'the compatibility agenda never includes coordinates, location ids, or habit ids');
+    'the compatibility agenda never includes coordinates or location ids');
+  assert(weatherShare.walkHid === 'walk-hid','completable glance rows carry hid so another display can apply a live done');
 
   let createRequestBody = null;
   await page.route('**/v1/agendas',async route=>{
@@ -322,6 +354,7 @@ function assert(cond,msg){
       dayCount:(projection.days || []).length,
       rowCount:(projection.days || []).reduce((sum,day)=>sum + (day.rows || []).length,0),
       rowMapCount:Object.keys(projection._rowMap || {}).length,
+      itemHid:((projection.days || []).flatMap(day=>day.rows || []).find(row=>row.kind === 'item') || {}).hid || '',
       signs:typeof householdAgendaSignature(projection) === 'string'
     };
   });
@@ -333,6 +366,7 @@ function assert(cond,msg){
     'a glance feed still publishes the readable agenda projection');
   assert(glanceContract.rowMapCount > 0 && glanceContract.signs,
     'glance rows keep their completion row map, so marking done on the display still reaches the phone');
+  assert(glanceContract.itemHid === 'glance-hid','glance rows publish hid for live completion matching');
   assert(createRequestBody && !('viewerCredential' in createRequestBody),'feed creation never registers a permanent viewer credential');
   assert(ownerFeed.currentInvite === undefined,'owner creates no enrollment link or fallback code');
   assert(ownerFeed.reauthDays === 30,'display reauthorization defaults to 30 days');

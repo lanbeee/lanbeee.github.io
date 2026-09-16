@@ -164,9 +164,9 @@ const UI_PRIVACY_BLOCKS = [
     'A few features below contact an outside service, each for a stated job. Nothing else is uploaded.'
   ]},
   {id:'privacy-display-body', label:'Shared display', summary:'Opt-in fridge or tablet view. Encrypted on this phone, then relayed by Cloudflare.', body:[
-    'Shared display publishes a capped view of today and tomorrow. This phone encrypts that snapshot first, then a Cloudflare relay stores the encrypted copy so the paired display can fetch it.',
-    'The paired display can submit only encrypted completion events for today’s rows and tomorrow’s tasks; it cannot edit the plan or item details. Cloudflare can see that encrypted blobs exist, their sizes, and when they were updated, but cannot read item names, notes, places, or completion contents. The encryption key stays with your devices. Pairing is QR-only from inside Tings. The display can optionally require a local four-digit passcode after its three-tap privacy screen; three wrong attempts revoke that display access and require pairing again.',
-    'Look for the cloud-up mark on that setting. Revoke anytime in Settings; scan a new QR to add a display again.'
+    'Shared display publishes a capped today/tomorrow agenda every paired screen can decrypt, plus — only when a personal clone is signed in — a nested replica of the full library. That replica uses a second key transferred only to the clone, so a glance display cannot read habits, logs, or planner settings.',
+    'Either signed-in screen can submit encrypted completion events; the other screen reads them from the relay even if this phone is off. A glance display cannot edit the plan or item details. Cloudflare can see that encrypted blobs exist, their sizes, and when they were updated, but cannot read item names, notes, places, or completion contents. Pairing is QR-only from inside Tings. The display can optionally require a local four-digit passcode after its three-tap privacy screen; three wrong attempts revoke that display access and require pairing again.',
+    'Look for the cloud-up mark on that setting. At most two screens can be signed in: one full-app display and one glance display. Revoke one from the list, or revoke the whole feed, anytime in Settings; scan a new QR to add a display again.'
   ]},
   {id:'privacy-share-body', label:'Share item', summary:'Opt-in. Encrypted on this phone; the key rides in the invitation link.', body:[
     'Share item uses the same Cloudflare relay. The item is encrypted on this phone before it leaves. The key lives in the link itself, not on the server.',
@@ -198,7 +198,7 @@ const UI_PRIVACY_BLOCKS = [
 const UI_LEAVE_HINTS = {
   agenda:{
     aria:'this sends an encrypted agenda off this device',
-    body:'Publishing encrypts a limited today/tomorrow list on this phone, then stores that encrypted copy on a Cloudflare relay so a display can fetch it. Cloudflare cannot read item names. Full story: About → privacy.'
+    body:'Publishing encrypts a limited today/tomorrow agenda on this phone, plus a clone-only nested library when a personal clone is signed in, then stores that encrypted copy on a Cloudflare relay. Cloudflare cannot read item names. Full story: About → privacy.'
   },
   share:{
     aria:'this sends an encrypted item off this device',

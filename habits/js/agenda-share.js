@@ -21,7 +21,13 @@ const SHARED_DISPLAY_ROW_MAP_REVISIONS = 12;
 // AES-GCM metadata while sizing the complete UTF-8 projection, not just the
 // replica subsection.
 const SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES = 248 * 1024;
+// A clone replica is encrypted once on its own and then carried inside the
+// outer agenda ciphertext. Its base64 wrapper expands the transport, so keep
+// a conservative bound before sealing the nested payload.
+const SHARED_REPLICA_SNAPSHOT_MAX_PLAINTEXT_BYTES = 176 * 1024;
 const HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS = 15 * 60 * 1000;
+const HOUSEHOLD_AGENDA_MAX_DEVICES = 2;
+const HOUSEHOLD_AGENDA_QUEUE_LIMIT = 100;
 let _agendaPublishQueued = false;
 let _agendaPublishQueuedForce = false;
 
@@ -256,6 +262,12 @@ function householdProjectionRow(row, data, dayBase, rowMap, completedRowKeys, se
       ...base,
       kind:'item',
       completable,
+      hid:habit && habit.hid ? String(habit.hid).slice(0,64) : '',
+      occurrenceKey:String(row.occurrenceKey || '').slice(0,160),
+      scheduleOptionId:String(row.scheduleOptionId || '').slice(0,64),
+      scheduledDay:/^\d{4}-\d{2}-\d{2}$/.test(String(row.scheduledDay || ''))
+        ? String(row.scheduledDay)
+        : (typeof dateKey === 'function' ? dateKey(dayBase) : ''),
       allowEarlyCompletion:Boolean(completable && habit && habit.type === 'task'),
       title:habit && habit.name ? String(habit.name).slice(0,80) : 'Scheduled item',
       emoji:habit && habit.emoji ? String(habit.emoji).slice(0,8) : '',
@@ -362,12 +374,89 @@ function householdAgendaSyncMode(feed){
   return 'clone';
 }
 
+function householdAgendaOwnerControlsBlocked(){
+  return typeof replicaDisplayRequested === 'function' && replicaDisplayRequested();
+}
+
+function householdAgendaDevices(feed){
+  const list = Array.isArray(feed && feed.devices) ? feed.devices : [];
+  const out = [];
+  const seen = new Set();
+  for(const item of list){
+    const pairingId = String(item && item.pairingId || '');
+    if(!/^[0-9a-f]{32}$/.test(pairingId) || seen.has(pairingId)) continue;
+    seen.add(pairingId);
+    out.push({
+      pairingId,
+      syncMode:householdAgendaSyncMode(item),
+      pairedAt:Number(item && item.pairedAt) || 0
+    });
+    if(out.length >= HOUSEHOLD_AGENDA_MAX_DEVICES) break;
+  }
+  return out;
+}
+
+function householdAgendaHasStyle(feed,syncMode){
+  return householdAgendaDevices(feed).some(device=>device.syncMode === syncMode);
+}
+
+function householdAgendaLibraryStyle(feed){
+  const devices = householdAgendaDevices(feed);
+  if(devices.some(device=>device.syncMode === 'clone')) return 'clone';
+  if(devices.some(device=>device.syncMode === 'selected')) return 'selected';
+  if(devices.length) return 'glance';
+  return householdAgendaSyncMode(feed);
+}
+
+function householdAgendaApproveConflict(feed,syncMode){
+  const devices = householdAgendaDevices(feed);
+  const style = householdAgendaSyncMode({ syncMode });
+  if(devices.length >= HOUSEHOLD_AGENDA_MAX_DEVICES){
+    return 'Two displays are already signed in. Revoke one from the list first.';
+  }
+  if(style === 'glance' && devices.some(device=>device.syncMode === 'glance')){
+    return 'A glance display is already signed in. Revoke that frame first, then pair this one.';
+  }
+  if(style !== 'glance' && devices.some(device=>device.syncMode !== 'glance')){
+    return 'A full-app display is already signed in. Revoke that laptop or tablet first. One snapshot cannot serve two library styles.';
+  }
+  return '';
+}
+
+function reconcileHouseholdAgendaDevices(feed,sessions){
+  if(!Array.isArray(sessions)) return householdAgendaDevices(feed);
+  const live = [];
+  const seen = new Set();
+  for(const item of sessions){
+    const pairingId = String(item && item.pairingId || '');
+    if(!/^[0-9a-f]{32}$/.test(pairingId) || seen.has(pairingId)) continue;
+    seen.add(pairingId);
+    live.push(pairingId);
+  }
+  const current = householdAgendaDevices(feed);
+  const kept = current.filter(device=>seen.has(device.pairingId));
+  const known = new Set(kept.map(device=>device.pairingId));
+  const inferred = householdAgendaSyncMode(feed);
+  for(const pairingId of live){
+    if(kept.length >= HOUSEHOLD_AGENDA_MAX_DEVICES) break;
+    if(known.has(pairingId)) continue;
+    kept.push({ pairingId,syncMode:inferred,pairedAt:Date.now() });
+    known.add(pairingId);
+  }
+  return kept;
+}
+
+function householdAgendaWithDevices(feed,devices){
+  if(!feed) return feed;
+  return { ...feed,devices:householdAgendaDevices({ devices }) };
+}
+
 // A paired display is a real Tings installation, not merely a renderer. The
 // latest-state agenda envelope doubles as an encrypted replication snapshot so
 // the existing zero-knowledge transport and QR authorization remain useful.
 // Keeping `days` beside it lets older display builds continue to work.
 function buildHouseholdReplica(data,settings,feed,rowMap,now = Date.now()){
-  const mode = householdAgendaSyncMode(feed);
+  const mode = householdAgendaLibraryStyle(feed);
   if(mode === 'glance') return null;
   const source = Array.isArray(data) ? data : [];
   const previousRowIds = feed && feed.replicaRowIds && typeof feed.replicaRowIds === 'object'
@@ -430,8 +519,9 @@ function householdProjectionByteSize(projection){
 function fitHouseholdProjectionPayload(projection){
   const replica = projection && projection.replica;
   if(!replica || !Array.isArray(replica.items)) return projection;
+  const maxBytes = SHARED_REPLICA_SNAPSHOT_MAX_PLAINTEXT_BYTES;
   let bytes = householdProjectionByteSize(projection);
-  while(bytes > SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES){
+  while(bytes > maxBytes){
     let trimmed = false;
     for(const item of replica.items){
       const logs = item && item.habit && item.habit.logs;
@@ -442,13 +532,36 @@ function fitHouseholdProjectionPayload(projection){
     replica.historyTruncated = true;
     bytes = householdProjectionByteSize(projection);
   }
-  if(bytes > SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES){
+  if(bytes > maxBytes){
     const error = new Error('replica_too_large');
     error.code = 'replica_too_large';
     error.payloadBytes = bytes;
     throw error;
   }
   return projection;
+}
+
+async function householdAgendaTransportProjection(projection,feed){
+  const transport = { ...projection };
+  const replica = transport.replica;
+  delete transport.replica;
+  if(replica){
+    if(!/^[0-9a-f]{64}$/.test(String(feed && feed.replicaKey || ''))){
+      throw new Error('invalid_replica_key');
+    }
+    transport.replicaEnvelope = await shareEncrypt(feed.replicaKey,replica,{
+      schemaVersion:SHARE_SCHEMA_VERSION,
+      recordKind:'agenda_replica',
+      objectId:feed.feedId,
+      revision:projection.revision
+    });
+  }
+  if(householdProjectionByteSize(transport) > SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES){
+    const error = new Error('replica_too_large');
+    error.code = 'replica_too_large';
+    throw error;
+  }
+  return transport;
 }
 
 function householdReplicaSignature(replica){
@@ -497,6 +610,10 @@ function householdAgendaSignature(projection){
         emojiBgColor:row.emojiBgColor,
         status:row.status,
         completable:Boolean(row.completable),
+        hid:row.hid || '',
+        occurrenceKey:row.occurrenceKey || '',
+        scheduleOptionId:row.scheduleOptionId || '',
+        scheduledDay:row.scheduledDay || '',
         allowEarlyCompletion:Boolean(row.allowEarlyCompletion),
         durationMinutes:row.durationMinutes,
         locationLabel:row.locationLabel,
@@ -510,6 +627,7 @@ function householdAgendaSignature(projection){
 }
 
 async function createHouseholdAgendaFeed(title = 'Shared display'){
+  if(householdAgendaOwnerControlsBlocked()) return null;
   if(!shareConfigured()) throw new Error('share_unconfigured');
   const secrets = shareNewAgendaSecrets();
   await shareFetch('/v1/agendas', {
@@ -522,6 +640,7 @@ async function createHouseholdAgendaFeed(title = 'Shared display'){
   const feed = {
     feedId:secrets.id,
     contentKey:secrets.contentKey,
+    replicaKey:secrets.replicaKey,
     ownerCredential:secrets.ownerCredential,
     ownerId:shareRandomHex(8),
     title:title || 'Shared display',
@@ -533,6 +652,7 @@ async function createHouseholdAgendaFeed(title = 'Shared display'){
     scopeMode:'count',
     scopeValue:HOUSEHOLD_AGENDA_DEFAULT_ROWS,
     syncMode:'clone',
+    devices:[],
     rowMaps:[]
   };
   saveAgendaFeedRecord(feed);
@@ -625,6 +745,7 @@ function scanHouseholdAgendaQrFrame(generation){
 }
 
 async function startHouseholdAgendaQrScanner(){
+  if(householdAgendaOwnerControlsBlocked()) return false;
   const modal = $('agenda-pair-scanner');
   const status = $('agenda-pair-scanner-status');
   const video = $('agenda-pair-scanner-video');
@@ -683,6 +804,7 @@ function closeHouseholdAgendaPairingApproval(){
 }
 
 async function openHouseholdAgendaPairingApproval(pairing){
+  if(householdAgendaOwnerControlsBlocked()) return;
   const feed = agendaFeedRecord();
   const modal = $('agenda-pair-approval');
   const status = $('agenda-pair-approval-status');
@@ -706,15 +828,19 @@ async function openHouseholdAgendaPairingApproval(pairing){
     }
     const expiresAt = Number(result.body && result.body.expiresAt);
     if(!expiresAt || expiresAt <= Date.now()) throw new Error('pairing_unavailable');
-    _agendaPairApproval = { ...pairing,expiresAt };
+    const protocolVersion = Number(result.body && result.body.protocolVersion) || 1;
+    if(protocolVersion < AGENDA_PAIR_PROTOCOL_VERSION) throw new Error('pairing_update_required');
+    _agendaPairApproval = { ...pairing,expiresAt,protocolVersion };
     input.disabled = false;
     approve.disabled = false;
-    status.textContent = 'Type the 8-digit code shown on the display. Approving signs out every previously paired display immediately — they keep neither the old link nor the old key.';
+    status.textContent = 'Type the 8-digit code shown on the display. Approving adds this screen and does not sign out the other one.';
     input.focus();
   }catch(error){
     status.textContent = error && error.message === 'pairing_key_mismatch'
       ? 'Security check failed: the QR key does not match the Worker request. Do not approve it.'
-      : 'This pairing request expired or is no longer available. Generate a fresh QR on the display.';
+      : (error && error.message === 'pairing_update_required'
+        ? 'Reload the display to install the two-device sync update, then scan its fresh QR.'
+        : 'This pairing request expired or is no longer available. Generate a fresh QR on the display.');
   }
 }
 
@@ -781,15 +907,41 @@ function replicaCompletionFallbackMap(feed,payload,record){
   if(cleanHabitId(mappedHid) !== mappedHid) return null;
   const createdAt = Number(record && record.createdAt);
   const serverTime = Number.isFinite(createdAt) && createdAt > 0 ? Math.min(createdAt,Date.now()) : Date.now();
+  const reportedAt = Number(payload && payload.completedAt);
+  const completionTime = Number.isFinite(reportedAt) && reportedAt > 0
+    ? Math.min(reportedAt,Date.now())
+    : serverTime;
+  const scheduledDay = /^\d{4}-\d{2}-\d{2}$/.test(String(payload && payload.scheduledDay || ''))
+    ? String(payload.scheduledDay)
+    : '';
   return {
     hid:mappedHid,
-    dayBase:typeof dayStart === 'function' ? dayStart(serverTime) : serverTime,
-    start:0,
+    dayBase:typeof dayStart === 'function' ? dayStart(completionTime) : completionTime,
+    start:Number(payload && payload.start) || 0,
     minutes:Math.max(0,Math.min(720,Math.round(Number(payload && payload.minutes) || 0))),
-    occurrenceKey:'',
-    scheduleOptionId:'',
-    scheduledDay:'',
+    occurrenceKey:String(payload && payload.occurrenceKey || '').slice(0,160),
+    scheduleOptionId:String(payload && payload.scheduleOptionId || '').slice(0,64),
+    scheduledDay,
     replica:true
+  };
+}
+
+function applyPayloadCompletionIdentity(mapped,payload){
+  if(!mapped || !payload) return mapped;
+  const occurrenceKey = String(payload.occurrenceKey || '').slice(0,160);
+  const scheduleOptionId = String(payload.scheduleOptionId || '').slice(0,64);
+  const scheduledDay = /^\d{4}-\d{2}-\d{2}$/.test(String(payload.scheduledDay || ''))
+    ? String(payload.scheduledDay)
+    : '';
+  const minutes = Math.max(0,Math.min(720,Math.round(Number(payload.minutes) || 0)));
+  const start = Number(payload.start) || 0;
+  return {
+    ...mapped,
+    occurrenceKey:occurrenceKey || mapped.occurrenceKey,
+    scheduleOptionId:scheduleOptionId || mapped.scheduleOptionId,
+    scheduledDay:scheduledDay || mapped.scheduledDay,
+    minutes:minutes > 0 ? minutes : mapped.minutes,
+    start:start > 0 ? start : mapped.start
   };
 }
 
@@ -806,8 +958,8 @@ function householdAgendaQueueRecords(body){
   const listedDefinitions = Array.isArray(body && body.definitions) ? body.definitions : [];
   const isDefinition = record=>Boolean(record && record.envelope && record.envelope.recordKind === 'agenda_definition');
   return {
-    definitions:[...listedDefinitions,...completions.filter(isDefinition)].slice(0,50),
-    completions:completions.filter(record=>!isDefinition(record)).slice(0,50)
+    definitions:[...listedDefinitions,...completions.filter(isDefinition)].slice(0,HOUSEHOLD_AGENDA_QUEUE_LIMIT),
+    completions:completions.filter(record=>!isDefinition(record)).slice(0,HOUSEHOLD_AGENDA_QUEUE_LIMIT)
   };
 }
 
@@ -824,10 +976,23 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
   let nextFeed = Number.isInteger(remoteRevision) && remoteRevision >= 0
     ? { ...base,lastRevision:remoteRevision }
     : base;
+  if(Array.isArray(result.body && result.body.sessions)){
+    nextFeed = householdAgendaWithDevices(nextFeed,reconcileHouseholdAgendaDevices(nextFeed,result.body.sessions));
+  }
+  const libraryStyle = householdAgendaLibraryStyle(nextFeed);
+  const hasCloneDevice = libraryStyle === 'clone';
+  const hasSelectedDevice = libraryStyle === 'selected';
   const queued = householdAgendaQueueRecords(result.body);
   const pendingDefinitions = queued.definitions;
   const pending = queued.completions;
-  if(!pendingDefinitions.length && !pending.length) return { feed:nextFeed,operationIds:[],completedRowKeys:new Set(),changed:false };
+  if(!pendingDefinitions.length && !pending.length){
+    if(JSON.stringify(householdAgendaDevices(base)) !== JSON.stringify(householdAgendaDevices(nextFeed))
+      || Number(base.lastRevision) !== Number(nextFeed.lastRevision)){
+      saveAgendaFeedRecord(nextFeed);
+      if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
+    }
+    return { feed:nextFeed,operationIds:[],completedRowKeys:new Set(),changed:false };
+  }
 
   const data = load();
   const safeToAck = [];
@@ -845,7 +1010,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     const operationId = String(envelope && envelope.operationId || '');
     if(!/^[0-9a-f]{32}$/.test(operationId)) continue;
     let payload;
-    try{ payload = await shareDecrypt(nextFeed.contentKey,envelope); }
+    try{ payload = await shareDecrypt(nextFeed.replicaKey,envelope); }
     catch(_){ continue; }
     decrypted.set(operationId,payload);
     if(!payload || payload.schemaVersion !== 1 || payload.operationId !== operationId
@@ -853,12 +1018,12 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       || cleanHabitId(payload.hid) !== payload.hid) continue;
     safeToAck.push(operationId);
     definitionOperationIds.add(operationId);
-    if(nextFeed.syncMode !== 'clone') continue;
+    if(!hasCloneDevice) continue;
     const prior = definitionOps.get(payload.hid);
     const createdAt = Number(record && record.createdAt) || 0;
     if(!prior || createdAt >= prior.createdAt) definitionOps.set(payload.hid,{record,payload,createdAt});
   }
-  if(nextFeed.syncMode === 'clone'){
+  if(hasCloneDevice){
     const receipts = [];
     for(const {payload} of definitionOps.values()){
       const index = data.findIndex(h=>h && h.hid === payload.hid);
@@ -924,7 +1089,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     if(!mapped && payload && payload.action === 'complete'){
       mapped = replicaCompletionFallbackMap(nextFeed,payload,record);
       if(mapped && !data.some(h=>h && h.hid === mapped.hid)){
-        if((nextFeed.replicaRowIds && nextFeed.replicaRowIds[mapped.hid]) || nextFeed.syncMode === 'selected'){
+        if((nextFeed.replicaRowIds && nextFeed.replicaRowIds[mapped.hid]) || hasSelectedDevice){
           safeToAck.push(operationId);
         }
         continue;
@@ -932,12 +1097,13 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     }
     if(!mapped){
       if(payload && payload.action === 'complete' && cleanHabitId(payload.hid) === payload.hid){
-        if(nextFeed.syncMode === 'selected') safeToAck.push(operationId);
+        if(hasSelectedDevice) safeToAck.push(operationId);
         continue;
       }
       if(sharedDisplayCompletionRevisionKnown(nextFeed,envelope)) safeToAck.push(operationId);
       continue;
     }
+    mapped = applyPayloadCompletionIdentity(mapped,payload);
     if(sharedDisplayCompletionAlreadyLogged(data,operationId)){
       completedRowKeys.add(`${mapped.hid}|${mapped.start}`);
       safeToAck.push(operationId);
@@ -955,8 +1121,12 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     const h = index >= 0 ? data[index] : null;
     const createdAt = Number(record && record.createdAt);
     const serverTime = Number.isFinite(createdAt) && createdAt > 0 ? Math.min(createdAt,Date.now()) : Date.now();
-    if(mapped.replica) mapped.dayBase = dayStart(serverTime);
-    const todayBase = dayStart(serverTime);
+    const reportedAt = Number(payload && payload.completedAt);
+    const completionTime = Number.isFinite(reportedAt) && reportedAt > 0
+      ? Math.min(reportedAt,Date.now())
+      : serverTime;
+    if(mapped.replica) mapped.dayBase = dayStart(completionTime);
+    const todayBase = dayStart(completionTime);
     const tomorrow = new Date(todayBase);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowBase = tomorrow.getTime();
@@ -964,7 +1134,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       && mapped.dayBase > todayBase
       && mapped.dayBase <= tomorrowBase;
     if(!h || h.type === 'zero'
-      || (nextFeed.syncMode === 'selected' && mapped.replica && h.allowSharedDisplayCompletion === false)
+      || (hasSelectedDevice && mapped.replica && h.allowSharedDisplayCompletion === false)
       || (mapped.dayBase > todayBase && !completingTomorrowTask)){
       safeToAck.push(operationId);
       continue;
@@ -977,7 +1147,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       continue;
     }
     const logs = normalizeLogs(h.logs);
-    const planTargetTs = completingTomorrowTask ? (mapped.start || mapped.dayBase) : serverTime;
+    const planTargetTs = completingTomorrowTask ? (mapped.start || mapped.dayBase) : completionTime;
     const consumedPlanTs = typeof planToConsumeForEntry === 'function'
       ? planToConsumeForEntry(logs,planTargetTs)
       : null;
@@ -987,17 +1157,17 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     }
     let minutes = null;
     if(h.breakable){
-      const replicaMinutes = mapped.replica ? Math.round(Number(payload.minutes) || 0) : 0;
       const remaining = typeof breakableBudgetMinutes === 'function'
         ? breakableBudgetMinutes(h,mapped.dayBase)
         : mapped.minutes;
-      minutes = Math.max(0,Math.min(replicaMinutes || mapped.minutes,Math.round(Number(remaining) || 0)));
+      const credited = Math.max(0,Math.round(Number(mapped.minutes) || 0));
+      minutes = Math.max(0,Math.min(credited,Math.round(Number(remaining) || 0)));
       if(minutes <= 0){
         safeToAck.push(operationId);
         continue;
       }
     }
-    const entryTs = typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,serverTime) : serverTime;
+    const entryTs = typeof snapLogTimestamp === 'function' ? snapLogTimestamp(h,completionTime) : completionTime;
     const entry = makeActualLog(entryTs,{
       minutes,source:'shared_display',operationId,
       occurrenceKey:mapped.occurrenceKey,
@@ -1052,16 +1222,19 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
 }
 
 async function acknowledgeHouseholdAgendaCompletions(feed,operationIds){
-  const ids = [...new Set((operationIds || []).filter(id=>/^[0-9a-f]{32}$/.test(id)))].slice(0,50);
+  const ids = [...new Set((operationIds || []).filter(id=>/^[0-9a-f]{32}$/.test(id)))];
   if(!feed || !ids.length) return;
-  await shareFetch(`/v1/agendas/${feed.feedId}/completion-acks`,{
-    method:'POST',
-    credential:feed.ownerCredential,
-    body:{ operationIds:ids }
-  });
+  for(let i = 0;i < ids.length;i += 50){
+    await shareFetch(`/v1/agendas/${feed.feedId}/completion-acks`,{
+      method:'POST',
+      credential:feed.ownerCredential,
+      body:{ operationIds:ids.slice(i,i + 50) }
+    });
+  }
 }
 
 async function approveHouseholdAgendaPairing(){
+  if(householdAgendaOwnerControlsBlocked()) return false;
   const pairing = _agendaPairApproval;
   let feed = agendaFeedRecord();
   const status = $('agenda-pair-approval-status');
@@ -1080,16 +1253,24 @@ async function approveHouseholdAgendaPairing(){
   approve.disabled = true;
   input.disabled = true;
   status.textContent = 'Authorizing this exact display…';
-  const nextContentKey = shareRandomHex(SHARE_KEY_BYTES);
   try{
     try{
       const completionSync = await syncHouseholdAgendaCompletions(feed,{ force:true });
       feed = completionSync.feed || feed;
     }
     catch(_){ /* A fresh snapshot below reflects any completion that was reachable. */ }
-    // Pair approval revokes the previous display and clears the old ciphertext.
-    // Verify that a complete replacement snapshot fits before making that
-    // irreversible session rotation.
+    const syncMode = householdAgendaSyncMode(feed);
+    const conflict = householdAgendaApproveConflict(feed,syncMode);
+    if(conflict){
+      status.textContent = conflict;
+      input.disabled = false;
+      approve.disabled = false;
+      input.focus();
+      return false;
+    }
+    const nextContentKey = householdAgendaDevices(feed).length
+      ? feed.contentKey
+      : shareRandomHex(SHARE_KEY_BYTES);
     const preflightSource = typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null;
     if(preflightSource && Array.isArray(preflightSource.days) && preflightSource.days.length){
       buildHouseholdAgendaProjection(preflightSource,{ feed,data:load() });
@@ -1098,7 +1279,9 @@ async function approveHouseholdAgendaPairing(){
       nextContentKey,
       feed.feedId,
       pairing.pairingId,
-      pairing.displayPublicKey
+      pairing.displayPublicKey,
+      syncMode,
+      feed.replicaKey
     );
     const reauthDays = Number(feed.reauthDays) === 7 ? 7 : 30;
     await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}/approve`,{
@@ -1107,22 +1290,32 @@ async function approveHouseholdAgendaPairing(){
       body:{
         feedId:feed.feedId,
         confirmationCode,
+        protocolVersion:Math.min(AGENDA_PAIR_PROTOCOL_VERSION,Number(pairing.protocolVersion) || 1),
         sessionTtlMs:reauthDays === 7 ? HOUSEHOLD_AGENDA_WEEK_MS : HOUSEHOLD_AGENDA_MONTH_MS,
         transfer
       }
     });
-    const next = { ...feed,contentKey:nextContentKey,reauthDays };
+    const next = householdAgendaWithDevices({
+      ...feed,
+      contentKey:nextContentKey,
+      reauthDays,
+      syncMode
+    },[
+      ...householdAgendaDevices(feed),
+      { pairingId:pairing.pairingId,syncMode,pairedAt:Date.now() }
+    ]);
     delete next.currentInvite;
     saveAgendaFeedRecord(next);
     _lastAgendaProjectionSig = '';
     status.textContent = 'Display authorized. Publishing a fresh encrypted agenda…';
     try{
       await publishHouseholdAgendaNow(null,{ manual:true });
-      status.textContent = `Display authorized for ${reauthDays} days. Every earlier display is signed out.`;
+      status.textContent = `Display authorized for ${reauthDays} days. Any other signed-in screen stays connected.`;
     }catch(_){
       scheduleHouseholdAgendaPublish();
       status.textContent = 'Display authorized. The agenda will publish when this phone is online.';
     }
+    if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
     approve.hidden = true;
     return true;
   }catch(error){
@@ -1132,6 +1325,8 @@ async function approveHouseholdAgendaPairing(){
       status.textContent = 'That code did not match. Check the display carefully; five wrong attempts destroy the request.';
     }else if(error && (error.status === 410 || error.message === 'pairing_unavailable')){
       status.textContent = 'This pairing request expired or was destroyed. Generate a fresh QR on the display.';
+    }else if(error && error.status === 409 && error.message === 'session_limit'){
+      status.textContent = 'Two displays are already signed in. Revoke one from the list first.';
     }else if(error && error.status === 409){
       status.textContent = 'Another approval is in progress. Wait a moment and scan a fresh QR if it does not finish.';
     }else{
@@ -1142,6 +1337,27 @@ async function approveHouseholdAgendaPairing(){
     input.focus();
     return false;
   }
+}
+
+async function revokeHouseholdAgendaDevice(pairingId){
+  const feed = agendaFeedRecord();
+  const id = String(pairingId || '');
+  if(!feed || !/^[0-9a-f]{32}$/.test(id)) return feed;
+  try{
+    await shareFetch(`/v1/agendas/${feed.feedId}/display-access`,{
+      method:'DELETE',
+      credential:feed.ownerCredential,
+      body:{ pairingId:id }
+    });
+  }catch(error){
+    if(!(error && (error.status === 404 || error.status === 410))) throw error;
+  }
+  const next = householdAgendaWithDevices(feed,householdAgendaDevices(feed).filter(device=>device.pairingId !== id));
+  saveAgendaFeedRecord(next);
+  _lastAgendaProjectionSig = '';
+  if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
+  scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
+  return next;
 }
 
 async function publishHouseholdAgendaNow(week, opts = {}){
@@ -1176,7 +1392,8 @@ async function publishHouseholdAgendaNow(week, opts = {}){
   const sig = await shareSha256Hex(householdAgendaSignature(projection));
   const priorSig = _lastAgendaProjectionSig || String(feed.lastProjectionSig || '');
   if(!opts.manual && !completionSync.operationIds.length && sig === priorSig && feed.lastPublishedAt) return feed;
-  const envelope = await shareEncrypt(feed.contentKey, projection, {
+  const transportProjection = await householdAgendaTransportProjection(projection,feed);
+  const envelope = await shareEncrypt(feed.contentKey, transportProjection, {
     schemaVersion:SHARE_SCHEMA_VERSION,
     recordKind:'agenda_snapshot',
     objectId:feed.feedId,

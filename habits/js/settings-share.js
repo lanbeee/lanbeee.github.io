@@ -11,10 +11,24 @@ function householdAgendaAgeLabel(ts,now = Date.now()){
   return days === 1 ? '1 day ago' : `${days} days ago`;
 }
 
+function householdAgendaDeviceLabel(syncMode){
+  if(syncMode === 'selected') return 'shared items';
+  if(syncMode === 'glance') return 'glance display';
+  return 'personal clone';
+}
+
 function syncHouseholdAgendaSettings(){
   const empty = $('settings-agenda-empty');
   const active = $('settings-agenda-active');
+  const section = $('settings-agenda-head')?.closest('section');
   if(!empty || !active) return;
+  if(typeof replicaDisplayRequested === 'function' && replicaDisplayRequested()){
+    empty.hidden = true;
+    active.hidden = true;
+    if(section) section.hidden = true;
+    return;
+  }
+  if(section) section.hidden = false;
   const feed = agendaFeedRecord();
   empty.hidden = Boolean(feed);
   active.hidden = !feed;
@@ -38,11 +52,11 @@ function syncHouseholdAgendaSettings(){
   const syncHint = $('settings-agenda-sync-hint');
   if(syncHint){
     if(style === 'selected'){
-      syncHint.textContent = 'Only items set to view or mark done are copied. This device keeps its own planner settings and agenda.';
+      syncHint.textContent = 'Next QR: only items set to view or mark done are copied. This device keeps its own planner settings and agenda.';
     }else if(style === 'glance'){
-      syncHint.textContent = 'Shows an agenda you can read across the room and mark done. The display does not run the full app, so it stays fast on older screens.';
+      syncHint.textContent = 'Next QR: a glanceable agenda you can read across the room and mark done. The display does not run the full app, so it stays fast on older screens.';
     }else{
-      syncHint.textContent = 'Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.';
+      syncHint.textContent = 'Next QR: copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.';
     }
   }
   const scopeLabel = $('settings-agenda-scope-label');
@@ -61,9 +75,21 @@ function syncHouseholdAgendaSettings(){
       ? '1–48 hours ahead, always cut off at the end of tomorrow; maximum 50 rows.'
       : '1–50 upcoming rows, never beyond tomorrow.';
     hint.textContent = style === 'glance'
-      ? `How much of the agenda this display shows. ${range}`
+      ? `How much of the agenda a glance display shows. ${range}`
       : `Older display builds receive at most 50 upcoming rows. ${range}`;
   }
+  const devices = typeof householdAgendaDevices === 'function' ? householdAgendaDevices(feed) : [];
+  const list = $('settings-agenda-devices');
+  const devicesEmpty = $('settings-agenda-devices-empty');
+  if(list){
+    list.innerHTML = devices.map(device=>{
+      const when = device.pairedAt
+        ? householdAgendaAgeLabel(device.pairedAt)
+        : 'signed in';
+      return `<div class="settings-agenda-device"><div><strong>${householdAgendaDeviceLabel(device.syncMode)}</strong><p class="field-hint">Paired ${when}</p></div><button type="button" class="btn danger-soft" data-revoke-pairing="${device.pairingId}">sign out</button></div>`;
+    }).join('');
+  }
+  if(devicesEmpty) devicesEmpty.hidden = devices.length > 0;
 }
 
 function toastShare(ok,good,bad){
@@ -116,7 +142,16 @@ function bindHouseholdAgendaSettings(){
     feed.syncMode = householdAgendaSyncMode({ syncMode:$('settings-agenda-sync-mode').value });
     saveAgendaFeedRecord(feed);
     syncHouseholdAgendaSettings();
-    scheduleHouseholdAgendaPublish(null,{ forceCompletionSync:true });
+  });
+  $('settings-agenda-devices')?.addEventListener('click',async event=>{
+    const button = event.target.closest('[data-revoke-pairing]');
+    if(!button) return;
+    const pairingId = button.getAttribute('data-revoke-pairing') || '';
+    if(!window.confirm('Sign out this display? The other signed-in screen stays connected.')) return;
+    try{
+      await revokeHouseholdAgendaDevice(pairingId);
+      toastShare(true,'display signed out','could not sign out that display');
+    }catch(_){ toastShare(false,'','could not sign out that display'); }
   });
   $('settings-agenda-scope-mode')?.addEventListener('change',updateHouseholdScope);
   $('settings-agenda-scope-value')?.addEventListener('change',updateHouseholdScope);
@@ -131,7 +166,7 @@ function bindHouseholdAgendaSettings(){
     }
   });
   $('settings-agenda-revoke')?.addEventListener('click',async ()=>{
-    if(!window.confirm('Revoke this display? It will sign out immediately. Scan a new QR to add a display again. Offline screens erase their cache when they reconnect.')) return;
+    if(!window.confirm('Revoke the whole display feed? Every signed-in screen will sign out immediately. Scan a new QR to add a display again. Offline screens erase their cache when they reconnect.')) return;
     try{
       await revokeHouseholdAgendaFeed();
       toastShare(true,'display feed revoked','revoke failed');

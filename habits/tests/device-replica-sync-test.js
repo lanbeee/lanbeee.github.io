@@ -15,6 +15,7 @@ function assert(value,message){
   const result = await page.evaluate(async()=>{
     history.replaceState(null,'',location.pathname + '?display=1');
     const contentKey = shareRandomHex(32);
+    const replicaKey = shareRandomHex(32);
     const feedId = shareRandomHex(16);
     const deviceCredential = shareRandomHex(32);
     const ownerId = shareRandomHex(8);
@@ -32,7 +33,7 @@ function assert(value,message){
     const privateHabit = makeHabit(privateId,'Device private');
     Storage.writeRaw(KEY,JSON.stringify([oldShared,removed,privateHabit]));
     const enrollment = {
-      feedId,deviceCredential,contentKey,pairingId:shareRandomHex(16),
+      feedId,deviceCredential,contentKey,replicaKey,pairingId:shareRandomHex(16),
       meta:{revision:4},replicaMode:'selected',
       replicaRows:{
         [sharedId]:{rowId:'11'.repeat(8),access:'complete'},
@@ -121,7 +122,10 @@ function assert(value,message){
     let completeOperation = null;
     while(Date.now()<cloneDeadline){
       for(const envelope of clonePosts){
-        const decoded = await shareDecrypt(contentKey,envelope);
+        const decoded = await shareDecrypt(
+          envelope.recordKind === 'agenda_definition' ? replicaKey : contentKey,
+          envelope
+        );
         if(decoded && decoded.action === 'upsert' && decoded.hid === addedId) addOperation = {envelope,decoded};
         if(decoded && decoded.action === 'complete' && decoded.hid === addedId) completeOperation = {envelope,decoded};
       }
@@ -134,7 +138,7 @@ function assert(value,message){
     writeReplicaEnrollment(null);
     Storage.writeRaw(KEY,JSON.stringify(cloneBefore));
     const ownerFeed = {
-      feedId,contentKey,ownerCredential:shareRandomHex(32),ownerId,
+      feedId,contentKey,replicaKey,ownerCredential:shareRandomHex(32),ownerId,
       syncMode:'clone',lastRevision:5,rowMaps:[]
     };
     shareFetch = async()=>({body:{
@@ -160,7 +164,7 @@ function assert(value,message){
     const staleOperationId = shareRandomHex(16);
     const staleRowId = '44'.repeat(8);
     const staleHabit = {...load().find(h=>h.hid === sharedId),target:99};
-    const staleEnvelope = await shareEncrypt(contentKey,{
+    const staleEnvelope = await shareEncrypt(replicaKey,{
       schemaVersion:1,action:'upsert',operationId:staleOperationId,rowId:staleRowId,
       hid:sharedId,habit:replicaHabitDefinition(staleHabit),baseDefinitionHash:'deadbeef'
     },{
@@ -179,7 +183,7 @@ function assert(value,message){
     const fatOp = shareRandomHex(16);
     const doneOp = shareRandomHex(16);
     writeReplicaEnrollment({
-      feedId,deviceCredential,contentKey,pairingId:shareRandomHex(16),
+      feedId,deviceCredential,contentKey,replicaKey,pairingId:shareRandomHex(16),
       meta:{revision:5},replicaMode:'clone',
       replicaRows:{
         [fatId]:{rowId:fatRow,access:'complete'},
@@ -228,7 +232,7 @@ function assert(value,message){
       schemaVersion:SHARE_SCHEMA_VERSION,recordKind:'agenda_snapshot',objectId:feedId,revision:6
     });
     writeReplicaEnrollment({
-      feedId,deviceCredential,contentKey,pairingId,
+      feedId,deviceCredential,contentKey,replicaKey,pairingId,
       meta:{revision:5},replicaMode:'clone',
       replicaRows:{ [doneId]:{rowId:staleRow,access:'complete'} },
       replicaOutbox:[{operationId:staleDoneOp,hid:doneId,rowId:staleRow,minutes:4,logKey:'n:1',createdAt:3}]
@@ -257,7 +261,7 @@ function assert(value,message){
       && Number(replicaEnrollment()?.meta?.revision) === 6
       && !(replicaEnrollment()?.replicaOutbox || []).some(op=>op && op.operationId === staleDoneOp));
     writeReplicaEnrollment({
-      feedId,deviceCredential,contentKey,pairingId,
+      feedId,deviceCredential,contentKey,replicaKey,pairingId,
       meta:{revision:5},replicaMode:'clone',
       replicaRows:{ [doneId]:{rowId:staleRow,access:'complete'} },
       replicaOutbox:[{operationId:shareRandomHex(16),hid:doneId,rowId:staleRow,minutes:8,logKey:'n:2',createdAt:4}]
@@ -278,7 +282,7 @@ function assert(value,message){
     const wallCreated = makeHabit(wallCreatedId,'Kept private after mode switch');
     Storage.writeRaw(KEY,JSON.stringify([snapHabit,wallCreated]));
     writeReplicaEnrollment({
-      feedId,deviceCredential,contentKey,pairingId,
+      feedId,deviceCredential,contentKey,replicaKey,pairingId,
       meta:{revision:6},replicaMode:'clone',
       replicaRows:{
         [doneId]:{rowId:staleRow,access:'complete'},
@@ -308,7 +312,7 @@ function assert(value,message){
     const ownerDup = {ts:Date.now(),minutes:11,source:'shared_display',operationId:duplicateOp};
     Storage.writeRaw(KEY,JSON.stringify([makeHabit(doneId,'Dup fold',[localDup])]));
     writeReplicaEnrollment({
-      feedId,deviceCredential,contentKey,pairingId,
+      feedId,deviceCredential,contentKey,replicaKey,pairingId,
       meta:{revision:6},replicaMode:'clone',
       replicaRows:{ [doneId]:{rowId:staleRow,access:'complete'} },
       replicaPendingCompletions:{ [duplicateOp]:{hid:doneId,logKey:replicaLogKey(localDup)} },
@@ -337,7 +341,7 @@ function assert(value,message){
     duplicateChunkNext[0].logs.push({ts:duplicateChunkTs,minutes:15});
     Storage.writeRaw(KEY,JSON.stringify(duplicateChunkBefore));
     writeReplicaEnrollment({
-      feedId,deviceCredential,contentKey,pairingId,
+      feedId,deviceCredential,contentKey,replicaKey,pairingId,
       meta:{revision:6},replicaMode:'clone',
       replicaRows:{ [duplicateChunkId]:{rowId:duplicateChunkRow,access:'complete'} },
       replicaOutbox:[],replicaPendingCompletions:{}
@@ -393,7 +397,7 @@ function assert(value,message){
     const failedSaveOperationId = shareRandomHex(16);
     const failedSaveHabit = JSON.parse(JSON.stringify(load().find(h=>h.hid === duplicateChunkId)));
     const failedSaveCandidate = {...failedSaveHabit,name:'Must not acknowledge'};
-    const failedSaveEnvelope = await shareEncrypt(contentKey,{
+    const failedSaveEnvelope = await shareEncrypt(replicaKey,{
       schemaVersion:1,action:'upsert',operationId:failedSaveOperationId,rowId:duplicateChunkRow,
       hid:duplicateChunkId,habit:replicaHabitDefinition(failedSaveCandidate),
       baseDefinitionHash:replicaHabitDefinitionHash(failedSaveHabit)
@@ -518,13 +522,13 @@ function assert(value,message){
   });
   await glancePage.goto(`${baseUrl}index.html?display=1`,{waitUntil:'load'});
   await glancePage.waitForLoadState('load');
-  const glanceLanding = await glancePage.evaluate(()=>({
+  const glanceLanding = await glancePage.evaluate(async()=>({
     path:location.pathname,
     replicaChrome:Boolean(document.querySelector('.replica-display-bar')),
     // agenda-display.js is only loaded on the kiosk page, so reaching it here
     // also proves the redirect landed.
     stayedOnKiosk:typeof installDisplayReplica === 'function'
-      && installDisplayReplica({generatedAt:Date.now(),days:[]},displayReadEnrollment()),
+      && await installDisplayReplica({generatedAt:Date.now(),days:[]},displayReadEnrollment()),
     stillEnrolled:Boolean(displayReadEnrollment())
   }));
   assert(glanceClassify.glanceDetected

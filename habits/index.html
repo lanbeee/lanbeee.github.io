@@ -1053,7 +1053,7 @@
             <span data-ui-leave="agenda"></span>
           </div>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Pair a fridge, tablet, or second device. Personal clone makes it its own offline-capable Tings installation: every task and habit is copied and either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages and keeps owner-managed schedules. Glance display does not install the app at all — the screen shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower display. Only one display can be signed in. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it.</p>
+            <p class="field-hint">Pair at most two screens: one full-app display (personal clone or shared items) and one glance display. Personal clone copies every task and habit so either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages. Glance display shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower frame. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it. Approving a second screen does not sign the other out.</p>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
@@ -1061,7 +1061,7 @@
               <span class="settings-sublabel">feed title</span>
               <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Shared display" autocomplete="off" />
               <p class="field-hint" id="settings-agenda-status"></p>
-              <span class="settings-sublabel">sync style</span>
+              <span class="settings-sublabel">sync style for the next display</span>
               <select id="settings-agenda-sync-mode" class="mini-select">
                 <option value="clone">personal clone</option>
                 <option value="selected">shared items only</option>
@@ -1083,12 +1083,15 @@
                 <input id="settings-agenda-scope-value" class="settings-text-input" type="number" min="1" max="50" step="1" value="20" aria-label="agenda publish scope value" />
               </div>
               <p class="field-hint" id="settings-agenda-scope-hint">Older display builds receive at most 50 upcoming rows, never beyond tomorrow.</p>
+              <span class="settings-sublabel">signed-in displays</span>
+              <div id="settings-agenda-devices"></div>
+              <p class="field-hint" id="settings-agenda-devices-empty">No display is signed in yet. Scan a QR to add one.</p>
               <span class="settings-sublabel">pair a display</span>
-              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR signs out the laptop, tablet, or frame that was paired before. Requests work once and expire after 30 seconds.</p>
+              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR adds a second screen and does not sign the other out. Requests work once and expire after 30 seconds.</p>
               <div class="btn-row" style="flex-wrap:wrap">
                 <button type="button" class="btn primary" id="settings-agenda-scan-qr"><i class="ti ti-scan" aria-hidden="true"></i> scan display QR</button>
                 <button type="button" class="btn" id="settings-agenda-publish">sync now</button>
-                <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke</button>
+                <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke feed</button>
               </div>
             </div>
           </div>
@@ -1560,7 +1563,7 @@
 <div class="agenda-pair-approval" id="agenda-pair-approval" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-approval-title" hidden>
   <div class="agenda-pair-approval-card">
     <h2 id="agenda-pair-approval-title">Authorize shared display</h2>
-    <p>This permanently replaces any currently paired display. Only continue while you can see the display you just scanned.</p>
+    <p>This adds a signed-in screen. Any other display already paired stays connected. Only continue while you can see the display you just scanned.</p>
     <label for="agenda-pair-approval-code">8-digit code shown on display</label>
     <input id="agenda-pair-approval-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="1234-5678" />
     <p id="agenda-pair-approval-status" role="status"></p>

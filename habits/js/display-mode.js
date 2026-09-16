@@ -146,7 +146,7 @@ function unionReplicaOps(primary,secondary){
     if(ak !== bk) return ak - bk;
     return (Number(a && a.createdAt) || 0) - (Number(b && b.createdAt) || 0);
   });
-  // The Worker can hold at most 50 pending records at once, but that is a
+  // The Worker can hold at most 100 pending records at once, but that is a
   // server-side backpressure limit rather than a local durability limit. Keep
   // every unsent operation here; flushReplicaOutbox drains them as the owner
   // consumes and acknowledges batches.
@@ -249,16 +249,27 @@ function replicaCompletionBinding(enrolled,hid){
 function queueReplicaCompletion(enrolled,habit,log,binding){
   const key = replicaLogKey(log);
   if(!key || !habit || !habit.hid || !binding || binding.access !== 'complete') return false;
+  const existingOperationId = replicaLogOperationId(log);
+  if(existingOperationId && replicaOwnOperationIds(enrolled).has(existingOperationId)) return false;
   const outbox = Array.isArray(enrolled.replicaOutbox) ? enrolled.replicaOutbox.slice() : [];
   const pendingCompletions = enrolled.replicaPendingCompletions && typeof enrolled.replicaPendingCompletions === 'object'
     ? {...enrolled.replicaPendingCompletions}
     : {};
   if(outbox.some(op=>op && op.hid === habit.hid && op.logKey === key)) return false;
   if(Object.values(pendingCompletions).some(pending=>pending && pending.hid === habit.hid && pending.logKey === key)) return false;
-  const operationId = replicaLogOperationId(log) || shareRandomHex(16);
+  const operationId = existingOperationId || shareRandomHex(16);
+  const completedAt = Number(log && typeof log === 'object' ? log.ts : log) || Date.now();
+  const scheduledDay = /^\d{4}-\d{2}-\d{2}$/.test(String(log && log.scheduledDay || ''))
+    ? String(log.scheduledDay)
+    : (typeof dateKey === 'function' ? dateKey(completedAt) : '');
   outbox.push({
     operationId,hid:habit.hid,rowId:binding.rowId,logKey:key,
     minutes:Math.max(0,Math.round(Number(log && log.minutes) || 0)),
+    occurrenceKey:String(log && log.occurrenceKey || '').slice(0,160),
+    scheduleOptionId:String(log && log.scheduleOptionId || '').slice(0,64),
+    scheduledDay,
+    start:Number(log && log.start) || 0,
+    completedAt,
     createdAt:Date.now()
   });
   pendingCompletions[operationId] = {hid:habit.hid,logKey:key};
@@ -425,9 +436,15 @@ async function flushReplicaOutbox(){
           }
         : {
             schemaVersion:1,action:'complete',operationId:op.operationId,rowId:op.rowId,
-            hid:op.hid,minutes:op.minutes || null
+            hid:op.hid,minutes:op.minutes || null,
+            occurrenceKey:op.occurrenceKey || '',
+            scheduleOptionId:op.scheduleOptionId || '',
+            scheduledDay:op.scheduledDay || '',
+            start:Number(op.start) || null,
+            completedAt:Number(op.completedAt) || Number(op.createdAt) || Date.now()
           };
-      const envelope = await shareEncrypt(enrolled.contentKey,payload,{
+      const encryptionKey = isDefinition ? enrolled.replicaKey : enrolled.contentKey;
+      const envelope = await shareEncrypt(encryptionKey,payload,{
         schemaVersion:SHARE_SCHEMA_VERSION,
         recordKind:isDefinition ? 'agenda_definition' : 'agenda_completion',
         objectId:enrolled.feedId,revision,operationId:op.operationId,logId:op.rowId
@@ -590,13 +607,17 @@ async function pullReplicaSnapshot(){
     }
     if(!result.body || !result.body.snapshot) return null;
     const projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
-    if(!projection || !projection.replica || projection.replica.schemaVersion !== 1) return null;
+    let replica = projection && projection.replica;
+    if(!replica && projection && projection.replicaEnvelope && enrolled.replicaKey){
+      replica = await shareDecrypt(enrolled.replicaKey,projection.replicaEnvelope);
+    }
+    if(!projection || !replica || replica.schemaVersion !== 1) return null;
     const revision = Number(result.body.revision);
     const next = adoptLiveReplicaQueues({
       ...enrolled,snapshot:result.body.snapshot,meta:{generatedAt:projection.generatedAt,revision,error:null}
     });
     if(revision !== Number(enrolled.meta && enrolled.meta.revision)){
-      mergeReplicaSnapshot(projection.replica,next);
+      mergeReplicaSnapshot(replica,next);
       if(typeof refreshOpenViews === 'function') refreshOpenViews();
     }else{
       adoptLiveReplicaQueues(next);
@@ -606,7 +627,11 @@ async function pullReplicaSnapshot(){
       }
       writeReplicaEnrollment(next);
     }
-    return projection.replica;
+    const queued = typeof householdAgendaQueueRecords === 'function'
+      ? householdAgendaQueueRecords(result.body)
+      : { completions:Array.isArray(result.body.completions) ? result.body.completions : [] };
+    await applyReplicaLiveCompletions(replicaEnrollment() || next,queued.completions);
+    return replica;
   })().finally(()=>{ _replicaPull = null; });
   return _replicaPull;
 }
@@ -665,7 +690,124 @@ function setReplicaLocked(locked){
 // bookmark can still land it here; send it back rather than mounting clone
 // chrome (and a week planner) over an empty local database.
 function replicaEnrollmentIsGlance(enrolled){
-  return Boolean(enrolled) && !enrolled.replicaMode && !enrolled.replicaRows;
+  if(!enrolled) return false;
+  if(enrolled.syncMode === 'glance' || enrolled.syncMode === 'legacy') return true;
+  return !enrolled.replicaMode && !enrolled.replicaRows;
+}
+
+function replicaOwnOperationIds(enrolled){
+  const ids = new Set();
+  for(const op of (Array.isArray(enrolled && enrolled.replicaOutbox) ? enrolled.replicaOutbox : [])){
+    if(op && op.operationId) ids.add(String(op.operationId));
+  }
+  for(const operationId of Object.keys((enrolled && enrolled.replicaPendingCompletions) || {})){
+    if(operationId) ids.add(operationId);
+  }
+  for(const operationId of (Array.isArray(enrolled && enrolled.replicaLiveOperationIds) ? enrolled.replicaLiveOperationIds : [])){
+    if(operationId) ids.add(String(operationId));
+  }
+  return ids;
+}
+
+async function applyReplicaLiveCompletions(enrolled,records){
+  if(!enrolled || !enrolled.contentKey) return false;
+  const own = replicaOwnOperationIds(enrolled);
+  const liveIds = Array.isArray(enrolled.replicaLiveOperationIds) ? enrolled.replicaLiveOperationIds.slice() : [];
+  const data = typeof load === 'function' ? load() : [];
+  if(!Array.isArray(data) || !data.length && !(records && records.length)) return false;
+  let changed = false;
+  const acknowledged = [];
+  for(const record of (Array.isArray(records) ? records : [])){
+    const envelope = record && record.envelope;
+    const operationId = String(envelope && envelope.operationId || '');
+    if(!/^[0-9a-f]{32}$/.test(operationId)) continue;
+    if(own.has(operationId)){ acknowledged.push(operationId); continue; }
+    if(envelope.recordKind === 'agenda_definition') continue;
+    let payload;
+    try{ payload = await shareDecrypt(enrolled.contentKey,envelope); }
+    catch(_){ continue; }
+    if(!payload || payload.schemaVersion !== 1 || payload.action !== 'complete' || payload.operationId !== operationId) continue;
+    let hid = typeof cleanHabitId === 'function' ? cleanHabitId(payload.hid) : String(payload.hid || '');
+    if(!hid && enrolled.replicaRows && typeof enrolled.replicaRows === 'object'){
+      hid = Object.keys(enrolled.replicaRows).find(id=>{
+        const binding = enrolled.replicaRows[id];
+        return binding && String(binding.rowId || '') === String(payload.rowId || '');
+      }) || '';
+    }
+    if(!hid) continue;
+    const habit = data.find(item=>item && item.hid === hid);
+    if(!habit) continue;
+    const logs = typeof normalizeLogs === 'function' ? normalizeLogs(habit.logs) : (Array.isArray(habit.logs) ? habit.logs : []);
+    if(logs.some(log=>replicaLogOperationId(log) === operationId)){
+      acknowledged.push(operationId);
+      continue;
+    }
+    const createdAt = Number(record && record.createdAt);
+    const serverTime = Number.isFinite(createdAt) && createdAt > 0 ? Math.min(createdAt,Date.now()) : Date.now();
+    const reportedAt = Number(payload.completedAt);
+    const completionTime = Number.isFinite(reportedAt) && reportedAt > 0
+      ? Math.min(reportedAt,Date.now())
+      : serverTime;
+    const occurrenceKey = String(payload.occurrenceKey || '').slice(0,160);
+    const alreadyComplete = occurrenceKey
+      ? logs.some(log=>typeof logOccurrenceKey === 'function' && logOccurrenceKey(log) === occurrenceKey)
+      : (!habit.breakable && typeof completedOnDay === 'function' && completedOnDay(habit,completionTime));
+    if(alreadyComplete){
+      acknowledged.push(operationId);
+      continue;
+    }
+    const minutes = Math.max(0,Math.min(720,Math.round(Number(payload.minutes) || 0)));
+    if(habit.breakable && !minutes){
+      acknowledged.push(operationId);
+      continue;
+    }
+    const entryTs = typeof snapLogTimestamp === 'function' ? snapLogTimestamp(habit,completionTime) : completionTime;
+    const entry = typeof makeActualLog === 'function'
+      ? makeActualLog(entryTs,{
+          minutes:minutes || null,source:'shared_display',operationId,
+          occurrenceKey,
+          scheduleOptionId:String(payload.scheduleOptionId || '').slice(0,64),
+          scheduledDay:/^\d{4}-\d{2}-\d{2}$/.test(String(payload.scheduledDay || ''))
+            ? String(payload.scheduledDay) : ''
+        })
+      : { ts:entryTs,source:'shared_display',operationId };
+    habit.logs = typeof normalizeLogs === 'function' ? normalizeLogs([...logs,entry]) : [...logs,entry];
+    if(typeof latestActualLog === 'function') habit.lastLog = latestActualLog(habit.logs);
+    liveIds.push(operationId);
+    own.add(operationId);
+    acknowledged.push(operationId);
+    changed = true;
+  }
+  if(!changed){
+    await acknowledgeReplicaOperations(enrolled,acknowledged);
+    return false;
+  }
+  enrolled.replicaLiveOperationIds = [...new Set(liveIds)].filter(id=>/^[0-9a-f]{32}$/.test(id)).slice(-100);
+  writeReplicaEnrollment(enrolled);
+  const next = typeof normalize === 'function' ? normalize(data) : data;
+  Storage.writeRaw(KEY,JSON.stringify(next));
+  if(typeof bumpPlannerDataRevision === 'function') bumpPlannerDataRevision();
+  if(typeof refreshOpenViews === 'function'){
+    try{ refreshOpenViews(); }
+    catch(_){ /* Local logs already saved; the next render still shows them. */ }
+  }
+  await acknowledgeReplicaOperations(enrolled,acknowledged);
+  return true;
+}
+
+async function acknowledgeReplicaOperations(enrolled,operationIds){
+  const ids = [...new Set((operationIds || []).filter(id=>/^[0-9a-f]{32}$/.test(String(id || ''))))];
+  if(!enrolled || !enrolled.deviceCredential || !ids.length) return;
+  try{
+    for(let i=0;i<ids.length;i+=50){
+      await shareFetch(`/v1/agendas/${enrolled.feedId}/completion-acks`,{
+        method:'POST',credential:enrolled.deviceCredential,
+        body:{operationIds:ids.slice(i,i+50)},timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
+      });
+    }
+  }catch(error){
+    if(error && (error.status === 401 || error.status === 410)) throw error;
+  }
 }
 
 function mountReplicaDisplayMode(){
@@ -676,6 +818,7 @@ function mountReplicaDisplayMode(){
   ensureReplicaDisplayQuery();
   document.body.classList.add('replica-display-mode');
   document.body.classList.add(enrolled.replicaMode === 'selected' ? 'replica-mode-selected' : 'replica-mode-clone');
+  if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
   const bar = document.createElement('aside');
   bar.className = 'replica-display-bar';
   const ownershipLabel = enrolled.replicaMode === 'clone' ? 'editable personal clone' : 'owner-managed schedules';

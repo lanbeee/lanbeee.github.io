@@ -1,5 +1,7 @@
 const AGENDA_STALE_MS = 24 * 60 * 60 * 1000;
-const AGENDA_POLL_MS = 3 * 60 * 1000;
+// Same cadence as the personal clone: a done on the other screen should
+// appear here from the Worker event stream without waiting for the phone.
+const AGENDA_POLL_MS = 30 * 1000;
 const AGENDA_PAIR_POLL_MS = 4 * 1000;
 const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
   ? AGENDA_DISPLAY_KEY
@@ -483,8 +485,14 @@ function displayLogIdentity(log){
 // Install a replica snapshot into the normal app's local store. Pending local
 // logs are merged additively so an offline completion is never erased by an
 // older owner snapshot while it is waiting to be consumed.
-function installDisplayReplica(projection,enrollment){
-  const replica = projection && projection.replica;
+async function installDisplayReplica(projection,enrollment){
+  if(enrollment && (enrollment.syncMode === 'glance' || enrollment.syncMode === 'legacy')) return false;
+  if(enrollment && !enrollment.syncMode && !enrollment.replicaMode && !enrollment.replicaRows) return false;
+  let replica = projection && projection.replica;
+  if(!replica && projection && projection.replicaEnvelope && enrollment && enrollment.replicaKey){
+    try{ replica = await shareDecrypt(enrollment.replicaKey,projection.replicaEnvelope); }
+    catch(_){ return false; }
+  }
   if(!replica || replica.schemaVersion !== 1 || !Array.isArray(replica.items)) return false;
   let local = [];
   try{ local = JSON.parse(localStorage.getItem(KEY) || '[]'); }
@@ -673,6 +681,171 @@ function mergeDisplayCompletionRowIds(local, remote, projection, extras = []){
     ...(Array.isArray(remote) ? remote : []),
     ...extra
   ].map(id=>String(id || '')).filter(id=>/^[0-9a-f]{16}$/.test(id) && (known.has(id) || extra.has(id))))].slice(-50);
+}
+
+function displayPendingCompletionPosts(enrolled){
+  return Array.isArray(enrolled && enrolled.pendingCompletionPosts)
+    ? enrolled.pendingCompletionPosts.filter(item=>item && /^[0-9a-f]{16}$/.test(String(item.rowId || '')) && /^[0-9a-f]{32}$/.test(String(item.operationId || '')))
+    : [];
+}
+
+function displayOwnCompletionOperationIds(enrolled){
+  const ids = new Set();
+  for(const operationId of (Array.isArray(enrolled && enrolled.completionOperationIds) ? enrolled.completionOperationIds : [])){
+    if(/^[0-9a-f]{32}$/.test(String(operationId || ''))) ids.add(String(operationId));
+  }
+  for(const item of displayPendingCompletionPosts(enrolled)) ids.add(item.operationId);
+  return ids;
+}
+
+function displayCompletionIdentity(payload,envelope){
+  return {
+    hid:String(payload && payload.hid || ''),
+    rowId:String((payload && payload.rowId) || (envelope && envelope.logId) || ''),
+    occurrenceKey:String(payload && payload.occurrenceKey || ''),
+    scheduleOptionId:String(payload && payload.scheduleOptionId || ''),
+    scheduledDay:String(payload && payload.scheduledDay || ''),
+    minutes:Number(payload && payload.minutes) || 0,
+    start:Number(payload && payload.start) || 0
+  };
+}
+
+function pickDisplayCompletionRow(candidates,alreadyDone){
+  if(!candidates.length) return null;
+  const open = candidates.filter(row=>!alreadyDone.has(row.rowId));
+  const pool = open.length ? open : candidates;
+  return pool.slice().sort((a,b)=>(Number(a.start) || 0) - (Number(b.start) || 0))[0] || null;
+}
+
+// Clone completions use a per-habit replica row id, so they never match a
+// glance occurrence id. Prefer the encrypted occurrence/session identity and
+// never mark every row that happens to share the same habit id.
+function matchDisplayLiveCompletion(completable,payload,envelope,alreadyDone){
+  const id = displayCompletionIdentity(payload,envelope);
+  if(/^[0-9a-f]{16}$/.test(id.rowId)){
+    const exact = completable.find(row=>row.rowId === id.rowId);
+    if(exact) return exact;
+  }
+  if(!id.hid) return null;
+  let candidates = completable.filter(row=>String(row.hid || '') === id.hid);
+  if(id.occurrenceKey){
+    candidates = candidates.filter(row=>String(row.occurrenceKey || '') === id.occurrenceKey);
+    return pickDisplayCompletionRow(candidates,alreadyDone);
+  }
+  if(id.scheduleOptionId){
+    const opted = candidates.filter(row=>String(row.scheduleOptionId || '') === id.scheduleOptionId);
+    if(opted.length) candidates = opted;
+  }
+  if(id.scheduledDay){
+    const sameDay = candidates.filter(row=>String(row.scheduledDay || '') === id.scheduledDay);
+    if(sameDay.length) candidates = sameDay;
+  }
+  if(id.start > 0){
+    const sameStart = candidates.filter(row=>Number(row.start) === id.start);
+    if(sameStart.length) candidates = sameStart;
+  }
+  if(candidates.length > 1 && id.minutes > 0){
+    const sameDuration = candidates.filter(row=>Number(row.durationMinutes) === id.minutes);
+    if(sameDuration.length) candidates = sameDuration;
+  }
+  return pickDisplayCompletionRow(candidates,alreadyDone);
+}
+
+async function applyDisplayLiveCompletions(enrolled,records,projection){
+  const own = displayOwnCompletionOperationIds(enrolled);
+  const completable = [];
+  for(const day of (projection && Array.isArray(projection.days) ? projection.days : [])){
+    for(const row of (day && Array.isArray(day.rows) ? day.rows : [])){
+      if(row && row.completable === true && /^[0-9a-f]{16}$/.test(String(row.rowId || ''))) completable.push(row);
+    }
+  }
+  const alreadyDone = new Set([
+    ...(Array.isArray(enrolled && enrolled.completionRowIds) ? enrolled.completionRowIds : []),
+    ...displayPendingCompletionPosts(enrolled).map(item=>item.rowId)
+  ].map(id=>String(id || '')).filter(id=>/^[0-9a-f]{16}$/.test(id)));
+  const rowIds = new Set();
+  const acknowledged = [];
+  for(const record of (Array.isArray(records) ? records : [])){
+    const envelope = record && record.envelope;
+    if(!envelope || envelope.recordKind === 'agenda_definition') continue;
+    const operationId = String(envelope.operationId || '');
+    if(own.has(operationId)) continue;
+    let payload;
+    try{ payload = await shareDecrypt(enrolled.contentKey,envelope); }
+    catch(_){ continue; }
+    if(!payload || payload.action !== 'complete') continue;
+    const matched = matchDisplayLiveCompletion(completable,payload,envelope,alreadyDone);
+    if(matched){
+      rowIds.add(matched.rowId);
+      alreadyDone.add(matched.rowId);
+    }
+    acknowledged.push(operationId);
+  }
+  await acknowledgeDisplayOperations(enrolled,acknowledged);
+  return rowIds;
+}
+
+async function acknowledgeDisplayOperations(enrolled,operationIds){
+  const ids = [...new Set((operationIds || []).filter(id=>/^[0-9a-f]{32}$/.test(String(id || ''))))];
+  if(!enrolled || !enrolled.deviceCredential || !ids.length) return;
+  try{
+    for(let i=0;i<ids.length;i+=50){
+      await shareFetch(`/v1/agendas/${enrolled.feedId}/completion-acks`,{
+        method:'POST',credential:enrolled.deviceCredential,
+        body:{operationIds:ids.slice(i,i+50)},timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
+      });
+    }
+  }catch(error){
+    // A pre-v2 Worker rejects viewer acknowledgements. The event remains
+    // idempotent locally and the upgraded Worker will accept a later retry.
+    if(error && (error.status === 401 || error.status === 410)) throw error;
+  }
+}
+
+async function flushDisplayCompletionOutbox(enrolled){
+  const pending = displayPendingCompletionPosts(enrolled);
+  if(!pending.length || !enrolled || !enrolled.deviceCredential || !enrolled.contentKey) return enrolled;
+  const revision = Number(enrolled.meta && enrolled.meta.revision);
+  if(!Number.isInteger(revision) || revision < 1) return enrolled;
+  const remaining = [];
+  const posted = [];
+  for(const item of pending){
+    try{
+      const payload = {
+        schemaVersion:1,action:'complete',operationId:item.operationId,rowId:item.rowId,
+        minutes:item.minutes || null,
+        occurrenceKey:item.occurrenceKey || '',
+        scheduleOptionId:item.scheduleOptionId || '',
+        scheduledDay:item.scheduledDay || '',
+        start:Number(item.start) || null,
+        completedAt:Number(item.completedAt) || Date.now()
+      };
+      if(item.hid) payload.hid = item.hid;
+      const envelope = await shareEncrypt(enrolled.contentKey,payload,{
+        schemaVersion:SHARE_SCHEMA_VERSION,
+        recordKind:'agenda_completion',
+        objectId:enrolled.feedId,
+        revision,
+        operationId:item.operationId,
+        logId:item.rowId
+      });
+      await shareFetch(`/v1/agendas/${enrolled.feedId}/completions`,{
+        method:'POST',
+        credential:enrolled.deviceCredential,
+        body:{ completion:envelope },
+        timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
+      });
+      posted.push(item.operationId);
+    }catch(error){
+      if(error && (error.status === 401 || error.status === 410)) throw error;
+      remaining.push(item);
+    }
+  }
+  const completionOperationIds = [...new Set([
+    ...(Array.isArray(enrolled.completionOperationIds) ? enrolled.completionOperationIds : []),
+    ...posted
+  ])].filter(id=>/^[0-9a-f]{32}$/.test(id)).slice(-100);
+  return { ...enrolled,pendingCompletionPosts:remaining,completionOperationIds };
 }
 
 function renderDisplay(projection,meta,completedRowIds = []){
@@ -871,10 +1044,51 @@ async function commitDisplayCompletion(rowId){
     button.setAttribute('aria-label',`Saving ${target.row.title || 'item'} as done`);
   }
   const operationId = shareRandomHex(16);
+  const hid = String(target.row.hid || '');
+  const queued = {
+    rowId,
+    operationId,
+    minutes:Math.max(0,Math.round(Number(target.row.durationMinutes) || 0)),
+    occurrenceKey:String(target.row.occurrenceKey || '').slice(0,160),
+    scheduleOptionId:String(target.row.scheduleOptionId || '').slice(0,64),
+    scheduledDay:String(target.row.scheduledDay || target.day.dateKey || ''),
+    start:Number(target.row.start) || 0,
+    completedAt:Date.now(),
+    hid:hid && hid === (typeof cleanHabitId === 'function' ? cleanHabitId(hid) : hid) ? hid : ''
+  };
+  const persistQueued = stored=>{
+    const completionRowIds = [...new Set([
+      ...(Array.isArray(stored.completionRowIds) ? stored.completionRowIds : []),
+      rowId
+    ])].slice(-50);
+    const pendingCompletionPosts = [
+      ...displayPendingCompletionPosts(stored).filter(item=>item.operationId !== operationId && item.rowId !== rowId),
+      queued
+    ].slice(-50);
+    const completionOperationIds = [...new Set([
+      ...(Array.isArray(stored.completionOperationIds) ? stored.completionOperationIds : []),
+      operationId
+    ])].slice(-100);
+    return { ...stored,completionRowIds,pendingCompletionPosts,completionOperationIds };
+  };
+  if(displayAuthorizationMatches(enrolled)){
+    const queuedEnrollment = persistQueued(_displayFeed || displayReadEnrollment() || enrolled);
+    _displayFeed = queuedEnrollment;
+    displayWriteEnrollment(queuedEnrollment);
+  }
   const revision = Number(enrolled.meta && enrolled.meta.revision);
   try{
     if(!Number.isInteger(revision) || revision < 1) throw new Error('stale_snapshot');
-    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const payload = {
+      schemaVersion:1,action:'complete',operationId,rowId,
+      minutes:queued.minutes || null,
+      occurrenceKey:queued.occurrenceKey,
+      scheduleOptionId:queued.scheduleOptionId,
+      scheduledDay:queued.scheduledDay,
+      start:queued.start || null,
+      completedAt:queued.completedAt
+    };
+    if(queued.hid) payload.hid = queued.hid;
     const envelope = await shareEncrypt(enrolled.contentKey,payload,{
       schemaVersion:SHARE_SCHEMA_VERSION,
       recordKind:'agenda_completion',
@@ -889,37 +1103,35 @@ async function commitDisplayCompletion(rowId){
       body:{ completion:envelope },
       timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
     });
-    // Merge into the live enrollment, never the captured one: a refresh may
-    // have stored a newer revision or acknowledged other rows meanwhile.
-    // And if the display de-paired or re-paired while the push was in flight,
-    // the enroll screen owns the UI — stale credentials must not come back.
     if(!displayAuthorizationMatches(enrolled)){
       _displaySavingRowIds.delete(rowId);
       return;
     }
     const stored = _displayFeed || displayReadEnrollment();
-    const base = Array.isArray(stored.completionRowIds) ? stored.completionRowIds : [];
-    const completionRowIds = [...new Set([...base,rowId])].slice(-50);
-    const next = { ...stored,completionRowIds };
+    const next = {
+      ...stored,
+      completionRowIds:[...new Set([...(Array.isArray(stored.completionRowIds) ? stored.completionRowIds : []),rowId])].slice(-50),
+      pendingCompletionPosts:displayPendingCompletionPosts(stored).filter(item=>item.operationId !== operationId),
+      completionOperationIds:[...new Set([
+        ...(Array.isArray(stored.completionOperationIds) ? stored.completionOperationIds : []),
+        operationId
+      ])].slice(-100)
+    };
     _displayFeed = next;
     displayWriteEnrollment(next);
     _displaySavingRowIds.delete(rowId);
-    renderDisplay(_displayProjection,next.meta || {},completionRowIds);
+    renderDisplay(_displayProjection,next.meta || {},next.completionRowIds);
   }catch(error){
     _displaySavingRowIds.delete(rowId);
-    // Same guard as the success path: never paint the agenda (or an error
-    // state) back over an enroll screen that appeared while we were in flight.
     if(!displayAuthorizationMatches(enrolled)) return;
-    renderCurrentDisplay();
-    const failed = document.querySelector(`[data-complete-row="${rowId}"]`);
-    if(failed){
-      failed.disabled = false;
-      failed.classList.remove('is-saving');
-      failed.classList.add('is-error');
-      failed.setAttribute('aria-label',error && error.status === 429 ? 'Please wait, then try marking done again' : `Try marking ${target.row.title || 'item'} done again`);
+    if(error && (error.status === 401 || error.status === 410)){
+      clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
+      return;
     }
-    if(error && (error.status === 401 || error.status === 410)) clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
-    else if(error && error.status === 409) void refreshDisplay();
+    const stored = persistQueued(_displayFeed || displayReadEnrollment() || enrolled);
+    _displayFeed = stored;
+    displayWriteEnrollment(stored);
+    renderDisplay(_displayProjection,stored.meta || {},stored.completionRowIds);
   }
 }
 
@@ -973,6 +1185,18 @@ function updateDisplayPairingExpiry(){
 
 async function beginDisplayPairing(reason = 'new'){
   stopDisplayPairing();
+  const previous = _displayFeed || displayReadEnrollment();
+  if(previous && previous.feedId && previous.deviceCredential){
+    try{
+      await shareFetch(`/v1/agendas/${previous.feedId}/display-access`,{
+        method:'DELETE',credential:previous.deviceCredential,timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
+      });
+    }catch(error){
+      if(!(error && (error.status === 401 || error.status === 410))){
+        /* Offline revoke must not block a fresh QR; the owner list prunes later. */
+      }
+    }
+  }
   const section = $('agenda-enroll');
   if(section) section.hidden = false;
   const root = $('agenda-root');
@@ -997,7 +1221,8 @@ async function beginDisplayPairing(reason = 'new'){
         pollCredential:pairing.pollCredential,
         deviceCredentialHash:pairing.deviceCredentialHash,
         confirmationProof:pairing.confirmationProof,
-        displayPublicKey:pairing.displayPublicKey
+        displayPublicKey:pairing.displayPublicKey,
+        protocolVersion:AGENDA_PAIR_PROTOCOL_VERSION
       }
     });
     pairing.expiresAt = Number(result.body && result.body.expiresAt) || (Date.now() + 30 * 1000);
@@ -1024,7 +1249,7 @@ async function pollDisplayPairing(){
     });
     if(!result.body || result.body.state !== 'approved') return;
     const feedId = result.body.feedId;
-    const contentKey = await shareAgendaPairDecrypt(
+    const transferred = await shareAgendaPairDecrypt(
       result.body.transfer,
       pairing.privateKey,
       feedId,
@@ -1032,11 +1257,13 @@ async function pollDisplayPairing(){
     );
     const enrolled = {
       feedId,
-      contentKey,
+      contentKey:transferred.contentKey,
+      replicaKey:transferred.replicaKey || null,
       deviceCredential:pairing.deviceCredential,
       pairingId:pairing.pairingId,
       sessionExpiresAt:Number(result.body.sessionExpiresAt) || null
     };
+    if(transferred.syncMode) enrolled.syncMode = transferred.syncMode;
     _displayFeed = enrolled;
     displayWriteEnrollment(enrolled);
     const passcode = readDisplayPasscode();
@@ -1104,21 +1331,33 @@ async function refreshDisplay(opts = {}){
       snapshot:result.body.snapshot,
       meta
     };
-    const remoteCompletionRowIds = (Array.isArray(result.body.completions) ? result.body.completions : [])
-      .map(record=>record && record.envelope && record.envelope.logId)
-      .filter(value=>/^[0-9a-f]{16}$/.test(String(value || '')));
-    const extras = [..._displaySavingRowIds];
+    const liveRowIds = await applyDisplayLiveCompletions(next,result.body && result.body.completions,projection);
+    const extras = [
+      ..._displaySavingRowIds,
+      ...displayPendingCompletionPosts(next).map(item=>item.rowId),
+      ...liveRowIds
+    ];
     if(_displayPendingCompletion && _displayPendingCompletion.rowId) extras.push(_displayPendingCompletion.rowId);
     const completionRowIds = mergeDisplayCompletionRowIds(
       enrolled.completionRowIds,
-      remoteCompletionRowIds,
+      [],
       projection,
       extras
     );
     next.completionRowIds = completionRowIds;
-    _displayFeed = next;
-    displayWriteEnrollment(next);
-    if(installDisplayReplica(projection,next)) return;
+    let stored = next;
+    try{
+      stored = await flushDisplayCompletionOutbox(next);
+    }catch(error){
+      if(error && (error.status === 401 || error.status === 410)){
+        clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
+        return;
+      }
+    }
+    stored.completionRowIds = completionRowIds;
+    _displayFeed = stored;
+    displayWriteEnrollment(stored);
+    if(await installDisplayReplica(projection,stored)) return;
     renderDisplay(projection,meta,completionRowIds);
   }catch(error){
     const code = error && error.payload && error.payload.error;

@@ -39,6 +39,12 @@ function agendaFeedRecord(){
     delete feed.currentInvite;
     saveShareState(state);
   }
+  if(feed && !/^[0-9a-f]{64}$/.test(String(feed.replicaKey || ''))){
+    feed.replicaKey = typeof shareRandomHex === 'function'
+      ? shareRandomHex(32)
+      : Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
+    saveShareState(state);
+  }
   return feed;
 }
 

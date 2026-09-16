@@ -1137,13 +1137,23 @@ function executeUndo(){
   }
 }
 
+function occurrenceOptsFromCard(card){
+  const row = card && card.closest ? card.closest('.swipe-row') : null;
+  if(!row || !row.dataset || !row.dataset.occurrenceKey) return {};
+  return {
+    occurrenceKey:row.dataset.occurrenceKey,
+    scheduleOptionId:row.dataset.scheduleOptionId || undefined,
+    scheduledDay:row.dataset.scheduledDay || undefined
+  };
+}
+
 /**
  * HYBRID: set absolute breakable progress. Forward movement appends a minute
  * log; backward movement consolidates minute logs in the relevant scope while
  * preserving plans and non-minute entries.
  * Returns true when a log was saved.
  */
-function commitBreakableProgress(i,targetMinutes,dayBase){
+function commitBreakableProgress(i,targetMinutes,dayBase,opts){
   const data = load();
   if(!data[i] || !data[i].breakable)return false;
   const h = data[i];
@@ -1158,7 +1168,7 @@ function commitBreakableProgress(i,targetMinutes,dayBase){
     const delta = typeof breakableSliderDeltaMinutes === 'function'
       ? breakableSliderDeltaMinutes(h,target,dayBase)
       : (target - done);
-    if(delta > 0)return logTing(i,{ minutes:delta });
+    if(delta > 0)return logTing(i,{ minutes:delta,...(opts || {}) });
     return false;
   }
 
@@ -1201,7 +1211,7 @@ function commitBreakableFromCard(i,card){
       showToast('already done');
       return false;
     }
-    return commitBreakableProgress(i,intent.target);
+    return commitBreakableProgress(i,intent.target,undefined,occurrenceOptsFromCard(card));
   }
   const suggested = typeof suggestedBreakableLogMinutes === 'function'
     ? intent.suggested
@@ -1210,7 +1220,7 @@ function commitBreakableFromCard(i,card){
     showToast('already done');
     return false;
   }
-  return commitBreakableProgress(i,intent.done + suggested);
+  return commitBreakableProgress(i,intent.done + suggested,undefined,occurrenceOptsFromCard(card));
 }
 
 // HYBRID: log entry and flash card
@@ -1234,12 +1244,7 @@ function quickLog(i,card){
   };
   const data = load();
   const h = data[i];
-  const row = card && card.closest('.swipe-row');
-  const occurrenceOpts = row && row.dataset.occurrenceKey ? {
-    occurrenceKey:row.dataset.occurrenceKey,
-    scheduleOptionId:row.dataset.scheduleOptionId || undefined,
-    scheduledDay:row.dataset.scheduledDay || undefined
-  } : {};
+  const occurrenceOpts = occurrenceOptsFromCard(card);
   if(h && h.breakable){
     if(h.trackValue && typeof requestLogTing === 'function'){
       const intent = breakableCardIntent(h,card);
@@ -1252,7 +1257,7 @@ function quickLog(i,card){
         showToast('already done');
         return;
       }
-      requestLogTing(i,go,{ minutes });
+      requestLogTing(i,go,{ minutes,...occurrenceOpts });
       return;
     }
     if(!commitBreakableFromCard(i,card))return;
