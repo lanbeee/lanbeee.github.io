@@ -224,9 +224,10 @@ function json(route,status,body){
           return json(route,200,payload);
         }
         if(method === 'PUT'){
-          if(!ownerOk) return json(route,403,{ error:'forbidden' });
+          if(!ownerOk && !session) return json(route,401,{ error:'unauthorized' });
+          if(!ownerOk && body.replica) return json(route,403,{ error:'forbidden' });
           server.snapshot = body.snapshot;
-          server.replica = body.replica || null;
+          if(ownerOk) server.replica = body.replica || null;
           server.revision = body.snapshot && body.snapshot.revision || server.revision + 1;
           return json(route,200,{
             id:server.feed.id,status:'active',revision:server.revision

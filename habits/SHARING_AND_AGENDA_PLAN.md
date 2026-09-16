@@ -7,7 +7,7 @@ Add one dedicated Cloudflare sharing service with two distinct modes:
 1. **Collaborative item sharing** — two people independently track the same owner-managed habit or task.
 2. **Shared display** — one authorized tablet, fridge screen, or family device displays a capped view of today and tomorrow and can submit narrowly scoped completion events.
 
-Tailscale is not required. The owner’s browser remains the planner of record. It publishes an encrypted agenda projection whenever Tings opens or its plan changes; Cloudflare stores and serves ciphertext but cannot inspect item names, notes, addresses, or agenda content.
+Tailscale is not required. The owner phone and a personal clone can both publish an encrypted today/tomorrow agenda; Cloudflare stores and serves ciphertext but cannot inspect item names, notes, addresses, or agenda content.
 
 Use SQLite-backed Durable Objects rather than Workers KV. Durable Objects provide strongly consistent, transactional per-share storage; KV can expose stale values due to eventual consistency. See [Durable Objects storage](https://developers.cloudflare.com/durable-objects/best-practices/access-durable-objects-storage/) and [Workers KV consistency](https://developers.cloudflare.com/kv/reference/faq/).
 
@@ -145,7 +145,7 @@ Synchronize immediately after local changes, on startup/foreground/reconnect, an
 
 ### Architecture
 
-Publish a derived agenda projection rather than the complete habit database. The display cannot edit snapshots or item definitions; its only write capability is submitting a completion event tied to a row in the current encrypted snapshot.
+Publish a derived agenda projection rather than the complete habit database. A glance display cannot edit snapshots or item definitions; its only write capability is submitting a completion event tied to a row in the current encrypted snapshot. A personal clone can also PUT a days-only glance snapshot (no replica envelope) when its local week plan changes, so the fridge updates while the owner phone is off. That write is debounced and skipped when the days have not changed; polling stays at three minutes.
 
 The owner PWA:
 
@@ -326,7 +326,7 @@ Return ETags/revisions for agenda snapshots. Reject stale owner writes with `409
 - Role enforcement for owner, recipient, and viewer credentials.
 - One-time claim and QR-pairing consumption, 30-second pairing expiry/burning, and display-session expiry.
 - Conditional revision conflicts, retry idempotency, CORS, payload limits, rate limits, expiry, and purge behavior.
-- Agenda viewers cannot mutate snapshots, definitions, pause state, acknowledgements, or feed lifecycle; their sole write capability is a bounded, deduplicated completion for a current opaque row.
+- Agenda viewers cannot mutate the clone library, pause state, or feed lifecycle. Completions stay a bounded, deduplicated event for a current opaque row. A personal clone may replace the glance snapshot without sending `replica`.
 
 ### Collaborative items
 

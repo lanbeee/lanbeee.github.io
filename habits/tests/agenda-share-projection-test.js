@@ -71,6 +71,9 @@ function assert(cond,msg){
       homeCityName:'',homeCityLat:null,homeCityLng:null
     };
     const projection = buildHouseholdAgendaProjection(week,{ feed,data,now,dayCount:7,settings:quietSettings });
+    const daysOnly = buildHouseholdAgendaProjection(week,{
+      feed,data,now,dayCount:2,settings:quietSettings,omitReplica:true
+    });
     const repeatedProjection = buildHouseholdAgendaProjection(week,{ feed,data,now:now + 1000,dayCount:7,settings:quietSettings });
     const stableRowProjection = buildHouseholdAgendaProjection(week,{
       feed:{ ...feed,replicaRowIds:projection._replicaRowIds },data,now:now + 1000,dayCount:7,settings:quietSettings
@@ -197,6 +200,9 @@ function assert(cond,msg){
       fatReplicaBytes,
       fatHasTravel:Boolean(fatProjection.replica.settings && fatProjection.replica.settings.travel),
       fatCompactName:fatProjection.replica.items[0] && fatProjection.replica.items[0].habit.name,
+      omitReplicaHasReplica:Boolean(daysOnly.replica),
+      omitReplicaDays:daysOnly.days.length,
+      omitReplicaHasMedication:daysOnly.days.some(day=>(day.rows || []).some(row=>row.title === 'Medication')),
       rowMapCount:Object.keys(projection._rowMap || {}).length,
       mappedHid:firstItem && projection._rowMap[firstItem.rowId] && projection._rowMap[firstItem.rowId].hid,
       completable:firstItem && firstItem.completable,
@@ -255,6 +261,8 @@ function assert(cond,msg){
   assert(result.fatItemCount === 59 && result.fatReplicaBytes < 480 * 1024 && !result.fatHasTravel
     && result.fatCompactName === 'Fat 0',
     'a 59-habit owner library fits the replica budget after dropping travel cache and empty fields');
+  assert(!result.omitReplicaHasReplica && result.omitReplicaDays === 2 && result.omitReplicaHasMedication,
+    'a clone can build glance days without sealing the habit library');
   assert(result.crypto.wrongDisplayRejected,'a different display private key cannot decrypt the transfer');
   assert(result.crypto.rawCredentialHidden,'display device credential is represented to the Worker only by its hash');
 

@@ -376,7 +376,7 @@ function buildHouseholdAgendaProjection(week, opts = {}){
       };
     })
   };
-  const replica = buildHouseholdReplica(data,settings,feed,rowMap,now);
+  const replica = opts.omitReplica ? null : buildHouseholdReplica(data,settings,feed,rowMap,now);
   if(replica){
     projection.replica = replica;
     Object.defineProperty(projection,'_replicaRowIds',{ value:replica._rowIds || {},enumerable:false });
@@ -1644,6 +1644,10 @@ function startHouseholdAgendaPublish(){
 }
 
 function scheduleHouseholdAgendaPublish(week, opts = {}){
+  if(typeof replicaCanPublishAgenda === 'function' && replicaCanPublishAgenda()){
+    if(typeof scheduleReplicaAgendaPublish === 'function') scheduleReplicaAgendaPublish(week, opts);
+    return;
+  }
   if(!agendaFeedRecord() || !shareConfigured()) return;
   if(week) _pendingAgendaWeek = week;
   if(opts.forceCompletionSync) _agendaPublishQueuedForce = true;

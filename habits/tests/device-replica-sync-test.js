@@ -573,6 +573,7 @@ function assert(value,message){
       feedId,deviceCredential:shareRandomHex(32),contentKey,replicaKey,pairingId,syncMode:'clone'
     });
     Storage.writeRaw(KEY,JSON.stringify([]));
+    const originalFetch = shareFetch;
     shareFetch = async()=>({ body:{ snapshot:glanceSnapshot,revision:1,pairingId,completions:[] } });
     _replicaPull = null;
     const waiting = await pullReplicaSnapshot();
@@ -580,12 +581,19 @@ function assert(value,message){
     shareFetch = async()=>({ body:{ snapshot,replica:replicaEnvelope,revision:2,pairingId,completions:[] } });
     _replicaPull = null;
     const pulled = await pullReplicaSnapshot();
+    const storedMode = replicaEnrollment() && replicaEnrollment().replicaMode;
+    shareFetch = originalFetch;
+    if(typeof _replicaAgendaPublishTimer !== 'undefined' && _replicaAgendaPublishTimer){
+      clearTimeout(_replicaAgendaPublishTimer);
+      _replicaAgendaPublishTimer = null;
+    }
+    writeReplicaEnrollment(null);
     return {
       waitingNull:waiting == null,
       waitingMode:waitingMode || null,
       pulledMode:pulled && pulled.mode,
       names:load().map(h=>h && h.name),
-      storedMode:replicaEnrollment() && replicaEnrollment().replicaMode
+      storedMode
     };
   });
   assert(libraryPull.waitingNull && !libraryPull.waitingMode,
@@ -593,6 +601,93 @@ function assert(value,message){
   assert(libraryPull.pulledMode === 'clone' && libraryPull.storedMode === 'clone'
     && libraryPull.names.includes('Pulled from sealed library'),
     `the clone installs habits from the sibling replica envelope (${JSON.stringify(libraryPull)})`);
+
+  const cloneAgendaPublish = await page.evaluate(async()=>{
+    const contentKey = shareRandomHex(32);
+    const replicaKey = shareRandomHex(32);
+    const feedId = shareRandomHex(16);
+    const pairingId = shareRandomHex(16);
+    const hid = generateHabitId();
+    const now = Date.now();
+    const start = now + 60 * 60000;
+    const habit = normalize([{
+      hid,name:'Clone planned walk',type:'keepup',target:1,logs:[],durationMinutes:30
+    }])[0];
+    Storage.writeRaw(KEY,JSON.stringify([habit]));
+    writeReplicaEnrollment({
+      feedId,deviceCredential:shareRandomHex(32),contentKey,replicaKey,pairingId,
+      syncMode:'clone',replicaMode:'clone',meta:{revision:2},
+      replicaRows:{ [hid]:{ rowId:shareRandomHex(8),access:'complete' } }
+    });
+    const week = {
+      days:[{
+        dayBase:typeof dayStart === 'function' ? dayStart(now) : now,
+        dayKey:typeof dateKey === 'function' ? dateKey(now) : '',
+        usedMinutes:30,remainingMinutes:0,
+        timeline:[
+          { kind:'fill',start,end:start + 30 * 60000,h:habit,i:0 },
+          { kind:'blocked',start:start + 40 * 60000,end:start + 70 * 60000,label:'Clone blocked window' }
+        ]
+      }]
+    };
+    const puts = [];
+    const originalFetch = shareFetch;
+    if(typeof _replicaAgendaPublishTimer !== 'undefined' && _replicaAgendaPublishTimer){
+      clearTimeout(_replicaAgendaPublishTimer);
+      _replicaAgendaPublishTimer = null;
+    }
+    shareFetch = async(path,opts={})=>{
+      puts.push({
+        method:opts.method || 'GET',
+        path:String(path || ''),
+        hasReplica:Boolean(opts.body && opts.body.replica),
+        snapshot:opts.body && opts.body.snapshot || null,
+        expectedRevision:opts.body && opts.body.expectedRevision
+      });
+      if(opts.method === 'PUT') return { body:{ revision:3,status:'active' },status:200 };
+      return { body:{ revision:2,pairingId,completions:[] },status:200 };
+    };
+    try{
+      const first = await publishReplicaAgendaNow(week);
+      const stored = replicaEnrollment();
+      const second = await publishReplicaAgendaNow(week);
+      const glance = puts[0] && puts[0].snapshot
+        ? await shareDecrypt(contentKey,puts[0].snapshot)
+        : null;
+      writeReplicaEnrollment({
+        ...stored,replicaMode:'selected',syncMode:'selected'
+      });
+      const selected = replicaCanPublishAgenda();
+      const selectedPut = await publishReplicaAgendaNow(week);
+      return {
+        configured:typeof replicaCanPublishAgenda === 'function' && replicaCanPublishAgenda({
+          ...stored,replicaMode:'clone',syncMode:'clone'
+        }),
+        putCount:puts.filter(item=>item.method === 'PUT').length,
+        hasReplica:puts.some(item=>item.hasReplica),
+        expectedRevision:puts[0] && puts[0].expectedRevision,
+        revision:stored && stored.meta && stored.meta.revision,
+        title:glance && glance.days && glance.days[0] && glance.days[0].rows
+          && glance.days[0].rows.some(row=>row && (row.title === 'Clone planned walk' || row.title === 'Clone blocked window')),
+        nestedReplica:Boolean(glance && glance.replica),
+        skippedRepeat:second && second.meta && second.meta.revision === 3 && puts.filter(item=>item.method === 'PUT').length === 1,
+        selectedBlocked:!selected && selectedPut == null,
+        firstOk:Boolean(first)
+      };
+    }finally{
+      shareFetch = originalFetch;
+      writeReplicaEnrollment(null);
+      if(typeof _replicaAgendaPublishTimer !== 'undefined' && _replicaAgendaPublishTimer){
+        clearTimeout(_replicaAgendaPublishTimer);
+        _replicaAgendaPublishTimer = null;
+      }
+    }
+  });
+  assert(cloneAgendaPublish.firstOk && cloneAgendaPublish.putCount === 1 && !cloneAgendaPublish.hasReplica
+    && cloneAgendaPublish.expectedRevision === 2 && cloneAgendaPublish.revision === 3
+    && cloneAgendaPublish.title && !cloneAgendaPublish.nestedReplica && cloneAgendaPublish.skippedRepeat
+    && cloneAgendaPublish.selectedBlocked,
+    `a personal clone publishes glance days without the library envelope (${JSON.stringify(cloneAgendaPublish)})`);
 
   // Glance display: the phone publishes no replica, so the screen must never
   // install a library or mount the full-app planner.

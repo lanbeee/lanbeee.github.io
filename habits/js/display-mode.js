@@ -4,6 +4,7 @@
 
 const REPLICA_DISPLAY_POLL_MS = 3 * 60 * 1000;
 const REPLICA_DISPLAY_TIMEOUT_MS = 15 * 1000;
+const REPLICA_AGENDA_PUBLISH_DEBOUNCE_MS = 1200;
 const REPLICA_CHROME_HIDDEN_KEY = 'tings_replica_chrome_hidden_v1';
 let _replicaRefreshBusy = false;
 let _replicaFlushBusy = false;
@@ -12,6 +13,10 @@ let _replicaClockTimer = null;
 let _replicaPollTimer = null;
 let _replicaChromeBound = false;
 let _replicaLastPull = null;
+let _replicaAgendaPublishTimer = null;
+let _replicaAgendaPublishBusy = false;
+let _replicaAgendaPublishQueued = false;
+let _pendingReplicaAgendaWeek = null;
 
 function replicaLastPullSummary(){
   return _replicaLastPull;
@@ -808,6 +813,165 @@ function replicaEnrollmentIsGlance(enrolled){
 
 function replicaDisplayIsSelected(enrolled){
   return Boolean(enrolled && (enrolled.replicaMode === 'selected' || enrolled.syncMode === 'selected'));
+}
+
+// Completions already fan out through the Worker queue. The glance screen
+// still shows the last published days until someone PUTs a fresh snapshot.
+// A personal clone can do that with the small agenda envelope only — same
+// 3-minute glance poll, no extra replica upload, no tighter cadence.
+function replicaCanPublishAgenda(enrolled){
+  const live = enrolled || replicaEnrollment();
+  if(!live || !live.feedId || !live.deviceCredential || !live.contentKey) return false;
+  if(typeof shareConfigured === 'function' && !shareConfigured()) return false;
+  if(replicaEnrollmentIsGlance(live) || replicaDisplayIsSelected(live)) return false;
+  return live.replicaMode === 'clone';
+}
+
+function replicaAgendaPublishFeed(enrolled){
+  const replicaRowIds = {};
+  const rows = enrolled && enrolled.replicaRows && typeof enrolled.replicaRows === 'object'
+    ? enrolled.replicaRows : {};
+  for(const hid of Object.keys(rows)){
+    const rowId = rows[hid] && rows[hid].rowId;
+    if(/^[0-9a-f]{16}$/.test(String(rowId || ''))) replicaRowIds[hid] = String(rowId);
+  }
+  return {
+    feedId:enrolled.feedId,
+    lastRevision:Number(enrolled.meta && enrolled.meta.revision) || 0,
+    title:'Shared display',
+    replicaRowIds,
+    syncMode:'clone',
+    devices:[{ pairingId:enrolled.pairingId,syncMode:'clone',pairedAt:0 }]
+  };
+}
+
+function scheduleReplicaAgendaPublish(week){
+  if(!replicaCanPublishAgenda()) return;
+  if(week) _pendingReplicaAgendaWeek = week;
+  if(_replicaAgendaPublishTimer) clearTimeout(_replicaAgendaPublishTimer);
+  _replicaAgendaPublishTimer = setTimeout(()=>{
+    _replicaAgendaPublishTimer = null;
+    startReplicaAgendaPublish();
+  }, REPLICA_AGENDA_PUBLISH_DEBOUNCE_MS);
+}
+
+function startReplicaAgendaPublish(){
+  if(_replicaAgendaPublishBusy){
+    _replicaAgendaPublishQueued = true;
+    return;
+  }
+  const week = _pendingReplicaAgendaWeek;
+  _pendingReplicaAgendaWeek = null;
+  _replicaAgendaPublishQueued = false;
+  _replicaAgendaPublishBusy = true;
+  Promise.resolve(publishReplicaAgendaNow(week))
+    .catch(()=>{})
+    .finally(()=>{
+      _replicaAgendaPublishBusy = false;
+      if(_replicaAgendaPublishQueued || _pendingReplicaAgendaWeek) startReplicaAgendaPublish();
+    });
+}
+
+async function publishReplicaAgendaNow(week, opts = {}){
+  if(navigator.onLine === false) return null;
+  const enrolled = replicaEnrollment();
+  if(!replicaCanPublishAgenda(enrolled)) return null;
+  const revision = Number(enrolled.meta && enrolled.meta.revision) || 0;
+  if(!Number.isInteger(revision) || revision < 1) return null;
+  const source = week
+    || _pendingReplicaAgendaWeek
+    || (typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null);
+  if(!source || !Array.isArray(source.days) || !source.days.length){
+    if(typeof tingsShareLog === 'function') tingsShareLog('replica.agenda.skipped_empty_week', { revision });
+    return null;
+  }
+  if(typeof buildHouseholdAgendaProjection !== 'function'
+    || typeof householdAgendaTransportProjection !== 'function'
+    || typeof householdAgendaSignature !== 'function'
+    || typeof shareEncrypt !== 'function'){
+    return null;
+  }
+  const feed = replicaAgendaPublishFeed(enrolled);
+  let projection;
+  try{
+    projection = buildHouseholdAgendaProjection(source, {
+      feed,
+      data:opts.data,
+      omitReplica:true
+    });
+  }catch(error){
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('replica.agenda.build_failed', {
+        error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+      });
+    }
+    return null;
+  }
+  delete projection.replica;
+  const sig = typeof shareSha256Hex === 'function'
+    ? await shareSha256Hex(householdAgendaSignature(projection))
+    : householdAgendaSignature(projection);
+  if(!opts.manual && sig && sig === String(enrolled.lastAgendaProjectionSig || '')){
+    if(typeof tingsShareLog === 'function') tingsShareLog('replica.agenda.skipped_unchanged', { revision });
+    return enrolled;
+  }
+  const transportProjection = await householdAgendaTransportProjection(projection,feed);
+  const envelope = await shareEncrypt(enrolled.contentKey, transportProjection.snapshotPlain, {
+    schemaVersion:SHARE_SCHEMA_VERSION,
+    recordKind:'agenda_snapshot',
+    objectId:enrolled.feedId,
+    revision:projection.revision
+  });
+  try{
+    const result = await shareFetch(`/v1/agendas/${enrolled.feedId}`, {
+      method:'PUT',
+      credential:enrolled.deviceCredential,
+      ifMatch:revision,
+      body:{
+        snapshot:envelope,
+        expectedRevision:revision
+      },
+      timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
+    });
+    const live = adoptLiveReplicaQueues(replicaEnrollment() || enrolled);
+    live.meta = { ...(live.meta || {}), revision:Number(result.body && result.body.revision) || projection.revision };
+    live.lastAgendaProjectionSig = sig;
+    writeReplicaEnrollment(live);
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('replica.agenda.put_ok', {
+        revision:Number(live.meta.revision) || 0,
+        days:Array.isArray(projection.days) ? projection.days.length : 0,
+        rows:(projection.days || []).reduce((count,day)=>count + ((day && day.rows && day.rows.length) || 0), 0)
+      });
+    }
+    updateReplicaSyncStatus('synced');
+    return live;
+  }catch(error){
+    if(error && error.status === 409 && !opts.retried){
+      try{
+        const current = await shareFetch(`/v1/agendas/${enrolled.feedId}`, {
+          credential:enrolled.deviceCredential,timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
+        });
+        const currentRevision = Number(current.body && current.body.revision);
+        if(Number.isInteger(currentRevision) && currentRevision >= 0){
+          const live = adoptLiveReplicaQueues(replicaEnrollment() || enrolled);
+          live.meta = { ...(live.meta || {}), revision:currentRevision };
+          writeReplicaEnrollment(live);
+        }
+      }catch(_){ /* Retry still uses the revision captured before this PUT. */ }
+      return publishReplicaAgendaNow(source, { ...opts, retried:true,manual:true });
+    }
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('replica.agenda.put_failed', {
+        error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+      });
+    }
+    if(error && (error.status === 401 || error.status === 410)){
+      forgetReplicaDisplaySession();
+      location.replace('agenda-display.html');
+    }
+    throw error;
+  }
 }
 
 async function bootstrapReplicaLibrary(){
