@@ -2122,6 +2122,10 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
     : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase());
   push(dayLabel);
   if(sub)push(sub);
+  if(report.sharedDisplay && typeof formatSharedDisplayAuditText === 'function'){
+    push('');
+    push(formatSharedDisplayAuditText(report.sharedDisplay).trim());
+  }
   if(report.plannerIsPreview){
     push('FAST PREVIEW — GLPK optimizer is still running; placements and totals may change');
   }
@@ -2394,6 +2398,49 @@ async function copyDayCapacityScorecard(){
   if(typeof showToast === 'function')showToast(ok ? 'day audit copied' : 'copy failed');
 }
 
+let _sharedDisplayAuditGen = 0;
+
+function sharedDisplayAuditHtml(report){
+  const diagnosis = report && report.diagnosis ? report.diagnosis : 'checking the worker snapshot…';
+  const text = typeof formatSharedDisplayAuditText === 'function'
+    ? formatSharedDisplayAuditText(report || { diagnosis:'checking the worker snapshot…' })
+    : diagnosis;
+  return `
+    <section class="capacity-section" id="shared-display-audit">
+      <div class="capacity-section-head"><h3>shared display sync</h3><span>${escapeHtml((report && report.role) || 'checking')}</span></div>
+      <p class="capacity-note">${escapeHtml(diagnosis)} Copy this day audit and paste it in chat. Ignore CSP .map warnings in the browser console; they are not the library pull.</p>
+      <pre class="shared-display-audit-log">${escapeHtml(text)}</pre>
+    </section>`;
+}
+
+function startSharedDisplayAudit(report){
+  if(!report || typeof buildSharedDisplayAuditReport !== 'function') return;
+  const gen = ++_sharedDisplayAuditGen;
+  report.sharedDisplay = buildSharedDisplayAuditReport();
+  void (async()=>{
+    let live = null;
+    try{
+      live = typeof inspectSharedAgendaForAudit === 'function'
+        ? await inspectSharedAgendaForAudit()
+        : { skipped:'no_inspect' };
+    }catch(error){
+      live = {
+        error:typeof tingsShareErrorSummary === 'function'
+          ? tingsShareErrorSummary(error)
+          : String(error && error.message || error)
+      };
+    }
+    if(gen !== _sharedDisplayAuditGen || _dayCapacityReport !== report) return;
+    report.sharedDisplay = buildSharedDisplayAuditReport(live);
+    const node = $('shared-display-audit');
+    if(!node) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = sharedDisplayAuditHtml(report.sharedDisplay);
+    const next = wrap.firstElementChild;
+    if(next) node.replaceWith(next);
+  })();
+}
+
 function renderDayCapacityScorecard(report){
   const content = $('day-capacity-content');
   if(!content || !report)return;
@@ -2503,6 +2550,7 @@ function renderDayCapacityScorecard(report){
       <span>copy / download = entire week placements</span>
       <button type="button" class="capacity-day-audit-copy" data-capacity-copy-day>copy this day audit</button>
     </div>
+    ${sharedDisplayAuditHtml(report.sharedDisplay)}
     <div class="capacity-metrics">
       ${metric('eligible work',capacityMinutesLabel(report.outstandingLoad),`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`,'load')}
       ${metric('work placed',capacityMinutesLabel(report.placedLoadMinutes),`${coverage} of eligible work`,'net')}
@@ -2586,6 +2634,7 @@ function openDayCapacityScorecard(dayBase,weekMode = false){
   _dayCapacityReport = report;
   _dayCapacityTitle = titleText;
   _dayCapacitySub = subText;
+  startSharedDisplayAudit(report);
   renderDayCapacityScorecard(report);
   openSheet('day-capacity-sheet');
 }

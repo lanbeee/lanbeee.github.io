@@ -282,6 +282,7 @@ function task(name,dueDate,priority = 1){
   assert(await page.locator('#day-capacity-copy').isVisible(),'Copy week placements button missing');
   assert(await page.locator('#day-capacity-export').isVisible(),'Export week placements button missing');
   assert(await page.locator('[data-capacity-copy-day]').isVisible(),'Copy day audit link missing');
+  assert(await page.locator('#shared-display-audit').count() === 1,'Shared display sync section missing from day audit');
   const copied = await page.evaluate(async ()=>{
     const week = weekSnapshotForExport();
     const weekText = formatWeekPlacementsText(week);

@@ -495,9 +495,31 @@ async function installDisplayReplica(projection,enrollment){
   let replica = projection && projection.replica;
   if(!replica && projection && projection.replicaEnvelope && enrollment && enrollment.replicaKey){
     try{ replica = await shareDecrypt(enrollment.replicaKey,projection.replicaEnvelope); }
-    catch(_){ return false; }
+    catch(error){
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('display.replica.decrypt_failed', {
+          error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+        });
+      }
+      return false;
+    }
   }
-  if(!replica || replica.schemaVersion !== 1 || !Array.isArray(replica.items)) return false;
+  if(!replica || replica.schemaVersion !== 1 || !Array.isArray(replica.items)){
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('display.replica.skipped', {
+        syncMode:enrollment && enrollment.syncMode || null,
+        hasPlainReplica:Boolean(projection && projection.replica),
+        replicaEnvelope:typeof tingsShareEnvelopeSummary === 'function'
+          ? tingsShareEnvelopeSummary(projection && projection.replicaEnvelope)
+          : { present:Boolean(projection && projection.replicaEnvelope) },
+        replicaKey:typeof tingsShareKeyInfo === 'function'
+          ? tingsShareKeyInfo(enrollment && enrollment.replicaKey)
+          : { present:Boolean(enrollment && enrollment.replicaKey) },
+        replicaSchema:replica && replica.schemaVersion || null
+      });
+    }
+    return false;
+  }
   let local = [];
   try{ local = JSON.parse(localStorage.getItem(KEY) || '[]'); }
   catch(_){ local = []; }
@@ -1290,6 +1312,14 @@ async function pollDisplayPairing(){
     if(transferred.syncMode) enrolled.syncMode = transferred.syncMode;
     _displayFeed = enrolled;
     displayWriteEnrollment(enrolled);
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('display.paired', {
+        enrollment:typeof tingsShareEnrollmentSummary === 'function'
+          ? tingsShareEnrollmentSummary(enrolled)
+          : { syncMode:enrolled.syncMode || null, replicaKey:Boolean(enrolled.replicaKey) },
+        wantsFullApp:displayEnrollmentWantsFullApp(enrolled)
+      });
+    }
     const passcode = readDisplayPasscode();
     if(passcode && passcode.failures) writeDisplayPasscode({ ...passcode,failures:0 });
     try{
@@ -1337,13 +1367,21 @@ async function refreshDisplay(opts = {}){
       return;
     }
     if(!result.body || !result.body.snapshot){
+      if(typeof tingsShareLog === 'function') tingsShareLog('display.refresh.no_snapshot', {
+        revision:Number(result.body && result.body.revision) || 0
+      });
       renderDisplay(null,{ error:'waiting' });
       return;
     }
     let projection;
     try{
       projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
-    }catch(_){
+    }catch(error){
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('display.refresh.snapshot_decrypt_failed', {
+          error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+        });
+      }
       // A rotated content key must not fall back to the previous plaintext cache.
       renderDisplay(null,{ error:'waiting' });
       return;

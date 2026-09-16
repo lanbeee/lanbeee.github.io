@@ -11,6 +11,16 @@ let _replicaPull = null;
 let _replicaClockTimer = null;
 let _replicaPollTimer = null;
 let _replicaChromeBound = false;
+let _replicaLastPull = null;
+
+function replicaLastPullSummary(){
+  return _replicaLastPull;
+}
+
+function noteReplicaPull(reason, details){
+  _replicaLastPull = { at:Date.now(), reason, ...(details || {}) };
+  if(typeof tingsShareLog === 'function') tingsShareLog(`replica.pull.${reason}`, _replicaLastPull);
+}
 
 function replicaEnrollmentActive(){
   const enrolled = replicaEnrollment();
@@ -613,28 +623,86 @@ async function pullReplicaSnapshot(){
   if(_replicaPull) return _replicaPull;
   _replicaPull = (async()=>{
     let enrolled = replicaEnrollment();
-    if(!enrolled || !enrolled.deviceCredential || !enrolled.contentKey) return null;
+    if(!enrolled || !enrolled.deviceCredential || !enrolled.contentKey){
+      noteReplicaPull('missing_enrollment', {
+        enrollment:typeof tingsShareEnrollmentSummary === 'function'
+          ? tingsShareEnrollmentSummary(enrolled) : { enrolled:Boolean(enrolled) }
+      });
+      return null;
+    }
     const result = await shareFetch(`/v1/agendas/${enrolled.feedId}`,{
       credential:enrolled.deviceCredential,timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
     });
     if(result.body && result.body.pairingId && result.body.pairingId !== enrolled.pairingId){
+      noteReplicaPull('pairing_mismatch', {
+        local:typeof tingsShareIdTail === 'function' ? tingsShareIdTail(enrolled.pairingId) : null,
+        remote:typeof tingsShareIdTail === 'function' ? tingsShareIdTail(result.body.pairingId) : null
+      });
       throw Object.assign(new Error('reauth'),{status:401});
     }
-    if(!result.body || !result.body.snapshot) return null;
-    const projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
-    let replica = projection && projection.replica;
-    if(!replica && projection && projection.replicaEnvelope && enrolled.replicaKey){
-      try{ replica = await shareDecrypt(enrolled.replicaKey,projection.replicaEnvelope); }
-      catch(_){ replica = null; }
+    if(!result.body || !result.body.snapshot){
+      noteReplicaPull('no_snapshot', {
+        revision:Number(result.body && result.body.revision) || 0,
+        hasBody:Boolean(result.body)
+      });
+      return null;
     }
-    if(!projection || !replica || Number(replica.schemaVersion) !== 1) return null;
+    let projection;
+    try{
+      projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
+    }catch(error){
+      noteReplicaPull('snapshot_decrypt_failed', {
+        error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+      });
+      return null;
+    }
+    let replica = projection && projection.replica;
+    let replicaDecrypt = replica ? 'plaintext_replica' : null;
+    if(!replica && projection && projection.replicaEnvelope && enrolled.replicaKey){
+      try{
+        replica = await shareDecrypt(enrolled.replicaKey,projection.replicaEnvelope);
+        replicaDecrypt = 'ok';
+      }catch(error){
+        replica = null;
+        replicaDecrypt = typeof tingsShareErrorSummary === 'function'
+          ? tingsShareErrorSummary(error) : 'replica_decrypt_failed';
+      }
+    }else if(!replica && projection && projection.replicaEnvelope && !enrolled.replicaKey){
+      replicaDecrypt = 'no_replica_key';
+    }else if(!replica){
+      replicaDecrypt = 'no_envelope';
+    }
+    if(!projection || !replica || Number(replica.schemaVersion) !== 1){
+      noteReplicaPull('no_library', {
+        revision:Number(result.body.revision) || 0,
+        days:projection && Array.isArray(projection.days) ? projection.days.length : 0,
+        hasPlainReplica:Boolean(projection && projection.replica),
+        replicaEnvelope:typeof tingsShareEnvelopeSummary === 'function'
+          ? tingsShareEnvelopeSummary(projection && projection.replicaEnvelope)
+          : { present:Boolean(projection && projection.replicaEnvelope) },
+        replicaKey:typeof tingsShareKeyInfo === 'function'
+          ? tingsShareKeyInfo(enrolled.replicaKey) : { present:Boolean(enrolled.replicaKey) },
+        replicaDecrypt,
+        replicaSchema:replica ? replica.schemaVersion : null
+      });
+      return null;
+    }
     const revision = Number(result.body.revision);
+    const storedRevision = Number(enrolled.meta && enrolled.meta.revision);
     const next = adoptLiveReplicaQueues({
       ...enrolled,snapshot:result.body.snapshot,meta:{generatedAt:projection.generatedAt,revision,error:null}
     });
-    if(revision !== Number(enrolled.meta && enrolled.meta.revision)){
+    if(revision !== storedRevision){
       mergeReplicaSnapshot(replica,next);
       if(typeof refreshOpenViews === 'function') refreshOpenViews();
+      noteReplicaPull('installed', {
+        revision,
+        storedRevision,
+        replicaDecrypt,
+        mode:replica.mode,
+        items:Array.isArray(replica.items) ? replica.items.length : 0,
+        names:(replica.items || []).map(item=>item && item.habit && item.habit.name).filter(Boolean).slice(0, 8)
+      });
     }else{
       adoptLiveReplicaQueues(next);
       const live = replicaEnrollment();
@@ -642,6 +710,13 @@ async function pullReplicaSnapshot(){
         next.replicaRows = { ...(next.replicaRows || {}), ...live.replicaRows };
       }
       writeReplicaEnrollment(next);
+      noteReplicaPull('same_revision', {
+        revision,
+        replicaDecrypt,
+        mode:replica.mode,
+        items:Array.isArray(replica.items) ? replica.items.length : 0,
+        replicaMode:next.replicaMode || (live && live.replicaMode) || null
+      });
     }
     const queued = typeof householdAgendaQueueRecords === 'function'
       ? householdAgendaQueueRecords(result.body)
@@ -662,14 +737,26 @@ async function refreshReplicaDevice(opts = {}){
     const replica = await pullReplicaSnapshot();
     await flushReplicaOutbox();
     if(!replica){
-      updateReplicaSyncStatus(replicaEnrollment() && replicaEnrollment().replicaMode
-        ? 'synced'
-        : 'waiting for library…');
+      const waiting = !(replicaEnrollment() && replicaEnrollment().replicaMode);
+      updateReplicaSyncStatus(waiting ? 'waiting for library…' : 'synced');
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('replica.refresh.empty', {
+          manual:Boolean(opts.manual),
+          waiting,
+          lastPull:_replicaLastPull
+        });
+      }
       return;
     }
     const truncated = Boolean(replica.truncated);
     updateReplicaSyncStatus(truncated ? 'synced · recent history' : 'synced');
   }catch(error){
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('replica.refresh.error', {
+        manual:Boolean(opts.manual),
+        error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+      });
+    }
     if(error && (error.status === 401 || error.status === 410)){
       forgetReplicaDisplaySession();
       location.replace('agenda-display.html');
@@ -731,10 +818,24 @@ function replicaDisplayIsSelected(enrolled){
 
 async function bootstrapReplicaLibrary(){
   for(let attempt = 0; attempt < 4; attempt++){
-    if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+    if(replicaEnrollment() && replicaEnrollment().replicaMode){
+      if(typeof tingsShareLog === 'function') tingsShareLog('replica.bootstrap.ready', { attempt });
+      return;
+    }
+    if(typeof tingsShareLog === 'function') tingsShareLog('replica.bootstrap.attempt', { attempt });
     await refreshReplicaDevice();
-    if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+    if(replicaEnrollment() && replicaEnrollment().replicaMode){
+      if(typeof tingsShareLog === 'function') tingsShareLog('replica.bootstrap.ready', { attempt });
+      return;
+    }
     await new Promise(resolve=>setTimeout(resolve, attempt === 0 ? 4000 : 8000));
+  }
+  if(typeof tingsShareLog === 'function'){
+    tingsShareLog('replica.bootstrap.gave_up', {
+      lastPull:_replicaLastPull,
+      enrollment:typeof tingsShareEnrollmentSummary === 'function'
+        ? tingsShareEnrollmentSummary(replicaEnrollment()) : null
+    });
   }
 }
 
@@ -891,6 +992,13 @@ function mountReplicaDisplayMode(){
   ensureReplicaDisplayQuery();
   document.body.classList.add('replica-display-mode');
   document.body.classList.add(replicaDisplayIsSelected(enrolled) ? 'replica-mode-selected' : 'replica-mode-clone');
+  if(typeof tingsShareLog === 'function'){
+    tingsShareLog('replica.mount', {
+      enrollment:typeof tingsShareEnrollmentSummary === 'function'
+        ? tingsShareEnrollmentSummary(enrolled) : { syncMode:enrolled.syncMode || null },
+      localHabits:typeof tingsShareLocalHabits === 'function' ? tingsShareLocalHabits() : null
+    });
+  }
   if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
   bindReplicaChromeSettings();
   const appBar = document.getElementById('app-bar');
