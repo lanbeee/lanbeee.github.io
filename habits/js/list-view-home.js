@@ -730,7 +730,8 @@ function updateSortButton(settled = false){
     lastUnsearchedHomeCardCount = document.querySelectorAll('#list .ting-card').length;
   }
   const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
-  const canSearch = lastUnsearchedHomeCardCount >= 10 || hasSearchableArchive;
+  const canSearch = lastUnsearchedHomeCardCount >= 10 || hasSearchableArchive
+    || document.body.classList.contains('replica-display-mode');
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',!canSearch);

@@ -2,12 +2,15 @@
 // database and planner; the encrypted agenda endpoint is only its replication
 // transport. This keeps the display useful while the owner phone is closed.
 
-const REPLICA_DISPLAY_POLL_MS = 30 * 1000;
+const REPLICA_DISPLAY_POLL_MS = 3 * 60 * 1000;
 const REPLICA_DISPLAY_TIMEOUT_MS = 15 * 1000;
+const REPLICA_CHROME_HIDDEN_KEY = 'tings_replica_chrome_hidden_v1';
 let _replicaRefreshBusy = false;
 let _replicaFlushBusy = false;
 let _replicaPull = null;
 let _replicaClockTimer = null;
+let _replicaPollTimer = null;
+let _replicaChromeBound = false;
 
 function replicaEnrollmentActive(){
   const enrolled = replicaEnrollment();
@@ -636,12 +639,12 @@ async function pullReplicaSnapshot(){
   return _replicaPull;
 }
 
-async function refreshReplicaDevice(){
+async function refreshReplicaDevice(opts = {}){
   if(_replicaRefreshBusy || navigator.onLine === false) return;
   const enrolled = replicaEnrollment();
   if(!enrolled || !enrolled.deviceCredential || !enrolled.contentKey) return;
   _replicaRefreshBusy = true;
-  updateReplicaSyncStatus('syncing…');
+  if(opts.manual) updateReplicaSyncStatus('syncing…');
   try{
     const replica = await pullReplicaSnapshot();
     await flushReplicaOutbox();
@@ -709,13 +712,38 @@ function replicaDisplayIsSelected(enrolled){
 }
 
 async function bootstrapReplicaLibrary(){
-  for(let attempt = 0; attempt < 20; attempt++){
-    const enrolled = replicaEnrollment();
-    if(enrolled && enrolled.replicaMode) return;
-    await refreshReplicaDevice();
-    if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
-    await new Promise(resolve=>setTimeout(resolve,1500));
-  }
+  if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+  await refreshReplicaDevice();
+  if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+  await new Promise(resolve=>setTimeout(resolve,8000));
+  if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+  await refreshReplicaDevice();
+}
+
+function replicaChromeHidden(){
+  try{ return localStorage.getItem(REPLICA_CHROME_HIDDEN_KEY) === '1'; }
+  catch(_){ return false; }
+}
+
+function setReplicaChromeHidden(hidden){
+  document.body.classList.toggle('replica-chrome-hidden', Boolean(hidden));
+  const bar = document.querySelector('.replica-display-bar');
+  if(bar) bar.hidden = Boolean(hidden);
+  try{
+    if(hidden) localStorage.setItem(REPLICA_CHROME_HIDDEN_KEY,'1');
+    else localStorage.removeItem(REPLICA_CHROME_HIDDEN_KEY);
+  }catch(_){ }
+  const toggle = document.getElementById('settings-replica-chrome');
+  if(toggle) toggle.setAttribute('aria-pressed', hidden ? 'false' : 'true');
+}
+
+function bindReplicaChromeSettings(){
+  const toggle = document.getElementById('settings-replica-chrome');
+  if(!toggle || _replicaChromeBound) return;
+  _replicaChromeBound = true;
+  toggle.addEventListener('click',()=>{
+    setReplicaChromeHidden(!replicaChromeHidden());
+  });
 }
 
 function replicaOwnOperationIds(enrolled){
@@ -842,11 +870,21 @@ function mountReplicaDisplayMode(){
   document.body.classList.add('replica-display-mode');
   document.body.classList.add(replicaDisplayIsSelected(enrolled) ? 'replica-mode-selected' : 'replica-mode-clone');
   if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
+  bindReplicaChromeSettings();
+  const appBar = document.getElementById('app-bar');
+  if(appBar && (typeof paneTierActive === 'function' ? paneTierActive() : Number(document.body.dataset.paneCount) > 1)){
+    appBar.removeAttribute('hidden');
+  }
+  if(typeof updateSortButton === 'function') updateSortButton();
+  if(document.querySelector('.replica-display-bar')){
+    setReplicaChromeHidden(replicaChromeHidden());
+    return;
+  }
   const bar = document.createElement('aside');
   bar.className = 'replica-display-bar';
   const ownershipLabel = replicaDisplayIsSelected(enrolled) ? 'owner-managed schedules' : 'editable personal clone';
-  bar.innerHTML = `<div><time data-replica-time></time><span data-replica-weather></span></div><div class="replica-display-actions"><span class="replica-owner-label">${ownershipLabel}</span><span id="replica-sync-status">${enrolled.replicaMode ? 'local · ready' : 'waiting for library…'}</span><button type="button" id="replica-sync-now">sync</button><button type="button" id="replica-lock-button">lock</button><button type="button" id="replica-fullscreen">full screen</button></div>`;
-  document.body.appendChild(bar);
+  bar.innerHTML = `<div class="replica-display-now"><time data-replica-time></time><span data-replica-weather></span></div><div class="replica-display-actions"><span class="replica-owner-label">${ownershipLabel}</span><span id="replica-sync-status">${enrolled.replicaMode ? 'local · ready' : 'waiting for library…'}</span><button type="button" id="replica-sync-now">sync</button><button type="button" id="replica-lock-button">lock</button><button type="button" id="replica-fullscreen">full screen</button><button type="button" id="replica-hide-button">hide</button></div>`;
+  document.body.insertBefore(bar, document.body.firstChild);
   const lock = document.createElement('section');
   lock.id = 'replica-lock';
   lock.className = 'replica-lock';
@@ -862,7 +900,8 @@ function mountReplicaDisplayMode(){
     if(taps.length >= 3){ taps=[]; setReplicaLocked(false); }
   });
   document.getElementById('replica-lock-button').addEventListener('click',()=>setReplicaLocked(true));
-  document.getElementById('replica-sync-now').addEventListener('click',()=>void refreshReplicaDevice());
+  document.getElementById('replica-sync-now').addEventListener('click',()=>void refreshReplicaDevice({manual:true}));
+  document.getElementById('replica-hide-button').addEventListener('click',()=>setReplicaChromeHidden(true));
   document.getElementById('replica-fullscreen').addEventListener('click',async()=>{
     try{
       if(document.fullscreenElement) await document.exitFullscreen();
@@ -870,12 +909,19 @@ function mountReplicaDisplayMode(){
     }catch(_){ }
   });
   updateReplicaChrome();
-  _replicaClockTimer = setInterval(updateReplicaChrome,10 * 1000);
+  if(!_replicaClockTimer) _replicaClockTimer = setInterval(updateReplicaChrome,10 * 1000);
   try{ if(localStorage.getItem('tings_replica_locked_v1') === '1') setReplicaLocked(true); }catch(_){ }
+  setReplicaChromeHidden(replicaChromeHidden());
   void bootstrapReplicaLibrary();
-  setInterval(()=>{ if(document.visibilityState === 'visible') void refreshReplicaDevice(); },REPLICA_DISPLAY_POLL_MS);
-  window.addEventListener('online',()=>void refreshReplicaDevice());
-  window.addEventListener('focus',()=>void refreshReplicaDevice());
+  if(!_replicaPollTimer){
+    _replicaPollTimer = setInterval(()=>{
+      if(document.visibilityState === 'visible') void refreshReplicaDevice();
+    },REPLICA_DISPLAY_POLL_MS);
+    window.addEventListener('online',()=>void refreshReplicaDevice());
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState === 'visible') void refreshReplicaDevice();
+    });
+  }
 }
 
 document.addEventListener('DOMContentLoaded',mountReplicaDisplayMode);

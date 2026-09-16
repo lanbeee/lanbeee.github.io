@@ -421,9 +421,35 @@ function assert(value,message){
       && load().find(h=>h.hid === duplicateChunkId)?.name !== 'Must not acknowledge';
     history.replaceState(null,'',location.pathname + '?display=1');
     mountReplicaDisplayMode();
+    const barBox = document.querySelector('.replica-display-bar')?.getBoundingClientRect();
+    const appBox = document.querySelector('.app')?.getBoundingClientRect();
+    const logoBox = document.querySelector('.app-bar-logo')?.getBoundingClientRect();
+    const chromeLayout = {
+      top:barBox ? Math.round(barBox.top) : null,
+      left:barBox ? Math.round(barBox.left) : null,
+      width:barBox ? Math.round(barBox.width) : null,
+      besideApp:Boolean(barBox && appBox && barBox.left >= appBox.right - 8),
+      logoVisible:Boolean(logoBox && logoBox.width > 8 && logoBox.left >= 0 && logoBox.left < window.innerWidth),
+      hideControl:Boolean(document.getElementById('replica-hide-button')),
+      settingsToggle:Boolean(document.getElementById('settings-replica-chrome')),
+      searchVisible:getComputedStyle(document.getElementById('bar-open-search')).display !== 'none'
+    };
     document.getElementById('replica-lock-button')?.click();
     const lock = document.getElementById('replica-lock');
     lock?.click(); lock?.click(); lock?.click();
+    document.getElementById('replica-hide-button')?.click();
+    const chromeHidden = {
+      bodyClass:document.body.classList.contains('replica-chrome-hidden'),
+      barHidden:Boolean(document.querySelector('.replica-display-bar')?.hidden),
+      stored:localStorage.getItem('tings_replica_chrome_hidden_v1') === '1',
+      toggleOff:document.getElementById('settings-replica-chrome')?.getAttribute('aria-pressed') === 'false'
+    };
+    document.getElementById('settings-replica-chrome')?.click();
+    const chromeRestored = {
+      bodyClass:document.body.classList.contains('replica-chrome-hidden'),
+      barHidden:Boolean(document.querySelector('.replica-display-bar')?.hidden),
+      stored:localStorage.getItem('tings_replica_chrome_hidden_v1') === '1'
+    };
     return {
       ownerCadence:mergedShared && mergedShared.target,
       peerEditBlocked:rejectedDefinitionEdit.find(h=>h.hid===sharedId)?.target === 2
@@ -465,7 +491,10 @@ function assert(value,message){
       chrome:Boolean(document.querySelector('.replica-display-bar')),
       clock:Boolean(document.querySelector('[data-replica-time]')?.textContent),
       addVisible:getComputedStyle(document.getElementById('open-add')).display !== 'none',
-      unlocked:Boolean(lock && lock.hidden)
+      unlocked:Boolean(lock && lock.hidden),
+      chromeLayout,
+      chromeHidden,
+      chromeRestored
     };
   });
   console.log('\n--- Device replica sync ---\n');
@@ -500,6 +529,18 @@ function assert(value,message){
   assert(result.chrome && result.clock,'display mode shows a live current-time chrome');
   assert(result.addVisible,'personal clone keeps the normal add-task and add-habit action available');
   assert(result.unlocked,'three taps dismiss the display lock screen');
+  assert(result.chromeLayout && result.chromeLayout.top <= 8 && result.chromeLayout.left <= 8
+    && result.chromeLayout.width > 700 && !result.chromeLayout.besideApp,
+    `the display bar spans the top of the window instead of a right-hand column (${JSON.stringify(result.chromeLayout)})`);
+  assert(result.chromeLayout.logoVisible && result.chromeLayout.hideControl && result.chromeLayout.settingsToggle
+    && result.chromeLayout.searchVisible,
+    'desktop Tings chrome stays visible and the bar can be hidden from the bar or settings');
+  assert(result.chromeHidden && result.chromeHidden.bodyClass && result.chromeHidden.barHidden
+    && result.chromeHidden.stored && result.chromeHidden.toggleOff,
+    'hide puts the clone on the normal Tings window and remembers that choice');
+  assert(result.chromeRestored && !result.chromeRestored.bodyClass && !result.chromeRestored.barHidden
+    && !result.chromeRestored.stored,
+    'settings appearance can show the display bar again');
 
   // Glance display: the phone publishes no replica, so the screen must never
   // install a library or mount the full-app planner.
@@ -555,7 +596,10 @@ function assert(value,message){
   assert(glanceLanding.stayedOnKiosk === false && glanceLanding.stillEnrolled,
     'a snapshot without a replica block keeps the paired kiosk in place instead of installing a library');
 
-  const clonePendingContext = await browser.newContext({serviceWorkers:'block'});
+  const clonePendingContext = await browser.newContext({
+    serviceWorkers:'block',
+    viewport:{width:1024,height:768}
+  });
   const clonePendingPage = await clonePendingContext.newPage();
   const displayUrl = new URL('agenda-display.html',baseUrl).href;
   await clonePendingPage.goto(baseUrl,{waitUntil:'load'});
@@ -575,22 +619,33 @@ function assert(value,message){
   }));
   await clonePendingPage.goto(displayUrl,{waitUntil:'load'});
   await clonePendingPage.waitForURL(/index\.html/,{timeout:10000});
-  const clonePendingLanding = await clonePendingPage.evaluate(()=>({
-    path:location.pathname,
-    displayQuery:new URLSearchParams(location.search).get('display'),
-    replicaChrome:Boolean(document.querySelector('.replica-display-bar')),
-    bouncedToKiosk:typeof installDisplayReplica === 'function',
-    wantsFullApp:typeof sharedDisplayWantsFullApp === 'function'
-      && sharedDisplayWantsFullApp(replicaEnrollment()),
-    glance:replicaEnrollmentIsGlance(replicaEnrollment())
-  }));
+  await clonePendingPage.waitForSelector('.replica-display-bar',{timeout:5000});
+  const clonePendingLanding = await clonePendingPage.evaluate(()=>{
+    const bar = document.querySelector('.replica-display-bar')?.getBoundingClientRect();
+    const logo = (document.querySelector('.app-bar-logo') || document.querySelector('.wordmark'))?.getBoundingClientRect();
+    return {
+      path:location.pathname,
+      displayQuery:new URLSearchParams(location.search).get('display'),
+      replicaChrome:Boolean(document.querySelector('.replica-display-bar')),
+      bouncedToKiosk:typeof installDisplayReplica === 'function',
+      wantsFullApp:typeof sharedDisplayWantsFullApp === 'function'
+        && sharedDisplayWantsFullApp(replicaEnrollment()),
+      glance:replicaEnrollmentIsGlance(replicaEnrollment()),
+      barLeft:bar ? Math.round(bar.left) : null,
+      barWidth:bar ? Math.round(bar.width) : null,
+      logoVisible:Boolean(logo && logo.width > 8 && logo.left >= 0)
+    };
+  });
   assert(clonePendingLanding.path.endsWith('/index.html')
     && clonePendingLanding.displayQuery === '1'
     && clonePendingLanding.replicaChrome
     && !clonePendingLanding.bouncedToKiosk
     && clonePendingLanding.wantsFullApp
-    && clonePendingLanding.glance === false,
-    'a clone enrollment on the kiosk URL opens the full app before a replica snapshot exists');
+    && clonePendingLanding.glance === false
+    && clonePendingLanding.barLeft <= 8
+    && clonePendingLanding.barWidth > 700
+    && clonePendingLanding.logoVisible,
+    `a clone enrollment on the kiosk URL opens the full app before a replica snapshot exists (${JSON.stringify(clonePendingLanding)})`);
   await clonePendingContext.close();
   await glanceContext.close();
   await browser.close();

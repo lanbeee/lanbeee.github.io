@@ -1,7 +1,92 @@
 /* Full Tings running as a paired shared display. */
-.replica-display-bar{position:sticky;top:0;z-index:45;display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:58px;padding:8px max(14px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg) 92%,transparent);border-bottom:1px solid var(--border);backdrop-filter:blur(18px);color:var(--text)}
-.replica-display-bar>div{display:flex;align-items:baseline;gap:12px}.replica-display-bar time{font-size:clamp(24px,4vw,42px);font-weight:350;letter-spacing:-.035em;font-variant-numeric:tabular-nums}.replica-display-bar [data-replica-weather]{color:var(--text2);font-weight:700}.replica-display-actions{justify-content:flex-end}.replica-display-actions span{color:var(--text3);font-size:11px}.replica-display-actions button{min-height:36px;padding:6px 12px;border:0;border-radius:999px;background:var(--bg2);color:var(--text2);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+body.replica-display-mode[data-pane-count="2"],
+body.replica-display-mode[data-pane-count="3"]{
+  flex-direction:column;
+  justify-content:flex-start;
+  align-items:stretch;
+  height:100dvh;
+}
+body.replica-display-mode[data-pane-count="2"] .app,
+body.replica-display-mode[data-pane-count="3"] .app{
+  flex:1 1 auto;
+  min-height:0;
+  height:auto;
+  margin-inline:auto;
+}
+.replica-display-bar{
+  flex:0 0 auto;
+  width:100%;
+  box-sizing:border-box;
+  z-index:45;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-height:48px;
+  padding:8px max(14px,env(safe-area-inset-right)) 8px max(14px,env(safe-area-inset-left));
+  padding-top:max(8px,env(safe-area-inset-top));
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  border-bottom:1px solid var(--border);
+  color:var(--text);
+}
+.replica-display-now{
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+  min-width:0;
+  flex:0 1 auto;
+}
+.replica-display-bar time{
+  font-size:18px;
+  font-weight:600;
+  letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.replica-display-bar [data-replica-weather]{
+  color:var(--text2);
+  font-weight:700;
+  font-size:13px;
+  white-space:nowrap;
+}
+.replica-display-actions{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:6px;
+  min-width:0;
+  flex:1 1 auto;
+}
+.replica-display-actions span{
+  color:var(--text3);
+  font-size:11px;
+  white-space:nowrap;
+}
+.replica-display-actions button{
+  min-height:32px;
+  padding:6px 11px;
+  border:0;
+  border-radius:999px;
+  background:var(--bg2);
+  color:var(--text2);
+  font:inherit;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
 .replica-owner-label{padding:4px 8px;border-radius:999px;background:var(--bg2)}
+body.replica-chrome-hidden .replica-display-bar{display:none}
+#settings-replica-chrome{display:none}
+body.replica-display-mode #settings-replica-chrome{display:flex}
 .replica-lock{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;overflow:hidden;background:#000;color:#eef4f1;cursor:pointer;user-select:none}.replica-lock[hidden]{display:none}.replica-lock-glow{position:absolute;width:70vmax;height:70vmax;border-radius:50%;background:radial-gradient(circle,rgba(79,208,182,.12),transparent 65%)}.replica-lock-clock{position:relative;text-align:center}.replica-lock-clock time{display:block;font-size:clamp(76px,18vw,220px);font-weight:180;line-height:.9;letter-spacing:-.06em;font-variant-numeric:tabular-nums}.replica-lock-clock p{margin:22px 0 8px;font-size:clamp(18px,3vw,34px);font-weight:600}.replica-lock-clock span{display:block;color:#9eb0a8;font-size:clamp(16px,2.5vw,28px);font-weight:700}.replica-lock-clock small{display:block;margin-top:52px;color:#66736d;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
 html[data-replica-locked="true"],html[data-replica-locked="true"] body{overflow:hidden;background:#000}
-@media(max-width:620px){.replica-display-bar{gap:8px}.replica-display-actions span,.replica-display-actions #replica-fullscreen{display:none}.replica-display-actions{gap:5px}.replica-display-actions button{padding:6px 9px}.replica-display-bar [data-replica-weather]{font-size:12px}}
+@media(max-width:620px){
+  .replica-display-bar{gap:8px}
+  .replica-display-actions .replica-owner-label,
+  .replica-display-actions #replica-sync-status,
+  .replica-display-actions #replica-fullscreen{display:none}
+  .replica-display-actions{gap:5px}
+  .replica-display-actions button{padding:6px 9px}
+  .replica-display-bar [data-replica-weather]{font-size:12px}
+}

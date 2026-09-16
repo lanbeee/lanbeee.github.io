@@ -1,7 +1,7 @@
 const AGENDA_STALE_MS = 24 * 60 * 60 * 1000;
-// Same cadence as the personal clone: a done on the other screen should
-// appear here from the Worker event stream without waiting for the phone.
-const AGENDA_POLL_MS = 30 * 1000;
+// Same 3-minute cadence as the personal clone. Completions still go through
+// the Worker without the phone; this is just how often an open screen looks.
+const AGENDA_POLL_MS = 3 * 60 * 1000;
 const AGENDA_PAIR_POLL_MS = 4 * 1000;
 const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
   ? AGENDA_DISPLAY_KEY
