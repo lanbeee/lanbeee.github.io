@@ -44,9 +44,18 @@ function replicaEnrollment(){
 
 function writeReplicaEnrollment(value){
   try{
-    if(value) localStorage.setItem(AGENDA_DISPLAY_KEY,JSON.stringify(value));
-    else localStorage.removeItem(AGENDA_DISPLAY_KEY);
+    if(value){
+      localStorage.setItem(AGENDA_DISPLAY_KEY,JSON.stringify(value));
+      if(typeof clearSharedDisplaySessionEnded === 'function') clearSharedDisplaySessionEnded();
+    }else{
+      localStorage.removeItem(AGENDA_DISPLAY_KEY);
+    }
   }catch(_){ }
+}
+
+function forgetReplicaDisplaySession(){
+  if(typeof endSharedDisplaySession === 'function') endSharedDisplaySession();
+  else writeReplicaEnrollment(null);
 }
 
 function replicaLogFingerprint(log){
@@ -484,7 +493,10 @@ async function flushReplicaOutbox(){
     }
   }catch(error){
     updateReplicaSyncStatus(error && (error.status === 401 || error.status === 410) ? 'authorization expired' : 'offline · changes queued');
-    if(error && (error.status === 401 || error.status === 410)) location.replace('agenda-display.html');
+    if(error && (error.status === 401 || error.status === 410)){
+      forgetReplicaDisplaySession();
+      location.replace('agenda-display.html');
+    }
   }finally{ _replicaFlushBusy = false; }
 }
 
@@ -657,8 +669,10 @@ async function refreshReplicaDevice(opts = {}){
     const truncated = Boolean(replica.truncated);
     updateReplicaSyncStatus(truncated ? 'synced · recent history' : 'synced');
   }catch(error){
-    if(error && (error.status === 401 || error.status === 410)) location.replace('agenda-display.html');
-    else updateReplicaSyncStatus('offline · will retry');
+    if(error && (error.status === 401 || error.status === 410)){
+      forgetReplicaDisplaySession();
+      location.replace('agenda-display.html');
+    }else updateReplicaSyncStatus('offline · will retry');
   }finally{ _replicaRefreshBusy = false; }
 }
 
@@ -704,7 +718,10 @@ function replicaEnrollmentIsGlance(enrolled){
   if(!enrolled) return false;
   if(typeof sharedDisplayWantsFullApp === 'function' && sharedDisplayWantsFullApp(enrolled)) return false;
   if(enrolled.syncMode === 'glance' || enrolled.syncMode === 'legacy') return true;
-  return !enrolled.replicaMode && !enrolled.replicaRows;
+  const hasRows = typeof sharedDisplayHasReplicaRows === 'function'
+    ? sharedDisplayHasReplicaRows(enrolled)
+    : Boolean(enrolled.replicaRows);
+  return !enrolled.replicaMode && !hasRows;
 }
 
 function replicaDisplayIsSelected(enrolled){
@@ -714,9 +731,9 @@ function replicaDisplayIsSelected(enrolled){
 async function bootstrapReplicaLibrary(){
   if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
   await refreshReplicaDevice();
-  if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+  if(!replicaEnrollment() || replicaEnrollment().replicaMode) return;
   await new Promise(resolve=>setTimeout(resolve,8000));
-  if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+  if(!replicaEnrollment() || replicaEnrollment().replicaMode) return;
   await refreshReplicaDevice();
 }
 
@@ -864,7 +881,11 @@ async function acknowledgeReplicaOperations(enrolled,operationIds){
 function mountReplicaDisplayMode(){
   const enrolled = replicaEnrollment();
   if(!replicaEnrollmentActive() && !replicaDisplayQueryRequested()) return;
-  if(!enrolled || !enrolled.deviceCredential){ location.replace('agenda-display.html'); return; }
+  if(!enrolled || !enrolled.deviceCredential){
+    forgetReplicaDisplaySession();
+    location.replace('agenda-display.html');
+    return;
+  }
   if(replicaEnrollmentIsGlance(enrolled)){ location.replace('agenda-display.html'); return; }
   ensureReplicaDisplayQuery();
   document.body.classList.add('replica-display-mode');

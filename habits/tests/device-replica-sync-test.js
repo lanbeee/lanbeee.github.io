@@ -646,6 +646,46 @@ function assert(value,message){
     && clonePendingLanding.barWidth > 700
     && clonePendingLanding.logoVisible,
     `a clone enrollment on the kiosk URL opens the full app before a replica snapshot exists (${JSON.stringify(clonePendingLanding)})`);
+
+  const revokeContext = await browser.newContext({
+    serviceWorkers:'block',
+    viewport:{width:1024,height:768}
+  });
+  const revokePage = await revokeContext.newPage();
+  await revokePage.goto(baseUrl,{waitUntil:'load'});
+  await revokePage.evaluate(()=>{
+    localStorage.setItem(AGENDA_DISPLAY_KEY,JSON.stringify({
+      feedId:shareRandomHex(16),
+      deviceCredential:shareRandomHex(32),
+      contentKey:shareRandomHex(32),
+      replicaKey:shareRandomHex(32),
+      pairingId:shareRandomHex(16),
+      syncMode:'clone'
+    }));
+  });
+  await revokePage.route(/habits-share/,route=>route.fulfill({
+    status:410,contentType:'application/json',
+    body:JSON.stringify({ error:'revoked' })
+  }));
+  await revokePage.goto(new URL('index.html?display=1',baseUrl).href,{waitUntil:'load'});
+  await revokePage.waitForURL(/agenda-display/,{timeout:10000});
+  await revokePage.waitForTimeout(1500);
+  const revokeLanding = await revokePage.evaluate(()=>({
+    path:location.pathname,
+    displayQuery:new URLSearchParams(location.search).get('display'),
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4'),
+    ended:typeof sharedDisplaySessionEnded === 'function' && sharedDisplaySessionEnded()
+  }));
+  await revokePage.waitForTimeout(1500);
+  const stillRevoked = await revokePage.evaluate(()=>({
+    path:location.pathname,
+    enrollment:localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4')
+  }));
+  assert(revokeLanding.path.endsWith('/agenda-display.html') && !revokeLanding.enrollment,
+    `signing out a clone forgets local pairing instead of bouncing to the full app (${JSON.stringify(revokeLanding)})`);
+  assert(stillRevoked.path.endsWith('/agenda-display.html') && !stillRevoked.enrollment,
+    'a signed-out clone stays on the pairing page instead of looping with index.html');
+  await revokeContext.close();
   await clonePendingContext.close();
   await glanceContext.close();
   await browser.close();

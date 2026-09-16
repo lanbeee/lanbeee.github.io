@@ -469,8 +469,12 @@ function displayReadEnrollment(){
 
 function displayWriteEnrollment(value){
   try{
-    if(value) localStorage.setItem(AGENDA_DISPLAY_STORAGE_KEY,JSON.stringify(value));
-    else localStorage.removeItem(AGENDA_DISPLAY_STORAGE_KEY);
+    if(value){
+      localStorage.setItem(AGENDA_DISPLAY_STORAGE_KEY,JSON.stringify(value));
+      if(typeof clearSharedDisplaySessionEnded === 'function') clearSharedDisplaySessionEnded();
+    }else{
+      localStorage.removeItem(AGENDA_DISPLAY_STORAGE_KEY);
+    }
   }catch(_){}
 }
 
@@ -554,6 +558,11 @@ function displayEnrollmentWantsFullApp(enrollment){
 }
 
 function openDisplayFullApp(){
+  if(typeof sharedDisplaySessionEnded === 'function' && sharedDisplaySessionEnded()){
+    displayWriteEnrollment(null);
+    if(typeof clearSharedDisplaySessionEnded === 'function') clearSharedDisplaySessionEnded();
+    return;
+  }
   const href = typeof sharedDisplayFullAppHref === 'function'
     ? sharedDisplayFullAppHref()
     : (()=>{ const target = new URL('index.html',location.href); target.searchParams.set('display','1'); return target.href; })();
@@ -1400,7 +1409,8 @@ function clearDisplayAuthorization(error){
   dropPendingDisplayCompletion();
   _displaySavingRowIds.clear();
   _displayFeed = null;
-  displayWriteEnrollment(null);
+  if(typeof endSharedDisplaySession === 'function') endSharedDisplaySession();
+  else displayWriteEnrollment(null);
   renderDisplay(null,{ error });
   if(navigator.onLine !== false) void beginDisplayPairing(error);
 }
@@ -1423,6 +1433,10 @@ function startDisplayPolling(){
 
 async function bootAgendaDisplay(){
   clearAgendaFragment();
+  if(typeof sharedDisplaySessionEnded === 'function' && sharedDisplaySessionEnded()){
+    displayWriteEnrollment(null);
+    if(typeof clearSharedDisplaySessionEnded === 'function') clearSharedDisplaySessionEnded();
+  }
   const stored = displayReadEnrollment();
   if(stored && stored.deviceCredential && stored.pairingId){
     if(displayEnrollmentWantsFullApp(stored)){

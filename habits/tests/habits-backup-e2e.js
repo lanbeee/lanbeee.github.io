@@ -204,7 +204,35 @@ function assert(cond, msg){
   assert(rt.optionMode === 'profile' && rt.optionProfile === 'backup-outdoor', 'backup round-trip preserves specific-option weather guidance');
   assert(rt.locationProfile === 'backup-outdoor', 'backup round-trip preserves location weather guidance');
 
-  await page.locator('#settings-close').click();
+  // ── 12. Settings can wipe this browser’s Tings data ──
+  await page.evaluate(()=>{
+    localStorage.setItem('tings_v2', JSON.stringify([{ name:'wipe-me', type:'keepup', logs:[] }]));
+    localStorage.setItem('tings_agenda_display_v4', JSON.stringify({ feedId:'abc', syncMode:'clone' }));
+  });
+  await page.locator('#settings-clear-data').scrollIntoViewIfNeeded();
+  await page.locator('#settings-clear-data').click();
+  await page.locator('#settings-clear-data-confirm').waitFor({ state:'visible' });
+  await page.locator('#settings-clear-data-yes').scrollIntoViewIfNeeded();
+  await page.locator('#settings-clear-data-yes').click();
+  await page.waitForFunction(()=>{
+    try{
+      const habits = JSON.parse(localStorage.getItem('tings_v2') || '[]');
+      return !habits.some(h=>h && h.name === 'wipe-me')
+        && !localStorage.getItem('tings_agenda_display_v4');
+    }catch(_){ return false; }
+  }, null, { timeout:8000 });
+  const wiped = await page.evaluate(()=>{
+    const habits = JSON.parse(localStorage.getItem('tings_v2') || '[]');
+    return {
+      habitNames:habits.map(h=>h && h.name).filter(Boolean),
+      enrollment:localStorage.getItem('tings_agenda_display_v4'),
+      displayQuery:new URLSearchParams(location.search).get('display')
+    };
+  });
+  assert(!wiped.habitNames.includes('wipe-me'), 'clear all data removes habits from this browser');
+  assert(!wiped.enrollment, 'clear all data forgets display pairing on this browser');
+  assert(wiped.displayQuery !== '1', 'clear all data leaves the normal Tings URL');
+
   if(errors.length)throw new Error(errors.join('\n'));
   await browser.close();
   console.log('Backup e2e passed');

@@ -59,6 +59,8 @@ function resetSettingsSheetState(){
   if(backupConfirm)backupConfirm.hidden = true;
   const backupStatus = $('backup-status');
   if(backupStatus)backupStatus.textContent = '';
+  const clearConfirm = $('settings-clear-data-confirm');
+  if(clearConfirm)clearConfirm.hidden = true;
   clearCalendarPdfPreview({keepStatus:false});
   document.querySelectorAll('.settings-collapse-head').forEach(head=>{
     const body = $(head.dataset.collapseTarget);

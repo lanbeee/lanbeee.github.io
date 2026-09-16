@@ -42,6 +42,19 @@ function isAgendaDisplayPage(){
   return /\/agenda-display\.html$/.test(location.pathname);
 }
 
+const SHARED_DISPLAY_SESSION_ENDED_KEY = 'tings_display_session_ended_v1';
+
+function sharedDisplayEnrollmentKey(){
+  return typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
+    ? AGENDA_DISPLAY_KEY
+    : 'tings_agenda_display_v4';
+}
+
+function sharedDisplayHasReplicaRows(enrolled){
+  return Boolean(enrolled && enrolled.replicaRows && typeof enrolled.replicaRows === 'object'
+    && Object.keys(enrolled.replicaRows).length > 0);
+}
+
 // Glance enrollments stay on agenda-display.html. Clone / shared-items must
 // open the full app as soon as pairing transfers the replica key — the live
 // snapshot may still be glance-only until the owner finishes publishing.
@@ -51,13 +64,31 @@ function sharedDisplayWantsFullApp(enrolled){
   if(mode === 'glance' || mode === 'legacy') return false;
   if(mode === 'clone' || mode === 'selected') return true;
   if(/^[0-9a-f]{64}$/.test(String(enrolled.replicaKey || ''))) return true;
-  return Boolean(enrolled.replicaMode) || Boolean(enrolled.replicaRows);
+  return Boolean(enrolled.replicaMode) || sharedDisplayHasReplicaRows(enrolled);
 }
 
 function sharedDisplayFullAppHref(){
   const target = new URL('index.html',location.href);
   target.searchParams.set('display','1');
   return target.href;
+}
+
+function sharedDisplaySessionEnded(){
+  try{ return sessionStorage.getItem(SHARED_DISPLAY_SESSION_ENDED_KEY) === '1'; }
+  catch(_){ return false; }
+}
+
+function clearSharedDisplaySessionEnded(){
+  try{ sessionStorage.removeItem(SHARED_DISPLAY_SESSION_ENDED_KEY); }
+  catch(_){ }
+}
+
+// Forget this screen's pairing so a 401/410 cannot bounce clone ↔ kiosk.
+function endSharedDisplaySession(){
+  try{ localStorage.removeItem(sharedDisplayEnrollmentKey()); }
+  catch(_){ }
+  try{ sessionStorage.setItem(SHARED_DISPLAY_SESSION_ENDED_KEY,'1'); }
+  catch(_){ }
 }
 
 async function shareFetch(path, opts = {}){

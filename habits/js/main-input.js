@@ -733,6 +733,17 @@ $('settings-reset-yes').addEventListener('click',()=>{
   render();
   showToast('settings reset');
 });
+$('settings-clear-data')?.addEventListener('click',()=>{
+  const box = $('settings-clear-data-confirm');
+  if(box) box.hidden = false;
+});
+$('settings-clear-data-no')?.addEventListener('click',()=>{
+  const box = $('settings-clear-data-confirm');
+  if(box) box.hidden = true;
+});
+$('settings-clear-data-yes')?.addEventListener('click',()=>{
+  if(typeof clearAllLocalTingsData === 'function') clearAllLocalTingsData();
+});
 
 $('open-overview').addEventListener('click',()=>{
   if(!load().length)return;
