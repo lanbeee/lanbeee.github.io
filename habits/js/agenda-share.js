@@ -1,5 +1,6 @@
 let _agendaPublishTimer = null;
 let _agendaPublishInFlight = false;
+let _agendaPublishGate = Promise.resolve();
 let _lastAgendaProjectionSig = '';
 let _pendingAgendaWeek = null;
 let _agendaPairApproval = null;
@@ -433,8 +434,10 @@ function reconcileHouseholdAgendaDevices(feed,sessions){
     seen.add(pairingId);
     live.push(pairingId);
   }
-  const current = householdAgendaDevices(feed);
-  const kept = current.filter(device=>seen.has(device.pairingId));
+  // Keep locally remembered screens. A GET can race ahead of the Worker
+  // session row right after QR approval; dropping that pairing would publish
+  // a glance-only snapshot and leave the clone waiting for a library.
+  const kept = householdAgendaDevices(feed);
   const known = new Set(kept.map(device=>device.pairingId));
   const inferred = householdAgendaSyncMode(feed);
   for(const pairingId of live){
@@ -444,6 +447,43 @@ function reconcileHouseholdAgendaDevices(feed,sessions){
     known.add(pairingId);
   }
   return kept;
+}
+
+function householdAgendaEmptyWeek(now = Date.now()){
+  const base = typeof dayStart === 'function' ? dayStart(now) : now;
+  return {
+    optimized:false,
+    days:[{
+      dayBase:base,
+      dayKey:typeof dateKey === 'function' ? dateKey(base) : '',
+      usedMinutes:0,
+      remainingMinutes:0,
+      timeline:[]
+    }]
+  };
+}
+
+// A publish that started before QR approval must not write its captured feed
+// back over the live pairing list, keys, or sync style.
+function householdAgendaAdoptLiveFeed(feed){
+  const live = agendaFeedRecord();
+  if(!feed) return live;
+  if(!live || live.feedId !== feed.feedId) return feed;
+  const liveRevision = Number(live.lastRevision) || 0;
+  const feedRevision = Number(feed.lastRevision) || 0;
+  return {
+    ...live,
+    lastRevision:feedRevision > liveRevision ? feed.lastRevision : live.lastRevision,
+    completionReceipts:feed.completionReceipts || live.completionReceipts,
+    definitionReceipts:feed.definitionReceipts || live.definitionReceipts,
+    cloneDefinitionChains:feed.cloneDefinitionChains || live.cloneDefinitionChains
+  };
+}
+
+function commitAgendaFeedPublish(feed,fields){
+  const next = { ...(householdAgendaAdoptLiveFeed(feed) || feed || {}), ...(fields || {}) };
+  saveAgendaFeedRecord(next);
+  return next;
 }
 
 function householdAgendaWithDevices(feed,devices){
@@ -1313,10 +1353,11 @@ async function approveHouseholdAgendaPairing(){
     _lastAgendaProjectionSig = '';
     status.textContent = 'Display authorized. Publishing a fresh encrypted agenda…';
     try{
-      await publishHouseholdAgendaNow(null,{ manual:true });
+      await publishHouseholdAgendaNow(null,{ manual:true,forceCompletionSync:true });
       status.textContent = `Display authorized for ${reauthDays} days. Any other signed-in screen stays connected.`;
-    }catch(_){
-      scheduleHouseholdAgendaPublish();
+    }catch(error){
+      if(error && error.message === 'replica_too_large') throw error;
+      scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
       status.textContent = 'Display authorized. The agenda will publish when this phone is online.';
     }
     if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
@@ -1365,6 +1406,17 @@ async function revokeHouseholdAgendaDevice(pairingId){
 }
 
 async function publishHouseholdAgendaNow(week, opts = {}){
+  if(!opts.nested){
+    const previous = _agendaPublishGate;
+    let release = ()=>{};
+    _agendaPublishGate = new Promise(resolve=>{ release = resolve; });
+    try{
+      await previous;
+      return await publishHouseholdAgendaNow(week,{ ...opts,nested:true });
+    }finally{
+      release();
+    }
+  }
   let feed = agendaFeedRecord();
   if(!feed || !shareConfigured()) return null;
   let completionSync = { feed,operationIds:[],completedRowKeys:new Set(),changed:false };
@@ -1372,12 +1424,22 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     completionSync = await syncHouseholdAgendaCompletions(feed,{ force:Boolean(opts.forceCompletionSync) });
     feed = completionSync.feed || feed;
   }catch(_){ /* Publishing remains available during a transient completion-read failure. */ }
+  feed = householdAgendaAdoptLiveFeed(feed) || feed;
   if(completionSync.changed && typeof refreshOpenViews === 'function'){
     try{ refreshOpenViews(); }
     catch(_){ /* Local logs already saved; the next home render still republishes. */ }
   }
-  const source = week || (typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null);
-  if(!source || !Array.isArray(source.days) || !source.days.length) return null;
+  let source = week || (typeof weekSnapshotForExport === 'function' ? weekSnapshotForExport() : null);
+  if(!source || !Array.isArray(source.days) || !source.days.length){
+    if(householdAgendaLibraryStyle(feed) === 'glance') return null;
+    source = householdAgendaEmptyWeek();
+  }
+  const latest = agendaFeedRecord();
+  if(latest && latest.feedId === feed.feedId
+    && householdAgendaLibraryStyle(latest) !== householdAgendaLibraryStyle(feed)
+    && !opts.libraryRetry){
+    return publishHouseholdAgendaNow(source,{ ...opts,libraryRetry:true,manual:true,nested:true });
+  }
   let projection;
   try{
     projection = buildHouseholdAgendaProjection(source, {
@@ -1387,15 +1449,22 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     });
   }catch(error){
     if(error && error.message === 'replica_too_large'){
-      const failed = { ...feed,lastSyncError:'replica_too_large',lastSyncErrorAt:Date.now() };
-      saveAgendaFeedRecord(failed);
+      commitAgendaFeedPublish(feed,{ lastSyncError:'replica_too_large',lastSyncErrorAt:Date.now() });
       if(typeof syncHouseholdAgendaSettings === 'function') syncHouseholdAgendaSettings();
     }
     throw error;
   }
   const sig = await shareSha256Hex(householdAgendaSignature(projection));
   const priorSig = _lastAgendaProjectionSig || String(feed.lastProjectionSig || '');
-  if(!opts.manual && !completionSync.operationIds.length && sig === priorSig && feed.lastPublishedAt) return feed;
+  if(!opts.manual && !completionSync.operationIds.length && sig === priorSig && feed.lastPublishedAt){
+    return householdAgendaAdoptLiveFeed(feed) || feed;
+  }
+  const liveBeforePut = agendaFeedRecord();
+  if(liveBeforePut && liveBeforePut.feedId === feed.feedId
+    && householdAgendaLibraryStyle(liveBeforePut) !== householdAgendaLibraryStyle(feed)
+    && !opts.libraryRetry){
+    return publishHouseholdAgendaNow(source,{ ...opts,libraryRetry:true,manual:true,nested:true });
+  }
   const transportProjection = await householdAgendaTransportProjection(projection,feed);
   const envelope = await shareEncrypt(feed.contentKey, transportProjection, {
     schemaVersion:SHARE_SCHEMA_VERSION,
@@ -1403,6 +1472,13 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     objectId:feed.feedId,
     revision:projection.revision
   });
+  const liveAfterEncrypt = agendaFeedRecord();
+  if(liveAfterEncrypt && liveAfterEncrypt.feedId === feed.feedId
+    && householdAgendaLibraryStyle(liveAfterEncrypt) !== 'glance'
+    && !transportProjection.replicaEnvelope
+    && !opts.libraryRetry){
+    return publishHouseholdAgendaNow(source,{ ...opts,libraryRetry:true,manual:true,nested:true });
+  }
   try{
     const result = await shareFetch(`/v1/agendas/${feed.feedId}`, {
       method:'PUT',
@@ -1410,20 +1486,20 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       ifMatch:feed.lastRevision,
       body:{ snapshot:envelope, expectedRevision:feed.lastRevision }
     });
-    const next = {
-      ...feed,
+    const live = householdAgendaAdoptLiveFeed(feed) || feed;
+    const next = commitAgendaFeedPublish(feed,{
       lastRevision:result.body.revision,
       lastPublishedAt:projection.generatedAt,
       lastProjectionSig:sig,
       plannerProvenance:projection.plannerProvenance,
-      status:result.body.status || feed.status,
-      replicaRowIds:projection._replicaRowIds || {},
+      status:result.body.status || live.status,
+      replicaRowIds:projection._replicaRowIds || live.replicaRowIds || {},
       rowMaps:[
         { revision:Number(result.body.revision),rows:projection._rowMap || {} },
-        ...(Array.isArray(feed.rowMaps) ? feed.rowMaps : [])
+        ...(Array.isArray(live.rowMaps) ? live.rowMaps : [])
           .filter(entry=>Number(entry && entry.revision) !== Number(result.body.revision))
       ].slice(0,SHARED_DISPLAY_ROW_MAP_REVISIONS)
-    };
+    });
     delete next.lastSyncError;
     delete next.lastSyncErrorAt;
     saveAgendaFeedRecord(next);
@@ -1440,9 +1516,8 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       const current = await shareFetch(`/v1/agendas/${feed.feedId}`, { credential:feed.ownerCredential });
       const currentRevision = Number(current.body && current.body.revision);
       if(!Number.isInteger(currentRevision) || currentRevision < 0) throw error;
-      const fresh = { ...feed, lastRevision:currentRevision };
-      saveAgendaFeedRecord(fresh);
-      return publishHouseholdAgendaNow(source, { ...opts, retried:true,manual:true });
+      commitAgendaFeedPublish(feed,{ lastRevision:currentRevision });
+      return publishHouseholdAgendaNow(source, { ...opts, retried:true,manual:true,nested:true });
     }
     throw error;
   }

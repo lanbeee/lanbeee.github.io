@@ -1259,6 +1259,136 @@ function assert(cond,msg){
     && unchangedPublish.persistedDigest && unchangedPublish.stableRowId,
   `an unchanged periodic check reuses its persisted digest and does not upload another snapshot (${JSON.stringify(unchangedPublish)})`);
 
+  const cloneLibraryRace = await page.evaluate(async ()=>{
+    const now = Date.now();
+    const base = dayStart(now);
+    const contentKey = shareRandomHex(32);
+    const replicaKey = shareRandomHex(32);
+    const glanceId = 'aa'.repeat(16);
+    const cloneId = 'bb'.repeat(16);
+    const habit = normalize([{
+      hid:generateHabitId(),name:'Cloned library',type:'keepup',target:1,logs:[],lastLog:null,
+      durationMinutes:20,breakable:false,locationIds:[]
+    }])[0];
+    const week = { optimized:false,days:[{
+      dayBase:base,dayKey:dateKey(base),isToday:true,usedMinutes:20,remainingMinutes:0,
+      timeline:[{kind:'scheduled',start:now + 3600000,end:now + 4800000,h:habit}]
+    }] };
+    const feed = {
+      feedId:'c1c1'.repeat(8),contentKey,replicaKey,ownerCredential:'11'.repeat(32),
+      ownerId:'22'.repeat(8),lastRevision:0,title:'Race test',lastPublishedAt:null,
+      scopeMode:'count',scopeValue:20,syncMode:'glance',rowMaps:[],
+      devices:[{ pairingId:glanceId,syncMode:'glance',pairedAt:now }]
+    };
+    const originalFetch = shareFetch;
+    const originalFeed = agendaFeedRecord();
+    const published = [];
+    let revision = 0;
+    let releaseFirst;
+    const firstGate = new Promise(resolve=>{ releaseFirst = resolve; });
+    shareFetch = async (_path,opts={})=>{
+      if(opts.method === 'PUT'){
+        const projection = await shareDecrypt(contentKey,opts.body.snapshot);
+        published.push({
+          hasReplica:Boolean(projection.replica),
+          hasEnvelope:Boolean(projection.replicaEnvelope && projection.replicaEnvelope.ciphertext)
+        });
+        if(published.length === 1) await firstGate;
+        revision += 1;
+        return { body:{ revision,status:'active' } };
+      }
+      return { body:{ revision,completions:[],sessions:[
+        { pairingId:glanceId },{ pairingId:cloneId }
+      ] } };
+    };
+    saveAgendaFeedRecord(feed);
+    _lastAgendaProjectionSig = '';
+    _agendaCompletionSyncAt = 0;
+    try{
+      const first = publishHouseholdAgendaNow(week,{ data:[habit],manual:true });
+      while(published.length < 1) await new Promise(resolve=>setTimeout(resolve,0));
+      const live = agendaFeedRecord();
+      live.syncMode = 'clone';
+      live.devices = [
+        { pairingId:glanceId,syncMode:'glance',pairedAt:now },
+        { pairingId:cloneId,syncMode:'clone',pairedAt:now }
+      ];
+      saveAgendaFeedRecord(live);
+      releaseFirst();
+      await first;
+      const devicesAfter = householdAgendaDevices(agendaFeedRecord()).map(item=>item.syncMode).sort();
+      _agendaCompletionSyncAt = 0;
+      const second = await publishHouseholdAgendaNow(week,{ data:[habit],manual:true });
+      const last = published[published.length - 1] || {};
+      return {
+        devicesAfter,
+        firstHadEnvelope:Boolean(published[0] && published[0].hasEnvelope),
+        lastHadEnvelope:Boolean(last.hasEnvelope),
+        lastHadPlainReplica:Boolean(last.hasReplica),
+        revision:Number(second && second.lastRevision),
+        liveStyle:householdAgendaLibraryStyle(agendaFeedRecord())
+      };
+    }finally{
+      shareFetch = originalFetch;
+      saveAgendaFeedRecord(originalFeed);
+      _lastAgendaProjectionSig = '';
+    }
+  });
+  assert(cloneLibraryRace.devicesAfter.join(',') === 'clone,glance',
+    `a glance publish in flight does not wipe a clone pairing that landed while it was encrypting (${JSON.stringify(cloneLibraryRace)})`);
+  assert(cloneLibraryRace.liveStyle === 'clone' && cloneLibraryRace.lastHadEnvelope && !cloneLibraryRace.lastHadPlainReplica,
+    `after clone pairing the next snapshot carries a sealed library instead of a glance-only agenda (${JSON.stringify(cloneLibraryRace)})`);
+
+  const cloneWithoutWeek = await page.evaluate(async ()=>{
+    const contentKey = shareRandomHex(32);
+    const replicaKey = shareRandomHex(32);
+    const habit = normalize([{
+      hid:generateHabitId(),name:'No week yet',type:'keepup',target:1,logs:[],lastLog:null,
+      durationMinutes:15,breakable:false,locationIds:[]
+    }])[0];
+    const feed = {
+      feedId:'d2d2'.repeat(8),contentKey,replicaKey,ownerCredential:'33'.repeat(32),
+      ownerId:'44'.repeat(8),lastRevision:0,title:'Pending week',syncMode:'clone',
+      devices:[{ pairingId:'cc'.repeat(16),syncMode:'clone',pairedAt:Date.now() }],
+      rowMaps:[]
+    };
+    const originalFetch = shareFetch;
+    const originalFeed = agendaFeedRecord();
+    const originalWeek = weekSnapshotForExport;
+    let sealed = null;
+    shareFetch = async (_path,opts={})=>{
+      if(opts.method === 'PUT'){
+        sealed = opts.body.snapshot;
+        return { body:{ revision:1,status:'active' } };
+      }
+      return { body:{ revision:0,completions:[] } };
+    };
+    weekSnapshotForExport = ()=>null;
+    saveAgendaFeedRecord(feed);
+    _lastAgendaProjectionSig = '';
+    _agendaCompletionSyncAt = 0;
+    try{
+      const published = await publishHouseholdAgendaNow(null,{ data:[habit],manual:true });
+      const projection = sealed ? await shareDecrypt(contentKey,sealed) : null;
+      const replica = projection && projection.replicaEnvelope
+        ? await shareDecrypt(replicaKey,projection.replicaEnvelope)
+        : null;
+      return {
+        published:Boolean(published),
+        name:replica && replica.items && replica.items[0] && replica.items[0].habit
+          ? replica.items[0].habit.name : '',
+        mode:replica && replica.mode
+      };
+    }finally{
+      shareFetch = originalFetch;
+      weekSnapshotForExport = originalWeek;
+      saveAgendaFeedRecord(originalFeed);
+      _lastAgendaProjectionSig = '';
+    }
+  });
+  assert(cloneWithoutWeek.published && cloneWithoutWeek.mode === 'clone' && cloneWithoutWeek.name === 'No week yet',
+    `a personal clone still receives the library when the owner week planner is not ready (${JSON.stringify(cloneWithoutWeek)})`);
+
   const corruptInbound = await page.evaluate(async ()=>{
     const now = Date.now();
     const contentKey = shareRandomHex(32);

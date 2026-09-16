@@ -316,13 +316,18 @@ function json(route,status,body){
       { pairingId:'a'.repeat(32),syncMode:'clone' },
       { pairingId:'c'.repeat(32),syncMode:'glance' }
     ] };
+    const glanceOnlySessions = [{ pairingId:'c'.repeat(32) }];
     return {
       emptyClone:householdAgendaApproveConflict(empty,'clone'),
       secondGlance:householdAgendaApproveConflict(glance,'glance'),
       secondClone:householdAgendaApproveConflict(clone,'clone'),
       cloneThenGlance:householdAgendaApproveConflict(clone,'glance'),
       mixedFull:householdAgendaApproveConflict(mixed,'clone'),
-      replicaBlocked:householdAgendaOwnerControlsBlocked()
+      replicaBlocked:householdAgendaOwnerControlsBlocked(),
+      keptCloneAfterGlanceSession:householdAgendaDevices({
+        devices:reconcileHouseholdAgendaDevices(mixed,glanceOnlySessions)
+      }).map(item=>item.syncMode).sort(),
+      mixedLibrary:householdAgendaLibraryStyle(mixed)
     };
   });
   assert(!composition.emptyClone,'an unpaired feed can approve the first display');
@@ -331,6 +336,9 @@ function json(route,status,body){
   assert(!composition.cloneThenGlance,'clone plus glance is the allowed composition');
   assert(/Two displays|already signed in/.test(composition.mixedFull),'a third display is refused');
   assert(!composition.replicaBlocked,'the owner phone is not treated as a replica');
+  assert(composition.keptCloneAfterGlanceSession.join(',') === 'clone,glance',
+    'a completion pull that has not yet seen the clone session still keeps the clone pairing');
+  assert(composition.mixedLibrary === 'clone','mixed glance plus clone publishes the full library');
 
   const createsBefore = server.agendaCreates;
   const replicaGuard = await ownerPage.evaluate(async key=>{

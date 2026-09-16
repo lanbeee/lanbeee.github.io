@@ -624,9 +624,10 @@ async function pullReplicaSnapshot(){
     const projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
     let replica = projection && projection.replica;
     if(!replica && projection && projection.replicaEnvelope && enrolled.replicaKey){
-      replica = await shareDecrypt(enrolled.replicaKey,projection.replicaEnvelope);
+      try{ replica = await shareDecrypt(enrolled.replicaKey,projection.replicaEnvelope); }
+      catch(_){ replica = null; }
     }
-    if(!projection || !replica || replica.schemaVersion !== 1) return null;
+    if(!projection || !replica || Number(replica.schemaVersion) !== 1) return null;
     const revision = Number(result.body.revision);
     const next = adoptLiveReplicaQueues({
       ...enrolled,snapshot:result.body.snapshot,meta:{generatedAt:projection.generatedAt,revision,error:null}
@@ -729,12 +730,12 @@ function replicaDisplayIsSelected(enrolled){
 }
 
 async function bootstrapReplicaLibrary(){
-  if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
-  await refreshReplicaDevice();
-  if(!replicaEnrollment() || replicaEnrollment().replicaMode) return;
-  await new Promise(resolve=>setTimeout(resolve,8000));
-  if(!replicaEnrollment() || replicaEnrollment().replicaMode) return;
-  await refreshReplicaDevice();
+  for(let attempt = 0; attempt < 4; attempt++){
+    if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+    await refreshReplicaDevice();
+    if(replicaEnrollment() && replicaEnrollment().replicaMode) return;
+    await new Promise(resolve=>setTimeout(resolve, attempt === 0 ? 4000 : 8000));
+  }
 }
 
 function replicaChromeHidden(){

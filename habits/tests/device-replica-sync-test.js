@@ -542,6 +542,58 @@ function assert(value,message){
     && !result.chromeRestored.stored,
     'settings appearance can show the display bar again');
 
+  const libraryPull = await page.evaluate(async()=>{
+    const contentKey = shareRandomHex(32);
+    const replicaKey = shareRandomHex(32);
+    const feedId = shareRandomHex(16);
+    const pairingId = shareRandomHex(16);
+    const hid = generateHabitId();
+    const habit = normalize([{
+      hid,name:'Pulled from sealed library',type:'keepup',target:1,logs:[],durationMinutes:30
+    }])[0];
+    const replica = {
+      schemaVersion:1,mode:'clone',generatedAt:Date.now(),
+      items:[{ rowId:shareRandomHex(8),habit,access:'complete',definitionHash:'abc' }],
+      settings:null,truncated:false
+    };
+    const replicaEnvelope = await shareEncrypt(replicaKey,replica,{
+      schemaVersion:SHARE_SCHEMA_VERSION,recordKind:'agenda_replica',objectId:feedId,revision:2
+    });
+    const snapshot = await shareEncrypt(contentKey,{
+      schemaVersion:SHARE_SCHEMA_VERSION,feedId,days:[],replicaEnvelope
+    },{
+      schemaVersion:SHARE_SCHEMA_VERSION,recordKind:'agenda_snapshot',objectId:feedId,revision:2
+    });
+    const glanceSnapshot = await shareEncrypt(contentKey,{
+      schemaVersion:SHARE_SCHEMA_VERSION,feedId,days:[]
+    },{
+      schemaVersion:SHARE_SCHEMA_VERSION,recordKind:'agenda_snapshot',objectId:feedId,revision:1
+    });
+    writeReplicaEnrollment({
+      feedId,deviceCredential:shareRandomHex(32),contentKey,replicaKey,pairingId,syncMode:'clone'
+    });
+    Storage.writeRaw(KEY,JSON.stringify([]));
+    shareFetch = async()=>({ body:{ snapshot:glanceSnapshot,revision:1,pairingId,completions:[] } });
+    _replicaPull = null;
+    const waiting = await pullReplicaSnapshot();
+    const waitingMode = replicaEnrollment() && replicaEnrollment().replicaMode;
+    shareFetch = async()=>({ body:{ snapshot,revision:2,pairingId,completions:[] } });
+    _replicaPull = null;
+    const pulled = await pullReplicaSnapshot();
+    return {
+      waitingNull:waiting == null,
+      waitingMode:waitingMode || null,
+      pulledMode:pulled && pulled.mode,
+      names:load().map(h=>h && h.name),
+      storedMode:replicaEnrollment() && replicaEnrollment().replicaMode
+    };
+  });
+  assert(libraryPull.waitingNull && !libraryPull.waitingMode,
+    `a glance-only snapshot leaves the clone waiting instead of installing an empty library (${JSON.stringify(libraryPull)})`);
+  assert(libraryPull.pulledMode === 'clone' && libraryPull.storedMode === 'clone'
+    && libraryPull.names.includes('Pulled from sealed library'),
+    `the clone installs habits from the nested replica envelope (${JSON.stringify(libraryPull)})`);
+
   // Glance display: the phone publishes no replica, so the screen must never
   // install a library or mount the full-app planner.
   const glanceContext = await browser.newContext({serviceWorkers:'block'});
