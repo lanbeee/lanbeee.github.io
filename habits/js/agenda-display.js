@@ -489,11 +489,20 @@ function displayLogIdentity(log){
 // Install a replica snapshot into the normal app's local store. Pending local
 // logs are merged additively so an offline completion is never erased by an
 // older owner snapshot while it is waiting to be consumed.
-async function installDisplayReplica(projection,enrollment){
+async function installDisplayReplica(projection,enrollment,siblingEnvelope){
   if(enrollment && (enrollment.syncMode === 'glance' || enrollment.syncMode === 'legacy')) return false;
   if(enrollment && !enrollment.syncMode && !enrollment.replicaMode && !enrollment.replicaRows) return false;
   let replica = projection && projection.replica;
-  if(!replica && projection && projection.replicaEnvelope && enrollment && enrollment.replicaKey){
+  if(!replica && typeof tingsShareOpenReplica === 'function'){
+    const opened = await tingsShareOpenReplica(enrollment, projection, siblingEnvelope);
+    replica = opened.replica;
+    if(!replica && opened.how && opened.how !== 'no_envelope' && opened.how !== 'no_replica_key'){
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('display.replica.decrypt_failed', { error:opened.how });
+      }
+      return false;
+    }
+  }else if(!replica && projection && projection.replicaEnvelope && enrollment && enrollment.replicaKey){
     try{ replica = await shareDecrypt(enrollment.replicaKey,projection.replicaEnvelope); }
     catch(error){
       if(typeof tingsShareLog === 'function'){
@@ -510,8 +519,8 @@ async function installDisplayReplica(projection,enrollment){
         syncMode:enrollment && enrollment.syncMode || null,
         hasPlainReplica:Boolean(projection && projection.replica),
         replicaEnvelope:typeof tingsShareEnvelopeSummary === 'function'
-          ? tingsShareEnvelopeSummary(projection && projection.replicaEnvelope)
-          : { present:Boolean(projection && projection.replicaEnvelope) },
+          ? tingsShareEnvelopeSummary(siblingEnvelope || (projection && projection.replicaEnvelope))
+          : { present:Boolean(siblingEnvelope || (projection && projection.replicaEnvelope)) },
         replicaKey:typeof tingsShareKeyInfo === 'function'
           ? tingsShareKeyInfo(enrollment && enrollment.replicaKey)
           : { present:Boolean(enrollment && enrollment.replicaKey) },
@@ -1360,7 +1369,14 @@ async function refreshDisplay(opts = {}){
     return;
   }
   try{
-    const result = await shareFetch(`/v1/agendas/${enrolled.feedId}`,{ credential:enrolled.deviceCredential });
+    const wantsLibrary = typeof sharedDisplayWantsFullApp === 'function'
+      && sharedDisplayWantsFullApp(enrolled);
+    const result = await shareFetch(
+      typeof shareAgendaFeedPath === 'function'
+        ? shareAgendaFeedPath(enrolled.feedId,{ library:wantsLibrary })
+        : `/v1/agendas/${enrolled.feedId}`,
+      { credential:enrolled.deviceCredential }
+    );
     const remotePairingId = result.body && result.body.pairingId;
     if(remotePairingId && remotePairingId !== enrolled.pairingId){
       clearDisplayAuthorization('reauth');
@@ -1423,7 +1439,7 @@ async function refreshDisplay(opts = {}){
     stored.completionRowIds = completionRowIds;
     _displayFeed = stored;
     displayWriteEnrollment(stored);
-    if(await installDisplayReplica(projection,stored)) return;
+    if(await installDisplayReplica(projection,stored,result.body && result.body.replica)) return;
     if(displayEnrollmentWantsFullApp(stored)){
       openDisplayFullApp();
       return;

@@ -27,6 +27,11 @@ function agendaDisplayHref(hash){
   return url.href;
 }
 
+function shareAgendaFeedPath(feedId, opts = {}){
+  const path = `/v1/agendas/${feedId}`;
+  return opts.library ? `${path}?library=1` : path;
+}
+
 function agendaPairingOwnerHref(pairing){
   const url = shareAppDirectoryUrl();
   const params = new URLSearchParams({
@@ -122,6 +127,24 @@ function tingsShareEnvelopeSummary(envelope){
     hasCiphertext:Boolean(envelope.ciphertext),
     ciphertextChars:envelope.ciphertext ? String(envelope.ciphertext).length : 0
   };
+}
+
+async function tingsShareOpenReplica(enrolled, projection, siblingEnvelope){
+  if(projection && projection.replica && Number(projection.replica.schemaVersion) === 1){
+    return { replica:projection.replica, how:'plaintext_replica' };
+  }
+  const envelope = siblingEnvelope || (projection && projection.replicaEnvelope) || null;
+  if(!envelope) return { replica:null, how:'no_envelope' };
+  const key = enrolled && enrolled.replicaKey;
+  if(!/^[0-9a-f]{64}$/.test(String(key || ''))) return { replica:null, how:'no_replica_key' };
+  try{
+    return { replica:await shareDecrypt(key, envelope), how:'ok' };
+  }catch(error){
+    return {
+      replica:null,
+      how:tingsShareErrorSummary(error)
+    };
+  }
 }
 
 function tingsShareErrorSummary(error){
@@ -276,7 +299,7 @@ function sharedDisplayAuditDiagnosis(report){
       return 'owner could not decrypt the worker snapshot with contentKey';
     }
     if(live && live.replicaDecrypt === 'no_envelope'){
-      return 'worker snapshot has days but no sealed library envelope; clones will keep waiting';
+      return 'worker has days but no sealed library; clones will keep waiting until the owner publishes a replica envelope';
     }
     if(live && live.replicaDecrypt && live.replicaDecrypt !== 'ok'){
       return 'worker has a library envelope but replicaKey cannot decrypt it';
@@ -302,7 +325,7 @@ function sharedDisplayAuditDiagnosis(report){
     return 'contentKey cannot decrypt the worker snapshot';
   }
   if(live && live.replicaDecrypt === 'no_envelope'){
-    return 'snapshot decrypted, but it has no sealed library. Owner is still publishing glance-only data';
+    return 'snapshot decrypted, but the worker has no sealed library. Owner is still publishing glance-only data';
   }
   if(live && live.replicaDecrypt && live.replicaDecrypt !== 'ok'){
     return 'sealed library is present but this screen replicaKey cannot decrypt it';
@@ -397,7 +420,7 @@ async function inspectSharedAgendaForAudit(){
   if(typeof shareFetch !== 'function') return { skipped:'no_share_fetch' };
   let result;
   try{
-    result = await shareFetch(`/v1/agendas/${feedId}`, {
+    result = await shareFetch(shareAgendaFeedPath(feedId,{ library:true }), {
       credential,
       timeoutMs:15000
     });
@@ -424,7 +447,7 @@ async function inspectSharedAgendaForAudit(){
     snapshotDecrypt:null,
     days:0,
     hasPlainReplica:false,
-    replicaEnvelope:tingsShareEnvelopeSummary(null),
+    replicaEnvelope:tingsShareEnvelopeSummary(body.replica),
     replicaDecrypt:null,
     replicaMode:null,
     replicaSchema:null,
@@ -446,36 +469,23 @@ async function inspectSharedAgendaForAudit(){
     out.snapshotDecrypt = 'ok';
     out.days = projection && Array.isArray(projection.days) ? projection.days.length : 0;
     out.hasPlainReplica = Boolean(projection && projection.replica);
-    out.replicaEnvelope = tingsShareEnvelopeSummary(projection && projection.replicaEnvelope);
+    if(!out.replicaEnvelope.present){
+      out.replicaEnvelope = tingsShareEnvelopeSummary(projection && projection.replicaEnvelope);
+    }
   }catch(error){
     out.snapshotDecrypt = tingsShareErrorSummary(error);
     tingsShareLog('audit.inspect', out);
     return out;
   }
-  if(out.hasPlainReplica){
-    out.replicaDecrypt = 'plaintext_replica';
-    out.replicaMode = projection.replica && projection.replica.mode || null;
-    out.replicaSchema = projection.replica && projection.replica.schemaVersion || null;
-    out.replicaItemCount = projection.replica && Array.isArray(projection.replica.items)
-      ? projection.replica.items.length : 0;
-    out.replicaNames = ((projection.replica && projection.replica.items) || [])
+  const opened = await tingsShareOpenReplica({ replicaKey }, projection, body.replica);
+  out.replicaDecrypt = opened.how;
+  const replica = opened.replica;
+  if(replica){
+    out.replicaMode = replica.mode || null;
+    out.replicaSchema = replica.schemaVersion || null;
+    out.replicaItemCount = Array.isArray(replica.items) ? replica.items.length : 0;
+    out.replicaNames = (replica.items || [])
       .map(item=>item && item.habit && item.habit.name).filter(Boolean).slice(0, 12);
-  }else if(!out.replicaEnvelope.present){
-    out.replicaDecrypt = 'no_envelope';
-  }else if(!/^[0-9a-f]{64}$/.test(String(replicaKey || ''))){
-    out.replicaDecrypt = 'no_replica_key';
-  }else{
-    try{
-      const replica = await shareDecrypt(replicaKey, projection.replicaEnvelope);
-      out.replicaDecrypt = 'ok';
-      out.replicaMode = replica && replica.mode || null;
-      out.replicaSchema = replica && replica.schemaVersion || null;
-      out.replicaItemCount = replica && Array.isArray(replica.items) ? replica.items.length : 0;
-      out.replicaNames = ((replica && replica.items) || [])
-        .map(item=>item && item.habit && item.habit.name).filter(Boolean).slice(0, 12);
-    }catch(error){
-      out.replicaDecrypt = tingsShareErrorSummary(error);
-    }
   }
   tingsShareLog('audit.inspect', {
     revision:out.revision,

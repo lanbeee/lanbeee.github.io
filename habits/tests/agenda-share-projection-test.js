@@ -140,7 +140,10 @@ function assert(cond,msg){
     }] },{ feed,data:expandedLibrary,now,settings:quietSettings });
     const historyHeavy = Array.from({length:220},(_,index)=>({
       ...active,hid:`history-heavy-${index}`,name:`History heavy ${index}`,
-      logs:Array.from({length:80},(__,logIndex)=>now - (80 - logIndex) * 60000)
+      logs:Array.from({length:80},(__,logIndex)=>({
+        ts:now - (80 - logIndex) * 60000,
+        note:'n'.repeat(48)
+      }))
     }));
     const historyProjection = buildHouseholdAgendaProjection({ days:[{
       dayBase,dayKey:dateKey(dayBase),usedMinutes:0,remainingMinutes:0,timeline:[]
@@ -150,9 +153,25 @@ function assert(cond,msg){
       buildHouseholdAgendaProjection({ days:[{
         dayBase,dayKey:dateKey(dayBase),usedMinutes:0,remainingMinutes:0,timeline:[]
       }] },{
-        feed,data:[{ ...active,hid:'oversized-definition',notes:'x'.repeat(260 * 1024) }],now,settings:quietSettings
+        feed,data:[{ ...active,hid:'oversized-definition',notes:'x'.repeat(520 * 1024) }],now,settings:quietSettings
       });
     }catch(error){ oversizedRejected = error && error.message === 'replica_too_large'; }
+
+    const fatLibrary = Array.from({length:59},(_,index)=>normalize([{
+      ...active,hid:`fat-${String(index).padStart(2,'0')}-hid`,name:`Fat ${index}`,
+      logs:Array.from({length:40},(__,logIndex)=>now - (40 - logIndex) * 86400000)
+    }])[0]);
+    const fatSettings = {
+      ...quietSettings,
+      travel:Object.fromEntries(Array.from({length:24},(_,index)=>[
+        `loc${index}|loc${index + 1}`,
+        { durationSeconds:480,mode:'driving',cachedAt:now,polyline:'x'.repeat(400) }
+      ]))
+    };
+    const fatProjection = buildHouseholdAgendaProjection({ days:[{
+      dayBase,dayKey:dateKey(dayBase),usedMinutes:0,remainingMinutes:0,timeline:[]
+    }] },{ feed,data:fatLibrary,now,settings:fatSettings });
+    const fatReplicaBytes = householdProjectionByteSize(fatProjection.replica);
 
     return {
       dayCount:projection.days.length,
@@ -174,6 +193,10 @@ function assert(cond,msg){
       historyItemCount:historyProjection.replica.items.length,
       historyTrimmed:Boolean(historyProjection.replica.historyTruncated),
       oversizedRejected,
+      fatItemCount:fatProjection.replica.items.length,
+      fatReplicaBytes,
+      fatHasTravel:Boolean(fatProjection.replica.settings && fatProjection.replica.settings.travel),
+      fatCompactName:fatProjection.replica.items[0] && fatProjection.replica.items[0].habit.name,
       rowMapCount:Object.keys(projection._rowMap || {}).length,
       mappedHid:firstItem && projection._rowMap[firstItem.rowId] && projection._rowMap[firstItem.rowId].hid,
       completable:firstItem && firstItem.completable,
@@ -188,8 +211,9 @@ function assert(cond,msg){
           && transferredKey.syncMode === 'clone',
         glanceOmitsReplicaKey:glanceTransferred.replicaKey == null
           && glanceTransferred.syncMode === 'glance',
-        sealedHasPlainReplica:Boolean(sealed.replica),
+        sealedHasPlainReplica:Boolean(sealed.snapshotPlain && sealed.snapshotPlain.replica),
         sealedHasEnvelope:Boolean(sealed.replicaEnvelope && sealed.replicaEnvelope.ciphertext),
+        sealedSnapshotHasNestedEnvelope:Boolean(sealed.snapshotPlain && sealed.snapshotPlain.replicaEnvelope),
         glanceOpenedReplica,
         cloneOpenedMode:cloneOpenedReplica && cloneOpenedReplica.mode,
         wrongDisplayRejected,
@@ -225,8 +249,12 @@ function assert(cond,msg){
   assert(result.crypto.transferMatches,'ECDH transfers the content key to the exact display key');
   assert(result.crypto.glanceOmitsReplicaKey,'glance pairing transfer never includes the clone-only replica key');
   assert(!result.crypto.sealedHasPlainReplica && result.crypto.sealedHasEnvelope
+    && !result.crypto.sealedSnapshotHasNestedEnvelope
     && !result.crypto.glanceOpenedReplica && result.crypto.cloneOpenedMode === 'clone',
-    'published snapshots nest the clone library under a replica key the glance display cannot open');
+    'clone library is a sibling replica envelope, not nested inside the glance snapshot');
+  assert(result.fatItemCount === 59 && result.fatReplicaBytes < 480 * 1024 && !result.fatHasTravel
+    && result.fatCompactName === 'Fat 0',
+    'a 59-habit owner library fits the replica budget after dropping travel cache and empty fields');
   assert(result.crypto.wrongDisplayRejected,'a different display private key cannot decrypt the transfer');
   assert(result.crypto.rawCredentialHidden,'display device credential is represented to the Worker only by its hash');
 
@@ -1291,7 +1319,8 @@ function assert(cond,msg){
         const projection = await shareDecrypt(contentKey,opts.body.snapshot);
         published.push({
           hasReplica:Boolean(projection.replica),
-          hasEnvelope:Boolean(projection.replicaEnvelope && projection.replicaEnvelope.ciphertext)
+          hasEnvelope:Boolean(opts.body.replica && opts.body.replica.ciphertext),
+          nestedEnvelope:Boolean(projection.replicaEnvelope && projection.replicaEnvelope.ciphertext)
         });
         if(published.length === 1) await firstGate;
         revision += 1;
@@ -1337,7 +1366,7 @@ function assert(cond,msg){
   assert(cloneLibraryRace.devicesAfter.join(',') === 'clone,glance',
     `a glance publish in flight does not wipe a clone pairing that landed while it was encrypting (${JSON.stringify(cloneLibraryRace)})`);
   assert(cloneLibraryRace.liveStyle === 'clone' && cloneLibraryRace.lastHadEnvelope && !cloneLibraryRace.lastHadPlainReplica,
-    `after clone pairing the next snapshot carries a sealed library instead of a glance-only agenda (${JSON.stringify(cloneLibraryRace)})`);
+    `after clone pairing the next snapshot carries a sibling sealed library instead of a glance-only agenda (${JSON.stringify(cloneLibraryRace)})`);
 
   const cloneWithoutWeek = await page.evaluate(async ()=>{
     const contentKey = shareRandomHex(32);
@@ -1356,9 +1385,11 @@ function assert(cond,msg){
     const originalFeed = agendaFeedRecord();
     const originalWeek = weekSnapshotForExport;
     let sealed = null;
+    let sealedReplica = null;
     shareFetch = async (_path,opts={})=>{
       if(opts.method === 'PUT'){
         sealed = opts.body.snapshot;
+        sealedReplica = opts.body.replica || null;
         return { body:{ revision:1,status:'active' } };
       }
       return { body:{ revision:0,completions:[] } };
@@ -1370,11 +1401,14 @@ function assert(cond,msg){
     try{
       const published = await publishHouseholdAgendaNow(null,{ data:[habit],manual:true });
       const projection = sealed ? await shareDecrypt(contentKey,sealed) : null;
-      const replica = projection && projection.replicaEnvelope
-        ? await shareDecrypt(replicaKey,projection.replicaEnvelope)
-        : null;
+      const replica = sealedReplica
+        ? await shareDecrypt(replicaKey,sealedReplica)
+        : (projection && projection.replicaEnvelope
+          ? await shareDecrypt(replicaKey,projection.replicaEnvelope)
+          : null);
       return {
         published:Boolean(published),
+        nestedEnvelope:Boolean(projection && projection.replicaEnvelope),
         name:replica && replica.items && replica.items[0] && replica.items[0].habit
           ? replica.items[0].habit.name : '',
         mode:replica && replica.mode
@@ -1386,7 +1420,8 @@ function assert(cond,msg){
       _lastAgendaProjectionSig = '';
     }
   });
-  assert(cloneWithoutWeek.published && cloneWithoutWeek.mode === 'clone' && cloneWithoutWeek.name === 'No week yet',
+  assert(cloneWithoutWeek.published && cloneWithoutWeek.mode === 'clone' && cloneWithoutWeek.name === 'No week yet'
+    && !cloneWithoutWeek.nestedEnvelope,
     `a personal clone still receives the library when the owner week planner is not ready (${JSON.stringify(cloneWithoutWeek)})`);
 
   const corruptInbound = await page.evaluate(async ()=>{

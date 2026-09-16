@@ -43,6 +43,7 @@ function json(route,status,body){
   const server = {
     feed:null,
     snapshot:null,
+    replica:null,
     revision:0,
     sessions:new Map(),
     lastPairingId:null,
@@ -75,6 +76,7 @@ function json(route,status,body){
         server.feed = { id:body.id,ownerCredential:body.ownerCredential };
         server.revision = 0;
         server.snapshot = null;
+        server.replica = null;
         server.sessions.clear();
         server.completions = [];
         return json(route,201,{ id:body.id,status:'active',revision:0 });
@@ -217,12 +219,14 @@ function json(route,status,body){
               .map(({ targets:_targets,...item })=>item),
             definitions:[]
           };
+          if(url.searchParams.get('library') === '1') payload.replica = server.replica;
           if(ownerOk) payload.sessions = [...server.sessions.values()].map(item=>({ pairingId:item.pairingId }));
           return json(route,200,payload);
         }
         if(method === 'PUT'){
           if(!ownerOk) return json(route,403,{ error:'forbidden' });
           server.snapshot = body.snapshot;
+          server.replica = body.replica || null;
           server.revision = body.snapshot && body.snapshot.revision || server.revision + 1;
           return json(route,200,{
             id:server.feed.id,status:'active',revision:server.revision
@@ -415,11 +419,11 @@ function json(route,status,body){
     const projection = await shareDecrypt(enrolled.contentKey,snapshot);
     return {
       hasPlainReplica:Boolean(projection.replica),
-      hasSealedReplica:Boolean(projection.replicaEnvelope && projection.replicaEnvelope.ciphertext)
+      hasNestedReplica:Boolean(projection.replicaEnvelope && projection.replicaEnvelope.ciphertext)
     };
   },server.snapshot);
-  assert(!glancePlaintext.hasPlainReplica && glancePlaintext.hasSealedReplica,
-    'glance can decrypt agenda rows but sees the full clone library only as nested ciphertext');
+  assert(!glancePlaintext.hasPlainReplica && !glancePlaintext.hasNestedReplica && server.replica,
+    'glance snapshot has only agenda days; the clone library is a sibling envelope');
 
   await extraPage.waitForFunction(()=>typeof flushReplicaOutbox === 'function' && load().some(h=>h && h.hid === 'exercise'));
   const clonePosted = await extraPage.evaluate(async ()=>{

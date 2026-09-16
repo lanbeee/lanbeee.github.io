@@ -164,7 +164,7 @@ const UI_PRIVACY_BLOCKS = [
     'A few features below contact an outside service, each for a stated job. Nothing else is uploaded.'
   ]},
   {id:'privacy-display-body', label:'Shared display', summary:'Opt-in fridge or tablet view. Encrypted on this phone, then relayed by Cloudflare.', body:[
-    'Shared display publishes a capped today/tomorrow agenda every paired screen can decrypt, plus — only when a personal clone is signed in — a nested replica of the full library. That replica uses a second key transferred only to the clone, so a glance display cannot read habits, logs, or planner settings.',
+    'Shared display publishes a capped today/tomorrow agenda every paired screen can decrypt, plus — only when a personal clone is signed in — a separate encrypted copy of the full library. That library uses a second key transferred only to the clone, and glance displays never download it.',
     'Either signed-in screen can submit encrypted completion events; the other screen reads them from the relay even if this phone is off. A glance display cannot edit the plan or item details. Cloudflare can see that encrypted blobs exist, their sizes, and when they were updated, but cannot read item names, notes, places, or completion contents. Pairing is QR-only from inside Tings. The display can optionally require a local four-digit passcode after its three-tap privacy screen; three wrong attempts revoke that display access and require pairing again.',
     'Look for the cloud-up mark on that setting. At most two screens can be signed in: one full-app display and one glance display. Revoke one from the list, or revoke the whole feed, anytime in Settings; scan a new QR to add a display again.'
   ]},
@@ -198,7 +198,7 @@ const UI_PRIVACY_BLOCKS = [
 const UI_LEAVE_HINTS = {
   agenda:{
     aria:'this sends an encrypted agenda off this device',
-    body:'Publishing encrypts a limited today/tomorrow agenda on this phone, plus a clone-only nested library when a personal clone is signed in, then stores that encrypted copy on a Cloudflare relay. Cloudflare cannot read item names. Full story: About → privacy.'
+    body:'Publishing encrypts a limited today/tomorrow agenda on this phone, plus a clone-only library envelope when a personal clone is signed in, then stores those encrypted copies on a Cloudflare relay. Cloudflare cannot read item names. Full story: About → privacy.'
   },
   share:{
     aria:'this sends an encrypted item off this device',

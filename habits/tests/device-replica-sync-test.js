@@ -560,7 +560,7 @@ function assert(value,message){
       schemaVersion:SHARE_SCHEMA_VERSION,recordKind:'agenda_replica',objectId:feedId,revision:2
     });
     const snapshot = await shareEncrypt(contentKey,{
-      schemaVersion:SHARE_SCHEMA_VERSION,feedId,days:[],replicaEnvelope
+      schemaVersion:SHARE_SCHEMA_VERSION,feedId,days:[]
     },{
       schemaVersion:SHARE_SCHEMA_VERSION,recordKind:'agenda_snapshot',objectId:feedId,revision:2
     });
@@ -577,7 +577,7 @@ function assert(value,message){
     _replicaPull = null;
     const waiting = await pullReplicaSnapshot();
     const waitingMode = replicaEnrollment() && replicaEnrollment().replicaMode;
-    shareFetch = async()=>({ body:{ snapshot,revision:2,pairingId,completions:[] } });
+    shareFetch = async()=>({ body:{ snapshot,replica:replicaEnvelope,revision:2,pairingId,completions:[] } });
     _replicaPull = null;
     const pulled = await pullReplicaSnapshot();
     return {
@@ -592,7 +592,7 @@ function assert(value,message){
     `a glance-only snapshot leaves the clone waiting instead of installing an empty library (${JSON.stringify(libraryPull)})`);
   assert(libraryPull.pulledMode === 'clone' && libraryPull.storedMode === 'clone'
     && libraryPull.names.includes('Pulled from sealed library'),
-    `the clone installs habits from the nested replica envelope (${JSON.stringify(libraryPull)})`);
+    `the clone installs habits from the sibling replica envelope (${JSON.stringify(libraryPull)})`);
 
   // Glance display: the phone publishes no replica, so the screen must never
   // install a library or mount the full-app planner.

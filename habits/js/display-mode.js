@@ -630,7 +630,7 @@ async function pullReplicaSnapshot(){
       });
       return null;
     }
-    const result = await shareFetch(`/v1/agendas/${enrolled.feedId}`,{
+    const result = await shareFetch(shareAgendaFeedPath(enrolled.feedId,{ library:true }),{
       credential:enrolled.deviceCredential,timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
     });
     if(result.body && result.body.pairingId && result.body.pairingId !== enrolled.pairingId){
@@ -656,21 +656,15 @@ async function pullReplicaSnapshot(){
       });
       return null;
     }
-    let replica = projection && projection.replica;
-    let replicaDecrypt = replica ? 'plaintext_replica' : null;
-    if(!replica && projection && projection.replicaEnvelope && enrolled.replicaKey){
-      try{
-        replica = await shareDecrypt(enrolled.replicaKey,projection.replicaEnvelope);
-        replicaDecrypt = 'ok';
-      }catch(error){
-        replica = null;
-        replicaDecrypt = typeof tingsShareErrorSummary === 'function'
-          ? tingsShareErrorSummary(error) : 'replica_decrypt_failed';
-      }
-    }else if(!replica && projection && projection.replicaEnvelope && !enrolled.replicaKey){
-      replicaDecrypt = 'no_replica_key';
-    }else if(!replica){
-      replicaDecrypt = 'no_envelope';
+    let replica = null;
+    let replicaDecrypt = null;
+    if(typeof tingsShareOpenReplica === 'function'){
+      const opened = await tingsShareOpenReplica(enrolled, projection, result.body.replica);
+      replica = opened.replica;
+      replicaDecrypt = opened.how;
+    }else{
+      replica = projection && projection.replica;
+      replicaDecrypt = replica ? 'plaintext_replica' : 'no_envelope';
     }
     if(!projection || !replica || Number(replica.schemaVersion) !== 1){
       noteReplicaPull('no_library', {
@@ -678,8 +672,8 @@ async function pullReplicaSnapshot(){
         days:projection && Array.isArray(projection.days) ? projection.days.length : 0,
         hasPlainReplica:Boolean(projection && projection.replica),
         replicaEnvelope:typeof tingsShareEnvelopeSummary === 'function'
-          ? tingsShareEnvelopeSummary(projection && projection.replicaEnvelope)
-          : { present:Boolean(projection && projection.replicaEnvelope) },
+          ? tingsShareEnvelopeSummary(result.body.replica || (projection && projection.replicaEnvelope))
+          : { present:Boolean(result.body.replica || (projection && projection.replicaEnvelope)) },
         replicaKey:typeof tingsShareKeyInfo === 'function'
           ? tingsShareKeyInfo(enrolled.replicaKey) : { present:Boolean(enrolled.replicaKey) },
         replicaDecrypt,

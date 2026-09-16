@@ -28,14 +28,12 @@ const HOUSEHOLD_AGENDA_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const HOUSEHOLD_AGENDA_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const SHARED_DISPLAY_COMPLETION_POLL_MS = 30 * 1000;
 const SHARED_DISPLAY_ROW_MAP_REVISIONS = 12;
-// The Worker accepts 256 KiB of encrypted snapshot bytes. Keep headroom for
-// AES-GCM metadata while sizing the complete UTF-8 projection, not just the
-// replica subsection.
+// Glance days stay in the 256 KiB agenda snapshot. The clone library is a
+// sibling 512 KiB envelope, so this plaintext budget is only the days JSON.
 const SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES = 248 * 1024;
-// A clone replica is encrypted once on its own and then carried inside the
-// outer agenda ciphertext. Its base64 wrapper expands the transport, so keep
-// a conservative bound before sealing the nested payload.
-const SHARED_REPLICA_SNAPSHOT_MAX_PLAINTEXT_BYTES = 176 * 1024;
+// Replica ciphertext is stored beside the snapshot, not nested inside it.
+// AES-GCM adds a 16-byte tag; stay under the Worker's 512 KiB replica cap.
+const SHARED_REPLICA_SNAPSHOT_MAX_PLAINTEXT_BYTES = 480 * 1024;
 const HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS = 15 * 60 * 1000;
 const HOUSEHOLD_AGENDA_MAX_DEVICES = 2;
 const HOUSEHOLD_AGENDA_QUEUE_LIMIT = 100;
@@ -105,6 +103,21 @@ function replicaStableValue(value){
       out[key] = replicaStableValue(value[key]);
       return out;
     },{});
+  }
+  return value;
+}
+
+function replicaOmitEmpty(value){
+  if(Array.isArray(value)) return value.map(replicaOmitEmpty);
+  if(value && typeof value === 'object'){
+    const out = {};
+    for(const key of Object.keys(value)){
+      const next = replicaOmitEmpty(value[key]);
+      if(next == null || next === '') continue;
+      if(Array.isArray(next) && !next.length) continue;
+      out[key] = next;
+    }
+    return out;
   }
   return value;
 }
@@ -524,8 +537,8 @@ function buildHouseholdReplica(data,settings,feed,rowMap,now = Date.now()){
       minutes:Math.max(1,Math.min(720,Math.round(Number(h.durationMinutes) || 30))),
       occurrenceKey:'',scheduleOptionId:'',scheduledDay:'',replica:true
     };
-    const copy = JSON.parse(JSON.stringify(h));
-    copy.logs = normalizeLogs(copy.logs).slice(mode === 'clone' ? -80 : -30);
+    const copy = replicaOmitEmpty(JSON.parse(JSON.stringify(h)));
+    copy.logs = normalizeLogs(h.logs).slice(mode === 'clone' ? -80 : -30);
     return {
       rowId,habit:copy,
       access:mode === 'clone' || h.allowSharedDisplayCompletion !== false ? 'complete' : 'view',
@@ -534,11 +547,12 @@ function buildHouseholdReplica(data,settings,feed,rowMap,now = Date.now()){
       definitionHash:replicaHabitDefinitionHash(h)
     };
   });
-  const replicaSettings = mode === 'clone' ? JSON.parse(JSON.stringify(settings || {})) : null;
+  const replicaSettings = mode === 'clone' ? replicaOmitEmpty(JSON.parse(JSON.stringify(settings || {}))) : null;
   if(replicaSettings){
     delete replicaSettings._plannerCurrentCoord;
     delete replicaSettings._plannerLiveLocationId;
     delete replicaSettings._weatherContext;
+    delete replicaSettings.travel;
   }
   const replica = {
     schemaVersion:1,mode,generatedAt:now,
@@ -570,7 +584,7 @@ function fitHouseholdProjectionPayload(projection){
   const replica = projection && projection.replica;
   if(!replica || !Array.isArray(replica.items)) return projection;
   const maxBytes = SHARED_REPLICA_SNAPSHOT_MAX_PLAINTEXT_BYTES;
-  let bytes = householdProjectionByteSize(projection);
+  let bytes = householdProjectionByteSize(replica);
   while(bytes > maxBytes){
     let trimmed = false;
     for(const item of replica.items){
@@ -580,38 +594,41 @@ function fitHouseholdProjectionPayload(projection){
     if(!trimmed) break;
     replica.truncated = true;
     replica.historyTruncated = true;
-    bytes = householdProjectionByteSize(projection);
+    bytes = householdProjectionByteSize(replica);
   }
   if(bytes > maxBytes){
     const error = new Error('replica_too_large');
     error.code = 'replica_too_large';
     error.payloadBytes = bytes;
+    error.limitBytes = maxBytes;
     throw error;
   }
   return projection;
 }
 
 async function householdAgendaTransportProjection(projection,feed){
-  const transport = { ...projection };
-  const replica = transport.replica;
-  delete transport.replica;
+  const snapshotPlain = { ...projection };
+  const replica = snapshotPlain.replica;
+  delete snapshotPlain.replica;
+  let replicaEnvelope = null;
   if(replica){
     if(!/^[0-9a-f]{64}$/.test(String(feed && feed.replicaKey || ''))){
       throw new Error('invalid_replica_key');
     }
-    transport.replicaEnvelope = await shareEncrypt(feed.replicaKey,replica,{
+    replicaEnvelope = await shareEncrypt(feed.replicaKey,replica,{
       schemaVersion:SHARE_SCHEMA_VERSION,
       recordKind:'agenda_replica',
       objectId:feed.feedId,
       revision:projection.revision
     });
   }
-  if(householdProjectionByteSize(transport) > SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES){
+  if(householdProjectionByteSize(snapshotPlain) > SHARED_SNAPSHOT_MAX_PLAINTEXT_BYTES){
     const error = new Error('replica_too_large');
     error.code = 'replica_too_large';
+    error.payloadBytes = householdProjectionByteSize(snapshotPlain);
     throw error;
   }
-  return transport;
+  return { snapshotPlain, replicaEnvelope };
 }
 
 function householdReplicaSignature(replica){
@@ -1489,6 +1506,8 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     noteAgendaPublish(error && error.message === 'replica_too_large' ? 'replica_too_large' : 'build_failed', {
       libraryStyle:householdAgendaLibraryStyle(feed),
       devices:householdAgendaDevices(feed).map(device=>device.syncMode),
+      payloadBytes:error && error.payloadBytes || null,
+      limitBytes:error && error.limitBytes || null,
       error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
     });
     if(error && error.message === 'replica_too_large'){
@@ -1519,7 +1538,7 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     return publishHouseholdAgendaNow(source,{ ...opts,libraryRetry:true,manual:true,nested:true });
   }
   const transportProjection = await householdAgendaTransportProjection(projection,feed);
-  const envelope = await shareEncrypt(feed.contentKey, transportProjection, {
+  const envelope = await shareEncrypt(feed.contentKey, transportProjection.snapshotPlain, {
     schemaVersion:SHARE_SCHEMA_VERSION,
     recordKind:'agenda_snapshot',
     objectId:feed.feedId,
@@ -1541,7 +1560,11 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       method:'PUT',
       credential:feed.ownerCredential,
       ifMatch:feed.lastRevision,
-      body:{ snapshot:envelope, expectedRevision:feed.lastRevision }
+      body:{
+        snapshot:envelope,
+        replica:transportProjection.replicaEnvelope || null,
+        expectedRevision:feed.lastRevision
+      }
     });
     const live = householdAgendaAdoptLiveFeed(feed) || feed;
     const next = commitAgendaFeedPublish(feed,{
@@ -1567,6 +1590,7 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       devices:householdAgendaDevices(next).map(device=>device.syncMode),
       hasReplica:Boolean(projection.replica),
       hasEnvelope:Boolean(transportProjection.replicaEnvelope),
+      replicaBytes:projection.replica ? householdProjectionByteSize(projection.replica) : 0,
       replicaItems:projection.replica && Array.isArray(projection.replica.items) ? projection.replica.items.length : 0,
       replicaNames:((projection.replica && projection.replica.items) || [])
         .map(item=>item && item.habit && item.habit.name).filter(Boolean).slice(0, 8),

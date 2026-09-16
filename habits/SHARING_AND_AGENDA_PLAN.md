@@ -43,7 +43,7 @@ Configure:
 - Production and explicit localhost CORS origins.
 - A 256 KiB item-definition limit.
 - A 64 KiB individual activity-operation limit.
-- A 256 KiB encrypted agenda-snapshot limit plus a client-side 50-row cap.
+- A 256 KiB encrypted glance snapshot plus a sibling 512 KiB clone-library envelope.
 - A 4 KiB encrypted agenda-completion limit and a 64 KiB encrypted clone-definition limit on the same 50-deep display queue.
 - A 5 MiB total limit per share/feed.
 - Creation rate limiting by source IP and authenticated limits by credential/feed.
