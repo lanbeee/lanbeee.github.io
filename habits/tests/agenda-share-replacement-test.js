@@ -641,6 +641,32 @@ function json(route,status,body){
   });
   assert(glanceRetry,'glance keeps failed completion posts queued for the existing poll');
 
+  const glanceKeepDone = await framePage.evaluate(()=>{
+    const projection = JSON.parse(JSON.stringify(_displayProjection || {}));
+    const row = (projection.days || []).flatMap(day=>day.rows || [])
+      .find(item=>item && item.completable && item.hid);
+    if(!row) return { skipped:true };
+    const oldId = row.rowId;
+    const newId = 'ab'.repeat(8);
+    row.rowId = newId;
+    const enrolled = {
+      pendingCompletionPosts:[{
+        rowId:oldId,operationId:'cd'.repeat(16),hid:row.hid,
+        occurrenceKey:row.occurrenceKey || '',start:row.start || 0,
+        minutes:row.durationMinutes || 0,posted:true
+      }]
+    };
+    const next = retargetDisplayCompletions(enrolled,projection);
+    return {
+      skipped:false,
+      oldId,
+      newId,
+      rowId:next.pendingCompletionPosts[0] && next.pendingCompletionPosts[0].rowId
+    };
+  });
+  assert(glanceKeepDone.skipped || glanceKeepDone.rowId === glanceKeepDone.newId,
+    `glance rematches a posted done onto a republished row id (${JSON.stringify(glanceKeepDone)})`);
+
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

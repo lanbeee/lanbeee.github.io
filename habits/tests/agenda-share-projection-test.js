@@ -348,6 +348,26 @@ function assert(cond,msg){
     'the compatibility agenda never includes coordinates or location ids');
   assert(weatherShare.walkHid === 'walk-hid','completable glance rows carry hid so another display can apply a live done');
 
+  const weatherCarry = await page.evaluate(()=>{
+    const week = householdAgendaEmptyWeek();
+    const feed = { feedId:'abcd'.repeat(8),title:'Family',lastRevision:1 };
+    const settings = { ...DEFAULT_SORT_SETTINGS,minimalMode:false,homeCityLat:40.71,homeCityLng:-74 };
+    const previous = { emoji:'☀️',temperature:'64°' };
+    const carried = buildHouseholdAgendaProjection(week,{
+      feed,settings,omitReplica:true,previousWeather:previous
+    });
+    const hidden = buildHouseholdAgendaProjection(week,{
+      feed,settings:{ ...settings,minimalMode:true },omitReplica:true,previousWeather:previous
+    });
+    return {
+      emoji:carried.currentWeather && carried.currentWeather.emoji,
+      temp:carried.currentWeather && carried.currentWeather.temperature,
+      hidden:Boolean(hidden.currentWeather)
+    };
+  });
+  assert(weatherCarry.emoji === '☀️' && weatherCarry.temp === '64°' && !weatherCarry.hidden,
+    `a clone without a live forecast still republishes the last weather cue, and minimal mode does not (${JSON.stringify(weatherCarry)})`);
+
   let createRequestBody = null;
   await page.route('**/v1/agendas',async route=>{
     createRequestBody = route.request().postDataJSON();

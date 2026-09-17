@@ -617,6 +617,7 @@ function mergeReplicaSnapshot(replica,enrolled){
     Storage.write(SORT_SETTINGS_KEY,replica.settings);
     sortSettings = loadSortSettings();
     applyAppearanceSettings();
+    if(typeof refreshWeatherForecast === 'function') void refreshWeatherForecast();
   }
   enrolled.replicaRows = replicaRows;
   adoptLiveReplicaQueues(enrolled);
@@ -691,6 +692,10 @@ async function pullReplicaSnapshot(){
     const next = adoptLiveReplicaQueues({
       ...enrolled,snapshot:result.body.snapshot,meta:{generatedAt:projection.generatedAt,revision,error:null}
     });
+    const weatherCue = typeof householdAgendaRememberedWeather === 'function'
+      ? householdAgendaRememberedWeather(projection.currentWeather)
+      : null;
+    if(weatherCue) next.lastCurrentWeather = weatherCue;
     if(revision !== storedRevision){
       mergeReplicaSnapshot(replica,next);
       if(typeof refreshOpenViews === 'function') refreshOpenViews();
@@ -765,8 +770,11 @@ async function refreshReplicaDevice(opts = {}){
 
 function replicaWeatherText(){
   try{
-    const weather = householdAgendaCurrentWeather(sortSettings,Date.now());
-    return weather ? [weather.emoji,weather.temperature].filter(Boolean).join(' ') : '';
+    const live = householdAgendaCurrentWeather(sortSettings,Date.now());
+    const cue = live || (typeof householdAgendaRememberedWeather === 'function'
+      ? householdAgendaRememberedWeather(replicaEnrollment() && replicaEnrollment().lastCurrentWeather)
+      : null);
+    return cue ? [cue.emoji,cue.temperature].filter(Boolean).join(' ') : '';
   }catch(_){ return ''; }
 }
 
@@ -874,8 +882,28 @@ function startReplicaAgendaPublish(){
 
 async function publishReplicaAgendaNow(week, opts = {}){
   if(navigator.onLine === false) return null;
-  const enrolled = replicaEnrollment();
+  let enrolled = replicaEnrollment();
   if(!replicaCanPublishAgenda(enrolled)) return null;
+  try{
+    const live = await shareFetch(`/v1/agendas/${enrolled.feedId}`,{
+      credential:enrolled.deviceCredential,timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
+    });
+    const queued = typeof householdAgendaQueueRecords === 'function'
+      ? householdAgendaQueueRecords(live.body)
+      : { completions:Array.isArray(live.body && live.body.completions) ? live.body.completions : [] };
+    await applyReplicaLiveCompletions(replicaEnrollment() || enrolled,queued.completions);
+    enrolled = replicaEnrollment() || enrolled;
+    const currentRevision = Number(live.body && live.body.revision);
+    if(Number.isInteger(currentRevision) && currentRevision >= 0){
+      enrolled = adoptLiveReplicaQueues(enrolled);
+      const storedRevision = Number(enrolled.meta && enrolled.meta.revision) || 0;
+      enrolled.meta = { ...(enrolled.meta || {}), revision:Math.max(storedRevision,currentRevision) };
+      writeReplicaEnrollment(enrolled);
+    }
+  }catch(error){
+    if(error && (error.status === 401 || error.status === 410)) throw error;
+  }
+  enrolled = replicaEnrollment() || enrolled;
   const revision = Number(enrolled.meta && enrolled.meta.revision) || 0;
   if(!Number.isInteger(revision) || revision < 1) return null;
   const source = week
@@ -896,7 +924,8 @@ async function publishReplicaAgendaNow(week, opts = {}){
   try{
     projection = buildHouseholdAgendaProjection(source, {
       feed,
-      data:opts.data,
+      data:typeof load === 'function' ? load() : opts.data,
+      previousWeather:enrolled.lastCurrentWeather,
       omitReplica:true
     });
   }catch(error){
@@ -936,6 +965,7 @@ async function publishReplicaAgendaNow(week, opts = {}){
     const live = adoptLiveReplicaQueues(replicaEnrollment() || enrolled);
     live.meta = { ...(live.meta || {}), revision:Number(result.body && result.body.revision) || projection.revision };
     live.lastAgendaProjectionSig = sig;
+    if(projection.currentWeather) live.lastCurrentWeather = projection.currentWeather;
     writeReplicaEnrollment(live);
     if(typeof tingsShareLog === 'function'){
       tingsShareLog('replica.agenda.put_ok', {

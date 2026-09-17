@@ -651,8 +651,9 @@ function assert(value,message){
       const first = await publishReplicaAgendaNow(week);
       const stored = replicaEnrollment();
       const second = await publishReplicaAgendaNow(week);
-      const glance = puts[0] && puts[0].snapshot
-        ? await shareDecrypt(contentKey,puts[0].snapshot)
+      const put = puts.find(item=>item.method === 'PUT');
+      const glance = put && put.snapshot
+        ? await shareDecrypt(contentKey,put.snapshot)
         : null;
       writeReplicaEnrollment({
         ...stored,replicaMode:'selected',syncMode:'selected'
@@ -665,7 +666,7 @@ function assert(value,message){
         }),
         putCount:puts.filter(item=>item.method === 'PUT').length,
         hasReplica:puts.some(item=>item.hasReplica),
-        expectedRevision:puts[0] && puts[0].expectedRevision,
+        expectedRevision:put && put.expectedRevision,
         revision:stored && stored.meta && stored.meta.revision,
         title:glance && glance.days && glance.days[0] && glance.days[0].rows
           && glance.days[0].rows.some(row=>row && (row.title === 'Clone planned walk' || row.title === 'Clone blocked window')),
@@ -688,6 +689,64 @@ function assert(value,message){
     && cloneAgendaPublish.title && !cloneAgendaPublish.nestedReplica && cloneAgendaPublish.skippedRepeat
     && cloneAgendaPublish.selectedBlocked,
     `a personal clone publishes glance days without the library envelope (${JSON.stringify(cloneAgendaPublish)})`);
+
+  const cloneAppliesBeforePublish = await page.evaluate(async()=>{
+    const contentKey = shareRandomHex(32);
+    const replicaKey = shareRandomHex(32);
+    const feedId = shareRandomHex(16);
+    const pairingId = shareRandomHex(16);
+    const hid = generateHabitId();
+    const now = Date.now();
+    const start = now + 60 * 60000;
+    const habit = normalize([{
+      hid,name:'Morning meds',type:'keepup',target:1,logs:[],durationMinutes:5
+    }])[0];
+    Storage.writeRaw(KEY,JSON.stringify([habit]));
+    const rowId = shareRandomHex(8);
+    writeReplicaEnrollment({
+      feedId,deviceCredential:shareRandomHex(32),contentKey,replicaKey,pairingId,
+      syncMode:'clone',replicaMode:'clone',meta:{revision:2},
+      replicaRows:{ [hid]:{ rowId,access:'complete' } },
+      replicaOutbox:[],replicaPendingCompletions:{}
+    });
+    const week = {
+      days:[{
+        dayBase:typeof dayStart === 'function' ? dayStart(now) : now,
+        dayKey:typeof dateKey === 'function' ? dateKey(now) : '',
+        usedMinutes:5,remainingMinutes:0,
+        timeline:[{ kind:'fill',start,end:start + 5 * 60000,h:habit,i:0 }]
+      }]
+    };
+    const operationId = shareRandomHex(16);
+    const payload = { schemaVersion:1,action:'complete',operationId,rowId,hid };
+    const envelope = await shareEncrypt(contentKey,payload,{
+      schemaVersion:SHARE_SCHEMA_VERSION,recordKind:'agenda_completion',
+      objectId:feedId,revision:2,operationId,logId:rowId
+    });
+    let snapshot = null;
+    const originalFetch = shareFetch;
+    shareFetch = async(path,opts={})=>{
+      if(opts.method === 'PUT'){
+        snapshot = opts.body && opts.body.snapshot || null;
+        return { body:{ revision:3,status:'active' },status:200 };
+      }
+      return { body:{ revision:2,pairingId,completions:[{ envelope,createdAt:now }] },status:200 };
+    };
+    try{
+      await publishReplicaAgendaNow(week);
+      const glance = snapshot ? await shareDecrypt(contentKey,snapshot) : null;
+      const titles = (glance && glance.days || []).flatMap(day=>day.rows || []).map(row=>row && row.title);
+      return {
+        logged:normalizeLogs(load()[0] && load()[0].logs).some(log=>log && log.operationId === operationId),
+        stillPlanned:titles.includes('Morning meds')
+      };
+    }finally{
+      shareFetch = originalFetch;
+      writeReplicaEnrollment(null);
+    }
+  });
+  assert(cloneAppliesBeforePublish.logged && !cloneAppliesBeforePublish.stillPlanned,
+    `a clone applies a glance done before republishing days (${JSON.stringify(cloneAppliesBeforePublish)})`);
 
   // Glance display: the phone publishes no replica, so the screen must never
   // install a library or mount the full-app planner.

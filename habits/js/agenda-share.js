@@ -96,6 +96,24 @@ function householdAgendaCurrentWeather(settings,now){
   return householdAgendaWeatherCue(now,now + HOUSEHOLD_AGENDA_CURRENT_WEATHER_MS,null,settings,now);
 }
 
+function householdAgendaRememberedWeather(cue){
+  if(!cue || typeof cue !== 'object') return null;
+  const emoji = String(cue.emoji || '').slice(0,8);
+  const temperature = String(cue.temperature || '').slice(0,16);
+  if(!emoji && !temperature) return null;
+  const out = {};
+  if(emoji) out.emoji = emoji;
+  if(temperature) out.temperature = temperature;
+  return out;
+}
+
+function householdAgendaResolvedWeather(settings,now,previous){
+  const live = householdAgendaCurrentWeather(settings,now);
+  if(live) return live;
+  if(!settings || settings.minimalMode) return null;
+  return householdAgendaRememberedWeather(previous);
+}
+
 function replicaStableValue(value){
   if(Array.isArray(value)) return value.map(replicaStableValue);
   if(value && typeof value === 'object'){
@@ -325,7 +343,11 @@ function buildHouseholdAgendaProjection(week, opts = {}){
   const rowMap = {};
   const completedRowKeys = opts.completedRowKeys instanceof Set ? opts.completedRowKeys : new Set();
   const settings = householdAgendaSettings(opts);
-  const currentWeather = householdAgendaCurrentWeather(settings,now);
+  const currentWeather = householdAgendaResolvedWeather(
+    settings,
+    now,
+    opts.previousWeather || (feed && feed.lastCurrentWeather)
+  );
   const projection = {
     schemaVersion:SHARE_SCHEMA_VERSION,
     feedId:feed && feed.feedId,
@@ -499,7 +521,8 @@ function householdAgendaAdoptLiveFeed(feed){
     lastRevision:feedRevision > liveRevision ? feed.lastRevision : live.lastRevision,
     completionReceipts:feed.completionReceipts || live.completionReceipts,
     definitionReceipts:feed.definitionReceipts || live.definitionReceipts,
-    cloneDefinitionChains:feed.cloneDefinitionChains || live.cloneDefinitionChains
+    cloneDefinitionChains:feed.cloneDefinitionChains || live.cloneDefinitionChains,
+    lastCurrentWeather:feed.lastCurrentWeather || live.lastCurrentWeather
   };
 }
 
@@ -1500,7 +1523,8 @@ async function publishHouseholdAgendaNow(week, opts = {}){
     projection = buildHouseholdAgendaProjection(source, {
       feed,
       data:completionSync.changed ? load() : opts.data,
-      completedRowKeys:completionSync.completedRowKeys
+      completedRowKeys:completionSync.completedRowKeys,
+      previousWeather:feed.lastCurrentWeather
     });
   }catch(error){
     noteAgendaPublish(error && error.message === 'replica_too_large' ? 'replica_too_large' : 'build_failed', {
@@ -1573,6 +1597,7 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       lastProjectionSig:sig,
       plannerProvenance:projection.plannerProvenance,
       status:result.body.status || live.status,
+      lastCurrentWeather:projection.currentWeather || live.lastCurrentWeather || null,
       replicaRowIds:projection._replicaRowIds || live.replicaRowIds || {},
       rowMaps:[
         { revision:Number(result.body.revision),rows:projection._rowMap || {} },

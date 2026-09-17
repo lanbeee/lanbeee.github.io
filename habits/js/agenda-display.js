@@ -806,6 +806,47 @@ function matchDisplayLiveCompletion(completable,payload,envelope,alreadyDone){
   return pickDisplayCompletionRow(candidates,alreadyDone);
 }
 
+function displayCompletableRows(projection){
+  const rows = [];
+  for(const day of (projection && Array.isArray(projection.days) ? projection.days : [])){
+    for(const row of (day && Array.isArray(day.rows) ? day.rows : [])){
+      if(row && row.completable === true && /^[0-9a-f]{16}$/.test(String(row.rowId || ''))) rows.push(row);
+    }
+  }
+  return rows;
+}
+
+function retargetDisplayCompletionItem(item,completable,alreadyDone){
+  if(!item) return null;
+  const matched = matchDisplayLiveCompletion(completable,item,{ logId:item.rowId },alreadyDone);
+  if(!matched) return null;
+  alreadyDone.add(matched.rowId);
+  return { ...item,rowId:matched.rowId };
+}
+
+// Own glance posts never come back in the GET queue, and a new snapshot mints
+// new row ids. Rematch hid/occurrence onto the new rows so a mark is not
+// undone when the phone or clone republishes.
+function retargetDisplayCompletions(enrolled,projection){
+  if(!enrolled) return enrolled;
+  const completable = displayCompletableRows(projection);
+  const alreadyDone = new Set();
+  const pending = [];
+  for(const item of displayPendingCompletionPosts(enrolled)){
+    const next = retargetDisplayCompletionItem(item,completable,alreadyDone);
+    if(next) pending.push(next);
+  }
+  if(_displayPendingCompletion){
+    const next = retargetDisplayCompletionItem(_displayPendingCompletion,completable,new Set(alreadyDone));
+    if(next) _displayPendingCompletion = { ..._displayPendingCompletion,...next };
+    else dropPendingDisplayCompletion();
+  }
+  return {
+    ...enrolled,
+    pendingCompletionPosts:pending
+  };
+}
+
 async function applyDisplayLiveCompletions(enrolled,records,projection){
   const own = displayOwnCompletionOperationIds(enrolled);
   const completable = [];
@@ -865,6 +906,10 @@ async function flushDisplayCompletionOutbox(enrolled){
   const remaining = [];
   const posted = [];
   for(const item of pending){
+    if(item.posted){
+      remaining.push(item);
+      continue;
+    }
     try{
       const payload = {
         schemaVersion:1,action:'complete',operationId:item.operationId,rowId:item.rowId,
@@ -891,6 +936,7 @@ async function flushDisplayCompletionOutbox(enrolled){
         timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
       });
       posted.push(item.operationId);
+      remaining.push({ ...item,posted:true });
     }catch(error){
       if(error && (error.status === 401 || error.status === 410)) throw error;
       remaining.push(item);
@@ -900,7 +946,7 @@ async function flushDisplayCompletionOutbox(enrolled){
     ...(Array.isArray(enrolled.completionOperationIds) ? enrolled.completionOperationIds : []),
     ...posted
   ])].filter(id=>/^[0-9a-f]{32}$/.test(id)).slice(-100);
-  return { ...enrolled,pendingCompletionPosts:remaining,completionOperationIds };
+  return { ...enrolled,pendingCompletionPosts:remaining.slice(-50),completionOperationIds };
 }
 
 function renderDisplay(projection,meta,completedRowIds = []){
@@ -941,11 +987,12 @@ function renderDisplay(projection,meta,completedRowIds = []){
   }
   _displayProjection = projection;
   renderDisplayCurrentWeather(projection.currentWeather);
-  // The undo toast promises a push that must still be possible: if a refresh
-  // made the pending row unmarkable (unpublished, day rolled over),
-  // drop it here so the row and the toast can never disagree.
   if(_displayPendingCompletion && !displayMarkableRow(_displayPendingCompletion.rowId)){
-    dropPendingDisplayCompletion();
+    const rematched = retargetDisplayCompletionItem(
+      _displayPendingCompletion,displayCompletableRows(projection),new Set()
+    );
+    if(rematched) _displayPendingCompletion = { ..._displayPendingCompletion,...rematched };
+    else dropPendingDisplayCompletion();
   }
   const completed = new Set(Array.isArray(completedRowIds) ? completedRowIds : []);
   const tz = displayTimezone(projection.timezone);
@@ -1060,13 +1107,26 @@ function beginDisplayCompletion(rowId){
   const target = displayMarkableRow(rowId);
   if(!target) return;
   if(_displayPendingCompletion && _displayPendingCompletion.rowId !== rowId){
-    void commitDisplayCompletion(_displayPendingCompletion.rowId);
+    const previous = _displayPendingCompletion;
+    if(previous.timer) clearTimeout(previous.timer);
+    previous.timer = null;
+    _displayPendingCompletion = null;
+    void commitDisplayCompletion(previous.rowId,previous);
   }else if(_displayPendingCompletion){
     dropPendingDisplayCompletion();
   }
   _displayPendingCompletion = {
     rowId,
-    timer:setTimeout(()=>void commitDisplayCompletion(rowId),AGENDA_COMPLETION_UNDO_MS)
+    hid:String(target.row.hid || ''),
+    occurrenceKey:String(target.row.occurrenceKey || ''),
+    scheduleOptionId:String(target.row.scheduleOptionId || ''),
+    scheduledDay:String(target.row.scheduledDay || target.day.dateKey || ''),
+    start:Number(target.row.start) || 0,
+    minutes:Math.max(0,Math.round(Number(target.row.durationMinutes) || 0)),
+    timer:setTimeout(()=>{
+      const live = _displayPendingCompletion;
+      void commitDisplayCompletion(live && live.rowId || rowId,live);
+    },AGENDA_COMPLETION_UNDO_MS)
   };
   renderCurrentDisplay();
   showDisplayUndoToast(`Marked “${target.row.title || 'item'}” done`);
@@ -1080,13 +1140,22 @@ function cancelDisplayCompletion(){
   document.querySelector(`[data-complete-row="${pending.rowId}"]`)?.focus({ preventScroll:true });
 }
 
-async function commitDisplayCompletion(rowId){
-  const pending = _displayPendingCompletion && _displayPendingCompletion.rowId === rowId
+async function commitDisplayCompletion(rowId,identity = null){
+  const pending = identity || (_displayPendingCompletion && _displayPendingCompletion.rowId === rowId
     ? _displayPendingCompletion
-    : null;
-  if(pending) dropPendingDisplayCompletion();
+    : null);
+  if(pending && _displayPendingCompletion === pending) dropPendingDisplayCompletion();
   const enrolled = _displayFeed || displayReadEnrollment();
-  const target = displayMarkableRow(rowId);
+  let target = displayMarkableRow(rowId);
+  if(!target && pending){
+    const rematched = retargetDisplayCompletionItem(
+      pending,displayCompletableRows(_displayProjection),new Set()
+    );
+    if(rematched){
+      rowId = rematched.rowId;
+      target = displayMarkableRow(rowId);
+    }
+  }
   if(!enrolled || !enrolled.deviceCredential || !target){
     renderCurrentDisplay();
     return;
@@ -1166,7 +1235,9 @@ async function commitDisplayCompletion(rowId){
     const next = {
       ...stored,
       completionRowIds:[...new Set([...(Array.isArray(stored.completionRowIds) ? stored.completionRowIds : []),rowId])].slice(-50),
-      pendingCompletionPosts:displayPendingCompletionPosts(stored).filter(item=>item.operationId !== operationId),
+      pendingCompletionPosts:displayPendingCompletionPosts(stored).map(item=>
+        item.operationId === operationId ? { ...item,posted:true } : item
+      ),
       completionOperationIds:[...new Set([
         ...(Array.isArray(stored.completionOperationIds) ? stored.completionOperationIds : []),
         operationId
@@ -1413,23 +1484,24 @@ async function refreshDisplay(opts = {}){
       snapshot:result.body.snapshot,
       meta
     };
-    const liveRowIds = await applyDisplayLiveCompletions(next,result.body && result.body.completions,projection);
+    const rematched = retargetDisplayCompletions(next,projection);
+    const liveRowIds = await applyDisplayLiveCompletions(rematched,result.body && result.body.completions,projection);
     const extras = [
       ..._displaySavingRowIds,
-      ...displayPendingCompletionPosts(next).map(item=>item.rowId),
+      ...displayPendingCompletionPosts(rematched).map(item=>item.rowId),
       ...liveRowIds
     ];
     if(_displayPendingCompletion && _displayPendingCompletion.rowId) extras.push(_displayPendingCompletion.rowId);
     const completionRowIds = mergeDisplayCompletionRowIds(
-      enrolled.completionRowIds,
+      rematched.completionRowIds,
       [],
       projection,
       extras
     );
-    next.completionRowIds = completionRowIds;
-    let stored = next;
+    rematched.completionRowIds = completionRowIds;
+    let stored = rematched;
     try{
-      stored = await flushDisplayCompletionOutbox(next);
+      stored = await flushDisplayCompletionOutbox(rematched);
     }catch(error){
       if(error && (error.status === 401 || error.status === 410)){
         clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
