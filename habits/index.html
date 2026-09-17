@@ -1185,7 +1185,7 @@
               <p class="settings-sublabel">Reach the model on this computer</p>
               <p class="field-hint" id="assistant-reach-lead"></p>
               <ol class="assistant-reach-steps">
-                <li>Install Ollama if you have not, and leave it running.</li>
+                <li>Install Ollama if you have not.</li>
                 <li id="assistant-reach-step-allow"></li>
                 <li id="assistant-reach-step-restart"></li>
                 <li>Turn on <b>use Qwen</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
@@ -1215,6 +1215,13 @@
                 <span>
                   <b>show assistant debug</b>
                   <small>In the chat, print parse, local vs Qwen, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
+                </span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-model-only" aria-pressed="false">
+                <span>
+                  <b>always use Qwen</b>
+                  <small>Skip the local fast path. Every message goes to the model, so replies are slower but nothing is answered by a guess. Off by default.</small>
                 </span>
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>

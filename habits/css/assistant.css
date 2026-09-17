@@ -164,3 +164,10 @@ body:not(.assistant-debug-on) .assistant-bubble-debug{display:none;}
   #assistant-send:hover:not(:disabled){filter:brightness(0.94);}
 }
 #assistant-setup-fields{margin-top:8px;}
+
+.assistant-retry-row{
+  display:flex;justify-content:center;padding:2px 0 6px;
+}
+.assistant-retry{
+  font-size:12.5px;padding:5px 12px;border-radius:999px;opacity:.78;
+}

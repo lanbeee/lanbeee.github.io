@@ -109,7 +109,7 @@ own a clear area; jump to these first.
 | `js/agenda-order.js` | 774 | Schedule links / order constraints (`plannerOrderConstraintsForDay`) |
 | `js/agenda-planner-worker.js` | 209 | Web Worker wrapping GLPK so solves don't block the UI |
 | `js/prayer-times.js` | 549 | Adhan-based prayer windows |
-| `js/assistant-*.js` | — | Local Qwen3.8 chat: parse first, then think + validated tool calls (`draft_item` creates or changes any mix of fields, including weekday lists and every-N-day cadences) |
+| `js/assistant-*.js` | — | Local Qwen3.8 chat: a residue-audited fast path (`assistantFastPathRisk`) answers only provably-simple phrasing locally; anything unrecognized or complicated (relative dates, negation, clocks, vague rhythms) goes to the model, whose validated tool calls (`draft_item` creates or changes any mix of fields, including weekday lists and every-N-day cadences) do all writes |
 | `sw.js` | — | Service worker (precache + stale-while-revalidate) — bump `CACHE` on JS edits |
 
 Large modules are sequential, byte-exact source slices. Their `<script>` and

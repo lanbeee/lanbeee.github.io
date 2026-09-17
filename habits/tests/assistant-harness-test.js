@@ -153,13 +153,16 @@ async function launchBrowser(){
       sheet:Boolean(document.getElementById('assistant-sheet')),
       privacy:Boolean(document.getElementById('privacy-assistant-body')),
       debugToggle:Boolean(document.getElementById('setting-local-assistant-debug')),
-      debugSheet:Boolean(document.getElementById('assistant-debug-toggle'))
+      debugSheet:Boolean(document.getElementById('assistant-debug-toggle')),
+      modelOnlyToggle:Boolean(document.getElementById('setting-local-assistant-model-only')),
+      modelOnlyPressed:document.getElementById('setting-local-assistant-model-only')?.getAttribute('aria-pressed')
     };
   });
   assert(ui.off.hidden === true && ui.off.pressed === 'false', 'chat button hidden while assistant is off');
   assert(ui.onHidden === false && ui.onPressed === 'true' && ui.setupHidden === false, 'enabling shows the button and setup fields');
   assert(ui.sheet && ui.privacy, 'assistant sheet and privacy copy exist');
   assert(ui.debugToggle && ui.debugSheet, 'debug switch exists in settings and on the chat');
+  assert(ui.modelOnlyToggle && ui.modelOnlyPressed === 'false', 'always-use-Qwen toggle exists and is off by default');
   const reach = await page.evaluate(() => {
     const getInit = assistantFetchInit('http://127.0.0.1:11434/api/tags', {method:'GET'});
     const postInit = assistantFetchInit('http://127.0.0.1:11434/api/chat', {
@@ -184,16 +187,18 @@ async function launchBrowser(){
       guideCmd:(document.getElementById('assistant-reach-cmd')?.textContent || ''),
       stepCount:document.querySelectorAll('#assistant-reach-guide li').length,
       copyBtn:Boolean(document.getElementById('assistant-copy-origins')),
-      originHelpGone:!document.getElementById('assistant-origin-help')
+      originHelpGone:!document.getElementById('assistant-origin-help'),
+      guideRestart:(document.getElementById('assistant-reach-step-restart')?.textContent || '')
     };
   });
   assert(reach.getSpace === 'loopback' && reach.postSpace === 'loopback', 'loopback fetches declare targetAddressSpace');
   assert(!reach.getHasType && reach.postType === 'application/json', 'JSON content-type is only set when there is a body');
-  assert(/Settings → local assistant/i.test(reach.publicFail) && /Keep Ollama running/i.test(reach.publicFail), 'GitHub Pages fetch error points at the in-app steps');
+  assert(/Settings → local assistant/i.test(reach.publicFail) && /quit and reopen Ollama/i.test(reach.publicFail), 'GitHub Pages fetch error points at the in-app steps');
   assert(/Settings → local assistant/i.test(reach.public403), '403 points at the in-app steps');
   assert(reach.allow === 'launchctl setenv OLLAMA_ORIGINS "https://lanbeee.github.io"', 'Mac allow command is the launchctl line');
   assert(!reach.pageOrigin && reach.guide && reach.stepCount === 4 && reach.copyBtn && reach.originHelpGone, 'settings shows a four-step reach guide');
   assert(/already allowed|GitHub Pages/i.test(reach.guideLead) && /launchctl setenv OLLAMA_ORIGINS "https:\/\/lanbeee\.github\.io"/.test(reach.guideCmd), 'loopback page still shows the GitHub Pages command');
+  assert(/Fully quit Ollama/i.test(reach.guideRestart) && /does nothing until/i.test(reach.guideRestart), 'reach guide says the allow command needs a full Ollama quit');
 
   await page.locator('#open-about').click();
   await page.waitForSelector('#about-sheet.open');
@@ -420,6 +425,89 @@ async function launchBrowser(){
   const debugUi = await page.locator('#assistant-thread .assistant-bubble-debug .assistant-debug-log').last().textContent();
   assert(/parse /.test(debugUi) && /path local/.test(debugUi) && /call draft_item/.test(debugUi), 'chat debug card shows parse, path, and tool');
 
+  console.log('\n[J] complicated phrasing routes to the model, not the fast path');
+  const route = await page.evaluate(async () => {
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true });
+    const calls = [];
+    const script = [
+      { message:{ thinking:'relative date', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
+      { message:{ thinking:'draft', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Meeting', due:'2026-09-19', dueTime:'13:00' } } }] } }
+    ];
+    const out = await runAssistantTurn('Can you add a meeting for day after tomorrow at 1 p.m.?', {
+      complete:async req => {
+        calls.push((req.messages || []).map(msg => String(msg.content || '')).join('\n'));
+        return script.shift();
+      }
+    });
+    const envelope = calls[0] || '';
+    const pathEvent = (out.debug || []).find(ev => ev.t === 'path') || {};
+    const drafted = out.draft || {};
+    return {
+      type:out.type,
+      llmCalls:calls.length,
+      path:pathEvent.path,
+      via:pathEvent.via,
+      risk:pathEvent.risk,
+      name:drafted.name,
+      dueKey:typeof dateKey === 'function' && drafted.dueDate != null ? dateKey(drafted.dueDate) : null,
+      dueTime:drafted.dueTime,
+      envHasDate:/"date":\{"iso":"\d{4}-\d{2}-\d{2}"/.test(envelope),
+      envHasFacts:/"extractedFacts":\{/.test(envelope)
+    };
+  });
+  assert(route.type === 'preview' && route.llmCalls === 2, 'day after tomorrow goes to the model and drafts');
+  assert(route.path === 'llm' && route.via === 'parser-risk' && route.risk === 'relative-date', 'trace shows the relative-date risk route');
+  assert(route.name === 'Meeting' && route.dueKey === '2026-09-19' && route.dueTime === '13:00', 'model draft carries the right date and time');
+  assert(route.envHasDate, 'envelope includes today ISO date');
+  assert(!route.envHasFacts, 'untrusted local facts are withheld from the model');
+
+  const routeTime = await page.evaluate(async () => {
+    const script = [
+      { message:{ thinking:'t', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
+      { message:{ thinking:'draft', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Meeting', due:'2026-09-19', windowText:'from 11:30 am to 1 pm' } } }] } }
+    ];
+    const out = await runAssistantTurn('Create a meeting for two days after tomorrow, from eleven thirty a.m. to one p.m.', {
+      complete:async () => script.shift()
+    });
+    const w = out.draft && out.draft.window || {};
+    return {
+      type:out.type,
+      name:out.draft && out.draft.name,
+      start:w.start && (w.start.clock || w.start.anchor),
+      end:w.end && (w.end.clock || w.end.anchor)
+    };
+  });
+  assert(routeTime.type === 'preview' && /meeting/i.test(routeTime.name || ''), 'two days after tomorrow also goes to the model');
+  assert(routeTime.start === '11:30' && routeTime.end === '13:00', 'model windowText becomes an 11:30-13:00 window');
+
+  const riskTable = await page.evaluate(() => {
+    const now = Date.now();
+    const catalog = assistantCatalog([], { locations:[], weatherProfiles:[] }, now);
+    const riskOf = text => assistantFastPathRisk(text, assistantParseUtterance(text, catalog, now));
+    return {
+      negation:riskOf('I did not do the laundry'),
+      minutes:riskOf('I did 30 minutes of work'),
+      relative:riskOf('remind me to pay in two weeks'),
+      simple0:riskOf('remind me to call mom'),
+      simple1:riskOf('add a walk between 5pm and 7pm'),
+      simple2:riskOf('I already did Walk')
+    };
+  });
+  assert(riskTable.negation === 'negation' && riskTable.minutes === 'minutes' && riskTable.relative === 'relative-date', 'risk audit flags negation, minutes, relative dates');
+  assert(riskTable.simple0 === null && riskTable.simple1 === null && riskTable.simple2 === null, 'simple phrasing still passes the audit');
+
+  const staysLocal = await page.evaluate(async () => {
+    try{
+      const out = await runAssistantTurn('Remind me to call mom', {
+        complete:async () => { throw new Error('LLM must not run for simple phrasing'); }
+      });
+      return { type:out.type, name:out.draft && out.draft.name };
+    }catch(err){
+      return { type:'threw', text:String(err && err.message || err) };
+    }
+  });
+  assert(staysLocal.type === 'preview' && /mom/i.test(staysLocal.name || ''), 'simple create never reaches the model');
+
   console.log('\n[G] live Qwen3.8 think+tools (optional)');
   const live = await page.evaluate(async () => {
     try{
@@ -469,6 +557,64 @@ async function launchBrowser(){
     assert(live.tool === 'classify_intent', 'live Qwen called classify_intent');
     assert(live.intent === 'create_task' || live.intent === 'create_habit', 'live classify is a create intent');
   }
+
+  console.log('\n[K] always-use-Qwen setting and use-AI-instead retry');
+  const modelOnlyTurn = await page.evaluate(async () => {
+    const script = [
+      { message:{ thinking:'classify', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
+      { message:{ thinking:'draft', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Mom call', due:'today' } } }] } }
+    ];
+    patchLocalAssistant({ localAssistant:true, localAssistantModelOnly:true });
+    const out = await runAssistantTurn('Remind me to call mom', {
+      complete:async () => script.shift()
+    });
+    const pathEvent = (out.debug || []).find(ev => ev.t === 'path') || {};
+    const res = {
+      type:out.type,
+      fastPath:out.fastPath === true,
+      path:pathEvent.path,
+      via:pathEvent.via,
+      name:out.draft && out.draft.name,
+      togglePressed:document.getElementById('setting-local-assistant-model-only')?.getAttribute('aria-pressed')
+    };
+    patchLocalAssistant({ localAssistantModelOnly:false });
+    return res;
+  });
+  assert(modelOnlyTurn.type === 'preview' && modelOnlyTurn.name === 'Mom call', 'model-only setting sends simple phrasing to the model');
+  assert(modelOnlyTurn.fastPath !== true && modelOnlyTurn.path === 'llm' && modelOnlyTurn.via === 'setting', 'trace shows the model-only route');
+  assert(modelOnlyTurn.togglePressed === 'true', 'always-use-Qwen toggle reflects the setting');
+
+  const retryUi = await page.evaluate(async () => {
+    if(typeof clearAssistantChat === 'function')clearAssistantChat();
+    const replies = [
+      { message:{ thinking:'classify', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
+      { message:{ thinking:'draft', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Ring mom', due:'today' } } }] } }
+    ];
+    window.assistantComplete = async () => replies.shift();
+    await sendAssistantMessage('Remind me to call mom');
+    await new Promise(resolve => setTimeout(resolve, 60));
+    const retryBtn = document.querySelector('#assistant-thread [data-assistant-retry]');
+    const before = document.querySelectorAll('#assistant-thread .assistant-bubble').length;
+    let after = before;
+    if(retryBtn){
+      retryBtn.click();
+      for(let i = 0; i < 40 && after <= before; i += 1){
+        await new Promise(resolve => setTimeout(resolve, 50));
+        after = document.querySelectorAll('#assistant-thread .assistant-bubble').length;
+      }
+    }
+    return {
+      hadRetry:Boolean(retryBtn),
+      label:retryBtn ? retryBtn.textContent.trim() : '',
+      rowGone:!retryBtn || !retryBtn.isConnected,
+      before,
+      after,
+      lastPreview:Array.from(document.querySelectorAll('#assistant-thread .assistant-preview-name')).pop()?.textContent || ''
+    };
+  });
+  assert(retryUi.hadRetry && /use AI instead/i.test(retryUi.label), 'fast-path preview offers use AI instead');
+  assert(retryUi.rowGone && retryUi.after > retryUi.before, 'retry re-runs the utterance through the model');
+  assert(/Ring mom/i.test(retryUi.lastPreview), 'retry preview comes from the model, not the fast path');
 
   assert(!errors.length, 'no page errors (' + errors.join(' | ') + ')');
   await browser.close();

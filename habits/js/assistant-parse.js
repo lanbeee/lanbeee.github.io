@@ -33,7 +33,7 @@ function assistantNormText(value){
     .toLowerCase()
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201c\u201d]/g, '"')
-    .replace(/\b(\d{1,2})\s*([ap])\.?\s?m\.?(?![a-z])/g, '$1$2')
+    .replace(/\b(\d{1,2})\s*([ap])\.?\s?m\.?(?![a-z])/g, '$1$2m')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -405,7 +405,7 @@ function assistantStripNameJunk(text){
 
 function assistantCutNameTail(text){
   const s = assistantNormText(text);
-  const cut = s.search(/\b(?:to be done|only if|if it(?:'s| is) not|if it(?:'s| is)|using\b|every\b|twice\b|thrice\b|(?:once|twice|thrice|one|two|three|four|five|six|seven|eight|nine|ten)\s+times?\b|\d+\s*x\b|\d+\s+times?\b|day after\b|after\b|before\b|between\b|tomorrow\b|today\b|tonight\b|this (?:morning|afternoon|evening)|next\b|at \d|for \d|in \d|urgent\b|someday\b|and only)\b/);
+  const cut = s.search(/\b(?:to be done|only if|if it(?:'s| is) not|if it(?:'s| is)|using\b|every\b|twice\b|thrice\b|(?:once|twice|thrice|one|two|three|four|five|six|seven|eight|nine|ten)\s+times?\b|\d+\s*x\b|\d+\s+times?\b|day after\b|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+(?:days?|weeks?)\b|after\b|before\b|between\b|tomorrow\b|today\b|tonight\b|this (?:morning|afternoon|evening)|next\b|at \d|for \d|in (?:\d|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b|urgent\b|someday\b|and only)\b/);
   if(cut > 2)return s.slice(0, cut).trim();
   return s;
 }
@@ -780,6 +780,93 @@ function assistantPreferIntent(modelIntent, guessed){
   if(model === 'unclear' && guessed.intent !== 'unclear' && guessed.intent !== 'edit_item')return guessed.intent;
   if(model === 'unsupported' && guessed.confident && guessed.intent !== 'unsupported')return guessed.intent;
   return model;
+}
+
+const ASSISTANT_WEEKDAY_LABELS = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+// Relative date math beyond the trivial set is never trusted to the regex
+// parser — "day after tomorrow", "two days after tomorrow", "in two weeks",
+// "a day before day after tomorrow" — there is always another phrasing.
+// Window phrasing ("every day after sunset") is not date math: an anchor word
+// later in the sentence opts out.
+const ASSISTANT_COMPLEX_DATE_RES = [
+  /\b(?:days?|weeks?|months?|years?)\s+(?:after|before|from|out)\b(?![^,.!?]*\b(?:sunset|sunrise|dawn|fajr|dhuhr|zuhr|noon|asr|maghrib|isha|dusk)\b)/,
+  /\b(?:after|before|eve)\s+(?:tomorrow|tommorow|tmrw|today|tonight|yesterday|next week)\b/,
+  /\bday after (?:tomorrow|tommorow|tmrw)\b/,
+  /\bin\s+(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a)\s+(?:day|week|month)s?\b/
+];
+
+// Structural vocabulary. If any of it survives in the residue after every
+// exact parser consumption is stripped, the local parse guessed somewhere —
+// route the whole utterance to the model instead of saving a guess.
+const ASSISTANT_FAST_RISK_RE = new RegExp(
+  '\\b(?:'
+  + 'am|pm|a\\.m|p\\.m'
+  + '|today|tomorrow|tommorow|tmrw|tonight|yesterday|next|last|every|each'
+  + '|day|days|week|weeks|weekend|weekends|weekday|weekdays|month|months|year|years'
+  + '|morning|afternoon|evening|night|noon|midnight'
+  + '|' + ASSISTANT_ANCHOR_WORD
+  + '|after|before|between|until|till|weekly|daily'
+  + '|hour|hours|hr|hrs|minute|minutes|min|mins'
+  + '|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve'
+  + '|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen'
+  + '|twenty|thirty|forty|fifty|sixty|ninety|hundred'
+  + '|quarter|half|past|o\'clock'
+  + '|raining|rain|freezing|freeze|snow|snowing|weather'
+  + ')\\b'
+  + '|\\d|:'
+);
+
+// Null when the local fast path may answer, else why it must go to the LLM.
+function assistantFastPathRisk(text, parsed){
+  const raw = assistantNormText(text);
+  if(/\b(?:did not|didn't|didnt|never|not done|haven't|have not|hasn't|has not)\b/.test(raw))return 'negation';
+  for(const re of ASSISTANT_COMPLEX_DATE_RES){
+    if(re.test(raw))return 'relative-date';
+  }
+  let s = raw;
+  const cut = re => { s = s.replace(re, ' '); };
+  // Scaffolding the intent rules consume.
+  cut(/^(?:please |can you |could you |hey |ok |okay )+/g);
+  cut(/^(?:remind me(?: to)?|don't forget(?: to)?|dont forget(?: to)?|remember to|i (?:need|have|gotta|got)(?: to)?|i should|i want to|i wanna)\s+/g);
+  cut(/^(?:add:?|create|make|new(?: task| habit)?)\s+(?:a |an |the )?/g);
+  cut(/^(?:new )?(?:task|habit|ting|item):\s*/g);
+  cut(/^(?:when is|where's|where is|did i (?:do|finish)|do i have|is there)\s+/g);
+  cut(/^(?:i (?:already )?)?(?:already )?(?:did|done|finished|logged)\s+/);
+  cut(/^(?:done with|finished|mark|check(?:ed)? off|log)\s+/);
+  // Weather clauses trail the utterance; consume to the end.
+  cut(/\b(?:only if|unless|not raining|no rain|not freezing|no freeze|not too cold|not snowing|no snow|dry weather|using dry)\b[\s\S]*$/g);
+  // Consumed structure — mirrors assistantParseUtterance exactly.
+  // NOTE: weekday/anchor token lists are bare alternations; always wrap them
+  // in (?:…) or the surrounding pattern only binds the first branch.
+  cut(/\bday after (?:tomorrow|tommorow|tmrw)\b/g);
+  cut(/\bin\s+(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a)\s+(?:day|week)s?\b/g);
+  cut(/\b(?:today|tomorrow|tommorow|tmrw|tonight|this (?:morning|afternoon|evening)|next week)\b/g);
+  cut(new RegExp('\\b(?:(?:next|this|every|each|on|and)\\s+)?\\s*(?:' + ASSISTANT_WEEKDAY_TOKEN + ')\\b', 'g'));
+  cut(/\b\d{4}-\d{2}-\d{2}\b/g);
+  cut(/\bon\s+\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/g);
+  cut(/\b(?:at|by|around)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/g);
+  cut(/\b(?:between|from)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s+(?:and|to|-)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/g);
+  const anchor = '(?:' + ASSISTANT_ANCHOR_WORD + ')';
+  cut(new RegExp('\\b(?:\\d+(?:\\.\\d+)?\\s*(?:hours?|hrs?|h|minutes?|mins?|m)|an hour|half an hour)\\s+(?:before|after)\\s+' + anchor + '\\s+(?:till|until|to)\\s+' + anchor + '\\b', 'g'));
+  cut(new RegExp('\\b(?:\\d+(?:\\.\\d+)?\\s*(?:hours?|hrs?|h|minutes?|mins?|m)|an hour|half an hour)\\s+(?:before|after)\\s+' + anchor + '\\b', 'g'));
+  cut(new RegExp('\\b(?:after|before)\\s+' + anchor + '\\b', 'g'));
+  cut(/\b(?:every day|each day|daily|every other day|every (?:morning|night|evening)|weekly|every week)\b/g);
+  cut(/\b(?:once|twice|thrice)\s+(?:a\s+|per\s+|each\s+)?(?:day|week)s?\b/g);
+  cut(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+times?\s+(?:a|per|each|every)\s+(?:week|day)s?\b/g);
+  cut(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+days?\b/g);
+  cut(/\b(?:every weekend|weekends?|weekdays?|to be done)\b/g);
+  cut(/\b(?:\d+(?:\.\d+)?\s*(?:minutes?|mins?|m|hours?|hrs?|h)|an hour|half an hour)\b/g);
+  cut(/\b(?:p[0-5]|urgent|asap|critical|important|high|normal|medium|low|someday|whenever|later)\b/g);
+  for(const place of (parsed && parsed.places) || []){
+    cut(new RegExp(String(place).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+  }
+  if(/\b(?:habit|repeating|recurring)\b/.test(s) && !(parsed && parsed.rhythm))return 'vague-rhythm';
+  if(/\b(?:at|in|on)\s+(?:the|my|a|an|his|her|their)\b/.test(s))return 'place-phrase';
+  const risk = s.match(ASSISTANT_FAST_RISK_RE);
+  if(risk)return 'token:' + String(risk[0]).trim();
+  if(parsed && (parsed.intent === 'complete_item' || parsed.intent === 'lookup_item') && parsed.durationMinutes != null)return 'minutes';
+  return null;
 }
 
 function assistantParseUtterance(text, catalog, now){

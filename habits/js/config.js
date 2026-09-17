@@ -336,7 +336,9 @@ const DEFAULT_SORT_SETTINGS = {
   localAssistantProvider:'auto',
   localAssistantUrl:'',
   localAssistantModel:'',
-  localAssistantDebug:false
+  localAssistantDebug:false,
+  // Skip the local fast path entirely: every message goes to the model.
+  localAssistantModelOnly:false
 };
 
 const ASSISTANT_OLLAMA_ORIGIN = 'http://127.0.0.1:11434';
@@ -408,9 +410,9 @@ function assistantOllamaOriginsAllowText(origin, platform){
 }
 function assistantOllamaRestartHint(platform){
   const which = platform || assistantHostPlatform();
-  if(which === 'windows')return 'Quit Ollama from the taskbar, then open it again.';
-  if(which === 'linux')return 'Stop any running Ollama, then run the copied command.';
-  return 'Quit Ollama from the menu bar at the top of the screen, then open it again.';
+  if(which === 'windows')return 'Fully quit Ollama from the taskbar, then open it again. The command does nothing until you do this.';
+  if(which === 'linux')return 'Stop the running Ollama process, then start it again. The allow command does nothing until you do this.';
+  return 'Fully quit Ollama from the menu bar at the top of the screen, then open it again. The command does nothing until you do this.';
 }
 /** Minimum gap between automatic retention cleanup passes (≈1 month). */
 const RETENTION_CLEANUP_INTERVAL_MS = 30 * 86400000;

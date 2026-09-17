@@ -10,7 +10,7 @@ function assistantSystemPrompt(){
     'draft_item creates or changes an item. Put every field the user said in that one call: name, durationMinutes, rhythm, timesPerPeriod, periodDays, weekdays, due, dueTime, windowText, weatherProfile, weatherText, placeNames, priority.',
     'Prefer plain strings: rhythm "every Tuesday, Wednesday and Friday", "every two days", "three times in eight days", "every weekend", "five times a week". weekdays "Tue, Wed, Fri" or weekdays/weekends.',
     'If currentDraft is set, "it" / "this" / "that" is that item. Keep its name and hid. Call draft_item with only the new fields.',
-    'Copy extractedFacts into the tool. Use catalog place and weather names. sunset means maghrib.',
+    'Copy extractedFacts into the tool, but resolve dates yourself: catalog.date is today (ISO date + weekday), so relative phrases like "day after tomorrow" or "two days after tomorrow" become an exact due YYYY-MM-DD. Use catalog place and weather names. sunset means maghrib.',
     'If a name is ambiguous, call ask_user with one short question.',
     'Never put reasoning inside tool arguments.'
   ].join(' ');
@@ -22,6 +22,7 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
   const payload = {
     request:String(text || '').trim(),
     catalog:{
+      date:catalog.date || null,
       today:compact
         ? {next:(catalog.today && catalog.today.next) || null}
         : catalog.today,
@@ -32,7 +33,11 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
       aliases:catalog.aliases
     }
   };
-  const facts = typeof assistantCompactFacts === 'function' ? assistantCompactFacts(parsed) : null;
+  // Local facts are only attached when the fast path fully consumed the
+  // utterance; a partial parse must not poison the model with a wrong due.
+  const facts = parsed && parsed.factsTrusted !== false && typeof assistantCompactFacts === 'function'
+    ? assistantCompactFacts(parsed)
+    : null;
   if(facts)payload.extractedFacts = facts;
   const current = typeof assistantCompactDraft === 'function' ? assistantCompactDraft(draft) : null;
   if(current)payload.currentDraft = current;
@@ -55,7 +60,9 @@ function assistantBuildCompactUser(session, request, extras){
     request:String(request || (session.parsed && session.parsed.text) || ''),
     intent:session.intent || (session.parsed && session.parsed.intent) || null,
     currentDraft:typeof assistantCompactDraft === 'function' ? assistantCompactDraft(session.draft) : null,
-    extractedFacts:typeof assistantCompactFacts === 'function' ? assistantCompactFacts(session.parsed) : null,
+    extractedFacts:session.parsed && session.parsed.factsTrusted !== false && typeof assistantCompactFacts === 'function'
+      ? assistantCompactFacts(session.parsed)
+      : null,
     note:'Older thinking and tool traces were dropped to free context. "it" means currentDraft. Call the next tool.'
   };
   if(extras && extras.repair)payload.continueWith = extras.repair;
@@ -145,6 +152,16 @@ function assistantDebugEnabled(){
   if(typeof loadSortSettings === 'function'){
     const s = loadSortSettings();
     return Boolean(s && s.localAssistantDebug);
+  }
+  return false;
+}
+
+// "always use Qwen" setting: the local fast path never answers.
+function assistantModelOnlyEnabled(){
+  if(typeof sortSettings !== 'undefined' && sortSettings && sortSettings.localAssistantModelOnly)return true;
+  if(typeof loadSortSettings === 'function'){
+    const s = loadSortSettings();
+    return Boolean(s && s.localAssistantModelOnly);
   }
   return false;
 }
@@ -576,6 +593,27 @@ function assistantTryLocalTurn(text, session, context){
     const compact = /\bnext\b/i.test(parsed.text) && !/\b(today|due|left|plan)\b/i.test(parsed.text);
     return {type:'today', text:assistantFormatToday(context.catalog, {compact}), session};
   }
+  if(parsed.intent === 'unsupported'){
+    assistantTracePush(session, {t:'path', path:'local', via:'unsupported'});
+    session.intent = 'unsupported';
+    return {
+      type:'say',
+      text:'I can add a task or habit, tell you what is on today, look one up, or log something done. I cannot reschedule the week or delete items.',
+      session
+    };
+  }
+
+  // The fast path must prove it consumed every structural token. Any residue
+  // (unknown dates, clocks, rhythms, negation) means it guessed — the model
+  // decides instead. See assistantFastPathRisk in assistant-parse.js.
+  const risk = typeof assistantFastPathRisk === 'function'
+    ? assistantFastPathRisk(parsed.text || text, parsed)
+    : null;
+  if(risk){
+    parsed.factsTrusted = false;
+    assistantTracePush(session, {t:'path', path:'llm', via:'parser-risk', risk});
+    return null;
+  }
   if(parsed.intent === 'complete_item'){
     assistantTracePush(session, {t:'path', path:'local', via:'complete'});
     const name = parsed.itemName || (session.draft && session.draft.name) || text;
@@ -585,15 +623,6 @@ function assistantTryLocalTurn(text, session, context){
     assistantTracePush(session, {t:'path', path:'local', via:'lookup'});
     const name = parsed.itemName || (session.draft && session.draft.name) || text;
     return assistantLocalLookup(session, context, name);
-  }
-  if(parsed.intent === 'unsupported'){
-    assistantTracePush(session, {t:'path', path:'local', via:'unsupported'});
-    session.intent = 'unsupported';
-    return {
-      type:'say',
-      text:'I can add a task or habit, tell you what is on today, look one up, or log something done. I cannot reschedule the week or delete items.',
-      session
-    };
   }
   if((parsed.intent === 'create_task' || parsed.intent === 'create_habit') && parsed.itemName){
     assistantTracePush(session, {t:'path', path:'local', via:'create', intent:parsed.intent});
@@ -728,13 +757,19 @@ async function runAssistantTurn(userText, opts = {}){
     t:'turn',
     text,
     forceLlm:Boolean(opts.forceLlm),
+    modelOnly:!opts.forceLlm && assistantModelOnlyEnabled(),
     focus:session.draft && session.draft.name ? session.draft.name : null
   });
   const done = out => assistantFinishDebug(session, out);
 
-  if(!opts.forceLlm){
+  const forceModel = Boolean(opts.forceLlm) || assistantModelOnlyEnabled();
+
+  if(!forceModel){
     const local = assistantTryLocalTurn(text, session, context);
-    if(local)return done(local);
+    if(local){
+      local.fastPath = true;
+      return done(local);
+    }
   }else{
     session.parsed = typeof assistantParseUtterance === 'function'
       ? assistantParseUtterance(text, context.catalog, context.now)
@@ -742,9 +777,10 @@ async function runAssistantTurn(userText, opts = {}){
     assistantTracePush(session, {
       t:'parse',
       facts:typeof assistantCompactFacts === 'function' ? assistantCompactFacts(session.parsed) : null,
-      forceLlm:true
+      forceLlm:opts.forceLlm === true,
+      modelOnly:opts.forceLlm !== true
     });
-    assistantTracePush(session, {t:'path', path:'llm', via:'force'});
+    assistantTracePush(session, {t:'path', path:'llm', via:opts.forceLlm ? 'force' : 'setting'});
   }
 
   if(typeof complete !== 'function')return done({type:'error', text:'Local assistant client is missing.', session});
@@ -958,7 +994,7 @@ function assistantReachErrorText(pageOrigin){
     ? (typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '')
     : String(pageOrigin || '');
   if(origin){
-    return `Cannot reach the local model from this website. Open Settings → local assistant and follow the steps. Keep Ollama running.`;
+    return `Cannot reach the local model from this website. Open Settings → local assistant, run the allow command, then fully quit and reopen Ollama.`;
   }
   return 'Cannot reach the local model. Keep Ollama running on this computer.';
 }

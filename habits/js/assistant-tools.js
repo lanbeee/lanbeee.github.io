@@ -129,8 +129,16 @@ function assistantCatalog(data, settings, now){
   const locs = Array.isArray(settings && settings.locations) ? settings.locations : [];
   const profiles = Array.isArray(settings && settings.weatherProfiles) ? settings.weatherProfiles : [];
   const habits = Array.isArray(data) ? data : [];
+  const ts = now != null ? Number(now) : Date.now();
   const today = assistantTodayBrief(data, settings, now);
+  const iso = typeof dateKey === 'function'
+    ? dateKey(ts)
+    : new Date(ts).toISOString().slice(0, 10);
   return {
+    date:{
+      iso,
+      weekday:ASSISTANT_WEEKDAY_LABELS[new Date(ts).getDay()] || null
+    },
     today:{
       next:today.next,
       open:today.open,

@@ -10,6 +10,7 @@ function assistantSettings(){
   return {
     on:Boolean(s.localAssistant),
     debug:Boolean(s.localAssistantDebug),
+    modelOnly:Boolean(s.localAssistantModelOnly),
     provider:normalizeLocalAssistantProvider(s.localAssistantProvider),
     url:normalizeLocalAssistantUrl(s.localAssistantUrl),
     model:normalizeLocalAssistantModel(s.localAssistantModel)
