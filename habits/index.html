@@ -1177,10 +1177,24 @@
             <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
               <span>
                 <b>use Qwen on this computer</b>
-                <small>Works in the regular Tings app on this computer, not only a personal clone. Talk to Ollama or LM Studio on loopback. Clear requests are parsed here; Qwen calls tools to create or change an item. Nothing is saved until you confirm. Off by default.</small>
+                <small>Talk to Ollama or LM Studio on this computer. Clear requests are parsed here; Qwen calls tools to create or change an item. Nothing is saved until you confirm. Off by default.</small>
               </span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
+            <div id="assistant-reach-guide" class="assistant-reach-guide">
+              <p class="settings-sublabel">Reach the model on this computer</p>
+              <p class="field-hint" id="assistant-reach-lead"></p>
+              <ol class="assistant-reach-steps">
+                <li>Install Ollama if you have not, and leave it running.</li>
+                <li id="assistant-reach-step-allow"></li>
+                <li id="assistant-reach-step-restart"></li>
+                <li>Turn on <b>use Qwen</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
+              </ol>
+              <pre class="assistant-reach-cmd" id="assistant-reach-cmd"></pre>
+              <div class="btn-row assistant-reach-actions">
+                <button type="button" class="btn" id="assistant-copy-origins">copy the command</button>
+              </div>
+            </div>
             <div id="assistant-setup-fields" hidden>
               <span class="settings-sublabel">server</span>
               <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="local model server">
@@ -1204,7 +1218,6 @@
                 </span>
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
-              <p class="field-hint">Open Tings at http://127.0.0.1:4181 so this browser can call Ollama. That is the same regular app you already use on this computer. GitHub Pages is blocked unless this computer sets OLLAMA_ORIGINS. Only 127.0.0.1 / localhost URLs are allowed.</p>
             </div>
           </div>
         </section>

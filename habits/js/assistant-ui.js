@@ -46,7 +46,45 @@ function syncLocalAssistantControls(){
   if($('assistant-model'))$('assistant-model').value = s.model;
   const extras = $('assistant-setup-fields');
   if(extras)extras.hidden = !s.on;
+  syncAssistantOriginHelp();
   syncAssistantChrome();
+}
+
+function syncAssistantOriginHelp(){
+  const publicOrigin = typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '';
+  const origin = typeof assistantGuideOrigin === 'function' ? assistantGuideOrigin() : (publicOrigin || 'https://lanbeee.github.io');
+  const platform = typeof assistantHostPlatform === 'function' ? assistantHostPlatform() : 'mac';
+  const cmd = typeof assistantOllamaOriginsAllowText === 'function' ? assistantOllamaOriginsAllowText(origin, platform) : '';
+  const restart = typeof assistantOllamaRestartHint === 'function'
+    ? assistantOllamaRestartHint(platform)
+    : 'Quit Ollama, then open it again.';
+  const lead = $('assistant-reach-lead');
+  const allow = $('assistant-reach-step-allow');
+  const quit = $('assistant-reach-step-restart');
+  const pre = $('assistant-reach-cmd');
+  const copy = $('assistant-copy-origins');
+  if(lead){
+    lead.textContent = publicOrigin
+      ? `This web copy cannot see the model until you allow this site once. The chat still stays on this computer. This page is ${origin}.`
+      : 'This local page is already allowed. Keep Ollama running. Use the steps below the first time you open the personal clone on GitHub Pages.';
+  }
+  if(allow){
+    allow.textContent = publicOrigin
+      ? `Allow this website. Copy the command, paste it in ${platform === 'windows' ? 'Command Prompt' : 'Terminal'}, and press Return.`
+      : `On the personal clone, allow that website the same way. The command below uses ${origin}.`;
+  }
+  if(quit)quit.textContent = restart;
+  if(pre){
+    pre.textContent = cmd;
+    pre.hidden = !cmd;
+  }
+  if(copy)copy.hidden = !cmd;
+}
+
+function assistantEnabledStatusText(){
+  const origin = typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '';
+  if(origin)return 'On. If list models fails, follow the steps under local assistant.';
+  return 'On. Keep Ollama running on this computer.';
 }
 
 function patchLocalAssistant(patch){
@@ -227,12 +265,13 @@ function assistantRenderLiveDebug(events){
   });
 }
 
-async function assistantCopyDebug(text){
+async function assistantCopyText(text, okToast){
   const payload = String(text || '');
+  const ok = okToast || 'copied';
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
       await navigator.clipboard.writeText(payload);
-      if(typeof showToast === 'function')showToast('debug copied');
+      if(typeof showToast === 'function')showToast(ok);
       return;
     }
   }catch(_){}
@@ -243,9 +282,13 @@ async function assistantCopyDebug(text){
   ta.style.opacity = '0';
   document.body.appendChild(ta);
   ta.select();
-  try{ document.execCommand('copy'); if(typeof showToast === 'function')showToast('debug copied'); }
+  try{ document.execCommand('copy'); if(typeof showToast === 'function')showToast(ok); }
   catch(_){ if(typeof showToast === 'function')showToast('could not copy'); }
   ta.remove();
+}
+
+async function assistantCopyDebug(text){
+  return assistantCopyText(text, 'debug copied');
 }
 
 function assistantPreviewBody(text){
@@ -548,9 +591,16 @@ function bindAssistantUi(){
 
   $('setting-local-assistant')?.addEventListener('click', () => {
     patchLocalAssistant({localAssistant:!assistantEnabled()});
-    assistantSetStatus(assistantEnabled()
-      ? 'On. Keep Ollama running. Open the regular Tings app at http://127.0.0.1:4181 so the browser can reach it.'
-      : '');
+    assistantSetStatus(assistantEnabled() ? assistantEnabledStatusText() : '');
+  });
+  $('assistant-copy-origins')?.addEventListener('click', () => {
+    const text = typeof assistantOllamaOriginsAllowText === 'function' ? assistantOllamaOriginsAllowText() : '';
+    if(!text){
+      if(typeof showToast === 'function')showToast('could not copy');
+      return;
+    }
+    const platform = typeof assistantHostPlatform === 'function' ? assistantHostPlatform() : 'mac';
+    assistantCopyText(text, platform === 'windows' ? 'command copied — paste it in Command Prompt' : 'command copied — paste it in Terminal');
   });
   $('setting-local-assistant-debug')?.addEventListener('click', () => {
     if(!assistantEnabled())patchLocalAssistant({localAssistant:true, localAssistantDebug:true});
@@ -597,3 +647,4 @@ bindAssistantUi();
 assistantResizeComposer();
 assistantSyncSend();
 syncAssistantChrome();
+syncAssistantOriginHelp();

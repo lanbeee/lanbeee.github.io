@@ -78,14 +78,18 @@ function expectedDueKey(token){
       hidden:document.getElementById('open-assistant')?.hidden,
       barHidden:document.getElementById('bar-open-assistant')?.hidden,
       settingsOn:document.getElementById('setting-local-assistant')?.getAttribute('aria-pressed'),
-      hint:(document.querySelector('#settings-assistant-body small') || {}).textContent || '',
+      hint:(document.querySelector('#setting-local-assistant small') || {}).textContent || '',
       bodyClass:document.body.classList.contains('assistant-on'),
-      displayMode:document.body.classList.contains('replica-display-mode')
+      displayMode:document.body.classList.contains('replica-display-mode'),
+      guide:Boolean(document.getElementById('assistant-reach-guide')),
+      guideSteps:document.querySelectorAll('#assistant-reach-guide li').length,
+      copyBtn:Boolean(document.getElementById('assistant-copy-origins'))
     };
   });
   assert(!owner.replica && !owner.displayMode, 'no replica enrollment on a fresh local app');
   assert(owner.hidden === false && owner.bodyClass, 'chat button shows on the regular app');
-  assert(/regular Tings app|not only a personal clone/i.test(owner.hint), 'settings copy says regular app, not clone-only');
+  assert(/Ollama|LM Studio/i.test(owner.hint), 'settings copy names the local model');
+  assert(owner.guide && owner.guideSteps === 4 && owner.copyBtn, 'settings has a four-step reach guide with copy');
 
   console.log('\n[parse] utterance corpus (' + ASSISTANT_PARSE_CASES.length + ')');
   const parsedRows = await page.evaluate(({cases, now}) => {

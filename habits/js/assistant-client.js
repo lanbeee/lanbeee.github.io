@@ -80,13 +80,63 @@ function pickAssistantModel(names, preferred){
   return qwen ? qwen.raw : list[0];
 }
 
+function assistantHasRequestBody(opts){
+  return Boolean(opts && opts.body != null && opts.body !== '');
+}
+
+function assistantFetchInit(url, opts){
+  const src = opts || {};
+  const init = {};
+  Object.keys(src).forEach(key => {
+    if(key === 'headers')return;
+    init[key] = src[key];
+  });
+  if(typeof assistantUrlIsLoopback === 'function' ? assistantUrlIsLoopback(url) : false){
+    init.targetAddressSpace = 'loopback';
+  }
+  const headers = Object.assign({}, src.headers || {});
+  const hasType = Object.keys(headers).some(key => String(key).toLowerCase() === 'content-type');
+  if(assistantHasRequestBody(src) && !hasType)headers['Content-Type'] = 'application/json';
+  if(Object.keys(headers).length)init.headers = headers;
+  return init;
+}
+
+async function assistantLocalNetworkPermissionState(){
+  if(typeof navigator === 'undefined' || !navigator.permissions || !navigator.permissions.query)return '';
+  const names = ['loopback-network', 'local-network-access'];
+  for(let i = 0; i < names.length; i += 1){
+    try{
+      const status = await navigator.permissions.query({name:names[i]});
+      if(status && status.state)return status.state;
+    }catch(_){}
+  }
+  return '';
+}
+
+async function assistantFetchAttempt(url, init){
+  try{
+    return await fetch(url, init);
+  }catch(err){
+    if(!init || !init.targetAddressSpace)throw err;
+    const msg = String(err && err.message || err || '');
+    if(!/targetAddressSpace|Unexpected (field|option)|not a valid value/i.test(msg))throw err;
+    const retry = Object.assign({}, init);
+    delete retry.targetAddressSpace;
+    return fetch(url, retry);
+  }
+}
+
 async function assistantFetch(url, opts){
   const controller = opts && opts.signal ? null : new AbortController();
   if(controller)_assistantAbort = controller;
   const signal = (opts && opts.signal) || (controller && controller.signal);
+  const init = assistantFetchInit(url, Object.assign({}, opts, {signal}));
   try{
-    const res = await fetch(url, {...opts, signal, headers:{'Content-Type':'application/json', ...(opts && opts.headers || {})}});
-    return res;
+    const permission = await assistantLocalNetworkPermissionState();
+    if(permission === 'denied' && typeof assistantPublicPageOrigin === 'function' && assistantPublicPageOrigin()){
+      throw new Error('Local network access is blocked for this site. In the address bar, allow Apps on this device / Local network, then try again.');
+    }
+    return await assistantFetchAttempt(url, init);
   }finally{
     if(controller && _assistantAbort === controller)_assistantAbort = null;
   }

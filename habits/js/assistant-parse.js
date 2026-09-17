@@ -33,6 +33,7 @@ function assistantNormText(value){
     .toLowerCase()
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\b(\d{1,2})\s*([ap])\.?\s?m\.?(?![a-z])/g, '$1$2')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -314,6 +315,7 @@ function assistantParseDue(value, now){
   if(!s)return null;
   if(s === 'today' || s === 'tonight' || s === 'this evening' || s === 'this afternoon' || s === 'this morning')return base;
   if(s === 'tomorrow' || s === 'tommorow' || s === 'tmrw')return base + 86400000;
+  if(s === 'day after tomorrow' || s === 'day after tommorow' || s === 'day after tmrw')return base + 2 * 86400000;
   if(s === 'next week')return base + 7 * 86400000;
   if(/^\d{4}-\d{2}-\d{2}$/.test(s)){
     const parsed = new Date(`${s}T00:00:00`).getTime();
@@ -378,7 +380,8 @@ function assistantStripNameJunk(text){
   let s = assistantNormText(text);
   s = s.replace(/^(?:please |can you |could you |hey |ok |okay )+/g, '');
   s = s.replace(/^(?:remind me(?: to)?|don't forget(?: to)?|dont forget(?: to)?|remember to|i (?:need|have|gotta|got)(?: to)?|i should|i want to|i wanna)\s+/g, '');
-  s = s.replace(/\b(?:today|tomorrow|tommorow|tmrw|tonight|this (?:morning|afternoon|evening)|next week)\b/g, ' ');
+  s = s.replace(/\b(?:day after )?(?:today|tomorrow|tommorow|tmrw|tonight|this (?:morning|afternoon|evening)|next week)\b/g, ' ');
+  s = s.replace(/\bin\s+(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a)\s+(?:day|week)s?\b/g, ' ');
   s = s.replace(/\b(?:next )?(?:sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?)\b/g, ' ');
   s = s.replace(/\b(?:after|before|at|around)\s+(?:sunset|sunrise|fajr|dhuhr|zuhr|asr|maghrib|isha|noon|dawn)\b/g, ' ');
   s = s.replace(/\b(?:at|around|by|after|before)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/g, ' ');
@@ -402,7 +405,7 @@ function assistantStripNameJunk(text){
 
 function assistantCutNameTail(text){
   const s = assistantNormText(text);
-  const cut = s.search(/\b(?:to be done|only if|if it(?:'s| is) not|if it(?:'s| is)|using\b|every\b|twice\b|thrice\b|(?:once|twice|thrice|one|two|three|four|five|six|seven|eight|nine|ten)\s+times?\b|\d+\s*x\b|\d+\s+times?\b|after\b|before\b|between\b|tomorrow\b|today\b|tonight\b|this (?:morning|afternoon|evening)|next\b|at \d|for \d|urgent\b|someday\b|and only)\b/);
+  const cut = s.search(/\b(?:to be done|only if|if it(?:'s| is) not|if it(?:'s| is)|using\b|every\b|twice\b|thrice\b|(?:once|twice|thrice|one|two|three|four|five|six|seven|eight|nine|ten)\s+times?\b|\d+\s*x\b|\d+\s+times?\b|day after\b|after\b|before\b|between\b|tomorrow\b|today\b|tonight\b|this (?:morning|afternoon|evening)|next\b|at \d|for \d|in \d|urgent\b|someday\b|and only)\b/);
   if(cut > 2)return s.slice(0, cut).trim();
   return s;
 }
@@ -797,7 +800,13 @@ function assistantParseUtterance(text, catalog, now){
   let due = null;
   const iso = s.match(/\b(\d{4}-\d{2}-\d{2})\b/);
   const slash = s.match(/\bon\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/);
-  if(/\btomorrow\b|\btommorow\b|\btmrw\b/.test(s))due = assistantParseDue('tomorrow', now);
+  const inRel = s.match(/\bin\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a)\s+(day|week)s?\b/);
+  if(/\bday after (?:tomorrow|tommorow|tmrw)\b/.test(s))due = assistantParseDue('day after tomorrow', now);
+  else if(inRel){
+    const n = /^\d+$/.test(inRel[1]) ? Number(inRel[1]) : (inRel[1] === 'a' ? 1 : assistantParseCount(inRel[1], 1, 364));
+    if(n != null)due = assistantParseDue('today', now) + n * (inRel[2] === 'week' ? 7 : 1) * 86400000;
+  }
+  else if(/\btomorrow\b|\btommorow\b|\btmrw\b/.test(s))due = assistantParseDue('tomorrow', now);
   else if(/\bnext week\b/.test(s))due = assistantParseDue('next week', now);
   else if(iso)due = assistantParseDue(iso[1], now);
   else if(slash)due = assistantParseDue(slash[1], now);

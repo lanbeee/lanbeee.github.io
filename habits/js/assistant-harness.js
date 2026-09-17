@@ -953,16 +953,33 @@ async function runAssistantTurn(userText, opts = {}){
   return done({type:'error', text:'That took too many steps. Try a shorter request, or add it from +.', session});
 }
 
-function assistantFriendlyError(err){
+function assistantReachErrorText(pageOrigin){
+  const origin = pageOrigin == null
+    ? (typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '')
+    : String(pageOrigin || '');
+  if(origin){
+    return `Cannot reach the local model from this website. Open Settings → local assistant and follow the steps. Keep Ollama running.`;
+  }
+  return 'Cannot reach the local model. Keep Ollama running on this computer.';
+}
+
+function assistantFriendlyError(err, pageOrigin){
   let msg = String(err && err.message || err || '');
   try{
     const parsed = JSON.parse(msg);
     if(parsed && parsed.error)msg = String(parsed.error);
   }catch(_){}
+  if(/local network access is blocked/i.test(msg))return msg;
   if(/Failed to fetch|NetworkError|Load failed/i.test(msg)){
-    return 'Cannot reach the local model. Serve Tings at http://127.0.0.1:4181 (the regular app, not only a personal clone), keep Ollama running, and allow this origin.';
+    return assistantReachErrorText(pageOrigin);
   }
-  if(/403/.test(msg))return 'Ollama blocked this page origin. Open Tings at http://127.0.0.1:4181, or set OLLAMA_ORIGINS on this computer.';
+  if(/403/.test(msg)){
+    const origin = pageOrigin == null
+      ? (typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '')
+      : String(pageOrigin || '');
+    if(origin)return 'Ollama blocked this website. Open Settings → local assistant and follow the allow steps, then quit and reopen Ollama.';
+    return 'Ollama blocked this website. Open Settings → local assistant and follow the allow steps.';
+  }
   if(/404/.test(msg))return 'That model is not on this computer. Tap list models and pick a Qwen3.8 tag.';
   if(/aborted|AbortError/i.test(msg))return 'Cancelled.';
   if(assistantIsBrokenToolJson(msg)){

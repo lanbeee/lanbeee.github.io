@@ -160,6 +160,40 @@ async function launchBrowser(){
   assert(ui.onHidden === false && ui.onPressed === 'true' && ui.setupHidden === false, 'enabling shows the button and setup fields');
   assert(ui.sheet && ui.privacy, 'assistant sheet and privacy copy exist');
   assert(ui.debugToggle && ui.debugSheet, 'debug switch exists in settings and on the chat');
+  const reach = await page.evaluate(() => {
+    const getInit = assistantFetchInit('http://127.0.0.1:11434/api/tags', {method:'GET'});
+    const postInit = assistantFetchInit('http://127.0.0.1:11434/api/chat', {
+      method:'POST',
+      body:JSON.stringify({model:'qwen'})
+    });
+    const publicFail = assistantFriendlyError('Failed to fetch', 'https://lanbeee.github.io');
+    const public403 = assistantFriendlyError('Ollama 403', 'https://lanbeee.github.io');
+    const allow = assistantOllamaOriginsAllowText('https://lanbeee.github.io', 'mac');
+    if(typeof syncAssistantOriginHelp === 'function')syncAssistantOriginHelp();
+    return {
+      getSpace:getInit.targetAddressSpace,
+      getHasType:Boolean(getInit.headers && getInit.headers['Content-Type']),
+      postSpace:postInit.targetAddressSpace,
+      postType:postInit.headers && postInit.headers['Content-Type'],
+      publicFail,
+      public403,
+      allow,
+      pageOrigin:assistantPublicPageOrigin(),
+      guide:Boolean(document.getElementById('assistant-reach-guide')),
+      guideLead:(document.getElementById('assistant-reach-lead')?.textContent || ''),
+      guideCmd:(document.getElementById('assistant-reach-cmd')?.textContent || ''),
+      stepCount:document.querySelectorAll('#assistant-reach-guide li').length,
+      copyBtn:Boolean(document.getElementById('assistant-copy-origins')),
+      originHelpGone:!document.getElementById('assistant-origin-help')
+    };
+  });
+  assert(reach.getSpace === 'loopback' && reach.postSpace === 'loopback', 'loopback fetches declare targetAddressSpace');
+  assert(!reach.getHasType && reach.postType === 'application/json', 'JSON content-type is only set when there is a body');
+  assert(/Settings → local assistant/i.test(reach.publicFail) && /Keep Ollama running/i.test(reach.publicFail), 'GitHub Pages fetch error points at the in-app steps');
+  assert(/Settings → local assistant/i.test(reach.public403), '403 points at the in-app steps');
+  assert(reach.allow === 'launchctl setenv OLLAMA_ORIGINS "https://lanbeee.github.io"', 'Mac allow command is the launchctl line');
+  assert(!reach.pageOrigin && reach.guide && reach.stepCount === 4 && reach.copyBtn && reach.originHelpGone, 'settings shows a four-step reach guide');
+  assert(/already allowed|GitHub Pages/i.test(reach.guideLead) && /launchctl setenv OLLAMA_ORIGINS "https:\/\/lanbeee\.github\.io"/.test(reach.guideCmd), 'loopback page still shows the GitHub Pages command');
 
   await page.locator('#open-about').click();
   await page.waitForSelector('#about-sheet.open');
@@ -168,6 +202,9 @@ async function launchBrowser(){
   await page.locator('#settings-assistant-head').click();
   const expanded = await page.locator('#settings-assistant-head').getAttribute('aria-expanded');
   assert(expanded === 'true', 'settings local assistant section opens');
+  const guideVisible = await page.locator('#assistant-reach-guide').isVisible();
+  const guideTitle = await page.locator('#assistant-reach-guide .settings-sublabel').textContent();
+  assert(guideVisible && /Reach the model/i.test(guideTitle || ''), 'reach guide is visible in Settings');
 
   console.log('\n[F] compact model context at 60%');
   const compact = await page.evaluate(() => {

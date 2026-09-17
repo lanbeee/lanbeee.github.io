@@ -328,9 +328,10 @@ const DEFAULT_SORT_SETTINGS = {
   /** Timestamp of last monthly auto retention cleanup (0 = never). */
   lastRetentionCleanupAt:0,
 
-  // Local assistant on this computer (Ollama / LM Studio). Works in the
-  // regular Tings app, not only a personal clone. Off by default. URLs must
-  // be loopback — habit names never go to a remote model from this toggle.
+  // Local assistant on this computer (Ollama / LM Studio). Off by default.
+  // URLs must be loopback — habit names never go to a remote model from this
+  // toggle. A public HTTPS origin (GitHub Pages) can still call loopback if
+  // Ollama allows that origin and the browser grants local-network access.
   localAssistant:false,
   localAssistantProvider:'auto',
   localAssistantUrl:'',
@@ -360,6 +361,56 @@ function normalizeLocalAssistantUrl(value){
   }catch{
     return '';
   }
+}
+function assistantUrlIsLoopback(url){
+  try{
+    const base = (typeof location !== 'undefined' && location.href) ? location.href : 'http://127.0.0.1/';
+    return ASSISTANT_LOOPBACK_HOSTS.includes(new URL(String(url || ''), base).hostname);
+  }catch(_){
+    return false;
+  }
+}
+function assistantPublicPageOrigin(){
+  try{
+    if(typeof location === 'undefined' || !location.origin || location.origin === 'null')return '';
+    if(location.protocol !== 'http:' && location.protocol !== 'https:')return '';
+    if(ASSISTANT_LOOPBACK_HOSTS.includes(location.hostname))return '';
+    return location.origin;
+  }catch(_){
+    return '';
+  }
+}
+function assistantHostPlatform(){
+  try{
+    const hint = (typeof navigator !== 'undefined' && navigator.userAgentData && navigator.userAgentData.platform)
+      || (typeof navigator !== 'undefined' && navigator.platform)
+      || (typeof navigator !== 'undefined' && navigator.userAgent)
+      || '';
+    const p = String(hint);
+    if(/Win/i.test(p))return 'windows';
+    if(/Linux/i.test(p) && !/Android/i.test(p))return 'linux';
+    return 'mac';
+  }catch(_){
+    return 'mac';
+  }
+}
+function assistantGuideOrigin(origin){
+  if(origin != null && String(origin).trim())return String(origin).trim();
+  const page = assistantPublicPageOrigin();
+  return page || 'https://lanbeee.github.io';
+}
+function assistantOllamaOriginsAllowText(origin, platform){
+  const page = assistantGuideOrigin(origin);
+  const which = platform || assistantHostPlatform();
+  if(which === 'windows')return `setx OLLAMA_ORIGINS "${page}"`;
+  if(which === 'linux')return `OLLAMA_ORIGINS="${page}" ollama serve`;
+  return `launchctl setenv OLLAMA_ORIGINS "${page}"`;
+}
+function assistantOllamaRestartHint(platform){
+  const which = platform || assistantHostPlatform();
+  if(which === 'windows')return 'Quit Ollama from the taskbar, then open it again.';
+  if(which === 'linux')return 'Stop any running Ollama, then run the copied command.';
+  return 'Quit Ollama from the menu bar at the top of the screen, then open it again.';
 }
 /** Minimum gap between automatic retention cleanup passes (≈1 month). */
 const RETENTION_CLEANUP_INTERVAL_MS = 30 * 86400000;
