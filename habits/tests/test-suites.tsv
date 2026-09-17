@@ -55,6 +55,8 @@ movable-non-overlap-deferral-test.js	planner	once
 offline-resilience.js	integrations	once
 onboarding-coach-test.js	ui	once
 advanced-coach-isolation-test.js	ui	once
+assistant-harness-test.js	ui	once
+assistant-prompt-corpus-test.js	ui	once
 plan-by-date-test.js	planner	once
 plan-by-deferral-test.js	planner	once
 planner-parity-test.js	planner	once

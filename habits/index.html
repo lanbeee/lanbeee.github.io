@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: http://127.0.0.1:* http://localhost:* http://[::1]:* https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -41,6 +41,7 @@
 <link rel="stylesheet" href="./css/filters.css" />
 <link rel="stylesheet" href="./css/actions.css" />
 <link rel="stylesheet" href="./css/overlays.css" />
+<link rel="stylesheet" href="./css/assistant.css" />
 <link rel="stylesheet" href="./css/context.css" />
 <link rel="stylesheet" href="./css/progress.css" />
 <link rel="stylesheet" href="./css/agenda.css" />
@@ -66,6 +67,9 @@
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>
+      <button class="icon-btn assistant-launch" id="bar-open-assistant" type="button" hidden aria-label="ask Tings">
+        <i class="ti ti-message-circle" aria-hidden="true"></i>
+      </button>
       <button class="icon-btn app-bar-add" id="bar-open-add" aria-label="add habit">
         <i class="ti ti-plus" aria-hidden="true"></i>
       </button>
@@ -78,13 +82,16 @@
     <div class="pane-list">
       <div class="topbar">
         <button class="wordmark" id="open-about" aria-label="about Tings">
-          <img src="./favicon.svg" alt="" aria-hidden="true" />
-          <span class="wordmark-copy">
-            <span>Tings</span>
-            <small class="wordmark-date" id="home-date" aria-hidden="true"></small>
-          </span>
-        </button>
-        <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
+      <img src="./favicon.svg" alt="" aria-hidden="true" />
+      <span class="wordmark-copy">
+        <span>Tings</span>
+        <small class="wordmark-date" id="home-date" aria-hidden="true"></small>
+      </span>
+    </button>
+    <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
+    <button class="icon-btn assistant-launch" id="open-assistant" type="button" hidden aria-label="ask Tings">
+      <i class="ti ti-message-circle" aria-hidden="true"></i>
+    </button>
       </div>
       <div id="quota-bar"></div>
       <div id="reminder-banner" class="reminder-banner" hidden></div>
@@ -208,6 +215,38 @@
       <div class="btn-row add-actions">
         <button class="btn primary" id="do-save">add</button>
         <button class="btn" id="do-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- local assistant -->
+  <div class="sheet-wrap" id="assistant-sheet">
+    <div class="sheet assistant-sheet" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
+      <div class="assistant-head">
+        <div class="assistant-head-copy">
+          <span class="sheet-eyebrow">on this computer</span>
+          <p class="sheet-title" id="assistant-title">ask Tings</p>
+          <!-- <p class="assistant-sub">The top bar is "it".</p> -->
+        </div>
+        <div class="assistant-head-actions">
+          <button type="button" class="btn" id="assistant-debug-toggle" aria-pressed="false" aria-label="assistant debug">debug</button>
+          <button type="button" class="btn" id="assistant-clear" aria-label="clear chat">clear chat</button>
+          <button type="button" class="icon-btn" id="assistant-close" aria-label="close assistant"><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div class="assistant-focus" id="assistant-focus" hidden>
+        <div class="assistant-focus-text">
+          <span class="assistant-focus-kicker" id="assistant-focus-kicker">working on</span>
+          <strong id="assistant-focus-name"></strong>
+          <span class="assistant-focus-meta" id="assistant-focus-meta"></span>
+        </div>
+        <button type="button" class="btn" id="assistant-focus-done">done</button>
+      </div>
+      <div class="assistant-thread" id="assistant-thread"></div>
+      <p class="assistant-waiting" id="assistant-waiting" hidden>thinking…</p>
+      <div class="assistant-compose">
+        <textarea id="assistant-input" rows="1" maxlength="500" placeholder="Remind me, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
+        <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
       </div>
     </div>
   </div>
@@ -1129,6 +1168,46 @@
             <div class="settings-grid" data-ui-toggles="advanced"></div>
           </div>
         </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-assistant-head" data-collapse-target="settings-assistant-body" aria-expanded="false" aria-controls="settings-assistant-body">
+            <span class="settings-label">local assistant</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-assistant-body" hidden>
+            <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
+              <span>
+                <b>use Qwen on this computer</b>
+                <small>Works in the regular Tings app on this computer, not only a personal clone. Talk to Ollama or LM Studio on loopback. Clear requests are parsed here; Qwen calls tools to create or change an item. Nothing is saved until you confirm. Off by default.</small>
+              </span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <div id="assistant-setup-fields" hidden>
+              <span class="settings-sublabel">server</span>
+              <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="local model server">
+                <button type="button" class="seg-opt on" data-assistant-provider="auto">auto</button>
+                <button type="button" class="seg-opt" data-assistant-provider="ollama">Ollama</button>
+                <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio</button>
+              </div>
+              <span class="settings-sublabel">address</span>
+              <input id="assistant-url" class="settings-text-input" type="url" maxlength="80" placeholder="http://127.0.0.1:11434" autocomplete="off" />
+              <span class="settings-sublabel">model</span>
+              <input id="assistant-model" class="settings-text-input" type="text" maxlength="80" placeholder="qwen3.8:27b-mlx" autocomplete="off" />
+              <div class="btn-row" style="flex-wrap:wrap">
+                <button type="button" class="btn" id="assistant-refresh-models">list models</button>
+                <button type="button" class="btn primary" id="assistant-test">test thinking + tool</button>
+              </div>
+              <p class="field-hint" id="assistant-conn-status"></p>
+              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-debug" aria-pressed="false">
+                <span>
+                  <b>show assistant debug</b>
+                  <small>In the chat, print parse, local vs Qwen, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
+                </span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <p class="field-hint">Open Tings at http://127.0.0.1:4181 so this browser can call Ollama. That is the same regular app you already use on this computer. GitHub Pages is blocked unless this computer sets OLLAMA_ORIGINS. Only 127.0.0.1 / localhost URLs are allowed.</p>
+            </div>
+          </div>
+        </section>
         <section class="settings-block settings-danger">
           <span class="settings-label">start over</span>
           <p class="field-hint">Reset only changes these app settings. Your habits and entries stay safe.</p>
@@ -1669,6 +1748,12 @@
 <script src="./js/settings-samples.js" defer></script>
 <script src="./js/settings-appearance.js" defer></script>
 <script src="./js/settings-share.js" defer></script>
+<script src="./js/assistant-schema.js" defer></script>
+<script src="./js/assistant-parse.js" defer></script>
+<script src="./js/assistant-tools.js" defer></script>
+<script src="./js/assistant-harness.js" defer></script>
+<script src="./js/assistant-client.js" defer></script>
+<script src="./js/assistant-ui.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/main-input.js" defer></script>

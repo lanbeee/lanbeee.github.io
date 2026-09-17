@@ -28,6 +28,7 @@
 
 sortSettings = loadSortSettings();
 applyAppearanceSettings();
+if(typeof syncAssistantChrome === 'function')syncAssistantChrome();
 try{
   const params = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
   if(params.get('feed') && params.get('key') && params.get('viewer')

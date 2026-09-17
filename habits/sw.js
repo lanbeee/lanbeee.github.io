@@ -1,4 +1,4 @@
-const CACHE = 'tings-v374';
+const CACHE = 'tings-v387';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -59,6 +59,7 @@ const PRECACHE = [
   './css/filters.css',
   './css/actions.css',
   './css/overlays.css',
+  './css/assistant.css',
   './css/context.css',
   './css/progress.css',
   './css/agenda.css',
@@ -128,6 +129,12 @@ const PRECACHE = [
   './js/settings-samples.js',
   './js/settings-appearance.js',
   './js/settings-share.js',
+  './js/assistant-schema.js',
+  './js/assistant-parse.js',
+  './js/assistant-tools.js',
+  './js/assistant-harness.js',
+  './js/assistant-client.js',
+  './js/assistant-ui.js',
   './js/agenda-display.js',
   './js/display-mode.js',
   './js/agenda-display-boot.js',
@@ -191,8 +198,18 @@ self.addEventListener('activate', event => {
   })());
 });
 
+function isLoopbackRequest(req){
+  try{
+    const host = new URL(req.url).hostname;
+    return host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1';
+  }catch(_){
+    return false;
+  }
+}
+
 self.addEventListener('fetch', event => {
   const req = event.request;
+  if (isLoopbackRequest(req)) return;
   if (req.method !== 'GET') return;
   // Pairing status and encrypted agenda reads must hit the network. Cache Storage
   // ignores Cache-Control: no-store when cache.put() is used, and a cached 200

@@ -139,6 +139,7 @@ body[data-pane-count="3"] .app-bar{
 }
 /* Search mode: field takes the bar; calendar/+ step aside. */
 .app-bar-search.is-open ~ .app-bar-actions #bar-open-overview,
+.app-bar-search.is-open ~ .app-bar-actions #bar-open-assistant,
 .app-bar-search.is-open ~ .app-bar-actions #bar-open-add{
   display:none;
 }

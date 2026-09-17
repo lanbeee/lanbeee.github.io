@@ -33,7 +33,7 @@
   will-change:transform,opacity;
 }
 .sheet-wrap.open .sheet{transform:translateY(0) scale(1);opacity:1;}
-#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet{
+#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet{
   align-items:stretch;background:rgba(0,0,0,0.18);padding-top:0;
 }
 body[data-pane-count="2"] #add-sheet,
@@ -49,13 +49,15 @@ body[data-pane-count="3"] #overview-sheet,
 body[data-pane-count="2"] #settings-sheet,
 body[data-pane-count="3"] #settings-sheet,
 body[data-pane-count="2"] #sample-habits-sheet,
-body[data-pane-count="3"] #sample-habits-sheet{
+body[data-pane-count="3"] #sample-habits-sheet,
+body[data-pane-count="2"] #assistant-sheet,
+body[data-pane-count="3"] #assistant-sheet{
   align-items:center;
   justify-content:center;
   background:rgba(0,0,0,0.36);
   padding:24px;
 }
-.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet{
+.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet,.assistant-sheet{
   border-radius:0;min-height:100dvh;max-height:100dvh;
   padding-top:calc(22px + env(safe-area-inset-top));
   padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + env(safe-area-inset-bottom));
@@ -104,7 +106,8 @@ body[data-pane-count="3"] #sample-habits-sheet{
 .sheet-wrap.open .detail-sheet,
 .sheet-wrap.open .overview-sheet,
 .sheet-wrap.open .settings-sheet,
-.sheet-wrap.open .sample-habits-sheet{transform:none;opacity:1;}
+.sheet-wrap.open .sample-habits-sheet,
+.sheet-wrap.open .assistant-sheet{transform:none;opacity:1;}
 
 body[data-pane-count="2"] .sheet-wrap,
 body[data-pane-count="3"] .sheet-wrap{
@@ -129,12 +132,14 @@ body[data-pane-count="2"] .detail-sheet,
 body[data-pane-count="2"] .overview-sheet,
 body[data-pane-count="2"] .settings-sheet,
 body[data-pane-count="2"] .sample-habits-sheet,
+body[data-pane-count="2"] .assistant-sheet,
 body[data-pane-count="3"] .add-sheet,
 body[data-pane-count="3"] .about-sheet,
 body[data-pane-count="3"] .detail-sheet,
 body[data-pane-count="3"] .overview-sheet,
 body[data-pane-count="3"] .settings-sheet,
-body[data-pane-count="3"] .sample-habits-sheet{
+body[data-pane-count="3"] .sample-habits-sheet,
+body[data-pane-count="3"] .assistant-sheet{
   min-height:0;
   max-height:calc(100dvh - 48px);
   padding-top:24px;

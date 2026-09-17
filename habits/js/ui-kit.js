@@ -183,6 +183,12 @@ const UI_PRIVACY_BLOCKS = [
     'The seven-day forecast is cached for six hours. A shorter 15-minute forecast refreshes only while Tings is visible, a weather-linked planned item is active or starts within 90 minutes, and the cached day is not already decisive (for example 0% rain and snow remaining). Air-quality rules use CAMS ENSEMBLE data through Open-Meteo.',
     'Forecasts are guidance and may be wrong. Missing data never blocks planning.'
   ]},
+  {id:'privacy-assistant-body', label:'Local assistant', summary:'Optional. Talks only to Ollama or LM Studio on this computer. Off by default.', body:[
+    'Local assistant sends a short catalog (item names, place labels, weather profile names) plus what you type to a model running on this computer. It does not send notes, logs, addresses, or coordinates, and it does not use a Tings cloud model.',
+    'It works in the regular Tings app on this computer, not only a personal clone. Clear requests (remind me, what is next, I already did it, change it, every Tuesday) are parsed here; Qwen calls tools to create or change an item with whatever details you said, including cadences like every two days or Tuesday, Wednesday and Friday. The top bar is the item you are changing. Nothing is saved until you confirm. GitHub Pages cannot reach Ollama unless this computer allows that origin; serving Tings at http://127.0.0.1:4181 already works with the default Ollama CORS list.',
+    'A debug switch in Settings (and on the chat) prints parse, tool calls, thinking, and context use in the thread and this browser’s console. That stays on this device; it does not send extra data off this computer.',
+    'Turn it off anytime in Settings. The rest of Tings does not need it.'
+  ]},
   {id:'privacy-others-body', label:'Other services', summary:'Icons and map/PDF libraries load from public CDNs. They do not receive your list.', body:[
     'Tabler icons (jsDelivr) and Leaflet (unpkg) draw buttons and the map. PDF import uses pdf.js in this browser; the file you pick is not uploaded.',
     'Naming a pasted App Store link asks Apple’s public listing for that app’s name. It receives only the numeric id already inside the link, and only when you paste one. Offline, you simply type the name yourself.',

@@ -1,0 +1,599 @@
+// Local assistant sheet + settings. Preview never saves until Add.
+
+let _assistantSession = null;
+let _assistantBusy = false;
+let _assistantPendingDraft = null;
+let _assistantTurn = 0;
+
+function assistantEnabled(){
+  return Boolean(sortSettings && sortSettings.localAssistant);
+}
+
+function assistantDebugOn(){
+  if(typeof assistantSettings === 'function')return Boolean(assistantSettings().debug);
+  return Boolean(sortSettings && sortSettings.localAssistantDebug);
+}
+
+function syncAssistantChrome(){
+  const on = assistantEnabled();
+  document.body.classList.toggle('assistant-on', on);
+  document.body.classList.toggle('assistant-debug-on', on && assistantDebugOn());
+  ['open-assistant','bar-open-assistant'].forEach(id => {
+    const btn = $(id);
+    if(btn)btn.hidden = !on;
+  });
+  if(!on){
+    assistantAbortInFlight();
+    if($('assistant-sheet') && $('assistant-sheet').classList.contains('open'))closeAssistantSheet();
+  }
+}
+
+function syncLocalAssistantControls(){
+  const s = assistantSettings();
+  const toggle = $('setting-local-assistant');
+  if(toggle)toggle.setAttribute('aria-pressed', String(s.on));
+  const debugToggle = $('setting-local-assistant-debug');
+  if(debugToggle)debugToggle.setAttribute('aria-pressed', String(s.debug));
+  const sheetDebug = $('assistant-debug-toggle');
+  if(sheetDebug){
+    sheetDebug.setAttribute('aria-pressed', String(s.debug));
+    sheetDebug.hidden = !s.on;
+  }
+  document.querySelectorAll('#assistant-provider-seg .seg-opt').forEach(btn => {
+    btn.classList.toggle('on', btn.dataset.assistantProvider === s.provider);
+  });
+  if($('assistant-url'))$('assistant-url').value = s.url;
+  if($('assistant-model'))$('assistant-model').value = s.model;
+  const extras = $('assistant-setup-fields');
+  if(extras)extras.hidden = !s.on;
+  syncAssistantChrome();
+}
+
+function patchLocalAssistant(patch){
+  if(typeof updateSortSetting === 'function')updateSortSetting(patch, {renderNow:false});
+  else if(typeof saveSortSettings === 'function')saveSortSettings({...loadSortSettings(), ...patch});
+  sortSettings = typeof loadSortSettings === 'function' ? loadSortSettings() : sortSettings;
+  syncLocalAssistantControls();
+}
+
+function assistantSetStatus(text){
+  const el = $('assistant-conn-status');
+  if(el)el.textContent = text || '';
+}
+
+function openAssistantSheet(){
+  if(!assistantEnabled()){
+    if(typeof showToast === 'function')showToast('Turn on local assistant in Settings');
+    return;
+  }
+  if(!_assistantSession)_assistantSession = assistantCreateSession();
+  renderAssistantThread();
+  syncAssistantFocusBar();
+  openSheet('assistant-sheet');
+  assistantResizeComposer();
+  assistantSyncSend();
+  const input = $('assistant-input');
+  if(input){
+    input.focus({preventScroll:true});
+    setTimeout(() => {
+      if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
+    }, 260);
+  }
+}
+
+function closeAssistantSheet(){
+  assistantAbortInFlight();
+  assistantShowBusy(false);
+  closeSheet('assistant-sheet');
+}
+
+function assistantWelcomeHtml(){
+  return `<div class="assistant-bubble assistant-bubble-say"><p>Say it like a person. Nothing is saved until you confirm.</p>
+      <div class="assistant-suggestions">
+        <button type="button" class="assistant-suggest" data-assistant-suggest="Remind me to call mom">Remind me to call mom</button>
+        <button type="button" class="assistant-suggest" data-assistant-suggest="What's next?">What's next?</button>
+        <button type="button" class="assistant-suggest" data-assistant-suggest="Walk every day after sunset">Walk after sunset</button>
+      </div></div>`;
+}
+
+function assistantThreadEl(){
+  return $('assistant-thread');
+}
+
+function assistantFocusedDraft(){
+  return (_assistantSession && _assistantSession.draft && _assistantSession.draft.name)
+    ? _assistantSession.draft
+    : (_assistantPendingDraft && _assistantPendingDraft.name ? _assistantPendingDraft : null);
+}
+
+function assistantFocusMetaText(draft){
+  if(!draft)return '';
+  const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (typeof sortSettings !== 'undefined' ? sortSettings : {});
+  const summary = typeof assistantDraftSummary === 'function' ? assistantDraftSummary(draft, settings) : '';
+  const rest = summary
+    ? summary.replace(new RegExp(`^${String(draft.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*·\\s*`), '')
+    : '';
+  const status = draft.hid ? 'saved' : 'not saved yet';
+  return rest && rest !== draft.name ? `${status} · ${rest}` : status;
+}
+
+function syncAssistantFocusBar(){
+  const bar = $('assistant-focus');
+  if(!bar)return;
+  const draft = assistantFocusedDraft();
+  if(!draft){
+    bar.hidden = true;
+    bar.classList.remove('is-draft');
+    return;
+  }
+  bar.hidden = false;
+  const name = $('assistant-focus-name');
+  const meta = $('assistant-focus-meta');
+  const kicker = $('assistant-focus-kicker');
+  if(name)name.textContent = draft.name;
+  if(meta)meta.textContent = assistantFocusMetaText(draft);
+  if(kicker)kicker.textContent = draft.hid ? 'working on' : 'draft';
+  bar.classList.toggle('is-draft', !draft.hid);
+}
+
+function assistantClearFocus(){
+  if(_assistantSession){
+    _assistantSession.draft = null;
+    _assistantSession.pendingEdit = null;
+    _assistantSession.pendingComplete = null;
+    _assistantSession.awaiting = null;
+  }
+  _assistantPendingDraft = null;
+  syncAssistantFocusBar();
+}
+
+function clearAssistantChat(){
+  _assistantTurn += 1;
+  assistantAbortInFlight();
+  assistantShowBusy(false);
+  assistantClearFocus();
+  _assistantSession = typeof assistantCreateSession === 'function' ? assistantCreateSession() : null;
+  const input = $('assistant-input');
+  if(input){
+    input.value = '';
+    input.focus({preventScroll:true});
+  }
+  const thread = assistantThreadEl();
+  if(thread)thread.innerHTML = assistantWelcomeHtml();
+  assistantResizeComposer();
+  assistantSyncSend();
+  syncAssistantFocusBar();
+}
+
+function assistantThinkHtml(thinking){
+  const text = String(thinking || '').trim();
+  if(!text)return '';
+  return `<details class="assistant-think"><summary>thought</summary><pre>${escapeHtml(text)}</pre></details>`;
+}
+
+function assistantDebugPayload(events){
+  try{ return JSON.stringify(events || [], null, 2); }catch(_){ return '[]'; }
+}
+
+function assistantDebugHtml(events, extra){
+  const text = extra && extra.debugText
+    || (typeof assistantFormatDebug === 'function' ? assistantFormatDebug(events) : '');
+  if(!text && !(events && events.length))return '';
+  return `<details class="assistant-debug" open>
+    <summary>debug</summary>
+    <pre class="assistant-debug-log">${escapeHtml(text)}</pre>
+    <textarea class="assistant-debug-json" hidden></textarea>
+    <div class="assistant-debug-actions">
+      <button type="button" class="btn" data-assistant-copy-debug>copy json</button>
+    </div>
+  </details>`;
+}
+
+function assistantShowThink(kind){
+  return kind === 'say' || assistantDebugOn();
+}
+
+function assistantFillDebugBubble(el, events, extra){
+  if(!el)return;
+  el.innerHTML = assistantDebugHtml(events, extra);
+  const json = extra && extra.debugJson || assistantDebugPayload(events);
+  const hold = el.querySelector('.assistant-debug-json');
+  if(hold)hold.value = json;
+  const thread = assistantThreadEl();
+  if(thread)thread.scrollTop = thread.scrollHeight;
+}
+
+function assistantEnsureLiveDebug(){
+  if(!assistantDebugOn())return null;
+  const thread = assistantThreadEl();
+  if(!thread)return null;
+  let el = thread.querySelector('.assistant-bubble-debug.is-live');
+  if(!el){
+    thread.querySelectorAll('.assistant-bubble-debug.is-live').forEach(node => node.classList.remove('is-live'));
+    el = document.createElement('div');
+    el.className = 'assistant-bubble assistant-bubble-debug is-live';
+    el.innerHTML = `<details class="assistant-debug" open><summary>debug</summary><pre class="assistant-debug-log">starting…</pre></details>`;
+    thread.appendChild(el);
+  }
+  return el;
+}
+
+function assistantRenderLiveDebug(events){
+  if(!assistantDebugOn())return;
+  const el = assistantEnsureLiveDebug();
+  assistantFillDebugBubble(el, events, {
+    debugText:typeof assistantFormatDebug === 'function' ? assistantFormatDebug(events) : '',
+    debugJson:assistantDebugPayload(events)
+  });
+}
+
+async function assistantCopyDebug(text){
+  const payload = String(text || '');
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(payload);
+      if(typeof showToast === 'function')showToast('debug copied');
+      return;
+    }
+  }catch(_){}
+  const ta = document.createElement('textarea');
+  ta.value = payload;
+  ta.setAttribute('readonly','');
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try{ document.execCommand('copy'); if(typeof showToast === 'function')showToast('debug copied'); }
+  catch(_){ if(typeof showToast === 'function')showToast('could not copy'); }
+  ta.remove();
+}
+
+function assistantPreviewBody(text){
+  const parts = String(text || '').split(' · ').map(part => part.trim()).filter(Boolean);
+  const name = parts.shift() || text || '';
+  const chips = parts.map(part => `<span class="assistant-chip">${escapeHtml(part)}</span>`).join('');
+  return `<p class="assistant-preview-name">${escapeHtml(name)}</p>${chips ? `<div class="assistant-chip-row">${chips}</div>` : ''}`;
+}
+
+function appendAssistantBubble(kind, text, extra){
+  const thread = assistantThreadEl();
+  if(!thread)return;
+  const div = document.createElement('div');
+  div.className = `assistant-bubble assistant-bubble-${kind}`;
+  const think = assistantShowThink(kind) ? assistantThinkHtml(extra && extra.thinking) : '';
+  if(kind === 'preview'){
+    div.innerHTML = `${think}${assistantPreviewBody(text)}
+      <div class="btn-row assistant-preview-actions">
+        <button type="button" class="btn primary" data-assistant-act="add">save</button>
+        <button type="button" class="btn" data-assistant-act="edit">edit</button>
+        <button type="button" class="btn" data-assistant-act="discard">never mind</button>
+      </div>`;
+  }else if(kind === 'complete'){
+    div.innerHTML = `${think}<p>${escapeHtml(text)}</p>
+      <div class="btn-row assistant-preview-actions">
+        <button type="button" class="btn primary" data-assistant-act="log">log it</button>
+        <button type="button" class="btn" data-assistant-act="discard">never mind</button>
+      </div>`;
+  }else if(kind === 'ask'){
+    const choices = (extra && extra.choices || []).map(choice =>
+      `<button type="button" class="btn" data-assistant-choice="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`
+    ).join('');
+    div.innerHTML = `${think}<p>${escapeHtml(text)}</p>${choices ? `<div class="btn-row assistant-choices">${choices}</div>` : ''}`;
+  }else if(kind === 'debug'){
+    assistantFillDebugBubble(div, extra && extra.debug, extra);
+  }else{
+    div.innerHTML = `${think}<p>${escapeHtml(text)}</p>`;
+  }
+  thread.appendChild(div);
+  thread.scrollTop = thread.scrollHeight;
+  return div;
+}
+
+function renderAssistantThread(){
+  const thread = assistantThreadEl();
+  if(!thread)return;
+  if(!thread.childElementCount)thread.innerHTML = assistantWelcomeHtml();
+}
+
+function assistantComposerValue(){
+  return String($('assistant-input')?.value || '').trim();
+}
+
+function assistantResizeComposer(){
+  const input = $('assistant-input');
+  if(!input)return;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), 120)}px`;
+}
+
+function assistantSyncSend(){
+  const send = $('assistant-send');
+  if(send)send.disabled = _assistantBusy || !assistantComposerValue();
+}
+
+function assistantShowBusy(on){
+  _assistantBusy = on;
+  const input = $('assistant-input');
+  if(input)input.disabled = on;
+  assistantSyncSend();
+  document.querySelectorAll('#assistant-thread .assistant-suggest').forEach(btn => { btn.disabled = on; });
+  const wait = $('assistant-waiting');
+  if(wait){
+    wait.hidden = !on;
+    if(on && !wait.textContent.trim())wait.textContent = 'thinking…';
+  }
+}
+
+async function handleAssistantOutcome(out){
+  if(!out)return;
+  if(out.draft)_assistantPendingDraft = out.draft;
+  if(out.session)_assistantSession = out.session;
+  if(out.draft && _assistantSession && !_assistantSession.draft)_assistantSession.draft = out.draft;
+  syncAssistantFocusBar();
+  const live = assistantThreadEl()?.querySelector('.assistant-bubble-debug.is-live');
+  if(live && out.debug){
+    assistantFillDebugBubble(live, out.debug, {debugText:out.debugText, debugJson:assistantDebugPayload(out.debug)});
+    live.classList.remove('is-live');
+  }else if(assistantDebugOn() && out.debug && out.debug.length){
+    appendAssistantBubble('debug', '', {debug:out.debug, debugText:out.debugText, debugJson:assistantDebugPayload(out.debug)});
+  }
+  if(out.type === 'preview'){
+    appendAssistantBubble('say', 'Check this, then save. Edit opens the full form.', {thinking:out.thinking});
+    appendAssistantBubble('preview', out.summary || out.draft.name, {thinking:out.thinking});
+    return;
+  }
+  if(out.type === 'complete'){
+    if(out.alreadyDone){
+      appendAssistantBubble('say', out.text || 'Already logged today.', {thinking:out.thinking});
+      return;
+    }
+    appendAssistantBubble('complete', out.text || 'Log it as done?', {thinking:out.thinking});
+    return;
+  }
+  if(out.type === 'ask'){
+    appendAssistantBubble('ask', out.question, {choices:out.choices, thinking:out.thinking});
+    return;
+  }
+  if(out.type === 'today' || out.type === 'say'){
+    appendAssistantBubble('say', out.text, {thinking:out.thinking});
+    return;
+  }
+  appendAssistantBubble('say', out.text || 'Something went wrong.', {thinking:out.thinking});
+}
+
+async function sendAssistantMessage(text){
+  const value = String(text || '').trim();
+  if(!value || _assistantBusy)return;
+  const turn = ++_assistantTurn;
+  appendAssistantBubble('user', value);
+  const input = $('assistant-input');
+  if(input){
+    input.value = '';
+    assistantResizeComposer();
+    assistantSyncSend();
+  }
+  assistantShowBusy(true);
+  try{
+    const out = await runAssistantTurn(value, {
+      session:_assistantSession || assistantCreateSession(),
+      onProgress:info => {
+        if(turn !== _assistantTurn)return;
+        const wait = $('assistant-waiting');
+        if(!wait)return;
+        if(info && info.phase === 'think')wait.textContent = info.step ? `thinking (${info.step})…` : 'thinking…';
+        else wait.textContent = 'working…';
+      },
+      onDebug:(events, row) => {
+        if(turn !== _assistantTurn)return;
+        assistantRenderLiveDebug(events);
+        const wait = $('assistant-waiting');
+        if(wait && row && row.t){
+          if(row.t === 'path')wait.textContent = `${row.path || 'path'} · ${row.via || ''}`.trim();
+          else if(row.t === 'tool')wait.textContent = `call ${row.name}`;
+          else if(row.t === 'model')wait.textContent = `model ${row.step || ''}`.trim();
+          else if(row.t === 'step')wait.textContent = `thinking (${row.step})…`;
+        }
+      }
+    });
+    if(turn !== _assistantTurn)return;
+    await handleAssistantOutcome(out);
+  }catch(err){
+    if(turn !== _assistantTurn)return;
+    appendAssistantBubble('say', assistantFriendlyError(err));
+  }finally{
+    if(turn === _assistantTurn)assistantShowBusy(false);
+  }
+}
+
+function assistantMarkLastActionSpent(kind){
+  const thread = assistantThreadEl();
+  if(!thread)return;
+  const bubbles = thread.querySelectorAll(`.assistant-bubble-${kind}`);
+  const last = bubbles[bubbles.length - 1];
+  if(!last)return;
+  last.querySelector('.assistant-preview-actions')?.remove();
+  last.classList.add('is-saved');
+}
+
+function assistantKeepWorkingOn(commit){
+  if(!_assistantSession)_assistantSession = typeof assistantCreateSession === 'function' ? assistantCreateSession() : {};
+  _assistantSession.pendingComplete = null;
+  _assistantSession.awaiting = null;
+  _assistantSession.messages = [];
+  if(commit && commit.habit && typeof assistantHabitToDraft === 'function'){
+    const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (typeof sortSettings !== 'undefined' ? sortSettings : {});
+    _assistantSession.draft = assistantHabitToDraft(commit.habit, commit.index, settings);
+  }else if(_assistantPendingDraft && _assistantPendingDraft.name){
+    _assistantSession.draft = _assistantPendingDraft;
+  }
+  _assistantPendingDraft = _assistantSession.draft;
+  syncAssistantFocusBar();
+}
+
+function assistantAfterSave(commit, openForm, toast){
+  assistantKeepWorkingOn(commit);
+  if(typeof render === 'function')render();
+  if(openForm && typeof openDetailSchedule === 'function' && commit && commit.index != null){
+    closeAssistantSheet();
+    openDetailSchedule(commit.index);
+    return;
+  }
+  const name = (commit && (commit.habit && commit.habit.name || commit.name))
+    || (_assistantSession && _assistantSession.draft && _assistantSession.draft.name)
+    || 'it';
+  appendAssistantBubble('say', `Saved. Still working on ${name}. Say what to change, or tap done.`);
+  if(typeof showToast === 'function')showToast(toast || 'saved');
+}
+
+function commitAssistantDraft(openForm){
+  if(!_assistantPendingDraft){
+    if(typeof showToast === 'function')showToast('nothing to save');
+    return;
+  }
+  const result = assistantCommitDraft(_assistantPendingDraft);
+  if(!result.ok){
+    if(typeof showToast === 'function')showToast(result.error || 'could not save');
+    return;
+  }
+  assistantMarkLastActionSpent('preview');
+  assistantAfterSave(result, openForm, result.updated ? 'updated' : 'saved');
+}
+
+function commitAssistantComplete(){
+  const pending = _assistantSession && _assistantSession.pendingComplete;
+  if(!pending){
+    if(typeof showToast === 'function')showToast('nothing to log');
+    return;
+  }
+  const result = assistantCommitComplete(pending);
+  if(!result.ok){
+    if(typeof showToast === 'function')showToast(result.error || 'could not log');
+    return;
+  }
+  assistantMarkLastActionSpent('complete');
+  assistantAfterSave(result, false, 'logged');
+}
+
+function assistantDiscardPending(){
+  const draft = assistantFocusedDraft();
+  if(draft && draft.hid && typeof load === 'function' && typeof assistantHabitToDraft === 'function'){
+    const data = load();
+    const index = data.findIndex(item => item && item.hid === draft.hid);
+    if(index >= 0){
+      const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+      if(_assistantSession){
+        _assistantSession.draft = assistantHabitToDraft(data[index], index, settings);
+        _assistantSession.pendingComplete = null;
+      }
+      _assistantPendingDraft = _assistantSession && _assistantSession.draft;
+      syncAssistantFocusBar();
+      return;
+    }
+  }
+  assistantClearFocus();
+}
+
+function bindAssistantUi(){
+  $('open-assistant')?.addEventListener('click', openAssistantSheet);
+  $('bar-open-assistant')?.addEventListener('click', openAssistantSheet);
+  $('assistant-clear')?.addEventListener('click', clearAssistantChat);
+  $('assistant-debug-toggle')?.addEventListener('click', () => {
+    patchLocalAssistant({localAssistantDebug:!assistantDebugOn()});
+  });
+  $('assistant-focus-done')?.addEventListener('click', assistantClearFocus);
+  $('assistant-close')?.addEventListener('click', closeAssistantSheet);
+  $('assistant-sheet')?.addEventListener('click', e => {
+    if(e.target === e.currentTarget)closeAssistantSheet();
+  });
+  $('assistant-send')?.addEventListener('click', () => sendAssistantMessage($('assistant-input')?.value));
+  $('assistant-input')?.addEventListener('input', () => {
+    assistantResizeComposer();
+    assistantSyncSend();
+  });
+  $('assistant-input')?.addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      sendAssistantMessage($('assistant-input').value);
+    }
+  });
+  $('assistant-thread')?.addEventListener('click', e => {
+    const suggest = e.target.closest('[data-assistant-suggest]');
+    if(suggest){
+      sendAssistantMessage(suggest.dataset.assistantSuggest);
+      return;
+    }
+    const act = e.target.closest('[data-assistant-act]');
+    if(act){
+      const which = act.dataset.assistantAct;
+      if(which === 'add')commitAssistantDraft(false);
+      else if(which === 'edit')commitAssistantDraft(true);
+      else if(which === 'log')commitAssistantComplete();
+      else if(which === 'discard'){
+        assistantDiscardPending();
+        act.closest('.assistant-bubble')?.remove();
+      }
+      return;
+    }
+    const choice = e.target.closest('[data-assistant-choice]');
+    if(choice){
+      sendAssistantMessage(choice.dataset.assistantChoice);
+      return;
+    }
+    const copy = e.target.closest('[data-assistant-copy-debug]');
+    if(copy){
+      const hold = copy.closest('.assistant-bubble-debug')?.querySelector('.assistant-debug-json');
+      assistantCopyDebug(hold ? hold.value : '');
+    }
+  });
+
+  $('setting-local-assistant')?.addEventListener('click', () => {
+    patchLocalAssistant({localAssistant:!assistantEnabled()});
+    assistantSetStatus(assistantEnabled()
+      ? 'On. Keep Ollama running. Open the regular Tings app at http://127.0.0.1:4181 so the browser can reach it.'
+      : '');
+  });
+  $('setting-local-assistant-debug')?.addEventListener('click', () => {
+    if(!assistantEnabled())patchLocalAssistant({localAssistant:true, localAssistantDebug:true});
+    else patchLocalAssistant({localAssistantDebug:!assistantDebugOn()});
+  });
+  $('assistant-provider-seg')?.addEventListener('click', e => {
+    const opt = e.target.closest('[data-assistant-provider]');
+    if(!opt)return;
+    patchLocalAssistant({localAssistantProvider:normalizeLocalAssistantProvider(opt.dataset.assistantProvider)});
+  });
+  $('assistant-url')?.addEventListener('change', () => {
+    patchLocalAssistant({localAssistantUrl:normalizeLocalAssistantUrl($('assistant-url').value)});
+    if($('assistant-url'))$('assistant-url').value = assistantSettings().url;
+  });
+  $('assistant-model')?.addEventListener('change', () => {
+    patchLocalAssistant({localAssistantModel:normalizeLocalAssistantModel($('assistant-model').value)});
+  });
+  $('assistant-refresh-models')?.addEventListener('click', async () => {
+    assistantSetStatus('listing models…');
+    try{
+      const found = await assistantListModels(true);
+      const model = pickAssistantModel(found.models, assistantSettings().model);
+      patchLocalAssistant({localAssistantModel:model});
+      assistantSetStatus(`${found.provider} · ${found.models.length} model${found.models.length === 1 ? '' : 's'} · using ${model}`);
+    }catch(err){
+      assistantSetStatus(assistantFriendlyError(err));
+    }
+  });
+  $('assistant-test')?.addEventListener('click', async () => {
+    if(!assistantEnabled())patchLocalAssistant({localAssistant:true});
+    assistantSetStatus('testing Qwen (thinking + tool call)…');
+    try{
+      const result = await assistantTestConnection();
+      assistantSetStatus(result.ok
+        ? `${result.provider} · ${result.model} · thinking ${result.thinking ? 'on' : 'off'} · ${result.tool}`
+        : `${result.model} answered without classify_intent`);
+    }catch(err){
+      assistantSetStatus(assistantFriendlyError(err));
+    }
+  });
+}
+
+bindAssistantUi();
+assistantResizeComposer();
+assistantSyncSend();
+syncAssistantChrome();

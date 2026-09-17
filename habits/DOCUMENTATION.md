@@ -1982,8 +1982,12 @@ Settings sections (actual order):
 │   │   ├── islamic names toggle
 │   │   ├── calculation method
 │   │   └── asr school (shafi/hanafi)
-│   └── advanced
-│       └── smarter packing (ILP optimizer)
+│   ├── advanced
+│   │   └── smarter packing (ILP optimizer)
+│   └── local assistant
+│       ├── use Qwen on this computer (off by default; regular app or clone)
+│       ├── Ollama / LM Studio loopback URL
+│       └── thinking + tool-call test
 └── start over (reset settings)
 ```
 
@@ -2580,6 +2584,7 @@ When you swipe a card left or right, the following action buttons appear:
 | **push-client.js** | 139 | Web Push subscription management |
 | **calendar-import.js** | 548 | Microsoft Graph & Google Calendar import |
 | **prayer-times.js** | 549 | Islamic prayer time calculation |
+| **assistant-*.js** | — | Local Qwen3.8 chat: think, then `draft_item` / lookup / complete tool calls |
 | **agenda-optimizer.js** + **agenda-optimizer-ilp.js** | 313 + 1624 | GLPK loader/worker entry and ILP optimizer |
 | **agenda-order.js** | 774 | Agenda packing algorithm |
 | **agenda-planner-worker.js** | 209 | Web Worker for planning |
@@ -2596,6 +2601,7 @@ list in `index.html`, the planner worker's `importScripts`, and `sw.js`
 ### 19.2 HTML Structure (index.html)
 Main sheet containers:
 - `#add-sheet` - New habit creation
+- `#assistant-sheet` - Local Qwen assistant (optional)
 - `#detail-sheet` - Habit editing
 - `#about-sheet` - About hub (help, this device, privacy)
 - `#privacy-sheet` - Privacy explainer
@@ -2807,6 +2813,21 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 | `completedTaskRetentionDays` | number | 7 | Days to keep done tasks |
 | `habitLogKeepCount` | number | 30 | Max logs per habit (0=unlimited) |
 | `lastRetentionCleanupAt` | number | 0 | Timestamp of last cleanup |
+
+#### Local assistant 👤👨‍💻
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `localAssistant` | boolean | false | Show the in-app chat that talks to Ollama / LM Studio on this computer |
+| `localAssistantProvider` | string | 'auto' | auto, ollama, or lmstudio |
+| `localAssistantUrl` | string | '' | Loopback origin only (`http://127.0.0.1:11434`). Empty uses the provider default |
+| `localAssistantModel` | string | '' | Empty auto-picks a Qwen3.8 tag (prefers `qwen3.8:27b-mlx`) |
+| `localAssistantDebug` | boolean | false | Show parse, path, tool calls, results, thinking, and context use in the chat (and `console.debug`) |
+
+Works in the **regular Tings app** on this computer (open `http://127.0.0.1:4181`), not only a personal clone. The sheet is titled **ask Tings**. Clear phrasing is parsed in Tings (`remind me`, `what's next`, `I already did X`, `three times a week`, `every Tuesday`, `every Tuesday, Wednesday and Friday`, `every two days`, `three times in eight days`, `every weekend`, `only if it's not raining`, `make it 45 minutes`); Qwen3.8 is the fallback for messy wording. Intents: create a one-off, create a repeating habit, read today, look one item up, log something done, or edit the item on the working-on bar (`it` / `this`). Spoken rain/freeze limits become a weather profile on save (or reuse one that already covers them). Tings never saves until the preview **save** / **log it**. After save, the chat stays open on that item so follow-ups update it in place. `https://lanbeee.github.io` is CORS-blocked unless `OLLAMA_ORIGINS` includes it.
+
+Turn **show assistant debug** on in Settings, or tap **debug** on the chat header. Each reply then includes an open debug card: parse facts, local vs Qwen path, every tool name/args/result, thinking, repairs, and token use. Copy JSON dumps the same trace. The browser console also prints `[tings assistant]` lines. Debug stays on this device.
+
+The model **thinks**, then calls Tings tools. `draft_item` is the create-or-change tool: one call can set any mix of name, duration, rhythm (`every Tuesday, Wednesday and Friday`, `every two days`, `three times in eight days`, `every weekend`, `five times a week`), weekdays, window, weather, place, due, and priority (plain strings are fine). The tool parses that string into `target` / `allowedWeekdays` and actually updates the focused or named item. `set_window` / `set_weather` / `set_place` still exist for a single-field follow-up. `complete_item`, `lookup_item`, `classify_intent`, and `ask_user` cover log, look-up, and questions. Tings still previews before save. Replayed thinking is capped. If the prompt is at **60%** of the model context (from Ollama `prompt_eval_count` / LM Studio `usage`, or a length estimate), Tings **compacts** older tool traces into a short working summary (`currentDraft` + the latest request) instead of sending the full transcript.
 
 #### Default Habit Values 👨‍💻
 | Field | Type | Default | Purpose |

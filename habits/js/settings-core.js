@@ -127,4 +127,5 @@ function syncSettingsControls(){
   syncHomeCityStatus();
   renderDefaultTopicsChips();
   applyAppearanceSettings();
+  if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
 }

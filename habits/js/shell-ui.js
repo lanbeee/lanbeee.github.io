@@ -411,8 +411,9 @@ function updateKeyboardLift(){
     return;
   }
   const addOpen = $('add-sheet').classList.contains('open');
+  const assistantOpen = $('assistant-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
-  if((!addOpen && !searchOpen) || !window.visualViewport){
+  if((!addOpen && !assistantOpen && !searchOpen) || !window.visualViewport){
     document.documentElement.style.setProperty('--keyboard-lift','0px');
     return;
   }
@@ -423,7 +424,7 @@ function updateKeyboardLift(){
 // RENDER: scrolls focused input into view
 function keepFocusedInputVisible(){
   const active = document.activeElement;
-  if(!active || (!$('add-sheet').contains(active) && active !== $('habit-search')))return;
+  if(!active || (!$('add-sheet').contains(active) && !$('assistant-sheet')?.contains(active) && active !== $('habit-search')))return;
   if (paneTierActive()) return;
   active.scrollIntoView({block:'center',inline:'nearest'});
 }
@@ -496,7 +497,7 @@ function closeSheet(id){
   $(id).classList.remove('open');
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
-  if(id === 'add-sheet')updateKeyboardLift();
+  if(id === 'add-sheet' || id === 'assistant-sheet')updateKeyboardLift();
 }
 
 // HYBRID: opens a day drill-down item in detail without leaving the day sheet
@@ -518,7 +519,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -533,7 +534,7 @@ function shouldMountInPane(id) {
 // Use overflow locking only — never position:fixed. Fixing the body forces
 // scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
-  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.body.classList.toggle('fullpage-open',fullPageOpen);
   if(modalOpen && !document.body.classList.contains('modal-open')){
@@ -1305,7 +1306,7 @@ document.addEventListener('click',e=>{
 // not close the entire stack in a single keypress.
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape') return;
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -1333,6 +1334,7 @@ document.addEventListener('keydown',e=>{
     else if (id === 'slipped-sheet') closeSheet('slipped-sheet');
     else if (id === 'free-time-sheet') closeSheet('free-time-sheet');
     else if (id === 'weather-context-sheet') closeSheet('weather-context-sheet');
+    else if (id === 'assistant-sheet' && typeof closeAssistantSheet === 'function') closeAssistantSheet();
     return;
   }
   const pane = getPane();

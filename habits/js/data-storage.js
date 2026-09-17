@@ -197,6 +197,14 @@ function loadSortSettings(){
     delete merged.prayerCityLat;
     delete merged.prayerCityLng;
     merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
+    merged.localAssistant = Boolean(merged.localAssistant);
+    merged.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
+      ? normalizeLocalAssistantProvider(merged.localAssistantProvider) : 'auto';
+    merged.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
+      ? normalizeLocalAssistantUrl(merged.localAssistantUrl) : '';
+    merged.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'
+      ? normalizeLocalAssistantModel(merged.localAssistantModel) : '';
+    merged.localAssistantDebug = Boolean(merged.localAssistantDebug);
     merged.agendaOptimizer = agendaPlannerForcedFast()
       ? false
       : Boolean(merged.agendaOptimizer);
@@ -296,6 +304,14 @@ function saveSortSettings(settings){
   delete next.prayerCityLat;
   delete next.prayerCityLng;
   next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
+  next.localAssistant = Boolean(next.localAssistant);
+  next.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
+    ? normalizeLocalAssistantProvider(next.localAssistantProvider) : 'auto';
+  next.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
+    ? normalizeLocalAssistantUrl(next.localAssistantUrl) : '';
+  next.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'
+    ? normalizeLocalAssistantModel(next.localAssistantModel) : '';
+  next.localAssistantDebug = Boolean(next.localAssistantDebug);
   next.agendaOptimizer = agendaPlannerForcedFast()
     ? false
     : Boolean(next.agendaOptimizer);

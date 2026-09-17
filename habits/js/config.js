@@ -326,8 +326,41 @@ const DEFAULT_SORT_SETTINGS = {
   /** Keep newest N actual logs per non-task habit; 0 = off (12 | 30 | 60 | 0). */
   habitLogKeepCount:30,
   /** Timestamp of last monthly auto retention cleanup (0 = never). */
-  lastRetentionCleanupAt:0
+  lastRetentionCleanupAt:0,
+
+  // Local assistant on this computer (Ollama / LM Studio). Works in the
+  // regular Tings app, not only a personal clone. Off by default. URLs must
+  // be loopback — habit names never go to a remote model from this toggle.
+  localAssistant:false,
+  localAssistantProvider:'auto',
+  localAssistantUrl:'',
+  localAssistantModel:'',
+  localAssistantDebug:false
 };
+
+const ASSISTANT_OLLAMA_ORIGIN = 'http://127.0.0.1:11434';
+const ASSISTANT_LMSTUDIO_ORIGIN = 'http://127.0.0.1:1234';
+const ASSISTANT_DEFAULT_MODEL = 'qwen3.8:27b-mlx';
+const ASSISTANT_LOOPBACK_HOSTS = ['127.0.0.1','localhost','[::1]','::1'];
+
+function normalizeLocalAssistantProvider(value){
+  return value === 'ollama' || value === 'lmstudio' ? value : 'auto';
+}
+function normalizeLocalAssistantModel(value){
+  return String(value || '').trim().replace(/\s+/g,' ').slice(0,80);
+}
+function normalizeLocalAssistantUrl(value){
+  const s = String(value || '').trim();
+  if(!s)return '';
+  try{
+    const u = new URL(s);
+    if(u.protocol !== 'http:' && u.protocol !== 'https:')return '';
+    if(!ASSISTANT_LOOPBACK_HOSTS.includes(u.hostname))return '';
+    return u.origin;
+  }catch{
+    return '';
+  }
+}
 /** Minimum gap between automatic retention cleanup passes (≈1 month). */
 const RETENTION_CLEANUP_INTERVAL_MS = 30 * 86400000;
 const COMPLETED_TASK_RETENTION_DAYS = [2,3,7];
