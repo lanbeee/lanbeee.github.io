@@ -2,7 +2,7 @@
 // "use AI instead" must actually land the named fields from the model.
 // Skips when no qwen3.8 is reachable. ASSISTANT_LIVE=1 fails on skip;
 // ASSISTANT_LIVE=full adds the longer battery.
-const { chromium, BASE } = require('./helpers/planner-test-helpers');
+const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-helpers');
 
 const FROZEN = Date.parse('2026-09-17T13:24:00'); // Thursday
 const REQUIRE_LIVE = Boolean(process.env.ASSISTANT_LIVE);
@@ -325,7 +325,7 @@ function checkExpect(prefix, got, spec){
   await page.goto(BASE, { waitUntil:'load' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil:'load' });
-  await page.waitForTimeout(400);
+  await waitForAssistant(page);
 
   console.log('\n[probe] local Qwen3.8');
   const probe = await page.evaluate(async () => {

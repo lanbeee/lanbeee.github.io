@@ -1,6 +1,6 @@
 // Reliability suite for every draft_item setting: parsers, apply+commit,
 // clear/none, invalid no-clobber, combined windows, and round-trips.
-const { chromium, BASE } = require('./helpers/planner-test-helpers');
+const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-helpers');
 
 const FROZEN = Date.parse('2026-09-17T13:24:00'); // Thursday
 
@@ -39,7 +39,7 @@ async function launchBrowser(){
   await page.goto(BASE, { waitUntil:'load' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil:'load' });
-  await page.waitForTimeout(400);
+  await waitForAssistant(page);
 
   console.log('\n[P] parsers');
   const parsers = await page.evaluate(({now}) => {

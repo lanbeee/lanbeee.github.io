@@ -6,19 +6,8 @@
 const { chromium } = require('playwright');
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
-(async () => {
-  const browser = await chromium.launch({ headless:true });
-  const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
-  const pageErrors = [];
-  page.on('pageerror',e=>pageErrors.push(String(e)));
-
-  const failures = [];
-  function check(name,cond,detail){
-    if(cond){ console.log(`  ok  - ${name}`); }
-    else { failures.push(`${name}${detail ? ' :: ' + detail : ''}`); console.log(`  FAIL- ${name}${detail ? ' :: ' + detail : ''}`); }
-  }
-
-  await page.addInitScript(()=>{
+function seedProgressiveHome(target){
+  return target.addInitScript(()=>{
     window.__progressiveObs = { saw:false, cardsSeen:false, destructive:0, sawLoading:false };
     const attachObs = ()=>{
       const list = document.getElementById('list');
@@ -68,6 +57,21 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       locationOptIn:false
     }));
   });
+}
+
+(async () => {
+  const browser = await chromium.launch({ headless:true });
+  const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
+  const pageErrors = [];
+  page.on('pageerror',e=>pageErrors.push(String(e)));
+
+  const failures = [];
+  function check(name,cond,detail){
+    if(cond){ console.log(`  ok  - ${name}`); }
+    else { failures.push(`${name}${detail ? ' :: ' + detail : ''}`); console.log(`  FAIL- ${name}${detail ? ' :: ' + detail : ''}`); }
+  }
+
+  await seedProgressiveHome(page);
 
   await page.goto(BASE,{ waitUntil:'load' });
   // No cache in this fixture: skeleton must be the first paint (or already
@@ -102,7 +106,13 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       destructiveRenders:Number(window.__progressiveObs?.destructive || 0),
       hasFingerprint:typeof homeListFingerprint === 'function',
       hasRenderIfChanged:typeof renderHomeIfChanged === 'function',
-      hasPlanSignature:typeof homeAgendaPlanSignature === 'function'
+      hasPlanSignature:typeof homeAgendaPlanSignature === 'function',
+      hasBootRecovery:typeof window.tingsRecoverHomeBoot === 'function',
+      assistantAfterBoot:(()=>{
+        const scripts=[...document.querySelectorAll('script[src]')].map(node=>node.getAttribute('src'));
+        return scripts.indexOf('./js/assistant-loader.js') > scripts.indexOf('./js/main-runtime.js')
+          && typeof window.tingsLoadAssistant === 'function';
+      })()
     };
   });
   check('cold load does not use is-progressive', !loadState.sawProgressive && !loadState.progressiveNow, JSON.stringify(loadState));
@@ -113,6 +123,9 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   check('cold open used the loading skeleton before agenda', loadState.sawLoading, JSON.stringify(loadState));
   check('background comparison helpers exist',
     loadState.hasFingerprint && loadState.hasRenderIfChanged && loadState.hasPlanSignature,
+    JSON.stringify(loadState));
+  check('optional assistant scripts cannot block critical home boot',
+    loadState.assistantAfterBoot && loadState.hasBootRecovery,
     JSON.stringify(loadState));
 
   const displayOnly = await page.evaluate(()=>{
@@ -262,6 +275,64 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   }));
   check('reopen does not use is-progressive', !afterReopen.sawProgressive && !afterReopen.progressive, JSON.stringify(afterReopen));
   check('reopen keeps cards on screen', afterReopen.cards >= 3, JSON.stringify(afterReopen));
+
+  const bootRecovery = await page.evaluate(()=>{
+    const week = _homeRenderedWeek;
+    document.getElementById('list').innerHTML = '<div class="home-loading"><span></span></div>';
+    const ran = window.tingsRecoverHomeBoot();
+    const state = {
+      ran,
+      loading:Boolean(document.querySelector('#list .home-loading')),
+      cards:document.querySelectorAll('#list .ting-card').length
+    };
+    if(week)render({__fromOptimizer:true,__optimizedWeek:week});
+    return state;
+  });
+  check('early boot watchdog replaces a stranded skeleton with a usable list',
+    bootRecovery.ran && !bootRecovery.loading && bootRecovery.cards >= 3,
+    JSON.stringify(bootRecovery));
+
+  // Hold the first optional assistant file open as if a phone has a stale or
+  // failing cache entry. Core boot must finish before that deferred request.
+  const delayedContext = await browser.newContext({
+    viewport:{width:390,height:844},
+    serviceWorkers:'block'
+  });
+  const delayedPage = await delayedContext.newPage();
+  await seedProgressiveHome(delayedPage);
+  let releaseAssistant = null;
+  await delayedPage.route('**/js/assistant-schema.js',route=>new Promise(resolve=>{
+    releaseAssistant = ()=>{
+      void route.abort('failed');
+      resolve();
+    };
+  }));
+  let delayedAssistant = null;
+  try{
+    await delayedPage.goto(BASE,{waitUntil:'commit'});
+    await delayedPage.waitForFunction(()=>{
+      const list=document.getElementById('list');
+      return Boolean(list && !list.querySelector('.home-loading')
+        && (list.querySelectorAll('.ting-card').length > 0
+          || list.querySelector('.home-boot-recovery')));
+    },null,{timeout:12000});
+    delayedAssistant = await delayedPage.evaluate(()=>({
+      loading:Boolean(document.querySelector('#list .home-loading')),
+      cards:document.querySelectorAll('#list .ting-card').length,
+      recovery:Boolean(document.querySelector('#list .home-boot-recovery')),
+      renderReady:typeof render === 'function'
+    }));
+  }catch(error){
+    delayedAssistant = {error:String(error && error.message || error)};
+  }finally{
+    if(releaseAssistant)releaseAssistant();
+    await delayedContext.close();
+  }
+  check('a stalled optional assistant download cannot strand the home skeleton',
+    delayedAssistant && !delayedAssistant.loading
+      && delayedAssistant.renderReady
+      && (delayedAssistant.cards > 0 || delayedAssistant.recovery),
+    JSON.stringify(delayedAssistant));
 
   check('no pageerrors', pageErrors.length === 0, JSON.stringify(pageErrors));
 

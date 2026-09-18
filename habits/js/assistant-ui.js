@@ -76,8 +76,8 @@ function syncAssistantOriginHelp(){
   const copy = $('assistant-copy-origins');
   if(lead){
     lead.textContent = publicOrigin
-      ? `Allow this site once, make Ollama listen on Wi-Fi/Tailscale if a phone will connect, then fully quit and reopen Ollama. On a phone, paste the laptop URL in address. This page is ${origin}.`
-      : 'This local page is already allowed. Keep Ollama running. For a phone, run the listen command, fully quit Ollama, then paste this laptop’s Wi-Fi or Tailscale URL in address on the phone.';
+      ? `Allow this site once, then fully quit and reopen Ollama. For a phone, Tailscale Serve is the reliable route because it gives Ollama an HTTPS address. This page is ${origin}.`
+      : 'This local page is already allowed. Keep Ollama running. For a phone, use Tailscale Serve to give Ollama an HTTPS address.';
   }
   if(allow){
     allow.textContent = publicOrigin
@@ -85,10 +85,10 @@ function syncAssistantOriginHelp(){
       : `On the personal clone, allow that website the same way. The first command below uses ${origin}.`;
   }
   if(listen){
-    listen.textContent = 'So a phone can reach this laptop, also run the listen line. Ollama only answers on this computer until you do.';
+    listen.textContent = 'Recommended for a phone: with Tailscale connected on both devices, run “tailscale serve --bg 11434” on the laptop. It privately proxies Ollama over HTTPS; you do not need to expose Ollama to the whole Wi-Fi network.';
   }
   if(phone){
-    phone.textContent = 'On a phone, type the laptop’s Wi-Fi or Tailscale URL in address, for example http://192.168.1.12:11434. Leave address blank on the laptop itself.';
+    phone.textContent = 'Copy the exact https://…ts.net URL printed by Tailscale into address on the phone. Leave address blank on the laptop itself.';
   }
   if(quit)quit.textContent = restart;
   if(pre){

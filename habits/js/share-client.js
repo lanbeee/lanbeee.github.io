@@ -508,7 +508,8 @@ function tingsShareDump(){
 
 async function shareFetch(path, opts = {}){
   if(!shareConfigured()) throw new Error('share_unconfigured');
-  const headers = { 'Content-Type':'application/json' };
+  const headers = {};
+  if(opts.body != null) headers['Content-Type'] = 'application/json';
   if(opts.credential) headers.Authorization = `Bearer ${opts.credential}`;
   if(opts.ifMatch != null) headers['If-Match'] = `"${opts.ifMatch}"`;
   // Optional deadline so a hung connection surfaces as a normal error instead

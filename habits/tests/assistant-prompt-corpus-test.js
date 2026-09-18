@@ -1,6 +1,6 @@
 // Vigorous local-assistant corpus: utterance parse, local turns on the
 // regular (non-clone) app, complete/lookup, and optional live Qwen.
-const { chromium, BASE } = require('./helpers/planner-test-helpers');
+const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-helpers');
 const {
   ASSISTANT_FROZEN_NOW,
   ASSISTANT_PARSE_CASES,
@@ -61,7 +61,7 @@ function expectedDueKey(token){
   await page.goto(BASE, { waitUntil:'load' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil:'load' });
-  await page.waitForTimeout(400);
+  await waitForAssistant(page);
 
   console.log('\n[owner] assistant is on the regular app, not clone-gated');
   const owner = await page.evaluate(() => {

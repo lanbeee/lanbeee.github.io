@@ -48,6 +48,24 @@ function windowedSettings(extra){
   ], extra);
 }
 
+async function waitForAssistant(page, timeout = 15000){
+  await page.waitForFunction(
+    ()=>typeof window.tingsLoadAssistant === 'function' || typeof assistantParseReply === 'function',
+    null,
+    {timeout}
+  );
+  const ready = await page.evaluate(async()=>{
+    if(typeof window.tingsLoadAssistant === 'function'){
+      try{ await window.tingsLoadAssistant(); }
+      catch(_){ return false; }
+    }
+    return typeof assistantParseReply === 'function'
+      && typeof openAssistantSheet === 'function'
+      && typeof syncLocalAssistantControls === 'function';
+  });
+  if(!ready)throw new Error('assistant bundle did not become ready');
+}
+
 async function glpkAvailable(page){
   if(FAST_ONLY)return false;
   return page.evaluate(async () => {
@@ -128,6 +146,7 @@ module.exports = {
   baseHabit,
   openEveningSettings,
   windowedSettings,
+  waitForAssistant,
   glpkAvailable,
   runPlannerPair,
   minutesOnDay,

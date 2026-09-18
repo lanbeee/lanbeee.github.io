@@ -1137,7 +1137,7 @@ function assistantReachErrorText(pageOrigin){
   const url = typeof assistantSettings === 'function' ? assistantSettings().url : '';
   const lan = url && typeof assistantUrlIsLoopback === 'function' && !assistantUrlIsLoopback(url);
   if(origin && lan){
-    return 'Cannot reach that laptop address. On the laptop, run the listen command, allow this website, then fully quit and reopen Ollama. On iPhone, this HTTPS page often cannot use http:// — paste a Tailscale https:// name, or open Tings at http://LAPTOP:4181.';
+    return 'Cannot reach that laptop address. On the laptop, allow this website in Ollama and fully quit and reopen it. Then run “tailscale serve --bg 11434” and paste the printed https://…ts.net URL here. Plain http:// is blocked from the secure phone app.';
   }
   if(origin){
     return `Cannot reach the local model from this website. Open Settings → local assistant, run the allow command, then fully quit and reopen Ollama.`;

@@ -419,6 +419,25 @@ function assert(value,message){
     const failedSaveNotAcknowledged = !failedSaveFold.operationIds.includes(failedSaveOperationId)
       && !failedSaveFold.feed.definitionReceipts?.some(item=>item.operationId === failedSaveOperationId)
       && load().find(h=>h.hid === duplicateChunkId)?.name !== 'Must not acknowledge';
+    const accessPaths = [];
+    shareFetch = async path=>{
+      accessPaths.push(String(path));
+      return {body:{authorized:true},status:200};
+    };
+    _replicaAccessCheckBusy = false;
+    const accessCheckOk = await checkReplicaDisplayAccess();
+    const originalEndAuthorization = endReplicaDisplayAuthorization;
+    let revokedAccessEnded = false;
+    endReplicaDisplayAuthorization = ()=>{ revokedAccessEnded = true; };
+    shareFetch = async()=>{
+      const error = new Error('unauthorized');
+      error.status = 401;
+      throw error;
+    };
+    _replicaAccessCheckBusy = false;
+    await checkReplicaDisplayAccess();
+    endReplicaDisplayAuthorization = originalEndAuthorization;
+    shareFetch = async()=>({body:{authorized:true},status:200});
     history.replaceState(null,'',location.pathname + '?display=1');
     mountReplicaDisplayMode();
     const barBox = document.querySelector('.replica-display-bar')?.getBoundingClientRect();
@@ -487,6 +506,10 @@ function assert(value,message){
       duplicateChunksFoldOnce,
       offlineQueueKeepsAll,
       failedSaveNotAcknowledged,
+      lightweightAccessCheck:accessCheckOk
+        && accessPaths.some(path=>path.endsWith('/display-access'))
+        && typeof REPLICA_ACCESS_CHECK_MS === 'undefined',
+      revokedAccessEnded,
       duplicateChunkDiagnostic,
       chrome:Boolean(document.querySelector('.replica-display-bar')),
       clock:Boolean(document.querySelector('[data-replica-time]')?.textContent),
@@ -526,6 +549,8 @@ function assert(value,message){
   assert(result.duplicateChunksFoldOnce,'the echoed identical chunk folds exactly once');
   assert(result.offlineQueueKeepsAll,'more than 50 offline operations remain queued locally until they can drain');
   assert(result.failedSaveNotAcknowledged,'an accepted definition is retried when owner persistence fails');
+  assert(result.lightweightAccessCheck,'authorization can be checked without downloading the library');
+  assert(result.revokedAccessEnded,'an authorization-check 401 ends the clone session immediately');
   assert(result.chrome && result.clock,'display mode shows a live current-time chrome');
   assert(result.addVisible,'personal clone keeps the normal add-task and add-habit action available');
   assert(result.unlocked,'three taps dismiss the display lock screen');

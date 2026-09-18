@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: http://127.0.0.1:* http://localhost:* https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -1204,8 +1204,8 @@
                 <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio</button>
               </div>
               <span class="settings-sublabel">address</span>
-              <input id="assistant-url" class="settings-text-input" type="text" inputmode="url" maxlength="160" placeholder="http://192.168.1.12:11434" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, paste the laptop’s Wi-Fi or Tailscale URL, then tap Done.</p>
+              <input id="assistant-url" class="settings-text-input" type="text" inputmode="url" maxlength="160" placeholder="https://laptop.tailnet.ts.net" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page.</p>
               <span class="settings-sublabel">model</span>
               <input id="assistant-model" class="settings-text-input" type="text" maxlength="80" placeholder="qwen3.8:27b-mlx" autocomplete="off" />
               <div class="btn-row" style="flex-wrap:wrap">
@@ -1770,17 +1770,13 @@
 <script src="./js/settings-samples.js" defer></script>
 <script src="./js/settings-appearance.js" defer></script>
 <script src="./js/settings-share.js" defer></script>
-<script src="./js/assistant-schema.js" defer></script>
-<script src="./js/assistant-parse.js" defer></script>
-<script src="./js/assistant-tools.js" defer></script>
-<script src="./js/assistant-harness.js" defer></script>
-<script src="./js/assistant-client.js" defer></script>
-<script src="./js/assistant-ui.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/main-input.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
 <script src="./js/display-mode.js" defer></script>
 <script src="./js/sw-register.js" defer></script>
+<!-- The experimental assistant loads after the core controller has rendered. -->
+<script src="./js/assistant-loader.js" defer></script>
 </body>
 </html>

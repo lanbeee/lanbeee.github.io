@@ -1,6 +1,6 @@
 // Local assistant harness: parse/repair, catalogs, draft save. Fake LLM by
 // default; optional live Qwen3.8 if Ollama is reachable from the page.
-const { chromium, BASE } = require('./helpers/planner-test-helpers');
+const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-helpers');
 
 let pass = 0, fail = 0;
 function assert(cond, msg){
@@ -30,7 +30,7 @@ async function launchBrowser(){
   await page.goto(BASE, { waitUntil:'load' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil:'load' });
-  await page.waitForTimeout(400);
+  await waitForAssistant(page);
 
   console.log('\n[A] parse + think + tool_calls');
   const parse = await page.evaluate(() => {
@@ -407,6 +407,7 @@ async function launchBrowser(){
       lanNoPort:normalizeLocalAssistantUrl('http://10.0.0.8'),
       cgnat:normalizeLocalAssistantUrl('http://100.64.1.2:11434'),
       magic:normalizeLocalAssistantUrl('https://nabeel-macbook.tail123.ts.net'),
+      bareMagic:normalizeLocalAssistantUrl('nabeel-macbook.tail123.ts.net'),
       openai:normalizeLocalAssistantUrl('https://api.openai.com'),
       publicIp:normalizeLocalAssistantUrl('http://8.8.8.8:11434'),
       pageOrigin:assistantPublicPageOrigin(),
@@ -419,12 +420,14 @@ async function launchBrowser(){
       guideRestart:(document.getElementById('assistant-reach-step-restart')?.textContent || ''),
       guideListen:(document.getElementById('assistant-reach-step-listen')?.textContent || ''),
       guidePhone:(document.getElementById('assistant-reach-step-phone')?.textContent || ''),
-      urlType:document.getElementById('assistant-url')?.getAttribute('type')
+      urlType:document.getElementById('assistant-url')?.getAttribute('type'),
+      csp:(document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || '')
     };
   });
   assert(reach.getSpace === 'loopback' && reach.postSpace === 'loopback', 'loopback fetches declare targetAddressSpace');
   assert(reach.lanSpace === 'local' && reach.tailSpace === 'local', 'LAN and Tailscale fetches declare local address space');
   assert(!reach.getHasType && reach.postType === 'application/json', 'JSON content-type is only set when there is a body');
+  assert(/https:\/\/\*\.ts\.net/.test(reach.csp), 'CSP allows private Tailscale HTTPS model endpoints');
   assert(/Settings → local assistant/i.test(reach.publicFail) && /quit and reopen Ollama/i.test(reach.publicFail), 'GitHub Pages fetch error points at the in-app steps');
   assert(/Settings → local assistant/i.test(reach.public403), '403 points at the in-app steps');
   assert(reach.allow === 'launchctl setenv OLLAMA_ORIGINS "https://lanbeee.github.io"', 'Mac allow command is the launchctl line');
@@ -432,14 +435,15 @@ async function launchBrowser(){
   assert(reach.loopback === 'http://127.0.0.1:11434', 'loopback URL still saves');
   assert(reach.bareLan === 'http://192.168.1.12:11434', 'bare LAN IP plus port is saved like Immich');
   assert(reach.lanNoPort === 'http://10.0.0.8:11434', 'LAN URL without a port defaults to 11434');
-  assert(reach.cgnat === 'http://100.64.1.2:11434' && reach.magic === 'https://nabeel-macbook.tail123.ts.net', 'Tailscale IP and MagicDNS URLs save');
+  assert(reach.cgnat === 'http://100.64.1.2:11434' && reach.magic === 'https://nabeel-macbook.tail123.ts.net'
+    && reach.bareMagic === 'https://nabeel-macbook.tail123.ts.net', 'Tailscale IP and MagicDNS URLs save; bare MagicDNS defaults to HTTPS');
   assert(reach.openai === '' && reach.publicIp === '', 'public cloud and public IPs are rejected');
   assert(!reach.pageOrigin && reach.guide && reach.stepCount === 6 && reach.copyBtn && reach.originHelpGone, 'settings shows a six-step reach guide');
   assert(reach.urlType === 'text', 'address field is text so a phone can save a LAN URL');
   assert(/already allowed|phone/i.test(reach.guideLead) && /launchctl setenv OLLAMA_ORIGINS "https:\/\/lanbeee\.github\.io"/.test(reach.guideCmd), 'loopback page still shows the GitHub Pages command');
   assert(/OLLAMA_HOST/.test(reach.guideCmd), 'reach guide includes the listen command');
   assert(/Fully quit Ollama/i.test(reach.guideRestart) && /do(?:es)? nothing until/i.test(reach.guideRestart), 'reach guide says the allow command needs a full Ollama quit');
-  assert(/listen/i.test(reach.guideListen) && /192\.168\.1\.12:11434/.test(reach.guidePhone), 'reach guide explains phone URL');
+  assert(/tailscale serve --bg 11434/i.test(reach.guideListen) && /https:\/\/.*ts\.net/i.test(reach.guidePhone), 'reach guide explains the private HTTPS phone route');
 
   const savedUrl = await page.evaluate(() => {
     saveSortSettings({ ...loadSortSettings(), localAssistant:true, localAssistantUrl:'' });

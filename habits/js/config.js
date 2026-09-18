@@ -403,13 +403,15 @@ function assistantHostIsPrivateLan(host){
   return false;
 }
 function assistantRejectedUrlHint(){
-  return 'That address was not saved. Use this computer (127.0.0.1), a Wi-Fi URL like http://192.168.1.12:11434, or a Tailscale name ending in .ts.net.';
+  return 'That address was not saved. Use this computer (127.0.0.1), a private Wi-Fi URL, or preferably the HTTPS .ts.net URL printed by Tailscale Serve.';
 }
 function normalizeLocalAssistantUrl(value){
   const s = String(value || '').trim();
   if(!s)return '';
   try{
-    const raw = /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `http://${s}`;
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(s);
+    const bareHost = s.split(/[/:?#]/,1)[0].toLowerCase();
+    const raw = hasScheme ? s : `${bareHost.endsWith('.ts.net') ? 'https' : 'http'}://${s}`;
     const u = new URL(raw);
     if(u.protocol !== 'http:' && u.protocol !== 'https:')return '';
     if(!assistantHostIsPrivateLan(u.hostname))return '';

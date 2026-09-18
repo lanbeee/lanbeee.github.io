@@ -10,6 +10,16 @@
 .home-loading span:nth-child(3){opacity:0.58;animation-delay:180ms;}
 @keyframes home-loading-shift{to{background-position:-120% 0;}}
 @media (prefers-reduced-motion:reduce){.home-loading span{animation:none;}}
+.home-boot-recovery{
+  display:flex;flex-direction:column;align-items:flex-start;gap:8px;
+  margin:38px 0 0;padding:18px;border:1px solid var(--border);
+  border-radius:16px;background:var(--bg);color:var(--text);
+}
+.home-boot-recovery span{color:var(--text2);font-size:.88rem;}
+.home-boot-recovery button{
+  margin-top:4px;padding:9px 14px;border:0;border-radius:999px;
+  background:var(--teal-icon);color:var(--bg);font:inherit;font-weight:700;
+}
 /* Day headers are plain text labels that stick at the top while scrolling.
    The background matches the page tone exactly, so it never reads as a bar —
    it only exists so cards sliding under a stuck label stay hidden behind it.

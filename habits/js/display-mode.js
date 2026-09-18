@@ -4,6 +4,7 @@
 
 const REPLICA_DISPLAY_POLL_MS = 3 * 60 * 1000;
 const REPLICA_DISPLAY_TIMEOUT_MS = 15 * 1000;
+const REPLICA_ACCESS_TIMEOUT_MS = 8 * 1000;
 const REPLICA_AGENDA_PUBLISH_DEBOUNCE_MS = 1200;
 const REPLICA_CHROME_HIDDEN_KEY = 'tings_replica_chrome_hidden_v1';
 let _replicaRefreshBusy = false;
@@ -11,6 +12,7 @@ let _replicaFlushBusy = false;
 let _replicaPull = null;
 let _replicaClockTimer = null;
 let _replicaPollTimer = null;
+let _replicaAccessCheckBusy = false;
 let _replicaChromeBound = false;
 let _replicaLastPull = null;
 let _replicaAgendaPublishTimer = null;
@@ -71,6 +73,46 @@ function writeReplicaEnrollment(value){
 function forgetReplicaDisplaySession(){
   if(typeof endSharedDisplaySession === 'function') endSharedDisplaySession();
   else writeReplicaEnrollment(null);
+}
+
+function endReplicaDisplayAuthorization(){
+  forgetReplicaDisplaySession();
+  location.replace('agenda-display.html');
+}
+
+// Cheap credential check used when a 401 should sign the clone out without
+// waiting on a full library download. Idle traffic stays on the existing
+// 3-minute snapshot poll; this is not a second heartbeat.
+async function checkReplicaDisplayAccess(){
+  if(_replicaAccessCheckBusy || navigator.onLine === false)return false;
+  const enrolled = replicaEnrollment();
+  if(!enrolled || !enrolled.feedId || !enrolled.deviceCredential)return false;
+  _replicaAccessCheckBusy = true;
+  try{
+    await shareFetch(`/v1/agendas/${enrolled.feedId}/display-access`,{
+      credential:enrolled.deviceCredential,
+      timeoutMs:REPLICA_ACCESS_TIMEOUT_MS
+    });
+    return true;
+  }catch(error){
+    if(error && (error.status === 401 || error.status === 410)){
+      endReplicaDisplayAuthorization();
+      return false;
+    }
+    // Rolling deployment: an older Worker does not have the lightweight GET
+    // yet. The normal snapshot poll remains the compatibility fallback.
+    if(!(error && (error.status === 404 || error.status === 405))){
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('replica.access_check.error', {
+          error:typeof tingsShareErrorSummary === 'function'
+            ? tingsShareErrorSummary(error) : String(error && error.message || error)
+        });
+      }
+    }
+    return false;
+  }finally{
+    _replicaAccessCheckBusy = false;
+  }
 }
 
 function replicaLogFingerprint(log){
@@ -509,8 +551,7 @@ async function flushReplicaOutbox(){
   }catch(error){
     updateReplicaSyncStatus(error && (error.status === 401 || error.status === 410) ? 'authorization expired' : 'offline · changes queued');
     if(error && (error.status === 401 || error.status === 410)){
-      forgetReplicaDisplaySession();
-      location.replace('agenda-display.html');
+      endReplicaDisplayAuthorization();
     }
   }finally{ _replicaFlushBusy = false; }
 }
@@ -771,8 +812,7 @@ async function refreshReplicaDevice(opts = {}){
       });
     }
     if(error && (error.status === 401 || error.status === 410)){
-      forgetReplicaDisplaySession();
-      location.replace('agenda-display.html');
+      endReplicaDisplayAuthorization();
     }else updateReplicaSyncStatus('offline · will retry');
   }finally{ _replicaRefreshBusy = false; }
 }
@@ -1006,8 +1046,7 @@ async function publishReplicaAgendaNow(week, opts = {}){
       });
     }
     if(error && (error.status === 401 || error.status === 410)){
-      forgetReplicaDisplaySession();
-      location.replace('agenda-display.html');
+      endReplicaDisplayAuthorization();
     }
     throw error;
   }
@@ -1251,4 +1290,8 @@ function mountReplicaDisplayMode(){
   }
 }
 
-document.addEventListener('DOMContentLoaded',mountReplicaDisplayMode);
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded',mountReplicaDisplayMode,{once:true});
+}else{
+  mountReplicaDisplayMode();
+}
