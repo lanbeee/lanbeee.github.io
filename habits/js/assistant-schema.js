@@ -3,8 +3,9 @@
 // and never lets prose write localStorage. Keep this list short: tool schemas
 // compete with thinking tokens.
 
-const ASSISTANT_INTENTS = ['create_task','create_habit','ask_today','complete_item','lookup_item','unclear','unsupported'];
-const ASSISTANT_STEPS = ['classify','extract','window','weather','place','complete','lookup'];
+const ASSISTANT_INTENTS = ['create_task','create_habit','create_setting','ask_today','complete_item','lookup_item','unclear','unsupported'];
+const ASSISTANT_SETTING_KINDS = ['weather','location','busy','topic'];
+const ASSISTANT_STEPS = ['classify','extract','complete','lookup'];
 const ASSISTANT_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
 const ASSISTANT_ANCHOR_ALIASES = {
   sunset:'maghrib', dusk:'maghrib', maghreb:'maghrib',
@@ -16,25 +17,21 @@ const ASSISTANT_ANCHOR_ALIASES = {
 const ASSISTANT_MAX_LLM_CALLS = 8;
 const ASSISTANT_MAX_REPAIRS = 2;
 const ASSISTANT_NAME_MAX = 60;
-const ASSISTANT_CONTEXT_COMPACT_AT = 0.6;
-const ASSISTANT_DEFAULT_CONTEXT_TOKENS = 32768;
+// Compact late: small models need the transcript (and their own thinking)
+// in context. 128k × 85% ≈ 111k tokens before we fold the trace.
+const ASSISTANT_CONTEXT_COMPACT_AT = 0.85;
+const ASSISTANT_DEFAULT_CONTEXT_TOKENS = 131072;
 const ASSISTANT_CHARS_PER_TOKEN = 4;
-const ASSISTANT_THINKING_REPLAY_MAX = 1200;
+const ASSISTANT_THINKING_REPLAY_MAX = 8000;
 const ASSISTANT_THINKING_COMPACT_MAX = 240;
-
-const ASSISTANT_ENDPOINT_PROPS = {
-  type:'object',
-  properties:{
-    kind:{type:'string', enum:['unset','clock','anchor']},
-    clock:{type:['string','null'], description:'24h HH:MM when kind is clock'},
-    anchor:{type:['string','null'], description:'fajr, sunrise, dhuhr, asr, maghrib, isha. sunset means maghrib.'},
-    offsetMin:{type:'integer', description:'signed minutes vs the anchor'}
-  }
-};
+// Ollama num_predict counts thinking + the tool call. little-coder's default
+// thinking budget is 4096; leave extra room so the model can still emit JSON.
+const ASSISTANT_THINK_TOKENS = 4096;
+const ASSISTANT_TOOL_TOKENS = 2048;
 
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
-    description:'Classify a new request after thinking. If currentDraft is set and they mean that item, classify create_habit or create_task, then call draft_item with only the new fields.',
+    description:'Classify a new request after thinking. create_setting = a weather profile, place, busy time, or topic — not a habit or task. "Create a weather profile for barbecuing" is create_setting. A habit/task that names weather conditions is still create_habit/create_task; put the conditions in weatherText. If currentDraft is set, they are changing that row unless they clearly start a new one. "Add the location home" or "use home and mom\'s house" is a change: classify create_habit or create_task for currentDraft\'s kind, then draft_item with only the new fields (placeNames). Do not classify unclear when currentDraft is set, even if they omitted it/this. Do not classify unsupported for weather profiles, places, busy times, or topics.',
     parameters:{
       type:'object',
       required:['intent'],
@@ -45,61 +42,75 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   draft_item:{
-      description:'Create or change an item in one call. Fill every field the user said; omit the rest. If currentDraft is set, "it" means that item — keep its name and hid. Strings are preferred (rhythm, weekdays, windowText, durationMinutes). Do not nest objects.',
+      description:'Create or change an item in one call. Fill every setting the user named; omit the rest. name is a 1-3 word title. Put habitKind, topics, windowText, order, placePrefs, hardDue, and the rest in their own fields. If currentDraft is set, "it" means that item — keep its name and hid. Prefer plain strings. Do not nest window or place objects — a nested object is how tool JSON gets cut off.',
     parameters:{
       type:'object',
       properties:{
         kind:{type:'string', enum:['task','habit']},
-        name:{type:['string','null'], description:'Item name, or omit/"it" to change currentDraft'},
+        habitKind:{type:['string','null'], description:'keepup/build, reduce/limit, or zero/stop'},
+        name:{type:['string','null'], description:'Short title only, e.g. Kettlebells. Never paste the rest of the sentence here. Omit/"it" to change currentDraft'},
+        newName:{type:['string','null'], description:'Rename the current item'},
+        emoji:{type:['string','null'], description:'emoji, or none'},
+        emojiColor:{type:['string','null'], description:'teal, amber, red, purple, blue, green, pink, orange, indigo, cyan, lime, slate, or none'},
         durationMinutes:{type:['integer','string','null'], description:'minutes, or "45 minutes" / "half an hour"'},
         priority:{type:['integer','string','null'], description:'0 critical … 5 someday, or urgent / someday'},
+        topics:{type:['array','string','null'], items:{type:'string'}, description:'"health, wellness", catalog topic names, or none'},
         due:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD'},
         dueTime:{type:['string','null'], description:'24h HH:MM or 7pm'},
+        hardDue:{type:['boolean','string','null'], description:'true = due day is firm (no late days)'},
+        planBy:{type:['string','null'], description:'keepup/reduce do-by date: today, tomorrow, or YYYY-MM-DD'},
         rhythm:{type:['string','null'], description:'plain English: "every Tuesday, Wednesday and Friday", "every two days", "three times in eight days", "every weekend", "five times a week"'},
         timesPerPeriod:{type:['integer','string','null'], description:'5, or "five". Use with periodDays, or skip and set rhythm instead'},
         periodDays:{type:['integer','string','null'], description:'7 with timesPerPeriod 5 means five times a week; 8 with 3 means three times in eight days'},
         weekdays:{type:['array','string','null'], items:{type:'string'}, description:'Tuesday, "Tue, Wed, Fri", weekdays, weekends, or omit for any day'},
-        windowText:{type:['string','null'], description:'plain English: "after sunset", "between 5pm and 7pm", "2 hours before sunset till sunset"'},
-        weatherProfile:{type:['string','null'], description:'catalog weather name, none, inherit, or "not raining"'},
-        weatherText:{type:['string','null'], description:'plain English weather: "only if it is not raining and not freezing"'},
-        placeNames:{type:['array','string','null'], items:{type:'string'}, description:'catalog place names, or one name string'},
+        monthDays:{type:['array','string','null'], items:{type:'string'}, description:'"1, 15", "the 1st", or any'},
+        preferredWeekdays:{type:['array','string','null'], items:{type:'string'}, description:'soft weekday preference, or none'},
+        preferredMonthDays:{type:['array','string','null'], items:{type:'string'}, description:'soft month-day preference, or none'},
+        windowText:{type:['string','null'], description:'allowed window as one string: "after sunset", "between 5pm and 7pm", "later of 6pm and sunset until isha", "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier"'},
+        preferredWindowText:{type:['string','null'], description:'preferred window, same phrasing as windowText'},
+        earlyDays:{type:['integer','string','null'], description:'days it may start early, 0-60'},
+        delayDays:{type:['integer','string','null'], description:'days it may stay on time late, 0-60'},
+        breakable:{type:['boolean','string','null'], description:'true/split, or false/one session'},
+        minChunkMinutes:{type:['integer','string','null'], description:'shortest split, or "15 minutes"'},
+        autoMarkMinutes:{type:['integer','string','null'], description:'minutes, or manual/off'},
+        trackValue:{type:['boolean','string','null'], description:'log a numeric value'},
+        pinned:{type:['boolean','string','null']},
+        snooze:{type:['string','null'], description:'off, 2 hours, until tomorrow, 3 days'},
+        sharedDisplay:{type:['boolean','string','null'], description:'include on the shared display'},
+        sharedComplete:{type:['boolean','string','null'], description:'allow completing from the shared display'},
+        weatherProfile:{type:['string','null'], description:'catalog weather name, none, inherit, a new profile name, or "not raining"'},
+        weatherText:{type:['string','null'], description:'plain English weather: "only if it is not raining and not freezing". Tings creates a profile when none matches'},
+        showWeather:{type:['boolean','string','null'], description:'show forecast on the card'},
+        weatherAtPlace:{type:['boolean','string','null'], description:'forecast uses this item\'s place instead of home city'},
+        weatherPlace:{type:['string','null'], description:'catalog place for anywhere-forecast, or none'},
+        placeNames:{type:['array','string','null'], items:{type:'string'}, description:'catalog.places names only, or one string such as "home and mom\'s house". Never invent a place that is not in the catalog'},
         anywhere:{type:['boolean','null']},
+        placePrefs:{type:['string','null'], description:'"Home high, Gym avoid"'},
+        before:{type:['string','null'], description:'other item this should finish before, or none'},
+        after:{type:['string','null'], description:'other item this should start after, or none'},
+        order:{type:['string','null'], description:'"right after Walk, same day" or "none"'},
+        links:{type:['array','string','null'], items:{type:'string'}, description:'URL, tel:, "call 5551234", or none'},
+        option:{type:['array','string','null'], items:{type:'string'}, description:'extra window "Tue 9am-11am at Home", or none'},
         needAsk:{type:'boolean'},
         ask:{type:['string','null']}
       }
     }
   },
-  set_window:{
-    description:'Set the allowed clock or prayer window on the current draft.',
+  draft_setting:{
+    description:'Create or change a settings row — weather profile, place, busy time, or topic — not a habit or task. name is a short title. For weather, weatherText is the rules as one string. For a place, address is the search query (lat/lng if known). For busy time, windowText and days. If currentDraft is a setting, keep its kind and name and only add the new fields.',
     parameters:{
       type:'object',
-      required:['start','end'],
+      required:['kind','name'],
       properties:{
-        start:ASSISTANT_ENDPOINT_PROPS,
-        end:ASSISTANT_ENDPOINT_PROPS
-      }
-    }
-  },
-  set_weather:{
-    description:'Attach a named weather profile from the catalog, inherit the place default, or opt out.',
-    parameters:{
-      type:'object',
-      required:['mode'],
-      properties:{
-        mode:{type:'string', enum:['none','inherit','profile']},
-        profile:{type:['string','null']}
-      }
-    }
-  },
-  set_place:{
-    description:'Attach saved places by catalog name. Do not invent names.',
-    parameters:{
-      type:'object',
-      properties:{
-        names:{type:'array', items:{type:'string'}},
-        anywhere:{type:'boolean'},
-        needAsk:{type:'boolean'},
-        ask:{type:['string','null']}
+        kind:{type:'string', enum:ASSISTANT_SETTING_KINDS},
+        name:{type:['string','null'], description:'Short title: Barbecuing, Gym, Sleep, health'},
+        newName:{type:['string','null']},
+        weatherText:{type:['string','null'], description:'Weather rules in English: "not raining, wind under 25, above 15C"'},
+        address:{type:['string','null'], description:'Place search query or street address'},
+        lat:{type:['number','string','null']},
+        lng:{type:['number','string','null']},
+        windowText:{type:['string','null'], description:'Busy window, same phrasing as item windowText'},
+        days:{type:['array','string','null'], items:{type:'string'}, description:'Busy weekdays, or omit for every day'}
       }
     }
   },
@@ -148,21 +159,26 @@ function assistantOllamaTools(names){
   }));
 }
 
+function assistantIsSettingKind(kind){
+  return ASSISTANT_SETTING_KINDS.indexOf(kind) >= 0;
+}
+
+function assistantIsItemKind(kind){
+  return kind === 'habit' || kind === 'task';
+}
+
 function assistantStepTools(step){
-  if(step === 'classify')return ['classify_intent','draft_item'];
-  if(step === 'extract')return ['draft_item','set_window','set_weather','set_place','ask_user'];
-  if(step === 'window')return ['set_window','draft_item','ask_user'];
-  if(step === 'weather')return ['set_weather','draft_item','ask_user'];
-  if(step === 'place')return ['set_place','draft_item','ask_user'];
+  if(step === 'classify')return ['classify_intent','draft_item','draft_setting'];
+  if(step === 'extract')return ['draft_item','draft_setting','ask_user'];
   if(step === 'complete')return ['complete_item','ask_user'];
   if(step === 'lookup')return ['lookup_item','ask_user'];
   return ['ask_user'];
 }
 
 function assistantStepPredict(step){
-  if(step === 'classify')return 1200;
-  if(step === 'extract')return 1800;
-  return 1000;
+  if(step === 'extract')return ASSISTANT_THINK_TOKENS + ASSISTANT_TOOL_TOKENS;
+  if(step === 'classify')return ASSISTANT_THINK_TOKENS + 1024;
+  return ASSISTANT_THINK_TOKENS + 512;
 }
 
 function stripAssistantThink(text){
@@ -241,14 +257,25 @@ function assistantParseReply(raw, stepHint){
           ? parsed.value.arguments
           : parsed.value;
         toolCalls.push({id:'', name, args});
-      }else if(ASSISTANT_INTENTS.includes(parsed.value.intent)){
-        toolCalls.push({id:'', name:'classify_intent', args:parsed.value});
+      }else if(parsed.value.kind && parsed.value.name && assistantIsSettingKind(parsed.value.kind)){
+        toolCalls.push({id:'', name:'draft_setting', args:parsed.value});
       }else if(parsed.value.kind && parsed.value.name){
         toolCalls.push({id:'', name:'draft_item', args:parsed.value});
+      }else if(parsed.value.name && (parsed.value.windowText || parsed.value.rhythm || parsed.value.durationMinutes != null || parsed.value.kind || parsed.value.weatherText || parsed.value.address)){
+        toolCalls.push({
+          id:'',
+          name:assistantIsSettingKind(parsed.value.kind) ? 'draft_setting' : 'draft_item',
+          args:parsed.value
+        });
+      }else if(ASSISTANT_INTENTS.includes(parsed.value.intent)){
+        toolCalls.push({id:'', name:'classify_intent', args:parsed.value});
       }else if(parsed.value.name && (stepHint === 'complete' || parsed.value.done || parsed.value.complete)){
         toolCalls.push({id:'', name:'complete_item', args:parsed.value});
       }
     }
+  }
+  if(!toolCalls.length && raw && raw._parseError){
+    toolCalls.push({id:'', name:'', args:null, parseError:String(raw._parseError)});
   }
   return {role:'assistant', content, thinking, toolCalls};
 }
@@ -276,8 +303,8 @@ function assistantPromptTokens(messages, tools){
 
 function assistantGuessContextLimit(model){
   const s = String(model || '').toLowerCase();
-  if(/qwen3\.8|qwen3-8|qwen3\.5|qwen3/.test(s))return 32768;
-  if(/qwen/.test(s))return 32768;
+  if(/qwen3\.8|qwen3-8|qwen3\.5|qwen3/.test(s))return 131072;
+  if(/qwen/.test(s))return 131072;
   return ASSISTANT_DEFAULT_CONTEXT_TOKENS;
 }
 
@@ -318,6 +345,8 @@ function assistantCompactFacts(parsed){
     ['places', parsed.places],
     ['weather', parsed.weather],
     ['weatherHints', parsed.weatherHints],
+    ['settingKind', parsed.settingKind],
+    ['address', parsed.address],
     ['rhythm', parsed.rhythm],
     ['priority', parsed.priority],
     ['newName', parsed.newName]
@@ -334,19 +363,51 @@ function assistantCompactFacts(parsed){
 
 function assistantCompactDraft(draft){
   if(!draft || !draft.name)return null;
+  if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(draft.kind)){
+    const out = {kind:draft.kind, name:draft.name};
+    if(draft.settingId)out.settingId = draft.settingId;
+    if(draft.weatherProposed && Array.isArray(draft.weatherProposed.rules) && draft.weatherProposed.rules.length){
+      out.rules = draft.weatherProposed.rules.length;
+    }
+    if(draft.address)out.address = draft.address;
+    if(draft.window)out.window = draft.window;
+    if(Array.isArray(draft.allowedWeekdays) && draft.allowedWeekdays.length)out.days = draft.allowedWeekdays.slice();
+    return out;
+  }
   const out = {kind:draft.kind || null, name:draft.name};
   if(draft.hid)out.hid = draft.hid;
+  if(draft.habitKind && draft.habitKind !== 'keepup')out.habitKind = draft.habitKind;
+  if(draft.emoji)out.emoji = draft.emoji;
+  if(draft.emojiBgColor)out.emojiColor = draft.emojiBgColor;
   if(draft.durationMinutes != null)out.durationMinutes = draft.durationMinutes;
+  if(draft.priority != null)out.priority = draft.priority;
+  if(Array.isArray(draft.topics) && draft.topics.length)out.topics = draft.topics.slice();
   if(draft.window)out.window = draft.window;
+  if(draft.preferredWindow)out.preferredWindow = draft.preferredWindow;
   if(draft.weather)out.weather = {mode:draft.weather.mode, name:draft.weather.name || null};
   if(draft.places && draft.places.names && draft.places.names.length)out.places = draft.places.names;
-    if(draft.kind === 'habit'){
+  if(draft.kind === 'habit'){
     if(draft.timesPerPeriod != null)out.timesPerPeriod = draft.timesPerPeriod;
     if(draft.periodDays != null)out.periodDays = draft.periodDays;
     if(Array.isArray(draft.allowedWeekdays) && draft.allowedWeekdays.length)out.weekdays = draft.allowedWeekdays.slice();
+    if(Array.isArray(draft.allowedMonthDays) && draft.allowedMonthDays.length)out.monthDays = draft.allowedMonthDays.slice();
+    if(Array.isArray(draft.preferredWeekdays) && draft.preferredWeekdays.length)out.preferredWeekdays = draft.preferredWeekdays.slice();
+    if(Array.isArray(draft.preferredMonthDays) && draft.preferredMonthDays.length)out.preferredMonthDays = draft.preferredMonthDays.slice();
   }
   if(draft.dueDate != null)out.dueDate = draft.dueDate;
   if(draft.dueTime)out.dueTime = draft.dueTime;
+  if(draft.earlyWindowDays != null)out.earlyDays = draft.earlyWindowDays;
+  if(draft.delayAllowanceDays != null)out.delayDays = draft.delayAllowanceDays;
+  if(draft.breakable != null)out.breakable = draft.breakable;
+  if(draft.minChunkMinutes != null)out.minChunkMinutes = draft.minChunkMinutes;
+  if(draft.autoMarkMinutes !== undefined)out.autoMarkMinutes = draft.autoMarkMinutes;
+  if(draft.trackValue)out.trackValue = true;
+  if(draft.pinned)out.pinned = true;
+  if(draft.hardDue)out.hardDue = true;
+  if(Array.isArray(draft.scheduleLinks) && draft.scheduleLinks.length){
+    out.order = draft.scheduleLinks.map(link => `${link.direction} ${link.name || link.anchorHid}`).join(', ');
+  }
+  if(Array.isArray(draft.links) && draft.links.length)out.links = draft.links.length;
   return out;
 }
 
@@ -355,7 +416,7 @@ function assistantLastSteeringText(messages){
     const msg = messages[i];
     if(!msg || msg.role !== 'user')continue;
     const c = String(msg.content || '');
-    if(/That tool call was invalid|You thought but did not call|Call (?:set_|draft_|complete_|lookup_)|currentDraft is the item|The user is changing currentDraft/i.test(c)){
+    if(/That tool call was invalid|was cut off|Do not call a tool|FLAT strings|You thought but did not call|Call (?:set_|draft_|complete_|lookup_)|currentDraft is the item|The user is changing currentDraft|weather profile, place, busy time/i.test(c)){
       return c;
     }
     return '';

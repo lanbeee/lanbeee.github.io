@@ -1,6 +1,5 @@
-// Utterance parsers for the local assistant. Qwen names the intent and the
-// item; Tings fills clocks, dates, duration, places, and rhythm from the
-// words the user typed so messy phrasing still becomes a valid draft.
+// Utterance parsers for the local fast path only. They must not overwrite a
+// Qwen draft_item call: untrusted or "use AI instead" turns withhold facts.
 
 const ASSISTANT_WEEKDAY_NAMES = {
   sunday:0, sun:0,
@@ -241,6 +240,282 @@ function assistantNormalizeWeekdaysArg(value){
   return null;
 }
 
+function assistantParseBool(value){
+  if(typeof value === 'boolean')return value;
+  if(value == null || value === '')return null;
+  const s = assistantNormText(value);
+  if(/^(true|yes|on|y|1)$/.test(s))return true;
+  if(/^(false|no|off|n|0)$/.test(s))return false;
+  return null;
+}
+
+function assistantParseHabitKind(value){
+  if(value == null || value === '')return null;
+  const s = assistantNormText(value);
+  if(/^(keepup|build|building)$/.test(s))return 'keepup';
+  if(/^(reduce|limit|limiting)$/.test(s))return 'reduce';
+  if(/^(zero|stop|stopping)$/.test(s))return 'zero';
+  return null;
+}
+
+function assistantParseMonthDays(value){
+  if(value == null || value === '')return null;
+  if(typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 31)return [value];
+  if(Array.isArray(value)){
+    const days = [];
+    for(let i = 0; i < value.length; i += 1){
+      const nested = assistantParseMonthDays(value[i]);
+      if(!nested)continue;
+      for(let j = 0; j < nested.length; j += 1){
+        if(days.indexOf(nested[j]) < 0)days.push(nested[j]);
+      }
+    }
+    return days.sort((a, b) => a - b);
+  }
+  const s = assistantNormText(value);
+  if(!s)return null;
+  if(/^(any|all|none|everyday|every day|daily)$/.test(s))return [];
+  const days = [];
+  const re = /\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b/g;
+  let match;
+  while((match = re.exec(s))){
+    const n = Number(match[1]);
+    if(n >= 1 && n <= 31 && days.indexOf(n) < 0)days.push(n);
+  }
+  return days.length ? days.sort((a, b) => a - b) : null;
+}
+
+function assistantParseTopicsArg(value){
+  if(value == null || value === '')return null;
+  const s = typeof value === 'string' ? assistantNormText(value) : '';
+  if(s && /^(none|off|clear)$/.test(s))return [];
+  if(typeof normalizeTopics === 'function')return normalizeTopics(value);
+  const items = Array.isArray(value) ? value : String(value).split(',');
+  return items.map(item => String(item || '').trim()).filter(Boolean).slice(0, 24);
+}
+
+function assistantParseEmojiColor(value){
+  if(value == null || value === '')return null;
+  const s = assistantNormText(value);
+  if(/^(none|off|clear|default)$/.test(s))return '';
+  if(typeof normalizeEmojiBgColor === 'function'){
+    const token = normalizeEmojiBgColor(s);
+    if(token)return token;
+    return null;
+  }
+  return s;
+}
+
+function assistantParseEmoji(value){
+  if(value == null)return null;
+  const raw = String(value).trim();
+  if(!raw || /^(none|off|clear|default)$/i.test(raw))return '';
+  return typeof cleanMark === 'function' ? cleanMark(raw) : raw.slice(0, 8);
+}
+
+function assistantParseBreakable(value){
+  if(typeof value === 'boolean')return {breakable:value};
+  if(value == null || value === '')return null;
+  const s = assistantNormText(value);
+  const bool = assistantParseBool(s);
+  if(bool != null)return {breakable:bool};
+  if(/\b(?:unbreakable|one session|don'?t split|do not split|no split)\b/.test(s)){
+    return {breakable:false};
+  }
+  if(/\b(?:split|breakable|chunks?)\b/.test(s)){
+    const mins = typeof assistantParseDuration === 'function' ? assistantParseDuration(s) : null;
+    return mins != null ? {breakable:true, minChunkMinutes:mins} : {breakable:true};
+  }
+  return null;
+}
+
+function assistantParseAutoMark(value){
+  if(value == null || value === '')return undefined;
+  if(typeof value === 'number' && Number.isFinite(value)){
+    return typeof normalizeAutoMark === 'function' ? normalizeAutoMark(value) : Math.max(0, Math.round(value));
+  }
+  const s = assistantNormText(value);
+  if(/^(manual|off|none|blank)$/.test(s))return null;
+  if(typeof normalizeAutoMark === 'function')return normalizeAutoMark(s);
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function assistantParseFlexDays(value){
+  if(value == null || value === '')return null;
+  if(typeof value === 'number' && Number.isFinite(value)){
+    return Math.max(0, Math.min(60, Math.round(value)));
+  }
+  const s = assistantNormText(value);
+  if(/^(none|off|no)$/.test(s))return 0;
+  const n = typeof assistantParseCount === 'function' ? assistantParseCount(s, 0, 60) : parseInt(s, 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(60, n)) : null;
+}
+
+function assistantParseSnoozeUntil(value, now){
+  if(value == null || value === '')return undefined;
+  const ts = now != null ? Number(now) : Date.now();
+  if(typeof value === 'number' && Number.isFinite(value) && value > 1e11)return Math.round(value);
+  const s = assistantNormText(value);
+  if(/^(off|none|clear|show|unsnooze)$/.test(s))return null;
+  if(/\buntil (?:the )?end of (?:the )?day\b|\beod\b/.test(s)){
+    const start = typeof dayStart === 'function' ? dayStart(ts) : ts;
+    return start + 86400000;
+  }
+  const hours = s.match(/\b(\d+(?:\.\d+)?)\s*h(?:ours?)?\b/) || s.match(/\b(?:for )?(\d+)\s*hours?\b/);
+  if(hours){
+    const n = Math.min(72, Math.max(1, Math.round(Number(hours[1]))));
+    return ts + n * 3600000;
+  }
+  const days = s.match(/\b(\d+)\s*d(?:ays?)?\b/) || s.match(/\b(?:for )?(\d+)\s*days?\b/);
+  if(days){
+    const n = Math.min(60, Math.max(1, Number(days[1])));
+    return ts + n * 86400000;
+  }
+  if(/\buntil tomorrow\b|\btomorrow\b/.test(s)){
+    const start = typeof dayStart === 'function' ? dayStart(ts) : ts;
+    return start + 86400000;
+  }
+  const due = typeof assistantParseDue === 'function' ? assistantParseDue(s, ts) : null;
+  if(due != null)return due;
+  return undefined;
+}
+
+function assistantParseLinkText(value){
+  const raw = String(value || '').trim();
+  if(!raw)return null;
+  const s = assistantNormText(raw);
+  if(/^(none|off|clear)$/.test(s))return {clear:true};
+  if(/^(tel:|sms:)/i.test(raw) || /\bcall\b/.test(s) || /^\+?\d[\d\s().-]{3,}$/.test(raw)){
+    return {kind:'phone', value:raw.replace(/^(?:call|phone|tel:)\s*/i, '')};
+  }
+  if(/\bwhatsapp\b/.test(s) || /wa\.me/i.test(raw))return {kind:'whatsapp', value:raw};
+  if(/\bfacetime\b/.test(s))return {kind:'facetime', value:raw};
+  if(/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:/i.test(raw)){
+    return {kind:'app', value:raw};
+  }
+  return {kind:'link', value:raw};
+}
+
+function assistantParseLinksArg(value){
+  if(value == null || value === '')return null;
+  if(typeof value === 'string' && /^(none|off|clear)$/i.test(value.trim()))return [];
+  const items = Array.isArray(value) ? value : [value];
+  const out = [];
+  for(const item of items){
+    if(item && typeof item === 'object' && item.value){
+      out.push(item);
+      continue;
+    }
+    const parsed = assistantParseLinkText(item);
+    if(!parsed)continue;
+    if(parsed.clear)return [];
+    out.push(parsed);
+  }
+  const normalized = typeof normalizeLinks === 'function' ? normalizeLinks(out) : out;
+  if(!normalized.length && out.length)return null;
+  return normalized;
+}
+
+function assistantParseOrderModifiers(text){
+  const s = assistantNormText(text);
+  return {
+    adjacency:/\b(?:right|direct(?:ly)?|immediately|straight)\b/.test(s) ? 'direct' : 'sometime',
+    requireSameDay:/\bsame day\b/.test(s)
+  };
+}
+
+function assistantParseOrderName(text){
+  let s = assistantNormText(text);
+  s = s.replace(/^(?:it |this |that )?(?:should |must |needs to )?(?:go |be |sit |come )?/, '');
+  s = s.replace(/\b(?:right|directly|immediately|straight)\s+/g, '');
+  s = s.replace(/\b(?:same day|on the same day)\b/g, '');
+  s = s.replace(/^(?:after|before)\s+/, '');
+  s = s.replace(/[.,].*$/, '');
+  s = s.replace(/\s+\b(?:the|a|an)\b\s*$/, '');
+  s = s.replace(/^(?:the|a|an)\s+/, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  if(!s || /^(none|off|clear|it|this|that)$/.test(s))return null;
+  return s.slice(0, ASSISTANT_NAME_MAX);
+}
+
+function assistantParseOrderText(value){
+  if(value == null || value === '')return null;
+  const s = assistantNormText(value);
+  if(/^(none|off|clear)$/.test(s))return {clear:true};
+  const mods = assistantParseOrderModifiers(s);
+  const direction = /\bbefore\b/.test(s) ? 'before' : (/\bafter\b/.test(s) ? 'after' : null);
+  const name = assistantParseOrderName(s);
+  if(!direction || !name)return {modifiers:mods};
+  return {links:[{name, direction, adjacency:mods.adjacency, requireSameDay:mods.requireSameDay}]};
+}
+
+function assistantParsePlacePrefsText(value){
+  if(value == null || value === '')return null;
+  const s = assistantNormText(value);
+  if(/^(none|off|clear)$/.test(s))return [];
+  const parts = String(value).split(/[,;]|\band\b/i);
+  const out = [];
+  for(const part of parts){
+    const chunk = String(part || '').trim();
+    if(!chunk)continue;
+    const norm = assistantNormText(chunk);
+    const level = /\bavoid\b/.test(norm) ? 'avoid'
+      : (/\bhigh|prefer(?:red)?|favourite|favorite\b/.test(norm) ? 'high'
+        : (/\blittle|low\b/.test(norm) ? 'little' : 'high'));
+    const name = chunk.replace(/\b(?:avoid|high|prefer(?:red)?|favourite|favorite|little|low)\b/ig, '').trim();
+    if(name)out.push({name, level});
+  }
+  return out.length ? out : null;
+}
+
+function assistantWindowToOptionTimes(window){
+  if(!window || typeof window !== 'object')return null;
+  const start = window.start || {};
+  const end = window.end || {};
+  const out = {};
+  if(start.kind === 'clock')out.start = start.minutes;
+  else if(start.kind === 'anchor'){
+    out.startAnchor = start.anchor;
+    out.startOffsetMin = start.offsetMin || 0;
+  }else return null;
+  if(end.kind === 'clock')out.end = end.minutes;
+  else if(end.kind === 'anchor'){
+    out.endAnchor = end.anchor;
+    out.endOffsetMin = end.offsetMin || 0;
+  }else if(start.kind === 'clock'){
+    out.end = Math.min(1439, start.minutes + 60);
+  }else return null;
+  return out;
+}
+
+function assistantParseScheduleOptionText(value, catalog){
+  if(value == null || value === '')return null;
+  const s = assistantNormText(value);
+  if(/^(none|off|clear)$/.test(s))return {clear:true};
+  const window = typeof assistantParseWindowFromText === 'function' ? assistantParseWindowFromText(s) : null;
+  const times = assistantWindowToOptionTimes(window);
+  if(!times)return null;
+  const weekdays = typeof assistantNormalizeWeekdaysArg === 'function' ? assistantNormalizeWeekdaysArg(s) : [];
+  const places = typeof assistantMatchCatalogNames === 'function'
+    ? assistantMatchCatalogNames((catalog && catalog.places) || [], s)
+    : [];
+  const anywhere = /\banywhere\b/.test(s);
+  const pref = /\bavoid\b/.test(s) ? 'avoid'
+    : (/\bhigh|prefer\b/.test(s) ? 'high'
+      : (/\blittle\b/.test(s) ? 'little' : null));
+  const option = {
+    weekdays:Array.isArray(weekdays) ? weekdays : [],
+    locationId:anywhere ? null : (places[0] && places[0].id) || null,
+    sameDayMode:/\bseparate\b/.test(s) ? 'separate' : 'alternative',
+    weatherProfileMode:'inherit',
+    weatherProfileId:null,
+    ...times
+  };
+  if(pref)option.pref = pref;
+  return {option};
+}
+
 function assistantParseRhythm(text){
   const s = assistantNormText(text);
   if(!s)return null;
@@ -416,12 +691,130 @@ function assistantParseWeatherHints(text){
   const notFreezing = /\b(?:not freezing|above freezing|if it(?:'s| is) not freezing|isn'?t freezing|no freeze|not too cold)\b/.test(s);
   const notSnowing = /\b(?:not snowing|no snow)\b/.test(s);
   const dryNamed = /\b(?:dry weather|using dry)\b/.test(s);
+  const notWindy = /\b(?:not too windy|skip wind|calm(?: wind)?|no (?:strong )?wind)\b/.test(s);
   return {
-    mentioned:notRaining || notFreezing || notSnowing || dryNamed,
+    mentioned:notRaining || notFreezing || notSnowing || dryNamed || notWindy,
     notRaining:notRaining || dryNamed,
     notFreezing,
-    notSnowing
+    notSnowing,
+    notWindy
   };
+}
+
+function assistantTitleName(value, max){
+  const raw = String(value || '').trim().replace(/\s+/g, ' ');
+  if(!raw)return '';
+  const cap = max != null ? max : 32;
+  if(/^[A-Z0-9]{2,8}$/.test(raw))return raw.slice(0, cap);
+  return raw.replace(/\b([a-z])/g, ch => ch.toUpperCase()).slice(0, cap);
+}
+
+function assistantWeatherStoreValue(metric, n, unitRaw){
+  const unit = assistantNormText(unitRaw).replace(/[°\s]/g, '');
+  if(metric === 'temperature_2m' || metric === 'apparent_temperature'){
+    if(unit === 'f' || unit === 'fahrenheit')return (n - 32) * 5 / 9;
+    if(unit === 'c' || unit === 'celsius' || unit === 'deg' || unit === 'degree' || unit === 'degrees')return n;
+  }
+  if((metric === 'wind_speed_10m' || metric === 'wind_gusts_10m') && unit === 'mph'){
+    return n / 0.621371;
+  }
+  if((metric === 'precipitation' || metric === 'snowfall') && (unit === 'in' || unit === 'inch' || unit === 'inches')){
+    return metric === 'snowfall' ? n * 2.54 : n * 25.4;
+  }
+  return typeof weatherMetricValueToStored === 'function' ? weatherMetricValueToStored(metric, n) : n;
+}
+
+function assistantPushWeatherRule(rules, metric, patch){
+  const next = Object.assign({metric, min:null, max:null, hard:false, relative:'none'}, patch);
+  const i = rules.findIndex(rule => rule && rule.metric === metric);
+  if(i >= 0)rules[i] = Object.assign({}, rules[i], next);
+  else rules.push(next);
+}
+
+function assistantParseWeatherRulesFromText(text){
+  const s = assistantNormText(text);
+  const hints = assistantParseWeatherHints(s);
+  const rules = [];
+  if(hints.notWindy)assistantPushWeatherRule(rules, 'wind_speed_10m', {max:20, relative:'low', hard:false});
+  const num = '(-?\\d+(?:\\.\\d+)?)';
+  const unit = '(?:\\s*(°?\\s*c|°?\\s*f|celsius|fahrenheit|degrees?|km\\/?h|kmh|mph|%|mm|cm|in(?:ches)?)?)';
+  const take = (re, metric, which, hard) => {
+    const match = s.match(re);
+    if(!match)return;
+    const n = Number(match[1]);
+    if(!Number.isFinite(n))return;
+    const stored = assistantWeatherStoreValue(metric, n, match[2]);
+    const patch = {hard:hard !== false};
+    patch[which] = stored;
+    assistantPushWeatherRule(rules, metric, patch);
+  };
+  take(new RegExp('\\b(?:wind(?: speed)?|gusts?)\\s+(?:under|below|max(?:imum)?|less than|at most)\\s+' + num + unit), /gust/.test(s) ? 'wind_gusts_10m' : 'wind_speed_10m', 'max');
+  take(new RegExp('\\brain chance\\s+(?:under|below|max(?:imum)?|less than|at most)\\s+' + num), 'precipitation_probability', 'max');
+  take(new RegExp('\\b(?:temp(?:erature)?|feels like)\\s+(?:above|over|at least|min(?:imum)?)\\s+' + num + unit), 'temperature_2m', 'min');
+  take(new RegExp('\\b(?:temp(?:erature)?|feels like)\\s+(?:below|under|at most|max(?:imum)?)\\s+' + num + unit), 'temperature_2m', 'max');
+  if(!/\bfreezing\b/.test(s)){
+    take(new RegExp('\\b(?:above|over|at least|min(?:imum)?)\\s+' + num + '\\s*(°?\\s*c|°?\\s*f|celsius|fahrenheit|degrees?)'), 'temperature_2m', 'min');
+    take(new RegExp('\\b(?:below|under|at most|max(?:imum)?)\\s+' + num + '\\s*(°?\\s*c|°?\\s*f|celsius|fahrenheit|degrees?)'), 'temperature_2m', 'max');
+  }
+  if(/\bprefer(?:ring)? (?:warm|hot|higher temp)/.test(s))assistantPushWeatherRule(rules, 'temperature_2m', {relative:'high'});
+  if(/\bprefer(?:ring)? (?:cool|cold|lower temp)/.test(s))assistantPushWeatherRule(rules, 'temperature_2m', {relative:'low'});
+  if(/\bprefer(?:ring)? dry\b/.test(s))assistantPushWeatherRule(rules, 'precipitation_probability', {relative:'low'});
+  return {hints, rules, mentioned:hints.mentioned || rules.length > 0};
+}
+
+function assistantParseSettingCreate(text){
+  const s = assistantNormText(text);
+  if(!s)return null;
+  if(/\b(?:habit|task|remind me)\b/.test(s))return null;
+  const cutName = blob => {
+    let name = String(blob || '').replace(/^(?:called|named|for|to)\s+/, '');
+    name = name.split(/\b(?:only if|not raining|skip rain|wind |temp(?:erature)? |above |below |with |from |between |every )\b/)[0];
+    name = typeof assistantStripNameJunk === 'function'
+      ? assistantStripNameJunk(typeof assistantCutNameTail === 'function' ? assistantCutNameTail(name) : name)
+      : name.trim();
+    return name;
+  };
+  if(/\bweather profile\b/.test(s) && /\b(?:create|add|make|new)\b/.test(s)){
+    const m = s.match(/\bweather profile\s+(?:called|named|for|to)\s+(.+)$/)
+      || s.match(/\b(?:create|add|make|new)\s+(?:a |an |the )?weather profile\s+(.+)$/);
+    const name = cutName(m && m[1]) || 'Outdoor';
+    return {kind:'weather', name:assistantTitleName(name, 32)};
+  }
+  if(/\b(?:busy time|blocked time)\b/.test(s) && /\b(?:create|add|make|new)\b/.test(s)){
+    const m = s.match(/\b(?:busy time|blocked time)\s+(?:called|named|for)\s+(.+)$/)
+      || s.match(/\b(?:create|add|make|new)\s+(?:a |an |the )?(?:busy time|blocked time)\s+(.+)$/);
+    const name = cutName(m && m[1]) || 'Busy';
+    return {kind:'busy', name:assistantTitleName(name, 24)};
+  }
+  if(/\b(?:create|add|make|new)\s+(?:a |an |the )?topics?\b/.test(s)
+    && !/\b(?:habit|task|location|place|weather|window|duration|priority|emoji)\b/.test(s)){
+    const m = s.match(/\btopics?\s+(?:called|named|for)?\s*(.+)$/);
+    const name = cutName(m && m[1]);
+    if(!name)return null;
+    return {kind:'topic', name:assistantTitleName(name, 32)};
+  }
+  if(/\b(?:create|make)\s+(?:a |an |the )?(?:new )?(?:location|place)\b/.test(s)
+    || /\badd\s+(?:a |an )?(?:new )(?:location|place)\b/.test(s)
+    || /\badd\s+(?:a |an )?(?:location|place)\s+(?:called|named)\b/.test(s)
+    || /\bnew (?:location|place)\b/.test(s)){
+    const named = s.match(/\b(?:called|named)\s+(.+?)(?:\s+(?:at|address)\s+(.+))?$/);
+    const at = s.match(/\b(?:location|place)\s+(.+?)\s+at\s+(.+)$/);
+    let name = '';
+    let address = '';
+    if(named){
+      name = cutName(named[1]);
+      address = String(named[2] || '').trim();
+    }else if(at){
+      name = cutName(at[1]);
+      address = String(at[2] || '').trim();
+    }else{
+      const m = s.match(/\b(?:location|place)\s+(.+)$/);
+      name = cutName(m && m[1]) || 'Place';
+    }
+    if(!name)name = 'Place';
+    return {kind:'location', name:assistantTitleName(name, 48), address:address.slice(0, 120)};
+  }
+  return null;
 }
 
 function assistantGuessItemName(text){
@@ -464,9 +857,51 @@ function assistantNamesMatch(a, b){
   return limit > 0 && assistantLevenshtein(na, nb) <= limit;
 }
 
+function assistantLooksLikeSettingFollowup(text){
+  const s = assistantNormText(text);
+  if(!s)return false;
+  if(/\b(?:add(?:ing)?|set|use|put)\s+(?:the\s+|its\s+|a\s+)?(?:location|place|venue|window|weather|duration|priority|topics?|emoji)\b/.test(s))return true;
+  if(/^(?:the\s+)?(?:location|place|venue)\s+(?:is\s+|to\s+|at\s+)?\S/.test(s))return true;
+  if(/\b(?:make it|keep it|have it|do it)\s+(?:at|from)\b/.test(s))return true;
+  return false;
+}
+
+function assistantParseLocationClause(text){
+  const s = assistantNormText(text);
+  if(!s)return null;
+  const match = s.match(/\b(?:add(?:ing)?|set|use|put)\s+(?:the\s+|its\s+|a\s+)?(?:location|place|venue)\s+(?:to\s+|as\s+|at\s+)?(.+)$/)
+    || s.match(/^(?:the\s+)?(?:location|place|venue)\s+(?:is\s+|to\s+|at\s+)?(.+)$/);
+  if(!match)return null;
+  let ref = String(match[1] || '').trim();
+  ref = ref.replace(/^(?:to|as|at|the)\s+/i, '');
+  ref = ref.replace(/\s+(?:on|for|to)\s+(?:it|this|that|the (?:habit|task|item|ting))\s*$/i, '');
+  ref = ref.replace(/[?.!,;:]+$/g, '').trim();
+  if(!ref || /^(?:it|this|that)$/i.test(ref))return null;
+  return ref;
+}
+
+function assistantMatchPlacesFromRef(places, ref){
+  const want = assistantNormText(ref);
+  if(!want)return [];
+  const list = places || [];
+  if(typeof assistantMatchByName === 'function'){
+    const match = assistantMatchByName(list, ref);
+    if(match && match.ok && match.item)return [match.item];
+  }
+  const exact = list.filter(item => assistantNormText(item && item.name) === want);
+  if(exact.length === 1)return exact;
+  const part = list.filter(item => {
+    const name = assistantNormText(item && item.name);
+    return name && (name.includes(want) || want.includes(name));
+  });
+  if(part.length === 1)return part;
+  return typeof assistantMatchCatalogNames === 'function' ? assistantMatchCatalogNames(list, ref) : [];
+}
+
 function assistantLooksLikeEdit(text){
   const s = assistantNormText(text);
   if(!s)return false;
+  if(assistantLooksLikeSettingFollowup(s))return true;
   if(/\b(?:remind me|don't forget|dont forget|add:?|create |new task|new habit)\b/.test(s)
     && !/\b(?:make it|change it|update it|rename it|add \d)/.test(s)){
     return false;
@@ -511,30 +946,15 @@ function assistantGuessEditTarget(text){
   return cleaned.slice(0, ASSISTANT_NAME_MAX);
 }
 
-function assistantHasPatchFields(parsed){
+function assistantHasPatchFields(parsed, draft){
   if(!parsed)return false;
-  if(parsed.window)return true;
-  if(parsed.durationMinutes != null)return true;
-  if(parsed.rhythm)return true;
-  if(parsed.priority != null)return true;
+  if(parsed.window || parsed.rhythm || parsed.newName)return true;
+  if(parsed.durationMinutes != null || parsed.priority != null)return true;
   if(parsed.places && parsed.places.length)return true;
-  if(parsed.weather)return true;
-  if(parsed.weatherHints && parsed.weatherHints.mentioned)return true;
-  if(parsed.due || parsed.dueTime)return true;
-  if(parsed.newName)return true;
-  return false;
-}
-
-function assistantHasActionablePatch(parsed, draft){
-  if(!parsed)return false;
-  if(parsed.rhythm)return true;
-  if(parsed.durationMinutes != null)return true;
-  if(parsed.window)return true;
-  if(parsed.priority != null)return true;
-  if(parsed.places && parsed.places.length)return true;
-  if(parsed.weather)return true;
-  if(parsed.weatherHints && parsed.weatherHints.mentioned)return true;
-  if(parsed.newName)return true;
+  if(parsed.weather || (parsed.weatherHints && parsed.weatherHints.mentioned))return true;
+  if(parsed.habitKind || parsed.emoji != null || parsed.topics || parsed.monthDays)return true;
+  if(parsed.breakable != null || parsed.pinned != null || parsed.hardDue != null)return true;
+  if(parsed.earlyWindowDays != null || parsed.delayAllowanceDays != null)return true;
   if(parsed.due || parsed.dueTime)return !draft || draft.kind === 'task';
   return false;
 }
@@ -549,7 +969,12 @@ function assistantMentionsFocus(text, parsed, draft){
 }
 
 function assistantIsNewCreate(parsed, draft){
+  if(parsed && parsed.intent === 'create_setting'){
+    if(assistantLooksLikeSettingFollowup(parsed.text) && draft && typeof assistantIsItemKind === 'function' && assistantIsItemKind(draft.kind))return false;
+    return true;
+  }
   if(!parsed || (parsed.intent !== 'create_task' && parsed.intent !== 'create_habit'))return false;
+  if(assistantLooksLikeSettingFollowup(parsed.text))return false;
   if(!parsed.itemName || assistantIsPronounName(parsed.itemName))return false;
   if(assistantLooksLikeEdit(parsed.text))return false;
   if(!draft || !draft.name)return true;
@@ -560,6 +985,7 @@ function assistantIsFollowupOnFocus(text, parsed, draft){
   if(!draft || !draft.name || !parsed)return false;
   if(parsed.intent === 'ask_today' && parsed.confident)return false;
   if(parsed.intent === 'unsupported' && parsed.confident)return false;
+  if(assistantLooksLikeSettingFollowup(text))return true;
   if(assistantIsNewCreate(parsed, draft))return false;
   const named = parsed.itemName && !assistantIsPronounName(parsed.itemName) ? parsed.itemName : null;
   const sameName = named && assistantNamesMatch(named, draft.name);
@@ -586,7 +1012,7 @@ function assistantParseOffsetMinutes(num, unit, special){
   return Math.round(n);
 }
 
-function assistantParseEndpointPhrase(phrase){
+function assistantParseSimpleEndpointPhrase(phrase){
   let s = assistantNormText(phrase);
   if(!s)return null;
   s = s.replace(/^(?:till|until|to|by)\s+/, '');
@@ -613,20 +1039,79 @@ function assistantParseEndpointPhrase(phrase){
   return null;
 }
 
+function assistantParseCombinedEndpointParts(text){
+  const s = assistantNormText(text);
+  if(!s)return null;
+  const whichever = s.match(/^(.+?)\s+or\s+(.+?)\s*,?\s*whichever is (later|earlier)$/);
+  if(whichever)return {a:whichever[1], b:whichever[2], combine:whichever[3]};
+  const ofAnd = s.match(/^(?:the )?(later|earlier)\s+of\s+(.+?)\s+and\s+(.+)$/);
+  if(ofAnd)return {a:ofAnd[2], b:ofAnd[3], combine:ofAnd[1]};
+  return null;
+}
+
+function assistantParseEndpointPhrase(phrase){
+  const parts = assistantParseCombinedEndpointParts(phrase);
+  if(parts){
+    const primary = assistantParseSimpleEndpointPhrase(parts.a);
+    const second = assistantParseSimpleEndpointPhrase(parts.b);
+    if(primary && second){
+      primary.combine = parts.combine;
+      primary.second = second;
+      return primary;
+    }
+  }
+  return assistantParseSimpleEndpointPhrase(phrase);
+}
+
+function assistantAttachCombine(window, combine, second){
+  if(!window || !window.start || !combine || !second)return window;
+  window.start.combine = combine;
+  window.start.second = second;
+  return window;
+}
+
+function assistantWindowFromClocks(start, end){
+  if(start == null || end == null)return null;
+  return {
+    start:{kind:'clock', minutes:start, clock:assistantClockLabel(start)},
+    end:{kind:'clock', minutes:end, clock:assistantClockLabel(end)}
+  };
+}
+
 function assistantParseWindowFromText(text){
   let s = assistantNormText(text);
+  s = s.replace(/[.?!,;:]+$/g, '').trim();
   s = s.replace(/^(?:please |can you |could you )?(?:change|update|edit|make)(?: it| this| that| this one)?(?: to(?: be)?)?\s+/, '');
-  s = s.replace(/^allowed(?: to be)?\s+/, '');
-  const clockRange = s.match(/\b(?:between|from)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s+(?:and|to|-)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/);
-  if(clockRange){
-    const start = assistantParseClock(clockRange[1]);
-    const end = assistantParseClock(clockRange[2]);
-    if(start != null && end != null){
-      return {
-        start:{kind:'clock', minutes:start, clock:assistantClockLabel(start)},
-        end:{kind:'clock', minutes:end, clock:assistantClockLabel(end)}
-      };
+  s = s.replace(/^(?:allowed|preferred)(?: to be)?\s+/, '');
+  const endBit = `(?:${ASSISTANT_ANCHOR_WORD}|\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)`;
+  const combineRange = s.match(new RegExp(`\\b(later|earlier)\\s+of\\s+(.+?)\\s+and\\s+(.+?)(?:\\s+(?:until|till|to)\\s+(${endBit}))?(?=\\s*[.?!,;:]|$)`));
+  if(combineRange){
+    const combine = combineRange[1] === 'earlier' ? 'earlier' : 'later';
+    const start = assistantParseEndpointPhrase(combineRange[2]);
+    const second = assistantParseEndpointPhrase(combineRange[3]);
+    const end = combineRange[4] ? assistantParseEndpointPhrase(combineRange[4]) : {kind:'unset'};
+    if(start && second)return assistantAttachCombine({start, end:end || {kind:'unset'}}, combine, second);
+  }
+  const whicheverRange = s.match(/\b(?:from|between)\s+(.+?)\s+(?:to|until|till|and)\s+(.+?)\s+or\s+(.+?)\s*,?\s*whichever is (later|earlier)\b/);
+  if(whicheverRange){
+    const start = assistantParseSimpleEndpointPhrase(whicheverRange[1]);
+    const end = assistantParseSimpleEndpointPhrase(whicheverRange[2]);
+    const second = assistantParseSimpleEndpointPhrase(whicheverRange[3]);
+    if(start && end && second){
+      end.combine = whicheverRange[4];
+      end.second = second;
+      return {start, end};
     }
+  }
+  if(/^(any|all day|none|open|24h|all day long)$/.test(s)){
+    return {start:{kind:'unset'}, end:{kind:'unset'}};
+  }
+  const clockRange = s.match(/\b(?:between|from)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s+(?:and|to|-)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/)
+    || s.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*[-–]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))/)
+    || s.match(/\b(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\b/);
+  if(clockRange){
+    const ranged = assistantWindowFromClocks(assistantParseClock(clockRange[1]), assistantParseClock(clockRange[2]));
+    if(ranged)return ranged;
   }
   const between = s.match(/\b(?:(?:to be )?allowed(?: to be)? )?(?:between|from)\s+(.+?)\s+(?:and|to)\s+(?:(?:till|until|to|by)\s+)?(.+?)(?:[.!?]|$)/);
   if(between){
@@ -653,13 +1138,7 @@ function assistantParseWindowFromText(text){
   const atClock = s.match(/\b(?:at|around)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))/);
   if(atClock){
     const start = assistantParseClock(atClock[1]);
-    if(start != null){
-      const end = Math.min(1440, start + 60);
-      return {
-        start:{kind:'clock', minutes:start, clock:assistantClockLabel(start)},
-        end:{kind:'clock', minutes:end, clock:assistantClockLabel(end)}
-      };
-    }
+    if(start != null)return assistantWindowFromClocks(start, Math.min(1440, start + 60));
   }
   const offsetAnchor = s.match(new RegExp(`\\b(?:(\\d+(?:\\.\\d+)?)\\s*(hours?|hrs?|h|minutes?|mins?|m)|(an hour)|(half an hour))\\s+(before|after)\\s+(${ASSISTANT_ANCHOR_WORD})\\b`));
   if(offsetAnchor){
@@ -686,35 +1165,17 @@ function assistantParseWindowFromText(text){
     const anchor = typeof assistantCleanAnchor === 'function' ? assistantCleanAnchor(beforeAnchor[1]) : beforeAnchor[1];
     if(anchor)return {start:{kind:'unset'}, end:{kind:'anchor', anchor, offsetMin:0}};
   }
-  if(/\bthis evening\b|\bin the evening\b|\bevening\b/.test(s) && !/\bevery evening\b/.test(s)){
-    return {
-      start:{kind:'clock', minutes:17 * 60, clock:'17:00'},
-      end:{kind:'clock', minutes:21 * 60, clock:'21:00'}
-    };
+  if(/\b(?:this evening|in the evening)\b/.test(s) || (/\bevening\b/.test(s) && !/\bevery evening\b/.test(s))){
+    return assistantWindowFromClocks(17 * 60, 21 * 60);
   }
-  if(/\bthis morning\b|\bin the morning\b/.test(s) && !/\bevery morning\b/.test(s)){
-    return {
-      start:{kind:'clock', minutes:6 * 60, clock:'06:00'},
-      end:{kind:'clock', minutes:12 * 60, clock:'12:00'}
-    };
+  if(/\b(?:this morning|in the morning|every morning)\b/.test(s)){
+    return assistantWindowFromClocks(6 * 60, 12 * 60);
   }
   if(/\bthis afternoon\b|\bin the afternoon\b/.test(s)){
-    return {
-      start:{kind:'clock', minutes:12 * 60, clock:'12:00'},
-      end:{kind:'clock', minutes:17 * 60, clock:'17:00'}
-    };
-  }
-  if(/\bevery morning\b/.test(s)){
-    return {
-      start:{kind:'clock', minutes:6 * 60, clock:'06:00'},
-      end:{kind:'clock', minutes:12 * 60, clock:'12:00'}
-    };
+    return assistantWindowFromClocks(12 * 60, 17 * 60);
   }
   if(/\bevery night\b|\bevery evening\b/.test(s)){
-    return {
-      start:{kind:'clock', minutes:18 * 60, clock:'18:00'},
-      end:{kind:'clock', minutes:22 * 60, clock:'22:00'}
-    };
+    return assistantWindowFromClocks(18 * 60, 22 * 60);
   }
   return null;
 }
@@ -736,6 +1197,10 @@ function assistantGuessIntent(text){
   if(!s)return {intent:'unclear', confident:false};
   if(/\b(delete everything|wipe my list|reschedule .{0,24}week|hack the)\b/.test(s)){
     return {intent:'unsupported', confident:true};
+  }
+  const setting = assistantParseSettingCreate(s);
+  if(setting){
+    return {intent:'create_setting', confident:true, settingKind:setting.kind, name:setting.name, address:setting.address || ''};
   }
   if(/\b(i (?:already )?(?:did|done|finished)|already did|mark .{0,40} done|check(?:ed)? off|log .{0,40}(?:done)?|done with|finished)\b/.test(s)
     && !/\b(remind me|don't forget|dont forget|add |create |every day|daily)\b/.test(s)){
@@ -772,6 +1237,10 @@ function assistantPreferIntent(modelIntent, guessed){
   if(guessed.intent === 'edit_item' && guessed.confident){
     if(model === 'create_task' || model === 'create_habit')return model;
     if(model === 'unclear' || model === 'unsupported')return 'create_habit';
+  }
+  if(guessed.intent === 'create_setting' && guessed.confident
+    && (model === 'unclear' || model === 'unsupported' || model === 'create_task' || model === 'create_habit' || modelIntent === 'edit_item')){
+    return 'create_setting';
   }
   if((guessed.intent === 'create_task' || guessed.intent === 'create_habit') && guessed.confident
     && (model === 'unclear' || model === 'unsupported' || modelIntent === 'edit_item')){
@@ -817,6 +1286,224 @@ const ASSISTANT_FAST_RISK_RE = new RegExp(
   + '|\\d|:'
 );
 
+// True only when a local parse is allowed to fill missing draft_item fields.
+// Default is trusted; FastPathRisk / forceLlm set factsTrusted = false.
+function assistantTrustParsedFacts(parsed){
+  return Boolean(parsed) && parsed.factsTrusted !== false;
+}
+
+// True when the model pasted the request into name instead of using fields.
+function assistantNameLooksLikeSettingsDump(name){
+  const s = typeof assistantNormText === 'function' ? assistantNormText(name) : String(name || '').trim().toLowerCase();
+  if(!s)return false;
+  const words = s.split(/\s+/).filter(Boolean);
+  if(words.length >= 7)return true;
+  return /\b(?:topics?|priority|urgent|someday|allowed|later of|until|prefer|avoid|no late|hard due|split into|every (?:tue|wed|fri|weekend)|limit habit|right after)\b/.test(s);
+}
+
+function assistantShortTitleFromDump(name){
+  let s = String(name || '').trim();
+  if(!s)return '';
+  s = s.replace(/^(?:a|an|the)\s+/i, '');
+  s = s.replace(/^(?:limit|build|stop|reduce|keepup|habit|task|ting)\s+/i, '');
+  s = s.split(/\b(?:topics?|priority|urgent|allowed|later of|prefer|avoid|no late|until|every|right after|due day|firm)\b/i)[0].trim();
+  const words = s.split(/\s+/).filter(Boolean).slice(0, 3);
+  return words.join(' ') || String(name || '').trim().split(/\s+/).slice(0, 2).join(' ');
+}
+
+function assistantLooksLikeWindowText(text){
+  const s = assistantNormText(text);
+  if(!s)return false;
+  return /\b(?:later of|earlier of|whichever is (?:earlier|later)|until|till|between\b|from \d|\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*[-–]|after (?:sunset|sunrise|dawn|dusk|fajr|dhuhr|zuhr|noon|asr|maghrib|isha)|before (?:sunset|sunrise|dawn|dusk|fajr|dhuhr|zuhr|noon|asr|maghrib|isha))\b/.test(s);
+}
+
+function assistantWindowHasBound(window){
+  if(!window || typeof window !== 'object')return false;
+  const start = window.start && window.start.kind && window.start.kind !== 'unset';
+  const end = window.end && window.end.kind && window.end.kind !== 'unset';
+  return Boolean(start || end);
+}
+
+function assistantBestWindowFromTexts(texts){
+  let best = null;
+  for(const text of texts || []){
+    if(!text || !assistantLooksLikeWindowText(text))continue;
+    const parsed = assistantParseWindowFromText(text);
+    if(!assistantWindowHasBound(parsed))continue;
+    best = best ? assistantMergePartialWindow(best, parsed) : parsed;
+  }
+  return best;
+}
+
+function assistantMergePartialWindow(existing, parsed){
+  if(!assistantWindowHasBound(parsed))return existing || parsed || null;
+  if(!existing || typeof existing !== 'object')return parsed;
+  const startUnset = !existing.start || existing.start.kind === 'unset';
+  const endUnset = !existing.end || existing.end.kind === 'unset';
+  const start = startUnset && parsed.start && parsed.start.kind !== 'unset' ? parsed.start : existing.start;
+  const end = endUnset && parsed.end && parsed.end.kind !== 'unset' ? parsed.end : existing.end;
+  return {start:start || {kind:'unset'}, end:end || {kind:'unset'}};
+}
+
+function assistantEndpointHasCombine(end){
+  return Boolean(end && end.combine && end.second && end.second.kind && end.second.kind !== 'unset');
+}
+
+function assistantWindowHasCombine(window){
+  return assistantEndpointHasCombine(window && window.start) || assistantEndpointHasCombine(window && window.end);
+}
+
+function assistantParseHardDueText(value){
+  if(value == null || value === '')return null;
+  if(typeof assistantParseBool === 'function'){
+    const asBool = assistantParseBool(value);
+    if(asBool != null)return asBool;
+  }
+  const s = assistantNormText(value);
+  if(/\b(?:hard due|due day is firm|that due day is firm|firm(?: due)?(?: day)?|no late days|no delay(?: days)?|cannot (?:be )?late)\b/.test(s))return true;
+  return null;
+}
+
+function assistantLooksLikeScheduleOption(text){
+  const s = assistantNormText(text);
+  if(!s)return false;
+  const days = typeof assistantCollectWeekdays === 'function' ? assistantCollectWeekdays(s) : [];
+  return days.length > 0 && /\b(?:from|between)\b/.test(s) && /\b(?:at|@)\b/.test(s);
+}
+
+function assistantParseSharedDisplayText(text){
+  const s = assistantNormText(text);
+  if(!s || !/\bshared display\b/.test(s))return null;
+  if(/\b(?:off|hide|hidden|not on|keep (?:it )?off|leave (?:it )?off)\b/.test(s))return false;
+  if(/\b(?:on|show|include|keep (?:it )?on)\b/.test(s))return true;
+  return null;
+}
+
+function assistantParseSnoozeClause(text){
+  const raw = String(text || '');
+  const match = raw.match(/\bsnooze(?:\s+it)?\s+(?:for\s+)?([^.,;]+)/i);
+  return match ? match[1].trim() : null;
+}
+
+function assistantParseWeatherPlaceClause(text){
+  const raw = String(text || '');
+  const match = raw.match(/\b(?:use|at|from)\s+(?:the\s+)?([A-Za-z][\w']+)\s+place\b/i)
+    || raw.match(/\bforecast\b[\s\S]{0,48}?\b(?:at|from|use)\s+(?:the\s+)?([A-Za-z][\w']+)/i);
+  return match ? match[1].trim() : null;
+}
+
+function assistantParsePlacePrefsLoose(text){
+  const raw = String(text || '');
+  if(!raw.trim())return null;
+  const out = [];
+  const seen = new Set();
+  const add = (name, level) => {
+    const n = String(name || '').replace(/\b(?:high|low|little|preferred|favourite|favorite)\b/ig, '').trim();
+    const key = n.toLowerCase();
+    if(!n || seen.has(key))return;
+    if(ASSISTANT_WEEKDAY_NAMES[key] != null || ASSISTANT_MONTH_NAMES[key] != null)return;
+    if(/^(?:it|this|that|high|low|morning|evening|afternoon|weekend|weekdays?|sunset|sunrise|dawn|dusk)$/.test(key))return;
+    seen.add(key);
+    out.push({name:n, level});
+  };
+  raw.replace(/\bprefer(?:red)?\s+(?!window\b|weekdays?\b|month(?:\s*days?)?\b|time\b)([A-Za-z][\w' -]{0,32}?)(?:\s+(?:high|favourite|favorite))?(?=\s+and\b|\s+avoid\b|[.,;]|$)/gi, (_, name) => {
+    add(name, 'high');
+    return _;
+  });
+  raw.replace(/\bavoid\s+([A-Za-z][\w' -]{0,32}?)(?=\s+and\b|[.,;]|$)/gi, (_, name) => {
+    add(name, 'avoid');
+    return _;
+  });
+  return out.length ? out : null;
+}
+
+function assistantParseOrderFromLooseText(text){
+  const raw = String(text || '');
+  const re = /\b((?:right|directly|immediately|straight)\s+)?(before|after)\s+[^.]*/gi;
+  let match;
+  while((match = re.exec(raw))){
+    const around = raw.slice(Math.max(0, match.index - 8), match.index + match[0].length);
+    if(/\b(?:day|days)\s+after\b/i.test(around))continue;
+    const clause = match[0].trim();
+    const tail = assistantNormText(clause.replace(/^\s*(?:right|directly|immediately|straight)\s+/i, '').replace(/^(?:before|after)\s+/i, ''));
+    if(/^(?:today|tomorrow|tonight|yesterday|now)\b/.test(tail))continue;
+    const anchorWord = typeof ASSISTANT_ANCHOR_WORD === 'string' ? ASSISTANT_ANCHOR_WORD : 'fajr|sunrise|dhuhr|asr|maghrib|isha|sunset|dawn|dusk|noon';
+    if(new RegExp('^(?:' + anchorWord + '|\\d)').test(tail))continue;
+    if(/\b(?:sunset|sunrise|dawn|dusk|noon|midnight|maghrib|isha|fajr|asr|dhuhr)\b/.test(tail) && !/\bsame day\b/.test(tail))continue;
+    const parsed = typeof assistantParseOrderText === 'function' ? assistantParseOrderText(clause) : null;
+    if(parsed && parsed.links && parsed.links.length)return parsed;
+  }
+  return null;
+}
+
+function assistantSalvageDraftArgs(args, requestText){
+  const out = Object.assign({}, args || {});
+  const blobs = [out.windowText, out.name, requestText].filter(value => typeof value === 'string' && value.trim());
+  if(!blobs.length)return out;
+  const parsedWindow = typeof assistantBestWindowFromTexts === 'function'
+    ? assistantBestWindowFromTexts(blobs)
+    : null;
+  if(parsedWindow){
+    if(!out.window || typeof out.window !== 'object' || Array.isArray(out.window))out.window = parsedWindow;
+    else if(typeof assistantWindowHasCombine === 'function'
+      && assistantWindowHasCombine(parsedWindow)
+      && !assistantWindowHasCombine(out.window))out.window = parsedWindow;
+    else out.window = assistantMergePartialWindow(out.window, parsedWindow);
+  }
+  const blob = blobs.join('. ');
+  if((out.placePrefs == null || out.placePrefs === '') && typeof assistantParsePlacePrefsLoose === 'function'){
+    const prefs = assistantParsePlacePrefsLoose(blob);
+    if(prefs)out.placePrefs = prefs.map(row => `${row.name} ${row.level}`).join(', ');
+  }
+  if((out.placeNames == null || out.placeNames === '' || (Array.isArray(out.placeNames) && !out.placeNames.length))
+    && typeof assistantParseLocationClause === 'function'){
+    const loc = assistantParseLocationClause(requestText || blob);
+    if(loc)out.placeNames = loc;
+  }
+  if(out.order == null && out.after == null && out.before == null){
+    const order = assistantParseOrderFromLooseText(blob);
+    if(order && order.links && order.links.length){
+      const clause = blob.match(/\b((?:right|directly|immediately|straight)\s+)?(before|after)\s+[^.]*/i);
+      out.order = clause ? clause[0].trim() : blob;
+    }
+  }
+  if(out.order && requestText && /\bsame day\b/i.test(requestText) && !/\bsame day\b/i.test(String(out.order))){
+    out.order = `${String(out.order).trim()}, same day`;
+  }
+  if(out.hardDue == null){
+    const hard = assistantParseHardDueText(blob);
+    if(hard != null)out.hardDue = hard;
+  }
+  if(out.snooze == null){
+    const snooze = assistantParseSnoozeClause(blob);
+    if(snooze)out.snooze = snooze;
+  }
+  if(out.sharedDisplay == null){
+    const shared = assistantParseSharedDisplayText(blob);
+    if(shared != null)out.sharedDisplay = shared;
+  }
+  if((out.weatherPlace == null || out.weatherPlace === '') && (out.showWeather === true || /\bforecast\b/i.test(blob))){
+    const place = assistantParseWeatherPlaceClause(blob);
+    if(place)out.weatherPlace = place;
+    else if(out.weatherAtPlace && out.placeNames){
+      out.weatherPlace = Array.isArray(out.placeNames) ? out.placeNames[0] : out.placeNames;
+    }
+  }
+  if(out.option == null && assistantLooksLikeScheduleOption(blob))out.option = blob;
+  if(out.snooze && out.durationMinutes != null && !(args && args.snooze != null)){
+    const hours = assistantNormText(out.snooze).match(/(\d+(?:\.\d+)?)\s*h(?:ours?)?/);
+    const requestHasDuration = /\b(?:\d+\s*(?:minutes?|mins?|m)|half an hour|an hour)\b/i.test(requestText || '');
+    if(hours && !requestHasDuration && Number(out.durationMinutes) === Math.round(Number(hours[1]) * 60)){
+      delete out.durationMinutes;
+    }
+  }
+  if((out.weatherText == null || out.weatherText === '') && requestText && typeof assistantParseWeatherHints === 'function'
+    && assistantParseWeatherHints(requestText).mentioned){
+    out.weatherText = requestText;
+  }
+  return out;
+}
+
 // Null when the local fast path may answer, else why it must go to the LLM.
 function assistantFastPathRisk(text, parsed){
   const raw = assistantNormText(text);
@@ -831,11 +1518,17 @@ function assistantFastPathRisk(text, parsed){
   cut(/^(?:remind me(?: to)?|don't forget(?: to)?|dont forget(?: to)?|remember to|i (?:need|have|gotta|got)(?: to)?|i should|i want to|i wanna)\s+/g);
   cut(/^(?:add:?|create|make|new(?: task| habit)?)\s+(?:a |an |the )?/g);
   cut(/^(?:new )?(?:task|habit|ting|item):\s*/g);
+  if(parsed && parsed.intent === 'create_setting'){
+    cut(/\b(?:weather profile|busy time|blocked time|location|place|topics?)\b/g);
+    cut(/\b(?:called|named|for|to|at|address)\b/g);
+    if(parsed.itemName)cut(new RegExp(String(parsed.itemName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+    if(parsed.address)cut(new RegExp(String(parsed.address).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+  }
   cut(/^(?:when is|where's|where is|did i (?:do|finish)|do i have|is there)\s+/g);
   cut(/^(?:i (?:already )?)?(?:already )?(?:did|done|finished|logged)\s+/);
   cut(/^(?:done with|finished|mark|check(?:ed)? off|log)\s+/);
   // Weather clauses trail the utterance; consume to the end.
-  cut(/\b(?:only if|unless|not raining|no rain|not freezing|no freeze|not too cold|not snowing|no snow|dry weather|using dry)\b[\s\S]*$/g);
+  cut(/\b(?:only if|unless|not raining|no rain|not freezing|no freeze|not too cold|not too windy|not snowing|no snow|dry weather|using dry|skip(?: the)? rain|skip wind)\b[\s\S]*$/g);
   // Consumed structure — mirrors assistantParseUtterance exactly.
   // NOTE: weekday/anchor token lists are bare alternations; always wrap them
   // in (?:…) or the surrounding pattern only binds the first branch.
@@ -875,6 +1568,7 @@ function assistantParseUtterance(text, catalog, now){
   const guessed = assistantGuessIntent(s);
   let itemName = assistantGuessItemName(raw);
   if(assistantIsPronounName(itemName))itemName = null;
+  if(guessed.intent === 'create_setting')itemName = guessed.name || itemName;
   if(!itemName && guessed.intent === 'edit_item')itemName = assistantGuessEditTarget(raw);
   const newName = assistantParseRename(raw);
   if(!itemName && (guessed.intent === 'create_habit' || guessed.intent === 'create_task')){
@@ -903,6 +1597,7 @@ function assistantParseUtterance(text, catalog, now){
     if(dayMatch)due = assistantParseDue(`${dayMatch[1] || ''}${dayMatch[2]}`, now);
   }
   if(!due && guessed.intent === 'create_task')due = assistantDayBase(now != null ? now : Date.now());
+  if(guessed.intent === 'create_setting')due = null;
   const dueTime = (() => {
     const at = s.match(/\b(?:at|by|around)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))/);
     return at ? assistantParseClock(at[1]) : null;
@@ -913,7 +1608,12 @@ function assistantParseUtterance(text, catalog, now){
   const priority = assistantParsePriority(s);
   const durationText = s.replace(/\b(?:\d+(?:\.\d+)?\s*(?:hours?|hrs?|h|minutes?|mins?|m)|an hour|half an hour)\s+(?:before|after)\b/g, ' ');
   const duration = assistantParseDuration(durationText);
-  const places = assistantMatchCatalogNames((catalog && catalog.places) || [], s);
+  let places = assistantMatchCatalogNames((catalog && catalog.places) || [], s);
+  if(!places.length){
+    const locRef = assistantParseLocationClause(raw);
+    if(locRef)places = assistantMatchPlacesFromRef((catalog && catalog.places) || [], locRef);
+  }
+  if(assistantLooksLikeSettingFollowup(s))itemName = null;
   const weather = assistantMatchCatalogNames((catalog && catalog.weather) || [], s);
   const weatherHints = assistantParseWeatherHints(s);
   return {
@@ -934,46 +1634,8 @@ function assistantParseUtterance(text, catalog, now){
     weatherId:weather[0] ? weather[0].id : null,
     weatherHints,
     itemName,
-    newName
+    newName,
+    settingKind:guessed.settingKind || null,
+    address:guessed.address || null
   };
-}
-
-function assistantEnrichDraft(draft, parsed, catalog, settings){
-  if(!draft || !parsed)return draft;
-  if(draft.durationMinutes == null && parsed.durationMinutes != null){
-    draft.durationMinutes = typeof clampDuration === 'function'
-      ? clampDuration(parsed.durationMinutes)
-      : parsed.durationMinutes;
-  }
-  if(draft.kind === 'task'){
-    if(draft.dueDate == null && parsed.dueTs != null)draft.dueDate = parsed.dueTs;
-    if(draft.dueTime == null && parsed.dueTime)draft.dueTime = parsed.dueTime;
-  }
-  if(draft.kind === 'habit' && parsed.rhythm){
-    if(draft.timesPerPeriod == null)draft.timesPerPeriod = parsed.rhythm.timesPerPeriod;
-    if(draft.periodDays == null)draft.periodDays = parsed.rhythm.periodDays;
-    if(parsed.rhythm.weekdays && draft.allowedWeekdays == null){
-      draft.allowedWeekdays = parsed.rhythm.weekdays.slice();
-    }
-  }
-  if(draft.priority == null && parsed.priority != null)draft.priority = parsed.priority;
-  if(!draft.window && parsed.window){
-    draft.window = parsed.window;
-    draft.windowMentioned = true;
-  }
-  if(!draft.places && parsed.places && parsed.places.length){
-    const applied = assistantApplyPlace(draft, {names:parsed.places, anywhere:false}, catalog);
-    if(applied && applied.ok)Object.assign(draft, applied.draft);
-  }
-  if(typeof assistantAttachParsedWeather === 'function'){
-    assistantAttachParsedWeather(draft, parsed, catalog, settings);
-  }else if(!draft.weather && parsed.weather){
-    const applied = assistantApplyWeather(draft, {mode:'profile', profile:parsed.weather}, catalog);
-    if(applied && applied.ok)Object.assign(draft, applied.draft);
-  }
-  if(draft.kind === 'task' && draft.dueDate == null){
-    draft.dueDate = parsed.dueTs != null ? parsed.dueTs : assistantDayBase(Date.now());
-  }
-  if(!draft.name && parsed.itemName)draft.name = parsed.itemName.slice(0, ASSISTANT_NAME_MAX);
-  return draft;
 }

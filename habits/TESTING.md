@@ -76,6 +76,11 @@ Use `--verbose` to stream full output. Failure output is limited to the last 20
 lines by default; set `FAIL_TAIL_LINES=0` to print no excerpt or another value to
 change the bound.
 
+Live Qwen checks (Ollama / LM Studio on this machine) are optional inside the
+assistant suites: they skip when no `qwen3.8` tag is reachable. Set
+`ASSISTANT_LIVE=1` to fail instead of skip, or `ASSISTANT_LIVE=full` for the
+longer draft_item settings battery.
+
 ## Adding planner tests without copying the harness
 
 Reuse `tests/helpers/planner-test-helpers.js` for the common habit fixture,

@@ -268,6 +268,65 @@ function expectedDueKey(token){
   assert(/Outdoor/i.test(local.outdoorWeather || '') && /3× \/ week/.test(local.outdoorSummary || ''), 'preview names Outdoor weather and 3× / week');
   assert(local.outdoorSavedOk && local.outdoorRainMax && local.outdoorTempMin && local.outdoorWeatherId, 'save creates a skip-rain-and-freeze weather profile');
 
+  const settingsLocal = await page.evaluate(async ({now}) => {
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      defaultDurationMinutes:30,
+      locations:[],
+      weatherProfiles:[]
+    });
+    save([]);
+    const llm = async () => { throw new Error('LLM should not run for setting creates'); };
+    const context = assistantBuildContext(now);
+    const session = assistantCreateSession();
+    const bbq = await runAssistantTurn('Create a weather profile for barbecuing', {context, complete:llm, session});
+    const bbqSaved = bbq.type === 'preview' ? assistantCommitDraft(bbq.draft) : {ok:false};
+    const profiles = loadSortSettings().weatherProfiles || [];
+    const rain = await runAssistantTurn('skip rain', {context:assistantBuildContext(now), complete:llm, session});
+    const rainSaved = rain.type === 'preview' ? assistantCommitDraft(rain.draft) : {ok:false};
+    const after = (loadSortSettings().weatherProfiles || []).find(profile => /barbecu/i.test(profile && profile.name));
+    const habit = await runAssistantTurn('Create a weekly barbecue habit only if it is not raining', {
+      context:assistantBuildContext(now),
+      complete:llm,
+      session:assistantCreateSession()
+    });
+    const habitSaved = habit.type === 'preview' ? assistantCommitDraft(habit.draft) : {ok:false};
+    const habitRow = habitSaved.ok ? load().find(item => /barbecue/i.test(item && item.name)) : null;
+    const topic = await runAssistantTurn('Create a topic called health', {
+      context:assistantBuildContext(now),
+      complete:llm
+    });
+    const topicSaved = topic.type === 'preview' ? assistantCommitDraft(topic.draft) : {ok:false};
+    return {
+      bbqType:bbq.type,
+      bbqKind:bbq.draft && bbq.draft.kind,
+      bbqName:bbq.draft && bbq.draft.name,
+      bbqSavedOk:bbqSaved.ok,
+      profileCount:profiles.length,
+      profileName:profiles[0] && profiles[0].name,
+      rainType:rain.type,
+      rainSavedOk:rainSaved.ok,
+      rainMax:after && (after.rules || []).some(rule => rule.metric === 'precipitation_probability' && rule.max === 20),
+      habitType:habit.type,
+      habitKind:habit.draft && habit.draft.kind,
+      habitWeather:habit.draft && habit.draft.weather && habit.draft.weather.name,
+      habitSavedOk:habitSaved.ok,
+      habitWeatherId:habitRow && habitRow.weatherProfileId,
+      topicType:topic.type,
+      topicKind:topic.draft && topic.draft.kind,
+      topicSavedOk:topicSaved.ok,
+      topics:loadSortSettings().topics || []
+    };
+  }, {now:ASSISTANT_FROZEN_NOW});
+  assert(settingsLocal.bbqType === 'preview' && settingsLocal.bbqKind === 'weather' && /barbecu/i.test(settingsLocal.bbqName || ''), 'weather profile for barbecuing is a local setting preview');
+  assert(settingsLocal.bbqSavedOk && settingsLocal.profileCount === 1 && /barbecu/i.test(settingsLocal.profileName || ''), 'saving barbecuing creates a weather profile');
+  assert(settingsLocal.rainType === 'preview' && settingsLocal.rainSavedOk && settingsLocal.rainMax, 'skip rain adds a rain cap to the focused profile');
+  assert(settingsLocal.habitType === 'preview' && settingsLocal.habitKind === 'habit', 'habit + weather conditions stays a habit');
+  assert(settingsLocal.habitSavedOk && settingsLocal.habitWeatherId, 'habit save attaches a weather profile when none matched');
+  assert(settingsLocal.topicType === 'preview' && settingsLocal.topicKind === 'topic' && settingsLocal.topicSavedOk && (settingsLocal.topics || []).some(topic => /health/i.test(topic)), 'topic create saves into settings.topics');
+
   console.log('\n[focus] follow-ups on "it" update the same item after save');
   const focus = await page.evaluate(async ({now}) => {
     localStorage.removeItem(KEY);
@@ -281,26 +340,44 @@ function expectedDueKey(token){
     save((typeof normalize === 'function' ? normalize : (x=>x))([{
       name:'Walk', type:'keepup', target:1, durationMinutes:30, logs:[], lastLog:null
     }]));
-    const llm = async () => { throw new Error('LLM should not run for focused follow-ups'); };
+    const localOnly = async () => { throw new Error('LLM should not run for local creates'); };
+    const itemLlm = async req => {
+      let request = '';
+      for(const msg of req.messages || []){
+        if(!msg || msg.role !== 'user')continue;
+        try{
+          const parsed = JSON.parse(msg.content);
+          if(parsed && parsed.request)request = String(parsed.request);
+        }catch(_){}
+      }
+      const draftItem = args => ({message:{thinking:'edit', tool_calls:[{function:{name:'draft_item', arguments:args}}]}});
+      if(req.step === 'classify')throw new Error('focused follow-up should skip classify');
+      if(/2 hours before sunset/.test(request))return draftItem({windowText:'from 2 hours before sunset until sunset'});
+      if(/45 minutes/.test(request))return draftItem({durationMinutes:45});
+      if(/Tuesday, Wednesday and Friday/.test(request))return draftItem({rhythm:'every Tuesday, Wednesday and Friday'});
+      if(/every Tuesday/.test(request))return draftItem({rhythm:'every Tuesday'});
+      if(/five times a week/.test(request))return draftItem({rhythm:'five times a week'});
+      throw new Error('unexpected LLM for focused follow-up: ' + request.slice(0, 240));
+    };
     const context = assistantBuildContext(now);
     const session = assistantCreateSession();
-    const created = await runAssistantTurn("Add an outside exercise to be done three times a week and only if it's not raining, and if it's not freezing.", {context, complete:llm, session});
-    const windowed = await runAssistantTurn('Change it to be allowed between 2 hours before sunset and till sunset', {context, complete:llm, session});
+    const created = await runAssistantTurn("Add an outside exercise to be done three times a week and only if it's not raining, and if it's not freezing.", {context, complete:localOnly, session});
+    const windowed = await runAssistantTurn('Change it to be allowed between 2 hours before sunset and till sunset', {context, complete:itemLlm, session});
     const saved = windowed.type === 'preview' ? assistantCommitDraft(windowed.draft) : {ok:false};
     session.draft = saved.habit && typeof assistantHabitToDraft === 'function'
       ? assistantHabitToDraft(saved.habit, saved.index, loadSortSettings())
       : session.draft;
     const laterContext = assistantBuildContext(now);
-    const longer = await runAssistantTurn('make it 45 minutes', {context:laterContext, complete:llm, session});
+    const longer = await runAssistantTurn('make it 45 minutes', {context:laterContext, complete:itemLlm, session});
     const savedAgain = longer.type === 'preview' ? assistantCommitDraft(longer.draft) : {ok:false};
-    const named = await runAssistantTurn('change Walk to 20 minutes', {context:assistantBuildContext(now), complete:llm, session:assistantCreateSession()});
+    const named = await runAssistantTurn('change Walk to 20 minutes', {context:assistantBuildContext(now), complete:localOnly, session:assistantCreateSession()});
     const namedSaved = named.type === 'preview' ? assistantCommitDraft(named.draft) : {ok:false};
-    const five = await runAssistantTurn('Can you change the outside exercise to five times a week', {context:assistantBuildContext(now), complete:llm, session});
+    const five = await runAssistantTurn('Can you change the outside exercise to five times a week', {context:assistantBuildContext(now), complete:itemLlm, session});
     const fiveSnap = {type:five.type, times:five.draft && five.draft.timesPerPeriod, days:five.draft && five.draft.periodDays, question:five.question || five.text || ''};
     const fiveSaved = five.type === 'preview' ? assistantCommitDraft(five.draft) : {ok:false};
-    const itFive = await runAssistantTurn('Change it to five times a week', {context:assistantBuildContext(now), complete:llm, session});
+    const itFive = await runAssistantTurn('Change it to five times a week', {context:assistantBuildContext(now), complete:itemLlm, session});
     const itFiveSnap = {type:itFive.type, times:itFive.draft && itFive.draft.timesPerPeriod, question:itFive.question || itFive.text || ''};
-    const tuesday = await runAssistantTurn('Can you change the outside exercise to every Tuesday', {context:assistantBuildContext(now), complete:llm, session});
+    const tuesday = await runAssistantTurn('Can you change the outside exercise to every Tuesday', {context:assistantBuildContext(now), complete:itemLlm, session});
     const tueSnap = {
       type:tuesday.type,
       days:tuesday.draft && (tuesday.draft.allowedWeekdays || []).slice(),
@@ -309,7 +386,7 @@ function expectedDueKey(token){
       question:tuesday.question || tuesday.text || ''
     };
     const tueSaved = tuesday.type === 'preview' ? assistantCommitDraft(tuesday.draft) : {ok:false};
-    const tueWedFri = await runAssistantTurn('Change it to every Tuesday, Wednesday and Friday', {context:assistantBuildContext(now), complete:llm, session});
+    const tueWedFri = await runAssistantTurn('Change it to every Tuesday, Wednesday and Friday', {context:assistantBuildContext(now), complete:itemLlm, session});
     const listSnap = {
       type:tueWedFri.type,
       days:tueWedFri.draft && (tueWedFri.draft.allowedWeekdays || []).slice(),
@@ -367,7 +444,7 @@ function expectedDueKey(token){
       listSavedDays:listSaved.habit && listSaved.habit.allowedWeekdays
     };
   }, {now:ASSISTANT_FROZEN_NOW});
-  assert(focus.createdType === 'preview' && focus.windowType === 'preview', 'create then "change it" stays local');
+  assert(focus.createdType === 'preview' && focus.windowType === 'preview', 'create then "change it" updates the same draft via draft_item');
   assert(focus.windowStart && focus.windowStart.anchor === 'maghrib' && focus.windowStart.offsetMin === -120, 'follow-up window starts 2h before maghrib');
   assert(focus.windowEnd && focus.windowEnd.anchor === 'maghrib', 'follow-up window ends at sunset');
   assert(focus.savedOk && focus.longerType === 'preview' && focus.longerMins === 45 && focus.longerHid === focus.hid, 'after save, "make it 45 minutes" still means that habit');
@@ -414,10 +491,11 @@ function expectedDueKey(token){
       forceLlm:true,
       complete:async () => { throw new Error("Value looks like object, but can't find closing '}' symbol"); }
     });
-    return {type:out.type, name:out.draft && out.draft.name, kind:out.draft && out.draft.kind, times:out.draft && out.draft.timesPerPeriod, weather:out.draft && out.draft.weather && out.draft.weather.name};
+    return {type:out.type, name:out.draft && out.draft.name, kind:out.draft && out.draft.kind, times:out.draft && out.draft.timesPerPeriod, weather:out.draft && out.draft.weather && out.draft.weather.name, repairs:out.session && out.session.repairs, debug:out.debugText || ''};
   });
-  assert(recovered.type === 'preview' && /outside exercise/i.test(recovered.name || '') && recovered.kind === 'habit', 'broken Ollama JSON falls back to the local draft');
+  assert(recovered.type === 'preview' && /outside exercise/i.test(recovered.name || '') && recovered.kind === 'habit', 'broken Ollama JSON is steered, then last-resort local draft');
   assert(recovered.times === 3 && /Outdoor/i.test(recovered.weather || ''), 'fallback keeps 3× / week and Outdoor weather');
+  assert(recovered.repairs >= 1 && /repair/i.test(recovered.debug), 'harness attempted a repair before falling back');
 
   console.log('\n[a11y] sheet copy is short and confirm-gated');
   const a11y = await page.evaluate(() => {
@@ -475,7 +553,7 @@ function expectedDueKey(token){
       kicker:document.getElementById('assistant-focus-kicker')?.textContent,
       chips:document.querySelectorAll('.assistant-bubble-preview .assistant-chip').length
     };
-    commitAssistantDraft(false);
+    await commitAssistantDraft(false);
     const afterSave = {
       barHidden:document.getElementById('assistant-focus')?.hidden,
       name:document.getElementById('assistant-focus-name')?.textContent,

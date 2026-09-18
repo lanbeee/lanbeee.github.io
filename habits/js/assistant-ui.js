@@ -189,7 +189,7 @@ function assistantFocusMetaText(draft){
   const rest = summary
     ? summary.replace(new RegExp(`^${String(draft.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*·\\s*`), '')
     : '';
-  const status = draft.hid ? 'saved' : 'not saved yet';
+  const status = (draft.hid || draft.settingId) ? 'saved' : 'not saved yet';
   return rest && rest !== draft.name ? `${status} · ${rest}` : status;
 }
 
@@ -208,8 +208,8 @@ function syncAssistantFocusBar(){
   const kicker = $('assistant-focus-kicker');
   if(name)name.textContent = draft.name;
   if(meta)meta.textContent = assistantFocusMetaText(draft);
-  if(kicker)kicker.textContent = draft.hid ? 'working on' : 'draft';
-  bar.classList.toggle('is-draft', !draft.hid);
+  if(kicker)kicker.textContent = (draft.hid || draft.settingId) ? 'working on' : 'draft';
+  bar.classList.toggle('is-draft', !(draft.hid || draft.settingId));
 }
 
 function assistantClearFocus(){
@@ -343,10 +343,11 @@ function appendAssistantBubble(kind, text, extra){
   div.className = `assistant-bubble assistant-bubble-${kind}`;
   const think = assistantShowThink(kind) ? assistantThinkHtml(extra && extra.thinking) : '';
   if(kind === 'preview'){
+    const setting = extra && extra.setting;
     div.innerHTML = `${think}${assistantPreviewBody(text)}
       <div class="btn-row assistant-preview-actions">
         <button type="button" class="btn primary" data-assistant-act="add">save</button>
-        <button type="button" class="btn" data-assistant-act="edit">edit</button>
+        ${setting ? '' : '<button type="button" class="btn" data-assistant-act="edit">edit</button>'}
         <button type="button" class="btn" data-assistant-act="discard">never mind</button>
       </div>`;
   }else if(kind === 'complete'){
@@ -438,8 +439,9 @@ async function handleAssistantOutcome(out){
   }
   const retryText = assistantRetryTextFor(out);
   if(out.type === 'preview'){
-    appendAssistantBubble('say', 'Check this, then save. Edit opens the full form.', {thinking:out.thinking});
-    appendAssistantBubble('preview', out.summary || out.draft.name, {thinking:out.thinking});
+    const setting = out.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(out.draft.kind);
+    appendAssistantBubble('say', setting ? 'Check this, then save.' : 'Check this, then save. Edit opens the full form.', {thinking:out.thinking});
+    appendAssistantBubble('preview', out.summary || out.draft.name, {thinking:out.thinking, setting});
     if(retryText)appendAssistantRetry(retryText);
     return;
   }
@@ -466,15 +468,20 @@ async function handleAssistantOutcome(out){
   appendAssistantBubble('say', out.text || 'Something went wrong.', {thinking:out.thinking});
 }
 
-// Redo the last fast-path utterance through the model. A draft that already
-// exists as a saved item (hid) stays in focus; a preview the fast path just
-// invented is dropped so the model starts clean.
+// Redo the last fast-path utterance through the model. A saved item stays
+// in focus. An unsaved preview is kept when this is a follow-up on that
+// draft ("add the location home"); a first-turn create is dropped so the
+// model starts clean.
 async function assistantSendWithModel(text){
   const value = String(text || '').trim();
   if(!value || _assistantBusy)return;
   const prior = assistantFocusedDraft();
   const session = assistantCreateSession();
-  if(prior && prior.name && prior.hid)session.draft = prior;
+  if(prior && prior.name){
+    const keepFollow = (typeof assistantLooksLikeSettingFollowup === 'function' && assistantLooksLikeSettingFollowup(value))
+      || (typeof assistantLooksLikeEdit === 'function' && assistantLooksLikeEdit(value));
+    if(prior.hid || keepFollow)session.draft = prior;
+  }
   const turn = ++_assistantTurn;
   assistantShowBusy(true);
   try{
@@ -572,6 +579,8 @@ function assistantKeepWorkingOn(commit){
   if(commit && commit.habit && typeof assistantHabitToDraft === 'function'){
     const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (typeof sortSettings !== 'undefined' ? sortSettings : {});
     _assistantSession.draft = assistantHabitToDraft(commit.habit, commit.index, settings);
+  }else if(commit && commit.draft && commit.draft.name){
+    _assistantSession.draft = commit.draft;
   }else if(_assistantPendingDraft && _assistantPendingDraft.name){
     _assistantSession.draft = _assistantPendingDraft;
   }
@@ -594,18 +603,54 @@ function assistantAfterSave(commit, openForm, toast){
   if(typeof showToast === 'function')showToast(toast || 'saved');
 }
 
-function commitAssistantDraft(openForm){
+async function assistantFillLocationDraft(draft){
+  if(!draft || draft.kind !== 'location')return {ok:true, draft};
+  if(Number.isFinite(Number(draft.lat)) && Number.isFinite(Number(draft.lng)))return {ok:true, draft};
+  const query = String(draft.address || draft.name || '').trim();
+  if(!query || typeof geocodeSearch !== 'function'){
+    return {ok:false, error:'I need an address or coordinates to pin that place.'};
+  }
+  const hits = await geocodeSearch(query, {limit:5});
+  if(!hits.length)return {ok:false, error:'No places matched that address. Try a fuller address or coordinates.'};
+  if(hits.length === 1){
+    draft.lat = hits[0].lat;
+    draft.lng = hits[0].lng;
+    if(!draft.address)draft.address = hits[0].address || '';
+    if(hits[0].name && assistantNormText(draft.name) === 'place')draft.name = hits[0].name;
+    return {ok:true, draft};
+  }
+  if(!_assistantSession)_assistantSession = typeof assistantCreateSession === 'function' ? assistantCreateSession() : {};
+  _assistantSession.awaiting = 'location-pick';
+  _assistantSession.locationHits = hits;
+  _assistantSession.draft = draft;
+  appendAssistantBubble('ask', 'Which place is that?', {
+    choices:hits.map(hit => hit.address || hit.name)
+  });
+  return {ok:false, waiting:true};
+}
+
+async function commitAssistantDraft(openForm){
   if(!_assistantPendingDraft){
     if(typeof showToast === 'function')showToast('nothing to save');
     return;
   }
-  const result = assistantCommitDraft(_assistantPendingDraft);
-  if(!result.ok){
-    if(typeof showToast === 'function')showToast(result.error || 'could not save');
-    return;
+  try{
+    const filled = await assistantFillLocationDraft(_assistantPendingDraft);
+    if(filled.waiting)return;
+    if(!filled.ok){
+      if(typeof showToast === 'function')showToast(filled.error || 'could not save');
+      return;
+    }
+    const result = assistantCommitDraft(filled.draft || _assistantPendingDraft);
+    if(!result.ok){
+      if(typeof showToast === 'function')showToast(result.error || 'could not save');
+      return;
+    }
+    assistantMarkLastActionSpent('preview');
+    assistantAfterSave(result, openForm, result.updated ? 'updated' : 'saved');
+  }catch(err){
+    if(typeof showToast === 'function')showToast(String(err && err.message || err) || 'could not save');
   }
-  assistantMarkLastActionSpent('preview');
-  assistantAfterSave(result, openForm, result.updated ? 'updated' : 'saved');
 }
 
 function commitAssistantComplete(){

@@ -135,6 +135,222 @@ async function launchBrowser(){
   assert(turn.type === 'preview' && turn.name === 'Pharmacy', 'prose is repaired into a draft_item preview');
   assert(turn.leftover === 0, 'classify + extract consumed the scripted replies');
 
+  console.log('\n[D2] broken tool JSON stays in the loop and is steered');
+  const steered = await page.evaluate(async () => {
+    const prompt = 'Create a 5 times a week Study habit (1 hour long) which will be from 15 min before sunrise to 2 hours after sunrise or 9 AM whichever is earlier';
+    const calls = [];
+    const out = await runAssistantTurn(prompt, {
+      forceLlm:true,
+      complete:async (req) => {
+        calls.push({
+          step:req.step,
+          think:req.think,
+          format:req.format || null,
+          tools:(req.tools || []).map(row => row && row.function && row.function.name).filter(Boolean),
+          lastUser:String((req.messages || []).filter(m => m && m.role === 'user').slice(-1)[0] && (req.messages || []).filter(m => m && m.role === 'user').slice(-1)[0].content || '').slice(0, 240)
+        });
+        if(req.step === 'classify'){
+          return {message:{role:'assistant', thinking:'habit', tool_calls:[{function:{name:'classify_intent', arguments:{intent:'create_habit'}}}]}};
+        }
+        if(calls.filter(row => row.step === 'extract').length === 1){
+          throw new Error("Value looks like object, but can't find closing '}' symbol");
+        }
+        return {message:{role:'assistant', content:JSON.stringify({
+          kind:'habit',
+          name:'Study',
+          durationMinutes:60,
+          rhythm:'five times a week',
+          windowText:'from 15 min before sunrise to 2 hours after sunrise or 9 AM whichever is earlier'
+        })}};
+      }
+    });
+    const end = out.draft && out.draft.window && out.draft.window.end;
+    return {
+      type:out.type,
+      name:out.draft && out.draft.name,
+      duration:out.draft && out.draft.durationMinutes,
+      times:out.draft && out.draft.timesPerPeriod,
+      startOff:out.draft && out.draft.window && out.draft.window.start && out.draft.window.start.offsetMin,
+      endCombine:end && end.combine,
+      endSecond:end && end.second && end.second.minutes,
+      repairs:out.session && out.session.repairs,
+      calls,
+      debug:out.debugText || '',
+      extractTools:calls.find(row => row.step === 'extract') && calls.find(row => row.step === 'extract').tools,
+      steeredFlat:/FLAT strings|windowText|do not nest/i.test(calls.map(row => row.lastUser).join('\n'))
+    };
+  });
+  assert(steered.type === 'preview' && /study/i.test(steered.name || ''), 'extract JSON failure still drafts Study after a steered retry');
+  assert(steered.duration === 60 && steered.times === 5, 'retry kept 1 hour and 5× / week');
+  assert(steered.startOff === -15 && steered.endCombine === 'earlier' && steered.endSecond === 9 * 60, 'windowText after repair is sunrise−15 to earlier of sunrise+2h and 9am');
+  assert(/broken-json|repair/i.test(steered.debug), 'debug shows a repair turn, not a stumble');
+  assert(steered.extractTools && steered.extractTools.indexOf('draft_item') >= 0 && steered.extractTools.indexOf('set_window') < 0, 'extract only offers draft_item, not nested set_window');
+  assert(steered.steeredFlat, 'repair tells the model to use flat windowText strings');
+  assert(steered.calls.filter(row => row.step === 'extract').some(row => row.think === false), 'repair turns thinking off so the tool JSON still fits');
+  assert(steered.calls.filter(row => row.step === 'extract').some(row => row.format === 'json' && (!row.tools || !row.tools.length)), 'repair drops native tools and asks for a JSON object');
+
+  console.log('\n[D3] focused follow-up stays on the model with currentDraft');
+  const followLoc = await page.evaluate(async () => {
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      defaultDurationMinutes:30,
+      locations:[{id:'home-1', name:'Sample Home', lat:51.5, lng:-0.12}],
+      weatherProfiles:[]
+    });
+    const now = Date.now();
+    const context = assistantBuildContext(now);
+    const catalog = context.catalog;
+    const parsed = assistantParseUtterance('Add the location home.', catalog, now);
+    const session = assistantCreateSession();
+    session.draft = {
+      kind:'habit',
+      name:'Study',
+      durationMinutes:60,
+      timesPerPeriod:5,
+      periodDays:7,
+      window:{
+        start:{kind:'anchor', anchor:'sunrise', offsetMin:-15},
+        end:{kind:'anchor', anchor:'sunrise', offsetMin:120, combine:'earlier', second:{kind:'clock', minutes:9*60, clock:'09:00'}}
+      }
+    };
+    const wouldCreate = assistantShouldLocalCreate(parsed, session);
+    const calls = [];
+    const out = await runAssistantTurn('Add the location home.', {
+      session,
+      context,
+      complete:async req => {
+        const user = (req.messages || []).filter(m => m && m.role === 'user').map(m => String(m.content || '')).join('\n');
+        calls.push({
+          step:req.step,
+          tools:(req.tools || []).map(row => row && row.function && row.function.name).filter(Boolean),
+          hasDraft:/"currentDraft":\{/.test(user) && /"name":"Study"/.test(user),
+          hasFacts:/"extractedFacts":\{/.test(user)
+        });
+        return {message:{thinking:'place', tool_calls:[{function:{name:'draft_item', arguments:{placeNames:'Home'}}}]}};
+      }
+    });
+    const pathEv = (out.debug || []).find(ev => ev.t === 'path') || {};
+    const forced = await runAssistantTurn('Add the location home.', {
+      forceLlm:true,
+      session:Object.assign(assistantCreateSession(), {draft:session.draft}),
+      context,
+      complete:async req => {
+        calls.push({forcedStep:req.step});
+        return {message:{thinking:'place', tool_calls:[{function:{name:'draft_item', arguments:{placeNames:'Sample Home'}}}]}};
+      }
+    });
+    return {
+      intent:parsed.intent,
+      itemName:parsed.itemName,
+      places:parsed.places && parsed.places.slice(),
+      wouldCreate,
+      type:out.type,
+      name:out.draft && out.draft.name,
+      kind:out.draft && out.draft.kind,
+      place:out.draft && out.draft.places && out.draft.places.names && out.draft.places.names[0],
+      times:out.draft && out.draft.timesPerPeriod,
+      path:pathEv.path,
+      via:pathEv.via,
+      firstStep:calls[0] && calls[0].step,
+      hasDraft:calls[0] && calls[0].hasDraft,
+      hasFacts:calls[0] && calls[0].hasFacts,
+      forcedType:forced.type,
+      forcedName:forced.draft && forced.draft.name,
+      forcedPlace:forced.draft && forced.draft.places && forced.draft.places.names && forced.draft.places.names[0],
+      forcedStep:calls.find(row => row.forcedStep) && calls.find(row => row.forcedStep).forcedStep
+    };
+  });
+  assert(followLoc.intent === 'edit_item' && followLoc.itemName == null, 'add-the-location is an edit, not a new task name');
+  assert(followLoc.places && /home/i.test(followLoc.places.join(' ')), 'parser still resolves Home/Sample Home for salvage');
+  assert(followLoc.wouldCreate !== true, 'focused add-location is not a local create');
+  assert(followLoc.type === 'preview' && followLoc.name === 'Study' && followLoc.kind === 'habit', 'follow-up keeps the Study habit');
+  assert(/home/i.test(followLoc.place || '') && followLoc.times === 5, 'model sets the place on Study and keeps 5× / week');
+  assert(followLoc.path === 'llm' && followLoc.via === 'focus-continue', 'debug stays on the model, not local via create');
+  assert(followLoc.firstStep === 'extract' && followLoc.hasDraft === true && followLoc.hasFacts !== true, 'extract sees currentDraft Study and withholds parser facts');
+  assert(followLoc.forcedType === 'preview' && followLoc.forcedName === 'Study' && /home/i.test(followLoc.forcedPlace || ''), 'use-AI-instead keeps the unsaved Study draft');
+  assert(followLoc.forcedStep === 'extract', 'force llm on a focused follow-up skips classify so it cannot say unclear');
+
+  console.log('\n[D4] unknown places keep currentDraft so the next line is extract, not classify');
+  const keptPlace = await page.evaluate(async () => {
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      locations:[
+        {id:'home-1', name:'Sample Home', lat:51.5, lng:-0.12},
+        {id:'mom-1', name:"Sample Mom's house", lat:51.51, lng:-0.13}
+      ],
+      weatherProfiles:[]
+    });
+    save([]);
+    const now = Date.now();
+    const context = assistantBuildContext(now);
+    const session = assistantCreateSession();
+    const first = await runAssistantTurn(
+      'Create a habit for barbecue once in a week and select appropriate time, best weather and appropriate duration etc',
+      {
+        session,
+        context,
+        forceLlm:true,
+        complete:async req => {
+          if(req.step === 'classify'){
+            return {message:{thinking:'habit', tool_calls:[{function:{name:'classify_intent', arguments:{intent:'create_habit'}}}]}};
+          }
+          return {message:{thinking:'draft', tool_calls:[{function:{name:'draft_item', arguments:{
+            kind:'habit',
+            name:'Weekly Barbecue',
+            durationMinutes:120,
+            rhythm:'weekly',
+            windowText:'from 15 minutes before sunset to 2 hours after sunset',
+            weatherText:'sunny and mild',
+            placeNames:['backyard', 'rooftop']
+          }}}]}};
+        }
+      }
+    );
+    const followCalls = [];
+    const follow = await runAssistantTurn('Use home and mom\'s house', {
+      session:first.session || session,
+      context:assistantBuildContext(now),
+      complete:async req => {
+        const user = (req.messages || []).filter(m => m && m.role === 'user').map(m => String(m.content || '')).join('\n');
+        followCalls.push({
+          step:req.step,
+          hasDraft:/"currentDraft":\{/.test(user) && /Weekly Barbecue/.test(user),
+          hasFacts:/"extractedFacts":\{/.test(user)
+        });
+        if(req.step === 'classify')throw new Error('place follow-up should skip classify');
+        return {message:{thinking:'places', tool_calls:[{function:{name:'draft_item', arguments:{
+          placeNames:['Sample Home', "Sample Mom's house"]
+        }}}]}};
+      }
+    });
+    const names = follow.draft && follow.draft.places && follow.draft.places.names || [];
+    return {
+      firstType:first.type,
+      firstName:first.draft && first.draft.name,
+      firstDuration:first.draft && first.draft.durationMinutes,
+      firstPlaces:first.draft && first.draft.places && first.draft.places.names,
+      firstAsk:/saved place/i.test(first.question || ''),
+      awaiting:first.session && first.session.awaiting,
+      followType:follow.type,
+      followName:follow.draft && follow.draft.name,
+      followDuration:follow.draft && follow.draft.durationMinutes,
+      followPlaces:names.slice(),
+      followStep:followCalls[0] && followCalls[0].step,
+      followDraft:followCalls[0] && followCalls[0].hasDraft,
+      followFacts:followCalls[0] && followCalls[0].hasFacts,
+      followText:follow.text || follow.error || follow.question || ''
+    };
+  });
+  assert(keptPlace.firstType === 'ask' && keptPlace.firstAsk, 'invented places ask for a saved place');
+  assert(keptPlace.firstName === 'Weekly Barbecue' && keptPlace.firstDuration === 120, 'the barbecue draft is kept while asking');
+  assert(!keptPlace.firstPlaces || !keptPlace.firstPlaces.length, 'unknown backyard/rooftop are not attached');
+  assert(!keptPlace.awaiting, 'does not switch to local awaiting-place');
+  assert(keptPlace.followType === 'preview' && keptPlace.followName === 'Weekly Barbecue' && keptPlace.followDuration === 120, 'follow-up previews the same habit');
+  assert(keptPlace.followPlaces.includes('Sample Home') && keptPlace.followPlaces.some(name => /mom/i.test(name)), 'draft_item uses catalog place names from the model');
+  assert(keptPlace.followStep === 'extract' && keptPlace.followDraft === true && keptPlace.followFacts !== true, 'follow-up is extract with currentDraft and no parser facts');
+
   console.log('\n[E] settings chrome');
   const ui = await page.evaluate(() => {
     saveSortSettings({ ...loadSortSettings(), localAssistant:false });
@@ -261,9 +477,9 @@ async function launchBrowser(){
   const guideTitle = await page.locator('#assistant-reach-guide .settings-sublabel').textContent();
   assert(guideVisible && /Reach the model/i.test(guideTitle || ''), 'reach guide is visible in Settings');
 
-  console.log('\n[F] compact model context at 60%');
+  console.log('\n[F] compact model context at 85%');
   const compact = await page.evaluate(() => {
-    const replay = assistantReplayMessage({content:'', thinking:'z'.repeat(5000), toolCalls:[]});
+    const replay = assistantReplayMessage({content:'', thinking:'z'.repeat(ASSISTANT_THINKING_REPLAY_MAX + 400), toolCalls:[]});
     const session = assistantCreateSession();
     session.contextLimit = 800;
     session.draft = {
@@ -285,20 +501,31 @@ async function launchBrowser(){
       {role:'user', content:'x'.repeat(1200)},
       {role:'assistant', thinking:'y'.repeat(4000), content:'', tool_calls:[{id:'1', type:'function', function:{name:'classify_intent', arguments:'{"intent":"create_habit"}'}}]},
       {role:'tool', content:'{"ok":true,"intent":"create_habit"}'},
-      {role:'user', content:'Call set_window. sunset means maghrib. Use kind clock or anchor.'}
+      {role:'user', content:'Call draft_item with windowText. sunset means maghrib.'}
     ];
     const before = assistantPromptTokens(session.messages, []);
     const out = assistantMaybeCompact(session, [], session.parsed.text);
     const small = assistantCreateSession();
-    small.contextLimit = 32768;
+    small.contextLimit = ASSISTANT_DEFAULT_CONTEXT_TOKENS;
     small.messages = [
       {role:'system', content:'sys'},
       {role:'user', content:'short'}
     ];
     const skip = assistantMaybeCompact(small, [], 'short');
+    const win = ASSISTANT_DEFAULT_CONTEXT_TOKENS;
+    const at = ASSISTANT_CONTEXT_COMPACT_AT;
     return {
-      should:assistantShouldCompact(19661, 32768),
-      shouldNot:assistantShouldCompact(1000, 32768),
+      at,
+      win,
+      guess:assistantGuessContextLimit('qwen3.8:27b-mlx'),
+      fromShow:assistantContextFromShow({
+        model_info:{ 'qwen3.context_length':32768 },
+        parameters:'num_ctx                       131072\nnum_gpu 99'
+      }),
+      classifyPredict:assistantStepPredict('classify'),
+      extractPredict:assistantStepPredict('extract'),
+      should:assistantShouldCompact(Math.ceil(win * at), win),
+      shouldNot:assistantShouldCompact(Math.floor(win * at) - 1, win),
       ollamaTokens:assistantReadPromptTokens({prompt_eval_count:4096}),
       openAiTokens:assistantReadPromptTokens({usage:{prompt_tokens:99}}),
       replayLen:replay.thinking.length,
@@ -312,18 +539,21 @@ async function launchBrowser(){
       replayMax:ASSISTANT_THINKING_REPLAY_MAX
     };
   });
-  assert(compact.should && !compact.shouldNot, '60% of the window is the compact trigger');
+  assert(compact.at === 0.85 && compact.win === 131072, 'compact waits until 85% of a 128k window');
+  assert(compact.guess === 131072 && compact.fromShow === 131072, 'Qwen guess and Ollama num_ctx are 128k');
+  assert(compact.classifyPredict >= 4096 && compact.extractPredict >= 6144, 'generation budget leaves room to think before the tool call');
+  assert(compact.should && !compact.shouldNot, '85% of the window is the compact trigger');
   assert(compact.ollamaTokens === 4096 && compact.openAiTokens === 99, 'prompt token counts are read from Ollama and LM Studio');
   assert(compact.replayLen <= compact.replayMax + 1, 'replayed thinking is capped');
   assert(compact.compacted && compact.after < compact.before, 'over-budget traces are compacted smaller');
   assert(compact.roles.join(',') === 'system,user', 'compact keeps system + one summary user');
-  assert(/outside exercise/.test(compact.blob) && /set_window|maghrib/.test(compact.blob), 'compact keeps the focused habit and the next tool hint');
+  assert(/outside exercise/.test(compact.blob) && /maghrib/.test(compact.blob), 'compact keeps the focused habit and its window');
   assert(!compact.oldThinking, 'compact drops thinking traces');
-  assert(!compact.skipCompacted, 'short prompts stay as-is under 60%');
+  assert(!compact.skipCompacted, 'short prompts stay as-is under 85%');
 
   const compactTurn = await page.evaluate(async () => {
     const replies = [
-      {message:{thinking:'t'.repeat(2500), tool_calls:[{function:{name:'classify_intent', arguments:{intent:'create_task'}}}]}, prompt_eval_count:700},
+      {message:{thinking:'t'.repeat(2500), tool_calls:[{function:{name:'classify_intent', arguments:{intent:'create_task'}}}]}, prompt_eval_count:900},
       {message:{thinking:'ok', tool_calls:[{function:{name:'draft_item', arguments:{kind:'task', name:'Pharmacy', durationMinutes:20, due:'today'}}}]}}
     ];
     let sawCompact = false;
@@ -426,6 +656,148 @@ async function launchBrowser(){
   assert(upsert.weekendOk && upsert.weekendTimes === 1 && JSON.stringify(upsert.weekendWeekdays) === JSON.stringify([0,6]), 'draft_item "every weekend" is Sat/Sun');
   assert(upsert.forcedType === 'preview' && upsert.forcedTimes === 1 && JSON.stringify(upsert.forcedWeekdays) === JSON.stringify([2]), 'forced LLM draft_item call applies every Tuesday');
   assert(/outside exercise/i.test(upsert.forcedName || '') && upsert.leftover === 0, 'tool call used the focused outside exercise');
+
+  console.log('\n[H2] draft_item can set every item setting');
+  const fields = await page.evaluate(() => {
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      defaultDurationMinutes:30,
+      defaultBreakable:false,
+      defaultTopics:['inbox'],
+      locations:[{id:'home-1', name:'Home', lat:51.5, lng:-0.12},{id:'gym-1', name:'Gym', lat:51.51, lng:-0.13}],
+      weatherProfiles:[{id:'dry-1', name:'Dry'}]
+    });
+    const seed = (typeof normalize === 'function' ? normalize : (x=>x))([
+      {name:'Walk', type:'keepup', target:1, durationMinutes:20, logs:[], lastLog:null},
+      {name:'outside exercise', type:'reduce', target:7/3, durationMinutes:30, logs:[], lastLog:null, topics:['health'], breakable:true, minChunkMinutes:15, earlyWindowDays:2, delayAllowanceDays:1, emoji:'🏃', emojiBgColor:'teal', pinned:true}
+    ]);
+    save(seed);
+    const now = Date.now();
+    const context = assistantBuildContext(now);
+    const found = assistantFindHabit(load(), 'outside exercise');
+    const session = assistantCreateSession();
+    assistantFocusHabit(session, found, context);
+    const tool = assistantExecuteTool('draft_item', {
+      habitKind:'limit',
+      emoji:'💪',
+      emojiColor:'amber',
+      topics:'health, fitness',
+      monthDays:'1, 15',
+      preferredWeekdays:'Saturday',
+      preferredWindowText:'between 8am and 10am',
+      earlyDays:3,
+      delayDays:0,
+      breakable:'split into 20 minutes',
+      autoMarkMinutes:'manual',
+      trackValue:true,
+      pinned:true,
+      showWeather:true,
+      weatherAtPlace:true,
+      weatherPlace:'Home',
+      placePrefs:'Home high, Gym avoid',
+      after:'Walk',
+      order:'right after Walk, same day',
+      links:'https://example.com/workout',
+      option:'Tue 9am-11am at Gym'
+    }, session, context);
+    const commit = tool.ok ? assistantCommitDraft(tool.draft) : {ok:false, error:tool.error};
+    const habit = commit.ok ? load()[commit.index] : null;
+    const partner = load().find(item => item && item.name === 'Walk');
+    session.parsed = assistantParseUtterance('Change it to five times a week', context.catalog, now);
+    const rhythmOnly = assistantExecuteTool('draft_item', {rhythm:'five times a week'}, session, {
+      ...context,
+      data:load(),
+      catalog:assistantCatalog(load(), context.settings, now)
+    });
+    const afterRhythm = rhythmOnly.ok ? assistantCommitDraft(rhythmOnly.draft) : {ok:false};
+    const kept = afterRhythm.ok ? load()[afterRhythm.index] : null;
+    const taskSession = assistantCreateSession();
+    const task = assistantExecuteTool('draft_item', {
+      kind:'task',
+      name:'File taxes',
+      due:'tomorrow',
+      hardDue:true,
+      snooze:'2 hours',
+      sharedDisplay:false,
+      sharedComplete:false
+    }, taskSession, assistantBuildContext(now));
+    const taskCommit = task.ok ? assistantCommitDraft(task.draft) : {ok:false};
+    const taskHabit = taskCommit.ok ? load()[taskCommit.index] : null;
+    const later = assistantParseWindowFromText('later of 6pm and sunset until isha');
+    return {
+      toolOk:tool.ok,
+      ask:tool.ask || null,
+      error:tool.error || commit.error || null,
+      type:habit && habit.type,
+      emoji:habit && habit.emoji,
+      emojiBg:habit && habit.emojiBgColor,
+      topics:habit && habit.topics,
+      monthDays:habit && habit.allowedMonthDays,
+      prefDays:habit && habit.preferredWeekdays,
+      prefStart:habit && habit.preferredTimeStart,
+      prefEnd:habit && habit.preferredTimeEnd,
+      early:habit && habit.earlyWindowDays,
+      delay:habit && habit.delayAllowanceDays,
+      breakable:habit && habit.breakable,
+      chunk:habit && habit.minChunkMinutes,
+      autoMark:habit && habit.autoMarkMinutes,
+      track:habit && habit.trackValue,
+      pinned:habit && habit.pinned,
+      showWeather:habit && habit.showWeather,
+      weatherAt:habit && habit.showWeatherAtLocation,
+      weatherPlace:habit && habit.weatherLocationId,
+      prefHome:habit && habit.locationPrefs && habit.locationPrefs['home-1'],
+      prefGym:habit && habit.locationPrefs && habit.locationPrefs['gym-1'],
+      linkKind:habit && habit.scheduleLinks && habit.scheduleLinks[0] && habit.scheduleLinks[0].direction,
+      linkHid:habit && habit.scheduleLinks && habit.scheduleLinks[0] && habit.scheduleLinks[0].anchorHid,
+      linkAdj:habit && habit.scheduleLinks && habit.scheduleLinks[0] && habit.scheduleLinks[0].adjacency,
+      sameDay:habit && habit.scheduleLinks && habit.scheduleLinks[0] && habit.scheduleLinks[0].requireSameDay,
+      partnerHid:partner && partner.hid,
+      url:habit && habit.links && habit.links[0] && habit.links[0].value,
+      optionLoc:habit && habit.scheduleOptions && habit.scheduleOptions[0] && habit.scheduleOptions[0].locationId,
+      optionStart:habit && habit.scheduleOptions && habit.scheduleOptions[0] && habit.scheduleOptions[0].start,
+      optionDays:habit && habit.scheduleOptions && habit.scheduleOptions[0] && habit.scheduleOptions[0].weekdays,
+      keptType:kept && kept.type,
+      keptTopics:kept && kept.topics,
+      keptBreakable:kept && kept.breakable,
+      keptPinned:kept && kept.pinned,
+      keptTimes:kept && typeof rhythmParts === 'function' ? rhythmParts(kept.target).times : null,
+      taskOk:taskCommit.ok,
+      taskDelay:taskHabit && taskHabit.delayAllowanceDays,
+      taskHard:taskHabit && taskHabit.hardDue,
+      taskShared:taskHabit && taskHabit.showOnSharedDisplay,
+      taskComplete:taskHabit && taskHabit.allowSharedDisplayCompletion,
+      snoozed:taskHabit && taskHabit.snoozedUntil != null,
+      laterStart:later && later.start && later.start.kind,
+      laterCombine:later && later.start && later.start.combine,
+      laterSecond:later && later.start && later.start.second && later.start.second.anchor,
+      laterEnd:later && later.end && later.end.anchor,
+      schemaKeys:Object.keys(ASSISTANT_TOOL_DEFS.draft_item.parameters.properties)
+    };
+  });
+  assert(fields.toolOk && !fields.ask && !fields.error, 'full-settings draft_item applies without asking (' + (fields.error || fields.ask || '') + ')');
+  assert(fields.type === 'reduce', 'habitKind limit saves as reduce');
+  assert(fields.emoji === '💪' && fields.emojiBg === 'amber', 'emoji and color save');
+  assert(JSON.stringify(fields.topics) === JSON.stringify(['health','fitness']), 'topics save');
+  assert(JSON.stringify(fields.monthDays) === JSON.stringify([1,15]), 'month days save');
+  assert(JSON.stringify(fields.prefDays) === JSON.stringify([6]), 'preferred Saturday saves');
+  assert(fields.prefStart === 8 * 60 && fields.prefEnd === 10 * 60, 'preferred window saves');
+  assert(fields.early === 3 && fields.delay === 0, 'early/delay days save');
+  assert(fields.breakable === true && fields.chunk === 20, 'breakable split and min chunk save');
+  assert(fields.autoMark === null && fields.track === true && fields.pinned === true, 'manual auto-mark, track value, and pin save');
+  assert(fields.showWeather === true && fields.weatherAt === true && fields.weatherPlace === 'home-1', 'weather card settings save');
+  assert(fields.prefHome === 'high' && fields.prefGym === 'avoid', 'place preferences save');
+  assert(fields.linkKind === 'after' && fields.linkHid === fields.partnerHid && fields.linkAdj === 'direct' && fields.sameDay === true, 'order link is direct after Walk, same day');
+  assert(/example\.com\/workout/.test(fields.url || ''), 'action link saves');
+  assert(fields.optionLoc === 'gym-1' && fields.optionStart === 9 * 60 && JSON.stringify(fields.optionDays) === JSON.stringify([2]), 'specific Tue 9am Gym option saves');
+  assert(fields.keptType === 'reduce' && JSON.stringify(fields.keptTopics) === JSON.stringify(['health','fitness']) && fields.keptBreakable === true && fields.keptPinned === true, 'a rhythm-only follow-up keeps the other settings');
+  assert(fields.keptTimes === 5, 'rhythm-only follow-up still updates cadence');
+  assert(fields.taskOk && fields.taskDelay === 0 && fields.taskHard === true, 'hard due sets delay 0');
+  assert(fields.taskShared === false && fields.taskComplete === false && fields.snoozed, 'shared-display flags and snooze save');
+  assert(fields.laterStart === 'clock' && fields.laterCombine === 'later' && fields.laterSecond === 'maghrib' && fields.laterEnd === 'isha', 'later-of window text parses');
+  assert(fields.schemaKeys.includes('habitKind') && fields.schemaKeys.includes('breakable') && fields.schemaKeys.includes('order') && fields.schemaKeys.includes('links') && fields.schemaKeys.includes('option'), 'draft_item schema lists the extra settings');
 
   console.log('\n[I] assistant debug trace');
   const debugTrace = await page.evaluate(async () => {
@@ -665,6 +1037,156 @@ async function launchBrowser(){
   assert(retryUi.hadRetry && /use AI instead/i.test(retryUi.label), 'fast-path preview offers use AI instead');
   assert(retryUi.rowGone && retryUi.after > retryUi.before, 'retry re-runs the utterance through the model');
   assert(/Ring mom/i.test(retryUi.lastPreview), 'retry preview comes from the model, not the fast path');
+
+  console.log('\n[L] use-AI-instead does not copy parser guesses into the model');
+  const forceFacts = await page.evaluate(async () => {
+    const calls = [];
+    const script = [
+      { message:{ thinking:'c', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
+      { message:{ thinking:'d', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Mom call', due:'today' } } }] } }
+    ];
+    const out = await runAssistantTurn('Remind me to call mom', {
+      forceLlm:true,
+      complete:async req => {
+        calls.push((req.messages || []).map(msg => String(msg.content || '')).join('\n'));
+        return script.shift();
+      }
+    });
+    const parseEv = (out.debug || []).find(ev => ev.t === 'parse') || {};
+    return {
+      type:out.type,
+      name:out.draft && out.draft.name,
+      fastPath:out.fastPath === true,
+      hasFacts:/"extractedFacts":\{/.test(calls[0] || ''),
+      factsTrusted:parseEv.factsTrusted === true,
+      leftover:script.length
+    };
+  });
+  assert(forceFacts.type === 'preview' && /mom/i.test(forceFacts.name || '') && forceFacts.leftover === 0, 'forced simple phrasing still drafts via the model');
+  assert(forceFacts.fastPath !== true && forceFacts.hasFacts !== true && forceFacts.factsTrusted !== true, 'use AI instead withholds extractedFacts');
+
+  const noMerge = await page.evaluate(async () => {
+    const script = [
+      { message:{ thinking:'c', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
+      { message:{ thinking:'d', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Pharmacy', due:'today' } } }] } }
+    ];
+    const out = await runAssistantTurn('Remind me to go to the pharmacy for 20 minutes', {
+      forceLlm:true,
+      complete:async () => script.shift()
+    });
+    return {name:out.draft && out.draft.name, duration:out.draft && out.draft.durationMinutes};
+  });
+  assert(/pharmacy/i.test(noMerge.name || ''), 'forced draft keeps the model name');
+  assert(noMerge.duration == null, 'untrusted parser duration is not merged into the model draft');
+
+  const riskNoMerge = await page.evaluate(async () => {
+    const script = [
+      { message:{ thinking:'c', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
+      { message:{ thinking:'d', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Contractor', due:'2026-10-01' } } }] } }
+    ];
+    const out = await runAssistantTurn('remind me to pay the contractor in two weeks for 20 minutes', {
+      complete:async () => script.shift()
+    });
+    const dueKey = out.draft && out.draft.dueDate != null && typeof dateKey === 'function'
+      ? dateKey(out.draft.dueDate)
+      : null;
+    const pathEvent = (out.debug || []).find(ev => ev.t === 'path') || {};
+    return {
+      type:out.type,
+      name:out.draft && out.draft.name,
+      duration:out.draft && out.draft.durationMinutes,
+      dueKey,
+      via:pathEvent.via,
+      risk:pathEvent.risk
+    };
+  });
+  assert(riskNoMerge.type === 'preview' && /contractor/i.test(riskNoMerge.name || ''), 'relative-date risk still drafts from the model');
+  assert(riskNoMerge.via === 'parser-risk' && riskNoMerge.risk === 'relative-date', 'two weeks is the relative-date route');
+  assert(riskNoMerge.dueKey === '2026-10-01' && riskNoMerge.duration == null, 'model due wins; parser minutes are not patched on');
+
+  console.log('\n[S] settings create + weather propose on items');
+  const settings = await page.evaluate(async () => {
+    const jsonHabit = assistantParseReply({
+      message:{ role:'assistant', content:'{"name":"Barbecue","weatherText":"not raining"}' }
+    }, 'extract');
+    const jsonSetting = assistantParseReply({
+      message:{ role:'assistant', content:'{"kind":"weather","name":"Barbecuing","weatherText":"not raining"}' }
+    }, 'extract');
+    const catalog = assistantCatalog([], { weatherProfiles:[], locations:[] }, Date.now());
+    const asHabit = assistantParseUtterance('Create a habit for barbecuing only if it is not raining', catalog, Date.now());
+    const asProfile = assistantParseUtterance('Create a weather profile for barbecuing', catalog, Date.now());
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      weatherProfiles:[],
+      locations:[]
+    });
+    save([]);
+    const llm = async () => { throw new Error('LLM should not run for barbecuing profile'); };
+    const local = await runAssistantTurn('Create a weather profile for barbecuing', { complete:llm });
+    const script = [
+      { message:{ thinking:'c', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_habit' } } }] } },
+      { message:{ thinking:'d', tool_calls:[{ function:{ name:'draft_item', arguments:{
+        kind:'habit', name:'Barbecue', rhythm:'once a week', weatherText:'only if it is not raining'
+      } } }] } }
+    ];
+    const model = await runAssistantTurn('Create a weekly barbecue habit only if it is not raining', {
+      forceLlm:true,
+      complete:async () => script.shift()
+    });
+    const saved = model.type === 'preview' ? assistantCommitDraft(model.draft) : {ok:false, error:model.error || model.type};
+    const habit = saved.ok ? load()[saved.index] : null;
+    const profile = (loadSortSettings().weatherProfiles || []).find(row => row && row.id === (habit && habit.weatherProfileId));
+    const miss = assistantApplyDraftItem({
+      kind:'task',
+      name:'Picnic',
+      weatherProfile:'Windy picnic',
+      weatherText:'not too windy and not raining'
+    }, assistantEmptyDraft(), assistantCatalog([], {weatherProfiles:[]}, Date.now()), Date.now(), loadSortSettings(), []);
+    const missSaved = miss.ok ? assistantCommitDraft(miss.draft) : {ok:false, error:miss.error};
+    const picnic = missSaved.ok ? load()[missSaved.index] : null;
+    const picnicProfile = (loadSortSettings().weatherProfiles || []).find(row => row && row.id === (picnic && picnic.weatherProfileId));
+    const namedDry = assistantApplyDraftItem({
+      kind:'habit',
+      name:'Stretch',
+      weatherText:'Dry'
+    }, assistantEmptyDraft(), {
+      weather:[{id:'dry-1', name:'Dry'}],
+      places:[]
+    }, Date.now(), {weatherProfiles:[{id:'dry-1', name:'Dry'}]}, []);
+    return {
+      jsonHabit:jsonHabit.toolCalls && jsonHabit.toolCalls[0] && jsonHabit.toolCalls[0].name,
+      jsonSetting:jsonSetting.toolCalls && jsonSetting.toolCalls[0] && jsonSetting.toolCalls[0].name,
+      habitIntent:asHabit.intent,
+      profileIntent:asProfile.intent,
+      profileKind:asProfile.settingKind,
+      localType:local.type,
+      localKind:local.draft && local.draft.kind,
+      localName:local.draft && local.draft.name,
+      modelType:model.type,
+      modelName:model.draft && model.draft.name,
+      modelWeather:model.draft && model.draft.weather && model.draft.weather.name,
+      savedOk:saved.ok,
+      weatherId:habit && habit.weatherProfileId,
+      rainMax:profile && (profile.rules || []).some(rule => rule.metric === 'precipitation_probability' && rule.max === 20),
+      missOk:miss.ok && missSaved.ok,
+      picnicName:picnicProfile && picnicProfile.name,
+      picnicWind:picnicProfile && (picnicProfile.rules || []).some(rule => rule.metric === 'wind_speed_10m'),
+      picnicRain:picnicProfile && (picnicProfile.rules || []).some(rule => rule.metric === 'precipitation_probability'),
+      namedDryOk:namedDry.ok && namedDry.draft && namedDry.draft.weather && namedDry.draft.weather.name === 'Dry' && namedDry.draft.weather.profileId === 'dry-1'
+    };
+  });
+  assert(settings.jsonHabit === 'draft_item', 'weatherText JSON without kind is an item draft');
+  assert(settings.jsonSetting === 'draft_setting', 'kind weather JSON is a setting draft');
+  assert(settings.habitIntent === 'create_habit', 'habit + weather conditions is create_habit');
+  assert(settings.profileIntent === 'create_setting' && settings.profileKind === 'weather', 'weather profile for barbecuing is create_setting');
+  assert(settings.localType === 'preview' && settings.localKind === 'weather' && /barbecu/i.test(settings.localName || ''), 'barbecuing profile previews locally');
+  assert(settings.modelType === 'preview' && /barbecue/i.test(settings.modelName || ''), 'model habit+weatherText still previews');
+  assert(settings.savedOk && settings.weatherId && settings.rainMax, 'saving the habit creates a covering weather profile');
+  assert(settings.missOk && /picnic|windy|outdoor|calm/i.test(settings.picnicName || ''), 'unknown weatherProfile name still creates a profile');
+  assert(settings.picnicWind && settings.picnicRain, 'proposed picnic profile keeps wind and rain rules');
+  assert(settings.namedDryOk, 'weatherText Dry attaches the catalog Dry profile');
 
   assert(!errors.length, 'no page errors (' + errors.join(' | ') + ')');
   await browser.close();

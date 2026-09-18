@@ -10,22 +10,96 @@ function assistantCleanAnchor(value){
   return ASSISTANT_ANCHORS.includes(aliased) ? aliased : null;
 }
 
+function assistantSecondaryFromRaw(raw){
+  if(!raw || typeof raw !== 'object')return null;
+  if(raw.second && typeof raw.second === 'object')return assistantNormalizeEndpoint(raw.second);
+  const has = raw.clock2 != null || raw.anchor2 != null || raw.habit2 != null;
+  if(!has)return null;
+  return assistantNormalizeEndpoint({
+    kind:raw.habit2 ? 'habit' : (raw.anchor2 ? 'anchor' : 'clock'),
+    clock:raw.clock2,
+    anchor:raw.anchor2,
+    offsetMin:raw.offsetMin2,
+    habit:raw.habit2,
+    dayOffset:raw.dayOffset2
+  });
+}
+
 function assistantNormalizeEndpoint(raw){
   if(!raw || typeof raw !== 'object')return {kind:'unset'};
-  const kind = raw.kind === 'clock' || raw.kind === 'anchor' ? raw.kind : 'unset';
+  const kind = raw.kind === 'clock' || raw.kind === 'anchor' || raw.kind === 'habit'
+    ? raw.kind
+    : (raw.habit ? 'habit' : (raw.anchor ? 'anchor' : (raw.clock ? 'clock' : 'unset')));
+  let end;
   if(kind === 'clock'){
-    const minutes = assistantParseClock(raw.clock);
-    if(minutes == null)return {error:'clock must be HH:MM (or 7pm)'};
-    return {kind:'clock', minutes, clock:assistantClockLabel(minutes)};
-  }
-  if(kind === 'anchor'){
+    const minutes = assistantParseClock(raw.clock != null ? raw.clock : raw.minutes);
+    if(minutes == null && Number.isFinite(Number(raw.minutes))){
+      end = {kind:'clock', minutes:Number(raw.minutes), clock:assistantClockLabel(Number(raw.minutes))};
+    }else if(minutes == null){
+      return {error:'clock must be HH:MM (or 7pm)'};
+    }else{
+      end = {kind:'clock', minutes, clock:assistantClockLabel(minutes)};
+    }
+  }else if(kind === 'anchor'){
     const anchor = assistantCleanAnchor(raw.anchor);
     if(!anchor)return {error:'anchor must be fajr, sunrise, dhuhr, asr, maghrib, or isha (sunset means maghrib)'};
     const offset = Number.isFinite(Number(raw.offsetMin)) ? Math.round(Number(raw.offsetMin)) : 0;
     const clamped = typeof normalizePrayerOffset === 'function' ? normalizePrayerOffset(offset) : offset;
-    return {kind:'anchor', anchor, offsetMin:clamped};
+    end = {kind:'anchor', anchor, offsetMin:clamped};
+  }else if(kind === 'habit'){
+    const name = String(raw.habit || raw.anchor || raw.name || '').trim();
+    if(!name)return {error:'habit window needs another item name'};
+    const offset = Number.isFinite(Number(raw.offsetMin)) ? Math.round(Number(raw.offsetMin)) : 0;
+    const clamped = typeof normalizePrayerOffset === 'function' ? normalizePrayerOffset(offset) : offset;
+    end = {kind:'habit', habitName:name, habitId:raw.habitId || null, offsetMin:clamped};
+  }else{
+    end = {kind:'unset'};
   }
-  return {kind:'unset'};
+  const dayOffset = Number(raw.dayOffset) === 1 ? 1 : 0;
+  if(dayOffset)end.dayOffset = 1;
+  const combine = typeof cleanTimeCombine === 'function'
+    ? cleanTimeCombine(raw.combine)
+    : (raw.combine === 'later' || raw.combine === 'earlier' ? raw.combine : null);
+  if(combine){
+    const second = assistantSecondaryFromRaw(raw);
+    if(second && !second.error && second.kind !== 'unset'){
+      end.combine = combine;
+      end.second = second;
+    }
+  }
+  return end;
+}
+
+function assistantResolveEndpointHabits(end, data){
+  if(!end || typeof end !== 'object')return {ok:true, end:end || {kind:'unset'}};
+  let next = end;
+  if(end.kind === 'habit' && !end.habitId){
+    const found = typeof assistantFindHabit === 'function'
+      ? assistantFindHabit(data, end.habitName || end.habit || end.name)
+      : {ok:false};
+    if(!found || !found.ok){
+      return found && found.ok === false
+        ? found
+        : {ok:false, error:'UNKNOWN', ask:'I cannot find that item to use as a time anchor.'};
+    }
+    next = Object.assign({}, end, {habitId:found.hid, habitName:found.name});
+  }
+  if(next.second){
+    const second = assistantResolveEndpointHabits(next.second, data);
+    if(!second.ok)return second;
+    if(second.end !== next.second)next = Object.assign({}, next, {second:second.end});
+  }
+  return {ok:true, end:next};
+}
+
+function assistantResolveWindowHabits(window, data){
+  if(!window || typeof window !== 'object')return {ok:true, window};
+  const start = assistantResolveEndpointHabits(window.start, data);
+  if(!start.ok)return start;
+  const end = assistantResolveEndpointHabits(window.end, data);
+  if(!end.ok)return end;
+  if(start.end === window.start && end.end === window.end)return {ok:true, window};
+  return {ok:true, window:{start:start.end, end:end.end}};
 }
 
 function assistantMatchByName(list, value){
@@ -158,6 +232,7 @@ function assistantCatalog(data, settings, now){
       id:String(profile && profile.id || ''),
       name:String(profile && profile.name || '').slice(0,32)
     })).filter(item => item.id && item.name),
+    topics:(Array.isArray(settings && settings.topics) ? settings.topics : []).slice(0, 12).map(topic => String(topic || '').slice(0, 32)).filter(Boolean),
     anchors:ASSISTANT_ANCHORS.slice(),
     aliases:'sunset=maghrib, dawn=fajr, noon=dhuhr'
   };
@@ -177,30 +252,55 @@ function assistantBuildContext(now){
 function assistantEmptyDraft(){
   return {
     kind:null,
+    habitKind:null,
     name:'',
+    emoji:null,
+    emojiBgColor:null,
     durationMinutes:null,
     priority:null,
+    topics:null,
     dueDate:null,
     dueTime:null,
+    hardDue:null,
+    planByDate:null,
     timesPerPeriod:null,
     periodDays:null,
     allowedWeekdays:null,
+    allowedMonthDays:null,
+    preferredWeekdays:null,
+    preferredMonthDays:null,
     window:null,
+    preferredWindow:null,
     weather:null,
     places:null,
-    windowMentioned:false,
-    weatherMentioned:false,
-    placeMentioned:false
+    locationPrefs:null,
+    earlyWindowDays:null,
+    delayAllowanceDays:null,
+    breakable:null,
+    minChunkMinutes:null,
+    autoMarkMinutes:undefined,
+    trackValue:null,
+    pinned:null,
+    snoozedUntil:undefined,
+    showOnSharedDisplay:null,
+    allowSharedDisplayCompletion:null,
+    showWeather:null,
+    showWeatherAtLocation:null,
+    weatherLocationId:null,
+    weatherLocationName:null,
+    scheduleLinks:null,
+    scheduleOptions:null,
+    links:null
   };
 }
 
-function assistantApplyWindow(draft, args){
+function assistantApplyWindow(draft, args, role){
   const start = assistantNormalizeEndpoint(args && args.start);
   if(start.error)return {ok:false, error:start.error};
   const end = assistantNormalizeEndpoint(args && args.end);
   if(end.error)return {ok:false, error:end.error};
-  draft.window = {start, end};
-  draft.windowMentioned = start.kind !== 'unset' || end.kind !== 'unset';
+  const key = role === 'preferred' ? 'preferredWindow' : 'window';
+  draft[key] = {start, end};
   return {ok:true, draft};
 }
 
@@ -211,7 +311,8 @@ function assistantApplyWeather(draft, args, catalog){
   }
   if(mode !== 'profile'){
     draft.weather = {mode, profileId:null, name:null};
-    draft.weatherMentioned = true;
+    draft.weatherNeedAsk = null;
+    draft.weatherProposed = null;
     return {ok:true, draft};
   }
   const names = (catalog && catalog.weather) || [];
@@ -224,7 +325,7 @@ function assistantApplyWeather(draft, args, catalog){
     return {ok:false, error:'UNKNOWN_WEATHER', ask:`Use one of: ${names.map(item => item.name).join(', ')}, inherit, or none.`};
   }
   draft.weather = {mode:'profile', profileId:match.item.id, name:match.item.name};
-  draft.weatherMentioned = true;
+  draft.weatherNeedAsk = null;
   return {ok:true, draft};
 }
 
@@ -240,7 +341,205 @@ function assistantWeatherRulesFromHints(hints){
   if(hints.notFreezing){
     rules.push({metric:'temperature_2m', min:1, max:null, hard:true, relative:'none'});
   }
+  if(hints.notWindy){
+    rules.push({metric:'wind_speed_10m', min:null, max:20, hard:false, relative:'low'});
+  }
   return typeof normalizeWeatherRule === 'function' ? rules.map(normalizeWeatherRule) : rules;
+}
+
+function assistantMergeWeatherRules(base, extra){
+  const out = (Array.isArray(base) ? base : []).map(rule => Object.assign({}, rule));
+  for(const rule of extra || []){
+    if(!rule || !rule.metric)continue;
+    const i = out.findIndex(row => row && row.metric === rule.metric);
+    if(i >= 0)out[i] = Object.assign({}, out[i], rule);
+    else out.push(Object.assign({}, rule));
+  }
+  return typeof normalizeWeatherRule === 'function'
+    ? out.slice(0, 8).map(normalizeWeatherRule)
+    : out.slice(0, 8);
+}
+
+function assistantHintWeatherName(hints, fallback){
+  if(fallback)return fallback;
+  if(!hints)return 'Outdoor';
+  if(hints.notRaining && hints.notFreezing)return 'Outdoor';
+  if(hints.notFreezing)return 'Above freezing';
+  if(hints.notWindy && hints.notRaining)return 'Outdoor';
+  if(hints.notWindy)return 'Calm';
+  return 'Dry';
+}
+
+function assistantWeatherCapAsk(profiles){
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  return {
+    question:`You already have ${cap} weather profiles. Use one of: ${profiles.map(item => item.name).join(', ')}, or say "no weather".`,
+    choices:profiles.map(item => item.name).concat(['no weather'])
+  };
+}
+
+function assistantProposeWeather(draft, opts, catalog, settings){
+  if(!draft)return draft;
+  const nameWanted = String(opts && opts.name || '').trim();
+  const text = String(opts && opts.text || '').trim();
+  const parsed = typeof assistantParseWeatherRulesFromText === 'function'
+    ? assistantParseWeatherRulesFromText(text || nameWanted)
+    : {hints:typeof assistantParseWeatherHints === 'function' ? assistantParseWeatherHints(text || nameWanted) : null, rules:[], mentioned:false};
+  const hints = (opts && opts.hints) || parsed.hints || {};
+  let rules = assistantMergeWeatherRules(parsed.rules, assistantWeatherRulesFromHints(hints));
+  const nameLooksLikeRules = nameWanted && typeof assistantParseWeatherHints === 'function'
+    && assistantParseWeatherHints(nameWanted).mentioned
+    && !text;
+  const profileName = nameLooksLikeRules ? '' : nameWanted;
+  const catalogWeather = (catalog && catalog.weather) || [];
+  if(profileName){
+    const match = assistantMatchByName(catalogWeather, profileName);
+    if(match.ok){
+      draft.weather = {mode:'profile', profileId:match.item.id, name:match.item.name};
+      draft.weatherNeedAsk = null;
+      if(rules.length && draft.kind === 'weather'){
+        draft.weatherProposed = {
+          name:match.item.name,
+          rules:assistantMergeWeatherRules((match.item.rules || []), rules),
+          hints
+        };
+        draft.settingId = match.item.id;
+      }else{
+        draft.weatherProposed = null;
+      }
+      return draft;
+    }
+  }
+  const profiles = typeof normalizeWeatherProfiles === 'function'
+    ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
+    : ((settings && settings.weatherProfiles) || []);
+  if(hints && hints.mentioned && draft.kind !== 'weather'){
+    const cover = profiles.find(profile => assistantProfileCoversHints(profile, hints));
+    if(cover){
+      draft.weather = {mode:'profile', profileId:cover.id, name:cover.name};
+      draft.weatherProposed = null;
+      draft.weatherNeedAsk = null;
+      return draft;
+    }
+  }
+  if(!rules.length && !profileName && !(hints && hints.mentioned) && draft.kind !== 'weather')return draft;
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  const existingId = draft.settingId || (draft.weather && draft.weather.profileId);
+  const existing = existingId ? profiles.find(profile => profile && profile.id === existingId) : null;
+  if(!existing && profiles.length >= cap && draft.kind !== 'weather'){
+    draft.weatherNeedAsk = assistantWeatherCapAsk(profiles);
+    return draft;
+  }
+  if(draft.weatherProposed && Array.isArray(draft.weatherProposed.rules)){
+    rules = assistantMergeWeatherRules(draft.weatherProposed.rules, rules);
+  }
+  const name = assistantUniqueWeatherName(
+    profileName || (draft.weatherProposed && draft.weatherProposed.name) || assistantHintWeatherName(hints, draft.kind === 'weather' ? draft.name : ''),
+    existing ? profiles.filter(profile => profile.id !== existing.id) : profiles
+  );
+  draft.weatherProposed = {name, rules, hints};
+  draft.weather = {mode:'profile', profileId:existing ? existing.id : null, name, pending:!existing};
+  draft.weatherNeedAsk = null;
+  if(existing)draft.settingId = existing.id;
+  return draft;
+}
+
+function assistantAttachParsedWeather(draft, parsed, catalog, settings){
+  if(!draft)return draft;
+  const text = parsed && (parsed.weatherText || parsed.text) || '';
+  const parsedRules = typeof assistantParseWeatherRulesFromText === 'function'
+    ? assistantParseWeatherRulesFromText(text)
+    : null;
+  const mentioned = Boolean(parsed && parsed.weather)
+    || Boolean(parsed && parsed.weatherHints && parsed.weatherHints.mentioned)
+    || Boolean(parsedRules && parsedRules.mentioned);
+  if(draft.weather && draft.kind !== 'weather' && !mentioned){
+    return draft;
+  }
+  if(parsed && parsed.weather){
+    const applied = assistantApplyWeather(draft, {mode:'profile', profile:parsed.weather}, catalog);
+    if(applied && applied.ok && draft.weather && draft.weather.profileId)return draft;
+  }
+  const had = draft.weather;
+  if(draft.kind !== 'weather')draft.weather = null;
+  assistantProposeWeather(draft, {
+    name:parsed && parsed.weather || '',
+    text,
+    hints:parsed && parsed.weatherHints || (parsedRules && parsedRules.hints)
+  }, catalog, settings);
+  if(!draft.weather)draft.weather = had;
+  return draft;
+}
+
+function assistantPersistSettings(patch){
+  const current = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+  const next = Object.assign({}, current, patch);
+  if(typeof saveSortSettings === 'function')saveSortSettings(next);
+  if(typeof sortSettings !== 'undefined' && sortSettings){
+    Object.keys(patch || {}).forEach(key => { sortSettings[key] = next[key]; });
+  }
+  if(typeof bumpPlannerDataRevision === 'function'
+    && (patch.weatherProfiles || patch.locations || patch.blockedTimes)){
+    bumpPlannerDataRevision();
+  }
+  if(patch.weatherProfiles && typeof renderWeatherControls === 'function')renderWeatherControls();
+  if(patch.locations && typeof renderLocationControls === 'function')renderLocationControls();
+  if(patch.blockedTimes && typeof renderBlockedTimeControls === 'function')renderBlockedTimeControls();
+  if(patch.topics && typeof renderTopicList === 'function')renderTopicList();
+  return next;
+}
+
+function assistantMaterializeWeatherProfile(draft, settings){
+  if(!draft || !draft.weatherProposed)return null;
+  const current = settings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  let profiles = typeof normalizeWeatherProfiles === 'function'
+    ? normalizeWeatherProfiles(current.weatherProfiles)
+    : ((current.weatherProfiles || []).slice());
+  const proposed = draft.weatherProposed;
+  const nameWanted = String((proposed && proposed.name) || draft.name || 'Outdoor').trim().slice(0, 32) || 'Outdoor';
+  const existingId = draft.settingId || (draft.weather && draft.weather.profileId) || null;
+  if(existingId){
+    const i = profiles.findIndex(profile => profile && profile.id === existingId);
+    if(i >= 0){
+      profiles[i] = {
+        ...profiles[i],
+        name:nameWanted,
+        rules:assistantMergeWeatherRules(profiles[i].rules, proposed.rules)
+      };
+      assistantPersistSettings({weatherProfiles:profiles});
+      return {id:profiles[i].id, name:profiles[i].name};
+    }
+  }
+  if(draft.kind !== 'weather' && proposed.hints && proposed.hints.mentioned){
+    const cover = profiles.find(profile => assistantProfileCoversHints(profile, proposed.hints));
+    if(cover)return {id:cover.id, name:cover.name};
+  }
+  const byName = profiles.find(profile => assistantNormText(profile && profile.name) === assistantNormText(nameWanted));
+  if(byName){
+    if(proposed.rules && proposed.rules.length){
+      byName.rules = assistantMergeWeatherRules(byName.rules, proposed.rules);
+      assistantPersistSettings({weatherProfiles:profiles});
+    }
+    return {id:byName.id, name:byName.name};
+  }
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  if(profiles.length >= cap)return null;
+  const id = `weather-${Date.now().toString(36)}`;
+  const name = assistantUniqueWeatherName(nameWanted, profiles);
+  const rules = assistantMergeWeatherRules([], proposed.rules);
+  profiles = profiles.concat([{id, name, rules}]);
+  assistantPersistSettings({weatherProfiles:profiles});
+  return {id, name};
+}
+
+function assistantEnsureProposedWeather(draft, settings){
+  if(!draft || !draft.weatherProposed || (draft.weather && draft.weather.profileId && draft.kind !== 'weather'))return draft;
+  const made = assistantMaterializeWeatherProfile(draft, settings);
+  if(!made)return draft;
+  draft.weather = {mode:'profile', profileId:made.id, name:made.name};
+  draft.settingId = made.id;
+  draft.weatherProposed = draft.kind === 'weather' ? draft.weatherProposed : null;
+  return draft;
 }
 
 function assistantProfileCoversHints(profile, hints){
@@ -251,6 +550,7 @@ function assistantProfileCoversHints(profile, hints){
   if(hints.notRaining && !hasMax('precipitation_probability') && !hasMax('precipitation'))return false;
   if(hints.notSnowing && !hasMax('snowfall') && !hints.notRaining)return false;
   if(hints.notFreezing && !hasMin(['temperature_2m','apparent_temperature'], 0))return false;
+  if(hints.notWindy && !hasMax('wind_speed_10m') && !hasMax('wind_gusts_10m'))return false;
   return true;
 }
 
@@ -265,72 +565,16 @@ function assistantUniqueWeatherName(wanted, profiles){
   return `Outdoor ${Date.now().toString(36)}`.slice(0, 32);
 }
 
-function assistantAttachParsedWeather(draft, parsed, catalog, settings){
-  if(!draft || draft.weather)return draft;
-  if(parsed && parsed.weather){
-    const applied = assistantApplyWeather(draft, {mode:'profile', profile:parsed.weather}, catalog);
-    if(applied && applied.ok)Object.assign(draft, applied.draft);
-    if(draft.weather)return draft;
+function assistantPlaceAsk(error, places, matches){
+  const names = (places || []).map(item => item && item.name).filter(Boolean);
+  if(error === 'AMBIGUOUS'){
+    const labels = (matches || []).map(item => item && item.name).filter(Boolean);
+    return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which place: ${labels.join(', ')}?`, choices:labels};
   }
-  const hints = parsed && parsed.weatherHints;
-  if(!hints || !hints.mentioned)return draft;
-  const profiles = typeof normalizeWeatherProfiles === 'function'
-    ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
-    : ((settings && settings.weatherProfiles) || []);
-  const cover = profiles.find(profile => assistantProfileCoversHints(profile, hints));
-  if(cover){
-    draft.weather = {mode:'profile', profileId:cover.id, name:cover.name};
-    draft.weatherMentioned = true;
-    return draft;
+  if(error === 'NO_PLACES'){
+    return {ok:false, error:'NO_PLACES', ask:'No saved places yet. Add one in Settings → locations, or drop the place.'};
   }
-  const rules = assistantWeatherRulesFromHints(hints);
-  if(!rules.length)return draft;
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
-  if(profiles.length >= cap){
-    draft.weatherNeedAsk = {
-      question:`You already have ${cap} weather profiles. Use one of: ${profiles.map(item => item.name).join(', ')}, or say "no weather".`,
-      choices:profiles.map(item => item.name).concat(['no weather'])
-    };
-    draft.weatherMentioned = true;
-    return draft;
-  }
-  const name = assistantUniqueWeatherName(
-    hints.notRaining && hints.notFreezing ? 'Outdoor' : (hints.notFreezing ? 'Above freezing' : 'Dry'),
-    profiles
-  );
-  draft.weatherProposed = {name, rules, hints};
-  draft.weather = {mode:'profile', profileId:null, name, pending:true};
-  draft.weatherMentioned = true;
-  return draft;
-}
-
-function assistantEnsureProposedWeather(draft, settings){
-  if(!draft || !draft.weatherProposed || (draft.weather && draft.weather.profileId))return draft;
-  const current = settings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
-  let profiles = typeof normalizeWeatherProfiles === 'function'
-    ? normalizeWeatherProfiles(current.weatherProfiles)
-    : ((current.weatherProfiles || []).slice());
-  const cover = profiles.find(profile => assistantProfileCoversHints(profile, draft.weatherProposed.hints));
-  if(cover){
-    draft.weather = {mode:'profile', profileId:cover.id, name:cover.name};
-    draft.weatherProposed = null;
-    return draft;
-  }
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
-  if(profiles.length >= cap)return draft;
-  const id = `weather-${Date.now().toString(36)}`;
-  const name = assistantUniqueWeatherName(draft.weatherProposed.name, profiles);
-  const rules = (draft.weatherProposed.rules || []).map(rule =>
-    typeof normalizeWeatherRule === 'function' ? normalizeWeatherRule(rule) : rule
-  );
-  profiles = profiles.concat([{id, name, rules}]);
-  if(typeof saveSortSettings === 'function'){
-    saveSortSettings({...current, weatherProfiles:profiles});
-  }
-  if(typeof sortSettings !== 'undefined' && sortSettings)sortSettings.weatherProfiles = profiles;
-  draft.weather = {mode:'profile', profileId:id, name};
-  draft.weatherProposed = null;
-  return draft;
+  return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${names.join(', ')}.`, choices:names};
 }
 
 function assistantApplyPlace(draft, args, catalog){
@@ -338,30 +582,21 @@ function assistantApplyPlace(draft, args, catalog){
   const places = (catalog && catalog.places) || [];
   if(!wanted.length){
     draft.places = {ids:[], names:[], anywhere:args && args.anywhere !== false};
-    draft.placeMentioned = true;
     return {ok:true, draft};
   }
-  if(!places.length){
-    return {ok:false, error:'NO_PLACES', ask:'No saved places yet. Add one in Settings → locations, or drop the place.'};
-  }
+  if(!places.length)return assistantPlaceAsk('NO_PLACES', places);
   const ids = [];
   const names = [];
   for(const ref of wanted){
     const match = assistantMatchByName(places, ref);
-    if(!match.ok){
-      if(match.error === 'AMBIGUOUS'){
-        return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which place: ${match.matches.map(item => item.name).join(', ')}?`};
-      }
-      return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${places.map(item => item.name).join(', ')}.`};
-    }
-    if(!match.item.id)return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${places.map(item => item.name).join(', ')}.`};
+    if(!match.ok)return assistantPlaceAsk(match.error, places, match.matches);
+    if(!match.item || !match.item.id)return assistantPlaceAsk('UNKNOWN', places);
     if(!ids.includes(match.item.id)){
       ids.push(match.item.id);
       names.push(match.item.name);
     }
   }
   draft.places = {ids, names, anywhere:Boolean(args && args.anywhere)};
-  draft.placeMentioned = true;
   return {ok:true, draft};
 }
 
@@ -398,11 +633,28 @@ function assistantMergeExtractedArgs(args, parsed){
     if(parsed.intent === 'create_habit' || parsed.rhythm)out.kind = 'habit';
     else if(parsed.intent === 'create_task')out.kind = 'task';
   }
+  if(!out.newName && parsed.newName)out.newName = parsed.newName;
+  if(!out.habitKind && parsed.habitKind)out.habitKind = parsed.habitKind;
+  if((out.topics == null || out.topics === '') && parsed.topics)out.topics = parsed.topics;
+  if(out.breakable == null && parsed.breakable != null)out.breakable = parsed.breakable;
+  if(out.pinned == null && parsed.pinned != null)out.pinned = parsed.pinned;
+  if(out.hardDue == null && parsed.hardDue != null)out.hardDue = parsed.hardDue;
   return out;
 }
 
 function assistantNormalizeDraftArgs(args, now){
   const out = Object.assign({}, args || {});
+  ['placeNames','placePrefs','topics','weekdays'].forEach(key => {
+    if(Array.isArray(out[key]) && !out[key].length)delete out[key];
+  });
+  if(typeof out.order === 'number')delete out.order;
+  if(typeof out.hardDue === 'string' && typeof assistantParseDue === 'function'){
+    const dueFromHard = assistantParseDue(out.hardDue, now);
+    if(dueFromHard != null){
+      if(out.due == null || out.due === '')out.due = out.hardDue;
+      out.hardDue = true;
+    }
+  }
   if(out.weekdays != null && out.allowedWeekdays == null && typeof assistantNormalizeWeekdaysArg === 'function'){
     const days = assistantNormalizeWeekdaysArg(out.weekdays);
     if(days)out.allowedWeekdays = days;
@@ -441,6 +693,13 @@ function assistantNormalizeDraftArgs(args, now){
     const window = assistantParseWindowFromText(windowSource);
     if(window)out.window = window;
   }
+  const preferredSource = typeof out.preferredWindowText === 'string' && out.preferredWindowText.trim()
+    ? out.preferredWindowText
+    : (typeof out.preferredWindow === 'string' ? out.preferredWindow : '');
+  if(preferredSource && typeof assistantParseWindowFromText === 'function'){
+    const preferred = assistantParseWindowFromText(preferredSource);
+    if(preferred)out.preferredWindow = preferred;
+  }
   if(typeof out.placeNames === 'string' && out.placeNames.trim()){
     out.placeNames = [out.placeNames.trim()];
   }
@@ -455,6 +714,83 @@ function assistantNormalizeDraftArgs(args, now){
   if(typeof out.weatherProfile === 'string' && typeof assistantParseWeatherHints === 'function'){
     const hints = assistantParseWeatherHints(out.weatherProfile);
     if(hints && hints.mentioned && !out.weatherText)out.weatherText = out.weatherProfile;
+  }
+  if(out.habitKind != null && typeof assistantParseHabitKind === 'function'){
+    const kind = assistantParseHabitKind(out.habitKind);
+    if(kind)out.habitKind = kind;
+    else delete out.habitKind;
+  }
+  if(out.monthDays != null && typeof assistantParseMonthDays === 'function'){
+    const days = assistantParseMonthDays(out.monthDays);
+    if(days)out.allowedMonthDays = days;
+  }
+  if(out.preferredWeekdays != null && typeof assistantNormalizeWeekdaysArg === 'function'){
+    const days = assistantNormalizeWeekdaysArg(out.preferredWeekdays);
+    if(days != null)out.preferredWeekdays = days;
+    else delete out.preferredWeekdays;
+  }
+  if(out.preferredMonthDays != null && typeof assistantParseMonthDays === 'function'){
+    const days = assistantParseMonthDays(out.preferredMonthDays);
+    if(days != null)out.preferredMonthDays = days;
+    else delete out.preferredMonthDays;
+  }
+  if(out.topics != null && typeof assistantParseTopicsArg === 'function'){
+    out.topics = assistantParseTopicsArg(out.topics);
+  }
+  if(out.emoji != null && typeof assistantParseEmoji === 'function'){
+    out.emoji = assistantParseEmoji(out.emoji);
+  }
+  if(out.emojiColor != null && typeof assistantParseEmojiColor === 'function'){
+    const color = assistantParseEmojiColor(out.emojiColor);
+    if(color != null)out.emojiBgColor = color;
+  }
+  if(out.breakable != null && typeof assistantParseBreakable === 'function'){
+    const parsed = assistantParseBreakable(out.breakable);
+    if(parsed){
+      out.breakable = parsed.breakable;
+      if(parsed.minChunkMinutes != null && (out.minChunkMinutes == null || out.minChunkMinutes === '')){
+        out.minChunkMinutes = parsed.minChunkMinutes;
+      }
+    }
+  }
+  if(out.minChunkMinutes != null && out.minChunkMinutes !== ''){
+    const mins = typeof assistantParseDuration === 'function'
+      ? assistantParseDuration(out.minChunkMinutes)
+      : parseInt(out.minChunkMinutes, 10);
+    if(Number.isFinite(mins)){
+      out.minChunkMinutes = typeof clampMinChunk === 'function' ? clampMinChunk(mins) : mins;
+    }
+  }
+  if(out.earlyDays != null && out.earlyWindowDays == null && typeof assistantParseFlexDays === 'function'){
+    out.earlyWindowDays = assistantParseFlexDays(out.earlyDays);
+  }
+  if(out.delayDays != null && out.delayAllowanceDays == null && typeof assistantParseFlexDays === 'function'){
+    out.delayAllowanceDays = assistantParseFlexDays(out.delayDays);
+  }
+  if(out.autoMarkMinutes !== undefined && typeof assistantParseAutoMark === 'function'){
+    out.autoMarkMinutes = assistantParseAutoMark(out.autoMarkMinutes);
+  }
+  ['hardDue','trackValue','pinned','sharedDisplay','sharedComplete','showWeather','weatherAtPlace','anywhere'].forEach(key => {
+    if(out[key] != null && typeof assistantParseBool === 'function'){
+      const parsed = assistantParseBool(out[key]);
+      if(parsed != null)out[key] = parsed;
+    }
+  });
+  if(out.snooze !== undefined && typeof assistantParseSnoozeUntil === 'function'){
+    out.snoozedUntil = assistantParseSnoozeUntil(out.snooze, now);
+  }
+  if(out.links != null && typeof assistantParseLinksArg === 'function'){
+    out.links = assistantParseLinksArg(out.links);
+  }
+  if(out.placePrefs != null && typeof assistantParsePlacePrefsText === 'function'){
+    out.placePrefList = assistantParsePlacePrefsText(out.placePrefs);
+  }
+  if(out.planBy != null && out.planBy !== ''){
+    const plan = assistantParseDue(out.planBy, now);
+    if(plan != null)out.planByDate = plan;
+  }
+  if(typeof out.newName === 'string' && out.newName.trim()){
+    out.newName = out.newName.trim().slice(0, ASSISTANT_NAME_MAX);
   }
   return out;
 }
@@ -477,7 +813,7 @@ function assistantResolveDraftBase(args, session, context){
     const found = typeof assistantFindHabit === 'function' ? assistantFindHabit(context && context.data, want) : {ok:false};
     if(found && found.ok){
       const draft = typeof assistantHabitToDraft === 'function'
-        ? assistantHabitToDraft(found.habit, found.index, context && context.settings)
+        ? assistantHabitToDraft(found.habit, found.index, context && context.settings, context && context.data)
         : assistantEmptyDraft();
       return {ok:true, draft, existing:true};
     }
@@ -488,11 +824,193 @@ function assistantResolveDraftBase(args, session, context){
   return {ok:true, draft:assistantEmptyDraft(), existing:false};
 }
 
-function assistantApplyDraftItem(args, draft, catalog, now, settings){
-  const raw = assistantNormalizeDraftArgs(args, now);
+function assistantResolveOrderLink(name, data, mods){
+  const found = assistantFindHabit(data, name);
+  if(!found || !found.ok)return found;
+  return {
+    ok:true,
+    link:{
+      name:found.name,
+      anchorHid:found.hid,
+      direction:mods.direction,
+      adjacency:mods.adjacency || 'sometime',
+      requireSameDay:Boolean(mods.requireSameDay)
+    }
+  };
+}
+
+function assistantMergeScheduleLink(draft, link){
+  const list = Array.isArray(draft.scheduleLinks) ? draft.scheduleLinks.slice() : [];
+  const key = `${link.direction}:${link.anchorHid}`;
+  const next = list.filter(item => `${item.direction}:${item.anchorHid}` !== key);
+  next.push(link);
+  draft.scheduleLinks = next;
+}
+
+function assistantApplyExtraDraftFields(next, raw, catalog, data){
+  if(raw.newName)next.name = raw.newName;
+  if(raw.habitKind === 'keepup' || raw.habitKind === 'reduce' || raw.habitKind === 'zero')next.habitKind = raw.habitKind;
+  if(raw.emoji != null)next.emoji = raw.emoji;
+  if(raw.emojiBgColor != null)next.emojiBgColor = raw.emojiBgColor;
+  if(Array.isArray(raw.topics))next.topics = raw.topics;
+  if(Array.isArray(raw.allowedMonthDays))next.allowedMonthDays = raw.allowedMonthDays;
+  if(Array.isArray(raw.preferredWeekdays))next.preferredWeekdays = raw.preferredWeekdays;
+  if(Array.isArray(raw.preferredMonthDays))next.preferredMonthDays = raw.preferredMonthDays;
+  if(raw.preferredWindow && typeof raw.preferredWindow === 'object' && !Array.isArray(raw.preferredWindow)){
+    const applied = assistantApplyWindow(next, raw.preferredWindow, 'preferred');
+    if(applied.ok)Object.assign(next, applied.draft);
+  }
+  if(raw.earlyWindowDays != null)next.earlyWindowDays = raw.earlyWindowDays;
+  if(raw.delayAllowanceDays != null)next.delayAllowanceDays = raw.delayAllowanceDays;
+  if(typeof raw.hardDue === 'boolean'){
+    next.hardDue = raw.hardDue;
+    if(raw.hardDue)next.delayAllowanceDays = 0;
+    else if(next.delayAllowanceDays == null || next.delayAllowanceDays === 0)next.delayAllowanceDays = 1;
+  }
+  if(typeof raw.breakable === 'boolean')next.breakable = raw.breakable;
+  if(raw.minChunkMinutes != null)next.minChunkMinutes = raw.minChunkMinutes;
+  if(raw.autoMarkMinutes !== undefined)next.autoMarkMinutes = raw.autoMarkMinutes;
+  if(typeof raw.trackValue === 'boolean')next.trackValue = raw.trackValue;
+  if(typeof raw.pinned === 'boolean')next.pinned = raw.pinned;
+  if(raw.snoozedUntil !== undefined)next.snoozedUntil = raw.snoozedUntil;
+  if(typeof raw.sharedDisplay === 'boolean')next.showOnSharedDisplay = raw.sharedDisplay;
+  if(typeof raw.sharedComplete === 'boolean')next.allowSharedDisplayCompletion = raw.sharedComplete;
+  if(typeof raw.showWeather === 'boolean')next.showWeather = raw.showWeather;
+  if(typeof raw.weatherAtPlace === 'boolean')next.showWeatherAtLocation = raw.weatherAtPlace;
+  if(typeof raw.anywhere === 'boolean'){
+    if(next.places)next.places.anywhere = raw.anywhere;
+    else{
+      next.places = {ids:[], names:[], anywhere:raw.anywhere};
+    }
+  }
+  if(raw.weatherPlace != null){
+    const want = String(raw.weatherPlace).trim();
+    if(!want || /^(none|off|clear)$/i.test(want)){
+      next.weatherLocationId = null;
+      next.weatherLocationName = null;
+    }else{
+      const match = assistantMatchByName((catalog && catalog.places) || [], want);
+      if(!match.ok){
+        if(match.error === 'AMBIGUOUS'){
+          return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which forecast place: ${match.matches.map(item => item.name).join(', ')}?`};
+        }
+        return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${((catalog && catalog.places) || []).map(item => item.name).join(', ')}.`};
+      }
+      next.weatherLocationId = match.item.id;
+      next.weatherLocationName = match.item.name;
+    }
+  }
+  if(raw.planByDate != null)next.planByDate = raw.planByDate;
+  if(Array.isArray(raw.links))next.links = raw.links;
+  if(Array.isArray(raw.placePrefList)){
+    if(!raw.placePrefList.length)next.locationPrefs = {};
+    else{
+      const prefs = Object.assign({}, next.locationPrefs || {});
+      const ids = (next.places && next.places.ids) ? next.places.ids.slice() : [];
+      const names = (next.places && next.places.names) ? next.places.names.slice() : [];
+      for(const row of raw.placePrefList){
+        const match = assistantMatchByName((catalog && catalog.places) || [], row.name);
+        if(!match.ok){
+          if(match.error === 'AMBIGUOUS'){
+            return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which place: ${match.matches.map(item => item.name).join(', ')}?`};
+          }
+          return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${((catalog && catalog.places) || []).map(item => item.name).join(', ')}.`};
+        }
+        prefs[match.item.id] = row.level;
+        if(!ids.includes(match.item.id)){
+          ids.push(match.item.id);
+          names.push(match.item.name);
+        }
+      }
+      next.locationPrefs = prefs;
+      next.places = {ids, names, anywhere:next.places ? Boolean(next.places.anywhere) : false};
+    }
+  }
+  const mods = typeof assistantParseOrderText === 'function' && raw.order
+    ? assistantParseOrderText(raw.order)
+    : null;
+  if(mods && mods.clear)next.scheduleLinks = [];
+  const orderMods = (mods && mods.modifiers) || (mods && mods.links && mods.links[0])
+    || (typeof assistantParseOrderModifiers === 'function' ? assistantParseOrderModifiers(raw.order || '') : {adjacency:'sometime', requireSameDay:false});
+  if(mods && mods.links){
+    for(const row of mods.links){
+      const resolved = assistantResolveOrderLink(row.name, data, row);
+      if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN', ask:resolved && resolved.ask};
+      assistantMergeScheduleLink(next, resolved.link);
+    }
+  }
+  if(raw.after != null){
+    if(!String(raw.after).trim() || /^(none|off|clear)$/i.test(String(raw.after).trim())){
+      next.scheduleLinks = (next.scheduleLinks || []).filter(link => link.direction !== 'after');
+    }else{
+      const resolved = assistantResolveOrderLink(raw.after, data, {
+        direction:'after',
+        adjacency:orderMods.adjacency || 'sometime',
+        requireSameDay:Boolean(orderMods.requireSameDay)
+      });
+      if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN'};
+      assistantMergeScheduleLink(next, resolved.link);
+    }
+  }
+  if(raw.before != null){
+    if(!String(raw.before).trim() || /^(none|off|clear)$/i.test(String(raw.before).trim())){
+      next.scheduleLinks = (next.scheduleLinks || []).filter(link => link.direction !== 'before');
+    }else{
+      const resolved = assistantResolveOrderLink(raw.before, data, {
+        direction:'before',
+        adjacency:orderMods.adjacency || 'sometime',
+        requireSameDay:Boolean(orderMods.requireSameDay)
+      });
+      if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN'};
+      assistantMergeScheduleLink(next, resolved.link);
+    }
+  }
+  if(raw.option != null){
+    const values = Array.isArray(raw.option) ? raw.option : [raw.option];
+    const existing = Array.isArray(next.scheduleOptions) ? next.scheduleOptions.slice() : [];
+    let options = Array.isArray(raw.option) ? [] : existing;
+    let parsedAny = false;
+    for(const value of values){
+      const parsed = typeof assistantParseScheduleOptionText === 'function'
+        ? assistantParseScheduleOptionText(value, catalog)
+        : null;
+      if(parsed && parsed.clear){
+        options = [];
+        parsedAny = true;
+        break;
+      }
+      if(parsed && parsed.option){
+        options.push(parsed.option);
+        parsedAny = true;
+      }
+    }
+    if(parsedAny){
+      next.scheduleOptions = typeof normalizeHabitScheduleOptions === 'function'
+        ? normalizeHabitScheduleOptions(options)
+        : options;
+    }
+  }
+  return {ok:true, draft:next};
+}
+
+function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requestText){
+  const salvaged = typeof assistantSalvageDraftArgs === 'function'
+    ? assistantSalvageDraftArgs(args, requestText)
+    : args;
+  const raw = assistantNormalizeDraftArgs(salvaged, now);
+  if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(raw.kind)){
+    return assistantApplyDraftSetting(raw, draft, catalog, now, settings, requestText);
+  }
+  if(typeof assistantIsSettingKind === 'function' && draft && assistantIsSettingKind(draft.kind)
+    && !assistantIsItemKind(raw.kind)){
+    return assistantApplyDraftSetting(Object.assign({kind:draft.kind}, raw), draft, catalog, now, settings, requestText);
+  }
   const seed = draft && draft.name ? draft : assistantEmptyDraft();
   const spokenName = String(raw && raw.name || '').trim().slice(0, ASSISTANT_NAME_MAX);
+  const settingFollow = typeof assistantLooksLikeSettingFollowup === 'function'
+    && assistantLooksLikeSettingFollowup(requestText);
   const same = seed.name && (!spokenName
+    || settingFollow
     || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(spokenName))
     || (typeof assistantNamesMatch === 'function' ? assistantNamesMatch(spokenName, seed.name)
       : assistantNormText(seed.name) === assistantNormText(spokenName)));
@@ -506,11 +1024,17 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings){
   let kind = raw.kind === 'habit' ? 'habit' : (raw.kind === 'task' ? 'task' : (same ? next.kind : null));
   if(!kind && hasRhythm)kind = 'habit';
   if(!kind && same && next.kind)kind = next.kind;
+  if(same && seed.kind && settingFollow)kind = seed.kind;
   if(!kind)kind = 'task';
-  const name = (same && next.name)
+  let name = (same && next.name)
     ? next.name
     : spokenName;
   if(!name)return {ok:false, error:'name is required'};
+  if(!same && typeof assistantNameLooksLikeSettingsDump === 'function' && assistantNameLooksLikeSettingsDump(spokenName || name)
+    && typeof assistantShortTitleFromDump === 'function'){
+    const short = assistantShortTitleFromDump(spokenName || name);
+    if(short)name = short.slice(0, ASSISTANT_NAME_MAX);
+  }
   next.kind = kind;
   next.name = name;
   if(raw.durationMinutes != null && raw.durationMinutes !== ''){
@@ -566,36 +1090,78 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings){
   }
   if(raw.window && typeof raw.window === 'object' && !Array.isArray(raw.window)){
     const applied = assistantApplyWindow(next, raw.window);
-    if(!applied.ok)next.windowMentioned = true;
-    else Object.assign(next, applied.draft);
-  }else if(raw.window === null){
-    next.windowMentioned = false;
+    if(!applied.ok)return applied;
+    Object.assign(next, applied.draft);
+  }
+  const weatherSource = String(raw.weatherText || '').trim()
+    || (raw.weatherHints && raw.weatherHints.mentioned ? String(requestText || '') : '');
+  if(!raw.weatherProfile && weatherSource && !(raw.weather && typeof raw.weather === 'object')){
+    const exact = ((catalog && catalog.weather) || []).find(item => (
+      assistantNormText(item && item.name) === assistantNormText(weatherSource)
+    ));
+    if(exact)raw.weatherProfile = exact.name;
   }
   if(raw.weather && typeof raw.weather === 'object'){
     const applied = assistantApplyWeather(next, raw.weather, catalog);
-    if(!applied.ok)return applied;
+    if(!applied.ok){
+      if(applied.error === 'NO_WEATHER_PROFILES' || applied.error === 'UNKNOWN_WEATHER'){
+        assistantProposeWeather(next, {
+          name:raw.weather.profile || raw.weather.name || '',
+          text:weatherSource || raw.weather.profile || ''
+        }, catalog, settings);
+      }else return applied;
+    }
   }else if(raw.weatherProfile){
-    const rawProfile = String(raw.weatherProfile || '').trim().toLowerCase();
-    if(rawProfile === 'none' || rawProfile === 'inherit'){
-      const applied = assistantApplyWeather(next, {mode:rawProfile}, catalog);
+    const rawProfile = String(raw.weatherProfile || '').trim();
+    const rawProfileKey = rawProfile.toLowerCase();
+    if(rawProfileKey === 'none' || rawProfileKey === 'inherit'){
+      const applied = assistantApplyWeather(next, {mode:rawProfileKey}, catalog);
       if(!applied.ok)return applied;
-    }else if(!(raw.weatherText && typeof assistantParseWeatherHints === 'function'
-      && assistantParseWeatherHints(raw.weatherProfile).mentioned)){
-      const applied = assistantApplyWeather(next, {mode:'profile', profile:raw.weatherProfile}, catalog);
-      if(!applied.ok)return applied;
+    }else{
+      const asHints = typeof assistantParseWeatherHints === 'function'
+        ? assistantParseWeatherHints(rawProfile)
+        : null;
+      if(asHints && asHints.mentioned && !raw.weatherText){
+        assistantProposeWeather(next, {text:rawProfile, hints:asHints}, catalog, settings);
+      }else{
+        const applied = assistantApplyWeather(next, {mode:'profile', profile:rawProfile}, catalog);
+        if(!applied.ok){
+          assistantProposeWeather(next, {name:rawProfile, text:weatherSource}, catalog, settings);
+        }
+      }
     }
   }
-  if(raw.weatherText && typeof assistantAttachParsedWeather === 'function' && !next.weather){
+  if(weatherSource && (!next.weather || next.weather.pending)){
     assistantAttachParsedWeather(next, {
-      weatherHints:typeof assistantParseWeatherHints === 'function' ? assistantParseWeatherHints(raw.weatherText) : null
+      weatherText:weatherSource,
+      weatherHints:raw.weatherHints || (typeof assistantParseWeatherHints === 'function'
+        ? assistantParseWeatherHints(weatherSource)
+        : null)
     }, catalog, settings);
   }
-  if(raw.place && typeof raw.place === 'object'){
-    const applied = assistantApplyPlace(next, raw.place, catalog);
-    if(!applied.ok)return applied;
-  }else if(Array.isArray(raw.placeNames) && raw.placeNames.length){
-    const applied = assistantApplyPlace(next, {names:raw.placeNames, anywhere:raw.anywhere}, catalog);
-    if(!applied.ok)return applied;
+  const extra = assistantApplyExtraDraftFields(next, raw, catalog, data);
+  if(!extra.ok)return extra;
+  if(next.window){
+    const resolved = assistantResolveWindowHabits(next.window, data);
+    if(!resolved.ok)return resolved;
+    next.window = resolved.window;
+  }
+  if(next.preferredWindow){
+    const resolved = assistantResolveWindowHabits(next.preferredWindow, data);
+    if(!resolved.ok)return resolved;
+    next.preferredWindow = resolved.window;
+  }
+  const placeArgs = raw.place && typeof raw.place === 'object' && !Array.isArray(raw.place)
+    ? raw.place
+    : (Array.isArray(raw.placeNames) && raw.placeNames.length ? {names:raw.placeNames, anywhere:raw.anywhere} : null);
+  if(placeArgs){
+    const applied = assistantApplyPlace(next, placeArgs, catalog);
+    if(!applied.ok){
+      if(next.name && applied.ask){
+        return {ok:true, draft:next, ask:applied.ask, error:applied.error, choices:applied.choices || null};
+      }
+      return applied;
+    }
   }
   if(raw.needAsk && raw.ask)return {ok:true, draft:next, ask:String(raw.ask).trim(), choices:null};
   return {ok:true, draft:next};
@@ -604,7 +1170,7 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings){
 function assistantValidateClassify(args){
   const intent = String(args && args.intent || '').trim();
   if(!ASSISTANT_INTENTS.includes(intent)){
-    return {ok:false, error:'intent must be create_task, create_habit, ask_today, complete_item, lookup_item, unclear, or unsupported'};
+    return {ok:false, error:'intent must be create_task, create_habit, create_setting, ask_today, complete_item, lookup_item, unclear, or unsupported'};
   }
   return {ok:true, intent, reason:String(args && args.reason || '')};
 }
@@ -647,36 +1213,152 @@ function assistantLookupText(found, context){
   return `${name} is on your list, but not on today's plan.`;
 }
 
-function assistantEndpointFromHabit(habit, role){
+function assistantEndpointFromHabit(habit, prefix){
   if(!habit)return {kind:'unset'};
-  const anchor = role === 'start' ? habit.allowedTimeStartAnchor : habit.allowedTimeEndAnchor;
-  const offset = role === 'start' ? habit.allowedTimeStartOffsetMin : habit.allowedTimeEndOffsetMin;
-  const minutes = role === 'start' ? habit.allowedTimeStart : habit.allowedTimeEnd;
-  if(anchor){
-    return {
+  const role = prefix === 'start' ? 'allowedTimeStart'
+    : prefix === 'end' ? 'allowedTimeEnd'
+    : prefix;
+  const anchor = habit[role + 'Anchor'];
+  const offset = habit[role + 'OffsetMin'];
+  const minutes = habit[role];
+  const habitId = habit[role + 'AnchorHabitId'];
+  let end;
+  if(anchor === 'habit' && habitId){
+    end = {
+      kind:'habit',
+      habitId,
+      offsetMin:typeof normalizePrayerOffset === 'function' ? normalizePrayerOffset(offset) : (offset || 0)
+    };
+  }else if(anchor){
+    end = {
       kind:'anchor',
       anchor,
       offsetMin:typeof normalizePrayerOffset === 'function' ? normalizePrayerOffset(offset) : (offset || 0)
     };
-  }
-  if(minutes != null && Number.isFinite(Number(minutes))){
+  }else if(minutes != null && Number.isFinite(Number(minutes))){
     const mins = Number(minutes);
-    return {kind:'clock', minutes:mins, clock:assistantClockLabel(mins)};
+    end = {kind:'clock', minutes:mins, clock:assistantClockLabel(mins)};
+  }else{
+    end = {kind:'unset'};
   }
-  return {kind:'unset'};
+  const dayOffset = Number(habit[role + 'DayOffset']) === 1 ? 1 : 0;
+  if(dayOffset)end.dayOffset = 1;
+  const combine = typeof cleanTimeCombine === 'function'
+    ? cleanTimeCombine(habit[role + 'Combine'])
+    : (habit[role + 'Combine'] === 'later' || habit[role + 'Combine'] === 'earlier' ? habit[role + 'Combine'] : null);
+  const anchor2 = habit[role + 'Anchor2'];
+  if(combine && anchor2){
+    let second;
+    if(anchor2 === 'fixed'){
+      const fixed = Number(habit[role + 'FixedMin2']);
+      second = {kind:'clock', minutes:fixed, clock:assistantClockLabel(fixed)};
+    }else if(anchor2 === 'habit'){
+      second = {
+        kind:'habit',
+        habitId:habit[role + 'AnchorHabitId2'],
+        offsetMin:typeof normalizePrayerOffset === 'function'
+          ? normalizePrayerOffset(habit[role + 'OffsetMin2'])
+          : (habit[role + 'OffsetMin2'] || 0)
+      };
+    }else{
+      second = {
+        kind:'anchor',
+        anchor:anchor2,
+        offsetMin:typeof normalizePrayerOffset === 'function'
+          ? normalizePrayerOffset(habit[role + 'OffsetMin2'])
+          : (habit[role + 'OffsetMin2'] || 0)
+      };
+    }
+    if(Number(habit[role + 'DayOffset2']) === 1)second.dayOffset = 1;
+    end.combine = combine;
+    end.second = second;
+  }
+  return end;
 }
 
-function assistantHabitToDraft(habit, index, settings){
+function assistantClearEndpointFields(record, prefix){
+  record[prefix] = null;
+  record[prefix + 'Anchor'] = null;
+  record[prefix + 'OffsetMin'] = 0;
+  record[prefix + 'AnchorHabitId'] = null;
+  record[prefix + 'Combine'] = null;
+  record[prefix + 'Anchor2'] = null;
+  record[prefix + 'OffsetMin2'] = 0;
+  record[prefix + 'AnchorHabitId2'] = null;
+  record[prefix + 'FixedMin2'] = null;
+  record[prefix + 'DayOffset'] = 0;
+  record[prefix + 'DayOffset2'] = 0;
+}
+
+function assistantWriteEndpointToRecord(record, prefix, end, data){
+  assistantClearEndpointFields(record, prefix);
+  if(!end || end.kind === 'unset')return;
+  let resolved = end;
+  if(end.kind === 'habit' && !end.habitId && data){
+    const found = assistantFindHabit(data, end.habitName);
+    if(found && found.ok){
+      resolved = Object.assign({}, end, {habitId:found.hid, habitName:found.name});
+    }
+  }
+  if(resolved.kind === 'clock')record[prefix] = resolved.minutes;
+  else if(resolved.kind === 'anchor'){
+    record[prefix + 'Anchor'] = resolved.anchor;
+    record[prefix + 'OffsetMin'] = resolved.offsetMin || 0;
+  }else if(resolved.kind === 'habit' && resolved.habitId){
+    record[prefix + 'Anchor'] = 'habit';
+    record[prefix + 'AnchorHabitId'] = resolved.habitId;
+    record[prefix + 'OffsetMin'] = resolved.offsetMin || 0;
+  }
+  if(resolved.dayOffset === 1)record[prefix + 'DayOffset'] = 1;
+  if(resolved.combine && resolved.second){
+    const second = resolved.second;
+    record[prefix + 'Combine'] = resolved.combine;
+    if(second.kind === 'clock'){
+      record[prefix + 'Anchor2'] = 'fixed';
+      record[prefix + 'FixedMin2'] = second.minutes;
+    }else if(second.kind === 'anchor'){
+      record[prefix + 'Anchor2'] = second.anchor;
+      record[prefix + 'OffsetMin2'] = second.offsetMin || 0;
+    }else if(second.kind === 'habit'){
+      let hid = second.habitId;
+      if(!hid && data && second.habitName){
+        const found = assistantFindHabit(data, second.habitName);
+        if(found && found.ok)hid = found.hid;
+      }
+      if(hid){
+        record[prefix + 'Anchor2'] = 'habit';
+        record[prefix + 'AnchorHabitId2'] = hid;
+        record[prefix + 'OffsetMin2'] = second.offsetMin || 0;
+      }
+    }
+    if(second.dayOffset === 1)record[prefix + 'DayOffset2'] = 1;
+  }
+}
+
+function assistantWriteWindowToRecord(record, window, role, data){
+  const startPrefix = role === 'preferred' ? 'preferredTimeStart' : 'allowedTimeStart';
+  const endPrefix = role === 'preferred' ? 'preferredTimeEnd' : 'allowedTimeEnd';
+  if(!window)return;
+  assistantWriteEndpointToRecord(record, startPrefix, window.start, data);
+  assistantWriteEndpointToRecord(record, endPrefix, window.end, data);
+}
+
+function assistantHabitToDraft(habit, index, settings, data){
   const draft = assistantEmptyDraft();
   if(!habit)return draft;
   draft.kind = habit.type === 'task' ? 'task' : 'habit';
+  draft.habitKind = habit.type === 'task' ? null : habit.type;
   draft.name = String(habit.name || '').slice(0, ASSISTANT_NAME_MAX);
   draft.hid = habit.hid;
   draft.index = index;
+  draft.emoji = habit.emoji || '';
+  draft.emojiBgColor = habit.emojiBgColor || '';
   draft.durationMinutes = habit.durationMinutes != null ? habit.durationMinutes : null;
   draft.priority = habit.priority != null ? habit.priority : null;
+  draft.topics = Array.isArray(habit.topics) ? habit.topics.slice() : [];
   if(draft.kind === 'task'){
     draft.dueDate = habit.dueDate != null ? habit.dueDate : null;
+    draft.hardDue = Boolean(habit.hardDue);
     if(habit.eventTime != null){
       const when = new Date(habit.eventTime);
       if(Number.isFinite(when.getTime())){
@@ -690,12 +1372,20 @@ function assistantHabitToDraft(habit, index, settings){
   }
   if(draft.kind === 'habit'){
     draft.allowedWeekdays = Array.isArray(habit.allowedWeekdays) ? habit.allowedWeekdays.slice() : [];
+    draft.allowedMonthDays = Array.isArray(habit.allowedMonthDays) ? habit.allowedMonthDays.slice() : [];
+    draft.preferredWeekdays = Array.isArray(habit.preferredWeekdays) ? habit.preferredWeekdays.slice() : [];
+    draft.preferredMonthDays = Array.isArray(habit.preferredMonthDays) ? habit.preferredMonthDays.slice() : [];
+    draft.planByDate = habit.planByDate != null ? habit.planByDate : null;
   }
-  const start = assistantEndpointFromHabit(habit, 'start');
-  const end = assistantEndpointFromHabit(habit, 'end');
+  const start = assistantEndpointFromHabit(habit, 'allowedTimeStart');
+  const end = assistantEndpointFromHabit(habit, 'allowedTimeEnd');
   if(start.kind !== 'unset' || end.kind !== 'unset'){
     draft.window = {start, end};
-    draft.windowMentioned = true;
+  }
+  const prefStart = assistantEndpointFromHabit(habit, 'preferredTimeStart');
+  const prefEnd = assistantEndpointFromHabit(habit, 'preferredTimeEnd');
+  if(prefStart.kind !== 'unset' || prefEnd.kind !== 'unset'){
+    draft.preferredWindow = {start:prefStart, end:prefEnd};
   }
   if(habit.weatherProfileMode && habit.weatherProfileMode !== 'inherit'){
     const profiles = (settings && settings.weatherProfiles) || [];
@@ -705,22 +1395,62 @@ function assistantHabitToDraft(habit, index, settings){
       profileId:habit.weatherProfileMode === 'profile' ? habit.weatherProfileId : null,
       name:profile ? profile.name : null
     };
-    draft.weatherMentioned = true;
   }
+  const locs = (settings && settings.locations) || [];
   if(Array.isArray(habit.locationIds) && habit.locationIds.length){
-    const locs = (settings && settings.locations) || [];
     const names = habit.locationIds.map(id => {
       const loc = locs.find(item => item && item.id === id);
       return loc && loc.name;
     }).filter(Boolean);
     draft.places = {ids:habit.locationIds.slice(), names, anywhere:Boolean(habit.anywhereAllowed)};
-    draft.placeMentioned = true;
+  }else{
+    draft.places = {ids:[], names:[], anywhere:habit.anywhereAllowed !== false};
   }
+  draft.locationPrefs = habit.locationPrefs && typeof habit.locationPrefs === 'object' ? Object.assign({}, habit.locationPrefs) : {};
+  draft.earlyWindowDays = habit.earlyWindowDays != null ? habit.earlyWindowDays : null;
+  draft.delayAllowanceDays = habit.delayAllowanceDays != null ? habit.delayAllowanceDays : null;
+  draft.breakable = Boolean(habit.breakable);
+  draft.minChunkMinutes = habit.minChunkMinutes != null ? habit.minChunkMinutes : null;
+  draft.autoMarkMinutes = habit.autoMarkMinutes !== undefined ? habit.autoMarkMinutes : null;
+  draft.trackValue = Boolean(habit.trackValue);
+  draft.pinned = Boolean(habit.pinned);
+  draft.snoozedUntil = habit.snoozedUntil || null;
+  draft.showOnSharedDisplay = habit.showOnSharedDisplay !== false;
+  draft.allowSharedDisplayCompletion = habit.allowSharedDisplayCompletion !== false;
+  draft.showWeather = Boolean(habit.showWeather);
+  draft.showWeatherAtLocation = Boolean(habit.showWeatherAtLocation);
+  draft.weatherLocationId = habit.weatherLocationId || null;
+  if(draft.weatherLocationId){
+    const loc = locs.find(item => item && item.id === draft.weatherLocationId);
+    draft.weatherLocationName = loc && loc.name || null;
+  }
+  const list = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  draft.scheduleLinks = (Array.isArray(habit.scheduleLinks) ? habit.scheduleLinks : []).map(link => {
+    const other = list.find(item => item && item.hid === link.anchorHid);
+    return {
+      name:other && other.name || '',
+      anchorHid:link.anchorHid,
+      direction:link.direction,
+      adjacency:link.adjacency || 'sometime',
+      requireSameDay:Boolean(link.requireSameDay)
+    };
+  });
+  draft.scheduleOptions = Array.isArray(habit.scheduleOptions) ? habit.scheduleOptions.slice() : [];
+  draft.links = Array.isArray(habit.links) ? habit.links.slice() : [];
   return draft;
 }
 
 function assistantPatchDraftFromParsed(draft, parsed, catalog, settings){
   if(!draft || !parsed)return draft;
+  if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(draft.kind)){
+    if(parsed.newName)draft.name = typeof assistantTitleName === 'function' ? assistantTitleName(parsed.newName, 32) : String(parsed.newName).slice(0, 32);
+    if(draft.kind === 'weather'){
+      assistantProposeWeather(draft, {name:draft.name, text:parsed.text || parsed.weatherText || ''}, catalog, settings);
+    }
+    if(draft.kind === 'busy' && parsed.window)draft.window = parsed.window;
+    if(draft.kind === 'location' && parsed.address)draft.address = parsed.address;
+    return draft;
+  }
   if(parsed.newName)draft.name = String(parsed.newName).slice(0, ASSISTANT_NAME_MAX);
   if(parsed.durationMinutes != null){
     draft.durationMinutes = typeof clampDuration === 'function'
@@ -738,10 +1468,7 @@ function assistantPatchDraftFromParsed(draft, parsed, catalog, settings){
     else draft.allowedWeekdays = [];
   }
   if(parsed.priority != null)draft.priority = parsed.priority;
-  if(parsed.window){
-    draft.window = parsed.window;
-    draft.windowMentioned = true;
-  }
+  if(parsed.window)draft.window = parsed.window;
   if(parsed.places && parsed.places.length){
     const applied = assistantApplyPlace(draft, {names:parsed.places, anywhere:false}, catalog);
     if(applied && applied.ok)Object.assign(draft, applied.draft);
@@ -760,6 +1487,206 @@ function assistantPatchDraftFromParsed(draft, parsed, catalog, settings){
   return draft;
 }
 
+function assistantEmptySetting(kind){
+  return {
+    kind:kind || null,
+    name:'',
+    settingId:null,
+    weatherProposed:null,
+    weather:null,
+    address:'',
+    lat:null,
+    lng:null,
+    window:null,
+    allowedWeekdays:null
+  };
+}
+
+function assistantBusyFromWindow(window){
+  const block = {start:900, end:960};
+  if(!window || typeof window !== 'object')return block;
+  const applyEnd = (end, prefix) => {
+    if(!end || end.kind === 'unset')return;
+    if(end.kind === 'clock' && end.minutes != null)block[prefix] = end.minutes;
+    if(end.kind === 'anchor' && end.anchor){
+      block[prefix + 'Anchor'] = end.anchor;
+      block[prefix + 'OffsetMin'] = end.offsetMin || 0;
+      if(block[prefix] == null)block[prefix] = prefix === 'start' ? 0 : 1200;
+    }
+    if(end.combine && end.second){
+      block[prefix + 'Combine'] = end.combine;
+      if(end.second.kind === 'clock'){
+        block[prefix + 'Anchor2'] = 'fixed';
+        block[prefix + 'FixedMin2'] = end.second.minutes;
+      }else if(end.second.kind === 'anchor'){
+        block[prefix + 'Anchor2'] = end.second.anchor;
+        block[prefix + 'OffsetMin2'] = end.second.offsetMin || 0;
+      }
+    }
+  };
+  applyEnd(window.start, 'start');
+  applyEnd(window.end, 'end');
+  if(block.start === block.end)block.end = (block.start + 60) % 1440;
+  return block;
+}
+
+function assistantApplyDraftSetting(args, draft, catalog, now, settings, requestText){
+  const raw = args || {};
+  let kind = typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(raw.kind)
+    ? raw.kind
+    : (draft && assistantIsSettingKind(draft.kind) ? draft.kind : null);
+  if(!kind)return {ok:false, error:'kind must be weather, location, busy, or topic'};
+  const next = draft && draft.kind === kind ? Object.assign({}, draft) : assistantEmptySetting(kind);
+  let name = String(raw.newName || raw.name || next.name || '').trim();
+  if(typeof assistantIsPronounName === 'function' && assistantIsPronounName(name))name = next.name;
+  if(!name)return {ok:false, error:'name is required'};
+  const max = kind === 'busy' ? 24 : (kind === 'location' ? 48 : 32);
+  next.kind = kind;
+  next.name = typeof assistantTitleName === 'function' ? assistantTitleName(name, max) : name.slice(0, max);
+  if(kind === 'weather'){
+    const text = raw.weatherText || requestText || '';
+    assistantProposeWeather(next, {name:next.name, text}, catalog, settings);
+    if(next.weatherProposed)next.weatherProposed.name = next.name;
+    if(next.weather)next.weather.name = next.name;
+    const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+    const profiles = typeof normalizeWeatherProfiles === 'function'
+      ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
+      : ((settings && settings.weatherProfiles) || []);
+    if(!next.settingId && !next.weatherProposed && profiles.length >= cap){
+      next.weatherNeedAsk = assistantWeatherCapAsk(profiles);
+    }
+  }else if(kind === 'location'){
+    if(raw.address != null && String(raw.address).trim())next.address = String(raw.address).trim().slice(0, 120);
+    const lat = raw.lat != null ? Number(raw.lat) : next.lat;
+    const lng = raw.lng != null ? Number(raw.lng) : next.lng;
+    if(Number.isFinite(lat))next.lat = lat;
+    if(Number.isFinite(lng))next.lng = lng;
+  }else if(kind === 'busy'){
+    const windowSource = typeof raw.windowText === 'string' && raw.windowText.trim()
+      ? raw.windowText
+      : raw.window;
+    if(typeof windowSource === 'string' && typeof assistantParseWindowFromText === 'function'){
+      const window = assistantParseWindowFromText(windowSource);
+      if(window)next.window = window;
+    }else if(windowSource && typeof windowSource === 'object' && !Array.isArray(windowSource)){
+      next.window = windowSource;
+    }else if(requestText && typeof assistantParseWindowFromText === 'function'){
+      const window = assistantParseWindowFromText(requestText);
+      if(window)next.window = window;
+    }
+    if(raw.days != null && typeof assistantNormalizeWeekdaysArg === 'function'){
+      const days = assistantNormalizeWeekdaysArg(raw.days);
+      if(days)next.allowedWeekdays = days;
+    }
+  }
+  return {ok:true, draft:next};
+}
+
+function assistantCommitWeatherSetting(draft, settings){
+  if(draft.weatherProposed || !draft.settingId){
+    const made = assistantMaterializeWeatherProfile(draft, settings);
+    if(!made){
+      const profiles = typeof normalizeWeatherProfiles === 'function'
+        ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
+        : ((settings && settings.weatherProfiles) || []);
+      const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+      if(profiles.length >= cap)return {ok:false, error:`${cap} weather profiles max`};
+      return {ok:false, error:'could not save weather profile'};
+    }
+    draft.settingId = made.id;
+    draft.weather = {mode:'profile', profileId:made.id, name:made.name};
+    draft.name = made.name;
+  }
+  return {ok:true, draft, name:draft.name, setting:'weather', settingId:draft.settingId};
+}
+
+function assistantCommitLocationSetting(draft, settings){
+  const lat = Number(draft.lat);
+  const lng = Number(draft.lng);
+  if(!Number.isFinite(lat) || !Number.isFinite(lng)){
+    return {ok:false, error:'Look up the address first, or give coordinates.'};
+  }
+  const locations = typeof normalizeLocationRegistry === 'function'
+    ? normalizeLocationRegistry(settings && settings.locations)
+    : ((settings && settings.locations) || []).slice();
+  const cap = typeof MAX_LOCATIONS === 'number' ? MAX_LOCATIONS : 32;
+  if(draft.settingId){
+    const i = locations.findIndex(loc => loc && loc.id === draft.settingId);
+    if(i >= 0){
+      locations[i] = {
+        ...locations[i],
+        name:draft.name,
+        address:String(draft.address || locations[i].address || '').slice(0, 120),
+        lat, lng
+      };
+      assistantPersistSettings({locations});
+      return {ok:true, draft, name:draft.name, setting:'location', settingId:draft.settingId, updated:true};
+    }
+  }
+  if(locations.length >= cap)return {ok:false, error:`limit ${cap} locations`};
+  const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `loc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  locations.push({
+    id,
+    name:draft.name,
+    address:String(draft.address || '').slice(0, 120),
+    lat, lng,
+    emoji:'',
+    radiusM:typeof DEFAULT_LOCATION_RADIUS_M === 'number' ? DEFAULT_LOCATION_RADIUS_M : 75,
+    weatherProfileId:null
+  });
+  assistantPersistSettings({locations});
+  draft.settingId = id;
+  return {ok:true, draft, name:draft.name, setting:'location', settingId:id};
+}
+
+function assistantCommitBusySetting(draft, settings){
+  const blocks = typeof normalizeBlockedTimes === 'function'
+    ? normalizeBlockedTimes(settings && settings.blockedTimes)
+    : ((settings && settings.blockedTimes) || []).slice();
+  const clocks = assistantBusyFromWindow(draft.window);
+  const row = Object.assign({
+    label:String(draft.name || 'busy').slice(0, 24),
+    days:Array.isArray(draft.allowedWeekdays) ? draft.allowedWeekdays.slice() : []
+  }, clocks);
+  if(draft.settingId != null && blocks[draft.settingId]){
+    blocks[draft.settingId] = Object.assign({}, blocks[draft.settingId], row);
+    assistantPersistSettings({blockedTimes:blocks});
+    return {ok:true, draft, name:draft.name, setting:'busy', settingId:draft.settingId, updated:true};
+  }
+  if(blocks.length >= 24)return {ok:false, error:'24 busy times max'};
+  blocks.push(row);
+  assistantPersistSettings({blockedTimes:blocks});
+  draft.settingId = blocks.length - 1;
+  return {ok:true, draft, name:draft.name, setting:'busy', settingId:draft.settingId};
+}
+
+function assistantCommitTopicSetting(draft, settings){
+  const current = typeof normalizeTopics === 'function'
+    ? normalizeTopics(settings && settings.topics)
+    : ((settings && settings.topics) || []).slice();
+  const next = typeof normalizeTopics === 'function'
+    ? normalizeTopics(current.concat([draft.name]))
+    : current.concat([draft.name]);
+  if(next.length === current.length && next.every((topic, i) => topic === current[i])){
+    draft.settingId = draft.name;
+    return {ok:true, draft, name:draft.name, setting:'topic', settingId:draft.name, updated:true};
+  }
+  assistantPersistSettings({topics:next});
+  draft.settingId = draft.name;
+  return {ok:true, draft, name:draft.name, setting:'topic', settingId:draft.name};
+}
+
+function assistantCommitSetting(draft){
+  const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+  if(draft.kind === 'weather')return assistantCommitWeatherSetting(draft, settings);
+  if(draft.kind === 'location')return assistantCommitLocationSetting(draft, settings);
+  if(draft.kind === 'busy')return assistantCommitBusySetting(draft, settings);
+  if(draft.kind === 'topic')return assistantCommitTopicSetting(draft, settings);
+  return {ok:false, error:'unknown setting'};
+}
+
 function assistantExecuteTool(name, args, session, context){
   const catalog = context.catalog;
   const draft = session.draft || assistantEmptyDraft();
@@ -770,27 +1697,60 @@ function assistantExecuteTool(name, args, session, context){
     const choices = Array.isArray(args.choices) ? args.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
     return {ok:true, ask:question, choices};
   }
-  if(name === 'draft_item'){
-    const nextArgs = assistantMergeExtractedArgs(args, session.parsed);
+  if(name === 'draft_item' || name === 'draft_setting'){
+    const focusedItem = session.draft && session.draft.name
+      && typeof assistantIsItemKind === 'function' && assistantIsItemKind(session.draft.kind);
+    const trustFacts = !focusedItem && typeof assistantTrustParsedFacts === 'function' && assistantTrustParsedFacts(session.parsed);
+    const nextArgs = trustFacts
+      ? assistantMergeExtractedArgs(args, session.parsed)
+      : Object.assign({}, args || {});
+    if((name === 'draft_setting' || trustFacts) && session.parsed && session.parsed.settingKind && !nextArgs.kind){
+      nextArgs.kind = session.parsed.settingKind;
+    }
+    if((name === 'draft_setting' || trustFacts) && session.parsed && session.parsed.address && !nextArgs.address){
+      nextArgs.address = session.parsed.address;
+    }
+    const asSetting = name === 'draft_setting'
+      || (typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(nextArgs.kind))
+      || (session.intent === 'create_setting' && !(typeof assistantIsItemKind === 'function' && assistantIsItemKind(nextArgs.kind)))
+      || (session.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind)
+        && !(typeof assistantIsItemKind === 'function' && assistantIsItemKind(nextArgs.kind)));
+    if(asSetting){
+      if(!nextArgs.kind && session.draft && assistantIsSettingKind(session.draft.kind))nextArgs.kind = session.draft.kind;
+      const applied = assistantApplyDraftSetting(
+        nextArgs,
+        session.draft,
+        catalog,
+        context.now,
+        context.settings,
+        session && session.parsed && session.parsed.text
+      );
+      if(applied.ok)session.draft = applied.draft;
+      return applied;
+    }
     const resolved = assistantResolveDraftBase(nextArgs, session, context);
     if(!resolved.ok)return resolved;
     if(resolved.draft && resolved.draft.name){
-      nextArgs.kind = nextArgs.kind || resolved.draft.kind;
-      if(!nextArgs.name || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(nextArgs.name))){
+      const follow = (session.parsed && typeof assistantLooksLikeSettingFollowup === 'function'
+        && assistantLooksLikeSettingFollowup(session.parsed.text))
+        || (session.parsed && typeof assistantIsFollowupOnFocus === 'function'
+          && assistantIsFollowupOnFocus(session.parsed.text, session.parsed, resolved.draft));
+      if(follow)nextArgs.kind = resolved.draft.kind || nextArgs.kind;
+      else nextArgs.kind = nextArgs.kind || resolved.draft.kind;
+      if(!nextArgs.name || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(nextArgs.name)) || follow){
         nextArgs.name = resolved.draft.name;
       }
     }
-    const applied = assistantApplyDraftItem(nextArgs, resolved.draft, catalog, context.now, context.settings);
-    if(applied.ok){
-      if(session.parsed && typeof assistantPatchDraftFromParsed === 'function'
-        && typeof assistantHasPatchFields === 'function' && assistantHasPatchFields(session.parsed)){
-        assistantPatchDraftFromParsed(applied.draft, session.parsed, catalog, context.settings);
-      }
-      if(typeof assistantEnrichDraft === 'function' && session.parsed){
-        assistantEnrichDraft(applied.draft, session.parsed, catalog, context.settings);
-      }
-      session.draft = applied.draft;
-    }
+    const applied = assistantApplyDraftItem(
+      nextArgs,
+      resolved.draft,
+      catalog,
+      context.now,
+      context.settings,
+      context.data,
+      session && session.parsed && session.parsed.text
+    );
+    if(applied.draft)session.draft = applied.draft;
     return applied;
   }
   if(name === 'set_window'){
@@ -833,15 +1793,34 @@ function assistantExecuteTool(name, args, session, context){
 
 function assistantEndpointSummary(end){
   if(!end || end.kind === 'unset')return 'any';
-  if(end.kind === 'clock')return end.clock;
-  const labels = typeof PRAYER_ANCHOR_LABELS !== 'undefined' ? PRAYER_ANCHOR_LABELS : {};
-  const label = labels[end.anchor] || end.anchor;
-  const off = end.offsetMin || 0;
-  if(!off)return label;
-  const abs = Math.abs(off);
-  const rel = off < 0 ? 'before' : 'after';
-  if(abs % 60 === 0)return `${abs / 60}h ${rel} ${label}`;
-  return `${abs}m ${rel} ${label}`;
+  let primary;
+  if(end.kind === 'clock')primary = end.clock;
+  else if(end.kind === 'habit'){
+    const name = end.habitName || 'another item';
+    const off = end.offsetMin || 0;
+    if(!off)primary = name;
+    else{
+      const abs = Math.abs(off);
+      const rel = off < 0 ? 'before' : 'after';
+      primary = `${abs}m ${rel} ${name}`;
+    }
+  }else{
+    const labels = typeof PRAYER_ANCHOR_LABELS !== 'undefined' ? PRAYER_ANCHOR_LABELS : {};
+    const label = labels[end.anchor] || end.anchor;
+    const off = end.offsetMin || 0;
+    if(!off)primary = label;
+    else{
+      const abs = Math.abs(off);
+      const rel = off < 0 ? 'before' : 'after';
+      primary = abs % 60 === 0 ? `${abs / 60}h ${rel} ${label}` : `${abs}m ${rel} ${label}`;
+    }
+  }
+  if(end.combine && end.second){
+    const word = end.combine === 'earlier' ? 'earlier of' : 'later of';
+    const second = assistantEndpointSummary(Object.assign({}, end.second, {combine:null, second:null}));
+    return `${word} ${primary} · ${second}`;
+  }
+  return primary;
 }
 
 function assistantWeekdaySummary(days){
@@ -860,28 +1839,97 @@ function assistantDraftFingerprint(draft){
   return JSON.stringify({
     n:draft.name,
     k:draft.kind,
+    hk:draft.habitKind,
+    e:draft.emoji,
+    c:draft.emojiBgColor,
     d:draft.durationMinutes,
     p:draft.priority,
+    tp:draft.topics,
     due:draft.dueDate,
     tm:draft.dueTime,
+    hd:draft.hardDue,
     t:draft.timesPerPeriod,
     pd:draft.periodDays,
     w:Array.isArray(draft.allowedWeekdays) ? draft.allowedWeekdays : [],
+    md:Array.isArray(draft.allowedMonthDays) ? draft.allowedMonthDays : [],
+    pw:Array.isArray(draft.preferredWeekdays) ? draft.preferredWeekdays : [],
+    pmd:Array.isArray(draft.preferredMonthDays) ? draft.preferredMonthDays : [],
     win:draft.window || null,
+    pwin:draft.preferredWindow || null,
     wea:draft.weather ? {m:draft.weather.mode, i:draft.weather.profileId, n:draft.weather.name} : null,
-    pl:draft.places ? {ids:draft.places.ids, a:draft.places.anywhere} : null
+    pl:draft.places ? {ids:draft.places.ids, a:draft.places.anywhere} : null,
+    lp:draft.locationPrefs || null,
+    early:draft.earlyWindowDays,
+    delay:draft.delayAllowanceDays,
+    br:draft.breakable,
+    mc:draft.minChunkMinutes,
+    am:draft.autoMarkMinutes,
+    tv:draft.trackValue,
+    pin:draft.pinned,
+    sn:draft.snoozedUntil,
+    sh:draft.showOnSharedDisplay,
+    sc:draft.allowSharedDisplayCompletion,
+    sw:draft.showWeather,
+    swp:draft.showWeatherAtLocation,
+    wl:draft.weatherLocationId,
+    sl:draft.scheduleLinks || null,
+    so:draft.scheduleOptions || null,
+    lk:draft.links || null,
+    pb:draft.planByDate,
+    sid:draft.settingId || null,
+    wp:draft.weatherProposed || null,
+    addr:draft.address || null,
+    lat:draft.lat,
+    lng:draft.lng
   });
 }
 
-function assistantPatchChangedDraft(draft, parsed, catalog, settings){
-  if(!draft || typeof assistantPatchDraftFromParsed !== 'function')return false;
-  const before = assistantDraftFingerprint(draft);
-  assistantPatchDraftFromParsed(draft, parsed, catalog, settings);
-  return assistantDraftFingerprint(draft) !== before;
+function assistantSettingLabel(kind){
+  if(kind === 'weather')return 'weather profile';
+  if(kind === 'location')return 'place';
+  if(kind === 'busy')return 'busy time';
+  if(kind === 'topic')return 'topic';
+  return '';
+}
+
+function assistantWeatherRulesSummary(rules){
+  return (rules || []).filter(rule => rule && (typeof weatherRuleActive === 'function'
+    ? weatherRuleActive(rule)
+    : (rule.min != null || rule.max != null || (rule.relative && rule.relative !== 'none')))).map(rule => {
+    const label = (typeof WEATHER_METRICS !== 'undefined' && WEATHER_METRICS[rule.metric] && WEATHER_METRICS[rule.metric].label) || rule.metric;
+    const unit = typeof weatherMetricUnitLabel === 'function' ? weatherMetricUnitLabel(rule.metric) : '';
+    const fmt = v => {
+      const n = typeof weatherMetricDisplayValue === 'function' ? weatherMetricDisplayValue(rule.metric, v) : v;
+      return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '';
+    };
+    const bits = [];
+    if(rule.min != null)bits.push(`≥${fmt(rule.min)}${unit}`);
+    if(rule.max != null)bits.push(`≤${fmt(rule.max)}${unit}`);
+    if(rule.relative === 'low')bits.push('prefer lower');
+    if(rule.relative === 'high')bits.push('prefer higher');
+    if(rule.hard)bits.push('hard');
+    return `${label} ${bits.join(' ')}`.trim();
+  }).filter(Boolean);
 }
 
 function assistantDraftSummary(draft, settings){
   if(!draft || !draft.name)return '';
+  if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(draft.kind)){
+    const parts = [draft.name, assistantSettingLabel(draft.kind)];
+    if(draft.kind === 'weather'){
+      const rules = (draft.weatherProposed && draft.weatherProposed.rules) || [];
+      const chips = assistantWeatherRulesSummary(rules);
+      if(chips.length)parts.push(...chips.slice(0, 4));
+      else parts.push('no rules yet');
+    }else if(draft.kind === 'location'){
+      if(draft.address)parts.push(draft.address);
+      else if(Number.isFinite(Number(draft.lat)))parts.push('pinned');
+      else parts.push('needs address');
+    }else if(draft.kind === 'busy' && draft.window){
+      parts.push(`${assistantEndpointSummary(draft.window.start)} → ${assistantEndpointSummary(draft.window.end)}`);
+    }
+    return parts.filter(Boolean).join(' · ');
+  }
   const parts = [draft.name, draft.kind === 'habit' ? 'habit' : 'task'];
   const duration = draft.durationMinutes != null
     ? draft.durationMinutes
@@ -916,6 +1964,16 @@ function assistantDraftSummary(draft, settings){
   if(draft.places && draft.places.names && draft.places.names.length){
     parts.push(draft.places.names.join(', '));
   }
+  if(draft.habitKind === 'reduce')parts.push('limit');
+  if(draft.habitKind === 'zero')parts.push('stop');
+  if(Array.isArray(draft.topics) && draft.topics.length)parts.push(draft.topics.join(', '));
+  if(draft.breakable)parts.push('split');
+  if(draft.pinned)parts.push('pinned');
+  if(draft.hardDue)parts.push('hard due');
+  if(Array.isArray(draft.scheduleLinks) && draft.scheduleLinks.length){
+    parts.push(draft.scheduleLinks.map(link => `${link.direction} ${link.name || ''}`.trim()).join(', '));
+  }
+  if(Array.isArray(draft.links) && draft.links.length)parts.push('link');
   return parts.filter(Boolean).join(' · ');
 }
 
@@ -947,42 +2005,64 @@ function assistantFormatToday(catalog, opts){
   return parts.join('\n\n');
 }
 
-function assistantDraftToHabit(draft, settings, now){
+function assistantDraftToHabit(draft, settings, now, data){
   const ts = now != null ? Number(now) : Date.now();
   const s = settings || {};
   const isHabit = draft.kind === 'habit';
-  const type = isHabit ? (s.defaultType === 'reduce' ? 'reduce' : 'keepup') : 'task';
+  const type = isHabit
+    ? (draft.habitKind === 'reduce' || draft.habitKind === 'zero' || draft.habitKind === 'keepup'
+      ? draft.habitKind
+      : (s.defaultType === 'reduce' || s.defaultType === 'zero' ? s.defaultType : 'keepup'))
+    : 'task';
   const times = draft.timesPerPeriod || 1;
   const days = draft.periodDays || Math.round(s.defaultTarget || 7);
-  const target = isHabit
-    ? (typeof targetFromRhythmParts === 'function' ? targetFromRhythmParts(times, days) : days / times)
-    : null;
+  const target = (type === 'zero' || type === 'task')
+    ? null
+    : (typeof targetFromRhythmParts === 'function' ? targetFromRhythmParts(times, days) : days / times);
   const record = {
     name:String(draft.name || '').slice(0, ASSISTANT_NAME_MAX),
     type,
     target,
     lastLog:null,
     logs:[],
-    emoji:'',
-    pinned:false,
-    showOnSharedDisplay:true,
-    allowSharedDisplayCompletion:true,
+    emoji:draft.emoji != null ? draft.emoji : '',
+    emojiBgColor:draft.emojiBgColor != null ? draft.emojiBgColor : '',
+    pinned:draft.pinned != null ? Boolean(draft.pinned) : false,
+    showOnSharedDisplay:draft.showOnSharedDisplay != null ? Boolean(draft.showOnSharedDisplay) : true,
+    allowSharedDisplayCompletion:draft.allowSharedDisplayCompletion != null ? Boolean(draft.allowSharedDisplayCompletion) : true,
     priority:draft.priority != null ? draft.priority : (s.defaultPriority != null ? s.defaultPriority : 2),
-    topics:Array.isArray(s.defaultTopics) ? s.defaultTopics.slice() : [],
+    topics:Array.isArray(draft.topics)
+      ? draft.topics.slice()
+      : (Array.isArray(s.defaultTopics) ? s.defaultTopics.slice() : []),
     locationIds:draft.places && Array.isArray(draft.places.ids) ? draft.places.ids.slice() : [],
     anywhereAllowed:draft.places ? Boolean(draft.places.anywhere || !draft.places.ids.length) : true,
+    locationPrefs:draft.locationPrefs && typeof draft.locationPrefs === 'object' ? Object.assign({}, draft.locationPrefs) : {},
     durationMinutes:draft.durationMinutes != null ? draft.durationMinutes : s.defaultDurationMinutes,
-    breakable:Boolean(s.defaultBreakable),
-    minChunkMinutes:s.defaultMinChunkMinutes,
+    breakable:draft.breakable != null ? Boolean(draft.breakable) : Boolean(s.defaultBreakable),
+    minChunkMinutes:draft.minChunkMinutes != null ? draft.minChunkMinutes : s.defaultMinChunkMinutes,
     createdAt:ts,
-    earlyWindowDays:s.defaultEarlyWindowDays,
-    delayAllowanceDays:s.defaultDelayAllowanceDays,
-    autoMarkMinutes:s.defaultAutoMarkMinutes
+    earlyWindowDays:draft.earlyWindowDays != null ? draft.earlyWindowDays : s.defaultEarlyWindowDays,
+    delayAllowanceDays:draft.delayAllowanceDays != null ? draft.delayAllowanceDays : s.defaultDelayAllowanceDays,
+    autoMarkMinutes:draft.autoMarkMinutes !== undefined ? draft.autoMarkMinutes : s.defaultAutoMarkMinutes,
+    trackValue:Boolean(draft.trackValue),
+    showWeather:Boolean(draft.showWeather),
+    showWeatherAtLocation:Boolean(draft.showWeatherAtLocation),
+    weatherLocationId:draft.weatherLocationId || null
   };
   if(isHabit){
     record.allowedWeekdays = typeof normalizeAllowedWeekdays === 'function'
       ? normalizeAllowedWeekdays(draft.allowedWeekdays || [])
       : (Array.isArray(draft.allowedWeekdays) ? draft.allowedWeekdays.slice() : []);
+    record.allowedMonthDays = typeof normalizeAllowedMonthDays === 'function'
+      ? normalizeAllowedMonthDays(draft.allowedMonthDays || [])
+      : (Array.isArray(draft.allowedMonthDays) ? draft.allowedMonthDays.slice() : []);
+    record.preferredWeekdays = typeof normalizeAllowedWeekdays === 'function'
+      ? normalizeAllowedWeekdays(draft.preferredWeekdays || [])
+      : (Array.isArray(draft.preferredWeekdays) ? draft.preferredWeekdays.slice() : []);
+    record.preferredMonthDays = typeof normalizeAllowedMonthDays === 'function'
+      ? normalizeAllowedMonthDays(draft.preferredMonthDays || [])
+      : (Array.isArray(draft.preferredMonthDays) ? draft.preferredMonthDays.slice() : []);
+    record.planByDate = draft.planByDate != null ? draft.planByDate : null;
   }
   if(type === 'task'){
     record.dueDate = draft.dueDate;
@@ -993,30 +2073,31 @@ function assistantDraftToHabit(draft, settings, now){
       record.eventTime = null;
     }
     if(record.dueDate == null)record.earlyWindowDays = 0;
+    if(draft.hardDue === true)record.delayAllowanceDays = 0;
   }
-  if(draft.weather && !draft.weather.pending){
+  if(draft.weather && (draft.weather.mode !== 'profile' || draft.weather.profileId)){
     record.weatherProfileMode = draft.weather.mode;
     record.weatherProfileId = draft.weather.mode === 'profile' ? draft.weather.profileId : null;
   }
-  const win = draft.window;
-  if(win){
-    record.allowedTimeStart = null;
-    record.allowedTimeEnd = null;
-    record.allowedTimeStartAnchor = null;
-    record.allowedTimeStartOffsetMin = 0;
-    record.allowedTimeEndAnchor = null;
-    record.allowedTimeEndOffsetMin = 0;
-    if(win.start && win.start.kind === 'clock')record.allowedTimeStart = win.start.minutes;
-    if(win.end && win.end.kind === 'clock')record.allowedTimeEnd = win.end.minutes;
-    if(win.start && win.start.kind === 'anchor'){
-      record.allowedTimeStartAnchor = win.start.anchor;
-      record.allowedTimeStartOffsetMin = win.start.offsetMin || 0;
-    }
-    if(win.end && win.end.kind === 'anchor'){
-      record.allowedTimeEndAnchor = win.end.anchor;
-      record.allowedTimeEndOffsetMin = win.end.offsetMin || 0;
-    }
+  assistantWriteWindowToRecord(record, draft.window, 'allowed', data);
+  assistantWriteWindowToRecord(record, draft.preferredWindow, 'preferred', data);
+  if(Array.isArray(draft.scheduleLinks)){
+    record.scheduleLinks = draft.scheduleLinks.map(link => ({
+      anchorHid:link.anchorHid,
+      direction:link.direction,
+      adjacency:link.adjacency === 'direct' ? 'direct' : 'sometime',
+      requireSameDay:Boolean(link.requireSameDay)
+    })).filter(link => link.anchorHid && (link.direction === 'before' || link.direction === 'after'));
   }
+  if(Array.isArray(draft.scheduleOptions)){
+    record.scheduleOptions = typeof normalizeHabitScheduleOptions === 'function'
+      ? normalizeHabitScheduleOptions(draft.scheduleOptions)
+      : draft.scheduleOptions.slice();
+  }
+  if(Array.isArray(draft.links)){
+    record.links = typeof normalizeLinks === 'function' ? normalizeLinks(draft.links) : draft.links.slice();
+  }
+  if(draft.snoozedUntil !== undefined)record.snoozedUntil = draft.snoozedUntil;
   return record;
 }
 
@@ -1051,7 +2132,7 @@ function assistantCommitComplete(pending){
 function assistantFocusHabit(session, found, context){
   if(!session || !found || !found.habit)return null;
   session.draft = typeof assistantHabitToDraft === 'function'
-    ? assistantHabitToDraft(found.habit, found.index, context && context.settings)
+    ? assistantHabitToDraft(found.habit, found.index, context && context.settings, context && context.data)
     : assistantEmptyDraft();
   return session.draft;
 }
@@ -1076,13 +2157,29 @@ function assistantDraftExistingIndex(data, draft){
 
 function assistantCommitDraft(draft){
   if(!draft || !draft.name)return {ok:false, error:'empty draft'};
+  if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(draft.kind)){
+    return assistantCommitSetting(draft);
+  }
   if(typeof load !== 'function' || typeof save !== 'function')return {ok:false, error:'save unavailable'};
   const data = load();
   const existing = assistantDraftExistingIndex(data, draft);
   if(existing < 0 && data.length >= MAX_TINGS)return {ok:false, error:`${MAX_TINGS} habits max`};
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
   if(typeof assistantEnsureProposedWeather === 'function')assistantEnsureProposedWeather(draft, settings);
-  const record = assistantDraftToHabit(draft, typeof loadSortSettings === 'function' ? loadSortSettings() : settings, Date.now());
+  if(draft.weatherProposed && draft.kind !== 'weather' && !(draft.weather && draft.weather.profileId)){
+    if(draft.weatherNeedAsk)return {ok:false, error:draft.weatherNeedAsk.question};
+    return {ok:false, error:'could not save weather profile'};
+  }
+  if(Array.isArray(draft.topics) && draft.topics.length){
+    const currentTopics = typeof normalizeTopics === 'function'
+      ? normalizeTopics(settings.topics)
+      : ((settings.topics || []).slice());
+    const mergedTopics = typeof normalizeTopics === 'function'
+      ? normalizeTopics(currentTopics.concat(draft.topics))
+      : currentTopics.concat(draft.topics);
+    if(mergedTopics.length !== currentTopics.length)assistantPersistSettings({topics:mergedTopics});
+  }
+  const record = assistantDraftToHabit(draft, typeof loadSortSettings === 'function' ? loadSortSettings() : settings, Date.now(), data);
   let next;
   let index;
   if(existing >= 0){
@@ -1094,13 +2191,10 @@ function assistantCommitDraft(draft){
       logs:prev.logs,
       lastLog:prev.lastLog,
       createdAt:prev.createdAt,
-      emoji:prev.emoji,
-      emojiBgColor:prev.emojiBgColor,
-      pinned:prev.pinned,
       sample:prev.sample,
-      scheduleLinks:prev.scheduleLinks,
-      showOnSharedDisplay:prev.showOnSharedDisplay,
-      allowSharedDisplayCompletion:prev.allowSharedDisplayCompletion
+      externalId:prev.externalId,
+      source:prev.source,
+      importedAt:prev.importedAt
     };
     next = data.slice();
     next[existing] = merged;
@@ -1115,13 +2209,4 @@ function assistantCommitDraft(draft){
   draft.hid = habit && habit.hid;
   draft.index = index;
   return {ok:true, index, habit, updated:existing >= 0};
-}
-
-function assistantMissingFollowups(draft){
-  const steps = [];
-  if(!draft || !draft.name)return ['extract'];
-  if(draft.windowMentioned && (!draft.window || (draft.window.start.kind === 'unset' && draft.window.end.kind === 'unset')))steps.push('window');
-  if(draft.weatherMentioned && !draft.weather)steps.push('weather');
-  if(draft.placeMentioned && !draft.places)steps.push('place');
-  return steps;
 }

@@ -32,18 +32,22 @@ function assistantAbortInFlight(){
 
 function assistantContextFromShow(body){
   const info = (body && body.model_info) || {};
-  let ctx = 0;
+  let fromInfo = 0;
   Object.keys(info).forEach(key => {
     if(/context[_]?length/i.test(key)){
       const n = Number(info[key]);
-      if(Number.isFinite(n) && n > ctx)ctx = n;
+      if(Number.isFinite(n) && n > fromInfo)fromInfo = n;
     }
   });
-  if(!ctx && body && body.parameters){
+  let fromParams = 0;
+  if(body && body.parameters){
     const match = String(body.parameters).match(/num_ctx\s+(\d+)/i);
-    if(match)ctx = Number(match[1]);
+    if(match)fromParams = Number(match[1]) || 0;
   }
-  return ctx > 0 ? ctx : 0;
+  // Runtime num_ctx is what the user enabled (e.g. 128k). Prefer it over a
+  // stale architecture default in model_info.
+  if(fromParams > 0)return fromParams;
+  return fromInfo > 0 ? fromInfo : 0;
 }
 
 async function assistantLookupContextLimit(origin, provider, model){
@@ -199,18 +203,62 @@ async function assistantListModels(force){
 }
 
 function assistantOllamaBody(req, model){
-  return {
+  const body = {
     model,
-    stream:false,
+    stream:true,
     think:req.think !== false,
     keep_alive:'10m',
     messages:req.messages,
-    tools:req.tools || [],
     options:{
       temperature:req.temperature != null ? req.temperature : (req.step === 'classify' ? 0.1 : 0.2),
-      num_predict:req.maxPredict || 1200
+      num_predict:req.maxPredict || (ASSISTANT_THINK_TOKENS + ASSISTANT_TOOL_TOKENS)
     }
   };
+  if(req.tools && req.tools.length)body.tools = req.tools;
+  if(req.format)body.format = req.format;
+  return body;
+}
+
+function assistantOllamaHasReply(body){
+  const msg = body && body.message;
+  if(!msg || typeof msg !== 'object')return false;
+  if(String(msg.content || '').trim())return true;
+  if(String(msg.thinking || '').trim())return true;
+  return Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+}
+
+function assistantAccumulateOllamaChat(text){
+  const raw = String(text || '').trim();
+  if(!raw)return {error:'empty reply'};
+  if(raw[0] === '{'){
+    try{
+      const once = JSON.parse(raw);
+      if(once && once.error && !once.message)return {error:String(once.error), body:once};
+      if(once && (once.message || once.done != null))return {body:once, error:once.error ? String(once.error) : ''};
+    }catch(_){}
+  }
+  const acc = {
+    message:{role:'assistant', content:'', thinking:'', tool_calls:[]},
+    prompt_eval_count:0
+  };
+  let error = '';
+  raw.split(/\n+/).forEach(line => {
+    const s = line.trim();
+    if(!s)return;
+    let chunk;
+    try{ chunk = JSON.parse(s); }catch(_){ return; }
+    if(chunk.error)error = String(chunk.error);
+    if(chunk.prompt_eval_count)acc.prompt_eval_count = chunk.prompt_eval_count;
+    if(chunk.eval_count)acc.eval_count = chunk.eval_count;
+    const msg = chunk.message;
+    if(!msg)return;
+    if(msg.thinking)acc.message.thinking += msg.thinking;
+    if(msg.content)acc.message.content += msg.content;
+    if(Array.isArray(msg.tool_calls) && msg.tool_calls.length){
+      acc.message.tool_calls = msg.tool_calls;
+    }
+  });
+  return {body:acc, error};
 }
 
 function assistantOpenAiBody(req, model){
@@ -220,7 +268,7 @@ function assistantOpenAiBody(req, model){
     messages:req.messages,
     tools:req.tools || [],
     temperature:req.temperature != null ? req.temperature : (req.step === 'classify' ? 0.1 : 0.2),
-    max_tokens:req.maxPredict || 1200,
+    max_tokens:req.maxPredict || (ASSISTANT_THINK_TOKENS + ASSISTANT_TOOL_TOKENS),
     chat_template_kwargs:{enable_thinking:req.think !== false, preserve_thinking:true}
   };
 }
@@ -265,8 +313,17 @@ async function assistantComplete(req){
       body:JSON.stringify(assistantOllamaBody(req, model))
     });
     const text = await res.text();
-    if(!res.ok)throw new Error(assistantHttpErrorText(text, `Ollama ${res.status}`));
-    const body = JSON.parse(text);
+    const got = assistantAccumulateOllamaChat(text);
+    const body = got.body && got.body.message ? got.body : null;
+    if(body && assistantOllamaHasReply(body)){
+      if(got.error && !(body.message.tool_calls && body.message.tool_calls.length)){
+        body._parseError = got.error;
+      }
+      body._contextLimit = contextLimit;
+      return body;
+    }
+    if(!res.ok || got.error)throw new Error(got.error || assistantHttpErrorText(text, `Ollama ${res.status}`));
+    if(!body)throw new Error(assistantHttpErrorText(text, `Ollama ${res.status}`));
     body._contextLimit = contextLimit;
     return body;
   }

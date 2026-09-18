@@ -56,6 +56,8 @@ offline-resilience.js	integrations	once
 onboarding-coach-test.js	ui	once
 advanced-coach-isolation-test.js	ui	once
 assistant-harness-test.js	ui	once
+assistant-item-settings-test.js	ui	once
+assistant-llm-settings-test.js	ui	once
 assistant-prompt-corpus-test.js	ui	once
 plan-by-date-test.js	planner	once
 plan-by-deferral-test.js	planner	once
