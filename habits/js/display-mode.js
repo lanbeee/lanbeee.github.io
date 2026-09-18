@@ -614,10 +614,19 @@ function mergeReplicaSnapshot(replica,enrolled){
   Storage.writeRaw(KEY,JSON.stringify(mergedHabits));
   bumpPlannerDataRevision();
   if(replica.mode === 'clone' && replica.settings){
-    Storage.write(SORT_SETTINGS_KEY,replica.settings);
-    sortSettings = loadSortSettings();
-    applyAppearanceSettings();
-    if(typeof refreshWeatherForecast === 'function') void refreshWeatherForecast();
+    // Only shared registries (places, busy times, weather profiles, home city)
+    // install from the owner payload. Every other setting is device-local, so
+    // the phone's theme or planner choice never overwrites this installation's.
+    const shared = typeof sharedReplicaSettings === 'function'
+      ? sharedReplicaSettings(replica.settings)
+      : null;
+    if(shared){
+      Storage.write(SORT_SETTINGS_KEY,{ ...loadSortSettings(),...shared });
+      sortSettings = loadSortSettings();
+      if(typeof syncSettingsControls === 'function') syncSettingsControls();
+      applyAppearanceSettings();
+      if(typeof refreshWeatherForecast === 'function') void refreshWeatherForecast();
+    }
   }
   enrolled.replicaRows = replicaRows;
   adoptLiveReplicaQueues(enrolled);

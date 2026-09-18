@@ -537,6 +537,27 @@ function householdAgendaWithDevices(feed,devices){
   return { ...feed,devices:householdAgendaDevices({ devices }) };
 }
 
+// The only settings a personal clone adopts from a published library. The
+// owner payload still carries the whole settings object, but everything outside
+// this list is device-local: theme, density, planner choice, assistant
+// endpoints, GPS-derived ids… each installation keeps its own value. Absent
+// keys keep the local value too (the publisher omits empty registries).
+const CLONE_SHARED_SETTING_KEYS = [
+  'locations',
+  'blockedTimes','cancelledBlocks','blockedTimeOverrides',
+  'weatherProfiles',
+  'homeCityName','homeCityLat','homeCityLng','homeCityCountry'
+];
+
+function sharedReplicaSettings(settings){
+  if(!settings || typeof settings !== 'object') return null;
+  const out = {};
+  for(const key of CLONE_SHARED_SETTING_KEYS){
+    if(Object.prototype.hasOwnProperty.call(settings,key)) out[key] = settings[key];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 // A paired display is a real Tings installation, not merely a renderer. The
 // latest-state agenda envelope doubles as an encrypted replication snapshot so
 // the existing zero-knowledge transport and QR authorization remain useful.

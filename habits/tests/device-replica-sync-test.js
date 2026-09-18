@@ -748,6 +748,76 @@ function assert(value,message){
   assert(cloneAppliesBeforePublish.logged && !cloneAppliesBeforePublish.stillPlanned,
     `a clone applies a glance done before republishing days (${JSON.stringify(cloneAppliesBeforePublish)})`);
 
+  // Clone settings locality: only shared registries (places, busy times,
+  // weather profiles, home city) install from the owner payload. Theme,
+  // density, and every other device preference survive every pull.
+  const settingsLocality = await page.evaluate(()=>{
+    const feedId = shareRandomHex(16);
+    const ownerId = shareRandomHex(8);
+    const hid = generateHabitId();
+    const habit = normalize([{
+      hid,name:'Settings locality item',type:'keepup',target:1,logs:[],durationMinutes:30
+    }])[0];
+    saveSortSettings({
+      ...loadSortSettings(),
+      themeMode:'dark',fontScale:'large',minimalMode:true,
+      locations:normalizeLocationRegistry([{ id:'local-cafe',name:'Device-local cafe',lat:1,lng:2 }]),
+      blockedTimes:[],weatherProfiles:[]
+    });
+    Storage.writeRaw(KEY,JSON.stringify([habit]));
+    const rowId = shareRandomHex(8);
+    const makeSnapshot = settings=>({
+      schemaVersion:1,mode:'clone',definitionOwnerId:ownerId,
+      items:[{rowId,habit,access:'complete',definitionHash:replicaHabitDefinitionHash(habit)}],
+      settings,truncated:false,completionReceipts:[],definitionReceipts:[]
+    });
+    const ownerSettings = {
+      themeMode:'light',fontScale:'small',minimalMode:false,
+      locations:normalizeLocationRegistry([{ id:'owner-gym',name:'Owner gym',lat:3,lng:4 }]),
+      blockedTimes:normalizeBlockedTimes([{label:'sleep',days:[0,1,2,3,4,5,6],start:1380,end:300}]),
+      weatherProfiles:[]
+    };
+    const enrollment = base=>({
+      feedId,deviceCredential:shareRandomHex(32),contentKey:shareRandomHex(32),
+      replicaKey:shareRandomHex(32),pairingId:shareRandomHex(16),syncMode:'clone',
+      replicaMode:'clone',replicaRows:{ [hid]:{rowId,access:'complete'} },
+      replicaOutbox:[],replicaPendingDefinitions:{},replicaPendingCompletions:{},...base
+    });
+    writeReplicaEnrollment(enrollment({ meta:{revision:7} }));
+    try{
+      mergeReplicaSnapshot(makeSnapshot(ownerSettings),replicaEnrollment());
+      const afterFirst = loadSortSettings();
+      // A local edit between pulls must survive the next snapshot, and an
+      // absent registry key means "no opinion", not deletion.
+      saveSortSettings({...loadSortSettings(),fontScale:'medium'});
+      const secondSettings = {...ownerSettings};
+      delete secondSettings.locations;
+      secondSettings.blockedTimes = normalizeBlockedTimes([{label:'gym',days:[1,3],start:1080,end:1200}]);
+      writeReplicaEnrollment(enrollment({ meta:{revision:8} }));
+      mergeReplicaSnapshot(makeSnapshot(secondSettings),replicaEnrollment());
+      const afterSecond = loadSortSettings();
+      const hasPlace = (settings,name)=>settings.locations.some(loc=>loc && loc.name === name);
+      return {
+        adoptedLocations:hasPlace(afterFirst,'Owner gym') && !hasPlace(afterFirst,'Device-local cafe'),
+        adoptedBlocked:afterFirst.blockedTimes.length === 1 && afterFirst.blockedTimes[0].label === 'sleep',
+        keptTheme:afterFirst.themeMode === 'dark',
+        keptFontScale:afterFirst.fontScale === 'large',
+        keptMinimal:afterFirst.minimalMode === true,
+        secondKeptTheme:afterSecond.themeMode === 'dark',
+        localEditSurvived:afterSecond.fontScale === 'medium',
+        secondKeptLocations:hasPlace(afterSecond,'Owner gym'),
+        secondAdoptedBlocked:afterSecond.blockedTimes.length === 1 && afterSecond.blockedTimes[0].label === 'gym'
+      };
+    }finally{
+      writeReplicaEnrollment(null);
+    }
+  });
+  assert(settingsLocality.adoptedLocations && settingsLocality.adoptedBlocked
+    && settingsLocality.keptTheme && settingsLocality.keptFontScale && settingsLocality.keptMinimal
+    && settingsLocality.secondKeptTheme && settingsLocality.localEditSurvived
+    && settingsLocality.secondKeptLocations && settingsLocality.secondAdoptedBlocked,
+    `a clone installs only places, busy times, and weather settings and keeps its own theme (${JSON.stringify(settingsLocality)})`);
+
   // Glance display: the phone publishes no replica, so the screen must never
   // install a library or mount the full-app planner.
   const glanceContext = await browser.newContext({serviceWorkers:'block'});
