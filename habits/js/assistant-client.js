@@ -1,5 +1,5 @@
 // Ollama native /api/chat (preferred for Qwen3.8 think+tools) and LM Studio
-// OpenAI-compatible /v1/chat/completions. Loopback only.
+// OpenAI-compatible /v1/chat/completions. Loopback, LAN, or Tailscale only.
 
 let _assistantAbort = null;
 let _assistantModelsCache = {at:0, origin:'', models:[]};
@@ -92,7 +92,10 @@ function assistantFetchInit(url, opts){
     if(key === 'headers')return;
     init[key] = src[key];
   });
-  if(typeof assistantUrlIsLoopback === 'function' ? assistantUrlIsLoopback(url) : false){
+  if(typeof assistantUrlAddressSpace === 'function'){
+    const space = assistantUrlAddressSpace(url);
+    if(space)init.targetAddressSpace = space;
+  }else if(typeof assistantUrlIsLoopback === 'function' ? assistantUrlIsLoopback(url) : false){
     init.targetAddressSpace = 'loopback';
   }
   const headers = Object.assign({}, src.headers || {});
@@ -120,10 +123,17 @@ async function assistantFetchAttempt(url, init){
   }catch(err){
     if(!init || !init.targetAddressSpace)throw err;
     const msg = String(err && err.message || err || '');
-    if(!/targetAddressSpace|Unexpected (field|option)|not a valid value/i.test(msg))throw err;
     const retry = Object.assign({}, init);
     delete retry.targetAddressSpace;
-    return fetch(url, retry);
+    if(/targetAddressSpace|Unexpected (field|option)|not a valid value|address space/i.test(msg)){
+      return fetch(url, retry);
+    }
+    let host = '';
+    try{ host = new URL(String(url || ''), 'http://127.0.0.1/').hostname; }catch(_){}
+    if(init.targetAddressSpace === 'local' && typeof assistantHostLooksTailscale === 'function' && assistantHostLooksTailscale(host)){
+      try{ return await fetch(url, retry); }catch(_){ throw err; }
+    }
+    throw err;
   }
 }
 

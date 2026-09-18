@@ -329,9 +329,10 @@ const DEFAULT_SORT_SETTINGS = {
   lastRetentionCleanupAt:0,
 
   // Local assistant on this computer (Ollama / LM Studio). Off by default.
-  // URLs must be loopback — habit names never go to a remote model from this
-  // toggle. A public HTTPS origin (GitHub Pages) can still call loopback if
-  // Ollama allows that origin and the browser grants local-network access.
+  // URLs stay on this machine or a private LAN/Tailscale address — habit names
+  // never go to a public cloud model from this toggle. A public HTTPS origin
+  // (GitHub Pages) can still call that local server if Ollama allows the site
+  // and the browser grants local-network access.
   localAssistant:false,
   localAssistantProvider:'auto',
   localAssistantUrl:'',
@@ -352,31 +353,94 @@ function normalizeLocalAssistantProvider(value){
 function normalizeLocalAssistantModel(value){
   return String(value || '').trim().replace(/\s+/g,' ').slice(0,80);
 }
+function assistantNormalizeHostname(host){
+  return String(host || '').trim().replace(/^\[|\]$/g, '').toLowerCase();
+}
+function assistantIpv4Octets(host){
+  const parts = String(host || '').split('.');
+  if(parts.length !== 4)return null;
+  const out = [];
+  for(let i = 0; i < 4; i++){
+    if(!/^\d{1,3}$/.test(parts[i]))return null;
+    const n = Number(parts[i]);
+    if(!Number.isInteger(n) || n > 255)return null;
+    out.push(n);
+  }
+  return out;
+}
+function assistantHostIsLoopback(host){
+  const h = assistantNormalizeHostname(host);
+  if(h === 'localhost' || h === '::1' || h.endsWith('.localhost'))return true;
+  const parts = assistantIpv4Octets(h);
+  return Boolean(parts && parts[0] === 127);
+}
+function assistantIpv4IsPrivateLan(host){
+  const parts = assistantIpv4Octets(host);
+  if(!parts)return false;
+  const a = parts[0], b = parts[1];
+  if(a === 10)return true;
+  if(a === 127)return true;
+  if(a === 192 && b === 168)return true;
+  if(a === 172 && b >= 16 && b <= 31)return true;
+  if(a === 169 && b === 254)return true;
+  if(a === 100 && b >= 64 && b <= 127)return true;
+  return false;
+}
+function assistantHostLooksTailscale(host){
+  const h = assistantNormalizeHostname(host);
+  if(h === 'ts.net' || h.endsWith('.ts.net'))return true;
+  const parts = assistantIpv4Octets(h);
+  return Boolean(parts && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127);
+}
+function assistantHostIsPrivateLan(host){
+  const h = assistantNormalizeHostname(host);
+  if(assistantHostIsLoopback(h))return true;
+  if(h === 'ts.net' || h.endsWith('.ts.net') || h.endsWith('.local'))return true;
+  if(assistantIpv4IsPrivateLan(h))return true;
+  if(h.includes(':')){
+    if(h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd'))return true;
+  }
+  return false;
+}
+function assistantRejectedUrlHint(){
+  return 'That address was not saved. Use this computer (127.0.0.1), a Wi-Fi URL like http://192.168.1.12:11434, or a Tailscale name ending in .ts.net.';
+}
 function normalizeLocalAssistantUrl(value){
   const s = String(value || '').trim();
   if(!s)return '';
   try{
-    const u = new URL(s);
+    const raw = /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `http://${s}`;
+    const u = new URL(raw);
     if(u.protocol !== 'http:' && u.protocol !== 'https:')return '';
-    if(!ASSISTANT_LOOPBACK_HOSTS.includes(u.hostname))return '';
+    if(!assistantHostIsPrivateLan(u.hostname))return '';
+    if(u.protocol === 'http:' && !u.port)u.port = '11434';
     return u.origin;
-  }catch{
+  }catch(_){
     return '';
   }
 }
 function assistantUrlIsLoopback(url){
   try{
     const base = (typeof location !== 'undefined' && location.href) ? location.href : 'http://127.0.0.1/';
-    return ASSISTANT_LOOPBACK_HOSTS.includes(new URL(String(url || ''), base).hostname);
+    return assistantHostIsLoopback(new URL(String(url || ''), base).hostname);
   }catch(_){
     return false;
   }
+}
+function assistantUrlAddressSpace(url){
+  try{
+    const base = (typeof location !== 'undefined' && location.href) ? location.href : 'http://127.0.0.1/';
+    const host = new URL(String(url || ''), base).hostname;
+    if(assistantHostIsLoopback(host))return 'loopback';
+    if(assistantHostIsPrivateLan(host))return 'local';
+  }catch(_){}
+  return '';
 }
 function assistantPublicPageOrigin(){
   try{
     if(typeof location === 'undefined' || !location.origin || location.origin === 'null')return '';
     if(location.protocol !== 'http:' && location.protocol !== 'https:')return '';
-    if(ASSISTANT_LOOPBACK_HOSTS.includes(location.hostname))return '';
+    if(assistantHostIsLoopback(location.hostname))return '';
     return location.origin;
   }catch(_){
     return '';
@@ -408,11 +472,23 @@ function assistantOllamaOriginsAllowText(origin, platform){
   if(which === 'linux')return `OLLAMA_ORIGINS="${page}" ollama serve`;
   return `launchctl setenv OLLAMA_ORIGINS "${page}"`;
 }
+function assistantOllamaHostAllowText(platform){
+  const which = platform || assistantHostPlatform();
+  if(which === 'windows')return 'setx OLLAMA_HOST "0.0.0.0:11434"';
+  if(which === 'linux')return 'OLLAMA_HOST="0.0.0.0:11434" ollama serve';
+  return 'launchctl setenv OLLAMA_HOST "0.0.0.0:11434"';
+}
+function assistantOllamaSetupCommands(origin, platform){
+  const which = platform || assistantHostPlatform();
+  const page = assistantGuideOrigin(origin);
+  if(which === 'linux')return `OLLAMA_ORIGINS="${page}" OLLAMA_HOST="0.0.0.0:11434" ollama serve`;
+  return `${assistantOllamaOriginsAllowText(origin, which)}\n${assistantOllamaHostAllowText(which)}`;
+}
 function assistantOllamaRestartHint(platform){
   const which = platform || assistantHostPlatform();
-  if(which === 'windows')return 'Fully quit Ollama from the taskbar, then open it again. The command does nothing until you do this.';
-  if(which === 'linux')return 'Stop the running Ollama process, then start it again. The allow command does nothing until you do this.';
-  return 'Fully quit Ollama from the menu bar at the top of the screen, then open it again. The command does nothing until you do this.';
+  if(which === 'windows')return 'Fully quit Ollama from the taskbar, then open it again. The commands do nothing until you do this.';
+  if(which === 'linux')return 'Stop the running Ollama process, then start it again. The commands do nothing until you do this.';
+  return 'Fully quit Ollama from the menu bar at the top of the screen, then open it again. The commands do nothing until you do this.';
 }
 /** Minimum gap between automatic retention cleanup passes (≈1 month). */
 const RETENTION_CLEANUP_INTERVAL_MS = 30 * 86400000;

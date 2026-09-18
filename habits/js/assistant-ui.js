@@ -61,24 +61,34 @@ function syncAssistantOriginHelp(){
   const publicOrigin = typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '';
   const origin = typeof assistantGuideOrigin === 'function' ? assistantGuideOrigin() : (publicOrigin || 'https://lanbeee.github.io');
   const platform = typeof assistantHostPlatform === 'function' ? assistantHostPlatform() : 'mac';
-  const cmd = typeof assistantOllamaOriginsAllowText === 'function' ? assistantOllamaOriginsAllowText(origin, platform) : '';
+  const cmd = typeof assistantOllamaSetupCommands === 'function'
+    ? assistantOllamaSetupCommands(origin, platform)
+    : (typeof assistantOllamaOriginsAllowText === 'function' ? assistantOllamaOriginsAllowText(origin, platform) : '');
   const restart = typeof assistantOllamaRestartHint === 'function'
     ? assistantOllamaRestartHint(platform)
     : 'Quit Ollama, then open it again.';
   const lead = $('assistant-reach-lead');
   const allow = $('assistant-reach-step-allow');
+  const listen = $('assistant-reach-step-listen');
+  const phone = $('assistant-reach-step-phone');
   const quit = $('assistant-reach-step-restart');
   const pre = $('assistant-reach-cmd');
   const copy = $('assistant-copy-origins');
   if(lead){
     lead.textContent = publicOrigin
-      ? `This web copy cannot see the model until you allow this site once, then fully quit and reopen Ollama. The chat still stays on this computer. This page is ${origin}.`
-      : 'This local page is already allowed. Keep Ollama running. Use the steps below the first time you open the personal clone on GitHub Pages. After the allow command, fully quit and reopen Ollama.';
+      ? `Allow this site once, make Ollama listen on Wi-Fi/Tailscale if a phone will connect, then fully quit and reopen Ollama. On a phone, paste the laptop URL in address. This page is ${origin}.`
+      : 'This local page is already allowed. Keep Ollama running. For a phone, run the listen command, fully quit Ollama, then paste this laptop’s Wi-Fi or Tailscale URL in address on the phone.';
   }
   if(allow){
     allow.textContent = publicOrigin
-      ? `Allow this website. Copy the command, paste it in ${platform === 'windows' ? 'Command Prompt' : 'Terminal'}, and press Return.`
-      : `On the personal clone, allow that website the same way. The command below uses ${origin}.`;
+      ? `Allow this website. Copy the commands, paste them in ${platform === 'windows' ? 'Command Prompt' : 'Terminal'}, and press Return.`
+      : `On the personal clone, allow that website the same way. The first command below uses ${origin}.`;
+  }
+  if(listen){
+    listen.textContent = 'So a phone can reach this laptop, also run the listen line. Ollama only answers on this computer until you do.';
+  }
+  if(phone){
+    phone.textContent = 'On a phone, type the laptop’s Wi-Fi or Tailscale URL in address, for example http://192.168.1.12:11434. Leave address blank on the laptop itself.';
   }
   if(quit)quit.textContent = restart;
   if(pre){
@@ -99,6 +109,27 @@ function patchLocalAssistant(patch){
   else if(typeof saveSortSettings === 'function')saveSortSettings({...loadSortSettings(), ...patch});
   sortSettings = typeof loadSortSettings === 'function' ? loadSortSettings() : sortSettings;
   syncLocalAssistantControls();
+}
+
+function commitAssistantUrlFromInput(){
+  const el = $('assistant-url');
+  if(!el)return true;
+  const raw = el.value;
+  const next = typeof normalizeLocalAssistantUrl === 'function' ? normalizeLocalAssistantUrl(raw) : '';
+  if(String(raw).trim() && !next){
+    assistantSetStatus(typeof assistantRejectedUrlHint === 'function'
+      ? assistantRejectedUrlHint()
+      : 'That address was not saved.');
+    return false;
+  }
+  if(next !== assistantSettings().url){
+    patchLocalAssistant({localAssistantUrl:next});
+    if(next && typeof assistantUrlIsLoopback === 'function' && !assistantUrlIsLoopback(next)){
+      assistantSetStatus('Saved. Tap list models. Allow local network if the phone asks.');
+    }
+  }
+  else el.value = assistantSettings().url;
+  return true;
 }
 
 function assistantSetStatus(text){
@@ -682,13 +713,15 @@ function bindAssistantUi(){
     assistantSetStatus(assistantEnabled() ? assistantEnabledStatusText() : '');
   });
   $('assistant-copy-origins')?.addEventListener('click', () => {
-    const text = typeof assistantOllamaOriginsAllowText === 'function' ? assistantOllamaOriginsAllowText() : '';
+    const text = typeof assistantOllamaSetupCommands === 'function'
+      ? assistantOllamaSetupCommands()
+      : (typeof assistantOllamaOriginsAllowText === 'function' ? assistantOllamaOriginsAllowText() : '');
     if(!text){
       if(typeof showToast === 'function')showToast('could not copy');
       return;
     }
     const platform = typeof assistantHostPlatform === 'function' ? assistantHostPlatform() : 'mac';
-    assistantCopyText(text, platform === 'windows' ? 'command copied — paste it in Command Prompt' : 'command copied — paste it in Terminal');
+    assistantCopyText(text, platform === 'windows' ? 'commands copied — paste them in Command Prompt' : 'commands copied — paste them in Terminal');
   });
   $('setting-local-assistant-debug')?.addEventListener('click', () => {
     if(!assistantEnabled())patchLocalAssistant({localAssistant:true, localAssistantDebug:true});
@@ -699,14 +732,24 @@ function bindAssistantUi(){
     if(!opt)return;
     patchLocalAssistant({localAssistantProvider:normalizeLocalAssistantProvider(opt.dataset.assistantProvider)});
   });
-  $('assistant-url')?.addEventListener('change', () => {
-    patchLocalAssistant({localAssistantUrl:normalizeLocalAssistantUrl($('assistant-url').value)});
-    if($('assistant-url'))$('assistant-url').value = assistantSettings().url;
-  });
+  const urlEl = $('assistant-url');
+  if(urlEl){
+    const saveUrl = () => commitAssistantUrlFromInput();
+    urlEl.addEventListener('change', saveUrl);
+    urlEl.addEventListener('blur', saveUrl);
+    urlEl.addEventListener('keydown', e => {
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        saveUrl();
+        urlEl.blur();
+      }
+    });
+  }
   $('assistant-model')?.addEventListener('change', () => {
     patchLocalAssistant({localAssistantModel:normalizeLocalAssistantModel($('assistant-model').value)});
   });
   $('assistant-refresh-models')?.addEventListener('click', async () => {
+    if(!commitAssistantUrlFromInput())return;
     assistantSetStatus('listing models…');
     try{
       const found = await assistantListModels(true);
@@ -718,6 +761,7 @@ function bindAssistantUi(){
     }
   });
   $('assistant-test')?.addEventListener('click', async () => {
+    if(!commitAssistantUrlFromInput())return;
     if(!assistantEnabled())patchLocalAssistant({localAssistant:true});
     assistantSetStatus('testing Qwen (thinking + tool call)…');
     try{

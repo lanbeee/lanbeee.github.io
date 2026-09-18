@@ -172,15 +172,27 @@ async function launchBrowser(){
     const publicFail = assistantFriendlyError('Failed to fetch', 'https://lanbeee.github.io');
     const public403 = assistantFriendlyError('Ollama 403', 'https://lanbeee.github.io');
     const allow = assistantOllamaOriginsAllowText('https://lanbeee.github.io', 'mac');
+    const lanInit = assistantFetchInit('http://192.168.1.12:11434/api/tags', {method:'GET'});
+    const tailInit = assistantFetchInit('https://nabeel-macbook.tail123.ts.net/api/tags', {method:'GET'});
     if(typeof syncAssistantOriginHelp === 'function')syncAssistantOriginHelp();
     return {
       getSpace:getInit.targetAddressSpace,
       getHasType:Boolean(getInit.headers && getInit.headers['Content-Type']),
       postSpace:postInit.targetAddressSpace,
       postType:postInit.headers && postInit.headers['Content-Type'],
+      lanSpace:lanInit.targetAddressSpace,
+      tailSpace:tailInit.targetAddressSpace,
       publicFail,
       public403,
       allow,
+      setup:assistantOllamaSetupCommands('https://lanbeee.github.io', 'mac'),
+      loopback:normalizeLocalAssistantUrl('http://127.0.0.1:11434'),
+      bareLan:normalizeLocalAssistantUrl('192.168.1.12:11434'),
+      lanNoPort:normalizeLocalAssistantUrl('http://10.0.0.8'),
+      cgnat:normalizeLocalAssistantUrl('http://100.64.1.2:11434'),
+      magic:normalizeLocalAssistantUrl('https://nabeel-macbook.tail123.ts.net'),
+      openai:normalizeLocalAssistantUrl('https://api.openai.com'),
+      publicIp:normalizeLocalAssistantUrl('http://8.8.8.8:11434'),
       pageOrigin:assistantPublicPageOrigin(),
       guide:Boolean(document.getElementById('assistant-reach-guide')),
       guideLead:(document.getElementById('assistant-reach-lead')?.textContent || ''),
@@ -188,17 +200,55 @@ async function launchBrowser(){
       stepCount:document.querySelectorAll('#assistant-reach-guide li').length,
       copyBtn:Boolean(document.getElementById('assistant-copy-origins')),
       originHelpGone:!document.getElementById('assistant-origin-help'),
-      guideRestart:(document.getElementById('assistant-reach-step-restart')?.textContent || '')
+      guideRestart:(document.getElementById('assistant-reach-step-restart')?.textContent || ''),
+      guideListen:(document.getElementById('assistant-reach-step-listen')?.textContent || ''),
+      guidePhone:(document.getElementById('assistant-reach-step-phone')?.textContent || ''),
+      urlType:document.getElementById('assistant-url')?.getAttribute('type')
     };
   });
   assert(reach.getSpace === 'loopback' && reach.postSpace === 'loopback', 'loopback fetches declare targetAddressSpace');
+  assert(reach.lanSpace === 'local' && reach.tailSpace === 'local', 'LAN and Tailscale fetches declare local address space');
   assert(!reach.getHasType && reach.postType === 'application/json', 'JSON content-type is only set when there is a body');
   assert(/Settings → local assistant/i.test(reach.publicFail) && /quit and reopen Ollama/i.test(reach.publicFail), 'GitHub Pages fetch error points at the in-app steps');
   assert(/Settings → local assistant/i.test(reach.public403), '403 points at the in-app steps');
   assert(reach.allow === 'launchctl setenv OLLAMA_ORIGINS "https://lanbeee.github.io"', 'Mac allow command is the launchctl line');
-  assert(!reach.pageOrigin && reach.guide && reach.stepCount === 4 && reach.copyBtn && reach.originHelpGone, 'settings shows a four-step reach guide');
-  assert(/already allowed|GitHub Pages/i.test(reach.guideLead) && /launchctl setenv OLLAMA_ORIGINS "https:\/\/lanbeee\.github\.io"/.test(reach.guideCmd), 'loopback page still shows the GitHub Pages command');
-  assert(/Fully quit Ollama/i.test(reach.guideRestart) && /does nothing until/i.test(reach.guideRestart), 'reach guide says the allow command needs a full Ollama quit');
+  assert(/OLLAMA_HOST "0\.0\.0\.0:11434"/.test(reach.setup), 'setup commands also listen on the network');
+  assert(reach.loopback === 'http://127.0.0.1:11434', 'loopback URL still saves');
+  assert(reach.bareLan === 'http://192.168.1.12:11434', 'bare LAN IP plus port is saved like Immich');
+  assert(reach.lanNoPort === 'http://10.0.0.8:11434', 'LAN URL without a port defaults to 11434');
+  assert(reach.cgnat === 'http://100.64.1.2:11434' && reach.magic === 'https://nabeel-macbook.tail123.ts.net', 'Tailscale IP and MagicDNS URLs save');
+  assert(reach.openai === '' && reach.publicIp === '', 'public cloud and public IPs are rejected');
+  assert(!reach.pageOrigin && reach.guide && reach.stepCount === 6 && reach.copyBtn && reach.originHelpGone, 'settings shows a six-step reach guide');
+  assert(reach.urlType === 'text', 'address field is text so a phone can save a LAN URL');
+  assert(/already allowed|phone/i.test(reach.guideLead) && /launchctl setenv OLLAMA_ORIGINS "https:\/\/lanbeee\.github\.io"/.test(reach.guideCmd), 'loopback page still shows the GitHub Pages command');
+  assert(/OLLAMA_HOST/.test(reach.guideCmd), 'reach guide includes the listen command');
+  assert(/Fully quit Ollama/i.test(reach.guideRestart) && /do(?:es)? nothing until/i.test(reach.guideRestart), 'reach guide says the allow command needs a full Ollama quit');
+  assert(/listen/i.test(reach.guideListen) && /192\.168\.1\.12:11434/.test(reach.guidePhone), 'reach guide explains phone URL');
+
+  const savedUrl = await page.evaluate(() => {
+    saveSortSettings({ ...loadSortSettings(), localAssistant:true, localAssistantUrl:'' });
+    if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
+    const el = document.getElementById('assistant-url');
+    el.value = '192.168.4.20:11434';
+    el.dispatchEvent(new Event('change', {bubbles:true}));
+    const okShown = el.value;
+    const okStored = (typeof assistantSettings === 'function' ? assistantSettings().url : '');
+    const okStatus = document.getElementById('assistant-conn-status')?.textContent || '';
+    el.value = 'https://api.openai.com/v1';
+    el.dispatchEvent(new Event('change', {bubbles:true}));
+    return {
+      okShown,
+      okStored,
+      okStatus,
+      rejectedShown:el.value,
+      rejectedStored:(typeof assistantSettings === 'function' ? assistantSettings().url : ''),
+      rejectedStatus:document.getElementById('assistant-conn-status')?.textContent || ''
+    };
+  });
+  assert(savedUrl.okShown === 'http://192.168.4.20:11434' && savedUrl.okStored === 'http://192.168.4.20:11434', 'phone can save a LAN address');
+  assert(/Saved/i.test(savedUrl.okStatus), 'saving a laptop URL confirms it stuck');
+  assert(savedUrl.rejectedShown === 'https://api.openai.com/v1' && savedUrl.rejectedStored === 'http://192.168.4.20:11434', 'rejected cloud URL is not written');
+  assert(/not saved/i.test(savedUrl.rejectedStatus), 'rejected URL explains why it did not save');
 
   await page.locator('#open-about').click();
   await page.waitForSelector('#about-sheet.open');

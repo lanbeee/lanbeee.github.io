@@ -89,7 +89,7 @@ function expectedDueKey(token){
   assert(!owner.replica && !owner.displayMode, 'no replica enrollment on a fresh local app');
   assert(owner.hidden === false && owner.bodyClass, 'chat button shows on the regular app');
   assert(/Ollama|LM Studio/i.test(owner.hint), 'settings copy names the local model');
-  assert(owner.guide && owner.guideSteps === 4 && owner.copyBtn, 'settings has a four-step reach guide with copy');
+  assert(owner.guide && owner.guideSteps === 6 && owner.copyBtn, 'settings has a six-step reach guide with copy');
 
   console.log('\n[parse] utterance corpus (' + ASSISTANT_PARSE_CASES.length + ')');
   const parsedRows = await page.evaluate(({cases, now}) => {
