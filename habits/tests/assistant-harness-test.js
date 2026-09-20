@@ -408,6 +408,11 @@ async function launchBrowser(){
       cgnat:normalizeLocalAssistantUrl('http://100.64.1.2:11434'),
       magic:normalizeLocalAssistantUrl('https://nabeel-macbook.tail123.ts.net'),
       bareMagic:normalizeLocalAssistantUrl('nabeel-macbook.tail123.ts.net'),
+      gatewayPath:normalizeLocalAssistantUrl('https://nabeel-macbook.tail123.ts.net/openai'),
+      gatewayPathSlash:normalizeLocalAssistantUrl('https://nabeel-macbook.tail123.ts.net/openai/'),
+      gatewayEndpointTail:normalizeLocalAssistantUrl('https://nabeel-macbook.tail123.ts.net/openai/v1/chat/completions'),
+      gatewayApiTail:normalizeLocalAssistantUrl('http://127.0.0.1:8787/api/tags'),
+      gatewayTraversal:normalizeLocalAssistantUrl('http://127.0.0.1:8787/openai/../secret'),
       openai:normalizeLocalAssistantUrl('https://api.openai.com'),
       publicIp:normalizeLocalAssistantUrl('http://8.8.8.8:11434'),
       pageOrigin:assistantPublicPageOrigin(),
@@ -438,6 +443,11 @@ async function launchBrowser(){
   assert(reach.cgnat === 'http://100.64.1.2:11434' && reach.magic === 'https://nabeel-macbook.tail123.ts.net'
     && reach.bareMagic === 'https://nabeel-macbook.tail123.ts.net', 'Tailscale IP and MagicDNS URLs save; bare MagicDNS defaults to HTTPS');
   assert(reach.openai === '' && reach.publicIp === '', 'public cloud and public IPs are rejected');
+  assert(reach.gatewayPath === 'https://nabeel-macbook.tail123.ts.net/openai'
+    && reach.gatewayPathSlash === 'https://nabeel-macbook.tail123.ts.net/openai', 'a gateway base path is kept, without a trailing slash');
+  assert(reach.gatewayEndpointTail === 'https://nabeel-macbook.tail123.ts.net/openai'
+    && reach.gatewayApiTail === 'http://127.0.0.1:8787', 'a pasted endpoint tail is dropped so the client can append it');
+  assert(reach.gatewayTraversal === 'http://127.0.0.1:8787/secret', 'a base path is the resolved URL path, with no traversal segments');
   assert(!reach.pageOrigin && reach.guide && reach.stepCount === 6 && reach.copyBtn && reach.originHelpGone, 'settings shows a six-step reach guide');
   assert(reach.urlType === 'text', 'address field is text so a phone can save a LAN URL');
   assert(/already allowed|phone/i.test(reach.guideLead) && /launchctl setenv OLLAMA_ORIGINS "https:\/\/lanbeee\.github\.io"/.test(reach.guideCmd), 'loopback page still shows the GitHub Pages command');
@@ -469,6 +479,94 @@ async function launchBrowser(){
   assert(/Saved/i.test(savedUrl.okStatus), 'saving a laptop URL confirms it stuck');
   assert(savedUrl.rejectedShown === 'https://api.openai.com/v1' && savedUrl.rejectedStored === 'http://192.168.4.20:11434', 'rejected cloud URL is not written');
   assert(/not saved/i.test(savedUrl.rejectedStatus), 'rejected URL explains why it did not save');
+
+  const gateway = await page.evaluate(async () => {
+    const testComplete = globalThis.__assistantTestComplete;
+    delete globalThis.__assistantTestComplete;
+    const realFetch = window.fetch;
+    const calls = [];
+    const serve = (listStatus) => async (url, init) => {
+      calls.push(String(url));
+      if(String(url).includes('/v1/models')){
+        return listStatus === 200
+          ? new Response(JSON.stringify({data:[{id:'gateway-model'}]}), {status:200})
+          : new Response('no listing here', {status:listStatus});
+      }
+      return new Response(JSON.stringify({choices:[{message:{role:'assistant', content:'ok'}}]}), {status:200});
+    };
+    saveSortSettings({
+      ...loadSortSettings(),
+      localAssistant:true,
+      localAssistantProvider:'lmstudio',
+      localAssistantUrl:'https://laptop.tail123.ts.net/openai',
+      localAssistantModel:'gateway-model'
+    });
+    sortSettings = loadSortSettings();
+    let listed = '';
+    let noListReply = '';
+    let noListError = '';
+    try{
+      window.fetch = serve(200);
+      const ok = await assistantComplete({messages:[{role:'user', content:'hi'}], step:'classify'});
+      listed = ok.message.content;
+      window.fetch = serve(404);
+      const fallback = await assistantComplete({messages:[{role:'user', content:'hi'}], step:'classify'});
+      noListReply = fallback.message.content;
+    }catch(err){
+      noListError = String(err && err.message || err);
+    }finally{
+      window.fetch = realFetch;
+      if(testComplete)globalThis.__assistantTestComplete = testComplete;
+    }
+    return {calls, listed, noListReply, noListError};
+  });
+  const reasoning = await page.evaluate(() => {
+    const body = (model, level, req) => assistantOpenAiBody(
+      Object.assign({messages:[], step:'extract'}, req || {}),
+      model,
+      {reasoning:level}
+    );
+    const ollama = (level, req) => assistantOllamaBody(
+      Object.assign({messages:[], step:'extract'}, req || {}),
+      'qwen3.8:27b-mlx',
+      Object.assign({reasoning:level}, (req && req.opts) || {})
+    );
+    return {
+      glmFull:body('glm-5.3-flash', 'high'),
+      glmLow:body('glm-5.3-flash', 'low'),
+      glmOff:body('glm-5.3-flash', 'off'),
+      glm52Off:body('glm-5.2', 'off'),
+      glmPlain:assistantOpenAiBody({messages:[], step:'extract'}, 'glm-5.3-flash', {reasoning:'high', plain:true}),
+      lmFull:body('qwen3.8', 'high'),
+      lmOff:body('qwen3.8', 'off'),
+      ollamaFull:ollama('high').think,
+      ollamaLow:ollama('low').think,
+      ollamaLowRetry:assistantOllamaBody({messages:[], step:'extract'}, 'qwen3.8:27b-mlx', {reasoning:'low', plainThink:true}).think,
+      ollamaOff:ollama('off').think,
+      defaultLevel:normalizeLocalAssistantReasoning(undefined),
+      coerced:normalizeLocalAssistantReasoning('deep'),
+      glmContext:assistantGuessContextLimit('glm-5.3-flash')
+    };
+  });
+  assert(reasoning.defaultLevel === 'high' && reasoning.coerced === 'high', 'thinking depth defaults to full and rejects unknown values');
+  assert(reasoning.glmFull.reasoning_effort === 'high' && reasoning.glmLow.reasoning_effort === 'low', 'GLM thinking depth maps onto reasoning_effort');
+  assert(reasoning.glmOff.reasoning_effort === 'low' && reasoning.glmOff.thinking.type === 'enabled', 'GLM 5.3 cannot disable thinking, so off is its shallowest level');
+  assert(reasoning.glm52Off.reasoning_effort === 'none' && reasoning.glm52Off.thinking.type === 'disabled', 'a GLM that can skip thinking is told to skip it');
+  assert(reasoning.glmFull.temperature === 1 && reasoning.glmFull.top_p === 0.95, 'GLM keeps its own recommended sampling');
+  assert(reasoning.glmFull.max_tokens > reasoning.glmLow.max_tokens, 'a full GLM reasoning pass gets room before the tool call');
+  assert(!reasoning.glmFull.chat_template_kwargs, 'the LM Studio template hook is not sent to GLM');
+  assert(!reasoning.glmPlain.reasoning_effort && !reasoning.glmPlain.thinking && !reasoning.glmPlain.top_p, 'the retry body drops every dialect field');
+  assert(reasoning.lmFull.chat_template_kwargs.enable_thinking === true && !reasoning.lmFull.reasoning_effort, 'LM Studio at full depth keeps its template hook only');
+  assert(reasoning.lmOff.chat_template_kwargs.enable_thinking === false && reasoning.lmOff.reasoning_effort === 'none', 'off disables thinking on an OpenAI-compatible server');
+  assert(reasoning.ollamaFull === true && reasoning.ollamaLow === 'low' && reasoning.ollamaOff === false, 'Ollama gets a boolean or a thinking level');
+  assert(reasoning.ollamaLowRetry === true, 'a model without thinking levels is retried with plain thinking');
+  assert(reasoning.glmContext === 1000000, 'GLM 5.3 context window is not guessed at 128k');
+
+  assert(gateway.calls[0] === 'https://laptop.tail123.ts.net/openai/v1/models'
+    && gateway.calls[1] === 'https://laptop.tail123.ts.net/openai/v1/chat/completions',
+    'a base path is kept when the client appends its own endpoints');
+  assert(gateway.listed === 'ok' && !gateway.noListError, 'a gateway origin answers a chat request');
+  assert(gateway.noListReply === 'ok', 'a pinned provider and model still chat when model listing is missing');
 
   await page.locator('#open-about').click();
   await page.waitForSelector('#about-sheet.open');

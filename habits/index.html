@@ -1212,9 +1212,16 @@
               </div>
               <span class="settings-sublabel">address</span>
               <input id="assistant-url" class="settings-text-input" type="text" inputmode="url" maxlength="160" placeholder="https://laptop.tailnet.ts.net" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page.</p>
+              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>.</p>
               <span class="settings-sublabel">model</span>
               <input id="assistant-model" class="settings-text-input" type="text" maxlength="80" placeholder="qwen3.8:27b-mlx" autocomplete="off" />
+              <span class="settings-sublabel">thinking</span>
+              <div class="seg compact-seg" id="assistant-reasoning-seg" role="group" aria-label="thinking depth">
+                <button type="button" class="seg-opt on" data-assistant-reasoning="high">full</button>
+                <button type="button" class="seg-opt" data-assistant-reasoning="low">low</button>
+                <button type="button" class="seg-opt" data-assistant-reasoning="off">off</button>
+              </div>
+              <p class="field-hint" id="assistant-reasoning-hint">Less thinking answers faster and uses less of a paid plan; full is the most reliable at reading an odd sentence. A model that cannot turn thinking off, like GLM 5.3, uses its shallowest level instead.</p>
               <div class="btn-row" style="flex-wrap:wrap">
                 <button type="button" class="btn" id="assistant-refresh-models">list models</button>
                 <button type="button" class="btn primary" id="assistant-test">test thinking + tool</button>

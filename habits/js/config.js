@@ -338,6 +338,8 @@ const DEFAULT_SORT_SETTINGS = {
   localAssistantUrl:'',
   localAssistantModel:'',
   localAssistantDebug:false,
+  // Thinking depth asked of the model: 'high', 'low', or 'off'.
+  localAssistantReasoning:'high',
   // Skip the local fast path entirely: every message goes to the model.
   localAssistantModelOnly:false
 };
@@ -352,6 +354,9 @@ function normalizeLocalAssistantProvider(value){
 }
 function normalizeLocalAssistantModel(value){
   return String(value || '').trim().replace(/\s+/g,' ').slice(0,80);
+}
+function normalizeLocalAssistantReasoning(value){
+  return value === 'low' || value === 'off' ? value : 'high';
 }
 function assistantNormalizeHostname(host){
   return String(host || '').trim().replace(/^\[|\]$/g, '').toLowerCase();
@@ -405,6 +410,21 @@ function assistantHostIsPrivateLan(host){
 function assistantRejectedUrlHint(){
   return 'That address was not saved. Use this computer (127.0.0.1), a private Wi-Fi URL, or preferably the HTTPS .ts.net URL printed by Tailscale Serve.';
 }
+// The client appends /api/... or /v1/... itself, so a pasted endpoint tail is
+// dropped rather than doubled.
+const ASSISTANT_URL_ENDPOINT_TAIL = /\/(?:v1(?:\/(?:chat\/completions|completions|models))?|api(?:\/(?:chat|generate|tags|show))?)$/i;
+/** Base path of a private gateway that fronts several model servers on one origin. */
+function assistantUrlBasePath(pathname){
+  let path = String(pathname || '');
+  for(let i = 0; i < 3; i++){
+    const next = path.replace(/\/+$/, '').replace(ASSISTANT_URL_ENDPOINT_TAIL, '');
+    if(next === path)break;
+    path = next;
+  }
+  const parts = path.split('/').filter(seg => seg && seg !== '.' && seg !== '..');
+  if(!parts.length)return '';
+  return `/${parts.slice(0,4).join('/')}`.slice(0,64).replace(/\/+$/, '');
+}
 function normalizeLocalAssistantUrl(value){
   const s = String(value || '').trim();
   if(!s)return '';
@@ -416,7 +436,7 @@ function normalizeLocalAssistantUrl(value){
     if(u.protocol !== 'http:' && u.protocol !== 'https:')return '';
     if(!assistantHostIsPrivateLan(u.hostname))return '';
     if(u.protocol === 'http:' && !u.port)u.port = '11434';
-    return u.origin;
+    return `${u.origin}${assistantUrlBasePath(u.pathname)}`;
   }catch(_){
     return '';
   }

@@ -49,6 +49,9 @@ function syncLocalAssistantControls(){
   document.querySelectorAll('#assistant-provider-seg .seg-opt').forEach(btn => {
     btn.classList.toggle('on', btn.dataset.assistantProvider === s.provider);
   });
+  document.querySelectorAll('#assistant-reasoning-seg .seg-opt').forEach(btn => {
+    btn.classList.toggle('on', btn.dataset.assistantReasoning === s.reasoning);
+  });
   if($('assistant-url'))$('assistant-url').value = s.url;
   if($('assistant-model'))$('assistant-model').value = s.model;
   const extras = $('assistant-setup-fields');
@@ -815,6 +818,11 @@ function bindAssistantUi(){
     const opt = e.target.closest('[data-assistant-provider]');
     if(!opt)return;
     patchLocalAssistant({localAssistantProvider:normalizeLocalAssistantProvider(opt.dataset.assistantProvider)});
+  });
+  $('assistant-reasoning-seg')?.addEventListener('click', e => {
+    const opt = e.target.closest('[data-assistant-reasoning]');
+    if(!opt)return;
+    patchLocalAssistant({localAssistantReasoning:normalizeLocalAssistantReasoning(opt.dataset.assistantReasoning)});
   });
   const urlEl = $('assistant-url');
   if(urlEl){

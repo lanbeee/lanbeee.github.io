@@ -13,8 +13,27 @@ function assistantSettings(){
     modelOnly:Boolean(s.localAssistantModelOnly),
     provider:normalizeLocalAssistantProvider(s.localAssistantProvider),
     url:normalizeLocalAssistantUrl(s.localAssistantUrl),
-    model:normalizeLocalAssistantModel(s.localAssistantModel)
+    model:normalizeLocalAssistantModel(s.localAssistantModel),
+    reasoning:normalizeLocalAssistantReasoning(s.localAssistantReasoning)
   };
+}
+
+// GLM speaks the OpenAI protocol but takes thinking depth as reasoning_effort,
+// and the GLM-5.3 series cannot switch thinking off at all — the shallowest it
+// offers is the low level.
+function assistantModelIsGlm(model){
+  return /glm/i.test(String(model || ''));
+}
+function assistantGlmKeepsThinking(model){
+  return /glm[-_ ]?5\.3/i.test(String(model || ''));
+}
+function assistantReasoningEffort(level, model){
+  if(level === 'off')return assistantGlmKeepsThinking(model) ? 'low' : 'none';
+  if(level === 'low')return 'low';
+  return 'high';
+}
+function assistantThinkingWanted(req, level){
+  return req.think !== false && level !== 'off';
 }
 
 function assistantOriginFor(provider, url){
@@ -191,6 +210,18 @@ async function assistantDiscover(settings){
   }
 }
 
+// A gateway can expose a chat endpoint without a model listing. When both the
+// provider and the model are pinned there is nothing left to discover, so let
+// the chat call itself report any real failure.
+async function assistantResolveTarget(s){
+  try{
+    return await assistantDiscover(s);
+  }catch(err){
+    if(s.provider === 'auto' || !s.model)throw err;
+    return {provider:s.provider, origin:assistantOriginFor(s.provider, s.url), models:[s.model]};
+  }
+}
+
 async function assistantListModels(force){
   const now = Date.now();
   const s = assistantSettings();
@@ -202,11 +233,17 @@ async function assistantListModels(force){
   return found;
 }
 
-function assistantOllamaBody(req, model){
+function assistantOllamaBody(req, model, opts){
+  const level = normalizeLocalAssistantReasoning(opts && opts.reasoning);
+  // Ollama takes a boolean, or a level for the models that expose one. A model
+  // without levels rejects the string, so the caller retries with true.
+  const think = !assistantThinkingWanted(req, level)
+    ? false
+    : (level === 'low' && !(opts && opts.plainThink) ? 'low' : true);
   const body = {
     model,
     stream:true,
-    think:req.think !== false,
+    think,
     keep_alive:'10m',
     messages:req.messages,
     options:{
@@ -261,16 +298,31 @@ function assistantAccumulateOllamaChat(text){
   return {body:acc, error};
 }
 
-function assistantOpenAiBody(req, model){
-  return {
+function assistantOpenAiBody(req, model, opts){
+  const level = normalizeLocalAssistantReasoning(opts && opts.reasoning);
+  const think = assistantThinkingWanted(req, level);
+  const glm = assistantModelIsGlm(model);
+  const budget = req.maxPredict || (ASSISTANT_THINK_TOKENS + ASSISTANT_TOOL_TOKENS);
+  const body = {
     model,
     stream:false,
     messages:req.messages,
     tools:req.tools || [],
-    temperature:req.temperature != null ? req.temperature : (req.step === 'classify' ? 0.1 : 0.2),
-    max_tokens:req.maxPredict || (ASSISTANT_THINK_TOKENS + ASSISTANT_TOOL_TOKENS),
-    chat_template_kwargs:{enable_thinking:req.think !== false, preserve_thinking:true}
+    // GLM is tuned for its own defaults; a near-zero temperature degrades it.
+    temperature:req.temperature != null ? req.temperature : (glm ? 1 : (req.step === 'classify' ? 0.1 : 0.2)),
+    // Deep thinking can outrun the local budget and cut off before the tool call.
+    max_tokens:glm && think && level !== 'low' ? Math.max(budget, ASSISTANT_GLM_THINK_TOKENS) : budget
   };
+  if(opts && opts.plain)return body;
+  if(glm){
+    body.top_p = 0.95;
+    body.thinking = {type:think || assistantGlmKeepsThinking(model) ? 'enabled' : 'disabled'};
+    body.reasoning_effort = assistantReasoningEffort(level, model);
+  }else{
+    body.chat_template_kwargs = {enable_thinking:think, preserve_thinking:true};
+    if(level !== 'high')body.reasoning_effort = assistantReasoningEffort(level, model);
+  }
+  return body;
 }
 
 function assistantFromOpenAi(body){
@@ -304,15 +356,22 @@ async function assistantComplete(req){
   }
   const s = assistantSettings();
   if(!s.on)throw new Error('Local assistant is off.');
-  const found = await assistantDiscover(s);
+  const found = await assistantResolveTarget(s);
   const model = pickAssistantModel(found.models, s.model);
   const contextLimit = await assistantLookupContextLimit(found.origin, found.provider, model);
   if(found.provider === 'ollama'){
-    const res = await assistantFetch(`${found.origin}/api/chat`, {
+    let res = await assistantFetch(`${found.origin}/api/chat`, {
       method:'POST',
-      body:JSON.stringify(assistantOllamaBody(req, model))
+      body:JSON.stringify(assistantOllamaBody(req, model, {reasoning:s.reasoning}))
     });
-    const text = await res.text();
+    let text = await res.text();
+    if(!res.ok && s.reasoning === 'low' && /think/i.test(text)){
+      res = await assistantFetch(`${found.origin}/api/chat`, {
+        method:'POST',
+        body:JSON.stringify(assistantOllamaBody(req, model, {reasoning:s.reasoning, plainThink:true}))
+      });
+      text = await res.text();
+    }
     const got = assistantAccumulateOllamaChat(text);
     const body = got.body && got.body.message ? got.body : null;
     if(body && assistantOllamaHasReply(body)){
@@ -327,11 +386,22 @@ async function assistantComplete(req){
     body._contextLimit = contextLimit;
     return body;
   }
-  const res = await assistantFetch(`${found.origin}/v1/chat/completions`, {
+  let res = await assistantFetch(`${found.origin}/v1/chat/completions`, {
     method:'POST',
-    body:JSON.stringify(assistantOpenAiBody(req, model))
+    body:JSON.stringify(assistantOpenAiBody(req, model, {reasoning:s.reasoning}))
   });
-  const text = await res.text();
+  let text = await res.text();
+  // The thinking controls are dialect, not protocol: enable_thinking is an LM
+  // Studio template hook and reasoning_effort/thinking are GLM fields. A
+  // stricter server rejects the ones it does not know; the request is still
+  // valid without them.
+  if(res.status === 400 && /chat_template_kwargs|enable_thinking|reasoning_effort|thinking|top_p|unknown|unsupported|extra field|invalid.*(field|param)/i.test(text)){
+    res = await assistantFetch(`${found.origin}/v1/chat/completions`, {
+      method:'POST',
+      body:JSON.stringify(assistantOpenAiBody(req, model, {reasoning:s.reasoning, plain:true}))
+    });
+    text = await res.text();
+  }
   if(!res.ok)throw new Error(assistantHttpErrorText(text, `LM Studio ${res.status}`));
   const mapped = assistantFromOpenAi(JSON.parse(text));
   mapped._contextLimit = contextLimit;

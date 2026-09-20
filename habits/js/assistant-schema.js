@@ -28,6 +28,9 @@ const ASSISTANT_THINKING_COMPACT_MAX = 240;
 // thinking budget is 4096; leave extra room so the model can still emit JSON.
 const ASSISTANT_THINK_TOKENS = 4096;
 const ASSISTANT_TOOL_TOKENS = 2048;
+// A GLM reasoning pass is longer than a local model's, and max_tokens caps
+// thinking plus the tool call together.
+const ASSISTANT_GLM_THINK_TOKENS = 16384;
 
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
@@ -305,6 +308,8 @@ function assistantGuessContextLimit(model){
   const s = String(model || '').toLowerCase();
   if(/qwen3\.8|qwen3-8|qwen3\.5|qwen3/.test(s))return 131072;
   if(/qwen/.test(s))return 131072;
+  if(/glm[-_ ]?5\.[23]/.test(s))return 1000000;
+  if(/glm/.test(s))return 200000;
   return ASSISTANT_DEFAULT_CONTEXT_TOKENS;
 }
 
