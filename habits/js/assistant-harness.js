@@ -251,7 +251,9 @@ function assistantFormatDebugLine(ev){
       const tools = (ev.tools || []).map(call => call.name + (call.parseError ? '!' : '')).join(', ') || 'none';
       const think = ev.thinking ? `\nthink ${String(ev.thinking).replace(/\s+/g, ' ').slice(0, 280)}` : '';
       const tokens = ev.tokens ? `  tokens ${ev.tokens}/${ev.limit || '?'}` : '';
-      return `model ${ev.step || ''}  tools ${tools}${tokens}${think}`;
+      const ms = ev.ms != null ? `  ${ev.ms}ms` : '';
+      const evald = ev.evalTokens ? `  ${ev.evalTokens} gen tok` : '';
+      return `model ${ev.step || ''}  tools ${tools}${ms}${evald}${tokens}${think}`;
     }
     case 'tool':
       return `call ${ev.name}${ev.step ? ` @${ev.step}` : ''}  ${assistantDebugJson(ev.args)}`;
@@ -262,7 +264,7 @@ function assistantFormatDebugLine(ev){
     case 'error':
       return `error @${ev.step || '?'}  ${ev.error || ''}`;
     case 'done':
-      return `done ${ev.type || '?'}${ev.intent ? `  ${ev.intent}` : ''}  llm ${ev.llmCalls || 0}${ev.text ? `  ${String(ev.text).slice(0, 160)}` : ''}`;
+      return `done ${ev.type || '?'}${ev.intent ? `  ${ev.intent}` : ''}  llm ${ev.llmCalls || 0}${ev.totalMs != null ? `  ${(ev.totalMs / 1000).toFixed(1)}s` : ''}${ev.text ? `  ${String(ev.text).slice(0, 160)}` : ''}`;
     default:
       return `${ev.t} ${assistantDebugJson(ev)}`;
   }
@@ -284,6 +286,7 @@ function assistantFinishDebug(session, out){
       repairs:session.repairs || 0,
       tokens:session.contextUsed || 0,
       limit:session.contextLimit || 0,
+      totalMs:session.turnStartedAt ? Date.now() - session.turnStartedAt : null,
       draft:typeof assistantCompactDraft === 'function' ? assistantCompactDraft(out.draft || session.draft) : null,
       text:out.summary || out.text || out.question || ''
     });
@@ -745,6 +748,7 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   }
   const repairingThinkOff = repairing;
   session.llmCalls += 1;
+  const stepStartedAt = Date.now();
   const raw = await complete({
     messages:session.messages,
     tools,
@@ -761,6 +765,9 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   assistantTracePush(session, {
     t:'model',
     step,
+    ms:Date.now() - stepStartedAt,
+    promptTokens:(raw && raw.prompt_eval_count) || null,
+    evalTokens:(raw && raw.eval_count) || null,
     thinking:assistantTraceClip(parsed.thinking, 600),
     content:assistantTraceClip(parsed.content, 300),
     tools:(parsed.toolCalls || []).map(call => ({
@@ -844,6 +851,13 @@ async function runAssistantTurn(userText, opts = {}){
   const onProgress = opts.onProgress || (()=>{});
   const text = String(userText || '').trim();
   if(!text)return {type:'error', text:'Type something first.'};
+  const turnStartedAt = Date.now();
+  // Entry points (add sheet, detail page) pass the intent or item in, so the
+  // classify call is provably unnecessary — the turn starts at extract.
+  const entryIntent = opts.startIntent === 'create_habit' || opts.startIntent === 'create_task' || opts.startIntent === 'create_setting'
+    ? opts.startIntent
+    : null;
+  session.turnStartedAt = turnStartedAt;
   if((!session.draft || !session.draft.name) && opts.draft && opts.draft.name)session.draft = opts.draft;
   session.llmCalls = 0;
   session.repairs = 0;
@@ -860,7 +874,9 @@ async function runAssistantTurn(userText, opts = {}){
     text,
     forceLlm:Boolean(opts.forceLlm),
     modelOnly:!opts.forceLlm && assistantModelOnlyEnabled(),
-    focus:session.draft && session.draft.name ? session.draft.name : null
+    focus:session.draft && session.draft.name ? session.draft.name : null,
+    entry:opts.entry || null,
+    startIntent:entryIntent
   });
   const done = out => assistantFinishDebug(session, out);
 
@@ -922,6 +938,20 @@ async function runAssistantTurn(userText, opts = {}){
     step = 'extract';
     session.intent = 'create_setting';
     session.messages.push({role:'user', content:assistantDraftSettingSteerText()});
+  }else if(entryIntent){
+    // Context entry: the surface already knows what kind of thing this is,
+    // so extract runs first with the matching steer and classify is skipped.
+    // Provenance stays auditable via the entry-add / entry-detail path row.
+    const trustFacts = typeof assistantTrustParsedFacts === 'function' && assistantTrustParsedFacts(session.parsed);
+    const factsHint = trustFacts
+      ? ' Copy extractedFacts.'
+      : ' extractedFacts is absent — read the request yourself.';
+    step = 'extract';
+    session.intent = entryIntent;
+    assistantTracePush(session, {t:'path', path:'llm', via:'entry' + (opts.entry ? '-' + opts.entry : ''), intent:entryIntent});
+    session.messages.push({role:'user', content:entryIntent === 'create_setting'
+      ? assistantDraftSettingSteerText() + factsHint
+      : assistantDraftItemSteerText(entryIntent, factsHint)});
   }
 
   while(session.llmCalls < ASSISTANT_MAX_LLM_CALLS){

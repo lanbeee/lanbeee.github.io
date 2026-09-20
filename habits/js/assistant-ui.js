@@ -137,13 +137,13 @@ function assistantSetStatus(text){
   if(el)el.textContent = text || '';
 }
 
-function openAssistantSheet(){
+function openAssistantSheet(opts){
   if(!assistantEnabled()){
     if(typeof showToast === 'function')showToast('Turn on local assistant in Settings');
     return;
   }
   if(!_assistantSession)_assistantSession = assistantCreateSession();
-  renderAssistantThread();
+  if(!(opts && opts.skipWelcome))renderAssistantThread();
   syncAssistantFocusBar();
   openSheet('assistant-sheet');
   assistantResizeComposer();
@@ -161,6 +161,42 @@ function closeAssistantSheet(){
   assistantAbortInFlight();
   assistantShowBusy(false);
   closeSheet('assistant-sheet');
+}
+
+// Entry points (add sheet, detail page) start a fresh conversation with the
+// intent or item already known, so the model skips classify and extracts
+// straight away. The local fast-path gates still run first — the model is
+// the fallback, not the default.
+async function assistantOpenWithInstruction(text, opts){
+  opts = opts || {};
+  if(!assistantEnabled()){
+    if(typeof showToast === 'function')showToast('Turn on local assistant in Settings');
+    return false;
+  }
+  const value = String(text || '').trim();
+  const draft = opts.draft && opts.draft.name ? opts.draft : null;
+  if(!value && !draft)return false;
+  _assistantTurn += 1;
+  assistantAbortInFlight();
+  assistantShowBusy(false);
+  _assistantPendingDraft = null;
+  _assistantSession = assistantCreateSession();
+  if(draft)_assistantSession.draft = draft;
+  syncAssistantFocusBar();
+  openAssistantSheet({skipWelcome:!value || Boolean(draft)});
+  if(!value){
+    // Detail entry with no instruction yet: introduce the focus locally —
+    // no model call until the user types.
+    appendAssistantBubble('say', `Working on ${draft.name}. Tell me what to change — schedule, window, place, duration, anything.`);
+    const input = $('assistant-input');
+    if(input)input.focus({preventScroll:true});
+    setTimeout(() => {
+      if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
+    }, 260);
+    return true;
+  }
+  await sendAssistantMessage(value, {startIntent:opts.intent, entry:opts.entry});
+  return true;
 }
 
 function assistantWelcomeHtml(){
@@ -517,7 +553,8 @@ async function assistantSendWithModel(text){
   }
 }
 
-async function sendAssistantMessage(text){
+async function sendAssistantMessage(text, opts){
+  opts = opts || {};
   const value = String(text || '').trim();
   if(!value || _assistantBusy)return;
   const turn = ++_assistantTurn;
@@ -532,6 +569,8 @@ async function sendAssistantMessage(text){
   try{
     const out = await runAssistantTurn(value, {
       session:_assistantSession || assistantCreateSession(),
+      startIntent:opts.startIntent || undefined,
+      entry:opts.entry || undefined,
       onProgress:info => {
         if(turn !== _assistantTurn)return;
         const wait = $('assistant-waiting');

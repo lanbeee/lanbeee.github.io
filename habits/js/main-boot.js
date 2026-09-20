@@ -333,6 +333,20 @@ $('do-save').addEventListener('click',()=>{
   }
 });
 
+// WIRE: create-with-AI — hand the typed instruction to the assistant with
+// the kind already known, so the model skips classify and extracts directly.
+// The add sheet stays underneath (assistant overlays at z 125), so the typed
+// text survives if the assistant is dismissed.
+$('ting-ask-ai').addEventListener('click',()=>{
+  const text = $('ting-message').value.trim();
+  if(!text){$('ting-message').focus();return;}
+  if(typeof tingsLoadAssistant !== 'function')return;
+  const intent = selectedType === 'task' ? 'create_task' : 'create_habit';
+  void tingsLoadAssistant().then(()=>{
+    if(typeof assistantOpenWithInstruction === 'function')assistantOpenWithInstruction(text,{intent,entry:'add'});
+  });
+});
+
 // PURE: "YYYY-MM-DD" -> day-start ms timestamp, or null when blank
 function parseDateInput(value){
   if(!value)return null;
@@ -1533,6 +1547,22 @@ $('detail-snooze').addEventListener('click',()=>{
   if(detailIdx === null)return;
   snoozeFromDetail = true;
   openSnooze(detailIdx);
+});
+// WIRE: change-with-AI — open the assistant focused on this item; typed
+// instructions extract against currentDraft without a classify round trip.
+$('detail-ask-ai').addEventListener('click',()=>{
+  if(detailIdx === null)return;
+  if(typeof tingsLoadAssistant !== 'function')return;
+  const index = detailIdx;
+  const item = load()[index];
+  if(!item)return;
+  void tingsLoadAssistant().then(()=>{
+    if(typeof assistantOpenWithInstruction !== 'function')return;
+    const draft = typeof assistantHabitToDraft === 'function'
+      ? assistantHabitToDraft(item,index,loadSortSettings())
+      : {hid:item.hid,name:item.name,kind:item.type === 'task' ? 'task' : 'habit'};
+    assistantOpenWithInstruction('',{draft,entry:'detail'});
+  });
 });
 $('detail-export').addEventListener('click',()=>{
   if(detailIdx === null)return;
