@@ -1208,11 +1208,11 @@
               <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="local model server">
                 <button type="button" class="seg-opt on" data-assistant-provider="auto">auto</button>
                 <button type="button" class="seg-opt" data-assistant-provider="ollama">Ollama</button>
-                <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio</button>
+                <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio / API</button>
               </div>
               <span class="settings-sublabel">address</span>
               <input id="assistant-url" class="settings-text-input" type="text" inputmode="url" maxlength="160" placeholder="https://laptop.tailnet.ts.net" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>.</p>
+              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>. Pick <b>LM Studio / API</b> for any server that speaks the OpenAI <code>/v1</code> protocol, including a gateway to a cloud model.</p>
               <span class="settings-sublabel">model</span>
               <input id="assistant-model" class="settings-text-input" type="text" maxlength="80" placeholder="qwen3.8:27b-mlx" autocomplete="off" />
               <span class="settings-sublabel">thinking</span>
