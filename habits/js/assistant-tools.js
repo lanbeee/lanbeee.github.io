@@ -577,20 +577,89 @@ function assistantPlaceAsk(error, places, matches){
   return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${names.join(', ')}.`, choices:names};
 }
 
-function assistantApplyPlace(draft, args, catalog){
+function assistantPlaceholderOrigin(settings){
+  const locs = Array.isArray(settings && settings.locations) ? settings.locations : [];
+  const pinned = locs.find(loc => loc && Number.isFinite(Number(loc.lat)) && Number.isFinite(Number(loc.lng)));
+  if(pinned)return {lat:Number(pinned.lat), lng:Number(pinned.lng)};
+  if(Number.isFinite(Number(settings && settings.homeCityLat)) && Number.isFinite(Number(settings && settings.homeCityLng))){
+    return {lat:Number(settings.homeCityLat), lng:Number(settings.homeCityLng)};
+  }
+  return {lat:43.0008, lng:-78.789};
+}
+
+function assistantPlaceholderCoords(settings, index){
+  const origin = assistantPlaceholderOrigin(settings);
+  const ang = ((Number(index) || 0) * 2.3) % (Math.PI * 2);
+  return {
+    lat:origin.lat + Math.cos(ang) * 0.0008,
+    lng:origin.lng + Math.sin(ang) * 0.0008
+  };
+}
+
+function assistantPlaceholderAddress(name){
+  const label = String(name || 'Place').trim().slice(0, 48) || 'Place';
+  return `${label} (placeholder — set the real address in Settings)`.slice(0, 120);
+}
+
+function assistantEnsurePlaceholderPlace(name, address, session, catalog, settings, requestText){
+  const want = String(name || '').trim();
+  if(!want)return null;
+  const places = (catalog && catalog.places) || [];
+  const existing = assistantMatchByName(places, want);
+  if(existing.ok && existing.item)return existing.item;
+  if(!session.pendingPlaces)session.pendingPlaces = [];
+  const pending = session.pendingPlaces.find(item => assistantNormText(item && item.name) === assistantNormText(want));
+  if(pending){
+    if(!places.some(item => item && item.id === pending.id))places.push({id:pending.id, name:pending.name});
+    catalog.places = places;
+    return pending;
+  }
+  const coords = assistantPlaceholderCoords(settings, session.pendingPlaces.length);
+  const id = `pending-loc-${session.pendingPlaces.length + 1}`;
+  const given = String(address || '').trim().slice(0, 120);
+  const loc = {
+    kind:'location',
+    name:typeof assistantTitleName === 'function' ? assistantTitleName(want, 48) : want.slice(0, 48),
+    address:given
+      ? (/placeholder/i.test(given) ? given : `${given} (placeholder)`.slice(0, 120))
+      : assistantPlaceholderAddress(want),
+    lat:coords.lat,
+    lng:coords.lng,
+    placeholder:true,
+    id
+  };
+  session.pendingPlaces.push(loc);
+  places.push({id, name:loc.name});
+  catalog.places = places;
+  return loc;
+}
+
+function assistantApplyPlace(draft, args, catalog, opts){
   const wanted = Array.isArray(args && args.names) ? args.names : [];
   const places = (catalog && catalog.places) || [];
   if(!wanted.length){
     draft.places = {ids:[], names:[], anywhere:args && args.anywhere !== false};
     return {ok:true, draft};
   }
-  if(!places.length)return assistantPlaceAsk('NO_PLACES', places);
+  const allowPlaceholders = Boolean(opts && opts.placeholders);
+  if(!places.length && !allowPlaceholders)return assistantPlaceAsk('NO_PLACES', places);
   const ids = [];
   const names = [];
   for(const ref of wanted){
-    const match = assistantMatchByName(places, ref);
-    if(!match.ok)return assistantPlaceAsk(match.error, places, match.matches);
-    if(!match.item || !match.item.id)return assistantPlaceAsk('UNKNOWN', places);
+    let match = assistantMatchByName(places, ref);
+    if((!match.ok || !match.item || !match.item.id) && allowPlaceholders && match.error !== 'AMBIGUOUS'){
+      const made = assistantEnsurePlaceholderPlace(
+        ref,
+        null,
+        opts.session,
+        catalog,
+        opts.settings,
+        opts.requestText
+      );
+      if(made)match = {ok:true, item:made};
+    }
+    if(!match.ok)return assistantPlaceAsk(match.error, catalog.places || places, match.matches);
+    if(!match.item || !match.item.id)return assistantPlaceAsk('UNKNOWN', catalog.places || places);
     if(!ids.includes(match.item.id)){
       ids.push(match.item.id);
       names.push(match.item.name);
@@ -648,6 +717,13 @@ function assistantNormalizeDraftArgs(args, now){
     if(Array.isArray(out[key]) && !out[key].length)delete out[key];
   });
   if(typeof out.order === 'number')delete out.order;
+  if((out.priority == null || out.priority === '') && out.order != null && typeof assistantParsePriority === 'function'){
+    const orderText = typeof assistantNormText === 'function' ? assistantNormText(out.order) : String(out.order || '').trim().toLowerCase();
+    if(/^(?:p[0-5]|urgent|asap|critical|someday|whenever|[0-5])$/.test(orderText)){
+      out.priority = out.order;
+      delete out.order;
+    }
+  }
   if(typeof out.hardDue === 'string' && typeof assistantParseDue === 'function'){
     const dueFromHard = assistantParseDue(out.hardDue, now);
     if(dueFromHard != null){
@@ -993,10 +1069,12 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data){
   return {ok:true, draft:next};
 }
 
-function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requestText){
-  const salvaged = typeof assistantSalvageDraftArgs === 'function'
-    ? assistantSalvageDraftArgs(args, requestText)
-    : args;
+function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requestText, opts){
+  const salvaged = (opts && opts.skipSalvage)
+    ? (args || {})
+    : (typeof assistantSalvageDraftArgs === 'function'
+      ? assistantSalvageDraftArgs(args, requestText)
+      : args);
   const raw = assistantNormalizeDraftArgs(salvaged, now);
   if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(raw.kind)){
     return assistantApplyDraftSetting(raw, draft, catalog, now, settings, requestText);
@@ -1155,7 +1233,9 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requ
     ? raw.place
     : (Array.isArray(raw.placeNames) && raw.placeNames.length ? {names:raw.placeNames, anywhere:raw.anywhere} : null);
   if(placeArgs){
-    const applied = assistantApplyPlace(next, placeArgs, catalog);
+    const applied = assistantApplyPlace(next, placeArgs, catalog, opts && opts.placeholders
+      ? {placeholders:true, session:opts.session, settings:opts.settings || settings, requestText}
+      : null);
     if(!applied.ok){
       if(next.name && applied.ask){
         return {ok:true, draft:next, ask:applied.ask, error:applied.error, choices:applied.choices || null};
@@ -1163,8 +1243,23 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requ
       return applied;
     }
   }
+  if(opts && opts.placeholders && next.durationMinutes == null){
+    const derived = assistantDurationFromClockWindow(next.window);
+    if(derived)next.durationMinutes = derived;
+  }
   if(raw.needAsk && raw.ask)return {ok:true, draft:next, ask:String(raw.ask).trim(), choices:null};
   return {ok:true, draft:next};
+}
+
+function assistantDurationFromClockWindow(window){
+  if(!window || typeof window !== 'object')return null;
+  const start = window.start && window.start.kind === 'clock' ? Number(window.start.minutes) : NaN;
+  const end = window.end && window.end.kind === 'clock' ? Number(window.end.minutes) : NaN;
+  if(!Number.isFinite(start) || !Number.isFinite(end))return null;
+  let span = end - start;
+  if(span <= 0)span += 1440;
+  if(span < 5 || span > 12 * 60)return null;
+  return span;
 }
 
 function assistantValidateClassify(args){
@@ -1687,6 +1782,119 @@ function assistantCommitSetting(draft){
   return {ok:false, error:'unknown setting'};
 }
 
+function assistantNormalizePlaceNamesArg(value){
+  if(value == null || value === '')return [];
+  if(Array.isArray(value))return value.map(item => String(item || '').trim()).filter(Boolean);
+  return String(value).split(/,|&|\band\b/i).map(part => part.trim()).filter(Boolean);
+}
+
+function assistantBatchItemUnscheduled(item){
+  if(!item || typeof item !== 'object')return true;
+  if(!String(item.name || '').trim())return true;
+  const windowText = String(item.windowText || item.dueTime || '').trim();
+  if(/^(to be announced|tba)$/i.test(windowText)){
+    const rhythm = String(item.rhythm || '').trim();
+    const weekdays = item.weekdays != null && String(item.weekdays).trim();
+    const due = String(item.due || '').trim();
+    if(!weekdays && !rhythm && !due)return true;
+  }
+  return false;
+}
+
+function assistantWorkingCatalog(catalog){
+  const src = catalog || {};
+  return Object.assign({}, src, {
+    places:Array.isArray(src.places) ? src.places.map(item => Object.assign({}, item)) : []
+  });
+}
+
+function assistantApplyDraftBatch(args, session, context){
+  const rawPlaces = Array.isArray(args && args.places) ? args.places : [];
+  const rawItems = Array.isArray(args && args.items) ? args.items : [];
+  const cap = typeof ASSISTANT_BATCH_MAX === 'number' ? ASSISTANT_BATCH_MAX : 24;
+  if(!rawItems.length)return {ok:false, error:'items is required'};
+  const items = rawItems.filter(item => !assistantBatchItemUnscheduled(item));
+  if(!items.length)return {ok:false, error:'every row was unscheduled (no days or times)'};
+  if(rawPlaces.length + items.length > cap)return {ok:false, error:`${cap} rows max`};
+  const catalog = assistantWorkingCatalog(context && context.catalog);
+  const settings = (context && context.settings) || {};
+  session.pendingPlaces = [];
+  session.drafts = [];
+  session.bulk = true;
+  rawPlaces.forEach(row => {
+    if(!row || !row.name)return;
+    assistantEnsurePlaceholderPlace(row.name, row.address, session, catalog, settings);
+  });
+  items.forEach(item => {
+    assistantNormalizePlaceNamesArg(item && item.placeNames).forEach(name => {
+      assistantEnsurePlaceholderPlace(name, null, session, catalog, settings);
+    });
+  });
+  const drafts = (session.pendingPlaces || []).slice();
+  const itemOpts = {placeholders:true, session, settings, skipSalvage:true};
+  for(const item of items){
+    const applied = assistantApplyDraftItem(
+      item,
+      null,
+      catalog,
+      context && context.now,
+      settings,
+      context && context.data,
+      '',
+      itemOpts
+    );
+    if(!applied.ok)return applied;
+    if(applied.draft && applied.draft.name)drafts.push(applied.draft);
+  }
+  if(!drafts.length)return {ok:false, error:'nothing to add'};
+  session.drafts = drafts;
+  session.draft = drafts.find(row => row.kind === 'habit' || row.kind === 'task') || drafts[0];
+  return {ok:true, drafts, draft:session.draft};
+}
+
+function assistantCommitDrafts(drafts){
+  const rows = Array.isArray(drafts) ? drafts.filter(Boolean) : [];
+  if(!rows.length)return {ok:false, error:'empty draft'};
+  if(rows.length === 1)return assistantCommitDraft(rows[0]);
+  const places = rows.filter(row => row.kind === 'location');
+  const items = rows.filter(row => row.kind === 'habit' || row.kind === 'task');
+  const others = rows.filter(row => row.kind !== 'location' && row.kind !== 'habit' && row.kind !== 'task');
+  const saved = [];
+  for(const place of places){
+    const result = assistantCommitDraft(place);
+    if(!result.ok)return result;
+    saved.push(result);
+  }
+  const context = typeof assistantBuildContext === 'function' ? assistantBuildContext() : null;
+  const catalog = context && context.catalog;
+  for(const item of items){
+    if(item.places && Array.isArray(item.places.names) && item.places.names.length && catalog){
+      const applied = assistantApplyPlace(item, {names:item.places.names, anywhere:Boolean(item.places.anywhere)}, catalog);
+      if(applied.ok)Object.assign(item, applied.draft);
+    }
+    const result = assistantCommitDraft(item);
+    if(!result.ok)return result;
+    saved.push(result);
+  }
+  for(const other of others){
+    const result = assistantCommitDraft(other);
+    if(!result.ok)return result;
+    saved.push(result);
+  }
+  const lastItem = saved.slice().reverse().find(row => row.habit) || saved[saved.length - 1];
+  return {
+    ok:true,
+    saved,
+    count:saved.length,
+    places:places.length,
+    items:items.length,
+    habit:lastItem && lastItem.habit,
+    index:lastItem && lastItem.index,
+    draft:lastItem && lastItem.draft || items[items.length - 1] || places[places.length - 1],
+    name:lastItem && (lastItem.habit && lastItem.habit.name || lastItem.name)
+  };
+}
+
 function assistantExecuteTool(name, args, session, context){
   const catalog = context.catalog;
   const draft = session.draft || assistantEmptyDraft();
@@ -1696,6 +1904,15 @@ function assistantExecuteTool(name, args, session, context){
     if(!question)return {ok:false, error:'question is required'};
     const choices = Array.isArray(args.choices) ? args.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
     return {ok:true, ask:question, choices};
+  }
+  if(name === 'draft_batch'){
+    const applied = assistantApplyDraftBatch(args, session, context);
+    if(applied.ok){
+      session.drafts = applied.drafts;
+      session.draft = applied.draft;
+      session.bulk = true;
+    }
+    return applied;
   }
   if(name === 'draft_item' || name === 'draft_setting'){
     const focusedItem = session.draft && session.draft.name
@@ -1741,6 +1958,7 @@ function assistantExecuteTool(name, args, session, context){
         nextArgs.name = resolved.draft.name;
       }
     }
+    const wide = typeof assistantWideSession === 'function' && assistantWideSession(session);
     const applied = assistantApplyDraftItem(
       nextArgs,
       resolved.draft,
@@ -1748,7 +1966,13 @@ function assistantExecuteTool(name, args, session, context){
       context.now,
       context.settings,
       context.data,
-      session && session.parsed && session.parsed.text
+      wide ? '' : (session && session.parsed && session.parsed.text),
+      {
+        placeholders:Boolean(session && session.bulk),
+        skipSalvage:wide,
+        session,
+        settings:context.settings
+      }
     );
     if(applied.draft)session.draft = applied.draft;
     return applied;

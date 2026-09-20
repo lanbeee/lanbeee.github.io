@@ -3,6 +3,7 @@
 let _assistantSession = null;
 let _assistantBusy = false;
 let _assistantPendingDraft = null;
+let _assistantPendingDrafts = null;
 let _assistantTurn = 0;
 
 function assistantEnabled(){
@@ -183,6 +184,7 @@ async function assistantOpenWithInstruction(text, opts){
   assistantAbortInFlight();
   assistantShowBusy(false);
   _assistantPendingDraft = null;
+  _assistantPendingDrafts = null;
   _assistantSession = assistantCreateSession();
   if(draft)_assistantSession.draft = draft;
   syncAssistantFocusBar();
@@ -221,7 +223,22 @@ function assistantFocusedDraft(){
     : (_assistantPendingDraft && _assistantPendingDraft.name ? _assistantPendingDraft : null);
 }
 
+function assistantPendingDrafts(){
+  if(Array.isArray(_assistantPendingDrafts) && _assistantPendingDrafts.length)return _assistantPendingDrafts;
+  const one = assistantFocusedDraft();
+  return one ? [one] : [];
+}
+
 function assistantFocusMetaText(draft){
+  const drafts = assistantPendingDrafts();
+  if(drafts.length > 1){
+    const items = drafts.filter(row => row.kind === 'habit' || row.kind === 'task').length;
+    const places = drafts.filter(row => row.kind === 'location').length;
+    const bits = [];
+    if(items)bits.push(`${items} ${items === 1 ? 'item' : 'items'}`);
+    if(places)bits.push(`${places} ${places === 1 ? 'place' : 'places'}`);
+    return `not saved yet · ${bits.join(', ')}`;
+  }
   if(!draft)return '';
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (typeof sortSettings !== 'undefined' ? sortSettings : {});
   const summary = typeof assistantDraftSummary === 'function' ? assistantDraftSummary(draft, settings) : '';
@@ -245,7 +262,13 @@ function syncAssistantFocusBar(){
   const name = $('assistant-focus-name');
   const meta = $('assistant-focus-meta');
   const kicker = $('assistant-focus-kicker');
-  if(name)name.textContent = draft.name;
+  if(name){
+    const drafts = assistantPendingDrafts();
+    const items = drafts.filter(row => row.kind === 'habit' || row.kind === 'task');
+    name.textContent = drafts.length > 1
+      ? (items[0] && items[0].name ? `${items[0].name} +${drafts.length - 1}` : `${drafts.length} drafts`)
+      : draft.name;
+  }
   if(meta)meta.textContent = assistantFocusMetaText(draft);
   if(kicker)kicker.textContent = (draft.hid || draft.settingId) ? 'working on' : 'draft';
   bar.classList.toggle('is-draft', !(draft.hid || draft.settingId));
@@ -259,6 +282,7 @@ function assistantClearFocus(){
     _assistantSession.awaiting = null;
   }
   _assistantPendingDraft = null;
+  _assistantPendingDrafts = null;
   syncAssistantFocusBar();
 }
 
@@ -375,6 +399,15 @@ function assistantPreviewBody(text){
   return `<p class="assistant-preview-name">${escapeHtml(name)}</p>${chips ? `<div class="assistant-chip-row">${chips}</div>` : ''}`;
 }
 
+function assistantBatchKicker(drafts){
+  const items = (drafts || []).filter(row => row.kind === 'habit' || row.kind === 'task').length;
+  const places = (drafts || []).filter(row => row.kind === 'location').length;
+  const bits = [];
+  if(items)bits.push(`${items} ${items === 1 ? 'item' : 'items'}`);
+  if(places)bits.push(`${places} placeholder ${places === 1 ? 'place' : 'places'}`);
+  return bits.join(', ') || `${(drafts || []).length} drafts`;
+}
+
 function appendAssistantBubble(kind, text, extra){
   const thread = assistantThreadEl();
   if(!thread)return;
@@ -383,10 +416,16 @@ function appendAssistantBubble(kind, text, extra){
   const think = assistantShowThink(kind) ? assistantThinkHtml(extra && extra.thinking) : '';
   if(kind === 'preview'){
     const setting = extra && extra.setting;
-    div.innerHTML = `${think}${assistantPreviewBody(text)}
+    const drafts = Array.isArray(extra && extra.drafts) ? extra.drafts.filter(row => row && row.name) : [];
+    const batch = drafts.length > 1;
+    const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (typeof sortSettings !== 'undefined' ? sortSettings : {});
+    const body = batch
+      ? `<p class="assistant-preview-kicker">${escapeHtml(assistantBatchKicker(drafts))}</p><div class="assistant-preview-list">${drafts.map(row => assistantPreviewBody(typeof assistantDraftSummary === 'function' ? assistantDraftSummary(row, settings) : row.name)).join('')}</div>`
+      : assistantPreviewBody(text);
+    div.innerHTML = `${think}${body}
       <div class="btn-row assistant-preview-actions">
-        <button type="button" class="btn primary" data-assistant-act="add">save</button>
-        ${setting ? '' : '<button type="button" class="btn" data-assistant-act="edit">edit</button>'}
+        <button type="button" class="btn primary" data-assistant-act="add">${batch ? 'save all' : 'save'}</button>
+        ${setting || batch ? '' : '<button type="button" class="btn" data-assistant-act="edit">edit</button>'}
         <button type="button" class="btn" data-assistant-act="discard">never mind</button>
       </div>`;
   }else if(kind === 'complete'){
@@ -423,8 +462,9 @@ function assistantComposerValue(){
 function assistantResizeComposer(){
   const input = $('assistant-input');
   if(!input)return;
+  if(typeof ASSISTANT_INPUT_MAX === 'number')input.maxLength = ASSISTANT_INPUT_MAX;
   input.style.height = 'auto';
-  input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), 120)}px`;
+  input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), 220)}px`;
 }
 
 function assistantSyncSend(){
@@ -466,8 +506,12 @@ function assistantRetryTextFor(out){
 async function handleAssistantOutcome(out){
   if(!out)return;
   if(out.draft)_assistantPendingDraft = out.draft;
+  _assistantPendingDrafts = Array.isArray(out.drafts) && out.drafts.length
+    ? out.drafts
+    : (out.draft ? [out.draft] : null);
   if(out.session)_assistantSession = out.session;
   if(out.draft && _assistantSession && !_assistantSession.draft)_assistantSession.draft = out.draft;
+  if(_assistantPendingDrafts && _assistantSession && !_assistantSession.drafts)_assistantSession.drafts = _assistantPendingDrafts;
   syncAssistantFocusBar();
   const live = assistantThreadEl()?.querySelector('.assistant-bubble-debug.is-live');
   if(live && out.debug){
@@ -478,9 +522,16 @@ async function handleAssistantOutcome(out){
   }
   const retryText = assistantRetryTextFor(out);
   if(out.type === 'preview'){
-    const setting = out.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(out.draft.kind);
-    appendAssistantBubble('say', setting ? 'Check this, then save.' : 'Check this, then save. Edit opens the full form.', {thinking:out.thinking});
-    appendAssistantBubble('preview', out.summary || out.draft.name, {thinking:out.thinking, setting});
+    const drafts = Array.isArray(out.drafts) ? out.drafts : (out.draft ? [out.draft] : []);
+    const batch = drafts.length > 1;
+    const setting = !batch && out.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(out.draft.kind);
+    const places = drafts.filter(row => row && row.kind === 'location').length;
+    appendAssistantBubble('say', batch
+      ? (places
+        ? 'Check these, then save all. Placeholder places use dummy addresses — set the real ones in Settings → locations.'
+        : 'Check these, then save all.')
+      : (setting ? 'Check this, then save.' : 'Check this, then save. Edit opens the full form.'), {thinking:out.thinking});
+    appendAssistantBubble('preview', out.summary || (out.draft && out.draft.name) || 'drafts', {thinking:out.thinking, setting, drafts});
     if(retryText)appendAssistantRetry(retryText);
     return;
   }
@@ -638,6 +689,18 @@ function assistantAfterSave(commit, openForm, toast){
     openDetailSchedule(commit.index);
     return;
   }
+  const batchCount = commit && commit.count > 1 ? commit.count : 0;
+  if(batchCount){
+    const places = commit.places || 0;
+    const items = commit.items || batchCount;
+    const placeNote = places
+      ? ` ${places} placeholder ${places === 1 ? 'place' : 'places'} — set the real addresses in Settings → locations.`
+      : '';
+    appendAssistantBubble('say', `Saved ${items} ${items === 1 ? 'item' : 'items'}.${placeNote}`);
+    assistantClearFocus();
+    if(typeof showToast === 'function')showToast(toast || 'saved');
+    return;
+  }
   const name = (commit && (commit.habit && commit.habit.name || commit.name))
     || (_assistantSession && _assistantSession.draft && _assistantSession.draft.name)
     || 'it';
@@ -672,18 +735,31 @@ async function assistantFillLocationDraft(draft){
 }
 
 async function commitAssistantDraft(openForm){
-  if(!_assistantPendingDraft){
+  const drafts = assistantPendingDrafts();
+  if(!drafts.length){
     if(typeof showToast === 'function')showToast('nothing to save');
     return;
   }
   try{
-    const filled = await assistantFillLocationDraft(_assistantPendingDraft);
+    if(drafts.length > 1){
+      const result = typeof assistantCommitDrafts === 'function'
+        ? assistantCommitDrafts(drafts)
+        : {ok:false, error:'save unavailable'};
+      if(!result.ok){
+        if(typeof showToast === 'function')showToast(result.error || 'could not save');
+        return;
+      }
+      assistantMarkLastActionSpent('preview');
+      assistantAfterSave(result, false, 'saved');
+      return;
+    }
+    const filled = await assistantFillLocationDraft(drafts[0]);
     if(filled.waiting)return;
     if(!filled.ok){
       if(typeof showToast === 'function')showToast(filled.error || 'could not save');
       return;
     }
-    const result = assistantCommitDraft(filled.draft || _assistantPendingDraft);
+    const result = assistantCommitDraft(filled.draft || drafts[0]);
     if(!result.ok){
       if(typeof showToast === 'function')showToast(result.error || 'could not save');
       return;

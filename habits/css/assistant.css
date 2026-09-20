@@ -149,9 +149,16 @@ body:not(.assistant-debug-on) .assistant-bubble-debug{display:none;}
   flex:0 0 auto;padding-top:8px;
 }
 .assistant-compose textarea{
-  width:100%;min-height:44px;max-height:120px;resize:none;margin:0;
+  width:100%;min-height:44px;max-height:220px;resize:none;margin:0;
   border-radius:16px;padding:11px 14px;line-height:1.35;
   field-sizing:content;
+}
+.assistant-preview-list{
+  display:flex;flex-direction:column;gap:10px;margin:0 0 10px;
+}
+.assistant-preview-list .assistant-preview-name{margin:0;}
+.assistant-preview-kicker{
+  margin:0 0 8px;font-size:12px;font-weight:650;color:var(--text3);
 }
 #assistant-send{
   flex:0 0 44px;width:44px;height:44px;padding:0;border-radius:50%;

@@ -1501,12 +1501,31 @@ function assistantSalvageDraftArgs(args, requestText){
     && assistantParseWeatherHints(requestText).mentioned){
     out.weatherText = requestText;
   }
+  if((out.habitKind == null || out.habitKind === '') && typeof assistantParseHabitKind === 'function'){
+    const kindHit = blob.match(/\b(limit|build|stop|reduce|keepup|zero)\s+habit\b/i);
+    const kind = kindHit ? assistantParseHabitKind(kindHit[1]) : null;
+    if(kind)out.habitKind = kind;
+  }
+  if(out.priority == null || out.priority === ''){
+    const priHit = blob.match(/\bpriority\s+(urgent|asap|critical|someday|p[0-5]|[0-5])\b/i)
+      || blob.match(/,\s*(urgent|asap|someday)\s*\.?$/i);
+    if(priHit && typeof assistantParsePriority === 'function')out.priority = priHit[1];
+  }
+  if((out.topics == null || out.topics === '' || (Array.isArray(out.topics) && !out.topics.length))){
+    const topicHit = blob.match(/\btopics?\s+([a-z][\w\s]{0,48}?)(?=\s*,\s*(?:every|priority|urgent)|,|\.|$)/i);
+    if(topicHit){
+      const names = topicHit[1].split(/\s*(?:,|&|and)\s*/i).map(part => part.trim()).filter(Boolean);
+      if(names.length)out.topics = names;
+    }
+  }
   return out;
 }
 
 // Null when the local fast path may answer, else why it must go to the LLM.
 function assistantFastPathRisk(text, parsed){
   const raw = assistantNormText(text);
+  if(typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text))return 'multi-item';
+  if(typeof assistantRequestIsHeavy === 'function' && assistantRequestIsHeavy(text))return 'long-request';
   if(/\b(?:did not|didn't|didnt|never|not done|haven't|have not|hasn't|has not)\b/.test(raw))return 'negation';
   for(const re of ASSISTANT_COMPLEX_DATE_RES){
     if(re.test(raw))return 'relative-date';

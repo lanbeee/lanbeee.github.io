@@ -8,6 +8,7 @@ function assistantSystemPrompt(){
     'create_task = one-off. create_habit = repeating. create_setting = a weather profile, place, busy time, or topic. ask_today = what is on today or next.',
     'complete_item = already did it. lookup_item = when is it / did I do it.',
     'draft_item creates or changes an item. Put every setting the user named in that one call and omit the rest. name is a short title only — never copy the rest of the request into name. Identity: name, newName, habitKind (build/limit/stop), emoji, emojiColor, topics, priority. Schedule: rhythm, timesPerPeriod, periodDays, weekdays, monthDays, preferredWeekdays, preferredMonthDays, due, dueTime, hardDue, planBy, windowText, preferredWindowText, earlyDays, delayDays, before, after, order, option. Effort: durationMinutes, breakable, minChunkMinutes, autoMarkMinutes, trackValue. Place/weather: placeNames, anywhere, placePrefs, weatherProfile, weatherText, showWeather, weatherAtPlace, weatherPlace. Other: pinned, snooze, sharedDisplay, sharedComplete, links. If they name weather conditions and catalog.weather has no match, still set weatherText — Tings will create a profile.',
+    'If they ask for several items at once (a list, a pasted schedule, two habits, errands plus places), call draft_batch once — not many draft_item calls. One item with a long or detailed instruction is still draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown places in a batch get a dummy address; do not ask.',
     'draft_setting creates or changes a weather profile, place, busy time, or topic. kind is weather, location, busy, or topic. "Create a weather profile for barbecuing" → kind weather, name Barbecuing. Weather rules go in weatherText as one string.',
     'Example: "45 minute limit habit called Kettlebells, topics health, every Tuesday and Friday, urgent" → name "Kettlebells", habitKind "limit", durationMinutes 45, topics "health", rhythm "every Tuesday and Friday", priority 0.',
     'Example: "Stretch at Home, prefer Home high, right after Walk same day, later of 6pm and sunset until isha" → name "Stretch", placeNames "Home", placePrefs "Home high", order "right after Walk, same day", windowText "later of 6pm and sunset until isha".',
@@ -51,6 +52,14 @@ function assistantDraftSettingSteerText(){
   return 'Call draft_setting. kind is weather, location, busy, or topic. name is a short title. Weather rules go in weatherText as one string (example: "not raining, wind under 25, above 15C"). Place address in address. Busy window in windowText. Do not call draft_item for a weather profile, place, busy time, or topic.';
 }
 
+function assistantDraftBatchSteerText(){
+  return 'Call draft_batch once with every item from the request. Several items — a list, a pasted schedule, two habits, errands plus places — belong in one draft_batch. One item, even with a long instruction, is draft_item. Recurring meetings are kind habit. Skip a row that is TBA with no days and no times. Unknown place names go in places with a dummy address — do not ask. name is a short title. Do not call draft_item for each row.';
+}
+
+function assistantWideExtractSteerText(){
+  return 'Call one tool. Several items → draft_batch once with every item and any new places. One item, even a long detailed instruction → draft_item. A weather profile, place, busy time, or topic → draft_setting. Recurring meetings are habits. Skip TBA rows that have no days and no times. Unknown places in a batch may use a dummy address — do not ask. name is a short title.';
+}
+
 function assistantDraftItemSteerText(intent, factsHint){
   const hint = factsHint || '';
   if(intent === 'create_setting')return assistantDraftSettingSteerText() + hint;
@@ -82,6 +91,7 @@ function assistantRepairText(step, error){
 }
 
 function assistantNeedToolText(step){
+  if(step === 'extract')return 'You thought but did not call a tool. Call draft_batch if they listed several items, otherwise draft_item or draft_setting.';
   const tool = assistantStepTools(step)[0];
   return `You thought but did not call a tool. Call ${tool} now.`;
 }
@@ -176,7 +186,7 @@ function assistantNoteContextUsage(session, raw, tools){
 }
 
 function assistantCreateSession(){
-  return {draft:null, messages:[], llmCalls:0, repairs:0, intent:null, awaiting:null, pendingComplete:null, pendingEdit:null, parsed:null, debug:[]};
+  return {draft:null, drafts:null, messages:[], llmCalls:0, repairs:0, intent:null, awaiting:null, pendingComplete:null, pendingEdit:null, parsed:null, debug:[], bulk:false, wide:false};
 }
 
 function assistantDebugEnabled(){
@@ -434,14 +444,25 @@ function assistantTryFocusFollowup(text, parsed, session, context){
 }
 
 function assistantPreviewResult(session, context, thinking){
-  if(!session.draft || !session.draft.name){
+  const batch = Array.isArray(session.drafts) && session.drafts.length > 1;
+  const drafts = batch
+    ? session.drafts.filter(row => row && row.name)
+    : (session.draft && session.draft.name ? [session.draft] : []);
+  if(!drafts.length){
     return {type:'error', text:'I could not get a name for that item.', thinking, session};
   }
+  session.draft = drafts.find(row => row.kind === 'habit' || row.kind === 'task') || drafts[0];
+  session.drafts = drafts;
   session.awaiting = null;
+  const settings = context && context.settings;
+  const summary = drafts.length > 1
+    ? drafts.map(row => assistantDraftSummary(row, settings)).join('\n')
+    : assistantDraftSummary(session.draft, settings);
   return {
     type:'preview',
     draft:session.draft,
-    summary:assistantDraftSummary(session.draft, context.settings),
+    drafts,
+    summary,
     thinking,
     session
   };
@@ -636,6 +657,16 @@ function assistantTryLocalTurn(text, session, context){
     return assistantPreviewResult(session, context);
   }
 
+  if(typeof assistantRequestNeedsModel === 'function' && assistantRequestNeedsModel(text)){
+    parsed.factsTrusted = false;
+    assistantTracePush(session, {
+      t:'path',
+      path:'llm',
+      via:typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text) ? 'multi-item' : 'long-request'
+    });
+    return null;
+  }
+
   const focused = Boolean(session.draft && session.draft.name);
   const focusedItem = focused && typeof assistantIsItemKind === 'function' && assistantIsItemKind(session.draft.kind);
   // A focused habit/task is the model's job. Do not parser-patch "use home",
@@ -728,7 +759,9 @@ async function assistantCallStep(session, step, complete, onProgress, context){
     session.messages = [
       {role:'system', content:setting
         ? 'Reply with one JSON object and nothing else. No markdown, no tools. kind is weather, location, busy, or topic. name is a short title. weatherText, address, and windowText are flat strings. Only keys the user named.'
-        : 'Reply with one JSON object and nothing else. No markdown, no tools. Only keys the user named — do not invent places, topics, duration, or order unless they asked you to pick time, weather, or duration. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If currentDraft is set, keep its name and kind and only add the new fields (placeNames, windowText, rhythm). Keys you may use: kind (habit or task), name (short title), durationMinutes, rhythm, windowText, due (today/tomorrow/YYYY-MM-DD), hardDue (true if that due day is firm), weekdays, placeNames, order, weatherText. windowText is one string, e.g. "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier". Do not nest objects.'},
+        : (assistantWideSession(session)
+          ? 'Reply with one JSON object and nothing else. No markdown, no tools. If they asked for several items, keys are places (array of {name, address}) and items (array of habits/tasks with the same fields as draft_item). If this is one item, use draft_item fields only. Skip TBA rows with no days and no times. Dummy addresses are fine for new places in a batch.'
+          : 'Reply with one JSON object and nothing else. No markdown, no tools. Only keys the user named — do not invent places, topics, duration, or order unless they asked you to pick time, weather, or duration. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If currentDraft is set, keep its name and kind and only add the new fields (placeNames, windowText, rhythm). Keys you may use: kind (habit or task), name (short title), durationMinutes, rhythm, windowText, due (today/tomorrow/YYYY-MM-DD), hardDue (true if that due day is firm), weekdays, placeNames, order, weatherText. windowText is one string, e.g. "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier". Do not nest objects.')},
       {role:'user', content:JSON.stringify({
         request,
         currentDraft:current,
@@ -756,7 +789,7 @@ async function assistantCallStep(session, step, complete, onProgress, context){
     format:jsonFallback ? 'json' : undefined,
     maxPredict:repairingThinkOff
       ? (typeof ASSISTANT_TOOL_TOKENS === 'number' ? ASSISTANT_TOOL_TOKENS : 2048) + 256
-      : assistantStepPredict(step),
+      : assistantStepPredict(step, session),
     temperature:repairingThinkOff ? 0.1 : undefined,
     step
   });
@@ -798,6 +831,7 @@ function assistantHandleIntent(session, context, intent, thinking){
   if(intent === 'edit_item')return null;
   if(intent === 'unclear'){
     if(session.draft && session.draft.name)return null;
+    if(assistantWideSession(session))return null;
     session.awaiting = null;
     return {
       type:'ask',
@@ -866,6 +900,8 @@ async function runAssistantTurn(userText, opts = {}){
   session.contextRatio = 0;
   session.debug = [];
   session.onDebug = typeof opts.onDebug === 'function' ? opts.onDebug : null;
+  session.wide = typeof assistantRequestNeedsModel === 'function' && assistantRequestNeedsModel(text);
+  session.bulk = false;
   session.contextLimit = opts.contextLimit || session.contextLimit || (typeof assistantGuessContextLimit === 'function'
     ? assistantGuessContextLimit(opts.model)
     : ASSISTANT_DEFAULT_CONTEXT_TOKENS);
@@ -876,7 +912,8 @@ async function runAssistantTurn(userText, opts = {}){
     modelOnly:!opts.forceLlm && assistantModelOnlyEnabled(),
     focus:session.draft && session.draft.name ? session.draft.name : null,
     entry:opts.entry || null,
-    startIntent:entryIntent
+    startIntent:entryIntent,
+    wide:session.wide === true
   });
   const done = out => assistantFinishDebug(session, out);
 
@@ -895,7 +932,7 @@ async function runAssistantTurn(userText, opts = {}){
     if(session.parsed){
       // "use AI instead" never copies the parse. Always-use-Qwen still
       // withholds facts when the residue audit says the parse guessed.
-      if(opts.forceLlm){
+      if(opts.forceLlm || session.wide){
         session.parsed.factsTrusted = false;
       }else if(typeof assistantFastPathRisk === 'function'){
         const risk = assistantFastPathRisk(session.parsed.text || text, session.parsed);
@@ -925,7 +962,7 @@ async function runAssistantTurn(userText, opts = {}){
   let step = 'classify';
   if(session.awaiting === 'complete')step = 'complete';
   else if(session.awaiting === 'lookup')step = 'lookup';
-  else if(session.draft && session.draft.name){
+  else if(session.draft && session.draft.name && !(typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text))){
     step = 'extract';
     const setting = typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind);
     session.messages.push({
@@ -934,10 +971,15 @@ async function runAssistantTurn(userText, opts = {}){
         ? 'The user is changing currentDraft (a settings row). Call draft_setting with only the new fields as flat strings. Keep the same kind and name.'
         : 'The user is changing currentDraft. Call draft_item with only the new fields as flat strings — do not nest objects. Keep the same name and hid. extractedFacts is absent — read the request yourself. Place replies like "use home and mom\'s house" are placeNames from catalog.places.'
     });
-  }else if(session.parsed && session.parsed.intent === 'create_setting'){
+  }else if(session.parsed && session.parsed.intent === 'create_setting' && !session.wide){
     step = 'extract';
     session.intent = 'create_setting';
     session.messages.push({role:'user', content:assistantDraftSettingSteerText()});
+  }else if(session.wide && !entryIntent){
+    step = 'extract';
+    if(!(session.draft && session.draft.name))session.draft = null;
+    assistantTracePush(session, {t:'path', path:'llm', via:typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text) ? 'multi-item' : 'long-request'});
+    session.messages.push({role:'user', content:assistantWideExtractSteerText()});
   }else if(entryIntent){
     // Context entry: the surface already knows what kind of thing this is,
     // so extract runs first with the matching steer and classify is skipped.
@@ -949,12 +991,17 @@ async function runAssistantTurn(userText, opts = {}){
     step = 'extract';
     session.intent = entryIntent;
     assistantTracePush(session, {t:'path', path:'llm', via:'entry' + (opts.entry ? '-' + opts.entry : ''), intent:entryIntent});
-    session.messages.push({role:'user', content:entryIntent === 'create_setting'
-      ? assistantDraftSettingSteerText() + factsHint
-      : assistantDraftItemSteerText(entryIntent, factsHint)});
+    session.messages.push({role:'user', content:session.wide
+      ? assistantWideExtractSteerText() + factsHint
+      : (entryIntent === 'create_setting'
+        ? assistantDraftSettingSteerText() + factsHint
+        : assistantDraftItemSteerText(entryIntent, factsHint))});
   }
 
-  while(session.llmCalls < ASSISTANT_MAX_LLM_CALLS){
+  const maxCalls = assistantWideSession(session)
+    ? (typeof ASSISTANT_MAX_LLM_CALLS_BATCH === 'number' ? ASSISTANT_MAX_LLM_CALLS_BATCH : 12)
+    : ASSISTANT_MAX_LLM_CALLS;
+  while(session.llmCalls < maxCalls){
     let parsed;
     try{
       parsed = await assistantCallStep(session, step, complete, onProgress, context);
@@ -970,7 +1017,7 @@ async function runAssistantTurn(userText, opts = {}){
         session.messages.push({role:'user', content:assistantRepairText(step, errText)});
         continue;
       }
-      const recovered = assistantRecoverLocalDraft(text, session, context);
+      const recovered = assistantWideSession(session) ? null : assistantRecoverLocalDraft(text, session, context);
       if(recovered){
         assistantTracePush(session, {t:'path', path:'local', via:'recover-after-error', type:recovered.type});
         return done(recovered);
@@ -978,13 +1025,14 @@ async function runAssistantTurn(userText, opts = {}){
       return done({type:'error', text:assistantFriendlyError(err), session});
     }
     const allowed = new Set(assistantStepTools(step));
-    const call = (parsed.toolCalls || []).find(item => allowed.has(item.name))
+    const call = (parsed.toolCalls || []).find(item => item.name === 'draft_batch' && allowed.has(item.name))
+      || (parsed.toolCalls || []).find(item => allowed.has(item.name))
       || (parsed.toolCalls || [])[0];
 
     if(!call || call.parseError){
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         assistantTracePush(session, {t:'repair', step, error:call && call.parseError || 'no tool', gaveUp:true});
-        const recovered = assistantRecoverLocalDraft(text, session, context);
+        const recovered = assistantWideSession(session) ? null : assistantRecoverLocalDraft(text, session, context);
         if(recovered)return done(recovered);
         return done({type:'error', text:'I could not turn that into a Tings action. Try a shorter request, or add it from +.', thinking:parsed.thinking, session});
       }
@@ -1003,6 +1051,8 @@ async function runAssistantTurn(userText, opts = {}){
       if(call.name === 'draft_item' && (step === 'classify' || step === 'extract')){
         step = 'extract';
       }else if(call.name === 'draft_setting' && (step === 'classify' || step === 'extract')){
+        step = 'extract';
+      }else if(call.name === 'draft_batch' && (step === 'classify' || step === 'extract')){
         step = 'extract';
       }else if(call.name === 'complete_item' && (step === 'classify' || step === 'complete')){
         step = 'complete';
@@ -1076,6 +1126,11 @@ async function runAssistantTurn(userText, opts = {}){
         session.messages.push({role:'user', content:assistantDraftSettingSteerText() + factsHint});
         continue;
       }
+      if(session.wide && (intent === 'create_habit' || intent === 'create_task' || intent === 'unclear')){
+        step = 'extract';
+        session.messages.push({role:'user', content:assistantWideExtractSteerText() + factsHint});
+        continue;
+      }
       if(intent === 'edit_item' || (session.draft && session.draft.name && (intent === 'create_task' || intent === 'create_habit' || intent === 'unclear'))){
         step = 'extract';
         session.messages.push({
@@ -1105,7 +1160,9 @@ async function runAssistantTurn(userText, opts = {}){
       step = 'extract';
       session.messages.push({
         role:'user',
-        content:assistantDraftItemSteerText(intent, factsHint)
+        content:session.wide
+          ? assistantWideExtractSteerText() + factsHint
+          : assistantDraftItemSteerText(intent, factsHint)
       });
       continue;
     }
@@ -1133,7 +1190,7 @@ async function runAssistantTurn(userText, opts = {}){
 
     assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:true, preview:assistantDraftSummary(session.draft, context.settings)});
 
-    if(call.name === 'draft_item' && result.ask){
+    if(call.name === 'draft_item' && result.ask && !session.bulk){
       return done({
         type:'ask',
         question:result.ask,
@@ -1142,6 +1199,15 @@ async function runAssistantTurn(userText, opts = {}){
         draft:session.draft,
         session
       });
+    }
+    if(call.name === 'draft_batch' || (Array.isArray(session.drafts) && session.drafts.length > 1)){
+      return done(assistantPreviewResult(session, context, parsed.thinking));
+    }
+    if(session.wide && !session.bulk && typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text)
+      && (call.name === 'draft_item' || call.name === 'draft_setting') && !session.batchSteer){
+      session.batchSteer = true;
+      session.messages.push({role:'user', content:assistantWideExtractSteerText() + ' If they asked for several items, call draft_batch with the row you just drafted plus every remaining item. If this really is one item, call draft_item again with the same fields.'});
+      continue;
     }
     if(session.draft && session.draft.weatherNeedAsk){
       session.awaiting = 'weather';
