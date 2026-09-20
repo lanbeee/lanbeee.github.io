@@ -92,6 +92,12 @@ async function launchBrowser(){
     check('after sunset is not an order', assistantParseOrderFromLooseText('walk after sunset') == null);
     check('day after tomorrow is not an order', assistantParseOrderFromLooseText('meeting for day after tomorrow at 1pm') == null);
     check('firm due day', assistantParseHardDueText('That due day is firm, no late days') === true);
+    const preferHigher = assistantParseWeatherRulesFromText('Can you change the temperature preference towards higher temperature?');
+    check('vague temp preference is relative high', preferHigher && preferHigher.rules.some(rule => rule.metric === 'temperature_2m' && rule.relative === 'high'));
+    const preferHot = assistantParseWeatherRulesFromText('prefers hot weather up to a limit');
+    check('prefers hot is relative high', preferHot && preferHot.rules.some(rule => rule.metric === 'temperature_2m' && rule.relative === 'high'));
+    const chipPatch = assistantParseWeatherRulesFromText('temperature ≤86°F prefer higher hard');
+    check('summary chip keeps max and prefer higher', chipPatch && chipPatch.rules.some(rule => rule.metric === 'temperature_2m' && rule.relative === 'high' && rule.max != null));
     const locCat = {places:[{id:'home-1', name:'Sample Home'}, {id:'gym-1', name:'Gym'}]};
     const addLoc = assistantParseUtterance('Add the location home.', locCat, now);
     check('add location is edit', addLoc.intent === 'edit_item' && addLoc.itemName == null);
@@ -583,6 +589,77 @@ async function launchBrowser(){
     return rows;
   }, {now:FROZEN});
   report(salvage);
+
+  console.log('\n[N] nested weather-profile edits merge');
+  const nested = await page.evaluate(({now}) => {
+    const rows = [];
+    const check = (name, cond, extra) => rows.push({name, ok:Boolean(cond), extra});
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      weatherProfiles:[],
+      locations:[]
+    });
+    save([]);
+    const context = assistantBuildContext(now);
+    const session = assistantCreateSession();
+    const created = assistantExecuteTool('draft_setting', {
+      kind:'weather',
+      name:'Winter Outdoors',
+      weatherText:'wind under 25mph, temperature below 86F, rain chance under 20%'
+    }, session, context);
+    check('create ok', created.ok && created.draft && created.draft.kind === 'weather', created.error);
+    const firstRules = created.draft && created.draft.weatherProposed && created.draft.weatherProposed.rules || [];
+    check('create wind/temp/rain', firstRules.some(rule => rule.metric === 'wind_speed_10m' && rule.max != null)
+      && firstRules.some(rule => rule.metric === 'temperature_2m' && rule.max != null)
+      && firstRules.some(rule => rule.metric === 'precipitation_probability' && rule.max === 20));
+    const saved = created.ok ? assistantCommitDraft(created.draft) : {ok:false};
+    check('save ok', saved.ok && saved.settingId, saved.error);
+    session.draft = created.draft;
+    const catalog = assistantCatalog([], loadSortSettings(), now);
+    check('catalog lists rule chips', catalog.weather && catalog.weather[0] && Array.isArray(catalog.weather[0].rules) && catalog.weather[0].rules.length >= 3);
+    const compactBefore = assistantCompactDraft(session.draft);
+    check('compact draft lists nested rules', compactBefore && Array.isArray(compactBefore.rules) && compactBefore.rules.length >= 3);
+    const follow = assistantExecuteTool('draft_setting', {
+      kind:'weather',
+      name:'Winter Outdoors',
+      weatherText:'prefer higher temperature'
+    }, session, context);
+    check('follow-up ok', follow.ok, follow.error);
+    const summary = assistantDraftSummary(follow.draft, loadSortSettings());
+    check('preview keeps rules', summary && !/no rules yet/.test(summary) && /prefer higher/.test(summary), summary);
+    const rules = follow.draft && follow.draft.weatherProposed && follow.draft.weatherProposed.rules || [];
+    const temp = rules.find(rule => rule.metric === 'temperature_2m');
+    const wind = rules.find(rule => rule.metric === 'wind_speed_10m');
+    const rain = rules.find(rule => rule.metric === 'precipitation_probability');
+    check('temp prefer higher keeps max', temp && temp.relative === 'high' && temp.max != null && temp.hard === true);
+    check('wind and rain stay', wind && wind.max != null && rain && rain.max === 20);
+    const omitted = assistantExecuteTool('draft_setting', {
+      kind:'weather',
+      name:'Winter Outdoors'
+    }, session, Object.assign({}, context, {settings:loadSortSettings()}));
+    const omittedSummary = assistantDraftSummary(omitted.draft, loadSortSettings());
+    check('empty weatherText does not wipe', omitted.ok && omitted.draft && omitted.draft.weatherProposed && omitted.draft.weatherProposed.rules
+      && omitted.draft.weatherProposed.rules.length >= 3 && !/no rules yet/.test(omittedSummary || ''), omittedSummary);
+    const requestFollow = assistantApplyDraftSetting(
+      {kind:'weather', name:'Winter Outdoors'},
+      session.draft,
+      assistantCatalog([], loadSortSettings(), now),
+      now,
+      loadSortSettings(),
+      'Can you change the temperature preference towards higher temperature?'
+    );
+    const requestTemp = requestFollow.draft && requestFollow.draft.weatherProposed && requestFollow.draft.weatherProposed.rules
+      && requestFollow.draft.weatherProposed.rules.find(rule => rule.metric === 'temperature_2m');
+    check('user phrasing as requestText sets prefer higher', requestFollow.ok && requestTemp && requestTemp.relative === 'high' && requestTemp.max != null);
+    const savedFollow = assistantCommitDraft(requestFollow.draft);
+    const stored = (loadSortSettings().weatherProfiles || []).find(profile => /winter/i.test(profile && profile.name));
+    const storedTemp = stored && (stored.rules || []).find(rule => rule.metric === 'temperature_2m');
+    check('saved profile keeps nested rules', savedFollow.ok && stored && stored.rules && stored.rules.length >= 3 && storedTemp && storedTemp.relative === 'high' && storedTemp.max != null);
+    return rows;
+  }, {now:FROZEN});
+  report(nested);
 
   console.log('\n[T] stringified tool-call args');
   const toolCall = await page.evaluate(() => {

@@ -228,10 +228,17 @@ function assistantCatalog(data, settings, now){
       id:String(loc && loc.id || ''),
       name:String(loc && loc.name || '').slice(0,40)
     })).filter(item => item.id && item.name),
-    weather:profiles.slice(0,4).map(profile => ({
-      id:String(profile && profile.id || ''),
-      name:String(profile && profile.name || '').slice(0,32)
-    })).filter(item => item.id && item.name),
+    weather:profiles.slice(0,4).map(profile => {
+      const row = {
+        id:String(profile && profile.id || ''),
+        name:String(profile && profile.name || '').slice(0,32)
+      };
+      const chips = typeof assistantWeatherRulesSummary === 'function'
+        ? assistantWeatherRulesSummary(profile && profile.rules).slice(0, 6)
+        : [];
+      if(chips.length)row.rules = chips;
+      return row;
+    }).filter(item => item.id && item.name),
     topics:(Array.isArray(settings && settings.topics) ? settings.topics : []).slice(0, 12).map(topic => String(topic || '').slice(0, 32)).filter(Boolean),
     anchors:ASSISTANT_ANCHORS.slice(),
     aliases:'sunset=maghrib, dawn=fajr, noon=dhuhr'
@@ -352,12 +359,77 @@ function assistantMergeWeatherRules(base, extra){
   for(const rule of extra || []){
     if(!rule || !rule.metric)continue;
     const i = out.findIndex(row => row && row.metric === rule.metric);
-    if(i >= 0)out[i] = Object.assign({}, out[i], rule);
-    else out.push(Object.assign({}, rule));
+    if(i < 0){
+      out.push(Object.assign({metric:rule.metric, min:null, max:null, hard:false, relative:'none'}, rule));
+      continue;
+    }
+    const next = Object.assign({}, out[i]);
+    if(rule.min != null)next.min = rule.min;
+    if(rule.max != null)next.max = rule.max;
+    if(rule.relative === 'high' || rule.relative === 'low')next.relative = rule.relative;
+    else if(rule.relativeExplicit)next.relative = rule.relative === 'high' || rule.relative === 'low' ? rule.relative : 'none';
+    if(rule.min != null || rule.max != null){
+      if(typeof rule.hard === 'boolean')next.hard = rule.hard;
+    }else if(rule.hard === true){
+      next.hard = true;
+    }
+    out[i] = next;
   }
   return typeof normalizeWeatherRule === 'function'
     ? out.slice(0, 8).map(normalizeWeatherRule)
     : out.slice(0, 8);
+}
+
+function assistantWeatherProfilesList(settings){
+  return typeof normalizeWeatherProfiles === 'function'
+    ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
+    : ((settings && settings.weatherProfiles) || []);
+}
+
+function assistantFindWeatherProfile(name, id, settings, catalog){
+  const profiles = assistantWeatherProfilesList(settings);
+  if(id){
+    const byId = profiles.find(profile => profile && profile.id === id);
+    if(byId)return byId;
+  }
+  const wanted = String(name || '').trim();
+  if(wanted && typeof assistantMatchByName === 'function'){
+    const match = assistantMatchByName(profiles, wanted);
+    if(match && match.ok)return match.item;
+    const cat = assistantMatchByName((catalog && catalog.weather) || [], wanted);
+    if(cat && cat.ok && cat.item){
+      const structured = Array.isArray(cat.item.rules) && cat.item.rules[0] && cat.item.rules[0].metric;
+      return profiles.find(profile => profile && profile.id === cat.item.id)
+        || profiles.find(profile => assistantNormText(profile && profile.name) === assistantNormText(cat.item.name))
+        || (structured ? cat.item : null);
+    }
+  }
+  return null;
+}
+
+function assistantDraftWeatherRules(draft, settings){
+  if(draft && draft.weatherProposed && Array.isArray(draft.weatherProposed.rules) && draft.weatherProposed.rules.length){
+    return draft.weatherProposed.rules;
+  }
+  const current = settings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
+  const found = assistantFindWeatherProfile(
+    draft && draft.name,
+    draft && (draft.settingId || (draft.weather && draft.weather.profileId)),
+    current
+  );
+  return (found && found.rules) || [];
+}
+
+function assistantJoinWeatherText(weatherText, requestText){
+  const a = String(weatherText || '').trim();
+  const b = String(requestText || '').trim();
+  if(!a)return b;
+  if(!b)return a;
+  const na = typeof assistantNormText === 'function' ? assistantNormText(a) : a.toLowerCase();
+  const nb = typeof assistantNormText === 'function' ? assistantNormText(b) : b.toLowerCase();
+  if(na === nb || nb.indexOf(na) >= 0)return b;
+  if(na.indexOf(nb) >= 0)return a;
+  return a + '\n' + b;
 }
 
 function assistantHintWeatherName(hints, fallback){
@@ -386,33 +458,32 @@ function assistantProposeWeather(draft, opts, catalog, settings){
     ? assistantParseWeatherRulesFromText(text || nameWanted)
     : {hints:typeof assistantParseWeatherHints === 'function' ? assistantParseWeatherHints(text || nameWanted) : null, rules:[], mentioned:false};
   const hints = (opts && opts.hints) || parsed.hints || {};
-  let rules = assistantMergeWeatherRules(parsed.rules, assistantWeatherRulesFromHints(hints));
+  const patchRules = assistantMergeWeatherRules(parsed.rules, assistantWeatherRulesFromHints(hints));
   const nameLooksLikeRules = nameWanted && typeof assistantParseWeatherHints === 'function'
     && assistantParseWeatherHints(nameWanted).mentioned
     && !text;
   const profileName = nameLooksLikeRules ? '' : nameWanted;
-  const catalogWeather = (catalog && catalog.weather) || [];
-  if(profileName){
-    const match = assistantMatchByName(catalogWeather, profileName);
-    if(match.ok){
-      draft.weather = {mode:'profile', profileId:match.item.id, name:match.item.name};
+  const profiles = assistantWeatherProfilesList(settings);
+  const existing = assistantFindWeatherProfile(
+    profileName || (draft.kind === 'weather' ? draft.name : ''),
+    draft.settingId || (draft.weather && draft.weather.profileId),
+    settings,
+    catalog
+  );
+  if(existing && draft.kind !== 'weather'){
+    if(patchRules.length){
+      const rules = assistantMergeWeatherRules(existing.rules || [], patchRules);
+      draft.weatherProposed = {name:existing.name, rules, hints};
+      draft.weather = {mode:'profile', profileId:existing.id, name:existing.name};
       draft.weatherNeedAsk = null;
-      if(rules.length && draft.kind === 'weather'){
-        draft.weatherProposed = {
-          name:match.item.name,
-          rules:assistantMergeWeatherRules((match.item.rules || []), rules),
-          hints
-        };
-        draft.settingId = match.item.id;
-      }else{
-        draft.weatherProposed = null;
-      }
+      draft.settingId = existing.id;
       return draft;
     }
+    draft.weather = {mode:'profile', profileId:existing.id, name:existing.name};
+    draft.weatherNeedAsk = null;
+    draft.weatherProposed = null;
+    return draft;
   }
-  const profiles = typeof normalizeWeatherProfiles === 'function'
-    ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
-    : ((settings && settings.weatherProfiles) || []);
   if(hints && hints.mentioned && draft.kind !== 'weather'){
     const cover = profiles.find(profile => assistantProfileCoversHints(profile, hints));
     if(cover){
@@ -422,17 +493,19 @@ function assistantProposeWeather(draft, opts, catalog, settings){
       return draft;
     }
   }
-  if(!rules.length && !profileName && !(hints && hints.mentioned) && draft.kind !== 'weather')return draft;
+  if(!patchRules.length && !profileName && !(hints && hints.mentioned) && draft.kind !== 'weather')return draft;
   const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
-  const existingId = draft.settingId || (draft.weather && draft.weather.profileId);
-  const existing = existingId ? profiles.find(profile => profile && profile.id === existingId) : null;
   if(!existing && profiles.length >= cap && draft.kind !== 'weather'){
     draft.weatherNeedAsk = assistantWeatherCapAsk(profiles);
     return draft;
   }
-  if(draft.weatherProposed && Array.isArray(draft.weatherProposed.rules)){
-    rules = assistantMergeWeatherRules(draft.weatherProposed.rules, rules);
+  let baseRules = [];
+  if(draft.weatherProposed && Array.isArray(draft.weatherProposed.rules) && draft.weatherProposed.rules.length){
+    baseRules = draft.weatherProposed.rules;
+  }else if(existing){
+    baseRules = existing.rules || [];
   }
+  const rules = assistantMergeWeatherRules(baseRules, patchRules);
   const name = assistantUniqueWeatherName(
     profileName || (draft.weatherProposed && draft.weatherProposed.name) || assistantHintWeatherName(hints, draft.kind === 'weather' ? draft.name : ''),
     existing ? profiles.filter(profile => profile.id !== existing.id) : profiles
@@ -533,7 +606,13 @@ function assistantMaterializeWeatherProfile(draft, settings){
 }
 
 function assistantEnsureProposedWeather(draft, settings){
-  if(!draft || !draft.weatherProposed || (draft.weather && draft.weather.profileId && draft.kind !== 'weather'))return draft;
+  if(!draft || !draft.weatherProposed)return draft;
+  const updatingAttached = draft.kind !== 'weather'
+    && draft.weather
+    && draft.weather.profileId
+    && Array.isArray(draft.weatherProposed.rules)
+    && draft.weatherProposed.rules.length;
+  if(draft.weather && draft.weather.profileId && draft.kind !== 'weather' && !updatingAttached)return draft;
   const made = assistantMaterializeWeatherProfile(draft, settings);
   if(!made)return draft;
   draft.weather = {mode:'profile', profileId:made.id, name:made.name};
@@ -1216,6 +1295,17 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requ
         ? assistantParseWeatherHints(weatherSource)
         : null)
     }, catalog, settings);
+  }else if(weatherSource && next.weather && next.weather.profileId){
+    const parsedRules = typeof assistantParseWeatherRulesFromText === 'function'
+      ? assistantParseWeatherRulesFromText(weatherSource)
+      : null;
+    if(parsedRules && parsedRules.mentioned){
+      assistantProposeWeather(next, {
+        name:next.weather.name || '',
+        text:weatherSource,
+        hints:raw.weatherHints || parsedRules.hints
+      }, catalog, settings);
+    }
   }
   const extra = assistantApplyExtraDraftFields(next, raw, catalog, data);
   if(!extra.ok)return extra;
@@ -1639,7 +1729,7 @@ function assistantApplyDraftSetting(args, draft, catalog, now, settings, request
   next.kind = kind;
   next.name = typeof assistantTitleName === 'function' ? assistantTitleName(name, max) : name.slice(0, max);
   if(kind === 'weather'){
-    const text = raw.weatherText || requestText || '';
+    const text = assistantJoinWeatherText(raw.weatherText, requestText);
     assistantProposeWeather(next, {name:next.name, text}, catalog, settings);
     if(next.weatherProposed)next.weatherProposed.name = next.name;
     if(next.weather)next.weather.name = next.name;
@@ -2141,7 +2231,7 @@ function assistantDraftSummary(draft, settings){
   if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(draft.kind)){
     const parts = [draft.name, assistantSettingLabel(draft.kind)];
     if(draft.kind === 'weather'){
-      const rules = (draft.weatherProposed && draft.weatherProposed.rules) || [];
+      const rules = assistantDraftWeatherRules(draft, settings);
       const chips = assistantWeatherRulesSummary(rules);
       if(chips.length)parts.push(...chips.slice(0, 4));
       else parts.push('no rules yet');

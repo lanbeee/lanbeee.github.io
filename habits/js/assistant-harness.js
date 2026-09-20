@@ -9,7 +9,7 @@ function assistantSystemPrompt(){
     'complete_item = already did it. lookup_item = when is it / did I do it.',
     'draft_item creates or changes an item. Put every setting the user named in that one call and omit the rest. name is a short title only — never copy the rest of the request into name. Identity: name, newName, habitKind (build/limit/stop), emoji, emojiColor, topics, priority. Schedule: rhythm, timesPerPeriod, periodDays, weekdays, monthDays, preferredWeekdays, preferredMonthDays, due, dueTime, hardDue, planBy, windowText, preferredWindowText, earlyDays, delayDays, before, after, order, option. Effort: durationMinutes, breakable, minChunkMinutes, autoMarkMinutes, trackValue. Place/weather: placeNames, anywhere, placePrefs, weatherProfile, weatherText, showWeather, weatherAtPlace, weatherPlace. Other: pinned, snooze, sharedDisplay, sharedComplete, links. If they name weather conditions and catalog.weather has no match, still set weatherText — Tings will create a profile.',
     'If they ask for several items at once (a list, a pasted schedule, two habits, errands plus places), call draft_batch once — not many draft_item calls. One item with a long or detailed instruction is still draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown places in a batch get a dummy address; do not ask.',
-    'draft_setting creates or changes a weather profile, place, busy time, or topic. kind is weather, location, busy, or topic. "Create a weather profile for barbecuing" → kind weather, name Barbecuing. Weather rules go in weatherText as one string.',
+    'draft_setting creates or changes a weather profile, place, busy time, or topic. kind is weather, location, busy, or topic. "Create a weather profile for barbecuing" → kind weather, name Barbecuing. Weather rules go in weatherText as one string. On a change, weatherText is a patch that merges onto currentDraft.rules (example: "prefer higher temperature") — do not drop other rules.',
     'Example: "45 minute limit habit called Kettlebells, topics health, every Tuesday and Friday, urgent" → name "Kettlebells", habitKind "limit", durationMinutes 45, topics "health", rhythm "every Tuesday and Friday", priority 0.',
     'Example: "Stretch at Home, prefer Home high, right after Walk same day, later of 6pm and sunset until isha" → name "Stretch", placeNames "Home", placePrefs "Home high", order "right after Walk, same day", windowText "later of 6pm and sunset until isha".',
     'If currentDraft is a weather profile, place, busy time, or topic, call draft_setting with only the new fields. If currentDraft is a habit or task, "it" / "this" / "that" is that item. Keep its name and hid. Call draft_item with only the new fields. "Add the location home" or "use home and mom\'s house" sets placeNames on currentDraft — it is not a new item. Do not classify unclear when currentDraft is set.',
@@ -49,7 +49,7 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
 }
 
 function assistantDraftSettingSteerText(){
-  return 'Call draft_setting. kind is weather, location, busy, or topic. name is a short title. Weather rules go in weatherText as one string (example: "not raining, wind under 25, above 15C"). Place address in address. Busy window in windowText. Do not call draft_item for a weather profile, place, busy time, or topic.';
+  return 'Call draft_setting. kind is weather, location, busy, or topic. name is a short title. Weather rules go in weatherText as one string (example: "not raining, wind under 25, above 15C, prefer higher temperature"). A follow-up patches currentDraft.rules — "prefer higher temperature" keeps the other bounds. Place address in address. Busy window in windowText. Do not call draft_item for a weather profile, place, busy time, or topic.';
 }
 
 function assistantDraftBatchSteerText(){
@@ -968,7 +968,7 @@ async function runAssistantTurn(userText, opts = {}){
     session.messages.push({
       role:'user',
       content:setting
-        ? 'The user is changing currentDraft (a settings row). Call draft_setting with only the new fields as flat strings. Keep the same kind and name.'
+        ? 'The user is changing currentDraft (a settings row). Call draft_setting with only the new fields as flat strings. Keep the same kind and name. weatherText is a patch that merges onto currentDraft.rules; currentDraft.rules lists the existing weather rules. Example: "prefer higher temperature" sets temperature prefer-higher and keeps wind and rain.'
         : 'The user is changing currentDraft. Call draft_item with only the new fields as flat strings — do not nest objects. Keep the same name and hid. extractedFacts is absent — read the request yourself. Place replies like "use home and mom\'s house" are placeNames from catalog.places.'
     });
   }else if(session.parsed && session.parsed.intent === 'create_setting' && !session.wide){

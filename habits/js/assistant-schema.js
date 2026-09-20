@@ -71,7 +71,7 @@ const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   sharedDisplay:{type:['boolean','string','null'], description:'include on the shared display'},
   sharedComplete:{type:['boolean','string','null'], description:'allow completing from the shared display'},
   weatherProfile:{type:['string','null'], description:'catalog weather name, none, inherit, a new profile name, or "not raining"'},
-  weatherText:{type:['string','null'], description:'plain English weather: "only if it is not raining and not freezing". Tings creates a profile when none matches'},
+  weatherText:{type:['string','null'], description:'plain English weather: "only if it is not raining and not freezing", or a patch like "prefer higher temperature". Tings creates a profile when none matches'},
   showWeather:{type:['boolean','string','null'], description:'show forecast on the card'},
   weatherAtPlace:{type:['boolean','string','null'], description:'forecast uses this item\'s place instead of home city'},
   weatherPlace:{type:['string','null'], description:'catalog place for anywhere-forecast, or none'},
@@ -158,7 +158,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   draft_setting:{
-    description:'Create or change a settings row — weather profile, place, busy time, or topic — not a habit or task. name is a short title. For weather, weatherText is the rules as one string. For a place, address is the search query (lat/lng if known). For busy time, windowText and days. If currentDraft is a setting, keep its kind and name and only add the new fields.',
+    description:'Create or change a settings row — weather profile, place, busy time, or topic — not a habit or task. name is a short title. For weather, weatherText is the rules as one string; a follow-up patches currentDraft.rules (prefer higher/lower, harder/softer bounds) without dropping other metrics. For a place, address is the search query (lat/lng if known). For busy time, windowText and days. If currentDraft is a setting, keep its kind and name and only add the new fields.',
     parameters:{
       type:'object',
       required:['kind','name'],
@@ -166,7 +166,7 @@ const ASSISTANT_TOOL_DEFS = {
         kind:{type:'string', enum:ASSISTANT_SETTING_KINDS},
         name:{type:['string','null'], description:'Short title: Barbecuing, Gym, Sleep, health'},
         newName:{type:['string','null']},
-        weatherText:{type:['string','null'], description:'Weather rules in English: "not raining, wind under 25, above 15C"'},
+        weatherText:{type:['string','null'], description:'Weather rules in English. On a change this MERGES onto currentDraft.rules — do not repeat rules you are not changing. Examples: "prefer higher temperature", "wind under 25mph hard", "rain chance under 20, prefer lower"'},
         address:{type:['string','null'], description:'Place search query or street address'},
         lat:{type:['number','string','null']},
         lng:{type:['number','string','null']},
@@ -441,8 +441,14 @@ function assistantCompactDraft(draft){
   if(typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(draft.kind)){
     const out = {kind:draft.kind, name:draft.name};
     if(draft.settingId)out.settingId = draft.settingId;
-    if(draft.weatherProposed && Array.isArray(draft.weatherProposed.rules) && draft.weatherProposed.rules.length){
-      out.rules = draft.weatherProposed.rules.length;
+    if(draft.kind === 'weather'){
+      const rules = typeof assistantDraftWeatherRules === 'function'
+        ? assistantDraftWeatherRules(draft)
+        : ((draft.weatherProposed && draft.weatherProposed.rules) || []);
+      const chips = typeof assistantWeatherRulesSummary === 'function'
+        ? assistantWeatherRulesSummary(rules)
+        : [];
+      if(chips.length)out.rules = chips;
     }
     if(draft.address)out.address = draft.address;
     if(draft.window)out.window = draft.window;
@@ -461,6 +467,14 @@ function assistantCompactDraft(draft){
   if(draft.preferredWindow)out.preferredWindow = draft.preferredWindow;
   if(draft.weather)out.weather = {mode:draft.weather.mode, name:draft.weather.name || null};
   if(draft.places && draft.places.names && draft.places.names.length)out.places = draft.places.names;
+  if(draft.locationPrefs && draft.places && Array.isArray(draft.places.ids)){
+    const prefs = draft.places.ids.map((id, i) => {
+      const level = draft.locationPrefs[id];
+      const name = draft.places.names && draft.places.names[i];
+      return level && name ? `${name} ${level}` : null;
+    }).filter(Boolean);
+    if(prefs.length)out.placePrefs = prefs.join(', ');
+  }
   if(draft.kind === 'habit'){
     if(draft.timesPerPeriod != null)out.timesPerPeriod = draft.timesPerPeriod;
     if(draft.periodDays != null)out.periodDays = draft.periodDays;
@@ -479,10 +493,13 @@ function assistantCompactDraft(draft){
   if(draft.trackValue)out.trackValue = true;
   if(draft.pinned)out.pinned = true;
   if(draft.hardDue)out.hardDue = true;
+  if(Array.isArray(draft.scheduleOptions) && draft.scheduleOptions.length)out.options = draft.scheduleOptions.length;
   if(Array.isArray(draft.scheduleLinks) && draft.scheduleLinks.length){
     out.order = draft.scheduleLinks.map(link => `${link.direction} ${link.name || link.anchorHid}`).join(', ');
   }
-  if(Array.isArray(draft.links) && draft.links.length)out.links = draft.links.length;
+  if(Array.isArray(draft.links) && draft.links.length){
+    out.links = draft.links.map(link => String(link && (link.value || link) || '').slice(0, 48)).filter(Boolean).slice(0, 3);
+  }
   return out;
 }
 

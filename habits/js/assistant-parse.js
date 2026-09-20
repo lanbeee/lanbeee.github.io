@@ -725,10 +725,48 @@ function assistantWeatherStoreValue(metric, n, unitRaw){
 }
 
 function assistantPushWeatherRule(rules, metric, patch){
-  const next = Object.assign({metric, min:null, max:null, hard:false, relative:'none'}, patch);
   const i = rules.findIndex(rule => rule && rule.metric === metric);
-  if(i >= 0)rules[i] = Object.assign({}, rules[i], next);
+  const next = i >= 0
+    ? Object.assign({}, rules[i])
+    : {metric, min:null, max:null, hard:false, relative:'none'};
+  next.metric = metric;
+  const extra = patch && typeof patch === 'object' ? patch : {};
+  if(extra.min != null)next.min = extra.min;
+  if(extra.max != null)next.max = extra.max;
+  if(extra.relative === 'high' || extra.relative === 'low')next.relative = extra.relative;
+  else if(extra.relativeExplicit)next.relative = extra.relative === 'high' || extra.relative === 'low' ? extra.relative : 'none';
+  if(typeof extra.hard === 'boolean' && (extra.min != null || extra.max != null || extra.hard === true)){
+    next.hard = extra.hard;
+  }
+  if(i >= 0)rules[i] = next;
   else rules.push(next);
+}
+
+function assistantParseWeatherRelativeFromText(s, rules){
+  const t = String(s || '');
+  const tempHigh = /\bprefer(?:s|ring)? (?:higher|warm|hot|warmer|hotter)\b/.test(t)
+    || /\b(?:higher|warmer|hotter) (?:temp(?:erature)?|temps)\b/.test(t)
+    || /\btemp(?:erature)?.{0,48}(?:preference )?(?:towards |to )?(?:higher|warmer|hotter)\b/.test(t)
+    || /\b(?:towards |to )(?:higher|warmer|hotter).{0,24}temp/.test(t)
+    || /\bpreference towards (?:higher|warmer|hotter)\b/.test(t)
+    || /\b(?:temp(?:erature)?|feels like)[^\n.]{0,48}prefer(?:ring)? higher\b/.test(t)
+    || (/\bprefer(?:s|ring)? higher\b/.test(t) && !/\b(?:rain|wind|gust)\b/.test(t));
+  const tempLow = /\bprefer(?:s|ring)? (?:lower|cool|cold|cooler|colder)\b/.test(t)
+    || /\b(?:lower|cooler|colder) (?:temp(?:erature)?|temps)\b/.test(t)
+    || /\btemp(?:erature)?.{0,48}(?:preference )?(?:towards |to )?(?:lower|cooler|colder)\b/.test(t)
+    || /\bpreference towards (?:lower|cooler|colder)\b/.test(t)
+    || /\b(?:temp(?:erature)?|feels like)[^\n.]{0,48}prefer(?:ring)? lower\b/.test(t);
+  if(tempHigh)assistantPushWeatherRule(rules, 'temperature_2m', {relative:'high'});
+  else if(tempLow)assistantPushWeatherRule(rules, 'temperature_2m', {relative:'low'});
+  if(/\bprefer(?:s|ring)? (?:dry|drier|lower rain)\b/.test(t)
+    || /\brain[^\n.]{0,32}prefer(?:ring)? lower\b/.test(t)
+    || /\bprefer(?:ring)? lower[^\n.]{0,24}rain\b/.test(t)){
+    assistantPushWeatherRule(rules, 'precipitation_probability', {relative:'low'});
+  }
+  if(/\bprefer(?:s|ring)? (?:calm|calmer|lower wind)\b/.test(t)
+    || /\bwind[^\n.]{0,32}prefer(?:ring)? lower\b/.test(t)){
+    assistantPushWeatherRule(rules, 'wind_speed_10m', {relative:'low'});
+  }
 }
 
 function assistantParseWeatherRulesFromText(text){
@@ -748,17 +786,15 @@ function assistantParseWeatherRulesFromText(text){
     patch[which] = stored;
     assistantPushWeatherRule(rules, metric, patch);
   };
-  take(new RegExp('\\b(?:wind(?: speed)?|gusts?)\\s+(?:under|below|max(?:imum)?|less than|at most)\\s+' + num + unit), /gust/.test(s) ? 'wind_gusts_10m' : 'wind_speed_10m', 'max');
-  take(new RegExp('\\brain chance\\s+(?:under|below|max(?:imum)?|less than|at most)\\s+' + num), 'precipitation_probability', 'max');
-  take(new RegExp('\\b(?:temp(?:erature)?|feels like)\\s+(?:above|over|at least|min(?:imum)?)\\s+' + num + unit), 'temperature_2m', 'min');
-  take(new RegExp('\\b(?:temp(?:erature)?|feels like)\\s+(?:below|under|at most|max(?:imum)?)\\s+' + num + unit), 'temperature_2m', 'max');
+  take(new RegExp('\\b(?:wind(?: speed)?|gusts?)\\s*(?:≤|<=|<|under|below|max(?:imum)?|less than|at most)\\s*' + num + unit), /gust/.test(s) ? 'wind_gusts_10m' : 'wind_speed_10m', 'max');
+  take(new RegExp('\\brain chance\\s*(?:≤|<=|<|under|below|max(?:imum)?|less than|at most)\\s*' + num), 'precipitation_probability', 'max');
+  take(new RegExp('\\b(?:temp(?:erature)?|feels like)\\s*(?:≥|>=|>|above|over|at least|min(?:imum)?)\\s*' + num + unit), 'temperature_2m', 'min');
+  take(new RegExp('\\b(?:temp(?:erature)?|feels like)\\s*(?:≤|<=|<|below|under|at most|max(?:imum)?)\\s*' + num + unit), 'temperature_2m', 'max');
   if(!/\bfreezing\b/.test(s)){
     take(new RegExp('\\b(?:above|over|at least|min(?:imum)?)\\s+' + num + '\\s*(°?\\s*c|°?\\s*f|celsius|fahrenheit|degrees?)'), 'temperature_2m', 'min');
     take(new RegExp('\\b(?:below|under|at most|max(?:imum)?)\\s+' + num + '\\s*(°?\\s*c|°?\\s*f|celsius|fahrenheit|degrees?)'), 'temperature_2m', 'max');
   }
-  if(/\bprefer(?:ring)? (?:warm|hot|higher temp)/.test(s))assistantPushWeatherRule(rules, 'temperature_2m', {relative:'high'});
-  if(/\bprefer(?:ring)? (?:cool|cold|lower temp)/.test(s))assistantPushWeatherRule(rules, 'temperature_2m', {relative:'low'});
-  if(/\bprefer(?:ring)? dry\b/.test(s))assistantPushWeatherRule(rules, 'precipitation_probability', {relative:'low'});
+  assistantParseWeatherRelativeFromText(s, rules);
   return {hints, rules, mentioned:hints.mentioned || rules.length > 0};
 }
 
@@ -863,6 +899,10 @@ function assistantLooksLikeSettingFollowup(text){
   if(/\b(?:add(?:ing)?|set|use|put)\s+(?:the\s+|its\s+|a\s+)?(?:location|place|venue|window|weather|duration|priority|topics?|emoji)\b/.test(s))return true;
   if(/^(?:the\s+)?(?:location|place|venue)\s+(?:is\s+|to\s+|at\s+)?\S/.test(s))return true;
   if(/\b(?:make it|keep it|have it|do it)\s+(?:at|from)\b/.test(s))return true;
+  if(/\b(?:change|update|edit|make|set|prefer)\b/.test(s)
+    && /\b(?:weather|temperature|wind|rain chance|prefer (?:higher|lower|warm|hot|cool|cold))\b/.test(s)){
+    return true;
+  }
   return false;
 }
 

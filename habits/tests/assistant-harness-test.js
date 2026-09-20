@@ -1290,6 +1290,76 @@ async function launchBrowser(){
   assert(settings.picnicWind && settings.picnicRain, 'proposed picnic profile keeps wind and rain rules');
   assert(settings.namedDryOk, 'weatherText Dry attaches the catalog Dry profile');
 
+  console.log('\n[S2] weather-profile follow-up patches nested rules');
+  const nestedWeather = await page.evaluate(async () => {
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      weatherProfiles:[],
+      locations:[]
+    });
+    save([]);
+    const now = Date.parse('2026-09-17T13:24:00');
+    const context = assistantBuildContext(now);
+    const session = assistantCreateSession();
+    const create = await runAssistantTurn('Create a weather profile called Winter Outdoors with wind under 25mph, temperature below 86F, rain chance under 20%', {
+      forceLlm:true,
+      session,
+      context,
+      complete:async () => ({
+        message:{
+          thinking:'setting',
+          tool_calls:[{function:{name:'draft_setting', arguments:{
+            kind:'weather',
+            name:'Winter Outdoors',
+            weatherText:'wind under 25mph, temperature below 86F, rain chance under 20%'
+          }}}]
+        }
+      })
+    });
+    const saved = create.type === 'preview' ? assistantCommitDraft(create.draft) : {ok:false};
+    session.draft = create.draft;
+    const calls = [];
+    const follow = await runAssistantTurn('Can you change the temperature preference towards higher temperature?', {
+      session,
+      context:assistantBuildContext(now),
+      complete:async req => {
+        const user = (req.messages || []).filter(m => m && m.role === 'user').map(m => String(m.content || '')).join('\n');
+        calls.push({
+          step:req.step,
+          hasRules:/"rules":\[/.test(user),
+          steer:/prefer higher temperature/.test(user)
+        });
+        return {message:{thinking:'patch', tool_calls:[{function:{name:'draft_setting', arguments:{
+          kind:'weather',
+          name:'Winter Outdoors',
+          weatherText:'prefer higher temperature'
+        }}}]}};
+      }
+    });
+    const rules = follow.draft && follow.draft.weatherProposed && follow.draft.weatherProposed.rules || [];
+    const temp = rules.find(rule => rule.metric === 'temperature_2m');
+    return {
+      createType:create.type,
+      savedOk:saved.ok,
+      followType:follow.type,
+      summary:follow.summary || '',
+      firstStep:calls[0] && calls[0].step,
+      hasRules:calls[0] && calls[0].hasRules,
+      tempHigh:temp && temp.relative === 'high',
+      tempMax:temp && temp.max != null,
+      wind:rules.some(rule => rule.metric === 'wind_speed_10m' && rule.max != null),
+      rain:rules.some(rule => rule.metric === 'precipitation_probability' && rule.max === 20),
+      compactRules:assistantCompactDraft(follow.draft) && assistantCompactDraft(follow.draft).rules
+    };
+  });
+  assert(nestedWeather.createType === 'preview' && nestedWeather.savedOk, 'winter outdoors profile creates and saves');
+  assert(nestedWeather.followType === 'preview' && !/no rules yet/.test(nestedWeather.summary || ''), 'follow-up preview still shows rules');
+  assert(nestedWeather.firstStep === 'extract' && nestedWeather.hasRules === true, 'extract sees currentDraft.rules chips');
+  assert(nestedWeather.tempHigh && nestedWeather.tempMax && nestedWeather.wind && nestedWeather.rain, 'prefer-higher patches temperature and keeps wind/rain');
+  assert(Array.isArray(nestedWeather.compactRules) && nestedWeather.compactRules.some(row => /prefer higher/.test(row)), 'compact draft shows prefer higher');
+
   assert(!errors.length, 'no page errors (' + errors.join(' | ') + ')');
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
