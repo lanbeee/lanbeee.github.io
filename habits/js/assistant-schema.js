@@ -3,9 +3,9 @@
 // and never lets prose write localStorage. Keep this list short: tool schemas
 // compete with thinking tokens.
 
-const ASSISTANT_INTENTS = ['create_task','create_habit','create_setting','ask_today','ask_weather','ask_schedule','ask_items','ask_settings','complete_item','delete_item','lookup_item','unclear','unsupported'];
+const ASSISTANT_INTENTS = ['create_task','create_habit','create_setting','ask_today','ask_weather','ask_schedule','ask_items','ask_settings','complete_item','plan_item','delete_item','lookup_item','unclear','unsupported'];
 const ASSISTANT_SETTING_KINDS = ['weather','location','busy','topic'];
-const ASSISTANT_STEPS = ['classify','extract','complete','delete','lookup','query'];
+const ASSISTANT_STEPS = ['classify','extract','complete','plan','delete','lookup','query'];
 const ASSISTANT_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
 const ASSISTANT_ANCHOR_ALIASES = {
   sunset:'maghrib', dusk:'maghrib', maghreb:'maghrib',
@@ -114,7 +114,7 @@ function assistantRequestNeedsModel(text){
 
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
-    description:'Classify only when you cannot call the final tool directly. create_setting = a weather profile, place, busy time, or topic — not a habit or task. A habit/task that names weather conditions is still create_habit/create_task. ask_weather and ask_schedule use live forecast/planner answers. ask_items covers lists, status, and progress. ask_settings covers existing places, profiles, topics, and busy times. delete_item removes one named task/habit after confirmation. Availability and what-if questions are ask_schedule — not create_task. If currentDraft is set, they are changing that row unless they clearly start a new one. Do not classify unclear when currentDraft is set.',
+    description:'Classify only when you cannot call the final tool directly. create_setting = a weather profile, place, busy time, or topic — not a habit or task. A habit/task that names weather conditions is still create_habit/create_task. ask_weather and ask_schedule use live forecast/planner answers. ask_items covers lists, status, and progress. ask_settings covers existing places, profiles, topics, and busy times. lookup_item answers one existing item (next time, last done, history, stats, why). find_item lists closest saved names when the spoken name may not match the title. complete_item / plan_item / delete_item change an existing item after confirmation. If several items could match, call ask_user — do not guess a name and do not create a new item. Availability and what-if questions are ask_schedule — not create_task. If currentDraft is set, they are changing that row unless they clearly start a new one. Do not classify unclear when currentDraft is set.',
     parameters:{
       type:'object',
       required:['intent'],
@@ -176,23 +176,53 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   complete_item:{
-    description:'Find an existing item by name to log as done. Tings will preview before saving.',
+    description:'Log an existing item, or undo its latest completion from today. Tings previews before saving. Include minutes for a habit chunk, value for a tracked measurement, and note for optional log detail.',
     parameters:{
       type:'object',
       required:['name'],
       properties:{
         name:{type:'string'},
-        minutes:{type:['integer','null'], description:'optional chunk minutes for a split habit'}
+        action:{type:['string','null'], enum:['log','undo_today',null], description:'log by default; undo_today means mark it not done / undo today’s latest completion'},
+        minutes:{type:['integer','null'], description:'optional chunk minutes for a split habit'},
+        value:{type:['number','string','null'], description:'optional numeric tracked value'},
+        note:{type:['string','null'], description:'optional short note about this completion'}
+      }
+    }
+  },
+  plan_item:{
+    description:'Plan or unplan one occurrence of an existing task/habit on a date. This is a one-day plan, not a change to the recurring schedule or due date. An optional time makes it a fixed appointment; an optional saved place applies only to that day. Tings previews before saving.',
+    parameters:{
+      type:'object',
+      required:['name','date'],
+      properties:{
+        name:{type:'string'},
+        action:{type:['string','null'], enum:['add','remove',null], description:'add by default; remove unplans that date'},
+        date:{type:'string', description:'today, tomorrow, a weekday, or YYYY-MM-DD'},
+        time:{type:['string','null'], description:'optional fixed clock, such as 3pm or 15:00'},
+        place:{type:['string','null'], description:'optional saved catalog place for this occurrence'}
       }
     }
   },
   lookup_item:{
-    description:'Look up one existing item: when it is, whether it is done, or if it is on today.',
+    description:'Answer a question about one existing item. name may be a fragment, nickname, typo, or the whole question — Tings ranks saved titles and uses a unique match. If several titles could fit, Tings asks instead of guessing. summary includes next planned time and last completion; history lists recent logs; stats gives pace/streak/progress; why explains planner placement.',
     parameters:{
       type:'object',
       required:['name'],
       properties:{
-        name:{type:'string'}
+        name:{type:'string', description:'Saved title, a distinctive word from it, or the user’s phrasing'},
+        query:{type:['string','null'], enum:['summary','history','stats','why',null]},
+        date:{type:['string','null'], description:'for why: today, tomorrow, a weekday, or YYYY-MM-DD'}
+      }
+    }
+  },
+  find_item:{
+    description:'Search saved tasks/habits by a name fragment, nickname, typo, or the whole question. Tings ranks deterministic fuzzy matches. Use this when the spoken name may not match the saved title. If several could fit, Tings asks the user — do not guess. After a unique match, call lookup_item, complete_item, plan_item, or delete_item with that exact name.',
+    parameters:{
+      type:'object',
+      required:['query'],
+      properties:{
+        query:{type:'string', description:'Name fragment, nickname, or the user’s phrasing'},
+        limit:{type:['integer','null'], description:'max matches, default 5'}
       }
     }
   },
@@ -288,11 +318,12 @@ function assistantIsItemKind(kind){
 function assistantStepTools(step){
   // The first model pass may call the final tool directly. classify_intent is
   // retained for models that prefer a two-step plan, not as a mandatory gate.
-  if(step === 'classify')return ['classify_intent','draft_item','draft_setting','draft_batch','complete_item','delete_item','lookup_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
-  if(step === 'extract')return ['draft_item','draft_setting','draft_batch','complete_item','delete_item','lookup_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
-  if(step === 'complete')return ['complete_item','ask_user'];
-  if(step === 'delete')return ['delete_item','ask_user'];
-  if(step === 'lookup')return ['lookup_item','ask_user'];
+  if(step === 'classify')return ['classify_intent','draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
+  if(step === 'extract')return ['draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
+  if(step === 'complete')return ['complete_item','find_item','ask_user'];
+  if(step === 'plan')return ['plan_item','find_item','ask_user'];
+  if(step === 'delete')return ['delete_item','find_item','ask_user'];
+  if(step === 'lookup')return ['lookup_item','find_item','ask_user'];
   if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
   return ['ask_user'];
 }

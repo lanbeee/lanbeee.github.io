@@ -56,6 +56,7 @@ const ASSISTANT_PARSE_CASES = [
   {id:'mark-done', prompt:'mark walk done', intent:'complete_item', name:'walk'},
   {id:'done-with', prompt:'done with laundry', intent:'complete_item', name:'laundry'},
   {id:'when-is', prompt:'when is walk', intent:'lookup_item', name:'walk'},
+  {id:'when-supposed', prompt:'When am I supposed to call Amma next?', intent:'lookup_item', name:'call amma'},
   {id:'did-i-do', prompt:'did I do pharmacy', intent:'lookup_item', name:'pharmacy'},
   {id:'do-i-have', prompt:'do I have dentist today', intent:'lookup_item', name:'dentist'},
   {id:'reschedule-week', prompt:'reschedule my week', intent:'unsupported'},

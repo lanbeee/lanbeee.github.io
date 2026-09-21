@@ -854,11 +854,11 @@ function assistantParseSettingCreate(text){
 }
 
 function assistantGuessItemName(text){
-  const raw = assistantNormText(text).replace(/^(?:please |can you |could you |hey |ok |okay )+/g, '');
+  const raw = assistantNormText(text).replace(/^(?:please |can you |could you |hey |ok |okay )+/g, '').replace(/[?.!]+$/g, '');
   const patterns = [
     /^(?:i(?:'ve| have)? (?:already )?(?:did|done|finished|logged)|mark(?:ed)?|check(?:ed)? off|log)\s+(?:the )?(.+?)(?:\s+(?:as )?(?:done|complete|finished))?$/,
     /^(?:i already did|already did|done with|finished)\s+(?:the )?(.+)$/,
-    /^(?:when is|where's|where is|did i (?:do|finish)|do i have|is there)\s+(?:the )?(.+?)(?:\s+today)?$/,
+    /^(?:when am i supposed to|when should i|when (?:do|did|will) i(?: last)?|when is|when's|where's|where is|did i (?:do|finish)|do i have|is there)\s+(?:the )?(.+?)(?:\s+(?:next|last|today|again))?$/,
     /^(?:remind me to|don't forget to|dont forget to|remember to|i (?:need|have|gotta|got)(?: to)?|i should|i want to|i wanna|add:?|create|make)\s+(?:a |an |the )?(.+)$/,
     /^(?:new )?(?:task|habit|ting|item):\s*(.+)$/,
     /(?:habit|task) (?:called |named )(.+)$/
@@ -1262,7 +1262,7 @@ function assistantGuessIntent(text){
     && !/\b(remind me|don't forget|dont forget|add |create |every day|daily)\b/.test(s)){
     return {intent:'complete_item', confident:true};
   }
-  if(/\b(when is|where(?:'| i)?s|did i (?:do|finish)|do i have|is .{0,40} (?:today|done|on (?:the )?(?:list|plan|agenda)))\b/.test(s)){
+  if(/\b(when is|when'?s|when am i|when should i|when (?:do|did|will) i|where(?:'| i)?s|did i (?:do|finish)|do i have|is .{0,40} (?:today|done|on (?:the )?(?:list|plan|agenda))|last time i|how often|why (?:isn'?t|is not|wasn'?t))\b/.test(s)){
     return {intent:'lookup_item', confident:true};
   }
   if(/\b(what(?:'| i)?s (?:on )?(?:today|next|due|left)|what do i (?:have|need)|what(?:'| i)?s left|what should i do|show (?:me )?today|today'?s plan|anything due)\b/.test(s)){
@@ -1287,9 +1287,11 @@ function assistantGuessIntent(text){
 function assistantPreferIntent(modelIntent, guessed){
   const model = ASSISTANT_INTENTS.includes(modelIntent) ? modelIntent : 'unclear';
   if(!guessed || !guessed.intent)return model;
-  // The model's query intents win even over a confident local ask_today —
-  // "what should I do given the weather" parses like ask_today locally.
-  if(model === 'ask_weather' || model === 'ask_schedule')return model;
+  // The model's query/action intents win even over a confident local ask_today —
+  // "what habits do I have" and "what should I do given the weather" parse like
+  // ask_today, but the model picked the grounded list/weather/schedule tool.
+  if(model === 'ask_weather' || model === 'ask_schedule' || model === 'ask_items' || model === 'ask_settings')return model;
+  if(model === 'plan_item' || model === 'delete_item')return model;
   if(['complete_item', 'lookup_item', 'ask_today'].includes(guessed.intent) && guessed.confident){
     return guessed.intent;
   }
@@ -1602,7 +1604,7 @@ function assistantFastPathRisk(text, parsed){
     if(parsed.itemName)cut(new RegExp(String(parsed.itemName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
     if(parsed.address)cut(new RegExp(String(parsed.address).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
   }
-  cut(/^(?:when is|where's|where is|did i (?:do|finish)|do i have|is there)\s+/g);
+  cut(/^(?:when am i supposed to|when should i|when (?:do|did|will) i(?: last)?|when is|when's|where's|where is|did i (?:do|finish)|do i have|is there)\s+/g);
   cut(/^(?:i (?:already )?)?(?:already )?(?:did|done|finished|logged)\s+/);
   cut(/^(?:done with|finished|mark|check(?:ed)? off|log)\s+/);
   // Weather clauses trail the utterance; consume to the end.

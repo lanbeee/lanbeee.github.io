@@ -7,21 +7,43 @@ function assistantSystemPrompt(){
     'Think, then call the final tool directly whenever possible. classify_intent is optional. Do not save. Do not invent habit JSON.',
     'create_task = one-off. create_habit = repeating. create_setting = a weather profile, place, busy time, or topic. ask_today = what is on today or next.',
     'ask_weather = a weather question, or whether the weather suits an item — Tings computes the forecast answer. ask_schedule = free time, the freest day, whether a window is open, whether a new commitment would make them miss something, what they missed, or the agenda for a day/week. Availability and what-if questions ("do I have time tomorrow 5 to 6 pm", "if I add a task tomorrow 5 to 6 pm will I miss anything") are ask_schedule — never create_task, and never answer them from your own guess: Tings computes them with answer_weather / answer_schedule.',
-    'complete_item = already did it. delete_item = remove one item after confirmation. lookup_item = details about one named item. answer_items = list/status/progress questions. answer_settings = list saved places, weather profiles, topics, or busy times.',
+    'complete_item = log it as done, add minutes/value/note, or undo today’s latest completion. plan_item = add/remove a one-day plan for an existing item; this is not a recurring-schedule edit. delete_item = remove one item after confirmation. lookup_item = summary, history, stats, or why one named item is or is not scheduled. find_item = rank closest saved names when the spoken name may not match. answer_items = list/status/progress questions. answer_settings = list saved places, weather profiles, topics, or busy times.',
     'draft_item creates or changes an item. Put every setting the user named in that one call and omit the rest. name is a short title only — never copy the rest of the request into name. Identity: name, newName, habitKind (build/limit/stop), emoji, emojiColor, topics, priority. Schedule: rhythm, timesPerPeriod, periodDays, weekdays, monthDays, preferredWeekdays, preferredMonthDays, due, dueTime, hardDue, planBy, windowText, preferredWindowText, earlyDays, delayDays, before, after, order, option. Effort: durationMinutes, breakable, minChunkMinutes, autoMarkMinutes, trackValue. Place/weather: placeNames, anywhere, placePrefs, weatherProfile, weatherText, showWeather, weatherAtPlace, weatherPlace. Other: pinned, snooze, sharedDisplay, sharedComplete, links. If they name weather conditions and catalog.weather has no match, still set weatherText — Tings will create a profile.',
     'If they ask for several items at once (a list, a pasted schedule, two habits, errands plus places), call draft_batch once — not many draft_item calls. One item with a long or detailed instruction is still draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown places in a batch get a dummy address; do not ask.',
     'draft_setting creates or changes a weather profile, place, busy time, or topic. kind is weather, location, busy, or topic. "Create a weather profile for barbecuing" → kind weather, name Barbecuing. Weather rules go in weatherText as one string. On a change, weatherText is a patch that merges onto currentDraft.rules (example: "prefer higher temperature") — do not drop other rules.',
     'Example: "45 minute limit habit called Kettlebells, topics health, every Tuesday and Friday, urgent" → name "Kettlebells", habitKind "limit", durationMinutes 45, topics "health", rhythm "every Tuesday and Friday", priority 0.',
     'Example: "Stretch at Home, prefer Home high, right after Walk same day, later of 6pm and sunset until isha" → name "Stretch", placeNames "Home", placePrefs "Home high", order "right after Walk, same day", windowText "later of 6pm and sunset until isha".',
-    'If currentDraft is a weather profile, place, busy time, or topic, call draft_setting with only the new fields. If currentDraft is a habit or task, "it" / "this" / "that" is that item. Keep its name and hid. Call draft_item with only the new fields. "Add the location home" or "use home and mom\'s house" sets placeNames on currentDraft — it is not a new item. Do not classify unclear when currentDraft is set.',
+    'If currentDraft is a weather profile, place, busy time, or topic, call draft_setting with only the new fields. If currentDraft is a habit or task, "it" / "this" / "that" is that item. A question about it uses lookup_item (including next time, last completion, history, stats, or why); done/not-done uses complete_item; plan/unplan uses plan_item; remove the whole item uses delete_item; only a settings change uses draft_item. Keep its name and hid. "Add the location home" or "use home and mom\'s house" sets placeNames on currentDraft — it is not a new item. Do not classify unclear when currentDraft is set.',
     'If extractedFacts is present, copy those fields into the tool, but resolve dates yourself: catalog.date is today (ISO date + weekday), so relative phrases like "day after tomorrow" or "two days after tomorrow" become an exact due YYYY-MM-DD. If extractedFacts is absent, read the request yourself. You may fill duration, windowText, and weatherText when they asked you to pick those. placeNames must be catalog.places names the user named — never invent backyard, park, or any place that is not in catalog.places. If they did not name a saved place, omit placeNames. sunset means maghrib.',
-    'If a name is ambiguous, call ask_user with one short question.',
+    'If a name is missing, a fragment, or could match more than one saved item, call find_item or ask_user. Do not guess a title and do not create a new item. Tings ranks names and will ask the user when several could fit.',
     'On extract, call draft_item with flat strings only. Do not nest window or place objects. If a tool call is invalid or cut off, retry that tool with smaller string arguments — Tings will steer you.'
   ].join(' ');
 }
 
 function assistantUnsupportedText(){
-  return 'I can add or change tasks, habits, weather profiles, places, busy times, and topics; answer schedule, weather, item-status, and settings questions; look up, complete, or remove an item; and preview every change before it is saved.';
+  return 'I can add or change tasks, habits, weather profiles, places, busy times, and topics; answer schedule, weather, item-status, history, stats, and settings questions; explain planner choices; and preview completing, correcting, planning, unplanning, or removing an item before it is saved.';
+}
+
+// Name-clarification chips start a fresh turn, so remember which action the
+// original request was heading toward. Classify/extract have to infer it.
+function assistantAwaitingFromAsk(step, text){
+  if(step === 'complete' || step === 'plan' || step === 'delete' || step === 'lookup' || step === 'query')return step;
+  const s = typeof assistantNormText === 'function'
+    ? assistantNormText(text)
+    : String(text || '').trim().toLowerCase();
+  if(/\b(?:unplan|remove(?: the| this| that)? plan|don'?t (?:do|plan)|skip(?: it| today)?)\b/.test(s))return 'plan';
+  if(/\bplan(?:\s+it)?\s+(?:for\s+)?(?:today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d)/.test(s))return 'plan';
+  if(/\b(?:delete|remove|get rid of|nuke)\b/.test(s)
+    && !/\b(?:busy|blocked|location|place|weather|topic|plan)\b/.test(s))return 'delete';
+  if(/\b(?:already (?:did|done|finished)|mark .{0,24}(?:done|not done)|log .{0,24}done|not done|undo)\b/.test(s))return 'complete';
+  if(/\b(?:when|last time|history|stats|why |did i |do i have)\b/.test(s))return 'lookup';
+  return null;
+}
+
+function assistantLooksLikeNameReply(text){
+  const s = String(text || '').trim();
+  if(!s || s.length > 60 || /[?]/.test(s))return false;
+  return s.split(/\s+/).filter(Boolean).length <= 4;
 }
 
 // The legacy fast path deliberately handles only simple "today" and item
@@ -214,7 +236,7 @@ function assistantNoteContextUsage(session, raw, tools){
 }
 
 function assistantCreateSession(){
-  return {draft:null, drafts:null, messages:[], llmCalls:0, repairs:0, intent:null, awaiting:null, pendingComplete:null, pendingDelete:null, pendingEdit:null, parsed:null, debug:[], bulk:false, wide:false};
+  return {draft:null, drafts:null, messages:[], llmCalls:0, repairs:0, intent:null, awaiting:null, pendingComplete:null, pendingPlan:null, pendingDelete:null, pendingEdit:null, parsed:null, debug:[], bulk:false, wide:false};
 }
 
 function assistantDebugEnabled(){
@@ -606,12 +628,15 @@ function assistantLocalSetting(session, context, parsed){
 
 function assistantLocalComplete(session, context, name){
   assistantTracePush(session, {t:'tool', step:'local', name:'complete_item', args:{name:String(name || '')}});
-  const found = assistantFindHabit(context.data, name);
+  const found = typeof assistantFindHabitSmart === 'function'
+    ? assistantFindHabitSmart(context.data, name, session && session.parsed && session.parsed.text)
+    : assistantFindHabit(context.data, name);
   if(!found.ok){
     assistantTracePush(session, {t:'result', name:'complete_item', ok:false, ask:found.ask || 'which item?'});
     session.awaiting = 'complete';
     session.intent = 'complete_item';
-    return {type:'ask', question:found.ask, choices:(found.matches || []).map(item => item.name), session};
+    session.clarifyingRequest = (session.parsed && session.parsed.text) || name || session.clarifyingRequest;
+    return {type:'ask', question:found.ask, choices:found.choices || (found.matches || []).map(item => item.name), session};
   }
   const preview = assistantCompletePreview(found, null);
   assistantTracePush(session, {t:'result', name:'complete_item', ok:true, preview:preview.summary});
@@ -619,21 +644,24 @@ function assistantLocalComplete(session, context, name){
   session.intent = 'complete_item';
   session.awaiting = null;
   if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
-  return {type:'complete', text:preview.summary, alreadyDone:preview.alreadyDone, pendingComplete:preview.pendingComplete, session};
+  return {type:'complete', text:preview.summary, alreadyDone:preview.alreadyDone, completeAction:preview.pendingComplete && preview.pendingComplete.action || 'log', pendingComplete:preview.pendingComplete, session};
 }
 
 function assistantLocalLookup(session, context, name){
   assistantTracePush(session, {t:'tool', step:'local', name:'lookup_item', args:{name:String(name || '')}});
-  const found = assistantFindHabit(context.data, name);
+  const found = typeof assistantFindHabitSmart === 'function'
+    ? assistantFindHabitSmart(context.data, name, session && session.parsed && session.parsed.text)
+    : assistantFindHabit(context.data, name);
   if(!found.ok){
     assistantTracePush(session, {t:'result', name:'lookup_item', ok:false, ask:found.ask || 'which item?'});
     session.awaiting = 'lookup';
     session.intent = 'lookup_item';
-    return {type:'ask', question:found.ask, choices:(found.matches || []).map(item => item.name), session};
+    session.clarifyingRequest = (session.parsed && session.parsed.text) || name || session.clarifyingRequest;
+    return {type:'ask', question:found.ask, choices:found.choices || (found.matches || []).map(item => item.name), session};
   }
   session.awaiting = null;
   session.intent = 'lookup_item';
-  const text = assistantLookupText(found, context);
+  const text = assistantLookupText(found, context, null, session && session.parsed && session.parsed.text);
   assistantTracePush(session, {t:'result', name:'lookup_item', ok:true, preview:text});
   if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
   return {type:'say', text, session};
@@ -725,6 +753,17 @@ function assistantTryLocalTurn(text, session, context){
     }
   }
 
+  if(parsed.intent === 'lookup_item' && parsed.confident){
+    assistantTracePush(session, {t:'path', path:'local', via:'lookup'});
+    const name = parsed.itemName || (session.draft && session.draft.name) || text;
+    return assistantLocalLookup(session, context, name);
+  }
+  if(parsed.intent === 'complete_item' && parsed.confident){
+    assistantTracePush(session, {t:'path', path:'local', via:'complete'});
+    const name = parsed.itemName || (session.draft && session.draft.name) || text;
+    return assistantLocalComplete(session, context, name);
+  }
+
   if(!parsed.confident){
     parsed.factsTrusted = false;
     assistantTracePush(session, {t:'path', path:'llm', via:'parser-unconfident', intent:parsed.intent});
@@ -757,16 +796,6 @@ function assistantTryLocalTurn(text, session, context){
     parsed.factsTrusted = false;
     assistantTracePush(session, {t:'path', path:'llm', via:'parser-risk', risk});
     return null;
-  }
-  if(parsed.intent === 'complete_item'){
-    assistantTracePush(session, {t:'path', path:'local', via:'complete'});
-    const name = parsed.itemName || (session.draft && session.draft.name) || text;
-    return assistantLocalComplete(session, context, name);
-  }
-  if(parsed.intent === 'lookup_item'){
-    assistantTracePush(session, {t:'path', path:'local', via:'lookup'});
-    const name = parsed.itemName || (session.draft && session.draft.name) || text;
-    return assistantLocalLookup(session, context, name);
   }
   if(assistantShouldLocalCreate(parsed, session)){
     assistantTracePush(session, {t:'path', path:'local', via:'create', intent:parsed.intent});
@@ -962,7 +991,13 @@ async function runAssistantTurn(userText, opts = {}){
     startIntent:entryIntent,
     wide:session.wide === true
   });
-  const done = out => assistantFinishDebug(session, out);
+  const done = out => {
+    if(out && out.type && out.type !== 'ask' && out.type !== 'error'){
+      session.awaiting = null;
+      session.clarifyingRequest = null;
+    }
+    return assistantFinishDebug(session, out);
+  };
 
   const forceModel = Boolean(opts.forceLlm) || assistantModelOnlyEnabled();
 
@@ -998,6 +1033,7 @@ async function runAssistantTurn(userText, opts = {}){
   ];
   let step = 'classify';
   if(session.awaiting === 'complete')step = 'complete';
+  else if(session.awaiting === 'plan')step = 'plan';
   else if(session.awaiting === 'delete')step = 'delete';
   else if(session.awaiting === 'lookup')step = 'lookup';
   else if(session.awaiting === 'query')step = 'query';
@@ -1008,7 +1044,7 @@ async function runAssistantTurn(userText, opts = {}){
       role:'user',
       content:setting
         ? 'The user is changing currentDraft (a settings row). Call draft_setting with only the new fields as flat strings. Keep the same kind and name. weatherText is a patch that merges onto currentDraft.rules; currentDraft.rules lists the existing weather rules. Example: "prefer higher temperature" sets temperature prefer-higher and keeps wind and rain.'
-        : 'The user is changing currentDraft. Call draft_item with only the new fields as flat strings — do not nest objects. Keep the same name and hid. extractedFacts is absent — read the request yourself. Place replies like "use home and mom\'s house" are placeNames from catalog.places.'
+        : 'The user is changing currentDraft only if this is a settings change; otherwise they are referring to it. If this is a question about when/last/history/stats/why, call lookup_item with currentDraft.name. If the spoken name may not match, call find_item. If several saved items could fit, call ask_user — do not guess and do not create. If it logs or corrects a completion, call complete_item; if it plans/unplans one day, call plan_item; if it removes the whole item, call delete_item. Only a settings change calls draft_item with new flat fields. Keep the same name and hid. extractedFacts is absent — read the request yourself. Place replies like "use home and mom\'s house" are placeNames from catalog.places.'
     });
   }else if(session.parsed && session.parsed.intent === 'create_setting' && !session.wide){
     step = 'extract';
@@ -1035,6 +1071,13 @@ async function runAssistantTurn(userText, opts = {}){
       : (entryIntent === 'create_setting'
         ? assistantDraftSettingSteerText() + factsHint
         : assistantDraftItemSteerText(entryIntent, factsHint))});
+  }
+  if(session.clarifyingRequest && session.clarifyingRequest !== text
+    && (session.awaiting || assistantLooksLikeNameReply(text))){
+    session.messages.push({
+      role:'user',
+      content:'Earlier they asked: "' + session.clarifyingRequest + '". They just named the item. Continue that same action with this exact saved title. Do not create a new item.'
+    });
   }
 
   const maxCalls = assistantWideSession(session)
@@ -1064,9 +1107,13 @@ async function runAssistantTurn(userText, opts = {}){
       return done({type:'error', text:assistantFriendlyError(err), session});
     }
     const allowed = new Set(assistantStepTools(step));
-    const call = (parsed.toolCalls || []).find(item => item.name === 'draft_batch' && allowed.has(item.name))
+    let call = (parsed.toolCalls || []).find(item => item.name === 'draft_batch' && allowed.has(item.name))
       || (parsed.toolCalls || []).find(item => allowed.has(item.name))
       || (parsed.toolCalls || [])[0];
+    if(call && call.name === 'draft_item' && typeof assistantLooksLikeItemQuestion === 'function'
+      && assistantLooksLikeItemQuestion(text) && !(session.draft && session.draft.hid && typeof assistantLooksLikeEdit === 'function' && assistantLooksLikeEdit(text))){
+      call = {id:call.id || '', name:'lookup_item', args:{name:(call.args && call.args.name) || (session.draft && session.draft.name) || text}};
+    }
 
     if(!call || call.parseError){
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
@@ -1095,10 +1142,14 @@ async function runAssistantTurn(userText, opts = {}){
         step = 'extract';
       }else if(call.name === 'complete_item' && (step === 'classify' || step === 'complete')){
         step = 'complete';
+      }else if(call.name === 'plan_item' && (step === 'classify' || step === 'plan')){
+        step = 'plan';
       }else if(call.name === 'delete_item' && (step === 'classify' || step === 'delete')){
         step = 'delete';
       }else if(call.name === 'lookup_item' && (step === 'classify' || step === 'lookup')){
         step = 'lookup';
+      }else if(call.name === 'find_item' && (step === 'classify' || step === 'extract' || step === 'lookup' || step === 'complete' || step === 'plan' || step === 'delete')){
+        // fall through
       }else if(session.draft && session.draft.name && (call.name === 'set_window' || call.name === 'set_weather' || call.name === 'set_place')){
         step = 'extract';
       }else if(call.name === 'ask_user'){
@@ -1132,12 +1183,18 @@ async function runAssistantTurn(userText, opts = {}){
     if(!result.ok){
       if(result.ask){
         assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:false, error:result.error, ask:result.ask});
-        if(call.name === 'complete_item')session.awaiting = 'complete';
-        if(call.name === 'delete_item')session.awaiting = 'delete';
-        if(call.name === 'lookup_item')session.awaiting = 'lookup';
-        if(call.name === 'set_place')session.awaiting = 'place';
-        if(call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings')session.awaiting = 'query';
-        return done({type:'ask', question:result.ask, choices:result.choices || (result.matches || []).map(item => item.name), thinking:parsed.thinking, draft:session.draft, session});
+        const fromTool = call.name === 'complete_item' ? 'complete'
+          : call.name === 'plan_item' ? 'plan'
+          : call.name === 'delete_item' ? 'delete'
+          : call.name === 'lookup_item' ? 'lookup'
+          : call.name === 'find_item' ? assistantAwaitingFromAsk(step, text)
+          : (call.name === 'draft_item' || call.name === 'draft_setting') ? 'edit'
+          : call.name === 'set_place' ? 'place'
+          : (call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings') ? 'query'
+            : assistantAwaitingFromAsk(step, text);
+        session.awaiting = fromTool || session.awaiting || null;
+        session.clarifyingRequest = text || session.clarifyingRequest || null;
+        return done({type:'ask', question:result.ask, choices:result.choices || (result.candidates || []).map(item => item.name) || (result.matches || []).map(item => item.name), thinking:parsed.thinking, draft:session.draft, session});
       }
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         return done({type:'error', text:result.error || 'That did not match a Tings field.', thinking:parsed.thinking, session});
@@ -1149,6 +1206,10 @@ async function runAssistantTurn(userText, opts = {}){
     }
 
     session.repairs = 0;
+
+    if(result.noChange){
+      return done({type:'say', text:result.text || result.summary || 'Nothing changed.', thinking:parsed.thinking, session});
+    }
 
     if(call.name === 'classify_intent'){
       const guessed = session.parsed || {};
@@ -1193,7 +1254,7 @@ async function runAssistantTurn(userText, opts = {}){
         step = 'extract';
         session.messages.push({
           role:'user',
-          content:'The user is changing currentDraft if it is set, or an existing named item. Call draft_item with every new field in one call as flat strings — do not nest objects. Strings are ok: rhythm "every Tuesday, Wednesday and Friday", "every two days", "three times in eight days", "every weekend", windowText "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier". Keep the same name and hid. Place replies like "use home and mom\'s house" are placeNames from catalog.places.' + factsHint
+          content:'The user refers to currentDraft if it is set, or an existing named item. Questions about when/last/history/stats/why use lookup_item; completion or correction uses complete_item; one-day plan changes use plan_item; whole-item removal uses delete_item. Only a settings change calls draft_item with every new field in one flat call. Strings are ok: rhythm "every Tuesday, Wednesday and Friday", "every two days", "three times in eight days", "every weekend", windowText "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier". Keep the same name and hid. Place replies like "use home and mom\'s house" are placeNames from catalog.places.' + factsHint
         });
         continue;
       }
@@ -1204,6 +1265,11 @@ async function runAssistantTurn(userText, opts = {}){
         }
         step = 'complete';
         session.messages.push({role:'user', content:'Call complete_item with the catalog or spoken item name.'});
+        continue;
+      }
+      if(intent === 'plan_item'){
+        step = 'plan';
+        session.messages.push({role:'user', content:'Call plan_item with the existing item name and date. action add creates or replaces that day’s one-day plan; action remove unplans that date. Include time only for a fixed appointment and place only when the user named a saved catalog place.'});
         continue;
       }
       if(intent === 'delete_item'){
@@ -1217,7 +1283,7 @@ async function runAssistantTurn(userText, opts = {}){
           return done({...local, thinking:parsed.thinking});
         }
         step = 'lookup';
-        session.messages.push({role:'user', content:'Call lookup_item with the item name.'});
+        session.messages.push({role:'user', content:'Call lookup_item with the item name. If the spoken name may not match a saved title, call find_item first. If several saved items could fit, call ask_user instead of guessing.'});
         continue;
       }
       step = 'extract';
@@ -1232,8 +1298,8 @@ async function runAssistantTurn(userText, opts = {}){
 
     if(call.name === 'ask_user'){
       assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:true, waiting:true});
-      if(step === 'complete')session.awaiting = 'complete';
-      else if(step === 'lookup')session.awaiting = 'lookup';
+      session.awaiting = assistantAwaitingFromAsk(step, text) || session.awaiting || null;
+      session.clarifyingRequest = text || session.clarifyingRequest || null;
       return done({type:'ask', question:result.ask, choices:result.choices, thinking:parsed.thinking, draft:session.draft, session});
     }
 
@@ -1242,16 +1308,30 @@ async function runAssistantTurn(userText, opts = {}){
         type:'complete',
         text:result.summary,
         alreadyDone:result.alreadyDone,
+        completeAction:result.pendingComplete && result.pendingComplete.action || 'log',
         pendingComplete:result.pendingComplete,
         thinking:parsed.thinking,
         session
       });
+    }
+    if(call.name === 'plan_item'){
+      return done({type:'plan', text:result.summary, pendingPlan:result.pendingPlan, planAction:result.pendingPlan && result.pendingPlan.action || 'add', thinking:parsed.thinking, session});
     }
     if(call.name === 'delete_item'){
       return done({type:'delete', text:result.summary, pendingDelete:result.pendingDelete, thinking:parsed.thinking, session});
     }
     if(call.name === 'lookup_item'){
       return done({type:'say', text:result.text, thinking:parsed.thinking, session});
+    }
+    if(call.name === 'find_item'){
+      assistantPushToolResult(session, parsed, parsed.toolCalls, {
+        ok:true,
+        matches:result.matches || [],
+        hint:(result.matches && result.matches.length)
+          ? 'Call lookup_item, complete_item, plan_item, or delete_item with the exact saved name. If several still fit, call ask_user — do not guess.'
+          : 'No saved item is close to that name. If they asked about an existing item, say you cannot find it. If they asked to create one, call draft_item.'
+      });
+      continue;
     }
     if(call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings'){
       return done({type:'say', text:result.text, thinking:parsed.thinking, session});

@@ -268,8 +268,334 @@ async function launchBrowser(){
     return {type:out.type, offered, pending:out.session.pendingDelete && out.session.pendingDelete.name};
   });
   assert(focusedAction.type === 'delete' && focusedAction.pending === 'Temporary focus'
-    && focusedAction.offered.includes('delete_item') && focusedAction.offered.includes('complete_item') && focusedAction.offered.includes('lookup_item'),
-    'focused follow-ups can delete, complete, or look up “it” through model tools');
+    && focusedAction.offered.includes('delete_item') && focusedAction.offered.includes('complete_item')
+    && focusedAction.offered.includes('lookup_item') && focusedAction.offered.includes('plan_item'),
+    'focused follow-ups can delete, complete, look up, or plan “it” through model tools');
+
+  console.log('\n[clarify] delete + ambiguous name keeps the delete action');
+  const clarifyDelete = await page.evaluate(async () => {
+    save([
+      {hid:'call-amma', name:'Call Amma', type:'keepup', logs:[]},
+      {hid:'call-baba', name:'Call Baba', type:'keepup', logs:[]}
+    ]);
+    const session = assistantCreateSession();
+    const first = await runAssistantTurn('Delete call', {
+      session,
+      complete:async () => ({message:{thinking:'search', tool_calls:[{function:{name:'find_item', arguments:{query:'call'}}}]}})
+    });
+    const awaiting = first.session && first.session.awaiting;
+    const clarifying = first.session && first.session.clarifyingRequest;
+    const secondSteps = [];
+    const second = await runAssistantTurn('Call Amma', {
+      session,
+      complete:async req => {
+        secondSteps.push({
+          step:req.step,
+          tools:(req.tools || []).map(row => row.function.name),
+          steer:(req.messages || []).map(row => row.content || '').join(' ')
+        });
+        return {message:{thinking:'delete the named one', tool_calls:[{function:{name:'delete_item', arguments:{name:'Call Amma'}}}]}};
+      }
+    });
+    save([]);
+    return {
+      firstType:first.type,
+      choices:first.choices,
+      awaiting,
+      clarifying,
+      secondType:second.type,
+      pending:second.pendingDelete && second.pendingDelete.name,
+      secondSteps
+    };
+  });
+  assert(clarifyDelete.firstType === 'ask'
+    && (clarifyDelete.choices || []).includes('Call Amma')
+    && (clarifyDelete.choices || []).includes('Call Baba')
+    && clarifyDelete.awaiting === 'delete',
+    `ambiguous delete asks and stays on delete: ${clarifyDelete.awaiting} / ${(clarifyDelete.choices || []).join(', ')}`);
+  assert(clarifyDelete.secondSteps[0] && clarifyDelete.secondSteps[0].step === 'delete'
+    && clarifyDelete.secondSteps[0].tools.includes('delete_item')
+    && /Delete call/.test(clarifyDelete.secondSteps[0].steer),
+    'the name-chip reply continues delete with the original request in context');
+  assert(clarifyDelete.secondType === 'delete' && clarifyDelete.pending === 'Call Amma',
+    'confirming the name previews removing that item');
+
+  console.log('\n[clarify] a miss from find_item does not abort a create');
+  const findThenCreate = await page.evaluate(async () => {
+    save([]);
+    const calls = [];
+    const out = await runAssistantTurn('Add a Stretch habit every morning', {
+      complete:async req => {
+        calls.push(req.step);
+        if(calls.length === 1){
+          return {message:{thinking:'search first', tool_calls:[{function:{name:'find_item', arguments:{query:'Stretch'}}}]}};
+        }
+        return {message:{thinking:'create it', tool_calls:[{function:{name:'draft_item', arguments:{kind:'habit', name:'Stretch', rhythm:'every morning'}}}]}};
+      }
+    });
+    return {type:out.type, name:out.draft && out.draft.name, calls};
+  });
+  assert(findThenCreate.type === 'preview' && findThenCreate.name === 'Stretch' && findThenCreate.calls.length >= 2,
+    `empty find_item continues into create: ${findThenCreate.type} ${findThenCreate.name}`);
+
+  console.log('\n[routing] model list/plan/delete intents are not overwritten by ask_today');
+  const prefer = await page.evaluate(() => ({
+    items:assistantPreferIntent('ask_items', {intent:'ask_today', confident:true}),
+    del:assistantPreferIntent('delete_item', {intent:'ask_today', confident:true}),
+    plan:assistantPreferIntent('plan_item', {intent:'lookup_item', confident:true}),
+    lookup:assistantPreferIntent('create_task', {intent:'lookup_item', confident:true})
+  }));
+  assert(prefer.items === 'ask_items' && prefer.del === 'delete_item' && prefer.plan === 'plan_item',
+    `grounded model intents win: ${JSON.stringify(prefer)}`);
+  assert(prefer.lookup === 'lookup_item',
+    'a question still wins over a create guess');
+
+  console.log('\n[actions] one-day plans preview, replace, remove, and remain undoable');
+  const planActions = await page.evaluate(async () => {
+    const base = dayStart(Date.now());
+    const tomorrow = dateKey(base + 86400000);
+    save([{hid:'plan-walk', name:'Evening walk', type:'habit', target:1, logs:[]}]);
+    saveSortSettings({...loadSortSettings(), locations:[{id:'home', name:'Home', lat:1, lng:1}]});
+    const addSession = assistantCreateSession();
+    const preview = await assistantExecuteTool('plan_item', {
+      name:'Evening walk', action:'add', date:'tomorrow', time:'3pm', place:'Home'
+    }, addSession, assistantBuildContext());
+    const before = normalizeLogs(load()[0].logs).filter(isPlanLog).length;
+    const added = assistantCommitPlan(addSession.pendingPlan);
+    const addedPlans = normalizeLogs(load()[0].logs).filter(isPlanLog);
+
+    const replaceSession = assistantCreateSession();
+    const replacePreview = await assistantExecuteTool('plan_item', {
+      name:'Evening walk', date:'tomorrow', time:'4:30pm'
+    }, replaceSession, assistantBuildContext());
+    const replaced = assistantCommitPlan(replaceSession.pendingPlan);
+    const replacedPlans = normalizeLogs(load()[0].logs).filter(isPlanLog);
+
+    const removeSession = assistantCreateSession();
+    const removePreview = await assistantExecuteTool('plan_item', {
+      name:'Evening walk', action:'remove', date:'tomorrow'
+    }, removeSession, assistantBuildContext());
+    const removed = assistantCommitPlan(removeSession.pendingPlan);
+    const after = normalizeLogs(load()[0].logs).filter(isPlanLog).length;
+    const emptySession = assistantCreateSession();
+    const empty = await assistantExecuteTool('plan_item', {
+      name:'Evening walk', action:'remove', date:'tomorrow'
+    }, emptySession, assistantBuildContext());
+    save([]);
+    saveSortSettings({...loadSortSettings(), locations:[]});
+    refreshHomeWeekForAssistant();
+    return {
+      tomorrow,before,preview,added,
+      addedMeta:{count:addedPlans.length,timed:planTimed(addedPlans[0]),locationId:planLocationId(addedPlans[0]),hour:new Date(logTime(addedPlans[0])).getHours()},
+      replacePreview,replaced,
+      replacedMeta:{count:replacedPlans.length,hour:new Date(logTime(replacedPlans[0])).getHours(),minute:new Date(logTime(replacedPlans[0])).getMinutes()},
+      removePreview,removed,after,empty
+    };
+  });
+  assert(planActions.preview.ok && planActions.before === 0 && /Plan Evening walk/.test(planActions.preview.summary),
+    'planning an existing item is a non-mutating confirmation preview');
+  assert(planActions.added.ok && planActions.addedMeta.count === 1
+    && planActions.addedMeta.timed && planActions.addedMeta.locationId === 'home'
+    && planActions.addedMeta.hour === 15,
+    'confirmed plan writes one timed, place-specific occurrence');
+  assert(planActions.replacePreview.pendingPlan.replacing === 1 && planActions.replaced.ok
+    && planActions.replacedMeta.count === 1 && planActions.replacedMeta.hour === 16 && planActions.replacedMeta.minute === 30,
+    'planning the same day replaces rather than duplicates the occurrence');
+  assert(planActions.removePreview.ok && planActions.removed.ok && planActions.after === 0,
+    'unplanning also previews and removes only that day’s occurrence');
+  assert(planActions.empty.ok && planActions.empty.noChange && /no one-day plan/i.test(planActions.empty.text),
+    'unplanning a missing occurrence answers honestly without a write');
+
+  console.log('\n[actions] rich completion logs and mark-not-done correction');
+  const completionActions = await page.evaluate(async () => {
+    save([{hid:'tracked-water', name:'Water', type:'habit', target:1, trackValue:true, logs:[]}]);
+    const logSession = assistantCreateSession();
+    const preview = await assistantExecuteTool('complete_item', {
+      name:'Water', value:8, minutes:20, note:'after lunch'
+    }, logSession, assistantBuildContext());
+    const before = normalizeLogs(load()[0].logs).length;
+    const logged = assistantCommitComplete(logSession.pendingComplete);
+    const stored = normalizeLogs(load()[0].logs);
+    const entry = stored[stored.length - 1];
+    const undoSession = assistantCreateSession();
+    const undoPreview = await assistantExecuteTool('complete_item', {
+      name:'Water', action:'undo_today'
+    }, undoSession, assistantBuildContext());
+    const undone = assistantCommitComplete(undoSession.pendingComplete);
+    const after = normalizeLogs(load()[0].logs).length;
+    const emptySession = assistantCreateSession();
+    const empty = await assistantExecuteTool('complete_item', {
+      name:'Water', action:'undo_today'
+    }, emptySession, assistantBuildContext());
+    save([]);
+    refreshHomeWeekForAssistant();
+    return {
+      preview,before,logged,minutes:logMinutes(entry),value:logValue(entry),note:logNote(entry),
+      undoPreview,undone,after,empty
+    };
+  });
+  assert(completionActions.preview.ok && completionActions.before === 0
+    && /20m/.test(completionActions.preview.summary) && /value 8/.test(completionActions.preview.summary),
+    'completion metadata is visible before saving');
+  assert(completionActions.logged.ok && completionActions.minutes === 20
+    && completionActions.value === 8 && completionActions.note === 'after lunch',
+    'confirmed completion preserves minutes, tracked value, and note');
+  assert(completionActions.undoPreview.ok && /not done/i.test(completionActions.undoPreview.summary)
+    && completionActions.undone.ok && completionActions.after === 0,
+    'mark-not-done previews and removes today’s latest completion');
+  assert(completionActions.empty.ok && completionActions.empty.noChange && /no completion/i.test(completionActions.empty.text),
+    'a second correction does not invent a completion');
+
+  console.log('\n[answers] item summary, history, stats, and planner explanation');
+  const itemAnswers = await page.evaluate(() => {
+    const now = Date.now();
+    save([{
+      hid:'read-stats', name:'Read', type:'keepup', target:2, durationMinutes:30,
+      snoozedUntil:now + 3600000,
+      logs:[makeActualLog(now - 3 * 86400000,{minutes:30,note:'chapter one'}), makeActualLog(now,{value:42,note:'chapter two'})],
+      lastLog:now
+    }]);
+    const context = assistantBuildContext(now);
+    const found = assistantFindHabit(context.data, 'Read');
+    const summary = assistantLookupText(found, context, {query:'summary'});
+    const history = assistantLookupText(found, context, {query:'history'});
+    const stats = assistantLookupText(found, context, {query:'stats'});
+    const why = assistantLookupText(found, context, {query:'why', date:'today'});
+    save([]);
+    refreshHomeWeekForAssistant();
+    return {summary,history,stats,why};
+  });
+  assert(/Settings:/.test(itemAnswers.summary) && /30 min/.test(itemAnswers.summary),
+    `item summary includes real settings: ${itemAnswers.summary}`);
+  assert(/2 completions/.test(itemAnswers.history) && /chapter two/.test(itemAnswers.history) && /value 42/.test(itemAnswers.history),
+    `history lists recent entry metadata: ${itemAnswers.history}`);
+  assert(/2 total entries/.test(itemAnswers.stats) && /last 30 days|on pace/i.test(itemAnswers.stats),
+    `stats are computed from saved logs: ${itemAnswers.stats}`);
+  assert(/snoozed until/i.test(itemAnswers.why),
+    `planner explanation names a concrete blocker: ${itemAnswers.why}`);
+
+  console.log('\n[follow-up] “if not today, then when?” reads the week and keeps item history context');
+  const ammaFollowup = await page.evaluate(async () => {
+    const now = Date.now();
+    const base = dayStart(now);
+    const lastTs = base - 3 * 86400000 + 20 * 3600000;
+    const amma = {hid:'call-amma', name:'Call Amma', type:'keepup', target:7, durationMinutes:20, logs:[makeActualLog(lastTs)], lastLog:lastTs};
+    save([amma]);
+    const days = [];
+    for(let k = 0; k < 7; k += 1){
+      const dayBase = base + k * 86400000;
+      days.push({dayBase,isToday:k === 0,timeline:k === 1 ? [{kind:'fill',i:0,h:amma,start:dayBase + 18 * 3600000,end:dayBase + 18 * 3600000 + 20 * 60000}] : []});
+    }
+    const savedWeek = _homeRenderedWeek;
+    _homeRenderedWeek = {days};
+    const session = assistantCreateSession();
+    const first = await runAssistantTurn('When am I supposed to call Amma next?', {
+      session,
+      complete:async () => ({message:{thinking:'look up the named item',tool_calls:[{function:{name:'lookup_item',arguments:{name:'Call Amma',query:'summary'}}}]}})
+    });
+    let secondRequest = null;
+    const second = await runAssistantTurn('Okay, if not today then when? When did I do it last?', {
+      session,
+      complete:async req => {
+        secondRequest = {
+          step:req.step,
+          tools:(req.tools || []).map(row => row.function.name),
+          steer:(req.messages || []).map(row => row.content || '').join(' ')
+        };
+        return {message:{thinking:'use the focused item history',tool_calls:[{function:{name:'lookup_item',arguments:{name:'Call Amma',query:'history'}}}]}};
+      }
+    });
+    _homeRenderedWeek = savedWeek;
+    save([]);
+    refreshHomeWeekForAssistant();
+    return {first:first.text, second:second.text, secondRequest, focus:session.draft && session.draft.name};
+  });
+  assert(/Next planned: tomorrow at 6pm/i.test(ammaFollowup.first)
+    && /Last completed:/.test(ammaFollowup.first),
+    `first lookup answers both next and last instead of stopping at “not today”: ${ammaFollowup.first}`);
+  assert(ammaFollowup.focus === 'Call Amma'
+    && (/Call Amma has 1 completion/.test(ammaFollowup.second) || /Last completed:/.test(ammaFollowup.second)),
+    `the pronoun follow-up keeps Call Amma and reads its history: ${ammaFollowup.second}`);
+
+  console.log('\n[names] ranked fuzzy match asks instead of guessing');
+  const nameMatch = await page.evaluate(async () => {
+    const now = Date.now();
+    const base = dayStart(now);
+    const lastTs = base - 3 * 86400000 + 20 * 3600000;
+    const amma = {hid:'call-amma', name:'Call Amma', type:'keepup', target:7, durationMinutes:20, logs:[makeActualLog(lastTs)], lastLog:lastTs};
+    const baba = {hid:'call-baba', name:'Call Baba', type:'keepup', target:7, durationMinutes:15, logs:[]};
+    const walk = {hid:'evening-walk', name:'Evening walk', type:'habit', target:1, logs:[]};
+    save([amma, baba, walk]);
+    const days = [];
+    for(let k = 0; k < 7; k += 1){
+      const dayBase = base + k * 86400000;
+      days.push({dayBase, isToday:k === 0, timeline:k === 1 ? [{kind:'fill', i:0, h:amma, start:dayBase + 18 * 3600000, end:dayBase + 18 * 3600000 + 20 * 60000}] : []});
+    }
+    const savedWeek = _homeRenderedWeek;
+    _homeRenderedWeek = {days};
+    const ammaHit = assistantFindHabit(load(), 'amma');
+    const typoHit = assistantFindHabit(load(), 'call ama');
+    const questionHit = assistantFindHabit(load(), 'When am I supposed to call Amma next?');
+    const walkHit = assistantFindHabit(load(), 'walk');
+    const callAsk = assistantFindHabit(load(), 'call');
+    const missing = assistantFindHabit(load(), 'xyzzy');
+    const ranked = assistantRankByName(assistantHabitRows(load()), 'amma', 5).map(row => row.name);
+    const context = assistantBuildContext();
+    const session = assistantCreateSession();
+    const local = assistantTryLocalTurn('When am I supposed to call Amma next?', session, context);
+    const follow = assistantTryLocalTurn('Okay if not today then when. When did I do it last?', session, context);
+    const findAsk = await assistantExecuteTool('find_item', {query:'call'}, assistantCreateSession(), context);
+    const lookupFrag = await assistantExecuteTool('lookup_item', {name:'amma'}, assistantCreateSession(), context);
+    const hijack = await runAssistantTurn('When am I supposed to call Amma next?', {
+      complete:async () => ({message:{thinking:'wrongly create', tool_calls:[{function:{name:'draft_item', arguments:{name:'Amma', kind:'habit'}}}]}})
+    });
+    _homeRenderedWeek = savedWeek;
+    save([]);
+    refreshHomeWeekForAssistant();
+    return {
+      ammaHit:{ok:ammaHit.ok, name:ammaHit.name},
+      typoHit:{ok:typoHit.ok, name:typoHit.name},
+      questionHit:{ok:questionHit.ok, name:questionHit.name},
+      walkHit:{ok:walkHit.ok, name:walkHit.name},
+      callAsk:{ok:callAsk.ok, ask:callAsk.ask, choices:callAsk.choices},
+      missing:{ok:missing.ok, ask:missing.ask, choices:missing.choices},
+      ranked,
+      local:{type:local && local.type, text:local && local.text, ask:local && local.question},
+      follow:{type:follow && follow.type, text:follow && follow.text},
+      findAsk:{ok:findAsk.ok, ask:findAsk.ask, choices:findAsk.choices},
+      lookupFrag:{ok:lookupFrag.ok, text:lookupFrag.text},
+      hijack:{type:hijack.type, text:hijack.text}
+    };
+  });
+  assert(nameMatch.ammaHit.ok && nameMatch.ammaHit.name === 'Call Amma',
+    'a distinctive fragment uniquely resolves Call Amma');
+  assert(nameMatch.typoHit.ok && nameMatch.typoHit.name === 'Call Amma',
+    'a close typo uniquely resolves Call Amma');
+  assert(nameMatch.questionHit.ok && nameMatch.questionHit.name === 'Call Amma',
+    'the whole question still resolves Call Amma');
+  assert(nameMatch.walkHit.ok && nameMatch.walkHit.name === 'Evening walk',
+    'a unique token resolves Evening walk');
+  assert(!nameMatch.callAsk.ok && nameMatch.callAsk.choices
+    && nameMatch.callAsk.choices.includes('Call Amma') && nameMatch.callAsk.choices.includes('Call Baba'),
+    `an ambiguous “call” asks instead of guessing: ${nameMatch.callAsk.ask}`);
+  assert(!nameMatch.missing.ok && !(nameMatch.missing.choices || []).length,
+    'unknown names do not dump unrelated list items as choices');
+  assert(nameMatch.ranked[0] === 'Call Amma',
+    `ranked search puts Call Amma first: ${nameMatch.ranked.join(', ')}`);
+  assert(nameMatch.local && nameMatch.local.type === 'say'
+    && /Next planned: tomorrow at 6pm/i.test(nameMatch.local.text)
+    && /Last completed:/.test(nameMatch.local.text),
+    `local lookup answers next and last without the model: ${nameMatch.local && nameMatch.local.text}`);
+  assert(nameMatch.follow && nameMatch.follow.type === 'say'
+    && /Call Amma has 1 completion/.test(nameMatch.follow.text),
+    `the last-time follow-up stays on Call Amma: ${nameMatch.follow && nameMatch.follow.text}`);
+  assert(!nameMatch.findAsk.ok && nameMatch.findAsk.choices
+    && nameMatch.findAsk.choices.includes('Call Amma') && nameMatch.findAsk.choices.includes('Call Baba'),
+    'find_item asks the user when several titles fit');
+  assert(nameMatch.lookupFrag.ok && /Next planned: tomorrow at 6pm/i.test(nameMatch.lookupFrag.text),
+    `lookup_item accepts the fragment “amma”: ${nameMatch.lookupFrag.text}`);
+  assert(nameMatch.hijack.type === 'say' && /Next planned:|Last completed:/.test(nameMatch.hijack.text),
+    `a question is not turned into a new habit: ${nameMatch.hijack.text}`);
 
   console.log('\n[handlers] item status and settings lists');
   const broadHandlers = await page.evaluate(() => {
@@ -404,12 +730,13 @@ async function launchBrowser(){
   console.log('\n[contract] classify enum + unknown query kinds');
   const contract = await page.evaluate(async () => {
     const ok = assistantValidateClassify({intent:'ask_weather'}).ok
-      && assistantValidateClassify({intent:'ask_schedule'}).ok;
+      && assistantValidateClassify({intent:'ask_schedule'}).ok
+      && assistantValidateClassify({intent:'plan_item'}).ok;
     const weird = await assistantAnswerSchedule({query:'everything'}, assistantBuildContext());
     const weatherWeird = assistantAnswerWeather({query:'everything'}, assistantBuildContext());
     return {ok, vague:weird.text, weatherVague:weatherWeird.text};
   });
-  assert(contract.ok, 'classify accepts the two new intents');
+  assert(contract.ok, 'classify accepts the query and one-day-plan intents');
   assert(/vague/i.test(contract.vague) && /freest/i.test(contract.vague),
     'an unknown query kind falls back to the capability list');
   assert(/vague/i.test(contract.weatherVague) && /weather/i.test(contract.weatherVague),

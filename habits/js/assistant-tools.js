@@ -127,24 +127,212 @@ function assistantMatchByName(list, value){
   return {ok:false, error:'UNKNOWN', names:list.map(item => item.name)};
 }
 
-function assistantFindHabit(data, value){
-  const list = (Array.isArray(data) ? data : []).map((habit, index) => ({
+const ASSISTANT_NAME_STOP = new Set([
+  'a','an','the','my','your','to','of','for','and','or','on','in','at','it','this','that',
+  'when','where','what','which','who','how','am','is','are','was','were','be','been',
+  'do','did','does','have','has','had','i','im','ive','should','would','could','can','will',
+  'next','last','today','tomorrow','tonight','please','you','me','we','they','okay','ok',
+  'then','if','not','so','just','also','still','already','yet','supposed','something',
+  'anything','plan','agenda','list','schedule','again','now','about','with','from',
+  'there','here','into','than','too','very','being','wasnt','isnt'
+]);
+const ASSISTANT_NAME_WEAK = new Set([
+  'call','check','log','mark','finish','finished','done','buy','get','pick','run','make',
+  'take','go','see','ask','tell','set','add'
+]);
+
+function assistantNameTokens(text){
+  const norm = typeof assistantNormText === 'function' ? assistantNormText(text) : String(text || '').toLowerCase();
+  return norm.replace(/[^a-z0-9'\s]/g, ' ').split(/\s+/).map(tok => tok.replace(/'s$/g, '').replace(/'/g, '')).filter(tok => tok.length >= 2 && !ASSISTANT_NAME_STOP.has(tok));
+}
+
+function assistantScoreNameMatch(query, name){
+  const qRaw = typeof assistantNormText === 'function' ? assistantNormText(query) : String(query || '').trim().toLowerCase();
+  const nRaw = typeof assistantNormText === 'function' ? assistantNormText(name) : String(name || '').trim().toLowerCase();
+  if(!qRaw || !nRaw)return {score:0, why:''};
+  if(qRaw === nRaw)return {score:100, why:'exact'};
+  const qFold = qRaw.replace(/[^a-z0-9]+/g, '');
+  const nFold = nRaw.replace(/[^a-z0-9]+/g, '');
+  if(qFold && qFold === nFold)return {score:96, why:'exact'};
+  let score = 0;
+  const why = [];
+  if(nRaw.includes(qRaw) && qRaw.length >= 3){
+    score += qRaw.length >= 5 ? 48 : 34;
+    why.push('in-name');
+  }else if(qRaw.includes(nRaw) && nRaw.length >= 4){
+    score += 44;
+    why.push('in-query');
+  }
+  const qTokens = assistantNameTokens(qRaw);
+  const nTokens = assistantNameTokens(nRaw);
+  const nSet = new Set(nTokens);
+  for(const qt of qTokens){
+    const weak = ASSISTANT_NAME_WEAK.has(qt);
+    if(nSet.has(qt)){
+      score += weak ? 10 : (qt.length >= 4 ? 46 : 28);
+      if(!weak)why.push('token:' + qt);
+      continue;
+    }
+    const prefixed = nTokens.find(nt => nt.length >= 4 && qt.length >= 3 && (nt.startsWith(qt) || qt.startsWith(nt)));
+    if(prefixed && !weak){
+      score += 22;
+      why.push('prefix:' + prefixed);
+      continue;
+    }
+    if(qt.length >= 3 && typeof assistantLevenshtein === 'function'){
+      let best = null;
+      let bestD = 99;
+      for(const nt of nTokens){
+        if(nt.length < 3)continue;
+        const dist = assistantLevenshtein(qt, nt);
+        const lim = Math.max(
+          typeof assistantFuzzyLimit === 'function' ? assistantFuzzyLimit(qt.length) : 0,
+          typeof assistantFuzzyLimit === 'function' ? assistantFuzzyLimit(nt.length) : 0
+        );
+        if(dist > 0 && dist <= lim && dist < bestD){
+          bestD = dist;
+          best = nt;
+        }
+      }
+      if(best){
+        score += weak ? 6 : 30;
+        why.push('typo:' + qt + '~' + best);
+      }
+    }
+  }
+  if(typeof assistantLevenshtein === 'function' && qRaw.length >= 4 && nRaw.length >= 4 && qRaw.length <= nRaw.length + 8){
+    const dist = assistantLevenshtein(qRaw, nRaw);
+    const lim = Math.max(
+      typeof assistantFuzzyLimit === 'function' ? assistantFuzzyLimit(qRaw.length) : 0,
+      typeof assistantFuzzyLimit === 'function' ? assistantFuzzyLimit(nRaw.length) : 0
+    );
+    if(dist > 0 && dist <= lim + 1){
+      score += Math.max(8, 26 - dist * 8);
+      why.push('edit:' + dist);
+    }
+  }
+  return {score, why:why.slice(0, 3).join(',')};
+}
+
+function assistantHabitRows(data){
+  return (Array.isArray(data) ? data : []).map((habit, index) => ({
     index,
     hid:habit && habit.hid,
     name:String(habit && habit.name || ''),
     type:habit && habit.type,
     habit
   })).filter(item => item.name);
-  const match = assistantMatchByName(list, value);
-  if(!match.ok){
-    if(match.error === 'AMBIGUOUS'){
-      return {ok:false, error:'AMBIGUOUS', ask:`Which one: ${match.matches.map(item => item.name).join(', ')}?`, matches:match.matches};
-    }
-    return {ok:false, error:'UNKNOWN', ask:list.length
-      ? `I do not see that on your list. Try one of: ${list.slice(0, 8).map(item => item.name).join(', ')}.`
-      : 'Your list is empty, so there is nothing to log yet.'};
+}
+
+function assistantRankByName(list, query, limit){
+  const cap = Math.min(Math.max(Number(limit) || 5, 1), 8);
+  const scored = [];
+  for(const item of list || []){
+    const name = String(item && item.name || '');
+    if(!name)continue;
+    const hit = assistantScoreNameMatch(query, name);
+    if(hit.score > 0)scored.push({item, name, score:hit.score, why:hit.why, type:item.type === 'task' ? 'task' : 'habit'});
   }
-  return {ok:true, ...match.item};
+  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  return scored.slice(0, cap);
+}
+
+function assistantCandidateRows(ranked){
+  return (ranked || []).map(row => ({
+    name:row.name,
+    type:row.type || (row.item && row.item.type === 'task' ? 'task' : 'habit'),
+    score:row.score,
+    why:row.why || ''
+  }));
+}
+
+function assistantHabitAskFromCandidates(candidates, error){
+  const names = (candidates || []).map(row => row && row.name).filter(Boolean);
+  if(names.length === 1){
+    return {
+      ok:false,
+      error:error || 'CONFIRM',
+      ask:`Did you mean ${names[0]}?`,
+      choices:names,
+      candidates,
+      matches:names.map(name => ({name}))
+    };
+  }
+  if(names.length){
+    return {
+      ok:false,
+      error:error || 'AMBIGUOUS',
+      ask:`Which one: ${names.join(', ')}?`,
+      choices:names,
+      candidates,
+      matches:names.map(name => ({name}))
+    };
+  }
+  return {
+    ok:false,
+    error:error || 'UNKNOWN',
+    ask:'I do not see that on your list.',
+    choices:[],
+    candidates:[]
+  };
+}
+
+function assistantPickRankedName(ranked){
+  const rows = Array.isArray(ranked) ? ranked : [];
+  const candidates = assistantCandidateRows(rows);
+  if(!rows.length)return {ok:false, error:'UNKNOWN', candidates:[]};
+  const top = rows[0];
+  const second = rows[1];
+  const gap = second ? top.score - second.score : 99;
+  const strong = top.score >= 36 && (rows.length === 1 || (top.score >= 42 && gap >= 16));
+  if(strong)return {ok:true, item:top.item, candidates};
+  if(rows.length === 1 && top.score >= 16)return {ok:false, error:'CONFIRM', item:top.item, candidates};
+  const close = rows.filter(row => row.score >= 10 && row.score >= top.score - 14);
+  if(close.length > 1)return {ok:false, error:'AMBIGUOUS', matches:close.map(row => row.item), candidates:assistantCandidateRows(close)};
+  if(rows.length === 1)return {ok:false, error:'CONFIRM', item:top.item, candidates};
+  return {ok:false, error:'AMBIGUOUS', matches:rows.map(row => row.item), candidates};
+}
+
+function assistantFindHabit(data, value){
+  const list = assistantHabitRows(data);
+  const query = String(value || '').trim();
+  if(!query){
+    return assistantHabitAskFromCandidates([], 'UNKNOWN');
+  }
+  if(!list.length){
+    return {ok:false, error:'UNKNOWN', ask:'Your list is empty, so there is nothing to look up yet.', choices:[], candidates:[]};
+  }
+  const ranked = assistantRankByName(list, query, 8);
+  const picked = assistantPickRankedName(ranked);
+  if(picked.ok)return {ok:true, ...picked.item, candidates:picked.candidates};
+  if(!picked.candidates || !picked.candidates.length){
+    return {ok:false, error:'UNKNOWN', ask:'I do not see that on your list.', choices:[], candidates:[]};
+  }
+  return assistantHabitAskFromCandidates(picked.candidates, picked.error);
+}
+
+function assistantFindHabitSmart(data, name, spoken){
+  const primary = String(name || '').trim();
+  const found = assistantFindHabit(data, primary);
+  if(found.ok)return found;
+  const fallback = String(spoken || '').trim();
+  if(!fallback || (typeof assistantNormText === 'function'
+    ? assistantNormText(fallback) === assistantNormText(primary)
+    : fallback.toLowerCase() === primary.toLowerCase()))return found;
+  const alt = assistantFindHabit(data, fallback);
+  if(alt.ok)return alt;
+  const aScore = alt.candidates && alt.candidates[0] ? alt.candidates[0].score : 0;
+  const pScore = found.candidates && found.candidates[0] ? found.candidates[0].score : 0;
+  return aScore > pScore ? alt : found;
+}
+
+function assistantLooksLikeItemQuestion(text){
+  const s = typeof assistantNormText === 'function' ? assistantNormText(text) : String(text || '').trim().toLowerCase();
+  if(!s)return false;
+  if(/\b(?:remind me|don't forget|dont forget|create |new (?:task|habit)|add:?)\b/.test(s))return false;
+  if(typeof assistantLooksLikeEdit === 'function' && assistantLooksLikeEdit(s)
+    && !/\b(?:when|did i|do i have|why |last time|history|stats)\b/.test(s))return false;
+  return /\b(?:when(?:'s| is| am i| should i| do i| did i| will i)|where(?:'s| is)|did i (?:do|finish)|do i have|last time|how often|why (?:isn'?t|is not|wasn'?t)|on (?:my |the )?(?:plan|agenda|list))\b/.test(s);
 }
 
 function assistantRowClock(row){
@@ -965,15 +1153,25 @@ function assistantResolveDraftBase(args, session, context){
     return {ok:true, draft:{...current}, existing:Boolean(current.hid || current.index != null)};
   }
   if(want && !(typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))){
-    const found = typeof assistantFindHabit === 'function' ? assistantFindHabit(context && context.data, want) : {ok:false};
+    const spoken = session && session.parsed && session.parsed.text;
+    const found = typeof assistantFindHabitSmart === 'function'
+      ? assistantFindHabitSmart(context && context.data, want, spoken)
+      : (typeof assistantFindHabit === 'function' ? assistantFindHabit(context && context.data, want) : {ok:false});
     if(found && found.ok){
       const draft = typeof assistantHabitToDraft === 'function'
         ? assistantHabitToDraft(found.habit, found.index, context && context.settings, context && context.data)
         : assistantEmptyDraft();
       return {ok:true, draft, existing:true};
     }
+    const creating = !(current && (current.hid || current.index != null));
     const editing = session && session.parsed && session.parsed.intent === 'edit_item';
-    if(editing && found && !found.ok)return found;
+    const question = typeof assistantLooksLikeItemQuestion === 'function'
+      && assistantLooksLikeItemQuestion((session && session.parsed && session.parsed.text) || '');
+    if(!creating || editing || question)return found;
+    const close = (found && found.candidates || []).filter(row => Number(row.score) >= 40);
+    if(found && found.error === 'AMBIGUOUS' && close.length){
+      return assistantHabitAskFromCandidates(close, 'AMBIGUOUS');
+    }
   }
   if(current)return {ok:true, draft:{...current}, existing:Boolean(current.hid || current.index != null)};
   return {ok:true, draft:assistantEmptyDraft(), existing:false};
@@ -1360,42 +1558,258 @@ function assistantValidateClassify(args){
   return {ok:true, intent, reason:String(args && args.reason || '')};
 }
 
-function assistantCompletePreview(found, minutes){
+function assistantCompletePreview(found, options){
+  const opts = typeof options === 'number' ? {minutes:options} : (options || {});
+  const action = assistantNormText(opts.action) === 'undo_today' ? 'undo_today' : 'log';
+  const minutes = opts.minutes != null ? assistantParseDuration(opts.minutes) : null;
+  const valueNum = opts.value === null || opts.value === undefined || opts.value === '' ? null : Number(opts.value);
+  const value = Number.isFinite(valueNum) ? valueNum : null;
+  const note = String(opts.note || '').trim().slice(0, typeof MAX_NOTE_CHARS === 'number' ? MAX_NOTE_CHARS : 200);
+  const logs = found.habit && typeof normalizeLogs === 'function' ? normalizeLogs(found.habit.logs) : [];
+  const todayKey = typeof dateKey === 'function' ? dateKey(Date.now()) : '';
+  const todayActual = logs.filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log))
+    && (!todayKey || (typeof dateKey === 'function' && dateKey(logTime(log)) === todayKey)));
+  if(action === 'undo_today'){
+    const target = todayActual[todayActual.length - 1];
+    if(!target)return {ok:true, noChange:true, text:`${found.name} has no completion to undo today.`};
+    return {
+      ok:true,
+      pendingComplete:{
+        action:'undo_today',
+        index:found.index,
+        hid:found.hid,
+        name:found.name,
+        targetTs:typeof logTime === 'function' ? logTime(target) : Number(target && target.ts || target)
+      },
+      alreadyDone:false,
+      summary:`Mark ${found.name} not done by removing its latest completion from today?`
+    };
+  }
+  if(opts.minutes != null && opts.minutes !== '' && minutes == null){
+    return {ok:false, error:'minutes must be a duration such as 20 or "20 minutes"'};
+  }
+  if(opts.value !== null && opts.value !== undefined && opts.value !== '' && value === null){
+    return {ok:false, error:'value must be a number'};
+  }
   const done = found.habit && typeof completedToday === 'function' && completedToday(found.habit);
+  const detail = [minutes && `${minutes}m`, value !== null && `value ${value}`, note && `“${note}”`].filter(Boolean).join(' · ');
   return {
     ok:true,
     pendingComplete:{
+      action:'log',
       index:found.index,
       hid:found.hid,
       name:found.name,
-      minutes:minutes && minutes > 0 ? minutes : null
+      minutes:minutes && minutes > 0 ? minutes : null,
+      value,
+      note:note || null
     },
-    alreadyDone:Boolean(done),
-    summary:done
+    // A chunk/value/note is an intentional additional entry even when the
+    // rhythm has already met today's target.
+    alreadyDone:Boolean(done && !detail),
+    summary:done && !detail
       ? `${found.name} is already logged today.`
-      : `Log ${found.name} as done?`
+      : `Log ${found.name}${detail ? ` · ${detail}` : ' as done'}?`
   };
 }
 
-function assistantLookupText(found, context){
+function assistantLookupSummaryText(found, context){
   const habit = found.habit;
   const name = found.name;
   const today = (context.catalog && context.catalog.today) || {};
   const onOpen = (today.open || []).find(item => item.hid === found.hid || assistantNormText(item.name) === assistantNormText(name));
   const onDone = (today.done || []).find(item => item.hid === found.hid || assistantNormText(item.name) === assistantNormText(name));
   const overdue = (today.overdue || []).find(item => item.hid === found.hid || assistantNormText(item.name) === assistantNormText(name));
-  if(onDone)return `${name} is already done${onDone.clock ? ` (it was at ${onDone.clock})` : ' today'}.`;
-  if(onOpen)return onOpen.clock ? `${name} is on today at ${onOpen.clock}.` : `${name} is on today.`;
-  if(overdue)return `${name} is overdue.`;
+  let state = '';
+  if(onDone)state = `${name} is already done${onDone.clock ? ` (it was at ${onDone.clock})` : ' today'}.`;
+  else if(onOpen)state = onOpen.clock ? `${name} is on today at ${onOpen.clock}.` : `${name} is on today.`;
+  else if(overdue)state = `${name} is overdue.`;
   if(habit && habit.type === 'task'){
-    if(typeof isTaskDone === 'function' && isTaskDone(habit))return `${name} is already done.`;
-    if(habit.dueDate != null){
+    if(!state && typeof isTaskDone === 'function' && isTaskDone(habit))state = `${name} is already done.`;
+    if(!state && habit.dueDate != null){
       const key = typeof dateKey === 'function' ? dateKey(habit.dueDate) : '';
-      return key ? `${name} is a task due ${key}.` : `${name} is a task.`;
+      state = key ? `${name} is a task due ${key}.` : `${name} is a task.`;
     }
-    return `${name} is a task.`;
+    if(!state)state = `${name} is a task.`;
+  }else if(!state){
+    state = `${name} is on your list, but not on today's plan.`;
   }
-  return `${name} is on your list, but not on today's plan.`;
+  const now = context.now != null ? Number(context.now) : Date.now();
+  const todayBase = assistantDayBase(now);
+  const occurrenceLabel = (ts, timed) => {
+    const base = assistantDayBase(ts);
+    const delta = Math.round((base - todayBase) / 86400000);
+    const day = delta === 0 ? 'today'
+      : delta === 1 ? 'tomorrow'
+        : new Date(base).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
+    if(!timed)return day;
+    const mins = new Date(ts).getHours() * 60 + new Date(ts).getMinutes();
+    const clock = typeof assistantFriendlyClock === 'function' ? assistantFriendlyClock(mins) : new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    return `${day} at ${clock}`;
+  };
+  let nextText = '';
+  try{
+    const week = assistantQueryWeek(context.data, context.settings);
+    const rows = [];
+    for(const day of week && week.days || []){
+      for(const row of (day && day.timeline) || []){
+        if(!row || (row.kind !== 'fill' && row.kind !== 'scheduled'))continue;
+        const source = row.h || (context.data && row.i != null ? context.data[row.i] : null);
+        if(!source)continue;
+        if(found.hid ? source.hid !== found.hid : assistantNormText(source.name) !== assistantNormText(name))continue;
+        if(Number(row.end) <= now)continue;
+        rows.push(row);
+      }
+    }
+    rows.sort((a,b) => a.start - b.start);
+    if(rows.length){
+      nextText = ` Next planned: ${occurrenceLabel(rows[0].start, true)}.`;
+    }else{
+      const plans = (typeof normalizeLogs === 'function' ? normalizeLogs(habit && habit.logs) : [])
+        .filter(log => typeof isPlanLog === 'function' && isPlanLog(log) && logTime(log) >= todayBase)
+        .sort((a,b) => logTime(a) - logTime(b));
+      if(plans.length){
+        const first = plans[0];
+        nextText = ` Next planned: ${occurrenceLabel(logTime(first), typeof planTimed === 'function' && planTimed(first))}.`;
+      }else if(habit && habit.type === 'task' && habit.eventTime && habit.eventTime >= now){
+        nextText = ` Next scheduled: ${occurrenceLabel(habit.eventTime, true)}.`;
+      }else if(habit && habit.type === 'task' && habit.dueDate != null && assistantDayBase(habit.dueDate) >= todayBase
+        && !(typeof isTaskDone === 'function' && isTaskDone(habit))){
+        nextText = ` Next due: ${occurrenceLabel(habit.dueDate, false)}.`;
+      }else if(habit && habit.planByDate != null && assistantDayBase(habit.planByDate) >= todayBase){
+        nextText = ` Next plan-by date: ${occurrenceLabel(habit.planByDate, false)}.`;
+      }else if(!(habit && habit.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(habit))){
+        nextText = ' No occurrence is currently placed in the next seven days.';
+      }
+    }
+  }catch(_){}
+  let lastText = '';
+  try{
+    const logs = (typeof normalizeLogs === 'function' ? normalizeLogs(habit && habit.logs) : [])
+      .filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log)) && logTime(log) <= now);
+    if(logs.length){
+      const ts = logTime(logs[logs.length - 1]);
+      const when = assistantDayBase(ts) === todayBase
+        ? 'today'
+        : new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric',year:'numeric'});
+      lastText = ` Last completed: ${when}.`;
+    }else{
+      lastText = ' No completion has been logged yet.';
+    }
+  }catch(_){}
+  let details = '';
+  try{
+    const draft = typeof assistantHabitToDraft === 'function'
+      ? assistantHabitToDraft(habit, found.index, context.settings, context.data)
+      : null;
+    const summary = draft && typeof assistantDraftSummary === 'function'
+      ? assistantDraftSummary(draft, context.settings)
+      : '';
+    if(summary){
+      const bits = summary.split(' · ').slice(1);
+      if(bits.length)details = ` Settings: ${bits.join(' · ')}.`;
+    }
+  }catch(_){}
+  return state + nextText + lastText + details;
+}
+
+function assistantLookupHistoryText(found){
+  const logs = typeof normalizeLogs === 'function' ? normalizeLogs(found.habit && found.habit.logs) : [];
+  const actual = logs.filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log))
+    && (typeof logTime !== 'function' || logTime(log) <= Date.now()));
+  if(!actual.length)return `${found.name} has no completion history yet.`;
+  const recent = actual.slice(-8).reverse().map(log => {
+    const ts = typeof logTime === 'function' ? logTime(log) : Number(log && log.ts || log);
+    const when = new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+    const bits = [when];
+    const minutes = typeof logMinutes === 'function' ? logMinutes(log) : null;
+    const value = typeof logValue === 'function' ? logValue(log) : null;
+    const note = typeof logNote === 'function' ? logNote(log) : '';
+    if(minutes)bits.push(`${minutes}m`);
+    if(value !== null)bits.push(`value ${value}`);
+    if(note)bits.push(note);
+    return bits.join(' · ');
+  });
+  return `${found.name} has ${actual.length} completion${actual.length === 1 ? '' : 's'}. Recent: ${recent.join('; ')}.`;
+}
+
+function assistantLookupStatsText(found){
+  const h = found.habit || {};
+  const actual = typeof actualLogs === 'function' ? actualLogs(h.logs) : [];
+  if(h.type === 'task'){
+    const done = typeof isTaskDone === 'function' && isTaskDone(h);
+    const due = h.dueDate != null && typeof dateKey === 'function' ? ` Due ${dateKey(h.dueDate)}.` : '';
+    return `${found.name} is ${done ? 'done' : 'open'}.${due} ${actual.length} completion ${actual.length === 1 ? 'entry' : 'entries'} total.`.replace(/\s+/g,' ').trim();
+  }
+  const bits = [`${actual.length} total ${actual.length === 1 ? 'entry' : 'entries'}`];
+  if(typeof recentWindowStats === 'function'){
+    const recent = recentWindowStats(h,30);
+    bits.push(h.type === 'keepup' ? `${recent.good}/${recent.expected} on pace in the last 30 days` : `${recent.count} in the last 30 days`);
+  }
+  if(typeof currentRun === 'function'){
+    const run = currentRun(h);
+    if(run && Number.isFinite(Number(run.num)))bits.push(`${run.num} ${run.label || (h.type === 'keepup' ? 'streak' : 'current run')}`);
+  }
+  if(typeof progressScore === 'function'){
+    const score = progressScore(h);
+    if(score != null)bits.push(`${score}% progress score`);
+  }
+  if(typeof daysSince === 'function'){
+    const gap = daysSince(h.lastLog);
+    if(gap != null)bits.push(`${Math.max(0,gap)} day${Math.abs(gap) === 1 ? '' : 's'} since last`);
+  }
+  return `${found.name}: ${bits.join(' · ')}.`;
+}
+
+function assistantLookupWhyText(found, context, dateValue){
+  const date = assistantQueryDay(dateValue, context.now);
+  if(dateValue != null && String(dateValue).trim() && !date){
+    return 'I can explain planner choices for a day in the next seven days.';
+  }
+  const dayBase = date ? date.dayBase : assistantDayBase(context.now);
+  const dayLabel = date ? date.label : 'today';
+  const week = assistantQueryWeek(context.data, context.settings);
+  const day = week && (week.days || []).find(row => row.dayBase === dayBase);
+  const placed = assistantQueryDayRows(day, context.data).filter(row => assistantNormText(row.name) === assistantNormText(found.name));
+  if(placed.length){
+    return `${found.name} is planned ${dayLabel} at ${placed.map(row => row.clock).filter(Boolean).join(' and ') || 'a flexible time'}. The planner fit it around fixed time, travel, priorities, windows, and other eligible work.`;
+  }
+  if(found.habit && found.habit.snoozedUntil && found.habit.snoozedUntil > context.now){
+    return `${found.name} is not planned ${dayLabel} because it is snoozed until ${new Date(found.habit.snoozedUntil).toLocaleString()}.`;
+  }
+  if(found.habit && found.habit.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(found.habit)){
+    return `${found.name} is not planned ${dayLabel} because the task is already done.`;
+  }
+  try{
+    if(typeof buildDayCapacityScorecard === 'function'){
+      const report = buildDayCapacityScorecard(context.data, context.settings, dayBase, context.now, {weekMode:true, weekSnapshot:week});
+      const trace = (report && report.plannerTrace || []).find(row => row && (row.i === found.index || assistantNormText(row.name) === assistantNormText(found.name)));
+      if(trace){
+        const reason = trace.decision || (trace.status === 'unplaced' ? 'it did not fit the final plan' : 'the planner selected that slot');
+        const constraints = (trace.inputs || []).filter(bit => /allowed|priority|duration|weather|order|location|planned for/i.test(bit)).slice(0, 3);
+        return `${found.name} is ${trace.status} ${dayLabel}: ${reason}.${constraints.length ? ` Relevant inputs: ${constraints.join(' · ')}.` : ''}`;
+      }
+    }
+  }catch(_){}
+  return `${found.name} is not on ${dayLabel}'s plan. It may be off-rhythm, outside its allowed day/window, already satisfied, lower priority than work that fit, or unable to fit the remaining gaps.`;
+}
+
+function assistantLookupQueryFromText(text, args){
+  const explicit = assistantNormText(args && args.query);
+  if(explicit === 'history' || explicit === 'stats' || explicit === 'why' || explicit === 'summary')return explicit;
+  const s = assistantNormText(text);
+  if(/\b(?:history|logs?|last time|last did|did i (?:do|finish)|when did)\b/.test(s))return 'history';
+  if(/\b(?:stats?|streak|pace|progress score)\b/.test(s))return 'stats';
+  if(/\b(?:why|why isn|not on|not scheduled|didn'?t (?:fit|place))\b/.test(s))return 'why';
+  return 'summary';
+}
+
+function assistantLookupText(found, context, args, spoken){
+  const query = assistantLookupQueryFromText(spoken, args);
+  if(query === 'history')return assistantLookupHistoryText(found);
+  if(query === 'stats')return assistantLookupStatsText(found);
+  if(query === 'why')return assistantLookupWhyText(found, context, args && args.date);
+  return assistantLookupSummaryText(found, context);
 }
 
 function assistantDeletePreview(found){
@@ -1404,6 +1818,53 @@ function assistantDeletePreview(found){
     pendingDelete:{index:found.index, hid:found.hid, name:found.name},
     summary:`Remove ${found.name}? This deletes the item and its history.`
   };
+}
+
+function assistantPlanPreview(found, args, context){
+  const action = assistantNormText(args && args.action) === 'remove' ? 'remove' : 'add';
+  if(found.habit && found.habit.type === 'zero'){
+    return {ok:false, error:'Stop habits cannot be planned; they only record lapses.'};
+  }
+  if(found.habit && found.habit.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(found.habit)){
+    return {ok:false, error:`${found.name} is already done.`};
+  }
+  const parsed = typeof assistantParseDue === 'function' ? assistantParseDue(args && args.date, context.now) : null;
+  if(parsed == null)return {ok:false, error:'date is required'};
+  const dayBase = assistantDayBase(parsed);
+  const todayBase = assistantDayBase(context.now);
+  if(dayBase < todayBase)return {ok:false, error:'Plans can only be added or removed for today or a future day.'};
+  const key = typeof dateKey === 'function' ? dateKey(dayBase) : '';
+  if(!key)return {ok:false, error:'invalid plan date'};
+  let timeMin = null;
+  const timeText = String(args && args.time || '').trim();
+  if(timeText){
+    timeMin = typeof assistantParseClock === 'function' ? assistantParseClock(timeText) : null;
+    if(timeMin == null)return {ok:false, error:'time must look like 3pm or 15:00'};
+  }
+  let locationId = null;
+  let placeName = '';
+  const placeText = String(args && args.place || '').trim();
+  if(placeText && action === 'add'){
+    const match = assistantMatchByName((context.catalog && context.catalog.places) || [], placeText);
+    if(!match.ok)return assistantPlaceAsk(match.error, (context.catalog && context.catalog.places) || [], match.matches);
+    locationId = match.item.id;
+    placeName = match.item.name;
+  }
+  const existing = (typeof normalizeLogs === 'function' ? normalizeLogs(found.habit && found.habit.logs) : [])
+    .filter(log => typeof isPlanLog === 'function' && isPlanLog(log)
+      && typeof dateKey === 'function' && dateKey(logTime(log)) === key);
+  if(action === 'remove' && !existing.length){
+    return {ok:true, noChange:true, text:`${found.name} has no one-day plan on ${key}.`};
+  }
+  const clock = timeMin == null ? '' : (typeof assistantFriendlyClock === 'function' ? assistantFriendlyClock(timeMin) : timeText);
+  const pendingPlan = {
+    action,index:found.index,hid:found.hid,name:found.name,key,dayBase,timeMin,locationId,placeName,
+    replacing:existing.length
+  };
+  const summary = action === 'remove'
+    ? `Remove ${found.name}'s one-day plan on ${key}?`
+    : `${existing.length ? 'Replace' : 'Plan'} ${found.name} on ${key}${clock ? ` at ${clock}` : ''}${placeName ? ` at ${placeName}` : ''}?`;
+  return {ok:true, pendingPlan, summary};
 }
 
 function assistantAnswerItems(args, context){
@@ -1589,7 +2050,10 @@ function assistantAnswerWeather(args, context){
     const want = String((args && args.name) || '').trim();
     if(!want)return {ok:true, text:`Which item should I check the weather for? ${assistantQueryCapabilities()}`};
     const found = assistantFindHabit(context.data, want);
-    if(!found.ok)return {ok:true, text:found.ask || 'I cannot find that item.'};
+    if(!found.ok){
+      if((found.choices || []).length)return found;
+      return {ok:true, text:found.ask || 'I cannot find that item.'};
+    }
     const week = assistantQueryWeek(context.data, settings);
     const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
     const rows = [];
@@ -2492,34 +2956,48 @@ function assistantExecuteTool(name, args, session, context){
     if(applied.ok)session.draft = applied.draft;
     return applied;
   }
-  if(name === 'complete_item'){
-    const want = (args && args.name) || (session.draft && session.draft.name);
-    const found = assistantFindHabit(context.data, want);
-    if(!found.ok)return found;
-    if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(found.hid)){
-      return {ok:false, error:'This screen is view only. Open the main Tings app on this computer to log it.'};
+  if(name === 'find_item'){
+    const query = String((args && (args.query || args.name)) || (session.parsed && session.parsed.text) || '').trim();
+    if(!query)return {ok:false, error:'query is required', ask:'Which item are you asking about?'};
+    const ranked = assistantRankByName(assistantHabitRows(context.data), query, args && args.limit);
+    const picked = assistantPickRankedName(ranked);
+    const matches = assistantCandidateRows(ranked);
+    if(picked.ok){
+      return {ok:true, matches, text:`Closest match: ${picked.item.name}.`};
     }
-    const minutes = args && args.minutes != null ? assistantParseDuration(args.minutes) : null;
-    const preview = assistantCompletePreview(found, minutes);
-    session.pendingComplete = preview.pendingComplete;
-    if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
-    return preview;
+    if(matches.length)return assistantHabitAskFromCandidates(matches, picked.error);
+    return {ok:true, matches:[], text:'No saved item is close to that name.'};
   }
-  if(name === 'delete_item'){
+  if(name === 'complete_item' || name === 'plan_item' || name === 'delete_item' || name === 'lookup_item'){
     const want = (args && args.name) || (session.draft && session.draft.name);
-    const found = assistantFindHabit(context.data, want);
+    const spoken = (session.parsed && session.parsed.text) || '';
+    const found = typeof assistantFindHabitSmart === 'function'
+      ? assistantFindHabitSmart(context.data, want, spoken)
+      : assistantFindHabit(context.data, want);
     if(!found.ok)return found;
-    const preview = assistantDeletePreview(found);
-    session.pendingDelete = preview.pendingDelete;
+    if(name === 'complete_item'){
+      if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(found.hid)){
+        return {ok:false, error:'This screen is view only. Open the main Tings app on this computer to log it.'};
+      }
+      const preview = assistantCompletePreview(found, args);
+      session.pendingComplete = preview.pendingComplete || null;
+      if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
+      return preview;
+    }
+    if(name === 'plan_item'){
+      const preview = assistantPlanPreview(found, args, context);
+      session.pendingPlan = preview.pendingPlan || null;
+      if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
+      return preview;
+    }
+    if(name === 'delete_item'){
+      const preview = assistantDeletePreview(found);
+      session.pendingDelete = preview.pendingDelete;
+      if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
+      return preview;
+    }
     if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
-    return preview;
-  }
-  if(name === 'lookup_item'){
-    const want = (args && args.name) || (session.draft && session.draft.name);
-    const found = assistantFindHabit(context.data, want);
-    if(!found.ok)return found;
-    if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
-    return {ok:true, text:assistantLookupText(found, context), found};
+    return {ok:true, text:assistantLookupText(found, context, args, session.parsed && session.parsed.text), found};
   }
   // Query tools answer from live app data and never touch the draft or
   // storage. answer_schedule is async (the what-if may rebuild the week).
@@ -2856,10 +3334,38 @@ function assistantCommitComplete(pending){
     if(!found.ok)return {ok:false, error:found.ask || 'that item is gone'};
     index = found.index;
   }
-  const opts = pending.minutes ? {minutes:pending.minutes} : {};
+  if(pending.action === 'undo_today'){
+    const habit = data[index];
+    const before = typeof normalizeLogs === 'function' ? normalizeLogs(habit.logs) : (habit.logs || []).slice();
+    const targetTs = Number(pending.targetTs);
+    const after = before.slice();
+    let removeAt = -1;
+    for(let pos = after.length - 1; pos >= 0; pos -= 1){
+      const log = after[pos];
+      if(typeof isPlanLog === 'function' && isPlanLog(log))continue;
+      const ts = typeof logTime === 'function' ? logTime(log) : Number(log && log.ts || log);
+      if(ts === targetTs){ removeAt = pos; break; }
+    }
+    if(removeAt < 0)return {ok:false, error:'that completion is already gone'};
+    after.splice(removeAt,1);
+    habit.logs = typeof normalizeLogs === 'function' ? normalizeLogs(after) : after;
+    habit.lastLog = typeof latestActualLog === 'function' ? latestActualLog(habit.logs) : null;
+    if(typeof save === 'function' && !save(data))return {ok:false, error:'could not save'};
+    if(typeof showActionToast === 'function'){
+      showActionToast(`Marked ${habit.name} not done`,{
+        type:'breakable-set',idx:index,logs:before,snoozedUntil:habit.snoozedUntil || null,
+        openAction:false,undoLabel:'restore'
+      });
+    }
+    return {ok:true, index, name:habit.name, action:'undo_today', habit};
+  }
+  const opts = {};
+  if(pending.minutes)opts.minutes = pending.minutes;
+  if(pending.value !== null && pending.value !== undefined)opts.value = pending.value;
+  if(pending.note)opts.note = pending.note;
   if(typeof logTing === 'function'){
     const ok = logTing(index, opts);
-    return ok ? {ok:true, index, name:data[index] && data[index].name} : {ok:false, error:'could not log'};
+    return ok ? {ok:true, index, name:data[index] && data[index].name, action:'log', habit:data[index]} : {ok:false, error:'could not log'};
   }
   const habit = data[index];
   if(!habit)return {ok:false, error:'that item is gone'};
@@ -2869,7 +3375,62 @@ function assistantCommitComplete(pending){
   habit.logs = logs;
   habit.lastLog = ts;
   if(typeof save === 'function' && !save(data))return {ok:false, error:'could not save'};
-  return {ok:true, index, name:habit.name};
+  return {ok:true, index, name:habit.name, action:'log', habit};
+}
+
+function assistantCommitPlan(pending){
+  if(!pending || pending.index == null || !pending.key)return {ok:false, error:'nothing to plan'};
+  const data = typeof load === 'function' ? load() : [];
+  let index = pending.index;
+  if(!data[index] || (pending.hid && data[index].hid && data[index].hid !== pending.hid)){
+    const found = assistantFindHabit(data, pending.name);
+    if(!found.ok)return {ok:false, error:found.ask || 'that item is gone'};
+    index = found.index;
+  }
+  const habit = data[index];
+  if(!habit)return {ok:false, error:'that item is gone'};
+  if(habit.type === 'zero')return {ok:false, error:'Stop habits cannot be planned.'};
+  if(pending.key < (typeof todayIso === 'function' ? todayIso() : dateKey(Date.now()))){
+    return {ok:false, error:'that plan date has already passed'};
+  }
+  if(pending.action !== 'remove' && habit.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(habit)){
+    return {ok:false, error:`${habit.name} is already done`};
+  }
+  if(pending.action !== 'remove' && pending.locationId){
+    const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+    const places = typeof normalizeLocationRegistry === 'function'
+      ? normalizeLocationRegistry(settings.locations)
+      : (settings.locations || []);
+    if(!places.some(place => place && place.id === pending.locationId)){
+      return {ok:false, error:'that saved place is no longer available'};
+    }
+  }
+  const before = typeof normalizeLogs === 'function' ? normalizeLogs(habit.logs) : (habit.logs || []).slice();
+  const remaining = before.filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log)
+    && typeof dateKey === 'function' && dateKey(logTime(log)) === pending.key));
+  if(pending.action !== 'remove'){
+    const base = new Date(`${pending.key}T12:00:00`);
+    if(Number.isNaN(base.getTime()))return {ok:false, error:'invalid plan date'};
+    const minute = pending.timeMin == null ? 12 * 60 : Number(pending.timeMin);
+    const ts = new Date(base.getFullYear(),base.getMonth(),base.getDate(),Math.floor(minute / 60),minute % 60,0,0).getTime();
+    const entry = typeof makePlanLog === 'function'
+      ? makePlanLog(ts,{timed:pending.timeMin != null,locationId:pending.locationId || null})
+      : {ts,plan:true};
+    remaining.push(entry);
+  }
+  habit.logs = typeof normalizeLogs === 'function' ? normalizeLogs(remaining) : remaining;
+  habit.lastLog = typeof latestActualLog === 'function' ? latestActualLog(habit.logs) : habit.lastLog;
+  if(typeof save === 'function' && !save(data))return {ok:false, error:'could not save'};
+  const verb = pending.action === 'remove' ? 'Unplanned' : (pending.replacing ? 'Replanned' : 'Planned');
+  if(typeof showActionToast === 'function'){
+    showActionToast(`${verb} ${habit.name}`,{
+      type:'breakable-set',idx:index,logs:before,snoozedUntil:habit.snoozedUntil || null,
+      openAction:false,undoLabel:'undo'
+    });
+  }
+  if(typeof refreshOpenViews === 'function')refreshOpenViews();
+  else if(typeof render === 'function')render();
+  return {ok:true,index,name:habit.name,action:pending.action || 'add',habit};
 }
 
 function assistantCommitDelete(pending){

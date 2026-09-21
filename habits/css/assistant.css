@@ -80,7 +80,7 @@ body[data-pane-count="3"] .assistant-sheet{
   border-bottom-right-radius:8px;
 }
 .assistant-bubble-say{border-bottom-left-radius:8px;}
-.assistant-bubble-preview,.assistant-bubble-complete,.assistant-bubble-delete{
+.assistant-bubble-preview,.assistant-bubble-complete,.assistant-bubble-plan,.assistant-bubble-delete{
   max-width:100%;background:var(--bg2);padding:13px;
 }
 .assistant-bubble-preview.is-saved{opacity:.72;}

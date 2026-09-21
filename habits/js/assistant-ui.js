@@ -279,6 +279,7 @@ function assistantClearFocus(){
     _assistantSession.draft = null;
     _assistantSession.pendingEdit = null;
     _assistantSession.pendingComplete = null;
+    _assistantSession.pendingPlan = null;
     _assistantSession.pendingDelete = null;
     _assistantSession.awaiting = null;
   }
@@ -430,9 +431,17 @@ function appendAssistantBubble(kind, text, extra){
         <button type="button" class="btn" data-assistant-act="discard">never mind</button>
       </div>`;
   }else if(kind === 'complete'){
+    const undo = extra && extra.action === 'undo_today';
     div.innerHTML = `${think}<p>${escapeHtml(text)}</p>
       <div class="btn-row assistant-preview-actions">
-        <button type="button" class="btn primary" data-assistant-act="log">log it</button>
+        <button type="button" class="btn primary" data-assistant-act="log">${undo ? 'mark not done' : 'log it'}</button>
+        <button type="button" class="btn" data-assistant-act="discard">never mind</button>
+      </div>`;
+  }else if(kind === 'plan'){
+    const remove = extra && extra.action === 'remove';
+    div.innerHTML = `${think}<p>${escapeHtml(text)}</p>
+      <div class="btn-row assistant-preview-actions">
+        <button type="button" class="btn primary" data-assistant-act="plan">${remove ? 'remove plan' : 'plan it'}</button>
         <button type="button" class="btn" data-assistant-act="discard">never mind</button>
       </div>`;
   }else if(kind === 'delete'){
@@ -548,8 +557,12 @@ async function handleAssistantOutcome(out){
       if(retryText)appendAssistantRetry(retryText);
       return;
     }
-    appendAssistantBubble('complete', out.text || 'Log it as done?', {thinking:out.thinking});
+    appendAssistantBubble('complete', out.text || 'Log it as done?', {thinking:out.thinking, action:out.completeAction});
     if(retryText)appendAssistantRetry(retryText);
+    return;
+  }
+  if(out.type === 'plan'){
+    appendAssistantBubble('plan', out.text || 'Plan this item?', {thinking:out.thinking, action:out.planAction});
     return;
   }
   if(out.type === 'delete'){
@@ -678,6 +691,7 @@ function assistantMarkLastActionSpent(kind){
 function assistantKeepWorkingOn(commit){
   if(!_assistantSession)_assistantSession = typeof assistantCreateSession === 'function' ? assistantCreateSession() : {};
   _assistantSession.pendingComplete = null;
+  _assistantSession.pendingPlan = null;
   _assistantSession.pendingDelete = null;
   _assistantSession.awaiting = null;
   _assistantSession.messages = [];
@@ -795,7 +809,32 @@ function commitAssistantComplete(){
     return;
   }
   assistantMarkLastActionSpent('complete');
-  assistantAfterSave(result, false, 'logged');
+  assistantKeepWorkingOn(result);
+  if(typeof render === 'function')render();
+  appendAssistantBubble('say', result.action === 'undo_today'
+    ? `Marked ${result.name} not done. You can restore it from the toast.`
+    : `Logged ${result.name}. You can undo from the toast.`);
+}
+
+function commitAssistantPlan(){
+  const pending = _assistantSession && _assistantSession.pendingPlan;
+  if(!pending){
+    if(typeof showToast === 'function')showToast('nothing to plan');
+    return;
+  }
+  const result = typeof assistantCommitPlan === 'function'
+    ? assistantCommitPlan(pending)
+    : {ok:false, error:'planning unavailable'};
+  if(!result.ok){
+    if(typeof showToast === 'function')showToast(result.error || 'could not plan');
+    return;
+  }
+  _assistantSession.pendingPlan = null;
+  assistantMarkLastActionSpent('plan');
+  assistantKeepWorkingOn(result);
+  appendAssistantBubble('say', result.action === 'remove'
+    ? `Removed ${result.name}'s one-day plan. You can undo from the toast.`
+    : `Planned ${result.name}. You can undo from the toast.`);
 }
 
 function commitAssistantDelete(){
@@ -827,6 +866,7 @@ function assistantDiscardPending(){
       if(_assistantSession){
         _assistantSession.draft = assistantHabitToDraft(data[index], index, settings);
         _assistantSession.pendingComplete = null;
+        _assistantSession.pendingPlan = null;
         _assistantSession.pendingDelete = null;
       }
       _assistantPendingDraft = _assistantSession && _assistantSession.draft;
@@ -885,6 +925,7 @@ function bindAssistantUi(){
       if(which === 'add')commitAssistantDraft(false);
       else if(which === 'edit')commitAssistantDraft(true);
       else if(which === 'log')commitAssistantComplete();
+      else if(which === 'plan')commitAssistantPlan();
       else if(which === 'remove')commitAssistantDelete();
       else if(which === 'discard'){
         assistantDiscardPending();
