@@ -4,22 +4,26 @@
 
 function assistantSystemPrompt(){
   return [
-    'You are the Tings assistant in this app on this computer.',
-    'Think, then call the final tool directly whenever possible. classify_intent is optional. Do not save. Do not invent habit JSON.',
-    'create_task = one-off. create_habit = repeating. create_setting = a weather profile, place, busy time, or topic. ask_today = what is on today or next.',
-    'ask_weather = a weather question, or whether the weather suits an item — Tings computes the forecast answer. ask_schedule = free time, the freest day, whether a window is open, whether a new commitment would make them miss something, what they missed (the same list as the missed pill on today), or the agenda for a day/week. Ranking, follow-ups, and several questions in one message are the same job: call a tool for each part (you may emit several tool calls), then Tings gives you another turn to fetch more or answer from the tool data. "Most important thing I missed" and "most frequent habit on tomorrow\'s agenda" are still ask_schedule: fetch that list first, then lookup_item only if you still need history/stats/why. Availability and what-if questions ("do I have time tomorrow 5 to 6 pm", "if I add a task tomorrow 5 to 6 pm will I miss anything") are ask_schedule — never create_task, and never answer them from your own guess: Tings computes them with answer_weather / answer_schedule.',
-    'complete_item = log it as done, add minutes/value/note, or undo today’s latest completion. plan_item = add/remove a one-day plan for an existing item; this is not a recurring-schedule edit. delete_item = remove one item after confirmation. lookup_item = summary, history, stats, or why one named item is or is not scheduled. find_item = rank closest saved names when the spoken name may not match. answer_items = list/status/progress questions. answer_settings = list saved places, weather profiles, topics, or busy times. After a tool returns items or an item, you may call another tool for the rest of the request, then answer from that tool data — never invent names, priorities, or frequencies. recent.request / recent.answer / recent.items / recent.referent are the previous turn in this chat; "it" / "that" / "the one" is currentDraft or recent.referent.',
-    'draft_item creates or changes an item. Put every setting the user named in that one call and omit the rest. name is a short title only — never copy the rest of the request into name. Identity: name, newName, habitKind (build/limit/stop), emoji, emojiColor, topics, priority. Schedule: rhythm, timesPerPeriod, periodDays, weekdays, monthDays, preferredWeekdays, preferredMonthDays, due, dueTime, hardDue, planBy, windowText, preferredWindowText, earlyDays, delayDays, before, after, order, option. Effort: durationMinutes, breakable, minChunkMinutes, autoMarkMinutes, trackValue. Place/weather: placeNames, anywhere, placePrefs, weatherProfile, weatherText, showWeather, weatherAtPlace, weatherPlace. Other: pinned, snooze, sharedDisplay, sharedComplete, links. If they name weather conditions and catalog.weather has no match, still set weatherText — Tings will create a profile.',
-    'If they ask for several items at once (a list, a pasted schedule, two habits, errands plus places), call draft_batch once — not many draft_item calls. One item with a long or detailed instruction is still draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown places in a batch get a dummy address; do not ask.',
-    'draft_setting creates or changes a weather profile, place, busy time, or topic. kind is weather, location, busy, or topic. "Create a weather profile for barbecuing" → kind weather, name Barbecuing. Weather rules go in weatherText as one string. On a change, weatherText is a patch that merges onto currentDraft.rules (example: "prefer higher temperature") — do not drop other rules.',
-    'Example: "45 minute limit habit called Kettlebells, topics health, every Tuesday and Friday, urgent" → name "Kettlebells", habitKind "limit", durationMinutes 45, topics "health", rhythm "every Tuesday and Friday", priority 0.',
-    'Example: "Stretch at Home, prefer Home high, right after Walk same day, later of 6pm and sunset until isha" → name "Stretch", placeNames "Home", placePrefs "Home high", order "right after Walk, same day", windowText "later of 6pm and sunset until isha".',
-    'If currentDraft is a weather profile, place, busy time, or topic, call draft_setting with only the new fields. If currentDraft is a habit or task, "it" / "this" / "that" is that item. A question about it uses lookup_item (including next time, last completion, history, stats, or why); done/not-done uses complete_item; plan/unplan uses plan_item; remove the whole item uses delete_item; only a settings change uses draft_item. Keep its name and hid. "Add the location home" or "use home and mom\'s house" sets placeNames on currentDraft — it is not a new item. Do not classify unclear when currentDraft is set.',
-    'Read the request yourself and resolve dates against catalog.date (today as ISO date + weekday): relative phrases like "day after tomorrow" or "two days after tomorrow" become an exact due YYYY-MM-DD. You may fill duration, windowText, and weatherText when they asked you to pick those. placeNames must be catalog.places names the user named — never invent backyard, park, or any place that is not in catalog.places. If they did not name a saved place, omit placeNames. sunset means maghrib.',
-    'If a name is missing, a fragment, or could match more than one saved item, call find_item or ask_user. When find_item is for a lookup, completion, plan, or deletion, set its action field so a clarification resumes the same operation. Do not guess a title and do not create a new item. Tings ranks names and will ask the user when several could fit.',
-    'If the whole request is confusing or could mean two different Tings actions, call ask_user with one short question and optional choices instead of guessing. Tings asks at most twice in a row, then stops.',
-    'On extract, call draft_item with flat strings only. Do not nest window or place objects. If a tool call is invalid or cut off, retry that tool with smaller string arguments — Tings will steer you.'
-  ].join(' ');
+    'You are the Tings assistant. Understand the request, then call tools; do not guess app data or save anything yourself.',
+    '',
+    'PRIORITIES',
+    '1. Call the final tool directly when you can. classify_intent is optional.',
+    '2. Treat tool results as authoritative. Never invent or recalculate names, dates, times, totals, priorities, frequencies, history, weather, or schedule facts.',
+    '3. Handle every part of a compound request. Emit several tool calls when independent parts are clear; after results, call more tools if a part remains.',
+    '4. If a saved-item name is missing or ambiguous, call find_item or ask_user. Never guess the item or create a replacement.',
+    '',
+    'READS AND ACTIONS',
+    'Use answer_schedule for agendas, missed items, free time, freest day, open windows, and what-if conflicts. For most important, most frequent, or longest, set select so Tings computes the ranking. Use answer_weather for forecast facts and weather fit. Use answer_items for lists/status/progress, answer_settings for saved configuration, and lookup_item for one item’s next time, last completion, history, stats, or planner reason.',
+    'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove an item. These tools preview changes for confirmation.',
+    '',
+    'CREATION AND EDITING',
+    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several items. Use draft_setting for settings. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists.',
+    'currentDraft is the item being edited. “it”, “this”, and “that” refer to currentDraft, otherwise recent.referent when appropriate. A question about it uses lookup_item; done uses complete_item; plan/unplan uses plan_item; remove uses delete_item. A named saved place may update placeNames on the current item; do not turn it into a new item.',
+    '',
+    'GROUNDING',
+    'Resolve relative dates using catalog.date. sunset means maghrib. placeNames may contain only places the user named that exist in catalog.places; omit the field otherwise. recent contains the previous request, verified answer, items, and referent.',
+    'If the request is genuinely ambiguous, ask one short question. If tool JSON fails, retry with a smaller flat object.'
+  ].join('\n');
 }
 
 function assistantUnsupportedText(){
@@ -182,7 +186,7 @@ function assistantRepairText(step, error){
 }
 
 function assistantQueryListHint(){
-  return 'The items array has Tings facts (priority P0–P5, frequency, duration). If the user asked more than one thing, or a follow-up about this data, call the next matching tool now. Rank or pick from the payload you have. Call lookup_item only for history, stats, or why on an exact saved name. Then answer in 1–2 sentences from tool data only — do not invent names or numbers.';
+  return 'The items array has Tings facts (priority P0–P5, frequency, duration). If the user asked for the most important, most frequent, or longest schedule item, call answer_schedule again with select most_important, most_frequent, or longest; Tings must compute the choice. If they asked another question too, call its matching tool now. Call lookup_item only for history, stats, or why on an exact saved name. Do not calculate, rank, or rewrite factual results yourself.';
 }
 
 function assistantFollowupSteerText(){
@@ -244,9 +248,9 @@ function assistantRememberGrounded(session, result, call){
   if(!session || !result)return;
   const text = String(result.text || result.summary || '').trim();
   if(text)session.lastGroundedText = text;
-  if(call && assistantIsReadTool(call.name) && text){
+  if(call && (assistantIsReadTool(call.name) || result.noChange) && text){
     session.lastReadText = text;
-    session.lastReadParts = (session.lastReadParts || []).concat([text]).slice(-4);
+    session.lastReadParts = (session.lastReadParts || []).concat([text]).slice(-8);
   }
   if(!session.recent || typeof session.recent !== 'object')session.recent = {};
   const tools = Array.isArray(session.recent.tools) ? session.recent.tools.slice() : [];
@@ -432,15 +436,22 @@ function assistantQueuePendingAction(session, kind, result){
 function assistantFinalizeFromAnswer(session, parsed, fallbackText){
   let content = String((parsed && parsed.content) || '').trim();
   if(typeof assistantLooksLikeToolNarration === 'function' && assistantLooksLikeToolNarration(content))content = '';
-  const grounded = String(fallbackText || (Array.isArray(session.lastReadParts) && session.lastReadParts.length ? session.lastReadParts.join(' ') : '') || session.lastReadText || session.lastGroundedText || '').trim();
-  const extra = content || grounded;
+  const readGrounded = String(Array.isArray(session.lastReadParts) && session.lastReadParts.length
+    ? session.lastReadParts.join('\n\n')
+    : session.lastReadText || '').trim();
+  const grounded = String(fallbackText || readGrounded || session.lastGroundedText || '').trim();
+  // Read tools own factual wording. The model may orchestrate more calls, but
+  // its prose must never replace computed schedule/weather/item facts. This
+  // also makes compound answers safe: every verified tool answer is preserved.
+  const authoritative = readGrounded || grounded;
+  const extra = authoritative || content;
   const write = assistantPendingWriteOutcome(session, parsed, extra);
   if(write){
     const summary = String((session.pendingOutcome && session.pendingOutcome.text) || write.text || '').trim();
     if(write.alsoText === write.text || write.alsoText === summary)write.alsoText = null;
     return write;
   }
-  const text = content || grounded;
+  const text = authoritative || content;
   if(text)return {type:'say', text, thinking:parsed && parsed.thinking, session};
   return {
     type:'error',
@@ -1482,16 +1493,12 @@ async function runAssistantTurn(userText, opts = {}){
         step = 'answer';
         continue;
       }
-      const spokenAnswer = spoken && !narration;
-      const extractLike = step === 'extract' || Boolean(session.draft && session.draft.name);
-      const queryAnswer = (step === 'answer' || step === 'query') && spokenAnswer;
-      const followupAnswer = !extractLike && assistantHasRecentContext(session) && spokenAnswer;
-      if(assistantCanFinalize(session) || queryAnswer || followupAnswer){
+      if(assistantCanFinalize(session)){
         return done(assistantFinalizeFromAnswer(session, parsed));
       }
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         assistantTracePush(session, {t:'repair', step, error:call && call.parseError || 'no tool', gaveUp:true});
-        if(assistantCanFinalize(session) || queryAnswer || followupAnswer)return done(assistantFinalizeFromAnswer(session, parsed));
+        if(assistantCanFinalize(session))return done(assistantFinalizeFromAnswer(session, parsed));
         if(assistantWideSession(session)){
           return done({type:'error', text:'I could not turn that into a Tings action. Try a shorter request, or add it from +.', thinking:parsed && parsed.thinking, session});
         }
@@ -1603,7 +1610,7 @@ async function runAssistantTurn(userText, opts = {}){
 
     if(result.noChange){
       const noChangeText = result.text || result.summary || 'Nothing changed.';
-      assistantRememberGrounded(session, {text:noChangeText}, call);
+      assistantRememberGrounded(session, {text:noChangeText, noChange:true}, call);
       assistantPushChainResult(session, parsed, {
         ok:true,
         noChange:true,
@@ -1636,7 +1643,7 @@ async function runAssistantTurn(userText, opts = {}){
         session.messages.push({role:'user', content:intent === 'ask_weather'
           ? 'Call answer_weather. query day = forecast for a date, query window = a time window (start and end clocks), query item = check the weather against a named item. Resolve "tomorrow" and weekday names against catalog.date yourself.'
           : intent === 'ask_schedule' || intent === 'ask_today'
-            ? 'Call answer_schedule. query free = open time on a day (add start and end clocks to check one window), freest = freest day of the week, conflict = whether blocking a start/end window would make them miss something, missed = the same list as the missed pill on today, day = one day’s agenda (rows include priority and frequency), week = the whole week. If they asked several things, call a tool for each part. A ranking or follow-up needs that list first, then lookup_item only for extra history/stats/why. Resolve "tomorrow" and weekday names against catalog.date yourself.'
+            ? 'Call answer_schedule. query free = open time on a day (add start and end clocks to check one window), freest = freest day of the week, conflict = whether blocking a start/end window would make them miss something, missed = the same list as the missed pill on today, day = one day’s agenda, week = the whole week. For most important, most frequent, or longest, add select most_important, most_frequent, or longest so Tings computes it. If they asked several things, call a tool for each part. Use lookup_item only for extra history/stats/why. Resolve "tomorrow" and weekday names against catalog.date yourself.'
             : intent === 'ask_items'
               ? 'Call answer_items. Use list with kind/status/search, or progress for a today summary.'
               : 'Call answer_settings for places, weather, topics, or busy times.'});
@@ -1775,7 +1782,9 @@ async function runAssistantTurn(userText, opts = {}){
         text:result.text,
         items:Array.isArray(result.items) ? result.items : undefined,
         item:result.item || null,
-        hint:assistantQueryContinueHint()
+        hint:Array.isArray(result.items) && result.items.length
+          ? assistantQueryListHint()
+          : assistantQueryContinueHint()
       });
       session.analyzeList = true;
       session.awaiting = 'answer';

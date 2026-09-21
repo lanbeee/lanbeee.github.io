@@ -278,7 +278,9 @@ function expectedDueKey(token){
   assert(local.createType === 'preview' && /mom/i.test(local.createName || ''), 'model tool creates a preview for remind me');
   assert(local.habitType === 'preview' && local.habitKind === 'habit' && local.habitWindow === 'maghrib', 'daily walk after sunset is a habit with maghrib');
   assert(local.todayType === 'say', 'what is next is answered after a schedule tool');
-  assert(/current Tings data/i.test(String(local.todayText || '').trim()), 'what is next completes the model/tool loop');
+  assert(/Nothing is planned|Today:/i.test(String(local.todayText || '').trim())
+    && !/current Tings data/i.test(String(local.todayText || '').trim()),
+    `what is next keeps the authoritative tool answer: ${local.todayText}`);
   assert(/Pharmacy/i.test(local.lookupText || ''), 'lookup names the pharmacy');
   assert(local.completeType === 'complete' && /Walk/i.test(local.completeName || ''), 'I already did Walk previews a log');
   assert(local.commitOk && local.walkLogged, 'confirming complete actually logs Walk');

@@ -2027,7 +2027,49 @@ function assistantTodayAgendaHids(data, week, now){
   return hids;
 }
 
-function assistantAnswerMissed(context){
+function assistantSelectScheduleItem(items, select){
+  const rows = (Array.isArray(items) ? items : []).filter(Boolean);
+  if(!rows.length)return null;
+  if(select === 'most_important'){
+    return rows.slice().sort((a,b) => {
+      const ap = Number.isFinite(Number(a.priorityRank)) ? Number(a.priorityRank) : 2;
+      const bp = Number.isFinite(Number(b.priorityRank)) ? Number(b.priorityRank) : 2;
+      return ap - bp;
+    })[0];
+  }
+  if(select === 'most_frequent'){
+    const habits = rows.filter(item => item.type === 'habit');
+    return habits.slice().sort((a,b) => (Number(b.timesPerWeek) || 0) - (Number(a.timesPerWeek) || 0))[0] || null;
+  }
+  if(select === 'longest'){
+    const timed = rows.filter(item => Number.isFinite(Number(item.durationMinutes)) && Number(item.durationMinutes) > 0);
+    return timed.slice().sort((a,b) => Number(b.durationMinutes) - Number(a.durationMinutes))[0] || null;
+  }
+  return null;
+}
+
+function assistantSelectedScheduleText(items, select, scope){
+  const picked = assistantSelectScheduleItem(items, select);
+  if(!picked){
+    if(select === 'most_frequent')return {ok:true, items:[], text:'There is no recurring habit to compare here.'};
+    if(select === 'longest')return {ok:true, items:[], text:'None of those items has a duration.'};
+    return null;
+  }
+  const label = select === 'most_important' ? 'most important'
+    : select === 'most_frequent' ? 'most frequent'
+    : 'longest';
+  const detail = select === 'most_important' ? picked.priority
+    : select === 'most_frequent' ? picked.frequency
+    : assistantQueryDurationText(picked.durationMinutes);
+  return {
+    ok:true,
+    items:[picked],
+    item:picked,
+    text:`The ${label} ${scope} is ${picked.name}${detail ? ` (${detail})` : ''}.`
+  };
+}
+
+function assistantAnswerMissed(context, select){
   const data = context.data;
   const settings = context.settings;
   const now = context.now != null ? Number(context.now) : Date.now();
@@ -2047,7 +2089,8 @@ function assistantAnswerMissed(context){
   const listed = items.map(item => item.missed && item.missed !== 'today'
     ? `${item.name} (${item.missed})`
     : item.name).join(', ');
-  return {ok:true, items, text:`Missed: ${listed}${more}.`};
+  const selected = assistantSelectedScheduleText(items, select, 'missed item');
+  return selected || {ok:true, items, text:`Missed: ${listed}${more}.`};
 }
 
 function assistantQueryDurationText(minutes){
@@ -2251,6 +2294,8 @@ async function assistantAnswerSchedule(args, context){
   const data = context.data;
   const queryRaw = assistantNormText(args && args.query);
   const query = ['free','freest','conflict','missed','day','week'].includes(queryRaw) ? queryRaw : '';
+  const selectRaw = assistantNormText(args && args.select);
+  const select = ['most_important','most_frequent','longest'].includes(selectRaw) ? selectRaw : '';
   if(!query)return {ok:true, text:`That schedule question is too vague for me. ${assistantQueryCapabilities()}`};
   const date = assistantQueryDay(args && args.date, now);
   if((args && args.date != null && String(args.date).trim() !== '') && !date){
@@ -2262,7 +2307,7 @@ async function assistantAnswerSchedule(args, context){
   const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
   const gapsInfo = day && typeof computeDayFreeGaps === 'function' ? computeDayFreeGaps(day, settings, now) : null;
 
-  if(query === 'missed')return assistantAnswerMissed(context);
+  if(query === 'missed')return assistantAnswerMissed(context, select);
 
   if(query === 'freest'){
     if(!week || typeof computeDayFreeGaps !== 'function')return {ok:true, text:'I could not read this week\'s plan yet — open the home view once, then ask again.'};
@@ -2293,6 +2338,8 @@ async function assistantAnswerSchedule(args, context){
     if(!rows.length)return {ok:true, text:`Nothing is planned on ${dayLabel}.`, items:[]};
     const free = gapsInfo ? ` ${assistantQueryDurationText(gapsInfo.totalFreeMinutes)} stays open.` : '';
     const items = assistantQueryRowFacts(rows);
+    const selected = assistantSelectedScheduleText(items, select, `item in ${dayLabel}'s agenda`);
+    if(selected)return selected;
     return {
       ok:true,
       items,

@@ -1272,8 +1272,9 @@ async function launchBrowser(){
     'each compound confirmation commits its own requested target');
   assert(compounds.noOpType === 'say'
     && compounds.noOpTools.includes('plan_item') && compounds.noOpTools.includes('answer_items')
-    && /Alpha and Beta/i.test(compounds.noOpText || ''),
-    'a no-op action does not discard the remaining queued clause');
+    && /no one-day plan/i.test(compounds.noOpText || '')
+    && /Alpha(?: and|,) Beta/i.test(compounds.noOpText || ''),
+    `a no-op action does not discard the remaining queued clause: ${compounds.noOpText}`);
   assert(JSON.stringify(compounds.clarify) === JSON.stringify(['ask','ask','say']) && compounds.clarifyGaveUp,
     'required clarification is also capped at two attempts');
 

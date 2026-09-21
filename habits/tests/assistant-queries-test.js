@@ -197,6 +197,78 @@ async function launchBrowser(){
   assert(weatherTurn.type === 'say' && /Test City|forecast/i.test(weatherTurn.text),
     `weather day answer is grounded in the forecast: ${weatherTurn.text}`);
 
+  console.log('\n[grounding] model prose cannot overwrite factual tool results');
+  const grounding = await page.evaluate(async () => {
+    saveSortSettings({...loadSortSettings(), locations:[{id:'home', name:'Home', address:'1 Main St'}]});
+    refreshHomeWeekForAssistant();
+    const context = assistantBuildContext();
+    const expectedFree = await assistantAnswerSchedule({query:'free', date:'today'}, context);
+    const expectedPlaces = assistantAnswerSettings({kind:'places'}, context);
+    const singleReplies = [
+      {message:{thinking:'use computed schedule', tool_calls:[
+        {function:{name:'answer_schedule', arguments:{query:'free', date:'today'}}}
+      ]}},
+      {message:{content:'You have 99 hours free in three overlapping gaps from 7pm to midnight.'}}
+    ];
+    const single = await runAssistantTurn('How much free time do I have today?', {
+      context,
+      complete:async () => singleReplies.shift()
+    });
+    const compoundReplies = [
+      {message:{thinking:'answer both parts from tools', tool_calls:[
+        {function:{name:'answer_schedule', arguments:{query:'free', date:'today'}}},
+        {function:{name:'answer_settings', arguments:{kind:'places'}}}
+      ]}},
+      {message:{content:'You have 88 hours free and your saved place is Atlantis.'}}
+    ];
+    const compound = await runAssistantTurn('How much free time do I have today, and what places are saved?', {
+      context,
+      complete:async () => compoundReplies.shift()
+    });
+    const now = Date.now();
+    save([{hid:'grounded-amma', name:'Call Amma', type:'habit', target:7,
+      logs:[makeActualLog(now - 2 * 86400000)], lastLog:now - 2 * 86400000}]);
+    refreshHomeWeekForAssistant();
+    const followContext = assistantBuildContext();
+    const expectedHistory = await assistantExecuteTool('lookup_item',
+      {name:'Call Amma', query:'history'}, assistantCreateSession(), followContext);
+    const followSession = assistantCreateSession();
+    followSession.recent = {request:'When is Call Amma next?', referent:'Call Amma', say:'Call Amma is on your list.'};
+    const followReplies = [
+      {message:{content:'You have never called Amma.'}},
+      {message:{thinking:'verify history', tool_calls:[
+        {function:{name:'lookup_item', arguments:{name:'Call Amma', query:'history'}}}
+      ]}},
+      {message:{content:'You called yesterday at noon.'}}
+    ];
+    const follow = await runAssistantTurn('When did I do it last?', {
+      context:followContext,
+      session:followSession,
+      complete:async () => followReplies.shift()
+    });
+    save([]);
+    refreshHomeWeekForAssistant();
+    return {
+      expectedFree:expectedFree.text,
+      expectedPlaces:expectedPlaces.text,
+      expectedHistory:expectedHistory.text,
+      single:{type:single.type, text:single.text},
+      compound:{type:compound.type, text:compound.text},
+      follow:{type:follow.type, text:follow.text, tools:(follow.debug || []).filter(row => row.t === 'tool').map(row => row.name)}
+    };
+  });
+  assert(grounding.single.type === 'say' && grounding.single.text === grounding.expectedFree
+    && !/99 hours|overlapping/i.test(grounding.single.text),
+    `a fabricated rewrite is discarded: ${grounding.single.text}`);
+  assert(grounding.compound.type === 'say'
+    && grounding.compound.text === `${grounding.expectedFree}\n\n${grounding.expectedPlaces}`
+    && !/88 hours|Atlantis/i.test(grounding.compound.text),
+    `compound answers preserve each authoritative result: ${grounding.compound.text}`);
+  assert(grounding.follow.type === 'say' && grounding.follow.text === grounding.expectedHistory
+    && grounding.follow.tools.includes('lookup_item')
+    && !/never called|yesterday at noon/i.test(grounding.follow.text),
+    `follow-ups must refresh facts through a tool: ${grounding.follow.text}`);
+
   console.log('\n[routing] natural query wording bypasses the legacy local answers');
   const routedQueries = await page.evaluate(() => [
     'What should I do tomorrow?',
@@ -681,6 +753,9 @@ async function launchBrowser(){
     });
     const dropped = collectDroppedItems(load(), loadSortSettings(), [], now).map(row => row.name);
     const missed = await assistantAnswerSchedule({query:'missed'}, assistantBuildContext());
+    const mostImportant = await assistantAnswerSchedule({query:'missed', select:'most_important'}, assistantBuildContext());
+    const mostFrequent = await assistantAnswerSchedule({query:'missed', select:'most_frequent'}, assistantBuildContext());
+    const longest = await assistantAnswerSchedule({query:'missed', select:'longest'}, assistantBuildContext());
     const local = assistantTryMissedTurn('What did I miss today?', assistantCreateSession(), assistantBuildContext());
     _homeRenderedWeek = savedWeek;
     save([]);
@@ -689,6 +764,9 @@ async function launchBrowser(){
     return {
       dropped,
       text:missed.text,
+      mostImportant:mostImportant.text,
+      mostFrequent:mostFrequent.text,
+      longest:longest.text,
       items:(missed.items || []).map(item => ({name:item.name, priority:item.priority, priorityRank:item.priorityRank, frequency:item.frequency})),
       localType:local && local.type,
       localText:local && local.text,
@@ -703,6 +781,12 @@ async function launchBrowser(){
     `answer_schedule missed matches that pill list: ${missedHandlers.text}`);
   assert(missedHandlers.items.some(item => item.name === 'Take meds' && item.priority === 'P0' && item.priorityRank === 0),
     `missed items include priority facts: ${JSON.stringify(missedHandlers.items)}`);
+  assert(/most important.*Take meds.*P0/i.test(missedHandlers.mostImportant),
+    `priority ranking is computed by the tool: ${missedHandlers.mostImportant}`);
+  assert(/most frequent.*Take meds.*daily/i.test(missedHandlers.mostFrequent),
+    `frequency ranking is computed by the tool: ${missedHandlers.mostFrequent}`);
+  assert(/longest.*Sort laundry.*20m/i.test(missedHandlers.longest),
+    `duration ranking is computed by the tool: ${missedHandlers.longest}`);
   assert(missedHandlers.localType === 'say' && /Take meds/.test(missedHandlers.localText),
     `what did I miss today uses the header list locally: ${missedHandlers.localText}`);
 

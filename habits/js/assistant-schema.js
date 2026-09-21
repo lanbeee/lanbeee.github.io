@@ -115,7 +115,7 @@ function assistantRequestNeedsModel(text){
 
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
-    description:'Classify only when you cannot call the final tool directly. create_setting = a weather profile, place, busy time, or topic — not a habit or task. A habit/task that names weather conditions is still create_habit/create_task. ask_weather and ask_schedule use live forecast/planner answers. "What did I miss today?" is ask_schedule (the today-header missed list), not ask_today. Several questions or an action plus a question in one message is still one turn: call a tool for each part (you may emit several tool calls). A ranking or follow-up about a list ("most important missed", "most frequent on tomorrow\'s agenda", "when did I last do that one") fetches the list first, then lookup_item if you need extra details. ask_items covers lists, status, and progress. ask_settings covers existing places, profiles, topics, and busy times. lookup_item answers one existing item (next time, last done, history, stats, why). find_item lists closest saved names when the spoken name may not match the title. complete_item / plan_item / delete_item change an existing item after confirmation. If several items could match, call ask_user — do not guess a name and do not create a new item. If the whole request is confusing, call ask_user instead of guessing. Availability and what-if questions are ask_schedule — not create_task. If currentDraft is set, "it" is that row unless they clearly start a new one. recent.items / recent.referent are the last list and named item from this chat. Do not classify unclear when currentDraft is set.',
+    description:'Classify only when you cannot call the final tool directly. create_setting is a weather profile, place, busy time, or topic. ask_weather and ask_schedule use live data; availability, missed-item, ranking, and what-if questions are ask_schedule, not creation. For schedule rankings call answer_schedule with select. Several questions or an action plus a question require a tool for every part. ask_items covers lists/status/progress; ask_settings covers saved configuration; lookup_item covers one item’s next time/history/stats/why. complete_item, plan_item, and delete_item preview actions. If a name or request is ambiguous, call find_item or ask_user instead of guessing. currentDraft and recent hold conversational context.',
     parameters:{
       type:'object',
       required:['intent'],
@@ -272,7 +272,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_schedule:{
-    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end). query freest = which day of the week is freest. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = the same list as the missed pill on today\'s header (planner expectations that slipped, not a raw overdue dump). query day = the agenda for one day, with per-item priority and frequency. query week = the whole week overview. Several questions in one message: call this for each schedule part (missed and tomorrow\'s agenda are two calls) and lookup_item / answer_weather / answer_items for the rest. After items return, rank from that payload; call lookup_item only when you still need history, stats, or why.',
+    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end). query freest = which day of the week is freest. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = the same list as the missed pill on today\'s header (planner expectations that slipped, not a raw overdue dump). query day = the agenda for one day, with per-item priority and frequency. query week = the whole week overview. For "most important", "most frequent", or "longest", set select so Tings computes the answer; never rank items yourself. Several questions in one message: call this for each schedule part and lookup_item / answer_weather / answer_items for the rest.',
     parameters:{
       type:'object',
       required:['query'],
@@ -281,7 +281,8 @@ const ASSISTANT_TOOL_DEFS = {
         date:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD. Default today'},
         start:{type:['string','null'], description:'window start: 5pm or 17:00'},
         end:{type:['string','null'], description:'window end: 6pm or 18:00'},
-        minutes:{type:['integer','null'], description:'duration in minutes, e.g. a 45 minute task'}
+        minutes:{type:['integer','null'], description:'duration in minutes, e.g. a 45 minute task'},
+        select:{type:['string','null'], enum:['most_important','most_frequent','longest',null], description:'Compute one ranked choice from query day or missed. Omit for the full list.'}
       }
     }
   },

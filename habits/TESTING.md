@@ -81,7 +81,9 @@ assistant suites: they skip when no `qwen3.8` tag is reachable. Set
 `ASSISTANT_LIVE=1` to fail instead of skip, or `ASSISTANT_LIVE=full` for the
 longer draft_item settings battery. Compound / follow-up / multi-part questions
 are `tests/assistant-compound-test.js` against the real model — not a scripted
-`complete()` mock.
+`complete()` mock. `tests/assistant-queries-test.js` also injects deliberately
+false model prose after correct tool calls and verifies that single and compound
+answers retain only authoritative tool output.
 
 ## Adding planner tests without copying the harness
 
