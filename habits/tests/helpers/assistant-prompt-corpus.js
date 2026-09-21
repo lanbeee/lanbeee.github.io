@@ -110,7 +110,14 @@ const ASSISTANT_LIVE_EXTRA = [
   {prompt:'gym twice a week', intent:['create_habit']},
   {prompt:'pay rent next Monday', intent:['create_task']},
   {prompt:'walk at Home after maghrib', intent:['create_task','create_habit']},
-  {prompt:'uhhh I think I need to like go get the thing from the pharmacy maybe 20 minutes?', intent:['create_task','unclear']}
+  {prompt:'uhhh I think I need to like go get the thing from the pharmacy maybe 20 minutes?', intent:['create_task','unclear']},
+  {prompt:"What's the weather tomorrow?", intent:['ask_weather']},
+  {prompt:'Will it rain on Thursday?', intent:['ask_weather']},
+  {prompt:'Should I go for a run today given the weather?', intent:['ask_weather']},
+  {prompt:'Which day of this week am I freest?', intent:['ask_schedule']},
+  {prompt:'Can I add a task tomorrow from 5 to 6 PM? Do I have time for it?', intent:['ask_schedule']},
+  {prompt:'If I add a task tomorrow 5 to 6 PM, am I going to miss anything else?', intent:['ask_schedule']},
+  {prompt:'What did I miss?', intent:['ask_schedule','ask_today']}
 ];
 
 module.exports = {

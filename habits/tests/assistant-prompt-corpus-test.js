@@ -68,6 +68,8 @@ function expectedDueKey(token){
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
       localAssistant:true,
+      localAssistantModelOnly:false,
+      localAssistantRoutingVersion:2,
       locations:[{id:'home-1', name:'Home'}, {id:'gym-1', name:'Gym'}],
       weatherProfiles:[{id:'dry-1', name:'Dry'}]
     });
@@ -198,6 +200,8 @@ function expectedDueKey(token){
     const settings = {
       ...DEFAULT_SORT_SETTINGS,
       localAssistant:true,
+      localAssistantModelOnly:false,
+      localAssistantRoutingVersion:2,
       defaultDurationMinutes:30,
       locations:[{id:'home-1', name:'Home'}, {id:'gym-1', name:'Gym'}],
       weatherProfiles:[{id:'dry-1', name:'Dry'}]
@@ -273,6 +277,8 @@ function expectedDueKey(token){
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
       localAssistant:true,
+      localAssistantModelOnly:false,
+      localAssistantRoutingVersion:2,
       defaultDurationMinutes:30,
       locations:[],
       weatherProfiles:[]
@@ -333,6 +339,8 @@ function expectedDueKey(token){
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
       localAssistant:true,
+      localAssistantModelOnly:false,
+      localAssistantRoutingVersion:2,
       defaultDurationMinutes:30,
       locations:[{id:'home-1', name:'Home'}, {id:'gym-1', name:'Gym'}],
       weatherProfiles:[{id:'dry-1', name:'Dry'}]

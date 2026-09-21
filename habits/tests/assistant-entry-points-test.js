@@ -100,8 +100,9 @@ async function launchBrowser(){
   assert(addSetting.llmCalls === 1 && addSetting.step === 'extract', 'single extract call, no classify');
   assert(/draft_setting/.test(addSetting.steer || ''), 'steer asks for draft_setting');
 
-  console.log('\n[C] entry fast path: trivial add never reaches the model');
+  console.log('\n[C] opt-in parser shortcut: trivial add never reaches the model');
   const entryLocal = await page.evaluate(async () => {
+    patchLocalAssistant({localAssistantModelOnly:false, localAssistantRoutingVersion:2});
     assistantComplete = async () => { throw new Error('LLM must not run for simple entry phrasing'); };
     const ok = await assistantOpenWithInstruction('Remind me to call mom', { intent:'create_task', entry:'add' });
     const session = _assistantSession;

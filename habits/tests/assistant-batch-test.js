@@ -305,7 +305,7 @@ async function launchBrowser(){
     };
   }, VAGUE);
   assert(vague.type === 'preview' && vague.fastPath !== true, 'vague week setup previews from the model');
-  assert(vague.via === 'multi-item' && vague.hasFacts !== true, 'parser facts are not copied into a multi-item turn');
+  assert(vague.via === 'setting' && vague.hasFacts !== true, 'model-first routing does not copy parser facts into a multi-item turn');
   assert(vague.steps[0] === 'extract' && vague.hasBatchTool, 'extract offers draft_batch');
   assert(vague.names.length === 3, 'three items: ' + (vague.names || []).join(', '));
   assert(vague.walkAnchor === 'maghrib', 'walk window is maghrib from the model');
@@ -360,7 +360,7 @@ async function launchBrowser(){
     };
   }, MESSY);
   assert(messy.type === 'preview' && messy.fastPath !== true, 'messy relative list is not a local fast-path create');
-  assert(messy.via === 'parser-risk' && messy.risk === 'relative-date', 'relative dates send the whole request to the model');
+  assert(messy.via === 'setting' && !messy.risk, 'model-first routing sends the whole relative-date request to the model');
   assert(messy.steps[0] === 'classify' && messy.hasBatchTool, 'classify still offers draft_batch');
   assert(messy.hasFacts !== true, 'untrusted relative-date facts are withheld');
   assert(messy.names.length === 3, 'model returns three items, not the first clause only');

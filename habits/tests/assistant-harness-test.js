@@ -266,7 +266,7 @@ async function launchBrowser(){
   assert(followLoc.wouldCreate !== true, 'focused add-location is not a local create');
   assert(followLoc.type === 'preview' && followLoc.name === 'Study' && followLoc.kind === 'habit', 'follow-up keeps the Study habit');
   assert(/home/i.test(followLoc.place || '') && followLoc.times === 5, 'model sets the place on Study and keeps 5× / week');
-  assert(followLoc.path === 'llm' && followLoc.via === 'focus-continue', 'debug stays on the model, not local via create');
+  assert(followLoc.path === 'llm' && followLoc.via === 'setting', 'model-first routing keeps the follow-up on the model');
   assert(followLoc.firstStep === 'extract' && followLoc.hasDraft === true && followLoc.hasFacts !== true, 'extract sees currentDraft Study and withholds parser facts');
   assert(followLoc.forcedType === 'preview' && followLoc.forcedName === 'Study' && /home/i.test(followLoc.forcedPlace || ''), 'use-AI-instead keeps the unsaved Study draft');
   assert(followLoc.forcedStep === 'extract', 'force llm on a focused follow-up skips classify so it cannot say unclear');
@@ -378,7 +378,7 @@ async function launchBrowser(){
   assert(ui.onHidden === false && ui.onPressed === 'true' && ui.setupHidden === false, 'enabling shows the button and setup fields');
   assert(ui.sheet && ui.privacy, 'assistant sheet and privacy copy exist');
   assert(ui.debugToggle && ui.debugSheet, 'debug switch exists in settings and on the chat');
-  assert(ui.modelOnlyToggle && ui.modelOnlyPressed === 'false', 'always-use-Qwen toggle exists and is off by default');
+  assert(ui.modelOnlyToggle && ui.modelOnlyPressed === 'true', 'LLM-first routing toggle exists and is on by default');
   const reach = await page.evaluate(() => {
     const getInit = assistantFetchInit('http://127.0.0.1:11434/api/tags', {method:'GET'});
     const postInit = assistantFetchInit('http://127.0.0.1:11434/api/chat', {
@@ -903,7 +903,7 @@ async function launchBrowser(){
 
   console.log('\n[I] assistant debug trace');
   const debugTrace = await page.evaluate(async () => {
-    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true, locations:[], weatherProfiles:[] });
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true, localAssistantModelOnly:false, localAssistantRoutingVersion:2, locations:[], weatherProfiles:[] });
     if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
     const local = await runAssistantTurn('Remind me to call mom');
     const replies = [
@@ -951,7 +951,7 @@ async function launchBrowser(){
 
   console.log('\n[J] complicated phrasing routes to the model, not the fast path');
   const route = await page.evaluate(async () => {
-    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true });
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true, localAssistantModelOnly:true, localAssistantRoutingVersion:2 });
     const calls = [];
     const script = [
       { message:{ thinking:'relative date', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
@@ -980,7 +980,7 @@ async function launchBrowser(){
     };
   });
   assert(route.type === 'preview' && route.llmCalls === 2, 'day after tomorrow goes to the model and drafts');
-  assert(route.path === 'llm' && route.via === 'parser-risk' && route.risk === 'relative-date', 'trace shows the relative-date risk route');
+  assert(route.path === 'llm' && route.via === 'setting' && !route.risk, 'model-first routing bypasses parser risk decisions');
   assert(route.name === 'Meeting' && route.dueKey === '2026-09-19' && route.dueTime === '13:00', 'model draft carries the right date and time');
   assert(route.envHasDate, 'envelope includes today ISO date');
   assert(!route.envHasFacts, 'untrusted local facts are withheld from the model');
@@ -1021,6 +1021,7 @@ async function launchBrowser(){
   assert(riskTable.simple0 === null && riskTable.simple1 === null && riskTable.simple2 === null, 'simple phrasing still passes the audit');
 
   const staysLocal = await page.evaluate(async () => {
+    patchLocalAssistant({localAssistantModelOnly:false, localAssistantRoutingVersion:2});
     try{
       const out = await runAssistantTurn('Remind me to call mom', {
         complete:async () => { throw new Error('LLM must not run for simple phrasing'); }
@@ -1030,7 +1031,7 @@ async function launchBrowser(){
       return { type:'threw', text:String(err && err.message || err) };
     }
   });
-  assert(staysLocal.type === 'preview' && /mom/i.test(staysLocal.name || ''), 'simple create never reaches the model');
+  assert(staysLocal.type === 'preview' && /mom/i.test(staysLocal.name || ''), 'opt-in parser shortcut still handles simple creation');
 
   console.log('\n[G] live Qwen3.8 think+tools (optional)');
   const live = await page.evaluate(async () => {
@@ -1054,7 +1055,7 @@ async function launchBrowser(){
             { role:'system', content:assistantSystemPrompt() },
             { role:'user', content:assistantUserEnvelope('Create a 45 minute walk after sunset', catalog, null) }
           ],
-          tools:assistantOllamaTools(['classify_intent'])
+          tools:assistantOllamaTools(assistantStepTools('classify'))
         })
       });
       if(!raw.ok)return { skipped:true, reason:'chat '+raw.status };
@@ -1066,6 +1067,7 @@ async function launchBrowser(){
         thinking:Boolean(parsed.thinking),
         tool:call && call.name,
         intent:call && call.args && call.args.intent,
+        name:call && call.args && call.args.name,
         toolCount:(parsed.toolCalls || []).length,
         rawKeys:body.message ? Object.keys(body.message) : [],
         rawToolNames:((body.message && body.message.tool_calls) || []).map(row => row && row.function && row.function.name)
@@ -1078,8 +1080,9 @@ async function launchBrowser(){
     console.log('  skip: ' + live.reason);
   }else{
     assert(live.thinking, 'live Qwen returned a thinking trace');
-    assert(live.tool === 'classify_intent', 'live Qwen called classify_intent');
-    assert(live.intent === 'create_task' || live.intent === 'create_habit', 'live classify is a create intent');
+    assert(live.tool === 'classify_intent' || live.tool === 'draft_item', 'live Qwen selected a valid first-pass create tool');
+    assert((live.tool === 'classify_intent' && (live.intent === 'create_task' || live.intent === 'create_habit'))
+      || (live.tool === 'draft_item' && /walk/i.test(live.name || '')), 'live Qwen either classifies or directly drafts the walk');
   }
 
   console.log('\n[K] always-use-Qwen setting and use-AI-instead retry');

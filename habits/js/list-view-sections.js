@@ -933,11 +933,15 @@ function fixedConflictForWindow(dayBase,start,end,settings,baselineDay){
   return fixed.find(item=>item.start < end && item.end > start) || null;
 }
 
-async function analyzeFreeWindow(info,start,end){
+// PURE-ish core of the free-window checker: computes what blocking
+// [start,end) would do to the current week without mutating anything.
+// Shared by the UI checker (analyzeFreeWindow) and the assistant's
+// answer_schedule conflict query, so both answer identically.
+async function computeFreeWindowVerdict(info,start,end){
   const duration = Math.max(0,Math.round((end - start) / 60000));
   const openMinutes = freeWindowOverlapMinutes(info.gaps,start,end);
   if(openMinutes >= duration){
-    return {tone:'open',icon:'check',title:'Already open',copy:`All ${formatFreeDuration(duration)} are available now.`};
+    return {tone:'open',duration,openMinutes};
   }
 
   const data = load();
@@ -954,7 +958,7 @@ async function analyzeFreeWindow(info,start,end){
   const baselineDay = baseline.days.find(day=>day.dayBase === dayBase);
   const fixed = fixedConflictForWindow(dayBase,start,end,settings,baselineDay);
   if(fixed){
-    return {tone:'blocked',icon:'lock',title:'Not movable as planned',copy:`This overlaps ${fixed.name}, which is fixed on the day.`};
+    return {tone:'blocked',duration,openMinutes,fixed};
   }
 
   const startDate = new Date(start);
@@ -985,8 +989,7 @@ async function analyzeFreeWindow(info,start,end){
       const newRows = (nextDay?.timeline || []).filter(row=>row.kind === 'fill' && row.i === index);
       return oldRows.some((row,i)=>!newRows[i] || Math.abs(row.start - newRows[i].start) > 60000);
     }).map(index=>data[index]?.name).filter(Boolean).slice(0,2);
-    const detail = movedNames.length ? ` It would move ${movedNames.join(' and ')} within the day.` : '';
-    return {tone:'possible',icon:'arrows-shuffle',title:'Can be made open',copy:`The planner can keep everything on this day.${detail}`};
+    return {tone:'possible',duration,openMinutes,movedNames};
   }
 
   const later = [];
@@ -997,12 +1000,30 @@ async function analyzeFreeWindow(info,start,end){
     if(destination != null && destination > dayBase)later.push({name,destination});
     else unscheduled.push(name);
   }
-  if(later.length){
-    const first = later[0];
-    const dayLabel = homeWeekDayLabel({dayBase:first.destination,weekday:new Date(first.destination).getDay(),isToday:false,offset:Math.round((first.destination-dayStart(Date.now()))/86400000)}).toLowerCase();
-    return {tone:'spill',icon:'arrow-forward-up',title:'Would spill into a later day',copy:`Making this space would move ${first.name}${later.length > 1 ? ` and ${later.length - 1} more` : ''} to ${dayLabel}.`};
+  for(const row of later){
+    row.dayLabel = homeWeekDayLabel({dayBase:row.destination,weekday:new Date(row.destination).getDay(),isToday:false,offset:Math.round((row.destination-dayStart(Date.now()))/86400000)});
   }
-  return {tone:'spill',icon:'calendar-off',title:'Doesn’t fit cleanly',copy:`Making this space would push ${unscheduled.slice(0,2).join(' and ') || 'planned work'} out of this day.`};
+  return {tone:'spill',duration,openMinutes,later,unscheduled};
+}
+
+async function analyzeFreeWindow(info,start,end){
+  const verdict = await computeFreeWindowVerdict(info,start,end);
+  if(verdict.tone === 'open'){
+    return {tone:'open',icon:'check',title:'Already open',copy:`All ${formatFreeDuration(verdict.duration)} are available now.`};
+  }
+  if(verdict.tone === 'blocked'){
+    return {tone:'blocked',icon:'lock',title:'Not movable as planned',copy:`This overlaps ${verdict.fixed.name}, which is fixed on the day.`};
+  }
+  if(verdict.tone === 'possible'){
+    const detail = verdict.movedNames.length ? ` It would move ${verdict.movedNames.join(' and ')} within the day.` : '';
+    return {tone:'possible',icon:'arrows-shuffle',title:'Can be made open',copy:`The planner can keep everything on this day.${detail}`};
+  }
+  if(verdict.later.length){
+    const first = verdict.later[0];
+    const dayLabel = String(first.dayLabel || '').toLowerCase();
+    return {tone:'spill',icon:'arrow-forward-up',title:'Would spill into a later day',copy:`Making this space would move ${first.name}${verdict.later.length > 1 ? ` and ${verdict.later.length - 1} more` : ''} to ${dayLabel}.`};
+  }
+  return {tone:'spill',icon:'calendar-off',title:'Doesn’t fit cleanly',copy:`Making this space would push ${verdict.unscheduled.slice(0,2).join(' and ') || 'planned work'} out of this day.`};
 }
 
 function renderFreeWindowChecker(info,onRangeChange){

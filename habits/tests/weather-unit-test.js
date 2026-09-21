@@ -268,6 +268,7 @@ function assert(value,message){
     // clock mid-agenda: otherwise a suite run between midnight and 09:00
     // drags the domain below the packed day and shifts every proportional top.
     const realNow=Date.now;
+    const bucketBefore=localStorage.getItem(WEATHER_CACHE_KEY);
     Date.now=()=>base+10.5*3600000;
     try{
       // Re-freshen the seeded fetch against the frozen clock: the context
@@ -298,7 +299,13 @@ function assert(value,message){
       document.getElementById('weather-metric-close').click();
       document.getElementById('weather-context-done').click();
       return {blocks:blocks.length,height,names,directDetails,tenthTop,rainHours};
-    }finally{Date.now=realNow;}
+    }finally{
+      Date.now=realNow;
+      // The frozen fetchedAt sits ~8h before the real clock, which would
+      // expire the forecast for every later section — restore the bucket.
+      if(bucketBefore!=null)localStorage.setItem(WEATHER_CACHE_KEY,bucketBefore);
+      sortSettings=loadSortSettings();
+    }
   },seeded);
   assert(denseAgenda.blocks===12 && denseAgenda.height>=330 && denseAgenda.names.includes('Packed item 10'),
     'a packed day expands vertically so all twelve item names remain directly visible');

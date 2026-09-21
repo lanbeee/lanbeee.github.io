@@ -61,6 +61,7 @@ assistant-batch-test.js	ui	once
 assistant-item-settings-test.js	ui	once
 assistant-llm-settings-test.js	ui	once
 assistant-prompt-corpus-test.js	ui	once
+assistant-queries-test.js	ui	once
 plan-by-date-test.js	planner	once
 plan-by-deferral-test.js	planner	once
 planner-parity-test.js	planner	once

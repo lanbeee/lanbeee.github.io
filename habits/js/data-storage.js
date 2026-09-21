@@ -101,6 +101,13 @@ function loadSortSettings(){
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
     const merged = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...migrated,preset:'todayFirst'};
+    // v2 makes model-first routing the default for existing installs too. Once
+    // the user changes the toggle, updateSortSetting persists this version and
+    // their explicit preference wins on later loads.
+    if(!Number.isFinite(Number(saved.localAssistantRoutingVersion)) || Number(saved.localAssistantRoutingVersion) < 2){
+      merged.localAssistantModelOnly = true;
+      merged.localAssistantRoutingVersion = 2;
+    }
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }

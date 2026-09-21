@@ -1,12 +1,13 @@
-// Guided Qwen3.8 loop: think, then tool calls that actually create or change
-// items. Clear phrasing can still be applied locally; the model fills the rest.
+// Guided Qwen3.8 loop: the model understands each request first, then calls a
+// validated tool. The parser is an opt-in shortcut and failure fallback only.
 
 function assistantSystemPrompt(){
   return [
     'You are the Tings assistant in this app on this computer.',
-    'Think, then call a tool. Do not save. Do not invent habit JSON.',
+    'Think, then call the final tool directly whenever possible. classify_intent is optional. Do not save. Do not invent habit JSON.',
     'create_task = one-off. create_habit = repeating. create_setting = a weather profile, place, busy time, or topic. ask_today = what is on today or next.',
-    'complete_item = already did it. lookup_item = when is it / did I do it.',
+    'ask_weather = a weather question, or whether the weather suits an item — Tings computes the forecast answer. ask_schedule = free time, the freest day, whether a window is open, whether a new commitment would make them miss something, what they missed, or the agenda for a day/week. Availability and what-if questions ("do I have time tomorrow 5 to 6 pm", "if I add a task tomorrow 5 to 6 pm will I miss anything") are ask_schedule — never create_task, and never answer them from your own guess: Tings computes them with answer_weather / answer_schedule.',
+    'complete_item = already did it. delete_item = remove one item after confirmation. lookup_item = details about one named item. answer_items = list/status/progress questions. answer_settings = list saved places, weather profiles, topics, or busy times.',
     'draft_item creates or changes an item. Put every setting the user named in that one call and omit the rest. name is a short title only — never copy the rest of the request into name. Identity: name, newName, habitKind (build/limit/stop), emoji, emojiColor, topics, priority. Schedule: rhythm, timesPerPeriod, periodDays, weekdays, monthDays, preferredWeekdays, preferredMonthDays, due, dueTime, hardDue, planBy, windowText, preferredWindowText, earlyDays, delayDays, before, after, order, option. Effort: durationMinutes, breakable, minChunkMinutes, autoMarkMinutes, trackValue. Place/weather: placeNames, anywhere, placePrefs, weatherProfile, weatherText, showWeather, weatherAtPlace, weatherPlace. Other: pinned, snooze, sharedDisplay, sharedComplete, links. If they name weather conditions and catalog.weather has no match, still set weatherText — Tings will create a profile.',
     'If they ask for several items at once (a list, a pasted schedule, two habits, errands plus places), call draft_batch once — not many draft_item calls. One item with a long or detailed instruction is still draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown places in a batch get a dummy address; do not ask.',
     'draft_setting creates or changes a weather profile, place, busy time, or topic. kind is weather, location, busy, or topic. "Create a weather profile for barbecuing" → kind weather, name Barbecuing. Weather rules go in weatherText as one string. On a change, weatherText is a patch that merges onto currentDraft.rules (example: "prefer higher temperature") — do not drop other rules.',
@@ -17,6 +18,32 @@ function assistantSystemPrompt(){
     'If a name is ambiguous, call ask_user with one short question.',
     'On extract, call draft_item with flat strings only. Do not nest window or place objects. If a tool call is invalid or cut off, retry that tool with smaller string arguments — Tings will steer you.'
   ].join(' ');
+}
+
+function assistantUnsupportedText(){
+  return 'I can add or change tasks, habits, weather profiles, places, busy times, and topics; answer schedule, weather, item-status, and settings questions; look up, complete, or remove an item; and preview every change before it is saved.';
+}
+
+// The legacy fast path deliberately handles only simple "today" and item
+// lookups. Natural query phrasing can resemble those intents ("what do I have
+// tomorrow?", "do I have time?", "what should I do if it is windy?"). Defer
+// those turns to the model so it can select the read-only query tools instead
+// of returning an unrelated local answer. Creation/edit requests are excluded:
+// weather clauses on a new habit still belong in draft_item.
+function assistantQueryRouteHint(text, parsed){
+  const s = typeof assistantNormText === 'function'
+    ? assistantNormText(text)
+    : String(text || '').trim().toLowerCase();
+  const intent = parsed && parsed.intent;
+  if(intent !== 'ask_today' && intent !== 'lookup_item')return null;
+  const weather = /\b(?:weather|forecast|rain(?:ing|y)?|snow(?:ing|y)?|freez(?:e|ing)|wind(?:y|s)?|gusts?|temperature|temps?|degrees?|humid(?:ity)?|uv|sunny|cloudy|storm(?:y)?|hot|warm|cold|cool|dry)\b/.test(s);
+  if(weather)return 'weather-query';
+  const availability = /\b(?:free(?:st)?(?:\s+time)?|available|availability|open\s+(?:time|window|slot)|have\s+time|make\s+room|fit\s+(?:it|this|that)|miss\s+anything|agenda|schedule)\b/.test(s);
+  if(availability)return 'schedule-query';
+  const anotherDay = /\b(?:tomorrow|tommorow|tmrw|next\s+week|sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?|\d{4}-\d{2}-\d{2})\b/.test(s);
+  if(anotherDay && (intent === 'ask_today' || /\bwhat\s+do\s+i\s+have\b/.test(s)))return 'schedule-query';
+  const genericSchedule = /\bdo\s+i\s+have\s+(?:anything|something|plans?|tasks?|appointments?)\b/.test(s);
+  return genericSchedule ? 'schedule-query' : null;
 }
 
 function assistantUserEnvelope(text, catalog, draft, parsed, opts){
@@ -92,6 +119,7 @@ function assistantRepairText(step, error){
 
 function assistantNeedToolText(step){
   if(step === 'extract')return 'You thought but did not call a tool. Call draft_batch if they listed several items, otherwise draft_item or draft_setting.';
+  if(step === 'query')return 'You thought but did not call a tool. Call the matching answer_weather, answer_schedule, answer_items, or answer_settings tool now.';
   const tool = assistantStepTools(step)[0];
   return `You thought but did not call a tool. Call ${tool} now.`;
 }
@@ -186,7 +214,7 @@ function assistantNoteContextUsage(session, raw, tools){
 }
 
 function assistantCreateSession(){
-  return {draft:null, drafts:null, messages:[], llmCalls:0, repairs:0, intent:null, awaiting:null, pendingComplete:null, pendingEdit:null, parsed:null, debug:[], bulk:false, wide:false};
+  return {draft:null, drafts:null, messages:[], llmCalls:0, repairs:0, intent:null, awaiting:null, pendingComplete:null, pendingDelete:null, pendingEdit:null, parsed:null, debug:[], bulk:false, wide:false};
 }
 
 function assistantDebugEnabled(){
@@ -645,6 +673,12 @@ function assistantTryLocalTurn(text, session, context){
     assistantTracePush(session, {t:'path', path:'local', via:'awaiting-lookup'});
     return assistantLocalLookup(session, context, text);
   }
+  if(session.awaiting === 'query'){
+    // A follow-up like "the gym one" refines the pending query; the model
+    // has the transcript and calls answer_weather / answer_schedule again.
+    assistantTracePush(session, {t:'path', path:'llm', via:'awaiting-query'});
+    return null;
+  }
   if(session.awaiting === 'weather' && session.draft){
     assistantTracePush(session, {t:'path', path:'local', via:'awaiting-weather'});
     const raw = assistantNormText(text);
@@ -664,6 +698,13 @@ function assistantTryLocalTurn(text, session, context){
       path:'llm',
       via:typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text) ? 'multi-item' : 'long-request'
     });
+    return null;
+  }
+
+  const queryRoute = assistantQueryRouteHint(text, parsed);
+  if(queryRoute){
+    parsed.factsTrusted = false;
+    assistantTracePush(session, {t:'path', path:'llm', via:queryRoute, intent:parsed.intent});
     return null;
   }
 
@@ -700,7 +741,7 @@ function assistantTryLocalTurn(text, session, context){
     session.intent = 'unsupported';
     return {
       type:'say',
-      text:'I can add a task, habit, weather profile, place, busy time, or topic, tell you what is on today, look one up, or log something done. I cannot reschedule the week or delete items.',
+      text:assistantUnsupportedText(),
       session
     };
   }
@@ -835,8 +876,8 @@ function assistantHandleIntent(session, context, intent, thinking){
     session.awaiting = null;
     return {
       type:'ask',
-      question:'Do you want a one-off task, a repeating habit, what is on today, or to log something done?',
-      choices:['task', 'habit', "what's today", 'log done'],
+      question:'That was unclear. Do you want a one-off task, a repeating habit, what is on today, weather or schedule info, or to log something done?',
+      choices:['task', 'habit', "what's today", 'schedule question', 'weather', 'log done'],
       thinking,
       session
     };
@@ -844,7 +885,7 @@ function assistantHandleIntent(session, context, intent, thinking){
   if(intent === 'unsupported'){
     return {
       type:'say',
-      text:'I can add a task, habit, weather profile, place, busy time, or topic, tell you what is on today, look one up, or log something done. I cannot reschedule the week or delete items.',
+      text:assistantUnsupportedText(),
       thinking,
       session
     };
@@ -865,6 +906,12 @@ function assistantRecoverLocalDraft(text, session, context){
   if(assistantShouldLocalCreate(parsed, session)){
     if(parsed.intent === 'create_setting')return assistantLocalSetting(session, context, parsed);
     return assistantLocalCreate(session, context, parsed, parsed.intent);
+  }
+  if(parsed.intent === 'complete_item'){
+    return assistantLocalComplete(session, context, parsed.itemName || text);
+  }
+  if(parsed.intent === 'lookup_item'){
+    return assistantLocalLookup(session, context, parsed.itemName || text);
   }
   if(parsed.intent === 'ask_today'){
     session.intent = 'ask_today';
@@ -926,19 +973,9 @@ async function runAssistantTurn(userText, opts = {}){
       return done(local);
     }
   }else{
-    session.parsed = typeof assistantParseUtterance === 'function'
-      ? assistantParseUtterance(text, context.catalog, context.now)
-      : null;
-    if(session.parsed){
-      // "use AI instead" never copies the parse. Always-use-Qwen still
-      // withholds facts when the residue audit says the parse guessed.
-      if(opts.forceLlm || session.wide){
-        session.parsed.factsTrusted = false;
-      }else if(typeof assistantFastPathRisk === 'function'){
-        const risk = assistantFastPathRisk(session.parsed.text || text, session.parsed);
-        if(risk)session.parsed.factsTrusted = false;
-      }
-    }
+    // Do not seed the model with parser guesses. Keeping only the original
+    // text lets recovery parse it later if the model endpoint fails.
+    session.parsed = {text, intent:'unclear', confident:false, factsTrusted:false};
     assistantTracePush(session, {
       t:'parse',
       facts:typeof assistantTrustParsedFacts === 'function' && assistantTrustParsedFacts(session.parsed) && typeof assistantCompactFacts === 'function'
@@ -961,7 +998,9 @@ async function runAssistantTurn(userText, opts = {}){
   ];
   let step = 'classify';
   if(session.awaiting === 'complete')step = 'complete';
+  else if(session.awaiting === 'delete')step = 'delete';
   else if(session.awaiting === 'lookup')step = 'lookup';
+  else if(session.awaiting === 'query')step = 'query';
   else if(session.draft && session.draft.name && !(typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text))){
     step = 'extract';
     const setting = typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind);
@@ -1056,6 +1095,8 @@ async function runAssistantTurn(userText, opts = {}){
         step = 'extract';
       }else if(call.name === 'complete_item' && (step === 'classify' || step === 'complete')){
         step = 'complete';
+      }else if(call.name === 'delete_item' && (step === 'classify' || step === 'delete')){
+        step = 'delete';
       }else if(call.name === 'lookup_item' && (step === 'classify' || step === 'lookup')){
         step = 'lookup';
       }else if(session.draft && session.draft.name && (call.name === 'set_window' || call.name === 'set_weather' || call.name === 'set_place')){
@@ -1077,7 +1118,9 @@ async function runAssistantTurn(userText, opts = {}){
     }
 
     assistantTracePush(session, {t:'tool', step, name:call.name, args:assistantTraceClip(call.args, 600)});
-    const result = assistantExecuteTool(call.name, call.args, session, context);
+    // Query tools (answer_schedule) may await a what-if week rebuild; the
+    // other tools return plain objects, so the await is free for them.
+    const result = await assistantExecuteTool(call.name, call.args, session, context);
     assistantTracePush(session, {
       t:'result',
       name:call.name,
@@ -1090,8 +1133,10 @@ async function runAssistantTurn(userText, opts = {}){
       if(result.ask){
         assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:false, error:result.error, ask:result.ask});
         if(call.name === 'complete_item')session.awaiting = 'complete';
+        if(call.name === 'delete_item')session.awaiting = 'delete';
         if(call.name === 'lookup_item')session.awaiting = 'lookup';
         if(call.name === 'set_place')session.awaiting = 'place';
+        if(call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings')session.awaiting = 'query';
         return done({type:'ask', question:result.ask, choices:result.choices || (result.matches || []).map(item => item.name), thinking:parsed.thinking, draft:session.draft, session});
       }
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
@@ -1116,6 +1161,19 @@ async function runAssistantTurn(userText, opts = {}){
         intent = 'create_setting';
       }
       assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:true, intent});
+      if(intent === 'ask_weather' || intent === 'ask_schedule' || intent === 'ask_items' || intent === 'ask_settings'){
+        // Query step: the model fills day/window/name, Tings computes the
+        // answer from live plan + forecast data. Never guessed by the model.
+        step = 'query';
+        session.messages.push({role:'user', content:intent === 'ask_weather'
+          ? 'Call answer_weather. query day = forecast for a date, query window = a time window (start and end clocks), query item = check the weather against a named item. Resolve "tomorrow" and weekday names against catalog.date yourself.'
+          : intent === 'ask_schedule'
+            ? 'Call answer_schedule. query free = open time on a day (add start and end clocks to check one window), freest = freest day of the week, conflict = whether blocking a start/end window would make them miss something, missed = overdue and earlier-today items still open, day = one day\'s agenda, week = the whole week. Resolve "tomorrow" and weekday names against catalog.date yourself.'
+            : intent === 'ask_items'
+              ? 'Call answer_items. Use list with kind/status/search, or progress for a today summary.'
+              : 'Call answer_settings for places, weather, topics, or busy times.'});
+        continue;
+      }
       const handled = assistantHandleIntent(session, context, intent, parsed.thinking);
       if(handled)return done(handled);
       const factsHint = trustFacts
@@ -1146,6 +1204,11 @@ async function runAssistantTurn(userText, opts = {}){
         }
         step = 'complete';
         session.messages.push({role:'user', content:'Call complete_item with the catalog or spoken item name.'});
+        continue;
+      }
+      if(intent === 'delete_item'){
+        step = 'delete';
+        session.messages.push({role:'user', content:'Call delete_item with the existing item name. Tings will ask for confirmation.'});
         continue;
       }
       if(intent === 'lookup_item'){
@@ -1184,7 +1247,13 @@ async function runAssistantTurn(userText, opts = {}){
         session
       });
     }
+    if(call.name === 'delete_item'){
+      return done({type:'delete', text:result.summary, pendingDelete:result.pendingDelete, thinking:parsed.thinking, session});
+    }
     if(call.name === 'lookup_item'){
+      return done({type:'say', text:result.text, thinking:parsed.thinking, session});
+    }
+    if(call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings'){
       return done({type:'say', text:result.text, thinking:parsed.thinking, session});
     }
 

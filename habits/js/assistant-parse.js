@@ -893,12 +893,22 @@ function assistantNamesMatch(a, b){
   return limit > 0 && assistantLevenshtein(na, nb) <= limit;
 }
 
-function assistantLooksLikeSettingFollowup(text){
+// Direct-object setting patches: "add the location home", "the place is …",
+// "keep it at home". These are edits even when phrased with a create verb,
+// unlike descriptive weather/place clauses inside a create request.
+function assistantLooksLikeSettingObjectPatch(text){
   const s = assistantNormText(text);
   if(!s)return false;
   if(/\b(?:add(?:ing)?|set|use|put)\s+(?:the\s+|its\s+|a\s+)?(?:location|place|venue|window|weather|duration|priority|topics?|emoji)\b/.test(s))return true;
   if(/^(?:the\s+)?(?:location|place|venue)\s+(?:is\s+|to\s+|at\s+)?\S/.test(s))return true;
   if(/\b(?:make it|keep it|have it|do it)\s+(?:at|from)\b/.test(s))return true;
+  return false;
+}
+
+function assistantLooksLikeSettingFollowup(text){
+  const s = assistantNormText(text);
+  if(!s)return false;
+  if(assistantLooksLikeSettingObjectPatch(s))return true;
   if(/\b(?:change|update|edit|make|set|prefer)\b/.test(s)
     && /\b(?:weather|temperature|wind|rain chance|prefer (?:higher|lower|warm|hot|cool|cold))\b/.test(s)){
     return true;
@@ -941,12 +951,18 @@ function assistantMatchPlacesFromRef(places, ref){
 function assistantLooksLikeEdit(text){
   const s = assistantNormText(text);
   if(!s)return false;
-  if(assistantLooksLikeSettingFollowup(s))return true;
+  // Direct-object setting patches stay edits even with a create verb:
+  // "Add the location home." patches currentDraft, it does not add a task.
+  if(assistantLooksLikeSettingObjectPatch(s))return true;
+  // Create phrasing is never an edit, even when it names weather or a place
+  // ("Add a Stretch at Home, prefer Home high, using Dry weather"). The
+  // prefer+weather patch rule below is for follow-ups on an existing draft.
   if(/\b(?:remind me|don't forget|dont forget|add:?|create |new task|new habit)\b/.test(s)
     && !/\b(?:make it|change it|update it|rename it|add \d)/.test(s)){
     return false;
   }
-  return /\b(?:change|update|edit|rename)\b/.test(s)
+  return assistantLooksLikeSettingFollowup(s)
+    || /\b(?:change|update|edit|rename)\b/.test(s)
     || /\bmake it\b/.test(s)
     || /\bset (?:the |its |it )/.test(s)
     || /\b(?:put it|keep it|have it)\b/.test(s)
@@ -1271,6 +1287,9 @@ function assistantGuessIntent(text){
 function assistantPreferIntent(modelIntent, guessed){
   const model = ASSISTANT_INTENTS.includes(modelIntent) ? modelIntent : 'unclear';
   if(!guessed || !guessed.intent)return model;
+  // The model's query intents win even over a confident local ask_today —
+  // "what should I do given the weather" parses like ask_today locally.
+  if(model === 'ask_weather' || model === 'ask_schedule')return model;
   if(['complete_item', 'lookup_item', 'ask_today'].includes(guessed.intent) && guessed.confident){
     return guessed.intent;
   }

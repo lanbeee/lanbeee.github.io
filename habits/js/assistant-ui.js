@@ -279,6 +279,7 @@ function assistantClearFocus(){
     _assistantSession.draft = null;
     _assistantSession.pendingEdit = null;
     _assistantSession.pendingComplete = null;
+    _assistantSession.pendingDelete = null;
     _assistantSession.awaiting = null;
   }
   _assistantPendingDraft = null;
@@ -434,6 +435,12 @@ function appendAssistantBubble(kind, text, extra){
         <button type="button" class="btn primary" data-assistant-act="log">log it</button>
         <button type="button" class="btn" data-assistant-act="discard">never mind</button>
       </div>`;
+  }else if(kind === 'delete'){
+    div.innerHTML = `${think}<p>${escapeHtml(text)}</p>
+      <div class="btn-row assistant-preview-actions">
+        <button type="button" class="btn danger-soft" data-assistant-act="remove">remove</button>
+        <button type="button" class="btn" data-assistant-act="discard">keep it</button>
+      </div>`;
   }else if(kind === 'ask'){
     const choices = (extra && extra.choices || []).map(choice =>
       `<button type="button" class="btn" data-assistant-choice="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`
@@ -543,6 +550,10 @@ async function handleAssistantOutcome(out){
     }
     appendAssistantBubble('complete', out.text || 'Log it as done?', {thinking:out.thinking});
     if(retryText)appendAssistantRetry(retryText);
+    return;
+  }
+  if(out.type === 'delete'){
+    appendAssistantBubble('delete', out.text || 'Remove this item?', {thinking:out.thinking});
     return;
   }
   if(out.type === 'ask'){
@@ -667,6 +678,7 @@ function assistantMarkLastActionSpent(kind){
 function assistantKeepWorkingOn(commit){
   if(!_assistantSession)_assistantSession = typeof assistantCreateSession === 'function' ? assistantCreateSession() : {};
   _assistantSession.pendingComplete = null;
+  _assistantSession.pendingDelete = null;
   _assistantSession.awaiting = null;
   _assistantSession.messages = [];
   if(commit && commit.habit && typeof assistantHabitToDraft === 'function'){
@@ -786,6 +798,25 @@ function commitAssistantComplete(){
   assistantAfterSave(result, false, 'logged');
 }
 
+function commitAssistantDelete(){
+  const pending = _assistantSession && _assistantSession.pendingDelete;
+  if(!pending){
+    if(typeof showToast === 'function')showToast('nothing to remove');
+    return;
+  }
+  const result = typeof assistantCommitDelete === 'function'
+    ? assistantCommitDelete(pending)
+    : {ok:false, error:'remove unavailable'};
+  if(!result.ok){
+    if(typeof showToast === 'function')showToast(result.error || 'could not remove');
+    return;
+  }
+  _assistantSession.pendingDelete = null;
+  assistantMarkLastActionSpent('delete');
+  assistantClearFocus();
+  appendAssistantBubble('say', `Removed ${result.name}. You can undo from the toast.`);
+}
+
 function assistantDiscardPending(){
   const draft = assistantFocusedDraft();
   if(draft && draft.hid && typeof load === 'function' && typeof assistantHabitToDraft === 'function'){
@@ -796,6 +827,7 @@ function assistantDiscardPending(){
       if(_assistantSession){
         _assistantSession.draft = assistantHabitToDraft(data[index], index, settings);
         _assistantSession.pendingComplete = null;
+        _assistantSession.pendingDelete = null;
       }
       _assistantPendingDraft = _assistantSession && _assistantSession.draft;
       syncAssistantFocusBar();
@@ -816,7 +848,7 @@ function bindAssistantUi(){
     patchLocalAssistant({localAssistantDebug:!assistantDebugOn()});
   });
   $('setting-local-assistant-model-only')?.addEventListener('click', () => {
-    patchLocalAssistant({localAssistantModelOnly:!assistantModelOnlyOn()});
+    patchLocalAssistant({localAssistantModelOnly:!assistantModelOnlyOn(), localAssistantRoutingVersion:2});
   });
   $('assistant-focus-done')?.addEventListener('click', assistantClearFocus);
   $('assistant-close')?.addEventListener('click', closeAssistantSheet);
@@ -853,6 +885,7 @@ function bindAssistantUi(){
       if(which === 'add')commitAssistantDraft(false);
       else if(which === 'edit')commitAssistantDraft(true);
       else if(which === 'log')commitAssistantComplete();
+      else if(which === 'remove')commitAssistantDelete();
       else if(which === 'discard'){
         assistantDiscardPending();
         act.closest('.assistant-bubble')?.remove();

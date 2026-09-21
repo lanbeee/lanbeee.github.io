@@ -340,8 +340,10 @@ const DEFAULT_SORT_SETTINGS = {
   localAssistantDebug:false,
   // Thinking depth asked of the model: 'high', 'low', or 'off'.
   localAssistantReasoning:'high',
-  // Skip the local fast path entirely: every message goes to the model.
-  localAssistantModelOnly:false
+  // Model-first is the safe default. The parser remains available only as an
+  // explicit speed shortcut and as a recovery fallback when the model fails.
+  localAssistantModelOnly:true,
+  localAssistantRoutingVersion:2
 };
 
 const ASSISTANT_OLLAMA_ORIGIN = 'http://127.0.0.1:11434';

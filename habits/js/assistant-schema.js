@@ -3,9 +3,9 @@
 // and never lets prose write localStorage. Keep this list short: tool schemas
 // compete with thinking tokens.
 
-const ASSISTANT_INTENTS = ['create_task','create_habit','create_setting','ask_today','complete_item','lookup_item','unclear','unsupported'];
+const ASSISTANT_INTENTS = ['create_task','create_habit','create_setting','ask_today','ask_weather','ask_schedule','ask_items','ask_settings','complete_item','delete_item','lookup_item','unclear','unsupported'];
 const ASSISTANT_SETTING_KINDS = ['weather','location','busy','topic'];
-const ASSISTANT_STEPS = ['classify','extract','complete','lookup'];
+const ASSISTANT_STEPS = ['classify','extract','complete','delete','lookup','query'];
 const ASSISTANT_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
 const ASSISTANT_ANCHOR_ALIASES = {
   sunset:'maghrib', dusk:'maghrib', maghreb:'maghrib',
@@ -114,7 +114,7 @@ function assistantRequestNeedsModel(text){
 
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
-    description:'Classify a new request after thinking. If they asked for several items, you may call draft_batch now instead of classifying. create_setting = a weather profile, place, busy time, or topic — not a habit or task. "Create a weather profile for barbecuing" is create_setting. A habit/task that names weather conditions is still create_habit/create_task; put the conditions in weatherText. If currentDraft is set, they are changing that row unless they clearly start a new one. "Add the location home" or "use home and mom\'s house" is a change: classify create_habit or create_task for currentDraft\'s kind, then draft_item with only the new fields (placeNames). Do not classify unclear when currentDraft is set, even if they omitted it/this. Do not classify unsupported for weather profiles, places, busy times, or topics.',
+    description:'Classify only when you cannot call the final tool directly. create_setting = a weather profile, place, busy time, or topic — not a habit or task. A habit/task that names weather conditions is still create_habit/create_task. ask_weather and ask_schedule use live forecast/planner answers. ask_items covers lists, status, and progress. ask_settings covers existing places, profiles, topics, and busy times. delete_item removes one named task/habit after confirmation. Availability and what-if questions are ask_schedule — not create_task. If currentDraft is set, they are changing that row unless they clearly start a new one. Do not classify unclear when currentDraft is set.',
     parameters:{
       type:'object',
       required:['intent'],
@@ -196,6 +196,63 @@ const ASSISTANT_TOOL_DEFS = {
       }
     }
   },
+  delete_item:{
+    description:'Find one existing task or habit by name and preview removing it. Tings always asks for confirmation before deletion.',
+    parameters:{
+      type:'object',
+      required:['name'],
+      properties:{name:{type:'string'}}
+    }
+  },
+  answer_items:{
+    description:'Answer list and status questions about tasks and habits. list = names matching kind/status/search; progress = a concise today summary. Use this for "what habits do I have", "show my open tasks", "what did I finish today", and "how am I doing today".',
+    parameters:{
+      type:'object',
+      required:['query'],
+      properties:{
+        query:{type:'string', enum:['list','progress']},
+        kind:{type:['string','null'], enum:['all','task','habit',null]},
+        status:{type:['string','null'], enum:['all','open','done','overdue',null]},
+        search:{type:['string','null'], description:'optional name or topic text filter'}
+      }
+    }
+  },
+  answer_settings:{
+    description:'List configured places, weather profiles, topics, or busy times. Use this for questions about what app settings are already available.',
+    parameters:{
+      type:'object',
+      required:['kind'],
+      properties:{kind:{type:'string', enum:['places','weather','topics','busy']}}
+    }
+  },
+  answer_weather:{
+    description:'Answer a weather question from the real forecast — Tings computes it, never guess weather. query day = "what is the weather tomorrow". query window = "will it rain Thursday 5 to 6 pm" (start and end required). query item = "should I run today given the weather" (name required).',
+    parameters:{
+      type:'object',
+      required:['query'],
+      properties:{
+        query:{type:'string', enum:['day','window','item']},
+        date:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD. Default today'},
+        start:{type:['string','null'], description:'window start: 5pm or 17:00'},
+        end:{type:['string','null'], description:'window end: 6pm or 18:00'},
+        name:{type:['string','null'], description:'existing item for query item'}
+      }
+    }
+  },
+  answer_schedule:{
+    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end). query freest = which day of the week is freest. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = what did I miss: overdue and earlier-today items still open. query day = the agenda for one day. query week = the whole week overview.',
+    parameters:{
+      type:'object',
+      required:['query'],
+      properties:{
+        query:{type:'string', enum:['free','freest','conflict','missed','day','week']},
+        date:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD. Default today'},
+        start:{type:['string','null'], description:'window start: 5pm or 17:00'},
+        end:{type:['string','null'], description:'window end: 6pm or 18:00'},
+        minutes:{type:['integer','null'], description:'duration in minutes, e.g. a 45 minute task'}
+      }
+    }
+  },
   ask_user:{
     description:'Ask the user one short question when a catalog match is ambiguous or a required field is missing.',
     parameters:{
@@ -229,10 +286,14 @@ function assistantIsItemKind(kind){
 }
 
 function assistantStepTools(step){
-  if(step === 'classify')return ['classify_intent','draft_item','draft_setting','draft_batch'];
-  if(step === 'extract')return ['draft_item','draft_setting','draft_batch','ask_user'];
+  // The first model pass may call the final tool directly. classify_intent is
+  // retained for models that prefer a two-step plan, not as a mandatory gate.
+  if(step === 'classify')return ['classify_intent','draft_item','draft_setting','draft_batch','complete_item','delete_item','lookup_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
+  if(step === 'extract')return ['draft_item','draft_setting','draft_batch','complete_item','delete_item','lookup_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
   if(step === 'complete')return ['complete_item','ask_user'];
+  if(step === 'delete')return ['delete_item','ask_user'];
   if(step === 'lookup')return ['lookup_item','ask_user'];
+  if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
   return ['ask_user'];
 }
 
@@ -249,6 +310,7 @@ function assistantStepPredict(step, session){
     return ASSISTANT_THINK_TOKENS + toolTokens;
   }
   if(step === 'classify')return ASSISTANT_THINK_TOKENS + 1024;
+  if(step === 'query')return ASSISTANT_THINK_TOKENS + 1024;
   return ASSISTANT_THINK_TOKENS + 512;
 }
 

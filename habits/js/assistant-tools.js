@@ -1355,7 +1355,7 @@ function assistantDurationFromClockWindow(window){
 function assistantValidateClassify(args){
   const intent = String(args && args.intent || '').trim();
   if(!ASSISTANT_INTENTS.includes(intent)){
-    return {ok:false, error:'intent must be create_task, create_habit, create_setting, ask_today, complete_item, lookup_item, unclear, or unsupported'};
+    return {ok:false, error:`intent must be one of ${ASSISTANT_INTENTS.join(', ')}`};
   }
   return {ok:true, intent, reason:String(args && args.reason || '')};
 }
@@ -1396,6 +1396,416 @@ function assistantLookupText(found, context){
     return `${name} is a task.`;
   }
   return `${name} is on your list, but not on today's plan.`;
+}
+
+function assistantDeletePreview(found){
+  return {
+    ok:true,
+    pendingDelete:{index:found.index, hid:found.hid, name:found.name},
+    summary:`Remove ${found.name}? This deletes the item and its history.`
+  };
+}
+
+function assistantAnswerItems(args, context){
+  const query = assistantNormText(args && args.query);
+  const kind = ['task','habit'].includes(assistantNormText(args && args.kind))
+    ? assistantNormText(args.kind)
+    : 'all';
+  const status = ['open','done','overdue'].includes(assistantNormText(args && args.status))
+    ? assistantNormText(args.status)
+    : 'all';
+  const search = assistantNormText(args && args.search);
+  const now = context.now != null ? Number(context.now) : Date.now();
+  const todayBase = assistantDayBase(now);
+  const rows = (Array.isArray(context.data) ? context.data : []).map(habit => {
+    if(!habit || !habit.name)return null;
+    const type = habit.type === 'task' ? 'task' : 'habit';
+    const done = type === 'task'
+      ? (typeof isTaskDone === 'function' && isTaskDone(habit))
+      : (typeof completedToday === 'function' && completedToday(habit, now));
+    const overdue = type === 'task' && !done && habit.dueDate != null && assistantDayBase(habit.dueDate) < todayBase;
+    const haystack = assistantNormText([habit.name].concat(habit.topics || []).join(' '));
+    return {name:String(habit.name), type, done:Boolean(done), overdue:Boolean(overdue), haystack};
+  }).filter(Boolean).filter(row => {
+    if(kind !== 'all' && row.type !== kind)return false;
+    if(status === 'done' && !row.done)return false;
+    if(status === 'open' && row.done)return false;
+    if(status === 'overdue' && !row.overdue)return false;
+    if(search && !row.haystack.includes(search))return false;
+    return true;
+  });
+
+  if(query === 'progress'){
+    const today = context.catalog && context.catalog.today || {};
+    const done = (today.done || []).length;
+    const open = (today.open || []).length;
+    const overdue = (today.overdue || []).length;
+    if(!done && !open && !overdue)return {ok:true, text:'Nothing is planned or overdue today.'};
+    const parts = [`${done} done today`, `${open} still open`];
+    if(overdue)parts.push(`${overdue} overdue`);
+    const next = today.next && today.next.name
+      ? ` Next: ${today.next.clock ? `${today.next.clock} ` : ''}${today.next.name}.`
+      : '';
+    return {ok:true, text:`Today: ${parts.join(' · ')}.${next}`};
+  }
+  if(query !== 'list')return {ok:true, text:'I can list tasks or habits by open, done, or overdue status, or summarize today’s progress.'};
+  const label = status === 'all' ? (kind === 'all' ? 'items' : `${kind}s`) : `${status} ${kind === 'all' ? 'items' : `${kind}s`}`;
+  if(!rows.length)return {ok:true, text:`No ${label}${search ? ` match “${String(args.search).trim()}”` : ''}.`};
+  const shown = rows.slice(0, 20).map(row => row.name);
+  const more = rows.length > shown.length ? `, and ${rows.length - shown.length} more` : '';
+  return {ok:true, text:`${rows.length} ${label}: ${shown.join(', ')}${more}.`};
+}
+
+function assistantAnswerSettings(args, context){
+  const kind = assistantNormText(args && args.kind);
+  const settings = context.settings || {};
+  let rows = [];
+  let label = '';
+  if(kind === 'places'){
+    label = 'saved places';
+    rows = (settings.locations || []).map(row => row && row.name).filter(Boolean);
+  }else if(kind === 'weather'){
+    label = 'weather profiles';
+    rows = (settings.weatherProfiles || []).map(row => {
+      if(!row || !row.name)return null;
+      const rules = typeof assistantWeatherRulesSummary === 'function' ? assistantWeatherRulesSummary(row.rules).slice(0, 3) : [];
+      return rules.length ? `${row.name} (${rules.join(', ')})` : row.name;
+    }).filter(Boolean);
+  }else if(kind === 'topics'){
+    label = 'topics';
+    rows = (settings.topics || []).map(String).filter(Boolean);
+  }else if(kind === 'busy'){
+    label = 'busy times';
+    const blocks = typeof normalizeBlockedTimes === 'function' ? normalizeBlockedTimes(settings.blockedTimes) : (settings.blockedTimes || []);
+    rows = blocks.map(row => row && row.label).filter(Boolean);
+  }else{
+    return {ok:false, error:'kind must be places, weather, topics, or busy'};
+  }
+  if(!rows.length)return {ok:true, text:`You have no ${label} yet.`};
+  return {ok:true, text:`Your ${label}: ${rows.slice(0, 20).join(', ')}${rows.length > 20 ? `, and ${rows.length - 20} more` : ''}.`};
+}
+
+// ── Query tools (answer_weather / answer_schedule) ───────────────────────
+// Read-only answers computed with the same primitives the UI uses: the
+// free-time panel (computeDayFreeGaps), the make-room checker core
+// (computeFreeWindowVerdict), and the weather sheet data (weatherDaySummary,
+// weatherPeriodSummary, weatherFitAssessment). The model only picks the
+// query and fills day/window/name — the numbers below are never guessed.
+
+function assistantQueryCapabilities(){
+  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed, the agenda for a day or the week, the weather for the next seven days, and whether the weather suits an item.';
+}
+
+function assistantQueryDurationText(minutes){
+  const m = Math.max(0, Math.round(Number(minutes) || 0));
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  if(h && rest)return `${h}h ${rest}m`;
+  if(h)return `${h}h`;
+  return `${rest}m`;
+}
+
+// Resolve the tool's date string to a dayBase inside the week horizon.
+function assistantQueryDay(value, now){
+  const ts = now != null ? Number(now) : Date.now();
+  const base = typeof assistantDayBase === 'function' ? assistantDayBase(ts) : new Date(new Date(ts).setHours(0,0,0,0)).getTime();
+  const s = assistantNormText(value);
+  let dayBase = base;
+  if(s){
+    const parsed = typeof assistantParseDue === 'function' ? assistantParseDue(s, ts) : null;
+    if(parsed == null)return null;
+    dayBase = parsed;
+  }
+  const offset = Math.round((dayBase - base) / 86400000);
+  if(offset < 0 || offset > 6)return null;
+  const label = offset === 0 ? 'today' : offset === 1 ? 'tomorrow' : (ASSISTANT_WEEKDAY_LABELS[new Date(dayBase).getDay()] || 'that day');
+  return {dayBase, offset, label};
+}
+
+function assistantQueryWindow(args, dayBase){
+  if(dayBase == null)return null;
+  let startMin = typeof assistantParseClock === 'function' ? assistantParseClock(args && args.start) : null;
+  let endMin = typeof assistantParseClock === 'function' ? assistantParseClock(args && args.end) : null;
+  const minutes = Number(args && args.minutes);
+  const hasDuration = Number.isFinite(minutes) && minutes > 0 && minutes <= 1440;
+  if(startMin != null && endMin == null && hasDuration)endMin = startMin + Math.round(minutes);
+  if(endMin != null && startMin == null && hasDuration)startMin = endMin - Math.round(minutes);
+  if(startMin == null || endMin == null || startMin < 0 || endMin > 1440 || endMin <= startMin)return null;
+  return {start:dayBase + startMin * 60000, end:dayBase + endMin * 60000};
+}
+
+// The week agenda the home view already rendered, else the cache, else a
+// fresh fast build. Rows carry `h` so names and completions resolve.
+function assistantQueryWeek(data, settings){
+  const rendered = typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) ? _homeRenderedWeek : null;
+  const week = rendered
+    || (typeof cachedHomeAgenda === 'function' ? cachedHomeAgenda(data) : null)
+    || (typeof buildWeekAgenda === 'function' ? buildWeekAgenda(data, settings, 7) : null);
+  return week && Array.isArray(week.days) ? week : null;
+}
+
+function assistantQueryDayRows(day, data){
+  const rows = [];
+  for(const row of (day && day.timeline) || []){
+    if(!row || row.kind === 'travel' || row.kind === 'block' || row.kind === 'busy')continue;
+    const habit = row.h || (data && row.i != null ? data[row.i] : null);
+    const name = String((habit && habit.name) || row.name || '').trim();
+    if(!name)continue;
+    rows.push({name:name.slice(0,48), clock:assistantRowClock(row), start:row.start, end:row.end, kind:row.kind});
+  }
+  rows.sort((a,b) => a.start - b.start);
+  return rows;
+}
+
+function assistantQueryRowsInWindowText(rows, start, end){
+  const hit = rows.filter(row => row.end > start && row.start < end);
+  if(!hit.length)return null;
+  return hit.map(row => `${row.clock || ''} ${row.name}`.trim()).slice(0, 5).join(', ');
+}
+
+function assistantWeatherNumbers(settings){
+  const f = typeof weatherUsesFahrenheit === 'function' && weatherUsesFahrenheit(settings);
+  const convert = value => typeof weatherTempConverted === 'function' ? weatherTempConverted(value) : value;
+  return {unit:f ? '°F' : '°C', convert};
+}
+
+function assistantAnswerWeather(args, context){
+  const settings = context.settings;
+  const now = context.now;
+  const queryRaw = assistantNormText(args && args.query);
+  const date = assistantQueryDay(args && args.date, now);
+  if((args && args.date != null && String(args.date).trim() !== '') && !date){
+    return {ok:true, text:`I can only cover the next seven days. ${assistantQueryCapabilities()}`};
+  }
+  const dayBase = date ? date.dayBase : assistantDayBase(now);
+  const dayLabel = date ? date.label : 'today';
+  const query = ['day','window','item'].includes(queryRaw) ? queryRaw : '';
+
+  if(!query){
+    return {ok:true, text:`That weather question is too vague for me. ${assistantQueryCapabilities()}`};
+  }
+
+  if(query === 'item'){
+    const want = String((args && args.name) || '').trim();
+    if(!want)return {ok:true, text:`Which item should I check the weather for? ${assistantQueryCapabilities()}`};
+    const found = assistantFindHabit(context.data, want);
+    if(!found.ok)return {ok:true, text:found.ask || 'I cannot find that item.'};
+    const week = assistantQueryWeek(context.data, settings);
+    const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
+    const rows = [];
+    for(const row of (day && day.timeline) || []){
+      if(!row || (row.kind !== 'fill' && row.kind !== 'scheduled'))continue;
+      const habit = row.h || null;
+      if(!habit || habit.hid !== found.hid)continue;
+      rows.push(row);
+    }
+    if(!rows.length){
+      return {ok:true, text:`${found.name} is not planned on ${dayLabel}. ${assistantQueryCapabilities()}`};
+    }
+    const temps = assistantWeatherNumbers(settings);
+    const row = rows[0];
+    const clock = assistantRowClock(row);
+    let assessment = null;
+    if(typeof weatherFitAssessment === 'function'){
+      assessment = weatherFitAssessment(
+        {h:found.habit, i:found.index},
+        {placeStart:row.start, placeEnd:row.end, locId:row.locationId || null},
+        {dayBase, fills:[]},
+        settings
+      );
+    }
+    if(!assessment){
+      const period = typeof weatherPeriodSummary === 'function'
+        ? weatherPeriodSummary(row.start, row.end, settings, row.locationId || null, now)
+        : null;
+      if(!period)return {ok:true, text:`${found.name} has no weather rules, and I do not have a fresh forecast yet. Open the weather panel once to fetch it, then ask again.`};
+      return {ok:true, text:`${found.name} has no weather rules, so the forecast does not steer it. ${dayLabel} ${clock || ''}: ${period.condition ? period.condition.label : 'clear'}, ${Math.round(temps.convert(period.low))}–${Math.round(temps.convert(period.high))}${temps.unit}, ${Number.isFinite(period.precipitationChance) ? period.precipitationChance : 0}% rain chance.`.trim()};
+    }
+    const statusText = assessment.status === 'good'
+      ? `the weather looks good for it (${assessment.summary})`
+      : assessment.status === 'unknown'
+        ? `I cannot judge it — ${assessment.summary}`
+        : `watch out — ${assessment.summary}`;
+    return {ok:true, text:`${found.name} is planned ${dayLabel}${clock ? ` at ${clock}` : ''}: ${statusText}.`};
+  }
+
+  const contextWeather = typeof weatherPlannerContext === 'function' ? weatherPlannerContext(settings, now) : null;
+
+  if(query === 'window'){
+    const window = assistantQueryWindow(args, dayBase);
+    if(!window)return {ok:true, text:`Give me the time window, like "tomorrow 5 to 6 pm". ${assistantQueryCapabilities()}`};
+    const period = typeof weatherPeriodSummary === 'function'
+      ? weatherPeriodSummary(window.start, window.end, settings, null, now)
+      : null;
+    if(!period)return {ok:true, text:'I do not have a fresh forecast for that window yet. Open the weather panel once to fetch it, then ask again.'};
+    const temps = assistantWeatherNumbers(settings);
+    const parts = [
+      `${dayLabel} ${assistantFriendlyClock((window.start - dayBase) / 60000)}–${assistantFriendlyClock((window.end - dayBase) / 60000)}`,
+      `${period.condition ? period.condition.label : 'clear'}`,
+      `${Math.round(temps.convert(period.low))}–${Math.round(temps.convert(period.high))}${temps.unit}`,
+      `${Number.isFinite(period.precipitationChance) ? Math.round(period.precipitationChance) : 0}% rain chance`
+    ];
+    if(Number.isFinite(period.wind))parts.push(`wind ${Math.round(typeof weatherMetricValueConverted === 'function' ? weatherMetricValueConverted('wind_speed_10m', period.wind) : period.wind)}${typeof weatherMetricUnitLabel === 'function' ? weatherMetricUnitLabel('wind_speed_10m') : ''}`);
+    return {ok:true, text:parts.join(' · ') + '.'};
+  }
+
+  // query day.
+  const summary = contextWeather && typeof weatherDaySummary === 'function'
+    ? weatherDaySummary(contextWeather, dayBase, settings, now)
+    : null;
+  if(!summary)return {ok:true, text:'I do not have a fresh forecast yet. Open the weather panel once to fetch it, then ask again.'};
+  const temps = assistantWeatherNumbers(settings);
+  const parts = [
+    `${dayLabel} in ${summary.cityName || 'your home city'}`,
+    `${summary.condition ? `${summary.condition.emoji || ''} ${summary.condition.label}`.trim() : 'clear'}`,
+    `${Math.round(temps.convert(summary.low))}–${Math.round(temps.convert(summary.high))}${temps.unit}`,
+    `${Number.isFinite(summary.precipitationChance) ? Math.round(summary.precipitationChance) : 0}% rain chance`
+  ];
+  if(Number.isFinite(summary.wind))parts.push(`wind up to ${Math.round(typeof weatherMetricValueConverted === 'function' ? weatherMetricValueConverted('wind_speed_10m', summary.wind) : summary.wind)}${typeof weatherMetricUnitLabel === 'function' ? weatherMetricUnitLabel('wind_speed_10m') : ''}`);
+  return {ok:true, text:parts.join(' · ') + '.'};
+}
+
+async function assistantAnswerSchedule(args, context){
+  const settings = context.settings;
+  const now = context.now;
+  const data = context.data;
+  const queryRaw = assistantNormText(args && args.query);
+  const query = ['free','freest','conflict','missed','day','week'].includes(queryRaw) ? queryRaw : '';
+  if(!query)return {ok:true, text:`That schedule question is too vague for me. ${assistantQueryCapabilities()}`};
+  const date = assistantQueryDay(args && args.date, now);
+  if((args && args.date != null && String(args.date).trim() !== '') && !date){
+    return {ok:true, text:`I plan a week at a time, so pick a day in the next seven days. ${assistantQueryCapabilities()}`};
+  }
+  const dayBase = date ? date.dayBase : assistantDayBase(now);
+  const dayLabel = date ? date.label : 'today';
+  const week = assistantQueryWeek(data, settings);
+  const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
+  const gapsInfo = day && typeof computeDayFreeGaps === 'function' ? computeDayFreeGaps(day, settings, now) : null;
+
+  if(query === 'missed'){
+    const todayBase = assistantDayBase(now);
+    const missed = [];
+    for(const habit of Array.isArray(data) ? data : []){
+      if(!habit || habit.type !== 'task' || typeof isTaskDone === 'function' && isTaskDone(habit))continue;
+      if(habit.dueDate == null)continue;
+      const due = assistantDayBase(habit.dueDate);
+      if(due < todayBase)missed.push({name:String(habit.name || '').slice(0,48), due});
+    }
+    missed.sort((a,b) => a.due - b.due);
+    const earlier = [];
+    const day0 = week ? (week.days || []).find(item => item.dayBase === todayBase) : null;
+    for(const row of assistantQueryDayRows(day0, data)){
+      if(row.end > now)continue;
+      const source = ((day0 && day0.timeline) || []).find(item => item.start === row.start && item.end === row.end);
+      const habit = source && (source.h || (data && source.i != null ? data[source.i] : null));
+      if(habit && typeof completedToday === 'function' && completedToday(habit, now))continue;
+      earlier.push(row);
+    }
+    if(!missed.length && !earlier.length)return {ok:true, text:'Nothing missed — no overdue tasks, and everything planned earlier today is done.'};
+    const lines = [];
+    if(missed.length)lines.push(`Overdue: ${missed.slice(0, 6).map(item => `${item.name} (due ${typeof dateKey === 'function' ? dateKey(item.due) : ''})`.replace(' ()', '')).join(', ')}${missed.length > 6 ? ` and ${missed.length - 6} more` : ''}`);
+    if(earlier.length)lines.push(`Planned earlier today but still open: ${earlier.slice(0, 6).map(row => `${row.clock ? `${row.clock} ` : ''}${row.name}`).join(', ')}`);
+    return {ok:true, text:lines.join('. ') + '.'};
+  }
+
+  if(query === 'freest'){
+    if(!week || typeof computeDayFreeGaps !== 'function')return {ok:true, text:'I could not read this week\'s plan yet — open the home view once, then ask again.'};
+    const ranked = (week.days || []).map(item => {
+      const info = computeDayFreeGaps(item, settings, now);
+      const label = item.isToday ? 'today' : (ASSISTANT_WEEKDAY_LABELS[new Date(item.dayBase).getDay()] || '');
+      return {label, free:info.totalFreeMinutes, largest:info.largestGapMinutes};
+    }).filter(item => item.label);
+    if(!ranked.length)return {ok:true, text:'This week\'s plan is empty, so every day is open.'};
+    ranked.sort((a,b) => b.free - a.free || b.largest - a.largest);
+    const best = ranked[0];
+    const rest = ranked.slice(1).map(item => `${item.label} ${assistantQueryDurationText(item.free)}`).join(', ');
+    return {ok:true, text:`${best.label.charAt(0).toUpperCase() + best.label.slice(1)} looks freest — ${assistantQueryDurationText(best.free)} open, longest stretch ${assistantQueryDurationText(best.largest)}.${rest ? ` Then: ${rest}.` : ''}`};
+  }
+
+  if(query === 'day' || query === 'week'){
+    if(query === 'week'){
+      if(!week || typeof computeDayFreeGaps !== 'function')return {ok:true, text:'I could not read this week\'s plan yet — open the home view once, then ask again.'};
+      const lines = (week.days || []).map(item => {
+        const info = computeDayFreeGaps(item, settings, now);
+        const rows = assistantQueryDayRows(item, data);
+        const label = item.isToday ? 'Today' : (ASSISTANT_WEEKDAY_LABELS[new Date(item.dayBase).getDay()] || '');
+        return `${label}: ${rows.length ? `${rows.length} planned, ` : 'nothing planned, '}${assistantQueryDurationText(info.totalFreeMinutes)} open`;
+      });
+      return {ok:true, text:`Your week: ${lines.join(' · ')}.`};
+    }
+    const rows = assistantQueryDayRows(day, data);
+    if(!rows.length)return {ok:true, text:`Nothing is planned on ${dayLabel}.`};
+    const free = gapsInfo ? ` ${assistantQueryDurationText(gapsInfo.totalFreeMinutes)} stays open.` : '';
+    return {ok:true, text:`${dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)}: ${rows.map(row => `${row.clock || ''} ${row.name}`.trim()).join(', ')}.${free}`};
+  }
+
+  // free / conflict need the window (conflict always, free only for the
+  // window form — a bare "free" answers the whole day).
+  const window = assistantQueryWindow(args, dayBase);
+  if(!window){
+    if(query === 'conflict')return {ok:true, text:`Tell me the time window, like "tomorrow 5 to 6 pm", and I will check what it would displace. ${assistantQueryCapabilities()}`};
+    if(!gapsInfo)return {ok:true, text:'I could not read the plan for that day yet — open the home view once, then ask again.'};
+    const requestedMinutes = Math.round(Number(args && args.minutes));
+    if(Number.isFinite(requestedMinutes) && requestedMinutes > 0){
+      const fitting = gapsInfo.gaps.find(gap => Math.round((gap.end - gap.start) / 60000) >= requestedMinutes);
+      if(fitting){
+        const start = assistantFriendlyClock((fitting.start - dayBase) / 60000);
+        const end = assistantFriendlyClock((fitting.end - dayBase) / 60000);
+        return {ok:true, text:`Yes — ${dayLabel} has a contiguous ${assistantQueryDurationText(requestedMinutes)} opening from ${start} to ${end}.`};
+      }
+      return {ok:true, text:`No single ${assistantQueryDurationText(requestedMinutes)} block is open on ${dayLabel}; the longest stretch is ${assistantQueryDurationText(gapsInfo.largestGapMinutes)}.`};
+    }
+    return {ok:true, text:`${dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)} has ${assistantQueryDurationText(gapsInfo.totalFreeMinutes)} open across ${gapsInfo.gaps.length} gap${gapsInfo.gaps.length === 1 ? '' : 's'}; the longest stretch is ${assistantQueryDurationText(gapsInfo.largestGapMinutes)}.`};
+  }
+  if(!gapsInfo)return {ok:true, text:'I could not read the plan for that day yet — open the home view once, then ask again.'};
+  const duration = Math.round((window.end - window.start) / 60000);
+  const rows = assistantQueryDayRows(day, data);
+  const inWindow = assistantQueryRowsInWindowText(rows, window.start, window.end);
+  const clockLabel = `${assistantFriendlyClock((window.start - dayBase) / 60000)}–${assistantFriendlyClock((window.end - dayBase) / 60000)}`;
+  const weatherLine = () => {
+    const period = typeof weatherPeriodSummary === 'function'
+      ? weatherPeriodSummary(window.start, window.end, settings, null, now)
+      : null;
+    if(!period)return '';
+    const temps = assistantWeatherNumbers(settings);
+    return ` Weather then: ${period.condition ? period.condition.label : 'clear'}, ${Number.isFinite(period.precipitationChance) ? Math.round(period.precipitationChance) : 0}% rain chance, ${Math.round(temps.convert(period.low))}–${Math.round(temps.convert(period.high))}${temps.unit}.`;
+  };
+
+  if(query === 'free'){
+    const overlap = typeof freeWindowOverlapMinutes === 'function'
+      ? freeWindowOverlapMinutes(gapsInfo.gaps, window.start, window.end)
+      : 0;
+    if(overlap >= duration){
+      return {ok:true, text:`Yes — ${clockLabel} on ${dayLabel} is open${inWindow ? ` (around: ${inWindow})` : ''}.${weatherLine()}`};
+    }
+    const busy = inWindow ? ` ${inWindow} ${duration === 1 ? 'sits' : 'sit'} in that window.` : ' It is mostly taken.';
+    return {ok:true, text:`Only ${assistantQueryDurationText(overlap)} of ${assistantQueryDurationText(duration)} is open at ${clockLabel} on ${dayLabel}.${busy}`};
+  }
+
+  // conflict: what would blocking this window do to the rest of the plan?
+  if(typeof computeFreeWindowVerdict !== 'function' || !gapsInfo){
+    return {ok:true, text:'I could not run the what-if check yet — open the home view once, then ask again.'};
+  }
+  const verdict = await computeFreeWindowVerdict(gapsInfo, window.start, window.end);
+  const prefix = `${clockLabel} on ${dayLabel}`;
+  if(verdict.tone === 'open'){
+    return {ok:true, text:`Nothing to miss — ${prefix} is completely open, so a task there would not displace anything.${weatherLine()}`};
+  }
+  if(verdict.tone === 'blocked'){
+    return {ok:true, text:`No — ${prefix} overlaps ${verdict.fixed.name}, which is fixed on the day. Blocking it would clash right away.`};
+  }
+  if(verdict.tone === 'possible'){
+    const detail = verdict.movedNames.length ? ` The planner would shift ${verdict.movedNames.join(' and ')} within ${dayLabel}, but nothing gets lost.` : ' Everything else keeps its day.';
+    return {ok:true, text:`You would not miss anything — ${prefix} is tight but the planner can absorb it.${detail}${weatherLine()}`};
+  }
+  const laterNames = (verdict.later || []).map(row => row.name);
+  if(laterNames.length){
+    const first = verdict.later[0];
+    const more = verdict.later.length > 1 ? ` and ${verdict.later.length - 1} more` : '';
+    return {ok:true, text:`Yes — blocking ${prefix} would move ${first.name}${more} to ${String(first.dayLabel || 'a later day').toLowerCase()}. Skip it or pick another window if that matters.${weatherLine()}`};
+  }
+  const pushed = (verdict.unscheduled || []).slice(0, 2).join(' and ') || 'planned work';
+  return {ok:true, text:`Yes — blocking ${prefix} would push ${pushed} off ${dayLabel} entirely. It would go unplanned, not just later.`};
 }
 
 function assistantEndpointFromHabit(habit, prefix){
@@ -2095,6 +2505,15 @@ function assistantExecuteTool(name, args, session, context){
     if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
     return preview;
   }
+  if(name === 'delete_item'){
+    const want = (args && args.name) || (session.draft && session.draft.name);
+    const found = assistantFindHabit(context.data, want);
+    if(!found.ok)return found;
+    const preview = assistantDeletePreview(found);
+    session.pendingDelete = preview.pendingDelete;
+    if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
+    return preview;
+  }
   if(name === 'lookup_item'){
     const want = (args && args.name) || (session.draft && session.draft.name);
     const found = assistantFindHabit(context.data, want);
@@ -2102,6 +2521,16 @@ function assistantExecuteTool(name, args, session, context){
     if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
     return {ok:true, text:assistantLookupText(found, context), found};
   }
+  // Query tools answer from live app data and never touch the draft or
+  // storage. answer_schedule is async (the what-if may rebuild the week).
+  if(name === 'answer_weather'){
+    return assistantAnswerWeather(args, context);
+  }
+  if(name === 'answer_schedule'){
+    return assistantAnswerSchedule(args, context);
+  }
+  if(name === 'answer_items')return assistantAnswerItems(args, context);
+  if(name === 'answer_settings')return assistantAnswerSettings(args, context);
   return {ok:false, error:`unknown tool ${name}`};
 }
 
@@ -2441,6 +2870,29 @@ function assistantCommitComplete(pending){
   habit.lastLog = ts;
   if(typeof save === 'function' && !save(data))return {ok:false, error:'could not save'};
   return {ok:true, index, name:habit.name};
+}
+
+function assistantCommitDelete(pending){
+  if(!pending || pending.index == null)return {ok:false, error:'nothing to remove'};
+  const data = typeof load === 'function' ? load() : [];
+  let index = pending.index;
+  if(!data[index] || (pending.hid && data[index].hid && data[index].hid !== pending.hid)){
+    const found = assistantFindHabit(data, pending.name);
+    if(!found.ok)return {ok:false, error:found.ask || 'that item is gone'};
+    index = found.index;
+  }
+  const name = data[index] && data[index].name || pending.name;
+  if(typeof doNuke === 'function'){
+    doNuke(index);
+    const after = typeof load === 'function' ? load() : [];
+    const remains = pending.hid
+      ? after.some(item => item && item.hid === pending.hid)
+      : after.some(item => item && assistantNormText(item.name) === assistantNormText(name));
+    return remains ? {ok:false, error:'could not remove'} : {ok:true, name};
+  }
+  data.splice(index, 1);
+  if(typeof save === 'function' && !save(data))return {ok:false, error:'could not remove'};
+  return {ok:true, name};
 }
 
 function assistantFocusHabit(session, found, context){
