@@ -1278,6 +1278,117 @@ async function launchBrowser(){
   assert(JSON.stringify(compounds.clarify) === JSON.stringify(['ask','ask','say']) && compounds.clarifyGaveUp,
     'required clarification is also capped at two attempts');
 
+  console.log('\n[K3] research-then-create compounds survive continuation failures');
+  const researchedCreate = await page.evaluate(async () => {
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      weatherProfiles:[],
+      locations:[]
+    });
+    save([]);
+    const context = assistantBuildContext();
+    let pass = 0;
+    const out = await runAssistantTurn('Create a weekly barbecue ting, select best time and appropriate duration for it, and create the best weather profile for it', {
+      context,
+      complete:async () => {
+        pass += 1;
+        if(pass === 1)return {message:{thinking:'research availability first', tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'freest', purpose:'prepare_action'}}}
+        ]}};
+        if(pass === 2)throw new Error('Load failed');
+        if(pass === 3)return {message:{thinking:'verify a two hour opening', tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'free', date:'Sunday', minutes:120, purpose:'prepare_action'}}}
+        ]}};
+        return {message:{thinking:'finish the requested action', tool_calls:[
+          {function:{name:'draft_item', arguments:{
+            kind:'habit',
+            name:'Barbecue',
+            rhythm:'once a week',
+            weekdays:['Sunday'],
+            durationMinutes:120,
+            windowText:'between 4pm and 8pm',
+            weatherText:'not raining, wind under 20 mph, temperature above 55 F and below 90 F'
+          }}}
+        ]}};
+      }
+    });
+    const tools = (out.debug || []).filter(row => row.t === 'tool').map(row => row.name);
+    const retries = (out.debug || []).filter(row => row.t === 'retry');
+    const scheduleSchema = assistantOllamaTools(['answer_schedule'])[0].function.parameters.properties;
+
+    let failedPass = 0;
+    const partial = await runAssistantTurn('Find the best day and then create a weekly picnic', {
+      context,
+      complete:async () => {
+        failedPass += 1;
+        if(failedPass === 1)return {message:{tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'freest', purpose:'prepare_action'}}}
+        ]}};
+        throw new Error('Load failed');
+      }
+    });
+
+    let prosePass = 0;
+    const abandoned = await runAssistantTurn('Find the best day and then create a weekly cookout', {
+      context,
+      complete:async () => {
+        prosePass += 1;
+        if(prosePass === 1)return {message:{tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'freest', purpose:'prepare_action'}}}
+        ]}};
+        return {message:{content:'Tuesday is the freest day.'}};
+      }
+    });
+    return {
+      type:out.type,
+      name:out.draft && out.draft.name,
+      kind:out.draft && out.draft.kind,
+      duration:out.draft && out.draft.durationMinutes,
+      weekdays:out.draft && out.draft.allowedWeekdays,
+      hasWindow:Boolean(out.draft && out.draft.window),
+      hasWeather:Boolean(out.draft && out.draft.weatherProposed),
+      tools,
+      retries:retries.length,
+      calls:pass,
+      purposeSchema:scheduleSchema.purpose && scheduleSchema.purpose.enum,
+      partialType:partial.type,
+      partialFlag:partial.partial,
+      partialText:partial.text,
+      partialCalls:failedPass,
+      abandonedType:abandoned.type,
+      abandonedFlag:abandoned.partial,
+      abandonedText:abandoned.text,
+      abandonedCalls:prosePass
+    };
+  });
+  assert(researchedCreate.type === 'preview'
+    && researchedCreate.kind === 'habit'
+    && researchedCreate.name === 'Barbecue'
+    && researchedCreate.duration === 120,
+    `research continues into the requested draft: ${JSON.stringify(researchedCreate)}`);
+  assert(researchedCreate.tools.filter(name => name === 'answer_schedule').length === 2
+    && researchedCreate.tools.includes('draft_item')
+    && researchedCreate.retries === 1
+    && researchedCreate.calls === 4,
+    'a transient continuation failure retries and all dependent tools still run');
+  assert(Array.isArray(researchedCreate.purposeSchema)
+    && researchedCreate.purposeSchema.includes('prepare_action'),
+    'read tools expose the prepare_action obligation to the model');
+  assert(researchedCreate.hasWindow && researchedCreate.hasWeather
+    && JSON.stringify(researchedCreate.weekdays) === JSON.stringify([0]),
+    'the final preview keeps the chosen day, window, duration, and proposed weather profile');
+  assert(researchedCreate.partialType === 'error'
+    && researchedCreate.partialFlag === true
+    && researchedCreate.partialCalls === 3
+    && /partway|whole request/i.test(researchedCreate.partialText || ''),
+    'an exhausted continuation reports partial failure instead of presenting research as completion');
+  assert(researchedCreate.abandonedType === 'error'
+    && researchedCreate.abandonedFlag === true
+    && researchedCreate.abandonedCalls === 4
+    && !/^Tuesday is the freest day\.?$/i.test(researchedCreate.abandonedText || ''),
+    'model prose cannot close a request while prepare_action research is still pending');
+
   console.log('\n[L] use-AI-instead does not copy parser guesses into the model');
   const forceFacts = await page.evaluate(async () => {
     const calls = [];

@@ -9,7 +9,7 @@ function assistantSystemPrompt(){
     'PRIORITIES',
     '1. Call the final tool directly when you can. classify_intent is optional.',
     '2. Treat tool results as authoritative. Never invent or recalculate names, dates, times, totals, priorities, frequencies, history, weather, or schedule facts.',
-    '3. Handle every part of a compound request. Emit several tool calls when independent parts are clear; after results, call more tools if a part remains.',
+    '3. Handle every part of a compound request. Emit several tool calls when independent parts are clear; after results, call more tools if a part remains. On any read used to choose a later action, set purpose prepare_action; then finish with the requested draft or action tool.',
     '4. If a saved-item name is missing or ambiguous, call find_item or ask_user. Never guess the item or create a replacement.',
     '',
     'READS AND ACTIONS',
@@ -17,7 +17,7 @@ function assistantSystemPrompt(){
     'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove an item. These tools preview changes for confirmation.',
     '',
     'CREATION AND EDITING',
-    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several items. Use draft_setting for settings. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists.',
+    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several items. Use draft_setting for settings. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
     'currentDraft is the item being edited. “it”, “this”, and “that” refer to currentDraft, otherwise recent.referent when appropriate. A question about it uses lookup_item; done uses complete_item; plan/unplan uses plan_item; remove uses delete_item. A named saved place may update placeNames on the current item; do not turn it into a new item.',
     '',
     'GROUNDING',
@@ -194,7 +194,7 @@ function assistantFollowupSteerText(){
 }
 
 function assistantQueryContinueHint(){
-  return 'If they asked more than one thing, or a follow-up about this data, call the next matching tool now. If you already have everything, answer in 1–2 sentences from tool data only — do not invent names or numbers. "it"/"that"/"the one" is currentDraft or recent.referent.';
+  return 'Review the original request clause by clause. If this lookup was research for creating or changing something, call draft_item, draft_batch, or draft_setting now with the chosen fields. Otherwise call the next matching tool for every unfinished part. Only answer when every requested read and action is handled. Use tool data verbatim; do not invent names or numbers. "it"/"that"/"the one" is currentDraft or recent.referent.';
 }
 
 function assistantWriteContinueHint(){
@@ -208,6 +208,10 @@ function assistantIsReadTool(name){
 
 function assistantIsWriteTool(name){
   return name === 'complete_item' || name === 'plan_item' || name === 'delete_item';
+}
+
+function assistantIsActionTool(name){
+  return assistantIsWriteTool(name) || name === 'draft_item' || name === 'draft_setting' || name === 'draft_batch';
 }
 
 function assistantToolCallKey(call){
@@ -282,6 +286,11 @@ function assistantRememberTurn(session, text, out){
 
 function assistantTakeQueuedCall(queued, allowed){
   if(!Array.isArray(queued) || !queued.length)return null;
+  // Research must run before a dependent draft even when the model returned
+  // both calls in the opposite order. The draft can then use the authoritative
+  // result already present in the transcript.
+  const researchIdx = queued.findIndex(item => item && assistantIsReadTool(item.name) && allowed.has(item.name));
+  if(researchIdx >= 0)return queued.splice(researchIdx, 1)[0];
   const preferFinal = queued.findIndex(item => item && item.name && item.name !== 'classify_intent' && allowed.has(item.name));
   if(preferFinal >= 0)return queued.splice(preferFinal, 1)[0];
   const allowedIdx = queued.findIndex(item => item && allowed.has(item.name));
@@ -407,7 +416,7 @@ function assistantHasRecentContext(session){
 }
 
 function assistantCanFinalize(session){
-  return Boolean(session && ((Array.isArray(session.pendingActions) && session.pendingActions.length)
+  return Boolean(session && !session.researchPending && ((Array.isArray(session.pendingActions) && session.pendingActions.length)
     || session.chainWrite || session.lastGroundedText || session.lastReadText));
 }
 
@@ -461,6 +470,28 @@ function assistantFinalizeFromAnswer(session, parsed, fallbackText){
   };
 }
 
+function assistantIsTransientModelError(err){
+  const msg = String(err && err.message || err || '');
+  return /Failed to fetch|NetworkError|Load failed|fetch failed|timed?\s*out|ECONNRESET|EPIPE|\b50[234]\b/i.test(msg);
+}
+
+function assistantPartialFailure(session, err){
+  const parts = Array.isArray(session && session.lastReadParts)
+    ? session.lastReadParts.filter(Boolean)
+    : [];
+  const partial = String(parts.join('\n\n') || (session && session.lastGroundedText) || '').trim();
+  const reason = err
+    ? assistantFriendlyError(err)
+    : 'I could not finish the action that this research was meant to support.';
+  const prefix = partial ? `I got partway through and verified this:\n\n${partial}\n\n` : '';
+  return {
+    type:'error',
+    text:`${prefix}${reason} I could not verify that the whole request finished, so I did not treat this as complete.`,
+    partial:true,
+    session
+  };
+}
+
 function assistantTryMissedTurn(text, session, context){
   if(typeof assistantLooksLikeListAnalysis === 'function' && assistantLooksLikeListAnalysis(text))return null;
   if(typeof assistantLooksLikeMissedQuestion !== 'function' || !assistantLooksLikeMissedQuestion(text))return null;
@@ -484,7 +515,7 @@ function assistantTryMissedTurn(text, session, context){
 function assistantNeedToolText(step){
   if(step === 'extract')return 'You thought but did not call a tool. Call draft_batch if they listed several items, otherwise draft_item or draft_setting. If the request is confusing, call ask_user with one short question instead of guessing.';
   if(step === 'query')return 'You thought but did not call a tool. Call every matching answer_weather, answer_schedule, answer_items, answer_settings, or lookup_item tool now. Several parts in one request means several tool calls.';
-  if(step === 'answer')return 'Answer the user’s question in 1-2 sentences using only the tool data. If you still need another list, history, stats, or why, call the matching tool. Do not invent names or numbers. If you still cannot tell what they meant, call ask_user.';
+  if(step === 'answer')return 'Review the original request. If a read has purpose prepare_action, call the required draft_item, draft_batch, draft_setting, complete_item, plan_item, or delete_item now. Otherwise call any unfinished read tool, or answer in 1-2 sentences using only tool data. Do not invent names or numbers. If you still cannot tell what they meant, call ask_user.';
   if(step === 'classify')return 'You thought but did not call a tool. Call the matching tool now. If the request is confusing, call ask_user with one short question instead of guessing.';
   const tool = assistantStepTools(step)[0];
   return `You thought but did not call a tool. Call ${tool} now.`;
@@ -1323,6 +1354,7 @@ async function runAssistantTurn(userText, opts = {}){
   if((!session.draft || !session.draft.name) && opts.draft && opts.draft.name)session.draft = opts.draft;
   session.llmCalls = 0;
   session.repairs = 0;
+  session.modelRetries = 0;
   session.contextUsed = 0;
   session.contextMeasured = 0;
   session.contextRatio = 0;
@@ -1333,6 +1365,7 @@ async function runAssistantTurn(userText, opts = {}){
   session.lastReadText = null;
   session.lastReadParts = [];
   session.answerAttempts = 0;
+  session.researchPending = null;
   session.executedToolKeys = [];
   session.pendingActions = [];
   session.chainWrite = null;
@@ -1452,13 +1485,10 @@ async function runAssistantTurn(userText, opts = {}){
       if(session.llmCalls >= maxCalls)break;
       try{
         parsed = await assistantCallStep(session, step, complete, onProgress, context);
+        session.modelRetries = 0;
       }catch(err){
         const errText = String(err && err.message || err);
         assistantTracePush(session, {t:'error', step, error:assistantTraceClip(errText, 300)});
-        if(assistantCanFinalize(session)){
-          assistantTracePush(session, {t:'path', path:'llm', via:'finalize-after-error', step});
-          return done(assistantFinalizeFromAnswer(session, parsed));
-        }
         // Invalid/truncated tool JSON is a harness turn, not a dead end: steer
         // and retry the same step, the way Pi / little-coder keep the loop in flow.
         if(assistantIsBrokenToolJson(err) && session.repairs < ASSISTANT_MAX_REPAIRS){
@@ -1467,6 +1497,16 @@ async function runAssistantTurn(userText, opts = {}){
           assistantTracePush(session, {t:'repair', step, error:errText, n:session.repairs, via:'broken-json'});
           session.messages.push({role:'user', content:assistantRepairText(step, errText)});
           continue;
+        }
+        const retryCap = typeof ASSISTANT_MAX_MODEL_RETRIES === 'number' ? ASSISTANT_MAX_MODEL_RETRIES : 1;
+        if(assistantIsTransientModelError(err) && session.modelRetries < retryCap && session.llmCalls < maxCalls){
+          session.modelRetries += 1;
+          assistantTracePush(session, {t:'retry', step, error:assistantTraceClip(errText, 160), n:session.modelRetries});
+          continue;
+        }
+        if(assistantCanFinalize(session) || session.lastGroundedText || session.lastReadText){
+          assistantTracePush(session, {t:'path', path:'llm', via:'partial-after-error', step});
+          return done(assistantPartialFailure(session, err));
         }
         return done({type:'error', text:assistantFriendlyError(err), session});
       }
@@ -1499,6 +1539,7 @@ async function runAssistantTurn(userText, opts = {}){
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         assistantTracePush(session, {t:'repair', step, error:call && call.parseError || 'no tool', gaveUp:true});
         if(assistantCanFinalize(session))return done(assistantFinalizeFromAnswer(session, parsed));
+        if(session.researchPending)return done(assistantPartialFailure(session));
         if(assistantWideSession(session)){
           return done({type:'error', text:'I could not turn that into a Tings action. Try a shorter request, or add it from +.', thinking:parsed && parsed.thinking, session});
         }
@@ -1524,7 +1565,13 @@ async function runAssistantTurn(userText, opts = {}){
     const callKey = assistantToolCallKey(call);
     if((session.executedToolKeys || []).indexOf(callKey) >= 0){
       if(queuedCalls.length)continue;
-      return done(assistantFinalizeFromAnswer(session, parsed));
+      if(assistantCanFinalize(session))return done(assistantFinalizeFromAnswer(session, parsed));
+      if(session.repairs >= ASSISTANT_MAX_REPAIRS)return done(assistantPartialFailure(session));
+      session.repairs += 1;
+      session.messages.push({role:'user', content:'That research already ran. Do not repeat it. Call the create, change, complete, plan, or delete tool it was preparing for.'});
+      queuedCalls = [];
+      step = 'answer';
+      continue;
     }
     if(!allowed.has(call.name)){
       if(call.name === 'draft_item' && (step === 'classify' || step === 'extract')){
@@ -1607,6 +1654,12 @@ async function runAssistantTurn(userText, opts = {}){
     }
 
     session.repairs = 0;
+
+    if(assistantIsReadTool(call.name) && call.args && call.args.purpose === 'prepare_action'){
+      session.researchPending = {tool:call.name, args:call.args};
+    }else if(assistantIsActionTool(call.name)){
+      session.researchPending = null;
+    }
 
     if(result.noChange){
       const noChangeText = result.text || result.summary || 'Nothing changed.';
@@ -1775,6 +1828,7 @@ async function runAssistantTurn(userText, opts = {}){
       assistantRememberGrounded(session, result, call);
       session.analyzePasses = (session.analyzePasses || 0) + 1;
       if(session.analyzePasses > 6){
+        if(session.researchPending)return done(assistantPartialFailure(session));
         return done(assistantFinalizeFromAnswer(session, parsed, result.text));
       }
       assistantPushChainResult(session, parsed, {
@@ -1841,6 +1895,7 @@ async function runAssistantTurn(userText, opts = {}){
 
     return done(assistantPreviewResult(session, context, parsed.thinking));
   }
+  if(session.researchPending)return done(assistantPartialFailure(session));
   if(session.lastGroundedText || session.chainWrite || (session.pendingActions && session.pendingActions.length)){
     return done(assistantFinalizeFromAnswer(session, parsed));
   }

@@ -17,6 +17,10 @@ const ASSISTANT_ANCHOR_ALIASES = {
 const ASSISTANT_MAX_LLM_CALLS = 10;
 const ASSISTANT_MAX_LLM_CALLS_BATCH = 12;
 const ASSISTANT_MAX_REPAIRS = 2;
+// A continuation can fail after an expensive read tool has already returned.
+// Retry once before surfacing an explicitly partial failure; never present the
+// intermediate read as though the whole request completed.
+const ASSISTANT_MAX_MODEL_RETRIES = 1;
 const ASSISTANT_MAX_CLARIFY = 2;
 const ASSISTANT_NAME_MAX = 60;
 const ASSISTANT_INPUT_MAX = 12000;
@@ -37,6 +41,12 @@ const ASSISTANT_BATCH_TOOL_TOKENS = 8192;
 // A GLM reasoning pass is longer than a local model's, and max_tokens caps
 // thinking plus the tool call together.
 const ASSISTANT_GLM_THINK_TOKENS = 16384;
+
+const ASSISTANT_READ_PURPOSE_PROPERTY = {
+  type:['string','null'],
+  enum:['answer','prepare_action',null],
+  description:'Set prepare_action when this read is evidence for a later create/change/action in the same request. Tings will not consider the request finished until that action tool succeeds. Otherwise omit or use answer.'
+};
 
 const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   kind:{type:'string', enum:['task','habit']},
@@ -126,7 +136,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   draft_item:{
-      description:'Create or change one item in one call. Fill every setting the user named; omit the rest. name is a 1-3 word title. Put habitKind, topics, windowText, order, placePrefs, hardDue, and the rest in their own fields. If currentDraft is set, "it" means that item — keep its name and hid. Prefer plain strings. Do not nest window or place objects — a nested object is how tool JSON gets cut off. Several items in one request belong in draft_batch, not repeated draft_item calls.',
+      description:'Create or change one item in one call. Fill every setting the user named or explicitly asked you to choose; omit the rest. name is a 1-3 word title. Put habitKind, topics, windowText, order, placePrefs, hardDue, and the rest in their own fields. weatherText creates and attaches a weather profile when needed, so one item plus its new weather profile is one draft_item call. If currentDraft is set, "it" means that item — keep its name and hid. Prefer plain strings. Do not nest window or place objects — a nested object is how tool JSON gets cut off. Several items in one request belong in draft_batch, not repeated draft_item calls.',
     parameters:{
       type:'object',
       properties:ASSISTANT_DRAFT_ITEM_PROPERTIES
@@ -205,14 +215,15 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   lookup_item:{
-    description:'Answer a question about one existing item. name may be a fragment, nickname, typo, or the whole question — Tings ranks saved titles and uses a unique match. If several titles could fit, Tings asks instead of guessing. summary includes next planned time and last completion; history lists recent logs; stats gives pace/streak/progress; why explains planner placement.',
+    description:'Answer a question about one existing item. name may be a fragment, nickname, typo, or the whole question — Tings ranks saved titles and uses a unique match. If several titles could fit, Tings asks instead of guessing. summary includes next planned time and last completion; history lists recent logs; stats gives pace/streak/progress; why explains planner placement. Set purpose prepare_action when the lookup is research for a later action in this request.',
     parameters:{
       type:'object',
       required:['name'],
       properties:{
         name:{type:'string', description:'Saved title, a distinctive word from it, or the user’s phrasing'},
         query:{type:['string','null'], enum:['summary','history','stats','why',null]},
-        date:{type:['string','null'], description:'for why: today, tomorrow, a weekday, or YYYY-MM-DD'}
+        date:{type:['string','null'], description:'for why: today, tomorrow, a weekday, or YYYY-MM-DD'},
+        purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }
   },
@@ -245,7 +256,8 @@ const ASSISTANT_TOOL_DEFS = {
         query:{type:'string', enum:['list','progress']},
         kind:{type:['string','null'], enum:['all','task','habit',null]},
         status:{type:['string','null'], enum:['all','open','done','overdue',null]},
-        search:{type:['string','null'], description:'optional name or topic text filter'}
+        search:{type:['string','null'], description:'optional name or topic text filter'},
+        purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }
   },
@@ -254,7 +266,10 @@ const ASSISTANT_TOOL_DEFS = {
     parameters:{
       type:'object',
       required:['kind'],
-      properties:{kind:{type:'string', enum:['places','weather','topics','busy']}}
+      properties:{
+        kind:{type:'string', enum:['places','weather','topics','busy']},
+        purpose:ASSISTANT_READ_PURPOSE_PROPERTY
+      }
     }
   },
   answer_weather:{
@@ -267,12 +282,13 @@ const ASSISTANT_TOOL_DEFS = {
         date:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD. Default today'},
         start:{type:['string','null'], description:'window start: 5pm or 17:00'},
         end:{type:['string','null'], description:'window end: 6pm or 18:00'},
-        name:{type:['string','null'], description:'existing item for query item'}
+        name:{type:['string','null'], description:'existing item for query item'},
+        purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }
   },
   answer_schedule:{
-    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end). query freest = which day of the week is freest. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = the same list as the missed pill on today\'s header (planner expectations that slipped, not a raw overdue dump). query day = the agenda for one day, with per-item priority and frequency. query week = the whole week overview. For "most important", "most frequent", or "longest", set select so Tings computes the answer; never rank items yourself. Several questions in one message: call this for each schedule part and lookup_item / answer_weather / answer_items for the rest.',
+    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end); pass minutes without start/end to get the first contiguous opening of that size. query freest = which day of the week is freest. For a request to choose a time before creating an item, use freest, then free with your appropriate duration, then draft_item with the verified day/window and duration; the lookup is not the final answer. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = the same list as the missed pill on today\'s header (planner expectations that slipped, not a raw overdue dump). query day = the agenda for one day, with per-item priority and frequency. query week = the whole week overview. For "most important", "most frequent", or "longest", set select so Tings computes the answer; never rank items yourself. Several questions in one message: call this for each schedule part and lookup_item / answer_weather / answer_items for the rest.',
     parameters:{
       type:'object',
       required:['query'],
@@ -282,7 +298,8 @@ const ASSISTANT_TOOL_DEFS = {
         start:{type:['string','null'], description:'window start: 5pm or 17:00'},
         end:{type:['string','null'], description:'window end: 6pm or 18:00'},
         minutes:{type:['integer','null'], description:'duration in minutes, e.g. a 45 minute task'},
-        select:{type:['string','null'], enum:['most_important','most_frequent','longest',null], description:'Compute one ranked choice from query day or missed. Omit for the full list.'}
+        select:{type:['string','null'], enum:['most_important','most_frequent','longest',null], description:'Compute one ranked choice from query day or missed. Omit for the full list.'},
+        purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }
   },
@@ -327,8 +344,11 @@ function assistantStepTools(step){
   if(step === 'plan')return ['plan_item','find_item','ask_user'];
   if(step === 'delete')return ['delete_item','find_item','ask_user'];
   if(step === 'lookup')return ['lookup_item','find_item','ask_user'];
-  if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','lookup_item','find_item','complete_item','plan_item','delete_item','ask_user'];
-  if(step === 'answer')return ['lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','complete_item','plan_item','delete_item','ask_user'];
+  // A read is often research for a later action (find a free slot, then create
+  // the habit). Keep creation tools available after reads so the state machine
+  // cannot strand a compound request in an answer-only state.
+  if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','lookup_item','find_item','draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','ask_user'];
+  if(step === 'answer')return ['lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','ask_user'];
   return ['ask_user'];
 }
 

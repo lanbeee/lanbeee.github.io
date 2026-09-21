@@ -84,6 +84,10 @@ are `tests/assistant-compound-test.js` against the real model — not a scripted
 `complete()` mock. `tests/assistant-queries-test.js` also injects deliberately
 false model prose after correct tool calls and verifies that single and compound
 answers retain only authoritative tool output.
+`tests/assistant-harness-test.js` also covers dependent research-then-create
+turns: creation tools remain callable after schedule reads, `prepare_action`
+research cannot be closed by prose, one transient continuation failure retries,
+and an exhausted continuation is reported as partial instead of successful.
 
 ## Adding planner tests without copying the harness
 
