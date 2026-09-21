@@ -5,7 +5,8 @@
 const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-helpers');
 
 const FROZEN = Date.parse('2026-09-17T13:24:00'); // Thursday
-const REQUIRE_LIVE = Boolean(process.env.ASSISTANT_LIVE);
+const DISABLE_LIVE = process.env.ASSISTANT_LIVE === '0';
+const REQUIRE_LIVE = Boolean(process.env.ASSISTANT_LIVE) && !DISABLE_LIVE;
 const LIVE_FULL = process.env.ASSISTANT_LIVE === 'full';
 
 let pass = 0, fail = 0;
@@ -328,7 +329,7 @@ function checkExpect(prefix, got, spec){
   await waitForAssistant(page);
 
   console.log('\n[probe] local Qwen3.8');
-  const probe = await page.evaluate(async () => {
+  const probe = DISABLE_LIVE ? {skipped:true, reason:'ASSISTANT_LIVE=0'} : await page.evaluate(async () => {
     try{
       delete globalThis.__assistantTestComplete;
       saveSortSettings({

@@ -16,8 +16,7 @@ function assistantDebugOn(){
 }
 
 function assistantModelOnlyOn(){
-  if(typeof assistantSettings === 'function')return Boolean(assistantSettings().modelOnly);
-  return Boolean(sortSettings && sortSettings.localAssistantModelOnly);
+  return true;
 }
 
 function syncAssistantChrome(){
@@ -40,8 +39,6 @@ function syncLocalAssistantControls(){
   if(toggle)toggle.setAttribute('aria-pressed', String(s.on));
   const debugToggle = $('setting-local-assistant-debug');
   if(debugToggle)debugToggle.setAttribute('aria-pressed', String(s.debug));
-  const modelOnlyToggle = $('setting-local-assistant-model-only');
-  if(modelOnlyToggle)modelOnlyToggle.setAttribute('aria-pressed', String(s.modelOnly));
   const sheetDebug = $('assistant-debug-toggle');
   if(sheetDebug){
     sheetDebug.setAttribute('aria-pressed', String(s.debug));
@@ -169,8 +166,7 @@ function closeAssistantSheet(){
 
 // Entry points (add sheet, detail page) start a fresh conversation with the
 // intent or item already known, so the model skips classify and extracts
-// straight away. The local fast-path gates still run first — the model is
-// the fallback, not the default.
+// straight away. All other natural-language turns start with the model too.
 async function assistantOpenWithInstruction(text, opts){
   opts = opts || {};
   if(!assistantEnabled()){
@@ -281,6 +277,7 @@ function assistantClearFocus(){
     _assistantSession.pendingComplete = null;
     _assistantSession.pendingPlan = null;
     _assistantSession.pendingDelete = null;
+    _assistantSession.pendingActions = [];
     _assistantSession.awaiting = null;
   }
   _assistantPendingDraft = null;
@@ -450,6 +447,25 @@ function appendAssistantBubble(kind, text, extra){
         <button type="button" class="btn danger-soft" data-assistant-act="remove">remove</button>
         <button type="button" class="btn" data-assistant-act="discard">keep it</button>
       </div>`;
+  }else if(kind === 'actions'){
+    const actions = Array.isArray(extra && extra.actions) ? extra.actions : [];
+    const rows = actions.map((action, index) => {
+      const pending = action && action.pending || {};
+      const undo = action && action.kind === 'complete' && pending.action === 'undo_today';
+      const removePlan = action && action.kind === 'plan' && pending.action === 'remove';
+      const label = action && action.kind === 'complete' ? (undo ? 'mark not done' : 'log it')
+        : action && action.kind === 'plan' ? (removePlan ? 'remove plan' : 'plan it')
+        : 'remove';
+      const buttonClass = action && action.kind === 'delete' ? 'btn danger-soft' : 'btn primary';
+      return `<div class="assistant-action-row" data-assistant-action-row="${index}">
+        <p>${escapeHtml(action && action.summary || '')}</p>
+        <div class="btn-row assistant-preview-actions">
+          <button type="button" class="${buttonClass}" data-assistant-act="compound" data-assistant-action-index="${index}">${label}</button>
+          <button type="button" class="btn" data-assistant-act="discard-action" data-assistant-action-index="${index}">never mind</button>
+        </div>
+      </div>`;
+    }).join('');
+    div.innerHTML = `${think}${rows}`;
   }else if(kind === 'ask'){
     const choices = (extra && extra.choices || []).map(choice =>
       `<button type="button" class="btn" data-assistant-choice="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`
@@ -493,30 +509,12 @@ function assistantShowBusy(on){
   const input = $('assistant-input');
   if(input)input.disabled = on;
   assistantSyncSend();
-  document.querySelectorAll('#assistant-thread .assistant-suggest, #assistant-thread .assistant-retry').forEach(btn => { btn.disabled = on; });
+  document.querySelectorAll('#assistant-thread .assistant-suggest').forEach(btn => { btn.disabled = on; });
   const wait = $('assistant-waiting');
   if(wait){
     wait.hidden = !on;
     if(on && !wait.textContent.trim())wait.textContent = 'thinking…';
   }
-}
-
-// The fast path answered without the model; offer to redo this utterance
-// with Qwen instead.
-function appendAssistantRetry(text){
-  const thread = assistantThreadEl();
-  const value = String(text || '').trim();
-  if(!thread || !value)return;
-  const row = document.createElement('div');
-  row.className = 'assistant-retry-row';
-  row.innerHTML = `<button type="button" class="btn assistant-retry" data-assistant-retry="${escapeHtml(value)}">use AI instead</button>`;
-  thread.appendChild(row);
-  thread.scrollTop = thread.scrollHeight;
-}
-
-function assistantRetryTextFor(out){
-  if(!out || !out.fastPath || assistantModelOnlyOn())return null;
-  return out.session && out.session.parsed && out.session.parsed.text || null;
 }
 
 async function handleAssistantOutcome(out){
@@ -536,7 +534,9 @@ async function handleAssistantOutcome(out){
   }else if(assistantDebugOn() && out.debug && out.debug.length){
     appendAssistantBubble('debug', '', {debug:out.debug, debugText:out.debugText, debugJson:assistantDebugPayload(out.debug)});
   }
-  const retryText = assistantRetryTextFor(out);
+  if(out.alsoText){
+    appendAssistantBubble('say', out.alsoText, {thinking:out.thinking});
+  }
   if(out.type === 'preview'){
     const drafts = Array.isArray(out.drafts) ? out.drafts : (out.draft ? [out.draft] : []);
     const batch = drafts.length > 1;
@@ -548,17 +548,14 @@ async function handleAssistantOutcome(out){
         : 'Check these, then save all.')
       : (setting ? 'Check this, then save.' : 'Check this, then save. Edit opens the full form.'), {thinking:out.thinking});
     appendAssistantBubble('preview', out.summary || (out.draft && out.draft.name) || 'drafts', {thinking:out.thinking, setting, drafts});
-    if(retryText)appendAssistantRetry(retryText);
     return;
   }
   if(out.type === 'complete'){
     if(out.alreadyDone){
       appendAssistantBubble('say', out.text || 'Already logged today.', {thinking:out.thinking});
-      if(retryText)appendAssistantRetry(retryText);
       return;
     }
     appendAssistantBubble('complete', out.text || 'Log it as done?', {thinking:out.thinking, action:out.completeAction});
-    if(retryText)appendAssistantRetry(retryText);
     return;
   }
   if(out.type === 'plan'){
@@ -569,66 +566,19 @@ async function handleAssistantOutcome(out){
     appendAssistantBubble('delete', out.text || 'Remove this item?', {thinking:out.thinking});
     return;
   }
+  if(out.type === 'actions'){
+    appendAssistantBubble('actions', out.text || 'Confirm these actions.', {thinking:out.thinking, actions:out.actions});
+    return;
+  }
   if(out.type === 'ask'){
     appendAssistantBubble('ask', out.question, {choices:out.choices, thinking:out.thinking});
-    if(retryText)appendAssistantRetry(retryText);
     return;
   }
   if(out.type === 'today' || out.type === 'say'){
     appendAssistantBubble('say', out.text, {thinking:out.thinking});
-    if(retryText)appendAssistantRetry(retryText);
     return;
   }
   appendAssistantBubble('say', out.text || 'Something went wrong.', {thinking:out.thinking});
-}
-
-// Redo the last fast-path utterance through the model. A saved item stays
-// in focus. An unsaved preview is kept when this is a follow-up on that
-// draft ("add the location home"); a first-turn create is dropped so the
-// model starts clean.
-async function assistantSendWithModel(text){
-  const value = String(text || '').trim();
-  if(!value || _assistantBusy)return;
-  const prior = assistantFocusedDraft();
-  const session = assistantCreateSession();
-  if(prior && prior.name){
-    const keepFollow = (typeof assistantLooksLikeSettingFollowup === 'function' && assistantLooksLikeSettingFollowup(value))
-      || (typeof assistantLooksLikeEdit === 'function' && assistantLooksLikeEdit(value));
-    if(prior.hid || keepFollow)session.draft = prior;
-  }
-  const turn = ++_assistantTurn;
-  assistantShowBusy(true);
-  try{
-    const out = await runAssistantTurn(value, {
-      forceLlm:true,
-      session,
-      onProgress:info => {
-        if(turn !== _assistantTurn)return;
-        const wait = $('assistant-waiting');
-        if(!wait)return;
-        if(info && info.phase === 'think')wait.textContent = info.step ? `thinking (${info.step})…` : 'thinking…';
-        else wait.textContent = 'working…';
-      },
-      onDebug:(events, row) => {
-        if(turn !== _assistantTurn)return;
-        assistantRenderLiveDebug(events);
-        const wait = $('assistant-waiting');
-        if(wait && row && row.t){
-          if(row.t === 'path')wait.textContent = `${row.path || 'path'} · ${row.via || ''}`.trim();
-          else if(row.t === 'tool')wait.textContent = `call ${row.name}`;
-          else if(row.t === 'model')wait.textContent = `model ${row.step || ''}`.trim();
-          else if(row.t === 'step')wait.textContent = `thinking (${row.step})…`;
-        }
-      }
-    });
-    if(turn !== _assistantTurn)return;
-    await handleAssistantOutcome(out);
-  }catch(err){
-    if(turn !== _assistantTurn)return;
-    appendAssistantBubble('say', assistantFriendlyError(err));
-  }finally{
-    if(turn === _assistantTurn)assistantShowBusy(false);
-  }
 }
 
 async function sendAssistantMessage(text, opts){
@@ -693,6 +643,7 @@ function assistantKeepWorkingOn(commit){
   _assistantSession.pendingComplete = null;
   _assistantSession.pendingPlan = null;
   _assistantSession.pendingDelete = null;
+  _assistantSession.pendingActions = [];
   _assistantSession.awaiting = null;
   _assistantSession.messages = [];
   if(commit && commit.habit && typeof assistantHabitToDraft === 'function'){
@@ -856,6 +807,45 @@ function commitAssistantDelete(){
   appendAssistantBubble('say', `Removed ${result.name}. You can undo from the toast.`);
 }
 
+function commitAssistantCompoundAction(index, button){
+  const actions = _assistantSession && _assistantSession.pendingActions;
+  const action = Array.isArray(actions) ? actions[index] : null;
+  if(!action || !action.pending){
+    if(typeof showToast === 'function')showToast('that action is no longer pending');
+    return;
+  }
+  const result = action.kind === 'complete' && typeof assistantCommitComplete === 'function'
+    ? assistantCommitComplete(action.pending)
+    : action.kind === 'plan' && typeof assistantCommitPlan === 'function'
+      ? assistantCommitPlan(action.pending)
+      : action.kind === 'delete' && typeof assistantCommitDelete === 'function'
+        ? assistantCommitDelete(action.pending)
+        : {ok:false, error:'action unavailable'};
+  if(!result.ok){
+    if(typeof showToast === 'function')showToast(result.error || 'could not complete action');
+    return;
+  }
+  actions[index] = null;
+  const row = button && button.closest('[data-assistant-action-row]');
+  if(row){
+    row.querySelector('.assistant-preview-actions')?.remove();
+    row.classList.add('is-saved');
+  }
+  if(typeof render === 'function')render();
+  const text = action.kind === 'complete'
+    ? (result.action === 'undo_today' ? `Marked ${result.name} not done.` : `Logged ${result.name}.`)
+    : action.kind === 'plan'
+      ? (result.action === 'remove' ? `Removed ${result.name}'s one-day plan.` : `Planned ${result.name}.`)
+      : `Removed ${result.name}.`;
+  appendAssistantBubble('say', `${text} You can undo from the toast.`);
+}
+
+function discardAssistantCompoundAction(index, button){
+  const actions = _assistantSession && _assistantSession.pendingActions;
+  if(Array.isArray(actions))actions[index] = null;
+  button && button.closest('[data-assistant-action-row]')?.remove();
+}
+
 function assistantDiscardPending(){
   const draft = assistantFocusedDraft();
   if(draft && draft.hid && typeof load === 'function' && typeof assistantHabitToDraft === 'function'){
@@ -868,6 +858,7 @@ function assistantDiscardPending(){
         _assistantSession.pendingComplete = null;
         _assistantSession.pendingPlan = null;
         _assistantSession.pendingDelete = null;
+        _assistantSession.pendingActions = [];
       }
       _assistantPendingDraft = _assistantSession && _assistantSession.draft;
       syncAssistantFocusBar();
@@ -887,9 +878,6 @@ function bindAssistantUi(){
   $('setting-local-assistant-debug')?.addEventListener('click', () => {
     patchLocalAssistant({localAssistantDebug:!assistantDebugOn()});
   });
-  $('setting-local-assistant-model-only')?.addEventListener('click', () => {
-    patchLocalAssistant({localAssistantModelOnly:!assistantModelOnlyOn(), localAssistantRoutingVersion:2});
-  });
   $('assistant-focus-done')?.addEventListener('click', assistantClearFocus);
   $('assistant-close')?.addEventListener('click', closeAssistantSheet);
   $('assistant-sheet')?.addEventListener('click', e => {
@@ -907,13 +895,6 @@ function bindAssistantUi(){
     }
   });
   $('assistant-thread')?.addEventListener('click', e => {
-    const retry = e.target.closest('[data-assistant-retry]');
-    if(retry){
-      const row = retry.closest('.assistant-retry-row');
-      if(row)row.remove();
-      assistantSendWithModel(retry.dataset.assistantRetry);
-      return;
-    }
     const suggest = e.target.closest('[data-assistant-suggest]');
     if(suggest){
       sendAssistantMessage(suggest.dataset.assistantSuggest);
@@ -927,6 +908,8 @@ function bindAssistantUi(){
       else if(which === 'log')commitAssistantComplete();
       else if(which === 'plan')commitAssistantPlan();
       else if(which === 'remove')commitAssistantDelete();
+      else if(which === 'compound')commitAssistantCompoundAction(Number(act.dataset.assistantActionIndex), act);
+      else if(which === 'discard-action')discardAssistantCompoundAction(Number(act.dataset.assistantActionIndex), act);
       else if(which === 'discard'){
         assistantDiscardPending();
         act.closest('.assistant-bubble')?.remove();

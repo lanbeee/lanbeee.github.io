@@ -1,5 +1,5 @@
-// Utterance parsers for the local fast path only. They must not overwrite a
-// Qwen draft_item call: untrusted or "use AI instead" turns withhold facts.
+// Legacy parsing helpers retained for deterministic normalization tests and
+// compatibility. Natural-language assistant routing does not call them.
 
 const ASSISTANT_WEEKDAY_NAMES = {
   sunday:0, sun:0,
@@ -875,7 +875,7 @@ function assistantGuessItemName(text){
 const ASSISTANT_ANCHOR_WORD = 'sunset|sunrise|dawn|fajr|dhuhr|zuhr|noon|asr|maghrib|maghreb|isha|dusk';
 
 function assistantIsPronounName(name){
-  return /^(it|this|that|this one|the habit|the task|the ting|the item)(?:\s+to)?$/.test(assistantNormText(name));
+  return /^(it|this|that|this one|that one|the one|the habit|the task|the ting|the item)(?:\s+to)?$/.test(assistantNormText(name));
 }
 
 function assistantNamesMatch(a, b){
@@ -1248,11 +1248,29 @@ function assistantMatchCatalogNames(list, text){
   return hits;
 }
 
+function assistantLooksLikeMissedQuestion(text){
+  const s = assistantNormText(text);
+  if(!s)return false;
+  if(/\bmiss(?:ing)? anything\b/.test(s) || /\bif i (?:add|block|put)\b/.test(s))return false;
+  return /\b(?:what(?:'| )?d(?:id|o) i miss|what have i missed|what(?:'| i)?s missed|anything i miss(?:ed)?|did i miss(?: anything)?|show (?:me )?(?:the )?missed|missed (?:today|so far|this morning)|what i missed)\b/.test(s)
+    || (/\bmissed\b/.test(s) && /\b(?:today|list|header|pill|button)\b/.test(s) && /\b(?:what|which|show|list)\b/.test(s));
+}
+
+function assistantLooksLikeListAnalysis(text){
+  const s = assistantNormText(text);
+  if(!s)return false;
+  return /\b(?:most (?:important|urgent|critical|frequent|often|common)|highest priority|least (?:important|frequent)|longest|shortest|which (?:one|of them)|among (?:them|those|these)|busiest)\b/.test(s);
+}
+
 function assistantGuessIntent(text){
   const s = assistantNormText(text);
   if(!s)return {intent:'unclear', confident:false};
   if(/\b(delete everything|wipe my list|reschedule .{0,24}week|hack the)\b/.test(s)){
     return {intent:'unsupported', confident:true};
+  }
+  if(assistantLooksLikeMissedQuestion(s)
+    || (assistantLooksLikeListAnalysis(s) && /\b(?:miss(?:ed)?|agenda|tomorrow|today)\b/.test(s))){
+    return {intent:'ask_schedule', confident:true};
   }
   const setting = assistantParseSettingCreate(s);
   if(setting){

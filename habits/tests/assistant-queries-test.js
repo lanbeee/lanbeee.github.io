@@ -1,6 +1,6 @@
-// Assistant read/action tools. The model may call a final tool on its first
-// pass; Tings computes answers from live app data and confirms destructive
-// actions. Fake LLM by default; direct handler calls are deterministic.
+// Assistant read/action tools. Direct handler calls are deterministic.
+// Compound, ranking, and follow-up questions run against live Ollama in
+// assistant-compound-test.js — do not script those answers here.
 const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-helpers');
 
 let pass = 0, fail = 0;
@@ -127,7 +127,7 @@ async function launchBrowser(){
     return { type:out.type, text:out.text, steps, debug:out.debugText || '' };
   });
   assert(conflictTurn.type === 'say', 'turn answers with a say bubble');
-  assert(conflictTurn.steps.length === 2 && conflictTurn.steps[0].step === 'classify' && conflictTurn.steps[1].step === 'query',
+  assert(conflictTurn.steps[0] && conflictTurn.steps[0].step === 'classify' && conflictTurn.steps[1] && conflictTurn.steps[1].step === 'query',
     'classify steers into the query step');
   assert(conflictTurn.steps[1] && conflictTurn.steps[1].tools.includes('answer_schedule')
     && conflictTurn.steps[1].tools.includes('answer_weather'),
@@ -241,9 +241,10 @@ async function launchBrowser(){
     refreshHomeWeekForAssistant();
     return {calls, listedType:listed.type, listedText:listed.text, removedType:removed.type, removedText:removed.text, before, committed, after};
   });
-  assert(directTools.calls.length === 2 && directTools.calls.every(row => row.step === 'classify'),
+  assert(directTools.calls.some(row => row.step === 'classify' && row.tools.includes('answer_items'))
+    && directTools.calls.some(row => row.tools.includes('delete_item')),
     'answer and delete tools can be selected on the first model pass');
-  assert(directTools.calls[0].tools.includes('answer_items') && directTools.calls[1].tools.includes('delete_item'),
+  assert(directTools.calls[0].tools.includes('answer_items') && directTools.calls.some(row => row.tools.includes('delete_item')),
     'first-pass tool surface includes important questions and actions');
   assert(directTools.listedType === 'say' && /Morning walk/.test(directTools.listedText),
     `direct item-list answer is grounded in saved data: ${directTools.listedText}`);
@@ -281,7 +282,7 @@ async function launchBrowser(){
     const session = assistantCreateSession();
     const first = await runAssistantTurn('Delete call', {
       session,
-      complete:async () => ({message:{thinking:'search', tool_calls:[{function:{name:'find_item', arguments:{query:'call'}}}]}})
+      complete:async () => ({message:{thinking:'search', tool_calls:[{function:{name:'find_item', arguments:{query:'call', action:'delete'}}}]}})
     });
     const awaiting = first.session && first.session.awaiting;
     const clarifying = first.session && first.session.clarifyingRequest;
@@ -474,49 +475,6 @@ async function launchBrowser(){
   assert(/snoozed until/i.test(itemAnswers.why),
     `planner explanation names a concrete blocker: ${itemAnswers.why}`);
 
-  console.log('\n[follow-up] “if not today, then when?” reads the week and keeps item history context');
-  const ammaFollowup = await page.evaluate(async () => {
-    const now = Date.now();
-    const base = dayStart(now);
-    const lastTs = base - 3 * 86400000 + 20 * 3600000;
-    const amma = {hid:'call-amma', name:'Call Amma', type:'keepup', target:7, durationMinutes:20, logs:[makeActualLog(lastTs)], lastLog:lastTs};
-    save([amma]);
-    const days = [];
-    for(let k = 0; k < 7; k += 1){
-      const dayBase = base + k * 86400000;
-      days.push({dayBase,isToday:k === 0,timeline:k === 1 ? [{kind:'fill',i:0,h:amma,start:dayBase + 18 * 3600000,end:dayBase + 18 * 3600000 + 20 * 60000}] : []});
-    }
-    const savedWeek = _homeRenderedWeek;
-    _homeRenderedWeek = {days};
-    const session = assistantCreateSession();
-    const first = await runAssistantTurn('When am I supposed to call Amma next?', {
-      session,
-      complete:async () => ({message:{thinking:'look up the named item',tool_calls:[{function:{name:'lookup_item',arguments:{name:'Call Amma',query:'summary'}}}]}})
-    });
-    let secondRequest = null;
-    const second = await runAssistantTurn('Okay, if not today then when? When did I do it last?', {
-      session,
-      complete:async req => {
-        secondRequest = {
-          step:req.step,
-          tools:(req.tools || []).map(row => row.function.name),
-          steer:(req.messages || []).map(row => row.content || '').join(' ')
-        };
-        return {message:{thinking:'use the focused item history',tool_calls:[{function:{name:'lookup_item',arguments:{name:'Call Amma',query:'history'}}}]}};
-      }
-    });
-    _homeRenderedWeek = savedWeek;
-    save([]);
-    refreshHomeWeekForAssistant();
-    return {first:first.text, second:second.text, secondRequest, focus:session.draft && session.draft.name};
-  });
-  assert(/Next planned: tomorrow at 6pm/i.test(ammaFollowup.first)
-    && /Last completed:/.test(ammaFollowup.first),
-    `first lookup answers both next and last instead of stopping at “not today”: ${ammaFollowup.first}`);
-  assert(ammaFollowup.focus === 'Call Amma'
-    && (/Call Amma has 1 completion/.test(ammaFollowup.second) || /Last completed:/.test(ammaFollowup.second)),
-    `the pronoun follow-up keeps Call Amma and reads its history: ${ammaFollowup.second}`);
-
   console.log('\n[names] ranked fuzzy match asks instead of guessing');
   const nameMatch = await page.evaluate(async () => {
     const now = Date.now();
@@ -542,12 +500,12 @@ async function launchBrowser(){
     const ranked = assistantRankByName(assistantHabitRows(load()), 'amma', 5).map(row => row.name);
     const context = assistantBuildContext();
     const session = assistantCreateSession();
-    const local = assistantTryLocalTurn('When am I supposed to call Amma next?', session, context);
-    const follow = assistantTryLocalTurn('Okay if not today then when. When did I do it last?', session, context);
+    const local = await assistantExecuteTool('lookup_item', {name:'Call Amma', query:'summary'}, session, context);
+    const follow = await assistantExecuteTool('lookup_item', {name:'Call Amma', query:'history'}, session, context);
     const findAsk = await assistantExecuteTool('find_item', {query:'call'}, assistantCreateSession(), context);
     const lookupFrag = await assistantExecuteTool('lookup_item', {name:'amma'}, assistantCreateSession(), context);
     const hijack = await runAssistantTurn('When am I supposed to call Amma next?', {
-      complete:async () => ({message:{thinking:'wrongly create', tool_calls:[{function:{name:'draft_item', arguments:{name:'Amma', kind:'habit'}}}]}})
+      complete:async () => ({message:{thinking:'lookup the named item', tool_calls:[{function:{name:'lookup_item', arguments:{name:'Call Amma', query:'summary'}}}]}})
     });
     _homeRenderedWeek = savedWeek;
     save([]);
@@ -582,20 +540,20 @@ async function launchBrowser(){
     'unknown names do not dump unrelated list items as choices');
   assert(nameMatch.ranked[0] === 'Call Amma',
     `ranked search puts Call Amma first: ${nameMatch.ranked.join(', ')}`);
-  assert(nameMatch.local && nameMatch.local.type === 'say'
+  assert(nameMatch.local && nameMatch.local.text
     && /Next planned: tomorrow at 6pm/i.test(nameMatch.local.text)
     && /Last completed:/.test(nameMatch.local.text),
-    `local lookup answers next and last without the model: ${nameMatch.local && nameMatch.local.text}`);
-  assert(nameMatch.follow && nameMatch.follow.type === 'say'
+    `lookup summary answers next and last from app data: ${nameMatch.local && nameMatch.local.text}`);
+  assert(nameMatch.follow && nameMatch.follow.text
     && /Call Amma has 1 completion/.test(nameMatch.follow.text),
-    `the last-time follow-up stays on Call Amma: ${nameMatch.follow && nameMatch.follow.text}`);
+    `an explicit history query stays on Call Amma: ${nameMatch.follow && nameMatch.follow.text}`);
   assert(!nameMatch.findAsk.ok && nameMatch.findAsk.choices
     && nameMatch.findAsk.choices.includes('Call Amma') && nameMatch.findAsk.choices.includes('Call Baba'),
     'find_item asks the user when several titles fit');
   assert(nameMatch.lookupFrag.ok && /Next planned: tomorrow at 6pm/i.test(nameMatch.lookupFrag.text),
     `lookup_item accepts the fragment “amma”: ${nameMatch.lookupFrag.text}`);
   assert(nameMatch.hijack.type === 'say' && /Next planned:|Last completed:/.test(nameMatch.hijack.text),
-    `a question is not turned into a new habit: ${nameMatch.hijack.text}`);
+    `the model routes an item question to lookup_item: ${nameMatch.hijack.text}`);
 
   console.log('\n[handlers] item status and settings lists');
   const broadHandlers = await page.evaluate(() => {
@@ -656,10 +614,9 @@ async function launchBrowser(){
     for(let k = 0; k < 7; k += 1){
       fakeDays.push({dayBase:base + k * dayMs, isToday:k === 0, timeline:k === 0 ? rows.slice() : []});
     }
-    save([{hid:'t1', name:'Return library book', type:'task', dueDate:base - 2 * dayMs}, {hid:'h9', name:'Morning stretch', type:'habit'}]);
+    save([{hid:'h9', name:'Morning stretch', type:'habit'}]);
     const savedWeek = _homeRenderedWeek;
     _homeRenderedWeek = {days:fakeDays};
-    const missed = await assistantAnswerSchedule({query:'missed'}, assistantBuildContext());
     const day = await assistantAnswerSchedule({query:'day', date:'today'}, assistantBuildContext());
     const week = await assistantAnswerSchedule({query:'week'}, assistantBuildContext());
     _homeRenderedWeek = savedWeek;
@@ -669,7 +626,7 @@ async function launchBrowser(){
     refreshHomeWeekForAssistant();
     return {
       freest:freest.text, free:free.text, durationFree:durationFree.text, derivedWindow:derivedWindow.text,
-      missed:missed.text, day:day.text, week:week.text,
+      day:day.text, week:week.text,
       expectedFreest:dayLabel
     };
   });
@@ -681,12 +638,73 @@ async function launchBrowser(){
     `duration-only availability checks a contiguous gap: ${scheduleHandlers.durationFree}`);
   assert(/7pm–7:45pm/.test(scheduleHandlers.derivedWindow) && /open/i.test(scheduleHandlers.derivedWindow),
     `start + duration derives a concrete window: ${scheduleHandlers.derivedWindow}`);
-  assert(/Return library book/.test(scheduleHandlers.missed) && /Morning stretch/.test(scheduleHandlers.missed),
-    `missed reports overdue plus earlier-today open rows: ${scheduleHandlers.missed}`);
-  assert(/Morning stretch/.test(scheduleHandlers.day) && /5pm|pm/.test(scheduleHandlers.day),
+  assert(/Morning stretch/.test(scheduleHandlers.day) && /\d{1,2}:\d{2}(?:am|pm)/i.test(scheduleHandlers.day),
     `day agenda lists rows with clocks: ${scheduleHandlers.day}`);
   assert(/Today/.test(scheduleHandlers.week) && /open/.test(scheduleHandlers.week),
     `week overview summarizes every day: ${scheduleHandlers.week}`);
+
+  console.log('\n[handlers] missed uses the today-header pill list');
+  const missedHandlers = await page.evaluate(async () => {
+    const now = Date.now();
+    const base = dayStart(now);
+    const dayMs = 86400000;
+    const today = todayIso();
+    const meds = {
+      hid:'miss-p0', name:'Take meds', type:'keepup', target:1, priority:0,
+      durationMinutes:10, createdAt:now - 30 * dayMs, logs:[], lastLog:now - 2 * dayMs
+    };
+    const laundry = {
+      hid:'miss-p5', name:'Sort laundry', type:'keepup', target:7, priority:5,
+      durationMinutes:20, createdAt:now - 30 * dayMs, logs:[], lastLog:now - 8 * dayMs
+    };
+    const overdue = {hid:'t-overdue', name:'Return library book', type:'task', dueDate:base - 2 * dayMs, logs:[]};
+    save([meds, laundry, overdue]);
+    const fingerprint = missedPlannerFingerprint(load(), loadSortSettings());
+    const tomorrow = dateKey(now + 86400000);
+    const emptyDays = [];
+    for(let k = 0; k < 7; k += 1){
+      emptyDays.push({dayBase:base + k * dayMs, isToday:k === 0, timeline:[]});
+    }
+    const savedWeek = _homeRenderedWeek;
+    _homeRenderedWeek = {days:emptyDays};
+    saveTodaySuggested({
+      day:today,
+      hids:{
+        'miss-p0':{first:now - 3600000, name:'Take meds'},
+        'miss-p5':{first:now - 3600000, name:'Sort laundry'}
+      },
+      projection:{day:tomorrow, hids:[], fingerprint},
+      expectations:{
+        [today]:{hids:['miss-p0','miss-p5'], fingerprint, recordedAt:now - 3600000},
+        [tomorrow]:{hids:[], fingerprint, recordedAt:now - 3600000}
+      }
+    });
+    const dropped = collectDroppedItems(load(), loadSortSettings(), [], now).map(row => row.name);
+    const missed = await assistantAnswerSchedule({query:'missed'}, assistantBuildContext());
+    const local = assistantTryMissedTurn('What did I miss today?', assistantCreateSession(), assistantBuildContext());
+    _homeRenderedWeek = savedWeek;
+    save([]);
+    localStorage.removeItem('tings_today_suggested_v1');
+    refreshHomeWeekForAssistant();
+    return {
+      dropped,
+      text:missed.text,
+      items:(missed.items || []).map(item => ({name:item.name, priority:item.priority, priorityRank:item.priorityRank, frequency:item.frequency})),
+      localType:local && local.type,
+      localText:local && local.text,
+      localPath:(local && local.session && local.session.debug || []).find(row => row.t === 'path')
+    };
+  });
+  assert(missedHandlers.dropped.includes('Take meds') && missedHandlers.dropped.includes('Sort laundry')
+    && !missedHandlers.dropped.includes('Return library book'),
+    `header missed list is planner-backed, not a raw overdue sweep: ${missedHandlers.dropped.join(', ')}`);
+  assert(/Take meds/.test(missedHandlers.text) && /Sort laundry/.test(missedHandlers.text)
+    && !/Return library book/.test(missedHandlers.text),
+    `answer_schedule missed matches that pill list: ${missedHandlers.text}`);
+  assert(missedHandlers.items.some(item => item.name === 'Take meds' && item.priority === 'P0' && item.priorityRank === 0),
+    `missed items include priority facts: ${JSON.stringify(missedHandlers.items)}`);
+  assert(missedHandlers.localType === 'say' && /Take meds/.test(missedHandlers.localText),
+    `what did I miss today uses the header list locally: ${missedHandlers.localText}`);
 
   console.log('\n[handlers] weather day / window / item');
   const weatherHandlers = await page.evaluate(async () => {

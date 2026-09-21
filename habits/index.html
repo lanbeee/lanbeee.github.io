@@ -1234,13 +1234,7 @@
                 </span>
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
-              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-model-only" aria-pressed="false">
-                <span>
-                  <b>LLM-first routing</b>
-                  <small>Let the model understand every request before Tings runs a validated tool. Turn this off only to use faster parser shortcuts for simple phrases. On by default.</small>
-                </span>
-                <span class="switch-ui" aria-hidden="true"></span>
-              </button>
+              <p class="field-hint">Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p>
             </div>
           </div>
         </section>

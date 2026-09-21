@@ -1,21 +1,23 @@
-// Guided Qwen3.8 loop: the model understands each request first, then calls a
-// validated tool. The parser is an opt-in shortcut and failure fallback only.
+// Guided Qwen3.8 loop: the model understands every natural-language request,
+// then calls validated tools. Deterministic code validates arguments, reads
+// authoritative app state, and stages writes; it never chooses semantic intent.
 
 function assistantSystemPrompt(){
   return [
     'You are the Tings assistant in this app on this computer.',
     'Think, then call the final tool directly whenever possible. classify_intent is optional. Do not save. Do not invent habit JSON.',
     'create_task = one-off. create_habit = repeating. create_setting = a weather profile, place, busy time, or topic. ask_today = what is on today or next.',
-    'ask_weather = a weather question, or whether the weather suits an item — Tings computes the forecast answer. ask_schedule = free time, the freest day, whether a window is open, whether a new commitment would make them miss something, what they missed, or the agenda for a day/week. Availability and what-if questions ("do I have time tomorrow 5 to 6 pm", "if I add a task tomorrow 5 to 6 pm will I miss anything") are ask_schedule — never create_task, and never answer them from your own guess: Tings computes them with answer_weather / answer_schedule.',
-    'complete_item = log it as done, add minutes/value/note, or undo today’s latest completion. plan_item = add/remove a one-day plan for an existing item; this is not a recurring-schedule edit. delete_item = remove one item after confirmation. lookup_item = summary, history, stats, or why one named item is or is not scheduled. find_item = rank closest saved names when the spoken name may not match. answer_items = list/status/progress questions. answer_settings = list saved places, weather profiles, topics, or busy times.',
+    'ask_weather = a weather question, or whether the weather suits an item — Tings computes the forecast answer. ask_schedule = free time, the freest day, whether a window is open, whether a new commitment would make them miss something, what they missed (the same list as the missed pill on today), or the agenda for a day/week. Ranking, follow-ups, and several questions in one message are the same job: call a tool for each part (you may emit several tool calls), then Tings gives you another turn to fetch more or answer from the tool data. "Most important thing I missed" and "most frequent habit on tomorrow\'s agenda" are still ask_schedule: fetch that list first, then lookup_item only if you still need history/stats/why. Availability and what-if questions ("do I have time tomorrow 5 to 6 pm", "if I add a task tomorrow 5 to 6 pm will I miss anything") are ask_schedule — never create_task, and never answer them from your own guess: Tings computes them with answer_weather / answer_schedule.',
+    'complete_item = log it as done, add minutes/value/note, or undo today’s latest completion. plan_item = add/remove a one-day plan for an existing item; this is not a recurring-schedule edit. delete_item = remove one item after confirmation. lookup_item = summary, history, stats, or why one named item is or is not scheduled. find_item = rank closest saved names when the spoken name may not match. answer_items = list/status/progress questions. answer_settings = list saved places, weather profiles, topics, or busy times. After a tool returns items or an item, you may call another tool for the rest of the request, then answer from that tool data — never invent names, priorities, or frequencies. recent.request / recent.answer / recent.items / recent.referent are the previous turn in this chat; "it" / "that" / "the one" is currentDraft or recent.referent.',
     'draft_item creates or changes an item. Put every setting the user named in that one call and omit the rest. name is a short title only — never copy the rest of the request into name. Identity: name, newName, habitKind (build/limit/stop), emoji, emojiColor, topics, priority. Schedule: rhythm, timesPerPeriod, periodDays, weekdays, monthDays, preferredWeekdays, preferredMonthDays, due, dueTime, hardDue, planBy, windowText, preferredWindowText, earlyDays, delayDays, before, after, order, option. Effort: durationMinutes, breakable, minChunkMinutes, autoMarkMinutes, trackValue. Place/weather: placeNames, anywhere, placePrefs, weatherProfile, weatherText, showWeather, weatherAtPlace, weatherPlace. Other: pinned, snooze, sharedDisplay, sharedComplete, links. If they name weather conditions and catalog.weather has no match, still set weatherText — Tings will create a profile.',
     'If they ask for several items at once (a list, a pasted schedule, two habits, errands plus places), call draft_batch once — not many draft_item calls. One item with a long or detailed instruction is still draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown places in a batch get a dummy address; do not ask.',
     'draft_setting creates or changes a weather profile, place, busy time, or topic. kind is weather, location, busy, or topic. "Create a weather profile for barbecuing" → kind weather, name Barbecuing. Weather rules go in weatherText as one string. On a change, weatherText is a patch that merges onto currentDraft.rules (example: "prefer higher temperature") — do not drop other rules.',
     'Example: "45 minute limit habit called Kettlebells, topics health, every Tuesday and Friday, urgent" → name "Kettlebells", habitKind "limit", durationMinutes 45, topics "health", rhythm "every Tuesday and Friday", priority 0.',
     'Example: "Stretch at Home, prefer Home high, right after Walk same day, later of 6pm and sunset until isha" → name "Stretch", placeNames "Home", placePrefs "Home high", order "right after Walk, same day", windowText "later of 6pm and sunset until isha".',
     'If currentDraft is a weather profile, place, busy time, or topic, call draft_setting with only the new fields. If currentDraft is a habit or task, "it" / "this" / "that" is that item. A question about it uses lookup_item (including next time, last completion, history, stats, or why); done/not-done uses complete_item; plan/unplan uses plan_item; remove the whole item uses delete_item; only a settings change uses draft_item. Keep its name and hid. "Add the location home" or "use home and mom\'s house" sets placeNames on currentDraft — it is not a new item. Do not classify unclear when currentDraft is set.',
-    'If extractedFacts is present, copy those fields into the tool, but resolve dates yourself: catalog.date is today (ISO date + weekday), so relative phrases like "day after tomorrow" or "two days after tomorrow" become an exact due YYYY-MM-DD. If extractedFacts is absent, read the request yourself. You may fill duration, windowText, and weatherText when they asked you to pick those. placeNames must be catalog.places names the user named — never invent backyard, park, or any place that is not in catalog.places. If they did not name a saved place, omit placeNames. sunset means maghrib.',
-    'If a name is missing, a fragment, or could match more than one saved item, call find_item or ask_user. Do not guess a title and do not create a new item. Tings ranks names and will ask the user when several could fit.',
+    'Read the request yourself and resolve dates against catalog.date (today as ISO date + weekday): relative phrases like "day after tomorrow" or "two days after tomorrow" become an exact due YYYY-MM-DD. You may fill duration, windowText, and weatherText when they asked you to pick those. placeNames must be catalog.places names the user named — never invent backyard, park, or any place that is not in catalog.places. If they did not name a saved place, omit placeNames. sunset means maghrib.',
+    'If a name is missing, a fragment, or could match more than one saved item, call find_item or ask_user. When find_item is for a lookup, completion, plan, or deletion, set its action field so a clarification resumes the same operation. Do not guess a title and do not create a new item. Tings ranks names and will ask the user when several could fit.',
+    'If the whole request is confusing or could mean two different Tings actions, call ask_user with one short question and optional choices instead of guessing. Tings asks at most twice in a row, then stops.',
     'On extract, call draft_item with flat strings only. Do not nest window or place objects. If a tool call is invalid or cut off, retry that tool with smaller string arguments — Tings will steer you.'
   ].join(' ');
 }
@@ -26,17 +28,59 @@ function assistantUnsupportedText(){
 
 // Name-clarification chips start a fresh turn, so remember which action the
 // original request was heading toward. Classify/extract have to infer it.
+const ASSISTANT_CONFUSION_CHOICES = ['task', 'habit', "what's today", 'schedule question', 'weather', 'log done'];
+
+function assistantCanClarify(session, required){
+  const max = typeof ASSISTANT_MAX_CLARIFY === 'number' ? ASSISTANT_MAX_CLARIFY : 2;
+  return (session && session.clarifyCount || 0) < max;
+}
+
+function assistantGiveUpClarify(session, parsed){
+  return {
+    type:'say',
+    text:'I still do not follow. Try one short request, or add it from +.',
+    thinking:parsed && parsed.thinking,
+    gaveUp:true,
+    session
+  };
+}
+
+function assistantConfusionQuestion(parsed){
+  const spoken = String(parsed && parsed.content || '').trim();
+  if(spoken.length >= 12 && spoken.length <= 180 && /[?？]$/.test(spoken)
+    && !(typeof assistantLooksLikeToolNarration === 'function' && assistantLooksLikeToolNarration(spoken))){
+    return spoken;
+  }
+  return 'I am not sure what you want. A one-off task, a repeating habit, something already on your list, or a schedule or weather question?';
+}
+
+function assistantClarifyOutcome(session, parsed, opts){
+  const required = Boolean(opts && opts.required);
+  const question = String((opts && opts.question) || '').trim();
+  const choices = Array.isArray(opts && opts.choices) ? opts.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
+  if(!question)return assistantGiveUpClarify(session, parsed);
+  if(!assistantCanClarify(session, required))return assistantGiveUpClarify(session, parsed);
+  session.clarifyCount = (session.clarifyCount || 0) + 1;
+  if(opts && Object.prototype.hasOwnProperty.call(opts, 'awaiting'))session.awaiting = opts.awaiting || null;
+  if(opts && opts.request)session.clarifyingRequest = opts.request;
+  assistantTracePush(session, {
+    t:'ask',
+    n:session.clarifyCount,
+    required,
+    question:question.slice(0, 160)
+  });
+  return {
+    type:'ask',
+    question,
+    choices,
+    thinking:parsed && parsed.thinking,
+    draft:session.draft,
+    session
+  };
+}
+
 function assistantAwaitingFromAsk(step, text){
   if(step === 'complete' || step === 'plan' || step === 'delete' || step === 'lookup' || step === 'query')return step;
-  const s = typeof assistantNormText === 'function'
-    ? assistantNormText(text)
-    : String(text || '').trim().toLowerCase();
-  if(/\b(?:unplan|remove(?: the| this| that)? plan|don'?t (?:do|plan)|skip(?: it| today)?)\b/.test(s))return 'plan';
-  if(/\bplan(?:\s+it)?\s+(?:for\s+)?(?:today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d)/.test(s))return 'plan';
-  if(/\b(?:delete|remove|get rid of|nuke)\b/.test(s)
-    && !/\b(?:busy|blocked|location|place|weather|topic|plan)\b/.test(s))return 'delete';
-  if(/\b(?:already (?:did|done|finished)|mark .{0,24}(?:done|not done)|log .{0,24}done|not done|undo)\b/.test(s))return 'complete';
-  if(/\b(?:when|last time|history|stats|why |did i |do i have)\b/.test(s))return 'lookup';
   return null;
 }
 
@@ -56,8 +100,11 @@ function assistantQueryRouteHint(text, parsed){
   const s = typeof assistantNormText === 'function'
     ? assistantNormText(text)
     : String(text || '').trim().toLowerCase();
+  if(typeof assistantLooksLikeListAnalysis === 'function' && assistantLooksLikeListAnalysis(s)
+    && /\b(?:miss|agenda|tomorrow|today|habit|task)\b/.test(s))return 'schedule-query';
+  if(typeof assistantLooksLikeMissedQuestion === 'function' && assistantLooksLikeMissedQuestion(s))return 'schedule-query';
   const intent = parsed && parsed.intent;
-  if(intent !== 'ask_today' && intent !== 'lookup_item')return null;
+  if(intent !== 'ask_today' && intent !== 'lookup_item' && intent !== 'ask_schedule')return null;
   const weather = /\b(?:weather|forecast|rain(?:ing|y)?|snow(?:ing|y)?|freez(?:e|ing)|wind(?:y|s)?|gusts?|temperature|temps?|degrees?|humid(?:ity)?|uv|sunny|cloudy|storm(?:y)?|hot|warm|cold|cool|dry)\b/.test(s);
   if(weather)return 'weather-query';
   const availability = /\b(?:free(?:st)?(?:\s+time)?|available|availability|open\s+(?:time|window|slot)|have\s+time|make\s+room|fit\s+(?:it|this|that)|miss\s+anything|agenda|schedule)\b/.test(s);
@@ -86,14 +133,9 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
       aliases:catalog.aliases
     }
   };
-  // Local facts are only attached when the fast path fully consumed the
-  // utterance; a partial parse must not poison the model with a wrong due.
-  const facts = parsed && parsed.factsTrusted !== false && typeof assistantCompactFacts === 'function'
-    ? assistantCompactFacts(parsed)
-    : null;
-  if(facts)payload.extractedFacts = facts;
   const current = typeof assistantCompactDraft === 'function' ? assistantCompactDraft(draft) : null;
   if(current)payload.currentDraft = current;
+  if(opts && opts.recent)payload.recent = opts.recent;
   return JSON.stringify(payload);
 }
 
@@ -139,9 +181,300 @@ function assistantRepairText(step, error){
   return `That tool call was invalid (${err}). Think again, then call ${tool} with valid arguments. JSON only inside the tool.`;
 }
 
+function assistantQueryListHint(){
+  return 'The items array has Tings facts (priority P0–P5, frequency, duration). If the user asked more than one thing, or a follow-up about this data, call the next matching tool now. Rank or pick from the payload you have. Call lookup_item only for history, stats, or why on an exact saved name. Then answer in 1–2 sentences from tool data only — do not invent names or numbers.';
+}
+
+function assistantFollowupSteerText(){
+  return 'recent is the previous turn in this chat (their last request, your last answer, the list you fetched, and recent.referent). This message may continue that thread or ask something else. Call whatever tools you still need — several tool calls are ok. "it" / "that" / "the one" is currentDraft or recent.referent. Do not guess names or numbers.';
+}
+
+function assistantQueryContinueHint(){
+  return 'If they asked more than one thing, or a follow-up about this data, call the next matching tool now. If you already have everything, answer in 1–2 sentences from tool data only — do not invent names or numbers. "it"/"that"/"the one" is currentDraft or recent.referent.';
+}
+
+function assistantWriteContinueHint(){
+  return 'If they also asked a question, call the matching answer_schedule / answer_weather / answer_items / lookup_item tool now. If this was only the complete, plan, or delete request, do not call a tool.';
+}
+
+function assistantIsReadTool(name){
+  return name === 'answer_weather' || name === 'answer_schedule' || name === 'answer_items'
+    || name === 'answer_settings' || name === 'lookup_item';
+}
+
+function assistantIsWriteTool(name){
+  return name === 'complete_item' || name === 'plan_item' || name === 'delete_item';
+}
+
+function assistantToolCallKey(call){
+  let args = '';
+  try{ args = JSON.stringify(call && call.args || {}); }catch(_){ args = String(call && call.args || ''); }
+  return `${(call && call.name) || ''}:${args}`;
+}
+
+function assistantCompactRecentItems(items){
+  return (Array.isArray(items) ? items : []).slice(0, 12).map(item => {
+    if(!item || typeof item !== 'object')return null;
+    const name = String(item.name || '').trim();
+    if(!name)return null;
+    const out = {name:name.slice(0, 48)};
+    if(item.hid)out.hid = item.hid;
+    if(item.priority)out.priority = item.priority;
+    if(item.priorityRank != null)out.priorityRank = item.priorityRank;
+    if(item.frequency)out.frequency = item.frequency;
+    if(item.clock)out.clock = item.clock;
+    if(item.missed)out.missed = item.missed;
+    return out;
+  }).filter(Boolean);
+}
+
+function assistantEnvelopeRecent(session){
+  const recent = session && session.recent;
+  if(!recent)return null;
+  const out = {};
+  if(recent.request)out.request = recent.request;
+  if(recent.say)out.answer = recent.say;
+  if(recent.referent)out.referent = recent.referent;
+  if(Array.isArray(recent.items) && recent.items.length)out.items = recent.items.slice(0, 12);
+  if(Array.isArray(recent.tools) && recent.tools.length)out.tools = recent.tools.slice(-6);
+  return Object.keys(out).length ? out : null;
+}
+
+function assistantRememberGrounded(session, result, call){
+  if(!session || !result)return;
+  const text = String(result.text || result.summary || '').trim();
+  if(text)session.lastGroundedText = text;
+  if(call && assistantIsReadTool(call.name) && text){
+    session.lastReadText = text;
+    session.lastReadParts = (session.lastReadParts || []).concat([text]).slice(-4);
+  }
+  if(!session.recent || typeof session.recent !== 'object')session.recent = {};
+  const tools = Array.isArray(session.recent.tools) ? session.recent.tools.slice() : [];
+  if(call && call.name)tools.push(call.name);
+  session.recent.tools = tools.slice(-8);
+  if(text)session.recent.say = text.slice(0, 400);
+  const items = Array.isArray(result.items)
+    ? result.items
+    : (result.item ? [result.item] : null);
+  if(items && items.length)session.recent.items = assistantCompactRecentItems(items);
+  if(result.item && result.item.name)session.recent.referent = result.item.name;
+  else if(call && call.name === 'lookup_item' && call.args && call.args.name)session.recent.referent = String(call.args.name).slice(0, 48);
+}
+
+function assistantRememberTurn(session, text, out){
+  if(!session || !out)return;
+  const prev = session.recent && typeof session.recent === 'object' ? session.recent : {};
+  const say = String(out.text || out.summary || out.question || prev.say || '').trim();
+  session.recent = {
+    request:String(text || '').slice(0, 240),
+    say:say.slice(0, 400),
+    type:out.type || null,
+    focus:session.draft && session.draft.name || null,
+    items:Array.isArray(prev.items) ? prev.items : null,
+    referent:(session.draft && session.draft.hid && session.draft.name) || prev.referent || null,
+    tools:Array.isArray(prev.tools) ? prev.tools : null
+  };
+}
+
+function assistantTakeQueuedCall(queued, allowed){
+  if(!Array.isArray(queued) || !queued.length)return null;
+  const preferFinal = queued.findIndex(item => item && item.name && item.name !== 'classify_intent' && allowed.has(item.name));
+  if(preferFinal >= 0)return queued.splice(preferFinal, 1)[0];
+  const allowedIdx = queued.findIndex(item => item && allowed.has(item.name));
+  if(allowedIdx >= 0)return queued.splice(allowedIdx, 1)[0];
+  return queued.shift();
+}
+
+function assistantDropClassifyCalls(queued){
+  if(!Array.isArray(queued))return queued;
+  for(let i = queued.length - 1; i >= 0; i -= 1){
+    if(queued[i] && queued[i].name === 'classify_intent')queued.splice(i, 1);
+  }
+  return queued;
+}
+
+function assistantPendingWriteOutcome(session, parsed, extraText){
+  const thinking = parsed && parsed.thinking;
+  const extra = String(extraText || '').trim();
+  const actions = Array.isArray(session.pendingActions)
+    ? session.pendingActions.filter(action => action && action.pending)
+    : [];
+  if(actions.length > 1){
+    const summaries = actions.map(action => action.summary).filter(Boolean);
+    return {
+      type:'actions',
+      text:summaries.join(' '),
+      actions,
+      alsoText:extra && summaries.indexOf(extra) < 0 ? extra : null,
+      thinking,
+      session
+    };
+  }
+  if(actions.length === 1){
+    const action = actions[0];
+    const also = extra && extra !== action.summary ? extra : '';
+    if(action.kind === 'complete'){
+      return {
+        type:'complete',
+        text:action.summary,
+        alreadyDone:Boolean(action.alreadyDone),
+        completeAction:action.pending.action || 'log',
+        pendingComplete:action.pending,
+        alsoText:also || null,
+        thinking,
+        session
+      };
+    }
+    if(action.kind === 'plan'){
+      return {
+        type:'plan',
+        text:action.summary,
+        pendingPlan:action.pending,
+        planAction:action.pending.action || 'add',
+        alsoText:also || null,
+        thinking,
+        session
+      };
+    }
+    if(action.kind === 'delete'){
+      return {
+        type:'delete',
+        text:action.summary,
+        pendingDelete:action.pending,
+        alsoText:also || null,
+        thinking,
+        session
+      };
+    }
+  }
+  const also = extra && extra !== String((session.pendingOutcome && session.pendingOutcome.text) || '') ? extra : '';
+  if(session.chainWrite === 'complete' && session.pendingComplete){
+    const pending = session.pendingComplete;
+    return {
+      type:'complete',
+      text:(session.pendingOutcome && session.pendingOutcome.text) || pending.summary,
+      alreadyDone:Boolean(session.pendingOutcome && session.pendingOutcome.alreadyDone),
+      completeAction:pending.action || 'log',
+      pendingComplete:pending,
+      alsoText:also || null,
+      thinking,
+      session
+    };
+  }
+  if(session.chainWrite === 'plan' && session.pendingPlan){
+    const pending = session.pendingPlan;
+    return {
+      type:'plan',
+      text:(session.pendingOutcome && session.pendingOutcome.text) || pending.summary,
+      pendingPlan:pending,
+      planAction:pending.action || 'add',
+      alsoText:also || null,
+      thinking,
+      session
+    };
+  }
+  if(session.chainWrite === 'delete' && session.pendingDelete){
+    return {
+      type:'delete',
+      text:session.pendingOutcome && session.pendingOutcome.text,
+      pendingDelete:session.pendingDelete,
+      alsoText:also || null,
+      thinking,
+      session
+    };
+  }
+  return null;
+}
+
+function assistantLooksLikeToolNarration(text){
+  const s = String(text || '').trim();
+  if(!s)return false;
+  return /\b(?:i(?:['’]?ll| will)|let me|i am going to|i['’]m going to)\s+(?:look|fetch|check|get|call|find|search|pull|grab)\b/i.test(s);
+}
+
+function assistantHasRecentContext(session){
+  const recent = session && session.recent;
+  if(!recent || typeof recent !== 'object')return false;
+  return Boolean(
+    (Array.isArray(recent.items) && recent.items.length)
+    || recent.referent
+    || recent.say
+  );
+}
+
+function assistantCanFinalize(session){
+  return Boolean(session && ((Array.isArray(session.pendingActions) && session.pendingActions.length)
+    || session.chainWrite || session.lastGroundedText || session.lastReadText));
+}
+
+function assistantQueuePendingAction(session, kind, result){
+  if(!session || !result)return null;
+  const key = kind === 'complete' ? 'pendingComplete'
+    : kind === 'plan' ? 'pendingPlan'
+    : kind === 'delete' ? 'pendingDelete'
+    : null;
+  const pending = key && result[key];
+  if(!pending)return null;
+  const action = {
+    kind,
+    pending,
+    summary:String(result.summary || pending.summary || '').trim(),
+    alreadyDone:Boolean(result.alreadyDone)
+  };
+  if(!Array.isArray(session.pendingActions))session.pendingActions = [];
+  session.pendingActions.push(action);
+  session[key] = pending;
+  session.chainWrite = kind;
+  session.pendingOutcome = {text:action.summary, alreadyDone:action.alreadyDone};
+  return action;
+}
+
+function assistantFinalizeFromAnswer(session, parsed, fallbackText){
+  let content = String((parsed && parsed.content) || '').trim();
+  if(typeof assistantLooksLikeToolNarration === 'function' && assistantLooksLikeToolNarration(content))content = '';
+  const grounded = String(fallbackText || (Array.isArray(session.lastReadParts) && session.lastReadParts.length ? session.lastReadParts.join(' ') : '') || session.lastReadText || session.lastGroundedText || '').trim();
+  const extra = content || grounded;
+  const write = assistantPendingWriteOutcome(session, parsed, extra);
+  if(write){
+    const summary = String((session.pendingOutcome && session.pendingOutcome.text) || write.text || '').trim();
+    if(write.alsoText === write.text || write.alsoText === summary)write.alsoText = null;
+    return write;
+  }
+  const text = content || grounded;
+  if(text)return {type:'say', text, thinking:parsed && parsed.thinking, session};
+  return {
+    type:'error',
+    text:'I could not turn that into a Tings action. Try a shorter request, or add it from +.',
+    thinking:parsed && parsed.thinking,
+    session
+  };
+}
+
+function assistantTryMissedTurn(text, session, context){
+  if(typeof assistantLooksLikeListAnalysis === 'function' && assistantLooksLikeListAnalysis(text))return null;
+  if(typeof assistantLooksLikeMissedQuestion !== 'function' || !assistantLooksLikeMissedQuestion(text))return null;
+  if(typeof assistantAnswerMissed !== 'function')return null;
+  if(!session.parsed){
+    session.parsed = typeof assistantParseUtterance === 'function'
+      ? assistantParseUtterance(text, context.catalog, context.now)
+      : {intent:'ask_schedule', confident:true, text};
+  }
+  assistantTracePush(session, {t:'path', path:'local', via:'missed-list'});
+  session.intent = 'ask_schedule';
+  const missed = assistantAnswerMissed(context);
+  if(typeof assistantRememberGrounded === 'function'){
+    assistantRememberGrounded(session, missed, {name:'answer_schedule', args:{query:'missed'}});
+  }
+  assistantTracePush(session, {t:'tool', step:'local', name:'answer_schedule', args:{query:'missed'}});
+  assistantTracePush(session, {t:'result', name:'answer_schedule', ok:true, preview:missed && missed.text});
+  return {type:'say', text:missed.text, session};
+}
+
 function assistantNeedToolText(step){
-  if(step === 'extract')return 'You thought but did not call a tool. Call draft_batch if they listed several items, otherwise draft_item or draft_setting.';
-  if(step === 'query')return 'You thought but did not call a tool. Call the matching answer_weather, answer_schedule, answer_items, or answer_settings tool now.';
+  if(step === 'extract')return 'You thought but did not call a tool. Call draft_batch if they listed several items, otherwise draft_item or draft_setting. If the request is confusing, call ask_user with one short question instead of guessing.';
+  if(step === 'query')return 'You thought but did not call a tool. Call every matching answer_weather, answer_schedule, answer_items, answer_settings, or lookup_item tool now. Several parts in one request means several tool calls.';
+  if(step === 'answer')return 'Answer the user’s question in 1-2 sentences using only the tool data. If you still need another list, history, stats, or why, call the matching tool. Do not invent names or numbers. If you still cannot tell what they meant, call ask_user.';
+  if(step === 'classify')return 'You thought but did not call a tool. Call the matching tool now. If the request is confusing, call ask_user with one short question instead of guessing.';
   const tool = assistantStepTools(step)[0];
   return `You thought but did not call a tool. Call ${tool} now.`;
 }
@@ -236,7 +569,7 @@ function assistantNoteContextUsage(session, raw, tools){
 }
 
 function assistantCreateSession(){
-  return {draft:null, drafts:null, messages:[], llmCalls:0, repairs:0, intent:null, awaiting:null, pendingComplete:null, pendingPlan:null, pendingDelete:null, pendingEdit:null, parsed:null, debug:[], bulk:false, wide:false};
+  return {draft:null, drafts:null, messages:[], llmCalls:0, repairs:0, clarifyCount:0, intent:null, awaiting:null, pendingActions:[], pendingComplete:null, pendingPlan:null, pendingDelete:null, pendingEdit:null, parsed:null, debug:[], bulk:false, wide:false, recent:null};
 }
 
 function assistantDebugEnabled(){
@@ -248,14 +581,10 @@ function assistantDebugEnabled(){
   return false;
 }
 
-// "always use Qwen" setting: the local fast path never answers.
+// Natural language is always interpreted by the model. Deterministic code
+// validates tool arguments and computes answers, but never chooses intent.
 function assistantModelOnlyEnabled(){
-  if(typeof sortSettings !== 'undefined' && sortSettings && sortSettings.localAssistantModelOnly)return true;
-  if(typeof loadSortSettings === 'function'){
-    const s = loadSortSettings();
-    return Boolean(s && s.localAssistantModelOnly);
-  }
-  return false;
+  return true;
 }
 
 function assistantTraceClip(value, max){
@@ -321,6 +650,8 @@ function assistantFormatDebugLine(ev){
       return `result ${ev.name}  ${ev.ok ? 'ok' : 'fail'}${ev.error ? `  ${ev.error}` : ''}${ev.ask ? `  ask ${ev.ask}` : ''}${ev.preview ? `  ${ev.preview}` : ''}`;
     case 'repair':
       return `repair${ev.gaveUp ? ' gave up' : ''}${ev.n ? ` #${ev.n}` : ''}  ${ev.error || ''}`;
+    case 'ask':
+      return `ask${ev.required ? ' required' : ''}  #${ev.n || 1}  ${ev.question || ''}`;
     case 'error':
       return `error @${ev.step || '?'}  ${ev.error || ''}`;
     case 'done':
@@ -729,6 +1060,11 @@ function assistantTryLocalTurn(text, session, context){
     return null;
   }
 
+  const missedTurn = typeof assistantTryMissedTurn === 'function'
+    ? assistantTryMissedTurn(text, session, context)
+    : null;
+  if(missedTurn)return missedTurn;
+
   const queryRoute = assistantQueryRouteHint(text, parsed);
   if(queryRoute){
     parsed.factsTrusted = false;
@@ -884,12 +1220,20 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   return parsed;
 }
 
-function assistantPushToolResult(session, parsed, rawCalls, result){
-  session.messages.push(assistantReplayMessage(parsed, rawCalls));
+function assistantPushToolResult(session, parsed, rawCalls, result, opts){
+  if(!(opts && opts.replay === false)){
+    session.messages.push(assistantReplayMessage(parsed, rawCalls));
+  }
   session.messages.push({
     role:'tool',
     content:JSON.stringify(result)
   });
+}
+
+function assistantPushChainResult(session, parsed, result){
+  const already = session._replayed === parsed;
+  assistantPushToolResult(session, parsed, parsed && parsed.toolCalls, result, already ? {replay:false} : undefined);
+  session._replayed = parsed;
 }
 
 function assistantHandleIntent(session, context, intent, thinking){
@@ -902,14 +1246,11 @@ function assistantHandleIntent(session, context, intent, thinking){
   if(intent === 'unclear'){
     if(session.draft && session.draft.name)return null;
     if(assistantWideSession(session))return null;
-    session.awaiting = null;
-    return {
-      type:'ask',
+    return assistantClarifyOutcome(session, {thinking}, {
       question:'That was unclear. Do you want a one-off task, a repeating habit, what is on today, weather or schedule info, or to log something done?',
-      choices:['task', 'habit', "what's today", 'schedule question', 'weather', 'log done'],
-      thinking,
-      session
-    };
+      choices:ASSISTANT_CONFUSION_CHOICES,
+      awaiting:null
+    });
   }
   if(intent === 'unsupported'){
     return {
@@ -975,8 +1316,20 @@ async function runAssistantTurn(userText, opts = {}){
   session.contextMeasured = 0;
   session.contextRatio = 0;
   session.debug = [];
+  session.analyzeList = false;
+  session.analyzePasses = 0;
+  session.lastGroundedText = null;
+  session.lastReadText = null;
+  session.lastReadParts = [];
+  session.answerAttempts = 0;
+  session.executedToolKeys = [];
+  session.pendingActions = [];
+  session.chainWrite = null;
+  session.pendingOutcome = null;
   session.onDebug = typeof opts.onDebug === 'function' ? opts.onDebug : null;
-  session.wide = typeof assistantRequestNeedsModel === 'function' && assistantRequestNeedsModel(text);
+  // The model selects draft_item vs draft_batch. Regexes must not decide how
+  // many requests the user made or which semantic route to take.
+  session.wide = false;
   session.bulk = false;
   session.contextLimit = opts.contextLimit || session.contextLimit || (typeof assistantGuessContextLimit === 'function'
     ? assistantGuessContextLimit(opts.model)
@@ -992,52 +1345,50 @@ async function runAssistantTurn(userText, opts = {}){
     wide:session.wide === true
   });
   const done = out => {
-    if(out && out.type && out.type !== 'ask' && out.type !== 'error'){
+    if(out && out.type && out.type !== 'ask' && out.type !== 'error' && !out.gaveUp){
       session.awaiting = null;
       session.clarifyingRequest = null;
+      session.clarifyCount = 0;
     }
+    if(typeof assistantRememberTurn === 'function')assistantRememberTurn(session, text, out);
     return assistantFinishDebug(session, out);
   };
 
-  const forceModel = Boolean(opts.forceLlm) || assistantModelOnlyEnabled();
-
-  if(!forceModel){
-    const local = assistantTryLocalTurn(text, session, context);
-    if(local){
-      local.fastPath = true;
-      return done(local);
-    }
-  }else{
-    // Do not seed the model with parser guesses. Keeping only the original
-    // text lets recovery parse it later if the model endpoint fails.
-    session.parsed = {text, intent:'unclear', confident:false, factsTrusted:false};
-    assistantTracePush(session, {
-      t:'parse',
-      facts:typeof assistantTrustParsedFacts === 'function' && assistantTrustParsedFacts(session.parsed) && typeof assistantCompactFacts === 'function'
-        ? assistantCompactFacts(session.parsed)
-        : null,
-      factsTrusted:typeof assistantTrustParsedFacts === 'function' ? assistantTrustParsedFacts(session.parsed) : false,
-      forceLlm:opts.forceLlm === true,
-      modelOnly:opts.forceLlm !== true
-    });
-    assistantTracePush(session, {t:'path', path:'llm', via:opts.forceLlm ? 'force' : 'setting'});
-  }
+  // Never seed the model with parser guesses. The original text is enough for
+  // the LLM; tools remain the authority for names, dates, app data, and writes.
+  session.parsed = {text, intent:'unclear', confident:false, factsTrusted:false};
+  assistantTracePush(session, {
+    t:'parse',
+    facts:null,
+    factsTrusted:false,
+    forceLlm:opts.forceLlm === true,
+    modelOnly:true
+  });
+  assistantTracePush(session, {t:'path', path:'llm', via:opts.forceLlm ? 'force' : 'model-only'});
 
   if(typeof complete !== 'function')return done({type:'error', text:'Local assistant client is missing.', session});
 
   session.messages = [
     {role:'system', content:assistantSystemPrompt()},
     {role:'user', content:assistantUserEnvelope(text, context.catalog, session.draft, session.parsed, {
-      compact:(session.contextRatio || 0) >= ASSISTANT_CONTEXT_COMPACT_AT
+      compact:(session.contextRatio || 0) >= ASSISTANT_CONTEXT_COMPACT_AT,
+      recent:typeof assistantEnvelopeRecent === 'function' ? assistantEnvelopeRecent(session) : null
     })}
   ];
   let step = 'classify';
+  const hasQueryRecent = Boolean(session.recent && (
+    (Array.isArray(session.recent.items) && session.recent.items.length)
+    || session.recent.referent
+  ));
   if(session.awaiting === 'complete')step = 'complete';
   else if(session.awaiting === 'plan')step = 'plan';
   else if(session.awaiting === 'delete')step = 'delete';
   else if(session.awaiting === 'lookup')step = 'lookup';
-  else if(session.awaiting === 'query')step = 'query';
-  else if(session.draft && session.draft.name && !(typeof assistantLooksLikeMultiItem === 'function' && assistantLooksLikeMultiItem(text))){
+  else if(session.awaiting === 'query' || session.awaiting === 'answer')step = session.awaiting === 'answer' ? 'answer' : 'query';
+  else if(hasQueryRecent && !entryIntent){
+    session.messages.push({role:'user', content:assistantFollowupSteerText()});
+  }
+  else if(session.draft && session.draft.name){
     step = 'extract';
     const setting = typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind);
     session.messages.push({
@@ -1083,44 +1434,73 @@ async function runAssistantTurn(userText, opts = {}){
   const maxCalls = assistantWideSession(session)
     ? (typeof ASSISTANT_MAX_LLM_CALLS_BATCH === 'number' ? ASSISTANT_MAX_LLM_CALLS_BATCH : 12)
     : ASSISTANT_MAX_LLM_CALLS;
-  while(session.llmCalls < maxCalls){
-    let parsed;
-    try{
-      parsed = await assistantCallStep(session, step, complete, onProgress, context);
-    }catch(err){
-      const errText = String(err && err.message || err);
-      assistantTracePush(session, {t:'error', step, error:assistantTraceClip(errText, 300)});
-      // Invalid/truncated tool JSON is a harness turn, not a dead end: steer
-      // and retry the same step, the way Pi / little-coder keep the loop in flow.
-      if(assistantIsBrokenToolJson(err) && session.repairs < ASSISTANT_MAX_REPAIRS){
-        session.repairs += 1;
-        session.jsonFallback = step === 'extract';
-        assistantTracePush(session, {t:'repair', step, error:errText, n:session.repairs, via:'broken-json'});
-        session.messages.push({role:'user', content:assistantRepairText(step, errText)});
-        continue;
+  let parsed = null;
+  let queuedCalls = [];
+  while(session.llmCalls < maxCalls || queuedCalls.length){
+    if(!queuedCalls.length){
+      if(session.llmCalls >= maxCalls)break;
+      try{
+        parsed = await assistantCallStep(session, step, complete, onProgress, context);
+      }catch(err){
+        const errText = String(err && err.message || err);
+        assistantTracePush(session, {t:'error', step, error:assistantTraceClip(errText, 300)});
+        if(assistantCanFinalize(session)){
+          assistantTracePush(session, {t:'path', path:'llm', via:'finalize-after-error', step});
+          return done(assistantFinalizeFromAnswer(session, parsed));
+        }
+        // Invalid/truncated tool JSON is a harness turn, not a dead end: steer
+        // and retry the same step, the way Pi / little-coder keep the loop in flow.
+        if(assistantIsBrokenToolJson(err) && session.repairs < ASSISTANT_MAX_REPAIRS){
+          session.repairs += 1;
+          session.jsonFallback = step === 'extract';
+          assistantTracePush(session, {t:'repair', step, error:errText, n:session.repairs, via:'broken-json'});
+          session.messages.push({role:'user', content:assistantRepairText(step, errText)});
+          continue;
+        }
+        return done({type:'error', text:assistantFriendlyError(err), session});
       }
-      const recovered = assistantWideSession(session) ? null : assistantRecoverLocalDraft(text, session, context);
-      if(recovered){
-        assistantTracePush(session, {t:'path', path:'local', via:'recover-after-error', type:recovered.type});
-        return done(recovered);
-      }
-      return done({type:'error', text:assistantFriendlyError(err), session});
+      queuedCalls = (parsed.toolCalls || []).slice();
+      session._replayed = null;
     }
     const allowed = new Set(assistantStepTools(step));
-    let call = (parsed.toolCalls || []).find(item => item.name === 'draft_batch' && allowed.has(item.name))
-      || (parsed.toolCalls || []).find(item => allowed.has(item.name))
-      || (parsed.toolCalls || [])[0];
-    if(call && call.name === 'draft_item' && typeof assistantLooksLikeItemQuestion === 'function'
-      && assistantLooksLikeItemQuestion(text) && !(session.draft && session.draft.hid && typeof assistantLooksLikeEdit === 'function' && assistantLooksLikeEdit(text))){
-      call = {id:call.id || '', name:'lookup_item', args:{name:(call.args && call.args.name) || (session.draft && session.draft.name) || text}};
-    }
-
+    let call = assistantTakeQueuedCall(queuedCalls, allowed);
+    if(call && call.name && call.name !== 'classify_intent')assistantDropClassifyCalls(queuedCalls);
     if(!call || call.parseError){
+      const spoken = parsed && parsed.content && String(parsed.content).trim();
+      const narration = typeof assistantLooksLikeToolNarration === 'function' && assistantLooksLikeToolNarration(spoken);
+      const canKeepGoing = (step === 'answer' || session.analyzeList || session.lastGroundedText || session.chainWrite)
+        && (session.answerAttempts || 0) < 2
+        && session.llmCalls < maxCalls;
+      if(canKeepGoing && narration){
+        session.answerAttempts = (session.answerAttempts || 0) + 1;
+        if(parsed)session.messages.push(assistantReplayMessage(parsed));
+        session.messages.push({
+          role:'user',
+          content:'Do not describe the tool call. Call the next matching tool for the rest of the request now, or answer from the tool data you already have. Never invent names or numbers.'
+        });
+        queuedCalls = [];
+        step = 'answer';
+        continue;
+      }
+      const spokenAnswer = spoken && !narration;
+      const extractLike = step === 'extract' || Boolean(session.draft && session.draft.name);
+      const queryAnswer = (step === 'answer' || step === 'query') && spokenAnswer;
+      const followupAnswer = !extractLike && assistantHasRecentContext(session) && spokenAnswer;
+      if(assistantCanFinalize(session) || queryAnswer || followupAnswer){
+        return done(assistantFinalizeFromAnswer(session, parsed));
+      }
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         assistantTracePush(session, {t:'repair', step, error:call && call.parseError || 'no tool', gaveUp:true});
-        const recovered = assistantWideSession(session) ? null : assistantRecoverLocalDraft(text, session, context);
-        if(recovered)return done(recovered);
-        return done({type:'error', text:'I could not turn that into a Tings action. Try a shorter request, or add it from +.', thinking:parsed.thinking, session});
+        if(assistantCanFinalize(session) || queryAnswer || followupAnswer)return done(assistantFinalizeFromAnswer(session, parsed));
+        if(assistantWideSession(session)){
+          return done({type:'error', text:'I could not turn that into a Tings action. Try a shorter request, or add it from +.', thinking:parsed && parsed.thinking, session});
+        }
+        return done(assistantClarifyOutcome(session, parsed, {
+          question:assistantConfusionQuestion(parsed),
+          choices:ASSISTANT_CONFUSION_CHOICES,
+          awaiting:assistantAwaitingFromAsk(step, text),
+          request:text
+        }));
       }
       session.repairs += 1;
       if(call && call.parseError && assistantIsBrokenToolJson(call.parseError) && step === 'extract'){
@@ -1131,7 +1511,13 @@ async function runAssistantTurn(userText, opts = {}){
       session.messages.push({role:'user', content:call && call.parseError
         ? assistantRepairText(step, call.parseError)
         : assistantNeedToolText(step)});
+      queuedCalls = [];
       continue;
+    }
+    const callKey = assistantToolCallKey(call);
+    if((session.executedToolKeys || []).indexOf(callKey) >= 0){
+      if(queuedCalls.length)continue;
+      return done(assistantFinalizeFromAnswer(session, parsed));
     }
     if(!allowed.has(call.name)){
       if(call.name === 'draft_item' && (step === 'classify' || step === 'extract')){
@@ -1140,15 +1526,15 @@ async function runAssistantTurn(userText, opts = {}){
         step = 'extract';
       }else if(call.name === 'draft_batch' && (step === 'classify' || step === 'extract')){
         step = 'extract';
-      }else if(call.name === 'complete_item' && (step === 'classify' || step === 'complete')){
-        step = 'complete';
-      }else if(call.name === 'plan_item' && (step === 'classify' || step === 'plan')){
-        step = 'plan';
-      }else if(call.name === 'delete_item' && (step === 'classify' || step === 'delete')){
-        step = 'delete';
-      }else if(call.name === 'lookup_item' && (step === 'classify' || step === 'lookup')){
-        step = 'lookup';
-      }else if(call.name === 'find_item' && (step === 'classify' || step === 'extract' || step === 'lookup' || step === 'complete' || step === 'plan' || step === 'delete')){
+      }else if(call.name === 'complete_item' && (step === 'classify' || step === 'complete' || step === 'query' || step === 'answer')){
+        step = step === 'query' || step === 'answer' ? 'answer' : 'complete';
+      }else if(call.name === 'plan_item' && (step === 'classify' || step === 'plan' || step === 'query' || step === 'answer')){
+        step = step === 'query' || step === 'answer' ? 'answer' : 'plan';
+      }else if(call.name === 'delete_item' && (step === 'classify' || step === 'delete' || step === 'query' || step === 'answer')){
+        step = step === 'query' || step === 'answer' ? 'answer' : 'delete';
+      }else if(call.name === 'lookup_item' && (step === 'classify' || step === 'lookup' || step === 'query' || step === 'answer')){
+        step = (step === 'query' || step === 'answer' || session.analyzeList) ? 'answer' : 'lookup';
+      }else if(call.name === 'find_item' && (step === 'classify' || step === 'extract' || step === 'lookup' || step === 'complete' || step === 'plan' || step === 'delete' || step === 'query' || step === 'answer')){
         // fall through
       }else if(session.draft && session.draft.name && (call.name === 'set_window' || call.name === 'set_weather' || call.name === 'set_place')){
         step = 'extract';
@@ -1168,6 +1554,7 @@ async function runAssistantTurn(userText, opts = {}){
       }
     }
 
+    session.executedToolKeys = (session.executedToolKeys || []).concat([callKey]);
     assistantTracePush(session, {t:'tool', step, name:call.name, args:assistantTraceClip(call.args, 600)});
     // Query tools (answer_schedule) may await a what-if week rebuild; the
     // other tools return plain objects, so the await is free for them.
@@ -1187,14 +1574,21 @@ async function runAssistantTurn(userText, opts = {}){
           : call.name === 'plan_item' ? 'plan'
           : call.name === 'delete_item' ? 'delete'
           : call.name === 'lookup_item' ? 'lookup'
-          : call.name === 'find_item' ? assistantAwaitingFromAsk(step, text)
+          : call.name === 'find_item' && ['complete','plan','delete','lookup'].includes(String(call.args && call.args.action || ''))
+            ? String(call.args.action)
           : (call.name === 'draft_item' || call.name === 'draft_setting') ? 'edit'
           : call.name === 'set_place' ? 'place'
           : (call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings') ? 'query'
             : assistantAwaitingFromAsk(step, text);
         session.awaiting = fromTool || session.awaiting || null;
         session.clarifyingRequest = text || session.clarifyingRequest || null;
-        return done({type:'ask', question:result.ask, choices:result.choices || (result.candidates || []).map(item => item.name) || (result.matches || []).map(item => item.name), thinking:parsed.thinking, draft:session.draft, session});
+        return done(assistantClarifyOutcome(session, parsed, {
+          required:true,
+          question:result.ask,
+          choices:result.choices || (result.candidates || []).map(item => item.name) || (result.matches || []).map(item => item.name),
+          awaiting:fromTool || session.awaiting,
+          request:text
+        }));
       }
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         return done({type:'error', text:result.error || 'That did not match a Tings field.', thinking:parsed.thinking, session});
@@ -1208,10 +1602,23 @@ async function runAssistantTurn(userText, opts = {}){
     session.repairs = 0;
 
     if(result.noChange){
-      return done({type:'say', text:result.text || result.summary || 'Nothing changed.', thinking:parsed.thinking, session});
+      const noChangeText = result.text || result.summary || 'Nothing changed.';
+      assistantRememberGrounded(session, {text:noChangeText}, call);
+      assistantPushChainResult(session, parsed, {
+        ok:true,
+        noChange:true,
+        text:noChangeText,
+        hint:assistantQueryContinueHint()
+      });
+      session.analyzeList = true;
+      session.awaiting = 'answer';
+      step = 'answer';
+      if(queuedCalls.length)continue;
+      continue;
     }
 
     if(call.name === 'classify_intent'){
+      queuedCalls = [];
       const guessed = session.parsed || {};
       const trustFacts = typeof assistantTrustParsedFacts === 'function' && assistantTrustParsedFacts(session.parsed);
       let intent = trustFacts && typeof assistantPreferIntent === 'function'
@@ -1222,14 +1629,14 @@ async function runAssistantTurn(userText, opts = {}){
         intent = 'create_setting';
       }
       assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:true, intent});
-      if(intent === 'ask_weather' || intent === 'ask_schedule' || intent === 'ask_items' || intent === 'ask_settings'){
+      if(intent === 'ask_today' || intent === 'ask_weather' || intent === 'ask_schedule' || intent === 'ask_items' || intent === 'ask_settings'){
         // Query step: the model fills day/window/name, Tings computes the
         // answer from live plan + forecast data. Never guessed by the model.
         step = 'query';
         session.messages.push({role:'user', content:intent === 'ask_weather'
           ? 'Call answer_weather. query day = forecast for a date, query window = a time window (start and end clocks), query item = check the weather against a named item. Resolve "tomorrow" and weekday names against catalog.date yourself.'
-          : intent === 'ask_schedule'
-            ? 'Call answer_schedule. query free = open time on a day (add start and end clocks to check one window), freest = freest day of the week, conflict = whether blocking a start/end window would make them miss something, missed = overdue and earlier-today items still open, day = one day\'s agenda, week = the whole week. Resolve "tomorrow" and weekday names against catalog.date yourself.'
+          : intent === 'ask_schedule' || intent === 'ask_today'
+            ? 'Call answer_schedule. query free = open time on a day (add start and end clocks to check one window), freest = freest day of the week, conflict = whether blocking a start/end window would make them miss something, missed = the same list as the missed pill on today, day = one day’s agenda (rows include priority and frequency), week = the whole week. If they asked several things, call a tool for each part. A ranking or follow-up needs that list first, then lookup_item only for extra history/stats/why. Resolve "tomorrow" and weekday names against catalog.date yourself.'
             : intent === 'ask_items'
               ? 'Call answer_items. Use list with kind/status/search, or progress for a today summary.'
               : 'Call answer_settings for places, weather, topics, or busy times.'});
@@ -1298,43 +1705,98 @@ async function runAssistantTurn(userText, opts = {}){
 
     if(call.name === 'ask_user'){
       assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:true, waiting:true});
-      session.awaiting = assistantAwaitingFromAsk(step, text) || session.awaiting || null;
-      session.clarifyingRequest = text || session.clarifyingRequest || null;
-      return done({type:'ask', question:result.ask, choices:result.choices, thinking:parsed.thinking, draft:session.draft, session});
+      return done(assistantClarifyOutcome(session, parsed, {
+        question:result.ask,
+        choices:result.choices,
+        awaiting:assistantAwaitingFromAsk(step, text) || session.awaiting || null,
+        request:text
+      }));
     }
 
     if(call.name === 'complete_item'){
-      return done({
-        type:'complete',
-        text:result.summary,
-        alreadyDone:result.alreadyDone,
-        completeAction:result.pendingComplete && result.pendingComplete.action || 'log',
-        pendingComplete:result.pendingComplete,
-        thinking:parsed.thinking,
-        session
+      if(!result.alreadyDone)assistantQueuePendingAction(session, 'complete', result);
+      assistantRememberGrounded(session, {text:result.summary}, call);
+      assistantPushChainResult(session, parsed, {
+        ok:true,
+        summary:result.summary,
+        pending:'complete',
+        hint:assistantWriteContinueHint()
       });
+      if(queuedCalls.length)continue;
+      session.analyzePasses = (session.analyzePasses || 0) + 1;
+      if(session.analyzePasses > 6)return done(assistantFinalizeFromAnswer(session, parsed));
+      session.analyzeList = true;
+      session.awaiting = 'answer';
+      step = 'answer';
+      continue;
     }
     if(call.name === 'plan_item'){
-      return done({type:'plan', text:result.summary, pendingPlan:result.pendingPlan, planAction:result.pendingPlan && result.pendingPlan.action || 'add', thinking:parsed.thinking, session});
+      assistantQueuePendingAction(session, 'plan', result);
+      assistantRememberGrounded(session, {text:result.summary}, call);
+      assistantPushChainResult(session, parsed, {
+        ok:true,
+        summary:result.summary,
+        pending:'plan',
+        hint:assistantWriteContinueHint()
+      });
+      if(queuedCalls.length)continue;
+      session.analyzePasses = (session.analyzePasses || 0) + 1;
+      if(session.analyzePasses > 6)return done(assistantFinalizeFromAnswer(session, parsed));
+      session.analyzeList = true;
+      session.awaiting = 'answer';
+      step = 'answer';
+      continue;
     }
     if(call.name === 'delete_item'){
-      return done({type:'delete', text:result.summary, pendingDelete:result.pendingDelete, thinking:parsed.thinking, session});
+      assistantQueuePendingAction(session, 'delete', result);
+      assistantRememberGrounded(session, {text:result.summary}, call);
+      assistantPushChainResult(session, parsed, {
+        ok:true,
+        summary:result.summary,
+        pending:'delete',
+        hint:assistantWriteContinueHint()
+      });
+      if(queuedCalls.length)continue;
+      session.analyzePasses = (session.analyzePasses || 0) + 1;
+      if(session.analyzePasses > 6)return done(assistantFinalizeFromAnswer(session, parsed));
+      session.analyzeList = true;
+      session.awaiting = 'answer';
+      step = 'answer';
+      continue;
     }
-    if(call.name === 'lookup_item'){
-      return done({type:'say', text:result.text, thinking:parsed.thinking, session});
+    if(call.name === 'lookup_item' || call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings'){
+      assistantRememberGrounded(session, result, call);
+      session.analyzePasses = (session.analyzePasses || 0) + 1;
+      if(session.analyzePasses > 6){
+        return done(assistantFinalizeFromAnswer(session, parsed, result.text));
+      }
+      assistantPushChainResult(session, parsed, {
+        ok:true,
+        text:result.text,
+        items:Array.isArray(result.items) ? result.items : undefined,
+        item:result.item || null,
+        hint:assistantQueryContinueHint()
+      });
+      session.analyzeList = true;
+      session.awaiting = 'answer';
+      step = 'answer';
+      if(queuedCalls.length)continue;
+      continue;
     }
     if(call.name === 'find_item'){
-      assistantPushToolResult(session, parsed, parsed.toolCalls, {
+      assistantPushChainResult(session, parsed, {
         ok:true,
         matches:result.matches || [],
         hint:(result.matches && result.matches.length)
           ? 'Call lookup_item, complete_item, plan_item, or delete_item with the exact saved name. If several still fit, call ask_user — do not guess.'
           : 'No saved item is close to that name. If they asked about an existing item, say you cannot find it. If they asked to create one, call draft_item.'
       });
+      if(queuedCalls.length)continue;
+      if(step === 'query' || step === 'answer' || session.analyzeList){
+        step = 'answer';
+        session.analyzeList = true;
+      }
       continue;
-    }
-    if(call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings'){
-      return done({type:'say', text:result.text, thinking:parsed.thinking, session});
     }
 
     assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:true, preview:assistantDraftSummary(session.draft, context.settings)});
@@ -1359,20 +1821,29 @@ async function runAssistantTurn(userText, opts = {}){
       continue;
     }
     if(session.draft && session.draft.weatherNeedAsk){
-      session.awaiting = 'weather';
-      return done({
-        type:'ask',
+      return done(assistantClarifyOutcome(session, parsed, {
+        required:true,
         question:session.draft.weatherNeedAsk.question,
         choices:session.draft.weatherNeedAsk.choices,
-        thinking:parsed.thinking,
-        draft:session.draft,
-        session
-      });
+        awaiting:'weather',
+        request:text
+      }));
     }
 
     return done(assistantPreviewResult(session, context, parsed.thinking));
   }
-  return done({type:'error', text:'That took too many steps. Try a shorter request, or add it from +.', session});
+  if(session.lastGroundedText || session.chainWrite || (session.pendingActions && session.pendingActions.length)){
+    return done(assistantFinalizeFromAnswer(session, parsed));
+  }
+  if(assistantWideSession(session)){
+    return done({type:'error', text:'That took too many steps. Try a shorter request, or add it from +.', session});
+  }
+  return done(assistantClarifyOutcome(session, parsed, {
+    question:assistantConfusionQuestion(parsed),
+    choices:ASSISTANT_CONFUSION_CHOICES,
+    awaiting:assistantAwaitingFromAsk(step, text),
+    request:text
+  }));
 }
 
 function assistantReachErrorText(pageOrigin){

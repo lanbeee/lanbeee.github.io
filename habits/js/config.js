@@ -340,8 +340,8 @@ const DEFAULT_SORT_SETTINGS = {
   localAssistantDebug:false,
   // Thinking depth asked of the model: 'high', 'low', or 'off'.
   localAssistantReasoning:'high',
-  // Model-first is the safe default. The parser remains available only as an
-  // explicit speed shortcut and as a recovery fallback when the model fails.
+  // Retained for settings compatibility. Natural-language routing is always
+  // model-first; deterministic code validates tool calls and app data only.
   localAssistantModelOnly:true,
   localAssistantRoutingVersion:2
 };

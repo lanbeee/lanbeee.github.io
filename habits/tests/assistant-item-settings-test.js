@@ -270,6 +270,14 @@ async function launchBrowser(){
     check('schema covers settings', missing.length === 0, missing);
     r = apply({name:'limit kettlebells topics health and fitness', durationMinutes:45});
     check('packed name shortened', r.habit && /kettlebell/i.test(r.habit.name) && !/topics/i.test(r.habit.name));
+    const stretchCtx = assistantBuildContext(now);
+    const stretchTool = assistantExecuteTool('draft_item', {
+      kind:'habit', name:'Stretch', durationMinutes:20, after:'Walk',
+      order:'right after Walk, same day', placeNames:'Home',
+      placePrefs:'Home high, Gym avoid', weatherProfile:'Dry'
+    }, assistantCreateSession(), stretchCtx);
+    const stretchLink = stretchTool.draft && (stretchTool.draft.scheduleLinks || [])[0];
+    check('create Stretch after Walk keeps Stretch', stretchTool.ok && /stretch/i.test((stretchTool.draft && stretchTool.draft.name) || '') && stretchLink && /walk/i.test(stretchLink.name || ''));
     return rows;
   }, {now:FROZEN});
   report(fields);
@@ -485,7 +493,7 @@ async function launchBrowser(){
   }, {now:FROZEN});
   report(later);
 
-  console.log('\n[S] salvage omitted LLM fields');
+  console.log('\n[S] tool arguments are authoritative; request text is not salvaged');
   const salvage = await page.evaluate(({now}) => {
     const rows = [];
     const check = (name, cond, extra) => rows.push({name, ok:Boolean(cond), extra});
@@ -519,7 +527,7 @@ async function launchBrowser(){
         end:{kind:'unset'}
       }
     }, 'Add a 30 minute Maghrib stroll allowed later of 6pm and sunset until isha.');
-    check('later-of end salvaged', later.ok && later.draft && later.draft.window && later.draft.window.end && later.draft.window.end.anchor === 'isha', later.error);
+    check('omitted later-of end stays unset', later.ok && later.draft && later.draft.window && later.draft.window.end && later.draft.window.end.kind === 'unset', later.error);
     check('later-of start kept', later.draft && later.draft.window && later.draft.window.start && later.draft.window.start.combine === 'later');
     const taxes = run({
       kind:'task',
@@ -527,7 +535,7 @@ async function launchBrowser(){
       due:'2026-09-20',
       priority:0
     }, 'Remind me to file taxes on 2026-09-20. That due day is firm, no late days. Priority urgent.');
-    check('hard due salvaged', taxes.ok && taxes.draft && taxes.draft.hardDue === true && taxes.draft.delayAllowanceDays === 0, taxes.error);
+    check('omitted hard due is not inferred', taxes.ok && taxes.draft && taxes.draft.hardDue !== true && taxes.draft.delayAllowanceDays !== 0, taxes.error);
     const stretch = run({
       kind:'task',
       name:'stretch prefer home high and avoid gym',
@@ -535,8 +543,8 @@ async function launchBrowser(){
       place:{names:['Home', 'Gym'], anywhere:false},
       weather:{mode:'profile', profile:'Dry'}
     }, 'Add a 20 minute Stretch at Home, prefer Home high and avoid Gym, using Dry weather, right after Walk the same day.');
-    check('place prefs salvaged', stretch.ok && stretch.draft && stretch.draft.locationPrefs && stretch.draft.locationPrefs['home-1'] === 'high' && stretch.draft.locationPrefs['gym-1'] === 'avoid', stretch.error || stretch.ask);
-    check('order salvaged', stretch.draft && stretch.draft.scheduleLinks && stretch.draft.scheduleLinks[0] && /walk/i.test(stretch.draft.scheduleLinks[0].name) && stretch.draft.scheduleLinks[0].requireSameDay === true);
+    check('omitted place prefs are not inferred', stretch.ok && stretch.draft && !Object.keys(stretch.draft.locationPrefs || {}).length, stretch.error || stretch.ask);
+    check('omitted order is not inferred', stretch.draft && !(stretch.draft.scheduleLinks || []).length);
     const weekdayPref = run({
       name:'Strength',
       monthDays:['1', '15'],
@@ -555,9 +563,9 @@ async function launchBrowser(){
       durationMinutes:120,
       due:'2026-09-17'
     }, 'Remind me to call the bank today, snooze it for 2 hours, and keep it off the shared display.');
-    check('snooze salvaged', snooze.ok && snooze.draft && snooze.draft.snoozedUntil === now + 2 * 3600000, snooze.error);
-    check('shared display off salvaged', snooze.draft && snooze.draft.showOnSharedDisplay === false);
-    check('snooze hours are not duration', snooze.draft && snooze.draft.durationMinutes !== 120);
+    check('omitted snooze is not inferred', snooze.ok && snooze.draft && snooze.draft.snoozedUntil == null, snooze.error);
+    check('omitted shared flag is not inferred', snooze.draft && snooze.draft.showOnSharedDisplay !== false);
+    check('explicit duration remains authoritative', snooze.draft && snooze.draft.durationMinutes === 120);
     const option = run({
       kind:'habit',
       name:'gym visit',
@@ -568,14 +576,14 @@ async function launchBrowser(){
       window:{start:{kind:'clock', minutes:540, clock:'09:00'}, end:{kind:'clock', minutes:660, clock:'11:00'}},
       place:{names:['Gym'], anywhere:false}
     }, 'Add a 30 minute Gym visit every Tuesday from 9am to 11am at Gym.');
-    check('schedule option salvaged', option.ok && option.draft && option.draft.scheduleOptions && option.draft.scheduleOptions[0] && option.draft.scheduleOptions[0].locationId === 'gym-1' && option.draft.scheduleOptions[0].start === 9 * 60, option.error);
+    check('omitted schedule option is not inferred', option.ok && option.draft && !(option.draft.scheduleOptions || []).length, option.error);
     const weatherCard = run({
       name:'Strength',
       placeNames:['Home'],
       showWeather:true,
       weatherAtPlace:true
     }, 'Show the forecast on Strength and use the Home place for that forecast.');
-    check('weather place salvaged', weatherCard.ok && weatherCard.draft && weatherCard.draft.weatherLocationId === 'home-1', weatherCard.error || weatherCard.ask);
+    check('omitted weather place is not inferred', weatherCard.ok && weatherCard.draft && !weatherCard.draft.weatherLocationId, weatherCard.error || weatherCard.ask);
     const study = run({
       kind:'habit',
       name:'Study',
@@ -583,7 +591,7 @@ async function launchBrowser(){
       rhythm:'five times a week',
       window:{start:{kind:'anchor', anchor:'sunrise', offsetMin:-15}, end:{kind:'anchor', anchor:'sunrise', offsetMin:0}}
     }, 'Create a 5 times a week Study habit (1 hour long) which will be from 15 min before sunrise to 2 hours after sunrise or 9 AM whichever is earlier');
-    check('study end combine salvaged', study.ok && study.draft && study.draft.window && study.draft.window.end && study.draft.window.end.combine === 'earlier' && study.draft.window.end.second && study.draft.window.end.second.minutes === 9 * 60, study.error);
+    check('omitted study end combine is not inferred', study.ok && study.draft && study.draft.window && study.draft.window.end && !study.draft.window.end.combine && !study.draft.window.end.second, study.error);
     check('study start kept', study.draft && study.draft.window && study.draft.window.start && study.draft.window.start.offsetMin === -15);
     check('study rhythm 5×/week', study.draft && study.draft.timesPerPeriod === 5 && study.draft.periodDays === 7);
     return rows;

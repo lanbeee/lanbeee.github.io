@@ -319,6 +319,8 @@ function assistantFindHabitSmart(data, name, spoken){
   if(!fallback || (typeof assistantNormText === 'function'
     ? assistantNormText(fallback) === assistantNormText(primary)
     : fallback.toLowerCase() === primary.toLowerCase()))return found;
+  // A long utterance can uniquely hit a different mentioned title ("after Walk").
+  if(fallback.length > 80 || fallback.split(/\s+/).filter(Boolean).length > 8)return found;
   const alt = assistantFindHabit(data, fallback);
   if(alt.ok)return alt;
   const aScore = alt.candidates && alt.candidates[0] ? alt.candidates[0].score : 0;
@@ -1141,33 +1143,40 @@ function assistantNormalizeDraftArgs(args, now){
 function assistantResolveDraftBase(args, session, context){
   const current = session && session.draft && session.draft.name ? session.draft : null;
   const spoken = String(args && args.name || '').trim();
-  const parsedName = session && session.parsed && session.parsed.itemName
-    ? String(session.parsed.itemName).trim()
-    : '';
-  const want = spoken || parsedName;
-  const follow = current && session && session.parsed && typeof assistantIsFollowupOnFocus === 'function'
-    && assistantIsFollowupOnFocus(session.parsed.text, session.parsed, current);
+  const want = spoken;
   if(current && (!want || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))
-    || (typeof assistantNamesMatch === 'function' && assistantNamesMatch(want, current.name))
-    || follow)){
+    || (typeof assistantNamesMatch === 'function' && assistantNamesMatch(want, current.name)))){
     return {ok:true, draft:{...current}, existing:Boolean(current.hid || current.index != null)};
   }
   if(want && !(typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))){
     const spoken = session && session.parsed && session.parsed.text;
-    const found = typeof assistantFindHabitSmart === 'function'
+    const foundRaw = typeof assistantFindHabitSmart === 'function'
       ? assistantFindHabitSmart(context && context.data, want, spoken)
       : (typeof assistantFindHabit === 'function' ? assistantFindHabit(context && context.data, want) : {ok:false});
-    if(found && found.ok){
+    const foundName = foundRaw && (foundRaw.name || (foundRaw.habit && foundRaw.habit.name));
+    const titleMatch = foundRaw && foundRaw.ok && foundName && (typeof assistantNamesMatch === 'function'
+      ? assistantNamesMatch(want, foundName)
+      : (typeof assistantNormText === 'function'
+        ? assistantNormText(want) === assistantNormText(foundName)
+        : String(want).toLowerCase() === String(foundName).toLowerCase()));
+    const found = (foundRaw && foundRaw.ok && !titleMatch)
+      ? {ok:false, error:'UNKNOWN', candidates:foundRaw.candidates || []}
+      : foundRaw;
+    if(found && found.ok && titleMatch){
       const draft = typeof assistantHabitToDraft === 'function'
         ? assistantHabitToDraft(found.habit, found.index, context && context.settings, context && context.data)
         : assistantEmptyDraft();
       return {ok:true, draft, existing:true};
     }
     const creating = !(current && (current.hid || current.index != null));
-    const editing = session && session.parsed && session.parsed.intent === 'edit_item';
-    const question = typeof assistantLooksLikeItemQuestion === 'function'
-      && assistantLooksLikeItemQuestion((session && session.parsed && session.parsed.text) || '');
-    if(!creating || editing || question)return found;
+    const packedName = typeof assistantNameLooksLikeSettingsDump === 'function'
+      && assistantNameLooksLikeSettingsDump(want);
+    // A packed "name is the whole request" dump is a new item, not a failed
+    // lookup of the focused row.
+    if(packedName){
+      return {ok:true, draft:assistantEmptyDraft(), existing:false};
+    }
+    if(!creating)return found;
     const close = (found && found.candidates || []).filter(row => Number(row.score) >= 40);
     if(found && found.error === 'AMBIGUOUS' && close.length){
       return assistantHabitAskFromCandidates(close, 'AMBIGUOUS');
@@ -1797,10 +1806,8 @@ function assistantLookupWhyText(found, context, dateValue){
 function assistantLookupQueryFromText(text, args){
   const explicit = assistantNormText(args && args.query);
   if(explicit === 'history' || explicit === 'stats' || explicit === 'why' || explicit === 'summary')return explicit;
-  const s = assistantNormText(text);
-  if(/\b(?:history|logs?|last time|last did|did i (?:do|finish)|when did)\b/.test(s))return 'history';
-  if(/\b(?:stats?|streak|pace|progress score)\b/.test(s))return 'stats';
-  if(/\b(?:why|why isn|not on|not scheduled|didn'?t (?:fit|place))\b/.test(s))return 'why';
+  // Intent belongs to the model. The tool only validates the explicit query
+  // and defaults safely when the model omitted it.
   return 'summary';
 }
 
@@ -1886,7 +1893,8 @@ function assistantAnswerItems(args, context){
       : (typeof completedToday === 'function' && completedToday(habit, now));
     const overdue = type === 'task' && !done && habit.dueDate != null && assistantDayBase(habit.dueDate) < todayBase;
     const haystack = assistantNormText([habit.name].concat(habit.topics || []).join(' '));
-    return {name:String(habit.name), type, done:Boolean(done), overdue:Boolean(overdue), haystack};
+    const facts = assistantHabitQueryFacts(habit, {done:Boolean(done), overdue:Boolean(overdue)});
+    return Object.assign({haystack}, facts || {name:String(habit.name), type, done:Boolean(done), overdue:Boolean(overdue)});
   }).filter(Boolean).filter(row => {
     if(kind !== 'all' && row.type !== kind)return false;
     if(status === 'done' && !row.done)return false;
@@ -1911,10 +1919,14 @@ function assistantAnswerItems(args, context){
   }
   if(query !== 'list')return {ok:true, text:'I can list tasks or habits by open, done, or overdue status, or summarize today’s progress.'};
   const label = status === 'all' ? (kind === 'all' ? 'items' : `${kind}s`) : `${status} ${kind === 'all' ? 'items' : `${kind}s`}`;
-  if(!rows.length)return {ok:true, text:`No ${label}${search ? ` match “${String(args.search).trim()}”` : ''}.`};
-  const shown = rows.slice(0, 20).map(row => row.name);
-  const more = rows.length > shown.length ? `, and ${rows.length - shown.length} more` : '';
-  return {ok:true, text:`${rows.length} ${label}: ${shown.join(', ')}${more}.`};
+  if(!rows.length)return {ok:true, text:`No ${label}${search ? ` match “${String(args.search).trim()}”` : ''}.`, items:[]};
+  const items = rows.slice(0, 20).map(row => {
+    const copy = Object.assign({}, row);
+    delete copy.haystack;
+    return copy;
+  });
+  const more = rows.length > items.length ? `, and ${rows.length - items.length} more` : '';
+  return {ok:true, items, text:`${rows.length} ${label}: ${items.map(row => row.name).join(', ')}${more}.`};
 }
 
 function assistantAnswerSettings(args, context){
@@ -1954,7 +1966,88 @@ function assistantAnswerSettings(args, context){
 // query and fills day/window/name — the numbers below are never guessed.
 
 function assistantQueryCapabilities(){
-  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed, the agenda for a day or the week, the weather for the next seven days, and whether the weather suits an item.';
+  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed (the same list as the missed pill on today), the agenda for a day or the week, the weather for the next seven days, and whether the weather suits an item.';
+}
+
+function assistantPriorityFacts(habit){
+  const rank = typeof clampPriority === 'function'
+    ? clampPriority(habit && habit.priority)
+    : Number(habit && habit.priority);
+  const n = Number.isFinite(rank) ? rank : 2;
+  const labels = typeof PRIORITY_LABELS !== 'undefined' ? PRIORITY_LABELS : ['P0','P1','P2','P3','P4','P5'];
+  return {priority:labels[n] || ('P' + n), priorityRank:n};
+}
+
+function assistantFrequencyFacts(habit){
+  if(!habit || habit.type === 'task')return {frequency:'once', timesPerWeek:0};
+  const parts = typeof rhythmParts === 'function' ? rhythmParts(habit.target) : null;
+  const times = parts && parts.times || 1;
+  const days = parts && parts.days || 7;
+  const timesPerWeek = days ? Math.round((times / days) * 70) / 10 : 0;
+  let frequency = `${times}× / ${days}d`;
+  if(days === 1 && times === 1)frequency = 'daily';
+  else if(days === 7)frequency = `${times}× / week`;
+  return {frequency, timesPerWeek};
+}
+
+function assistantHabitQueryFacts(habit, extra){
+  if(!habit)return null;
+  const pri = assistantPriorityFacts(habit);
+  const freq = assistantFrequencyFacts(habit);
+  const facts = {
+    name:String(habit.name || '').slice(0, 48),
+    hid:habit.hid || undefined,
+    type:habit.type === 'task' ? 'task' : 'habit',
+    priority:pri.priority,
+    priorityRank:pri.priorityRank,
+    pinned:Boolean(habit.pinned),
+    durationMinutes:Number.isFinite(Number(habit.durationMinutes)) ? Number(habit.durationMinutes) : null,
+    frequency:freq.frequency,
+    timesPerWeek:freq.timesPerWeek
+  };
+  if(extra)Object.assign(facts, extra);
+  return facts;
+}
+
+function assistantTodayAgendaHids(data, week, now){
+  const todayBase = typeof dayStart === 'function' ? dayStart(now) : assistantDayBase(now);
+  const days = week && Array.isArray(week.days) ? week.days : [];
+  const day = days.find(item => item && (item.isToday || item.dayBase === todayBase)) || null;
+  const rows = (day && (day.homeDisplayedTimeline || day.timeline)) || [];
+  const hids = [];
+  const seen = new Set();
+  for(const row of rows){
+    if(!row || (row.kind !== 'fill' && row.kind !== 'scheduled'))continue;
+    const habit = row.h || (data && row.i != null ? data[row.i] : null);
+    const hid = habit && habit.hid;
+    if(!hid || seen.has(hid))continue;
+    seen.add(hid);
+    hids.push(hid);
+  }
+  return hids;
+}
+
+function assistantAnswerMissed(context){
+  const data = context.data;
+  const settings = context.settings;
+  const now = context.now != null ? Number(context.now) : Date.now();
+  const week = assistantQueryWeek(data, settings);
+  const todayHids = assistantTodayAgendaHids(data, week, now);
+  const dropped = typeof collectDroppedItems === 'function'
+    ? collectDroppedItems(data, settings, todayHids, now)
+    : [];
+  if(!dropped.length)return {ok:true, text:'Nothing missed — the missed list on today is empty.', items:[]};
+  const items = dropped.slice(0, 12).map(row => {
+    const habit = (data && row.idx != null ? data[row.idx] : null)
+      || (Array.isArray(data) ? data.find(item => item && item.hid === row.hid) : null);
+    return assistantHabitQueryFacts(habit, {missed:row.dayLabel || 'today'})
+      || {name:String(row.name || '').slice(0, 48), hid:row.hid, missed:row.dayLabel || 'today'};
+  });
+  const more = dropped.length > items.length ? ` and ${dropped.length - items.length} more` : '';
+  const listed = items.map(item => item.missed && item.missed !== 'today'
+    ? `${item.name} (${item.missed})`
+    : item.name).join(', ');
+  return {ok:true, items, text:`Missed: ${listed}${more}.`};
 }
 
 function assistantQueryDurationText(minutes){
@@ -2012,10 +2105,33 @@ function assistantQueryDayRows(day, data){
     const habit = row.h || (data && row.i != null ? data[row.i] : null);
     const name = String((habit && habit.name) || row.name || '').trim();
     if(!name)continue;
-    rows.push({name:name.slice(0,48), clock:assistantRowClock(row), start:row.start, end:row.end, kind:row.kind});
+    rows.push({
+      name:name.slice(0,48),
+      hid:habit && habit.hid || null,
+      habit,
+      clock:assistantRowClock(row),
+      start:row.start,
+      end:row.end,
+      kind:row.kind
+    });
   }
   rows.sort((a,b) => a.start - b.start);
   return rows;
+}
+
+function assistantQueryRowFacts(rows){
+  const seen = new Set();
+  const items = [];
+  for(const row of rows || []){
+    const key = row.hid || row.name;
+    if(!key || seen.has(key))continue;
+    seen.add(key);
+    const facts = assistantHabitQueryFacts(row.habit, {
+      clock:row.clock || undefined
+    });
+    items.push(facts || {name:row.name, clock:row.clock || undefined});
+  }
+  return items;
 }
 
 function assistantQueryRowsInWindowText(rows, start, end){
@@ -2146,31 +2262,7 @@ async function assistantAnswerSchedule(args, context){
   const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
   const gapsInfo = day && typeof computeDayFreeGaps === 'function' ? computeDayFreeGaps(day, settings, now) : null;
 
-  if(query === 'missed'){
-    const todayBase = assistantDayBase(now);
-    const missed = [];
-    for(const habit of Array.isArray(data) ? data : []){
-      if(!habit || habit.type !== 'task' || typeof isTaskDone === 'function' && isTaskDone(habit))continue;
-      if(habit.dueDate == null)continue;
-      const due = assistantDayBase(habit.dueDate);
-      if(due < todayBase)missed.push({name:String(habit.name || '').slice(0,48), due});
-    }
-    missed.sort((a,b) => a.due - b.due);
-    const earlier = [];
-    const day0 = week ? (week.days || []).find(item => item.dayBase === todayBase) : null;
-    for(const row of assistantQueryDayRows(day0, data)){
-      if(row.end > now)continue;
-      const source = ((day0 && day0.timeline) || []).find(item => item.start === row.start && item.end === row.end);
-      const habit = source && (source.h || (data && source.i != null ? data[source.i] : null));
-      if(habit && typeof completedToday === 'function' && completedToday(habit, now))continue;
-      earlier.push(row);
-    }
-    if(!missed.length && !earlier.length)return {ok:true, text:'Nothing missed — no overdue tasks, and everything planned earlier today is done.'};
-    const lines = [];
-    if(missed.length)lines.push(`Overdue: ${missed.slice(0, 6).map(item => `${item.name} (due ${typeof dateKey === 'function' ? dateKey(item.due) : ''})`.replace(' ()', '')).join(', ')}${missed.length > 6 ? ` and ${missed.length - 6} more` : ''}`);
-    if(earlier.length)lines.push(`Planned earlier today but still open: ${earlier.slice(0, 6).map(row => `${row.clock ? `${row.clock} ` : ''}${row.name}`).join(', ')}`);
-    return {ok:true, text:lines.join('. ') + '.'};
-  }
+  if(query === 'missed')return assistantAnswerMissed(context);
 
   if(query === 'freest'){
     if(!week || typeof computeDayFreeGaps !== 'function')return {ok:true, text:'I could not read this week\'s plan yet — open the home view once, then ask again.'};
@@ -2198,9 +2290,14 @@ async function assistantAnswerSchedule(args, context){
       return {ok:true, text:`Your week: ${lines.join(' · ')}.`};
     }
     const rows = assistantQueryDayRows(day, data);
-    if(!rows.length)return {ok:true, text:`Nothing is planned on ${dayLabel}.`};
+    if(!rows.length)return {ok:true, text:`Nothing is planned on ${dayLabel}.`, items:[]};
     const free = gapsInfo ? ` ${assistantQueryDurationText(gapsInfo.totalFreeMinutes)} stays open.` : '';
-    return {ok:true, text:`${dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)}: ${rows.map(row => `${row.clock || ''} ${row.name}`.trim()).join(', ')}.${free}`};
+    const items = assistantQueryRowFacts(rows);
+    return {
+      ok:true,
+      items,
+      text:`${dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)}: ${rows.map(row => `${row.clock || ''} ${row.name}`.trim()).join(', ')}.${free}`
+    };
   }
 
   // free / conflict need the window (conflict always, free only for the
@@ -2904,7 +3001,7 @@ function assistantExecuteTool(name, args, session, context){
         catalog,
         context.now,
         context.settings,
-        session && session.parsed && session.parsed.text
+        ''
       );
       if(applied.ok)session.draft = applied.draft;
       return applied;
@@ -2912,17 +3009,11 @@ function assistantExecuteTool(name, args, session, context){
     const resolved = assistantResolveDraftBase(nextArgs, session, context);
     if(!resolved.ok)return resolved;
     if(resolved.draft && resolved.draft.name){
-      const follow = (session.parsed && typeof assistantLooksLikeSettingFollowup === 'function'
-        && assistantLooksLikeSettingFollowup(session.parsed.text))
-        || (session.parsed && typeof assistantIsFollowupOnFocus === 'function'
-          && assistantIsFollowupOnFocus(session.parsed.text, session.parsed, resolved.draft));
-      if(follow)nextArgs.kind = resolved.draft.kind || nextArgs.kind;
-      else nextArgs.kind = nextArgs.kind || resolved.draft.kind;
-      if(!nextArgs.name || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(nextArgs.name)) || follow){
+      nextArgs.kind = nextArgs.kind || resolved.draft.kind;
+      if(!nextArgs.name || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(nextArgs.name))){
         nextArgs.name = resolved.draft.name;
       }
     }
-    const wide = typeof assistantWideSession === 'function' && assistantWideSession(session);
     const applied = assistantApplyDraftItem(
       nextArgs,
       resolved.draft,
@@ -2930,10 +3021,10 @@ function assistantExecuteTool(name, args, session, context){
       context.now,
       context.settings,
       context.data,
-      wide ? '' : (session && session.parsed && session.parsed.text),
+      '',
       {
         placeholders:Boolean(session && session.bulk),
-        skipSalvage:wide,
+        skipSalvage:true,
         session,
         settings:context.settings
       }
@@ -2969,11 +3060,20 @@ function assistantExecuteTool(name, args, session, context){
     return {ok:true, matches:[], text:'No saved item is close to that name.'};
   }
   if(name === 'complete_item' || name === 'plan_item' || name === 'delete_item' || name === 'lookup_item'){
-    const want = (args && args.name) || (session.draft && session.draft.name);
     const spoken = (session.parsed && session.parsed.text) || '';
-    const found = typeof assistantFindHabitSmart === 'function'
+    let want = (args && args.name) || '';
+    const pronoun = !String(want).trim()
+      || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(want));
+    if(pronoun){
+      want = (session.draft && session.draft.name)
+        || (session.recent && session.recent.referent)
+        || want;
+    }
+    let found = typeof assistantFindHabitSmart === 'function'
       ? assistantFindHabitSmart(context.data, want, spoken)
       : assistantFindHabit(context.data, want);
+    // An explicit name is authoritative. Context may resolve only an omitted
+    // name or a pronoun; a miss must never mutate or describe another item.
     if(!found.ok)return found;
     if(name === 'complete_item'){
       if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(found.hid)){
@@ -2997,7 +3097,12 @@ function assistantExecuteTool(name, args, session, context){
       return preview;
     }
     if(typeof assistantMaybeFocusFound === 'function')assistantMaybeFocusFound(session, found, context);
-    return {ok:true, text:assistantLookupText(found, context, args, session.parsed && session.parsed.text), found};
+    return {
+      ok:true,
+      text:assistantLookupText(found, context, args, session.parsed && session.parsed.text),
+      found,
+      item:typeof assistantHabitQueryFacts === 'function' ? assistantHabitQueryFacts(found.habit) : null
+    };
   }
   // Query tools answer from live app data and never touch the draft or
   // storage. answer_schedule is async (the what-if may rebuild the week).

@@ -118,7 +118,16 @@ const ASSISTANT_LIVE_EXTRA = [
   {prompt:'Which day of this week am I freest?', intent:['ask_schedule']},
   {prompt:'Can I add a task tomorrow from 5 to 6 PM? Do I have time for it?', intent:['ask_schedule']},
   {prompt:'If I add a task tomorrow 5 to 6 PM, am I going to miss anything else?', intent:['ask_schedule']},
-  {prompt:'What did I miss?', intent:['ask_schedule','ask_today']}
+  {prompt:'What did I miss?', intent:['ask_schedule']},
+  {prompt:'What did I miss today?', intent:['ask_schedule']},
+  {prompt:"What's the most important thing that I missed today?", intent:['ask_schedule']},
+  {prompt:"What's the most frequent habit from tomorrow's agenda?", intent:['ask_schedule']},
+  {prompt:"What's on tomorrow and when did I last call Amma?", intent:['ask_schedule','lookup_item']},
+  {prompt:"What did I miss today, and which of those is most important?", intent:['ask_schedule']},
+  {prompt:"What's the weather tomorrow and what's on my agenda?", intent:['ask_weather','ask_schedule']},
+  {prompt:'Mark Evening walk done and what is next?', intent:['complete_item','ask_today','ask_schedule']},
+  {prompt:'When did I last do that one?', intent:['lookup_item']},
+  {prompt:'Which of those is most frequent?', intent:['ask_schedule','ask_items']}
 ];
 
 module.exports = {

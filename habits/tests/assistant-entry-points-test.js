@@ -1,6 +1,6 @@
 // Assistant context entry points: add-sheet AI + detail chat. Context-known
-// intent or item skips the classify call (one extract call, or zero for the
-// local fast path). Fake LLM throughout; no live model needed.
+// intent or item skips the classify call (one extract call). Fake LLM
+// throughout; no live model needed.
 const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-helpers');
 
 let pass = 0, fail = 0;
@@ -100,10 +100,14 @@ async function launchBrowser(){
   assert(addSetting.llmCalls === 1 && addSetting.step === 'extract', 'single extract call, no classify');
   assert(/draft_setting/.test(addSetting.steer || ''), 'steer asks for draft_setting');
 
-  console.log('\n[C] opt-in parser shortcut: trivial add never reaches the model');
+  console.log('\n[C] entry always uses the model, even with an old setting off');
   const entryLocal = await page.evaluate(async () => {
     patchLocalAssistant({localAssistantModelOnly:false, localAssistantRoutingVersion:2});
-    assistantComplete = async () => { throw new Error('LLM must not run for simple entry phrasing'); };
+    const calls = [];
+    assistantComplete = async req => {
+      calls.push(req.step);
+      return {message:{thinking:'task', tool_calls:[{function:{name:'draft_item', arguments:{kind:'task',name:'Call mom'}}}]}};
+    };
     const ok = await assistantOpenWithInstruction('Remind me to call mom', { intent:'create_task', entry:'add' });
     const session = _assistantSession;
     const retry = document.querySelector('#assistant-thread .assistant-retry');
@@ -112,14 +116,15 @@ async function launchBrowser(){
       ok,
       sheetOpen,
       name:session && session.draft && session.draft.name,
-      fastPath:Boolean(session && session.debug && session.debug.some(row => row.t === 'path' && row.path === 'local')),
+      modelPath:Boolean(session && session.debug && session.debug.some(row => row.t === 'path' && row.path === 'llm')),
+      calls,
       retry:Boolean(retry)
     };
   });
   assert(entryLocal.ok && entryLocal.sheetOpen, 'entry opens the assistant sheet');
-  assert(/mom/i.test(entryLocal.name || ''), 'entry fast path previews the draft locally');
-  assert(entryLocal.fastPath, 'trace shows the local path');
-  assert(entryLocal.retry, 'use AI instead is offered on entry fast path');
+  assert(/mom/i.test(entryLocal.name || ''), 'entry model tool previews the draft');
+  assert(entryLocal.modelPath && entryLocal.calls[0] === 'extract', 'trace shows one extract call on the model path');
+  assert(!entryLocal.retry, 'model-only entry does not offer a redundant retry');
 
   console.log('\n[D] detail entry: empty text costs zero model calls, follow-up extracts');
   const detailEntry = await page.evaluate(async () => {

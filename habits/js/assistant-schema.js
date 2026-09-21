@@ -5,7 +5,7 @@
 
 const ASSISTANT_INTENTS = ['create_task','create_habit','create_setting','ask_today','ask_weather','ask_schedule','ask_items','ask_settings','complete_item','plan_item','delete_item','lookup_item','unclear','unsupported'];
 const ASSISTANT_SETTING_KINDS = ['weather','location','busy','topic'];
-const ASSISTANT_STEPS = ['classify','extract','complete','plan','delete','lookup','query'];
+const ASSISTANT_STEPS = ['classify','extract','complete','plan','delete','lookup','query','answer'];
 const ASSISTANT_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
 const ASSISTANT_ANCHOR_ALIASES = {
   sunset:'maghrib', dusk:'maghrib', maghreb:'maghrib',
@@ -14,9 +14,10 @@ const ASSISTANT_ANCHOR_ALIASES = {
   afternoon:'asr', asr:'asr',
   night:'isha', isha:'isha'
 };
-const ASSISTANT_MAX_LLM_CALLS = 8;
+const ASSISTANT_MAX_LLM_CALLS = 10;
 const ASSISTANT_MAX_LLM_CALLS_BATCH = 12;
 const ASSISTANT_MAX_REPAIRS = 2;
+const ASSISTANT_MAX_CLARIFY = 2;
 const ASSISTANT_NAME_MAX = 60;
 const ASSISTANT_INPUT_MAX = 12000;
 const ASSISTANT_BATCH_MAX = 24;
@@ -114,7 +115,7 @@ function assistantRequestNeedsModel(text){
 
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
-    description:'Classify only when you cannot call the final tool directly. create_setting = a weather profile, place, busy time, or topic — not a habit or task. A habit/task that names weather conditions is still create_habit/create_task. ask_weather and ask_schedule use live forecast/planner answers. ask_items covers lists, status, and progress. ask_settings covers existing places, profiles, topics, and busy times. lookup_item answers one existing item (next time, last done, history, stats, why). find_item lists closest saved names when the spoken name may not match the title. complete_item / plan_item / delete_item change an existing item after confirmation. If several items could match, call ask_user — do not guess a name and do not create a new item. Availability and what-if questions are ask_schedule — not create_task. If currentDraft is set, they are changing that row unless they clearly start a new one. Do not classify unclear when currentDraft is set.',
+    description:'Classify only when you cannot call the final tool directly. create_setting = a weather profile, place, busy time, or topic — not a habit or task. A habit/task that names weather conditions is still create_habit/create_task. ask_weather and ask_schedule use live forecast/planner answers. "What did I miss today?" is ask_schedule (the today-header missed list), not ask_today. Several questions or an action plus a question in one message is still one turn: call a tool for each part (you may emit several tool calls). A ranking or follow-up about a list ("most important missed", "most frequent on tomorrow\'s agenda", "when did I last do that one") fetches the list first, then lookup_item if you need extra details. ask_items covers lists, status, and progress. ask_settings covers existing places, profiles, topics, and busy times. lookup_item answers one existing item (next time, last done, history, stats, why). find_item lists closest saved names when the spoken name may not match the title. complete_item / plan_item / delete_item change an existing item after confirmation. If several items could match, call ask_user — do not guess a name and do not create a new item. If the whole request is confusing, call ask_user instead of guessing. Availability and what-if questions are ask_schedule — not create_task. If currentDraft is set, "it" is that row unless they clearly start a new one. recent.items / recent.referent are the last list and named item from this chat. Do not classify unclear when currentDraft is set.',
     parameters:{
       type:'object',
       required:['intent'],
@@ -216,13 +217,14 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   find_item:{
-    description:'Search saved tasks/habits by a name fragment, nickname, typo, or the whole question. Tings ranks deterministic fuzzy matches. Use this when the spoken name may not match the saved title. If several could fit, Tings asks the user — do not guess. After a unique match, call lookup_item, complete_item, plan_item, or delete_item with that exact name.',
+    description:'Search saved tasks/habits by a name fragment, nickname, typo, or the whole question. Tings ranks deterministic fuzzy matches. Use this when the spoken name may not match the saved title. If several could fit, Tings asks the user — do not guess. Set action when this search is for a lookup, completion, plan, or deletion so a name clarification continues the same action. After a unique match, call the requested tool with that exact name.',
     parameters:{
       type:'object',
       required:['query'],
       properties:{
         query:{type:'string', description:'Name fragment, nickname, or the user’s phrasing'},
-        limit:{type:['integer','null'], description:'max matches, default 5'}
+        limit:{type:['integer','null'], description:'max matches, default 5'},
+        action:{type:['string','null'], enum:['lookup','complete','plan','delete',null], description:'operation to resume after name clarification'}
       }
     }
   },
@@ -235,7 +237,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_items:{
-    description:'Answer list and status questions about tasks and habits. list = names matching kind/status/search; progress = a concise today summary. Use this for "what habits do I have", "show my open tasks", "what did I finish today", and "how am I doing today".',
+    description:'Answer list and status questions about tasks and habits. list = names matching kind/status/search, each with priority and frequency so you can rank the list; progress = a concise today summary. Use this for "what habits do I have", "show my open tasks", "what did I finish today", and "how am I doing today". If the request has another clause, call this and the other matching tools. After items return, rank from that payload or call lookup_item only for extra history/stats/why.',
     parameters:{
       type:'object',
       required:['query'],
@@ -270,7 +272,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_schedule:{
-    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end). query freest = which day of the week is freest. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = what did I miss: overdue and earlier-today items still open. query day = the agenda for one day. query week = the whole week overview.',
+    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end). query freest = which day of the week is freest. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = the same list as the missed pill on today\'s header (planner expectations that slipped, not a raw overdue dump). query day = the agenda for one day, with per-item priority and frequency. query week = the whole week overview. Several questions in one message: call this for each schedule part (missed and tomorrow\'s agenda are two calls) and lookup_item / answer_weather / answer_items for the rest. After items return, rank from that payload; call lookup_item only when you still need history, stats, or why.',
     parameters:{
       type:'object',
       required:['query'],
@@ -284,7 +286,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   ask_user:{
-    description:'Ask the user one short question when a catalog match is ambiguous or a required field is missing.',
+    description:'Ask the user one short question when you are confused, two Tings actions could fit, a catalog match is ambiguous, or a required field is missing. Do not guess. One question, optional short choices. Tings allows two clarification questions in a row, then stops.',
     parameters:{
       type:'object',
       required:['question'],
@@ -324,7 +326,8 @@ function assistantStepTools(step){
   if(step === 'plan')return ['plan_item','find_item','ask_user'];
   if(step === 'delete')return ['delete_item','find_item','ask_user'];
   if(step === 'lookup')return ['lookup_item','find_item','ask_user'];
-  if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
+  if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','lookup_item','find_item','complete_item','plan_item','delete_item','ask_user'];
+  if(step === 'answer')return ['lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','complete_item','plan_item','delete_item','ask_user'];
   return ['ask_user'];
 }
 
@@ -334,14 +337,18 @@ function assistantWideSession(session){
 
 function assistantStepPredict(step, session){
   const wide = typeof assistantWideSession === 'function' ? assistantWideSession(session) : Boolean(session && session.bulk);
-  if(step === 'extract' || (step === 'classify' && wide)){
+  if(step === 'extract' || step === 'classify'){
+    // The model, not a text pre-parser, decides whether the request needs
+    // draft_batch. Give the first pass enough room to emit a large batch even
+    // though the session cannot be labelled "wide" before the model reads it.
     const toolTokens = wide
       ? (typeof ASSISTANT_BATCH_TOOL_TOKENS === 'number' ? ASSISTANT_BATCH_TOOL_TOKENS : 8192)
-      : ASSISTANT_TOOL_TOKENS;
+      : step === 'classify'
+        ? (typeof ASSISTANT_BATCH_TOOL_TOKENS === 'number' ? ASSISTANT_BATCH_TOOL_TOKENS : 8192)
+        : ASSISTANT_TOOL_TOKENS;
     return ASSISTANT_THINK_TOKENS + toolTokens;
   }
-  if(step === 'classify')return ASSISTANT_THINK_TOKENS + 1024;
-  if(step === 'query')return ASSISTANT_THINK_TOKENS + 1024;
+  if(step === 'query' || step === 'answer')return ASSISTANT_THINK_TOKENS + 1024;
   return ASSISTANT_THINK_TOKENS + 512;
 }
 

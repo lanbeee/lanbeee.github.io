@@ -87,25 +87,17 @@ async function launchBrowser(){
   const VAGUE = 'Set up my week: a walk after maghrib tonight, remind me to call the dentist the day after tomorrow around lunch, and stretching every other day starting two days after that at the new Aldi.';
   const MESSY = 'I need a walk after sunset tomorrow night, kettlebells the day after tomorrow if it is not raining, and a grocery run two days after that.';
 
-  console.log('\n[batch] complicated requests skip the fast-path parser');
-  const detect = await page.evaluate(({paste, vague, messy}) => {
-    const andAlso = 'Add a walk after sunset and also add a 45 minute kettlebells habit every Tuesday';
+  console.log('\n[batch] the model decides whether a request is a batch');
+  const detect = await page.evaluate(() => {
     return {
-      calendarNeeds:assistantRequestNeedsModel(paste),
-      calendarHeavy:assistantRequestIsHeavy(paste),
-      andAlso:assistantLooksLikeMultiItem(andAlso),
-      vague:assistantLooksLikeMultiItem(vague),
-      messyMulti:assistantLooksLikeMultiItem(messy),
-      messyRisk:assistantFastPathRisk(messy, {intent:'create_task', text:messy}),
-      vagueRisk:assistantFastPathRisk(vague, {intent:'create_habit', text:vague}),
-      single:assistantRequestNeedsModel('Remind me to call mom')
+      modelOnly:assistantModelOnlyEnabled(),
+      initialWide:assistantCreateSession().wide === true,
+      classifyTools:assistantStepTools('classify')
     };
-  }, {paste:CALENDAR, vague:VAGUE, messy:MESSY});
-  assert(detect.calendarNeeds && detect.calendarHeavy, 'a long schedule paste is a model request');
-  assert(detect.andAlso === true, '"and also add" is several items');
-  assert(detect.vague === true && detect.vagueRisk === 'multi-item', 'set-up-my-week is several items for the model');
-  assert(detect.messyMulti !== true && detect.messyRisk === 'relative-date', 'a vague list with relative dates is not a local parse');
-  assert(detect.single === false, 'a short one-off is not forced through the model');
+  });
+  assert(detect.modelOnly, 'all natural-language requests go to the model');
+  assert(!detect.initialWide, 'no parser pre-labels a request as single or batch');
+  assert(detect.classifyTools.includes('draft_item') && detect.classifyTools.includes('draft_batch'), 'the first model pass can choose one item or a batch');
 
   console.log('\n[batch] draft_batch previews classes and dummy places');
   const turn = await page.evaluate(async paste => {
@@ -179,8 +171,8 @@ async function launchBrowser(){
     };
   }, CALENDAR);
   assert(turn.type === 'preview', 'batch turn previews (got ' + turn.type + ')');
-  assert(turn.steps[0] === 'extract' && turn.steps.length === 1, 'batch skips classify and extracts once');
-  assert(turn.hasBatchTool && turn.steer, 'extract offers and steers draft_batch');
+  assert(turn.steps[0] === 'classify' && turn.steps.length === 1, 'the first model pass emits the batch directly');
+  assert(turn.hasBatchTool, 'the first pass offers draft_batch without parser steering');
   assert(turn.hasFacts !== true, 'parser facts are withheld so the model reads the paste');
   assert(turn.predict > 6000, 'batch extract gets a larger tool budget');
   assert(turn.itemNames.length === 6, 'six scheduled meetings, not the TBA lab (' + turn.itemNames.join(', ') + ')');
@@ -305,8 +297,8 @@ async function launchBrowser(){
     };
   }, VAGUE);
   assert(vague.type === 'preview' && vague.fastPath !== true, 'vague week setup previews from the model');
-  assert(vague.via === 'setting' && vague.hasFacts !== true, 'model-first routing does not copy parser facts into a multi-item turn');
-  assert(vague.steps[0] === 'extract' && vague.hasBatchTool, 'extract offers draft_batch');
+  assert(vague.via === 'model-only' && vague.hasFacts !== true, 'model-only routing does not copy parser facts into a multi-item turn');
+  assert(vague.steps[0] === 'classify' && vague.hasBatchTool, 'the first model pass offers draft_batch');
   assert(vague.names.length === 3, 'three items: ' + (vague.names || []).join(', '));
   assert(vague.walkAnchor === 'maghrib', 'walk window is maghrib from the model');
   assert(vague.dentistDue === '2026-09-19', 'day after tomorrow is the model due, not a parser guess (' + vague.dentistDue + ')');
@@ -360,7 +352,7 @@ async function launchBrowser(){
     };
   }, MESSY);
   assert(messy.type === 'preview' && messy.fastPath !== true, 'messy relative list is not a local fast-path create');
-  assert(messy.via === 'setting' && !messy.risk, 'model-first routing sends the whole relative-date request to the model');
+  assert(messy.via === 'model-only' && !messy.risk, 'model-only routing sends the whole relative-date request to the model');
   assert(messy.steps[0] === 'classify' && messy.hasBatchTool, 'classify still offers draft_batch');
   assert(messy.hasFacts !== true, 'untrusted relative-date facts are withheld');
   assert(messy.names.length === 3, 'model returns three items, not the first clause only');

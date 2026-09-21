@@ -402,16 +402,19 @@ function missedOccurrenceDayLabel(day,now = Date.now()){
   return new Date(base).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toLowerCase();
 }
 
-function attachDroppedIndicator(header,list,todayHids){
-  const data = load();
-  const now = Date.now();
-  let snap = loadTodaySuggested();
-  const today = todayIso();
+// Same list as the today-header "N missed" pill. The assistant reads this
+// instead of inventing its own overdue sweep.
+function collectDroppedItems(data, settings, todayHids, now = Date.now()){
+  data = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  settings = settings || sortSettings;
+  todayHids = Array.isArray(todayHids) ? todayHids : [];
+  let snap = typeof loadTodaySuggested === 'function' ? loadTodaySuggested() : {hids:{},expectations:{}};
+  const today = typeof todayIso === 'function' ? todayIso() : (typeof dateKey === 'function' ? dateKey(now) : '');
   if(_droppedDayBaselineDay !== today){
     _droppedDayBaseline = snap.prevProjection || null;
     _droppedDayBaselineDay = today;
   }
-  const fingerprint = missedPlannerFingerprint(data,sortSettings);
+  const fingerprint = missedPlannerFingerprint(data, settings);
   const tomorrow = dateKey(now + 86400000);
   const currentExpectation = snap.expectations && snap.expectations[today];
   const tomorrowExpectation = snap.expectations && snap.expectations[tomorrow];
@@ -420,52 +423,58 @@ function attachDroppedIndicator(header,list,todayHids){
     || !tomorrowExpectation
     || tomorrowExpectation.fingerprint !== fingerprint;
   const projectionByDay = needsProjection
-    ? computePlannerExpectationMap(data,sortSettings,7)
+    ? computePlannerExpectationMap(data, settings, 7)
     : {};
-  const renderedProjection = renderedPlannerExpectationMap(data,now);
+  const renderedProjection = renderedPlannerExpectationMap(data, now);
   for(const [day,hids] of Object.entries(renderedProjection)){
     if(day === today && projectionByDay[day]){
-      projectionByDay[day] = [...new Set([...projectionByDay[day],...hids])];
+      projectionByDay[day] = [...new Set([...projectionByDay[day], ...hids])];
     }else{
       projectionByDay[day] = hids;
     }
   }
   const hasProjectionUpdate = Object.keys(projectionByDay).length > 0;
   const projectionHids = hasProjectionUpdate ? projectionByDay[tomorrow] || [] : null;
-  snap = recordTodaySuggested(
-    data,todayHids,now,projectionHids,fingerprint,
-    hasProjectionUpdate ? projectionByDay : null
-  );
+  if(typeof recordTodaySuggested === 'function'){
+    snap = recordTodaySuggested(
+      data, todayHids, now, projectionHids, fingerprint,
+      hasProjectionUpdate ? projectionByDay : null
+    );
+  }
 
   const currentSet = new Set(todayHids);
-  const laterPlanned = laterDayPlannedHids(data,projectionHids || (snap.projection && snap.projection.hids));
+  const laterPlanned = laterDayPlannedHids(data, projectionHids || (snap.projection && snap.projection.hids));
   const droppedMap = new Map();
-  const addMissed = (hid,name,emoji,idx,first,expectedDay)=>{
+  const addMissed = (hid, name, emoji, idx, first, expectedDay) => {
     const h = data[idx];
     if(!h)return;
     const renderedToday = expectedDay === today && Boolean(snap.hids?.[hid]);
-    if(!isMissedOccurrence(h,laterPlanned,now,expectedDay,{renderedToday}))return;
+    if(!isMissedOccurrence(h, laterPlanned, now, expectedDay, {renderedToday}))return;
     const prior = droppedMap.get(hid);
     if(prior && prior.expectedDay >= expectedDay)return;
-    droppedMap.set(hid,{
-      hid,name,emoji:emoji || h.emoji,idx,first,expectedDay,
-      dayLabel:missedOccurrenceDayLabel(expectedDay,now)
+    droppedMap.set(hid, {
+      hid, name, emoji:emoji || h.emoji, idx, first, expectedDay,
+      dayLabel:missedOccurrenceDayLabel(expectedDay, now)
     });
   };
 
-  for(const [expectedDay,entry] of Object.entries(snap.expectations || {})){
+  for(const [expectedDay, entry] of Object.entries(snap.expectations || {})){
     if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
     for(const hid of entry.hids){
       if(currentSet.has(hid))continue;
-      const idx = data.findIndex(h=>h && h.hid === hid);
+      const idx = data.findIndex(h => h && h.hid === hid);
       if(idx < 0)continue;
       const info = expectedDay === today ? snap.hids[hid] : null;
-      addMissed(hid,data[idx].name,data[idx].emoji,idx,info?.first || entry.recordedAt || now,expectedDay);
+      addMissed(hid, data[idx].name, data[idx].emoji, idx, info?.first || entry.recordedAt || now, expectedDay);
     }
   }
 
-  const dropped = [...droppedMap.values()].sort((a,b)=>
+  return [...droppedMap.values()].sort((a, b) =>
     a.expectedDay.localeCompare(b.expectedDay) || a.first - b.first);
+}
+
+function attachDroppedIndicator(header,list,todayHids){
+  const dropped = collectDroppedItems(load(), sortSettings, todayHids);
   if(!dropped.length)return;
   header.classList.add('has-dropped');
   const pill = document.createElement('button');

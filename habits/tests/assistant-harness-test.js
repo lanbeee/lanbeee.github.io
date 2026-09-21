@@ -266,7 +266,7 @@ async function launchBrowser(){
   assert(followLoc.wouldCreate !== true, 'focused add-location is not a local create');
   assert(followLoc.type === 'preview' && followLoc.name === 'Study' && followLoc.kind === 'habit', 'follow-up keeps the Study habit');
   assert(/home/i.test(followLoc.place || '') && followLoc.times === 5, 'model sets the place on Study and keeps 5× / week');
-  assert(followLoc.path === 'llm' && followLoc.via === 'setting', 'model-first routing keeps the follow-up on the model');
+  assert(followLoc.path === 'llm' && followLoc.via === 'model-only', 'model-only routing keeps the follow-up on the model');
   assert(followLoc.firstStep === 'extract' && followLoc.hasDraft === true && followLoc.hasFacts !== true, 'extract sees currentDraft Study and withholds parser facts');
   assert(followLoc.forcedType === 'preview' && followLoc.forcedName === 'Study' && /home/i.test(followLoc.forcedPlace || ''), 'use-AI-instead keeps the unsaved Study draft');
   assert(followLoc.forcedStep === 'extract', 'force llm on a focused follow-up skips classify so it cannot say unclear');
@@ -351,6 +351,62 @@ async function launchBrowser(){
   assert(keptPlace.followPlaces.includes('Sample Home') && keptPlace.followPlaces.some(name => /mom/i.test(name)), 'draft_item uses catalog place names from the model');
   assert(keptPlace.followStep === 'extract' && keptPlace.followDraft === true && keptPlace.followFacts !== true, 'follow-up is extract with currentDraft and no parser facts');
 
+  console.log('\n[D5] confusion asks the user, then stops');
+  const clarify = await page.evaluate(async () => {
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, locations:[], weatherProfiles:[] });
+    const unclear = {message:{role:'assistant', tool_calls:[
+      {function:{name:'classify_intent', arguments:{intent:'unclear'}}}
+    ]}};
+    const session = assistantCreateSession();
+    const complete = async () => JSON.parse(JSON.stringify(unclear));
+    const first = await runAssistantTurn('uh that thing maybe', {forceLlm:true, session, complete});
+    const firstSnap = {type:first.type, choices:first.choices, count:first.session && first.session.clarifyCount, q:first.question};
+    const second = await runAssistantTurn('still that', {forceLlm:true, session, complete});
+    const secondSnap = {type:second.type, count:second.session && second.session.clarifyCount};
+    const third = await runAssistantTurn('idk', {forceLlm:true, session, complete});
+    const askUser = await runAssistantTurn('Home or Gym I guess', {
+      forceLlm:true,
+      session:assistantCreateSession(),
+      complete:async () => ({message:{role:'assistant', tool_calls:[
+        {function:{name:'ask_user', arguments:{question:'Home or Gym?', choices:['Home','Gym']}}}
+      ]}})
+    });
+    const repairs = [];
+    const afterRepair = await runAssistantTurn('uh that thing maybe', {
+      forceLlm:true,
+      complete:async () => {
+        repairs.push(1);
+        return {message:{role:'assistant', content:repairs.length < 3 ? 'Hmm.' : 'Did you mean a task or a habit?'}};
+      }
+    });
+    return {
+      firstType:firstSnap.type,
+      firstChoices:firstSnap.choices,
+      firstCount:firstSnap.count,
+      firstQ:firstSnap.q,
+      secondType:secondSnap.type,
+      secondCount:secondSnap.count,
+      thirdType:third.type,
+      thirdGaveUp:third.gaveUp === true,
+      thirdText:third.text,
+      askType:askUser.type,
+      askQ:askUser.question,
+      askChoices:askUser.choices,
+      repairType:afterRepair.type,
+      repairQ:afterRepair.question,
+      repairN:repairs.length
+    };
+  });
+  assert(clarify.firstType === 'ask' && (clarify.firstChoices || []).includes('task') && clarify.firstCount === 1,
+    'classify unclear asks instead of guessing');
+  assert(clarify.secondType === 'ask' && clarify.secondCount === 2, 'a second unclear turn may still ask');
+  assert(clarify.thirdType === 'say' && clarify.thirdGaveUp && /do not follow|short request/i.test(clarify.thirdText || ''),
+    'a third confusion stops asking');
+  assert(clarify.askType === 'ask' && /Home or Gym/i.test(clarify.askQ || '') && (clarify.askChoices || []).includes('Gym'),
+    'ask_user still surfaces a short question with chips');
+  assert(clarify.repairType === 'ask' && /task or a habit/i.test(clarify.repairQ || '') && clarify.repairN >= 3,
+    'after repairs, confusion asks the user instead of erroring');
+
   console.log('\n[E] settings chrome');
   const ui = await page.evaluate(() => {
     saveSortSettings({ ...loadSortSettings(), localAssistant:false });
@@ -371,14 +427,14 @@ async function launchBrowser(){
       debugToggle:Boolean(document.getElementById('setting-local-assistant-debug')),
       debugSheet:Boolean(document.getElementById('assistant-debug-toggle')),
       modelOnlyToggle:Boolean(document.getElementById('setting-local-assistant-model-only')),
-      modelOnlyPressed:document.getElementById('setting-local-assistant-model-only')?.getAttribute('aria-pressed')
+      modelOnlyCopy:/Every request is interpreted by the local model/i.test(document.getElementById('assistant-setup-fields')?.textContent || '')
     };
   });
   assert(ui.off.hidden === true && ui.off.pressed === 'false', 'chat button hidden while assistant is off');
   assert(ui.onHidden === false && ui.onPressed === 'true' && ui.setupHidden === false, 'enabling shows the button and setup fields');
   assert(ui.sheet && ui.privacy, 'assistant sheet and privacy copy exist');
   assert(ui.debugToggle && ui.debugSheet, 'debug switch exists in settings and on the chat');
-  assert(ui.modelOnlyToggle && ui.modelOnlyPressed === 'true', 'LLM-first routing toggle exists and is on by default');
+  assert(!ui.modelOnlyToggle && ui.modelOnlyCopy, 'model-only routing is fixed policy, not a parser toggle');
   const reach = await page.evaluate(() => {
     const getInit = assistantFetchInit('http://127.0.0.1:11434/api/tags', {method:'GET'});
     const postInit = assistantFetchInit('http://127.0.0.1:11434/api/chat', {
@@ -905,7 +961,10 @@ async function launchBrowser(){
   const debugTrace = await page.evaluate(async () => {
     saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true, localAssistantModelOnly:false, localAssistantRoutingVersion:2, locations:[], weatherProfiles:[] });
     if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
-    const local = await runAssistantTurn('Remind me to call mom');
+    const localReplies = [
+      { message:{ thinking:'model first', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Mom call', due:'today' } } }] } }
+    ];
+    const local = await runAssistantTurn('Remind me to call mom', {complete:async () => localReplies.shift()});
     const replies = [
       { message:{ thinking:'classify now', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
       { message:{ thinking:'fill draft', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Pharmacy', durationMinutes:20, due:'today' } } }] } }
@@ -929,8 +988,8 @@ async function launchBrowser(){
     };
   });
   assert(debugTrace.debugPressed === 'true' && debugTrace.sheetPressed === 'true' && debugTrace.bodyClass, 'debug switch is on');
-  assert(debugTrace.localPath === 'local' && debugTrace.localTool === 'draft_item', 'local turn records path and draft_item');
-  assert(/parse /.test(debugTrace.localText) && /path local/.test(debugTrace.localText), 'local debug text has parse and path');
+  assert(debugTrace.localPath === 'llm' && debugTrace.localTool === 'draft_item', 'every natural-language turn records an LLM path and validated tool');
+  assert(/parse /.test(debugTrace.localText) && /path llm/.test(debugTrace.localText), 'model-only debug text has parse and LLM path');
   assert(debugTrace.llmTools.includes('classify_intent') && debugTrace.llmTools.includes('draft_item'), 'llm debug lists classify and draft_item');
   assert(debugTrace.llmDraft && /Pharmacy/i.test(JSON.stringify(debugTrace.llmDraft)), 'llm debug keeps draft_item args');
   assert(debugTrace.llmThink, 'llm debug includes thinking');
@@ -942,12 +1001,15 @@ async function launchBrowser(){
   await page.waitForSelector('#assistant-sheet.open');
   await page.evaluate(() => {
     if(typeof clearAssistantChat === 'function')clearAssistantChat();
+    const replies = [{message:{thinking:'direct', tool_calls:[{function:{name:'draft_item', arguments:{kind:'task', name:'Mom call', due:'today'}}}]}}];
+    globalThis.__assistantTestComplete = async () => replies.shift();
   });
   await page.locator('#assistant-input').fill('Remind me to call mom');
   await page.locator('#assistant-send').click();
   await page.waitForSelector('#assistant-thread .assistant-bubble-debug .assistant-debug-log');
   const debugUi = await page.locator('#assistant-thread .assistant-bubble-debug .assistant-debug-log').last().textContent();
-  assert(/parse /.test(debugUi) && /path local/.test(debugUi) && /call draft_item/.test(debugUi), 'chat debug card shows parse, path, and tool');
+  assert(/parse /.test(debugUi) && /path llm/.test(debugUi) && /call draft_item/.test(debugUi), 'chat debug card shows model path and validated tool');
+  await page.evaluate(() => { delete globalThis.__assistantTestComplete; });
 
   console.log('\n[J] complicated phrasing routes to the model, not the fast path');
   const route = await page.evaluate(async () => {
@@ -980,7 +1042,7 @@ async function launchBrowser(){
     };
   });
   assert(route.type === 'preview' && route.llmCalls === 2, 'day after tomorrow goes to the model and drafts');
-  assert(route.path === 'llm' && route.via === 'setting' && !route.risk, 'model-first routing bypasses parser risk decisions');
+  assert(route.path === 'llm' && route.via === 'model-only' && !route.risk, 'model-only routing bypasses parser risk decisions');
   assert(route.name === 'Meeting' && route.dueKey === '2026-09-19' && route.dueTime === '13:00', 'model draft carries the right date and time');
   assert(route.envHasDate, 'envelope includes today ISO date');
   assert(!route.envHasFacts, 'untrusted local facts are withheld from the model');
@@ -1031,10 +1093,12 @@ async function launchBrowser(){
       return { type:'threw', text:String(err && err.message || err) };
     }
   });
-  assert(staysLocal.type === 'preview' && /mom/i.test(staysLocal.name || ''), 'opt-in parser shortcut still handles simple creation');
+  assert(staysLocal.type === 'error' && !staysLocal.name, 'turning an old setting off cannot restore parser routing');
 
   console.log('\n[G] live Qwen3.8 think+tools (optional)');
-  const live = await page.evaluate(async () => {
+  const live = process.env.ASSISTANT_LIVE === '0'
+    ? {skipped:true, reason:'ASSISTANT_LIVE=0'}
+    : await page.evaluate(async () => {
     try{
       const res = await fetch('http://127.0.0.1:11434/api/tags');
       if(!res.ok)return { skipped:true, reason:'tags '+res.status };
@@ -1075,7 +1139,7 @@ async function launchBrowser(){
     }catch(err){
       return { skipped:true, reason:String(err && err.message || err) };
     }
-  });
+    });
     if(live.skipped){
     console.log('  skip: ' + live.reason);
   }else{
@@ -1102,14 +1166,14 @@ async function launchBrowser(){
       path:pathEvent.path,
       via:pathEvent.via,
       name:out.draft && out.draft.name,
-      togglePressed:document.getElementById('setting-local-assistant-model-only')?.getAttribute('aria-pressed')
+      togglePresent:Boolean(document.getElementById('setting-local-assistant-model-only'))
     };
     patchLocalAssistant({ localAssistantModelOnly:false });
     return res;
   });
   assert(modelOnlyTurn.type === 'preview' && modelOnlyTurn.name === 'Mom call', 'model-only setting sends simple phrasing to the model');
-  assert(modelOnlyTurn.fastPath !== true && modelOnlyTurn.path === 'llm' && modelOnlyTurn.via === 'setting', 'trace shows the model-only route');
-  assert(modelOnlyTurn.togglePressed === 'true', 'always-use-Qwen toggle reflects the setting');
+  assert(modelOnlyTurn.fastPath !== true && modelOnlyTurn.path === 'llm' && modelOnlyTurn.via === 'model-only', 'trace shows the permanent model-only route');
+  assert(!modelOnlyTurn.togglePresent, 'parser-routing toggle is removed');
 
   const retryUi = await page.evaluate(async () => {
     if(typeof clearAssistantChat === 'function')clearAssistantChat();
@@ -1117,31 +1181,101 @@ async function launchBrowser(){
       { message:{ thinking:'classify', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
       { message:{ thinking:'draft', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Ring mom', due:'today' } } }] } }
     ];
-    window.assistantComplete = async () => replies.shift();
+    globalThis.__assistantTestComplete = async () => replies.shift();
     await sendAssistantMessage('Remind me to call mom');
     await new Promise(resolve => setTimeout(resolve, 60));
     const retryBtn = document.querySelector('#assistant-thread [data-assistant-retry]');
-    const before = document.querySelectorAll('#assistant-thread .assistant-bubble').length;
-    let after = before;
-    if(retryBtn){
-      retryBtn.click();
-      for(let i = 0; i < 40 && after <= before; i += 1){
-        await new Promise(resolve => setTimeout(resolve, 50));
-        after = document.querySelectorAll('#assistant-thread .assistant-bubble').length;
-      }
-    }
+    delete globalThis.__assistantTestComplete;
     return {
       hadRetry:Boolean(retryBtn),
-      label:retryBtn ? retryBtn.textContent.trim() : '',
-      rowGone:!retryBtn || !retryBtn.isConnected,
-      before,
-      after,
       lastPreview:Array.from(document.querySelectorAll('#assistant-thread .assistant-preview-name')).pop()?.textContent || ''
     };
   });
-  assert(retryUi.hadRetry && /use AI instead/i.test(retryUi.label), 'fast-path preview offers use AI instead');
-  assert(retryUi.rowGone && retryUi.after > retryUi.before, 'retry re-runs the utterance through the model');
-  assert(/Ring mom/i.test(retryUi.lastPreview), 'retry preview comes from the model, not the fast path');
+  assert(!retryUi.hadRetry, 'model-only replies do not offer a redundant use-AI retry');
+  assert(/Ring mom/i.test(retryUi.lastPreview), 'the ordinary send path uses the model');
+
+  console.log('\n[K2] compound writes, explicit targets, and no-op queues');
+  const compounds = await page.evaluate(async () => {
+    const base = dayStart(Date.now());
+    save([
+      {hid:'alpha', name:'Alpha', type:'habit', target:1, durationMinutes:15, logs:[]},
+      {hid:'beta', name:'Beta', type:'habit', target:1, durationMinutes:20, logs:[]}
+    ]);
+    const context = assistantBuildContext();
+    const focused = assistantCreateSession();
+    focused.draft = assistantHabitToDraft(context.data[0], 0, context.settings, context.data);
+    const missingDelete = await assistantExecuteTool('delete_item', {name:'Missing'}, focused, context);
+    const missingLookup = await assistantExecuteTool('lookup_item', {name:'Missing'}, focused, context);
+
+    let writePass = 0;
+    const writes = await runAssistantTurn('Mark Alpha done and plan Beta tomorrow', {
+      context,
+      complete:async () => {
+        writePass += 1;
+        if(writePass === 1)return {message:{thinking:'two actions', tool_calls:[
+          {function:{name:'complete_item', arguments:{name:'Alpha'}}},
+          {function:{name:'plan_item', arguments:{name:'Beta', date:'tomorrow'}}}
+        ]}};
+        return {message:{content:'Both actions are ready for confirmation.'}};
+      }
+    });
+    _assistantSession = writes.session;
+    commitAssistantCompoundAction(0, null);
+    commitAssistantCompoundAction(1, null);
+    const committed = load();
+    const alphaLogs = normalizeLogs(committed.find(row => row.hid === 'alpha').logs).filter(log => !isPlanLog(log));
+    const betaPlans = normalizeLogs(committed.find(row => row.hid === 'beta').logs).filter(isPlanLog);
+
+    save([
+      {hid:'alpha', name:'Alpha', type:'habit', target:1, durationMinutes:15, logs:[]},
+      {hid:'beta', name:'Beta', type:'habit', target:1, durationMinutes:20, logs:[]}
+    ]);
+    const noOpContext = assistantBuildContext();
+    let noOpPass = 0;
+    const noOp = await runAssistantTurn('Unplan Alpha tomorrow and list my habits', {
+      context:noOpContext,
+      complete:async () => {
+        noOpPass += 1;
+        if(noOpPass === 1)return {message:{thinking:'two clauses', tool_calls:[
+          {function:{name:'plan_item', arguments:{name:'Alpha', action:'remove', date:'tomorrow'}}},
+          {function:{name:'answer_items', arguments:{query:'list', kind:'habit'}}}
+        ]}};
+        return {message:{content:'Alpha had no one-day plan. Your habits are Alpha and Beta.'}};
+      }
+    });
+    const noOpTools = (noOp.debug || []).filter(row => row.t === 'tool').map(row => row.name);
+
+    const clarifySession = assistantCreateSession();
+    const c1 = assistantClarifyOutcome(clarifySession, {}, {required:true, question:'Which item?'});
+    const c2 = assistantClarifyOutcome(clarifySession, {}, {required:true, question:'Which item?'});
+    const c3 = assistantClarifyOutcome(clarifySession, {}, {required:true, question:'Which item?'});
+    return {
+      missingDelete:{ok:missingDelete.ok, ask:missingDelete.ask, pending:focused.pendingDelete && focused.pendingDelete.name},
+      missingLookup:{ok:missingLookup.ok, text:missingLookup.text},
+      writeType:writes.type,
+      writeActions:(writes.actions || []).map(action => ({kind:action.kind, name:action.pending && action.pending.name})),
+      alphaActual:alphaLogs.length,
+      betaPlans:betaPlans.length,
+      noOpType:noOp.type,
+      noOpText:noOp.text,
+      noOpTools,
+      clarify:[c1.type,c2.type,c3.type],
+      clarifyGaveUp:c3.gaveUp === true
+    };
+  });
+  assert(!compounds.missingDelete.ok && !compounds.missingDelete.pending && !compounds.missingLookup.ok,
+    'an explicit missing name never falls back to the focused item');
+  assert(compounds.writeType === 'actions'
+    && JSON.stringify(compounds.writeActions) === JSON.stringify([{kind:'complete',name:'Alpha'},{kind:'plan',name:'Beta'}]),
+    `two writes retain two confirmations: ${JSON.stringify(compounds.writeActions)}`);
+  assert(compounds.alphaActual === 1 && compounds.betaPlans === 1,
+    'each compound confirmation commits its own requested target');
+  assert(compounds.noOpType === 'say'
+    && compounds.noOpTools.includes('plan_item') && compounds.noOpTools.includes('answer_items')
+    && /Alpha and Beta/i.test(compounds.noOpText || ''),
+    'a no-op action does not discard the remaining queued clause');
+  assert(JSON.stringify(compounds.clarify) === JSON.stringify(['ask','ask','say']) && compounds.clarifyGaveUp,
+    'required clarification is also capped at two attempts');
 
   console.log('\n[L] use-AI-instead does not copy parser guesses into the model');
   const forceFacts = await page.evaluate(async () => {
@@ -1206,7 +1340,7 @@ async function launchBrowser(){
     };
   });
   assert(riskNoMerge.type === 'preview' && /contractor/i.test(riskNoMerge.name || ''), 'relative-date risk still drafts from the model');
-  assert(riskNoMerge.via === 'parser-risk' && riskNoMerge.risk === 'relative-date', 'two weeks is the relative-date route');
+  assert(riskNoMerge.via === 'model-only' && !riskNoMerge.risk, 'relative dates use the same model-only route');
   assert(riskNoMerge.dueKey === '2026-10-01' && riskNoMerge.duration == null, 'model due wins; parser minutes are not patched on');
 
   console.log('\n[S] settings create + weather propose on items');
@@ -1228,8 +1362,9 @@ async function launchBrowser(){
       locations:[]
     });
     save([]);
-    const llm = async () => { throw new Error('LLM should not run for barbecuing profile'); };
-    const local = await runAssistantTurn('Create a weather profile for barbecuing', { complete:llm });
+    const local = await runAssistantTurn('Create a weather profile for barbecuing', { complete:async () => ({
+      message:{thinking:'setting', tool_calls:[{function:{name:'draft_setting', arguments:{kind:'weather', name:'Barbecuing', weatherText:'not raining'}}}]}
+    }) });
     const script = [
       { message:{ thinking:'c', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_habit' } } }] } },
       { message:{ thinking:'d', tool_calls:[{ function:{ name:'draft_item', arguments:{
@@ -1286,7 +1421,7 @@ async function launchBrowser(){
   assert(settings.jsonSetting === 'draft_setting', 'kind weather JSON is a setting draft');
   assert(settings.habitIntent === 'create_habit', 'habit + weather conditions is create_habit');
   assert(settings.profileIntent === 'create_setting' && settings.profileKind === 'weather', 'weather profile for barbecuing is create_setting');
-  assert(settings.localType === 'preview' && settings.localKind === 'weather' && /barbecu/i.test(settings.localName || ''), 'barbecuing profile previews locally');
+  assert(settings.localType === 'preview' && settings.localKind === 'weather' && /barbecu/i.test(settings.localName || ''), 'barbecuing profile previews through the model tool');
   assert(settings.modelType === 'preview' && /barbecue/i.test(settings.modelName || ''), 'model habit+weatherText still previews');
   assert(settings.savedOk && settings.weatherId && settings.rainMax, 'saving the habit creates a covering weather profile');
   assert(settings.missOk && /picnic|windy|outdoor|calm/i.test(settings.picnicName || ''), 'unknown weatherProfile name still creates a profile');

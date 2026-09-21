@@ -103,11 +103,10 @@ function loadSortSettings(){
     const merged = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...migrated,preset:'todayFirst'};
     // v2 makes model-first routing the default for existing installs too. Once
     // the user changes the toggle, updateSortSetting persists this version and
-    // their explicit preference wins on later loads.
-    if(!Number.isFinite(Number(saved.localAssistantRoutingVersion)) || Number(saved.localAssistantRoutingVersion) < 2){
-      merged.localAssistantModelOnly = true;
-      merged.localAssistantRoutingVersion = 2;
-    }
+    // Natural-language routing is always model-first. Keep the persisted keys
+    // only so older backups continue to import cleanly.
+    merged.localAssistantModelOnly = true;
+    merged.localAssistantRoutingVersion = 3;
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
