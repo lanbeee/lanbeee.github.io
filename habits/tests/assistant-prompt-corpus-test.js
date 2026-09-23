@@ -707,7 +707,7 @@ function expectedDueKey(token){
             stream:false,
             think:true,
             keep_alive:'10m',
-            options:{temperature:0.1, num_predict:800},
+            options:{temperature:0.1, num_predict:assistantStepPredict('classify')},
             messages:[
               {role:'system', content:assistantSystemPrompt()},
               {role:'user', content:assistantUserEnvelope(row.prompt, catalog, null, assistantParseUtterance(row.prompt, catalog, Date.now()))}
@@ -722,11 +722,10 @@ function expectedDueKey(token){
         const body = await raw.json();
         const parsed = assistantParseReply(body);
         const call = parsed.toolCalls && parsed.toolCalls[0];
-        const guessed = assistantParseUtterance(row.prompt, catalog, Date.now());
         const rawIntent = call && call.name === 'classify_intent' && call.args && call.args.intent;
-        const intent = typeof assistantPreferIntent === 'function'
-          ? assistantPreferIntent(rawIntent, guessed)
-          : rawIntent;
+        // The model's own label. A parser rewrite must not turn a missing
+        // or unclear classification into a pass.
+        const intent = rawIntent || (call && call.name) || '';
         const direct = {
           answer_schedule:['ask_schedule','ask_today'],
           answer_weather:['ask_weather'],

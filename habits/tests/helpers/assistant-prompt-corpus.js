@@ -94,13 +94,13 @@ const ASSISTANT_PARSE_CASES = [
 
 const ASSISTANT_LIVE_CORE = [
   {prompt:'Create a 45 minute walk after sunset', intent:['create_task','create_habit']},
-  {prompt:"What's on today?", intent:['ask_today']},
+  {prompt:"What's on today?", intent:['ask_today','ask_schedule']},
   {prompt:'I already did Walk', intent:['complete_item']},
   {prompt:'When is Pharmacy?', intent:['lookup_item']},
   {prompt:'Add a daily stretch habit every morning', intent:['create_habit']},
   {prompt:'Remind me to call mom tomorrow', intent:['create_task']},
   {prompt:'Reschedule the whole week for me', intent:['unsupported']},
-  {prompt:'Do I have Walk today?', intent:['lookup_item','ask_today']}
+  {prompt:'Do I have Walk today?', intent:['lookup_item','ask_today','ask_schedule']}
 ];
 
 const ASSISTANT_LIVE_EXTRA = [

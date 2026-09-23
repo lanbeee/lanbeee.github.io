@@ -231,8 +231,10 @@ function assistantFocusMetaText(draft){
     const items = drafts.filter(row => row.kind === 'habit' || row.kind === 'task').length;
     const places = drafts.filter(row => row.kind === 'location').length;
     const bits = [];
+    const settingsCount = drafts.filter(row => row.kind === 'weather' || row.kind === 'busy' || row.kind === 'topic').length;
     if(items)bits.push(`${items} ${items === 1 ? 'item' : 'items'}`);
     if(places)bits.push(`${places} ${places === 1 ? 'place' : 'places'}`);
+    if(settingsCount)bits.push(`${settingsCount} ${settingsCount === 1 ? 'setting' : 'settings'}`);
     return `not saved yet · ${bits.join(', ')}`;
   }
   if(!draft)return '';
@@ -401,9 +403,11 @@ function assistantPreviewBody(text){
 function assistantBatchKicker(drafts){
   const items = (drafts || []).filter(row => row.kind === 'habit' || row.kind === 'task').length;
   const places = (drafts || []).filter(row => row.kind === 'location').length;
+  const settingsCount = (drafts || []).filter(row => row.kind === 'weather' || row.kind === 'busy' || row.kind === 'topic').length;
   const bits = [];
   if(items)bits.push(`${items} ${items === 1 ? 'item' : 'items'}`);
   if(places)bits.push(`${places} placeholder ${places === 1 ? 'place' : 'places'}`);
+  if(settingsCount)bits.push(`${settingsCount} ${settingsCount === 1 ? 'setting' : 'settings'}`);
   return bits.join(', ') || `${(drafts || []).length} drafts`;
 }
 

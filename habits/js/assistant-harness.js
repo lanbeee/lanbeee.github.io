@@ -9,7 +9,7 @@ function assistantSystemPrompt(){
     'PRIORITIES',
     '1. Call the final tool directly when you can. classify_intent is optional.',
     '2. Treat tool results as authoritative. Never invent or recalculate names, dates, times, totals, priorities, frequencies, history, weather, or schedule facts.',
-    '3. Handle every part of a compound request. Emit several tool calls when independent parts are clear; after results, call more tools if a part remains. On any read used to choose a later action, set purpose prepare_action; then finish with the requested draft or action tool.',
+    '3. Handle every part of a compound request. Emit several tool calls when independent parts are clear; after results, call more tools if a part remains. On any read used to choose a later action, set purpose prepare_action; then finish with the requested draft or action tool. A setting drafted in that same response is only staged, because it has not seen the result. After the result, call the action the user asked for. Do not invent a task or habit they did not ask for. If the staged setting is the whole action, call draft_setting again with the same name.',
     '4. If a saved-item name is missing or ambiguous, call find_item or ask_user. Never guess the item or create a replacement.',
     '',
     'READS AND ACTIONS',
@@ -21,8 +21,8 @@ function assistantSystemPrompt(){
     'currentDraft is the item being edited. “it”, “this”, and “that” refer to currentDraft, otherwise recent.referent when appropriate. A question about it uses lookup_item; done uses complete_item; plan/unplan uses plan_item; remove uses delete_item. A named saved place may update placeNames on the current item; do not turn it into a new item.',
     '',
     'GROUNDING',
-    'Resolve relative dates using catalog.date. sunset means maghrib. placeNames may contain only places the user named that exist in catalog.places; omit the field otherwise. recent contains the previous request, verified answer, items, and referent.',
-    'If the request is genuinely ambiguous, ask one short question. If tool JSON fails, retry with a smaller flat object.'
+    'Resolve relative dates using catalog.date. sunset means maghrib. placeNames may contain only places the user named that exist in catalog.places; omit the field otherwise. recent contains the previous request, verified answer, items, and referent. "those", "these", and "them" mean recent.items. Rank that list by repeating the same read with sortBy and position. Do not query every saved habit for a list you already returned.',
+    'If the request is genuinely ambiguous, ask one short question. A whole-week reschedule, deleting everything, or anything that is not one task, habit, setting, read, complete, plan, or delete is unsupported: call classify_intent with intent unsupported. Do not ask which item to move and do not answer that in prose. If tool JSON fails, retry with a smaller flat object.'
   ].join('\n');
 }
 
@@ -190,7 +190,7 @@ function assistantQueryListHint(){
 }
 
 function assistantFollowupSteerText(){
-  return 'recent is the previous turn in this chat (their last request, your last answer, the list you fetched, and recent.referent). This message may continue that thread or ask something else. Call whatever tools you still need — several tool calls are ok. "it" / "that" / "the one" is currentDraft or recent.referent. Do not guess names or numbers.';
+  return 'recent is the previous turn (their last request, your last answer, recent.items, and recent.referent). This message may continue that thread or ask something else. "it" / "that" / "the one" is currentDraft or recent.referent. "those" / "these" / "them" is recent.items from that turn, not every saved habit. To rank that list, call the same read again — answer_schedule with the same date or query — and set sortBy, sortOrder, and position. Do not call answer_items over the whole library for "those". Do not guess names or numbers.';
 }
 
 function assistantQueryContinueHint(){
@@ -199,6 +199,74 @@ function assistantQueryContinueHint(){
 
 function assistantWriteContinueHint(){
   return 'If they also asked a question, call the matching answer_schedule / answer_weather / answer_items / lookup_item tool now. If this was only the complete, plan, or delete request, do not call a tool.';
+}
+
+function assistantDraftKey(row){
+  const name = typeof assistantNormText === 'function'
+    ? assistantNormText(row && row.name)
+    : String(row && row.name || '').toLowerCase();
+  return `${row && row.kind || ''}:${name}`;
+}
+
+function assistantStageTurnDraft(session, draft){
+  if(!session || !draft || !draft.name)return;
+  const list = Array.isArray(session.turnDrafts) ? session.turnDrafts.slice() : [];
+  const key = assistantDraftKey(draft);
+  const idx = list.findIndex(row => assistantDraftKey(row) === key);
+  if(idx >= 0)list[idx] = draft;
+  else list.push(draft);
+  session.turnDrafts = list;
+}
+
+function assistantPublishTurnDrafts(session){
+  if(!session)return;
+  if(typeof assistantRelinkStagedWeather === 'function')assistantRelinkStagedWeather(session);
+  const staged = Array.isArray(session.turnDrafts) ? session.turnDrafts.filter(row => row && row.name) : [];
+  if(!staged.length)return;
+  const merged = [];
+  const index = new Map();
+  const add = (row, replace) => {
+    if(!row || !row.name)return;
+    const key = assistantDraftKey(row);
+    if(index.has(key)){
+      if(replace)merged[index.get(key)] = row;
+      return;
+    }
+    index.set(key, merged.length);
+    merged.push(row);
+  };
+  staged.forEach(row => add(row, true));
+  (Array.isArray(session.drafts) ? session.drafts : []).forEach(row => add(row, false));
+  if(merged.length > 1)session.drafts = merged;
+  session.draft = merged.find(row => row.kind === 'habit' || row.kind === 'task') || merged[merged.length - 1];
+}
+
+function assistantQueuedCreate(queuedCalls){
+  const next = Array.isArray(queuedCalls) ? queuedCalls[0] : null;
+  return Boolean(next && (next.name === 'draft_item' || next.name === 'draft_setting' || next.name === 'draft_batch'));
+}
+
+// A draft_setting emitted in the same response as a prepare_action read has
+// not seen that result, so it cannot be the action the read was preparing.
+// Keep the research open until a later item, batch, or write consumes it.
+function assistantActionClearsResearch(session, call){
+  if(!session || !session.researchPending || !call)return true;
+  return !(call.name === 'draft_setting' && session.researchPending.gen === session._responseGen);
+}
+
+function assistantDraftShouldContinue(session, call, queuedCalls){
+  if(!call || (call.name !== 'draft_item' && call.name !== 'draft_setting'))return false;
+  if(Array.isArray(queuedCalls) && queuedCalls.length)return true;
+  return Boolean(session && session.researchPending);
+}
+
+function assistantResultPreview(call, result, session, settings){
+  if(!result || !result.ok)return null;
+  const draftPreview = assistantDraftSummary(session && session.draft, settings) || null;
+  if(call && (call.name === 'draft_item' || call.name === 'draft_setting' || call.name === 'draft_batch')){
+    return draftPreview || result.text || result.summary || null;
+  }
+  return result.text || result.summary || null;
 }
 
 function assistantIsReadTool(name){
@@ -1388,6 +1456,8 @@ async function runAssistantTurn(userText, opts = {}){
   session.lastReadParts = [];
   session.answerAttempts = 0;
   session.researchPending = null;
+  session.turnDrafts = null;
+  session._responseGen = 0;
   session.executedToolKeys = [];
   session.pendingActions = [];
   session.chainWrite = null;
@@ -1533,6 +1603,7 @@ async function runAssistantTurn(userText, opts = {}){
         return done({type:'error', text:assistantFriendlyError(err), session});
       }
       queuedCalls = (parsed.toolCalls || []).slice();
+      session._responseGen = (session._responseGen || 0) + 1;
       session._replayed = null;
     }
     const allowed = new Set(assistantStepTools(step));
@@ -1586,6 +1657,15 @@ async function runAssistantTurn(userText, opts = {}){
     }
     const callKey = assistantToolCallKey(call);
     if((session.executedToolKeys || []).indexOf(callKey) >= 0){
+      // The model repeated a setting that was staged before it saw this
+      // research. That is the signal the setting is the action — do not
+      // invent a task or habit to consume the read.
+      if(call.name === 'draft_setting' && session.researchPending
+        && Array.isArray(session.turnDrafts) && session.turnDrafts.length){
+        session.researchPending = null;
+        assistantPublishTurnDrafts(session);
+        return done(assistantPreviewResult(session, context, parsed && parsed.thinking));
+      }
       if(queuedCalls.length)continue;
       if(assistantCanFinalize(session))return done(assistantFinalizeFromAnswer(session, parsed));
       if(session.repairs >= ASSISTANT_MAX_REPAIRS)return done(assistantPartialFailure(session));
@@ -1641,7 +1721,7 @@ async function runAssistantTurn(userText, opts = {}){
       ok:Boolean(result && result.ok),
       error:result && result.error || null,
       ask:result && result.ask || null,
-      preview:result && result.ok ? (assistantDraftSummary(session.draft, context.settings) || result.text || result.summary || null) : null
+      preview:assistantResultPreview(call, result, session, context.settings)
     });
     if(!result.ok){
       if(result.ask){
@@ -1678,8 +1758,8 @@ async function runAssistantTurn(userText, opts = {}){
     session.repairs = 0;
 
     if(assistantIsReadTool(call.name) && call.args && call.args.purpose === 'prepare_action'){
-      session.researchPending = {tool:call.name, args:call.args};
-    }else if(assistantIsActionTool(call.name)){
+      session.researchPending = {tool:call.name, args:call.args, gen:session._responseGen || 0};
+    }else if(assistantIsActionTool(call.name) && assistantActionClearsResearch(session, call)){
       session.researchPending = null;
     }
 
@@ -1887,6 +1967,49 @@ async function runAssistantTurn(userText, opts = {}){
       continue;
     }
 
+    if(call.name === 'draft_batch'){
+      (Array.isArray(session.drafts) ? session.drafts : []).forEach(row => assistantStageTurnDraft(session, row));
+      if(queuedCalls.length){
+        const stagedSummary = (session.drafts || []).map(row => assistantDraftSummary(row, context.settings)).filter(Boolean).join('\n');
+        if(assistantQueuedCreate(queuedCalls))session.draft = null;
+        assistantPushChainResult(session, parsed, {
+          ok:true,
+          preview:stagedSummary,
+          staged:true
+        });
+        continue;
+      }
+    }
+    if((call.name === 'draft_item' || call.name === 'draft_setting') && session.draft && session.draft.name){
+      assistantStageTurnDraft(session, session.draft);
+    }
+    const keepDrafting = assistantDraftShouldContinue(session, call, queuedCalls);
+    const draftNeedsAnswer = (call.name === 'draft_item' && result.ask && !session.bulk)
+      || Boolean(session.draft && session.draft.weatherNeedAsk);
+    if(keepDrafting && !draftNeedsAnswer){
+      const stagedSummary = assistantDraftSummary(session.draft, context.settings);
+      const stagedSetting = session.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind);
+      if(session.draft && (stagedSetting || assistantQueuedCreate(queuedCalls))){
+        session.draft = null;
+      }
+      assistantPushChainResult(session, parsed, queuedCalls.length ? {
+        ok:true,
+        preview:stagedSummary,
+        staged:true
+      } : {
+        ok:true,
+        preview:stagedSummary,
+        staged:true,
+        hint:'This draft is staged for the same confirmation. It has not seen the prepare_action result, so that research is still open. Call the action the user asked for, and use the research when that action depends on a day, time, or duration. If an item should use a staged weather profile, set weatherProfile to that profile name. Do not invent a task or habit they did not ask for. If this staged setting is the whole action, call draft_setting again with the same name.'
+      });
+      if(!queuedCalls.length){
+        session.analyzeList = true;
+        session.awaiting = 'answer';
+        step = 'answer';
+      }
+      continue;
+    }
+
     assistantPushToolResult(session, parsed, parsed.toolCalls, {ok:true, preview:assistantDraftSummary(session.draft, context.settings)});
 
     if(call.name === 'draft_item' && result.ask && !session.bulk){
@@ -1899,6 +2022,7 @@ async function runAssistantTurn(userText, opts = {}){
         session
       });
     }
+    assistantPublishTurnDrafts(session);
     if(call.name === 'draft_batch' || (Array.isArray(session.drafts) && session.drafts.length > 1)){
       return done(assistantPreviewResult(session, context, parsed.thinking));
     }

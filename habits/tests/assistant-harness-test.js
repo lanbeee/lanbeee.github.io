@@ -599,6 +599,14 @@ async function launchBrowser(){
       ollamaLow:ollama('low').think,
       ollamaLowRetry:assistantOllamaBody({messages:[], step:'extract'}, 'qwen3.8:27b-mlx', {reasoning:'low', plainThink:true}).think,
       ollamaOff:ollama('off').think,
+      ollamaToolArgs:assistantOllamaBody({
+        messages:[
+          {role:'user', content:'What did I miss?'},
+          {role:'assistant', content:'', tool_calls:[{id:'call_0', type:'function', function:{name:'answer_schedule', arguments:'{"query":"missed"}'}}]},
+          {role:'tool', content:'Missed: Take meds.'}
+        ],
+        step:'answer'
+      }, 'qwen3.8:27b-mlx', {reasoning:'high'}).messages.slice(1),
       defaultLevel:normalizeLocalAssistantReasoning(undefined),
       coerced:normalizeLocalAssistantReasoning('deep'),
       glmContext:assistantGuessContextLimit('glm-5.3-flash')
@@ -615,6 +623,10 @@ async function launchBrowser(){
   assert(reasoning.lmFull.chat_template_kwargs.enable_thinking === true && !reasoning.lmFull.reasoning_effort, 'LM Studio at full depth keeps its template hook only');
   assert(reasoning.lmOff.chat_template_kwargs.enable_thinking === false && reasoning.lmOff.reasoning_effort === 'none', 'off disables thinking on an OpenAI-compatible server');
   assert(reasoning.ollamaFull === true && reasoning.ollamaLow === 'low' && reasoning.ollamaOff === false, 'Ollama gets a boolean or a thinking level');
+  assert(reasoning.ollamaToolArgs
+    && reasoning.ollamaToolArgs[0].tool_calls[0].function.arguments.query === 'missed'
+    && reasoning.ollamaToolArgs[1].tool_name === 'answer_schedule',
+    'Ollama replays tool arguments as objects so the next turn is accepted');
   assert(reasoning.ollamaLowRetry === true, 'a model without thinking levels is retried with plain thinking');
   assert(reasoning.glmContext === 1000000, 'GLM 5.3 context window is not guessed at 128k');
 
@@ -1388,6 +1400,219 @@ async function launchBrowser(){
     && researchedCreate.abandonedCalls === 4
     && !/^Tuesday is the freest day\.?$/i.test(researchedCreate.abandonedText || ''),
     'model prose cannot close a request while prepare_action research is still pending');
+
+  console.log('\n[K4] a weather profile staged beside research still drafts the habit');
+  const stagedProfile = await page.evaluate(async () => {
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      weatherProfiles:[],
+      locations:[]
+    });
+    save([]);
+    const context = assistantBuildContext();
+    let pass = 0;
+    const out = await runAssistantTurn('I want a weekly barbecue. Select the best time, create the best weather profile, and choose a duration', {
+      context,
+      complete:async () => {
+        pass += 1;
+        if(pass === 1)return {message:{thinking:'stage the profile, then use freest day', tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'freest', purpose:'prepare_action'}}},
+          {function:{name:'draft_setting', arguments:{kind:'weather', name:'Barbecuing', weatherText:'not raining, wind under 15mph'}}}
+        ]}};
+        return {message:{thinking:'draft the habit with the staged profile', tool_calls:[
+          {function:{name:'draft_item', arguments:{
+            kind:'habit',
+            name:'Barbecue',
+            weekdays:['Sunday'],
+            durationMinutes:180,
+            windowText:'between 4pm and 8pm',
+            weatherProfile:'Barbecuing'
+          }}}
+        ]}};
+      }
+    });
+    const tools = (out.debug || []).filter(row => row.t === 'tool').map(row => row.name);
+    const readPreview = ((out.debug || []).find(row => row.t === 'result' && row.name === 'answer_schedule') || {}).preview || '';
+    const drafts = Array.isArray(out.drafts) ? out.drafts : [];
+    const habit = drafts.find(row => row && row.kind === 'habit') || out.draft;
+    const profile = drafts.find(row => row && row.kind === 'weather');
+    const saved = drafts.length > 1 ? assistantCommitDrafts(drafts) : {ok:false};
+    const settings = loadSortSettings();
+    const data = load();
+    const savedHabit = data.find(row => row && /barbecue/i.test(row.name || ''));
+    const savedProfile = (settings.weatherProfiles || []).find(row => row && /barbecu/i.test(row.name || ''));
+
+    let later = 0;
+    const afterResearch = await runAssistantTurn('Find the freest day and create a weather profile called Weekend', {
+      context,
+      complete:async () => {
+        later += 1;
+        if(later === 1)return {message:{tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'freest', purpose:'prepare_action'}}}
+        ]}};
+        return {message:{tool_calls:[
+          {function:{name:'draft_setting', arguments:{kind:'weather', name:'Weekend', weatherText:'not raining'}}}
+        ]}};
+      }
+    });
+
+    const together = await runAssistantTurn('Add a weekly cookout and a grilling weather profile', {
+      context,
+      complete:async () => ({message:{tool_calls:[
+        {function:{name:'draft_setting', arguments:{kind:'weather', name:'Grilling', weatherText:'not raining'}}},
+        {function:{name:'draft_item', arguments:{
+          kind:'habit', name:'Cookout', weekdays:['Saturday'], durationMinutes:120, weatherProfile:'Grilling'
+        }}}
+      ]}})
+    });
+    const togetherDrafts = Array.isArray(together.drafts) ? together.drafts : [];
+    return {
+      type:out.type,
+      calls:pass,
+      tools,
+      readPreview,
+      draftCount:drafts.length,
+      habitName:habit && habit.name,
+      duration:habit && habit.durationMinutes,
+      weekdays:habit && habit.allowedWeekdays,
+      weatherName:habit && habit.weather && habit.weather.name,
+      profileName:profile && profile.name,
+      savedOk:saved.ok === true,
+      profileCount:(settings.weatherProfiles || []).length,
+      habitCount:data.length,
+      linked:Boolean(savedHabit && savedProfile && savedHabit.weatherProfileId === savedProfile.id),
+      laterType:afterResearch.type,
+      laterKind:afterResearch.draft && afterResearch.draft.kind,
+      laterCalls:later,
+      laterCount:Array.isArray(afterResearch.drafts) ? afterResearch.drafts.length : (afterResearch.draft ? 1 : 0),
+      togetherType:together.type,
+      togetherCalls:1,
+      togetherNames:togetherDrafts.map(row => row && row.kind + ':' + row.name)
+    };
+  });
+  assert(stagedProfile.type === 'preview'
+    && stagedProfile.calls === 2
+    && stagedProfile.tools.includes('answer_schedule')
+    && stagedProfile.tools.includes('draft_setting')
+    && stagedProfile.tools.includes('draft_item')
+    && stagedProfile.draftCount === 2
+    && stagedProfile.habitName === 'Barbecue'
+    && stagedProfile.profileName === 'Barbecuing'
+    && stagedProfile.duration === 180
+    && JSON.stringify(stagedProfile.weekdays) === JSON.stringify([0])
+    && stagedProfile.weatherName === 'Barbecuing',
+    `research plus a weather profile still drafts the habit in one confirmation: ${JSON.stringify(stagedProfile)}`);
+  assert(!/weather profile/i.test(stagedProfile.readPreview || ''),
+    'a schedule read keeps its own result text while a draft is staged');
+  assert(stagedProfile.savedOk && stagedProfile.linked && stagedProfile.habitCount === 1 && stagedProfile.profileCount === 1,
+    'saving the confirmation writes the profile once and attaches it to the habit');
+  assert(stagedProfile.laterType === 'preview'
+    && stagedProfile.laterKind === 'weather'
+    && stagedProfile.laterCalls === 2
+    && stagedProfile.laterCount === 1,
+    'a setting drafted after the research result still finishes that request');
+  assert(stagedProfile.togetherType === 'preview'
+    && JSON.stringify(stagedProfile.togetherNames) === JSON.stringify(['weather:Grilling', 'habit:Cookout']),
+    `sibling setting and habit drafts stay in one preview: ${JSON.stringify(stagedProfile.togetherNames)}`);
+
+  console.log('\n[K5] staged settings do not become the next habit, and a repeated setting stays a setting');
+  const stagedEdges = await page.evaluate(async () => {
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      weatherProfiles:[],
+      locations:[]
+    });
+    save([]);
+    const context = assistantBuildContext();
+    let before = 0;
+    const profileFirst = await runAssistantTurn('Create a grilling profile, check the freest day, then add a weekly barbecue', {
+      context,
+      complete:async () => {
+        before += 1;
+        if(before === 1)return {message:{tool_calls:[
+          {function:{name:'draft_setting', arguments:{kind:'weather', name:'Barbecuing', weatherText:'not raining'}}},
+          {function:{name:'answer_schedule', arguments:{query:'freest', purpose:'prepare_action'}}}
+        ]}};
+        return {message:{tool_calls:[
+          {function:{name:'draft_item', arguments:{
+            kind:'habit', name:'Barbecue', weekdays:['Sunday'], durationMinutes:180, weatherProfile:'Barbecuing'
+          }}}
+        ]}};
+      }
+    });
+    const profileFirstDrafts = Array.isArray(profileFirst.drafts) ? profileFirst.drafts : [];
+
+    const siblings = await runAssistantTurn('Add Walk and Cook', {
+      context,
+      complete:async () => ({message:{tool_calls:[
+        {function:{name:'draft_item', arguments:{kind:'habit', name:'Walk', weekdays:['Monday'], durationMinutes:30}}},
+        {function:{name:'draft_item', arguments:{kind:'habit', name:'Cook', weekdays:['Tuesday'], durationMinutes:45}}}
+      ]}})
+    });
+    const siblingDrafts = Array.isArray(siblings.drafts) ? siblings.drafts : [];
+
+    const batched = await runAssistantTurn('Add a grilling profile and two weekend habits', {
+      context,
+      complete:async () => ({message:{tool_calls:[
+        {function:{name:'draft_setting', arguments:{kind:'weather', name:'Grilling', weatherText:'not raining'}}},
+        {function:{name:'draft_batch', arguments:{items:[
+          {kind:'habit', name:'Cookout', weekdays:['Saturday'], durationMinutes:120, weatherProfile:'Grilling'},
+          {kind:'habit', name:'Swim', weekdays:['Sunday'], durationMinutes:40, weatherProfile:'Grilling'}
+        ]}}}
+      ]}})
+    });
+    const batchDrafts = Array.isArray(batched.drafts) ? batched.drafts : [];
+
+    let repeat = 0;
+    const settingOnly = await runAssistantTurn('Find the freest day and create a weather profile called Weekend', {
+      context,
+      complete:async () => {
+        repeat += 1;
+        const call = {function:{name:'draft_setting', arguments:{kind:'weather', name:'Weekend', weatherText:'not raining'}}};
+        if(repeat === 1)return {message:{tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'freest', purpose:'prepare_action'}}},
+          call
+        ]}};
+        return {message:{tool_calls:[call]}};
+      }
+    });
+    const settingDrafts = Array.isArray(settingOnly.drafts) ? settingOnly.drafts : [];
+    return {
+      profileFirstType:profileFirst.type,
+      profileFirstNames:profileFirstDrafts.map(row => row && row.kind + ':' + row.name),
+      profileFirstHabit:profileFirstDrafts.find(row => row && row.kind === 'habit'),
+      siblingType:siblings.type,
+      siblingNames:siblingDrafts.map(row => row && row.name),
+      batchType:batched.type,
+      batchNames:batchDrafts.map(row => row && row.kind + ':' + row.name),
+      batchWeather:(batchDrafts.find(row => row && row.name === 'Cookout') || {}).weather,
+      settingType:settingOnly.type,
+      settingKind:settingOnly.draft && settingOnly.draft.kind,
+      settingNames:settingDrafts.map(row => row && row.kind + ':' + row.name),
+      settingCalls:repeat
+    };
+  });
+  const profileHabit = stagedEdges.profileFirstHabit || {};
+  assert(stagedEdges.profileFirstType === 'preview'
+    && JSON.stringify(stagedEdges.profileFirstNames) === JSON.stringify(['weather:Barbecuing', 'habit:Barbecue'])
+    && profileHabit.name === 'Barbecue'
+    && profileHabit.kind === 'habit'
+    && profileHabit.weather && profileHabit.weather.name === 'Barbecuing',
+    `a profile drafted before the research does not become the habit: ${JSON.stringify(stagedEdges.profileFirstNames)}`);
+  assert(stagedEdges.siblingType === 'preview'
+    && JSON.stringify(stagedEdges.siblingNames) === JSON.stringify(['Walk', 'Cook']),
+    `sibling habits stay separate drafts: ${JSON.stringify(stagedEdges.siblingNames)}`);
+  assert(stagedEdges.batchType === 'preview'
+    && JSON.stringify(stagedEdges.batchNames) === JSON.stringify(['weather:Grilling', 'habit:Cookout', 'habit:Swim'])
+    && stagedEdges.batchWeather && stagedEdges.batchWeather.name === 'Grilling',
+    `a staged profile survives a habit batch: ${JSON.stringify(stagedEdges.batchNames)}`);
+  assert(stagedEdges.settingType === 'preview'
+    && stagedEdges.settingKind === 'weather'
+    && stagedEdges.settingCalls === 2
+    && JSON.stringify(stagedEdges.settingNames) === JSON.stringify(['weather:Weekend']),
+    `repeating the staged setting finishes that request without inventing a habit: ${JSON.stringify(stagedEdges.settingNames)}`);
 
   console.log('\n[L] use-AI-instead does not copy parser guesses into the model');
   const forceFacts = await page.evaluate(async () => {

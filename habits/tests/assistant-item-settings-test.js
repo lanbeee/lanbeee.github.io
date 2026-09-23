@@ -49,6 +49,7 @@ async function launchBrowser(){
     check('bool false/off', assistantParseBool('no') === false && assistantParseBool('off') === false);
     check('bool garbage', assistantParseBool('maybe') == null);
     check('habitKind build/limit/stop', assistantParseHabitKind('build') === 'keepup' && assistantParseHabitKind('limit') === 'reduce' && assistantParseHabitKind('stop') === 'zero');
+    check('habitKind schema pairs', assistantParseHabitKind('keepup/build') === 'keepup' && assistantParseHabitKind('reduce/limit') === 'reduce' && assistantParseHabitKind('zero/stop') === 'zero');
     check('habitKind garbage', assistantParseHabitKind('chore') == null);
     check('month days 1, 15', JSON.stringify(assistantParseMonthDays('1, 15')) === JSON.stringify([1,15]));
     check('month days the 1st', JSON.stringify(assistantParseMonthDays('the 1st')) === JSON.stringify([1]));

@@ -251,10 +251,15 @@ function assistantParseBool(value){
 
 function assistantParseHabitKind(value){
   if(value == null || value === '')return null;
-  const s = assistantNormText(value);
-  if(/^(keepup|build|building)$/.test(s))return 'keepup';
-  if(/^(reduce|limit|limiting)$/.test(s))return 'reduce';
-  if(/^(zero|stop|stopping)$/.test(s))return 'zero';
+  // The draft_item schema documents the slash pairs the model copies
+  // ("keepup/build", "reduce/limit", "zero/stop"). Take the first known word.
+  const tokens = assistantNormText(value).split(/[^a-z]+/).filter(Boolean);
+  for(let i = 0; i < tokens.length; i += 1){
+    const token = tokens[i];
+    if(/^(keepup|build|building)$/.test(token))return 'keepup';
+    if(/^(reduce|limit|limiting)$/.test(token))return 'reduce';
+    if(/^(zero|stop|stopping)$/.test(token))return 'zero';
+  }
   return null;
 }
 

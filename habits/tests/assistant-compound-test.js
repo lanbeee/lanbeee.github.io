@@ -602,6 +602,7 @@ function checkTurn(spec, got, label){
       function summarize(out){
         const debug = (out && out.debug) || [];
         const tools = debug.filter(row => row.t === 'tool').map(row => row.name);
+        const toolArgs = debug.filter(row => row.t === 'tool').map(row => ({name:row.name, args:row.args}));
         const steps = debug.filter(row => row.t === 'step').map(row => row.step);
         let recent = null;
         const msgs = (out.session && out.session.messages) || [];
@@ -623,6 +624,7 @@ function checkTurn(spec, got, label){
           text:out.text || out.summary || out.question || '',
           alsoText:out.alsoText || '',
           tools,
+          toolArgs,
           steps,
           llmCalls:out.session && out.session.llmCalls,
           recent,

@@ -1141,7 +1141,11 @@ function assistantNormalizeDraftArgs(args, now){
 }
 
 function assistantResolveDraftBase(args, session, context){
-  const current = session && session.draft && session.draft.name ? session.draft : null;
+  let current = session && session.draft && session.draft.name ? session.draft : null;
+  if(current && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(current.kind)
+    && !(args && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(args.kind))){
+    current = null;
+  }
   const spoken = String(args && args.name || '').trim();
   const want = spoken;
   if(current && (!want || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))
@@ -3136,22 +3140,85 @@ function assistantApplyDraftBatch(args, session, context){
   return {ok:true, drafts, draft:session.draft};
 }
 
+function assistantLinkStagedWeather(session, draft){
+  if(!session || !draft || draft.kind === 'weather')return draft;
+  const wanted = String(
+    (draft.weather && draft.weather.name)
+    || (draft.weatherProposed && draft.weatherProposed.name)
+    || ''
+  ).trim();
+  if(!wanted)return draft;
+  if(draft.weather && draft.weather.profileId && !draft.weather.pending)return draft;
+  const pool = []
+    .concat(Array.isArray(session.turnDrafts) ? session.turnDrafts : [])
+    .concat(Array.isArray(session.drafts) ? session.drafts : []);
+  const staged = pool.find(row => row && row.kind === 'weather' && row.weatherProposed
+    && typeof assistantNamesMatch === 'function' && assistantNamesMatch(row.name, wanted));
+  if(!staged)return draft;
+  const proposed = staged.weatherProposed || {};
+  draft.weatherProposed = {
+    name:staged.name,
+    rules:Array.isArray(proposed.rules) ? proposed.rules.map(rule => Object.assign({}, rule)) : [],
+    hints:proposed.hints || {}
+  };
+  draft.weather = {
+    mode:'profile',
+    profileId:staged.settingId || null,
+    name:staged.name,
+    pending:!staged.settingId
+  };
+  draft.weatherNeedAsk = null;
+  return draft;
+}
+
+function assistantRelinkStagedWeather(session){
+  if(!session)return;
+  const rows = []
+    .concat(Array.isArray(session.turnDrafts) ? session.turnDrafts : [])
+    .concat(Array.isArray(session.drafts) ? session.drafts : []);
+  rows.forEach(row => {
+    if(row && row.kind !== 'weather')assistantLinkStagedWeather(session, row);
+  });
+}
+
+function assistantBindSavedWeather(item){
+  if(!item || item.kind === 'weather' || !item.weather || !item.weather.name)return item;
+  if(item.weather.profileId && !item.weather.pending)return item;
+  const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+  const found = typeof assistantFindWeatherProfile === 'function'
+    ? assistantFindWeatherProfile(item.weather.name, null, settings, null)
+    : null;
+  if(!found)return item;
+  item.weather = {mode:'profile', profileId:found.id, name:found.name};
+  item.weatherProposed = null;
+  item.weatherNeedAsk = null;
+  return item;
+}
+
 function assistantCommitDrafts(drafts){
   const rows = Array.isArray(drafts) ? drafts.filter(Boolean) : [];
   if(!rows.length)return {ok:false, error:'empty draft'};
   if(rows.length === 1)return assistantCommitDraft(rows[0]);
   const places = rows.filter(row => row.kind === 'location');
   const items = rows.filter(row => row.kind === 'habit' || row.kind === 'task');
-  const others = rows.filter(row => row.kind !== 'location' && row.kind !== 'habit' && row.kind !== 'task');
+  const settingsRows = rows.filter(row => row.kind === 'weather' || row.kind === 'busy' || row.kind === 'topic');
+  const others = rows.filter(row => row.kind !== 'location' && row.kind !== 'habit' && row.kind !== 'task'
+    && row.kind !== 'weather' && row.kind !== 'busy' && row.kind !== 'topic');
   const saved = [];
   for(const place of places){
     const result = assistantCommitDraft(place);
     if(!result.ok)return result;
     saved.push(result);
   }
+  for(const setting of settingsRows){
+    const result = assistantCommitDraft(setting);
+    if(!result.ok)return result;
+    saved.push(result);
+  }
   const context = typeof assistantBuildContext === 'function' ? assistantBuildContext() : null;
   const catalog = context && context.catalog;
   for(const item of items){
+    assistantBindSavedWeather(item);
     if(item.places && Array.isArray(item.places.names) && item.places.names.length && catalog){
       const applied = assistantApplyPlace(item, {names:item.places.names, anywhere:Boolean(item.places.anywhere)}, catalog);
       if(applied.ok)Object.assign(item, applied.draft);
@@ -3214,13 +3281,25 @@ function assistantExecuteTool(name, args, session, context){
     const asSetting = name === 'draft_setting'
       || (typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(nextArgs.kind))
       || (session.intent === 'create_setting' && !(typeof assistantIsItemKind === 'function' && assistantIsItemKind(nextArgs.kind)))
-      || (session.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind)
+      || (name !== 'draft_item' && session.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind)
         && !(typeof assistantIsItemKind === 'function' && assistantIsItemKind(nextArgs.kind)));
     if(asSetting){
-      if(!nextArgs.kind && session.draft && assistantIsSettingKind(session.draft.kind))nextArgs.kind = session.draft.kind;
+      let base = session.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(session.draft.kind)
+        ? session.draft
+        : null;
+      if(!base && nextArgs.name){
+        const pool = []
+          .concat(Array.isArray(session.turnDrafts) ? session.turnDrafts : [])
+          .concat(Array.isArray(session.drafts) ? session.drafts : []);
+        base = pool.find(row => row && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(row.kind)
+          && (!nextArgs.kind || row.kind === nextArgs.kind)
+          && typeof assistantNamesMatch === 'function' && assistantNamesMatch(row.name, nextArgs.name)) || null;
+      }
+      if(!nextArgs.kind && base && assistantIsSettingKind(base.kind))nextArgs.kind = base.kind;
+      else if(!nextArgs.kind && session.draft && assistantIsSettingKind(session.draft.kind))nextArgs.kind = session.draft.kind;
       const applied = assistantApplyDraftSetting(
         nextArgs,
-        session.draft,
+        base || session.draft,
         catalog,
         context.now,
         context.settings,
@@ -3252,7 +3331,10 @@ function assistantExecuteTool(name, args, session, context){
         settings:context.settings
       }
     );
-    if(applied.draft)session.draft = applied.draft;
+    if(applied.draft){
+      session.draft = applied.draft;
+      assistantLinkStagedWeather(session, applied.draft);
+    }
     return applied;
   }
   if(name === 'set_window'){

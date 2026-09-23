@@ -233,6 +233,54 @@ async function assistantListModels(force){
   return found;
 }
 
+function assistantOllamaArguments(value){
+  if(value && typeof value === 'object' && !Array.isArray(value))return value;
+  if(typeof value === 'string'){
+    const text = value.trim();
+    if(!text)return {};
+    try{
+      const parsed = JSON.parse(text);
+      if(parsed && typeof parsed === 'object' && !Array.isArray(parsed))return parsed;
+    }catch(_){}
+  }
+  return {};
+}
+
+// Ollama's native chat API parses tool-call arguments as objects. Replaying
+// the OpenAI string form makes the next turn fail with
+// "Value looks like object, but can't find closing '}' symbol".
+function assistantOllamaMessages(messages){
+  const rows = Array.isArray(messages) ? messages : [];
+  let pendingNames = [];
+  return rows.map(msg => {
+    if(!msg || typeof msg !== 'object')return msg;
+    if(msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length){
+      pendingNames = [];
+      const tool_calls = msg.tool_calls.map(call => {
+        const fn = call && call.function && typeof call.function === 'object' ? call.function : {};
+        const name = String(fn.name || call.name || '');
+        if(name)pendingNames.push(name);
+        const next = {
+          type:call.type || 'function',
+          function:{
+            name,
+            arguments:assistantOllamaArguments(fn.arguments != null ? fn.arguments : call.arguments)
+          }
+        };
+        if(call.id)next.id = call.id;
+        return next;
+      });
+      return Object.assign({}, msg, {tool_calls});
+    }
+    if(msg.role === 'tool'){
+      const name = msg.tool_name || msg.name || pendingNames.shift() || '';
+      if(!name || msg.tool_name)return msg;
+      return Object.assign({}, msg, {tool_name:name});
+    }
+    return msg;
+  });
+}
+
 function assistantOllamaBody(req, model, opts){
   const level = normalizeLocalAssistantReasoning(opts && opts.reasoning);
   // Ollama takes a boolean, or a level for the models that expose one. A model
@@ -245,7 +293,7 @@ function assistantOllamaBody(req, model, opts){
     stream:true,
     think,
     keep_alive:'10m',
-    messages:req.messages,
+    messages:assistantOllamaMessages(req.messages),
     options:{
       temperature:req.temperature != null ? req.temperature : (req.step === 'classify' ? 0.1 : 0.2),
       num_predict:req.maxPredict || (ASSISTANT_THINK_TOKENS + ASSISTANT_TOOL_TOKENS)
