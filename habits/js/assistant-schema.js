@@ -301,16 +301,35 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_weather:{
-    description:'Answer a weather question from the real forecast — Tings computes it, never guess weather. query day = "what is the weather tomorrow". query window = "will it rain Thursday 5 to 6 pm" (start and end required). query item = "should I run today given the weather" (name required).',
+    description:'Answer from the real forecast. Tings computes every number and time. query day = a date. query window = a span; omit end for the rest of the day. query hours = which time matches. Lowest wind after 5pm = query hours, start 5pm, sortBy wind, sortOrder asc, position 1. Relatively hot with very low wind = conditions temperature relative high AND wind relative very_low. query item = weather fit for a saved item; pass start even when it is not already planned ("Badminton after 5pm"). query compare = two times (start vs compareStart), such as 5pm vs 1 hour before sunset, with name when a habit’s rules should decide.',
     parameters:{
       type:'object',
       required:['query'],
       properties:{
-        query:{type:'string', enum:['day','window','item']},
+        query:{type:'string', enum:['day','window','item','hours','compare']},
         date:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD. Default today'},
-        start:{type:['string','null'], description:'window start: 5pm or 17:00'},
-        end:{type:['string','null'], description:'window end: 6pm or 18:00'},
-        name:{type:['string','null'], description:'existing item for query item'},
+        start:{type:['string','null'], description:'5pm, 17:00, sunset, or 1 hour before sunset. For after 5pm, set start and omit end'},
+        end:{type:['string','null'], description:'6pm, 18:00, or sunset. Omit for the rest of the day'},
+        compareStart:{type:['string','null'], description:'Second moment for query compare: 7pm or 1 hour before sunset'},
+        name:{type:['string','null'], description:'Saved item for query item or compare'},
+        durationMinutes:{type:['integer','null'], description:'Session length when scoring a habit. Defaults to the item duration or 60'},
+        conditions:{
+          type:['array','null'],
+          description:'AND filters for query hours. metric is temperature, feels, rain, wind, gusts, or uv. Absolute: op gte/lte/gt/lt/eq and value in the display unit. Relative: relative high, low, very_high, or very_low.',
+          items:{
+            type:'object',
+            properties:{
+              metric:{type:'string'},
+              op:{type:['string','null']},
+              value:{type:['number','string','null']},
+              relative:{type:['string','null']}
+            }
+          }
+        },
+        sortBy:{type:['string','null'], description:'temperature, feels, rain, wind, gusts, or uv'},
+        sortOrder:{type:['string','null'], enum:['asc','desc',null], description:'asc = lowest/coolest/driest. desc = highest/warmest/wettest'},
+        position:{type:['integer','null'], description:'1-based hour after sorting. 1 is the best match'},
+        limit:{type:['integer','null'], description:'How many matching hours to list'},
         purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }

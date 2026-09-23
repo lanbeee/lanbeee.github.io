@@ -13,7 +13,7 @@ function assistantSystemPrompt(){
     '4. If a saved-item name is missing or ambiguous, call find_item or ask_user. Never guess the item or create a replacement.',
     '',
     'READS AND ACTIONS',
-    'Use answer_schedule for agendas, missed items, free time, freest day, open windows, and what-if conflicts. Use answer_items for questions across saved tasks/habits. For arbitrary filters, rankings, ordinals, counts, or duration math, put the whole operation in conditions + sortBy/sortOrder + position/limit + aggregate; Tings must compute it. Example: second most overdue missed = answer_schedule query missed, sortBy overdue_days, sortOrder desc, position 2. Importance is P0-P5 (lower is more important); urgency is the app attention score (higher is more urgent). Use answer_weather for forecast facts and weather fit, answer_settings for saved configuration, and lookup_item for one item’s next time, last completion, history, stats, or planner reason.',
+    'Use answer_schedule for agendas, missed items, free time, freest day, open windows, and what-if conflicts. Use answer_items for questions across saved tasks/habits. For arbitrary filters, rankings, ordinals, counts, or duration math, put the whole operation in conditions + sortBy/sortOrder + position/limit + aggregate; Tings must compute it. Example: second most overdue missed = answer_schedule query missed, sortBy overdue_days, sortOrder desc, position 2. Importance is P0-P5 (lower is more important); urgency is the app attention score (higher is more urgent). Use answer_weather for forecast facts and weather fit. query hours finds the time: lowest wind after 5pm is sortBy wind, sortOrder asc, position 1; relatively hot with very low wind is conditions on temperature and wind. query compare scores two times, including 1 hour before sunset, and can use a habit weather profile. query item with start checks that habit in the window even when it is not already planned. Use answer_settings for saved configuration, and lookup_item for one item’s next time, last completion, history, stats, or planner reason.',
     'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove an item. These tools preview changes for confirmation.',
     '',
     'CREATION AND EDITING',
@@ -290,8 +290,15 @@ function assistantIsActionTool(name){
 function assistantReadCallIsTerminal(call, result){
   if(!call || !result || !result.ok)return false;
   if(call.args && call.args.purpose === 'prepare_action')return false;
-  if(call.name !== 'answer_schedule' && call.name !== 'answer_items')return false;
   const args = call.args || {};
+  if(call.name === 'answer_weather'){
+    const query = String(args.query || '').toLowerCase();
+    return query === 'hours' || query === 'compare'
+      || Boolean(args.sortBy || args.position || args.compareStart
+        || (Array.isArray(args.conditions) && args.conditions.length)
+        || (query === 'item' && (args.start || args.end)));
+  }
+  if(call.name !== 'answer_schedule' && call.name !== 'answer_items')return false;
   return Boolean(
     args.select || args.sortBy || args.position || args.aggregate
     || args.limit || (Array.isArray(args.conditions) && args.conditions.length)
@@ -1796,7 +1803,7 @@ async function runAssistantTurn(userText, opts = {}){
         // answer from live plan + forecast data. Never guessed by the model.
         step = 'query';
         session.messages.push({role:'user', content:intent === 'ask_weather'
-          ? 'Call answer_weather. query day = forecast for a date, query window = a time window (start and end clocks), query item = check the weather against a named item. Resolve "tomorrow" and weekday names against catalog.date yourself.'
+          ? 'Call answer_weather. query day = a date. query window = a span; omit end for the rest of the day. query hours = which time matches: sortBy wind, sortOrder asc, position 1 is lowest wind; conditions AND together, for example temperature relative high and wind relative very_low. query item = a saved item’s weather fit; include start for "after 5pm" even if it is not planned. query compare = start versus compareStart, such as 5pm versus 1 hour before sunset, with name when the habit’s rules should decide. Resolve dates against catalog.date.'
           : intent === 'ask_schedule' || intent === 'ask_today'
             ? 'Call answer_schedule. query free = open time, freest = freest week day, conflict = what a start/end window displaces, missed = today’s missed-pill list, day = a day agenda, week = overview. Put every requested filter/rank/ordinal/count into conditions + sortBy/sortOrder + position/limit + aggregate so Tings computes it. Example: second most overdue missed = query missed, sortBy overdue_days, sortOrder desc, position 2. If they asked several independent things, call a tool for each. Use lookup_item only for history/stats/why. Resolve dates against catalog.date.'
             : intent === 'ask_items'

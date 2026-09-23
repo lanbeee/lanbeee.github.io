@@ -901,6 +901,93 @@ async function launchBrowser(){
   assert(/forecast/i.test(weatherHandlers.dry) && !/Test City/.test(weatherHandlers.dry),
     'empty cache answers honestly instead of inventing weather');
 
+  console.log('\n[handlers] hourly conditions, habit window, and time comparison');
+  const weatherDetail = await page.evaluate(async () => {
+    const now = Date.now();
+    const base = dayStart(now);
+    const bucket = JSON.parse(JSON.stringify(globalThis.__queryTestWeatherBucket));
+    const byHour = {
+      17:{temperature_2m:15, wind_speed_10m:20, precipitation_probability:90, weather_code:61},
+      18:{temperature_2m:22, wind_speed_10m:18, precipitation_probability:40, weather_code:2},
+      19:{temperature_2m:28, wind_speed_10m:4, precipitation_probability:5, weather_code:0},
+      20:{temperature_2m:24, wind_speed_10m:8, precipitation_probability:5, weather_code:1},
+      21:{temperature_2m:18, wind_speed_10m:6, precipitation_probability:10, weather_code:2},
+      22:{temperature_2m:16, wind_speed_10m:12, precipitation_probability:10, weather_code:2}
+    };
+    for(const sample of bucket.weekly.samples){
+      const hour = Math.round((sample.ts - base) / 3600000);
+      if(byHour[hour])Object.assign(sample, byHour[hour], {apparent_temperature:byHour[hour].temperature_2m});
+    }
+    bucket.weekly.fetchedAt = now - 600000;
+    weatherCacheWrite(bucket);
+    loadSortSettings();
+    const context = assistantBuildContext();
+    const lowest = assistantAnswerWeather({query:'hours', date:'today', start:'5pm', sortBy:'wind', sortOrder:'asc', position:1}, context);
+    const hotCalm = assistantAnswerWeather({
+      query:'hours', date:'today', start:'5pm',
+      conditions:[
+        {metric:'temperature', relative:'high'},
+        {metric:'wind', relative:'very_low'}
+      ]
+    }, context);
+    const digest = assistantAnswerWeather({query:'hours', date:'today', start:'5pm', end:'11pm'}, context);
+    const badminton = {hid:'bad', name:'Badminton', type:'habit', weatherProfileId:'dry', durationMinutes:60, target:7};
+    save([badminton]);
+    const savedWeek = _homeRenderedWeek;
+    const days = [];
+    for(let k = 0; k < 7; k += 1)days.push({dayBase:base + k * 86400000, isToday:k === 0, timeline:[]});
+    _homeRenderedWeek = {days};
+    const item = assistantAnswerWeather({query:'item', name:'Badminton', date:'today', start:'5pm'}, assistantBuildContext());
+    const compared = assistantAnswerWeather({query:'compare', date:'today', start:'5pm', compareStart:'7pm', name:'Badminton'}, assistantBuildContext());
+    const sunsetMin = resolvePrayerExprMinutes({latitude:40.7, longitude:-74}, 'maghrib', -60, base, 0);
+    const sunset = assistantAnswerWeather({query:'compare', date:'today', start:'5pm', compareStart:'1 hour before sunset'}, assistantBuildContext());
+    const longWindow = assistantAnswerWeather({query:'window', date:'today', start:'5pm', end:'11pm'}, assistantBuildContext());
+    const replies = [
+      {message:{thinking:'rank the wind', tool_calls:[{function:{name:'answer_weather', arguments:{
+        query:'hours', date:'today', start:'5pm', sortBy:'wind', sortOrder:'asc', position:1
+      }}}]}},
+      {message:{content:'The wind is probably steady all evening.'}}
+    ];
+    const turn = await runAssistantTurn('When will the wind be lowest today after 5 pm?', {
+      context:assistantBuildContext(),
+      complete:async () => replies.shift()
+    });
+    _homeRenderedWeek = savedWeek;
+    save([]);
+    weatherCacheWrite(globalThis.__queryTestWeatherBucket);
+    loadSortSettings();
+    return {
+      lowest:lowest.text,
+      hotCalm:hotCalm.text,
+      digest:digest.text,
+      item:item.text,
+      compared:compared.text,
+      sunsetMin,
+      sunsetClock:Number.isFinite(sunsetMin) ? assistantFriendlyClock(sunsetMin) : '',
+      sunset:sunset.text,
+      longWindow:longWindow.text,
+      turn:{type:turn.type, text:turn.text, llmCalls:turn.session && turn.session.llmCalls}
+    };
+  });
+  assert(/lowest wind is 7pm/i.test(weatherDetail.lowest) && /4 km\/h/.test(weatherDetail.lowest),
+    `lowest wind after 5pm is the 7pm hour: ${weatherDetail.lowest}`);
+  assert(/7pm is relatively hot and very low wind/i.test(weatherDetail.hotCalm),
+    `hot and very low wind picks 7pm: ${weatherDetail.hotCalm}`);
+  assert(/5pm/.test(weatherDetail.digest) && /7pm/.test(weatherDetail.digest) && /90% rain/.test(weatherDetail.digest),
+    `an open hourly read lists the evening: ${weatherDetail.digest}`);
+  assert(/Badminton is not planned/i.test(weatherDetail.item) && /6pm/.test(weatherDetail.item) && /90%/.test(weatherDetail.item),
+    `unplanned habit is scored after 5pm: ${weatherDetail.item}`);
+  assert(/7pm is the better fit/i.test(weatherDetail.compared) && /Badminton/.test(weatherDetail.compared) && /90%/.test(weatherDetail.compared),
+    `5pm vs 7pm uses the habit profile: ${weatherDetail.compared}`);
+  assert(weatherDetail.sunsetClock && weatherDetail.sunset.includes(weatherDetail.sunsetClock)
+    && /forecast hour/i.test(weatherDetail.sunset) && !/could not resolve/i.test(weatherDetail.sunset),
+    `one hour before sunset resolves (${weatherDetail.sunsetClock}): ${weatherDetail.sunset}`);
+  assert(/Lowest wind is 7pm/i.test(weatherDetail.longWindow),
+    `a long window also reports the wind extreme: ${weatherDetail.longWindow}`);
+  assert(weatherDetail.turn.type === 'say' && weatherDetail.turn.llmCalls === 1
+    && weatherDetail.turn.text === weatherDetail.lowest && !/probably/i.test(weatherDetail.turn.text),
+    `hourly ranking is terminal: ${weatherDetail.turn.text}`);
+
   console.log('\n[contract] classify enum + unknown query kinds');
   const contract = await page.evaluate(async () => {
     const ok = assistantValidateClassify({intent:'ask_weather'}).ok

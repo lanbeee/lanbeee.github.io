@@ -1975,7 +1975,7 @@ function assistantAnswerSettings(args, context){
 // query and fills day/window/name — the numbers below are never guessed.
 
 function assistantQueryCapabilities(){
-  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed (the same list as the missed pill on today), the agenda for a day or the week, the weather for the next seven days, and whether the weather suits an item.';
+  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed (the same list as the missed pill on today), the agenda for a day or the week, the weather for the next seven days, which hour matches weather conditions, a comparison of two times, and whether the weather suits an item.';
 }
 
 function assistantPriorityFacts(habit){
@@ -2365,6 +2365,550 @@ function assistantWeatherNumbers(settings){
   return {unit:f ? '°F' : '°C', convert};
 }
 
+const ASSISTANT_WEATHER_METRIC_KEYS = {
+  temperature:'temperature_2m', temp:'temperature_2m', hot:'temperature_2m', heat:'temperature_2m',
+  feels:'apparent_temperature', feel:'apparent_temperature',
+  rain:'precipitation_probability', precipitation:'precipitation_probability', wet:'precipitation_probability',
+  wind:'wind_speed_10m',
+  gust:'wind_gusts_10m', gusts:'wind_gusts_10m',
+  uv:'uv_index',
+  aqi:'us_aqi'
+};
+
+function assistantWeatherMetricKey(value){
+  const key = assistantNormText(value).replace(/[_-]+/g, ' ');
+  if(!key)return '';
+  if(ASSISTANT_WEATHER_METRIC_KEYS[key])return ASSISTANT_WEATHER_METRIC_KEYS[key];
+  if(key === 'rain chance' || key === 'precipitation probability')return 'precipitation_probability';
+  if(key === 'feels like' || key === 'apparent temperature')return 'apparent_temperature';
+  if(key === 'wind speed')return 'wind_speed_10m';
+  if(typeof WEATHER_METRICS === 'object' && WEATHER_METRICS[key.replace(/ /g, '_')])return key.replace(/ /g, '_');
+  return '';
+}
+
+function assistantWeatherRelative(value){
+  const key = assistantNormText(value).replace(/[_-]+/g, ' ');
+  if(key === 'very high' || key === 'very hot')return 'very_high';
+  if(key === 'very low' || key === 'very cold')return 'very_low';
+  if(key === 'high' || key === 'hot' || key === 'higher')return 'high';
+  if(key === 'low' || key === 'cold' || key === 'lower')return 'low';
+  return '';
+}
+
+function assistantWeatherCount(word){
+  if(word == null || word === '')return 1;
+  if(typeof ASSISTANT_NUMBER_WORDS === 'object' && ASSISTANT_NUMBER_WORDS[word] != null)return ASSISTANT_NUMBER_WORDS[word];
+  const n = Number(word);
+  return Number.isFinite(n) ? n : null;
+}
+
+function assistantWeatherAnchorMinutes(word, offsetMin, dayBase, settings){
+  const anchor = typeof assistantCleanAnchor === 'function' ? assistantCleanAnchor(word) : null;
+  if(!anchor || typeof resolvePrayerExprMinutes !== 'function')return null;
+  const lat = Number(settings && settings.homeCityLat);
+  const lng = Number(settings && settings.homeCityLng);
+  if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
+  const minutes = resolvePrayerExprMinutes({latitude:lat, longitude:lng}, anchor, offsetMin, dayBase, 0);
+  if(!Number.isFinite(minutes) || minutes < 0 || minutes >= 1440)return null;
+  return Math.round(minutes);
+}
+
+// A clock, or a prayer/sun offset such as "1 hour before sunset".
+function assistantWeatherMomentMinutes(value, dayBase, settings){
+  const s = assistantNormText(value).replace(/\./g, '').replace(/^(?:about|around|at)\s+/, '');
+  if(!s)return null;
+  if(s === 'noon' || s === 'midday' || s === 'midnight')return assistantParseClock(s);
+  const anchors = 'sunset|sunrise|dawn|dusk|fajr|dhuhr|zuhr|asr|maghrib|maghreb|isha';
+  const counts = 'a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\\d+(?:\\.\\d+)?';
+  const offset = s.match(new RegExp('^(?:(' + counts + ')\\s+)?(hours?|hrs?|minutes?|mins?)\\s+(before|after)\\s+(' + anchors + ')$'));
+  if(offset){
+    const count = assistantWeatherCount(offset[1]);
+    if(count == null)return null;
+    let minutes = /^h/.test(offset[2]) ? Math.round(count * 60) : Math.round(count);
+    if(offset[3] === 'before')minutes = -minutes;
+    return assistantWeatherAnchorMinutes(offset[4], minutes, dayBase, settings);
+  }
+  const side = s.match(new RegExp('^(before|after)\\s+(' + anchors + ')$'));
+  if(side)return assistantWeatherAnchorMinutes(side[2], 0, dayBase, settings);
+  const bare = s.match(new RegExp('^(' + anchors + ')$'));
+  if(bare)return assistantWeatherAnchorMinutes(bare[1], 0, dayBase, settings);
+  return typeof assistantParseClock === 'function' ? assistantParseClock(s) : null;
+}
+
+function assistantWeatherSpan(args, dayBase, settings, options){
+  const startGiven = args && args.start != null && String(args.start).trim() !== '';
+  const endGiven = args && args.end != null && String(args.end).trim() !== '';
+  const startParsed = startGiven ? assistantWeatherMomentMinutes(args.start, dayBase, settings) : null;
+  const endParsed = endGiven ? assistantWeatherMomentMinutes(args.end, dayBase, settings) : null;
+  if(startGiven && startParsed == null)return {error:`I could not resolve "${String(args.start).trim()}". Use a clock like 5pm, or sunset with an offset such as 1 hour before sunset.`};
+  if(endGiven && endParsed == null)return {error:`I could not resolve "${String(args.end).trim()}". Use a clock like 6pm, or sunset.`};
+  let startMin = startParsed;
+  let endMin = endParsed;
+  if(startMin == null && endMin == null){
+    if(!(options && options.allowWholeDay))return null;
+    startMin = 0;
+    endMin = 1440;
+    const now = options && options.now;
+    if(now != null && dayBase === assistantDayBase(now)){
+      const nowMin = Math.floor((Number(now) - dayBase) / 60000);
+      if(nowMin > 0 && nowMin < 1440)startMin = Math.floor(nowMin / 60) * 60;
+    }
+  }else if(startMin != null && endMin == null){
+    endMin = 1440;
+  }else if(startMin == null){
+    startMin = 0;
+  }
+  startMin = Math.max(0, Math.min(1439, Math.round(startMin)));
+  endMin = Math.max(0, Math.min(1440, Math.round(endMin)));
+  if(endMin <= startMin)return {error:'That time window is empty.'};
+  return {startMin, endMin};
+}
+
+function assistantWeatherSpanLabel(dayLabel, startMin, endMin){
+  const pretty = dayLabel ? dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1) : 'Today';
+  if(startMin <= 0 && endMin >= 1440)return pretty;
+  if(endMin >= 1440)return `${pretty} after ${assistantFriendlyClock(startMin)}`;
+  if(startMin <= 0)return `${pretty} until ${assistantFriendlyClock(endMin)}`;
+  return `${pretty} ${assistantFriendlyClock(startMin)}–${assistantFriendlyClock(endMin)}`;
+}
+
+function assistantWeatherReadableContext(settings, now, dayBase){
+  const context = (typeof weatherContextForLocation === 'function' && weatherContextForLocation(null, settings))
+    || (settings && settings._weatherContext)
+    || (typeof weatherPlannerContext === 'function' ? weatherPlannerContext(settings, now) : null);
+  if(!context || !Array.isArray(context.samples) || !context.samples.length)return null;
+  if(!Number(context.weeklyFetchedAt) || now - Number(context.weeklyFetchedAt) > 8 * 60 * 60 * 1000)return null;
+  if(typeof weatherRequestedDayKey === 'function' && weatherRequestedDayKey(dayBase) < weatherRequestedDayKey(now))return null;
+  return context;
+}
+
+function assistantWeatherValueText(metric, stored){
+  const shown = Math.round(typeof weatherMetricValueConverted === 'function'
+    ? weatherMetricValueConverted(metric, stored)
+    : Number(stored));
+  const unit = typeof weatherMetricUnitLabel === 'function' ? weatherMetricUnitLabel(metric) : '';
+  if(!unit)return String(shown);
+  return unit.charAt(0) === '°' ? `${shown}${unit}` : `${shown} ${unit}`;
+}
+
+function assistantWeatherHourRows(context, dayBase, startMin, endMin){
+  const buckets = new Map();
+  for(const sample of context.samples || []){
+    if(!sample || !Number.isFinite(Number(sample.ts)))continue;
+    const minute = Math.round((Number(sample.ts) - dayBase) / 60000);
+    if(minute < startMin || minute >= endMin)continue;
+    const hour = Math.floor(minute / 60) * 60;
+    if(!buckets.has(hour))buckets.set(hour, []);
+    buckets.get(hour).push(sample);
+  }
+  const keys = typeof WEATHER_METRICS === 'object' ? Object.keys(WEATHER_METRICS) : [];
+  return [...buckets.keys()].sort((a, b) => a - b).map(hour => {
+    const samples = buckets.get(hour);
+    const metrics = {};
+    for(const key of keys){
+      const value = typeof weatherAggregate === 'function' ? weatherAggregate(samples, key) : null;
+      if(Number.isFinite(value))metrics[key] = value;
+    }
+    let condition = '';
+    if(typeof weatherCodePresentation === 'function'){
+      const codes = samples.map(sample => Number(sample.weather_code)).filter(Number.isFinite).map(weatherCodePresentation);
+      codes.sort((a, b) => b.rank - a.rank);
+      condition = codes[0] && codes[0].label || '';
+    }
+    return {startMin:hour, condition, metrics};
+  });
+}
+
+function assistantWeatherHourBrief(row){
+  if(!row)return 'no hourly detail';
+  const metrics = row.metrics || {};
+  const parts = [];
+  if(row.condition)parts.push(row.condition);
+  if(Number.isFinite(metrics.temperature_2m))parts.push(assistantWeatherValueText('temperature_2m', metrics.temperature_2m));
+  if(Number.isFinite(metrics.wind_speed_10m))parts.push(`wind ${assistantWeatherValueText('wind_speed_10m', metrics.wind_speed_10m)}`);
+  if(Number.isFinite(metrics.precipitation_probability))parts.push(`${Math.round(metrics.precipitation_probability)}% rain`);
+  return parts.join(', ') || 'no hourly detail';
+}
+
+function assistantWeatherExtremesText(rows){
+  if(!rows || rows.length < 2)return '';
+  const bits = [];
+  const wind = rows.filter(row => Number.isFinite(row.metrics && row.metrics.wind_speed_10m));
+  if(wind.length >= 2){
+    const lo = wind.reduce((best, row) => row.metrics.wind_speed_10m < best.metrics.wind_speed_10m ? row : best);
+    const hi = wind.reduce((best, row) => row.metrics.wind_speed_10m > best.metrics.wind_speed_10m ? row : best);
+    if(lo.startMin !== hi.startMin){
+      bits.push(`Lowest wind is ${assistantFriendlyClock(lo.startMin)} (${assistantWeatherValueText('wind_speed_10m', lo.metrics.wind_speed_10m)})`);
+    }
+  }
+  const temp = rows.filter(row => Number.isFinite(row.metrics && row.metrics.temperature_2m));
+  if(temp.length >= 2){
+    const hi = temp.reduce((best, row) => row.metrics.temperature_2m > best.metrics.temperature_2m ? row : best);
+    const lo = temp.reduce((best, row) => row.metrics.temperature_2m < best.metrics.temperature_2m ? row : best);
+    if(lo.startMin !== hi.startMin){
+      bits.push(`Warmest is ${assistantFriendlyClock(hi.startMin)} (${assistantWeatherValueText('temperature_2m', hi.metrics.temperature_2m)})`);
+    }
+  }
+  return bits.length ? `${bits.join('. ')}.` : '';
+}
+
+function assistantWeatherConditions(args){
+  const raw = Array.isArray(args && args.conditions) ? args.conditions.slice(0, 8) : [];
+  const out = [];
+  for(const row of raw){
+    if(!row || typeof row !== 'object')continue;
+    const metric = assistantWeatherMetricKey(row.metric || row.field);
+    if(!metric)continue;
+    const relative = assistantWeatherRelative(row.relative);
+    const opName = assistantNormText(row.op);
+    const op = ['eq','neq','gt','gte','lt','lte'].includes(opName) ? opName : '';
+    let value = null;
+    if(row.value != null && row.value !== '' && typeof weatherMetricValueToStored === 'function'){
+      const stored = Number(weatherMetricValueToStored(metric, row.value));
+      if(Number.isFinite(stored))value = stored;
+    }
+    if(!relative && !(op && value != null))continue;
+    out.push({metric, relative, op, value});
+  }
+  return out;
+}
+
+function assistantWeatherAbsolutePass(value, condition){
+  if(!condition.op || condition.value == null)return true;
+  if(!Number.isFinite(value))return false;
+  if(condition.op === 'gt')return value > condition.value;
+  if(condition.op === 'gte')return value >= condition.value;
+  if(condition.op === 'lt')return value < condition.value;
+  if(condition.op === 'lte')return value <= condition.value;
+  if(condition.op === 'neq')return value !== condition.value;
+  return value === condition.value;
+}
+
+function assistantWeatherRelativePass(relative, percentile){
+  if(relative === 'very_low')return percentile <= 0.25;
+  if(relative === 'low')return percentile <= 0.45;
+  if(relative === 'high')return percentile >= 0.55;
+  if(relative === 'very_high')return percentile >= 0.75;
+  return true;
+}
+
+function assistantWeatherRelativeGoodness(condition, percentile){
+  const weight = condition.relative === 'very_high' || condition.relative === 'very_low' ? 1.5 : 1;
+  if(condition.relative === 'high' || condition.relative === 'very_high')return percentile * weight;
+  if(condition.relative === 'low' || condition.relative === 'very_low')return (1 - percentile) * weight;
+  return 0;
+}
+
+function assistantWeatherRelativePhrase(condition){
+  const metric = condition.metric;
+  const rel = condition.relative;
+  if(metric === 'temperature_2m' || metric === 'apparent_temperature'){
+    if(rel === 'very_high')return 'very hot';
+    if(rel === 'high')return 'relatively hot';
+    if(rel === 'very_low')return 'very cold';
+    if(rel === 'low')return 'relatively cold';
+  }
+  if(metric === 'wind_speed_10m' || metric === 'wind_gusts_10m'){
+    if(rel === 'very_low')return 'very low wind';
+    if(rel === 'low')return 'low wind';
+    if(rel === 'very_high')return 'very high wind';
+    if(rel === 'high')return 'high wind';
+  }
+  const label = typeof WEATHER_METRICS === 'object' && WEATHER_METRICS[metric] ? WEATHER_METRICS[metric].label : 'that';
+  if(rel === 'very_low')return `very low ${label}`;
+  if(rel === 'low')return `low ${label}`;
+  if(rel === 'very_high')return `very high ${label}`;
+  if(rel === 'high')return `high ${label}`;
+  return label;
+}
+
+function assistantWeatherExtremeWord(metric, order){
+  const high = order === 'desc';
+  if(metric === 'wind_speed_10m' || metric === 'wind_gusts_10m')return high ? 'highest wind' : 'lowest wind';
+  if(metric === 'temperature_2m' || metric === 'apparent_temperature')return high ? 'warmest' : 'coolest';
+  if(metric === 'precipitation_probability' || metric === 'precipitation')return high ? 'wettest' : 'driest';
+  if(metric === 'uv_index')return high ? 'highest UV' : 'lowest UV';
+  const label = typeof WEATHER_METRICS === 'object' && WEATHER_METRICS[metric] ? WEATHER_METRICS[metric].label : 'value';
+  return high ? `highest ${label}` : `lowest ${label}`;
+}
+
+function assistantWeatherDefaultOrder(metric){
+  if(metric === 'temperature_2m' || metric === 'apparent_temperature' || metric === 'uv_index')return 'desc';
+  return 'asc';
+}
+
+function assistantWeatherRankArgs(args){
+  return Boolean(args && (
+    args.sortBy || args.position || args.limit
+    || (Array.isArray(args.conditions) && args.conditions.length)
+  ));
+}
+
+function assistantWeatherNoForecast(){
+  return {ok:true, text:'I do not have a fresh forecast for that window yet. Open the weather panel once to fetch it, then ask again.'};
+}
+
+function assistantAnswerWeatherHours(args, context, dayBase, dayLabel){
+  const settings = context.settings;
+  const now = context.now;
+  const span = assistantWeatherSpan(args, dayBase, settings, {allowWholeDay:true, now});
+  if(!span)return {ok:true, text:`Give me the time window, like "after 5pm". ${assistantQueryCapabilities()}`};
+  if(span.error)return {ok:true, text:span.error};
+  const weather = assistantWeatherReadableContext(settings, now, dayBase);
+  if(!weather)return assistantWeatherNoForecast();
+  const rows = assistantWeatherHourRows(weather, dayBase, span.startMin, span.endMin);
+  if(!rows.length)return assistantWeatherNoForecast();
+  const where = assistantWeatherSpanLabel(dayLabel, span.startMin, span.endMin);
+  const conditions = assistantWeatherConditions(args);
+  const metrics = [...new Set(conditions.map(condition => condition.metric))];
+  for(const metric of metrics){
+    const values = rows.map(row => row.metrics[metric]).filter(Number.isFinite);
+    for(const row of rows){
+      if(!row.percentiles)row.percentiles = {};
+      const value = row.metrics[metric];
+      row.percentiles[metric] = typeof weatherPercentile === 'function'
+        ? weatherPercentile(value, values)
+        : 0.5;
+    }
+  }
+  const absolute = conditions.filter(condition => condition.op && condition.value != null);
+  const relative = conditions.filter(condition => condition.relative);
+  let matched = rows.filter(row => absolute.every(condition => assistantWeatherAbsolutePass(row.metrics[condition.metric], condition)));
+  let relaxed = false;
+  if(relative.length){
+    const strict = matched.filter(row => relative.every(condition => assistantWeatherRelativePass(condition.relative, row.percentiles && row.percentiles[condition.metric])));
+    if(strict.length)matched = strict;
+    else relaxed = true;
+  }
+  const sortMetric = assistantWeatherMetricKey(args && args.sortBy);
+  const requestedOrder = assistantNormText(args && args.sortOrder);
+  const order = requestedOrder === 'asc' || requestedOrder === 'desc'
+    ? requestedOrder
+    : (sortMetric ? assistantWeatherDefaultOrder(sortMetric) : 'asc');
+  matched.sort((a, b) => {
+    if(relative.length && !sortMetric){
+      const score = row => relative.reduce((sum, condition) => sum + assistantWeatherRelativeGoodness(condition, (row.percentiles && row.percentiles[condition.metric]) || 0), 0);
+      const delta = score(b) - score(a);
+      if(delta)return delta;
+    }
+    if(sortMetric){
+      const av = a.metrics[sortMetric];
+      const bv = b.metrics[sortMetric];
+      const am = !Number.isFinite(av);
+      const bm = !Number.isFinite(bv);
+      if(am !== bm)return am ? 1 : -1;
+      if(!am && av !== bv)return order === 'desc' ? bv - av : av - bv;
+    }
+    return a.startMin - b.startMin;
+  });
+  const position = Math.round(Number(args && args.position));
+  const hasPosition = Number.isInteger(position) && position > 0;
+  const limit = Math.round(Number(args && args.limit));
+  const hasLimit = Number.isInteger(limit) && limit > 0;
+  const items = matched.map(row => ({
+    clock:assistantFriendlyClock(row.startMin),
+    condition:row.condition || undefined,
+    temperature:Number.isFinite(row.metrics.temperature_2m) ? assistantWeatherValueText('temperature_2m', row.metrics.temperature_2m) : undefined,
+    wind:Number.isFinite(row.metrics.wind_speed_10m) ? assistantWeatherValueText('wind_speed_10m', row.metrics.wind_speed_10m) : undefined,
+    rain:Number.isFinite(row.metrics.precipitation_probability) ? `${Math.round(row.metrics.precipitation_probability)}%` : undefined
+  }));
+  if(!matched.length)return {ok:true, items:[], text:`No hour ${where.charAt(0).toLowerCase() + where.slice(1)} matches those conditions.`};
+  const pickOne = hasPosition || (!hasLimit && (sortMetric || relative.length));
+  if(pickOne){
+    const index = hasPosition ? position - 1 : 0;
+    const picked = matched[index];
+    if(!picked)return {ok:true, items, text:`Only ${matched.length} hour${matched.length === 1 ? '' : 's'} match, so there is no ${assistantQueryOrdinal(index + 1)} result.`};
+    const clock = assistantFriendlyClock(picked.startMin);
+    const brief = assistantWeatherHourBrief(picked);
+    if(sortMetric && !relative.length){
+      const word = assistantWeatherExtremeWord(sortMetric, order);
+      const ordinal = !hasPosition || position === 1 ? '' : `${assistantQueryOrdinal(position)} `;
+      return {ok:true, items, text:`${where}, the ${ordinal}${word} is ${clock}: ${brief}.`};
+    }
+    const phrase = relative.map(assistantWeatherRelativePhrase).filter(Boolean).join(' and ') || 'a match';
+    if(relaxed)return {ok:true, items, text:`${where}, no hour is ${phrase}. Closest is ${clock}: ${brief}.`};
+    const extra = !hasPosition && matched.length > 1 ? ` ${matched.length - 1} other hour${matched.length === 2 ? '' : 's'} also match.` : '';
+    return {ok:true, items, text:`${where}, ${clock} is ${phrase}: ${brief}.${extra}`};
+  }
+  const shown = matched.slice(0, hasLimit ? Math.min(8, limit) : 8);
+  const listed = shown.map(row => `${assistantFriendlyClock(row.startMin)} ${assistantWeatherHourBrief(row)}`).join('; ');
+  const more = matched.length > shown.length ? ` ${matched.length - shown.length} later hours not listed.` : '';
+  return {ok:true, items, text:`${where}: ${listed}.${more}`};
+}
+
+function assistantWeatherPoint(value, dayBase, settings){
+  if(value == null || String(value).trim() === '')return null;
+  const label = String(value).trim();
+  const minutes = assistantWeatherMomentMinutes(label, dayBase, settings);
+  if(minutes == null){
+    return {error:`I could not resolve "${label}". Use a clock like 5pm, or sunset with an offset such as 1 hour before sunset. Sunset needs a home city.`};
+  }
+  return {minutes, label};
+}
+
+function assistantWeatherPointLabel(point){
+  const clock = assistantFriendlyClock(point.minutes);
+  const raw = assistantNormText(point.label);
+  if(!raw || raw === assistantNormText(clock))return clock;
+  return `${clock} (${point.label})`;
+}
+
+function assistantWeatherMomentSummary(context, dayBase, minutes){
+  const ts = dayBase + minutes * 60000;
+  let best = null;
+  let bestDelta = Infinity;
+  for(const sample of context.samples || []){
+    if(!sample || !Number.isFinite(Number(sample.ts)))continue;
+    const delta = ts - Number(sample.ts);
+    if(delta < 0 || delta >= 60 * 60 * 1000 || delta >= bestDelta)continue;
+    best = sample;
+    bestDelta = delta;
+  }
+  if(!best)return null;
+  const metrics = {};
+  for(const key of (typeof WEATHER_METRICS === 'object' ? Object.keys(WEATHER_METRICS) : [])){
+    const value = Number(best[key]);
+    if(Number.isFinite(value))metrics[key] = value;
+  }
+  let condition = '';
+  if(typeof weatherCodePresentation === 'function' && Number.isFinite(Number(best.weather_code))){
+    condition = weatherCodePresentation(best.weather_code).label || '';
+  }
+  return {condition, metrics, sampleTs:Number(best.ts)};
+}
+
+function assistantWeatherDuration(args, habit){
+  const requested = Number(args && args.durationMinutes);
+  if(Number.isFinite(requested) && requested >= 15 && requested <= 1440)return Math.round(requested);
+  const own = Number(habit && habit.durationMinutes);
+  if(Number.isFinite(own) && own >= 15 && own <= 1440)return Math.round(own);
+  return 60;
+}
+
+function assistantWeatherFitAt(habit, index, dayBase, minutes, duration, settings){
+  if(!habit || typeof weatherFitAssessment !== 'function')return null;
+  const length = Math.max(15, Math.min(duration, 1440 - minutes));
+  return weatherFitAssessment(
+    {h:habit, i:index},
+    {placeStart:dayBase + minutes * 60000, placeEnd:dayBase + (minutes + length) * 60000, locId:null},
+    {dayBase, fills:[]},
+    settings
+  );
+}
+
+function assistantWeatherFitRank(assessment){
+  if(!assessment || assessment.status === 'unknown')return null;
+  return (assessment.hardFail ? 100000 : 0) + (Number(assessment.penalty) || 0);
+}
+
+function assistantWeatherFitPhrase(assessment){
+  if(!assessment)return 'no weather rules';
+  return assessment.summary || assessment.status || 'forecast';
+}
+
+function assistantWeatherPlannedNote(found, context, dayBase, dayLabel){
+  const week = assistantQueryWeek(context.data, context.settings);
+  const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
+  let clock = '';
+  for(const row of (day && day.timeline) || []){
+    if(!row || (row.kind !== 'fill' && row.kind !== 'scheduled'))continue;
+    const habit = row.h || null;
+    if(!habit || habit.hid !== found.hid)continue;
+    clock = typeof assistantRowClock === 'function' ? assistantRowClock(row) : '';
+    break;
+  }
+  if(!clock)return `${found.name} is not planned ${dayLabel}. `;
+  return `${found.name} is planned ${dayLabel} at ${clock}. `;
+}
+
+function assistantAnswerWeatherItemWindow(args, context, found, dayBase, dayLabel){
+  const settings = context.settings;
+  const span = assistantWeatherSpan(args, dayBase, settings, {});
+  if(!span)return {ok:true, text:`Give me the time window, like "after 5pm". ${assistantQueryCapabilities()}`};
+  if(span.error)return {ok:true, text:span.error};
+  const weather = assistantWeatherReadableContext(settings, context.now, dayBase);
+  if(!weather)return assistantWeatherNoForecast();
+  const duration = assistantWeatherDuration(args, found.habit);
+  const candidates = [];
+  for(let min = span.startMin; min < span.endMin; min += 60){
+    const length = Math.min(duration, span.endMin - min);
+    if(length < 15)break;
+    candidates.push({
+      min,
+      length,
+      assessment:assistantWeatherFitAt(found.habit, found.index, dayBase, min, length, settings),
+      sample:assistantWeatherMomentSummary(weather, dayBase, min)
+    });
+  }
+  if(!candidates.length)return assistantWeatherNoForecast();
+  const where = assistantWeatherSpanLabel(dayLabel, span.startMin, span.endMin);
+  const planned = assistantWeatherPlannedNote(found, context, dayBase, dayLabel);
+  candidates.sort((a, b) => {
+    const ar = assistantWeatherFitRank(a.assessment);
+    const br = assistantWeatherFitRank(b.assessment);
+    if(ar == null && br == null)return a.min - b.min;
+    if(ar == null)return 1;
+    if(br == null)return -1;
+    return ar - br || a.min - b.min;
+  });
+  const best = candidates[0];
+  const bestClock = `${assistantFriendlyClock(best.min)}–${assistantFriendlyClock(best.min + best.length)}`;
+  if(!best.assessment){
+    const brief = assistantWeatherHourBrief(best.sample);
+    return {ok:true, text:`${planned}${found.name} has no weather rules, so the forecast does not steer it. ${where}, ${bestClock} is ${brief}.`};
+  }
+  const earlier = candidates
+    .filter(row => row.min < best.min && assistantWeatherFitRank(row.assessment) != null && assistantWeatherFitRank(row.assessment) > assistantWeatherFitRank(best.assessment))
+    .sort((a, b) => a.min - b.min)[0];
+  const contrast = earlier ? ` ${assistantFriendlyClock(earlier.min)}: ${assistantWeatherFitPhrase(earlier.assessment)}.` : '';
+  return {ok:true, text:`${planned}${where}, best for ${found.name} is ${bestClock}: ${assistantWeatherFitPhrase(best.assessment)}.${contrast}`};
+}
+
+function assistantAnswerWeatherCompare(args, context, dayBase, dayLabel){
+  const settings = context.settings;
+  const left = assistantWeatherPoint(args && args.start, dayBase, settings);
+  const right = assistantWeatherPoint(args && (args.compareStart || args.end), dayBase, settings);
+  if(!left || !right)return {ok:true, text:`Tell me the two times to compare, like 5pm and 1 hour before sunset. ${assistantQueryCapabilities()}`};
+  if(left.error)return {ok:true, text:left.error};
+  if(right.error)return {ok:true, text:right.error};
+  const weather = assistantWeatherReadableContext(settings, context.now, dayBase);
+  if(!weather)return assistantWeatherNoForecast();
+  const leftSummary = assistantWeatherMomentSummary(weather, dayBase, left.minutes);
+  const rightSummary = assistantWeatherMomentSummary(weather, dayBase, right.minutes);
+  if(!leftSummary || !rightSummary)return assistantWeatherNoForecast();
+  let text = `${dayLabel} ${assistantWeatherPointLabel(left)}: ${assistantWeatherHourBrief(leftSummary)}. ${assistantWeatherPointLabel(right)}: ${assistantWeatherHourBrief(rightSummary)}.`;
+  if(leftSummary.sampleTs === rightSummary.sampleTs){
+    const sampleMin = Math.round((leftSummary.sampleTs - dayBase) / 60000);
+    text += ` Both fall in the ${assistantFriendlyClock(sampleMin)} forecast hour.`;
+  }
+  const want = String((args && args.name) || '').trim();
+  if(!want)return {ok:true, text};
+  const found = assistantFindHabit(context.data, want);
+  if(!found.ok){
+    if((found.choices || []).length)return found;
+    return {ok:true, text:`${text} I cannot find ${want}, so this compares the forecast only.`};
+  }
+  const duration = assistantWeatherDuration(args, found.habit);
+  const leftFit = assistantWeatherFitAt(found.habit, found.index, dayBase, left.minutes, duration, settings);
+  const rightFit = assistantWeatherFitAt(found.habit, found.index, dayBase, right.minutes, duration, settings);
+  const leftRank = assistantWeatherFitRank(leftFit);
+  const rightRank = assistantWeatherFitRank(rightFit);
+  if(leftRank == null && rightRank == null){
+    text += ` ${found.name} has no weather rules, so the forecast does not steer it.`;
+  }else if(leftRank == null || rightRank == null){
+    text += ` ${found.name} can only be scored at ${assistantWeatherPointLabel(leftRank == null ? right : left)}.`;
+  }else if(leftRank === rightRank){
+    text += ` For ${found.name}, both times score the same (${assistantWeatherFitPhrase(leftFit)}).`;
+  }else{
+    const better = leftRank < rightRank ? left : right;
+    const worse = leftRank < rightRank ? right : left;
+    const betterFit = leftRank < rightRank ? leftFit : rightFit;
+    const worseFit = leftRank < rightRank ? rightFit : leftFit;
+    text += ` For ${found.name}, ${assistantWeatherPointLabel(better)} is the better fit (${assistantWeatherFitPhrase(betterFit)}). ${assistantWeatherPointLabel(worse)}: ${assistantWeatherFitPhrase(worseFit)}.`;
+  }
+  return {ok:true, text};
+}
+
 function assistantAnswerWeather(args, context){
   const settings = context.settings;
   const now = context.now;
@@ -2375,10 +2919,16 @@ function assistantAnswerWeather(args, context){
   }
   const dayBase = date ? date.dayBase : assistantDayBase(now);
   const dayLabel = date ? date.label : 'today';
-  const query = ['day','window','item'].includes(queryRaw) ? queryRaw : '';
+  let query = ['day','window','item','hours','compare'].includes(queryRaw) ? queryRaw : '';
 
   if(!query){
     return {ok:true, text:`That weather question is too vague for me. ${assistantQueryCapabilities()}`};
+  }
+  if(query === 'compare' || (args && args.compareStart)){
+    return assistantAnswerWeatherCompare(args, context, dayBase, dayLabel);
+  }
+  if(query === 'hours' || (query === 'window' && assistantWeatherRankArgs(args))){
+    return assistantAnswerWeatherHours(args, context, dayBase, dayLabel);
   }
 
   if(query === 'item'){
@@ -2387,7 +2937,14 @@ function assistantAnswerWeather(args, context){
     const found = assistantFindHabit(context.data, want);
     if(!found.ok){
       if((found.choices || []).length)return found;
+      if(args && (args.start || args.end)){
+        const forecast = assistantAnswerWeatherHours(args, context, dayBase, dayLabel);
+        return {ok:true, text:`I cannot find ${want}, so this is only the forecast. ${forecast.text}`};
+      }
       return {ok:true, text:found.ask || 'I cannot find that item.'};
+    }
+    if(args && (args.start || args.end)){
+      return assistantAnswerWeatherItemWindow(args, context, found, dayBase, dayLabel);
     }
     const week = assistantQueryWeek(context.data, settings);
     const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
@@ -2431,21 +2988,31 @@ function assistantAnswerWeather(args, context){
   const contextWeather = typeof weatherPlannerContext === 'function' ? weatherPlannerContext(settings, now) : null;
 
   if(query === 'window'){
-    const window = assistantQueryWindow(args, dayBase);
-    if(!window)return {ok:true, text:`Give me the time window, like "tomorrow 5 to 6 pm". ${assistantQueryCapabilities()}`};
+    const span = assistantWeatherSpan(args, dayBase, settings, {});
+    if(!span)return {ok:true, text:`Give me the time window, like "tomorrow 5 to 6 pm". ${assistantQueryCapabilities()}`};
+    if(span.error)return {ok:true, text:span.error};
+    const windowStart = dayBase + span.startMin * 60000;
+    const windowEnd = dayBase + span.endMin * 60000;
     const period = typeof weatherPeriodSummary === 'function'
-      ? weatherPeriodSummary(window.start, window.end, settings, null, now)
+      ? weatherPeriodSummary(windowStart, windowEnd, settings, null, now)
       : null;
     if(!period)return {ok:true, text:'I do not have a fresh forecast for that window yet. Open the weather panel once to fetch it, then ask again.'};
     const temps = assistantWeatherNumbers(settings);
     const parts = [
-      `${dayLabel} ${assistantFriendlyClock((window.start - dayBase) / 60000)}–${assistantFriendlyClock((window.end - dayBase) / 60000)}`,
+      `${dayLabel} ${assistantFriendlyClock(span.startMin)}–${assistantFriendlyClock(span.endMin)}`,
       `${period.condition ? period.condition.label : 'clear'}`,
       `${Math.round(temps.convert(period.low))}–${Math.round(temps.convert(period.high))}${temps.unit}`,
       `${Number.isFinite(period.precipitationChance) ? Math.round(period.precipitationChance) : 0}% rain chance`
     ];
     if(Number.isFinite(period.wind))parts.push(`wind ${Math.round(typeof weatherMetricValueConverted === 'function' ? weatherMetricValueConverted('wind_speed_10m', period.wind) : period.wind)}${typeof weatherMetricUnitLabel === 'function' ? weatherMetricUnitLabel('wind_speed_10m') : ''}`);
-    return {ok:true, text:parts.join(' · ') + '.'};
+    let text = parts.join(' · ') + '.';
+    if(windowEnd - windowStart >= 3 * 60 * 60 * 1000){
+      const weather = assistantWeatherReadableContext(settings, now, dayBase);
+      const rows = weather ? assistantWeatherHourRows(weather, dayBase, span.startMin, span.endMin) : [];
+      const extremes = assistantWeatherExtremesText(rows);
+      if(extremes)text += ` ${extremes}`;
+    }
+    return {ok:true, text};
   }
 
   // query day.
