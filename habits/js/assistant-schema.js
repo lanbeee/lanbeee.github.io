@@ -48,6 +48,33 @@ const ASSISTANT_READ_PURPOSE_PROPERTY = {
   description:'Set prepare_action when this read is evidence for a later create/change/action in the same request. Tings will not consider the request finished until that action tool succeeds. Otherwise omit or use answer.'
 };
 
+const ASSISTANT_QUERY_FIELDS = [
+  'name','kind','status','priority','importance','urgency','overdue_days','due_in_days',
+  'days_since_last','frequency_per_week','duration_minutes','pinned','breakable',
+  'completed_today','topic','place','weather_profile','scheduled_time'
+];
+
+const ASSISTANT_QUERY_PROPERTIES = {
+  conditions:{
+    type:['array','null'],
+    description:'Optional AND filters. Examples: [{field:"priority",op:"eq",value:0},{field:"duration_minutes",op:"gte",value:30}]. importance is P0-P5 where 0 is most important; urgency is the app attention score where higher is more urgent.',
+    items:{
+      type:'object',
+      required:['field','op','value'],
+      properties:{
+        field:{type:'string', enum:ASSISTANT_QUERY_FIELDS},
+        op:{type:'string', enum:['eq','neq','gt','gte','lt','lte','contains']},
+        value:{type:['string','number','boolean']}
+      }
+    }
+  },
+  sortBy:{type:['string','null'], enum:ASSISTANT_QUERY_FIELDS.concat([null]), description:'Field to sort by. Use importance for most/least important, urgency for urgent, and overdue_days for overdue.'},
+  sortOrder:{type:['string','null'], enum:['asc','desc',null], description:'desc means most/highest/latest/longest; asc means least/lowest/earliest/shortest. Importance defaults asc because P0 is most important.'},
+  position:{type:['integer','null'], description:'1-based result after filtering and sorting. Use 2 for second, 3 for third, and so on.'},
+  limit:{type:['integer','null'], description:'Maximum sorted results when position is omitted.'},
+  aggregate:{type:['string','null'], enum:['count','sum_duration','average_duration',null], description:'Return a computed count or duration aggregate instead of listing items.'}
+};
+
 const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   kind:{type:'string', enum:['task','habit']},
   habitKind:{type:['string','null'], description:'keepup/build, reduce/limit, or zero/stop'},
@@ -125,7 +152,7 @@ function assistantRequestNeedsModel(text){
 
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
-    description:'Classify only when you cannot call the final tool directly. create_setting is a weather profile, place, busy time, or topic. ask_weather and ask_schedule use live data; availability, missed-item, ranking, and what-if questions are ask_schedule, not creation. For schedule rankings call answer_schedule with select. Several questions or an action plus a question require a tool for every part. ask_items covers lists/status/progress; ask_settings covers saved configuration; lookup_item covers one item’s next time/history/stats/why. complete_item, plan_item, and delete_item preview actions. If a name or request is ambiguous, call find_item or ask_user instead of guessing. currentDraft and recent hold conversational context.',
+    description:'Classify only when you cannot call the final tool directly. create_setting is a weather profile, place, busy time, or topic. ask_weather and ask_schedule use live data; availability, missed-item, agenda ranking, and what-if questions are ask_schedule. Broad saved-item analysis is ask_items. Put filtering, ranking, ordinals, counts, or duration totals into the final answer_schedule/answer_items call rather than deriving them yourself. Several questions or an action plus a question require a tool for every part. ask_settings covers saved configuration; lookup_item covers one item’s next time/history/stats/why. complete_item, plan_item, and delete_item preview actions. If a name or request is ambiguous, call find_item or ask_user instead of guessing. currentDraft and recent hold conversational context.',
     parameters:{
       type:'object',
       required:['intent'],
@@ -248,7 +275,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_items:{
-    description:'Answer list and status questions about tasks and habits. list = names matching kind/status/search, each with priority and frequency so you can rank the list; progress = a concise today summary. Use this for "what habits do I have", "show my open tasks", "what did I finish today", and "how am I doing today". If the request has another clause, call this and the other matching tools. After items return, rank from that payload or call lookup_item only for extra history/stats/why.',
+    description:'Query saved tasks and habits with deterministic facts, filters, sorting, ordinals, counts, and duration totals. list handles broad questions such as most urgent, second most important, overdue P0 habits longer than 30 minutes, or how many pinned tasks exist. Use conditions for AND filters, sortBy/sortOrder for ranking, position for first/second/etc., and aggregate for counts or duration math. progress is the concise today summary. Never filter, rank, count, or calculate from a returned list yourself—put the full operation in this tool call. If the request has another independent clause, call its matching tool too.',
     parameters:{
       type:'object',
       required:['query'],
@@ -257,6 +284,7 @@ const ASSISTANT_TOOL_DEFS = {
         kind:{type:['string','null'], enum:['all','task','habit',null]},
         status:{type:['string','null'], enum:['all','open','done','overdue',null]},
         search:{type:['string','null'], description:'optional name or topic text filter'},
+        ...ASSISTANT_QUERY_PROPERTIES,
         purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }
@@ -288,7 +316,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_schedule:{
-    description:'Answer a schedule question by computing it against the real plan — never guess the schedule. query free = how much time is open on a day, or whether one window is open (start/end); pass minutes without start/end to get the first contiguous opening of that size. query freest = which day of the week is freest. For a request to choose a time before creating an item, use freest, then free with your appropriate duration, then draft_item with the verified day/window and duration; the lookup is not the final answer. query conflict = "if I block/add a task tomorrow 5 to 6 pm, will I miss anything" — what a new window would displace (start and end required). query missed = the same list as the missed pill on today\'s header (planner expectations that slipped, not a raw overdue dump). query day = the agenda for one day, with per-item priority and frequency. query week = the whole week overview. For "most important", "most frequent", or "longest", set select so Tings computes the answer; never rank items yourself. Several questions in one message: call this for each schedule part and lookup_item / answer_weather / answer_items for the rest.',
+    description:'Query the real plan. free = open time; freest = freest week day; conflict = what a new time window displaces; missed = today\'s missed-pill list; day = one day agenda; week = week overview. For arbitrary compound questions over missed/day items, use conditions, sortBy/sortOrder, position, limit, and aggregate so Tings performs every filter, ranking, ordinal, count, or duration calculation. Example: "second most overdue thing I missed" = query missed, sortBy overdue_days, sortOrder desc, position 2. Example: "shortest urgent habit tomorrow" = query day, date tomorrow, conditions urgency gte 80 and kind eq habit, sortBy duration_minutes, sortOrder asc, position 1. Legacy select supports most important/frequent/longest. Never derive an answer yourself from the returned list.',
     parameters:{
       type:'object',
       required:['query'],
@@ -299,6 +327,7 @@ const ASSISTANT_TOOL_DEFS = {
         end:{type:['string','null'], description:'window end: 6pm or 18:00'},
         minutes:{type:['integer','null'], description:'duration in minutes, e.g. a 45 minute task'},
         select:{type:['string','null'], enum:['most_important','most_frequent','longest',null], description:'Compute one ranked choice from query day or missed. Omit for the full list.'},
+        ...ASSISTANT_QUERY_PROPERTIES,
         purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }

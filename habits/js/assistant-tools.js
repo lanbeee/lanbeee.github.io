@@ -1885,7 +1885,7 @@ function assistantAnswerItems(args, context){
   const search = assistantNormText(args && args.search);
   const now = context.now != null ? Number(context.now) : Date.now();
   const todayBase = assistantDayBase(now);
-  const rows = (Array.isArray(context.data) ? context.data : []).map(habit => {
+  const rows = (Array.isArray(context.data) ? context.data : []).map((habit,index) => {
     if(!habit || !habit.name)return null;
     const type = habit.type === 'task' ? 'task' : 'habit';
     const done = type === 'task'
@@ -1893,7 +1893,7 @@ function assistantAnswerItems(args, context){
       : (typeof completedToday === 'function' && completedToday(habit, now));
     const overdue = type === 'task' && !done && habit.dueDate != null && assistantDayBase(habit.dueDate) < todayBase;
     const haystack = assistantNormText([habit.name].concat(habit.topics || []).join(' '));
-    const facts = assistantHabitQueryFacts(habit, {done:Boolean(done), overdue:Boolean(overdue)});
+    const facts = assistantHabitQueryFacts(habit, {done:Boolean(done), overdue:Boolean(overdue)}, context, index);
     return Object.assign({haystack}, facts || {name:String(habit.name), type, done:Boolean(done), overdue:Boolean(overdue)});
   }).filter(Boolean).filter(row => {
     if(kind !== 'all' && row.type !== kind)return false;
@@ -1919,14 +1919,19 @@ function assistantAnswerItems(args, context){
   }
   if(query !== 'list')return {ok:true, text:'I can list tasks or habits by open, done, or overdue status, or summarize today’s progress.'};
   const label = status === 'all' ? (kind === 'all' ? 'items' : `${kind}s`) : `${status} ${kind === 'all' ? 'items' : `${kind}s`}`;
-  if(!rows.length)return {ok:true, text:`No ${label}${search ? ` match “${String(args.search).trim()}”` : ''}.`, items:[]};
-  const items = rows.slice(0, 20).map(row => {
+  const baseItems = rows.map(row => {
     const copy = Object.assign({}, row);
     delete copy.haystack;
     return copy;
   });
-  const more = rows.length > items.length ? `, and ${rows.length - items.length} more` : '';
-  return {ok:true, items, text:`${rows.length} ${label}: ${items.map(row => row.name).join(', ')}${more}.`};
+  const queried = assistantApplyItemQuery(baseItems, args || {}, kind === 'all' ? 'item' : kind);
+  if(queried.ok)return queried;
+  if(!queried.rows.length)return {ok:true, text:`No ${label}${search ? ` match “${String(args.search).trim()}”` : ''} match the query.`, items:[]};
+  const more = queried.total > queried.rows.length ? `, and ${queried.total - queried.rows.length} more` : '';
+  const countLabel = queried.total === 1
+    ? label.replace(/items$/, 'item').replace(/habits$/, 'habit').replace(/tasks$/, 'task')
+    : label;
+  return {ok:true, items:queried.rows, text:`${queried.total} matching ${countLabel}: ${queried.rows.map(row => row.name).join(', ')}${more}.`};
 }
 
 function assistantAnswerSettings(args, context){
@@ -1990,10 +1995,53 @@ function assistantFrequencyFacts(habit){
   return {frequency, timesPerWeek};
 }
 
-function assistantHabitQueryFacts(habit, extra){
+function assistantHabitOverdueFacts(habit, now = Date.now()){
+  if(!habit)return {overdueDays:0, dueInDays:null, daysSinceLast:null};
+  const todayBase = assistantDayBase(now);
+  const dayDiff = ts => ts == null ? null : Math.round((assistantDayBase(ts) - todayBase) / 86400000);
+  const last = habit.lastLog != null ? habit.lastLog : null;
+  const daysSinceLast = last == null ? null : Math.max(0, -dayDiff(last));
+  if(habit.type === 'task'){
+    const when = typeof taskWhen === 'function' ? taskWhen(habit) : (habit.eventTime != null ? habit.eventTime : habit.dueDate);
+    const dueInDays = dayDiff(when);
+    return {overdueDays:dueInDays == null ? 0 : Math.max(0, -dueInDays), dueInDays, daysSinceLast};
+  }
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(habit) : habit.planByDate;
+  if(planBy != null){
+    const dueInDays = dayDiff(planBy);
+    return {overdueDays:dueInDays == null ? 0 : Math.max(0, -dueInDays), dueInDays, daysSinceLast};
+  }
+  // Match the product cue: a never-completed rhythm is "ready for first
+  // entry", not N days overdue merely because it was created long ago.
+  const age = last == null ? null : Math.max(0, -dayDiff(last));
+  const target = Math.max(1, Math.ceil(Number(typeof effectiveTarget === 'function' ? effectiveTarget(habit) : habit.target) || 7));
+  const dueInDays = age == null ? null : target - age;
+  return {overdueDays:dueInDays == null ? 0 : Math.max(0, -dueInDays), dueInDays, daysSinceLast};
+}
+
+function assistantHabitQueryFacts(habit, extra, context, index){
   if(!habit)return null;
   const pri = assistantPriorityFacts(habit);
   const freq = assistantFrequencyFacts(habit);
+  const now = context && context.now != null ? Number(context.now) : Date.now();
+  const due = assistantHabitOverdueFacts(habit, now);
+  const settings = context && context.settings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
+  const done = habit.type === 'task'
+    ? Boolean(typeof isTaskDone === 'function' && isTaskDone(habit))
+    : Boolean(typeof completedToday === 'function' && completedToday(habit, now));
+  const snoozed = Boolean(habit.snoozedUntil && habit.snoozedUntil > now);
+  const status = snoozed ? 'snoozed' : done ? 'done' : due.overdueDays > 0 ? 'overdue' : due.dueInDays === 0 ? 'due' : 'open';
+  let urgency = null;
+  try{
+    if(typeof attentionScore === 'function')urgency = Math.round(attentionScore(habit, Number.isInteger(index) ? index : 0, settings) * 10) / 10;
+  }catch(_){}
+  const locations = settings && Array.isArray(settings.locations) ? settings.locations : [];
+  const places = (habit.locationIds || []).map(id => {
+    const found = locations.find(row => row && row.id === id);
+    return found && found.name;
+  }).filter(Boolean);
+  const profiles = settings && Array.isArray(settings.weatherProfiles) ? settings.weatherProfiles : [];
+  const profile = profiles.find(row => row && row.id === habit.weatherProfileId);
   const facts = {
     name:String(habit.name || '').slice(0, 48),
     hid:habit.hid || undefined,
@@ -2001,9 +2049,19 @@ function assistantHabitQueryFacts(habit, extra){
     priority:pri.priority,
     priorityRank:pri.priorityRank,
     pinned:Boolean(habit.pinned),
+    breakable:Boolean(habit.breakable),
+    completedToday:done,
+    status,
     durationMinutes:Number.isFinite(Number(habit.durationMinutes)) ? Number(habit.durationMinutes) : null,
     frequency:freq.frequency,
-    timesPerWeek:freq.timesPerWeek
+    timesPerWeek:freq.timesPerWeek,
+    topics:Array.isArray(habit.topics) ? habit.topics.slice(0, 8) : [],
+    places:places.slice(0, 8),
+    weatherProfile:profile && profile.name || null,
+    urgency,
+    overdueDays:due.overdueDays,
+    dueInDays:due.dueInDays,
+    daysSinceLast:due.daysSinceLast
   };
   if(extra)Object.assign(facts, extra);
   return facts;
@@ -2027,49 +2085,152 @@ function assistantTodayAgendaHids(data, week, now){
   return hids;
 }
 
-function assistantSelectScheduleItem(items, select){
-  const rows = (Array.isArray(items) ? items : []).filter(Boolean);
-  if(!rows.length)return null;
-  if(select === 'most_important'){
-    return rows.slice().sort((a,b) => {
-      const ap = Number.isFinite(Number(a.priorityRank)) ? Number(a.priorityRank) : 2;
-      const bp = Number.isFinite(Number(b.priorityRank)) ? Number(b.priorityRank) : 2;
-      return ap - bp;
-    })[0];
+const ASSISTANT_QUERY_FIELD_KEYS = {
+  name:'name', kind:'type', status:'status', priority:'priorityRank', importance:'priorityRank',
+  urgency:'urgency', overdue_days:'overdueDays', due_in_days:'dueInDays', days_since_last:'daysSinceLast',
+  frequency_per_week:'timesPerWeek', duration_minutes:'durationMinutes', pinned:'pinned', breakable:'breakable',
+  completed_today:'completedToday', topic:'topics', place:'places', weather_profile:'weatherProfile',
+  scheduled_time:'startMinutes'
+};
+
+function assistantQueryCompare(actual, op, expected){
+  const list = Array.isArray(actual) ? actual : null;
+  if(op === 'contains'){
+    if(list)return list.some(value => assistantNormText(value).includes(assistantNormText(expected)));
+    return assistantNormText(actual).includes(assistantNormText(expected));
   }
-  if(select === 'most_frequent'){
-    const habits = rows.filter(item => item.type === 'habit');
-    return habits.slice().sort((a,b) => (Number(b.timesPerWeek) || 0) - (Number(a.timesPerWeek) || 0))[0] || null;
-  }
-  if(select === 'longest'){
-    const timed = rows.filter(item => Number.isFinite(Number(item.durationMinutes)) && Number(item.durationMinutes) > 0);
-    return timed.slice().sort((a,b) => Number(b.durationMinutes) - Number(a.durationMinutes))[0] || null;
-  }
-  return null;
+  const aNum = typeof actual === 'number' ? actual : Number(actual);
+  const eNum = typeof expected === 'number' ? expected : Number(expected);
+  const numeric = actual !== null && actual !== '' && expected !== null && expected !== '' && Number.isFinite(aNum) && Number.isFinite(eNum);
+  if(op === 'gt')return numeric && aNum > eNum;
+  if(op === 'gte')return numeric && aNum >= eNum;
+  if(op === 'lt')return numeric && aNum < eNum;
+  if(op === 'lte')return numeric && aNum <= eNum;
+  const equal = list
+    ? list.some(value => assistantNormText(value) === assistantNormText(expected))
+    : typeof actual === 'boolean' || typeof expected === 'boolean'
+      ? Boolean(actual) === Boolean(expected)
+      : numeric ? aNum === eNum : assistantNormText(actual) === assistantNormText(expected);
+  return op === 'neq' ? !equal : equal;
 }
 
-function assistantSelectedScheduleText(items, select, scope){
-  const picked = assistantSelectScheduleItem(items, select);
-  if(!picked){
-    if(select === 'most_frequent')return {ok:true, items:[], text:'There is no recurring habit to compare here.'};
-    if(select === 'longest')return {ok:true, items:[], text:'None of those items has a duration.'};
-    return null;
-  }
-  const label = select === 'most_important' ? 'most important'
-    : select === 'most_frequent' ? 'most frequent'
-    : 'longest';
-  const detail = select === 'most_important' ? picked.priority
-    : select === 'most_frequent' ? picked.frequency
-    : assistantQueryDurationText(picked.durationMinutes);
-  return {
-    ok:true,
-    items:[picked],
-    item:picked,
-    text:`The ${label} ${scope} is ${picked.name}${detail ? ` (${detail})` : ''}.`
+function assistantQueryFieldValue(item, field){
+  const key = ASSISTANT_QUERY_FIELD_KEYS[assistantNormText(field)];
+  return key ? item && item[key] : undefined;
+}
+
+function assistantQueryOrdinal(n){
+  const value = Math.max(1, Math.round(Number(n) || 1));
+  const mod100 = value % 100;
+  if(mod100 >= 11 && mod100 <= 13)return `${value}th`;
+  return `${value}${value % 10 === 1 ? 'st' : value % 10 === 2 ? 'nd' : value % 10 === 3 ? 'rd' : 'th'}`;
+}
+
+function assistantQueryFieldLabel(field, direction){
+  const desc = direction === 'desc';
+  const labels = {
+    importance:desc ? 'least important' : 'most important', priority:desc ? 'least important' : 'most important',
+    urgency:desc ? 'most urgent' : 'least urgent', overdue_days:desc ? 'most overdue' : 'least overdue',
+    due_in_days:desc ? 'latest due' : 'soonest due', days_since_last:desc ? 'longest since completed' : 'most recently completed',
+    frequency_per_week:desc ? 'most frequent' : 'least frequent', duration_minutes:desc ? 'longest' : 'shortest',
+    scheduled_time:desc ? 'latest' : 'earliest', name:desc ? 'reverse-alphabetical' : 'alphabetical'
   };
+  return labels[field] || 'matching';
 }
 
-function assistantAnswerMissed(context, select){
+function assistantQueryDetail(item, field){
+  if(!item)return '';
+  if(field === 'priority' || field === 'importance')return item.priority || '';
+  if(field === 'urgency')return Number.isFinite(Number(item.urgency)) ? `urgency ${item.urgency}` : '';
+  if(field === 'overdue_days')return item.overdueDays > 0 ? `${item.overdueDays} day${item.overdueDays === 1 ? '' : 's'} overdue` : 'not overdue';
+  if(field === 'due_in_days')return item.dueInDays == null ? 'no due date' : item.dueInDays === 0 ? 'due today' : item.dueInDays < 0 ? `${Math.abs(item.dueInDays)} days overdue` : `due in ${item.dueInDays} days`;
+  if(field === 'days_since_last')return item.daysSinceLast == null ? 'never completed' : `${item.daysSinceLast} days since completion`;
+  if(field === 'frequency_per_week')return item.frequency || '';
+  if(field === 'duration_minutes')return item.durationMinutes == null ? 'duration not set' : assistantQueryDurationText(item.durationMinutes);
+  if(field === 'scheduled_time')return item.clock || '';
+  return '';
+}
+
+function assistantApplyItemQuery(items, args, scope){
+  let rows = (Array.isArray(items) ? items : []).filter(Boolean).map((item,index) => Object.assign({_queryIndex:index}, item));
+  const conditions = Array.isArray(args && args.conditions) ? args.conditions.slice(0, 12) : [];
+  for(const condition of conditions){
+    const field = assistantNormText(condition && condition.field);
+    const op = ['eq','neq','gt','gte','lt','lte','contains'].includes(assistantNormText(condition && condition.op))
+      ? assistantNormText(condition.op) : 'eq';
+    if(!ASSISTANT_QUERY_FIELD_KEYS[field])continue;
+    rows = rows.filter(item => assistantQueryCompare(assistantQueryFieldValue(item, field), op, condition.value));
+  }
+  const sortBy = ASSISTANT_QUERY_FIELD_KEYS[assistantNormText(args && args.sortBy)] ? assistantNormText(args.sortBy) : '';
+  const defaultDesc = ['urgency','overdue_days','days_since_last','frequency_per_week','duration_minutes'].includes(sortBy);
+  const direction = assistantNormText(args && args.sortOrder) === 'asc' ? 'asc'
+    : assistantNormText(args && args.sortOrder) === 'desc' ? 'desc'
+    : (defaultDesc ? 'desc' : 'asc');
+  if(sortBy){
+    rows.sort((a,b) => {
+      const av = assistantQueryFieldValue(a, sortBy);
+      const bv = assistantQueryFieldValue(b, sortBy);
+      let cmp = 0;
+      if(Array.isArray(av) || Array.isArray(bv) || typeof av === 'string' || typeof bv === 'string'){
+        cmp = String(Array.isArray(av) ? av.join(', ') : av || '').localeCompare(String(Array.isArray(bv) ? bv.join(', ') : bv || ''));
+      }else{
+        const an = Number(av), bn = Number(bv);
+        const am = av == null || av === '' || !Number.isFinite(an);
+        const bm = bv == null || bv === '' || !Number.isFinite(bn);
+        if(am !== bm)return am ? 1 : -1;
+        if(!am)cmp = an - bn;
+      }
+      if(cmp)return direction === 'desc' ? -cmp : cmp;
+      const priorityTie = (Number(a.priorityRank) || 0) - (Number(b.priorityRank) || 0);
+      return priorityTie || a._queryIndex - b._queryIndex;
+    });
+  }
+  const clean = item => { const copy = Object.assign({}, item); delete copy._queryIndex; return copy; };
+  const aggregate = assistantNormText(args && args.aggregate);
+  if(aggregate === 'count')return {ok:true, items:[], text:`${rows.length} ${scope}${rows.length === 1 ? '' : 's'} match.`};
+  if(aggregate === 'sum_duration' || aggregate === 'average_duration'){
+    const durations = rows.map(item => Number(item.durationMinutes)).filter(value => Number.isFinite(value) && value >= 0);
+    if(!durations.length)return {ok:true, items:[], text:`None of the matching ${scope}${rows.length === 1 ? '' : 's'} has a duration.`};
+    const total = durations.reduce((sum,value) => sum + value, 0);
+    const value = aggregate === 'average_duration' ? (durations.length ? Math.round(total / durations.length) : 0) : total;
+    const label = aggregate === 'average_duration' ? 'average duration' : 'total duration';
+    const count = aggregate === 'average_duration' ? durations.length : rows.length;
+    const qualifier = aggregate === 'average_duration' && durations.length !== rows.length ? ' with a duration' : '';
+    return {ok:true, items:rows.map(clean).slice(0,20), text:`The ${label} of the ${count} matching ${scope}${count === 1 ? '' : 's'}${qualifier} is ${assistantQueryDurationText(value)}.`};
+  }
+  const position = Math.round(Number(args && args.position));
+  if(Number.isInteger(position) && position > 0){
+    const picked = rows[position - 1];
+    if(!picked)return {ok:true, items:[], text:`Only ${rows.length} ${scope}${rows.length === 1 ? ' matches' : 's match'}, so there is no ${assistantQueryOrdinal(position)} result.`};
+    const item = clean(picked);
+    const ordinal = position === 1 ? 'The' : `The ${assistantQueryOrdinal(position)}`;
+    const ranking = sortBy ? assistantQueryFieldLabel(sortBy, direction) : 'matching';
+    const detail = assistantQueryDetail(item, sortBy);
+    return {ok:true, items:[item], item, text:`${ordinal} ${ranking} ${scope} is ${item.name}${detail ? ` (${detail})` : ''}.`};
+  }
+  const requestedLimit = Math.round(Number(args && args.limit));
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(20, requestedLimit) : 20;
+  return {rows:rows.slice(0,limit).map(clean), total:rows.length, queried:Boolean(conditions.length || sortBy || (args && args.limit != null))};
+}
+
+function assistantScheduleAnalysisArgs(args, select){
+  if(!select || (args && (args.sortBy || args.position || args.aggregate)))return args || {};
+  const out = Object.assign({}, args || {}, {position:1});
+  if(select === 'most_important'){
+    out.sortBy = 'importance';
+    out.sortOrder = 'asc';
+  }else if(select === 'most_frequent'){
+    out.sortBy = 'frequency_per_week';
+    out.sortOrder = 'desc';
+    out.conditions = (Array.isArray(out.conditions) ? out.conditions.slice() : []).concat([{field:'kind', op:'eq', value:'habit'}]);
+  }else if(select === 'longest'){
+    out.sortBy = 'duration_minutes';
+    out.sortOrder = 'desc';
+  }
+  return out;
+}
+
+function assistantAnswerMissed(context, select, args){
   const data = context.data;
   const settings = context.settings;
   const now = context.now != null ? Number(context.now) : Date.now();
@@ -2078,19 +2239,24 @@ function assistantAnswerMissed(context, select){
   const dropped = typeof collectDroppedItems === 'function'
     ? collectDroppedItems(data, settings, todayHids, now)
     : [];
-  if(!dropped.length)return {ok:true, text:'Nothing missed — the missed list on today is empty.', items:[]};
-  const items = dropped.slice(0, 12).map(row => {
+  if(!dropped.length){
+    const empty = assistantApplyItemQuery([], assistantScheduleAnalysisArgs(args, select), 'missed item');
+    return empty.ok ? empty : {ok:true, text:'Nothing missed — the missed list on today is empty.', items:[]};
+  }
+  const items = dropped.map(row => {
     const habit = (data && row.idx != null ? data[row.idx] : null)
       || (Array.isArray(data) ? data.find(item => item && item.hid === row.hid) : null);
-    return assistantHabitQueryFacts(habit, {missed:row.dayLabel || 'today'})
+    return assistantHabitQueryFacts(habit, {missed:row.dayLabel || 'today'}, context, row.idx)
       || {name:String(row.name || '').slice(0, 48), hid:row.hid, missed:row.dayLabel || 'today'};
   });
-  const more = dropped.length > items.length ? ` and ${dropped.length - items.length} more` : '';
-  const listed = items.map(item => item.missed && item.missed !== 'today'
+  const queried = assistantApplyItemQuery(items, assistantScheduleAnalysisArgs(args, select), 'missed item');
+  if(queried.ok)return queried;
+  if(!queried.rows.length)return {ok:true, text:'No missed items match the query.', items:[]};
+  const more = queried.total > queried.rows.length ? ` and ${queried.total - queried.rows.length} more` : '';
+  const listed = queried.rows.map(item => item.missed && item.missed !== 'today'
     ? `${item.name} (${item.missed})`
     : item.name).join(', ');
-  const selected = assistantSelectedScheduleText(items, select, 'missed item');
-  return selected || {ok:true, items, text:`Missed: ${listed}${more}.`};
+  return {ok:true, items:queried.rows, text:`Missed: ${listed}${more}.`};
 }
 
 function assistantQueryDurationText(minutes){
@@ -2162,16 +2328,22 @@ function assistantQueryDayRows(day, data){
   return rows;
 }
 
-function assistantQueryRowFacts(rows){
+function assistantQueryRowFacts(rows, context){
   const seen = new Set();
   const items = [];
   for(const row of rows || []){
     const key = row.hid || row.name;
     if(!key || seen.has(key))continue;
     seen.add(key);
+    const when = Number(row.start);
+    const startMinutes = Number.isFinite(when) ? new Date(when).getHours() * 60 + new Date(when).getMinutes() : null;
+    const index = row.habit && Array.isArray(context && context.data)
+      ? context.data.findIndex(item => item && item.hid === row.habit.hid)
+      : -1;
     const facts = assistantHabitQueryFacts(row.habit, {
-      clock:row.clock || undefined
-    });
+      clock:row.clock || undefined,
+      startMinutes
+    }, context, index);
     items.push(facts || {name:row.name, clock:row.clock || undefined});
   }
   return items;
@@ -2307,7 +2479,7 @@ async function assistantAnswerSchedule(args, context){
   const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
   const gapsInfo = day && typeof computeDayFreeGaps === 'function' ? computeDayFreeGaps(day, settings, now) : null;
 
-  if(query === 'missed')return assistantAnswerMissed(context, select);
+  if(query === 'missed')return assistantAnswerMissed(context, select, args);
 
   if(query === 'freest'){
     if(!week || typeof computeDayFreeGaps !== 'function')return {ok:true, text:'I could not read this week\'s plan yet — open the home view once, then ask again.'};
@@ -2335,15 +2507,19 @@ async function assistantAnswerSchedule(args, context){
       return {ok:true, text:`Your week: ${lines.join(' · ')}.`};
     }
     const rows = assistantQueryDayRows(day, data);
-    if(!rows.length)return {ok:true, text:`Nothing is planned on ${dayLabel}.`, items:[]};
+    if(!rows.length){
+      const empty = assistantApplyItemQuery([], assistantScheduleAnalysisArgs(args, select), `item in ${dayLabel}'s agenda`);
+      return empty.ok ? empty : {ok:true, text:`Nothing is planned on ${dayLabel}.`, items:[]};
+    }
     const free = gapsInfo ? ` ${assistantQueryDurationText(gapsInfo.totalFreeMinutes)} stays open.` : '';
-    const items = assistantQueryRowFacts(rows);
-    const selected = assistantSelectedScheduleText(items, select, `item in ${dayLabel}'s agenda`);
-    if(selected)return selected;
+    const items = assistantQueryRowFacts(rows, context);
+    const queried = assistantApplyItemQuery(items, assistantScheduleAnalysisArgs(args, select), `item in ${dayLabel}'s agenda`);
+    if(queried.ok)return queried;
+    if(!queried.rows.length)return {ok:true, text:`Nothing on ${dayLabel}'s agenda matches the query.`, items:[]};
     return {
       ok:true,
-      items,
-      text:`${dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)}: ${rows.map(row => `${row.clock || ''} ${row.name}`.trim()).join(', ')}.${free}`
+      items:queried.rows,
+      text:`${dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)}: ${queried.rows.map(item => `${item.clock || ''} ${item.name}`.trim()).join(', ')}.${free}`
     };
   }
 

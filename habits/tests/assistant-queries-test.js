@@ -631,9 +631,11 @@ async function launchBrowser(){
   const broadHandlers = await page.evaluate(() => {
     const base = dayStart(Date.now());
     save([
-      {hid:'h1', name:'Read', type:'habit', topics:['Learning'], logs:[]},
-      {hid:'t1', name:'Old errand', type:'task', dueDate:base - 86400000, logs:[]},
-      {hid:'t2', name:'Finished task', type:'task', dueDate:base, logs:[makeActualLog(Date.now())], lastLog:Date.now()}
+      {hid:'h1', name:'Read', type:'habit', priority:2, durationMinutes:30, topics:['Learning'],
+        locationIds:['home'], weatherProfileMode:'profile', weatherProfileId:'dry', pinned:true, breakable:true, logs:[]},
+      {hid:'t1', name:'Old errand', type:'task', priority:0, durationMinutes:60, dueDate:base - 86400000, logs:[]},
+      {hid:'t2', name:'Finished task', type:'task', priority:1, durationMinutes:15, dueDate:base,
+        logs:[makeActualLog(Date.now())], lastLog:Date.now()}
     ]);
     saveSortSettings({...loadSortSettings(),
       locations:[{id:'home', name:'Home', lat:1, lng:1}],
@@ -649,12 +651,31 @@ async function launchBrowser(){
     const weather = assistantAnswerSettings({kind:'weather'}, context);
     const topics = assistantAnswerSettings({kind:'topics'}, context);
     const busy = assistantAnswerSettings({kind:'busy'}, context);
+    const mostImportant = assistantAnswerItems({query:'list', sortBy:'importance', position:1}, context);
+    const mostUrgent = assistantAnswerItems({query:'list', sortBy:'urgency', sortOrder:'desc', position:1}, context);
+    const richFilter = assistantAnswerItems({query:'list', conditions:[
+      {field:'topic', op:'eq', value:'Learning'},
+      {field:'place', op:'eq', value:'Home'},
+      {field:'weather_profile', op:'eq', value:'Dry'},
+      {field:'pinned', op:'eq', value:true},
+      {field:'breakable', op:'eq', value:true},
+      {field:'duration_minutes', op:'gte', value:30}
+    ]}, context);
+    const taskMinutes = assistantAnswerItems({query:'list', kind:'task', aggregate:'sum_duration'}, context);
+    const doneCount = assistantAnswerItems({query:'list', aggregate:'count', conditions:[
+      {field:'completed_today', op:'eq', value:true}
+    ]}, context);
     save([]);
     saveSortSettings({...loadSortSettings(), locations:[], weatherProfiles:[{id:'dry', name:'Dry', rules:[
       {metric:'precipitation_probability', max:40, min:null, hard:true, relative:'none'}
     ]}], topics:[], blockedTimes:[]});
     refreshHomeWeekForAssistant();
-    return {habits:habits.text, overdue:overdue.text, progress:progress.text, places:places.text, weather:weather.text, topics:topics.text, busy:busy.text};
+    return {
+      habits:habits.text, overdue:overdue.text, progress:progress.text,
+      places:places.text, weather:weather.text, topics:topics.text, busy:busy.text,
+      mostImportant:mostImportant.text, mostUrgent:mostUrgent.text,
+      richFilter:richFilter.text, taskMinutes:taskMinutes.text, doneCount:doneCount.text
+    };
   });
   assert(/Read/.test(broadHandlers.habits) && /Old errand/.test(broadHandlers.overdue),
     'item lists filter by kind and overdue status');
@@ -663,6 +684,16 @@ async function launchBrowser(){
   assert(/Home/.test(broadHandlers.places) && /Dry/.test(broadHandlers.weather)
     && /Learning/.test(broadHandlers.topics) && /Work/.test(broadHandlers.busy),
     'settings questions list places, weather profiles, topics, and busy times');
+  assert(/most important item.*Old errand.*P0/i.test(broadHandlers.mostImportant),
+    `importance ranking is computed from priority: ${broadHandlers.mostImportant}`);
+  assert(/most urgent item.*urgency/i.test(broadHandlers.mostUrgent),
+    `urgency ranking uses the app attention score: ${broadHandlers.mostUrgent}`);
+  assert(/Read/.test(broadHandlers.richFilter) && !/Old errand|Finished task/.test(broadHandlers.richFilter),
+    `topic/place/weather/pinned/breakable/duration conditions compose: ${broadHandlers.richFilter}`);
+  assert(/total duration.*1h 15m/i.test(broadHandlers.taskMinutes),
+    `duration aggregation is computed across filtered tasks: ${broadHandlers.taskMinutes}`);
+  assert(/^1 item match\.$/i.test(broadHandlers.doneCount),
+    `boolean condition + count aggregation are computed: ${broadHandlers.doneCount}`);
 
   console.log('\n[handlers] freest / free / missed / day / week compute from the plan');
   const scheduleHandlers = await page.evaluate(async () => {
@@ -723,11 +754,13 @@ async function launchBrowser(){
     const today = todayIso();
     const meds = {
       hid:'miss-p0', name:'Take meds', type:'keepup', target:1, priority:0,
-      durationMinutes:10, createdAt:now - 30 * dayMs, logs:[], lastLog:now - 2 * dayMs
+      durationMinutes:10, createdAt:now - 30 * dayMs,
+      logs:[makeActualLog(now - 2 * dayMs)], lastLog:now - 2 * dayMs
     };
     const laundry = {
       hid:'miss-p5', name:'Sort laundry', type:'keepup', target:7, priority:5,
-      durationMinutes:20, createdAt:now - 30 * dayMs, logs:[], lastLog:now - 8 * dayMs
+      durationMinutes:20, createdAt:now - 30 * dayMs,
+      logs:[makeActualLog(now - 8 * dayMs)], lastLog:now - 8 * dayMs
     };
     const overdue = {hid:'t-overdue', name:'Return library book', type:'task', dueDate:base - 2 * dayMs, logs:[]};
     save([meds, laundry, overdue]);
@@ -756,6 +789,28 @@ async function launchBrowser(){
     const mostImportant = await assistantAnswerSchedule({query:'missed', select:'most_important'}, assistantBuildContext());
     const mostFrequent = await assistantAnswerSchedule({query:'missed', select:'most_frequent'}, assistantBuildContext());
     const longest = await assistantAnswerSchedule({query:'missed', select:'longest'}, assistantBuildContext());
+    const secondMostOverdue = await assistantAnswerSchedule({
+      query:'missed', sortBy:'overdue_days', sortOrder:'desc', position:2
+    }, assistantBuildContext());
+    const compoundCount = assistantAnswerItems({
+      query:'list', aggregate:'count', conditions:[
+        {field:'kind', op:'eq', value:'habit'},
+        {field:'status', op:'eq', value:'overdue'},
+        {field:'priority', op:'lte', value:5}
+      ]
+    }, assistantBuildContext());
+    const rankedReplies = [
+      {message:{thinking:'use a deterministic ordinal query', tool_calls:[{
+        function:{name:'answer_schedule', arguments:{
+          query:'missed', sortBy:'overdue_days', sortOrder:'desc', position:2
+        }}
+      }]}},
+      {message:{content:'Take meds is definitely the answer because I ranked the list myself.'}}
+    ];
+    const rankedTurn = await runAssistantTurn('What is the thing I missed today that is second most overdue?', {
+      context:assistantBuildContext(),
+      complete:async () => rankedReplies.shift()
+    });
     const local = assistantTryMissedTurn('What did I miss today?', assistantCreateSession(), assistantBuildContext());
     _homeRenderedWeek = savedWeek;
     save([]);
@@ -767,7 +822,13 @@ async function launchBrowser(){
       mostImportant:mostImportant.text,
       mostFrequent:mostFrequent.text,
       longest:longest.text,
-      items:(missed.items || []).map(item => ({name:item.name, priority:item.priority, priorityRank:item.priorityRank, frequency:item.frequency})),
+      secondMostOverdue:secondMostOverdue.text,
+      compoundCount:compoundCount.text,
+      rankedTurn:{type:rankedTurn.type, text:rankedTurn.text, llmCalls:rankedTurn.session && rankedTurn.session.llmCalls},
+      items:(missed.items || []).map(item => ({
+        name:item.name, priority:item.priority, priorityRank:item.priorityRank,
+        frequency:item.frequency, overdueDays:item.overdueDays, urgency:item.urgency, status:item.status
+      })),
       localType:local && local.type,
       localText:local && local.text,
       localPath:(local && local.session && local.session.debug || []).find(row => row.t === 'path')
@@ -787,6 +848,17 @@ async function launchBrowser(){
     `frequency ranking is computed by the tool: ${missedHandlers.mostFrequent}`);
   assert(/longest.*Sort laundry.*20m/i.test(missedHandlers.longest),
     `duration ranking is computed by the tool: ${missedHandlers.longest}`);
+  assert(/2nd most overdue.*Sort laundry.*1 day overdue/i.test(missedHandlers.secondMostOverdue),
+    `arbitrary ordinal overdue ranking is computed by the tool: ${missedHandlers.secondMostOverdue}`);
+  assert(/^2 items match\.$/i.test(missedHandlers.compoundCount),
+    `multi-condition count is computed by the tool: ${missedHandlers.compoundCount}`);
+  assert(missedHandlers.rankedTurn.type === 'say'
+    && missedHandlers.rankedTurn.text === missedHandlers.secondMostOverdue
+    && missedHandlers.rankedTurn.llmCalls === 1
+    && !/definitely/.test(missedHandlers.rankedTurn.text),
+    `ordinal result is terminal and tool-grounded: ${missedHandlers.rankedTurn.text}`);
+  assert(missedHandlers.items.every(item => Number.isFinite(item.overdueDays) && Number.isFinite(item.urgency) && item.status),
+    `query payloads include overdue, urgency, and status facts: ${JSON.stringify(missedHandlers.items)}`);
   assert(missedHandlers.localType === 'say' && /Take meds/.test(missedHandlers.localText),
     `what did I miss today uses the header list locally: ${missedHandlers.localText}`);
 

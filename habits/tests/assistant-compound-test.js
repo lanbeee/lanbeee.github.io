@@ -6,6 +6,7 @@ const { chromium, BASE, waitForAssistant } = require('./helpers/planner-test-hel
 const DISABLE_LIVE = process.env.ASSISTANT_LIVE === '0';
 const REQUIRE_LIVE = Boolean(process.env.ASSISTANT_LIVE) && !DISABLE_LIVE;
 const LIVE_FULL = process.env.ASSISTANT_LIVE === 'full';
+const LIVE_CASE = String(process.env.ASSISTANT_CASE || '').trim();
 
 let pass = 0, fail = 0;
 function assert(cond, msg){
@@ -36,6 +37,7 @@ function dump(got){
     text:got && got.text,
     alsoText:got && got.alsoText,
     tools:got && got.tools,
+    toolArgs:got && got.toolArgs,
     steps:got && got.steps,
     llmCalls:got && got.llmCalls,
     path:got && got.path,
@@ -61,6 +63,15 @@ const CORE = [
     textNone:[/library book/i],
     pick:/Take meds/i,
     notPick:/Sort laundry is the most important|the most important.{0,12}Sort laundry/i
+  },
+  {
+    id:'second-most-overdue-missed',
+    prompt:"What's the thing that I missed today and is second most overdue?",
+    expectType:['say'],
+    toolsAny:['answer_schedule'],
+    textAll:[/Sort laundry/i, /1 day overdue/i],
+    textNone:[/^Missed:/i],
+    notPick:/2nd most overdue.{0,30}Take meds/i
   },
   {
     id:'most-frequent-tomorrow',
@@ -304,7 +315,8 @@ function checkTurn(spec, got, label){
   console.log('  model: ' + probe.provider + ' ' + probe.model);
   page.setDefaultTimeout(40 * 60 * 1000);
 
-  const wanted = LIVE_FULL ? CORE.concat(EXTRA) : CORE;
+  const wantedAll = LIVE_FULL ? CORE.concat(EXTRA) : CORE;
+  const wanted = LIVE_CASE ? wantedAll.filter(spec => spec.id === LIVE_CASE) : wantedAll;
   console.log('\n[live] compound / multi-part via real Ollama (' + wanted.length + ')');
 
   for(const spec of wanted){
@@ -351,11 +363,15 @@ function checkTurn(spec, got, label){
         });
         const meds = {
           hid:'miss-p0', name:'Take meds', type:'keepup', target:1, priority:0,
-          durationMinutes:10, createdAt:now - 30 * dayMs, logs:[], lastLog:now - 2 * dayMs
+          durationMinutes:10, createdAt:now - 30 * dayMs,
+          logs:[typeof makeActualLog === 'function' ? makeActualLog(now - 2 * dayMs) : now - 2 * dayMs],
+          lastLog:now - 2 * dayMs
         };
         const laundry = {
           hid:'miss-p5', name:'Sort laundry', type:'keepup', target:7, priority:5,
-          durationMinutes:20, createdAt:now - 30 * dayMs, logs:[], lastLog:now - 8 * dayMs
+          durationMinutes:20, createdAt:now - 30 * dayMs,
+          logs:[typeof makeActualLog === 'function' ? makeActualLog(now - 8 * dayMs) : now - 8 * dayMs],
+          lastLog:now - 8 * dayMs
         };
         const lastAmma = base - 3 * dayMs + 20 * 3600000;
         const amma = {
@@ -435,6 +451,7 @@ function checkTurn(spec, got, label){
       function summarize(out){
         const debug = (out && out.debug) || [];
         const tools = debug.filter(row => row.t === 'tool').map(row => row.name);
+        const toolArgs = debug.filter(row => row.t === 'tool').map(row => ({name:row.name, args:row.args}));
         const steps = debug.filter(row => row.t === 'step').map(row => row.step);
         const path = debug.find(row => row.t === 'path') || {};
         let recent = null;
@@ -457,6 +474,7 @@ function checkTurn(spec, got, label){
             || (out.pendingDelete && out.pendingDelete.name)
             || null,
           tools,
+          toolArgs,
           steps,
           llmCalls:out.session && out.session.llmCalls,
           path:path.path,
@@ -480,8 +498,9 @@ function checkTurn(spec, got, label){
     }
   }
 
-  console.log('\n[live] follow-up turns via real Ollama (' + FOLLOWUPS.length + ')');
-  for(const spec of FOLLOWUPS){
+  const followups = LIVE_CASE ? FOLLOWUPS.filter(spec => spec.id === LIVE_CASE) : FOLLOWUPS;
+  console.log('\n[live] follow-up turns via real Ollama (' + followups.length + ')');
+  for(const spec of followups){
     console.log('\n[live] ' + spec.id);
     const turns = await page.evaluate(async ({model, prompts}) => {
       delete globalThis.__assistantTestComplete;
@@ -530,7 +549,9 @@ function checkTurn(spec, got, label){
         };
         const laundry = {
           hid:'miss-p5', name:'Sort laundry', type:'keepup', target:7, priority:5,
-          durationMinutes:20, createdAt:now - 30 * dayMs, logs:[], lastLog:now - 8 * dayMs
+          durationMinutes:20, createdAt:now - 30 * dayMs,
+          logs:[typeof makeActualLog === 'function' ? makeActualLog(now - 8 * dayMs) : {t:now - 8 * dayMs}],
+          lastLog:now - 8 * dayMs
         };
         const lastAmma = base - 3 * dayMs + 20 * 3600000;
         const amma = {

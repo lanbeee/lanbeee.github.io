@@ -13,7 +13,7 @@ function assistantSystemPrompt(){
     '4. If a saved-item name is missing or ambiguous, call find_item or ask_user. Never guess the item or create a replacement.',
     '',
     'READS AND ACTIONS',
-    'Use answer_schedule for agendas, missed items, free time, freest day, open windows, and what-if conflicts. For most important, most frequent, or longest, set select so Tings computes the ranking. Use answer_weather for forecast facts and weather fit. Use answer_items for lists/status/progress, answer_settings for saved configuration, and lookup_item for one item’s next time, last completion, history, stats, or planner reason.',
+    'Use answer_schedule for agendas, missed items, free time, freest day, open windows, and what-if conflicts. Use answer_items for questions across saved tasks/habits. For arbitrary filters, rankings, ordinals, counts, or duration math, put the whole operation in conditions + sortBy/sortOrder + position/limit + aggregate; Tings must compute it. Example: second most overdue missed = answer_schedule query missed, sortBy overdue_days, sortOrder desc, position 2. Importance is P0-P5 (lower is more important); urgency is the app attention score (higher is more urgent). Use answer_weather for forecast facts and weather fit, answer_settings for saved configuration, and lookup_item for one item’s next time, last completion, history, stats, or planner reason.',
     'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove an item. These tools preview changes for confirmation.',
     '',
     'CREATION AND EDITING',
@@ -186,7 +186,7 @@ function assistantRepairText(step, error){
 }
 
 function assistantQueryListHint(){
-  return 'The items array has Tings facts (priority P0–P5, frequency, duration). If the user asked for the most important, most frequent, or longest schedule item, call answer_schedule again with select most_important, most_frequent, or longest; Tings must compute the choice. If they asked another question too, call its matching tool now. Call lookup_item only for history, stats, or why on an exact saved name. Do not calculate, rank, or rewrite factual results yourself.';
+  return 'Do not calculate, filter, rank, count, or rewrite factual results yourself. If the user requested an analysis that this result did not already compute, call answer_schedule or answer_items again with the complete conditions, sortBy/sortOrder, position/limit, and aggregate. Example: second most overdue = sortBy overdue_days, sortOrder desc, position 2. If they asked another independent question, call its matching tool now. Call lookup_item only for history, stats, or why on one exact saved name.';
 }
 
 function assistantFollowupSteerText(){
@@ -214,6 +214,22 @@ function assistantIsActionTool(name){
   return assistantIsWriteTool(name) || name === 'draft_item' || name === 'draft_setting' || name === 'draft_batch';
 }
 
+// A fully specified list analysis already has its final wording and facts from
+// deterministic code. Do not spend another model pass asking it to restate the
+// result; that only creates an opportunity to corrupt or repeat the query.
+// Queued sibling tools still run first, and prepare_action reads must continue
+// until their requested write succeeds.
+function assistantReadCallIsTerminal(call, result){
+  if(!call || !result || !result.ok)return false;
+  if(call.args && call.args.purpose === 'prepare_action')return false;
+  if(call.name !== 'answer_schedule' && call.name !== 'answer_items')return false;
+  const args = call.args || {};
+  return Boolean(
+    args.select || args.sortBy || args.position || args.aggregate
+    || args.limit || (Array.isArray(args.conditions) && args.conditions.length)
+  );
+}
+
 function assistantToolCallKey(call){
   let args = '';
   try{ args = JSON.stringify(call && call.args || {}); }catch(_){ args = String(call && call.args || ''); }
@@ -230,6 +246,12 @@ function assistantCompactRecentItems(items){
     if(item.priority)out.priority = item.priority;
     if(item.priorityRank != null)out.priorityRank = item.priorityRank;
     if(item.frequency)out.frequency = item.frequency;
+    if(item.timesPerWeek != null)out.timesPerWeek = item.timesPerWeek;
+    if(item.durationMinutes != null)out.durationMinutes = item.durationMinutes;
+    if(item.urgency != null)out.urgency = item.urgency;
+    if(item.overdueDays != null)out.overdueDays = item.overdueDays;
+    if(item.dueInDays != null)out.dueInDays = item.dueInDays;
+    if(item.status)out.status = item.status;
     if(item.clock)out.clock = item.clock;
     if(item.missed)out.missed = item.missed;
     return out;
@@ -1696,9 +1718,9 @@ async function runAssistantTurn(userText, opts = {}){
         session.messages.push({role:'user', content:intent === 'ask_weather'
           ? 'Call answer_weather. query day = forecast for a date, query window = a time window (start and end clocks), query item = check the weather against a named item. Resolve "tomorrow" and weekday names against catalog.date yourself.'
           : intent === 'ask_schedule' || intent === 'ask_today'
-            ? 'Call answer_schedule. query free = open time on a day (add start and end clocks to check one window), freest = freest day of the week, conflict = whether blocking a start/end window would make them miss something, missed = the same list as the missed pill on today, day = one day’s agenda, week = the whole week. For most important, most frequent, or longest, add select most_important, most_frequent, or longest so Tings computes it. If they asked several things, call a tool for each part. Use lookup_item only for extra history/stats/why. Resolve "tomorrow" and weekday names against catalog.date yourself.'
+            ? 'Call answer_schedule. query free = open time, freest = freest week day, conflict = what a start/end window displaces, missed = today’s missed-pill list, day = a day agenda, week = overview. Put every requested filter/rank/ordinal/count into conditions + sortBy/sortOrder + position/limit + aggregate so Tings computes it. Example: second most overdue missed = query missed, sortBy overdue_days, sortOrder desc, position 2. If they asked several independent things, call a tool for each. Use lookup_item only for history/stats/why. Resolve dates against catalog.date.'
             : intent === 'ask_items'
-              ? 'Call answer_items. Use list with kind/status/search, or progress for a today summary.'
+              ? 'Call answer_items. Use list for saved-item questions and put all AND filters in conditions, ranking in sortBy/sortOrder, an ordinal in position, and counts or duration math in aggregate. Importance sorts ascending (P0 first); urgency sorts descending. Use progress only for a concise today summary.'
               : 'Call answer_settings for places, weather, topics, or busy times.'});
         continue;
       }
@@ -1826,6 +1848,9 @@ async function runAssistantTurn(userText, opts = {}){
     }
     if(call.name === 'lookup_item' || call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings'){
       assistantRememberGrounded(session, result, call);
+      if(!queuedCalls.length && !session.researchPending && assistantReadCallIsTerminal(call, result)){
+        return done(assistantFinalizeFromAnswer(session, parsed, result.text));
+      }
       session.analyzePasses = (session.analyzePasses || 0) + 1;
       if(session.analyzePasses > 6){
         if(session.researchPending)return done(assistantPartialFailure(session));
