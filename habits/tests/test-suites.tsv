@@ -11,6 +11,7 @@ agenda-share-projection-test.js	data	once
 agenda-share-replacement-test.js	data	once
 device-replica-sync-test.js	data	once
 at-location-first-test.js	planner	once
+at-location-before-home-bounce-test.js	planner	once
 blocked-group-test.js	data	once
 breakable-continuous-e2e.js	planner	once
 breakable-crown-e2e.js	planner	once

@@ -1374,14 +1374,16 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // me Home then back to FarA then Home again").
   //
   // Model the sequencing cost directly: for each AWAY option (loc ≠ seed)
-  // scheduled BEFORE an AT-SEED option (loc = seed), pay a penalty proportional
-  // to the saved commute. Linearize the joint "both selected" condition with one
-  // auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
+  // scheduled BEFORE an AT-SEED option (loc = seed), pay the extra round trip
+  // (the leg out and the leg back) in the same minute-scaled units as every
+  // other route term. There is no constant floor — a short loop can still lose
+  // to a large clock, preference, or weather cost, and a real extra visit can
+  // beat within-day ASAP. Linearize the joint "both selected" condition with
+  // one auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
   // route term is activated only in the frozen-selection pass below, so it can
   // reorder but cannot drop a placeable task; hard windows and pins remain
-  // structural constraints. Inside that fixed work set, travel and clock delay
-  // remain comparable soft costs: an extra short trip may be worthwhile when it
-  // prevents a much larger idle gap.
+  // structural constraints. Inside that fixed work set the solver compares
+  // whole arrangements, not a greedy "stay here" rule.
   // Today's start place — pin, geofence, lastKnown seed, or closest saved
   // place when the seed is the ephemeral GPS coordinate. Future days keep
   // null so the committed-route DP is not perturbed. Requiring liveLocationId
@@ -1460,7 +1462,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       const savedSec = typeof travelLegCostSeconds === 'function'
         ? travelLegCostSeconds(driveSec,seedLoc,aLoc) : driveSec;
       if(savedSec <= 0)continue;                         // co-located: no away-and-back risk
-      const pen = Math.min(TRAVEL_PAIR_CAP,routePenaltyForSeconds(savedSec));
+      // One leg is the commute you pay either way. Coming back to the place
+      // you already were adds that leg again. Charge both, capped like every
+      // other route interaction, so the frozen-selection pass can trade the
+      // loop against clock delay instead of treating every return as equal.
+      const pen = Math.min(TRAVEL_PAIR_CAP,routePenaltyForSeconds(savedSec * 2));
       if(pen <= 0)continue;
       for(const [candI,seedOpts] of seedOptionsByCandidate){
         if(candI === A.c.i)continue;
@@ -1805,13 +1811,12 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
 function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOptions = {}){
   if(typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return [];
   const doing = doingNowForDay(state);
-  const seqLoc = typeof todaySequencingLocationId === 'function'
-    ? todaySequencingLocationId(state) : null;
   const byWeight = orderAwareOptimizerSort(state.dayBase);
   const requiredOccurrenceIndices = packOptions.requiredOccurrenceIndices instanceof Set
     ? packOptions.requiredOccurrenceIndices : new Set();
   const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
   const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
+  if(typeof prepareAtLocationYield === 'function')prepareAtLocationYield(pool,states);
   const ordered = dayCandidates.slice().sort((a,b)=>{
     const claim = typeof compareWeekClaimPriority === 'function'
       ? compareWeekClaimPriority(a,b,states) : 0;
@@ -1824,17 +1829,6 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOp
     const requiredA = requiredOccurrenceIndices.has(a && a.i);
     const requiredB = requiredOccurrenceIndices.has(b && b.i);
     if(requiredA !== requiredB)return requiredA ? -1 : 1;
-    if(seqLoc && typeof habitMatchesSequencingLocation === 'function'){
-      const la = habitMatchesSequencingLocation(a && a.h, seqLoc);
-      const lb = habitMatchesSequencingLocation(b && b.h, seqLoc);
-      if(la !== lb){
-        const atC = la ? a : b;
-        const awayC = la ? b : a;
-        const canWait = typeof sequencingAwayCanWait !== 'function'
-          || sequencingAwayCanWait(awayC, atC, state);
-        if(canWait)return la ? -1 : 1;
-      }
-    }
     const aNeedsB = typeof clusterFlexDependsOnCandidate === 'function'
       && clusterFlexDependsOnCandidate(a,b);
     const bNeedsA = typeof clusterFlexDependsOnCandidate === 'function'

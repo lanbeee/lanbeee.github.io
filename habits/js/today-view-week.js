@@ -1134,15 +1134,13 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
   const seqLoc = (typeof todaySequencingLocationId === 'function' && dayStates[0])
     ? todaySequencingLocationId(dayStates[0])
     : (typeof liveLocationId === 'function' ? liveLocationId() : null);
+  if(typeof prepareAtLocationYield === 'function')prepareAtLocationYield(candidates,dayStates);
   for(const c of candidates){
     if(c.scarcity == null)c.scarcity = scarcityScore(c,dayStates);
     c.atLiveLocation = !!(seqLoc && typeof habitMatchesSequencingLocation === 'function'
       ? habitMatchesSequencingLocation(c.h, seqLoc)
       : (seqLoc && c.h && Array.isArray(c.h.locationIds) && c.h.locationIds.includes(seqLoc)));
   }
-  const awayCanWait = (awayC, atC) => typeof sequencingAwayCanWait === 'function'
-    ? sequencingAwayCanWait(awayC, atC, dayStates[0])
-    : true;
   const compareWeekPlacement = (a,b)=>{
     const claim = typeof compareWeekClaimPriority === 'function'
       ? compareWeekClaimPriority(a,b,dayStates) : 0;
@@ -1152,15 +1150,6 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
     const dailyB = typeof isIndependentDailyOccurrence === 'function'
       && isIndependentDailyOccurrence(b);
     if(dailyA !== dailyB)return dailyA ? -1 : 1;
-    if(seqLoc){
-      const la = a.atLiveLocation === true;
-      const lb = b.atLiveLocation === true;
-      if(la !== lb){
-        const atC = la ? a : b;
-        const awayC = la ? b : a;
-        if(awayCanWait(awayC, atC))return la ? -1 : 1;
-      }
-    }
     const sa = a.scarcity != null ? a.scarcity : SCARCITY_UNBOUNDED;
     const sb = b.scarcity != null ? b.scarcity : SCARCITY_UNBOUNDED;
     if(sa !== sb)return sa - sb;
@@ -1188,15 +1177,6 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
       const claim = typeof compareWeekClaimPriority === 'function'
         ? compareWeekClaimPriority(a,b,dayStates) : 0;
       if(claim)return claim;
-      if(seqLoc){
-        const la = a.atLiveLocation === true;
-        const lb = b.atLiveLocation === true;
-        if(la !== lb){
-          const atC = la ? a : b;
-          const awayC = la ? b : a;
-          if(awayCanWait(awayC, atC))return la ? -1 : 1;
-        }
-      }
       const wa = beforeBoost.get(ah) || 0;
       const wb = beforeBoost.get(bh) || 0;
       if(wa !== wb)return wb - wa;
@@ -2071,9 +2051,136 @@ function dayTravelSecondsFromState(state){
     (sum,row)=>sum + (row && row.kind === 'travel' ? Number(row.seconds) || 0 : 0),0);
 }
 
-// PURE: nearest-neighbour replay order for fills already selected on one day.
-// The actual replay still goes through tryPlaceOnDay, so allowed windows,
-// scheduled rows, capacity, and persistent order constraints remain hard gates.
+// Objective route cost of the rendered legs, including per-leg overhead.
+// Raw drive seconds treat two short returns like one longer hop.
+function dayRouteCostSeconds(state){
+  return ((state && state.rows) || []).reduce((sum,row)=>{
+    if(!row || row.kind !== 'travel')return sum;
+    const drive = Math.max(0,Number(row.seconds) || 0);
+    return sum + (typeof travelLegCostSeconds === 'function'
+      ? travelLegCostSeconds(drive,row.from,row.to) : drive);
+  },0);
+}
+
+function routeOrderKey(order){
+  return (order || []).map(fill=>`${fill && fill.i}:${fill && fill.chunkIndex == null ? '' : fill.chunkIndex}`).join('|');
+}
+
+// Travel-cost ranking of replay orders for fills already on the day.
+// Up to seven fills are ranked by every order (the route itself, not the
+// first nearest neighbor). Larger days keep a beam of partial routes so one
+// early hop cannot erase a cheaper continuation. Replay still goes through
+// tryPlaceOnDay, so windows, capacity, and order links remain hard gates.
+function routeCandidateOrders(state){
+  const items = (state && state.fills ? state.fills : [])
+    .map(entry=>entry && entry.fill)
+    .filter(fill=>fill && fill.h);
+  const chron = (state && state.fills ? state.fills : []).slice()
+    .sort((a,b)=>(a.fit.placeStart - b.fit.placeStart) || ((a.fill.i || 0) - (b.fill.i || 0)))
+    .map(entry=>entry.fill);
+  if(items.length < 2)return [chron];
+  const locIdFor = (fill,anchor)=>{
+    if(fill.locationId)return fill.locationId;
+    const ids = fill.h && fill.h.locationIds;
+    if(Array.isArray(ids) && ids.length === 1)return ids[0];
+    if(typeof pickHabitLocationId === 'function'){
+      return pickHabitLocationId(fill.h,anchor,state.registry,state.mode,state.dayBase) || anchor;
+    }
+    return anchor;
+  };
+  const step = (anchor,fill)=>{
+    const locId = locIdFor(fill,anchor);
+    let drive = 0;
+    if(anchor && locId && anchor !== locId && typeof travelEdgeBetweenIds === 'function'){
+      drive = Math.max(0,Number(travelEdgeBetweenIds(
+        anchor,locId,state.registry,state.mode,{allowNetwork:false}
+      ).seconds) || 0);
+    }
+    const cost = typeof travelLegCostSeconds === 'function'
+      ? travelLegCostSeconds(drive,anchor,locId) : drive;
+    return {anchor:locId || anchor,cost};
+  };
+  const ranked = [];
+  const remember = (order,cost)=>{
+    ranked.push({order,cost,key:routeOrderKey(order)});
+  };
+  if(items.length <= 7){
+    const used = new Array(items.length).fill(false);
+    const build = [];
+    const walk = (anchor,cost)=>{
+      if(build.length === items.length){
+        remember(build.slice(),cost);
+        return;
+      }
+      for(let i = 0;i < items.length;i += 1){
+        if(used[i])continue;
+        used[i] = true;
+        build.push(items[i]);
+        const moved = step(anchor,items[i]);
+        walk(moved.anchor,cost + moved.cost);
+        build.pop();
+        used[i] = false;
+      }
+    };
+    walk(state.seedLocId || null,0);
+  }else{
+    let frontier = [{idxs:[],anchor:state.seedLocId || null,path:0}];
+    const width = 16;
+    for(let depth = 0;depth < items.length;depth += 1){
+      const next = [];
+      for(const node of frontier){
+        const used = new Set(node.idxs);
+        for(let i = 0;i < items.length;i += 1){
+          if(used.has(i))continue;
+          const moved = step(node.anchor,items[i]);
+          const path = node.path + moved.cost;
+          let look = 0;
+          let seenLook = false;
+          for(let j = 0;j < items.length;j += 1){
+            if(j === i || used.has(j))continue;
+            const hop = step(moved.anchor,items[j]).cost;
+            if(!seenLook || hop < look){
+              look = hop;
+              seenLook = true;
+            }
+          }
+          next.push({
+            idxs:node.idxs.concat(i),
+            anchor:moved.anchor,
+            path,
+            bound:path + look
+          });
+        }
+      }
+      next.sort((a,b)=>a.bound - b.bound || a.idxs.join(',').localeCompare(b.idxs.join(',')));
+      frontier = next.slice(0,width);
+    }
+    frontier.sort((a,b)=>a.path - b.path || a.idxs.join(',').localeCompare(b.idxs.join(',')));
+    for(const node of frontier)remember(node.idxs.map(i=>items[i]),node.path);
+  }
+  ranked.sort((a,b)=>a.cost - b.cost || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const seen = new Set();
+  const out = [];
+  const take = order=>{
+    if(!order || !order.length)return;
+    const linked = typeof reorderAgendaItemsByOrderConstraints === 'function'
+      ? reorderAgendaItemsByOrderConstraints(order,state.dayBase) : order;
+    const key = routeOrderKey(linked);
+    if(seen.has(key))return;
+    seen.add(key);
+    out.push(linked);
+  };
+  for(const row of ranked){
+    take(row.order);
+    if(out.length >= 6)break;
+  }
+  take(chron);
+  take(routeCompactFillOrder(state));
+  return out;
+}
+
+// PURE: nearest-neighbour replay order. One seed for routeCandidateOrders,
+// not the order the day keeps.
 function routeCompactFillOrder(state){
   const left = (state && state.fills ? state.fills : []).map(entry=>entry.fill);
   const out = [];
@@ -2102,35 +2209,42 @@ function routeCompactFillOrder(state){
   return reorderAgendaItemsByOrderConstraints(out,state.dayBase);
 }
 
-// MUTATE: make a bounded, deterministic route improvement after Fast has
-// decided what belongs on each day. This closes the common greedy artifact
-// "far errand → flexible home task → nearby far errand". A replay is adopted
-// only when it preserves the exact per-candidate minutes and strictly reduces
-// travel, so placement coverage cannot regress.
+// MUTATE: after Fast has chosen which work belongs on a day, search replay
+// orders by full route cost and keep a strictly cheaper chain. The first
+// insertion order and a single nearest-neighbor walk are only seeds. A replay
+// is adopted only when it preserves the exact per-candidate minutes, does not
+// worsen weather, and lowers the objective route cost.
 function compactFastTravelRoutes(dayStates,candidates,settings){
   let improved = 0;
   for(const state of dayStates || []){
     if(!state || !Array.isArray(state.fills) || state.fills.length < 2)continue;
     const beforeSignature = dayFillMinuteSignature(state);
-    const beforeTravel = dayTravelSecondsFromState(state);
-    if(beforeTravel <= 0)continue;
-    const order = routeCompactFillOrder(state);
-    const isolated = {
-      ...state,
-      day:{...state.day,agendaItems:(state.day.agendaItems || []).slice()}
-    };
-    const rebuilt = rebuildDayFromFills(
-      isolated,order,candidates,{settings,allowNetwork:false}
-    );
-    if(!rebuilt)continue;
-    if(dayFillMinuteSignature(rebuilt) !== beforeSignature)continue;
-    if(dayTravelSecondsFromState(rebuilt) >= beforeTravel)continue;
-    if(typeof weatherPenaltyForFit === 'function'){
-      const weatherSum = day=>(day.fills || []).reduce((sum,entry)=>sum
+    const beforeCost = dayRouteCostSeconds(state);
+    if(beforeCost <= 0)continue;
+    const weatherSum = day=>typeof weatherPenaltyForFit !== 'function' ? 0
+      : (day.fills || []).reduce((sum,entry)=>sum
         + weatherPenaltyForFit(entry.fill,entry.fit,day,settings || day.settings),0);
-      if(weatherSum(rebuilt) > weatherSum(state) + 1e-6)continue;
+    const beforeWeather = weatherSum(state);
+    let best = null;
+    let bestCost = beforeCost;
+    for(const order of routeCandidateOrders(state)){
+      const isolated = {
+        ...state,
+        day:{...state.day,agendaItems:(state.day.agendaItems || []).slice()}
+      };
+      const rebuilt = rebuildDayFromFills(
+        isolated,order,candidates,{settings,allowNetwork:false}
+      );
+      if(!rebuilt)continue;
+      if(dayFillMinuteSignature(rebuilt) !== beforeSignature)continue;
+      const cost = dayRouteCostSeconds(rebuilt);
+      if(cost >= bestCost - 1e-6)continue;
+      if(weatherSum(rebuilt) > beforeWeather + 1e-6)continue;
+      best = rebuilt;
+      bestCost = cost;
     }
-    applyPlacementState(state,rebuilt);
+    if(!best)continue;
+    applyPlacementState(state,best);
     improved += 1;
   }
   return improved;

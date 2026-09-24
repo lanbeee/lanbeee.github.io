@@ -2136,11 +2136,22 @@ does. A fractional rhythm may also spend weather slack when its rolling quota
 is already satisfied; it becomes mandatory on the next day where an older
 completion falls out of that window. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
 planned/last-day tasks, then seed-neighborhood errands that can still finish
-before a later far location pin, then slack daily P0 so earliest-clock Zuhr cannot
-fragment the only contiguous 4h slot a due visit needs. Neighborhood hops (a
-few minutes from the day's start place) are not treated as away-and-back
-commutes; GLPK chains those errands on the same side of the far pin instead of
-leaving for the pin, returning for a store, and going back.
+before a later far location pin, then work at the place you are already
+standing, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only contiguous 4h slot a due visit needs. Being already at a
+store therefore does that store's errand before a home lunch or prayer when
+the whole at-location block still leaves them a slot, instead of going home
+and coming back. A last-day task that would miss stays ahead of that block.
+Neighborhood hops (a few minutes from the day's start place) stay on the same
+side of a later far pin; an at-home item does not jump ahead of that batch.
+GLPK chains those errands on the same side of the far pin instead of
+leaving for the pin, returning for a store, and going back. A return to the
+place you are already standing is the extra round trip (out and back) in the
+shared route objective, not a fixed penalty, so the frozen-selection pass can
+still prefer a large clock or weather saving. After Fast packs a day it
+searches replay orders by that same route cost — every order for up to seven
+fills, otherwise a beam — and replaces the greedy chain only when the same
+work gets strictly cheaper.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked

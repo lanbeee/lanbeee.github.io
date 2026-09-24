@@ -207,9 +207,22 @@ insertions use `fastGraphPlacement`: bounded beam search over partial day
 schedules, reopening up to seven existing non-linked/non-breakable placements.
 Keep-all search is transactional. Fast packs scarce one-day P0 (Juma) first, then
 planned/last-day tasks, then seed-neighborhood errands that still fit before a
-later far location pin, then slack daily P0 so earliest-clock Zuhr cannot
-fragment the only 4h slot a due visit needs — and so a short at-seed window
-cannot consume the only pre-pin gap those nearby errands needed. `tryPlaceOnDay` enumerates unforced
+later far location pin, then work at the place you are already standing, then
+slack daily P0 so earliest-clock Zuhr cannot fragment the only 4h slot a due
+visit needs — and so a short at-seed window cannot consume the only pre-pin gap
+those nearby errands needed. An at-home prayer or lunch must not jump ahead of
+that neighborhood batch: doing so sends you out to the far pin, back for the
+errand, and out again. Away items yield to the current place only when the whole at-location
+block still leaves them a slot, so standing at Walmart does grocery before a
+home lunch instead of leaving and coming back. A last-day task that would miss
+stays ahead of that block. The yield flag is on the away item, so two errands
+at the current place cannot disagree about whether the task can wait. That claim order is only the packing seed. After
+the day is filled, Fast replays alternate orders ranked by full route cost
+(every order when the day has at most seven fills; a beam with one-step
+lookahead otherwise) and keeps a chain only when the same work is strictly
+cheaper. GLPK's return term is the extra round trip in those same units, with
+no constant floor, so a short loop can still lose to a large clock or weather
+cost. `tryPlaceOnDay` enumerates unforced
 venues so Fast sees the same location set as GLPK. Planned items outrank
 at-location sequencing. `improveFastGraphWeek` searches when a planned/pinned
 item or a day-choosing leftover is still unplaced: cheap insert/eject first,

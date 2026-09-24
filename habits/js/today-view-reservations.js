@@ -430,21 +430,203 @@ function weekFillClaimsHorizonDay(c,dayStates){
     && eligibleStates.some(state=>state.dayBase <= lastOnTime);
 }
 
+function weekFillMatchesSequencingLocation(c,dayStates){
+  const state = Array.isArray(dayStates) ? dayStates[0] : null;
+  if(!c || !state || typeof todaySequencingLocationId !== 'function')return false;
+  const seqLoc = todaySequencingLocationId(state);
+  if(!seqLoc || typeof habitMatchesSequencingLocation !== 'function')return false;
+  return habitMatchesSequencingLocation(c.h,seqLoc);
+}
+
+function weekFillIsBreakableCandidate(c){
+  return !!(c && c.h && c.h.breakable);
+}
+
+// At-location promotion is a property of the item, not of the away item it is
+// compared with. A cluster-flex dependent stays out of this tier so its
+// partner is still packed first. Daily breakables stay on their own late pass.
+function weekFillPromotesAtSequencingLocation(c,dayStates){
+  if(weekFillIsBreakableCandidate(c))return false;
+  if(typeof clusterFlexPartnerIndicesForDay === 'function'){
+    const state = Array.isArray(dayStates) ? dayStates[0] : null;
+    if(state && clusterFlexPartnerIndicesForDay(c,state.dayBase).length)return false;
+  }
+  return weekFillMatchesSequencingLocation(c,dayStates);
+}
+
+function awayOccurrenceMustLandToday(c,dayStates){
+  const state = Array.isArray(dayStates) ? dayStates[0] : null;
+  if(!c || !c.h || !state || state.dayBase == null || weekFillIsBreakableCandidate(c))return false;
+  if(c.pinned === true && (c.pinnedDay == null || c.pinnedDay === state.dayBase))return true;
+  if(typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(c.h,state.dayBase,state.settings))return true;
+  if(typeof candidateOccurrenceLastOnTimeDay === 'function'){
+    const last = candidateOccurrenceLastOnTimeDay(c);
+    if(last != null && last <= state.dayBase)return true;
+  }
+  return !!(c.eligible && typeof c.eligible.has === 'function'
+    && c.eligible.size === 1 && c.eligible.has(state.dayBase));
+}
+
+function placementHorizonEnd(state){
+  const slots = state && Array.isArray(state.slots) ? state.slots : [];
+  let end = 0;
+  for(const slot of slots){
+    if(slot && Number(slot.end) > end)end = Number(slot.end);
+  }
+  if(end)return end;
+  const base = Number(state && state.dayBase) || 0;
+  const mins = Number(state && state.totalMinutes);
+  if(base && Number.isFinite(mins) && mins > 0)return base + mins * 60000;
+  return base + 86400000;
+}
+
+function placementRangeFits(state,rangeStart,rangeEnd,durMin){
+  const need = Math.max(1,Number(durMin) || 1) * 60000;
+  if(!(rangeEnd > rangeStart) || rangeEnd - rangeStart < need)return false;
+  const slots = state && Array.isArray(state.slots) ? state.slots : null;
+  if(!slots || !slots.length)return true;
+  return slots.some(slot=>{
+    if(!slot)return false;
+    const start = Math.max(rangeStart,Number(slot.start) || 0);
+    const end = Math.min(rangeEnd,Number(slot.end) || 0);
+    return end - start >= need;
+  });
+}
+
+function awayTravelMinutesFromSequence(c,state){
+  const seq = typeof todaySequencingLocationId === 'function'
+    ? todaySequencingLocationId(state) : null;
+  const ids = c && c.h && Array.isArray(c.h.locationIds) ? c.h.locationIds : [];
+  if(!seq || !ids.length || typeof travelEdgeBetweenIds !== 'function')return 20;
+  let best = Infinity;
+  for(const id of ids){
+    if(!id)continue;
+    if(id === seq)return 0;
+    const edge = travelEdgeBetweenIds(
+      seq,id,state.registry,state.mode,{allowNetwork:false});
+    const sec = Number(edge && edge.seconds) || 0;
+    if(sec < best)best = sec;
+  }
+  if(!Number.isFinite(best))return 20;
+  return Math.max(1,Math.ceil(best / 60));
+}
+
+// Can this away occurrence still land today after the at-location block that
+// would jump ahead of it? The reserve is the whole block, so the answer does
+// not change with which at-location item the sort happens to compare.
+function awayFitsAfterAtLocationBlock(c,dayStates,reservedMin){
+  const state = Array.isArray(dayStates) ? dayStates[0] : null;
+  if(!c || !c.h || !state)return false;
+  if(c.pinned === true)return false;
+  if(typeof fillIsPlannedOnDay === 'function'
+    && fillIsPlannedOnDay(c.h,state.dayBase,state.settings))return false;
+  if(typeof weekFillIsNearClusterBeforeFarPin === 'function'
+    && weekFillIsNearClusterBeforeFarPin(c,dayStates))return false;
+  const dur = clampDuration(c.h.durationMinutes);
+  const travelMin = awayTravelMinutesFromSequence(c,state);
+  const now = Number(state.startClock) || Number(state.dayBase) || Date.now();
+  const earliest = now + (Math.max(0,Number(reservedMin) || 0) + travelMin) * 60000;
+  let windows = null;
+  if(typeof hasTimeWindow === 'function' && hasTimeWindow(c.h)
+    && typeof fillDayWindows === 'function'){
+    windows = fillDayWindows(c.h,state.dayBase,state.seedLocId) || [];
+  }
+  if(windows && windows.length){
+    return windows.some(w=>placementRangeFits(
+      state,
+      Math.max(earliest,Number(w && w.start) || earliest),
+      Number(w && w.end) || 0,
+      dur
+    ));
+  }
+  return placementRangeFits(state,earliest,placementHorizonEnd(state),dur);
+}
+
+// Sets candidate.yieldsToAtLocation from today's whole at-location block.
+// Call before compareWeekClaimPriority. Items that do not have to land today
+// yield whenever that block exists, so a later-due task does not steal the
+// slot. Items that must land today yield only when a real slot remains.
+function prepareAtLocationYield(candidates,dayStates){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates) || !dayStates[0])return;
+  const minutes = c=>clampDuration(c && c.h && c.h.durationMinutes);
+  const base = [];
+  const seen = new Set();
+  for(const c of candidates){
+    if(!c || seen.has(c) || weekFillIsBreakableCandidate(c))continue;
+    const ahead = weekFillIsScarceCritical(c)
+      || weekFillPromotesAtSequencingLocation(c,dayStates)
+      || (typeof weekFillIsNearClusterBeforeFarPin === 'function'
+        && weekFillIsNearClusterBeforeFarPin(c,dayStates));
+    if(!ahead)continue;
+    seen.add(c);
+    base.push(c);
+  }
+  const promoterExists = candidates.some(c=>weekFillPromotesAtSequencingLocation(c,dayStates));
+  const reserved = base.reduce((sum,c)=>sum + minutes(c),0);
+  const extras = new Set();
+  const limit = candidates.length + 1;
+  for(let guard = 0;guard < limit;guard += 1){
+    let extraMin = 0;
+    extras.forEach(c=>{ extraMin += minutes(c); });
+    let grew = false;
+    for(const c of candidates){
+      if(!c || weekFillIsBreakableCandidate(c)){
+        // Breakables yield only while an at-location block exists. Forcing
+        // the flag on with no such block sinks a linked pair behind ordinary
+        // work and splits right-after chunks.
+        if(c)c.yieldsToAtLocation = promoterExists;
+        continue;
+      }
+      if(seen.has(c)){
+        c.yieldsToAtLocation = false;
+        continue;
+      }
+      if(!awayOccurrenceMustLandToday(c,dayStates)){
+        c.yieldsToAtLocation = promoterExists;
+        continue;
+      }
+      const fits = awayFitsAfterAtLocationBlock(c,dayStates,reserved + extraMin);
+      c.yieldsToAtLocation = promoterExists && fits;
+      if(!fits && !extras.has(c)){
+        extras.add(c);
+        grew = true;
+      }
+    }
+    if(!grew)break;
+  }
+}
+
+// Lower rank packs first. Yielding is a flag on the away item, computed for
+// the whole block, so two at-location durations cannot disagree about order.
+function weekFillClaimRank(c,dayStates){
+  if(weekFillIsScarceCritical(c))return 0;
+  // Breakables stay on this same ladder. A blanket late tier let lower-priority
+  // unrelated work claim the day before a right-after pair, so the pair's
+  // chunks no longer shared a boundary.
+  const promoter = weekFillPromotesAtSequencingLocation(c,dayStates);
+  const cluster = typeof weekFillIsNearClusterBeforeFarPin === 'function'
+    && weekFillIsNearClusterBeforeFarPin(c,dayStates);
+  const claim = weekFillClaimsHorizonDay(c,dayStates);
+  const known = !!(c && typeof c.yieldsToAtLocation === 'boolean');
+  const yields = known && c.yieldsToAtLocation === true;
+  if(claim && !promoter && !cluster && !yields)return 1;
+  if(cluster)return 2;
+  if(!promoter && known && !yields)return 3;
+  if(promoter)return 4;
+  if(yields)return 5;
+  return 6;
+}
+
 // PURE: Fast assignment order. Scarce one-day P0 first, then planned/last-day
-// non-breakable tasks, then seed-neighborhood errands that still fit before a
-// later far location pin, then slack daily P0 (Zuhr can slide), then pins.
+// tasks that would miss if the at-location block went first, then
+// seed-neighborhood errands that still fit before a later far location pin,
+// then work at the place you are already standing, then away items that still
+// fit after that block, then slack daily P0 (Zuhr can slide), then pins.
 function compareWeekClaimPriority(a,b,dayStates){
-  const scarceA = weekFillIsScarceCritical(a);
-  const scarceB = weekFillIsScarceCritical(b);
-  if(scarceA !== scarceB)return scarceA ? -1 : 1;
-  const claimA = weekFillClaimsHorizonDay(a,dayStates);
-  const claimB = weekFillClaimsHorizonDay(b,dayStates);
-  if(claimA !== claimB)return claimA ? -1 : 1;
-  const clusterA = typeof weekFillIsNearClusterBeforeFarPin === 'function'
-    && weekFillIsNearClusterBeforeFarPin(a,dayStates);
-  const clusterB = typeof weekFillIsNearClusterBeforeFarPin === 'function'
-    && weekFillIsNearClusterBeforeFarPin(b,dayStates);
-  if(clusterA !== clusterB)return clusterA ? -1 : 1;
+  const rankA = weekFillClaimRank(a,dayStates);
+  const rankB = weekFillClaimRank(b,dayStates);
+  if(rankA !== rankB)return rankA - rankB;
   const criticalA = typeof mustPlaceCriticalOccurrence === 'function'
     && mustPlaceCriticalOccurrence(a);
   const criticalB = typeof mustPlaceCriticalOccurrence === 'function'

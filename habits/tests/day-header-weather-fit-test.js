@@ -71,6 +71,7 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     render();
   });
   await page.waitForSelector('.section-header .weather-day-button', { timeout: 10000 });
+  await page.evaluate(() => document.fonts.ready);
   await twoRafs();
 
   const todayHeader = () => page.evaluate(() => {

@@ -325,6 +325,11 @@ function saveSortSettings(settings){
   delete next._plannerCurrentCoord;
   delete next._plannerLiveLocationId;
   delete next._weatherContext;
+  Storage.write(SORT_SETTINGS_KEY, next);
+  // Derived, not persisted. Reattach it on the live object so a travel-cache
+  // or settings write cannot blank the day-header forecast until the next load.
+  try{
+    if(typeof weatherPlannerContext === 'function')next._weatherContext = weatherPlannerContext(next);
+  }catch(_){}
   sortSettings = next;
-  Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }
