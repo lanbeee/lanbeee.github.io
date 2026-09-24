@@ -25,6 +25,7 @@ const ASSISTANT_MAX_CLARIFY = 2;
 const ASSISTANT_NAME_MAX = 60;
 const ASSISTANT_INPUT_MAX = 12000;
 const ASSISTANT_BATCH_MAX = 24;
+const ASSISTANT_APPLY_MAX = 40;
 const ASSISTANT_HEAVY_CHARS = 400;
 // Compact late: small models need the transcript (and their own thinking)
 // in context. 128k × 85% ≈ 111k tokens before we fold the trace.
@@ -150,9 +151,40 @@ function assistantRequestNeedsModel(text){
   return assistantLooksLikeMultiItem(text) || assistantRequestIsHeavy(text);
 }
 
+function assistantApplySelectorProperties(opts){
+  const query = Object.assign({}, ASSISTANT_QUERY_PROPERTIES);
+  delete query.aggregate;
+  const out = {
+    action:{type:['string','null'], enum:['edit','delete','snooze','show',null], description:'edit changes settings. delete removes the matched items. snooze hides them. show clears a snooze. Omit when the patch fields already say which.'},
+    search:{type:['string','null'], description:'Name or topic fragment, such as dental. Matches the whole saved set, not only names already listed.'},
+    kind:{type:['string','null'], enum:['all','task','habit',null]},
+    status:{type:['string','null'], enum:['all','open','done','overdue',null]},
+    names:{type:['array','string','null'], items:{type:'string'}, description:'Saved titles, or names copied from recent.items'},
+    fromRecent:{type:['boolean','null'], description:'Start from the previous list (those, these, them)'},
+    ...query
+  };
+  if(opts && opts.rest){
+    out.rest = {type:['boolean','null'], description:'Items in the shared set that earlier groups did not take'};
+  }
+  return out;
+}
+
+function assistantApplyPatchProperties(){
+  const out = {};
+  Object.keys(ASSISTANT_DRAFT_ITEM_PROPERTIES).forEach(key => {
+    if(key === 'name' || key === 'kind' || key === 'needAsk' || key === 'ask')return;
+    out[key] = ASSISTANT_DRAFT_ITEM_PROPERTIES[key];
+  });
+  return out;
+}
+
+function assistantApplyGroupProperties(){
+  return Object.assign({}, assistantApplySelectorProperties({rest:true}), assistantApplyPatchProperties());
+}
+
 const ASSISTANT_TOOL_DEFS = {
   classify_intent:{
-    description:'Classify only when you cannot call the final tool directly. create_setting is a weather profile, place, busy time, or topic. ask_weather and ask_schedule use live data; availability, missed-item, agenda ranking, and what-if questions are ask_schedule. Broad saved-item analysis is ask_items. Put filtering, ranking, ordinals, counts, or duration totals into the final answer_schedule/answer_items call rather than deriving them yourself. Several questions or an action plus a question require a tool for every part. ask_settings covers saved configuration; lookup_item covers one item’s next time/history/stats/why. complete_item, plan_item, and delete_item preview actions. If a name or request is ambiguous, call find_item or ask_user instead of guessing. A whole-week reschedule, deleting everything, or any action outside those tools is unsupported — not unclear. currentDraft and recent hold conversational context.',
+    description:'Classify only when you cannot call the final tool directly. create_setting is a weather profile, place, busy time, or topic. ask_weather and ask_schedule use live data; availability, missed-item, agenda ranking, and what-if questions are ask_schedule. Broad saved-item analysis is ask_items. Put filtering, ranking, ordinals, counts, or duration totals into the final answer_schedule/answer_items call rather than deriving them yourself. Several questions or an action plus a question require a tool for every part. ask_settings covers saved configuration; lookup_item covers one item’s next time/history/stats/why. complete_item, plan_item, and delete_item preview actions. apply_items changes, snoozes, shows, or deletes a matching set. If a name or request is ambiguous, call find_item or ask_user instead of guessing. A whole-week reschedule, or deleting every saved item with no topic or name, is unsupported — not unclear. currentDraft and recent hold conversational context.',
     parameters:{
       type:'object',
       required:['intent'],
@@ -170,7 +202,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   draft_batch:{
-    description:'Create several items from one request — a list, a pasted schedule, two habits, errands plus places. Call this once instead of many draft_item calls. Each item uses the same fields as draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown place names go in places with a dummy address — do not ask. The user will set the real address later. One item, even with a long instruction, is still draft_item.',
+    description:'Create several new items from one request — a list, a pasted schedule, two habits, errands plus places. Call this once instead of many draft_item calls. Each item uses the same fields as draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown place names go in places with a dummy address — do not ask. The user will set the real address later. One new item, even with a long instruction, is still draft_item. Changing, snoozing, or deleting items that already exist is apply_items, not draft_batch.',
     parameters:{
       type:'object',
       required:['items'],
@@ -193,6 +225,22 @@ const ASSISTANT_TOOL_DEFS = {
           }
         }
       }
+    }
+  },
+  apply_items:{
+    description:'Change, snooze, show, or delete saved tasks and habits that match a topic, name, or filter. Tings selects the members. Do not invent the list and do not call draft_item once per row. search "dental" matches every saved name or topic, including ones that were not listed yet. names are exact titles. fromRecent true is those/these/them from the previous list. conditions, sortBy, sortOrder, position, and limit work like answer_items. One shared change puts the patch on this call: durationMinutes 180 or "3 hours", snooze "3 days", priority, topics, windowText, and the other draft_item fields. Different changes use groups. rest true on a later group takes whatever the earlier groups left. action delete removes the set; snooze hides it; show clears a snooze. Deleting every saved item with no topic, name, or filter is unsupported. One item is still draft_item or delete_item.',
+    parameters:{
+      type:'object',
+      properties:Object.assign({}, assistantApplySelectorProperties(), assistantApplyPatchProperties(), {
+        groups:{
+          type:['array','null'],
+          description:'Different changes for different subsets of the same search, names, or previous list.',
+          items:{
+            type:'object',
+            properties:assistantApplyGroupProperties()
+          }
+        }
+      })
     }
   },
   draft_setting:{
@@ -386,17 +434,17 @@ function assistantIsItemKind(kind){
 function assistantStepTools(step){
   // The first model pass may call the final tool directly. classify_intent is
   // retained for models that prefer a two-step plan, not as a mandatory gate.
-  if(step === 'classify')return ['classify_intent','draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
-  if(step === 'extract')return ['draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
+  if(step === 'classify')return ['classify_intent','draft_item','draft_setting','draft_batch','apply_items','complete_item','plan_item','delete_item','lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
+  if(step === 'extract')return ['draft_item','draft_setting','draft_batch','apply_items','complete_item','plan_item','delete_item','lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','ask_user'];
   if(step === 'complete')return ['complete_item','find_item','ask_user'];
   if(step === 'plan')return ['plan_item','find_item','ask_user'];
-  if(step === 'delete')return ['delete_item','find_item','ask_user'];
+  if(step === 'delete')return ['delete_item','apply_items','find_item','ask_user'];
   if(step === 'lookup')return ['lookup_item','find_item','ask_user'];
   // A read is often research for a later action (find a free slot, then create
   // the habit). Keep creation tools available after reads so the state machine
   // cannot strand a compound request in an answer-only state.
-  if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','lookup_item','find_item','draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','ask_user'];
-  if(step === 'answer')return ['lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','draft_item','draft_setting','draft_batch','complete_item','plan_item','delete_item','ask_user'];
+  if(step === 'query')return ['answer_weather','answer_schedule','answer_items','answer_settings','lookup_item','find_item','draft_item','draft_setting','draft_batch','apply_items','complete_item','plan_item','delete_item','ask_user'];
+  if(step === 'answer')return ['lookup_item','find_item','answer_weather','answer_schedule','answer_items','answer_settings','draft_item','draft_setting','draft_batch','apply_items','complete_item','plan_item','delete_item','ask_user'];
   return ['ask_user'];
 }
 

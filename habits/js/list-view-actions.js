@@ -1030,6 +1030,12 @@ function executeUndo(){
     const {idx,habit} = pendingAction;
     data.splice(Math.min(idx,data.length),0,habit);
   }
+  if(pendingAction.type === 'delete-many'){
+    const items = (pendingAction.items || []).slice().sort((a,b) => a.idx - b.idx);
+    items.forEach(item => {
+      if(item && item.habit)data.splice(Math.min(item.idx, data.length), 0, item.habit);
+    });
+  }
   if(pendingAction.type === 'move'){
     const {idx,moved} = pendingAction;
     if(data[idx]){

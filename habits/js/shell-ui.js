@@ -368,10 +368,10 @@ function activityEntryExtras(item){
 }
 
 // HANDLER: deletes a habit and shows undo
-function doNuke(i){
+function doNuke(i, opts){
   const data = load();
   const removed = data[i];
-  if(!removed)return;
+  if(!removed)return null;
   // Cancel any scheduled push before removing.
   if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && removed.type === 'task'){
     cancelPush(reminderSignature(removed));
@@ -399,9 +399,13 @@ function doNuke(i){
     pruneOrderConstraintsForHabit(removed,[],Date.now());
   }
   if(save(data)){
-    showActionToast(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
-    render();
+    if(!(opts && opts.silent)){
+      showActionToast(`Removed ${toastItemName(removed)}`,{type:'delete',idx:i,habit:removed,openAction:false,undoLabel:'restore'});
+      render();
+    }
+    return removed;
   }
+  return null;
 }
 
 // RENDER: adjusts keyboard lift CSS variable for open sheets

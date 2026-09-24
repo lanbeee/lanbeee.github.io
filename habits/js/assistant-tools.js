@@ -1878,6 +1878,41 @@ function assistantPlanPreview(found, args, context){
   return {ok:true, pendingPlan, summary};
 }
 
+function assistantCollectItemRows(context){
+  const now = context && context.now != null ? Number(context.now) : Date.now();
+  const todayBase = assistantDayBase(now);
+  return (Array.isArray(context && context.data) ? context.data : []).map((habit, index) => {
+    if(!habit || !habit.name)return null;
+    const type = habit.type === 'task' ? 'task' : 'habit';
+    const done = type === 'task'
+      ? (typeof isTaskDone === 'function' && isTaskDone(habit))
+      : (typeof completedToday === 'function' && completedToday(habit, now));
+    const taskOverdue = type === 'task' && !done && habit.dueDate != null && assistantDayBase(habit.dueDate) < todayBase;
+    const haystack = assistantNormText([habit.name].concat(habit.topics || []).join(' '));
+    const facts = assistantHabitQueryFacts(habit, {done:Boolean(done), overdue:Boolean(taskOverdue)}, context, index);
+    const overdue = facts ? Number(facts.overdueDays) > 0 : taskOverdue;
+    return Object.assign({haystack, index}, facts || {name:String(habit.name), type, done:Boolean(done), index}, {overdue:Boolean(overdue)});
+  }).filter(Boolean);
+}
+
+function assistantFilterCollectedRows(rows, spec){
+  const kind = ['task','habit'].includes(assistantNormText(spec && spec.kind))
+    ? assistantNormText(spec.kind)
+    : 'all';
+  const status = ['open','done','overdue'].includes(assistantNormText(spec && spec.status))
+    ? assistantNormText(spec.status)
+    : 'all';
+  const search = assistantNormText(spec && spec.search);
+  return (Array.isArray(rows) ? rows : []).filter(row => {
+    if(kind !== 'all' && row.type !== kind)return false;
+    if(status === 'done' && !row.done)return false;
+    if(status === 'open' && row.done)return false;
+    if(status === 'overdue' && !(row.overdue || row.status === 'overdue' || Number(row.overdueDays) > 0))return false;
+    if(search && !String(row.haystack || '').includes(search))return false;
+    return true;
+  });
+}
+
 function assistantAnswerItems(args, context){
   const query = assistantNormText(args && args.query);
   const kind = ['task','habit'].includes(assistantNormText(args && args.kind))
@@ -1887,26 +1922,7 @@ function assistantAnswerItems(args, context){
     ? assistantNormText(args.status)
     : 'all';
   const search = assistantNormText(args && args.search);
-  const now = context.now != null ? Number(context.now) : Date.now();
-  const todayBase = assistantDayBase(now);
-  const rows = (Array.isArray(context.data) ? context.data : []).map((habit,index) => {
-    if(!habit || !habit.name)return null;
-    const type = habit.type === 'task' ? 'task' : 'habit';
-    const done = type === 'task'
-      ? (typeof isTaskDone === 'function' && isTaskDone(habit))
-      : (typeof completedToday === 'function' && completedToday(habit, now));
-    const overdue = type === 'task' && !done && habit.dueDate != null && assistantDayBase(habit.dueDate) < todayBase;
-    const haystack = assistantNormText([habit.name].concat(habit.topics || []).join(' '));
-    const facts = assistantHabitQueryFacts(habit, {done:Boolean(done), overdue:Boolean(overdue)}, context, index);
-    return Object.assign({haystack}, facts || {name:String(habit.name), type, done:Boolean(done), overdue:Boolean(overdue)});
-  }).filter(Boolean).filter(row => {
-    if(kind !== 'all' && row.type !== kind)return false;
-    if(status === 'done' && !row.done)return false;
-    if(status === 'open' && row.done)return false;
-    if(status === 'overdue' && !row.overdue)return false;
-    if(search && !row.haystack.includes(search))return false;
-    return true;
-  });
+  const rows = assistantFilterCollectedRows(assistantCollectItemRows(context), args);
 
   if(query === 'progress'){
     const today = context.catalog && context.catalog.today || {};
@@ -1926,6 +1942,7 @@ function assistantAnswerItems(args, context){
   const baseItems = rows.map(row => {
     const copy = Object.assign({}, row);
     delete copy.haystack;
+    delete copy.index;
     return copy;
   });
   const queried = assistantApplyItemQuery(baseItems, args || {}, kind === 'all' ? 'item' : kind);
@@ -2155,7 +2172,7 @@ function assistantQueryDetail(item, field){
   return '';
 }
 
-function assistantApplyItemQuery(items, args, scope){
+function assistantApplyItemQuery(items, args, scope, opts){
   let rows = (Array.isArray(items) ? items : []).filter(Boolean).map((item,index) => Object.assign({_queryIndex:index}, item));
   const conditions = Array.isArray(args && args.conditions) ? args.conditions.slice(0, 12) : [];
   for(const condition of conditions){
@@ -2213,8 +2230,13 @@ function assistantApplyItemQuery(items, args, scope){
     return {ok:true, items:[item], item, text:`${ordinal} ${ranking} ${scope} is ${item.name}${detail ? ` (${detail})` : ''}.`};
   }
   const requestedLimit = Math.round(Number(args && args.limit));
-  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0 ? Math.min(20, requestedLimit) : 20;
-  return {rows:rows.slice(0,limit).map(clean), total:rows.length, queried:Boolean(conditions.length || sortBy || (args && args.limit != null))};
+  const unlimited = Boolean(opts && opts.all);
+  const hard = opts && Number(opts.max) > 0 ? Number(opts.max) : 20;
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+    ? requestedLimit
+    : (unlimited ? rows.length : 20);
+  const capped = unlimited ? limit : Math.min(hard, limit);
+  return {rows:rows.slice(0, capped).map(clean), total:rows.length, queried:Boolean(conditions.length || sortBy || (args && args.limit != null))};
 }
 
 function assistantScheduleAnalysisArgs(args, select){
@@ -3762,9 +3784,32 @@ function assistantBindSavedWeather(item){
   return item;
 }
 
+function assistantPreflightApplyDrafts(rows){
+  const guarded = (Array.isArray(rows) ? rows : []).filter(row => row && row.applySourceFingerprint);
+  if(!guarded.length)return {ok:true};
+  const data = typeof load === 'function' ? load() : [];
+  const seen = new Set();
+  for(const draft of guarded){
+    const index = assistantDraftExistingIndex(data, draft);
+    if(index < 0)return {ok:false, error:`${draft.name} is no longer on the list. Ask me to make the change again.`};
+    const key = draft.hid || `index:${index}`;
+    if(seen.has(key))return {ok:false, error:`${draft.name} appears more than once in this change.`};
+    seen.add(key);
+    const current = assistantHabitToDraft(data[index], index, typeof loadSortSettings === 'function' ? loadSortSettings() : {}, data);
+    if(assistantDraftFingerprint(current) !== draft.applySourceFingerprint){
+      return {ok:false, error:`${draft.name} changed after this preview. Ask me to make the change again.`};
+    }
+  }
+  return {ok:true};
+}
+
 function assistantCommitDrafts(drafts){
   const rows = Array.isArray(drafts) ? drafts.filter(Boolean) : [];
   if(!rows.length)return {ok:false, error:'empty draft'};
+  // Validate every selected row before the first write. Without this pass a
+  // stale second row could leave the first half of a bulk confirmation saved.
+  const preflight = assistantPreflightApplyDrafts(rows);
+  if(!preflight.ok)return preflight;
   if(rows.length === 1)return assistantCommitDraft(rows[0]);
   const places = rows.filter(row => row.kind === 'location');
   const items = rows.filter(row => row.kind === 'habit' || row.kind === 'task');
@@ -3813,6 +3858,362 @@ function assistantCommitDrafts(drafts){
   };
 }
 
+function assistantApplyNameList(value){
+  const max = typeof ASSISTANT_APPLY_MAX === 'number' ? ASSISTANT_APPLY_MAX : 40;
+  if(value == null || value === '')return [];
+  const rows = Array.isArray(value) ? value : String(value).split(/[,;\n]/);
+  return rows.map(item => String(item || '').trim()).filter(Boolean).slice(0, max);
+}
+
+function assistantApplyNameHits(query, title){
+  if(typeof assistantNamesMatch === 'function' && assistantNamesMatch(query, title))return true;
+  const needle = assistantNormText(query);
+  const hay = assistantNormText(title);
+  return needle.length >= 4 && hay.includes(needle);
+}
+
+function assistantRowsForNames(rows, names){
+  const missed = [];
+  const ambiguous = [];
+  const picked = [];
+  const seen = new Set();
+  names.forEach(name => {
+    // `names` is for titles copied from a verified list, not a broad search.
+    // Prefer the exact title so "Walk" cannot silently expand to Evening Walk
+    // and Walk dog. Only use the fuzzy matcher when it yields one unique row.
+    const exact = (rows || []).filter(row => assistantNormText(row && row.name) === assistantNormText(name));
+    const hits = exact.length ? exact : (rows || []).filter(row => assistantApplyNameHits(name, row && row.name));
+    if(!hits.length)missed.push(name);
+    if(hits.length > 1){
+      ambiguous.push({name, matches:hits.map(row => row.name).filter(Boolean)});
+      return;
+    }
+    hits.forEach(row => {
+      const key = row.hid || row.name;
+      if(seen.has(key))return;
+      seen.add(key);
+      picked.push(row);
+    });
+  });
+  return {rows:picked, missed, ambiguous};
+}
+
+function assistantRowsForRecent(session, rows){
+  const recent = session && session.recent && Array.isArray(session.recent.items) ? session.recent.items : [];
+  const hids = new Set(recent.map(item => item && item.hid).filter(Boolean));
+  const names = recent.map(item => assistantNormText(item && item.name)).filter(Boolean);
+  return (rows || []).filter(row => (row.hid && hids.has(row.hid)) || names.includes(assistantNormText(row.name)));
+}
+
+function assistantApplyPatchKeys(){
+  return Object.keys(typeof assistantApplyPatchProperties === 'function'
+    ? assistantApplyPatchProperties()
+    : {}).filter(key => key !== 'name' && key !== 'kind');
+}
+
+function assistantApplyHasPatch(spec){
+  return assistantApplyPatchKeys().some(key => spec && spec[key] != null && spec[key] !== '');
+}
+
+function assistantApplyActionOf(spec){
+  const named = assistantNormText(spec && spec.action);
+  if(named === 'unsnooze')return 'show';
+  if(named === 'edit' || named === 'delete' || named === 'snooze' || named === 'show')return named;
+  if(spec && spec.snooze != null && String(spec.snooze).trim()){
+    return /^(off|none|clear|show|unsnooze)$/.test(assistantNormText(spec.snooze)) ? 'show' : 'snooze';
+  }
+  if(assistantApplyHasPatch(spec))return 'edit';
+  return '';
+}
+
+function assistantApplyIsNarrow(spec, action){
+  if(!spec)return false;
+  if(spec.fromRecent === true || spec.fromRecent === 'true')return true;
+  if(assistantApplyNameList(spec.names).length)return true;
+  if(String(spec.search || '').trim())return true;
+  if(Array.isArray(spec.conditions) && spec.conditions.length)return true;
+  if(Number(spec.position) > 0)return true;
+  if(Number(spec.limit) > 0)return true;
+  const status = assistantNormText(spec.status);
+  if(status && status !== 'all')return true;
+  const kind = assistantNormText(spec.kind);
+  if((kind === 'task' || kind === 'habit') && action !== 'delete')return true;
+  return false;
+}
+
+function assistantApplyMergedSelector(parent, group, universeReady){
+  const spec = Object.assign({}, group || {});
+  const keys = universeReady
+    ? ['search','kind','status','names','fromRecent','conditions']
+    : ['search','kind','status','names','fromRecent','conditions','sortBy','sortOrder','position','limit'];
+  keys.forEach(key => {
+    const empty = spec[key] == null || spec[key] === '' || (Array.isArray(spec[key]) && !spec[key].length);
+    if(empty && parent && parent[key] != null && parent[key] !== '')spec[key] = parent[key];
+  });
+  if(parent && Array.isArray(parent.conditions) && parent.conditions.length
+    && group && Array.isArray(group.conditions) && group.conditions.length){
+    spec.conditions = parent.conditions.concat(group.conditions);
+  }
+  if(spec.fromRecent == null && parent && (parent.fromRecent === true || parent.fromRecent === 'true')){
+    spec.fromRecent = true;
+  }
+  const groupHasPatch = assistantApplyHasPatch(group);
+  const groupHasAction = Boolean(assistantNormText(group && group.action));
+  if(!groupHasAction && parent && parent.action)spec.action = parent.action;
+  if(!groupHasPatch && !groupHasAction){
+    assistantApplyPatchKeys().forEach(key => {
+      if((spec[key] == null || spec[key] === '') && parent && parent[key] != null && parent[key] !== ''){
+        spec[key] = parent[key];
+      }
+    });
+  }
+  return spec;
+}
+
+function assistantResolveApplySet(spec, session, context, universe){
+  let rows = Array.isArray(universe) ? universe.slice() : assistantCollectItemRows(context);
+  if(spec && (spec.fromRecent === true || spec.fromRecent === 'true')){
+    rows = assistantRowsForRecent(session, rows);
+    if(!rows.length){
+      return {ok:false, ask:'I do not have a previous list. Name a topic or the items.', error:'UNKNOWN'};
+    }
+  }
+  const names = assistantApplyNameList(spec && spec.names);
+  if(names.length){
+    const named = assistantRowsForNames(rows, names);
+    if(named.ambiguous.length){
+      const first = named.ambiguous[0];
+      return {
+        ok:false,
+        ask:`“${first.name}” matches more than one saved item: ${first.matches.join(', ')}. Use a full title or another filter.`,
+        error:'AMBIGUOUS'
+      };
+    }
+    if(named.missed.length){
+      return {ok:false, ask:`I do not see ${named.missed.join(', ')} on your list.`, error:'UNKNOWN'};
+    }
+    rows = named.rows;
+  }
+  rows = assistantFilterCollectedRows(rows, spec);
+  if(assistantNormText(spec && spec.aggregate)){
+    return {ok:false, error:'apply_items selects items; leave aggregate off'};
+  }
+  const queried = assistantApplyItemQuery(rows, spec || {}, 'item', {all:true});
+  const selected = queried.ok
+    ? (Array.isArray(queried.items) ? queried.items : [])
+    : (queried.rows || []);
+  if(!selected.length){
+    return {ok:false, ask:(queried.ok && queried.text) || 'No saved items match that.', error:'UNKNOWN'};
+  }
+  const max = typeof ASSISTANT_APPLY_MAX === 'number' ? ASSISTANT_APPLY_MAX : 40;
+  if(selected.length > max){
+    return {
+      ok:false,
+      ask:`That matches ${queried.total || selected.length} items. I can change up to ${max} at once — add a tighter filter or a limit.`,
+      error:'TOO_MANY'
+    };
+  }
+  return {ok:true, rows:selected};
+}
+
+function assistantApplyHabitAt(data, row){
+  if(!Array.isArray(data) || !row)return null;
+  if(row.hid){
+    const byHid = data.find(item => item && item.hid === row.hid);
+    if(byHid)return byHid;
+  }
+  if(row.index != null && data[row.index] && assistantNormText(data[row.index].name) === assistantNormText(row.name)){
+    return data[row.index];
+  }
+  return data.find(item => item && assistantNormText(item.name) === assistantNormText(row.name)) || null;
+}
+
+function assistantApplyPatchFrom(spec, action){
+  const patch = {};
+  assistantApplyPatchKeys().forEach(key => {
+    if(spec && spec[key] != null && spec[key] !== '')patch[key] = spec[key];
+  });
+  if(action === 'show')patch.snooze = patch.snooze || 'off';
+  return patch;
+}
+
+function assistantApplyOneGroup(spec, rows, session, context, claimed, opts){
+  const action = assistantApplyActionOf(spec);
+  if(!action)return {ok:false, ask:'What should I change, snooze, or delete on that set?', error:'action required'};
+  if(!(opts && opts.rest) && !assistantApplyIsNarrow(spec, action)){
+    const verb = action === 'delete' ? 'remove' : 'change';
+    return {
+      ok:false,
+      ask:`Name a topic, a title, or which items to ${verb}. I will not ${verb} every saved item at once.`,
+      error:'selector required'
+    };
+  }
+  const patch = action === 'delete' ? null : assistantApplyPatchFrom(spec, action);
+  if(action === 'snooze' && (patch.snooze == null || String(patch.snooze).trim() === '')){
+    return {ok:false, ask:'How long should I snooze them? For example, 3 days or until tomorrow.', error:'snooze required'};
+  }
+  if(action === 'edit' && !assistantApplyHasPatch(patch)){
+    return {ok:false, ask:'What should I change on those?', error:'patch required'};
+  }
+  const fresh = [];
+  const local = new Set();
+  for(const row of rows){
+    const key = row.hid || row.name;
+    if(local.has(key))continue;
+    if(claimed.has(key)){
+      return {ok:false, ask:`${row.name} matches more than one change. Say which change it should get.`, error:'OVERLAP'};
+    }
+    local.add(key);
+    fresh.push(row);
+    claimed.add(key);
+  }
+  if(patch && patch.newName && fresh.length > 1){
+    return {ok:false, ask:'I can rename one item at a time. Which one should get the new name?', error:'rename'};
+  }
+  if(action === 'delete'){
+    return {
+      ok:true,
+      edits:[],
+      deletes:fresh.map(row => {
+        const habit = assistantApplyHabitAt(context && context.data, row);
+        const base = habit && typeof assistantHabitToDraft === 'function'
+          ? assistantHabitToDraft(habit, row.index, context.settings, context.data)
+          : null;
+        return {
+          index:row.index,
+          hid:row.hid,
+          name:row.name,
+          sourceFingerprint:base ? assistantDraftFingerprint(base) : ''
+        };
+      }),
+      items:fresh
+    };
+  }
+  const edits = [];
+  const data = context && context.data;
+  for(const row of fresh){
+    const habit = assistantApplyHabitAt(data, row);
+    if(!habit)return {ok:false, error:`${row.name} is no longer on the list`};
+    const base = typeof assistantHabitToDraft === 'function'
+      ? assistantHabitToDraft(habit, row.index, context.settings, data)
+      : assistantEmptyDraft();
+    const applied = assistantApplyDraftItem(
+      Object.assign({}, patch, {name:base.name, kind:base.kind}),
+      base,
+      context.catalog,
+      context.now,
+      context.settings,
+      data,
+      '',
+      {skipSalvage:true, session, settings:context.settings}
+    );
+    if(!applied.ok)return applied;
+    if(action === 'show' && applied.draft)applied.draft.applyNote = 'shown';
+    if(assistantDraftFingerprint(base) === assistantDraftFingerprint(applied.draft))continue;
+    if(applied.draft){
+      // Confirmations can stay open while another device or another app view
+      // changes the same row. Refuse a stale overwrite instead of applying a
+      // patch that was derived from an older version of the item.
+      applied.draft.applySourceFingerprint = assistantDraftFingerprint(base);
+      edits.push(applied.draft);
+    }
+  }
+  return {ok:true, edits, deletes:[], items:fresh};
+}
+
+function assistantApplyDeleteSummary(items){
+  const names = items.map(item => item.name).filter(Boolean);
+  if(names.length === 1)return `Remove ${names[0]}? This deletes the item and its history.`;
+  return `Remove these ${names.length} items: ${names.join(', ')}? This deletes them and their history.`;
+}
+
+function assistantApplyItems(args, session, context){
+  const parent = args && typeof args === 'object' ? args : {};
+  const rawGroups = Array.isArray(parent.groups) ? parent.groups.filter(group => group && typeof group === 'object') : [];
+  if(rawGroups.length > 8)return {ok:false, error:'8 groups max'};
+  let universe = null;
+  if(rawGroups.length){
+    const parentSelect = {
+      search:parent.search,
+      kind:parent.kind,
+      status:parent.status,
+      names:parent.names,
+      fromRecent:parent.fromRecent,
+      conditions:parent.conditions,
+      sortBy:parent.sortBy,
+      sortOrder:parent.sortOrder,
+      position:parent.position,
+      limit:parent.limit
+    };
+    const parentNarrow = assistantApplyIsNarrow(parentSelect, 'edit') || assistantApplyIsNarrow(parentSelect, 'delete');
+    const wantsRest = rawGroups.some(group => group.rest === true || group.rest === 'true');
+    if(wantsRest && !parentNarrow){
+      return {ok:false, ask:'Say which items the groups share — a topic, names, or the previous list.', error:'selector required'};
+    }
+    if(parentNarrow){
+      const resolved = assistantResolveApplySet(parentSelect, session, context, null);
+      if(!resolved.ok)return resolved;
+      universe = resolved.rows;
+    }
+  }
+  const groups = rawGroups.length ? rawGroups : [parent];
+  const claimed = new Set();
+  const edits = [];
+  const deletes = [];
+  const matched = [];
+  for(const group of groups){
+    const rest = Boolean(rawGroups.length && (group.rest === true || group.rest === 'true'));
+    const spec = rawGroups.length ? assistantApplyMergedSelector(parent, group, universe != null) : parent;
+    let pool = universe;
+    if(rest){
+      pool = (universe || []).filter(row => !claimed.has(row.hid || row.name));
+      if(!pool.length)continue;
+      spec.fromRecent = false;
+      if(!spec.search && !assistantApplyNameList(spec.names).length && !(Array.isArray(spec.conditions) && spec.conditions.length)){
+        spec.search = parent.search;
+        spec.names = parent.names;
+        spec.kind = parent.kind;
+        spec.status = parent.status;
+        spec.conditions = parent.conditions;
+      }
+    }
+    const resolved = assistantResolveApplySet(spec, session, context, pool);
+    if(!resolved.ok)return resolved;
+    const applied = assistantApplyOneGroup(spec, resolved.rows, session, context, claimed, {rest});
+    if(!applied.ok)return applied;
+    applied.edits.forEach(row => edits.push(row));
+    applied.deletes.forEach(row => deletes.push(row));
+    applied.items.forEach(row => matched.push(row));
+  }
+  if(!edits.length && !deletes.length){
+    return {ok:true, noChange:true, text:'Those items already have that change.'};
+  }
+  const pendingDelete = deletes.length ? {
+    index:deletes[0].index,
+    hid:deletes[0].hid,
+    name:deletes.length === 1 ? deletes[0].name : deletes.map(item => item.name).join(', '),
+    items:deletes,
+    summary:assistantApplyDeleteSummary(deletes)
+  } : null;
+  const parts = [];
+  if(edits.length)parts.push(`Change ${edits.length}: ${edits.map(row => row.name).join(', ')}.`);
+  if(pendingDelete)parts.push(pendingDelete.summary);
+  return {
+    ok:true,
+    drafts:edits,
+    draft:edits[0] || null,
+    pendingDelete,
+    summary:parts.join(' '),
+    text:parts.join(' '),
+    items:matched.map(row => ({
+      name:row.name,
+      hid:row.hid,
+      durationMinutes:row.durationMinutes,
+      topics:row.topics
+    }))
+  };
+}
+
 function assistantExecuteTool(name, args, session, context){
   const catalog = context.catalog;
   const draft = session.draft || assistantEmptyDraft();
@@ -3822,6 +4223,16 @@ function assistantExecuteTool(name, args, session, context){
     if(!question)return {ok:false, error:'question is required'};
     const choices = Array.isArray(args.choices) ? args.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
     return {ok:true, ask:question, choices};
+  }
+  if(name === 'apply_items'){
+    const applied = assistantApplyItems(args, session, context);
+    if(applied.ok && Array.isArray(applied.drafts) && applied.drafts.length){
+      session.drafts = applied.drafts;
+      session.draft = applied.draft;
+      session.bulk = true;
+    }
+    if(applied.ok && applied.pendingDelete)session.pendingDelete = applied.pendingDelete;
+    return applied;
   }
   if(name === 'draft_batch'){
     const applied = assistantApplyDraftBatch(args, session, context);
@@ -4167,6 +4578,8 @@ function assistantDraftSummary(draft, settings){
   if(Array.isArray(draft.topics) && draft.topics.length)parts.push(draft.topics.join(', '));
   if(draft.breakable)parts.push('split');
   if(draft.pinned)parts.push('pinned');
+  if(draft.snoozedUntil && Number(draft.snoozedUntil) > Date.now())parts.push('snoozed');
+  else if(draft.applyNote)parts.push(draft.applyNote);
   if(draft.hardDue)parts.push('hard due');
   if(Array.isArray(draft.scheduleLinks) && draft.scheduleLinks.length){
     parts.push(draft.scheduleLinks.map(link => `${link.direction} ${link.name || ''}`.trim()).join(', '));
@@ -4410,7 +4823,57 @@ function assistantCommitPlan(pending){
   return {ok:true,index,name:habit.name,action:pending.action || 'add',habit};
 }
 
+function assistantCommitDeleteSet(items){
+  const pending = Array.isArray(items) ? items.slice() : [];
+  const data = typeof load === 'function' ? load() : [];
+  const targets = [];
+  const seen = new Set();
+  // Resolve the entire confirmation against one snapshot before deleting the
+  // first row. A removed/renamed target must not cause a half-applied set.
+  for(const item of pending){
+    let index = item && item.hid ? data.findIndex(row => row && row.hid === item.hid) : -1;
+    if(index < 0){
+      const match = assistantFindHabit(data, item && item.name);
+      if(!match.ok)return {ok:false, error:match.ask || `${item && item.name || 'an item'} is gone`};
+      index = match.index;
+    }
+    const habit = data[index];
+    const key = habit && (habit.hid || `${index}:${habit.name}`);
+    if(!habit || seen.has(key))return {ok:false, error:`${item && item.name || 'An item'} is no longer available`};
+    if(item.sourceFingerprint){
+      const current = assistantHabitToDraft(habit, index, typeof loadSortSettings === 'function' ? loadSortSettings() : {}, data);
+      if(assistantDraftFingerprint(current) !== item.sourceFingerprint){
+        return {ok:false, error:`${habit.name} changed after this preview. Ask me to remove the set again.`};
+      }
+    }
+    seen.add(key);
+    targets.push({index, habit});
+  }
+  targets.sort((a, b) => b.index - a.index);
+  const removed = [];
+  for(const target of targets){
+    const habit = typeof doNuke === 'function' ? doNuke(target.index, {silent:true}) : null;
+    if(!habit)return {ok:false, error:'could not remove'};
+    removed.push({idx:target.index, habit});
+  }
+  removed.sort((a, b) => a.idx - b.idx);
+  const names = removed.map(row => row.habit && row.habit.name).filter(Boolean);
+  if(typeof showActionToast === 'function'){
+    showActionToast(names.length === 1 ? `Removed ${names[0]}` : `Removed ${names.length} items`, {
+      type:'delete-many',
+      items:removed,
+      openAction:false,
+      undoLabel:'restore'
+    });
+  }
+  if(typeof render === 'function')render();
+  return {ok:true, count:names.length, name:names.join(', '), names};
+}
+
 function assistantCommitDelete(pending){
+  if(pending && Array.isArray(pending.items) && pending.items.length){
+    return assistantCommitDeleteSet(pending.items);
+  }
   if(!pending || pending.index == null)return {ok:false, error:'nothing to remove'};
   const data = typeof load === 'function' ? load() : [];
   let index = pending.index;
@@ -4467,6 +4930,13 @@ function assistantCommitDraft(draft){
   if(typeof load !== 'function' || typeof save !== 'function')return {ok:false, error:'save unavailable'};
   const data = load();
   const existing = assistantDraftExistingIndex(data, draft);
+  if(draft.applySourceFingerprint){
+    if(existing < 0)return {ok:false, error:`${draft.name} is no longer on the list. Ask me to make the change again.`};
+    const current = assistantHabitToDraft(data[existing], existing, typeof loadSortSettings === 'function' ? loadSortSettings() : {}, data);
+    if(assistantDraftFingerprint(current) !== draft.applySourceFingerprint){
+      return {ok:false, error:`${draft.name} changed after this preview. Ask me to make the change again.`};
+    }
+  }
   if(existing < 0 && data.length >= MAX_TINGS)return {ok:false, error:`${MAX_TINGS} habits max`};
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
   if(typeof assistantEnsureProposedWeather === 'function')assistantEnsureProposedWeather(draft, settings);

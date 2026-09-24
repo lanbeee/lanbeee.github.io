@@ -451,6 +451,19 @@ function appendAssistantBubble(kind, text, extra){
         <button type="button" class="btn danger-soft" data-assistant-act="remove">remove</button>
         <button type="button" class="btn" data-assistant-act="discard">keep it</button>
       </div>`;
+  }else if(kind === 'apply'){
+    const drafts = Array.isArray(extra && extra.drafts) ? extra.drafts.filter(row => row && row.name) : [];
+    const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (typeof sortSettings !== 'undefined' ? sortSettings : {});
+    const list = drafts.length
+      ? `<div class="assistant-preview-list">${drafts.map(row => assistantPreviewBody(typeof assistantDraftSummary === 'function' ? assistantDraftSummary(row, settings) : row.name)).join('')}</div>`
+      : '';
+    const deleteText = extra && extra.deleteText ? `<p>${escapeHtml(extra.deleteText)}</p>` : '';
+    div.innerHTML = `${think}${list}${deleteText}
+      <div class="btn-row assistant-preview-actions">
+        ${drafts.length ? '<button type="button" class="btn primary" data-assistant-act="add">save changes</button>' : ''}
+        ${deleteText ? '<button type="button" class="btn danger-soft" data-assistant-act="remove">remove</button>' : ''}
+        <button type="button" class="btn" data-assistant-act="discard">never mind</button>
+      </div>`;
   }else if(kind === 'actions'){
     const actions = Array.isArray(extra && extra.actions) ? extra.actions : [];
     const rows = actions.map((action, index) => {
@@ -546,10 +559,13 @@ async function handleAssistantOutcome(out){
     const batch = drafts.length > 1;
     const setting = !batch && out.draft && typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(out.draft.kind);
     const places = drafts.filter(row => row && row.kind === 'location').length;
+    const updating = Boolean(out.updating);
     appendAssistantBubble('say', batch
-      ? (places
-        ? 'Check these, then save all. Placeholder places use dummy addresses — set the real ones in Settings → locations.'
-        : 'Check these, then save all.')
+      ? (updating
+        ? 'Check these changes, then save all.'
+        : (places
+          ? 'Check these, then save all. Placeholder places use dummy addresses — set the real ones in Settings → locations.'
+          : 'Check these, then save all.'))
       : (setting ? 'Check this, then save.' : 'Check this, then save. Edit opens the full form.'), {thinking:out.thinking});
     appendAssistantBubble('preview', out.summary || (out.draft && out.draft.name) || 'drafts', {thinking:out.thinking, setting, drafts});
     return;
@@ -568,6 +584,15 @@ async function handleAssistantOutcome(out){
   }
   if(out.type === 'delete'){
     appendAssistantBubble('delete', out.text || 'Remove this item?', {thinking:out.thinking});
+    return;
+  }
+  if(out.type === 'apply'){
+    appendAssistantBubble('say', 'Check these, then confirm.', {thinking:out.thinking});
+    appendAssistantBubble('apply', out.summary || '', {
+      thinking:out.thinking,
+      drafts:out.drafts,
+      deleteText:out.deleteText
+    });
     return;
   }
   if(out.type === 'actions'){
@@ -808,7 +833,9 @@ function commitAssistantDelete(){
   _assistantSession.pendingDelete = null;
   assistantMarkLastActionSpent('delete');
   assistantClearFocus();
-  appendAssistantBubble('say', `Removed ${result.name}. You can undo from the toast.`);
+  appendAssistantBubble('say', result.count > 1
+    ? `Removed ${result.count} items. You can undo from the toast.`
+    : `Removed ${result.name}. You can undo from the toast.`);
 }
 
 function commitAssistantCompoundAction(index, button){

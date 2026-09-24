@@ -14,20 +14,20 @@ function assistantSystemPrompt(){
     '',
     'READS AND ACTIONS',
     'Use answer_schedule for agendas, missed items, free time, freest day, open windows, and what-if conflicts. Use answer_items for questions across saved tasks/habits. For arbitrary filters, rankings, ordinals, counts, or duration math, put the whole operation in conditions + sortBy/sortOrder + position/limit + aggregate; Tings must compute it. Example: second most overdue missed = answer_schedule query missed, sortBy overdue_days, sortOrder desc, position 2. Importance is P0-P5 (lower is more important); urgency is the app attention score (higher is more urgent). Use answer_weather for forecast facts and weather fit. query hours finds the time: lowest wind after 5pm is sortBy wind, sortOrder asc, position 1; relatively hot with very low wind is conditions on temperature and wind. query compare scores two times, including 1 hour before sunset, and can use a habit weather profile. query item with start checks that habit in the window even when it is not already planned. Use answer_settings for saved configuration, and lookup_item for one item’s next time, last completion, history, stats, or planner reason.',
-    'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove an item. These tools preview changes for confirmation.',
+    'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove one item. Use apply_items to change, snooze, show, or delete a matching set. These tools preview changes for confirmation.',
     '',
     'CREATION AND EDITING',
-    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several items. Use draft_setting for settings. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
+    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several new items. Use apply_items when the change, snooze, show, or delete hits more than one saved item — do not call draft_item once per row and do not create replacements. search is a name or topic ("dental" matches every saved dental item). fromRecent means those/them. groups apply different changes; rest true takes the items earlier groups left. Example: all dental appointments to three hours is apply_items search "dental", durationMinutes 180. Use draft_setting for settings. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
     'currentDraft is the item being edited. “it”, “this”, and “that” refer to currentDraft, otherwise recent.referent when appropriate. A question about it uses lookup_item; done uses complete_item; plan/unplan uses plan_item; remove uses delete_item. A named saved place may update placeNames on the current item; do not turn it into a new item.',
     '',
     'GROUNDING',
-    'Resolve relative dates using catalog.date. sunset means maghrib. placeNames may contain only places the user named that exist in catalog.places; omit the field otherwise. recent contains the previous request, verified answer, items, and referent. "those", "these", and "them" mean recent.items. Rank that list by repeating the same read with sortBy and position. Do not query every saved habit for a list you already returned.',
-    'If the request is genuinely ambiguous, ask one short question. A whole-week reschedule, deleting everything, or anything that is not one task, habit, setting, read, complete, plan, or delete is unsupported: call classify_intent with intent unsupported. Do not ask which item to move and do not answer that in prose. If tool JSON fails, retry with a smaller flat object.'
+    'Resolve relative dates using catalog.date. sunset means maghrib. placeNames may contain only places the user named that exist in catalog.places; omit the field otherwise. recent contains the previous request, verified answer, items, and referent. "those", "these", and "them" mean recent.items. Rank that list by repeating the same read with sortBy and position. To change, snooze, or delete those, call apply_items with fromRecent true. If they named a topic ("all the dental ones"), use search so the full set matches, not only the names already shown. Do not query every saved habit for a list you already returned.',
+    'If the request is genuinely ambiguous, ask one short question. A whole-week reschedule, or deleting every saved item with no topic, name, or filter, is unsupported: call classify_intent with intent unsupported. Changing, snoozing, or deleting a matching set is apply_items. Do not ask which item to move and do not answer that in prose. If tool JSON fails, retry with a smaller flat object.'
   ].join('\n');
 }
 
 function assistantUnsupportedText(){
-  return 'I can add or change tasks, habits, weather profiles, places, busy times, and topics; answer schedule, weather, item-status, history, stats, and settings questions; explain planner choices; and preview completing, correcting, planning, unplanning, or removing an item before it is saved.';
+  return 'I can add or change tasks and habits, including a set that matches a topic or name; snooze or remove that set; edit weather profiles, places, busy times, and topics; answer schedule, weather, item-status, history, stats, and settings questions; explain planner choices; and preview completing, correcting, planning, unplanning, or removing before it is saved.';
 }
 
 // Name-clarification chips start a fresh turn, so remember which action the
@@ -186,15 +186,15 @@ function assistantRepairText(step, error){
 }
 
 function assistantQueryListHint(){
-  return 'Do not calculate, filter, rank, count, or rewrite factual results yourself. If the user requested an analysis that this result did not already compute, call answer_schedule or answer_items again with the complete conditions, sortBy/sortOrder, position/limit, and aggregate. Example: second most overdue = sortBy overdue_days, sortOrder desc, position 2. If they asked another independent question, call its matching tool now. Call lookup_item only for history, stats, or why on one exact saved name.';
+  return 'Do not calculate, filter, rank, count, or rewrite factual results yourself. If the user requested an analysis that this result did not already compute, call answer_schedule or answer_items again with the complete conditions, sortBy/sortOrder, position/limit, and aggregate. Example: second most overdue = sortBy overdue_days, sortOrder desc, position 2. If they asked to change, snooze, show, or delete this set, call apply_items with the same search or conditions, or fromRecent true. Do not call draft_item once per row. If they asked another independent question, call its matching tool now. Call lookup_item only for history, stats, or why on one exact saved name.';
 }
 
 function assistantFollowupSteerText(){
-  return 'recent is the previous turn (their last request, your last answer, recent.items, and recent.referent). This message may continue that thread or ask something else. "it" / "that" / "the one" is currentDraft or recent.referent. "those" / "these" / "them" is recent.items from that turn, not every saved habit. To rank that list, call the same read again — answer_schedule with the same date or query — and set sortBy, sortOrder, and position. Do not call answer_items over the whole library for "those". Do not guess names or numbers.';
+  return 'recent is the previous turn (their last request, your last answer, recent.items, and recent.referent). This message may continue that thread or ask something else. "it" / "that" / "the one" is currentDraft or recent.referent. "those" / "these" / "them" is recent.items from that turn, not every saved habit. To rank that list, call the same read again — answer_schedule with the same date or query — and set sortBy, sortOrder, and position. To change, snooze, or delete those, call apply_items with fromRecent true. A named topic uses search so the full set matches. Different changes belong in groups; rest true covers whatever an earlier group left. Do not call answer_items over the whole library for "those". Do not guess names or numbers.';
 }
 
 function assistantQueryContinueHint(){
-  return 'Review the original request clause by clause. If this lookup was research for creating or changing something, call draft_item, draft_batch, or draft_setting now with the chosen fields. Otherwise call the next matching tool for every unfinished part. Only answer when every requested read and action is handled. Use tool data verbatim; do not invent names or numbers. "it"/"that"/"the one" is currentDraft or recent.referent.';
+  return 'Review the original request clause by clause. If this lookup was research for creating or changing something, call draft_item, draft_batch, apply_items, or draft_setting now with the chosen fields. A set of saved items is apply_items, not one draft_item per row. Otherwise call the next matching tool for every unfinished part. Only answer when every requested read and action is handled. Use tool data verbatim; do not invent names or numbers. "it"/"that"/"the one" is currentDraft or recent.referent.';
 }
 
 function assistantWriteContinueHint(){
@@ -243,7 +243,7 @@ function assistantPublishTurnDrafts(session){
 
 function assistantQueuedCreate(queuedCalls){
   const next = Array.isArray(queuedCalls) ? queuedCalls[0] : null;
-  return Boolean(next && (next.name === 'draft_item' || next.name === 'draft_setting' || next.name === 'draft_batch'));
+  return Boolean(next && (next.name === 'draft_item' || next.name === 'draft_setting' || next.name === 'draft_batch' || next.name === 'apply_items'));
 }
 
 // A draft_setting emitted in the same response as a prepare_action read has
@@ -263,7 +263,7 @@ function assistantDraftShouldContinue(session, call, queuedCalls){
 function assistantResultPreview(call, result, session, settings){
   if(!result || !result.ok)return null;
   const draftPreview = assistantDraftSummary(session && session.draft, settings) || null;
-  if(call && (call.name === 'draft_item' || call.name === 'draft_setting' || call.name === 'draft_batch')){
+  if(call && (call.name === 'draft_item' || call.name === 'draft_setting' || call.name === 'draft_batch' || call.name === 'apply_items')){
     return draftPreview || result.text || result.summary || null;
   }
   return result.text || result.summary || null;
@@ -279,7 +279,7 @@ function assistantIsWriteTool(name){
 }
 
 function assistantIsActionTool(name){
-  return assistantIsWriteTool(name) || name === 'draft_item' || name === 'draft_setting' || name === 'draft_batch';
+  return assistantIsWriteTool(name) || name === 'draft_item' || name === 'draft_setting' || name === 'draft_batch' || name === 'apply_items';
 }
 
 // A fully specified list analysis already has its final wording and facts from
@@ -610,9 +610,9 @@ function assistantTryMissedTurn(text, session, context){
 }
 
 function assistantNeedToolText(step){
-  if(step === 'extract')return 'You thought but did not call a tool. Call draft_batch if they listed several items, otherwise draft_item or draft_setting. If the request is confusing, call ask_user with one short question instead of guessing.';
+  if(step === 'extract')return 'You thought but did not call a tool. Call draft_batch if they listed several new items. Call apply_items if they want to change, snooze, show, or delete saved items that match a topic, name, or previous list. Otherwise call draft_item or draft_setting. If the request is confusing, call ask_user with one short question instead of guessing.';
   if(step === 'query')return 'You thought but did not call a tool. Call every matching answer_weather, answer_schedule, answer_items, answer_settings, or lookup_item tool now. Several parts in one request means several tool calls.';
-  if(step === 'answer')return 'Review the original request. If a read has purpose prepare_action, call the required draft_item, draft_batch, draft_setting, complete_item, plan_item, or delete_item now. Otherwise call any unfinished read tool, or answer in 1-2 sentences using only tool data. Do not invent names or numbers. If you still cannot tell what they meant, call ask_user.';
+  if(step === 'answer')return 'Review the original request. If a read has purpose prepare_action, call the required draft_item, draft_batch, apply_items, draft_setting, complete_item, plan_item, or delete_item now. A set of saved items is one apply_items call. Otherwise call any unfinished read tool, or answer in 1-2 sentences using only tool data. Do not invent names or numbers. If you still cannot tell what they meant, call ask_user.';
   if(step === 'classify')return 'You thought but did not call a tool. Call the matching tool now. If the request is confusing, call ask_user with one short question instead of guessing.';
   const tool = assistantStepTools(step)[0];
   return `You thought but did not call a tool. Call ${tool} now.`;
@@ -961,6 +961,38 @@ function assistantTryFocusFollowup(text, parsed, session, context){
   if(parsed.intent === 'lookup_item')return assistantLocalLookup(session, context, draft.name);
   if(!hasPatch)return null;
   return assistantApplyLocalPatch(session, parsed, context);
+}
+
+function assistantApplyOutcome(session, context, thinking, result){
+  const hasDrafts = Array.isArray(result && result.drafts) && result.drafts.length > 0;
+  const hasDelete = Boolean(result && result.pendingDelete);
+  if(hasDrafts && hasDelete){
+    const preview = assistantPreviewResult(session, context, thinking);
+    return {
+      type:'apply',
+      drafts:preview.drafts,
+      draft:preview.draft,
+      summary:preview.summary,
+      pendingDelete:result.pendingDelete,
+      deleteText:result.pendingDelete.summary || result.summary,
+      thinking,
+      session
+    };
+  }
+  if(hasDelete && !hasDrafts){
+    const write = assistantPendingWriteOutcome(session, {thinking}, '');
+    if(write)return write;
+    return {
+      type:'delete',
+      text:result.summary,
+      pendingDelete:result.pendingDelete,
+      thinking,
+      session
+    };
+  }
+  const preview = assistantPreviewResult(session, context, thinking);
+  preview.updating = true;
+  return preview;
 }
 
 function assistantPreviewResult(session, context, thinking){
@@ -1773,6 +1805,9 @@ async function runAssistantTurn(userText, opts = {}){
     if(result.noChange){
       const noChangeText = result.text || result.summary || 'Nothing changed.';
       assistantRememberGrounded(session, {text:noChangeText, noChange:true}, call);
+      if(call.name === 'apply_items' && !queuedCalls.length){
+        return done({type:'say', text:noChangeText, thinking:parsed && parsed.thinking, session});
+      }
       assistantPushChainResult(session, parsed, {
         ok:true,
         noChange:true,
@@ -1850,7 +1885,7 @@ async function runAssistantTurn(userText, opts = {}){
       }
       if(intent === 'delete_item'){
         step = 'delete';
-        session.messages.push({role:'user', content:'Call delete_item with the existing item name. Tings will ask for confirmation.'});
+        session.messages.push({role:'user', content:'If they named one item, call delete_item with that name. If they named a topic, a list, or several items, call apply_items with action delete and search, names, or fromRecent. Tings will ask for confirmation.'});
         continue;
       }
       if(intent === 'lookup_item'){
@@ -1974,6 +2009,28 @@ async function runAssistantTurn(userText, opts = {}){
       continue;
     }
 
+    if(call.name === 'apply_items'){
+      const matched = Array.isArray(result.items) ? result.items : [];
+      assistantRememberGrounded(session, {text:result.summary || result.text, items:matched}, call);
+      if(Array.isArray(result.drafts) && result.drafts.length){
+        session.drafts = result.drafts;
+        session.draft = result.draft || result.drafts[0];
+        session.bulk = true;
+        result.drafts.forEach(row => assistantStageTurnDraft(session, row));
+      }
+      if(result.pendingDelete)assistantQueuePendingAction(session, 'delete', result);
+      if(queuedCalls.length){
+        assistantPushChainResult(session, parsed, {
+          ok:true,
+          summary:result.summary,
+          staged:true,
+          count:matched.length,
+          hint:assistantWriteContinueHint()
+        });
+        continue;
+      }
+      return done(assistantApplyOutcome(session, context, parsed.thinking, result));
+    }
     if(call.name === 'draft_batch'){
       (Array.isArray(session.drafts) ? session.drafts : []).forEach(row => assistantStageTurnDraft(session, row));
       if(queuedCalls.length){
