@@ -845,6 +845,111 @@ function assert(value,message){
         + `m, showerEnd=${rightAfter.showerEnd}, jumaStart=${rightAfter.jumaStart})`);
   }
 
+  console.log('\n[D2] required chain keeps an early build occurrence');
+  async function runRequiredChain(label,useExact,completedOptionalSuccessor){
+    return page.evaluate(async ({label,useExact,completedOptionalSuccessor})=>{
+      const friBase = dayStart(new Date(2026,8,25).getTime());
+      const now = friBase + (12 * 60 + 31) * 60000;
+      const settings = {
+        ...loadSortSettings(),
+        preset:'todayFirst',
+        showWeekOnHome:true,
+        agendaOptimizer:!!useExact,
+        availabilityMinutes:Array(7).fill(480),
+        availabilityOverrides:{},
+        blockedTimes:[
+          {label:'morning',days:[],start:0,end:12 * 60 + 30},
+          {label:'evening',days:[],start:16 * 60,end:1440}
+        ],
+        locations:[],travel:{},
+        showDueHabitsInAgenda:true,
+        showDueTasksInAgenda:true,
+        showScheduledTasksInAgenda:true,
+        showPlannedItemsInAgenda:true
+      };
+      settings.availabilityOverrides[dateKey(friBase)] = 480;
+      const exercise = {
+        hid:'chain-exercise',name:'Chain exercise',type:'keepup',target:1,
+        earlyWindowDays:0,delayAllowanceDays:0,
+        logs:[friBase - 86400000],durationMinutes:45,priority:1,
+        preferredTimeStart:17 * 60,preferredTimeEnd:23 * 60
+      };
+      const shower = {
+        hid:'chain-shower',name:'Chain shower',type:'keepup',target:2.5,
+        earlyWindowDays:3,delayAllowanceDays:0,
+        logs:[friBase - 86400000],durationMinutes:5,priority:2,
+        scheduleLinks:[
+          {anchorHid:'chain-exercise',direction:'after',adjacency:'direct',requireSameDay:true},
+          {anchorHid:'chain-juma',direction:'before',adjacency:'sometime',requireSameDay:true}
+        ]
+      };
+      const juma = {
+        hid:'chain-juma',name:'Chain Juma',type:'keepup',target:7,
+        earlyWindowDays:0,delayAllowanceDays:0,
+        logs:[friBase - 7 * 86400000],durationMinutes:20,priority:0,
+        allowedWeekdays:[5],allowedTimeStart:13 * 60 + 30,allowedTimeEnd:15 * 60 + 15
+      };
+      // This optional subject is stored in the reverse direction: it follows
+      // Shower. Completing it earlier today must not impose a past ceiling on
+      // the separate Shower occurrence required by Juma.
+      const optionalSuccessor = {
+        hid:'chain-optional',name:'Optional successor',type:'keepup',target:11,
+        logs:completedOptionalSuccessor ? [friBase] : [friBase - 12 * 86400000],
+        durationMinutes:5,priority:3,
+        scheduleLinks:[{
+          anchorHid:'chain-shower',direction:'after',adjacency:'direct',requireSameDay:false
+        }]
+      };
+      const RealDate = Date;
+      function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(now); }
+      FrozenDate.now = ()=>now;
+      FrozenDate.parse = RealDate.parse;
+      FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate,RealDate);
+      FrozenDate.prototype = RealDate.prototype;
+      const originalDate = globalThis.Date;
+      globalThis.Date = FrozenDate;
+      let timeline = [];
+      let plannerSolveStatus = null;
+      let daySolves = [];
+      try{
+        saveSortSettings(settings);
+        if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+        save([exercise,shower,juma,optionalSuccessor]);
+        const data = load();
+        const week = useExact && typeof buildWeekAgendaAsync === 'function'
+          ? await buildWeekAgendaAsync(data,settings,1)
+          : buildWeekAgenda(data,settings,1);
+        timeline = (week.days[0] && week.days[0].timeline) || [];
+        plannerSolveStatus = week.plannerSolveStatus || null;
+        daySolves = week.plannerDiagnostics && week.plannerDiagnostics.daySolves || [];
+      }finally{
+        globalThis.Date = originalDate;
+      }
+      const fills = timeline.filter(row=>row.kind === 'fill');
+      const find = hid=>fills.find(row=>row.h && row.h.hid === hid);
+      const ex = find('chain-exercise');
+      const sh = find('chain-shower');
+      const ju = find('chain-juma');
+      return {
+        label,completedOptionalSuccessor,plannerSolveStatus,daySolves,
+        hids:fills.map(row=>row.h && row.h.hid),
+        hasExercise:Boolean(ex),hasShower:Boolean(sh),hasJuma:Boolean(ju),
+        ordered:Boolean(ex && sh && ju && ex.end <= sh.start + 60000 && sh.end <= ju.start + 60000)
+      };
+    },{label,useExact,completedOptionalSuccessor});
+  }
+  for(const [label,useExact] of [['fast',false],['exact',true]]){
+    for(const completedOptionalSuccessor of [false,true]){
+      const chain = await runRequiredChain(label,useExact,completedOptionalSuccessor);
+      const suffix = completedOptionalSuccessor ? 'completed optional successor' : 'uncompleted optional successor';
+      assert(chain.hasExercise && chain.hasShower && chain.hasJuma,
+        `${label}: required chain is fully placed with ${suffix} (${chain.hids.join(',')}; ${chain.plannerSolveStatus || 'fast'} ${JSON.stringify(chain.daySolves)})`);
+      assert(chain.ordered,
+        `${label}: Exercise → Shower → Juma order holds with ${suffix} (${chain.hids.join(',')})`);
+    }
+  }
+
   console.log('\n[E] cadence OR — stiff-rhythm keepup honours a same-day partner');
   const orCase = await page.evaluate(async ()=>{
     // Monday Aug 3 2026. Shower is a keepup every 4 days, flex 0, last done Sun

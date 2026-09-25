@@ -1,3 +1,17 @@
+// A completed successor normally settles a persistent link for the day. The
+// one exception is the subject's own "right before" promise: once its anchor
+// is finished, that direct pairing really has expired. When the completed
+// successor is instead the link subject (A -> completed B, link stored on B),
+// it must not impose a past ceiling on a fresh A occurrence needed by another
+// same-day relationship.
+function orderSuccessorCommitCapsFill(edge,fillHid,committed){
+  if(!committed)return false;
+  if(committed.kind !== 'completed')return true;
+  if(!edge || edge.adjacency !== 'direct')return false;
+  if(edge.persistent && edge.subjectHid && edge.subjectHid !== fillHid)return false;
+  return true;
+}
+
 function tryPlaceOnDay(state,fill,opts = {}){
   if(typeof plannerPerfCountTryPlace === 'function')plannerPerfCountTryPlace();
   if(!state || !fill || !fill.h)return null;
@@ -105,7 +119,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
         // ceiling would just delete it from the day even though its own
         // rhythm still wants it. "Right before" keeps the ceiling — that
         // pairing is over for today, and the link pass omits it explicitly.
-        if(committed && (committed.kind !== 'completed' || e.adjacency === 'direct')){
+        if(orderSuccessorCommitCapsFill(e,fill.h.hid,committed)){
           orderCeiling = Math.min(orderCeiling,committed.start);
         }
         for(const entry of chron){
@@ -1145,7 +1159,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         const committed = scheduleAnchorCommitForDay(e.afterHid,dayBase);
         // See tryPlaceOnDay: a finished successor is history, not a ceiling,
         // unless the link demanded "right before" it.
-        if(committed && (committed.kind !== 'completed' || e.adjacency === 'direct')){
+        if(orderSuccessorCommitCapsFill(e,fill.h.hid,committed)){
           orderCeiling = Math.min(orderCeiling,committed.start);
         }
         for(const entry of chron){

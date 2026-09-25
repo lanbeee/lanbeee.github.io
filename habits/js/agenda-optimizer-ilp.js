@@ -430,15 +430,18 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
             if(C.fit.placeEnd > B.fit.placeStart + 60000)continue;
             between.push({name:C.varName,coef:1});
           }
-          if(between.length){
+          for(const interloper of between){
             // When both linked options are selected, no third movable fill may
-            // occupy the space between "right above" and "right below".
+            // occupy the space between "right above" and "right below". This
+            // implication must be one row per possible interloper. Summing all
+            // alternatives into one row also constrained them when B was not
+            // selected, and could make a longer linked chain infeasible.
             subjectTo.push({
               name:`ord_direct_${directClash++}`,
               vars:[
                 {name:A.varName,coef:1},
                 {name:B.varName,coef:1},
-                ...between
+                interloper
               ],
               bnds:{type:GLPK.GLP_UP,ub:2,lb:0}
             });
@@ -461,10 +464,10 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
           if(C.fit.placeEnd > B.fit.placeStart + 60000)continue;
           between.push({name:C.varName,coef:1});
         }
-        if(between.length){
+        for(const interloper of between){
           subjectTo.push({
             name:`ord_direct_placed_${directClash++}`,
-            vars:[{name:B.varName,coef:1},...between],
+            vars:[{name:B.varName,coef:1},interloper],
             bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
           });
         }
@@ -636,7 +639,9 @@ function optimizerFixedLocationAnchors(state){
   return anchors.sort((a,b)=>a.start-b.start || a.end-b.end);
 }
 
-function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
+function optimizerFitsForFill(
+  state,fill,dayCandidates,candidateBoundaryEdges,protectedBoundaryEdges = []
+){
   const out = [];
   const seen = new Map();
   const variants = typeof habitSchedulePlacementVariants === 'function'
@@ -652,7 +657,7 @@ function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
     : optimizerLocationVariants(fill,state).map(locationId=>({...fill,locationId}));
   for(const locatedFill of locatedFills){
     for(const fit of listPlaceFitsOnDay(
-      state,locatedFill,dayCandidates,candidateBoundaryEdges
+      state,locatedFill,dayCandidates,candidateBoundaryEdges,protectedBoundaryEdges
     )){
       const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
       if(!seen.has(key)){
@@ -674,7 +679,9 @@ function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
 // open-slot start, enumerate starts immediately before/after competing windows.
 // Those boundary options let GLPK move flexible work out of a narrow window
 // without paying for a minute-by-minute grid on mobile.
-function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges = []){
+function listPlaceFitsOnDay(
+  state,fill,dayCandidates = [],candidateBoundaryEdges = [],protectedBoundaryEdges = []
+){
   if(typeof tryPlaceOnDay !== 'function')return [];
   const doing = doingNowForDay(state);
   let placeFill = fill;
@@ -885,6 +892,12 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
     const isPinnedRouteOrAbut = (fit)=>{
       if(!fit)return false;
       if(slotBoundaryFits.has(fit))return true;
+      // A direct predecessor's option is an ILP alternative, not a chosen
+      // local placement. Preserve successor starts at all of those boundaries
+      // through this per-candidate trimming step so GLPK can select the
+      // compatible chain globally.
+      if(protectedBoundaryEdges.some(edge=>
+        Math.abs(Number(fit.placeStart) - Number(edge)) <= 60000))return true;
       const beforeSuccessor = successorStarts.some(start=>{
         if(fit.placeEnd > start + 60000)return false;
         const gapMin = Math.max(0,(start - fit.placeEnd) / 60000);
@@ -1005,15 +1018,80 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     if(Number.isFinite(Number(p.start)))candidateBoundaryEdges.push(Number(p.start));
     if(Number.isFinite(Number(p.end)))candidateBoundaryEdges.push(Number(p.end));
   }
+  // Enumerate linked options to a bounded fixed point before constructing the
+  // ILP. Every direct predecessor option contributes its completion boundary
+  // to the successor; repeated rounds propagate those alternatives through
+  // A -> B -> C chains. Nothing is committed or chosen here—the complete set
+  // remains available for GLPK's day-wide selection and route objective.
+  const fixedCandidates = dayCandidates.filter(c=>c && c.h && !c.h.breakable);
+  const candidateByHid = new Map(fixedCandidates
+    .filter(c=>c.h.hid)
+    .map(c=>[c.h.hid,c]));
+  const fillByIndex = new Map(fixedCandidates.map(c=>[c.i,{
+    h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity
+  }]));
+  const fitsByIndex = new Map();
+  const mergeFits = (index,incoming,chainEnds = null)=>{
+    const current = fitsByIndex.get(index) || [];
+    const byKey = new Map(current.map(fit=>[
+      `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`,fit
+    ]));
+    let added = 0;
+    for(const fit of incoming || []){
+      const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
+      const existing = byKey.get(key);
+      const onChainBoundary = Array.isArray(chainEnds) && chainEnds.some(end=>
+        Math.abs(Number(fit.placeStart) - Number(end)) <= 60000
+      );
+      if(existing){
+        if(onChainBoundary)existing.directChainBoundary = true;
+        continue;
+      }
+      if(onChainBoundary)fit.directChainBoundary = true;
+      byKey.set(key,fit);
+      current.push(fit);
+      added += 1;
+    }
+    fitsByIndex.set(index,current);
+    return added;
+  };
+  for(const c of fixedCandidates){
+    mergeFits(c.i,optimizerFitsForFill(
+      state,fillByIndex.get(c.i),dayCandidates,candidateBoundaryEdges
+    ));
+  }
+  const directEdges = (typeof plannerOrderConstraintsForDay === 'function'
+    ? plannerOrderConstraintsForDay(state.dayBase) : [])
+    .filter(edge=>edge && edge.adjacency === 'direct'
+      && candidateByHid.has(edge.beforeHid) && candidateByHid.has(edge.afterHid));
+  const maxLinkRounds = Math.min(8,Math.max(1,directEdges.length));
+  for(let round = 0;round < maxLinkRounds;round += 1){
+    let added = 0;
+    for(const edge of directEdges){
+      const predecessor = candidateByHid.get(edge.beforeHid);
+      const successor = candidateByHid.get(edge.afterHid);
+      const predecessorEnds = [...new Set((fitsByIndex.get(predecessor.i) || [])
+        .map(fit=>Number(fit.placeEnd)).filter(Number.isFinite))];
+      if(!predecessorEnds.length)continue;
+      const extraFits = optimizerFitsForFill(
+        state,
+        fillByIndex.get(successor.i),
+        dayCandidates,
+        [...candidateBoundaryEdges,...predecessorEnds],
+        predecessorEnds
+      );
+      added += mergeFits(successor.i,extraFits,predecessorEnds);
+    }
+    if(!added)break;
+  }
   for(const c of dayCandidates){
     // Breakable budgets are continuous resources, not one all-or-nothing event.
     // They are fitted after this exact fixed-duration solve has reserved narrow
     // windows, then split only when a continuous placement is impossible.
     if(c.h && c.h.breakable)continue;
-    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    let fits = optimizerFitsForFill(
-      state,fill,dayCandidates,candidateBoundaryEdges
-    );
+    const fill = fillByIndex.get(c.i)
+      || {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    let fits = (fitsByIndex.get(c.i) || []).slice();
     // Inject fits in free gaps touching no reservation (movables only). Breakables
     // are fitted after this solve so the normal enumerator never anchors after
     // their windows; this gives GLPK the outside option the reserve already
@@ -1112,7 +1190,12 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       groups.get(option.c.i).push(option);
     }
     for(const group of groups.values()){
-      group.sort((a,b)=>b.weight - a.weight || a.fit.placeStart - b.fit.placeStart);
+      group.sort((a,b)=>{
+        const chainA = a.fit && a.fit.directChainBoundary ? 1 : 0;
+        const chainB = b.fit && b.fit.directChainBoundary ? 1 : 0;
+        if(chainA !== chainB)return chainB - chainA;
+        return b.weight - a.weight || a.fit.placeStart - b.fit.placeStart;
+      });
     }
     opts = [];
     let round = 0;
