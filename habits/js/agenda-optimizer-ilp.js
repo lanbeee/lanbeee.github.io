@@ -687,7 +687,10 @@ function optimizerFitsForFill(
         Number(state.startClock) || 0,
         Number(predecessorFit.placeEnd) || 0
       );
-      const fit = tryPlaceOnDay(clone,locatedFill,{allowNetwork:false});
+      const fit = tryPlaceOnDay(clone,locatedFill,{
+        allowNetwork:false,
+        earliestFromAnchor:true
+      });
       if(!fit)continue;
       fit.linkedChainBoundary = true;
       const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
@@ -875,12 +878,34 @@ function listPlaceFitsOnDay(
         const clone = clonePlacementState(state);
         clone.slots = [slot];
         clone.startClock = Math.max(state.startClock,slot.start,anchor);
-        const fit = tryPlaceOnDay(clone,placeFill,doingOpts);
+        // A linked fill's preferred clock is one option. Reporting that same
+        // clock for every earlier anchor hides the start that can still sit
+        // before a required successor, and the ILP then has no feasible chain.
+        const probeOpts = linkedFill
+          ? {...doingOpts,earliestFromAnchor:true}
+          : doingOpts;
+        const fit = tryPlaceOnDay(clone,placeFill,probeOpts);
         if(!fit)continue;
         const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
         if(seen.has(key))continue;
         seen.add(key);
         fits.push(fit);
+      }
+      // The anchor probes above are the earliest start at each cursor. Also
+      // keep the preferred-time fit for this slot so a later direct pair is
+      // still an ILP option when earlier cursors are feasible.
+      if(linkedFill){
+        const preferredClone = clonePlacementState(state);
+        preferredClone.slots = [slot];
+        preferredClone.startClock = Math.max(state.startClock,slot.start);
+        const preferred = tryPlaceOnDay(preferredClone,placeFill,doingOpts);
+        if(preferred){
+          const key = `${preferred.placeStart}:${preferred.placeEnd}:${preferred.locId || ''}`;
+          if(!seen.has(key)){
+            seen.add(key);
+            fits.push(preferred);
+          }
+        }
       }
     }
     // ASAP scoring keeps only the earliest 16 fits. Preserve one feasible
@@ -919,6 +944,21 @@ function listPlaceFitsOnDay(
         || (a.score || 0) - (b.score || 0));
       const keep = routeAnchorDay ? 8 : 1;
       slotFits.slice(0,keep).forEach(fit=>slotBoundaryFits.add(fit));
+      const preferredWindow = typeof fillPreferredWindow === 'function' && placeFill && placeFill.h
+        ? fillPreferredWindow(placeFill.h,state.dayBase,state.seedLocId)
+        : null;
+      let preferredKeep = null;
+      slotFits.forEach(fit=>{
+        if(!fit)return;
+        if(fit.preferredHit)slotBoundaryFits.add(fit);
+        const inPreferred = preferredWindow
+          && fit.placeStart >= preferredWindow.start - 60000
+          && fit.placeStart <= preferredWindow.end + 60000;
+        if(inPreferred && (!preferredKeep || fit.placeStart < preferredKeep.placeStart)){
+          preferredKeep = fit;
+        }
+      });
+      if(preferredKeep)slotBoundaryFits.add(preferredKeep);
     }
     const isPinnedRouteOrAbut = (fit)=>{
       if(!fit)return false;
@@ -1286,7 +1326,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     for(const option of opts){
       if(!option || !option.c || !requiredOccurrenceIndices.has(option.c.i))continue;
       const priority = Math.max(0,Math.min(5,Number(option.c.priority) || 0));
-      option.weight += 1000000 + (5 - priority) * 10000;
+      // Lexicographic: one higher-priority required occurrence outranks any
+      // number of lower-priority ones that fit in its place. Same priority
+      // still keeps the larger compatible set. 100^5 stays exact in the
+      // solver's doubles for the option counts this day model generates.
+      option.weight += Math.pow(100, 5 - priority);
     }
   }
 

@@ -1122,6 +1122,35 @@ function annotateAgendaOccurrenceKeys(candidates,dayStates){
     }
   }
 }
+// A far daily commute can be the only placement that still fits after it is
+// committed, so assigning it first empties the week of nearer daily work.
+// Skip this day when a not-yet-placed at-location daily fits now and would
+// not fit afterward. Short trips that leave those dailies a slot still land.
+function awayDailyBlocksPromoter(state,c,fill,fit,candidates,dayOpts){
+  if(!state || !c || !fill || !fit)return false;
+  if(typeof isIndependentDailyOccurrence !== 'function'
+    || !isIndependentDailyOccurrence(c))return false;
+  if(typeof weekFillPromotesAtSequencingLocation === 'function'
+    && weekFillPromotesAtSequencingLocation(c,[state]))return false;
+  if(typeof clonePlacementState !== 'function'
+    || typeof commitPlacement !== 'function'
+    || typeof tryPlaceOnDay !== 'function')return false;
+  const trial = clonePlacementState(state);
+  commitPlacement(trial,fill,{...fit});
+  const probeOpts = {...(dayOpts || {}),allowNetwork:false};
+  for(const other of candidates || []){
+    if(!other || other.i === c.i || !other.h)continue;
+    if(!isIndependentDailyOccurrence(other))continue;
+    if(typeof weekFillPromotesAtSequencingLocation === 'function'
+      && !weekFillPromotesAtSequencingLocation(other,[state]))continue;
+    if(other.eligible && !other.eligible.has(state.dayBase))continue;
+    if(state.placed && state.placed.has(other.i))continue;
+    const otherFill = {h:other.h,i:other.i,priority:other.priority,scarcity:other.scarcity};
+    if(!tryPlaceOnDay(state,otherFill,probeOpts))continue;
+    if(!tryPlaceOnDay(trial,otherFill,probeOpts))return true;
+  }
+  return false;
+}
 function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,graphBudget,preferredDays){
   graphBudget = graphBudget || {remaining:768,searches:0,accepted:0};
   const todayBase = dayStates[0] ? dayStates[0].dayBase : dayStart(Date.now());
@@ -1292,6 +1321,11 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
           candidates,dayStates,graphBudget);
         if(!proposal)continue;
         const fit = proposal.fit;
+        // A long commute can be the only thing that fits once it is placed,
+        // so a far daily would take every day and leave nearer dailies with
+        // no week at all. Keep this day for a promoter that still fits now
+        // and would not fit after the commute.
+        if(!proposal.replacement && awayDailyBlocksPromoter(state,c,fill,fit,candidates,dayOpts))continue;
         if(proposal.replacement){
           applyPlacementState(state,proposal.replacement);
           state.day.agendaItems = state.day.agendaItems.filter(item=>item.i !== fill.i);

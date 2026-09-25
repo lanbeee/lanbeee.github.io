@@ -2522,11 +2522,31 @@ function orderConstraintPenalty(fill,fit,state){
 }
 
 // PURE: among feasible fits on one day, pick the best by unified score.
+// earliestFromAnchor is option generation for the ILP, not a placement
+// policy: each probe reports the first feasible start at or after its
+// cursor so GLPK can choose among them. The preferred-time score would
+// otherwise collapse every cursor onto one later clock.
 function pickBestScoredFit(fits,fill,state,opts = {}){
   if(!fits || !fits.length)return null;
   // Doing-now: always take the earliest feasible start so it stays first.
   if(opts.doingNowStart != null){
     return fits.reduce((best,f)=>!best || f.placeStart < best.placeStart ? f : best,null);
+  }
+  if(opts.earliestFromAnchor){
+    let best = null;
+    const weatherSettings = opts.settings || (state && state.settings)
+      || (typeof sortSettings !== 'undefined' ? sortSettings : null);
+    for(const fit of fits){
+      const weather = typeof weatherFitAssessment === 'function'
+        ? weatherFitAssessment(fill,fit,state,weatherSettings)
+        : null;
+      if(weather && weather.hardFail)continue;
+      if(!best || fit.placeStart < best.placeStart
+        || (fit.placeStart === best.placeStart && (fit.score || 0) < (best.score || 0))){
+        best = fit;
+      }
+    }
+    return best;
   }
   const weights = opts.weights || resolveAgendaScoreWeights(opts.settings || (state && state.settings));
   const spare = opts.spareWindows || [];

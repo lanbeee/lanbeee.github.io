@@ -1050,6 +1050,119 @@ function assert(value,message){
   assert(travelBoundary.jumaMinute >= 14 * 60 + 35 && travelBoundary.jumaMinute < 14 * 60 + 40,
     'Juma uses the propagated travel-adjusted boundary (' + JSON.stringify(travelBoundary) + ')');
 
+  console.log('\n[D4] GLPK keeps the required chain when the predecessor prefers later');
+  async function runEarlyAnchorWindow(label,useExact,optionalSuccessorDue){
+    return page.evaluate(async ({label,useExact,optionalSuccessorDue})=>{
+      const friBase = dayStart(new Date(2026,8,25).getTime());
+      const now = friBase + (13 * 60 + 19) * 60000;
+      const home = {id:'home',name:'Home',lat:40,lng:-75};
+      const mosque = {id:'mosque',name:'Mosque',lat:40.02,lng:-75.02};
+      const settings = {
+        ...loadSortSettings(),
+        preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:!!useExact,
+        availabilityMinutes:Array(7).fill(480),availabilityOverrides:{},
+        blockedTimes:[{label:'morning',days:[],start:0,end:13 * 60 + 19,locationId:'home'}],
+        locations:[home,mosque],
+        travel:{
+          'home|mosque':{seconds:12 * 60,metres:4000,provider:'test'},
+          'mosque|home':{seconds:12 * 60,metres:4000,provider:'test'}
+        },
+        defaultTravelMode:'driving',
+        showDueHabitsInAgenda:true,showDueTasksInAgenda:true,
+        showScheduledTasksInAgenda:true,showPlannedItemsInAgenda:true
+      };
+      settings.availabilityOverrides[dateKey(friBase)] = 480;
+      const exercise = {
+        hid:'early-exercise',name:'Early exercise',type:'keepup',target:3,
+        earlyWindowDays:1,logs:[friBase - 9 * 86400000],durationMinutes:45,priority:1,
+        preferredTimeStart:17 * 60,preferredTimeEnd:23 * 60,locationIds:['home']
+      };
+      const shower = {
+        hid:'early-shower',name:'Early shower',type:'keepup',target:2.5,
+        earlyWindowDays:3,logs:[friBase - 86400000],durationMinutes:5,priority:2,
+        locationIds:['home'],
+        scheduleLinks:[
+          {anchorHid:'early-exercise',direction:'after',adjacency:'direct',requireSameDay:true},
+          {anchorHid:'early-juma',direction:'before',adjacency:'sometime',requireSameDay:true},
+          {anchorHid:'early-haircut',direction:'after',adjacency:'direct',requireSameDay:true}
+        ]
+      };
+      // Not due today. Its direct-after link must not remove the shower
+      // occurrence that the scarce anchor still requires.
+      const haircut = {
+        hid:'early-haircut',name:'Early haircut',type:'reduce',target:40,
+        earlyWindowDays:7,logs:[friBase - 7 * 86400000],durationMinutes:60,priority:2,
+        locationIds:['home']
+      };
+      const juma = {
+        hid:'early-juma',name:'Early juma',type:'keepup',target:7,
+        logs:[friBase - 7 * 86400000],durationMinutes:20,priority:0,
+        locationIds:['mosque'],
+        scheduleOptions:[
+          {id:'early-window',weekdays:[5],start:13 * 60 + 45,end:14 * 60 + 30,locationId:'mosque',sameDayMode:'alternative'},
+          {id:'late-window',weekdays:[5],start:14 * 60 + 30,end:15 * 60 + 15,locationId:'mosque',sameDayMode:'alternative'}
+        ]
+      };
+      const optionalSuccessor = {
+        hid:'early-optional',name:'Early optional',type:'keepup',target:11,
+        logs:optionalSuccessorDue ? [friBase - 20 * 86400000] : [friBase],
+        durationMinutes:10,priority:4,locationIds:['home'],
+        scheduleLinks:[{
+          anchorHid:'early-shower',direction:'after',adjacency:'direct',requireSameDay:false
+        }]
+      };
+      const RealDate = Date;
+      function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(now); }
+      FrozenDate.now = ()=>now;
+      FrozenDate.parse = RealDate.parse;
+      FrozenDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FrozenDate,RealDate);
+      FrozenDate.prototype = RealDate.prototype;
+      const originalDate = globalThis.Date;
+      globalThis.Date = FrozenDate;
+      try{
+        saveSortSettings(settings);
+        if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+        save([exercise,shower,haircut,juma,optionalSuccessor]);
+        const data = load();
+        const week = useExact && typeof buildWeekAgendaAsync === 'function'
+          ? await buildWeekAgendaAsync(data,settings,1)
+          : buildWeekAgenda(data,settings,7);
+        const fills = ((week.days[0] && week.days[0].timeline) || [])
+          .filter(row=>row.kind === 'fill');
+        const find = hid=>fills.find(row=>row.h && row.h.hid === hid);
+        const ex = find('early-exercise');
+        const sh = find('early-shower');
+        const ju = find('early-juma');
+        return {
+          label,optionalSuccessorDue,
+          plannerSolveStatus:week.plannerSolveStatus || null,
+          hids:fills.map(row=>row.h && row.h.hid),
+          hasExercise:Boolean(ex),hasShower:Boolean(sh),hasJuma:Boolean(ju),
+          ordered:Boolean(ex && sh && ju && ex.end <= sh.start + 60000 && sh.end <= ju.start + 60000),
+          jumaMinute:ju ? Math.round((ju.start - friBase) / 60000) : null,
+          omissions:(week.days[0] && week.days[0].linkOmissions || []).map(item=>item && item.reason)
+        };
+      }finally{
+        globalThis.Date = originalDate;
+      }
+    },{label,useExact,optionalSuccessorDue});
+  }
+  // One open interval: the predecessor's preferred evening and the anchor's
+  // earliest window cannot both be chosen. GLPK has to keep a non-preferred
+  // predecessor start so the required chain stays feasible. The optional
+  // direct-after successor must not take that chain's place.
+  for(const optionalSuccessorDue of [false,true]){
+    const early = await runEarlyAnchorWindow('exact',true,optionalSuccessorDue);
+    const suffix = optionalSuccessorDue ? 'due optional successor' : 'completed optional successor';
+    assert(early.hasExercise && early.hasShower && early.hasJuma,
+      `GLPK: required chain stays with an early anchor window and ${suffix} (${JSON.stringify(early)})`);
+    assert(early.ordered,
+      `GLPK: Exercise → Shower → Juma holds with ${suffix} (${JSON.stringify(early)})`);
+    assert(early.jumaMinute != null && early.jumaMinute >= 14 * 60 + 30,
+      `GLPK: scarce anchor uses a later window that still admits the chain (${JSON.stringify(early)})`);
+  }
+
   console.log('\n[E] cadence OR — stiff-rhythm keepup honours a same-day partner');
   const orCase = await page.evaluate(async ()=>{
     // Monday Aug 3 2026. Shower is a keepup every 4 days, flex 0, last done Sun
