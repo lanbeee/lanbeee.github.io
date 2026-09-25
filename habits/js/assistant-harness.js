@@ -9,7 +9,7 @@ function assistantSystemPrompt(){
     'PRIORITIES',
     '1. Call the final tool directly when you can. classify_intent is optional.',
     '2. Treat tool results as authoritative. Never invent or recalculate names, dates, times, totals, priorities, frequencies, history, weather, or schedule facts.',
-    '3. Handle every part of a compound request. Emit several tool calls when independent parts are clear; after results, call more tools if a part remains. On any read used to choose a later action, set purpose prepare_action; then finish with the requested draft or action tool. A setting drafted in that same response is only staged, because it has not seen the result. After the result, call the action the user asked for. Do not invent a task or habit they did not ask for. If the staged setting is the whole action, call draft_setting again with the same name.',
+    '3. Handle every part of a compound request. Emit several tool calls when independent parts are clear; after results, call more tools if a part remains. Tings does not decide from the wording that the request is finished. After a result, call the next tool if a part remains; if it is finished, do not call a tool. On any read used to choose a later action, set purpose prepare_action; then finish with the requested draft or action tool. A setting drafted in that same response is only staged, because it has not seen the result. After the result, call the action the user asked for. Do not invent a task or habit they did not ask for. If the staged setting is the whole action, call draft_setting again with the same name. Changing saved items onto a place is apply_items, or draft_item for one item. Do not draft a place that is already in catalog.places.',
     '4. If a saved-item name is missing or ambiguous, call find_item or ask_user. Never guess the item or create a replacement.',
     '',
     'READS AND ACTIONS',
@@ -17,11 +17,11 @@ function assistantSystemPrompt(){
     'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove one item. Use apply_items to change, snooze, show, or delete a matching set. These tools preview changes for confirmation.',
     '',
     'CREATION AND EDITING',
-    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several new items. Use apply_items when the change, snooze, show, or delete hits more than one saved item — do not call draft_item once per row and do not create replacements. search is a name or topic ("dental" matches every saved dental item). fromRecent means those/them. groups apply different changes; rest true takes the items earlier groups left. Example: all dental appointments to three hours is apply_items search "dental", durationMinutes 180. Use draft_setting for settings. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
+    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several new items. Use apply_items when the change, snooze, show, or delete hits more than one saved item — do not call draft_item once per row and do not create replacements. search is a name or topic ("dental" matches every saved dental item). fromRecent means those/them. groups apply different changes; rest true takes the items earlier groups left. Example: all dental appointments to three hours is apply_items search "dental", durationMinutes 180. Example: all dental appointments to a saved place is apply_items search "dental", placeNames that place. Use draft_setting only for a setting that is not already saved. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
     'currentDraft is the item being edited. “it”, “this”, and “that” refer to currentDraft, otherwise recent.referent when appropriate. A question about it uses lookup_item; done uses complete_item; plan/unplan uses plan_item; remove uses delete_item. A named saved place may update placeNames on the current item; do not turn it into a new item.',
     '',
     'GROUNDING',
-    'Resolve relative dates using catalog.date. sunset means maghrib. placeNames may contain only places the user named that exist in catalog.places; omit the field otherwise. recent contains the previous request, verified answer, items, and referent. "those", "these", and "them" mean recent.items. Rank that list by repeating the same read with sortBy and position. To change, snooze, or delete those, call apply_items with fromRecent true. If they named a topic ("all the dental ones"), use search so the full set matches, not only the names already shown. Do not query every saved habit for a list you already returned.',
+    'Resolve relative dates using catalog.date. sunset means maghrib. catalog.places lists every saved place. placeNames may contain only places the user named that exist there; omit the field otherwise. Do not create a place that is already listed. recent contains the previous request, verified answer, items, and referent. "those", "these", and "them" mean recent.items. Rank that list by repeating the same read with sortBy and position. To change, snooze, or delete those, call apply_items with fromRecent true. If they named a topic ("all the dental ones"), use search so the full set matches, not only the names already shown. Do not query every saved habit for a list you already returned.',
     'If the request is genuinely ambiguous, ask one short question. A whole-week reschedule, or deleting every saved item with no topic, name, or filter, is unsupported: call classify_intent with intent unsupported. Changing, snoozing, or deleting a matching set is apply_items. Do not ask which item to move and do not answer that in prose. If tool JSON fails, retry with a smaller flat object.'
   ].join('\n');
 }
@@ -129,7 +129,7 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
       today:compact
         ? {next:(catalog.today && catalog.today.next) || null}
         : catalog.today,
-      places:(catalog.places || []).slice(0, compact ? 6 : 12).map(item => ({name:item.name})),
+      places:(catalog.places || []).map(item => ({name:item.name})),
       weather:(catalog.weather || []).slice(0, 4).map(item => ({name:item.name})),
       topics:(catalog.topics || []).slice(0, compact ? 6 : 12),
       habits:(catalog.habits || []).slice(0, habitLimit).map(item => ({name:item.name, type:item.type})),
@@ -210,6 +210,7 @@ function assistantDraftKey(row){
 
 function assistantStageTurnDraft(session, draft){
   if(!session || !draft || !draft.name)return;
+  session._focusOnly = false;
   const list = Array.isArray(session.turnDrafts) ? session.turnDrafts.slice() : [];
   const key = assistantDraftKey(draft);
   const idx = list.findIndex(row => assistantDraftKey(row) === key);
@@ -254,10 +255,83 @@ function assistantActionClearsResearch(session, call){
   return !(call.name === 'draft_setting' && session.researchPending.gen === session._responseGen);
 }
 
+// Drafts and bulk edits stage work. Whether anything else in the request is
+// still open is the model's call — phrasing is not a reliable signal.
+function assistantStagingTool(name){
+  return name === 'draft_item' || name === 'draft_setting' || name === 'draft_batch' || name === 'apply_items';
+}
+
+function assistantHasOpenPreview(session){
+  if(!session)return false;
+  if(session.pendingApply)return true;
+  if(Array.isArray(session.turnDrafts) && session.turnDrafts.some(row => row && row.name))return true;
+  // complete/plan/delete/lookup copy the saved item onto session.draft so
+  // pronouns resolve. That focus is not an edit waiting for confirmation.
+  if(session._focusOnly)return false;
+  return Boolean(session.draft && session.draft.name);
+}
+
+function assistantFinishModelStop(session, context, parsed){
+  if(!session || session.researchPending || !assistantHasOpenPreview(session))return null;
+  const thinking = parsed && parsed.thinking;
+  const read = String(Array.isArray(session.lastReadParts) && session.lastReadParts.length
+    ? session.lastReadParts.join('\n\n')
+    : (session.lastReadText || '')).trim();
+  if(session.pendingApply){
+    assistantPublishTurnDrafts(session);
+    const out = assistantApplyOutcome(session, context, thinking, session.pendingApply);
+    const summary = String(session.pendingApply.summary || (out && (out.summary || out.text)) || '').trim();
+    if(read && read !== summary)out.alsoText = read;
+    return out;
+  }
+  assistantPublishTurnDrafts(session);
+  if((session.draft && session.draft.name) || (Array.isArray(session.drafts) && session.drafts.some(row => row && row.name))){
+    return assistantPreviewResult(session, context, thinking);
+  }
+  return null;
+}
+
+// The model decides whether a request is finished. A glitch that keeps
+// calling tools does not get another turn past this budget; staged work is
+// kept instead of asking again.
+function assistantStopForBudget(session, context, parsed){
+  const staged = assistantFinishModelStop(session, context, parsed);
+  if(staged)return staged;
+  if(session && session.reusedPlace && !session.researchPending && !assistantHasOpenPreview(session)){
+    return {type:'say', text:session.reusedPlace + ' is already a saved place.', thinking:parsed && parsed.thinking, session};
+  }
+  if(session && session.researchPending)return assistantPartialFailure(session);
+  if(assistantCanFinalize(session))return assistantFinalizeFromAnswer(session, parsed);
+  return {
+    type:'error',
+    text:'That took too many steps. Try a shorter request, or add it from +.',
+    session
+  };
+}
+
+function assistantContinueAfterTool(session, context, parsed){
+  const maxFollow = typeof ASSISTANT_MAX_FOLLOWUPS === 'number' ? ASSISTANT_MAX_FOLLOWUPS : 2;
+  const maxCalls = session && session._maxCalls
+    || (typeof ASSISTANT_MAX_LLM_CALLS === 'number' ? ASSISTANT_MAX_LLM_CALLS : 4);
+  if(!session || (session.followups || 0) >= maxFollow || session.llmCalls >= maxCalls){
+    return assistantStopForBudget(session, context, parsed);
+  }
+  session.followups = (session.followups || 0) + 1;
+  return null;
+}
+
+function assistantStagedDraftHint(session, result){
+  if(result && result.existing && result.name){
+    return result.name + ' is already a saved place. Do not create it again. If the request still changes saved items or creates one, call apply_items or draft_item and use that place. If the place was the whole request, do not call a tool.';
+  }
+  return 'This part is staged. Read the original request again and decide yourself. If another part is still open, call the next tool now: apply_items for a set of saved items, draft_item or draft_batch for a new task or habit, draft_setting for a setting, or the matching read tool for a question. If this already finishes the request, do not call a tool. Repeating the same draft_setting means that setting was the whole request. Do not invent a task or habit they did not ask for.';
+}
+
 function assistantDraftShouldContinue(session, call, queuedCalls){
-  if(!call || (call.name !== 'draft_item' && call.name !== 'draft_setting'))return false;
-  if(Array.isArray(queuedCalls) && queuedCalls.length)return true;
-  return Boolean(session && session.researchPending);
+  if(!call)return false;
+  // draft_batch already carries every new item. Sibling tools in the same
+  // response still run; a lone batch publishes its preview on this pass.
+  return call.name === 'draft_item' || call.name === 'draft_setting';
 }
 
 function assistantResultPreview(call, result, session, settings){
@@ -841,6 +915,7 @@ function assistantApplyLocalPatch(session, parsed, context){
     return null;
   }
   session.draft = draft;
+  session._focusOnly = false;
   session.intent = typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(draft.kind)
     ? 'create_setting'
     : (draft.kind === 'habit' ? 'create_habit' : 'create_task');
@@ -1480,7 +1555,10 @@ async function runAssistantTurn(userText, opts = {}){
     ? opts.startIntent
     : null;
   session.turnStartedAt = turnStartedAt;
-  if((!session.draft || !session.draft.name) && opts.draft && opts.draft.name)session.draft = opts.draft;
+  if((!session.draft || !session.draft.name) && opts.draft && opts.draft.name){
+    session.draft = opts.draft;
+    session._focusOnly = false;
+  }
   session.llmCalls = 0;
   session.repairs = 0;
   session.modelRetries = 0;
@@ -1496,8 +1574,12 @@ async function runAssistantTurn(userText, opts = {}){
   session.answerAttempts = 0;
   session.researchPending = null;
   session.turnDrafts = null;
+  session.pendingApply = null;
+  session.followups = 0;
   session._responseGen = 0;
   session.executedToolKeys = [];
+  session.requestText = text;
+  session.reusedPlace = null;
   session.pendingActions = [];
   session.chainWrite = null;
   session.pendingOutcome = null;
@@ -1607,8 +1689,9 @@ async function runAssistantTurn(userText, opts = {}){
   }
 
   const maxCalls = assistantWideSession(session)
-    ? (typeof ASSISTANT_MAX_LLM_CALLS_BATCH === 'number' ? ASSISTANT_MAX_LLM_CALLS_BATCH : 12)
+    ? (typeof ASSISTANT_MAX_LLM_CALLS_BATCH === 'number' ? ASSISTANT_MAX_LLM_CALLS_BATCH : 6)
     : ASSISTANT_MAX_LLM_CALLS;
+  session._maxCalls = maxCalls;
   let parsed = null;
   let queuedCalls = [];
   while(session.llmCalls < maxCalls || queuedCalls.length){
@@ -1665,6 +1748,13 @@ async function runAssistantTurn(userText, opts = {}){
         step = 'answer';
         continue;
       }
+      if(!call){
+        const stopped = assistantFinishModelStop(session, context, parsed);
+        if(stopped)return done(stopped);
+        if(session.reusedPlace && !session.researchPending && !assistantHasOpenPreview(session)){
+          return done({type:'say', text:session.reusedPlace + ' is already a saved place.', thinking:parsed && parsed.thinking, session});
+        }
+      }
       if(assistantCanFinalize(session)){
         return done(assistantFinalizeFromAnswer(session, parsed));
       }
@@ -1696,20 +1786,30 @@ async function runAssistantTurn(userText, opts = {}){
     }
     const callKey = assistantToolCallKey(call);
     if((session.executedToolKeys || []).indexOf(callKey) >= 0){
-      // The model repeated a setting that was staged before it saw this
-      // research. That is the signal the setting is the action — do not
-      // invent a task or habit to consume the read.
-      if(call.name === 'draft_setting' && session.researchPending
-        && Array.isArray(session.turnDrafts) && session.turnDrafts.length){
+      // Repeating a staged draft or apply is the model confirming that part
+      // was the whole request. A sibling tool in this same response still runs.
+      if(assistantStagingTool(call.name) && !queuedCalls.length && assistantHasOpenPreview(session)){
         session.researchPending = null;
-        assistantPublishTurnDrafts(session);
-        return done(assistantPreviewResult(session, context, parsed && parsed.thinking));
+        const finished = assistantFinishModelStop(session, context, parsed);
+        if(finished)return done(finished);
       }
       if(queuedCalls.length)continue;
       if(assistantCanFinalize(session))return done(assistantFinalizeFromAnswer(session, parsed));
       if(session.repairs >= ASSISTANT_MAX_REPAIRS)return done(assistantPartialFailure(session));
       session.repairs += 1;
       session.messages.push({role:'user', content:'That research already ran. Do not repeat it. Call the create, change, complete, plan, or delete tool it was preparing for.'});
+      queuedCalls = [];
+      step = 'answer';
+      continue;
+    }
+    if(call.name === 'draft_setting' && session.reusedPlace
+      && typeof assistantNamesMatch === 'function'
+      && assistantNamesMatch(session.reusedPlace, call.args && (call.args.name || call.args.newName))){
+      if(queuedCalls.length)continue;
+      if(session.repairs >= ASSISTANT_MAX_REPAIRS)return done(assistantPartialFailure(session));
+      session.repairs += 1;
+      assistantTracePush(session, {t:'repair', step, error:'place already saved', n:session.repairs});
+      session.messages.push({role:'user', content:session.reusedPlace + ' is already a saved place. If a part of the request is still open, call that tool now. If the place was the whole request, do not call a tool.'});
       queuedCalls = [];
       step = 'answer';
       continue;
@@ -1805,9 +1905,6 @@ async function runAssistantTurn(userText, opts = {}){
     if(result.noChange){
       const noChangeText = result.text || result.summary || 'Nothing changed.';
       assistantRememberGrounded(session, {text:noChangeText, noChange:true}, call);
-      if(call.name === 'apply_items' && !queuedCalls.length){
-        return done({type:'say', text:noChangeText, thinking:parsed && parsed.thinking, session});
-      }
       assistantPushChainResult(session, parsed, {
         ok:true,
         noChange:true,
@@ -1818,6 +1915,8 @@ async function runAssistantTurn(userText, opts = {}){
       session.awaiting = 'answer';
       step = 'answer';
       if(queuedCalls.length)continue;
+      const noChangeNext = assistantContinueAfterTool(session, context, parsed);
+      if(noChangeNext)return done(noChangeNext);
       continue;
     }
 
@@ -1928,10 +2027,12 @@ async function runAssistantTurn(userText, opts = {}){
       });
       if(queuedCalls.length)continue;
       session.analyzePasses = (session.analyzePasses || 0) + 1;
-      if(session.analyzePasses > 6)return done(assistantFinalizeFromAnswer(session, parsed));
+      if(session.analyzePasses > 2)return done(assistantStopForBudget(session, context, parsed));
       session.analyzeList = true;
       session.awaiting = 'answer';
       step = 'answer';
+      const completeNext = assistantContinueAfterTool(session, context, parsed);
+      if(completeNext)return done(completeNext);
       continue;
     }
     if(call.name === 'plan_item'){
@@ -1945,10 +2046,12 @@ async function runAssistantTurn(userText, opts = {}){
       });
       if(queuedCalls.length)continue;
       session.analyzePasses = (session.analyzePasses || 0) + 1;
-      if(session.analyzePasses > 6)return done(assistantFinalizeFromAnswer(session, parsed));
+      if(session.analyzePasses > 2)return done(assistantStopForBudget(session, context, parsed));
       session.analyzeList = true;
       session.awaiting = 'answer';
       step = 'answer';
+      const planNext = assistantContinueAfterTool(session, context, parsed);
+      if(planNext)return done(planNext);
       continue;
     }
     if(call.name === 'delete_item'){
@@ -1962,35 +2065,39 @@ async function runAssistantTurn(userText, opts = {}){
       });
       if(queuedCalls.length)continue;
       session.analyzePasses = (session.analyzePasses || 0) + 1;
-      if(session.analyzePasses > 6)return done(assistantFinalizeFromAnswer(session, parsed));
+      if(session.analyzePasses > 2)return done(assistantStopForBudget(session, context, parsed));
       session.analyzeList = true;
       session.awaiting = 'answer';
       step = 'answer';
+      const deleteNext = assistantContinueAfterTool(session, context, parsed);
+      if(deleteNext)return done(deleteNext);
       continue;
     }
     if(call.name === 'lookup_item' || call.name === 'answer_weather' || call.name === 'answer_schedule' || call.name === 'answer_items' || call.name === 'answer_settings'){
       assistantRememberGrounded(session, result, call);
-      if(!queuedCalls.length && !session.researchPending && assistantReadCallIsTerminal(call, result)){
-        return done(assistantFinalizeFromAnswer(session, parsed, result.text));
-      }
+      // A fully specified read still returns to the model. It may be only the
+      // first part of the request; the model decides whether an action remains.
+      // Stopping here would require guessing from the wording.
       session.analyzePasses = (session.analyzePasses || 0) + 1;
-      if(session.analyzePasses > 6){
-        if(session.researchPending)return done(assistantPartialFailure(session));
-        return done(assistantFinalizeFromAnswer(session, parsed, result.text));
-      }
+      if(session.analyzePasses > 2)return done(assistantStopForBudget(session, context, parsed));
+      const readDone = assistantReadCallIsTerminal(call, result);
       assistantPushChainResult(session, parsed, {
         ok:true,
         text:result.text,
         items:Array.isArray(result.items) ? result.items : undefined,
         item:result.item || null,
-        hint:Array.isArray(result.items) && result.items.length
-          ? assistantQueryListHint()
-          : assistantQueryContinueHint()
+        hint:readDone
+          ? 'This result is already complete. Do not recalculate it or call the same read again. If the request still asks for a change, create, complete, plan, or delete, call that tool now. If the question was the whole request, do not call a tool.'
+          : (Array.isArray(result.items) && result.items.length
+            ? assistantQueryListHint()
+            : assistantQueryContinueHint())
       });
       session.analyzeList = true;
       session.awaiting = 'answer';
       step = 'answer';
       if(queuedCalls.length)continue;
+      const readNext = assistantContinueAfterTool(session, context, parsed);
+      if(readNext)return done(readNext);
       continue;
     }
     if(call.name === 'find_item'){
@@ -2006,6 +2113,8 @@ async function runAssistantTurn(userText, opts = {}){
         step = 'answer';
         session.analyzeList = true;
       }
+      const findNext = assistantContinueAfterTool(session, context, parsed);
+      if(findNext)return done(findNext);
       continue;
     }
 
@@ -2019,17 +2128,23 @@ async function runAssistantTurn(userText, opts = {}){
         result.drafts.forEach(row => assistantStageTurnDraft(session, row));
       }
       if(result.pendingDelete)assistantQueuePendingAction(session, 'delete', result);
-      if(queuedCalls.length){
-        assistantPushChainResult(session, parsed, {
-          ok:true,
-          summary:result.summary,
-          staged:true,
-          count:matched.length,
-          hint:assistantWriteContinueHint()
-        });
-        continue;
-      }
-      return done(assistantApplyOutcome(session, context, parsed.thinking, result));
+      session.pendingApply = result;
+      assistantPushChainResult(session, parsed, {
+        ok:true,
+        summary:result.summary,
+        staged:true,
+        count:matched.length,
+        hint:queuedCalls.length
+          ? assistantWriteContinueHint()
+          : 'Read the original request again and decide yourself. If another part is still open, call that tool now. If this change was the whole request, do not call a tool. Do not invent a task or habit.'
+      });
+      if(queuedCalls.length)continue;
+      session.analyzeList = true;
+      session.awaiting = 'answer';
+      step = 'answer';
+      const applyNext = assistantContinueAfterTool(session, context, parsed);
+      if(applyNext)return done(applyNext);
+      continue;
     }
     if(call.name === 'draft_batch'){
       (Array.isArray(session.drafts) ? session.drafts : []).forEach(row => assistantStageTurnDraft(session, row));
@@ -2044,7 +2159,7 @@ async function runAssistantTurn(userText, opts = {}){
         continue;
       }
     }
-    if((call.name === 'draft_item' || call.name === 'draft_setting') && session.draft && session.draft.name){
+    if(!result.existing && (call.name === 'draft_item' || call.name === 'draft_setting') && session.draft && session.draft.name){
       assistantStageTurnDraft(session, session.draft);
     }
     const keepDrafting = assistantDraftShouldContinue(session, call, queuedCalls);
@@ -2056,20 +2171,27 @@ async function runAssistantTurn(userText, opts = {}){
       if(session.draft && (stagedSetting || assistantQueuedCreate(queuedCalls))){
         session.draft = null;
       }
+      if(result && result.existing && result.name)session.reusedPlace = result.name;
       assistantPushChainResult(session, parsed, queuedCalls.length ? {
         ok:true,
         preview:stagedSummary,
-        staged:true
+        staged:true,
+        existing:result && result.existing ? true : undefined,
+        name:result && result.existing ? result.name : undefined
       } : {
         ok:true,
         preview:stagedSummary,
         staged:true,
-        hint:'This draft is staged for the same confirmation. It has not seen the prepare_action result, so that research is still open. Call the action the user asked for, and use the research when that action depends on a day, time, or duration. If an item should use a staged weather profile, set weatherProfile to that profile name. Do not invent a task or habit they did not ask for. If this staged setting is the whole action, call draft_setting again with the same name.'
+        existing:result && result.existing ? true : undefined,
+        name:result && result.existing ? result.name : undefined,
+        hint:assistantStagedDraftHint(session, result)
       });
       if(!queuedCalls.length){
         session.analyzeList = true;
         session.awaiting = 'answer';
         step = 'answer';
+        const draftNext = assistantContinueAfterTool(session, context, parsed);
+        if(draftNext)return done(draftNext);
       }
       continue;
     }
@@ -2094,6 +2216,8 @@ async function runAssistantTurn(userText, opts = {}){
       && (call.name === 'draft_item' || call.name === 'draft_setting') && !session.batchSteer){
       session.batchSteer = true;
       session.messages.push({role:'user', content:assistantWideExtractSteerText() + ' If they asked for several items, call draft_batch with the row you just drafted plus every remaining item. If this really is one item, call draft_item again with the same fields.'});
+      const batchNext = assistantContinueAfterTool(session, context, parsed);
+      if(batchNext)return done(batchNext);
       continue;
     }
     if(session.draft && session.draft.weatherNeedAsk){
@@ -2107,6 +2231,10 @@ async function runAssistantTurn(userText, opts = {}){
     }
 
     return done(assistantPreviewResult(session, context, parsed.thinking));
+  }
+  const capped = assistantStopForBudget(session, context, parsed);
+  if(capped && (assistantHasOpenPreview(session) || session.researchPending || assistantCanFinalize(session) || (session.reusedPlace && !session.researchPending) || session.llmCalls >= maxCalls)){
+    return done(capped);
   }
   if(session.researchPending)return done(assistantPartialFailure(session));
   if(session.lastGroundedText || session.chainWrite || (session.pendingActions && session.pendingActions.length)){

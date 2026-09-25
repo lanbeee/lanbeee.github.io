@@ -14,8 +14,11 @@ const ASSISTANT_ANCHOR_ALIASES = {
   afternoon:'asr', asr:'asr',
   night:'isha', isha:'isha'
 };
-const ASSISTANT_MAX_LLM_CALLS = 10;
-const ASSISTANT_MAX_LLM_CALLS_BATCH = 12;
+// Modest in-app assistant. Two follow-ups after the first answer, and at most
+// four model calls, so a glitch cannot spin. A multi-item turn gets six.
+const ASSISTANT_MAX_LLM_CALLS = 4;
+const ASSISTANT_MAX_LLM_CALLS_BATCH = 6;
+const ASSISTANT_MAX_FOLLOWUPS = 2;
 const ASSISTANT_MAX_REPAIRS = 2;
 // A continuation can fail after an expensive read tool has already returned.
 // Retry once before surfacing an explicitly partial failure; never present the

@@ -414,7 +414,9 @@ function assistantCatalog(data, settings, now){
       type:h && h.type === 'task' ? 'task' : 'habit',
       hid:h && h.hid ? String(h.hid) : undefined
     })),
-    places:locs.slice(0,12).map(loc => ({
+    // Every saved place. A capped list hides later names, so the model invents
+    // a duplicate and never applies the one the user already saved.
+    places:locs.map(loc => ({
       id:String(loc && loc.id || ''),
       name:String(loc && loc.name || '').slice(0,40)
     })).filter(item => item.id && item.name),
@@ -1981,7 +1983,9 @@ function assistantAnswerSettings(args, context){
     return {ok:false, error:'kind must be places, weather, topics, or busy'};
   }
   if(!rows.length)return {ok:true, text:`You have no ${label} yet.`};
-  return {ok:true, text:`Your ${label}: ${rows.slice(0, 20).join(', ')}${rows.length > 20 ? `, and ${rows.length - 20} more` : ''}.`};
+  const shown = kind === 'places' ? rows : rows.slice(0, 20);
+  const more = rows.length - shown.length;
+  return {ok:true, text:`Your ${label}: ${shown.join(', ')}${more > 0 ? `, and ${more} more` : ''}.`};
 }
 
 // ── Query tools (answer_weather / answer_schedule) ───────────────────────
@@ -3502,7 +3506,44 @@ function assistantBusyFromWindow(window){
   return block;
 }
 
-function assistantApplyDraftSetting(args, draft, catalog, now, settings, requestText){
+function assistantSavedLocationByName(name, settings){
+  const locs = Array.isArray(settings && settings.locations) ? settings.locations : [];
+  const rows = locs.map(loc => ({
+    id:loc && loc.id,
+    name:loc && loc.name,
+    address:loc && loc.address,
+    lat:loc && loc.lat,
+    lng:loc && loc.lng
+  })).filter(row => row && row.name);
+  const match = assistantMatchByName(rows, name);
+  return match && match.ok ? match.item : null;
+}
+
+// A place drafted only so a later item change can use it must be resolvable
+// in this turn. Placeholder coordinates let confirm save it; commit then
+// rebinds item place names to the saved id.
+function assistantExposeLocationDraft(draft, catalog, settings){
+  if(!draft || draft.kind !== 'location' || !draft.name || !catalog)return draft;
+  const places = Array.isArray(catalog.places) ? catalog.places : [];
+  const match = assistantMatchByName(places, draft.name);
+  if(match.ok && match.item && match.item.id){
+    if(String(match.item.id).indexOf('pending-loc-') === 0)draft.settingId = match.item.id;
+    catalog.places = places;
+    return draft;
+  }
+  const id = `pending-loc-${places.length + 1}`;
+  if(!Number.isFinite(Number(draft.lat)) || !Number.isFinite(Number(draft.lng))){
+    const coords = assistantPlaceholderCoords(settings, places.length);
+    draft.lat = coords.lat;
+    draft.lng = coords.lng;
+  }
+  draft.settingId = id;
+  places.push({id, name:draft.name});
+  catalog.places = places;
+  return draft;
+}
+
+function assistantApplyDraftSetting(args, draft, catalog, now, settings, requestText, opts){
   const raw = args || {};
   let kind = typeof assistantIsSettingKind === 'function' && assistantIsSettingKind(raw.kind)
     ? raw.kind
@@ -3528,11 +3569,23 @@ function assistantApplyDraftSetting(args, draft, catalog, now, settings, request
       next.weatherNeedAsk = assistantWeatherCapAsk(profiles);
     }
   }else if(kind === 'location'){
+    const saved = assistantSavedLocationByName(next.name, settings);
+    if(saved && opts && opts.reuseSavedPlace){
+      return {
+        ok:true,
+        existing:true,
+        name:saved.name,
+        text:`${saved.name} is already a saved place.`
+      };
+    }
     if(raw.address != null && String(raw.address).trim())next.address = String(raw.address).trim().slice(0, 120);
     const lat = raw.lat != null ? Number(raw.lat) : next.lat;
     const lng = raw.lng != null ? Number(raw.lng) : next.lng;
     if(Number.isFinite(lat))next.lat = lat;
     if(Number.isFinite(lng))next.lng = lng;
+    if(!saved && opts && opts.reuseSavedPlace && opts.catalog){
+      assistantExposeLocationDraft(next, opts.catalog, settings);
+    }
   }else if(kind === 'busy'){
     const windowSource = typeof raw.windowText === 'string' && raw.windowText.trim()
       ? raw.windowText
@@ -4281,9 +4334,13 @@ function assistantExecuteTool(name, args, session, context){
         catalog,
         context.now,
         context.settings,
-        ''
+        '',
+        {
+          reuseSavedPlace:true,
+          catalog
+        }
       );
-      if(applied.ok)session.draft = applied.draft;
+      if(applied.ok && !applied.existing)session.draft = applied.draft;
       return applied;
     }
     const resolved = assistantResolveDraftBase(nextArgs, session, context);
@@ -4907,7 +4964,9 @@ function assistantFocusHabit(session, found, context){
 function assistantMaybeFocusFound(session, found, context){
   if(!session || !found || !found.ok)return null;
   if(session.draft && session.draft.name && !session.draft.hid)return session.draft;
-  return assistantFocusHabit(session, found, context);
+  const draft = assistantFocusHabit(session, found, context);
+  session._focusOnly = true;
+  return draft;
 }
 
 function assistantDraftExistingIndex(data, draft){

@@ -66,7 +66,7 @@ async function launchBrowser(){
     };
   });
   assert(addTask.type === 'preview' && addTask.kind === 'task', 'single extract call drafts the task');
-  assert(addTask.llmCalls === 1 && addTask.calls.length === 1, 'no classify round trip (1 LLM call)');
+  assert(addTask.llmCalls === 2 && addTask.calls.length === 2 && addTask.calls[0].step === 'extract', 'extract runs first; the model is asked if anything remains');
   assert(addTask.calls[0] && addTask.calls[0].step === 'extract', 'first call is extract');
   assert(addTask.calls[0] && !addTask.calls[0].tools.includes('classify_intent'), 'classify_intent tool is not offered');
   assert(/kind task/.test(addTask.calls[0] && addTask.calls[0].steer || ''), 'steer names the entry kind (task)');
@@ -97,7 +97,7 @@ async function launchBrowser(){
     };
   });
   assert(addSetting.type === 'preview' && addSetting.kind === 'weather', 'draft_setting preview for entry setting');
-  assert(addSetting.llmCalls === 1 && addSetting.step === 'extract', 'single extract call, no classify');
+  assert(addSetting.llmCalls === 2 && addSetting.step === 'extract', 'extract runs first, then the model can stop');
   assert(/draft_setting/.test(addSetting.steer || ''), 'steer asks for draft_setting');
 
   console.log('\n[C] entry always uses the model, even with an old setting off');
@@ -159,7 +159,7 @@ async function launchBrowser(){
   assert(detailEntry.noCallsYet, 'empty-text entry makes zero LLM calls');
   assert(detailEntry.calls[0] && detailEntry.calls[0].step === 'extract', 'follow-up goes straight to extract');
   assert(/changing currentDraft/.test(detailEntry.calls[0] && detailEntry.calls[0].steer || ''), 'follow-up steer scopes to currentDraft');
-  assert(detailEntry.llmCalls === 1 && Number(detailEntry.duration) === 45, 'one model call applies the edit');
+  assert(detailEntry.llmCalls === 2 && Number(detailEntry.duration) === 45, 'the edit is applied, then the model can stop');
 
   console.log('\n[E] entry buttons: visibility + wiring');
   const chrome = await page.evaluate(() => {

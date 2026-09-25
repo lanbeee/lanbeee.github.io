@@ -854,7 +854,7 @@ async function launchBrowser(){
     `multi-condition count is computed by the tool: ${missedHandlers.compoundCount}`);
   assert(missedHandlers.rankedTurn.type === 'say'
     && missedHandlers.rankedTurn.text === missedHandlers.secondMostOverdue
-    && missedHandlers.rankedTurn.llmCalls === 1
+    && missedHandlers.rankedTurn.llmCalls === 2
     && !/definitely/.test(missedHandlers.rankedTurn.text),
     `ordinal result is terminal and tool-grounded: ${missedHandlers.rankedTurn.text}`);
   assert(missedHandlers.items.every(item => Number.isFinite(item.overdueDays) && Number.isFinite(item.urgency) && item.status),
@@ -984,7 +984,7 @@ async function launchBrowser(){
     `one hour before sunset resolves (${weatherDetail.sunsetClock}): ${weatherDetail.sunset}`);
   assert(/Lowest wind is 7pm/i.test(weatherDetail.longWindow),
     `a long window also reports the wind extreme: ${weatherDetail.longWindow}`);
-  assert(weatherDetail.turn.type === 'say' && weatherDetail.turn.llmCalls === 1
+  assert(weatherDetail.turn.type === 'say' && weatherDetail.turn.llmCalls === 2
     && weatherDetail.turn.text === weatherDetail.lowest && !/probably/i.test(weatherDetail.turn.text),
     `hourly ranking is terminal: ${weatherDetail.turn.text}`);
 

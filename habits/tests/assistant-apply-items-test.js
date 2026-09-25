@@ -419,6 +419,202 @@ async function launchBrowser(){
   assert(/save all/i.test(turn.buttons.join(' ')) && /changes/i.test(turn.say),
     'the preview asks to save the changes (' + turn.buttons.join(', ') + ')');
 
+  console.log('\n[apply] a saved place past the old cap is reused, then every dental item gets it');
+  const ubSouth = await page.evaluate(async () => {
+    const locations = [];
+    for(let i = 0; i < 12; i += 1){
+      locations.push({id:'p' + i, name:'Place ' + i, address:'Somewhere', lat:43, lng:-78});
+    }
+    locations.push({id:'ub-south', name:'UB South', address:'Main St', lat:43, lng:-78.7});
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      locations
+    });
+    save([
+      assistantTestHabit({hid:'den-1', name:'Dental cleaning', durationMinutes:45}),
+      assistantTestHabit({hid:'den-2', name:'Dental appointment', durationMinutes:30}),
+      assistantTestHabit({hid:'walk', name:'Walk', durationMinutes:30})
+    ]);
+    const catalog = assistantCatalog(load(), loadSortSettings(), Date.now());
+    const envelope = JSON.parse(assistantUserEnvelope(
+      'Can you change the location of all the Dental appointments to UB South',
+      catalog,
+      null,
+      null,
+      {compact:true}
+    ));
+    const listed = (envelope.catalog.places || []).map(row => row.name);
+    let calls = 0;
+    const out = await runAssistantTurn('Can you change the location of all the Dental appointments to UB South', {
+      context:assistantBuildContext(),
+      complete:async () => {
+        calls += 1;
+        if(calls === 1){
+          return {message:{thinking:'missing from the short list', tool_calls:[
+            {function:{name:'draft_setting', arguments:{
+              kind:'location',
+              name:'UB South',
+              address:'University at Buffalo South Campus, Buffalo, NY'
+            }}}
+          ]}};
+        }
+        if(calls === 2){
+          return {message:{thinking:'apply the saved place', tool_calls:[
+            {function:{name:'apply_items', arguments:{search:'dental', placeNames:['UB South']}}}
+          ]}};
+        }
+        return {message:{content:'Those dental changes are ready to save.'}};
+      }
+    });
+    const drafts = Array.isArray(out.drafts) ? out.drafts : [];
+    const saved = out.type === 'preview' ? assistantCommitDrafts(drafts) : {ok:false};
+    const after = load();
+    const places = loadSortSettings().locations || [];
+    const dental = after.filter(row => /dental/i.test(row.name || ''));
+    const walk = after.find(row => row.name === 'Walk');
+    return {
+      catalogHas:catalog.places.some(row => row.name === 'UB South'),
+      catalogCount:catalog.places.length,
+      envelopeHas:listed.includes('UB South'),
+      calls,
+      type:out.type,
+      kinds:drafts.map(row => row && row.kind),
+      names:drafts.map(row => row && row.name),
+      placeIds:drafts.filter(row => row && row.kind !== 'location').map(row => row.places && row.places.ids),
+      savedOk:saved.ok === true,
+      placeCount:places.length,
+      ubCount:places.filter(row => row && row.name === 'UB South').length,
+      dentalIds:dental.map(row => row.locationIds),
+      walkIds:walk && walk.locationIds
+    };
+  });
+  assert(ubSouth.catalogHas && ubSouth.catalogCount === 13 && ubSouth.envelopeHas,
+    'UB South stays in the catalog and the model envelope (' + ubSouth.catalogCount + ')');
+  assert(ubSouth.calls === 3 && ubSouth.type === 'preview'
+    && JSON.stringify(ubSouth.kinds) === JSON.stringify(['task', 'task'])
+    && ubSouth.names.every(name => /dental/i.test(name)),
+    'drafting the existing place continues into the dental change (' + ubSouth.calls + ' ' + ubSouth.type + ' ' + ubSouth.kinds.join(',') + ')');
+  assert(ubSouth.savedOk && ubSouth.placeCount === 13 && ubSouth.ubCount === 1
+    && ubSouth.dentalIds.every(ids => JSON.stringify(ids) === JSON.stringify(['ub-south']))
+    && !(ubSouth.walkIds || []).length,
+    'confirming uses the saved UB South and leaves Walk alone');
+
+  console.log('\n[apply] a missing place is created and the item change still runs');
+  const clinic = await page.evaluate(async () => {
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      locations:[{id:'home', name:'Home', address:'1 Road', lat:43, lng:-78}]
+    });
+    save([
+      assistantTestHabit({hid:'den-1', name:'Dental cleaning', durationMinutes:45}),
+      assistantTestHabit({hid:'den-2', name:'Dental appointment', durationMinutes:30})
+    ]);
+    let calls = 0;
+    const out = await runAssistantTurn('Change the location of all the Dental appointments to Clinic', {
+      context:assistantBuildContext(),
+      complete:async () => {
+        calls += 1;
+        if(calls === 1){
+          return {message:{tool_calls:[
+            {function:{name:'draft_setting', arguments:{kind:'location', name:'Clinic', address:'100 Clinic St'}}}
+          ]}};
+        }
+        if(calls === 2){
+          return {message:{tool_calls:[
+            {function:{name:'apply_items', arguments:{search:'dental', placeNames:['Clinic']}}}
+          ]}};
+        }
+        return {message:{content:'Clinic is staged and the dental items are ready.'}};
+      }
+    });
+    const drafts = Array.isArray(out.drafts) ? out.drafts : [];
+    const saved = out.type === 'preview' ? assistantCommitDrafts(drafts) : {ok:false};
+    const places = (loadSortSettings().locations || []).filter(row => row && row.name === 'Clinic');
+    const dental = load().filter(row => /dental/i.test(row.name || ''));
+    const clinicId = places[0] && places[0].id;
+    return {
+      calls,
+      type:out.type,
+      kinds:drafts.map(row => row && row.kind + ':' + row.name),
+      savedOk:saved.ok === true,
+      clinicCount:places.length,
+      dentalIds:dental.map(row => row.locationIds),
+      clinicId
+    };
+  });
+  assert(clinic.calls === 3 && clinic.type === 'preview'
+    && clinic.kinds.includes('location:Clinic')
+    && clinic.kinds.filter(row => row.startsWith('task:')).length === 2,
+    'a new place stays staged while the dental change continues (' + clinic.kinds.join(', ') + ')');
+  assert(clinic.savedOk && clinic.clinicCount === 1
+    && clinic.dentalIds.every(ids => JSON.stringify(ids) === JSON.stringify([clinic.clinicId])),
+    'confirming saves Clinic once and points both dental items at it');
+
+  console.log('\n[apply] adding a place by itself still finishes on that draft');
+  const library = await page.evaluate(async () => {
+    saveSortSettings({...DEFAULT_SORT_SETTINGS, localAssistant:true, locations:[]});
+    save([]);
+    let calls = 0;
+    const out = await runAssistantTurn('Add a place called Library', {
+      context:assistantBuildContext(),
+      complete:async () => {
+        calls += 1;
+        if(calls === 1){
+          return {message:{tool_calls:[
+            {function:{name:'draft_setting', arguments:{kind:'location', name:'Library', address:'Library'}}}
+          ]}};
+        }
+        return {message:{content:'That place is the whole request.'}};
+      }
+    });
+    return {calls, type:out.type, kind:out.draft && out.draft.kind, name:out.draft && out.draft.name};
+  });
+  assert(library.calls === 2 && library.type === 'preview' && library.kind === 'location' && library.name === 'Library',
+    'a place-only request finishes when the model stops, without a phrase check (' + library.calls + ' ' + library.type + ')');
+
+  console.log('\n[apply] a glitching model stops inside the follow-up cap');
+  const glitch = await page.evaluate(async () => {
+    saveSortSettings({...DEFAULT_SORT_SETTINGS, localAssistant:true, locations:[]});
+    save([]);
+    let drafts = 0;
+    const drafted = await runAssistantTurn('Add a walk', {
+      context:assistantBuildContext(),
+      complete:async () => {
+        drafts += 1;
+        return {message:{tool_calls:[
+          {function:{name:'draft_item', arguments:{kind:'task', name:'Walk ' + drafts, due:'today'}}}
+        ]}};
+      }
+    });
+    let reads = 0;
+    const reread = await runAssistantTurn('What is on today?', {
+      context:assistantBuildContext(),
+      complete:async () => {
+        reads += 1;
+        return {message:{tool_calls:[
+          {function:{name:'answer_schedule', arguments:{query:'day', date:reads === 1 ? 'today' : 'tomorrow', limit:reads}}}
+        ]}};
+      }
+    });
+    return {
+      followups:ASSISTANT_MAX_FOLLOWUPS,
+      maxCalls:ASSISTANT_MAX_LLM_CALLS,
+      drafts,
+      draftType:drafted.type,
+      draftName:drafted.draft && drafted.draft.name,
+      reads,
+      readType:reread.type,
+      readText:reread.text
+    };
+  });
+  assert(glitch.followups === 2 && glitch.maxCalls === 4, 'follow-ups are capped at two and the turn at four model calls');
+  assert(glitch.drafts === 3 && glitch.draftType === 'preview' && /Walk/.test(glitch.draftName || ''),
+    'a new draft on every reply stops at the cap and keeps the staged item (' + glitch.drafts + ' ' + glitch.draftType + ' ' + glitch.draftName + ')');
+  assert(glitch.reads === 3 && glitch.readType === 'say' && glitch.readText,
+    'a repeated schedule read with new arguments stops at the cap (' + glitch.reads + ' ' + glitch.readType + ')');
+
   if(errors.length){
     fail += 1;
     console.error('  not ok: page errors\n' + errors.join('\n'));

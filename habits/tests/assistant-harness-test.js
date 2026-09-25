@@ -1053,7 +1053,7 @@ async function launchBrowser(){
       envHasFacts:/"extractedFacts":\{/.test(envelope)
     };
   });
-  assert(route.type === 'preview' && route.llmCalls === 2, 'day after tomorrow goes to the model and drafts');
+  assert(route.type === 'preview' && route.llmCalls === 3, 'day after tomorrow goes to the model and drafts');
   assert(route.path === 'llm' && route.via === 'model-only' && !route.risk, 'model-only routing bypasses parser risk decisions');
   assert(route.name === 'Meeting' && route.dueKey === '2026-09-19' && route.dueTime === '13:00', 'model draft carries the right date and time');
   assert(route.envHasDate, 'envelope includes today ISO date');
@@ -1492,7 +1492,7 @@ async function launchBrowser(){
     };
   });
   assert(stagedProfile.type === 'preview'
-    && stagedProfile.calls === 2
+    && stagedProfile.calls === 3
     && stagedProfile.tools.includes('answer_schedule')
     && stagedProfile.tools.includes('draft_setting')
     && stagedProfile.tools.includes('draft_item')
@@ -1509,7 +1509,7 @@ async function launchBrowser(){
     'saving the confirmation writes the profile once and attaches it to the habit');
   assert(stagedProfile.laterType === 'preview'
     && stagedProfile.laterKind === 'weather'
-    && stagedProfile.laterCalls === 2
+    && stagedProfile.laterCalls === 3
     && stagedProfile.laterCount === 1,
     'a setting drafted after the research result still finishes that request');
   assert(stagedProfile.togetherType === 'preview'
