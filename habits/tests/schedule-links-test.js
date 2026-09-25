@@ -950,6 +950,106 @@ function assert(value,message){
     }
   }
 
+  console.log('\n[D3] GLPK propagates linked boundaries through travel');
+  const travelBoundary = await page.evaluate(async ()=>{
+    const friBase = dayStart(new Date(2026,8,25).getTime());
+    const now = friBase + (13 * 60 + 19) * 60000;
+    const home = {id:'home',name:'Home',lat:40,lng:-75};
+    const mosque = {id:'mosque',name:'Mosque',lat:40.01,lng:-75.01};
+    const settings = {
+      ...loadSortSettings(),
+      preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:true,
+      availabilityMinutes:Array(7).fill(480),availabilityOverrides:{},
+      blockedTimes:[{label:'morning',days:[],start:0,end:13 * 60 + 19,locationId:'home'}],
+      locations:[home,mosque],
+      travel:{
+        'home|mosque':{seconds:12 * 60,metres:3000,provider:'test'},
+        'mosque|home':{seconds:12 * 60,metres:3000,provider:'test'}
+      },
+      defaultTravelMode:'driving',
+      showDueHabitsInAgenda:true,showDueTasksInAgenda:true,
+      showScheduledTasksInAgenda:true,showPlannedItemsInAgenda:true
+    };
+    settings.availabilityOverrides[dateKey(friBase)] = 480;
+    const lunch = {
+      hid:'travel-lunch',name:'Lunch',type:'keepup',target:1,
+      logs:[friBase - 86400000],durationMinutes:15,priority:1,
+      allowedTimeStart:13 * 60,allowedTimeEnd:15 * 60 + 8,
+      locationIds:['home']
+    };
+    const exercise = {
+      hid:'travel-exercise',name:'Exercise',type:'keepup',target:1,
+      logs:[friBase - 86400000],durationMinutes:45,priority:1,
+      preferredTimeStart:17 * 60,preferredTimeEnd:23 * 60,
+      locationIds:['home']
+    };
+    const shower = {
+      hid:'travel-shower',name:'Shower',type:'keepup',target:2.5,
+      earlyWindowDays:3,logs:[friBase - 86400000],durationMinutes:5,priority:2,
+      locationIds:['home'],
+      scheduleLinks:[
+        {anchorHid:'travel-exercise',direction:'after',adjacency:'direct',requireSameDay:true},
+        {anchorHid:'travel-juma',direction:'before',adjacency:'sometime',requireSameDay:true},
+        {anchorHid:'travel-haircut',direction:'after',adjacency:'direct',requireSameDay:true}
+      ]
+    };
+    const haircut = {
+      hid:'travel-haircut',name:'Haircut',type:'reduce',target:40,
+      earlyWindowDays:7,logs:[friBase - 7 * 86400000],durationMinutes:60,priority:2,
+      locationIds:['home']
+    };
+    const juma = {
+      hid:'travel-juma',name:'Juma',type:'keepup',target:7,
+      logs:[friBase - 7 * 86400000],durationMinutes:20,priority:0,
+      allowedWeekdays:[5],allowedTimeStart:13 * 60 + 15,allowedTimeEnd:15 * 60 + 15,
+      locationIds:['mosque']
+    };
+    const meeting = {
+      hid:'travel-meeting',name:'Meeting',type:'task',target:null,
+      dueDate:friBase,eventTime:friBase + 15 * 60 * 60000,
+      durationMinutes:30,priority:1
+    };
+    const RealDate = Date;
+    function FrozenDate(...args){ return args.length ? new RealDate(...args) : new RealDate(now); }
+    FrozenDate.now = ()=>now;
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    Object.setPrototypeOf(FrozenDate,RealDate);
+    FrozenDate.prototype = RealDate.prototype;
+    const originalDate = globalThis.Date;
+    globalThis.Date = FrozenDate;
+    try{
+      saveSortSettings(settings);
+      if(typeof sortSettings !== 'undefined')Object.assign(sortSettings,settings);
+      save([lunch,exercise,shower,haircut,juma,meeting]);
+      const week = await buildWeekAgendaAsync(load(),settings,1);
+      const fills = (week.days[0] && week.days[0].timeline || [])
+        .filter(row=>row.kind === 'fill');
+      const find = hid=>fills.find(row=>row.h && row.h.hid === hid);
+      const ex = find('travel-exercise');
+      const sh = find('travel-shower');
+      const ju = find('travel-juma');
+      return {
+        plannerSolveStatus:week.plannerSolveStatus || null,
+        daySolves:week.plannerDiagnostics && week.plannerDiagnostics.daySolves || [],
+        hids:fills.map(row=>row.h && row.h.hid),
+        hasExercise:Boolean(ex),hasShower:Boolean(sh),hasJuma:Boolean(ju),
+        showerBeforeJuma:Boolean(sh && ju && sh.end <= ju.start),
+        travelGap:sh && ju ? Math.round((ju.start - sh.end) / 60000) : null,
+        jumaMinute:ju ? Math.round((ju.start - friBase) / 60000) : null
+      };
+    }finally{
+      globalThis.Date = originalDate;
+    }
+  });
+  assert(travelBoundary.hasExercise && travelBoundary.hasShower && travelBoundary.hasJuma,
+    'GLPK keeps the required linked chain after the clock advances ('
+      + JSON.stringify(travelBoundary) + ')');
+  assert(travelBoundary.showerBeforeJuma && travelBoundary.travelGap >= 12,
+    'Shower remains before Juma with its travel gap (' + JSON.stringify(travelBoundary) + ')');
+  assert(travelBoundary.jumaMinute >= 14 * 60 + 35 && travelBoundary.jumaMinute < 14 * 60 + 40,
+    'Juma uses the propagated travel-adjusted boundary (' + JSON.stringify(travelBoundary) + ')');
+
   console.log('\n[E] cadence OR — stiff-rhythm keepup honours a same-day partner');
   const orCase = await page.evaluate(async ()=>{
     // Monday Aug 3 2026. Shower is a keepup every 4 days, flex 0, last done Sun
