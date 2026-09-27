@@ -263,9 +263,11 @@ const DEFAULT_SORT_SETTINGS = {
   // Installs that predate this default keep it off (see loadSortSettings).
   minimalMode:true,
 
+  soundEffects:true,
   compactMode:false,
   fontScale:'medium',
   themeMode:'system',
+  colorPalette:'default',
 
   homeCityName:'',
   homeCityLat:null,

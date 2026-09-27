@@ -800,6 +800,7 @@ function logTing(i,opts = {}){
     else if(opts.value != null && Number.isFinite(Number(opts.value)))parts.push(`${opts.value}`);
     return parts.length ? ` · ${parts.join(' · ')}` : '';
   })();
+  if(opts.feedback !== false && typeof playTingFeedback === 'function')playTingFeedback('complete');
   showActionToast(`Logged ${toastItemName(h)}${detail}`,action);
   // If a session timer was open for this habit, drop it — the entry already
   // covers the session and a later stop must not prompt a second log.
@@ -845,6 +846,7 @@ function logTingAt(i,ts){
     if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(data[i]);
   }
   if(!save(data))return false;
+  if(typeof playTingFeedback === 'function')playTingFeedback(isPlan ? 'plan' : 'complete');
   showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
   // Calendar day log counts as completing the session — drop any open timer.
   if(!isPlan && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === i
@@ -894,6 +896,7 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
     ? (normalizeLocationRegistry(sortSettings?.locations).find(l=>l.id === locationId)?.name || '')
     : '';
   const locLabel = locName ? ` · ${locName}` : '';
+  if(typeof playTingFeedback === 'function')playTingFeedback('plan');
   showActionToast(`Planned ${toastItemName(data[i])}${timeLabel}${locLabel}`,action);
   return true;
 }

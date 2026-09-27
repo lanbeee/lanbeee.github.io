@@ -2676,6 +2676,8 @@ Same agenda logic, but simplified display:
 | `preset` | string | 'todayFirst' | Active sort preset name |
 | `minimalMode` | boolean | true | Simplified UI for new users |
 | `themeMode` | string | 'system' | light/dark/system |
+| `colorPalette` | string | 'default' | Appearance palette: default (neutral surfaces with blue selection and green create accents), neutral, sage, sky, lavender, or sand; each supports light/dark/system. |
+| `soundEffects` | boolean | true | Settings → appearance → gentle sounds. Quiet local chimes after logging or planning with a recent user gesture; no background audio. |
 | `fontScale` | string | 'medium' | small/medium/large |
 | `compactMode` | boolean | true | Square card layout |
 | `showWeekOnHome` | boolean | true | Week plan strip on home |

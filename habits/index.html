@@ -16,10 +16,10 @@
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <style>
-  html{background:#f5f4f0;color-scheme:light dark;}
-  @media (prefers-color-scheme:dark){html:not([data-theme="light"]){background:#121214;color-scheme:dark;}}
-  html[data-theme="dark"]{background:#121214;color-scheme:dark;}
-  html[data-theme="light"]{background:#f5f4f0;color-scheme:light;}
+  html{background:#f2f1ed;color-scheme:light dark;}
+  @media (prefers-color-scheme:dark){html:not([data-theme="light"]){background:#171717;color-scheme:dark;}}
+  html[data-theme="dark"]{background:#171717;color-scheme:dark;}
+  html[data-theme="light"]{background:#f2f1ed;color-scheme:light;}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" integrity="sha256-hHEk1Ncpkc6A17dPzMrchF97uv2NrtO9j0IW6fIyaeY=" crossorigin="" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -46,6 +46,8 @@
 <link rel="stylesheet" href="./css/progress.css" />
 <link rel="stylesheet" href="./css/agenda.css" />
 <link rel="stylesheet" href="./css/sweeps.css" />
+<link rel="stylesheet" href="./css/palettes.css" />
+<link rel="stylesheet" href="./css/calm.css" />
 <link rel="stylesheet" href="./css/display-mode.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
@@ -1074,6 +1076,15 @@
           </button>
           <div class="settings-collapse-body" id="settings-appearance-body" hidden>
             <div class="settings-grid" data-ui-toggles="appearance"></div>
+            <span class="settings-sublabel">color palette</span>
+            <div class="palette-picker" id="color-palette-picker" role="group" aria-label="color palette">
+              <button type="button" class="palette-option" data-palette-value="default" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>default</button>
+              <button type="button" class="palette-option" data-palette-value="neutral" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>neutral</button>
+              <button type="button" class="palette-option" data-palette-value="sage" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sage</button>
+              <button type="button" class="palette-option" data-palette-value="sky" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sky</button>
+              <button type="button" class="palette-option" data-palette-value="lavender" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>lavender</button>
+              <button type="button" class="palette-option" data-palette-value="sand" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sand</button>
+            </div>
             <span class="settings-sublabel">font size</span>
             <div class="seg compact-seg" id="font-scale-seg" role="group" aria-label="font size">
               <button type="button" class="seg-opt" data-seg-value="small">small</button>
@@ -1776,6 +1787,7 @@
 <script src="./js/settings-locations.js" defer></script>
 <script src="./js/settings-state.js" defer></script>
 <script src="./js/settings-samples.js" defer></script>
+<script src="./js/ui-feedback.js" defer></script>
 <script src="./js/settings-appearance.js" defer></script>
 <script src="./js/settings-share.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>

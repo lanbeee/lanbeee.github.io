@@ -223,7 +223,7 @@ function stopHabitTimer(promptLog,manual){
         openValueLogSheet(idx,after,sessionMinutes);
         if(typeof render === 'function')render();
       }else{
-        logTing(idx,{minutes:sessionMinutes});
+        logTing(idx,{minutes:sessionMinutes,feedback:false});
         if(detailIdx === idx)openDetail(idx);
         render();
       }

@@ -143,6 +143,7 @@ const UI_SETTING_TOGGLES = {
     {key:'defaultBreakable', title:'allow splitting', hint:'New habits can be split across sessions.'}
   ],
   appearance:[
+    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log a Ting or make a plan. No background sounds.'},
     {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.'}
   ],
   prayer:[

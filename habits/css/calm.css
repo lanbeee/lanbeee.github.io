@@ -1,0 +1,85 @@
+/* Calm finish: tonal surfaces, clear hierarchy, and quiet touch feedback.
+   After the legacy sweep; display-mode retains its final say. */
+body{
+  font-family:ui-rounded,"SF Pro Rounded","Google Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+:root{
+  --ease-snappy:cubic-bezier(.2,.8,.2,1);
+  --floating-shadow:0 8px 28px rgba(24,39,20,.12),0 2px 6px rgba(24,39,20,.04);
+  --accent-glow:0 3px 8px color-mix(in srgb,var(--teal-icon) 12%,transparent);
+  --accent-glow-strong:0 4px 12px color-mix(in srgb,var(--teal-icon) 18%,transparent);
+}
+.topbar{background:transparent;padding:14px 6px 8px;margin-top:6px;}
+.wordmark img{width:38px;height:38px;border-radius:14px;box-shadow:none;}
+.wordmark-copy > span{font-size:23px;font-weight:650;letter-spacing:-.045em;}
+.wordmark-copy{gap:5px;}
+.wordmark-date{font-size:10px;font-weight:500;color:var(--text2);}
+.topbar .home-filter-trigger{background:var(--bg);border-radius:50%;}
+.app-bar{background:var(--bg2);}
+.app-bar-title{font-size:23px;letter-spacing:-.045em;font-weight:650;}
+.pane-overview,.pane-detail{border-inline-start:1px solid var(--border);}
+#list{gap:10px;padding-top:12px;}
+.swipe-row{--card-radius:26px;--card-inset:12px;}
+.ting-name{font-weight:600;letter-spacing:-.02em;line-height:1.3;}
+.ting-cue{line-height:1.45;}
+.section-header{
+  font-size:calc(18px * var(--font-scale));font-weight:600;
+  letter-spacing:-.025em;text-transform:none;color:var(--text);
+  padding-top:22px;padding-bottom:10px;
+}
+.section-header-label::first-letter{text-transform:uppercase;}
+.dropped-pill,.free-pill{font-weight:600;letter-spacing:0;text-transform:none;}
+.section-header.stuck{background:var(--bg2);}
+.bottom-nav{border-radius:28px;padding:8px;gap:8px;}
+.bottom-nav .icon-btn{border-radius:20px;}
+.bottom-nav .nav-add{background:var(--teal-bg);color:var(--teal-text);box-shadow:none;}
+.bottom-nav .icon-btn.is-on{background:var(--teal-bg);color:var(--teal-text);}
+.seg{border-radius:18px;padding:4px;gap:3px;}
+.seg-opt{border-radius:14px;transition:background var(--dur-med) ease,color var(--dur-med) ease;}
+.seg-opt.on,.topic-chip.on,.schedule-chip.on,.monthday-chip.on,.topic-filter.on{
+  background:var(--teal-bg);color:var(--teal-text);box-shadow:none;
+}
+.btn{border-radius:999px;font-weight:600;}
+.btn.primary,
+.detail-actions .btn.primary,.about-actions .btn.primary,.overview-actions .btn.primary,
+.settings-actions .btn.primary,.sample-habits-actions .btn.primary{
+  background:var(--teal-icon);color:var(--bg);border-color:transparent;
+}
+.sheet-title{font-size:calc(23px * var(--font-scale));font-weight:600;letter-spacing:-.035em;}
+.detail-card,.score-card,.pace-card,.month-card,.tune-section,.settings-block,
+.settings-group,.settings-card,.about-block,.utility-sheet-panel{border-radius:22px;}
+.setting-toggle{border-radius:16px;}
+.setting-toggle input{accent-color:var(--teal-icon);}
+.settings-sheet .setting-switch[aria-pressed="true"] .switch-ui{
+  background:var(--teal-icon);border-color:var(--teal-icon);
+}
+.settings-hint,.field-hint{line-height:1.5;}
+#toast,#action-toast{border-radius:22px;}
+/* Keyboard focus also works with an external keyboard on a touch device. */
+button:focus-visible,[role="button"]:focus-visible,
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--teal-icon);outline-offset:3px;
+}
+@media (hover:hover) and (pointer:fine){
+  .ting-card:hover{background:color-mix(in srgb,var(--teal-bg) 18%,var(--bg));}
+  .icon-btn:hover{background:var(--bg3);}
+  .bottom-nav .nav-add:hover{background:var(--teal-bg);box-shadow:var(--accent-glow);}
+}
+/* Preserve compact-mode geometry and full-page sheet mechanics. */
+body.compact-mode .swipe-row{--card-radius:20px;}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto;}
+  *,*::before,*::after{
+    animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important;
+  }
+}
+/* The full agenda's adaptive weather row uses compact, measured typography. */
+.section-header.has-context{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:13px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+}
+.section-header.has-context :is(.dropped-pill,.free-pill){
+  font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+}

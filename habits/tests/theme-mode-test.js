@@ -35,7 +35,7 @@ function seedSettings(themeMode){
   return {
     preset:'todayFirst', topics:[], locations:[], travel:{},
     defaultTravelMode:'driving', blockedTimes:[],
-    themeMode: themeMode || 'system'
+    colorPalette:'neutral', themeMode: themeMode || 'system'
   };
 }
 
@@ -73,10 +73,10 @@ async function themeSnapshot(page){
 }
 
 function isDarkTokens(snap){
-  return snap.bg === '#1c1c1e' && snap.fieldBg === '#34343a' && snap.text === '#f2f2f7';
+  return snap.bg === '#242424' && snap.fieldBg === '#323232' && snap.text === '#ededed';
 }
 function isLightTokens(snap){
-  return snap.bg === '#ffffff' && snap.fieldBg === '#e0dfd9' && snap.text === '#1a1a1a';
+  return snap.bg === '#fdfcf9' && snap.fieldBg === '#e9e8e2' && snap.text === '#292a27';
 }
 function pinsDark(snap){
   return snap.dataTheme === 'dark'

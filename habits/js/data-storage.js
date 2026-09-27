@@ -167,6 +167,8 @@ function loadSortSettings(){
       && !Object.prototype.hasOwnProperty.call(saved,'minimalMode')
       ? false
       : Boolean(merged.minimalMode);
+    merged.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(merged.colorPalette) ? merged.colorPalette : 'default';
+    merged.soundEffects = merged.soundEffects !== false;
     merged.compactMode = legacyCalmDefault('compactMode') || Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
     merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';
@@ -280,6 +282,8 @@ function saveSortSettings(settings){
   next.showCueOnCards = next.showCueOnCards !== false;
   next.showOrderPillsOnCards = next.showOrderPillsOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);
+  next.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(next.colorPalette) ? next.colorPalette : 'default';
+  next.soundEffects = next.soundEffects !== false;
   next.compactMode = Boolean(next.compactMode);
   next.fontScale = ['small','medium','large'].includes(next.fontScale) ? next.fontScale : 'medium';
   next.themeMode = ['light','dark','system'].includes(next.themeMode) ? next.themeMode : 'system';

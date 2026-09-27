@@ -111,6 +111,10 @@ function toggleAppSettingButton(btn){
   const key = btn.dataset.settingToggle;
   if(!key)return;
   if(key === 'reminders'){toggleReminders();return;}
+  if(key === 'soundEffects'){
+    updateSortSetting({soundEffects:!sortSettings.soundEffects},{renderNow:false});
+    return;
+  }
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
   // Presentation-only: reuse the mounted week plan (same pattern as homeExtraMode).

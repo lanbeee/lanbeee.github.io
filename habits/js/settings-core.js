@@ -116,6 +116,9 @@ function syncSettingsControls(){
   document.querySelectorAll('#theme-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === sortSettings.themeMode);
   });
+  document.querySelectorAll('#color-palette-picker [data-palette-value]').forEach(btn=>{
+    btn.setAttribute('aria-pressed',String(btn.dataset.paletteValue === sortSettings.colorPalette));
+  });
   const taskRetention = normalizeCompletedTaskRetentionDays(sortSettings.completedTaskRetentionDays);
   document.querySelectorAll('#completed-task-retention-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',parseInt(btn.dataset.segValue,10) === taskRetention);

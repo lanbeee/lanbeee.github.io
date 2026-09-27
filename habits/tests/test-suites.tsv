@@ -109,3 +109,6 @@ zz-scroll-cap.js	diagnostics	once
 zz-verify-scroll-guard.js	ui	once
 fast-graph-planner-test.js	planner	once
 last-day-due-pair-test.js	planner	once
+
+ui-feedback-test.js	ui	once
+color-palette-test.js	ui	once

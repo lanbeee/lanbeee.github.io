@@ -652,6 +652,11 @@ $('font-scale-seg')?.addEventListener('click',e=>{
   updateSortSetting({fontScale:opt.dataset.segValue});
   applyAppearanceSettings();
 });
+$('color-palette-picker')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-palette-value]');
+  if(!opt)return;
+  updateSortSetting({colorPalette:opt.dataset.paletteValue},{renderNow:false});
+});
 $('theme-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');
   if(!opt)return;
