@@ -213,6 +213,12 @@ async function openSettings(page){
   await page.locator('#ting-tag-chips [data-location-id="sample-home"]').click();
   await page.locator('#ting-tag-chips [data-location-id="sample-gym"]').click();
   await page.waitForTimeout(150);
+  const chipOrder = await page.evaluate(()=>
+    [...document.querySelectorAll('#ting-tag-chips .location-chip[data-location-id]')].map(el=>el.dataset.locationId)
+  );
+  assert(chipOrder[0] === 'sample-gym' && chipOrder[1] === 'sample-home',
+    'selected places lead alphabetically (got ' + chipOrder.join(',') + ')');
+  assert(chipOrder.indexOf('sample-cafe') > 1, 'unselected Sample Cafe follows the selected places');
   // Second tap on Gym (with 2+ selected) marks it preferred (cycle: off→on→little→high→avoid→off)
   await page.locator('#ting-tag-chips [data-location-id="sample-gym"]').click();
   await page.waitForTimeout(100);
@@ -235,6 +241,31 @@ async function openSettings(page){
   assert(saved && saved.ids.includes('sample-home') && saved.ids.includes('sample-gym'), 'saved locationIds');
   assert(saved && saved.pref === 'sample-gym', 'saved preferredLocationId = Gym');
   assert(saved && saved.anywhere === true, 'saved habit allows anywhere with preferred Gym');
+
+  console.log('\n[C2] detail place tap cycles preference');
+  await page.evaluate(() => {
+    const idx = load().findIndex(x => x.name === 'loc chip test habit');
+    openDetail(idx);
+    scrollDetailToNav('schedule');
+  });
+  await page.waitForSelector('#detail-place-chips [data-location-id="sample-gym"]');
+  const detailPref = async () => page.locator('#detail-place-chips [data-location-id="sample-gym"]').evaluate(el => ({
+    pref: el.dataset.pref || '',
+    on: el.classList.contains('on')
+  }));
+  assert((await detailPref()).pref === 'little', 'detail shows the saved soft preference');
+  await page.locator('#detail-place-chips [data-location-id="sample-gym"]').click();
+  await page.waitForTimeout(80);
+  assert((await detailPref()).pref === 'high', 'tap cycles soft preference to strong');
+  await page.locator('#detail-place-chips [data-location-id="sample-gym"]').click();
+  await page.waitForTimeout(80);
+  assert((await detailPref()).pref === 'avoid', 'tap cycles strong preference to avoid');
+  await page.locator('#detail-place-chips [data-location-id="sample-gym"]').click();
+  await page.waitForTimeout(80);
+  const cycledOff = await detailPref();
+  assert(cycledOff.pref === '' && cycledOff.on === false, 'tap cycles avoid back to off');
+  await page.evaluate(() => closeDetail());
+  await page.waitForTimeout(150);
 
   // ── D. Home agenda travel + I-am-at ──
   console.log('\n[D] home agenda travel rows + I-am-at');

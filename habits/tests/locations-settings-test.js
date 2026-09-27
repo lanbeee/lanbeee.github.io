@@ -470,9 +470,16 @@ async function openSettings(page){
   console.log(addFlow);
   assert(!addFlow.pickerOpen && addFlow.addOpen, 'returns to the in-progress new habit');
   assert(addFlow.selected.some(name=>name.includes('Alpha Library')), 'new place is selected immediately');
-  const realOrder = addFlow.order.map(name=>name.replace(/[★☆–]\s*$/,'').trim());
-  assert(realOrder.join('|') === realOrder.slice().sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base',numeric:true})).join('|'),
-    'habit place chips are alphabetical');
+  const cleanChip = name=>name.replace(/[★☆–]\s*$/,'').trim();
+  const realOrder = addFlow.order.map(cleanChip);
+  const selectedNames = new Set(addFlow.selected.map(cleanChip));
+  const expectedOrder = realOrder.slice().sort((a,b)=>{
+    const as = selectedNames.has(a) ? 0 : 1;
+    const bs = selectedNames.has(b) ? 0 : 1;
+    if(as !== bs)return as - bs;
+    return a.localeCompare(b,undefined,{sensitivity:'base',numeric:true});
+  });
+  assert(realOrder.join('|') === expectedOrder.join('|'), 'selected places first, then alphabetical');
   await page.locator('#do-cancel').click();
 
   // ── L. Boot cleanliness ──

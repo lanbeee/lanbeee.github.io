@@ -69,8 +69,8 @@ function renderOverviewFilters(data){
   const summary = $('calendar-filter-summary');
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-  const topicChoices = overviewTopicChoices(data);
-  const locChoices = overviewLocationChoices(data);
+  let topicChoices = overviewTopicChoices(data);
+  let locChoices = overviewLocationChoices(data);
   const hasTopics = !minimal && topicChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
   const hasLocs = !minimal && locChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
   if(hasTopics && !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
@@ -81,6 +81,8 @@ function renderOverviewFilters(data){
   if(minimal || !hasLocs){
     overviewLocationFilter = 'all';
   }
+  topicChoices = orderFilterChoices(topicChoices, overviewTopicFilter);
+  locChoices = orderFilterChoices(locChoices, overviewLocationFilter);
 
   const activeLoc = hasLocs && overviewLocationFilter !== 'all'
     ? locChoices.find(choice=>choice.key === overviewLocationFilter)

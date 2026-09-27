@@ -29,7 +29,14 @@
   border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
 }
 .topbar .home-filter-trigger.has-active{ border:0;background:transparent;box-shadow:none; }
-.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end; }
+.topbar .home-filter-bar{overflow:hidden;}
+.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end;overflow:hidden; }
+/* Shrink inside the bar. A flex-end row that overflows clips the left edge,
+   which is what shaved the current-place control once the assistant button
+   took a slot on a phone. */
+.topbar .presence-filter{
+  flex:0 1 190px;width:auto;min-width:0;max-width:min(190px,100%);
+}
 .topbar .home-filter-trigger{ position:relative; }
 body[data-pane-count="2"] .topbar,
 body[data-pane-count="3"] .topbar{
