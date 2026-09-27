@@ -599,6 +599,62 @@ async function launchBrowser(){
   }, {now:FROZEN});
   report(salvage);
 
+  console.log('\n[S2] model create flag decides create-vs-change (no parser guesswork)');
+  const flag = await page.evaluate(({now}) => {
+    const rows = [];
+    const check = (name, cond, extra) => rows.push({name, ok:Boolean(cond), extra});
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      locations:[],
+      weatherProfiles:[]
+    });
+    const seed = (typeof normalize === 'function' ? normalize : (x=>x))([
+      {name:'Family outing', type:'keepup', target:1, durationMinutes:60, logs:[], lastLog:null},
+      {name:'Nanihal Family', type:'keepup', target:1, durationMinutes:60, logs:[], lastLog:null},
+      {name:'Show with family', type:'keepup', target:1, durationMinutes:60, logs:[], lastLog:null}
+    ]);
+    save(seed);
+    const context = assistantBuildContext(now);
+    function run(args, request, ctx){
+      const session = assistantCreateSession();
+      session.parsed = {text:request || '', factsTrusted:false, intent:'unclear'};
+      return assistantExecuteTool('draft_item', args, session, ctx || context);
+    }
+    const request = 'Create a new event called Family Night for today at noor from now to sunset at Noor';
+    const flagged = run({kind:'task', name:'Family Night', due:'today', create:true}, request);
+    check('create:true drafts a fresh item despite look-alike names',
+      flagged.ok && flagged.draft && flagged.draft.name === 'Family Night' && !flagged.ask,
+      flagged.error || flagged.ask);
+    const stringFlag = run({kind:'task', name:'Family Night', due:'today', create:'true'}, request);
+    check('string create:true is parsed the same way',
+      stringFlag.ok && !stringFlag.ask, stringFlag.error || stringFlag.ask);
+    const commit = flagged.ok ? assistantCommitDraft(flagged.draft) : {ok:false, error:flagged.error};
+    const saved = commit.ok ? load()[commit.index] : null;
+    check('committed as a separate new row',
+      saved && saved.name === 'Family Night' && load().length === 4
+        && !['Family outing', 'Nanihal Family', 'Show with family'].includes(saved.name),
+      commit.error || load().length);
+    const exact = run({kind:'task', name:'Family Night', due:'tomorrow', create:true},
+      request, assistantBuildContext(now));
+    check('create:true with an exact existing name still upserts that row',
+      exact.ok && exact.draft && exact.draft.hid != null, exact.error || exact.ask);
+    const unflagged = run({kind:'task', name:'Family Night', due:'today'}, request);
+    check('omitted flag keeps the which-one ask for near-miss names',
+      unflagged.ok === false && unflagged.error === 'AMBIGUOUS' && /Which one:/.test(unflagged.ask || ''),
+      unflagged.ask || unflagged.error);
+    const change = run({kind:'task', name:'Family outing', due:'today', create:false}, 'Update Family outing');
+    check('create:false resolves the exact existing item',
+      change.ok && change.draft && change.draft.hid != null && !change.ask,
+      change.error || change.ask);
+    const miss = run({kind:'task', name:'Familly nite', due:'today', create:false}, 'Update familly nite');
+    check('create:false miss is a lookup failure, not a silent create',
+      miss.ok === false, miss.ask || miss.error);
+    return rows;
+  }, {now:FROZEN});
+  report(flag);
+
   console.log('\n[N] nested weather-profile edits merge');
   const nested = await page.evaluate(({now}) => {
     const rows = [];

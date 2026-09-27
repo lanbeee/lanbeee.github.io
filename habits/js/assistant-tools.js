@@ -1182,7 +1182,15 @@ function assistantResolveDraftBase(args, session, context){
     if(packedName){
       return {ok:true, draft:assistantEmptyDraft(), existing:false};
     }
+    // The model declares the create-vs-change split with the create flag
+    // (draft_item schema). true forces a fresh row even over a focused
+    // draft; false treats a miss as a lookup failure instead of a create.
+    // Only the ambiguous no-flag case falls to the ask below.
+    const createFlag = args && args.create != null
+      && typeof assistantParseBool === 'function' ? assistantParseBool(args.create) : null;
+    if(createFlag === true)return {ok:true, draft:assistantEmptyDraft(), existing:false};
     if(!creating)return found;
+    if(createFlag === false)return found;
     const close = (found && found.candidates || []).filter(row => Number(row.score) >= 40);
     if(found && found.error === 'AMBIGUOUS' && close.length){
       return assistantHabitAskFromCandidates(close, 'AMBIGUOUS');

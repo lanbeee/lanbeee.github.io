@@ -81,6 +81,7 @@ const ASSISTANT_QUERY_PROPERTIES = {
 
 const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   kind:{type:'string', enum:['task','habit']},
+  create:{type:['boolean','string','null'], description:'true = the request adds something new; false = it changes an item that already exists. Omit only when the request could genuinely be either.'},
   habitKind:{type:['string','null'], description:'keepup/build, reduce/limit, or zero/stop'},
   name:{type:['string','null'], description:'Short title only, e.g. Kettlebells. Never paste the rest of the sentence here. Omit/"it" to change currentDraft'},
   newName:{type:['string','null'], description:'Rename the current item'},
@@ -175,7 +176,7 @@ function assistantApplySelectorProperties(opts){
 function assistantApplyPatchProperties(){
   const out = {};
   Object.keys(ASSISTANT_DRAFT_ITEM_PROPERTIES).forEach(key => {
-    if(key === 'name' || key === 'kind' || key === 'needAsk' || key === 'ask')return;
+    if(key === 'name' || key === 'kind' || key === 'create' || key === 'needAsk' || key === 'ask')return;
     out[key] = ASSISTANT_DRAFT_ITEM_PROPERTIES[key];
   });
   return out;
@@ -198,7 +199,7 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   draft_item:{
-      description:'Create or change one item in one call. Fill every setting the user named or explicitly asked you to choose; omit the rest. name is a 1-3 word title. Put habitKind, topics, windowText, order, placePrefs, hardDue, and the rest in their own fields. weatherText creates and attaches a weather profile when needed, so one item plus its new weather profile is one draft_item call. If currentDraft is set, "it" means that item — keep its name and hid. Prefer plain strings. Do not nest window or place objects — a nested object is how tool JSON gets cut off. Several items in one request belong in draft_batch, not repeated draft_item calls.',
+      description:'Create or change one item in one call. Set create true when the request makes something new and false when it changes something that already exists — omit it only when the request could genuinely be either, and Tings will ask when the name is close to saved items. Fill every setting the user named or explicitly asked you to choose; omit the rest. name is a 1-3 word title. Put habitKind, topics, windowText, order, placePrefs, hardDue, and the rest in their own fields. weatherText creates and attaches a weather profile when needed, so one item plus its new weather profile is one draft_item call. If currentDraft is set, "it" means that item — keep its name and hid. Prefer plain strings. Do not nest window or place objects — a nested object is how tool JSON gets cut off. Several items in one request belong in draft_batch, not repeated draft_item calls.',
     parameters:{
       type:'object',
       properties:ASSISTANT_DRAFT_ITEM_PROPERTIES
