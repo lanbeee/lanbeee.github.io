@@ -70,6 +70,11 @@
   .breakable-scrub-hint{width:44px;min-width:44px;}
   .free-fit-fields{grid-template-columns:minmax(0,1fr) 12px minmax(0,1fr);}
   .free-fit-run{grid-column:1 / -1;width:100%;}
+  .free-day-switch{grid-template-columns:32px minmax(0,1fr) 32px;gap:4px;padding:5px;}
+  .free-day-step{width:32px;height:32px;border-radius:9px;}
+  .free-day-chip{min-height:36px;border-radius:9px;}
+  .free-day-chip span{font-size:7px;}
+  .free-day-chip b{font-size:11px;}
   .free-day-tick:nth-last-child(2){display:none;}
   .ting-main{gap:7px;}
   .ting-name{font-size:calc(14.5px * var(--font-scale));-webkit-line-clamp:3;line-height:1.18;}

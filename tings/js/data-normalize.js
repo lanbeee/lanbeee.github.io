@@ -501,8 +501,13 @@ function clearPlanByDateOnLog(h){
 }
 
 function save(data){
+  let previous = [];
   try{
+    previous = Storage.read(KEY) || [];
     let next = normalize(data);
+    if(typeof beforeReplicaDeviceDataSave === 'function'){
+      try{ next = normalize(beforeReplicaDeviceDataSave(previous,next)); }catch(_){ }
+    }
     let str = JSON.stringify(next);
     const kb = Math.round((str.length * 2) / 1024);
     if(kb >= QUOTA_HARD_KB){
@@ -512,14 +517,24 @@ function save(data){
     Storage.writeRaw(KEY, str);
     bumpPlannerDataRevision();
     updateQuotaBar(sizeKb(next));
+    if(typeof onReplicaDeviceDataSaved === 'function'){
+      try{ onReplicaDeviceDataSaved(previous,next); }catch(_){ }
+    }
     return true;
   }catch(e){
     try{
-      const pruned = pruneForStorage(normalize(data),QUOTA_HARD_KB - 360);
+      let fallback = normalize(data);
+      if(typeof beforeReplicaDeviceDataSave === 'function'){
+        try{ fallback = normalize(beforeReplicaDeviceDataSave(previous,fallback)); }catch(_){ }
+      }
+      const pruned = pruneForStorage(fallback,QUOTA_HARD_KB - 360);
       const str = JSON.stringify(pruned);
       Storage.writeRaw(KEY, str);
       bumpPlannerDataRevision();
       updateQuotaBar(sizeKb(pruned));
+      if(typeof onReplicaDeviceDataSaved === 'function'){
+        try{ onReplicaDeviceDataSaved(previous,pruned); }catch(_){ }
+      }
       showToast('old dense activity compacted');
       return true;
     }catch{

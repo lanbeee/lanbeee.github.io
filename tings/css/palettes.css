@@ -1,0 +1,156 @@
+/* Appearance palettes. Semantic warning/error colors stay independent. */
+:root[data-palette="default"]{
+  --bg:#fdfcf9; --palette-dark-bg:#242424;
+  --bg2:#f2f1ed; --palette-dark-bg2:#171717;
+  --bg3:#e6e5df; --palette-dark-bg3:#373737;
+  --text:#292a27; --palette-dark-text:#ededed;
+  --text2:#60615c; --palette-dark-text2:#c4c4c4;
+  --text3:#696a63; --palette-dark-text3:#a1a1a1;
+  --field-bg:#e9e8e2; --palette-dark-field-bg:#323232;
+  --teal-bg:#c5dff5; --palette-dark-teal-bg:#234864;
+  --teal-icon:#24628f; --palette-dark-teal-icon:#8fc3ef;
+  --teal-text:#18486c; --palette-dark-teal-text:#d3e8fb;
+  --go-bg:#c5e6c2; --palette-dark-go-bg:#24563a;
+  --go-icon:#2d7a48; --palette-dark-go-icon:#8ed4a2;
+  --go-text:#1d5830; --palette-dark-go-text:#d2f0db;
+}
+:root[data-palette="neutral"]{
+  --bg:#fdfcf9; --palette-dark-bg:#242424;
+  --bg2:#f2f1ed; --palette-dark-bg2:#171717;
+  --bg3:#e6e5df; --palette-dark-bg3:#373737;
+  --text:#292a27; --palette-dark-text:#ededed;
+  --text2:#60615c; --palette-dark-text2:#c4c4c4;
+  --text3:#696a63; --palette-dark-text3:#a1a1a1;
+  --field-bg:#e9e8e2; --palette-dark-field-bg:#323232;
+  --teal-bg:#e3e4df; --palette-dark-teal-bg:#3d3f3a;
+  --teal-icon:#555752; --palette-dark-teal-icon:#c8cbc1;
+  --teal-text:#363833; --palette-dark-teal-text:#e6e8e0;
+}
+:root[data-palette="sage"]{
+  --bg:#fcfdf8; --palette-dark-bg:#20271f;
+  --bg2:#f0f2e9; --palette-dark-bg2:#151b15;
+  --bg3:#e2e7da; --palette-dark-bg3:#343e31;
+  --text:#252c25; --palette-dark-text:#e6eddf;
+  --text2:#5b6559; --palette-dark-text2:#bdc8b6;
+  --text3:#646e5e; --palette-dark-text3:#929f8b;
+  --field-bg:#e8ecdf; --palette-dark-field-bg:#303a2e;
+  --teal-bg:#dcebcf; --palette-dark-teal-bg:#334d2b;
+  --teal-icon:#47643c; --palette-dark-teal-icon:#b2d59e;
+  --teal-text:#304d27; --palette-dark-teal-text:#d5edc5;
+}
+:root[data-palette="sky"]{
+  --bg:#fafcff; --palette-dark-bg:#20272f;
+  --bg2:#edf2f7; --palette-dark-bg2:#151b22;
+  --bg3:#dde6ef; --palette-dark-bg3:#323e4b;
+  --text:#242d36; --palette-dark-text:#e2ebf5;
+  --text2:#566473; --palette-dark-text2:#b8c7d6;
+  --text3:#626f7d; --palette-dark-text3:#91a2b4;
+  --field-bg:#e2eaf3; --palette-dark-field-bg:#2c3846;
+  --teal-bg:#d6e8fa; --palette-dark-teal-bg:#294661;
+  --teal-icon:#385f82; --palette-dark-teal-icon:#a6cef2;
+  --teal-text:#284b6c; --palette-dark-teal-text:#d0e6fc;
+}
+:root[data-palette="lavender"]{
+  --bg:#fdfaff; --palette-dark-bg:#292330;
+  --bg2:#f3eff7; --palette-dark-bg2:#1c1722;
+  --bg3:#e8e1ef; --palette-dark-bg3:#3e3548;
+  --text:#302a38; --palette-dark-text:#efe5f6;
+  --text2:#675c73; --palette-dark-text2:#cdbed9;
+  --text3:#73677f; --palette-dark-text3:#ab99ba;
+  --field-bg:#ede5f3; --palette-dark-field-bg:#382f42;
+  --teal-bg:#e8dcf6; --palette-dark-teal-bg:#4b365f;
+  --teal-icon:#6b5185; --palette-dark-teal-icon:#d7b8ef;
+  --teal-text:#513967; --palette-dark-teal-text:#eed8ff;
+}
+:root[data-palette="sand"]{
+  --bg:#fffdf8; --palette-dark-bg:#2b261f;
+  --bg2:#f6f1e8; --palette-dark-bg2:#1d1914;
+  --bg3:#eae2d4; --palette-dark-bg3:#40382c;
+  --text:#342e26; --palette-dark-text:#f2e9da;
+  --text2:#6d6151; --palette-dark-text2:#cfc1ac;
+  --text3:#786b59; --palette-dark-text3:#ad9d85;
+  --field-bg:#eee6d8; --palette-dark-field-bg:#393225;
+  --teal-bg:#f1dfbf; --palette-dark-teal-bg:#534128;
+  --teal-icon:#79603c; --palette-dark-teal-icon:#dec297;
+  --teal-text:#5d4527; --palette-dark-teal-text:#f5dfba;
+}
+:root[data-palette][data-theme="dark"]{
+  --bg:var(--palette-dark-bg);
+  --bg2:var(--palette-dark-bg2);
+  --bg3:var(--palette-dark-bg3);
+  --text:var(--palette-dark-text);
+  --text2:var(--palette-dark-text2);
+  --text3:var(--palette-dark-text3);
+  --field-bg:var(--palette-dark-field-bg);
+  --teal-bg:var(--palette-dark-teal-bg);
+  --teal-icon:var(--palette-dark-teal-icon);
+  --teal-text:var(--palette-dark-teal-text);
+}
+:root[data-palette="default"][data-theme="dark"]{
+  --go-bg:var(--palette-dark-go-bg);
+  --go-icon:var(--palette-dark-go-icon);
+  --go-text:var(--palette-dark-go-text);
+}
+@media (prefers-color-scheme:dark){
+:root[data-palette]:not([data-theme="light"]){
+  --bg:var(--palette-dark-bg);
+  --bg2:var(--palette-dark-bg2);
+  --bg3:var(--palette-dark-bg3);
+  --text:var(--palette-dark-text);
+  --text2:var(--palette-dark-text2);
+  --text3:var(--palette-dark-text3);
+  --field-bg:var(--palette-dark-field-bg);
+  --teal-bg:var(--palette-dark-teal-bg);
+  --teal-icon:var(--palette-dark-teal-icon);
+  --teal-text:var(--palette-dark-teal-text);
+}
+:root[data-palette="default"]:not([data-theme="light"]){
+  --go-bg:var(--palette-dark-go-bg);
+  --go-icon:var(--palette-dark-go-icon);
+  --go-text:var(--palette-dark-go-text);
+}
+}
+
+.palette-picker{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 16px;}
+.palette-option{
+  flex:1 1 60px;min-width:max(60px,calc(52px * var(--font-scale)));min-height:76px;padding:8px 3px;
+  border:2px solid transparent;border-radius:18px;background:transparent;
+  color:var(--text2);font:inherit;font-size:calc(11px * var(--font-scale));
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:7px;
+  -webkit-tap-highlight-color:transparent;
+}
+.palette-option[aria-pressed="true"]{border-color:var(--teal-icon);color:var(--text);font-weight:650;}
+.palette-swatch{
+  width:32px;height:32px;display:grid;place-items:center;border-radius:50%;
+  background:var(--swatch);color:var(--swatch-ink);
+}
+.palette-swatch::after{content:'✓';font-size:19px;opacity:0;}
+.palette-option[aria-pressed="true"] .palette-swatch::after{opacity:1;}
+.palette-option[data-palette-value="neutral"]{--swatch:#e3e4df;--swatch-ink:#363833;}
+.palette-option[data-palette-value="sage"]{--swatch:#dcebcf;--swatch-ink:#304d27;}
+.palette-option[data-palette-value="sky"]{--swatch:#d6e8fa;--swatch-ink:#284b6c;}
+.palette-option[data-palette-value="lavender"]{--swatch:#e8dcf6;--swatch-ink:#513967;}
+.palette-option[data-palette-value="sand"]{--swatch:#f1dfbf;--swatch-ink:#5d4527;}
+
+.palette-option[data-palette-value="default"]{
+  --swatch:conic-gradient(#f2f1ed 0 220deg,#c5dff5 220deg 290deg,#c5e6c2 290deg);
+  --swatch-ink:#18486c;
+}
+/* Neutral surfaces. Blue is selection and tools; green is the create action. */
+:root[data-palette="default"] .bottom-nav .nav-add,
+:root[data-palette="default"] .app-bar-add{
+  background:var(--go-bg);color:var(--go-text);border-color:transparent;
+}
+:root[data-palette="default"] .bottom-nav .nav-add:hover,
+:root[data-palette="default"] .bottom-nav .nav-add:active,
+:root[data-palette="default"] .app-bar-add:hover,
+:root[data-palette="default"] .app-bar-add:active{
+  background:var(--go-bg);
+  box-shadow:0 4px 12px color-mix(in srgb,var(--go-icon) 28%,transparent);
+}
+:root[data-palette="default"] .topbar .home-filter-trigger{
+  background:var(--teal-bg);color:var(--teal-text);
+}
+:root[data-palette="default"] .topbar .home-filter-trigger > i{
+  color:var(--teal-icon);
+}

@@ -140,7 +140,7 @@ Everything below is covered in this skeleton:
 - **Directional scheduling:** `earlyWindowDays` only permits bringing work forward. `delayAllowanceDays` alone permits moving the same occurrence past its due/rhythm day.
 - **Strict due placement:** On an occurrence's last allowed day, both planners treat it as non-deferrable and claim any compatible open or reserved-spare time. It may shorten a protected daily breakable only when it has strictly higher priority. If a later feasible incumbent leaves an untouched due-day gap, it is pulled back. A genuinely infeasible later row is catch-up and does not erase the original Missed expectation.
 - **Progressive urgency:** No hard deadlines by default, with the ability to add.
-- **Privacy-first:** All data is stored in this browser. There is no Tings account. A few opt-in features can send something outward (shared display, share item, address search, send feedback); those controls carry a cloud-up mark. See About → privacy.
+- **Privacy-first and local-first:** Data is stored in the browser and there is no Tings account. An explicitly paired display receives an end-to-end encrypted replica of allowed items so it can plan and log while the primary device is closed. A few other opt-in features can send something outward (share item, address search, send feedback); those controls carry a cloud-up mark. See About → privacy.
 
 ### 1.3 Who is Tings For? 👤
 - People managing recurring routines
@@ -645,7 +645,14 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   guided-item explanations. Displayed temperatures are feels-like values. A
   far-away item names its saved place and uses that place's forecast. Tapping a
   summary card (feels like, precipitation, wind, UV) opens an interactive hourly
-  trend chart of that metric for the same day on top of the sheet. The chart
+  trend chart of that metric for the same day on top of the sheet. The weather
+  sheet itself has the same 7-day switcher as open time, so a chosen overlay
+  stays put while you compare tomorrow or the weekend. Below the summary cards,
+  hourly graphs start with feels-like; tapping rain, wind, or UV stacks those
+  measures on the same clock (rain as bars, the others as lines) instead of
+  opening a second chart. The dedicated hourly sheet can overlay the other
+  measures on top of the metric you opened, with one shared scrub readout.
+  The chart
   always spans the whole day — a near-term refresh cannot truncate it — and
   drag or arrow keys read any hour: feels like pairs with actual temperature,
   wind with gusts inside one shared frame, precipitation chance renders as bars
@@ -972,7 +979,7 @@ second row.
 
 ### 6.3 Open Time Pills (🕒 "N open")
 - Appears on day headers when there are free time stretches ≥ 10 minutes
-- Tap to open the **Free Time Sheet** (see §X.2)
+- Tap to open the **Free Time Sheet** (see §X.2). Calendar days also reach that sheet through **See open hours**.
 - Shows a visual strip of free/busy time blocks
 - Free blocks are tappable to select a time for scheduling
 - Includes tick marks at clean hour intervals
@@ -1325,7 +1332,10 @@ shortcuts can be stored on one item.
 #### Item Actions
 - **Pinned:** Keeps the item above automatic ordering
 - **Shared display:** Defaults to **mark done**. Choose **view only** to show the item without allowing completion from the display, or **hidden** to keep it out of every future shared-display snapshot. Regular mode only — hidden alongside the other full-mode action rows in minimal mode.
-- The standalone shared display shows the current time in its header. Swiping left (or "hide agenda") covers the agenda with a near-black night clock; three taps within 900ms bring it back — a swipe never restores it, so a stray brush of the frame can't flash the agenda. Marking an item done shows an undo toast for a few seconds: the row reads as done immediately, but the completion is only pushed to the owner's feed when the toast expires, and tapping undo restores the row without any request. Only one mark waits at a time — marking another item pushes the previous one at once; a refresh that pauses the display or drops the row cancels the pending mark instead of pushing it, and de-pairing mid-push never writes the old authorization back. The ⋯ menu holds the fullscreen toggle, light/dark/system theme (dark is the default), a − / + text-size stepper (70–200%), and a "screen fit" − / + control that pre-squashes the page vertically (85–100%) to cancel frames that stretch their panel. Everything persists per display.
+- **Sync style** is chosen when you approve that display’s QR (Settings holds the style for the **next** pairing). **Personal clone** and **shared items only** install a real Tings library; **glance display** does not. At most two screens can be signed in: one full-app display and one glance display. They share an encrypted agenda key and a receipt-tracked completion stream. Each completion is retained independently for the phone and the other screen, so either paired device can mark done and the other sees it on its next poll even while the phone is off; the phone reconciles the same event whenever it opens later. One breakable session carries its credited minutes, and one event marks at most one matching agenda occurrence. The full library is a sibling envelope under a separate replica key transferred only to the personal clone, so the glance device can decrypt agenda rows but does not download habits, logs, or planner settings. When the personal clone changes today’s plan, it publishes a small encrypted today/tomorrow snapshot so the glance display refreshes on its next poll without opening the phone and without uploading the clone library again. New task definitions still wait for the phone to reconcile and publish. A glance enrollment that somehow lands on `index.html` is sent back to `agenda-display.html`. The owner phone is the only pairing authority; a personal clone hides create/scan/approve so it cannot mint a second feed.
+- A shared display paired in **personal clone** or **shared items only** installs habits and runs the normal Tings planner locally. Replica mode follows the paired enrollment, including an installed PWA that launches without `?display=1`. In **personal clone**, the two installations are the same logical owner: every task and habit is copied, either device can add/edit/remove it, and either can add completion logs. Creating a task on the display and marking it done before the phone has published that item still queues both the definition and the completion. Clone definition ops use a 64 KiB `agenda_definition` envelope on `POST /v1/agendas/:id/definitions`, separate from the 4 KiB completion envelope, so a rich item cannot stall later dones. An oversized definition stays queued and later completions still flush. The display GETs the latest snapshot before posting queued ops; a stale revision retries after GET instead of stalling while the phone is open. Clone definitions are returned in GET `definitions`, not `completions`, so an older owner app cannot acknowledge them unread. Changes made offline stay visible locally and queue until sync returns. Each definition operation carries the hash of the definition it was based on; if both devices edit the same task or habit before seeing each other, the primary’s newer definition is retained instead of being silently overwritten. Switching to **shared items only** keeps unpublished display-created items private on that device instead of deleting them. In **shared items only**, the primary remains the single writer for names, rhythms, schedules, deletion, and sharing access, while either installation may add completion logs except on items the owner set to **view only** — those stay read-only on the paired full app, not only on the glance display; each installation keeps its private items and planner settings. Owner deletion or unsharing removes that shared replica rather than converting it into a private item. A personal clone installs only the shared registries from the owner snapshot — places, busy times (with their per-date cancellations and one-time edits), weather profiles, and the weather/prayer home city; every other setting (theme, density, font, planner engine, assistant, and so on) is device-local, so each installation can look and behave differently and an owner change never overwrites it. Settings flow one way, phone → clone: registries edited on the clone are overwritten by the next owner snapshot, and nothing syncs back to the phone.
+- Replica item identities stay stable across snapshots, and unchanged local checks do not upload another encrypted snapshot. A personal clone may replace the glance days envelope when its week plan changes; that PUT omits `replica`, so the Worker keeps the last owner-sealed library. The clone library is a sibling encrypted envelope (`replica` on owner PUT, returned only with `GET ?library=1`), so a glance display keeps downloading a small agenda snapshot. History is shortened first if the library is large; every task and habit is still retained. If definitions alone cannot fit the 480 KiB replica budget, sync pauses on the last complete snapshot and Settings shows the reason instead of publishing a partial clone that would look like deletion.
+- Full-app display mode shows current time and weather in a sticky bar, offers manual sync/fullscreen/lock actions, and covers the app with a near-black clock screen when locked; three taps within 900ms restore Tings. The glance renderer is a supported sync style rather than a compatibility shim, and keeps its undo toast, passcode, appearance, and screen-fit controls.
 - **Export to calendar:** Tasks with a due date or fixed time (regular mode only)
 - **Share item:** Sends an encrypted invitation for another person to track it
 - **Snooze:** Temporarily hides the item. When it is already hidden, Home swipe/card **show** brings it back immediately; Detail **show** opens the snooze sheet so you can unsnooze or hide it longer.
@@ -1473,8 +1483,9 @@ Tracks the currently active habit session:
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N open" pill on a day header
+- **Access:** Tap "N open" pill on a day header, or **See open hours** on a calendar day
 - Visual timeline of free vs busy blocks
+- A day switcher (previous/next plus a 7-day strip) keeps the chosen clock times, so the same window can be checked on another day without re-entering it. If a what-if result is already on screen, switching days re-runs that analysis automatically.
 - `formatFreeDuration` shows total free time ("3h" / "45m")
 - Largest gap highlighted
 - Free blocks can be selected to schedule a habit/task into that window. The
@@ -1484,11 +1495,12 @@ Tracks the currently active habit session:
   result (open, rearrangeable, spill, or fixed conflict).
 - When a fresh forecast exists, only a quiet `add weather` affordance appears
   under the free/busy strip. Tapping it reveals feels-like, rain, wind, and UV
-  choices; the user can add or remove up to two charts. Removing the final chart
-  folds the module back to the compact affordance. Every mini chart shares the
+  choices; adding several stacks them on one shared clock instead of separate
+  charts. Chosen graphs stay selected when you switch days. Removing the final
+  chart folds the module back to the compact affordance. The overlay shares the
   strip's time range and shades already-busy spans. When a time window is
-  selected, both weather charts highlight that same interval, dim everything
-  outside it, and summarize only the weather touching the selected window, so
+  selected, the weather chart highlights that same interval, dims everything
+  outside it, and summarizes only the weather touching the selected window, so
   weather and room can be compared without extra taps. This is visual context
   only and does not change the planner.
 
@@ -1723,9 +1735,9 @@ Step 4: AVAIL (availability)
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap a day in the calendar view, or tap "open time" on a day header
+- **Access:** Tap a day in the calendar view
 - Multi-step flow via `dayLogsStep`: 'list' → 'item' → 'add' → 'avail'
-- Step 1: List all items scheduled for that day
+- Step 1: List all items scheduled for that day, plus **Plan something**, **See open hours** (opens the Free Time Sheet for that date), log, and adjust open-time capacity
 - Step 2: Item detail (edit schedule, log, or plan)
 - Step 3: Add new plan for the item
 - Step 4: Set availability overrides for the day
@@ -1979,8 +1991,12 @@ Settings sections (actual order):
 │   │   ├── islamic names toggle
 │   │   ├── calculation method
 │   │   └── asr school (shafi/hanafi)
-│   └── advanced
-│       └── smarter packing (ILP optimizer)
+│   ├── advanced
+│   │   └── smarter packing (ILP optimizer)
+│   └── local assistant
+│       ├── use Qwen on this computer (off by default; regular app or clone)
+│       ├── Ollama / LM Studio loopback URL
+│       └── thinking + tool-call test
 └── start over (reset settings)
 ```
 
@@ -2129,11 +2145,22 @@ does. A fractional rhythm may also spend weather slack when its rolling quota
 is already satisfied; it becomes mandatory on the next day where an older
 completion falls out of that window. Fast assignment packs scarce one-day P0 (Friday-only Juma) first, then
 planned/last-day tasks, then seed-neighborhood errands that can still finish
-before a later far location pin, then slack daily P0 so earliest-clock Zuhr cannot
-fragment the only contiguous 4h slot a due visit needs. Neighborhood hops (a
-few minutes from the day's start place) are not treated as away-and-back
-commutes; GLPK chains those errands on the same side of the far pin instead of
-leaving for the pin, returning for a store, and going back.
+before a later far location pin, then work at the place you are already
+standing, then slack daily P0 so earliest-clock Zuhr cannot
+fragment the only contiguous 4h slot a due visit needs. Being already at a
+store therefore does that store's errand before a home lunch or prayer when
+the whole at-location block still leaves them a slot, instead of going home
+and coming back. A last-day task that would miss stays ahead of that block.
+Neighborhood hops (a few minutes from the day's start place) stay on the same
+side of a later far pin; an at-home item does not jump ahead of that batch.
+GLPK chains those errands on the same side of the far pin instead of
+leaving for the pin, returning for a store, and going back. A return to the
+place you are already standing is the extra round trip (out and back) in the
+shared route objective, not a fixed penalty, so the frozen-selection pass can
+still prefer a large clock or weather saving. After Fast packs a day it
+searches replay orders by that same route cost — every order for up to seven
+fills, otherwise a beam — and replaces the greedy chain only when the same
+work gets strictly cheaper.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked
@@ -2577,6 +2604,7 @@ When you swipe a card left or right, the following action buttons appear:
 | **push-client.js** | 139 | Web Push subscription management |
 | **calendar-import.js** | 548 | Microsoft Graph & Google Calendar import |
 | **prayer-times.js** | 549 | Islamic prayer time calculation |
+| **assistant-*.js** | — | Local Qwen3.8 chat: think, then `draft_item` / lookup / complete tool calls |
 | **agenda-optimizer.js** + **agenda-optimizer-ilp.js** | 313 + 1624 | GLPK loader/worker entry and ILP optimizer |
 | **agenda-order.js** | 774 | Agenda packing algorithm |
 | **agenda-planner-worker.js** | 209 | Web Worker for planning |
@@ -2593,6 +2621,7 @@ list in `index.html`, the planner worker's `importScripts`, and `sw.js`
 ### 19.2 HTML Structure (index.html)
 Main sheet containers:
 - `#add-sheet` - New habit creation
+- `#assistant-sheet` - Local Qwen assistant (optional)
 - `#detail-sheet` - Habit editing
 - `#about-sheet` - About hub (help, this device, privacy)
 - `#privacy-sheet` - Privacy explainer
@@ -2656,6 +2685,8 @@ Same agenda logic, but simplified display:
 | `preset` | string | 'todayFirst' | Active sort preset name |
 | `minimalMode` | boolean | true | Simplified UI for new users |
 | `themeMode` | string | 'system' | light/dark/system |
+| `colorPalette` | string | 'default' | Appearance palette: default (neutral surfaces with blue selection and green create accents), neutral, sage, sky, lavender, or sand; each supports light/dark/system. |
+| `soundEffects` | boolean | true | Settings → appearance → gentle sounds. Quiet local chimes after logging or planning with a recent user gesture; no background audio. |
 | `fontScale` | string | 'medium' | small/medium/large |
 | `compactMode` | boolean | true | Square card layout |
 | `showWeekOnHome` | boolean | true | Week plan strip on home |
@@ -2804,6 +2835,26 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 | `completedTaskRetentionDays` | number | 7 | Days to keep done tasks |
 | `habitLogKeepCount` | number | 30 | Max logs per habit (0=unlimited) |
 | `lastRetentionCleanupAt` | number | 0 | Timestamp of last cleanup |
+
+#### Local assistant 👤👨‍💻
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `localAssistant` | boolean | false | Show the in-app chat that talks to Ollama / LM Studio on this computer |
+| `localAssistantProvider` | string | 'auto' | auto, ollama, or lmstudio |
+| `localAssistantUrl` | string | '' | Loopback, private LAN, or Tailscale origin, optionally with a base path (`http://127.0.0.1:11434`, `http://192.168.1.12:11434`, `https://laptop.ts.net`, `https://laptop.ts.net/openai`). A base path lets one private gateway front several model servers; a pasted `/v1` or `/api` endpoint tail is dropped because the client appends it. Empty uses the provider default. Public cloud hosts are rejected |
+| `localAssistantModel` | string | '' | Empty auto-picks a Qwen3.8 tag (prefers `qwen3.8:27b-mlx`) |
+| `localAssistantReasoning` | string | 'high' | Thinking depth asked of the model: high, low, or off. Ollama gets `think: true / 'low' / false` (a model without levels is retried with `true`); an OpenAI-compatible server gets `reasoning_effort` plus `enable_thinking`, and GLM gets `thinking` + `reasoning_effort`. GLM 5.3 cannot disable thinking, so **off** sends its shallowest level |
+| `localAssistantDebug` | boolean | false | Show parse, path, tool calls, results, thinking, and context use in the chat (and `console.debug`) |
+
+Works on this computer from the regular app (`http://127.0.0.1:4181`) **and** from a personal clone on GitHub Pages. The sheet is titled **ask Tings**. Routing is **always LLM-first**: every natural-language request goes to Qwen3.8, and parser-derived fields are never used to choose intent, split clauses, populate the model request, merge tool arguments, or recover from a failed model call. Qwen receives today's date (ISO + weekday) and resolves relative language itself. Its first pass may call the final validated tool directly, so `classify_intent` is optional. Intents and tools cover creating/changing tasks, habits, weather profiles, places, busy times, and topics; today/weather/schedule questions; item lists, status, and today progress; saved settings lists; item summaries, recent history, stats, and planner explanations; completion/correction; one-day planning/unplanning; and deletion. Deterministic tools validate arguments, compute answers from live app data, and stage writes for confirmation. Explicit item names never fall back to another focused or recent item. Compound turns keep processing after a no-op, and multiple writes each retain their own confirmation. Completion logs may carry chunk minutes, a tracked value, and a note; **mark not done** removes only the latest completion from today. A one-day plan may be flexible or fixed to a clock and saved place; planning the same item/date again replaces that occurrence rather than creating a duplicate. Spoken rain/freeze/wind limits on a habit or task reuse a covering profile or create one on save (up to four). Tings never saves a draft until **save** and never performs an action until its confirmation button is tapped. After save, the chat stays open on that item so follow-ups update it in place. Settings → **local assistant** shows numbered first-time steps for a web copy. A phone should use Tailscale on both devices: allow the Tings origin in Ollama with `OLLAMA_ORIGINS`, fully quit and reopen Ollama, run `tailscale serve --bg 11434`, then paste the printed `https://….ts.net` URL into **address**. Tings allows private `.ts.net` API connections in its CSP; bare `.ts.net` names normalize to HTTPS. This avoids the browser mixed-content block that prevents an HTTPS GitHub Pages app from fetching a plain `http://` Wi-Fi or Tailscale-IP endpoint. Loopback Tings already matches Ollama’s default CORS list. Fetches set `targetAddressSpace` to `"loopback"` or `"local"` so Chromium can grant apps-on-this-device / local-network access. Public cloud model URLs are rejected.
+
+Two **context entry points** skip the classify round trip by construction. The **add sheet’s sparkles button** (beside the name field, visible only when the local assistant is on) hands the typed instruction to the assistant with the sheet’s habit/task kind already decided, so Qwen starts with a single extract call. The **detail page’s "change with AI" row** (Actions page, local assistant on only, hidden in minimal mode like its sibling rows) opens the assistant focused on that item: it greets locally with no model call, and the first instruction is applied to `currentDraft` in one extract call. Both start a fresh conversation, leave the source sheet open underneath (the assistant overlays it), and record provenance in the debug trace (`entry-add` / `entry-detail` + `startIntent`). Nothing saves until the preview **save**.
+
+Turn **show assistant debug** on in Settings, or tap **debug** on the chat header. Each reply then includes an open debug card: parse facts, local vs Qwen path, every tool name/args/result, thinking, repairs, and token use. Each model call also reports its wall-clock time and generated-token count, and the turn summary shows total seconds. Copy JSON dumps the same trace. The browser console also prints `[tings assistant]` lines. Debug stays on this device.
+
+The model **thinks**, then calls Tings tools, preferably the final tool on its first pass. `draft_item` is the create-or-change tool: one call can set any mix of item settings the user named — identity (name, rename, build/limit/stop, emoji, color, topics, priority), schedule (rhythm, weekdays, month days, preferred days, due, hard due, plan-by, allowed/preferred windows including "later of … and …", early/delay days, before/after order, extra time/place options), effort (duration, split/min chunk, auto-mark, log a value), place/weather, pin, snooze, shared-display flags, and links. Plain strings are fine (`every Tuesday, Wednesday and Friday`, `Tue 9am-11am at Home`, `right after Walk, same day`, `only if it is not raining`). Weather conditions go in `weatherText`; if no saved profile covers them, save creates one and attaches it. `placeNames` on a single `draft_item` must be saved catalog places; if the model invents a place, Tings keeps the rest of `currentDraft`, asks for a saved place, and the next reply is another `draft_item`. Several new items in one request use `draft_batch`; recurring meetings are habits, TBA rows with no days/times are skipped, and unknown batch places become placeholders. `apply_items` changes, snoozes, shows, or deletes saved items that match a topic, name, filter, or the previous list. One call can give different subsets different changes, then Tings previews the whole set before saving. Explicit `names` prefer exact titles and ask when only an ambiguous partial match exists. A bulk confirmation is rejected if any selected item changed or disappeared after its preview, so it cannot silently overwrite newer data or half-apply a stale removal. `draft_setting` creates or changes a weather profile, place, busy time, or topic. `complete_item`, `plan_item`, `delete_item`, `lookup_item`, `find_item`, `answer_items`, `answer_settings`, `answer_weather`, `answer_schedule`, and `ask_user` cover actions and questions; `classify_intent` remains available for models that prefer a two-step plan. Generation leaves several thousand thinking tokens before the tool call. If the prompt is at **85%** of model context, Tings compacts older tool traces into a short working summary instead of sending the full transcript.
+
+**Query tools** answer questions by computing against live data; the model selects tools and arguments but does not author factual results. `answer_weather` reads day/hour forecasts and assesses weather against an item's rules. `query hours` ranks hours inside a window, including several conditions at once (relatively hot and very low wind) and extremes (lowest wind after 5pm). `query compare` scores two times, including a clock such as one hour before sunset, and can apply a saved habit’s weather profile. `query item` with a start answers how that habit fits the window even when it is not already planned. `answer_schedule` reads open time, contiguous openings, the freest day, what-if conflicts, the same missed list as the today-header pill, and day/week agendas. `answer_schedule` and `answer_items` share a composable item-query layer: the model can combine AND conditions over name, kind, status, importance/priority, app urgency, overdue age, due distance, time since completion, frequency, duration, pin/split/completed state, topic, place, weather profile, and scheduled time; then request an authoritative sort, ordinal (`position: 2`), limit, count, total duration, or average duration. This handles questions such as “the second most overdue thing I missed,” “the shortest urgent habit tomorrow,” and “how many pinned P0 tasks are open” without trusting the model to inspect or rank a returned list. Legacy `most_important`, `most_frequent`, and `longest` selections remain supported. Compound questions run every requested tool and join their verified results. A later model prose pass cannot replace those results, so invented names, gaps, times, totals, weather, history, or rankings are discarded even if the model sounds confident. A read used to choose fields for a later action is marked `purpose: prepare_action`; that creates an explicit pending obligation, so prose cannot end the turn until `draft_item`, `draft_batch`, `draft_setting`, or the requested action tool succeeds. This supports research-then-create flows such as finding a suitable open block and then drafting a weekly outdoor habit with the chosen duration/window and an attached weather profile. Creation tools remain available after reads, and read calls are executed before dependent drafts when both arrive together. A transient model connection failure is retried once; if continuation still fails, Tings labels verified lookup output as partial and never presents it as completion of the whole request. No-op action results are preserved alongside the remaining compound answer, and several `tool_calls` in one model reply all run before finalization. The next user message includes `recent.items` / `recent.referent` so “when did I last do that one?” can call `lookup_item` without guessing. `answer_items` also summarizes today's progress. `answer_settings` lists saved places, weather profiles, topics, and busy times. `lookup_item` reports an item's current state and important settings, recent log details, pace/streak/progress statistics, or a concrete planner explanation for the next seven days. Its default summary searches the complete rendered week plus explicit future plan/due markers and reports both the next occurrence and latest real completion, so “not today” is not treated as a complete answer. Spoken names are ranked against the full saved list (fragments, nicknames, typos, or the whole question); a unique hit is used, and several close hits ask which item it is instead of guessing or creating a new one. `find_item` exposes that same ranking. When the whole request is confusing, Tings asks one short question (optional chips) instead of guessing — at most two clarification questions in a row, then it stops. Where data is missing or a question is vague, the reply says so honestly. Query tools are read-only: no draft, no save.
 
 #### Default Habit Values 👨‍💻
 | Field | Type | Default | Purpose |

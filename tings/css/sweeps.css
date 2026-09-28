@@ -24,7 +24,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .schedule-link-same-day-row,.sample-habit-row,.settings-block,.settings-group,
 .settings-row,.settings-card,.location-row,.location-result,.travel-card,.timeline-card,
 .blocked-card,.day-availability,.utility-sheet-panel,.travel-minute-field,
-.free-panel-metric,.free-day-strip,.free-gap-row,.free-fit-result,.dropped-item,
+.free-panel-metric,.free-day-strip,.free-day-switch,.free-gap-row,.free-fit-result,.dropped-item,
 .detail-order-block,.order-link-row,.activity-item,
 .capacity-metric,.free-fit-checker,.breakable-progress,.session-progress{
   border:0;box-shadow:none;
@@ -32,7 +32,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .detail-card,.score-card,.pace-card,.month-card,.overview-plan-tip,.overview-item,
 .tune-section,.schedule-order-block,.settings-block,.settings-group,.settings-card,
 .location-row,.utility-sheet-panel,
-.free-panel-metric,.free-day-strip,.free-gap-row,.dropped-item,
+.free-panel-metric,.free-day-strip,.free-day-switch,.free-gap-row,.dropped-item,
 .detail-order-block,.order-link-row,.activity-item,.capacity-metric{background:var(--bg2);}
 .sheet .detail-card,.sheet .score-card,.sheet .pace-card,.sheet .month-card,
 .sheet .overview-item,.sheet .tune-section,.sheet .settings-block,.sheet .settings-group,

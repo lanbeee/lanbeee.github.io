@@ -223,7 +223,7 @@ function stopHabitTimer(promptLog,manual){
         openValueLogSheet(idx,after,sessionMinutes);
         if(typeof render === 'function')render();
       }else{
-        logTing(idx,{minutes:sessionMinutes});
+        logTing(idx,{minutes:sessionMinutes,feedback:false});
         if(detailIdx === idx)openDetail(idx);
         render();
       }
@@ -585,6 +585,10 @@ $('day-logs-sheet').addEventListener('click',e=>{
   if(e.target.closest('#day-logs-plan')){
     if(!dayLogsCanPlan(dayLogsKey))return;
     setDayLogsStep('add');
+    return;
+  }
+  if(e.target.closest('#day-logs-open-hours')){
+    if(typeof openFreeTimeForDay === 'function')openFreeTimeForDay(dayLogsKey,{expanded:true});
     return;
   }
   if(e.target.closest('#day-logs-log')){

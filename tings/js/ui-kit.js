@@ -143,6 +143,7 @@ const UI_SETTING_TOGGLES = {
     {key:'defaultBreakable', title:'allow splitting', hint:'New habits can be split across sessions.'}
   ],
   appearance:[
+    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log a Ting or make a plan. No background sounds.'},
     {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.'}
   ],
   prayer:[
@@ -164,9 +165,9 @@ const UI_PRIVACY_BLOCKS = [
     'A few features below contact an outside service, each for a stated job. Nothing else is uploaded.'
   ]},
   {id:'privacy-display-body', label:'Shared display', summary:'Opt-in fridge or tablet view. Encrypted on this phone, then relayed by Cloudflare.', body:[
-    'Shared display publishes a capped view of today and tomorrow. This phone encrypts that snapshot first, then a Cloudflare relay stores the encrypted copy so the paired display can fetch it.',
-    'The paired display can submit only encrypted completion events for today’s rows and tomorrow’s tasks; it cannot edit the plan or item details. Cloudflare can see that encrypted blobs exist, their sizes, and when they were updated, but cannot read item names, notes, places, or completion contents. The encryption key stays with your devices. Pairing is QR-only from inside Tings. The display can optionally require a local four-digit passcode after its three-tap privacy screen; three wrong attempts revoke that display access and require pairing again.',
-    'Look for the cloud-up mark on that setting. Revoke anytime in Settings; scan a new QR to add a display again.'
+    'Shared display publishes a capped today/tomorrow agenda every paired screen can decrypt, plus — only when a personal clone is signed in — a separate encrypted copy of the full library. That library uses a second key transferred only to the clone, and glance displays never download it.',
+    'Either signed-in screen can submit encrypted completion events; the other screen reads them from the relay even if this phone is off. A personal clone can also publish an updated today/tomorrow agenda so the glance display refreshes without opening this phone. A glance display cannot edit the plan or item details. Cloudflare can see that encrypted blobs exist, their sizes, and when they were updated, but cannot read item names, notes, places, or completion contents. Pairing is QR-only from inside Tings. The display can optionally require a local four-digit passcode after its three-tap privacy screen; three wrong attempts revoke that display access and require pairing again.',
+    'Look for the cloud-up mark on that setting. At most two screens can be signed in: one full-app display and one glance display. Revoke one from the list, or revoke the whole feed, anytime in Settings; scan a new QR to add a display again.'
   ]},
   {id:'privacy-share-body', label:'Share item', summary:'Opt-in. Encrypted on this phone; the key rides in the invitation link.', body:[
     'Share item uses the same Cloudflare relay. The item is encrypted on this phone before it leaves. The key lives in the link itself, not on the server.',
@@ -183,6 +184,12 @@ const UI_PRIVACY_BLOCKS = [
     'The seven-day forecast is cached for six hours. A shorter 15-minute forecast refreshes only while Tings is visible, a weather-linked planned item is active or starts within 90 minutes, and the cached day is not already decisive (for example 0% rain and snow remaining). Air-quality rules use CAMS ENSEMBLE data through Open-Meteo.',
     'Forecasts are guidance and may be wrong. Missing data never blocks planning.'
   ]},
+  {id:'privacy-assistant-body', label:'Local assistant', summary:'Optional. Talks only to Ollama or LM Studio on this computer, or a laptop on your Wi-Fi or Tailscale. Off by default.', body:[
+    'Local assistant sends a short catalog (item names, place labels, weather profile names) plus what you type to a model running on this computer. It does not send notes, logs, addresses, or coordinates, and it does not use a Tings cloud model.',
+    'It talks only to Ollama or LM Studio on this computer, or on a laptop on this Wi-Fi or Tailscale, including from a personal clone on GitHub Pages. Clear requests (remind me, what is next, I already did it, change it, every Tuesday) are parsed here; Qwen calls tools to create or change an item with whatever details you said, including cadences like every two days or Tuesday, Wednesday and Friday. The top bar is the item you are changing. Nothing is saved until you confirm. Settings → local assistant has the first-time steps, including pasting the laptop URL on a phone.',
+    'A debug switch in Settings (and on the chat) prints parse, tool calls, thinking, and context use in the thread and this browser’s console. That stays on this device; it does not send extra data off this computer.',
+    'Turn it off anytime in Settings. The rest of Tings does not need it.'
+  ]},
   {id:'privacy-others-body', label:'Other services', summary:'Icons and map/PDF libraries load from public CDNs. They do not receive your list.', body:[
     'Tabler icons (jsDelivr) and Leaflet (unpkg) draw buttons and the map. PDF import uses pdf.js in this browser; the file you pick is not uploaded.',
     'Naming a pasted App Store link asks Apple’s public listing for that app’s name. It receives only the numeric id already inside the link, and only when you paste one. Offline, you simply type the name yourself.',
@@ -198,7 +205,7 @@ const UI_PRIVACY_BLOCKS = [
 const UI_LEAVE_HINTS = {
   agenda:{
     aria:'this sends an encrypted agenda off this device',
-    body:'Publishing encrypts a limited today/tomorrow list on this phone, then stores that encrypted copy on a Cloudflare relay so a display can fetch it. Cloudflare cannot read item names. Full story: About → privacy.'
+    body:'Publishing encrypts a limited today/tomorrow agenda on this phone, plus a clone-only library envelope when a personal clone is signed in, then stores those encrypted copies on a Cloudflare relay. Cloudflare cannot read item names. Full story: About → privacy.'
   },
   share:{
     aria:'this sends an encrypted item off this device',

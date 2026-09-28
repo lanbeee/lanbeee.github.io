@@ -2,6 +2,7 @@ const SHARE_SCHEMA_VERSION = 1;
 const SHARE_ID_BYTES = 16;
 const SHARE_KEY_BYTES = 32;
 const SHARE_NONCE_BYTES = 12;
+const AGENDA_PAIR_PROTOCOL_VERSION = 2;
 
 function shareConfigured(){
   const url = typeof shareWorkerBaseUrl === 'function'
@@ -107,6 +108,7 @@ function shareNewAgendaSecrets(){
   return {
     id:shareRandomHex(SHARE_ID_BYTES),
     contentKey:shareRandomHex(SHARE_KEY_BYTES),
+    replicaKey:shareRandomHex(SHARE_KEY_BYTES),
     ownerCredential:shareRandomHex(SHARE_KEY_BYTES)
   };
 }
@@ -201,7 +203,13 @@ async function shareImportAgendaPairPublicKey(publicKey){
   );
 }
 
-async function shareAgendaPairEncrypt(contentKey,feedId,pairingId,displayPublicKey){
+function shareAgendaPairSyncMode(value){
+  if(value === 'selected') return 'selected';
+  if(value === 'glance' || value === 'legacy') return 'glance';
+  return 'clone';
+}
+
+async function shareAgendaPairEncrypt(contentKey,feedId,pairingId,displayPublicKey,syncMode,replicaKey){
   const displayKey = await shareImportAgendaPairPublicKey(displayPublicKey);
   const ownerKeys = await crypto.subtle.generateKey(
     { name:'ECDH',namedCurve:'P-256' },
@@ -216,12 +224,20 @@ async function shareAgendaPairEncrypt(contentKey,feedId,pairingId,displayPublicK
     ['encrypt']
   );
   const nonce = crypto.getRandomValues(new Uint8Array(SHARE_NONCE_BYTES));
-  const plaintext = new TextEncoder().encode(JSON.stringify({
+  const normalizedMode = shareAgendaPairSyncMode(syncMode);
+  if(normalizedMode !== 'glance' && !/^[0-9a-f]{64}$/.test(String(replicaKey || ''))){
+    throw new Error('invalid_replica_key');
+  }
+  const payload = {
     schemaVersion:1,
+    protocolVersion:AGENDA_PAIR_PROTOCOL_VERSION,
     pairingId,
     feedId,
-    contentKey
-  }));
+    contentKey,
+    syncMode:normalizedMode
+  };
+  if(normalizedMode !== 'glance') payload.replicaKey = replicaKey;
+  const plaintext = new TextEncoder().encode(JSON.stringify(payload));
   const ciphertext = await crypto.subtle.encrypt(
     { name:'AES-GCM',iv:nonce,additionalData:shareAgendaPairAad(pairingId,feedId) },
     wrappingKey,
@@ -257,5 +273,14 @@ async function shareAgendaPairDecrypt(transfer,privateKey,feedId,pairingId){
     || payload.pairingId !== pairingId
     || payload.feedId !== feedId
     || !/^[0-9a-f]{64}$/.test(payload.contentKey || '')) throw new Error('invalid_pairing_transfer');
-  return payload.contentKey;
+  const syncMode = payload.syncMode == null ? null : shareAgendaPairSyncMode(payload.syncMode);
+  if(syncMode && syncMode !== 'glance' && !/^[0-9a-f]{64}$/.test(payload.replicaKey || '')){
+    throw new Error('invalid_pairing_transfer');
+  }
+  return {
+    contentKey:payload.contentKey,
+    replicaKey:syncMode === 'glance' ? null : (payload.replicaKey || null),
+    syncMode,
+    protocolVersion:Number(payload.protocolVersion) || 1
+  };
 }

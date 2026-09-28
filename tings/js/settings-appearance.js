@@ -10,6 +10,7 @@ function applyAppearanceSettings(){
   document.documentElement.dataset.fontScale = s.fontScale || 'medium';
   const mode = s.themeMode || 'system';
   const root = document.documentElement;
+  root.dataset.palette = s.colorPalette || 'default';
   if(mode === 'system'){
     root.removeAttribute('data-theme');
     root.style.removeProperty('color-scheme');

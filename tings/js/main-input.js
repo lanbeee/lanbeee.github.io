@@ -652,6 +652,11 @@ $('font-scale-seg')?.addEventListener('click',e=>{
   updateSortSetting({fontScale:opt.dataset.segValue});
   applyAppearanceSettings();
 });
+$('color-palette-picker')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-palette-value]');
+  if(!opt)return;
+  updateSortSetting({colorPalette:opt.dataset.paletteValue},{renderNow:false});
+});
 $('theme-mode-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');
   if(!opt)return;
@@ -732,6 +737,17 @@ $('settings-reset-yes').addEventListener('click',()=>{
   syncSettingsControls();
   render();
   showToast('settings reset');
+});
+$('settings-clear-data')?.addEventListener('click',()=>{
+  const box = $('settings-clear-data-confirm');
+  if(box) box.hidden = false;
+});
+$('settings-clear-data-no')?.addEventListener('click',()=>{
+  const box = $('settings-clear-data-confirm');
+  if(box) box.hidden = true;
+});
+$('settings-clear-data-yes')?.addEventListener('click',()=>{
+  if(typeof clearAllLocalTingsData === 'function') clearAllLocalTingsData();
 });
 
 $('open-overview').addEventListener('click',()=>{

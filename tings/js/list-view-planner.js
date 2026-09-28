@@ -779,7 +779,9 @@ function optimizerHomeStateKey(data){
 const HOME_AGENDA_CACHE_VERSION = 3;
 const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v3';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
-const HOME_COLD_BOOT_SKELETON_MAX_MS = 60 * 1000;
+// A usable unplanned list is better than making a slow phone look frozen.
+// The worker keeps running and replaces this fallback with the planned week.
+const HOME_COLD_BOOT_SKELETON_MAX_MS = 8 * 1000;
 
 // Older keys may contain a week solved by a previous Worker even when the page
 // scripts have updated. They are derived data only, so remove them eagerly.

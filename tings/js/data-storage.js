@@ -101,6 +101,12 @@ function loadSortSettings(){
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
     const migrated = saved && !saved.preset && Object.keys(saved).length ? {...saved,preset:'custom'} : saved;
     const merged = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...migrated,preset:'todayFirst'};
+    // v2 makes model-first routing the default for existing installs too. Once
+    // the user changes the toggle, updateSortSetting persists this version and
+    // Natural-language routing is always model-first. Keep the persisted keys
+    // only so older backups continue to import cleanly.
+    merged.localAssistantModelOnly = true;
+    merged.localAssistantRoutingVersion = 3;
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
@@ -161,6 +167,8 @@ function loadSortSettings(){
       && !Object.prototype.hasOwnProperty.call(saved,'minimalMode')
       ? false
       : Boolean(merged.minimalMode);
+    merged.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(merged.colorPalette) ? merged.colorPalette : 'default';
+    merged.soundEffects = merged.soundEffects !== false;
     merged.compactMode = legacyCalmDefault('compactMode') || Boolean(merged.compactMode);
     merged.fontScale = ['small','medium','large'].includes(merged.fontScale) ? merged.fontScale : 'medium';
     merged.themeMode = ['light','dark','system'].includes(merged.themeMode) ? merged.themeMode : 'system';
@@ -197,6 +205,14 @@ function loadSortSettings(){
     delete merged.prayerCityLat;
     delete merged.prayerCityLng;
     merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
+    merged.localAssistant = Boolean(merged.localAssistant);
+    merged.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
+      ? normalizeLocalAssistantProvider(merged.localAssistantProvider) : 'auto';
+    merged.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
+      ? normalizeLocalAssistantUrl(merged.localAssistantUrl) : '';
+    merged.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'
+      ? normalizeLocalAssistantModel(merged.localAssistantModel) : '';
+    merged.localAssistantDebug = Boolean(merged.localAssistantDebug);
     merged.agendaOptimizer = agendaPlannerForcedFast()
       ? false
       : Boolean(merged.agendaOptimizer);
@@ -266,6 +282,8 @@ function saveSortSettings(settings){
   next.showCueOnCards = next.showCueOnCards !== false;
   next.showOrderPillsOnCards = next.showOrderPillsOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);
+  next.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(next.colorPalette) ? next.colorPalette : 'default';
+  next.soundEffects = next.soundEffects !== false;
   next.compactMode = Boolean(next.compactMode);
   next.fontScale = ['small','medium','large'].includes(next.fontScale) ? next.fontScale : 'medium';
   next.themeMode = ['light','dark','system'].includes(next.themeMode) ? next.themeMode : 'system';
@@ -296,6 +314,14 @@ function saveSortSettings(settings){
   delete next.prayerCityLat;
   delete next.prayerCityLng;
   next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
+  next.localAssistant = Boolean(next.localAssistant);
+  next.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
+    ? normalizeLocalAssistantProvider(next.localAssistantProvider) : 'auto';
+  next.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
+    ? normalizeLocalAssistantUrl(next.localAssistantUrl) : '';
+  next.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'
+    ? normalizeLocalAssistantModel(next.localAssistantModel) : '';
+  next.localAssistantDebug = Boolean(next.localAssistantDebug);
   next.agendaOptimizer = agendaPlannerForcedFast()
     ? false
     : Boolean(next.agendaOptimizer);
@@ -303,6 +329,11 @@ function saveSortSettings(settings){
   delete next._plannerCurrentCoord;
   delete next._plannerLiveLocationId;
   delete next._weatherContext;
+  Storage.write(SORT_SETTINGS_KEY, next);
+  // Derived, not persisted. Reattach it on the live object so a travel-cache
+  // or settings write cannot blank the day-header forecast until the next load.
+  try{
+    if(typeof weatherPlannerContext === 'function')next._weatherContext = weatherPlannerContext(next);
+  }catch(_){}
   sortSettings = next;
-  Storage.write(SORT_SETTINGS_KEY, sortSettings);
 }

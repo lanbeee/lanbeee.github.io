@@ -430,15 +430,18 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
             if(C.fit.placeEnd > B.fit.placeStart + 60000)continue;
             between.push({name:C.varName,coef:1});
           }
-          if(between.length){
+          for(const interloper of between){
             // When both linked options are selected, no third movable fill may
-            // occupy the space between "right above" and "right below".
+            // occupy the space between "right above" and "right below". This
+            // implication must be one row per possible interloper. Summing all
+            // alternatives into one row also constrained them when B was not
+            // selected, and could make a longer linked chain infeasible.
             subjectTo.push({
               name:`ord_direct_${directClash++}`,
               vars:[
                 {name:A.varName,coef:1},
                 {name:B.varName,coef:1},
-                ...between
+                interloper
               ],
               bnds:{type:GLPK.GLP_UP,ub:2,lb:0}
             });
@@ -461,10 +464,10 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
           if(C.fit.placeEnd > B.fit.placeStart + 60000)continue;
           between.push({name:C.varName,coef:1});
         }
-        if(between.length){
+        for(const interloper of between){
           subjectTo.push({
             name:`ord_direct_placed_${directClash++}`,
-            vars:[{name:B.varName,coef:1},...between],
+            vars:[{name:B.varName,coef:1},interloper],
             bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
           });
         }
@@ -636,7 +639,10 @@ function optimizerFixedLocationAnchors(state){
   return anchors.sort((a,b)=>a.start-b.start || a.end-b.end);
 }
 
-function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
+function optimizerFitsForFill(
+  state,fill,dayCandidates,candidateBoundaryEdges,protectedBoundaryEdges = [],
+  predecessorContexts = []
+){
   const out = [];
   const seen = new Map();
   const variants = typeof habitSchedulePlacementVariants === 'function'
@@ -652,7 +658,7 @@ function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
     : optimizerLocationVariants(fill,state).map(locationId=>({...fill,locationId}));
   for(const locatedFill of locatedFills){
     for(const fit of listPlaceFitsOnDay(
-      state,locatedFill,dayCandidates,candidateBoundaryEdges
+      state,locatedFill,dayCandidates,candidateBoundaryEdges,protectedBoundaryEdges
     )){
       const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
       if(!seen.has(key)){
@@ -666,6 +672,39 @@ function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
       const index = seen.get(key);
       if((Number(fit.score) || 0) < (Number(out[index].score) || 0))out[index] = fit;
     }
+    // Sparse successor options must include the arrival boundary produced by
+    // each predecessor alternative, including location-dependent travel. A
+    // bare predecessor end timestamp is insufficient: when Lunch shifts an
+    // Exercise -> Shower chain later, the first valid mosque option may be
+    // Shower-end + 12m rather than any normal half-hour/window boundary.
+    for(const context of predecessorContexts){
+      const predecessorFit = context && context.fit;
+      const predecessorFill = context && context.fill;
+      if(!predecessorFit || !predecessorFill)continue;
+      const clone = clonePlacementState(state);
+      clone.fills.push({fill:predecessorFill,fit:predecessorFit});
+      clone.startClock = Math.max(
+        Number(state.startClock) || 0,
+        Number(predecessorFit.placeEnd) || 0
+      );
+      const fit = tryPlaceOnDay(clone,locatedFill,{
+        allowNetwork:false,
+        earliestFromAnchor:true
+      });
+      if(!fit)continue;
+      fit.linkedChainBoundary = true;
+      const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
+      if(!seen.has(key)){
+        seen.set(key,out.length);
+        out.push(fit);
+        continue;
+      }
+      const index = seen.get(key);
+      out[index].linkedChainBoundary = true;
+      if((Number(fit.score) || 0) < (Number(out[index].score) || 0)){
+        out[index] = fit;
+      }
+    }
   }
   return out;
 }
@@ -674,7 +713,9 @@ function optimizerFitsForFill(state,fill,dayCandidates,candidateBoundaryEdges){
 // open-slot start, enumerate starts immediately before/after competing windows.
 // Those boundary options let GLPK move flexible work out of a narrow window
 // without paying for a minute-by-minute grid on mobile.
-function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges = []){
+function listPlaceFitsOnDay(
+  state,fill,dayCandidates = [],candidateBoundaryEdges = [],protectedBoundaryEdges = []
+){
   if(typeof tryPlaceOnDay !== 'function')return [];
   const doing = doingNowForDay(state);
   let placeFill = fill;
@@ -837,12 +878,34 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         const clone = clonePlacementState(state);
         clone.slots = [slot];
         clone.startClock = Math.max(state.startClock,slot.start,anchor);
-        const fit = tryPlaceOnDay(clone,placeFill,doingOpts);
+        // A linked fill's preferred clock is one option. Reporting that same
+        // clock for every earlier anchor hides the start that can still sit
+        // before a required successor, and the ILP then has no feasible chain.
+        const probeOpts = linkedFill
+          ? {...doingOpts,earliestFromAnchor:true}
+          : doingOpts;
+        const fit = tryPlaceOnDay(clone,placeFill,probeOpts);
         if(!fit)continue;
         const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
         if(seen.has(key))continue;
         seen.add(key);
         fits.push(fit);
+      }
+      // The anchor probes above are the earliest start at each cursor. Also
+      // keep the preferred-time fit for this slot so a later direct pair is
+      // still an ILP option when earlier cursors are feasible.
+      if(linkedFill){
+        const preferredClone = clonePlacementState(state);
+        preferredClone.slots = [slot];
+        preferredClone.startClock = Math.max(state.startClock,slot.start);
+        const preferred = tryPlaceOnDay(preferredClone,placeFill,doingOpts);
+        if(preferred){
+          const key = `${preferred.placeStart}:${preferred.placeEnd}:${preferred.locId || ''}`;
+          if(!seen.has(key)){
+            seen.add(key);
+            fits.push(preferred);
+          }
+        }
       }
     }
     // ASAP scoring keeps only the earliest 16 fits. Preserve one feasible
@@ -881,10 +944,31 @@ function listPlaceFitsOnDay(state,fill,dayCandidates = [],candidateBoundaryEdges
         || (a.score || 0) - (b.score || 0));
       const keep = routeAnchorDay ? 8 : 1;
       slotFits.slice(0,keep).forEach(fit=>slotBoundaryFits.add(fit));
+      const preferredWindow = typeof fillPreferredWindow === 'function' && placeFill && placeFill.h
+        ? fillPreferredWindow(placeFill.h,state.dayBase,state.seedLocId)
+        : null;
+      let preferredKeep = null;
+      slotFits.forEach(fit=>{
+        if(!fit)return;
+        if(fit.preferredHit)slotBoundaryFits.add(fit);
+        const inPreferred = preferredWindow
+          && fit.placeStart >= preferredWindow.start - 60000
+          && fit.placeStart <= preferredWindow.end + 60000;
+        if(inPreferred && (!preferredKeep || fit.placeStart < preferredKeep.placeStart)){
+          preferredKeep = fit;
+        }
+      });
+      if(preferredKeep)slotBoundaryFits.add(preferredKeep);
     }
     const isPinnedRouteOrAbut = (fit)=>{
       if(!fit)return false;
       if(slotBoundaryFits.has(fit))return true;
+      // A direct predecessor's option is an ILP alternative, not a chosen
+      // local placement. Preserve successor starts at all of those boundaries
+      // through this per-candidate trimming step so GLPK can select the
+      // compatible chain globally.
+      if(protectedBoundaryEdges.some(edge=>
+        Math.abs(Number(fit.placeStart) - Number(edge)) <= 60000))return true;
       const beforeSuccessor = successorStarts.some(start=>{
         if(fit.placeEnd > start + 60000)return false;
         const gapMin = Math.max(0,(start - fit.placeEnd) / 60000);
@@ -1005,15 +1089,105 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     if(Number.isFinite(Number(p.start)))candidateBoundaryEdges.push(Number(p.start));
     if(Number.isFinite(Number(p.end)))candidateBoundaryEdges.push(Number(p.end));
   }
+  // Enumerate hard/explicit linked options to a bounded fixed point before
+  // constructing the ILP. Every predecessor option contributes its completion
+  // boundary to the successor; repeated rounds propagate those alternatives
+  // through A -> B -> C chains. Optional persistent order links keep their
+  // normal sparse options: expanding every one can multiply a dense day before
+  // GLPK has a chance to decide that the optional partner should be omitted.
+  const fixedCandidates = dayCandidates.filter(c=>c && c.h && !c.h.breakable);
+  const candidateByHid = new Map(fixedCandidates
+    .filter(c=>c.h.hid)
+    .map(c=>[c.h.hid,c]));
+  const fillByIndex = new Map(fixedCandidates.map(c=>[c.i,{
+    h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity
+  }]));
+  const fitsByIndex = new Map();
+  const mergeFits = (index,incoming,chainEnds = null)=>{
+    const current = fitsByIndex.get(index) || [];
+    const byKey = new Map(current.map(fit=>[
+      `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`,fit
+    ]));
+    let added = 0;
+    for(const fit of incoming || []){
+      const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
+      const existing = byKey.get(key);
+      const onChainBoundary = Boolean(fit.linkedChainBoundary)
+        || (Array.isArray(chainEnds) && chainEnds.some(end=>
+          Math.abs(Number(fit.placeStart) - Number(end)) <= 60000
+        ));
+      if(existing){
+        if(onChainBoundary)existing.directChainBoundary = true;
+        continue;
+      }
+      if(onChainBoundary)fit.directChainBoundary = true;
+      byKey.set(key,fit);
+      current.push(fit);
+      added += 1;
+    }
+    fitsByIndex.set(index,current);
+    return added;
+  };
+  for(const c of fixedCandidates){
+    mergeFits(c.i,optimizerFitsForFill(
+      state,fillByIndex.get(c.i),dayCandidates,candidateBoundaryEdges
+    ));
+  }
+  const linkedEdges = (typeof plannerOrderConstraintsForDay === 'function'
+    ? plannerOrderConstraintsForDay(state.dayBase) : [])
+    .filter(edge=>edge && (edge.requiresPair || edge.temporaryUpgrade)
+      && (edge.adjacency === 'direct'
+        || (edge.adjacency === 'sometime' && edge.requiresPair))
+      && candidateByHid.has(edge.beforeHid) && candidateByHid.has(edge.afterHid));
+  const maxLinkRounds = Math.min(8,Math.max(1,linkedEdges.length));
+  for(let round = 0;round < maxLinkRounds;round += 1){
+    let added = 0;
+    for(const edge of linkedEdges){
+      const predecessor = candidateByHid.get(edge.beforeHid);
+      const successor = candidateByHid.get(edge.afterHid);
+      const predecessorFits = (fitsByIndex.get(predecessor.i) || []).slice();
+      const predecessorEnds = [...new Set(predecessorFits
+        .map(fit=>Number(fit.placeEnd)).filter(Number.isFinite))];
+      if(!predecessorEnds.length)continue;
+      const predecessorContexts = [];
+      const contextSeen = new Set();
+      const orderedPredecessorFits = predecessorFits.slice().sort((a,b)=>
+        Number(a.placeEnd) - Number(b.placeEnd)
+        || (Number(a.score) || 0) - (Number(b.score) || 0)
+      );
+      for(const fit of orderedPredecessorFits){
+        // The ordinary boundary probe already uses the day seed as its route
+        // origin. Add a synthetic predecessor only when its option ends at a
+        // different place; duplicating every same-seed boundary needlessly
+        // enlarges the MIP on dense linked days.
+        const predecessorLoc = fitPresenceLocId(fit);
+        if((predecessorLoc || null) === (state.seedLocId || null))continue;
+        const key = `${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
+        if(contextSeen.has(key))continue;
+        contextSeen.add(key);
+        predecessorContexts.push({fill:fillByIndex.get(predecessor.i),fit});
+        if(predecessorContexts.length >= 12)break;
+      }
+      const extraFits = optimizerFitsForFill(
+        state,
+        fillByIndex.get(successor.i),
+        dayCandidates,
+        [...candidateBoundaryEdges,...predecessorEnds],
+        predecessorEnds,
+        edge.adjacency === 'sometime' ? predecessorContexts : []
+      );
+      added += mergeFits(successor.i,extraFits,predecessorEnds);
+    }
+    if(!added)break;
+  }
   for(const c of dayCandidates){
     // Breakable budgets are continuous resources, not one all-or-nothing event.
     // They are fitted after this exact fixed-duration solve has reserved narrow
     // windows, then split only when a continuous placement is impossible.
     if(c.h && c.h.breakable)continue;
-    const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
-    let fits = optimizerFitsForFill(
-      state,fill,dayCandidates,candidateBoundaryEdges
-    );
+    const fill = fillByIndex.get(c.i)
+      || {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+    let fits = (fitsByIndex.get(c.i) || []).slice();
     // Inject fits in free gaps touching no reservation (movables only). Breakables
     // are fitted after this solve so the normal enumerator never anchors after
     // their windows; this gives GLPK the outside option the reserve already
@@ -1112,7 +1286,12 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       groups.get(option.c.i).push(option);
     }
     for(const group of groups.values()){
-      group.sort((a,b)=>b.weight - a.weight || a.fit.placeStart - b.fit.placeStart);
+      group.sort((a,b)=>{
+        const chainA = a.fit && (a.fit.directChainBoundary || a.fit.linkedChainBoundary) ? 1 : 0;
+        const chainB = b.fit && (b.fit.directChainBoundary || b.fit.linkedChainBoundary) ? 1 : 0;
+        if(chainA !== chainB)return chainB - chainA;
+        return b.weight - a.weight || a.fit.placeStart - b.fit.placeStart;
+      });
     }
     opts = [];
     let round = 0;
@@ -1135,6 +1314,25 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   applyPlacedOrderWeights(opts,state);
   applyEarlyBeforeWeights(opts,state);
   applyPriorPlacementWeights(opts,solveOptions.priorPlacements,state.dayBase);
+
+  // A proved-infeasible all-required model gets one second GLPK pass in which
+  // ordinary overdue/last-day rows carry a lexicographically dominant reward
+  // instead of an impossible equality. Critical P0, explicit reorder, active,
+  // and weather-locked rows remain hard below. GLPK then chooses the largest,
+  // highest-priority compatible required subset globally (rather than handing
+  // the conflict to the greedy fallback).
+  const relaxRequiredOccurrences = solveOptions.relaxRequiredOccurrences === true;
+  if(relaxRequiredOccurrences && requiredOccurrenceIndices.size){
+    for(const option of opts){
+      if(!option || !option.c || !requiredOccurrenceIndices.has(option.c.i))continue;
+      const priority = Math.max(0,Math.min(5,Number(option.c.priority) || 0));
+      // Lexicographic: one higher-priority required occurrence outranks any
+      // number of lower-priority ones that fit in its place. Same priority
+      // still keeps the larger compatible set. 100^5 stays exact in the
+      // solver's doubles for the option counts this day model generates.
+      option.weight += Math.pow(100, 5 - priority);
+    }
+  }
 
   const vars = [];
   const binaries = [];
@@ -1204,7 +1402,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
         && weatherLockedPlacement(candidate,state,state.settings || sortSettings))
       || (typeof mustPlaceCriticalOccurrence === 'function'
         && mustPlaceCriticalOccurrence(candidate))
-      || requiredOccurrenceIndices.has(i)
+      || (!relaxRequiredOccurrences && requiredOccurrenceIndices.has(i))
     );
     subjectTo.push({
       name:`cand_${i}`,
@@ -1374,14 +1572,16 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // me Home then back to FarA then Home again").
   //
   // Model the sequencing cost directly: for each AWAY option (loc ≠ seed)
-  // scheduled BEFORE an AT-SEED option (loc = seed), pay a penalty proportional
-  // to the saved commute. Linearize the joint "both selected" condition with one
-  // auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
+  // scheduled BEFORE an AT-SEED option (loc = seed), pay the extra round trip
+  // (the leg out and the leg back) in the same minute-scaled units as every
+  // other route term. There is no constant floor — a short loop can still lose
+  // to a large clock, preference, or weather cost, and a real extra visit can
+  // beat within-day ASAP. Linearize the joint "both selected" condition with
+  // one auxiliary binary z = y_away ∧ y_atseed (standard 3-row relaxation). The
   // route term is activated only in the frozen-selection pass below, so it can
   // reorder but cannot drop a placeable task; hard windows and pins remain
-  // structural constraints. Inside that fixed work set, travel and clock delay
-  // remain comparable soft costs: an extra short trip may be worthwhile when it
-  // prevents a much larger idle gap.
+  // structural constraints. Inside that fixed work set the solver compares
+  // whole arrangements, not a greedy "stay here" rule.
   // Today's start place — pin, geofence, lastKnown seed, or closest saved
   // place when the seed is the ephemeral GPS coordinate. Future days keep
   // null so the committed-route DP is not perturbed. Requiring liveLocationId
@@ -1460,7 +1660,11 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       const savedSec = typeof travelLegCostSeconds === 'function'
         ? travelLegCostSeconds(driveSec,seedLoc,aLoc) : driveSec;
       if(savedSec <= 0)continue;                         // co-located: no away-and-back risk
-      const pen = Math.min(TRAVEL_PAIR_CAP,routePenaltyForSeconds(savedSec));
+      // One leg is the commute you pay either way. Coming back to the place
+      // you already were adds that leg again. Charge both, capped like every
+      // other route interaction, so the frozen-selection pass can trade the
+      // loop against clock delay instead of treating every return as equal.
+      const pen = Math.min(TRAVEL_PAIR_CAP,routePenaltyForSeconds(savedSec * 2));
       if(pen <= 0)continue;
       for(const [candI,seedOpts] of seedOptionsByCandidate){
         if(candI === A.c.i)continue;
@@ -1654,6 +1858,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // Cold open / ordinary solves stay at 4s — that wait is already the product
   // limit. The while-open tick may raise it when the next row is imminent.
   // Background refinement may raise it further after a usable agenda is mounted.
+  const ordinaryLimitOverride = Math.max(0,Number(solveOptions.nativeLimitSecondsOverride) || 0);
   const nativeLimitSeconds = solveOptions.refine
     ? Math.max(4,Math.min(
         50,
@@ -1668,7 +1873,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       ? Math.max(4,Math.min(10,Math.round(Number(solveOptions.glpkLimitSeconds)
         || (typeof HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS === 'number'
           ? HOME_AGENDA_TICK_GLPK_LIMIT_SECONDS : 10))))
-      : 4);
+      : (ordinaryLimitOverride > 0 ? Math.max(1,Math.min(4,ordinaryLimitOverride)) : 4));
   const result = GLPK.solve(problem,{
     msglev:GLPK.GLP_MSG_OFF,
     presol:true,
@@ -1690,13 +1895,47 @@ async function resolveSolve(maybe){
 
 async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable,solveOptions = {}){
   const GLPK = await ensureGlpk();
-  const packed = solveDayPackingIlp(
+  const solveStarted = (typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now();
+  let packed = solveDayPackingIlp(
     GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions
   );
   if(Array.isArray(packed) && packed.length === 0)return [];
-  const {result:raw,opts,problem,candidateOptionNames,routeObjectiveVars,nativeLimitSeconds} = packed;
+  let {
+    result:raw,opts,problem,candidateOptionNames,routeObjectiveVars,nativeLimitSeconds
+  } = packed;
   let result = await resolveSolve(raw);
   let status = result && result.result && result.result.status;
+  let relaxedRequiredOccurrences = false;
+  // GLP_NOFEAS/GLP_INFEAS means the hard due rows contradict one another; it
+  // is not a timeout. Spend only the remaining cold-open budget on a second
+  // GLPK model that keeps non-negotiable rows hard and globally chooses which
+  // ordinary required occurrence must miss.
+  if((status === 4 || status === 3)
+    && solveOptions.requiredOccurrenceIndices instanceof Set
+    && solveOptions.requiredOccurrenceIndices.size){
+    const now = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    const remainingSeconds = Math.floor(Math.max(0,4000 - (now - solveStarted)) / 1000);
+    if(remainingSeconds >= 1){
+      const retry = solveDayPackingIlp(
+        GLPK,state,dayCandidates,allCandidates,deferrable,{
+          ...solveOptions,
+          relaxRequiredOccurrences:true,
+          nativeLimitSecondsOverride:remainingSeconds
+        }
+      );
+      if(!(Array.isArray(retry) && retry.length === 0)){
+        packed = retry;
+        ({
+          result:raw,opts,problem,candidateOptionNames,routeObjectiveVars,nativeLimitSeconds
+        } = packed);
+        result = await resolveSolve(raw);
+        status = result && result.result && result.result.status;
+        relaxedRequiredOccurrences = status === 5 || status === 2;
+      }
+    }
+  }
   // GLP_OPT=5, GLP_FEAS=2. A time-limited incumbent is safe to publish because
   // critical one-day/daily P0 occurrences are hard rows above. Retaining it is
   // preferable to replacing the whole day with a greedy chain; the latter can
@@ -1715,7 +1954,7 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
   let routeObjectiveBefore = null;
   let routeObjectiveAfter = null;
   const incumbentVars = (result.result && result.result.vars) || {};
-  const hasRouteObjective = Array.isArray(routeObjectiveVars)
+  const hasRouteObjective = !relaxedRequiredOccurrences && Array.isArray(routeObjectiveVars)
     && routeObjectiveVars.length > 0;
   if(hasRouteObjective && Array.isArray(candidateOptionNames)){
     // Until the frozen-selection route pass returns an optimum, the complete
@@ -1792,6 +2031,7 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
     routePolishApplied,
     routeObjectiveBefore,
     routeObjectiveAfter,
+    relaxedRequiredOccurrences,
     candidateCount:Array.isArray(candidateOptionNames) ? candidateOptionNames.length : dayCandidates.length,
     optionCount:opts.length,
     routeTermCount:Array.isArray(routeObjectiveVars) ? routeObjectiveVars.length : 0
@@ -1805,13 +2045,12 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
 function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOptions = {}){
   if(typeof tryPlaceOnDay !== 'function' || typeof commitPlacement !== 'function')return [];
   const doing = doingNowForDay(state);
-  const seqLoc = typeof todaySequencingLocationId === 'function'
-    ? todaySequencingLocationId(state) : null;
   const byWeight = orderAwareOptimizerSort(state.dayBase);
   const requiredOccurrenceIndices = packOptions.requiredOccurrenceIndices instanceof Set
     ? packOptions.requiredOccurrenceIndices : new Set();
   const pool = Array.isArray(allCandidates) && allCandidates.length ? allCandidates : dayCandidates;
   const states = Array.isArray(dayStates) && dayStates.length ? dayStates : [state];
+  if(typeof prepareAtLocationYield === 'function')prepareAtLocationYield(pool,states);
   const ordered = dayCandidates.slice().sort((a,b)=>{
     const claim = typeof compareWeekClaimPriority === 'function'
       ? compareWeekClaimPriority(a,b,states) : 0;
@@ -1824,17 +2063,6 @@ function packDayWithHeuristic(state,dayCandidates,allCandidates,dayStates,packOp
     const requiredA = requiredOccurrenceIndices.has(a && a.i);
     const requiredB = requiredOccurrenceIndices.has(b && b.i);
     if(requiredA !== requiredB)return requiredA ? -1 : 1;
-    if(seqLoc && typeof habitMatchesSequencingLocation === 'function'){
-      const la = habitMatchesSequencingLocation(a && a.h, seqLoc);
-      const lb = habitMatchesSequencingLocation(b && b.h, seqLoc);
-      if(la !== lb){
-        const atC = la ? a : b;
-        const awayC = la ? b : a;
-        const canWait = typeof sequencingAwayCanWait !== 'function'
-          || sequencingAwayCanWait(awayC, atC, state);
-        if(canWait)return la ? -1 : 1;
-      }
-    }
     const aNeedsB = typeof clusterFlexDependsOnCandidate === 'function'
       && clusterFlexDependsOnCandidate(a,b);
     const bNeedsA = typeof clusterFlexDependsOnCandidate === 'function'

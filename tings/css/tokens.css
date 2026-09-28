@@ -1,9 +1,9 @@
 :root {
-  --bg:#ffffff; --bg2:#f5f4f0; --bg3:#e8e7e2;
-  --text:#1a1a1a; --text2:#6b6a65; --text3:#9e9d98;
+  --bg:#fdfcf9; --bg2:#f2f1ed; --bg3:#e6e5df;
+  --text:#292a27; --text2:#60615c; --text3:#696a63;
   --border:rgba(0,0,0,0.11); --border2:rgba(0,0,0,0.2);
-  --radius:16px; --radius-sm:10px;
-  --teal-bg:#E1F5EE; --teal-icon:#0F6E56; --teal-text:#085041;
+  --radius:22px; --radius-sm:14px;
+  --teal-bg:#e3e4df; --teal-icon:#555752; --teal-text:#363833;
   --amber-bg:#FAEEDA; --amber-icon:#BA7517; --amber-text:#633806;
   --red-bg:#FCEBEB; --red-icon:#A32D2D; --red-text:#791F1F;
   --purple-bg:#EEEDFE; --purple-icon:#534AB7; --purple-text:#3C3489;
@@ -51,7 +51,7 @@
   /* Recessed control fill (inputs, seg wells, emoji circles). On a white
      sheet --bg3 is only ~9% off-white and reads as merged with the surface;
      --field-bg steps one tone darker so a borderless field still has an edge. */
-  --field-bg:#e0dfd9;
+  --field-bg:#e9e8e2;
   --raised-shadow:0 1px 2px rgba(20,30,26,0.16),0 3px 8px rgba(20,30,26,0.10);
 }
 /* Native controls (date/time/select/scrollbars) follow `color-scheme`, not
@@ -62,10 +62,10 @@
 
 :root:not([data-theme="light"]) {
     color-scheme:dark;
-    --bg:#1c1c1e; --bg2:#121214; --bg3:#3a3a3c;
-    --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
+    --bg:#242424; --bg2:#171717; --bg3:#373737;
+    --text:#ededed; --text2:#c4c4c4; --text3:#a1a1a1;
     --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
-    --teal-bg:#085041; --teal-icon:#5DCAA5; --teal-text:#9FE1CB;
+    --teal-bg:#3d3f3a; --teal-icon:#c8cbc1; --teal-text:#e6e8e0;
     --amber-bg:#633806; --amber-icon:#EF9F27; --amber-text:#FAC775;
     --red-bg:#791F1F; --red-icon:#F09595; --red-text:#F7C1C1;
     --purple-bg:#3C3489; --purple-icon:#AFA9EC; --purple-text:#CECBF6;
@@ -77,7 +77,7 @@
     --cyan-bg:#0A565D; --cyan-icon:#7CD4DC; --cyan-text:#A8E2E7;
     --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
     --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
-    --field-bg:#34343a;
+    --field-bg:#323232;
     --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
   }
   :root:not([data-theme="light"]) .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}
@@ -95,10 +95,10 @@
 /* Forced dark theme (user preference overrides system light) */
 :root[data-theme="dark"] {
   color-scheme:dark;
-  --bg:#1c1c1e; --bg2:#121214; --bg3:#3a3a3c;
-  --text:#f2f2f7; --text2:#aeaeb2; --text3:#6e6e73;
+  --bg:#242424; --bg2:#171717; --bg3:#373737;
+  --text:#ededed; --text2:#c4c4c4; --text3:#a1a1a1;
   --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
-  --teal-bg:#085041; --teal-icon:#5DCAA5; --teal-text:#9FE1CB;
+  --teal-bg:#3d3f3a; --teal-icon:#c8cbc1; --teal-text:#e6e8e0;
   --amber-bg:#633806; --amber-icon:#EF9F27; --amber-text:#FAC775;
   --red-bg:#791F1F; --red-icon:#F09595; --red-text:#F7C1C1;
   --purple-bg:#3C3489; --purple-icon:#AFA9EC; --purple-text:#CECBF6;
@@ -110,7 +110,7 @@
   --cyan-bg:#0A565D; --cyan-icon:#7CD4DC; --cyan-text:#A8E2E7;
   --lime-bg:#3F5E10; --lime-icon:#B3D66A; --lime-text:#C9E295;
   --slate-bg:#37474F; --slate-icon:#90A4AE; --slate-text:#B0BEC5;
-  --field-bg:#34343a;
+  --field-bg:#323232;
   --raised-shadow:0 1px 2px rgba(0,0,0,0.5),0 3px 8px rgba(0,0,0,0.35);
 }
 :root[data-theme="dark"] .bottom-nav{box-shadow:0 10px 30px rgba(0,0,0,0.36);}

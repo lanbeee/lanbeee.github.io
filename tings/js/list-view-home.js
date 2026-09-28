@@ -102,20 +102,34 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     ? (wrap.dataset.anywhereAllowed ? wrap.dataset.anywhereAllowed === '1' : selectedLocs.length === 0)
     : Boolean(anywhereAllowed);
   wrap.dataset.anywhereAllowed = anywhereOn ? '1' : '0';
+  const selectedLocSet = new Set(selectedLocs);
+  const orderedLocations = locations.slice().sort((a,b)=>{
+    const aOn = selectedLocSet.has(a.id) ? 0 : 1;
+    const bOn = selectedLocSet.has(b.id) ? 0 : 1;
+    if(aOn !== bOn)return aOn - bOn;
+    return compareLocationNames(a,b);
+  });
+  const orderedTopics = topics.slice().sort((a,b)=>{
+    const aOn = selectedSet.has(String(a).toLowerCase()) ? 0 : 1;
+    const bOn = selectedSet.has(String(b).toLowerCase()) ? 0 : 1;
+    if(aOn !== bOn)return aOn - bOn;
+    return String(a).localeCompare(String(b),undefined,{sensitivity:'base',numeric:true});
+  });
   const anywhereHtml = locations.length > 0
     ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="no specific place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
     : '';
-  const locHtml = locations.map(loc=>{
-    const on = selectedLocs.includes(loc.id);
+  const locHtml = orderedLocations.map(loc=>{
+    const on = selectedLocSet.has(loc.id);
     const level = prefs[loc.id] || '';
     const mark = level === 'high' ? ' ★' : level === 'little' ? ' ☆' : level === 'avoid' ? ' –' : '';
-    const title = level === 'high' ? 'high preference'
+    const title = !on ? 'place'
+      : level === 'high' ? 'high preference'
       : level === 'little' ? 'little preference'
       : level === 'avoid' ? 'avoid if possible'
-      : 'place';
+      : 'allowed';
     return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${mark}</button>`;
   }).join('');
-  const topicHtml = topics.map(topic=>{
+  const topicHtml = orderedTopics.map(topic=>{
     const on = selectedSet.has(topic.toLowerCase());
     return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
   }).join('');
@@ -136,20 +150,26 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // that mobile browsers fire after touchend. The click handlers in main.js
   // check this flag and bail if set.
   function addScrollGuard(row){
-    var timer;
+    var timer, sx = null, sy = null, moved = false;
     function arm(){ row._sg = 1; clearTimeout(timer); timer = setTimeout(function(){ row._sg = 0; },500); }
-    (function(){
-      var sx,sy;
-      row.addEventListener('touchstart',function(e){
-        var t = e.changedTouches[0];
-        sx = t.clientX; sy = t.clientY;
-      },{passive:true});
-      row.addEventListener('touchmove',function(e){
-        var t = e.changedTouches[0];
-        if(Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8)arm();
-      },{passive:true});
-    })();
-    row.addEventListener('scroll',arm,{passive:true});
+    row.addEventListener('touchstart',function(e){
+      var t = e.changedTouches[0];
+      sx = t.clientX; sy = t.clientY; moved = false;
+    },{passive:true});
+    row.addEventListener('touchmove',function(e){
+      var t = e.changedTouches[0];
+      if(sx == null)return;
+      if(Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8){
+        moved = true;
+        arm();
+      }
+    },{passive:true});
+    row.addEventListener('touchend',function(){ sx = null; },{passive:true});
+    row.addEventListener('touchcancel',function(){ sx = null; },{passive:true});
+    // Only a real drag counts. Programmatic scrollLeft, and the tiny scroll
+    // a phone tap can emit, must not swallow the next click — that blocked
+    // cycling a place through allowed / preferred / avoid.
+    row.addEventListener('scroll',function(){ if(moved)arm(); },{passive:true});
   }
   addScrollGuard(locRow);
   addScrollGuard(topicRow);
@@ -195,16 +215,15 @@ function toggleLocationChip(e){
   const level = btn.dataset.pref || '';
   const isOn = btn.classList.contains('on');
   const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
-  const allowedOnly = wrap.dataset.locationChoiceMode === 'allowed';
+  // Preferred view only ranks places that are already allowed. Everywhere
+  // else, including the allowed schedule view, one tap cycles
+  // off → allowed → little → high → avoid → off.
   if(preferenceOnly){
     btn.classList.add('on');
     btn.dataset.pref = level === '' ? 'little'
       : level === 'little' ? 'high'
       : level === 'high' ? 'avoid'
       : '';
-  }else if(allowedOnly){
-    btn.classList.toggle('on',!isOn);
-    btn.dataset.pref = '';
   }else if(!isOn){
     btn.classList.add('on');
     btn.dataset.pref = '';
@@ -236,6 +255,17 @@ function cardLocationId(h,agendaRow){
 }
 
 // PURE: shared topic/place filter choice lists used by home and calendar.
+
+// PURE: "all" first, then the active choice, then A–Z, with the none/anywhere
+// bucket last. Chip rows use the same selected-then-alpha rule.
+function orderFilterChoices(choices, selectedKey){
+  const rank = choice => choice.key === 'all' ? 0 : choice.key === '__none__' ? 3 : choice.key === selectedKey ? 1 : 2;
+  return choices.slice().sort((a,b)=>{
+    const d = rank(a) - rank(b);
+    if(d)return d;
+    return String(a.label || '').localeCompare(String(b.label || ''),undefined,{sensitivity:'base',numeric:true});
+  });
+}
 
 function topicFilterChoices(data){
   const topics = normalizeTopics([...topicOptions(),...data.flatMap(h=>normalizeTopics(h.topics))]);
@@ -310,12 +340,14 @@ function renderHomeTagFilter(data,precomputedIndices = null){
     if(groups)groups.innerHTML = '';
     return;
   }
-  const topicChoices = homeTopicChoices(data);
-  const locChoices = homeLocationChoices(data);
+  let topicChoices = homeTopicChoices(data);
+  let locChoices = homeLocationChoices(data);
   // Reset stale filters: if the dimension is unused (or the chosen key is no
   // longer present), fall back to 'all' so we never silently hide everything.
   if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
   if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
+  topicChoices = orderFilterChoices(topicChoices, homeTopicFilter);
+  locChoices = orderFilterChoices(locChoices, homeLocationFilter);
   wrap.hidden = false;
   let statusHtml = '';
   if(hasPresence && typeof locationPresence === 'function'){
@@ -730,7 +762,8 @@ function updateSortButton(settled = false){
     lastUnsearchedHomeCardCount = document.querySelectorAll('#list .ting-card').length;
   }
   const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
-  const canSearch = lastUnsearchedHomeCardCount >= 10 || hasSearchableArchive;
+  const canSearch = lastUnsearchedHomeCardCount >= 10 || hasSearchableArchive
+    || document.body.classList.contains('replica-display-mode');
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',!canSearch);
@@ -2121,6 +2154,10 @@ function formatDayCapacityScorecardText(report,title = '',sub = ''){
     : new Date(report.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}).toLowerCase());
   push(dayLabel);
   if(sub)push(sub);
+  if(report.sharedDisplay && typeof formatSharedDisplayAuditText === 'function'){
+    push('');
+    push(formatSharedDisplayAuditText(report.sharedDisplay).trim());
+  }
   if(report.plannerIsPreview){
     push('FAST PREVIEW — GLPK optimizer is still running; placements and totals may change');
   }
@@ -2393,6 +2430,49 @@ async function copyDayCapacityScorecard(){
   if(typeof showToast === 'function')showToast(ok ? 'day audit copied' : 'copy failed');
 }
 
+let _sharedDisplayAuditGen = 0;
+
+function sharedDisplayAuditHtml(report){
+  const diagnosis = report && report.diagnosis ? report.diagnosis : 'checking the worker snapshot…';
+  const text = typeof formatSharedDisplayAuditText === 'function'
+    ? formatSharedDisplayAuditText(report || { diagnosis:'checking the worker snapshot…' })
+    : diagnosis;
+  return `
+    <section class="capacity-section" id="shared-display-audit">
+      <div class="capacity-section-head"><h3>shared display sync</h3><span>${escapeHtml((report && report.role) || 'checking')}</span></div>
+      <p class="capacity-note">${escapeHtml(diagnosis)} Copy this day audit and paste it in chat. Ignore CSP .map warnings in the browser console; they are not the library pull.</p>
+      <pre class="shared-display-audit-log">${escapeHtml(text)}</pre>
+    </section>`;
+}
+
+function startSharedDisplayAudit(report){
+  if(!report || typeof buildSharedDisplayAuditReport !== 'function') return;
+  const gen = ++_sharedDisplayAuditGen;
+  report.sharedDisplay = buildSharedDisplayAuditReport();
+  void (async()=>{
+    let live = null;
+    try{
+      live = typeof inspectSharedAgendaForAudit === 'function'
+        ? await inspectSharedAgendaForAudit()
+        : { skipped:'no_inspect' };
+    }catch(error){
+      live = {
+        error:typeof tingsShareErrorSummary === 'function'
+          ? tingsShareErrorSummary(error)
+          : String(error && error.message || error)
+      };
+    }
+    if(gen !== _sharedDisplayAuditGen || _dayCapacityReport !== report) return;
+    report.sharedDisplay = buildSharedDisplayAuditReport(live);
+    const node = $('shared-display-audit');
+    if(!node) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = sharedDisplayAuditHtml(report.sharedDisplay);
+    const next = wrap.firstElementChild;
+    if(next) node.replaceWith(next);
+  })();
+}
+
 function renderDayCapacityScorecard(report){
   const content = $('day-capacity-content');
   if(!content || !report)return;
@@ -2502,6 +2582,7 @@ function renderDayCapacityScorecard(report){
       <span>copy / download = entire week placements</span>
       <button type="button" class="capacity-day-audit-copy" data-capacity-copy-day>copy this day audit</button>
     </div>
+    ${sharedDisplayAuditHtml(report.sharedDisplay)}
     <div class="capacity-metrics">
       ${metric('eligible work',capacityMinutesLabel(report.outstandingLoad),`${report.eligibleCount} candidate${report.eligibleCount === 1 ? '' : 's'}`,'load')}
       ${metric('work placed',capacityMinutesLabel(report.placedLoadMinutes),`${coverage} of eligible work`,'net')}
@@ -2585,6 +2666,7 @@ function openDayCapacityScorecard(dayBase,weekMode = false){
   _dayCapacityReport = report;
   _dayCapacityTitle = titleText;
   _dayCapacitySub = subText;
+  startSharedDisplayAudit(report);
   renderDayCapacityScorecard(report);
   openSheet('day-capacity-sheet');
 }

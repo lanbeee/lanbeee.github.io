@@ -59,6 +59,8 @@ function resetSettingsSheetState(){
   if(backupConfirm)backupConfirm.hidden = true;
   const backupStatus = $('backup-status');
   if(backupStatus)backupStatus.textContent = '';
+  const clearConfirm = $('settings-clear-data-confirm');
+  if(clearConfirm)clearConfirm.hidden = true;
   clearCalendarPdfPreview({keepStatus:false});
   document.querySelectorAll('.settings-collapse-head').forEach(head=>{
     const body = $(head.dataset.collapseTarget);
@@ -114,6 +116,9 @@ function syncSettingsControls(){
   document.querySelectorAll('#theme-mode-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === sortSettings.themeMode);
   });
+  document.querySelectorAll('#color-palette-picker [data-palette-value]').forEach(btn=>{
+    btn.setAttribute('aria-pressed',String(btn.dataset.paletteValue === sortSettings.colorPalette));
+  });
   const taskRetention = normalizeCompletedTaskRetentionDays(sortSettings.completedTaskRetentionDays);
   document.querySelectorAll('#completed-task-retention-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',parseInt(btn.dataset.segValue,10) === taskRetention);
@@ -125,4 +130,5 @@ function syncSettingsControls(){
   syncHomeCityStatus();
   renderDefaultTopicsChips();
   applyAppearanceSettings();
+  if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
 }

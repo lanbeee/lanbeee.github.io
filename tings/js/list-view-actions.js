@@ -704,6 +704,10 @@ function planToConsumeForEntry(logs,entryTs){
 function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   const data = load();
   if(!data[idx])return false;
+  if(!toPlan && typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(data[idx].hid)){
+    if(typeof showToast === 'function') showToast('view only on this display');
+    return false;
+  }
   // Never turn a stop habit's entry into a plan — stop habits aren't plannable.
   if(toPlan && data[idx].type === 'zero')return false;
   const logs = normalizeLogs(data[idx].logs);
@@ -739,6 +743,10 @@ function logTing(i,opts = {}){
   const now = Date.now();
   if(!data[i])return false;
   const h = data[i];
+  if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(h.hid)){
+    if(typeof showToast === 'function') showToast('view only on this display');
+    return false;
+  }
   const logs = normalizeLogs(h.logs);
   const consumedPlanTs = planToConsumeForEntry(logs,now);
   let minutes = opts.minutes;
@@ -792,6 +800,7 @@ function logTing(i,opts = {}){
     else if(opts.value != null && Number.isFinite(Number(opts.value)))parts.push(`${opts.value}`);
     return parts.length ? ` · ${parts.join(' · ')}` : '';
   })();
+  if(opts.feedback !== false && typeof playTingFeedback === 'function')playTingFeedback('complete');
   showActionToast(`Logged ${toastItemName(h)}${detail}`,action);
   // If a session timer was open for this habit, drop it — the entry already
   // covers the session and a later stop must not prompt a second log.
@@ -806,6 +815,10 @@ function logTing(i,opts = {}){
 function logTingAt(i,ts){
   const data = load();
   if(!data[i])return false;
+  if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(data[i].hid)){
+    if(typeof showToast === 'function') showToast('view only on this display');
+    return false;
+  }
   // Calendar day logs are for today and past days only — future days use plans.
   if(dateKey(ts) > todayIso())return false;
   const entryTs = dateKey(ts) <= dateKey(Date.now()) && ts > Date.now() ? Date.now() : ts;
@@ -833,6 +846,7 @@ function logTingAt(i,ts){
     if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(data[i]);
   }
   if(!save(data))return false;
+  if(typeof playTingFeedback === 'function')playTingFeedback(isPlan ? 'plan' : 'complete');
   showActionToast(`${isPlan ? 'Planned' : 'Logged'} ${toastItemName(data[i])}`,action);
   // Calendar day log counts as completing the session — drop any open timer.
   if(!isPlan && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === i
@@ -882,6 +896,7 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
     ? (normalizeLocationRegistry(sortSettings?.locations).find(l=>l.id === locationId)?.name || '')
     : '';
   const locLabel = locName ? ` · ${locName}` : '';
+  if(typeof playTingFeedback === 'function')playTingFeedback('plan');
   showActionToast(`Planned ${toastItemName(data[i])}${timeLabel}${locLabel}`,action);
   return true;
 }
@@ -1018,6 +1033,12 @@ function executeUndo(){
     const {idx,habit} = pendingAction;
     data.splice(Math.min(idx,data.length),0,habit);
   }
+  if(pendingAction.type === 'delete-many'){
+    const items = (pendingAction.items || []).slice().sort((a,b) => a.idx - b.idx);
+    items.forEach(item => {
+      if(item && item.habit)data.splice(Math.min(item.idx, data.length), 0, item.habit);
+    });
+  }
   if(pendingAction.type === 'move'){
     const {idx,moved} = pendingAction;
     if(data[idx]){
@@ -1125,13 +1146,23 @@ function executeUndo(){
   }
 }
 
+function occurrenceOptsFromCard(card){
+  const row = card && card.closest ? card.closest('.swipe-row') : null;
+  if(!row || !row.dataset || !row.dataset.occurrenceKey) return {};
+  return {
+    occurrenceKey:row.dataset.occurrenceKey,
+    scheduleOptionId:row.dataset.scheduleOptionId || undefined,
+    scheduledDay:row.dataset.scheduledDay || undefined
+  };
+}
+
 /**
  * HYBRID: set absolute breakable progress. Forward movement appends a minute
  * log; backward movement consolidates minute logs in the relevant scope while
  * preserving plans and non-minute entries.
  * Returns true when a log was saved.
  */
-function commitBreakableProgress(i,targetMinutes,dayBase){
+function commitBreakableProgress(i,targetMinutes,dayBase,opts){
   const data = load();
   if(!data[i] || !data[i].breakable)return false;
   const h = data[i];
@@ -1146,7 +1177,7 @@ function commitBreakableProgress(i,targetMinutes,dayBase){
     const delta = typeof breakableSliderDeltaMinutes === 'function'
       ? breakableSliderDeltaMinutes(h,target,dayBase)
       : (target - done);
-    if(delta > 0)return logTing(i,{ minutes:delta });
+    if(delta > 0)return logTing(i,{ minutes:delta,...(opts || {}) });
     return false;
   }
 
@@ -1189,7 +1220,7 @@ function commitBreakableFromCard(i,card){
       showToast('already done');
       return false;
     }
-    return commitBreakableProgress(i,intent.target);
+    return commitBreakableProgress(i,intent.target,undefined,occurrenceOptsFromCard(card));
   }
   const suggested = typeof suggestedBreakableLogMinutes === 'function'
     ? intent.suggested
@@ -1198,7 +1229,7 @@ function commitBreakableFromCard(i,card){
     showToast('already done');
     return false;
   }
-  return commitBreakableProgress(i,intent.done + suggested);
+  return commitBreakableProgress(i,intent.done + suggested,undefined,occurrenceOptsFromCard(card));
 }
 
 // HYBRID: log entry and flash card
@@ -1222,12 +1253,7 @@ function quickLog(i,card){
   };
   const data = load();
   const h = data[i];
-  const row = card && card.closest('.swipe-row');
-  const occurrenceOpts = row && row.dataset.occurrenceKey ? {
-    occurrenceKey:row.dataset.occurrenceKey,
-    scheduleOptionId:row.dataset.scheduleOptionId || undefined,
-    scheduledDay:row.dataset.scheduledDay || undefined
-  } : {};
+  const occurrenceOpts = occurrenceOptsFromCard(card);
   if(h && h.breakable){
     if(h.trackValue && typeof requestLogTing === 'function'){
       const intent = breakableCardIntent(h,card);
@@ -1240,7 +1266,7 @@ function quickLog(i,card){
         showToast('already done');
         return;
       }
-      requestLogTing(i,go,{ minutes });
+      requestLogTing(i,go,{ minutes,...occurrenceOpts });
       return;
     }
     if(!commitBreakableFromCard(i,card))return;

@@ -227,6 +227,18 @@
 .capacity-facts span{display:flex;justify-content:space-between;gap:8px;min-width:0;}
 .capacity-facts b{color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
 .capacity-section{margin-top:18px;padding-top:15px;border-top:0.5px solid var(--border);}
+.shared-display-audit-log{
+  margin:10px 0 0;
+  padding:10px 12px;
+  max-height:280px;
+  overflow:auto;
+  border-radius:12px;
+  background:var(--bg2);
+  color:var(--text2);
+  font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
 .capacity-section h3{
   margin:0;color:var(--text);font-size:11px;font-weight:800;text-transform:uppercase;
 }

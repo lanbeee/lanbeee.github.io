@@ -45,6 +45,15 @@ function restoreBackup(raw){
   return {ok:true,count:trimmed.length};
 }
 
+function clearAllLocalTingsData(){
+  try{ localStorage.clear(); }catch(_){}
+  try{ sessionStorage.clear(); }catch(_){}
+  const next = new URL('index.html', location.href);
+  next.search = '';
+  next.hash = '';
+  location.replace(next.href);
+}
+
 // Ephemeral agenda commitments used by breakable auto-log. This is kept out of
 // the habit backup intentionally: it is a device-local snapshot of what this
 // particular agenda showed, not user-authored history.

@@ -9,17 +9,17 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <style>
-  html{background:#f5f4f0;color-scheme:light dark;}
-  @media (prefers-color-scheme:dark){html:not([data-theme="light"]){background:#121214;color-scheme:dark;}}
-  html[data-theme="dark"]{background:#121214;color-scheme:dark;}
-  html[data-theme="light"]{background:#f5f4f0;color-scheme:light;}
+  html{background:#f2f1ed;color-scheme:light dark;}
+  @media (prefers-color-scheme:dark){html:not([data-theme="light"]){background:#171717;color-scheme:dark;}}
+  html[data-theme="dark"]{background:#171717;color-scheme:dark;}
+  html[data-theme="light"]{background:#f2f1ed;color-scheme:light;}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" integrity="sha256-hHEk1Ncpkc6A17dPzMrchF97uv2NrtO9j0IW6fIyaeY=" crossorigin="" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -41,10 +41,14 @@
 <link rel="stylesheet" href="./css/filters.css" />
 <link rel="stylesheet" href="./css/actions.css" />
 <link rel="stylesheet" href="./css/overlays.css" />
+<link rel="stylesheet" href="./css/assistant.css" />
 <link rel="stylesheet" href="./css/context.css" />
 <link rel="stylesheet" href="./css/progress.css" />
 <link rel="stylesheet" href="./css/agenda.css" />
 <link rel="stylesheet" href="./css/sweeps.css" />
+<link rel="stylesheet" href="./css/palettes.css" />
+<link rel="stylesheet" href="./css/calm.css" />
+<link rel="stylesheet" href="./css/display-mode.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
@@ -65,6 +69,9 @@
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>
+      <button class="icon-btn assistant-launch" id="bar-open-assistant" type="button" hidden aria-label="ask Tings">
+        <i class="ti ti-message-circle" aria-hidden="true"></i>
+      </button>
       <button class="icon-btn app-bar-add" id="bar-open-add" aria-label="add habit">
         <i class="ti ti-plus" aria-hidden="true"></i>
       </button>
@@ -77,13 +84,16 @@
     <div class="pane-list">
       <div class="topbar">
         <button class="wordmark" id="open-about" aria-label="about Tings">
-          <img src="./favicon.svg" alt="" aria-hidden="true" />
-          <span class="wordmark-copy">
-            <span>Tings</span>
-            <small class="wordmark-date" id="home-date" aria-hidden="true"></small>
-          </span>
-        </button>
-        <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
+      <img src="./favicon.svg" alt="" aria-hidden="true" />
+      <span class="wordmark-copy">
+        <span>Tings</span>
+        <small class="wordmark-date" id="home-date" aria-hidden="true"></small>
+      </span>
+    </button>
+    <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
+    <button class="icon-btn assistant-launch" id="open-assistant" type="button" hidden aria-label="ask Tings">
+      <i class="ti ti-message-circle" aria-hidden="true"></i>
+    </button>
       </div>
       <div id="quota-bar"></div>
       <div id="reminder-banner" class="reminder-banner" hidden></div>
@@ -118,6 +128,9 @@
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="edit emoji"></button>
+        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="create with the local assistant">
+          <i class="ti ti-sparkles" aria-hidden="true"></i>
+        </button>
       </div>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <label class="emoji-field">
@@ -207,6 +220,37 @@
       <div class="btn-row add-actions">
         <button class="btn primary" id="do-save">add</button>
         <button class="btn" id="do-cancel">cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- local assistant -->
+  <div class="sheet-wrap" id="assistant-sheet">
+    <div class="sheet assistant-sheet" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
+      <div class="assistant-head">
+        <div class="assistant-head-copy">
+          <span class="sheet-eyebrow">on this computer</span>
+          <p class="sheet-title" id="assistant-title">ask Tings</p>
+        </div>
+        <div class="assistant-head-actions">
+          <button type="button" class="btn" id="assistant-debug-toggle" aria-pressed="false" aria-label="assistant debug">debug</button>
+          <button type="button" class="btn" id="assistant-clear" aria-label="clear chat">clear chat</button>
+          <button type="button" class="icon-btn" id="assistant-close" aria-label="close assistant"><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div class="assistant-focus" id="assistant-focus" hidden>
+        <div class="assistant-focus-text">
+          <span class="assistant-focus-kicker" id="assistant-focus-kicker">working on</span>
+          <strong id="assistant-focus-name"></strong>
+          <span class="assistant-focus-meta" id="assistant-focus-meta"></span>
+        </div>
+        <button type="button" class="btn" id="assistant-focus-done">done</button>
+      </div>
+      <div class="assistant-thread" id="assistant-thread"></div>
+      <p class="assistant-waiting" id="assistant-waiting" hidden>thinking…</p>
+      <div class="assistant-compose">
+        <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
+        <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
       </div>
     </div>
   </div>
@@ -546,6 +590,10 @@
               </button>
               <span data-ui-leave="share"></span>
             </div>
+            <button class="habit-action detail-full-only" id="detail-ask-ai" type="button">
+              <i class="ti ti-sparkles" aria-hidden="true"></i>
+              <span><b>change with AI</b><small>Ask the local assistant to edit this item</small></span>
+            </button>
             <button class="habit-action detail-full-only" id="detail-snooze" type="button">
               <i class="ti ti-moon" aria-hidden="true"></i>
               <span><b>snooze</b><small>Hide for a few hours or days</small></span>
@@ -1028,6 +1076,15 @@
           </button>
           <div class="settings-collapse-body" id="settings-appearance-body" hidden>
             <div class="settings-grid" data-ui-toggles="appearance"></div>
+            <span class="settings-sublabel">color palette</span>
+            <div class="palette-picker" id="color-palette-picker" role="group" aria-label="color palette">
+              <button type="button" class="palette-option" data-palette-value="default" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>default</button>
+              <button type="button" class="palette-option" data-palette-value="neutral" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>neutral</button>
+              <button type="button" class="palette-option" data-palette-value="sage" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sage</button>
+              <button type="button" class="palette-option" data-palette-value="sky" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sky</button>
+              <button type="button" class="palette-option" data-palette-value="lavender" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>lavender</button>
+              <button type="button" class="palette-option" data-palette-value="sand" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sand</button>
+            </div>
             <span class="settings-sublabel">font size</span>
             <div class="seg compact-seg" id="font-scale-seg" role="group" aria-label="font size">
               <button type="button" class="seg-opt" data-seg-value="small">small</button>
@@ -1040,6 +1097,13 @@
               <button type="button" class="seg-opt" data-seg-value="dark">dark</button>
               <button type="button" class="seg-opt" data-seg-value="system">system</button>
             </div>
+            <button class="setting-toggle setting-switch" type="button" id="settings-replica-chrome" aria-pressed="true">
+              <span>
+                <b>display bar</b>
+                <small>Clock, sync, and lock above the app on this paired screen. Turn off to use the normal Tings window.</small>
+              </span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
           </div>
         </section>
         <div class="settings-group-head">more</div>
@@ -1052,7 +1116,7 @@
             <span data-ui-leave="agenda"></span>
           </div>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Publish a limited view of today and tomorrow to a fridge or tablet. Today’s items and tomorrow’s tasks can be marked done there; each item can opt out from its detail page. Only one display can be signed in. Pairing is QR-only: the owner phone must scan the display, type its separate 8-digit code, and explicitly approve it. Approving a new display immediately signs out every previous one, even if that page is still open. Revoke signs the current display out; scan a new QR to add one back.</p>
+            <p class="field-hint">Pair at most two screens: one full-app display (personal clone or shared items) and one glance display. Personal clone copies every task and habit so either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages. Glance display shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower frame. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it. Approving a second screen does not sign the other out.</p>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
@@ -1060,13 +1124,20 @@
               <span class="settings-sublabel">feed title</span>
               <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Shared display" autocomplete="off" />
               <p class="field-hint" id="settings-agenda-status"></p>
+              <span class="settings-sublabel">sync style for the next display</span>
+              <select id="settings-agenda-sync-mode" class="mini-select">
+                <option value="clone">personal clone</option>
+                <option value="selected">shared items only</option>
+                <option value="glance">glance display</option>
+              </select>
+              <p class="field-hint" id="settings-agenda-sync-hint">Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.</p>
               <span class="settings-sublabel">display reauthorization</span>
               <select id="settings-agenda-reauth" class="mini-select">
                 <option value="30">every 30 days</option>
                 <option value="7">every 7 days</option>
               </select>
               <p class="field-hint">No silent refresh or fallback link: the display must show a new QR and be scanned again when access expires.</p>
-              <span class="settings-sublabel">publish scope</span>
+              <span class="settings-sublabel" id="settings-agenda-scope-label">glance-view compatibility</span>
               <div class="btn-row">
                 <select id="settings-agenda-scope-mode" class="mini-select">
                   <option value="count">next activities</option>
@@ -1074,13 +1145,16 @@
                 </select>
                 <input id="settings-agenda-scope-value" class="settings-text-input" type="number" min="1" max="50" step="1" value="20" aria-label="agenda publish scope value" />
               </div>
-              <p class="field-hint" id="settings-agenda-scope-hint">Maximum 50 upcoming rows, never beyond tomorrow.</p>
+              <p class="field-hint" id="settings-agenda-scope-hint">Older display builds receive at most 50 upcoming rows, never beyond tomorrow.</p>
+              <span class="settings-sublabel">signed-in displays</span>
+              <div id="settings-agenda-devices"></div>
+              <p class="field-hint" id="settings-agenda-devices-empty">No display is signed in yet. Scan a QR to add one.</p>
               <span class="settings-sublabel">pair a display</span>
-              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR signs out the laptop, tablet, or frame that was paired before. Requests work once and expire after 30 seconds.</p>
+              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR adds a second screen and does not sign the other out. Requests work once and expire after 30 seconds.</p>
               <div class="btn-row" style="flex-wrap:wrap">
                 <button type="button" class="btn primary" id="settings-agenda-scan-qr"><i class="ti ti-scan" aria-hidden="true"></i> scan display QR</button>
-                <button type="button" class="btn" id="settings-agenda-publish">publish now</button>
-                <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke</button>
+                <button type="button" class="btn" id="settings-agenda-publish">sync now</button>
+                <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke feed</button>
               </div>
             </div>
           </div>
@@ -1111,6 +1185,70 @@
             <div class="settings-grid" data-ui-toggles="advanced"></div>
           </div>
         </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-assistant-head" data-collapse-target="settings-assistant-body" aria-expanded="false" aria-controls="settings-assistant-body">
+            <span class="settings-label">local assistant</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-assistant-body" hidden>
+            <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
+              <span>
+                <b>use Qwen on this computer</b>
+                <small>Talk to Ollama or LM Studio on this computer, or on a laptop on this Wi-Fi or Tailscale. Clear requests are parsed here; Qwen calls tools to create or change an item. Nothing is saved until you confirm. Off by default.</small>
+              </span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <div id="assistant-reach-guide" class="assistant-reach-guide">
+              <p class="settings-sublabel">Reach the model on this computer</p>
+              <p class="field-hint" id="assistant-reach-lead"></p>
+              <ol class="assistant-reach-steps">
+                <li>Install Ollama if you have not.</li>
+                <li id="assistant-reach-step-allow"></li>
+                <li id="assistant-reach-step-listen"></li>
+                <li id="assistant-reach-step-restart"></li>
+                <li id="assistant-reach-step-phone"></li>
+                <li>Turn on <b>use Qwen</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
+              </ol>
+              <pre class="assistant-reach-cmd" id="assistant-reach-cmd"></pre>
+              <div class="btn-row assistant-reach-actions">
+                <button type="button" class="btn" id="assistant-copy-origins">copy the commands</button>
+              </div>
+            </div>
+            <div id="assistant-setup-fields" hidden>
+              <span class="settings-sublabel">server</span>
+              <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="local model server">
+                <button type="button" class="seg-opt on" data-assistant-provider="auto">auto</button>
+                <button type="button" class="seg-opt" data-assistant-provider="ollama">Ollama</button>
+                <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio / API</button>
+              </div>
+              <span class="settings-sublabel">address</span>
+              <input id="assistant-url" class="settings-text-input" type="text" inputmode="url" maxlength="160" placeholder="https://laptop.tailnet.ts.net" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>. Pick <b>LM Studio / API</b> for any server that speaks the OpenAI <code>/v1</code> protocol, including a gateway to a cloud model.</p>
+              <span class="settings-sublabel">model</span>
+              <input id="assistant-model" class="settings-text-input" type="text" maxlength="80" placeholder="qwen3.8:27b-mlx" autocomplete="off" />
+              <span class="settings-sublabel">thinking</span>
+              <div class="seg compact-seg" id="assistant-reasoning-seg" role="group" aria-label="thinking depth">
+                <button type="button" class="seg-opt on" data-assistant-reasoning="high">full</button>
+                <button type="button" class="seg-opt" data-assistant-reasoning="low">low</button>
+                <button type="button" class="seg-opt" data-assistant-reasoning="off">off</button>
+              </div>
+              <p class="field-hint" id="assistant-reasoning-hint">Less thinking answers faster and uses less of a paid plan; full is the most reliable at reading an odd sentence. A model that cannot turn thinking off, like GLM 5.3, uses its shallowest level instead.</p>
+              <div class="btn-row" style="flex-wrap:wrap">
+                <button type="button" class="btn" id="assistant-refresh-models">list models</button>
+                <button type="button" class="btn primary" id="assistant-test">test thinking + tool</button>
+              </div>
+              <p class="field-hint" id="assistant-conn-status"></p>
+              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-debug" aria-pressed="false">
+                <span>
+                  <b>show assistant debug</b>
+                  <small>In the chat, print parse, local vs Qwen, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
+                </span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <p class="field-hint">Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p>
+            </div>
+          </div>
+        </section>
         <section class="settings-block settings-danger">
           <span class="settings-label">start over</span>
           <p class="field-hint">Reset only changes these app settings. Your habits and entries stay safe.</p>
@@ -1120,6 +1258,15 @@
             <div class="btn-row">
               <button class="btn primary" id="settings-reset-yes">reset</button>
               <button class="btn" id="settings-reset-no">keep settings</button>
+            </div>
+          </div>
+          <p class="field-hint">Remove every habit, sample, setting, and paired display saved in this browser. Export a backup first if you still need it.</p>
+          <button class="btn danger-soft" id="settings-clear-data">clear all data</button>
+          <div class="reset-confirm" id="settings-clear-data-confirm" hidden>
+            <p>This cannot be undone. This browser’s Tings list, settings, and display pairing will be deleted.</p>
+            <div class="btn-row">
+              <button class="btn primary" id="settings-clear-data-yes">delete everything</button>
+              <button class="btn" id="settings-clear-data-no">keep data</button>
             </div>
           </div>
         </section>
@@ -1235,7 +1382,7 @@
         <div class="context-sheet-copy">
           <span class="sheet-eyebrow" id="weather-context-eyebrow">forecast context</span>
           <p class="sheet-name" id="weather-context-title">weather</p>
-          <p class="sheet-sub" id="weather-context-sub"></p>
+          <p class="sheet-sub" id="weather-context-sub">Switch days, then overlay hourly graphs on the same clock.</p>
         </div>
         <button class="mini-nav" id="weather-context-close" type="button" aria-label="close weather context">
           <i class="ti ti-x" aria-hidden="true"></i>
@@ -1302,7 +1449,7 @@
         <div class="context-sheet-copy">
           <span class="sheet-eyebrow">room in your day</span>
           <p class="sheet-name" id="free-time-title">open time</p>
-          <p class="sheet-sub">See the stretches that can still hold a habit or task.</p>
+          <p class="sheet-sub">See the stretches that can still hold a habit or task. Switch days to compare the same time.</p>
         </div>
         <button class="mini-nav" id="free-time-weather" type="button" hidden aria-expanded="false" aria-label="add weather context">
           <i class="ti ti-cloud-plus" aria-hidden="true"></i>
@@ -1552,7 +1699,7 @@
 <div class="agenda-pair-approval" id="agenda-pair-approval" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-approval-title" hidden>
   <div class="agenda-pair-approval-card">
     <h2 id="agenda-pair-approval-title">Authorize shared display</h2>
-    <p>This permanently replaces any currently paired display. Only continue while you can see the display you just scanned.</p>
+    <p>This adds a signed-in screen. Any other display already paired stays connected. Only continue while you can see the display you just scanned.</p>
     <label for="agenda-pair-approval-code">8-digit code shown on display</label>
     <input id="agenda-pair-approval-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="1234-5678" />
     <p id="agenda-pair-approval-status" role="status"></p>
@@ -1640,12 +1787,16 @@
 <script src="./js/settings-locations.js" defer></script>
 <script src="./js/settings-state.js" defer></script>
 <script src="./js/settings-samples.js" defer></script>
+<script src="./js/ui-feedback.js" defer></script>
 <script src="./js/settings-appearance.js" defer></script>
 <script src="./js/settings-share.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/main-input.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
+<script src="./js/display-mode.js" defer></script>
 <script src="./js/sw-register.js" defer></script>
+<!-- The experimental assistant loads after the core controller has rendered. -->
+<script src="./js/assistant-loader.js" defer></script>
 </body>
 </html>

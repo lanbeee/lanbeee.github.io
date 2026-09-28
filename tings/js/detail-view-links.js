@@ -464,7 +464,7 @@ function syncDetailSchedulePlacesUi(){
   if(hint){
     hint.textContent = preferenceOnly
       ? 'Tap a place to rank it: soft, strong, or avoid.'
-      : 'These places use the time window above.';
+      : 'Tap a place to cycle it: allowed, preferred, avoid, then off. These places use the time window above.';
   }
 }
 

@@ -1,4 +1,4 @@
-const CACHE = 'tings-v347';
+const CACHE = 'tings-v470';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -59,11 +59,15 @@ const PRECACHE = [
   './css/filters.css',
   './css/actions.css',
   './css/overlays.css',
+  './css/assistant.css',
   './css/context.css',
   './css/progress.css',
   './css/agenda.css',
   './css/sweeps.css',
+  './css/calm.css',
+  './css/palettes.css',
   './css/agenda-display.css',
+  './css/display-mode.css',
   './favicon.svg',
   './js/config.js',
   './js/storage.js',
@@ -125,9 +129,18 @@ const PRECACHE = [
   './js/settings-locations.js',
   './js/settings-state.js',
   './js/settings-samples.js',
+  './js/ui-feedback.js',
   './js/settings-appearance.js',
   './js/settings-share.js',
+  './js/assistant-loader.js',
+  './js/assistant-schema.js',
+  './js/assistant-parse.js',
+  './js/assistant-tools.js',
+  './js/assistant-harness.js',
+  './js/assistant-client.js',
+  './js/assistant-ui.js',
   './js/agenda-display.js',
+  './js/display-mode.js',
   './js/agenda-display-boot.js',
   './js/main-boot.js',
   './js/main-input.js',
@@ -167,15 +180,22 @@ async function cachePutResponse(cache, req, res){
   try{ await cache.put(req, res.clone()); }catch(_){}
 }
 
+async function cacheRequiredResponse(cache,url){
+  const res = await fetch(url,{ cache:'no-cache' });
+  const expectsHtml = url === './' || /\.html(?:\?|$)/i.test(url);
+  if(!res || !res.ok || (!expectsHtml && responseLooksLikeHtml(res))){
+    throw new Error(`required_asset_unavailable:${url}`);
+  }
+  await cache.put(url,res);
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await Promise.all(PRECACHE.map(async url => {
-      try{
-        const res = await fetch(url, { cache: 'no-cache' });
-        await cachePutResponse(cache, url, res);
-      }catch(_){}
-    }));
+    // App-shell activation is atomic. If even one required local file is
+    // unavailable during a deploy, keep the previous complete worker/cache
+    // instead of activating a partial shell that can strand startup.
+    await Promise.all(PRECACHE.map(url=>cacheRequiredResponse(cache,url)));
     await Promise.all(PRECACHE_CDN.map(url => cachePutOk(cache, url)));
     await self.skipWaiting();
   })());
@@ -189,8 +209,25 @@ self.addEventListener('activate', event => {
   })());
 });
 
+function isLoopbackRequest(req){
+  try{
+    const url = new URL(req.url);
+    const loopback = url.hostname === '127.0.0.1'
+      || url.hostname === 'localhost'
+      || url.hostname === '[::1]'
+      || url.hostname === '::1';
+    // A production page must not let its worker proxy calls to the laptop's
+    // local model. On a loopback-hosted development build, however, the same
+    // origin is the app shell and still needs offline interception.
+    return loopback && url.origin !== self.location.origin;
+  }catch(_){
+    return false;
+  }
+}
+
 self.addEventListener('fetch', event => {
   const req = event.request;
+  if (isLoopbackRequest(req)) return;
   if (req.method !== 'GET') return;
   // Pairing status and encrypted agenda reads must hit the network. Cache Storage
   // ignores Cache-Control: no-store when cache.put() is used, and a cached 200

@@ -2174,20 +2174,18 @@ function habitMatchesSequencingLocation(h, locId){
   return false;
 }
 
-// PURE: can this away item still fit after an at-location item takes the
-// next slot? Used so Fast/heuristic "at-location first" cannot drop a
-// hard window that GLPK would keep via a later option (soft travel penalty).
+// PURE: can this away item wait behind at-location work? The authoritative
+// answer is prepareAtLocationYield's block flag. Without that proof, only a
+// hard window that already fits this item (travel included, partner duration
+// excluded) may yield. Unwindowed work stays put.
 function sequencingAwayCanWait(awayC, atC, state){
-  if(!awayC || !awayC.h || !state)return true;
-  // A plan-locked away item cannot wait behind at-location sequencing.
-  // Ordinary due-today tasks still can — that is the grocery-vs-lunch case.
+  void atC;
+  if(awayC && typeof awayC.yieldsToAtLocation === 'boolean')return awayC.yieldsToAtLocation;
+  if(!awayC || !awayC.h || !state)return false;
   if(awayC.pinned === true)return false;
   if(typeof fillIsPlannedOnDay === 'function'
     && fillIsPlannedOnDay(awayC.h,state.dayBase,state.settings))return false;
   const now = Number(state.startClock) || Date.now();
-  const atDur = typeof clampDuration === 'function'
-    ? clampDuration(atC && atC.h && atC.h.durationMinutes)
-    : Math.max(1, Number(atC && atC.h && atC.h.durationMinutes) || 30);
   const awayDur = typeof clampDuration === 'function'
     ? clampDuration(awayC.h.durationMinutes)
     : Math.max(1, Number(awayC.h.durationMinutes) || 30);
@@ -2195,11 +2193,11 @@ function sequencingAwayCanWait(awayC, atC, state){
   if(typeof hasTimeWindow === 'function' && hasTimeWindow(awayC.h)
     && typeof fillDayWindows === 'function'){
     const wins = fillDayWindows(awayC.h, state.dayBase, state.seedLocId) || [];
-    if(!wins.length)return true;
-    const needMs = (atDur + awayDur + travelMin) * 60000;
+    if(!wins.length)return false;
+    const needMs = (awayDur + travelMin) * 60000;
     return wins.some(w => Number(w && w.end) - now >= needMs);
   }
-  return true;
+  return false;
 }
 
 // PURE: snapshot mutable fields so week scoring can dry-run without commit.
@@ -2524,11 +2522,31 @@ function orderConstraintPenalty(fill,fit,state){
 }
 
 // PURE: among feasible fits on one day, pick the best by unified score.
+// earliestFromAnchor is option generation for the ILP, not a placement
+// policy: each probe reports the first feasible start at or after its
+// cursor so GLPK can choose among them. The preferred-time score would
+// otherwise collapse every cursor onto one later clock.
 function pickBestScoredFit(fits,fill,state,opts = {}){
   if(!fits || !fits.length)return null;
   // Doing-now: always take the earliest feasible start so it stays first.
   if(opts.doingNowStart != null){
     return fits.reduce((best,f)=>!best || f.placeStart < best.placeStart ? f : best,null);
+  }
+  if(opts.earliestFromAnchor){
+    let best = null;
+    const weatherSettings = opts.settings || (state && state.settings)
+      || (typeof sortSettings !== 'undefined' ? sortSettings : null);
+    for(const fit of fits){
+      const weather = typeof weatherFitAssessment === 'function'
+        ? weatherFitAssessment(fill,fit,state,weatherSettings)
+        : null;
+      if(weather && weather.hardFail)continue;
+      if(!best || fit.placeStart < best.placeStart
+        || (fit.placeStart === best.placeStart && (fit.score || 0) < (best.score || 0))){
+        best = fit;
+      }
+    }
+    return best;
   }
   const weights = opts.weights || resolveAgendaScoreWeights(opts.settings || (state && state.settings));
   const spare = opts.spareWindows || [];

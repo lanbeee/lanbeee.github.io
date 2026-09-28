@@ -1,4 +1,6 @@
 const AGENDA_STALE_MS = 24 * 60 * 60 * 1000;
+// Same 3-minute cadence as the personal clone. Completions still go through
+// the Worker without the phone; this is just how often an open screen looks.
 const AGENDA_POLL_MS = 3 * 60 * 1000;
 const AGENDA_PAIR_POLL_MS = 4 * 1000;
 const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
@@ -467,9 +469,137 @@ function displayReadEnrollment(){
 
 function displayWriteEnrollment(value){
   try{
-    if(value) localStorage.setItem(AGENDA_DISPLAY_STORAGE_KEY,JSON.stringify(value));
-    else localStorage.removeItem(AGENDA_DISPLAY_STORAGE_KEY);
+    if(value){
+      localStorage.setItem(AGENDA_DISPLAY_STORAGE_KEY,JSON.stringify(value));
+      if(typeof clearSharedDisplaySessionEnded === 'function') clearSharedDisplaySessionEnded();
+    }else{
+      localStorage.removeItem(AGENDA_DISPLAY_STORAGE_KEY);
+    }
   }catch(_){}
+}
+
+function displayLogIdentity(log){
+  if(typeof log === 'number') return `n:${log}`;
+  if(!log || typeof log !== 'object') return '';
+  const operationId = String(log.operationId || '');
+  if(/^[0-9a-f]{32}$/.test(operationId)) return `op:${operationId}`;
+  return `o:${Number(log.ts) || 0}|${Number(log.minutes) || ''}|${Number(log.value) || ''}|${String(log.note || '')}`;
+}
+
+// Install a replica snapshot into the normal app's local store. Pending local
+// logs are merged additively so an offline completion is never erased by an
+// older owner snapshot while it is waiting to be consumed.
+async function installDisplayReplica(projection,enrollment,siblingEnvelope){
+  if(enrollment && (enrollment.syncMode === 'glance' || enrollment.syncMode === 'legacy')) return false;
+  if(enrollment && !enrollment.syncMode && !enrollment.replicaMode && !enrollment.replicaRows) return false;
+  let replica = projection && projection.replica;
+  if(!replica && typeof tingsShareOpenReplica === 'function'){
+    const opened = await tingsShareOpenReplica(enrollment, projection, siblingEnvelope);
+    replica = opened.replica;
+    if(!replica && opened.how && opened.how !== 'no_envelope' && opened.how !== 'no_replica_key'){
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('display.replica.decrypt_failed', { error:opened.how });
+      }
+      return false;
+    }
+  }else if(!replica && projection && projection.replicaEnvelope && enrollment && enrollment.replicaKey){
+    try{ replica = await shareDecrypt(enrollment.replicaKey,projection.replicaEnvelope); }
+    catch(error){
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('display.replica.decrypt_failed', {
+          error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+        });
+      }
+      return false;
+    }
+  }
+  if(!replica || replica.schemaVersion !== 1 || !Array.isArray(replica.items)){
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('display.replica.skipped', {
+        syncMode:enrollment && enrollment.syncMode || null,
+        hasPlainReplica:Boolean(projection && projection.replica),
+        replicaEnvelope:typeof tingsShareEnvelopeSummary === 'function'
+          ? tingsShareEnvelopeSummary(siblingEnvelope || (projection && projection.replicaEnvelope))
+          : { present:Boolean(siblingEnvelope || (projection && projection.replicaEnvelope)) },
+        replicaKey:typeof tingsShareKeyInfo === 'function'
+          ? tingsShareKeyInfo(enrollment && enrollment.replicaKey)
+          : { present:Boolean(enrollment && enrollment.replicaKey) },
+        replicaSchema:replica && replica.schemaVersion || null
+      });
+    }
+    return false;
+  }
+  let local = [];
+  try{ local = JSON.parse(localStorage.getItem(KEY) || '[]'); }
+  catch(_){ local = []; }
+  if(!Array.isArray(local)) local = [];
+  const localById = new Map(local.filter(h=>h && h.hid).map(h=>[h.hid,h]));
+  const incomingIds = new Set();
+  const replicaRows = {};
+  const incoming = replica.items.flatMap(item=>{
+    const habit = item && item.habit;
+    if(!habit || !habit.hid || !/^[0-9a-f]{16}$/.test(String(item.rowId || ''))) return [];
+    incomingIds.add(habit.hid);
+    replicaRows[habit.hid] = {
+      rowId:item.rowId,
+      access:item.access === 'view' ? 'view' : 'complete',
+      definitionHash:String(item.definitionHash || '')
+    };
+    const previous = localById.get(habit.hid);
+    const mergedLogs = [...(Array.isArray(habit.logs) ? habit.logs : [])];
+    const known = new Set(mergedLogs.map(displayLogIdentity));
+    for(const log of (previous && Array.isArray(previous.logs) ? previous.logs : [])){
+      const key = displayLogIdentity(log);
+      if(key && !known.has(key)){ mergedLogs.push(log); known.add(key); }
+    }
+    mergedLogs.sort((a,b)=>(Number(a && a.ts != null ? a.ts : a) || 0) - (Number(b && b.ts != null ? b.ts : b) || 0));
+    return [{
+      ...habit,logs:mergedLogs,
+      showOnSharedDisplay:replica.mode === 'clone' ? habit.showOnSharedDisplay : true,
+      allowSharedDisplayCompletion:replica.mode === 'clone'
+        ? habit.allowSharedDisplayCompletion
+        : item.access !== 'view'
+    }];
+  });
+  const previouslyShared = new Set(Object.keys(enrollment && enrollment.replicaRows || {}));
+  const keptLocal = replica.mode === 'selected'
+    ? local.filter(h=>h && !incomingIds.has(h.hid) && !previouslyShared.has(h.hid))
+    : [];
+  try{
+    localStorage.setItem(KEY,JSON.stringify([...keptLocal,...incoming]));
+    if(replica.mode === 'clone' && replica.settings){
+      localStorage.setItem(SORT_SETTINGS_KEY,JSON.stringify(replica.settings));
+    }
+    displayWriteEnrollment({
+      ...enrollment,replicaRows,replicaMode:replica.mode,
+      definitionOwnerId:replica.definitionOwnerId || null,
+      replicaTruncated:Boolean(replica.truncated)
+    });
+    openDisplayFullApp();
+    return true;
+  }catch(_){ return false; }
+}
+
+function displayEnrollmentWantsFullApp(enrollment){
+  return typeof sharedDisplayWantsFullApp === 'function'
+    ? sharedDisplayWantsFullApp(enrollment)
+    : Boolean(enrollment && (enrollment.syncMode === 'clone' || enrollment.syncMode === 'selected'
+      || /^[0-9a-f]{64}$/.test(String(enrollment.replicaKey || ''))
+      || enrollment.replicaMode || enrollment.replicaRows));
+}
+
+function openDisplayFullApp(){
+  if(typeof sharedDisplaySessionEnded === 'function' && sharedDisplaySessionEnded()){
+    displayWriteEnrollment(null);
+    if(typeof clearSharedDisplaySessionEnded === 'function') clearSharedDisplaySessionEnded();
+    return;
+  }
+  const href = typeof sharedDisplayFullAppHref === 'function'
+    ? sharedDisplayFullAppHref()
+    : (()=>{ const target = new URL('index.html',location.href); target.searchParams.set('display','1'); return target.href; })();
+  const status = $('agenda-enroll-status') || $('agenda-updated');
+  if(status) status.textContent = 'Opening the full Tings app…';
+  location.replace(href);
 }
 
 function clearAgendaFragment(){
@@ -608,6 +738,217 @@ function mergeDisplayCompletionRowIds(local, remote, projection, extras = []){
   ].map(id=>String(id || '')).filter(id=>/^[0-9a-f]{16}$/.test(id) && (known.has(id) || extra.has(id))))].slice(-50);
 }
 
+function displayPendingCompletionPosts(enrolled){
+  return Array.isArray(enrolled && enrolled.pendingCompletionPosts)
+    ? enrolled.pendingCompletionPosts.filter(item=>item && /^[0-9a-f]{16}$/.test(String(item.rowId || '')) && /^[0-9a-f]{32}$/.test(String(item.operationId || '')))
+    : [];
+}
+
+function displayOwnCompletionOperationIds(enrolled){
+  const ids = new Set();
+  for(const operationId of (Array.isArray(enrolled && enrolled.completionOperationIds) ? enrolled.completionOperationIds : [])){
+    if(/^[0-9a-f]{32}$/.test(String(operationId || ''))) ids.add(String(operationId));
+  }
+  for(const item of displayPendingCompletionPosts(enrolled)) ids.add(item.operationId);
+  return ids;
+}
+
+function displayCompletionIdentity(payload,envelope){
+  return {
+    hid:String(payload && payload.hid || ''),
+    rowId:String((payload && payload.rowId) || (envelope && envelope.logId) || ''),
+    occurrenceKey:String(payload && payload.occurrenceKey || ''),
+    scheduleOptionId:String(payload && payload.scheduleOptionId || ''),
+    scheduledDay:String(payload && payload.scheduledDay || ''),
+    minutes:Number(payload && payload.minutes) || 0,
+    start:Number(payload && payload.start) || 0
+  };
+}
+
+function pickDisplayCompletionRow(candidates,alreadyDone){
+  if(!candidates.length) return null;
+  const open = candidates.filter(row=>!alreadyDone.has(row.rowId));
+  const pool = open.length ? open : candidates;
+  return pool.slice().sort((a,b)=>(Number(a.start) || 0) - (Number(b.start) || 0))[0] || null;
+}
+
+// Clone completions use a per-habit replica row id, so they never match a
+// glance occurrence id. Prefer the encrypted occurrence/session identity and
+// never mark every row that happens to share the same habit id.
+function matchDisplayLiveCompletion(completable,payload,envelope,alreadyDone){
+  const id = displayCompletionIdentity(payload,envelope);
+  if(/^[0-9a-f]{16}$/.test(id.rowId)){
+    const exact = completable.find(row=>row.rowId === id.rowId);
+    if(exact) return exact;
+  }
+  if(!id.hid) return null;
+  let candidates = completable.filter(row=>String(row.hid || '') === id.hid);
+  if(id.occurrenceKey){
+    candidates = candidates.filter(row=>String(row.occurrenceKey || '') === id.occurrenceKey);
+    return pickDisplayCompletionRow(candidates,alreadyDone);
+  }
+  if(id.scheduleOptionId){
+    const opted = candidates.filter(row=>String(row.scheduleOptionId || '') === id.scheduleOptionId);
+    if(opted.length) candidates = opted;
+  }
+  if(id.scheduledDay){
+    const sameDay = candidates.filter(row=>String(row.scheduledDay || '') === id.scheduledDay);
+    if(sameDay.length) candidates = sameDay;
+  }
+  if(id.start > 0){
+    const sameStart = candidates.filter(row=>Number(row.start) === id.start);
+    if(sameStart.length) candidates = sameStart;
+  }
+  if(candidates.length > 1 && id.minutes > 0){
+    const sameDuration = candidates.filter(row=>Number(row.durationMinutes) === id.minutes);
+    if(sameDuration.length) candidates = sameDuration;
+  }
+  return pickDisplayCompletionRow(candidates,alreadyDone);
+}
+
+function displayCompletableRows(projection){
+  const rows = [];
+  for(const day of (projection && Array.isArray(projection.days) ? projection.days : [])){
+    for(const row of (day && Array.isArray(day.rows) ? day.rows : [])){
+      if(row && row.completable === true && /^[0-9a-f]{16}$/.test(String(row.rowId || ''))) rows.push(row);
+    }
+  }
+  return rows;
+}
+
+function retargetDisplayCompletionItem(item,completable,alreadyDone){
+  if(!item) return null;
+  const matched = matchDisplayLiveCompletion(completable,item,{ logId:item.rowId },alreadyDone);
+  if(!matched) return null;
+  alreadyDone.add(matched.rowId);
+  return { ...item,rowId:matched.rowId };
+}
+
+// Own glance posts never come back in the GET queue, and a new snapshot mints
+// new row ids. Rematch hid/occurrence onto the new rows so a mark is not
+// undone when the phone or clone republishes.
+function retargetDisplayCompletions(enrolled,projection){
+  if(!enrolled) return enrolled;
+  const completable = displayCompletableRows(projection);
+  const alreadyDone = new Set();
+  const pending = [];
+  for(const item of displayPendingCompletionPosts(enrolled)){
+    const next = retargetDisplayCompletionItem(item,completable,alreadyDone);
+    if(next) pending.push(next);
+  }
+  if(_displayPendingCompletion){
+    const next = retargetDisplayCompletionItem(_displayPendingCompletion,completable,new Set(alreadyDone));
+    if(next) _displayPendingCompletion = { ..._displayPendingCompletion,...next };
+    else dropPendingDisplayCompletion();
+  }
+  return {
+    ...enrolled,
+    pendingCompletionPosts:pending
+  };
+}
+
+async function applyDisplayLiveCompletions(enrolled,records,projection){
+  const own = displayOwnCompletionOperationIds(enrolled);
+  const completable = [];
+  for(const day of (projection && Array.isArray(projection.days) ? projection.days : [])){
+    for(const row of (day && Array.isArray(day.rows) ? day.rows : [])){
+      if(row && row.completable === true && /^[0-9a-f]{16}$/.test(String(row.rowId || ''))) completable.push(row);
+    }
+  }
+  const alreadyDone = new Set([
+    ...(Array.isArray(enrolled && enrolled.completionRowIds) ? enrolled.completionRowIds : []),
+    ...displayPendingCompletionPosts(enrolled).map(item=>item.rowId)
+  ].map(id=>String(id || '')).filter(id=>/^[0-9a-f]{16}$/.test(id)));
+  const rowIds = new Set();
+  const acknowledged = [];
+  for(const record of (Array.isArray(records) ? records : [])){
+    const envelope = record && record.envelope;
+    if(!envelope || envelope.recordKind === 'agenda_definition') continue;
+    const operationId = String(envelope.operationId || '');
+    if(own.has(operationId)) continue;
+    let payload;
+    try{ payload = await shareDecrypt(enrolled.contentKey,envelope); }
+    catch(_){ continue; }
+    if(!payload || payload.action !== 'complete') continue;
+    const matched = matchDisplayLiveCompletion(completable,payload,envelope,alreadyDone);
+    if(matched){
+      rowIds.add(matched.rowId);
+      alreadyDone.add(matched.rowId);
+    }
+    acknowledged.push(operationId);
+  }
+  await acknowledgeDisplayOperations(enrolled,acknowledged);
+  return rowIds;
+}
+
+async function acknowledgeDisplayOperations(enrolled,operationIds){
+  const ids = [...new Set((operationIds || []).filter(id=>/^[0-9a-f]{32}$/.test(String(id || ''))))];
+  if(!enrolled || !enrolled.deviceCredential || !ids.length) return;
+  try{
+    for(let i=0;i<ids.length;i+=50){
+      await shareFetch(`/v1/agendas/${enrolled.feedId}/completion-acks`,{
+        method:'POST',credential:enrolled.deviceCredential,
+        body:{operationIds:ids.slice(i,i+50)},timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
+      });
+    }
+  }catch(error){
+    // A pre-v2 Worker rejects viewer acknowledgements. The event remains
+    // idempotent locally and the upgraded Worker will accept a later retry.
+    if(error && (error.status === 401 || error.status === 410)) throw error;
+  }
+}
+
+async function flushDisplayCompletionOutbox(enrolled){
+  const pending = displayPendingCompletionPosts(enrolled);
+  if(!pending.length || !enrolled || !enrolled.deviceCredential || !enrolled.contentKey) return enrolled;
+  const revision = Number(enrolled.meta && enrolled.meta.revision);
+  if(!Number.isInteger(revision) || revision < 1) return enrolled;
+  const remaining = [];
+  const posted = [];
+  for(const item of pending){
+    if(item.posted){
+      remaining.push(item);
+      continue;
+    }
+    try{
+      const payload = {
+        schemaVersion:1,action:'complete',operationId:item.operationId,rowId:item.rowId,
+        minutes:item.minutes || null,
+        occurrenceKey:item.occurrenceKey || '',
+        scheduleOptionId:item.scheduleOptionId || '',
+        scheduledDay:item.scheduledDay || '',
+        start:Number(item.start) || null,
+        completedAt:Number(item.completedAt) || Date.now()
+      };
+      if(item.hid) payload.hid = item.hid;
+      const envelope = await shareEncrypt(enrolled.contentKey,payload,{
+        schemaVersion:SHARE_SCHEMA_VERSION,
+        recordKind:'agenda_completion',
+        objectId:enrolled.feedId,
+        revision,
+        operationId:item.operationId,
+        logId:item.rowId
+      });
+      await shareFetch(`/v1/agendas/${enrolled.feedId}/completions`,{
+        method:'POST',
+        credential:enrolled.deviceCredential,
+        body:{ completion:envelope },
+        timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
+      });
+      posted.push(item.operationId);
+      remaining.push({ ...item,posted:true });
+    }catch(error){
+      if(error && (error.status === 401 || error.status === 410)) throw error;
+      remaining.push(item);
+    }
+  }
+  const completionOperationIds = [...new Set([
+    ...(Array.isArray(enrolled.completionOperationIds) ? enrolled.completionOperationIds : []),
+    ...posted
+  ])].filter(id=>/^[0-9a-f]{32}$/.test(id)).slice(-100);
+  return { ...enrolled,pendingCompletionPosts:remaining.slice(-50),completionOperationIds };
+}
+
 function renderDisplay(projection,meta,completedRowIds = []){
   const now = Date.now();
   const root = $('agenda-root');
@@ -646,11 +987,12 @@ function renderDisplay(projection,meta,completedRowIds = []){
   }
   _displayProjection = projection;
   renderDisplayCurrentWeather(projection.currentWeather);
-  // The undo toast promises a push that must still be possible: if a refresh
-  // made the pending row unmarkable (unpublished, day rolled over),
-  // drop it here so the row and the toast can never disagree.
   if(_displayPendingCompletion && !displayMarkableRow(_displayPendingCompletion.rowId)){
-    dropPendingDisplayCompletion();
+    const rematched = retargetDisplayCompletionItem(
+      _displayPendingCompletion,displayCompletableRows(projection),new Set()
+    );
+    if(rematched) _displayPendingCompletion = { ..._displayPendingCompletion,...rematched };
+    else dropPendingDisplayCompletion();
   }
   const completed = new Set(Array.isArray(completedRowIds) ? completedRowIds : []);
   const tz = displayTimezone(projection.timezone);
@@ -765,13 +1107,26 @@ function beginDisplayCompletion(rowId){
   const target = displayMarkableRow(rowId);
   if(!target) return;
   if(_displayPendingCompletion && _displayPendingCompletion.rowId !== rowId){
-    void commitDisplayCompletion(_displayPendingCompletion.rowId);
+    const previous = _displayPendingCompletion;
+    if(previous.timer) clearTimeout(previous.timer);
+    previous.timer = null;
+    _displayPendingCompletion = null;
+    void commitDisplayCompletion(previous.rowId,previous);
   }else if(_displayPendingCompletion){
     dropPendingDisplayCompletion();
   }
   _displayPendingCompletion = {
     rowId,
-    timer:setTimeout(()=>void commitDisplayCompletion(rowId),AGENDA_COMPLETION_UNDO_MS)
+    hid:String(target.row.hid || ''),
+    occurrenceKey:String(target.row.occurrenceKey || ''),
+    scheduleOptionId:String(target.row.scheduleOptionId || ''),
+    scheduledDay:String(target.row.scheduledDay || target.day.dateKey || ''),
+    start:Number(target.row.start) || 0,
+    minutes:Math.max(0,Math.round(Number(target.row.durationMinutes) || 0)),
+    timer:setTimeout(()=>{
+      const live = _displayPendingCompletion;
+      void commitDisplayCompletion(live && live.rowId || rowId,live);
+    },AGENDA_COMPLETION_UNDO_MS)
   };
   renderCurrentDisplay();
   showDisplayUndoToast(`Marked “${target.row.title || 'item'}” done`);
@@ -785,13 +1140,22 @@ function cancelDisplayCompletion(){
   document.querySelector(`[data-complete-row="${pending.rowId}"]`)?.focus({ preventScroll:true });
 }
 
-async function commitDisplayCompletion(rowId){
-  const pending = _displayPendingCompletion && _displayPendingCompletion.rowId === rowId
+async function commitDisplayCompletion(rowId,identity = null){
+  const pending = identity || (_displayPendingCompletion && _displayPendingCompletion.rowId === rowId
     ? _displayPendingCompletion
-    : null;
-  if(pending) dropPendingDisplayCompletion();
+    : null);
+  if(pending && _displayPendingCompletion === pending) dropPendingDisplayCompletion();
   const enrolled = _displayFeed || displayReadEnrollment();
-  const target = displayMarkableRow(rowId);
+  let target = displayMarkableRow(rowId);
+  if(!target && pending){
+    const rematched = retargetDisplayCompletionItem(
+      pending,displayCompletableRows(_displayProjection),new Set()
+    );
+    if(rematched){
+      rowId = rematched.rowId;
+      target = displayMarkableRow(rowId);
+    }
+  }
   if(!enrolled || !enrolled.deviceCredential || !target){
     renderCurrentDisplay();
     return;
@@ -804,10 +1168,51 @@ async function commitDisplayCompletion(rowId){
     button.setAttribute('aria-label',`Saving ${target.row.title || 'item'} as done`);
   }
   const operationId = shareRandomHex(16);
+  const hid = String(target.row.hid || '');
+  const queued = {
+    rowId,
+    operationId,
+    minutes:Math.max(0,Math.round(Number(target.row.durationMinutes) || 0)),
+    occurrenceKey:String(target.row.occurrenceKey || '').slice(0,160),
+    scheduleOptionId:String(target.row.scheduleOptionId || '').slice(0,64),
+    scheduledDay:String(target.row.scheduledDay || target.day.dateKey || ''),
+    start:Number(target.row.start) || 0,
+    completedAt:Date.now(),
+    hid:hid && hid === (typeof cleanHabitId === 'function' ? cleanHabitId(hid) : hid) ? hid : ''
+  };
+  const persistQueued = stored=>{
+    const completionRowIds = [...new Set([
+      ...(Array.isArray(stored.completionRowIds) ? stored.completionRowIds : []),
+      rowId
+    ])].slice(-50);
+    const pendingCompletionPosts = [
+      ...displayPendingCompletionPosts(stored).filter(item=>item.operationId !== operationId && item.rowId !== rowId),
+      queued
+    ].slice(-50);
+    const completionOperationIds = [...new Set([
+      ...(Array.isArray(stored.completionOperationIds) ? stored.completionOperationIds : []),
+      operationId
+    ])].slice(-100);
+    return { ...stored,completionRowIds,pendingCompletionPosts,completionOperationIds };
+  };
+  if(displayAuthorizationMatches(enrolled)){
+    const queuedEnrollment = persistQueued(_displayFeed || displayReadEnrollment() || enrolled);
+    _displayFeed = queuedEnrollment;
+    displayWriteEnrollment(queuedEnrollment);
+  }
   const revision = Number(enrolled.meta && enrolled.meta.revision);
   try{
     if(!Number.isInteger(revision) || revision < 1) throw new Error('stale_snapshot');
-    const payload = { schemaVersion:1,action:'complete',operationId,rowId };
+    const payload = {
+      schemaVersion:1,action:'complete',operationId,rowId,
+      minutes:queued.minutes || null,
+      occurrenceKey:queued.occurrenceKey,
+      scheduleOptionId:queued.scheduleOptionId,
+      scheduledDay:queued.scheduledDay,
+      start:queued.start || null,
+      completedAt:queued.completedAt
+    };
+    if(queued.hid) payload.hid = queued.hid;
     const envelope = await shareEncrypt(enrolled.contentKey,payload,{
       schemaVersion:SHARE_SCHEMA_VERSION,
       recordKind:'agenda_completion',
@@ -822,37 +1227,37 @@ async function commitDisplayCompletion(rowId){
       body:{ completion:envelope },
       timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
     });
-    // Merge into the live enrollment, never the captured one: a refresh may
-    // have stored a newer revision or acknowledged other rows meanwhile.
-    // And if the display de-paired or re-paired while the push was in flight,
-    // the enroll screen owns the UI — stale credentials must not come back.
     if(!displayAuthorizationMatches(enrolled)){
       _displaySavingRowIds.delete(rowId);
       return;
     }
     const stored = _displayFeed || displayReadEnrollment();
-    const base = Array.isArray(stored.completionRowIds) ? stored.completionRowIds : [];
-    const completionRowIds = [...new Set([...base,rowId])].slice(-50);
-    const next = { ...stored,completionRowIds };
+    const next = {
+      ...stored,
+      completionRowIds:[...new Set([...(Array.isArray(stored.completionRowIds) ? stored.completionRowIds : []),rowId])].slice(-50),
+      pendingCompletionPosts:displayPendingCompletionPosts(stored).map(item=>
+        item.operationId === operationId ? { ...item,posted:true } : item
+      ),
+      completionOperationIds:[...new Set([
+        ...(Array.isArray(stored.completionOperationIds) ? stored.completionOperationIds : []),
+        operationId
+      ])].slice(-100)
+    };
     _displayFeed = next;
     displayWriteEnrollment(next);
     _displaySavingRowIds.delete(rowId);
-    renderDisplay(_displayProjection,next.meta || {},completionRowIds);
+    renderDisplay(_displayProjection,next.meta || {},next.completionRowIds);
   }catch(error){
     _displaySavingRowIds.delete(rowId);
-    // Same guard as the success path: never paint the agenda (or an error
-    // state) back over an enroll screen that appeared while we were in flight.
     if(!displayAuthorizationMatches(enrolled)) return;
-    renderCurrentDisplay();
-    const failed = document.querySelector(`[data-complete-row="${rowId}"]`);
-    if(failed){
-      failed.disabled = false;
-      failed.classList.remove('is-saving');
-      failed.classList.add('is-error');
-      failed.setAttribute('aria-label',error && error.status === 429 ? 'Please wait, then try marking done again' : `Try marking ${target.row.title || 'item'} done again`);
+    if(error && (error.status === 401 || error.status === 410)){
+      clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
+      return;
     }
-    if(error && (error.status === 401 || error.status === 410)) clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
-    else if(error && error.status === 409) void refreshDisplay();
+    const stored = persistQueued(_displayFeed || displayReadEnrollment() || enrolled);
+    _displayFeed = stored;
+    displayWriteEnrollment(stored);
+    renderDisplay(_displayProjection,stored.meta || {},stored.completionRowIds);
   }
 }
 
@@ -906,6 +1311,18 @@ function updateDisplayPairingExpiry(){
 
 async function beginDisplayPairing(reason = 'new'){
   stopDisplayPairing();
+  const previous = _displayFeed || displayReadEnrollment();
+  if(previous && previous.feedId && previous.deviceCredential){
+    try{
+      await shareFetch(`/v1/agendas/${previous.feedId}/display-access`,{
+        method:'DELETE',credential:previous.deviceCredential,timeoutMs:AGENDA_COMPLETION_TIMEOUT_MS
+      });
+    }catch(error){
+      if(!(error && (error.status === 401 || error.status === 410))){
+        /* Offline revoke must not block a fresh QR; the owner list prunes later. */
+      }
+    }
+  }
   const section = $('agenda-enroll');
   if(section) section.hidden = false;
   const root = $('agenda-root');
@@ -930,7 +1347,8 @@ async function beginDisplayPairing(reason = 'new'){
         pollCredential:pairing.pollCredential,
         deviceCredentialHash:pairing.deviceCredentialHash,
         confirmationProof:pairing.confirmationProof,
-        displayPublicKey:pairing.displayPublicKey
+        displayPublicKey:pairing.displayPublicKey,
+        protocolVersion:AGENDA_PAIR_PROTOCOL_VERSION
       }
     });
     pairing.expiresAt = Number(result.body && result.body.expiresAt) || (Date.now() + 30 * 1000);
@@ -957,7 +1375,7 @@ async function pollDisplayPairing(){
     });
     if(!result.body || result.body.state !== 'approved') return;
     const feedId = result.body.feedId;
-    const contentKey = await shareAgendaPairDecrypt(
+    const transferred = await shareAgendaPairDecrypt(
       result.body.transfer,
       pairing.privateKey,
       feedId,
@@ -965,13 +1383,23 @@ async function pollDisplayPairing(){
     );
     const enrolled = {
       feedId,
-      contentKey,
+      contentKey:transferred.contentKey,
+      replicaKey:transferred.replicaKey || null,
       deviceCredential:pairing.deviceCredential,
       pairingId:pairing.pairingId,
       sessionExpiresAt:Number(result.body.sessionExpiresAt) || null
     };
+    if(transferred.syncMode) enrolled.syncMode = transferred.syncMode;
     _displayFeed = enrolled;
     displayWriteEnrollment(enrolled);
+    if(typeof tingsShareLog === 'function'){
+      tingsShareLog('display.paired', {
+        enrollment:typeof tingsShareEnrollmentSummary === 'function'
+          ? tingsShareEnrollmentSummary(enrolled)
+          : { syncMode:enrolled.syncMode || null, replicaKey:Boolean(enrolled.replicaKey) },
+        wantsFullApp:displayEnrollmentWantsFullApp(enrolled)
+      });
+    }
     const passcode = readDisplayPasscode();
     if(passcode && passcode.failures) writeDisplayPasscode({ ...passcode,failures:0 });
     try{
@@ -981,6 +1409,10 @@ async function pollDisplayPairing(){
     }catch(_){}
     stopDisplayPairing();
     $('agenda-enroll').hidden = true;
+    if(displayEnrollmentWantsFullApp(enrolled)){
+      openDisplayFullApp();
+      return;
+    }
     $('agenda-enroll-status').textContent = '';
     await refreshDisplay();
     startDisplayPolling();
@@ -1008,20 +1440,35 @@ async function refreshDisplay(opts = {}){
     return;
   }
   try{
-    const result = await shareFetch(`/v1/agendas/${enrolled.feedId}`,{ credential:enrolled.deviceCredential });
+    const wantsLibrary = typeof sharedDisplayWantsFullApp === 'function'
+      && sharedDisplayWantsFullApp(enrolled);
+    const result = await shareFetch(
+      typeof shareAgendaFeedPath === 'function'
+        ? shareAgendaFeedPath(enrolled.feedId,{ library:wantsLibrary })
+        : `/v1/agendas/${enrolled.feedId}`,
+      { credential:enrolled.deviceCredential }
+    );
     const remotePairingId = result.body && result.body.pairingId;
     if(remotePairingId && remotePairingId !== enrolled.pairingId){
       clearDisplayAuthorization('reauth');
       return;
     }
     if(!result.body || !result.body.snapshot){
+      if(typeof tingsShareLog === 'function') tingsShareLog('display.refresh.no_snapshot', {
+        revision:Number(result.body && result.body.revision) || 0
+      });
       renderDisplay(null,{ error:'waiting' });
       return;
     }
     let projection;
     try{
       projection = await shareDecrypt(enrolled.contentKey,result.body.snapshot);
-    }catch(_){
+    }catch(error){
+      if(typeof tingsShareLog === 'function'){
+        tingsShareLog('display.refresh.snapshot_decrypt_failed', {
+          error:typeof tingsShareErrorSummary === 'function' ? tingsShareErrorSummary(error) : String(error && error.message || error)
+        });
+      }
       // A rotated content key must not fall back to the previous plaintext cache.
       renderDisplay(null,{ error:'waiting' });
       return;
@@ -1037,20 +1484,38 @@ async function refreshDisplay(opts = {}){
       snapshot:result.body.snapshot,
       meta
     };
-    const remoteCompletionRowIds = (Array.isArray(result.body.completions) ? result.body.completions : [])
-      .map(record=>record && record.envelope && record.envelope.logId)
-      .filter(value=>/^[0-9a-f]{16}$/.test(String(value || '')));
-    const extras = [..._displaySavingRowIds];
+    const rematched = retargetDisplayCompletions(next,projection);
+    const liveRowIds = await applyDisplayLiveCompletions(rematched,result.body && result.body.completions,projection);
+    const extras = [
+      ..._displaySavingRowIds,
+      ...displayPendingCompletionPosts(rematched).map(item=>item.rowId),
+      ...liveRowIds
+    ];
     if(_displayPendingCompletion && _displayPendingCompletion.rowId) extras.push(_displayPendingCompletion.rowId);
     const completionRowIds = mergeDisplayCompletionRowIds(
-      enrolled.completionRowIds,
-      remoteCompletionRowIds,
+      rematched.completionRowIds,
+      [],
       projection,
       extras
     );
-    next.completionRowIds = completionRowIds;
-    _displayFeed = next;
-    displayWriteEnrollment(next);
+    rematched.completionRowIds = completionRowIds;
+    let stored = rematched;
+    try{
+      stored = await flushDisplayCompletionOutbox(rematched);
+    }catch(error){
+      if(error && (error.status === 401 || error.status === 410)){
+        clearDisplayAuthorization(error.status === 410 ? 'revoked' : 'reauth');
+        return;
+      }
+    }
+    stored.completionRowIds = completionRowIds;
+    _displayFeed = stored;
+    displayWriteEnrollment(stored);
+    if(await installDisplayReplica(projection,stored,result.body && result.body.replica)) return;
+    if(displayEnrollmentWantsFullApp(stored)){
+      openDisplayFullApp();
+      return;
+    }
     renderDisplay(projection,meta,completionRowIds);
   }catch(error){
     const code = error && error.payload && error.payload.error;
@@ -1070,7 +1535,8 @@ function clearDisplayAuthorization(error){
   dropPendingDisplayCompletion();
   _displaySavingRowIds.clear();
   _displayFeed = null;
-  displayWriteEnrollment(null);
+  if(typeof endSharedDisplaySession === 'function') endSharedDisplaySession();
+  else displayWriteEnrollment(null);
   renderDisplay(null,{ error });
   if(navigator.onLine !== false) void beginDisplayPairing(error);
 }
@@ -1093,8 +1559,16 @@ function startDisplayPolling(){
 
 async function bootAgendaDisplay(){
   clearAgendaFragment();
+  if(typeof sharedDisplaySessionEnded === 'function' && sharedDisplaySessionEnded()){
+    displayWriteEnrollment(null);
+    if(typeof clearSharedDisplaySessionEnded === 'function') clearSharedDisplaySessionEnded();
+  }
   const stored = displayReadEnrollment();
   if(stored && stored.deviceCredential && stored.pairingId){
+    if(displayEnrollmentWantsFullApp(stored)){
+      openDisplayFullApp();
+      return;
+    }
     _displayFeed = stored;
     const passcode = readDisplayPasscode();
     if(passcode && passcode.failures >= AGENDA_PASSCODE_MAX_FAILURES){

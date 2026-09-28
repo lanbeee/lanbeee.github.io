@@ -29,7 +29,14 @@
   border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
 }
 .topbar .home-filter-trigger.has-active{ border:0;background:transparent;box-shadow:none; }
-.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end; }
+.topbar .home-filter-bar{overflow:hidden;}
+.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end;overflow:hidden; }
+/* Shrink inside the bar. A flex-end row that overflows clips the left edge,
+   which is what shaved the current-place control once the assistant button
+   took a slot on a phone. */
+.topbar .presence-filter{
+  flex:0 1 190px;width:auto;min-width:0;max-width:min(190px,100%);
+}
 .topbar .home-filter-trigger{ position:relative; }
 body[data-pane-count="2"] .topbar,
 body[data-pane-count="3"] .topbar{
@@ -139,6 +146,7 @@ body[data-pane-count="3"] .app-bar{
 }
 /* Search mode: field takes the bar; calendar/+ step aside. */
 .app-bar-search.is-open ~ .app-bar-actions #bar-open-overview,
+.app-bar-search.is-open ~ .app-bar-actions #bar-open-assistant,
 .app-bar-search.is-open ~ .app-bar-actions #bar-open-add{
   display:none;
 }
@@ -148,9 +156,10 @@ body[data-pane-count="3"] .app-bar{
   background:var(--field-bg);color:var(--text);
   font:inherit;font-size:14px;font-weight:500;
   padding:0 14px;outline:none;margin:0;
+  -webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;
 }
-.app-bar-search input:focus-visible{
-  box-shadow:none;
+.app-bar-search input:focus,.app-bar-search input:focus-visible{
+  outline:none;box-shadow:none;
 }
 .app-bar-search .search-clear{
   display:none;
@@ -229,13 +238,14 @@ body.fullpage-open .bottom-nav{
   order:2;
 }
 .nav-search input{
-  width:100%;min-width:0;height:44px;border-radius:12px;
+  width:100%;min-width:0;height:44px;border-radius:20px;
   border:0;
   background:var(--field-bg);color:var(--text);
   font:inherit;font-size:15px;font-weight:500;
   padding:0 14px;outline:none;
+  -webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;
 }
-.nav-search input:focus-visible{box-shadow:none;}
+.nav-search input:focus,.nav-search input:focus-visible{outline:none;box-shadow:none;}
 .nav-search .search-clear{
   display:none;
   flex:0 0 36px;
