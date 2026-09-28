@@ -15,6 +15,7 @@
 #privacy-sheet{z-index:105;}
 #value-log-sheet{z-index:115;}
 #snooze-sheet,#activity-sheet,#day-capacity-sheet,#day-logs-sheet{z-index:120;}
+#free-time-sheet{z-index:125;}
 #weather-context-sheet{z-index:130;}
 /* Hourly metric drill-down opens on top of the weather context sheet. */
 #weather-metric-sheet{z-index:140;}

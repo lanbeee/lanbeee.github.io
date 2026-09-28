@@ -313,6 +313,7 @@ function ensureOverviewWeekForDay(dayKey){
     if(token !== _overviewWeekFillToken)return;
     const live = typeof load === 'function' ? load() : data;
     storeOverviewWeekSnapshot(week,live);
+    if(typeof refreshOpenFreeTimeSheet === 'function')refreshOpenFreeTimeSheet(dayKey);
     if(dayLogsKey !== dayKey || dayLogsStep !== 'list')return;
     if(typeof dayLogsScoped === 'function' && dayLogsScoped())return;
     renderDayLogsListStep(dayKey);
@@ -1152,9 +1153,9 @@ function renderDayLogsListStep(key){
     <b>This day is open</b>
     <small>${dayLogsCanPlan(key)
       ? (dayLogsCanLog(key)
-        ? 'Add a plan, log something you did, or change how much time this day has.'
-        : 'Add a plan for this day. You can pick a time if you want.')
-      : 'Log a missed day, or change how much time this day had.'}</small>
+        ? 'Add a plan, check a time, log something you did, or change how much time this day has.'
+        : 'Add a plan, or check whether a time can be made open.')
+      : 'Log a missed day, check a time, or change how much time this day had.'}</small>
   </div>`;
   $('day-logs-body').innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
@@ -1163,6 +1164,11 @@ function renderDayLogsListStep(key){
         <span><b>Plan something</b><small>Put an item on this day. You can add a time.</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>` : ''}
+      <button type="button" class="day-quick-action" id="day-logs-open-hours">
+        <i class="ti ti-clock-hour-4" aria-hidden="true"></i>
+        <span><b>See open hours</b><small>Check if a time is free, or can be made free</small></span>
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>
       ${dayLogsCanLog(key) ? `<button type="button" class="day-quick-action${dayLogsCanPlan(key) ? '' : ' primary'}" id="day-logs-log">
         <i class="ti ti-check" aria-hidden="true"></i>
         <span><b>${pastDay ? 'Log a missed day' : 'Log something'}</b><small>${pastDay ? 'Add something you forgot to log' : 'Mark an item done on this day'}</small></span>

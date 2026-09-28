@@ -1356,6 +1356,100 @@ function weatherSunTimesFor(summary){
 // night shading and sunrise/sunset. The scrub group + _weatherChartMeta back
 // the pointer/keyboard readout bound in weatherBindMetricChartScrub.
 let _weatherChartMeta=null;
+let _weatherPageChartMeta=null;
+let _weatherOverlayKeys=['temp'];
+let _weatherMetricOverlays=[];
+let _weatherFocusHid='';
+let _weatherDayContext=null;
+
+const WEATHER_OVERLAY_SHORT={temp:'feels',precip:'rain',wind:'wind',uv:'UV'};
+const WEATHER_OVERLAY_DRAW_ORDER=['precip','temp','wind','uv'];
+
+function weatherNormalizeOverlayKeys(keys,available){
+  const allow=new Set(available && available.length ? available : Object.keys(WEATHER_METRIC_DETAILS));
+  const picked=new Set((keys || []).filter(key=>allow.has(key)));
+  return WEATHER_OVERLAY_DRAW_ORDER.filter(key=>picked.has(key));
+}
+
+function weatherOverlayPickerHtml(available,selected,attr,opts={}){
+  const order=Object.keys(WEATHER_METRIC_DETAILS).filter(key=>available.includes(key));
+  const locked=new Set(opts.locked || []);
+  return `<div class="weather-overlay-picker free-weather-picker" role="group" aria-label="${escapeHtml(opts.label || 'hourly weather graphs')}">${order.map(key=>{
+    const detail=WEATHER_METRIC_DETAILS[key],on=selected.includes(key) || locked.has(key);
+    const hold=locked.has(key);
+    return `<button type="button" ${attr}="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${hold?' aria-current="true"':''}><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(WEATHER_OVERLAY_SHORT[key])}</button>`;
+  }).join('')}</div>`;
+}
+
+function weatherOverlaySeriesPoints(metricKey,rows,domainStart,domainEnd){
+  const detail=WEATHER_METRIC_DETAILS[metricKey];
+  if(!detail)return [];
+  return (rows || []).map(row=>({
+    ts:Number(row.ts),v:Number(row[detail.primary]),
+    s:Number(row[detail.secondary]),w:detail.snow ? Number(row[detail.snow]) : NaN
+  })).filter(point=>Number.isFinite(point.ts) && Number.isFinite(point.v)
+    && point.ts<domainEnd && point.ts+3600000>domainStart).sort((a,b)=>a.ts-b.ts);
+}
+
+function weatherOverlayValueLabel(metricKey,value){
+  if(!Number.isFinite(Number(value)))return '';
+  if(metricKey==='temp')return `${weatherTempDisplay(value)}°${weatherUsesFahrenheit()?'F':'C'}`;
+  if(metricKey==='precip')return `${Math.round(value)}%`;
+  if(metricKey==='wind')return `${Math.round(weatherWindConverted(value))} ${weatherWindUnitLabel()}`;
+  return `UV ${Math.round(value)}`;
+}
+
+function weatherOverlayNearestPoint(points,ts){
+  if(!points.length)return null;
+  const hit=points.reduce((best,point)=>Math.abs(point.ts-ts)<Math.abs(best.ts-ts)?point:best,points[0]);
+  return Math.abs(hit.ts-ts)<=3600000 ? hit : null;
+}
+
+function weatherOverlayReadoutExtraHtml(overlays,idx){
+  return (overlays || []).map(overlay=>{
+    const label=weatherOverlayValueLabel(overlay.key,overlay.values[idx]);
+    if(!label)return '';
+    return `<span class="overlay-readout series-${escapeHtml(overlay.key)}">${escapeHtml(WEATHER_OVERLAY_SHORT[overlay.key])} ${escapeHtml(label)}</span>`;
+  }).join('');
+}
+
+function weatherMetricOverlayParts(overlayKeys,tsList,xOfTs,geom,summary){
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const dayBase=summary?.dayBase;
+  const back=[],front=[],dots=[],meta=[];
+  const keys=weatherNormalizeOverlayKeys(overlayKeys);
+  if(!keys.length || !tsList.length)return {back:'',front:'',dots:'',meta};
+  for(const key of keys){
+    const rows=weatherHourlyRowsForDayMetric(dayBase,key,settings);
+    const points=weatherOverlaySeriesPoints(key,rows,geom.domainStart,geom.domainEnd);
+    if(!points.length)continue;
+    const domain=weatherMetricVisualDomain(key,points.map(point=>point.v));
+    const yAt=value=>geom.bottom-((value-domain.min)/(domain.max-domain.min))*(geom.bottom-geom.top);
+    const values=tsList.map(ts=>{
+      const hit=weatherOverlayNearestPoint(points,ts);
+      return hit ? hit.v : NaN;
+    });
+    meta.push({key,values,yAt});
+    if(key==='precip'){
+      const span=Math.max(1,geom.domainEnd-geom.domainStart);
+      const hourWidth=(geom.W-geom.left-geom.right)/Math.max(1,span/3600000);
+      back.push(points.map(point=>{
+        const start=Math.max(geom.domainStart,point.ts);
+        const end=Math.min(geom.domainEnd,point.ts+3600000);
+        if(end<=start)return '';
+        const bx=xOfTs(start),bw=Math.max(2,Math.min(hourWidth*.7,xOfTs(end)-bx));
+        const by=yAt(point.v);
+        return `<rect class="overlay-bar series-precip" x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,geom.bottom-by).toFixed(1)}" rx="2"/>`;
+      }).join(''));
+    }else{
+      const linePts=tsList.map((ts,index)=>Number.isFinite(values[index]) ? [xOfTs(ts),yAt(values[index])] : null).filter(Boolean);
+      if(linePts.length>1)front.push(`<path class="overlay-line series-${escapeHtml(key)}" d="${weatherSmoothPath(linePts)}"/>`);
+      else if(linePts.length===1)front.push(`<circle class="overlay-dot series-${escapeHtml(key)}" cx="${linePts[0][0].toFixed(1)}" cy="${linePts[0][1].toFixed(1)}" r="3"/>`);
+    }
+    dots.push(`<circle class="scrubdot overlay series-${escapeHtml(key)}" r="3" style="display:none"/>`);
+  }
+  return {back:back.join(''),front:front.join(''),dots:dots.join(''),meta};
+}
 
 function weatherMetricReadoutHtml(meta,idx){
   const hour=meta.labels[idx] || '';
@@ -1379,10 +1473,10 @@ function weatherMetricReadoutHtml(meta,idx){
     value=`UV ${Math.round(v)}`;
     if(meta.sun)extra=meta.ts[idx]<meta.sun.sunrise || meta.ts[idx]>meta.sun.sunset ? 'night' : '';
   }
-  return `<b>${escapeHtml(hour)}</b><span>${escapeHtml(value)}</span>${extra?`<span class="dim">${escapeHtml(extra)}</span>`:''}`;
+  return `<b>${escapeHtml(hour)}</b><span>${escapeHtml(value)}</span>${extra?`<span class="dim">${escapeHtml(extra)}</span>`:''}${weatherOverlayReadoutExtraHtml(meta.overlays,idx)}`;
 }
 
-function weatherMetricChartHtml(metricKey,rows,summary){
+function weatherMetricChartHtml(metricKey,rows,summary,overlayKeys=[]){
   const detail=WEATHER_METRIC_DETAILS[metricKey];
   const W=340,H=152,top=24,bottom=128,left=8,right=8;
   const pts=rows.map(row=>({ts:Number(row.ts),v:Number(row[detail.primary]),s:Number(row[detail.secondary]),
@@ -1428,10 +1522,18 @@ function weatherMetricChartHtml(metricKey,rows,summary){
   // Sun context on UV (its whole scale is daylight) and temp (overnight lows
   // read against the night); wind/precip stay clean.
   const sun=metricKey==='uv' || metricKey==='temp' ? weatherSunTimesFor(summary) : null;
+  const overlayParts=weatherMetricOverlayParts(
+    (overlayKeys || []).filter(key=>key!==metricKey),
+    pts.map(p=>p.ts),
+    xOfTs,
+    {W,H,top,bottom,left,right,domainStart,domainEnd},
+    summary
+  );
   _weatherChartMeta={metricKey,ts:pts.map(p=>p.ts),xs,
     labels:pts.map(p=>hourFull.format(p.ts)),
     primary:pts.map(p=>p.v),secondary:pts.map(p=>p.s),snow:detail.snow ? pts.map(p=>p.w) : null,
     geom:{W,H,top,bottom,left,right,yMin:vMin,yMax:vMax,domainStart,domainEnd},idx0,idx:idx0,sun,
+    overlays:overlayParts.meta
   };
   let inner='';
   if(sun){
@@ -1447,6 +1549,7 @@ function weatherMetricChartHtml(metricKey,rows,summary){
       inner+=`<line class="sunline" x1="${x.toFixed(1)}" y1="${top-4}" x2="${x.toFixed(1)}" y2="${bottom}"/><text class="sunmark" x="${x.toFixed(1)}" y="${top+11}" text-anchor="${anchor}">${escapeHtml(label)}</text>`;
     }
   }
+  inner+=overlayParts.back;
   if(metricKey==='precip'){
     const step=(W-left-right)/pts.length;
     pts.forEach((p,i)=>{
@@ -1465,6 +1568,7 @@ function weatherMetricChartHtml(metricKey,rows,summary){
       if(secPts.length>1)inner+=`<path class="line secondary" d="${weatherSmoothPath(secPts)}"/>`;
     }
   }
+  inner+=overlayParts.front;
   // Threshold context lines (freezing / UV levels / breeze strength / even
   // chance): dashed, labelled at the left edge (the right corner is the now
   // line's and sunset mark's), skipped outside the domain.
@@ -1506,8 +1610,11 @@ function weatherMetricChartHtml(metricKey,rows,summary){
   inner+=`<g class="scrub"><line class="scrubline" x1="${xs[idx0].toFixed(1)}" y1="${top-4}" x2="${xs[idx0].toFixed(1)}" y2="${bottom}"/>`
     +`<circle class="scrubdot" cx="${xs[idx0].toFixed(1)}" cy="${yAt(pts[idx0].v).toFixed(1)}" r="3.6"/>`
     +(Number.isFinite(sVal) && metricKey!=='precip' && metricKey!=='uv' ? `<circle class="scrubdot secondary" cx="${xs[idx0].toFixed(1)}" cy="${yAt(sVal).toFixed(1)}" r="3"/>` : `<circle class="scrubdot secondary" r="3" style="display:none"/>`)
+    +overlayParts.dots
     +`</g>`;
-  return `<svg class="weather-metric-chart metric-${escapeHtml(metricKey)}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(`${detail.label} by hour, drag or use arrow keys to read a specific hour`)}"><defs><linearGradient id="weather-grad-${escapeHtml(metricKey)}" x1="0" y1="0" x2="0" y2="1"><stop class="a" offset="0"/><stop class="b" offset="1"/></linearGradient></defs>${inner}</svg>`;
+  const overlayNames=overlayParts.meta.map(item=>WEATHER_METRIC_DETAILS[item.key]?.label).filter(Boolean);
+  const overlayNote=overlayNames.length ? `, overlaid with ${overlayNames.join(', ')}` : '';
+  return `<svg class="weather-metric-chart metric-${escapeHtml(metricKey)}${overlayNames.length?' has-overlay':''}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(`${detail.label} by hour${overlayNote}, drag or use arrow keys to read a specific hour`)}"><defs><linearGradient id="weather-grad-${escapeHtml(metricKey)}" x1="0" y1="0" x2="0" y2="1"><stop class="a" offset="0"/><stop class="b" offset="1"/></linearGradient></defs>${inner}</svg>`;
 }
 
 function weatherAgendaMetricSummary(row,metricKey,weatherRows){
@@ -1773,6 +1880,19 @@ function weatherAgendaTimelineHtml(rows,summary,metricKey,weatherRows,nowTs){
   `;
 }
 
+function weatherPlaceOverlayScrubDots(svg,meta,x){
+  (meta.overlays || []).forEach(overlay=>{
+    const dot=svg.querySelector(`.scrubdot.overlay.series-${overlay.key}`);
+    if(!dot)return;
+    const value=overlay.values[meta.idx];
+    if(Number.isFinite(value)){
+      dot.style.display='';
+      dot.setAttribute('cx',x);
+      dot.setAttribute('cy',overlay.yAt(value).toFixed(1));
+    }else dot.style.display='none';
+  });
+}
+
 // Wire the open chart's scrub layer: pointer drag/hover and arrow keys move
 // the crosshair and update the readout line. Bound once per render.
 function weatherBindMetricChartScrub(){
@@ -1787,9 +1907,11 @@ function weatherBindMetricChartScrub(){
     const x=meta.xs[meta.idx].toFixed(1);
     svg.querySelector('.scrubline').setAttribute('x1',x);
     svg.querySelector('.scrubline').setAttribute('x2',x);
-    const dot=svg.querySelector('.scrubdot');
-    dot.setAttribute('cx',x);
-    dot.setAttribute('cy',yAt(meta.primary[meta.idx]).toFixed(1));
+    const dot=svg.querySelector('.scrubdot:not(.overlay):not(.secondary)');
+    if(dot){
+      dot.setAttribute('cx',x);
+      dot.setAttribute('cy',yAt(meta.primary[meta.idx]).toFixed(1));
+    }
     // Only temp/wind draw a secondary series on the chart; precip/uv carry
     // their second value in the readout alone.
     const sdot=svg.querySelector('.scrubdot.secondary');
@@ -1801,6 +1923,7 @@ function weatherBindMetricChartScrub(){
         sdot.setAttribute('cy',yAt(s).toFixed(1));
       }else sdot.style.display='none';
     }
+    weatherPlaceOverlayScrubDots(svg,meta,x);
     readout.innerHTML=weatherMetricReadoutHtml(meta,meta.idx);
   };
   setIdx(meta.idx0);
@@ -1871,13 +1994,244 @@ function weatherMetricStatsHtml(metricKey,rows,summary){
   return `<div class="weather-metric-stats">${chips}</div>`;
 }
 
+function plannerShiftDateKey(key,days){
+  const base=typeof dayStart==='function' ? dayStart(new Date(`${key}T12:00:00`).getTime()) : NaN;
+  if(!Number.isFinite(base) || typeof dateKey!=='function')return key;
+  return dateKey(base+days*86400000);
+}
+
+function plannerDaySwitchChipCopy(key){
+  const d=new Date(`${key}T12:00:00`);
+  const today=typeof todayIso==='function' ? todayIso() : '';
+  const tomorrow=typeof dateKey==='function' && typeof dayStart==='function'
+    ? dateKey(dayStart(Date.now())+86400000) : '';
+  const weekday=key===today ? 'today' : (key===tomorrow ? 'tmrw'
+    : (typeof weekdayShort==='function' ? weekdayShort(d.getDay()) : d.toLocaleDateString(undefined,{weekday:'short'})));
+  return {weekday,date:String(d.getDate())};
+}
+
+function plannerDaySwitchHtml(dayKey,attrName,ariaLabel){
+  if(!dayKey || typeof dateKey!=='function' || typeof dayStart!=='function')return '';
+  const selectedBase=dayStart(new Date(`${dayKey}T12:00:00`).getTime());
+  if(!Number.isFinite(selectedBase))return '';
+  const today=dayStart(Date.now());
+  const inPlannerWeek=selectedBase>=today && selectedBase<=today+6*86400000;
+  const windowStart=inPlannerWeek ? today : selectedBase-3*86400000;
+  const chips=[];
+  const attr=attrName || 'data-day';
+  for(let i=0;i<7;i+=1){
+    const key=dateKey(windowStart+i*86400000);
+    const on=key===dayKey;
+    const copy=plannerDaySwitchChipCopy(key);
+    chips.push(`<button type="button" class="free-day-chip${on?' on':''}" ${attr}="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${on?' aria-current="date"':''} aria-label="${escapeHtml(`${copy.weekday} ${copy.date}`)}"><span>${escapeHtml(copy.weekday)}</span><b>${escapeHtml(copy.date)}</b></button>`);
+  }
+  return `<div class="free-day-switch" aria-label="${escapeHtml(ariaLabel || 'choose another day')}">
+    <button type="button" class="free-day-step" ${attr}="${escapeHtml(plannerShiftDateKey(dayKey,-1))}" aria-label="previous day"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+    <div class="free-day-chips" role="group">${chips.join('')}</div>
+    <button type="button" class="free-day-step" ${attr}="${escapeHtml(plannerShiftDateKey(dayKey,1))}" aria-label="next day"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+  </div>`;
+}
+
+function weatherDayContextFor(dayBase){
+  const ts=weatherDayTimestamp(dayBase);
+  if(ts==null)return null;
+  if(typeof freeTimeDayForKey==='function' && typeof dateKey==='function'){
+    const day=freeTimeDayForKey(dateKey(ts));
+    if(day)return day;
+  }
+  return null;
+}
+
+function weatherOverlayHourXs(points,xOfTs){
+  return points.map(point=>xOfTs(point.ts+1800000));
+}
+
+function weatherOverlayChartHtml(opts){
+  const keys=weatherNormalizeOverlayKeys(opts.keys,opts.available);
+  const rowsByKey=opts.rowsByKey || {};
+  const domainStart=Number(opts.domainStart),domainEnd=Number(opts.domainEnd);
+  if(!keys.length || !(domainEnd>domainStart))return '';
+  const mode=opts.mode || 'page';
+  const compact=mode==='free';
+  const W=compact ? 320 : 340;
+  const H=compact ? 64 : 140;
+  const left=compact ? 0 : 8;
+  const right=compact ? 0 : 8;
+  const top=compact ? 5 : 18;
+  const bottom=compact ? 48 : 118;
+  const idPrefix=opts.idPrefix || (compact ? 'free-weather' : 'weather-page');
+  const series=keys.map(key=>{
+    const points=weatherOverlaySeriesPoints(key,rowsByKey[key],domainStart,domainEnd);
+    return {key,points,domain:points.length ? weatherMetricVisualDomain(key,points.map(point=>point.v)) : null};
+  }).filter(item=>item.points.length);
+  if(!series.length)return '';
+  const x=ts=>left+Math.max(0,Math.min(1,(ts-domainStart)/(domainEnd-domainStart)))*(W-left-right);
+  const yFor=(item,value)=>bottom-(value-item.domain.min)/(item.domain.max-item.domain.min)*(bottom-top);
+  const single=series.length===1;
+  const defs=series.map(item=>{
+    if(!(single || item.key==='precip'))return '';
+    return `<linearGradient id="${idPrefix}-gradient-${escapeHtml(item.key)}" x1="0" y1="1" x2="0" y2="0">${weatherMetricGradientStopsHtml(item.key,item.domain.min,item.domain.max)}</linearGradient>`;
+  }).join('');
+  let marks='';
+  for(const item of series){
+    const y=value=>yFor(item,value);
+    if(item.key==='precip'){
+      const hourWidth=(W-left-right)/Math.max(1,(domainEnd-domainStart)/3600000);
+      marks+=item.points.map(point=>{
+        const start=Math.max(domainStart,point.ts),end=Math.min(domainEnd,point.ts+3600000);
+        const bx=x(start),bw=Math.max(2,Math.min(hourWidth*.78,x(end)-bx));
+        const by=y(point.v),tone=weatherMetricTone(item.key,point.v);
+        const cls=single ? `free-weather-bar tone-${tone}` : 'overlay-bar series-precip';
+        return `<rect class="${cls}" x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,bottom-by).toFixed(1)}" rx="2"/>`;
+      }).join('');
+      continue;
+    }
+    const points=item.points.map(point=>[x(Math.max(domainStart,Math.min(domainEnd,point.ts+1800000))),y(point.v)]);
+    if(points.length===1){
+      const tone=weatherMetricTone(item.key,item.points[0].v);
+      const cls=single ? `free-weather-dot tone-${tone}` : `overlay-dot series-${item.key}`;
+      marks+=`<circle class="${cls}" cx="${points[0][0].toFixed(1)}" cy="${points[0][1].toFixed(1)}" r="3"/>`;
+      continue;
+    }
+    const path=weatherSmoothPath(points);
+    if(single){
+      const gid=`${idPrefix}-gradient-${item.key}`;
+      const area=`${path}L${points[points.length-1][0].toFixed(1)} ${bottom}L${points[0][0].toFixed(1)} ${bottom}Z`;
+      marks+=`<path class="free-weather-area" d="${area}" fill="url(#${gid})"/><path class="free-weather-line-halo" d="${path}"/><path class="free-weather-line" d="${path}" stroke="url(#${gid})"/>`;
+    }else{
+      marks+=`<path class="overlay-line series-${escapeHtml(item.key)}" d="${path}"/>`;
+    }
+  }
+  let busy='';
+  if(compact && Array.isArray(opts.busy)){
+    busy=opts.busy.map(block=>{
+      const start=Math.max(domainStart,block.start),end=Math.min(domainEnd,block.end);
+      if(end<=start)return '';
+      return `<rect class="free-weather-busy" x="${x(start).toFixed(1)}" y="${top}" width="${Math.max(1,x(end)-x(start)).toFixed(1)}" height="${bottom-top}"/>`;
+    }).join('');
+  }
+  const selection=opts.selection;
+  let selectionBack='',selectionFront='';
+  if(compact && selection && selection.end>selection.start){
+    const start=Math.max(domainStart,selection.start),end=Math.min(domainEnd,selection.end);
+    if(end>start){
+      const sx=x(start),ex=x(end),width=Math.max(1,ex-sx);
+      selectionBack=`<rect class="free-weather-selection-band" x="${sx.toFixed(1)}" y="${top}" width="${width.toFixed(1)}" height="${bottom-top}" rx="2"/>`;
+      selectionFront=`${sx>left?`<rect class="free-weather-selection-shade" x="${left}" y="${top}" width="${(sx-left).toFixed(1)}" height="${bottom-top}"/>`:''}${ex<W-right?`<rect class="free-weather-selection-shade" x="${ex.toFixed(1)}" y="${top}" width="${(W-right-ex).toFixed(1)}" height="${bottom-top}"/>`:''}<line class="free-weather-selection-edge" x1="${sx.toFixed(1)}" y1="${top}" x2="${sx.toFixed(1)}" y2="${bottom}"/><line class="free-weather-selection-edge" x1="${ex.toFixed(1)}" y1="${top}" x2="${ex.toFixed(1)}" y2="${bottom}"/>`;
+    }
+  }
+  let axis='';
+  if(compact){
+    const startLabel=typeof freeDayClockLabel==='function' ? freeDayClockLabel(domainStart) : '';
+    const endLabel=typeof freeDayClockLabel==='function' ? freeDayClockLabel(domainEnd) : '';
+    axis=`<line class="free-weather-baseline" x1="${left}" y1="${bottom}" x2="${W-right}" y2="${bottom}"/>`
+      +`<text class="free-weather-time" x="${left}" y="${H-3}" text-anchor="start">${escapeHtml(startLabel)}</text>`
+      +`<text class="free-weather-time" x="${W-right}" y="${H-3}" text-anchor="end">${escapeHtml(endLabel)}</text>`;
+  }else{
+    const summary=opts.summary;
+    const hourShort=new Intl.DateTimeFormat('en-GB',{timeZone:summary?.timezone || undefined,hour:'2-digit',hour12:false});
+    const ticks=series[0].points;
+    let hourIdxs=ticks.map((point,index)=>Number(hourShort.format(point.ts))%3===0?index:-1).filter(index=>index>=0);
+    const lastIdx=ticks.length-1;
+    if(lastIdx>=0 && !hourIdxs.includes(lastIdx)){
+      const lastX=x(ticks[lastIdx].ts+1800000);
+      hourIdxs=hourIdxs.filter(index=>Math.abs(x(ticks[index].ts+1800000)-lastX)>=24);
+      hourIdxs.push(lastIdx);
+    }
+    axis=hourIdxs.map(index=>{
+      const px=x(ticks[index].ts+1800000);
+      const anchor=px<32?'start':px>W-32?'end':'middle';
+      return `<text class="hour" x="${px.toFixed(1)}" y="${H-8}" text-anchor="${anchor}">${escapeHtml(hourShort.format(ticks[index].ts))}</text>`;
+    }).join('');
+    if(summary && weatherRequestedDayKey(Date.now())===summary.key){
+      const t=(Date.now()-domainStart)/Math.max(1,domainEnd-domainStart);
+      if(t>=0 && t<=1){
+        const nx=left+t*(W-left-right);
+        axis+=`<line class="nowline" x1="${nx.toFixed(1)}" y1="${top-4}" x2="${nx.toFixed(1)}" y2="${bottom}"/><text class="now" x="${nx.toFixed(1)}" y="${top-8}" text-anchor="${nx>W-40?'end':'middle'}">now</text>`;
+      }
+    }
+  }
+  let scrub='';
+  if(!compact){
+    const primary=series.find(item=>item.key!=='precip') || series[0];
+    const tsList=primary.points.map(point=>point.ts);
+    const xs=weatherOverlayHourXs(primary.points,x);
+    const hourFull=new Intl.DateTimeFormat('en-GB',{timeZone:opts.summary?.timezone || undefined,hour:'2-digit',minute:'2-digit',hour12:false});
+    let idx0=primary.points.reduce((best,point,index)=>point.v>primary.points[best].v?index:best,0);
+    if(opts.summary && weatherRequestedDayKey(Date.now())===opts.summary.key){
+      const now=Date.now();
+      if(now>=domainStart && now<=domainEnd){
+        idx0=tsList.reduce((best,ts,index)=>Math.abs(ts-now)<Math.abs(tsList[best]-now)?index:best,0);
+      }
+    }
+    const overlays=series.map(item=>({
+      key:item.key,
+      values:tsList.map(ts=>{
+        const hit=weatherOverlayNearestPoint(item.points,ts);
+        return hit ? hit.v : NaN;
+      }),
+      yAt:value=>yFor(item,value)
+    }));
+    _weatherPageChartMeta={
+      metricKey:primary.key,ts:tsList,xs,
+      labels:tsList.map(ts=>hourFull.format(ts)),
+      primary:overlays.find(item=>item.key===primary.key)?.values || primary.points.map(point=>point.v),
+      secondary:primary.points.map(()=>NaN),snow:null,
+      geom:{W,H,top,bottom,left,right,domainStart,domainEnd},idx0,idx:idx0,sun:null,
+      yAt:value=>yFor(primary,value),
+      overlays:overlays.filter(item=>item.key!==primary.key)
+    };
+    const y0=yFor(primary,primary.points[idx0].v);
+    const extraDots=overlays.filter(item=>item.key!==primary.key)
+      .map(item=>`<circle class="scrubdot overlay series-${escapeHtml(item.key)}" r="3" style="display:none"/>`).join('');
+    scrub=`<g class="scrub"><line class="scrubline" x1="${xs[idx0].toFixed(1)}" y1="${top-4}" x2="${xs[idx0].toFixed(1)}" y2="${bottom}"/>`
+      +`<circle class="scrubdot" cx="${xs[idx0].toFixed(1)}" cy="${y0.toFixed(1)}" r="3.6"/>`
+      +extraDots
+      +`</g>`;
+  }else{
+    _weatherPageChartMeta=null;
+  }
+  const names=series.map(item=>WEATHER_METRIC_DETAILS[item.key].label).join(', ');
+  const ariaBusy=compact ? '; shaded spans are busy' : '';
+  const selectionLabel=compact && selection && selection.end>selection.start && typeof freeDayClockLabel==='function'
+    ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)}` : '';
+  const ariaSelection=selectionLabel ? `; ${selectionLabel} is selected` : '';
+  const svgClass=compact
+    ? `free-weather-chart-svg${series.length>1?' is-overlay':''}`
+    : `weather-overlay-chart${series.length>1?' is-overlay':''}`;
+  const preserve=compact ? ' preserveAspectRatio="none"' : '';
+  const metricClass=single ? ` metric-${escapeHtml(series[0].key)}` : '';
+  return `<svg class="${svgClass}${metricClass}" viewBox="0 0 ${W} ${H}"${preserve} role="img" aria-label="${escapeHtml(`${names} by hour${ariaBusy}${ariaSelection}`)}"><defs>${defs}</defs>${busy}${selectionBack}${marks}${selectionFront}${axis}${scrub}</svg>`;
+}
+
+function weatherOverlayCaptionHtml(keys,rowsByKey,selection){
+  const labels=keys.map(key=>{
+    const detail=WEATHER_METRIC_DETAILS[key];
+    const rows=rowsByKey[key] || [];
+    const focus=selection && selection.end>selection.start
+      ? rows.filter(row=>Number(row.ts)<selection.end && Number(row.ts)+3600000>selection.start)
+      : rows;
+    return {label:detail.label,summary:weatherFreeTimeMetricSummary(key,focus.length ? focus : rows)};
+  }).filter(item=>item.summary);
+  if(!labels.length)return '';
+  const title=labels.map(item=>item.label).join(' · ');
+  const summary=labels.map(item=>item.summary).join(' · ');
+  const icons=keys.map(key=>`<i class="ti ${WEATHER_METRIC_DETAILS[key].icon}" aria-hidden="true"></i>`).join('');
+  return `<figcaption><span>${icons}${escapeHtml(title)}</span><b>${escapeHtml(summary)}</b></figcaption>`;
+}
+
 function weatherContextSheetModel(dayBase,dayContext=null,focusHid=''){
+  const ts=weatherDayTimestamp(dayBase);
+  if(ts==null)return null;
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
   const summary=weatherDaySummary(settings?._weatherContext,dayBase,settings);
-  if(!summary)return null;
-  return {summary,
-    dayRows:weatherDayRows(settings?._weatherContext,summary.dayBase),
-    items:weatherGuidedItemsForDay(dayBase,dayContext,settings),focusHid:String(focusHid || '')};
+  return {
+    summary,
+    dayBase:summary?.dayBase ?? ts,
+    dayRows:summary ? weatherDayRows(settings?._weatherContext,summary.dayBase) : [],
+    items:summary ? weatherGuidedItemsForDay(dayBase,dayContext,settings) : [],
+    focusHid:String(focusHid || '')
+  };
 }
 
 function weatherContextItemHtml(item,focusHid){
@@ -1892,17 +2246,26 @@ function weatherContextItemHtml(item,focusHid){
 }
 
 function renderWeatherContextSheet(model){
-  if(!model)return false;
-  const {summary,items,focusHid,dayRows=[]}=model;
-  const date=new Date(summary.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  if(!model || model.dayBase==null)return false;
+  const {summary,items=[],focusHid,dayRows=[]}=model;
+  const date=new Date(model.dayBase).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  const dayKey=typeof dateKey==='function' ? dateKey(model.dayBase) : '';
   const title=document.getElementById('weather-context-title');
   const sub=document.getElementById('weather-context-sub');
   const eyebrow=document.getElementById('weather-context-eyebrow');
   const icon=document.getElementById('weather-context-icon');
   const content=document.getElementById('weather-context-content');
+  const switchHtml=plannerDaySwitchHtml(dayKey,'data-weather-day','see this forecast on another day');
+  if(eyebrow)eyebrow.textContent='forecast context';
+  if(!summary){
+    if(title)title.textContent='weather';
+    if(sub)sub.textContent=`${date} · forecast unavailable`;
+    if(icon)icon.innerHTML='<i class="ti ti-cloud-off" aria-hidden="true"></i>';
+    if(content)content.innerHTML=`${switchHtml}<p class="weather-context-empty">No forecast is available for this day.</p>`;
+    return true;
+  }
   if(title)title.textContent=summary.condition.label;
   if(sub)sub.textContent=`${date} · ${summary.cityName} · ${weatherFreshnessText(summary.fetchedAt)}`;
-  if(eyebrow)eyebrow.textContent='forecast context';
   if(icon)icon.innerHTML=`<span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(summary.condition.emoji || '☁️')}</span>`;
   if(content){
     const range=weatherTemperatureRange(summary);
@@ -1926,8 +2289,10 @@ function renderWeatherContextSheet(model){
       weatherMetricCard('ti-sun-high', 'UV', summary.uv==null?'':String(Math.round(summary.uv)), hasHourly(WEATHER_METRIC_DETAILS.uv.primary)?'uv':null)
     ].filter(Boolean).join('');
     const itemHtml=items.map(item=>weatherContextItemHtml(item,focusHid)).join('');
-    content.innerHTML=`<div class="weather-context-metrics">${metrics}</div>
+    content.innerHTML=`${switchHtml}<div class="weather-context-metrics">${metrics}</div>
+      <section class="weather-overlay-panel" id="weather-overlay-host" aria-label="hourly overlay"></section>
       ${itemHtml?`<section class="weather-context-items"><p class="overview-section-title">weather-guided plan</p>${itemHtml}</section>`:'<p class="weather-context-empty">No weather-guided items are scheduled on this day.</p>'}`;
+    weatherFillOverlayHost(model);
   }
   return true;
 }
@@ -1984,16 +2349,133 @@ function syncWeatherAgendaCompareButton(){
   button.innerHTML=`<i class="ti ti-calendar-time" aria-hidden="true"></i> day × weather${count>1?` (${count})`:''}`;
 }
 
-function openWeatherContextSheet(dayBase,dayContext=null,focusHid=''){
+function openWeatherContextSheet(dayBase,dayContext=null,focusHid='',opts={}){
   const model=weatherContextSheetModel(dayBase,dayContext,focusHid);
+  if(!model)return false;
+  const sheet=document.getElementById('weather-context-sheet');
+  const alreadyOpen=Boolean(sheet?.classList.contains('open'));
+  if(!alreadyOpen && !opts.keepView){
+    _weatherOverlayKeys=['temp'];
+    _weatherMetricOverlays=[];
+  }
   if(!renderWeatherContextSheet(model))return false;
-  _weatherContextDay=model.summary.dayBase;
-  _weatherContextAgendaRows=weatherAgendaComparisonRows(model.summary.dayBase,dayContext);
-  _weatherMetricKey='';
-  if(typeof openSheet==='function')openSheet('weather-context-sheet');
+  _weatherContextDay=model.dayBase;
+  _weatherFocusHid=String(focusHid || '');
+  _weatherDayContext=dayContext;
+  _weatherContextAgendaRows=weatherAgendaComparisonRows(model.dayBase,dayContext);
+  if(!alreadyOpen)_weatherMetricKey='';
+  if(!alreadyOpen && typeof openSheet==='function')openSheet('weather-context-sheet');
   if(typeof armSheetBackdropGuard==='function')armSheetBackdropGuard('weather-context-sheet');
   if(focusHid)requestAnimationFrame(()=>document.querySelector(`#weather-context-content [data-weather-context-hid="${CSS.escape(focusHid)}"]`)?.scrollIntoView({block:'nearest'}));
   return true;
+}
+
+function switchWeatherContextDay(nextKey){
+  const nextBase=weatherDayTimestamp(nextKey);
+  if(nextBase==null || nextBase===_weatherContextDay)return;
+  const dayContext=weatherDayContextFor(nextBase);
+  const metricOpen=document.getElementById('weather-metric-sheet')?.classList.contains('open');
+  const agendaOpen=document.getElementById('weather-agenda-sheet')?.classList.contains('open');
+  const metricKey=_weatherMetricKey;
+  if(!openWeatherContextSheet(nextBase,dayContext,_weatherFocusHid,{keepView:true}))return;
+  if(metricOpen && metricKey){
+    if(!renderWeatherMetricSheet(metricKey) && typeof closeSheet==='function')closeSheet('weather-metric-sheet');
+  }
+  if(agendaOpen && metricKey){
+    if(!renderWeatherAgendaSheet(metricKey) && typeof closeSheet==='function')closeSheet('weather-agenda-sheet');
+  }
+}
+
+function weatherOverlayAvailableKeys(dayBase,settings){
+  return Object.keys(WEATHER_METRIC_DETAILS).filter(key=>weatherHourlyRowsForDayMetric(dayBase,key,settings).length);
+}
+
+function weatherPageOverlayInnerHtml(model){
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const available=weatherOverlayAvailableKeys(model.dayBase,settings);
+  const selected=weatherNormalizeOverlayKeys(_weatherOverlayKeys,available);
+  _weatherOverlayKeys=selected;
+  const rowsByKey=Object.fromEntries(available.map(key=>[key,weatherHourlyRowsForDayMetric(model.dayBase,key,settings)]));
+  const points=selected.flatMap(key=>rowsByKey[key] || []);
+  const domainStart=points.length ? Math.min(...points.map(row=>Number(row.ts))) : 0;
+  const domainEnd=points.length ? Math.max(...points.map(row=>Number(row.ts)))+3600000 : 0;
+  const chart=selected.length
+    ? weatherOverlayChartHtml({
+      keys:selected,rowsByKey,available,domainStart,domainEnd,mode:'page',
+      summary:model.summary,idPrefix:'weather-page'
+    })
+    : '';
+  const hint=selected.length
+    ? `${selected.length}/4 overlaid`
+    : 'tap to overlay';
+  const readout=selected.length ? '<div class="weather-metric-readout" id="weather-overlay-readout"></div>' : '';
+  const empty=available.length
+    ? (selected.length ? '' : '<p class="weather-overlay-hint">Tap feels, rain, wind, or UV to stack hourly graphs on the same clock.</p>')
+    : '<p class="weather-context-empty">No hourly forecast is available for this day.</p>';
+  return `<div class="weather-overlay-head"><span><b>hourly graphs</b><small>add more to compare the same hours</small></span><em>${escapeHtml(hint)}</em></div>
+    ${available.length ? weatherOverlayPickerHtml(available,selected,'data-weather-overlay',{label:'overlay hourly graphs'}) : ''}
+    ${readout}${chart || empty}`;
+}
+
+function weatherBindPageOverlayScrub(){
+  const meta=_weatherPageChartMeta;
+  const svg=document.querySelector('#weather-overlay-host svg.weather-overlay-chart');
+  const readout=document.getElementById('weather-overlay-readout');
+  if(!meta || !svg || !readout)return;
+  const {geom}=meta;
+  const setIdx=idx=>{
+    meta.idx=Math.max(0,Math.min(meta.xs.length-1,idx));
+    const x=meta.xs[meta.idx].toFixed(1);
+    svg.querySelector('.scrubline')?.setAttribute('x1',x);
+    svg.querySelector('.scrubline')?.setAttribute('x2',x);
+    const main=svg.querySelector('.scrubdot:not(.overlay)');
+    const mainValue=meta.primary[meta.idx];
+    if(main && Number.isFinite(mainValue)){
+      main.setAttribute('cx',x);
+      main.setAttribute('cy',(meta.yAt ? meta.yAt(mainValue) : geom.bottom).toFixed(1));
+    }
+    weatherPlaceOverlayScrubDots(svg,meta,x);
+    const hour=meta.labels[meta.idx] || '';
+    const mainLabel=weatherOverlayValueLabel(meta.metricKey,meta.primary[meta.idx]);
+    readout.innerHTML=`<b>${escapeHtml(hour)}</b><span class="overlay-readout series-${escapeHtml(meta.metricKey)}">${escapeHtml(WEATHER_OVERLAY_SHORT[meta.metricKey] || '')} ${escapeHtml(mainLabel)}</span>${weatherOverlayReadoutExtraHtml(meta.overlays,meta.idx)}`;
+  };
+  setIdx(meta.idx0);
+  svg.tabIndex=0;
+  const idxFromEvent=event=>{
+    const rect=svg.getBoundingClientRect();
+    if(!rect.width)return meta.idx;
+    const x=(event.clientX-rect.left)/rect.width*geom.W;
+    return meta.xs.reduce((best,point,i)=>Math.abs(point-x)<Math.abs(meta.xs[best]-x)?i:best,0);
+  };
+  let scrubbing=false;
+  svg.addEventListener('pointerdown',event=>{
+    scrubbing=true;
+    try{svg.setPointerCapture(event.pointerId);}catch{ /* synthetic events carry no active pointer */ }
+    setIdx(idxFromEvent(event));
+  });
+  svg.addEventListener('pointermove',event=>{
+    if(scrubbing || event.pointerType==='mouse')setIdx(idxFromEvent(event));
+  });
+  const stop=()=>{scrubbing=false;};
+  svg.addEventListener('pointerup',stop);
+  svg.addEventListener('pointercancel',stop);
+  svg.addEventListener('keydown',event=>{
+    if(event.key==='ArrowLeft' || event.key==='ArrowRight'){
+      event.preventDefault();
+      setIdx(meta.idx+(event.key==='ArrowLeft' ? -1 : 1));
+    }
+  });
+}
+
+function weatherFillOverlayHost(model){
+  const host=document.getElementById('weather-overlay-host');
+  if(!host || !model?.summary){
+    _weatherPageChartMeta=null;
+    if(host && !model?.summary)host.innerHTML='';
+    return;
+  }
+  host.innerHTML=weatherPageOverlayInnerHtml(model);
+  weatherBindPageOverlayScrub();
 }
 
 function weatherHourlyRowsForDayMetric(dayBase,metricKey,settings){
@@ -2029,78 +2511,35 @@ function weatherFreeTimeMetricSummary(metricKey,rows){
   return `up to ${Math.round(high)}`;
 }
 
-// A 64px shared-time-axis weather strip for the open-time sheet. Busy spans
+// A compact shared-time-axis weather strip for the open-time sheet. Busy spans
 // sit behind the weather marks, so the chart answers both "what is it doing?"
-// and "is this time already occupied?" without another interaction.
-function weatherFreeTimeChartHtml(metricKey,rows,info,selection=null){
-  const detail=WEATHER_METRIC_DETAILS[metricKey];
-  if(!detail || !(info.windowEnd>info.windowStart))return '';
-  // left/right stay 0: the time domain spans the whole viewBox because the
-  // svg is stretched (preserveAspectRatio="none") to exactly the day map's
-  // track width, so busy spans and selection edges must land on the same x.
-  const W=320,H=64,left=0,right=0,top=5,bottom=48;
-  const visible=(rows || []).map(row=>({
-    ts:Number(row.ts),value:Number(row[detail.primary]),amount:Number(row[detail.secondary]),snow:Number(row[detail.snow])
-  })).filter(point=>Number.isFinite(point.ts) && Number.isFinite(point.value)
-    && point.ts<info.windowEnd && point.ts+3600000>info.windowStart).sort((a,b)=>a.ts-b.ts);
-  if(!visible.length)return '';
-  const focus=selection && selection.end>selection.start
-    ? visible.filter(point=>point.ts<selection.end && point.ts+3600000>selection.start)
-    : [];
-  const values=visible.map(point=>point.value);
-  const domain=weatherMetricVisualDomain(metricKey,values);
-  const x=ts=>left+Math.max(0,Math.min(1,(ts-info.windowStart)/(info.windowEnd-info.windowStart)))*(W-left-right);
-  const y=value=>bottom-(value-domain.min)/(domain.max-domain.min)*(bottom-top);
-  const gradientId=`free-weather-gradient-${metricKey}`;
-  const busy=(info.busy || []).map(block=>{
-    const start=Math.max(info.windowStart,block.start),end=Math.min(info.windowEnd,block.end);
-    if(end<=start)return '';
-    return `<rect class="free-weather-busy" x="${x(start).toFixed(1)}" y="${top}" width="${Math.max(1,x(end)-x(start)).toFixed(1)}" height="${bottom-top}"/>`;
-  }).join('');
-  let selectionBack='',selectionFront='';
-  if(selection && selection.end>selection.start){
-    const start=Math.max(info.windowStart,selection.start),end=Math.min(info.windowEnd,selection.end);
-    if(end>start){
-      const sx=x(start),ex=x(end),width=Math.max(1,ex-sx);
-      selectionBack=`<rect class="free-weather-selection-band" x="${sx.toFixed(1)}" y="${top}" width="${width.toFixed(1)}" height="${bottom-top}" rx="2"/>`;
-      selectionFront=`${sx>left?`<rect class="free-weather-selection-shade" x="${left}" y="${top}" width="${(sx-left).toFixed(1)}" height="${bottom-top}"/>`:''}${ex<W-right?`<rect class="free-weather-selection-shade" x="${ex.toFixed(1)}" y="${top}" width="${(W-right-ex).toFixed(1)}" height="${bottom-top}"/>`:''}<line class="free-weather-selection-edge" x1="${sx.toFixed(1)}" y1="${top}" x2="${sx.toFixed(1)}" y2="${bottom}"/><line class="free-weather-selection-edge" x1="${ex.toFixed(1)}" y1="${top}" x2="${ex.toFixed(1)}" y2="${bottom}"/>`;
-    }
-  }
-  let marks='';
-  if(metricKey==='precip'){
-    const hourWidth=(W-left-right)/Math.max(1,(info.windowEnd-info.windowStart)/3600000);
-    marks=visible.map(point=>{
-      const start=Math.max(info.windowStart,point.ts),end=Math.min(info.windowEnd,point.ts+3600000);
-      const bx=x(start),bw=Math.max(2,Math.min(hourWidth*.78,x(end)-bx));
-      const by=y(point.value),tone=weatherMetricTone(metricKey,point.value);
-      return `<rect class="free-weather-bar tone-${tone}" x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,bottom-by).toFixed(1)}" rx="2"/>`;
-    }).join('');
-  }else{
-    const points=visible.map(point=>[x(Math.max(info.windowStart,Math.min(info.windowEnd,point.ts+1800000))),y(point.value)]);
-    if(points.length===1){
-      const tone=weatherMetricTone(metricKey,visible[0].value);
-      marks=`<circle class="free-weather-dot tone-${tone}" cx="${points[0][0].toFixed(1)}" cy="${points[0][1].toFixed(1)}" r="3"/>`;
-    }else{
-      const path=weatherSmoothPath(points);
-      const area=`${path}L${points[points.length-1][0].toFixed(1)} ${bottom}L${points[0][0].toFixed(1)} ${bottom}Z`;
-      marks=`<path class="free-weather-area" d="${area}" fill="url(#${gradientId})"/><path class="free-weather-line-halo" d="${path}"/><path class="free-weather-line" d="${path}" stroke="url(#${gradientId})"/>`;
-    }
-  }
-  const startLabel=freeDayClockLabel(info.windowStart),endLabel=freeDayClockLabel(info.windowEnd);
-  const selectionLabel=selection && selection.end>selection.start
-    ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)}`
-    : '';
-  const summary=weatherFreeTimeMetricSummary(metricKey,focus.length ? focus : visible);
-  const ariaSelection=selectionLabel ? `; ${selectionLabel} is selected` : '';
-  return `<figure class="free-weather-chart metric-${escapeHtml(metricKey)}${selectionLabel?' has-selection':''}"${selection?.tone?` data-selection-tone="${escapeHtml(selection.tone)}"`:''}><figcaption><span><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(detail.label)}</span><b${selectionLabel?` title="${escapeHtml(selectionLabel)} selected"`:''}>${escapeHtml(summary)}</b></figcaption><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(`${detail.label} from ${startLabel} to ${endLabel}; shaded spans are busy${ariaSelection}`)}"><defs><linearGradient id="${gradientId}" x1="0" y1="1" x2="0" y2="0">${weatherMetricGradientStopsHtml(metricKey,domain.min,domain.max)}</linearGradient></defs><line class="free-weather-baseline" x1="${left}" y1="${bottom}" x2="${W-right}" y2="${bottom}"/>${busy}${selectionBack}${marks}${selectionFront}<text class="free-weather-time" x="${left}" y="${H-3}" text-anchor="start">${escapeHtml(startLabel)}</text><text class="free-weather-time" x="${W-right}" y="${H-3}" text-anchor="end">${escapeHtml(endLabel)}</text></svg></figure>`;
+// and "is this time already occupied?" without another interaction. Several
+// measures overlay on one clock instead of stacking separate charts.
+function weatherFreeTimeChartHtml(metricKeys,info,selection=null){
+  const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+  const dayBase=typeof dayStart==='function' ? dayStart(info?.windowStart) : null;
+  const keys=weatherNormalizeOverlayKeys(Array.isArray(metricKeys)?metricKeys:[metricKeys]);
+  if(!keys.length || !(info.windowEnd>info.windowStart) || dayBase==null)return '';
+  const rowsByKey=Object.fromEntries(keys.map(key=>[key,weatherHourlyRowsForDayMetric(dayBase,key,settings)]));
+  const chart=weatherOverlayChartHtml({
+    keys,rowsByKey,domainStart:info.windowStart,domainEnd:info.windowEnd,
+    mode:'free',busy:info.busy || [],selection,idPrefix:'free-weather'
+  });
+  if(!chart)return '';
+  const caption=weatherOverlayCaptionHtml(keys,rowsByKey,selection);
+  const selectionLabel=selection && selection.end>selection.start && typeof freeDayClockLabel==='function'
+    ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)}` : '';
+  const metricClass=keys.length===1 ? ` metric-${escapeHtml(keys[0])}` : ' is-overlay';
+  return `<figure class="free-weather-chart${metricClass}${selectionLabel?' has-selection':''}"${selection?.tone?` data-selection-tone="${escapeHtml(selection.tone)}"`:''}>${caption}${chart}</figure>`;
 }
 
 // RENDER: optional weather context inside the free-time sheet. It starts off;
-// the cloud button in the sheet header adds/removes up to two charts so dense
+// the cloud button in the sheet header adds overlay graphs so dense
 // free-time details remain compact until the person explicitly asks for
 // forecast context. The header button is the single toggle: hidden when no
-// forecast exists, pressed while the section is open.
-function renderFreeTimeWeatherContext(info){
+// forecast exists, pressed while the section is open. Chosen graphs persist
+// when switching days.
+function renderFreeTimeWeatherContext(info,view){
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
   const dayBase=typeof dayStart==='function' ? dayStart(info?.windowStart) : null;
   const summary=dayBase==null ? null : weatherDaySummary(settings?._weatherContext,dayBase,settings);
@@ -2113,29 +2552,25 @@ function renderFreeTimeWeatherContext(info){
     headerButton.innerHTML=`<i class="ti ${active?'ti-cloud':'ti-cloud-plus'}" aria-hidden="true"></i>`;
   };
   if(!summary){syncHeader(false);return null;}
-  const available=Object.keys(WEATHER_METRIC_DETAILS).filter(key=>weatherHourlyRowsForDayMetric(dayBase,key,settings).length);
+  const available=weatherOverlayAvailableKeys(dayBase,settings);
   if(!available.length){syncHeader(false);return null;}
   const section=document.createElement('section');
   section.className='free-weather-context';
   section.setAttribute('aria-label','weather context for open time');
-  let selected=[];
-  let choosing=false;
+  let selected=weatherNormalizeOverlayKeys(view?.weatherKeys,available);
+  let choosing=Boolean(view?.weatherOpen) || selected.length>0;
   let selection=null;
-  const shortLabel={temp:'feels',precip:'rain',wind:'wind',uv:'UV'};
   const draw=()=>{
     const active=choosing || selected.length>0;
     syncHeader(active);
     section.hidden=!active;
     if(!active){section.innerHTML='';return;}
     const focusCopy=selection ? `${freeDayClockLabel(selection.start)}–${freeDayClockLabel(selection.end)} selected` : 'busy time is shaded';
-    section.innerHTML=`<div class="free-weather-head"><span><b>weather</b><small>${escapeHtml(focusCopy)}</small></span><em>${selected.length}/2</em></div><div class="free-weather-picker" aria-label="weather charts">${available.map(key=>{
-      const detail=WEATHER_METRIC_DETAILS[key],on=selected.includes(key),locked=!on && selected.length>=2;
-      return `<button type="button" data-free-weather-metric="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${locked?' disabled':''}><i class="ti ${detail.icon}" aria-hidden="true"></i>${escapeHtml(shortLabel[key])}</button>`;
-    }).join('')}</div><div class="free-weather-charts">${selected.map(key=>weatherFreeTimeChartHtml(key,weatherHourlyRowsForDayMetric(dayBase,key,settings),info,selection)).join('')}</div>`;
+    const chart=selected.length ? weatherFreeTimeChartHtml(selected,info,selection) : '';
+    section.innerHTML=`<div class="free-weather-head"><span><b>weather</b><small>${escapeHtml(focusCopy)}</small></span><em>${selected.length}/4</em></div>${weatherOverlayPickerHtml(available,selected,'data-free-weather-metric',{label:'weather charts'})}<div class="free-weather-charts">${chart}</div>`;
     section.querySelectorAll('[data-free-weather-metric]').forEach(button=>button.addEventListener('click',()=>{
       const key=button.dataset.freeWeatherMetric;
-      if(selected.includes(key))selected=selected.filter(item=>item!==key);
-      else if(selected.length<2)selected=[...selected,key];
+      selected=selected.includes(key) ? selected.filter(item=>item!==key) : weatherNormalizeOverlayKeys([...selected,key],available);
       if(!selected.length)choosing=false;
       draw();
     }));
@@ -2149,6 +2584,7 @@ function renderFreeTimeWeatherContext(info){
     selection=Number.isFinite(start) && Number.isFinite(end) && end>start ? {start,end,tone} : null;
     draw();
   };
+  section.getWeatherView=()=>({weatherKeys:selected.slice(),weatherOpen:choosing || selected.length>0});
   draw();
   return section;
 }
@@ -2157,6 +2593,7 @@ function renderWeatherMetricSheet(metricKey){
   const detail=WEATHER_METRIC_DETAILS[metricKey];
   if(!detail || !_weatherContextDay)return false;
   _weatherMetricKey=metricKey;
+  _weatherMetricOverlays=weatherNormalizeOverlayKeys(_weatherMetricOverlays).filter(key=>key!==metricKey);
   const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
   const summary=weatherDaySummary(settings?._weatherContext,_weatherContextDay,settings);
   if(!summary)return false;
@@ -2176,13 +2613,22 @@ function renderWeatherMetricSheet(metricKey){
       content.innerHTML='<p class="weather-context-empty">No hourly forecast is available for this day.</p>';
     }else{
       const stats=weatherMetricStatsHtml(metricKey,rows,summary);
-      const chart=weatherMetricChartHtml(metricKey,rows,summary);
+      const available=weatherOverlayAvailableKeys(_weatherContextDay,settings);
+      const overlayKeys=_weatherMetricOverlays.filter(key=>available.includes(key) && key!==metricKey);
+      _weatherMetricOverlays=overlayKeys;
+      const chart=weatherMetricChartHtml(metricKey,rows,summary,overlayKeys);
       const dual=metricKey==='temp' ? ['feels like','actual']
         : metricKey==='wind' ? ['wind','gusts'] : null;
       const dualReady=dual && chart
         && rows.filter(row=>Number.isFinite(Number(row[WEATHER_METRIC_DETAILS[metricKey].secondary]))).length>1;
       const legend=dualReady ? `<p class="weather-metric-legend"><span class="key solid"></span>${dual[0]}<span class="key dash"></span>${dual[1]}</p>` : '';
-      content.innerHTML=`${stats}<div class="weather-metric-readout" id="weather-metric-readout"></div>${chart || '<p class="weather-context-empty">Not enough hourly data to chart this day.</p>'}${legend}`;
+      const overlayLegend=overlayKeys.length
+        ? `<p class="weather-metric-legend overlay">${overlayKeys.map(key=>`<span class="key series-${escapeHtml(key)}"></span>${escapeHtml(WEATHER_METRIC_DETAILS[key].label)}`).join('')}</p>`
+        : '';
+      const picker=available.length>1
+        ? `<div class="weather-overlay-row"><span>overlay</span>${weatherOverlayPickerHtml(available,[metricKey,...overlayKeys],'data-weather-metric-overlay',{label:'overlay more graphs',locked:[metricKey]})}</div>`
+        : '';
+      content.innerHTML=`${stats}${picker}<div class="weather-metric-readout" id="weather-metric-readout"></div>${chart || '<p class="weather-context-empty">Not enough hourly data to chart this day.</p>'}${legend}${overlayLegend}`;
       weatherBindMetricChartScrub();
     }
   }
@@ -2268,6 +2714,42 @@ if(typeof document!=='undefined')document.addEventListener('click',event=>{
   }
   if(event.target.closest('#weather-context-close,#weather-context-done')){
     if(typeof closeSheet==='function')closeSheet('weather-context-sheet');
+    _weatherOverlayKeys=['temp'];
+    _weatherMetricOverlays=[];
+    _weatherPageChartMeta=null;
+    return;
+  }
+  const weatherDay=event.target.closest('[data-weather-day]');
+  if(weatherDay){
+    event.preventDefault();
+    event.stopPropagation();
+    switchWeatherContextDay(weatherDay.dataset.weatherDay);
+    return;
+  }
+  const overlayBtn=event.target.closest('[data-weather-overlay]');
+  if(overlayBtn){
+    event.preventDefault();
+    event.stopPropagation();
+    const key=overlayBtn.dataset.weatherOverlay;
+    const settings=typeof sortSettings!=='undefined' && sortSettings ? sortSettings : loadSortSettings();
+    const available=weatherOverlayAvailableKeys(_weatherContextDay,settings);
+    _weatherOverlayKeys=_weatherOverlayKeys.includes(key)
+      ? _weatherOverlayKeys.filter(item=>item!==key)
+      : weatherNormalizeOverlayKeys([..._weatherOverlayKeys,key],available);
+    weatherFillOverlayHost(weatherContextSheetModel(_weatherContextDay,_weatherDayContext,_weatherFocusHid));
+    return;
+  }
+  const metricOverlay=event.target.closest('[data-weather-metric-overlay]');
+  if(metricOverlay){
+    event.preventDefault();
+    event.stopPropagation();
+    const key=metricOverlay.dataset.weatherMetricOverlay;
+    if(key && key!==_weatherMetricKey){
+      _weatherMetricOverlays=_weatherMetricOverlays.includes(key)
+        ? _weatherMetricOverlays.filter(item=>item!==key)
+        : weatherNormalizeOverlayKeys([..._weatherMetricOverlays,key]);
+      renderWeatherMetricSheet(_weatherMetricKey);
+    }
     return;
   }
   const metricCard=event.target.closest('[data-weather-metric]');

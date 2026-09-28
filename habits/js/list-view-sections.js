@@ -865,7 +865,7 @@ function attachFreeTimeIndicator(header,day){
   pill.type = 'button';
   pill.className = 'free-pill';
   pill.textContent = `${formatFreeDuration(info.totalFreeMinutes)} open`;
-  bindDayHeaderPill(pill,()=>openFreeTimeSheet(info,header.dataset.label || 'today'));
+  bindDayHeaderPill(pill,()=>openFreeTimeForDay(dateKey(day.dayBase)));
   dayHeaderContextHost(header)?.appendChild(pill);
 }
 
@@ -946,6 +946,36 @@ function fixedConflictForWindow(dayBase,start,end,settings,baselineDay){
 // [start,end) would do to the current week without mutating anything.
 // Shared by the UI checker (analyzeFreeWindow) and the assistant's
 // answer_schedule conflict query, so both answer identically.
+function weekCoversDayBase(week,dayBase){
+  return Boolean(week && Array.isArray(week.days) && week.days.some(day=>day.dayBase === dayBase));
+}
+
+function agendaWeekCoveringDay(dayBase,data){
+  if(typeof _homeRenderedWeek !== 'undefined' && weekCoversDayBase(_homeRenderedWeek,dayBase)){
+    return _homeRenderedWeek;
+  }
+  const key = dateKey(dayBase);
+  if(typeof weekForOverviewDay === 'function'){
+    const week = weekForOverviewDay(data,key);
+    if(weekCoversDayBase(week,dayBase))return week;
+  }
+  if(typeof cachedOverviewWeek === 'function'){
+    const week = cachedOverviewWeek(data);
+    if(weekCoversDayBase(week,dayBase))return week;
+  }
+  return null;
+}
+
+function freeTimeCoverDays(dayBase){
+  const today = dayStart(Date.now());
+  const offset = Number.isFinite(dayBase) ? Math.round((dayBase - today) / 86400000) : 0;
+  return Math.max(7,offset + 1);
+}
+
+function freeTimeSolveMode(settings,coverDays){
+  return settings && settings.agendaOptimizer && coverDays <= 7 ? 'exact' : 'fast';
+}
+
 async function computeFreeWindowVerdict(info,start,end){
   const duration = Math.max(0,Math.round((end - start) / 60000));
   const openMinutes = freeWindowOverlapMinutes(info.gaps,start,end);
@@ -956,12 +986,16 @@ async function computeFreeWindowVerdict(info,start,end){
   const data = load();
   const settings = sortSettings || loadSortSettings();
   const dayBase = dayStart(info.windowStart);
-  let baseline = _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) ? _homeRenderedWeek : null;
+  let baseline = agendaWeekCoveringDay(dayBase,data);
+  const coverDays = Math.max(
+    freeTimeCoverDays(dayBase),
+    baseline && Array.isArray(baseline.days) ? baseline.days.length : 0
+  );
   if(!baseline){
-    const mode = settings.agendaOptimizer ? 'exact' : 'fast';
+    const mode = freeTimeSolveMode(settings,coverDays);
     baseline = typeof buildWeekAgendaOffMain === 'function'
-      ? await buildWeekAgendaOffMain(data,settings,7,mode,mode === 'fast' ? {fastGraph:true} : {})
-      : buildWeekAgenda(data,settings,7);
+      ? await buildWeekAgendaOffMain(data,settings,coverDays,mode,mode === 'fast' ? {fastGraph:true} : {})
+      : buildWeekAgenda(data,settings,coverDays);
     if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(baseline,data);
   }
   const baselineDay = baseline.days.find(day=>day.dayBase === dayBase);
@@ -981,11 +1015,10 @@ async function computeFreeWindowVerdict(info,start,end){
   // Put the temporary reservation first so it is retained even when a user
   // already has the maximum number of recurring busy-time rules.
   const hypotheticalSettings = {...settings,blockedTimes:[whatIfBlock,...normalizeBlockedTimes(settings.blockedTimes)]};
+  const mode = freeTimeSolveMode(settings,coverDays);
   let hypothetical = typeof buildWeekAgendaOffMain === 'function'
-    ? await buildWeekAgendaOffMain(data,hypotheticalSettings,7,
-      settings.agendaOptimizer ? 'exact' : 'fast',
-      settings.agendaOptimizer ? {} : {fastGraph:true})
-    : buildWeekAgenda(data,hypotheticalSettings,7);
+    ? await buildWeekAgendaOffMain(data,hypotheticalSettings,coverDays,mode,mode === 'fast' ? {fastGraph:true} : {})
+    : buildWeekAgenda(data,hypotheticalSettings,coverDays);
   if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(hypothetical,data);
 
   const before = weekFillMinutesForDay(baseline,dayBase);
@@ -1035,11 +1068,22 @@ async function analyzeFreeWindow(info,start,end){
   return {tone:'spill',icon:'calendar-off',title:'Doesn’t fit cleanly',copy:`Making this space would push ${verdict.unscheduled.slice(0,2).join(' and ') || 'planned work'} out of this day.`};
 }
 
-function renderFreeWindowChecker(info,onRangeChange){
+function freeTimeClockValue(value){
+  return /^\d{2}:\d{2}$/.test(String(value || '')) ? String(value) : '';
+}
+
+function renderFreeWindowChecker(info,onRangeChange,view){
   const checker = document.createElement('section');
   checker.className = 'free-fit-checker';
   checker.setAttribute('aria-label','check whether a time can be made open');
-  const initial = freeWindowDefault(info);
+  const restoredStart = freeTimeClockValue(view?.startClock);
+  const restoredEnd = freeTimeClockValue(view?.endClock);
+  const restored = restoredStart && restoredEnd
+    ? {start:freeWindowTimestamp(info,restoredStart),end:freeWindowTimestamp(info,restoredEnd)}
+    : null;
+  const initial = restored && restored.start != null && restored.end != null && restored.end > restored.start
+    ? restored
+    : freeWindowDefault(info);
   checker.innerHTML = `
     <button type="button" class="free-fit-toggle" aria-expanded="false" aria-controls="free-fit-body">
       <span class="free-fit-toggle-icon"><i class="ti ti-sparkles" aria-hidden="true"></i></span>
@@ -1127,12 +1171,44 @@ function renderFreeWindowChecker(info,onRangeChange){
     if(typeof onRangeChange === 'function')onRangeChange(start,end,'checking');
     void check();
   };
+  checker.applyView = restore=>{
+    if(!restore)return;
+    const startClock = freeTimeClockValue(restore.startClock);
+    const endClock = freeTimeClockValue(restore.endClock);
+    if(startClock)startInput.value = startClock;
+    if(endClock)endInput.value = endClock;
+    if(restore.expanded || restore.rerun)setExpanded(true);
+    if(restore.rerun)void check();
+    else if(startClock && endClock)showRange('active');
+  };
   return checker;
 }
 
-function renderFreePanel(info){
+function renderFreeDaySwitch(dayKey){
+  const wrap = document.createElement('div');
+  wrap.innerHTML = typeof plannerDaySwitchHtml === 'function'
+    ? plannerDaySwitchHtml(dayKey,'data-free-day','check the same time on another day')
+    : '';
+  const node = wrap.firstElementChild || wrap;
+  node.className = node.className || 'free-day-switch';
+  node.setAttribute('aria-label','check the same time on another day');
+  node.addEventListener('click',e=>{
+    const btn = e.target.closest('[data-free-day]');
+    if(!btn)return;
+    e.preventDefault();
+    switchFreeTimeDay(btn.dataset.freeDay);
+  });
+  return node;
+}
+
+function renderFreePanel(info,view){
   const panel = document.createElement('div');
   panel.className = 'free-panel';
+  const dayKey = view?.dayKey || (info?.windowStart != null ? dateKey(dayStart(info.windowStart)) : null);
+  if(dayKey){
+    panel.dataset.dayKey = dayKey;
+    panel.appendChild(renderFreeDaySwitch(dayKey));
+  }
   const summary = document.createElement('div');
   summary.className = 'free-panel-row free-panel-hero';
   summary.innerHTML = `<span class="free-panel-metric"><small>total room</small><b>${escapeHtml(formatFreeDuration(info.totalFreeMinutes))} open</b></span><span class="free-panel-metric"><small>biggest stretch</small><b>${escapeHtml(formatFreeDuration(info.largestGapMinutes))}</b></span>`;
@@ -1143,11 +1219,11 @@ function renderFreePanel(info){
     strip?.setSelection?.(start,end,tone);
     weather?.setSelection?.(start,end,tone);
   };
-  const checker = renderFreeWindowChecker(info,syncRange);
+  const checker = renderFreeWindowChecker(info,syncRange,view);
   strip = renderFreeDayStrip(info,(start,end)=>checker.pickWindow(start,end));
   panel.appendChild(strip);
   if(typeof renderFreeTimeWeatherContext === 'function'){
-    weather = renderFreeTimeWeatherContext(info);
+    weather = renderFreeTimeWeatherContext(info,view);
     if(weather)panel.appendChild(weather);
   }
   panel.appendChild(checker);
@@ -1172,16 +1248,120 @@ function renderFreePanel(info){
     note.textContent = `+ ${formatFreeDuration(shortMinutes)} in shorter stretches`;
     panel.appendChild(note);
   }
+  if(view)checker.applyView(view);
   return panel;
 }
 
-function openFreeTimeSheet(info,dayLabel){
+let _freeTimeView = null;
+
+function freeTimeDaySkeleton(key){
+  const dayBase = dayStart(new Date(`${key}T12:00:00`).getTime());
+  const today = dayStart(Date.now());
+  return {
+    dayBase,
+    isToday:dayBase === today,
+    weekday:new Date(dayBase).getDay(),
+    offset:Math.round((dayBase - today) / 86400000),
+    timeline:[]
+  };
+}
+
+function freeTimeDayForKey(key){
+  if(!key)return null;
+  const dayBase = dayStart(new Date(`${key}T12:00:00`).getTime());
+  if(!Number.isFinite(dayBase))return null;
+  const data = typeof load === 'function' ? load() : [];
+  const week = agendaWeekCoveringDay(dayBase,data);
+  return week?.days?.find(day=>dateKey(day.dayBase) === key) || freeTimeDaySkeleton(key);
+}
+
+function freeTimeDayLabel(day){
+  if(typeof homeWeekDayLabel === 'function')return homeWeekDayLabel(day);
+  return day ? dateKey(day.dayBase) : '';
+}
+
+function captureFreeTimeView(){
+  const root = document.getElementById('free-time-sheet');
+  const startClock = freeTimeClockValue(root?.querySelector('.free-fit-start')?.value);
+  const endClock = freeTimeClockValue(root?.querySelector('.free-fit-end')?.value);
+  const expanded = Boolean(root?.querySelector('.free-fit-checker')?.classList.contains('is-expanded'));
+  const result = root?.querySelector('.free-fit-result');
+  const rerun = Boolean(result && ['open','possible','spill','blocked','checking'].some(tone=>result.classList.contains(tone)));
+  const keepClocks = expanded || rerun;
+  const weatherView = root?.querySelector('.free-weather-context')?.getWeatherView?.() || {};
+  return {
+    startClock:keepClocks ? startClock : '',
+    endClock:keepClocks ? endClock : '',
+    expanded:expanded || rerun,
+    rerun,
+    weatherKeys:weatherView.weatherKeys || [],
+    weatherOpen:Boolean(weatherView.weatherOpen)
+  };
+}
+
+function renderFreeTimeContent(info,dayLabel,view){
   const content = document.getElementById('free-time-content');
+  const title = document.getElementById('free-time-title');
   if(!content)return;
-  document.getElementById('free-time-title').textContent = `open time ${dayLabel}`;
+  if(title)title.textContent = `open time ${dayLabel}`;
   content.innerHTML = '';
-  content.appendChild(renderFreePanel(info));
-  openSheet('free-time-sheet');
+  content.appendChild(renderFreePanel(info,view));
+}
+
+function openFreeTimeSheet(info,dayLabel,view){
+  const key = view?.dayKey || (info?.windowStart != null ? dateKey(dayStart(info.windowStart)) : null);
+  _freeTimeView = {...(view || {}),dayKey:key};
+  renderFreeTimeContent(info,dayLabel,_freeTimeView);
+  const sheet = document.getElementById('free-time-sheet');
+  if(!sheet?.classList.contains('open'))openSheet('free-time-sheet');
+}
+
+function openFreeTimeForDay(key,view){
+  if(!key)return;
+  const day = freeTimeDayForKey(key);
+  if(!day)return;
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const info = typeof computeDayFreeGaps === 'function'
+    ? computeDayFreeGaps(day,settings)
+    : {gaps:[],busy:[],totalFreeMinutes:0,largestGapMinutes:0,windowStart:day.dayBase,windowEnd:day.dayBase + 86400000};
+  const pendingWeek = !(day.timeline && day.timeline.length)
+    && (typeof dayLogsCanPlan !== 'function' || dayLogsCanPlan(key));
+  openFreeTimeSheet(info,freeTimeDayLabel(day),{...(view || {}),dayKey:key,pendingWeek});
+  if(pendingWeek && typeof ensureOverviewWeekForDay === 'function')ensureOverviewWeekForDay(key);
+}
+
+function refreshOpenFreeTimeSheet(filledKey){
+  const sheet = document.getElementById('free-time-sheet');
+  if(!sheet?.classList.contains('open') || !_freeTimeView || _freeTimeView.dayKey !== filledKey)return;
+  if(!_freeTimeView.pendingWeek)return;
+  const day = freeTimeDayForKey(filledKey);
+  if(!(day && day.timeline && day.timeline.length))return;
+  const live = captureFreeTimeView();
+  const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const info = computeDayFreeGaps(day,settings);
+  const view = {
+    ..._freeTimeView,
+    ...live,
+    expanded:live.expanded || _freeTimeView.expanded,
+    rerun:live.rerun,
+    pendingWeek:false
+  };
+  _freeTimeView = view;
+  renderFreeTimeContent(info,freeTimeDayLabel(day),view);
+}
+
+function switchFreeTimeDay(nextKey){
+  if(!nextKey || _freeTimeView?.dayKey === nextKey)return;
+  const live = captureFreeTimeView();
+  const prev = _freeTimeView || {};
+  openFreeTimeForDay(nextKey,{
+    startClock:live.startClock || prev.startClock,
+    endClock:live.endClock || prev.endClock,
+    expanded:live.expanded || prev.expanded,
+    rerun:live.rerun,
+    weatherKeys:live.weatherKeys?.length ? live.weatherKeys : prev.weatherKeys,
+    weatherOpen:live.weatherOpen || prev.weatherOpen
+  });
 }
 
 // PURE: reduce trail tones to one

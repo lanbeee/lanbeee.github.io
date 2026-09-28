@@ -353,7 +353,7 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .about-hero{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:14px;margin:0 0 12px;padding:16px;border-radius:20px;background:color-mix(in srgb,var(--teal-bg) 44%,var(--bg2));border:0;}
 .about-hero img{width:64px;height:64px;border-radius:18px;box-shadow:none;}
 .about-hero > div{padding-right:24px;}
-.about-hero-close{position:absolute;right:7px;top:7px;width:40px;height:40px;background:color-mix(in srgb,var(--bg) 76%,transparent);border-color:color-mix(in srgb,var(--teal-icon) 20%,var(--border));}
+.about-hero-close{position:absolute;right:8px;top:8px;width:40px;height:40px;background:color-mix(in srgb,var(--bg) 76%,transparent);border-color:color-mix(in srgb,var(--teal-icon) 20%,var(--border));}
 .sheet-eyebrow{display:block;margin-bottom:3px;color:var(--teal-text);font-size:9px;font-weight:790;letter-spacing:0.095em;text-transform:uppercase;}
 .about-hero .sheet-title{margin:0 0 5px;font-size:25px;font-weight:760;letter-spacing:-0.035em;}
 .about-hero .about-copy{margin:0;font-size:12px;line-height:1.4;}

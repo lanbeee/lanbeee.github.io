@@ -16,6 +16,8 @@ body{
 .wordmark-copy{gap:5px;}
 .wordmark-date{font-size:10px;font-weight:500;color:var(--text2);}
 .topbar .home-filter-trigger{background:var(--bg);border-radius:14px;}
+.topbar .presence-filter{border-radius:14px;}
+.presence-icon{border-radius:9px;}
 /* Icon-only (the Filters label is hidden): a real circle. 50% on the wider
    labeled button was an oval. */
 @container (max-width:384px){
@@ -40,6 +42,8 @@ body{
 .section-header.stuck{background:var(--bg2);}
 .bottom-nav{border-radius:28px;padding:8px;gap:8px;}
 .bottom-nav .icon-btn{border-radius:20px;}
+.nav-search input{border-radius:20px;}
+.add-sheet .add-actions{border-radius:999px;}
 .bottom-nav .nav-add{background:var(--teal-bg);color:var(--teal-text);box-shadow:none;}
 .bottom-nav .icon-btn.is-on{background:var(--teal-bg);color:var(--teal-text);}
 .seg{border-radius:18px;padding:4px;gap:3px;}
@@ -56,6 +60,22 @@ body{
 .sheet-title{font-size:calc(23px * var(--font-scale));font-weight:600;letter-spacing:-.035em;}
 .detail-card,.score-card,.pace-card,.month-card,.tune-section,.settings-block,
 .settings-group,.settings-card,.about-block,.utility-sheet-panel{border-radius:22px;}
+/* Nested corners share a center: inner radius = outer radius − inset. */
+.about-hero{padding:8px;border-radius:22px;gap:12px;}
+.about-hero img,.privacy-hero-icon{border-radius:14px;}
+.about-hero-close{border-radius:14px;}
+.name-icon-row .ting-emoji-preview,.ting-ask-ai{border-radius:14px;}
+.about-hero > div{padding:6px 40px 6px 6px;}
+.about-hub-group{padding:6px;border-radius:22px;}
+.about-hub-group .about-block{border-radius:16px;}
+.about-sheet .about-actions{padding:6px;border-radius:22px;}
+.about-sheet .about-hub .about-hub-foot{padding:6px;border-radius:22px;}
+.about-sheet .about-actions .btn{border-radius:16px;}
+.home-filter-option-icon{border-radius:6px;}
+.overview-card{border-radius:22px;}
+.overview-card .mini-nav{border-radius:8px;}
+.overview-detail-block{border-radius:22px;}
+.overview-pane-row{border-radius:12px;}
 .setting-toggle{border-radius:16px;}
 .setting-toggle input{accent-color:var(--teal-icon);}
 .settings-sheet .setting-switch[aria-pressed="true"] .switch-ui{
@@ -63,12 +83,20 @@ body{
 }
 .settings-hint,.field-hint{line-height:1.5;}
 #toast,#action-toast{border-radius:22px;}
-/* Keyboard focus also works with an external keyboard on a touch device. */
-button:focus-visible,[role="button"]:focus-visible,
-input:focus-visible,select:focus-visible,textarea:focus-visible{
-  outline:2px solid var(--teal-icon);outline-offset:3px;
+.app-bar-search input:focus,.app-bar-search input:focus-visible,
+.nav-search input:focus,.nav-search input:focus-visible{
+  outline:none;outline-offset:0;box-shadow:none;
 }
 @media (hover:hover) and (pointer:fine){
+  /* Keyboard-only: a 3px offset ring on tap reads as a highlight and clips
+     inside overflow chrome (search in the bottom nav). */
+  button:focus-visible,[role="button"]:focus-visible,
+  input:focus-visible,select:focus-visible,textarea:focus-visible{
+    outline:2px solid var(--teal-icon);outline-offset:3px;
+  }
+  .app-bar-search input:focus-visible,.nav-search input:focus-visible{
+    outline:none;outline-offset:0;
+  }
   .ting-card:hover{background:color-mix(in srgb,var(--teal-bg) 18%,var(--bg));}
   .icon-btn:hover{background:var(--bg3);}
   .bottom-nav .nav-add:hover{background:var(--teal-bg);box-shadow:var(--accent-glow);}

@@ -491,7 +491,7 @@ function assert(value,message){
     'temperature, wind, and UV share explicit low-to-high visual semantics');
 
   // Open-time weather starts hidden; the sheet header's cloud toggle reveals
-  // four compact controls that can add exactly two charts with shared busy shading.
+  // four compact controls that overlay chosen measures on one shared clock.
   const freeWeather=await page.evaluate(({base})=>{
     saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
     sortSettings=loadSortSettings();
@@ -516,7 +516,12 @@ function assert(value,message){
     const oneChart=context.querySelectorAll('.free-weather-chart').length;
     context.querySelector('[data-free-weather-metric="temp"]').click();
     const twoCharts=context.querySelectorAll('.free-weather-chart').length;
+    const overlayed=Boolean(context.querySelector('.free-weather-chart.is-overlay .overlay-bar.series-precip'))
+      && Boolean(context.querySelector('.free-weather-chart.is-overlay .overlay-line.series-temp'));
     const disabledAtMax=context.querySelectorAll('[data-free-weather-metric]:disabled').length;
+    context.querySelector('[data-free-weather-metric="wind"]').click();
+    const threeStillOne=context.querySelectorAll('.free-weather-chart').length;
+    context.querySelector('[data-free-weather-metric="wind"]').click();
     const start=panel.querySelector('.free-fit-start');
     const end=panel.querySelector('.free-fit-end');
     start.value='09:30';
@@ -536,6 +541,7 @@ function assert(value,message){
       .map(chart=>chart.querySelectorAll('.free-weather-busy').length);
     const heights=[...context.querySelectorAll('.free-weather-chart svg')]
       .map(svg=>Math.round(svg.getBoundingClientRect().height));
+    const kept=context.getWeatherView();
     context.querySelector('[data-free-weather-metric="precip"]').click();
     const afterRemove=context.querySelectorAll('.free-weather-chart').length;
     const enabledAfterRemove=context.querySelectorAll('[data-free-weather-metric]:not(:disabled)').length;
@@ -545,25 +551,35 @@ function assert(value,message){
     const compactAgain=context.hidden && !context.textContent.trim()
       && headerButton.getAttribute('aria-expanded')==='false'
       && !context.querySelector('.free-weather-picker');
-    return {initialCharts,compact,initialCount,choices,oneChart,twoCharts,disabledAtMax,linkedSelection,busyMasks,heights,afterRemove,enabledAfterRemove,allOff,compactAgain};
+    const restored=renderFreeTimeWeatherContext(info,{weatherKeys:kept.weatherKeys,weatherOpen:true});
+    document.body.appendChild(restored);
+    const restoredKeys=[...restored.querySelectorAll('[data-free-weather-metric][aria-pressed="true"]')]
+      .map(btn=>btn.dataset.freeWeatherMetric);
+    restored.remove();
+    panel.remove();
+    return {initialCharts,compact,initialCount,choices,oneChart,twoCharts,overlayed,threeStillOne,disabledAtMax,linkedSelection,busyMasks,heights,afterRemove,enabledAfterRemove,allOff,compactAgain,kept,restoredKeys};
   },seeded);
-  assert(freeWeather.initialCharts===0 && freeWeather.compact && freeWeather.initialCount==='0/2',
+  assert(freeWeather.initialCharts===0 && freeWeather.compact && freeWeather.initialCount==='0/4',
     'weather context stays hidden until the header cloud toggle opens it');
-  assert(freeWeather.choices===4 && freeWeather.oneChart===1 && freeWeather.twoCharts===2 && freeWeather.disabledAtMax===2,
-    'open time offers all four measures and enforces a two-chart maximum');
+  assert(freeWeather.choices===4 && freeWeather.oneChart===1 && freeWeather.twoCharts===1 && freeWeather.overlayed
+    && freeWeather.threeStillOne===1 && freeWeather.disabledAtMax===0,
+    'open time overlays every chosen measure on one chart instead of stacking a two-chart maximum');
   assert(freeWeather.busyMasks.every(count=>count===1) && freeWeather.heights.every(height=>height<=60),
-    'each mini chart stays short and shades the same occupied time span');
+    'the overlay chart stays short and shades the same occupied time span');
   assert(freeWeather.linkedSelection.dayMap && /9:30.*10:30/i.test(freeWeather.linkedSelection.dayMapCopy)
-    && freeWeather.linkedSelection.bands===2 && freeWeather.linkedSelection.edges===4
+    && freeWeather.linkedSelection.bands===1 && freeWeather.linkedSelection.edges===2
     && /9:30.*10:30/i.test(freeWeather.linkedSelection.focusHead)
     && freeWeather.linkedSelection.focusedCaptions.some(copy=>/20%/.test(copy))
     && freeWeather.linkedSelection.focusedCaptions.some(copy=>/10–11°C/.test(copy))
     && freeWeather.linkedSelection.tones.every(tone=>tone==='active'),
-    `changing the time fields links one exact focus window across the day map and both weather charts (${JSON.stringify(freeWeather.linkedSelection)})`);
+    `changing the time fields links one exact focus window across the day map and the weather overlay (${JSON.stringify(freeWeather.linkedSelection)})`);
   assert(freeWeather.afterRemove===1 && freeWeather.enabledAfterRemove===4,
-    'removing one chart immediately makes every weather choice available again');
+    'removing one overlay immediately makes every weather choice available again');
   assert(freeWeather.allOff===0 && freeWeather.compactAgain,
     'removing the final chart folds weather context away behind the header toggle');
+  assert(freeWeather.kept.weatherKeys.includes('precip') && freeWeather.kept.weatherKeys.includes('temp')
+    && freeWeather.restoredKeys.includes('precip') && freeWeather.restoredKeys.includes('temp'),
+    'chosen overlay graphs can be restored when the open-time day changes');
 
   // °F converts the chart labels and stats too; each metric gets its own shape.
   const drillF=await page.evaluate(()=>{
@@ -883,6 +899,46 @@ function assert(value,message){
   assert(refLines.windMph.refs.join()==='strong 24','mph converts the wind reference label (39 km/h → 24 mph)');
   assert(refLines.precip.refs.join()==='even 50%','the precipitation chart marks the even-chance line');
   assert(refLines.uv.refs.join()==='moderate 3','the UV chart marks the moderate level when the peak reaches it');
+
+  const daySwitch=await page.evaluate(({base})=>{
+    saveSortSettings({...loadSortSettings(),weatherTempUnit:'c'});
+    const next=base+86400000;
+    const cache=JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY));
+    cache.weekly.samples.push(...[9,10,11].map(hour=>({ts:next+hour*3600000,temperature_2m:18,apparent_temperature:16,
+      precipitation_probability:80,precipitation:2,wind_speed_10m:20,wind_gusts_10m:30,uv_index:6,weather_code:61,source:'weekly'})));
+    cache.weekly.days.push({ts:next,key:dateKey(next),weather_code:61,temperature_2m_min:12,temperature_2m_max:20,
+      apparent_temperature_min:11,apparent_temperature_max:18,precipitation_probability_max:80,
+      precipitation_sum:4,wind_speed_10m_max:20,wind_gusts_10m_max:30,uv_index_max:6});
+    localStorage.setItem(WEATHER_CACHE_KEY,JSON.stringify(cache));
+    sortSettings=loadSortSettings();
+    openWeatherContextSheet(base,null,'');
+    const switcher=Boolean(document.querySelector('#weather-context-content .free-day-switch'));
+    const host=document.getElementById('weather-overlay-host');
+    const defaultChart=Boolean(host?.querySelector('svg'));
+    host.querySelector('[data-weather-overlay="precip"]').click();
+    const pageOverlay=Boolean(host.querySelector('svg.is-overlay .overlay-bar.series-precip'))
+      && Boolean(host.querySelector('svg.is-overlay .overlay-line.series-temp'));
+    const nextKey=dateKey(next);
+    document.querySelector(`#weather-context-content [data-weather-day="${nextKey}"]`).click();
+    const switched=document.querySelector('#weather-context-content [data-weather-day][aria-current="date"]')?.dataset.weatherDay;
+    const keptOverlay=Boolean(document.querySelector('#weather-overlay-host svg.is-overlay .overlay-bar.series-precip'));
+    const sub=document.getElementById('weather-context-sub')?.textContent || '';
+    document.querySelector('#weather-context-content [data-weather-metric="temp"]').click();
+    document.querySelector('[data-weather-metric-overlay="precip"]').click();
+    const metricOverlay=Boolean(document.querySelector('#weather-metric-content svg.has-overlay .overlay-bar'));
+    const nextLabel=new Date(next).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+    document.getElementById('weather-metric-close').click();
+    document.getElementById('weather-context-done').click();
+    return {switcher,defaultChart,pageOverlay,switched,nextKey,keptOverlay,sub,metricOverlay,nextLabel};
+  },seeded);
+  assert(daySwitch.switcher && daySwitch.defaultChart,
+    'the weather sheet includes a day switcher and starts with an hourly graph');
+  assert(daySwitch.pageOverlay,'tapping rain overlays precipitation on the feels-like graph');
+  assert(daySwitch.switched===daySwitch.nextKey && daySwitch.keptOverlay,
+    'switching days keeps the same overlaid graphs on the new forecast');
+  assert(daySwitch.sub.includes(daySwitch.nextLabel),
+    'the weather subtitle follows the newly selected day');
+  assert(daySwitch.metricOverlay,'the hourly drill-down can overlay another measure on the same chart');
   assert(errors.length===0,'no page errors during unit switching');
 
   await browser.close();

@@ -262,10 +262,34 @@ function seedScript(){
     return {quickActions,listFooter,presets,saveCopy};
   });
   assert(dayMenu.quickActions.some(text => /plan something/i.test(text)), 'day menu leads with Plan something');
+  assert(dayMenu.quickActions.some(text => /see open hours/i.test(text)), 'day menu offers the open-hours checker');
   assert(dayMenu.quickActions.some(text => /adjust open time/i.test(text)), 'day menu exposes open-time adjustment as a clear action');
   assert(/back to calendar/i.test(dayMenu.listFooter) && /home/i.test(dayMenu.listFooter), 'day menu has clear calendar and home exits');
   assert(dayMenu.presets.join(',') === 'No time,2h,4h,8h', 'open-time editor offers understandable presets');
   assert(/save open time/i.test(dayMenu.saveCopy), 'open-time editor has an explicit save action');
+
+  const openHoursShortcut = await page.evaluate(() => {
+    const key = todayIso();
+    resetDayLogsStep();
+    renderDayLogs(key);
+    document.getElementById('day-logs-open-hours')?.click();
+    return {
+      sheetOpen: document.getElementById('free-time-sheet')?.classList.contains('open') || false,
+      title: document.getElementById('free-time-title')?.textContent || '',
+      expanded: document.querySelector('#free-time-sheet .free-fit-checker')?.classList.contains('is-expanded') || false,
+      hasSwitch: !!document.querySelector('#free-time-sheet .free-day-switch'),
+      selectedDay: document.querySelector('#free-time-sheet .free-day-chip.on')?.dataset.freeDay || '',
+      today: todayIso()
+    };
+  });
+  assert(openHoursShortcut.sheetOpen, 'See open hours opens the free-time sheet over the day');
+  assert(/open time/i.test(openHoursShortcut.title), `open-hours title names the sheet: "${openHoursShortcut.title}"`);
+  assert(openHoursShortcut.expanded, 'calendar shortcut expands the time checker immediately');
+  assert(openHoursShortcut.hasSwitch, 'open-hours sheet includes a day switcher');
+  assert(openHoursShortcut.selectedDay === openHoursShortcut.today, 'open-hours switcher lands on the tapped day');
+  await page.evaluate(() => {
+    if(typeof closeSheet === 'function')closeSheet('free-time-sheet');
+  });
 
   // ── C. Detail calendar scopes the day sheet to that habit ───────────────
   console.log('\n[C] detail calendar day sheet is habit-scoped');
@@ -359,13 +383,15 @@ function seedScript(){
       ...item,
       overviewPlan: !!document.querySelector('#day-logs-plan'),
       pastLog: pastQuick.some(text => /log a missed day/i.test(text)),
-      pastPlan: pastQuick.some(text => /plan something/i.test(text))
+      pastPlan: pastQuick.some(text => /plan something/i.test(text)),
+      pastHours: pastQuick.some(text => /see open hours/i.test(text))
     };
   });
   assert(pastScoped.hasLog, 'scoped past day offers Log for this day');
   assert(!pastScoped.hasPlan, 'scoped past day does not offer Plan this item');
   assert(!pastScoped.overviewPlan, 'overview past day does not offer Plan something');
   assert(pastScoped.pastLog && !pastScoped.pastPlan, 'overview past day offers Log a missed day, not Plan something');
+  assert(pastScoped.pastHours, 'overview past day still offers See open hours');
 
   // Unmarked future day from detail opens sheet without auto-logging
   const unmarked = await page.evaluate(() => {

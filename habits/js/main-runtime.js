@@ -587,6 +587,10 @@ $('day-logs-sheet').addEventListener('click',e=>{
     setDayLogsStep('add');
     return;
   }
+  if(e.target.closest('#day-logs-open-hours')){
+    if(typeof openFreeTimeForDay === 'function')openFreeTimeForDay(dayLogsKey,{expanded:true});
+    return;
+  }
   if(e.target.closest('#day-logs-log')){
     if(!dayLogsCanLog(dayLogsKey))return;
     setDayLogsStep('log',dayLogsScoped() ? dayLogsScopeIndex : null);

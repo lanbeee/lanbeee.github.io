@@ -156,9 +156,10 @@ body[data-pane-count="3"] .app-bar{
   background:var(--field-bg);color:var(--text);
   font:inherit;font-size:14px;font-weight:500;
   padding:0 14px;outline:none;margin:0;
+  -webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;
 }
-.app-bar-search input:focus-visible{
-  box-shadow:none;
+.app-bar-search input:focus,.app-bar-search input:focus-visible{
+  outline:none;box-shadow:none;
 }
 .app-bar-search .search-clear{
   display:none;
@@ -237,13 +238,14 @@ body.fullpage-open .bottom-nav{
   order:2;
 }
 .nav-search input{
-  width:100%;min-width:0;height:44px;border-radius:12px;
+  width:100%;min-width:0;height:44px;border-radius:20px;
   border:0;
   background:var(--field-bg);color:var(--text);
   font:inherit;font-size:15px;font-weight:500;
   padding:0 14px;outline:none;
+  -webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;
 }
-.nav-search input:focus-visible{box-shadow:none;}
+.nav-search input:focus,.nav-search input:focus-visible{outline:none;box-shadow:none;}
 .nav-search .search-clear{
   display:none;
   flex:0 0 36px;

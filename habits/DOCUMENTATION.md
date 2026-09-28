@@ -645,7 +645,14 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   guided-item explanations. Displayed temperatures are feels-like values. A
   far-away item names its saved place and uses that place's forecast. Tapping a
   summary card (feels like, precipitation, wind, UV) opens an interactive hourly
-  trend chart of that metric for the same day on top of the sheet. The chart
+  trend chart of that metric for the same day on top of the sheet. The weather
+  sheet itself has the same 7-day switcher as open time, so a chosen overlay
+  stays put while you compare tomorrow or the weekend. Below the summary cards,
+  hourly graphs start with feels-like; tapping rain, wind, or UV stacks those
+  measures on the same clock (rain as bars, the others as lines) instead of
+  opening a second chart. The dedicated hourly sheet can overlay the other
+  measures on top of the metric you opened, with one shared scrub readout.
+  The chart
   always spans the whole day — a near-term refresh cannot truncate it — and
   drag or arrow keys read any hour: feels like pairs with actual temperature,
   wind with gusts inside one shared frame, precipitation chance renders as bars
@@ -972,7 +979,7 @@ second row.
 
 ### 6.3 Open Time Pills (🕒 "N open")
 - Appears on day headers when there are free time stretches ≥ 10 minutes
-- Tap to open the **Free Time Sheet** (see §X.2)
+- Tap to open the **Free Time Sheet** (see §X.2). Calendar days also reach that sheet through **See open hours**.
 - Shows a visual strip of free/busy time blocks
 - Free blocks are tappable to select a time for scheduling
 - Includes tick marks at clean hour intervals
@@ -1476,8 +1483,9 @@ Tracks the currently active habit session:
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N open" pill on a day header
+- **Access:** Tap "N open" pill on a day header, or **See open hours** on a calendar day
 - Visual timeline of free vs busy blocks
+- A day switcher (previous/next plus a 7-day strip) keeps the chosen clock times, so the same window can be checked on another day without re-entering it. If a what-if result is already on screen, switching days re-runs that analysis automatically.
 - `formatFreeDuration` shows total free time ("3h" / "45m")
 - Largest gap highlighted
 - Free blocks can be selected to schedule a habit/task into that window. The
@@ -1487,11 +1495,12 @@ Tracks the currently active habit session:
   result (open, rearrangeable, spill, or fixed conflict).
 - When a fresh forecast exists, only a quiet `add weather` affordance appears
   under the free/busy strip. Tapping it reveals feels-like, rain, wind, and UV
-  choices; the user can add or remove up to two charts. Removing the final chart
-  folds the module back to the compact affordance. Every mini chart shares the
+  choices; adding several stacks them on one shared clock instead of separate
+  charts. Chosen graphs stay selected when you switch days. Removing the final
+  chart folds the module back to the compact affordance. The overlay shares the
   strip's time range and shades already-busy spans. When a time window is
-  selected, both weather charts highlight that same interval, dim everything
-  outside it, and summarize only the weather touching the selected window, so
+  selected, the weather chart highlights that same interval, dims everything
+  outside it, and summarizes only the weather touching the selected window, so
   weather and room can be compared without extra taps. This is visual context
   only and does not change the planner.
 
@@ -1726,9 +1735,9 @@ Step 4: AVAIL (availability)
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap a day in the calendar view, or tap "open time" on a day header
+- **Access:** Tap a day in the calendar view
 - Multi-step flow via `dayLogsStep`: 'list' → 'item' → 'add' → 'avail'
-- Step 1: List all items scheduled for that day
+- Step 1: List all items scheduled for that day, plus **Plan something**, **See open hours** (opens the Free Time Sheet for that date), log, and adjust open-time capacity
 - Step 2: Item detail (edit schedule, log, or plan)
 - Step 3: Add new plan for the item
 - Step 4: Set availability overrides for the day

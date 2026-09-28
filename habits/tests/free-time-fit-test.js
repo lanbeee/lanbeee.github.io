@@ -176,6 +176,32 @@ function assert(condition,message){
 
   const spill = await check('17:00','22:00');
   assert(/spill|push .* out of this day/i.test(spill),`warns when the window displaces work: "${spill.replace(/\n/g,' · ')}"`);
+
+  const timesBefore = await page.evaluate(()=>({
+    start:document.querySelector('.free-fit-start')?.value || '',
+    end:document.querySelector('.free-fit-end')?.value || '',
+    day:document.querySelector('.free-panel')?.dataset.dayKey || ''
+  }));
+  assert(await page.locator('.free-day-switch').count() === 1,'open-time sheet includes a day switcher');
+  await page.locator('.free-day-step[aria-label="next day"]').click();
+  await page.waitForFunction(prev=>document.querySelector('.free-panel')?.dataset.dayKey && document.querySelector('.free-panel')?.dataset.dayKey !== prev, timesBefore.day);
+  await settled();
+  const switched = await page.evaluate(()=>({
+    start:document.querySelector('.free-fit-start')?.value || '',
+    end:document.querySelector('.free-fit-end')?.value || '',
+    day:document.querySelector('.free-panel')?.dataset.dayKey || '',
+    selected:document.querySelector('.free-day-chip.on')?.dataset.freeDay || '',
+    expanded:document.querySelector('.free-fit-checker')?.classList.contains('is-expanded') || false,
+    result:document.querySelector('.free-fit-result')?.innerText || ''
+  }));
+  assert(switched.day !== timesBefore.day && switched.selected === switched.day,
+    `next-day control moves the sheet (${timesBefore.day} → ${switched.day})`);
+  assert(switched.start === timesBefore.start && switched.end === timesBefore.end,
+    `switching days keeps the same clock window (${switched.start}–${switched.end})`);
+  assert(switched.expanded,'switching days after a check keeps the checker open');
+  assert(/already open|can be made open|not movable|spill|push .* out of this day|doesn.t fit/i.test(switched.result),
+    `the same window is re-checked on the new day: "${switched.result.replace(/\n/g,' · ')}"`);
+
   assert(pageErrors.length === 0,`no page errors (${pageErrors.join(', ') || 'none'})`);
 
   await browser.close();
