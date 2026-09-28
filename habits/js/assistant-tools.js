@@ -420,7 +420,7 @@ function assistantCatalog(data, settings, now){
       id:String(loc && loc.id || ''),
       name:String(loc && loc.name || '').slice(0,40)
     })).filter(item => item.id && item.name),
-    weather:profiles.slice(0,4).map(profile => {
+    weather:profiles.slice(0,8).map(profile => {
       const row = {
         id:String(profile && profile.id || ''),
         name:String(profile && profile.name || '').slice(0,32)
@@ -532,16 +532,16 @@ function assistantWeatherRulesFromHints(hints){
   const rules = [];
   if(!hints)return rules;
   if(hints.notRaining){
-    rules.push({metric:'precipitation_probability', min:null, max:20, hard:true, relative:'none'});
+    rules.push({metric:'precipitation_probability', min:null, max:20, hard:true, relative:'none',importance:'medium'});
   }
   if(hints.notSnowing){
-    rules.push({metric:'snowfall', min:null, max:0.1, hard:true, relative:'none'});
+    rules.push({metric:'snowfall', min:null, max:0.1, hard:true, relative:'none',importance:'medium'});
   }
   if(hints.notFreezing){
-    rules.push({metric:'temperature_2m', min:1, max:null, hard:true, relative:'none'});
+    rules.push({metric:'temperature_2m', min:1, max:null, hard:true, relative:'none',importance:'medium'});
   }
   if(hints.notWindy){
-    rules.push({metric:'wind_speed_10m', min:null, max:20, hard:false, relative:'low'});
+    rules.push({metric:'wind_speed_10m', min:null, max:20, hard:false,relative:'low',importance:'medium'});
   }
   return typeof normalizeWeatherRule === 'function' ? rules.map(normalizeWeatherRule) : rules;
 }
@@ -552,12 +552,13 @@ function assistantMergeWeatherRules(base, extra){
     if(!rule || !rule.metric)continue;
     const i = out.findIndex(row => row && row.metric === rule.metric);
     if(i < 0){
-      out.push(Object.assign({metric:rule.metric, min:null, max:null, hard:false, relative:'none'}, rule));
+      out.push(Object.assign({metric:rule.metric, min:null, max:null, hard:false,relative:'none',importance:'medium',boundMode:'absolute'}, rule));
       continue;
     }
     const next = Object.assign({}, out[i]);
     if(rule.min != null)next.min = rule.min;
     if(rule.max != null)next.max = rule.max;
+    if(rule.boundMode==='absolute' || rule.boundMode==='percentile')next.boundMode=rule.boundMode;
     if(rule.relative === 'high' || rule.relative === 'low')next.relative = rule.relative;
     else if(rule.relativeExplicit)next.relative = rule.relative === 'high' || rule.relative === 'low' ? rule.relative : 'none';
     if(rule.min != null || rule.max != null){
@@ -565,6 +566,7 @@ function assistantMergeWeatherRules(base, extra){
     }else if(rule.hard === true){
       next.hard = true;
     }
+    if(['low','medium','high'].includes(rule.importance))next.importance=rule.importance;
     out[i] = next;
   }
   return typeof normalizeWeatherRule === 'function'
@@ -635,7 +637,7 @@ function assistantHintWeatherName(hints, fallback){
 }
 
 function assistantWeatherCapAsk(profiles){
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
   return {
     question:`You already have ${cap} weather profiles. Use one of: ${profiles.map(item => item.name).join(', ')}, or say "no weather".`,
     choices:profiles.map(item => item.name).concat(['no weather'])
@@ -686,7 +688,7 @@ function assistantProposeWeather(draft, opts, catalog, settings){
     }
   }
   if(!patchRules.length && !profileName && !(hints && hints.mentioned) && draft.kind !== 'weather')return draft;
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
   if(!existing && profiles.length >= cap && draft.kind !== 'weather'){
     draft.weatherNeedAsk = assistantWeatherCapAsk(profiles);
     return draft;
@@ -787,7 +789,7 @@ function assistantMaterializeWeatherProfile(draft, settings){
     }
     return {id:byName.id, name:byName.name};
   }
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
   if(profiles.length >= cap)return null;
   const id = `weather-${Date.now().toString(36)}`;
   const name = assistantUniqueWeatherName(nameWanted, profiles);
@@ -2004,7 +2006,7 @@ function assistantAnswerSettings(args, context){
 // query and fills day/window/name — the numbers below are never guessed.
 
 function assistantQueryCapabilities(){
-  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed (the same list as the missed pill on today), the agenda for a day or the week, the weather for the next seven days, which hour matches weather conditions, a comparison of two times, and whether the weather suits an item.';
+  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed (the same list as the missed pill on today), the agenda for a day or the week, the weather for the next seven days, the best weather window this week for an item, which hour matches weather conditions, a comparison of two times, and whether the weather suits an item.';
 }
 
 function assistantPriorityFacts(habit){
@@ -2840,6 +2842,36 @@ function assistantWeatherFitPhrase(assessment){
   return assessment.summary || assessment.status || 'forecast';
 }
 
+function assistantAnswerWeatherBest(args,context){
+  const want=String((args && args.name) || '').trim();
+  if(!want)return {ok:true,text:'Which saved item should I find the best weather for this week?'};
+  const found=assistantFindHabit(context.data,want);
+  if(!found.ok)return found;
+  const settings=context.settings;
+  const duration=assistantWeatherDuration(args,found.habit);
+  const today=assistantDayBase(context.now);
+  const candidates=[];
+  for(let offset=0;offset<7;offset+=1){
+    const dayBase=today+offset*86400000;
+    const span=assistantWeatherSpan(args,dayBase,settings,{allowWholeDay:true,now:context.now});
+    if(!span || span.error)continue;
+    for(let min=span.startMin;min<Math.min(span.endMin,1440);min+=60){
+      if(min+duration>span.endMin || min+duration>1440)continue;
+      const start=dayBase+min*60000;
+      if(start<context.now)continue;
+      const assessment=assistantWeatherFitAt(found.habit,found.index,dayBase,min,duration,settings);
+      const rank=assistantWeatherFitRank(assessment);
+      if(rank==null)continue;
+      candidates.push({dayBase,min,assessment,rank});
+    }
+  }
+  if(!candidates.length)return {ok:true,text:`I could not score ${found.name} across the next seven days. It may not have an active weather profile or a fresh forecast.`};
+  candidates.sort((a,b)=>a.rank-b.rank || a.dayBase-b.dayBase || a.min-b.min);
+  const best=candidates[0];
+  const dateLabel=new Intl.DateTimeFormat('en-US',{weekday:'long',month:'short',day:'numeric'}).format(new Date(best.dayBase));
+  return {ok:true,score:best.assessment.score,text:`Best weather for ${found.name} in the next seven days is ${dateLabel}, ${assistantFriendlyClock(best.min)}–${assistantFriendlyClock(best.min+duration)}: ${assistantWeatherFitPhrase(best.assessment)}.`};
+}
+
 function assistantWeatherPlannedNote(found, context, dayBase, dayLabel){
   const week = assistantQueryWeek(context.data, context.settings);
   const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
@@ -2947,13 +2979,14 @@ function assistantAnswerWeather(args, context){
   const settings = context.settings;
   const now = context.now;
   const queryRaw = assistantNormText(args && args.query);
+  if(queryRaw==='best')return assistantAnswerWeatherBest(args,context);
   const date = assistantQueryDay(args && args.date, now);
   if((args && args.date != null && String(args.date).trim() !== '') && !date){
     return {ok:true, text:`I can only cover the next seven days. ${assistantQueryCapabilities()}`};
   }
   const dayBase = date ? date.dayBase : assistantDayBase(now);
   const dayLabel = date ? date.label : 'today';
-  let query = ['day','window','item','hours','compare'].includes(queryRaw) ? queryRaw : '';
+  let query = ['day','window','item','hours','compare','best'].includes(queryRaw) ? queryRaw : '';
 
   if(!query){
     return {ok:true, text:`That weather question is too vague for me. ${assistantQueryCapabilities()}`};
@@ -3569,7 +3602,7 @@ function assistantApplyDraftSetting(args, draft, catalog, now, settings, request
     assistantProposeWeather(next, {name:next.name, text}, catalog, settings);
     if(next.weatherProposed)next.weatherProposed.name = next.name;
     if(next.weather)next.weather.name = next.name;
-    const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+    const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
     const profiles = typeof normalizeWeatherProfiles === 'function'
       ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
       : ((settings && settings.weatherProfiles) || []);
@@ -3622,7 +3655,7 @@ function assistantCommitWeatherSetting(draft, settings){
       const profiles = typeof normalizeWeatherProfiles === 'function'
         ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
         : ((settings && settings.weatherProfiles) || []);
-      const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+      const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
       if(profiles.length >= cap)return {ok:false, error:`${cap} weather profiles max`};
       return {ok:false, error:'could not save weather profile'};
     }
@@ -4577,10 +4610,12 @@ function assistantWeatherRulesSummary(rules){
       return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '';
     };
     const bits = [];
-    if(rule.min != null)bits.push(`≥${fmt(rule.min)}${unit}`);
-    if(rule.max != null)bits.push(`≤${fmt(rule.max)}${unit}`);
+    if(rule.min != null)bits.push(rule.boundMode==='percentile'?`≥${rule.min}th percentile`:`≥${fmt(rule.min)}${unit}`);
+    if(rule.max != null)bits.push(rule.boundMode==='percentile'?`≤${rule.max}th percentile`:`≤${fmt(rule.max)}${unit}`);
     if(rule.relative === 'low')bits.push('prefer lower');
     if(rule.relative === 'high')bits.push('prefer higher');
+    if(rule.importance === 'low')bits.push('low priority');
+    if(rule.importance === 'high')bits.push('high priority');
     if(rule.hard)bits.push('hard');
     return `${label} ${bits.join(' ')}`.trim();
   }).filter(Boolean);

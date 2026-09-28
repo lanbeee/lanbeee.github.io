@@ -99,6 +99,9 @@ async function launchBrowser(){
     check('prefers hot is relative high', preferHot && preferHot.rules.some(rule => rule.metric === 'temperature_2m' && rule.relative === 'high'));
     const chipPatch = assistantParseWeatherRulesFromText('temperature ≤86°F prefer higher hard');
     check('summary chip keeps max and prefer higher', chipPatch && chipPatch.rules.some(rule => rule.metric === 'temperature_2m' && rule.relative === 'high' && rule.max != null));
+    const weightedWeather = assistantParseWeatherRulesFromText('prefer lower wind, which is really important; prefer higher feels like temperature with low priority');
+    check('weather text parses independent priorities', weightedWeather && weightedWeather.rules.some(rule => rule.metric === 'wind_speed_10m' && rule.relative === 'low' && rule.importance === 'high')
+      && weightedWeather.rules.some(rule => rule.metric === 'apparent_temperature' && rule.relative === 'high' && rule.importance === 'low'));
     const locCat = {places:[{id:'home-1', name:'Sample Home'}, {id:'gym-1', name:'Gym'}]};
     const addLoc = assistantParseUtterance('Add the location home.', locCat, now);
     check('add location is edit', addLoc.intent === 'edit_item' && addLoc.itemName == null);

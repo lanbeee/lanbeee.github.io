@@ -583,7 +583,7 @@ homeCityLng: number|null,       // 👤 Longitude
 prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
-weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles shared by items, options, and places
+weatherProfiles: WeatherProfile[], // 👤 Up to eight named weighted-rule profiles shared by items, options, and places
 showWeatherTemperatureRanges: boolean, // Add feels-like low–high beside full-mode day forecast icons (default off)
 showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
 showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
@@ -680,9 +680,14 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
   are never shown as day weather.
-- Rules in one profile are AND-combined. `prefer lower`/`prefer higher` steers
-  placement; min/max set absolute bounds; `hard` rejects flexible times outside
-  const bounds, while active, planned, critical, and direct-linked commitments
+- Rules in one profile combine into one normalized 0–100 score. Each rule has
+  low, medium, or high relative priority. `prefer lower`/`prefer higher` is
+  ranked from the actual available seven-day forecast for that place (with
+  interval and whole-day context), so its baseline follows the week and season
+  rather than fixed climatic normals. Each rule's min/max limits can use either
+  literal values in the selected display unit or 0–100 percentiles of that
+  place's available forecast. Preferences steer placement; `hard` rejects flexible times outside
+  those bounds, while active, planned, critical, and direct-linked commitments
   remain and show an override. Selecting "no preference" never deletes a rule —
   a rule with no bounds and no preference is kept but inactive (the editor
   labels it). The rule editor shows each metric's scale and typical bands
@@ -704,7 +709,7 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   profiles cannot be deleted until those uses are changed. A forecast panel
   below the status line shows the exact rows the planner scores — the next 24
   hours of the stored home
-  forecast, one row per step (hourly, or 15-minute inside the near-term
+forecast, one row per step (hourly, or 15-minute inside the near-term
   horizon, shaded, where the detail supersedes the hourly value), with fetch
   ages and the detail horizon in the header line. It reads the stored cache
   even when no profile is attached yet, and says so when nothing is stored or
@@ -1939,7 +1944,7 @@ Settings sections (actual order):
 ├── display
 │   └── minimal mode toggle
 ├── weather guidance
-│   ├── up to four named rule profiles
+│   ├── up to eight named weighted-rule profiles
 │   ├── six-hour weekly / conditional 15-minute near-term status
 │   └── manual refresh and Open-Meteo/CAMS attribution
 ├── home page
@@ -2801,7 +2806,7 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 | `homeCityName` | string | '' | City name for prayer times |
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
-| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather profiles shared by items, options, and places |
+| `weatherProfiles` | WeatherProfile[] | [] | Up to eight named weighted weather profiles shared by items, options, and places |
 | `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high beside full-mode Home and Overview week-strip weather icons |
 | `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
 | `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |

@@ -256,7 +256,7 @@ const ASSISTANT_TOOL_DEFS = {
         kind:{type:'string', enum:ASSISTANT_SETTING_KINDS},
         name:{type:['string','null'], description:'Short title: Barbecuing, Gym, Sleep, health'},
         newName:{type:['string','null']},
-        weatherText:{type:['string','null'], description:'Weather rules in English. On a change this MERGES onto currentDraft.rules — do not repeat rules you are not changing. Examples: "prefer higher temperature", "wind under 25mph hard", "rain chance under 20, prefer lower"'},
+        weatherText:{type:['string','null'], description:'Weather rules in English. On a change this MERGES onto currentDraft.rules — do not repeat rules you are not changing. Each metric may have low, medium, or high priority. Relative preferences are evaluated against the available seven-day forecast, not a fixed seasonal baseline. Examples: "prefer higher feels-like temperature, high priority", "wind under 25mph hard", "rain chance under 20, prefer lower, low priority"'},
         address:{type:['string','null'], description:'Place search query or street address'},
         lat:{type:['number','string','null']},
         lng:{type:['number','string','null']},
@@ -353,12 +353,12 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_weather:{
-    description:'Answer from the real forecast. Tings computes every number and time. query day = a date. query window = a span; omit end for the rest of the day. query hours = which time matches. Lowest wind after 5pm = query hours, start 5pm, sortBy wind, sortOrder asc, position 1. Relatively hot with very low wind = conditions temperature relative high AND wind relative very_low. query item = weather fit for a saved item; pass start even when it is not already planned ("Badminton after 5pm"). query compare = two times (start vs compareStart), such as 5pm vs 1 hour before sunset, with name when a habit’s rules should decide.',
+    description:'Answer from the real forecast. Tings computes every number and time. query day = a date. query window = a span; omit end for the rest of the day. query hours = which time matches. query best ranks the next seven days using a saved item’s weighted weather profile. Lowest wind after 5pm = query hours, start 5pm, sortBy wind, sortOrder asc, position 1. Relatively hot with very low wind = conditions temperature relative high AND wind relative very_low. query item = weather fit for a saved item; pass start even when it is not already planned ("Badminton after 5pm"). query compare = two times (start vs compareStart), such as 5pm vs 1 hour before sunset, with name when a habit’s rules should decide.',
     parameters:{
       type:'object',
       required:['query'],
       properties:{
-        query:{type:'string', enum:['day','window','item','hours','compare']},
+        query:{type:'string', enum:['day','window','item','hours','compare','best']},
         date:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD. Default today'},
         start:{type:['string','null'], description:'5pm, 17:00, sunset, or 1 hour before sunset. For after 5pm, set start and omit end'},
         end:{type:['string','null'], description:'6pm, 18:00, or sunset. Omit for the rest of the day'},

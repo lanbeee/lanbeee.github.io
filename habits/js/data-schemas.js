@@ -139,14 +139,15 @@
  */
 
 /**
- * A named set of AND-combined weather rules stored in Settings. `relative`
- * compares both the exact interval and its whole day (50/50). Hard rules only
+ * A named set of weighted weather rules stored in Settings. `relative`
+ * compares both the exact interval and its whole day (50/50); percentile bounds
+ * use the same available forecast distribution. Hard rules only
  * reject flexible placements; planned, active, critical, and direct-linked rows may
  * override them. Forecast payloads live separately under WEATHER_CACHE_KEY.
  * @typedef {Object} WeatherProfile
  * @property {string} id
  * @property {string} name
- * @property {{metric:string,min:number|null,max:number|null,hard:boolean,relative:'none'|'low'|'high'}[]} rules
+ * @property {{metric:string,min:number|null,max:number|null,hard:boolean,relative:'none'|'low'|'high',importance:'low'|'medium'|'high',boundMode:'absolute'|'percentile'}[]} rules
  */
 
 /**
@@ -221,7 +222,7 @@
  * @property {Location[]} locations                            — master location registry (max 32)
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
- * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
+ * @property {WeatherProfile[]} weatherProfiles               — up to eight named weighted-rule profiles
  * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high to full-mode home/overview weather cues (default true)
  * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/feels-like pills on busy-time cards in regular mode
  * @property {boolean} showWeatherOnTravel                     — show interval condition/feels-like pills on travel cards in regular mode (default true)

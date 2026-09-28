@@ -28,7 +28,19 @@ function assert(value,message){
   assert(await page.locator('.weather-profile-card').count()===1,'settings creates a named weather profile');
   assert(await page.locator('#ting-weather-profile option').count()===3,'new profile appears beside inherit and no-weather choices');
   assert(await page.locator('.weather-rule-hint').count()===1,'each rule shows its metric scale');
-  assert(/chance/.test(await page.locator('.weather-rule-hint').first().textContent()),'the hint names the metric scale bands');
+  assert(/chance/.test(await page.locator('.weather-rule-hint').first().textContent()),'the fixed-value hint names the metric scale bands');
+  assert(await page.locator('[data-weather-rule-importance]').first().inputValue()==='medium','new weather rules start at medium relative priority');
+  await page.locator('[data-weather-rule-importance]').first().selectOption('high');
+  assert(await page.locator('[data-weather-rule-importance]').first().inputValue()==='high','each weather element can be given its own priority');
+  await page.locator('[data-weather-rule-bound-mode]').first().selectOption('percentile');
+  await page.locator('[data-weather-rule-max]').first().fill('25');
+  await page.locator('[data-weather-rule-max]').first().blur();
+  const percentileUi=await page.evaluate(()=>({
+    rule:normalizeWeatherProfiles(loadSortSettings().weatherProfiles)[0].rules[0],
+    hint:document.querySelector('.weather-rule-hint')?.textContent || ''
+  }));
+  assert(percentileUi.rule.boundMode==='percentile' && percentileUi.rule.max===25,'a rule can store a forecast percentile instead of a fixed value');
+  assert(/0 = lowest, 100 = highest/.test(percentileUi.hint),'the percentile editor explains its forecast-relative scale');
   await page.locator('[data-weather-rule-relative]').first().selectOption('none');
   assert(await page.locator('.weather-profile-card .weather-rule').count()===1,'choosing "no preference" keeps the rule so bounds can be set after');
   assert(!/inactive/.test(await page.locator('.weather-rule-hint').first().textContent()),'a bounds-only rule with no preference stays active');
@@ -256,6 +268,30 @@ function assert(value,message){
     const inertAssessment=weatherFitAssessment({h:{hid:'inert-h',weatherProfileId:'inert'},i:0,priority:3},
       {placeStart:at(9),placeEnd:at(10)},{dayBase:base.getTime(),settings:inertSettings,fills:[],registry:[]},inertSettings);
     const keptInert=normalizeWeatherProfiles([{...inertProfile}]);
+    const weightedSamples=[
+      {ts:at(9),precipitation_probability:90,apparent_temperature:30,source:'weekly'},
+      {ts:at(15),precipitation_probability:10,apparent_temperature:10,source:'weekly'}
+    ];
+    const weightedProfile={id:'weighted',name:'Weighted',rules:[
+      {metric:'precipitation_probability',min:null,max:null,hard:false,relative:'low',importance:'high'},
+      {metric:'apparent_temperature',min:null,max:null,hard:false,relative:'high',importance:'low'}
+    ]};
+    const weightedSettings={...settings,weatherProfiles:[weightedProfile],_weatherContext:{profiles:[weightedProfile],timezone:context.timezone,samples:weightedSamples,locks:[]}};
+    const weightedFill={h:{...h,weatherProfileId:'weighted'},i:0,priority:3};
+    const dryScore=weatherFitAssessment(weightedFill,fit(15),state,weightedSettings).score;
+    const warmScore=weatherFitAssessment(weightedFill,fit(9),state,weightedSettings).score;
+    const percentileProfile={id:'percentile',name:'Calmest quarter',rules:[
+      {metric:'wind_speed_10m',min:null,max:25,hard:true,relative:'none',importance:'medium',boundMode:'percentile'}
+    ]};
+    const percentileSettings={...settings,weatherProfiles:[percentileProfile],_weatherContext:{profiles:[percentileProfile],timezone:context.timezone,samples:[
+      {ts:at(8),wind_speed_10m:5,source:'weekly'},
+      {ts:at(9),wind_speed_10m:10,source:'weekly'},
+      {ts:at(15),wind_speed_10m:20,source:'weekly'},
+      {ts:at(16),wind_speed_10m:30,source:'weekly'}
+    ],locks:[]}};
+    const percentileFill={h:{...h,weatherProfileId:'percentile'},i:0,priority:3};
+    const lowWind=weatherFitAssessment(percentileFill,fit(8),state,percentileSettings);
+    const highWind=weatherFitAssessment(percentileFill,fit(16),state,percentileSettings);
     return {
       softHour:new Date(chosen.placeStart).getHours(),
       relativeHour:new Date(relativeChosen.placeStart).getHours(),
@@ -267,7 +303,12 @@ function assert(value,message){
       scarceHour:new Date(scarceChosen.placeStart).getHours(),
       missing:Boolean(missing),
       nearOnly:nearRows.length===1 && nearRows[0].source==='near',
-      normalized:normalizeWeatherProfiles([...profiles,...profiles,...profiles,...profiles,...profiles]).length,
+      normalized:normalizeWeatherProfiles(Array.from({length:10},(_,i)=>({id:`p${i}`,name:`P${i}`,rules:profiles[0].rules}))).length,
+      migratedPriority:normalizeWeatherProfiles(profiles)[0].rules[0].importance,
+      dryScore,warmScore,
+      percentileLowPass:!lowWind.hardFail,
+      percentileHighBlocked:highWind.hardFail,
+      percentileRank:highWind.results[0].percentile,
       keptNoPrefRule:keptInert.length===1 && keptInert[0].rules.length===1,
       inertIgnored:inertAssessment===null
     };
@@ -283,7 +324,10 @@ function assert(value,message){
   assert(result.scarceHour===15,'prefer-lower rain outranks scarce-window overlap');
   assert(result.missing,'missing forecast fails open');
   assert(result.nearOnly,'near-term samples replace weekly samples in overlap');
-  assert(result.normalized===4,'weather profiles are capped at four');
+  assert(result.normalized===8,'weather profiles are capped at eight');
+  assert(result.migratedPriority==='medium','existing weather rules migrate to medium relative priority');
+  assert(result.dryScore>result.warmScore,'a high-priority prefer-lower rain rule outweighs a low-priority prefer-higher feels-like rule');
+  assert(result.percentileLowPass && result.percentileHighBlocked && result.percentileRank===100,'a hard max-25 percentile rule accepts the calmest quarter and rejects the highest forecast wind');
   assert(result.keptNoPrefRule,'a no-preference rule without bounds survives normalization');
   assert(result.inertIgnored,'a rule with no bounds and no preference does not steer or block');
 

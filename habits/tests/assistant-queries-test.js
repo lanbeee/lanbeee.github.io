@@ -879,6 +879,7 @@ async function launchBrowser(){
     const savedWeek = _homeRenderedWeek;
     _homeRenderedWeek = {days:fakeDays};
     const item = assistantAnswerWeather({query:'item', name:'Run', date:'today'}, assistantBuildContext());
+    const best = assistantAnswerWeather({query:'best', name:'Run'}, assistantBuildContext());
     const missing = assistantAnswerWeather({query:'item', name:'Nonexistent thing', date:'today'}, assistantBuildContext());
     _homeRenderedWeek = savedWeek;
     save([]);
@@ -888,7 +889,7 @@ async function launchBrowser(){
     const dry = assistantAnswerWeather({query:'day', date:'today'}, assistantBuildContext());
     weatherCacheWrite(bucket);
     loadSortSettings();
-    return { day:day.text, window:window.text, item:item.text, missing:missing.text, dry:dry.text };
+    return { day:day.text, window:window.text, item:item.text, best:best.text, bestScore:best.score, missing:missing.text, dry:dry.text };
   });
   assert(/Test City/.test(weatherHandlers.day) && /rain chance/.test(weatherHandlers.day),
     `day answer names the city + rain chance: ${weatherHandlers.day}`);
@@ -896,6 +897,9 @@ async function launchBrowser(){
     `window answer uses the hourly samples: ${weatherHandlers.window}`);
   assert(/Run is planned today/.test(weatherHandlers.item) && /90%/.test(weatherHandlers.item),
     `item answer assesses the weather rules: ${weatherHandlers.item}`);
+  assert(/Best weather for Run in the next seven days/i.test(weatherHandlers.best) && /\/100/.test(weatherHandlers.best)
+    && Number.isFinite(weatherHandlers.bestScore),
+    `weekly best-weather query uses the item profile's combined score: ${weatherHandlers.best}`);
   assert(/cannot find|do not see/i.test(weatherHandlers.missing),
     'unknown item asks instead of guessing');
   assert(/forecast/i.test(weatherHandlers.dry) && !/Test City/.test(weatherHandlers.dry),

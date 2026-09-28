@@ -271,12 +271,24 @@ function weatherRuleActive(rule){
   return Boolean(rule && (rule.min != null || rule.max != null || rule.relative !== 'none'));
 }
 
+function normalizeWeatherRuleImportance(value){
+  if(value==='low' || value==='high')return value;
+  return 'medium';
+}
+
+function weatherRuleImportanceWeight(rule){
+  const importance=normalizeWeatherRuleImportance(rule && rule.importance);
+  return importance==='high' ? 2 : (importance==='low' ? 0.5 : 1);
+}
+
 function normalizeWeatherRule(raw){
   const metric = raw && WEATHER_METRICS[raw.metric] ? raw.metric : 'precipitation_probability';
+  const boundMode=raw && raw.boundMode==='percentile' ? 'percentile' : 'absolute';
   const numberOrNull = value=>{
     if(value === '' || value == null)return null;
     const n = Number(value);
-    return Number.isFinite(n) ? Math.max(-500,Math.min(5000,n)) : null;
+    if(!Number.isFinite(n))return null;
+    return boundMode==='percentile' ? Math.max(0,Math.min(100,n)) : Math.max(-500,Math.min(5000,n));
   };
   const relative = ['low','high'].includes(raw && raw.relative) ? raw.relative : 'none';
   return {
@@ -284,7 +296,9 @@ function normalizeWeatherRule(raw){
     min:numberOrNull(raw && raw.min),
     max:numberOrNull(raw && raw.max),
     hard:Boolean(raw && raw.hard),
-    relative
+    relative,
+    importance:normalizeWeatherRuleImportance(raw && raw.importance),
+    boundMode
   };
 }
 
@@ -737,19 +751,21 @@ function weatherMetricStats(context,metric){
 function weatherRuleResult(rule,intervalSamples,context,start){
   const value = weatherAggregate(intervalSamples,rule.metric);
   if(value == null)return {known:false,penalty:0,pass:true,value:null};
+  const stats=(rule.relative !== 'none' || rule.boundMode==='percentile')
+    ? weatherMetricStats(context,rule.metric) : null;
+  const intervalRank=stats ? weatherPercentile(value,stats.values) : null;
+  const boundValue=rule.boundMode==='percentile' ? intervalRank*100 : value;
   let pass = true;
   let penalty = 0;
-  if(rule.min != null && value < rule.min){
+  if(rule.min != null && boundValue < rule.min){
     pass = false;
-    penalty += 100 + Math.min(200,Math.abs(value-rule.min) * 4);
+    penalty += 100 + Math.min(200,Math.abs(boundValue-rule.min) * 4);
   }
-  if(rule.max != null && value > rule.max){
+  if(rule.max != null && boundValue > rule.max){
     pass = false;
-    penalty += 100 + Math.min(200,Math.abs(value-rule.max) * 4);
+    penalty += 100 + Math.min(200,Math.abs(boundValue-rule.max) * 4);
   }
   if(rule.relative !== 'none'){
-    const stats=weatherMetricStats(context,rule.metric);
-    const intervalRank = weatherPercentile(value,stats.values);
     const day = weatherDayKey(start,context.timezone);
     const dayValue = weatherAggregate(stats.byDay.get(day) || [],rule.metric);
     const dayRank = weatherPercentile(dayValue,stats.dayValues);
@@ -757,7 +773,7 @@ function weatherRuleResult(rule,intervalSamples,context,start){
     const dayBadness = rule.relative === 'low' ? dayRank : 1-dayRank;
     penalty += 100 * (intervalBadness * 0.5 + dayBadness * 0.5);
   }
-  return {known:true,pass,penalty,value};
+  return {known:true,pass,penalty,value,percentile:Number.isFinite(intervalRank)?Math.round(intervalRank*100):null};
 }
 
 function weatherCommitmentOverride(fill,state){
@@ -796,11 +812,16 @@ function weatherFitAssessment(fill,fit,state,settings){
     const meta = WEATHER_METRICS[result.rule.metric];
     const value = weatherMetricValueConverted(result.rule.metric,result.value);
     const unit = weatherMetricUnitLabel(result.rule.metric);
-    return `${meta.label} ${Math.round(value * 10) / 10}${unit}`;
+    const percentile=result.rule.boundMode==='percentile' && Number.isFinite(result.percentile)
+      ? ` · ${result.percentile}th percentile` : '';
+    return `${meta.label} ${Math.round(value * 10) / 10}${unit}${percentile}`;
   };
+  const totalWeight=known.reduce((sum,result)=>sum+weatherRuleImportanceWeight(result.rule),0) || 1;
+  const combinedBadness=known.reduce((sum,result)=>sum+Math.min(100,result.penalty)*weatherRuleImportanceWeight(result.rule),0)/totalWeight;
+  const score=Math.max(0,Math.min(100,Math.round(100-combinedBadness)));
   const summary = failing.length
-    ? `${overridden ? 'weather override' : 'weather caution'} · ${failing.map(describe).join(' · ')}`
-    : `good for ${profile.name} · ${known.slice(0,2).map(describe).join(' · ')}`;
+    ? `${score}/100 · ${overridden ? 'weather override' : 'weather caution'} · ${failing.map(describe).join(' · ')}`
+    : `${score}/100 · good for ${profile.name} · ${known.slice(0,2).map(describe).join(' · ')}`;
   return {
     profile,
     guidance,
@@ -808,7 +829,11 @@ function weatherFitAssessment(fill,fit,state,settings){
     hardFail:hardFail && !overridden,
     // Weather guidance outranks ordinary ASAP/preference tie-breaking, while
     // all planned/critical/order guarantees remain hard constraints upstream.
-    penalty:results.reduce((sum,result)=>sum+result.penalty,0) * 10,
+    // The weighted average makes profiles comparable even when they contain
+    // different numbers of rules. Hard limits stay mandatory regardless of a
+    // rule's relative priority or whether the limit uses values/percentiles.
+    penalty:combinedBadness * 10,
+    score,
     summary,
     results
   };
