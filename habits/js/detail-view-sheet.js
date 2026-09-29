@@ -26,6 +26,7 @@ function openDetail(i){
   const c = colors(days,h.target,h.type);
   const cardScoreTone = cardTone(h);
   const accent = visualClassColor(cardScoreTone);
+  if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
   $('detail-name').textContent = h.name;
   $('detail-sub').textContent = detailHeaderLine(h);
   $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
@@ -61,6 +62,9 @@ function openDetail(i){
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
   renderHabitScheduleOptions(h);
+  // Expand configured options, but keep unused advanced fields quiet.
+  $('detail-options-disclosure').open = Boolean(h.scheduleOptions?.length);
+  $('detail-weather-disclosure').open = Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';

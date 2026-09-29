@@ -1,4 +1,4 @@
-const CACHE = 'tings-v472';
+const CACHE = 'tings-v477';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -119,6 +119,7 @@ const PRECACHE = [
   './lib/js/glpk.mjs',
   './js/push-client.js',
   './js/reminders.js',
+  './js/native-reminders.js',
   './js/shell-ui.js',
   './js/time-picker.js',
   './js/emoji-suggest.js',

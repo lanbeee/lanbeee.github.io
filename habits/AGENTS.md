@@ -10,6 +10,10 @@ Open `index.html` via any static server. All state lives in `localStorage`.
 
 ---
 
+## Mobile wrapper
+
+`../../Tings` owns the Capacitor Android shell. Its build reads this PWA directory as canonical shared source. Root runtime paths in the wrapper are symlinks, not independent copies. `js/native-reminders.js` compiles mounted agenda rows only when `window.TingsNative.isNative`; native-only controls must stay absent in the PWA. OS delivery is implemented in the wrapper's `native/platform.js`. Do not duplicate planner engines for mobile.
+
 ## 1. Quick start
 
 ```bash

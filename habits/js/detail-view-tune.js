@@ -557,6 +557,7 @@ function setScheduleView(view){
   if(preferredGroup)preferredGroup.hidden = view !== 'preferred';
   const options = $('detail-habit-options');
   if(options)options.hidden = view !== 'allowed';
+  if($('detail-options-disclosure'))$('detail-options-disclosure').hidden = view !== 'allowed';
   if(typeof syncDetailSchedulePlacesUi === 'function')syncDetailSchedulePlacesUi();
 }
 

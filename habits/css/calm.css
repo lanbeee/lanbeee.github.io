@@ -110,11 +110,57 @@ body.compact-mode .swipe-row{--card-radius:20px;}
     transition-duration:.01ms !important;scroll-behavior:auto !important;
   }
 }
-/* The full agenda's adaptive weather row uses compact, measured typography. */
+/* Every day uses the same heading face, including weather/context days. */
 .section-header.has-context{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  font-size:13px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  font-family:inherit;font-size:calc(18px * var(--font-scale));
+  font-weight:600;letter-spacing:-.025em;text-transform:none;
 }
 .section-header.has-context :is(.dropped-pill,.free-pill){
-  font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  font-family:inherit;font-weight:600;letter-spacing:0;text-transform:none;
+}
+/* Capacitor supplies these variables; Safari/PWA uses the environment inset.
+   Inset the content, not the collapsible topbar, so its hide/show stays stable. */
+
+body[data-pane-count="1"] .app{
+  padding-top:var(--content-safe-top);
+  padding-left:max(0px,var(--content-safe-left));
+  padding-right:max(0px,var(--content-safe-right));
+}
+body[data-pane-count="2"] .app,body[data-pane-count="3"] .app{
+  padding-top:var(--content-safe-top);
+}
+.detail-disclosure{border-top:1px solid var(--border);margin-top:18px;padding-top:4px;}
+.detail-disclosure > summary{
+  cursor:pointer;padding:14px 0;color:var(--text2);font-size:13px;
+  font-weight:600;list-style:none;display:flex;align-items:center;justify-content:space-between;
+}
+.detail-disclosure > summary::-webkit-details-marker{display:none;}
+.detail-disclosure > summary::after{content:'+';font-size:18px;font-weight:400;}
+.detail-disclosure[open] > summary::after{content:'−';}
+.detail-disclosure .habit-options-block{border:0;margin-top:0;padding-top:0;}
+.detail-sheet .detail-page{box-shadow:none;}
+.detail-sheet .detail-page-tab.on{background:var(--teal-bg);color:var(--teal-text);box-shadow:none;}
+.detail-sheet :is(.detail-schedule-flexibility,.schedule-order-block){margin-top:20px;}
+/* Flat controls: the switch track is the control, without a browser button frame. */
+.detail-sheet button.setting-switch{
+  appearance:none;border:0;background:transparent;padding:0;box-shadow:none;
+}
+.detail-sheet .schedule-time-block{
+  background:transparent;box-shadow:none;border:0;border-top:1px solid var(--border);
+  border-radius:0;padding:16px 0 0;
+}
+
+/* Document scrolling needs an inset sticky edge. Inner desktop panes already
+   begin below the app bar and retain their own zero-based sticky edge. */
+body[data-pane-count="1"] .section-header{top:var(--content-safe-top);}
+.app-bar{top:var(--content-safe-top);}
+/* Keep scrolling cards out of the transparent system-status area. Sheets
+   paint above this layer and apply their own safe padding. */
+body::before{
+  content:'';position:fixed;inset:0 0 auto;height:var(--content-safe-top);
+  background:var(--bg2);z-index:40;pointer-events:none;
+}
+body[data-pane-count="2"] .app,body[data-pane-count="3"] .app{
+  padding-left:var(--content-safe-left);padding-right:var(--content-safe-right);
+  padding-bottom:var(--content-safe-bottom);
 }

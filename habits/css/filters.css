@@ -54,7 +54,7 @@
 }
 
 .home-filter-sheet{
-  max-height:min(82dvh,720px);padding-bottom:calc(22px + env(safe-area-inset-bottom));
+  max-height:min(82dvh,720px);padding-bottom:calc(22px + var(--content-safe-bottom));
   display:flex;flex-direction:column;overflow:hidden;
 }
 .home-filter-sheet::before{

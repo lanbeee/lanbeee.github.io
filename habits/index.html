@@ -319,35 +319,9 @@
             </div>
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
-          <div class="planning-grid detail-full-only detail-schedule-flexibility">
-            <div class="planning-field">
-              <span class="flexibility-label">early window <button type="button" class="info-btn" data-tip="detail-early-window-help" aria-label="about the early window"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <div class="info-tooltip" id="detail-early-window-help" role="tooltip" hidden>How many days early the planner may bring this forward. This never permits postponing it.</div></span>
-              <label class="range-value" aria-label="early window in days">
-                <input type="text" id="detail-early-window" inputmode="numeric" maxlength="2" value="0" />
-                <span>d</span>
-              </label>
-            </div>
-            <div class="planning-field">
-              <span class="flexibility-label">delay allowance <button type="button" class="info-btn" data-tip="detail-delay-allowance-help" aria-label="about the delay allowance"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <div class="info-tooltip" id="detail-delay-allowance-help" role="tooltip" hidden>How many days after the due or rhythm day this may remain on time. Zero means it must use its due day when it fits.</div></span>
-              <label class="range-value" aria-label="delay allowance in days">
-                <input type="text" id="detail-delay-allowance" inputmode="numeric" maxlength="2" value="0" />
-                <span>d</span>
-              </label>
-            </div>
-          </div>
+
           <div class="planning-grid detail-minimal-effort" id="detail-minimal-effort" hidden></div>
-          <div class="schedule-order-block detail-full-only" id="detail-schedule-order">
-            <div class="schedule-order-heading">
-              <span class="settings-sublabel schedule-order-label">item order
-                <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about item order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>Link this item before or after any number of others. Links are OR’d: plan with whichever partner lands that day. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. “Must do on days with” pulls this item onto a partner’s day when flexibility allows (shown with the early indicator); other days stay unconstrained.</span>
-              </span>
-              <button type="button" class="mini-text-btn schedule-link-add" id="detail-schedule-link-add">add link</button>
-            </div>
-            <div id="detail-schedule-link-list" class="schedule-link-list"></div>
-          </div>
+
           <div class="seg schedule-seg detail-full-only" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed" aria-label="allowed — hard limits">allowed</button>
             <button class="seg-opt" data-schedule-view="preferred" aria-label="preferred — soft preference">preferred</button>
@@ -402,7 +376,8 @@
             <p class="field-hint" id="detail-places-hint">These places use the time window above.</p>
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
           </div>
-          <div class="detail-full-only weather-habit-field">
+          <details class="detail-disclosure detail-full-only weather-habit-field" id="detail-weather-disclosure">
+            <summary>weather &amp; forecast</summary>
             <label class="setting-toggle compact-toggle" id="detail-show-weather-row">
               <span>show weather</span>
               <button class="setting-switch" id="detail-show-weather" type="button" aria-pressed="false">
@@ -424,7 +399,9 @@
               <select id="detail-weather-location" class="settings-select"><option value="">home city</option></select>
             </div>
             <p class="field-hint">Location-bound guidance uses the place where the planner schedules this item.</p>
-          </div>
+          </details>
+          <details class="detail-disclosure detail-full-only" id="detail-options-disclosure">
+            <summary>specific times &amp; places</summary>
           <div class="habit-options-block detail-full-only" id="detail-habit-options">
             <div class="habit-options-heading">
               <span class="settings-sublabel">specific times, places &amp; weather
@@ -436,9 +413,11 @@
             <p class="field-hint" id="detail-habit-options-hint">Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.</p>
             <div class="habit-option-list" id="detail-habit-option-list"></div>
           </div>
+          </details>
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="effort">
-          <span class="section-label">effort</span>
+          <span class="section-label">planning</span>
+          <p class="field-hint">Duration, flexibility and how this fits around other items.</p>
           <div class="planning-grid planning-grid-single" id="detail-effort-duration-grid">
             <div class="planning-field" id="detail-duration-field">
               <span>duration</span>
@@ -489,6 +468,34 @@
               <input type="text" id="detail-timer-auto-stop" inputmode="numeric" maxlength="3" placeholder="—" />
               <span>min</span>
             </label>
+          </div>
+          <div class="planning-grid detail-full-only detail-schedule-flexibility">
+            <div class="planning-field">
+              <span class="flexibility-label">early window <button type="button" class="info-btn" data-tip="detail-early-window-help" aria-label="about the early window"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-early-window-help" role="tooltip" hidden>How many days early the planner may bring this forward. This never permits postponing it.</div></span>
+              <label class="range-value" aria-label="early window in days">
+                <input type="text" id="detail-early-window" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
+            <div class="planning-field">
+              <span class="flexibility-label">delay allowance <button type="button" class="info-btn" data-tip="detail-delay-allowance-help" aria-label="about the delay allowance"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-delay-allowance-help" role="tooltip" hidden>How many days after the due or rhythm day this may remain on time. Zero means it must use its due day when it fits.</div></span>
+              <label class="range-value" aria-label="delay allowance in days">
+                <input type="text" id="detail-delay-allowance" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
+          </div>
+          <div class="schedule-order-block detail-full-only" id="detail-schedule-order">
+            <div class="schedule-order-heading">
+              <span class="settings-sublabel schedule-order-label">item order
+                <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about item order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>Link this item before or after any number of others. Links are OR’d: plan with whichever partner lands that day. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. “Must do on days with” pulls this item onto a partner’s day when flexibility allows (shown with the early indicator); other days stay unconstrained.</span>
+              </span>
+              <button type="button" class="mini-text-btn schedule-link-add" id="detail-schedule-link-add">add link</button>
+            </div>
+            <div id="detail-schedule-link-list" class="schedule-link-list"></div>
           </div>
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="identity">
@@ -1777,6 +1784,7 @@
 <script src="./js/agenda-optimizer-ilp.js" defer></script>
 <script src="./js/push-client.js" defer></script>
 <script src="./js/reminders.js" defer></script>
+<script src="./js/native-reminders.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
 <script src="./js/time-picker.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>

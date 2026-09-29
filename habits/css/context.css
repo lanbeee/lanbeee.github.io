@@ -1,4 +1,4 @@
-.context-sheet{padding:18px 16px calc(22px + env(safe-area-inset-bottom));}
+.context-sheet{padding:18px 16px calc(22px + var(--content-safe-bottom));}
 .context-sheet::before{content:"";display:block;width:38px;height:4px;margin:-7px auto 15px;border-radius:999px;background:var(--bg3);}
 .context-sheet-head{display:grid;grid-template-columns:44px minmax(0,1fr) 36px;align-items:center;gap:11px;margin-bottom:16px;}
 .context-sheet-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;font-size:20px;}
@@ -170,7 +170,7 @@
 .dropped-chevron{color:var(--text3);font-size:13px;}
 
 .weather-context-sheet,.weather-metric-sheet{max-height:min(88dvh,720px);overflow-y:auto;overscroll-behavior:contain;}
-.weather-agenda-sheet{display:flex;flex-direction:column;width:min(100%,680px);max-width:680px;height:min(94dvh,900px);max-height:calc(100dvh - env(safe-area-inset-top));overflow:hidden;}
+.weather-agenda-sheet{display:flex;flex-direction:column;width:min(100%,680px);max-width:680px;height:min(94dvh,900px);max-height:calc(100dvh - var(--content-safe-top));overflow:hidden;}
 .weather-agenda-sheet > .context-sheet-head{flex:0 0 auto;margin-bottom:10px;}
 .weather-context-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
 #weather-context-content{display:flex;flex-direction:column;gap:10px;}
@@ -364,7 +364,7 @@
 .weather-context-item small{overflow:hidden;text-overflow:ellipsis;color:var(--text3);font-size:9.5px;white-space:nowrap;}
 .weather-context-item p{margin:2px 0 0;color:var(--text2);font-size:10.5px;line-height:1.35;}
 .weather-context-empty{margin:14px 2px 0;color:var(--text3);font-size:10.5px;line-height:1.4;}
-.weather-context-actions{position:sticky;bottom:-22px;margin:16px -16px -22px;padding:10px 16px calc(12px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg) 94%,transparent);border-top:0.5px solid var(--border);backdrop-filter:blur(14px);}
+.weather-context-actions{position:sticky;bottom:-22px;margin:16px -16px -22px;padding:10px 16px calc(12px + var(--content-safe-bottom));background:color-mix(in srgb,var(--bg) 94%,transparent);border-top:0.5px solid var(--border);backdrop-filter:blur(14px);}
 .weather-context-actions .btn{min-height:44px;}
 
 /* Breakable progress: a compact, legible progress module with a crown-sized

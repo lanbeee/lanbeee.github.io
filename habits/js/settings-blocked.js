@@ -85,6 +85,7 @@ function blockedEndpointHtml(block, i, field){
 function renderBlockedTimeControls(){
   const wrap = $('blocked-time-list');
   if(!wrap)return;
+  if(typeof nativeEnsureBusyReminderIds === 'function')nativeEnsureBusyReminderIds();
   const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
   const locs = typeof locationOptions === 'function' ? locationOptions() : [];
   wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
@@ -110,6 +111,7 @@ function renderBlockedTimeControls(){
       <button class="mini-text-btn" type="button" data-blocked-remove="${i}">remove</button>
     </div>
   `).join('') : '<p class="field-hint">No busy times. The list can use any open time today.</p>';
+  if(typeof renderNativeBusyReminders === 'function')renderNativeBusyReminders(wrap,blocks);
 }
 
 function saveBlockedTimePatch(index,patch){

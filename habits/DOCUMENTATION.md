@@ -1144,10 +1144,10 @@ Visible when type = task:
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
 | `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics |
-| `schedule` | 📅 | Rhythm or task deadline, early/delay windows, allowed/preferred days, times and places, item order |
-| `effort` | 📊 | Duration, breakable, min chunk, logging and session controls |
+| `schedule` | 📅 | Rhythm or task deadline, allowed/preferred days, times and places; expandable weather and specific time/place options |
+| `planning` (`effort` key) | 📊 | Duration, chunks, logging, sessions, early/delay windows and item order |
 | `history` (`calendar` key) | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
-| `actions` | ⋮ | Links/calls, pin, export, share, snooze and remove |
+| `actions` | ⋮ | Phone reminders (Android), links/calls, pin, export, share, snooze and remove |
 
 **Minimal Mode Hidden Tabs:** `history` (internal key: `calendar`; the merged
 calendar+stats pane), `effort` (folded into `schedule`)
@@ -1167,6 +1167,8 @@ Fields shown (always visible, even in minimal mode):
 - **Topics** (topic chips)
 
 ### 9.4 Schedule Tab Details 👤
+
+Weather and specific time/place options are expandable. Configured options open when the item opens; unused options start closed. Flexibility and item-order fields described below now live in Planning.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -1225,7 +1227,9 @@ time: | 9am | — | 9am | — | 9am | — |
 - `requireSameDay` option
 - Visual timeline showing order
 
-### 9.5 Effort Tab 👤
+### 9.5 Planning Tab 👤
+
+Formerly Effort. Also contains early window, delay allowance and item-order links. Internal navigation key remains `effort`.
 
 #### Duration Section
 - **Duration (minutes):** Planned session length
@@ -3135,3 +3139,20 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 ---
 **End of Skeleton Document**
+
+
+## Android phone notifications
+
+The Capacitor wrapper at `../../Tings` builds from this directory. Its runtime source paths link here, so shared planner/UI edits have one source of truth. Run `npm run sync:android` from the wrapper after editing shared code.
+
+Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Enable phone reminders here, then choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until Snooze (five minutes) or Dismiss; dismissing does not log completion. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
+
+Alerts follow the mounted agenda and use shared completion and busy-time resolution helpers. They are replaced when the open app replans or reconciles data. Preferences stay on this device. The OS retains the last saved schedule while the app is closed, up to the available seven-day agenda; a closed app does not yet receive clone changes or produce a new week. Settings reports the last reminder reconciliation time. Snoozed alarms survive agenda refresh after their original time passes; disabling phone reminders or an item’s alarm edge stops its agenda alarms, including snoozed occurrences. Saved absolute instants persist across timezone changes until replanning. See the wrapper's `REMINDERS_PLAN.md` for native delivery details and remaining background sync work.
+
+### Safe-area layout (PWA and Android)
+
+The shared CSS resolves `--content-safe-top/right/bottom/left` from native
+inset variables or the browser safe-area environment. Home day headers stick
+below the top safe area when the document scrolls; desktop pane headers stick
+to their pane edge. A page-colored cover keeps scrolling content out of the
+system status area. Sheets and bottom controls use the same inset tokens.

@@ -299,7 +299,7 @@
   border-radius:var(--radius-sm);background:var(--bg2);
   color:var(--text2);font-size:12px;
 }
-.overview-list{display:flex;flex-direction:column;gap:8px;padding-bottom:calc(20px + env(safe-area-inset-bottom));}
+.overview-list{display:flex;flex-direction:column;gap:8px;padding-bottom:calc(20px + var(--content-safe-bottom));}
 .overview-section-title{
   color:var(--text3);font-size:11px;font-weight:700;
   letter-spacing:0.04em;text-transform:uppercase;margin:2px 0 0;

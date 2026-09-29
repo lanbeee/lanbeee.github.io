@@ -1,7 +1,7 @@
 const DETAIL_PAGE_NAV = {
   calendar:{label:'history',icon:'ti-calendar-week'},
   schedule:{label:'schedule',icon:'ti-calendar-time'},
-  effort:{label:'effort',icon:'ti-progress-check'},
+  effort:{label:'planning',icon:'ti-progress-check'},
   identity:{label:'identity',icon:'ti-id'},
   actions:{label:'actions',icon:'ti-dots'}
 };

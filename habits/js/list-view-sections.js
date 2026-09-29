@@ -5,7 +5,12 @@ function updateStuckSectionHeaders(){
   // Native sticky headers can occupy the same top coordinate while the next
   // day replaces the previous one. Only the later, visibly painted header is
   // the active stuck header; marking both makes hit targeting ambiguous.
-  const active=headers.filter(el=>el.getBoundingClientRect().top<=1).pop() || null;
+  const pane=document.querySelector('.pane-list');
+  const paneTop=document.body.dataset.paneCount==='1' ? 0 : (pane?.getBoundingClientRect().top || 0);
+  const active=headers.filter(el=>{
+    const stickyTop=parseFloat(getComputedStyle(el).top) || 0;
+    return el.getBoundingClientRect().top<=paneTop+stickyTop+1;
+  }).pop() || null;
   headers.forEach(el=>el.classList.toggle('stuck',el===active));
 }
 document.addEventListener('scroll',()=>{
@@ -1425,6 +1430,7 @@ function render(opts){
   if(!indices.length){
     empty.style.display = 'block';
     if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+    if(typeof queueNativeReminders === 'function')queueNativeReminders();
     const hasSearch = searchQuery.trim().length > 0;
     const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
     const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
@@ -2109,6 +2115,7 @@ function render(opts){
     });
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+  if(typeof queueNativeReminders === 'function')queueNativeReminders();
   if(typeof scheduleHouseholdAgendaPublish === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     scheduleHouseholdAgendaPublish(_homeRenderedWeek);
   }

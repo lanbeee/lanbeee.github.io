@@ -5,7 +5,7 @@
   /* Align the card's bounding box with the section cards below (sheet padding
      18px + their 14px inset), like a home habit card aligns with its column. */
   margin:0 0 6px;
-  padding:calc(5px + env(safe-area-inset-top)) 9px 6px 8px;
+  padding:calc(5px + var(--content-safe-top)) 9px 6px 8px;
   gap:8px;
 }
 .detail-title-wrap{
@@ -26,7 +26,7 @@
 }
 .detail-head .detail-mark .ti{font-size:34px;}
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:36px;}
-.detail-head::before{top:calc(10px + env(safe-area-inset-top));bottom:10px;}
+.detail-head::before{top:calc(10px + var(--content-safe-top));bottom:10px;}
 /* Habit links: call/meeting launch buttons sit in the detail header,
    opposite the mark button. */
 .detail-head-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
@@ -185,7 +185,7 @@ body[data-pane-count="3"] .detail-sheet{height:calc(100dvh - 48px);}
 .pane-detail:has(.detail-sheet){overflow:hidden;}
 .pane-detail .detail-sheet{height:100%;max-height:100%;}
 .detail-bottom-bar{
-  position:fixed;left:50%;bottom:calc(var(--nav-bottom) + env(safe-area-inset-bottom));
+  position:fixed;left:50%;bottom:calc(var(--nav-bottom) + var(--content-safe-bottom));
   z-index:160;width:min(calc(100% - 36px),444px);height:48px;
   transform:translateX(-50%);display:flex;align-items:stretch;gap:6px;
   padding:3px;background:var(--bg);
@@ -223,5 +223,5 @@ body[data-pane-count="3"] .detail-bottom-bar{
 }
 body[data-pane-count="2"] .detail-sheet,
 body[data-pane-count="3"] .detail-sheet{
-  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  padding-bottom:calc(24px + var(--content-safe-bottom));
 }

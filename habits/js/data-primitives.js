@@ -454,6 +454,7 @@ function normalizeBlockedTimes(value){
     const dayOff = typeof normalizeAnchorDayOffset === 'function' ? normalizeAnchorDayOffset : (v => 0);
     return {
       label,days,start,end,locationId,
+      ...(typeof raw?.reminderId === 'string' && raw.reminderId ? {reminderId:raw.reminderId.slice(0,100)} : {}),
       startAnchor:safeStartAnchor,
       startOffsetMin:normalizePrayerOffset(raw?.startOffsetMin),
       startCombine:startCombine && startAnchor2 ? startCombine : null,

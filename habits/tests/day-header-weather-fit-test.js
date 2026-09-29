@@ -159,25 +159,26 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.setViewportSize({ width: 393, height: 900 });
   await twoRafs();
   m = await todayHeader();
-  fail('A4 393px screenshot case: one-line adaptive header', m && !m.contextBelow && (m.slim || m.emojiOnly), JSON.stringify(m));
+  fail('A4 393px screenshot case: one-line adaptive header', m && !m.contextBelow && nothingClipped(m), JSON.stringify(m));
   fail('A5 393px screenshot case: nothing clipped', nothingClipped(m), JSON.stringify(m));
 
+  // Calmer typography fits more content; exercise smaller widths for degradation.
   // (B) Tight width + worst-case chips: simplify weather but keep one line.
   await setWorstCaseChips();
-  await page.setViewportSize({ width: 402, height: 900 });
+  await page.setViewportSize({ width: 360, height: 900 });
   await twoRafs();
   m = await todayHeader();
-  fail('B1 402px worst: inline slim degradation applied', m && !m.contextBelow && m.slim && !m.emojiOnly, JSON.stringify(m));
-  fail('B2 402px worst: nothing clipped', nothingClipped(m), JSON.stringify(m));
-  fail('B3 402px worst: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
+  fail('B1 360px worst: inline slim degradation applied', m && !m.contextBelow && m.slim && !m.emojiOnly, JSON.stringify(m));
+  fail('B2 360px worst: nothing clipped', nothingClipped(m), JSON.stringify(m));
+  fail('B3 360px worst: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
 
   // (C) Very tight width: only now use the deliberate second-line fallback.
-  await page.setViewportSize({ width: 320, height: 900 });
+  await page.setViewportSize({ width: 280, height: 900 });
   await twoRafs();
   m = await todayHeader();
-  fail('C1 320px worst: intentional second-line fallback', m && m.contextBelow, JSON.stringify(m));
-  fail('C2 320px worst: nothing clipped', nothingClipped(m), JSON.stringify(m));
-  fail('C3 320px worst: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
+  fail('C1 280px worst: intentional second-line fallback', m && m.contextBelow, JSON.stringify(m));
+  fail('C2 280px worst: nothing clipped', nothingClipped(m), JSON.stringify(m));
+  fail('C3 280px worst: chips single-line', allSingleLine(m), JSON.stringify(m.chipHeights));
 
   // (D) Self-correcting re-fit: at a width where roomy chips fit, mutate the
   //     chip content in place (as a late font load / late chip attach would)
@@ -196,10 +197,10 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const temp = btn.querySelector('.weather-temperature');
     if (temp) temp.textContent = '64–82°';
   });
-  await page.setViewportSize({ width: 402, height: 900 }); // roomy chips fit here…
+  await page.setViewportSize({ width: 360, height: 900 }); // roomy chips fit here…
   await twoRafs();
   m = await todayHeader();
-  fail('D1 402px roomy: full cue, nothing degraded', m && !m.contextBelow && !m.slim && !m.emojiOnly && nothingClipped(m), JSON.stringify(m));
+  fail('D1 360px roomy: full cue, nothing degraded', m && !m.contextBelow && !m.slim && !m.emojiOnly && nothingClipped(m), JSON.stringify(m));
 
   await setWorstCaseChips(); // …then widen chip text in place, same viewport
   await page.waitForTimeout(120); // RO callback + refit rAF

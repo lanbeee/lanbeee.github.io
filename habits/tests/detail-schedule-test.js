@@ -78,7 +78,7 @@ async function assertAttr(page, selector, attr, expected, msg){
     ['pinned','#detail-pinned']
   ].map(([key,selector]) => [key,document.querySelector(selector)?.closest('.detail-page')?.dataset.detailNav])));
   const expectedPaneMap = {
-    due:'schedule',earlyWindow:'schedule',delayAllowance:'schedule',duration:'effort',
+    due:'schedule',earlyWindow:'effort',delayAllowance:'effort',duration:'effort',
     links:'actions',identity:'identity',pinned:'actions'
   };
   if(JSON.stringify(paneMap) !== JSON.stringify(expectedPaneMap)){
@@ -122,7 +122,7 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Test independent scheduling-direction fields.
   console.log('Testing early/delay fields...');
-  await scrollDetailToSchedule(page, 1);
+  await scrollDetailToSchedule(page, 2);
   const earlyField = page.locator('#detail-early-window');
   const delayField = page.locator('#detail-delay-allowance');
   const earlyVal = await earlyField.inputValue();
@@ -287,6 +287,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   await openCardDetail(page,taskName);
   await scrollDetailToSchedule(page, 1);
   await page.locator('#detail-due-time').fill('');
+  await scrollDetailToSchedule(page, 2);
   await page.locator('#detail-delay-allowance').fill('0');
   await page.locator('#detail-delay-allowance').blur();
   await page.locator('#detail-save').click();
