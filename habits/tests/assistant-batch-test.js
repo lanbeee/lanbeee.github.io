@@ -358,6 +358,114 @@ async function launchBrowser(){
   assert(messy.names.length === 3, 'model returns three items, not the first clause only');
   assert(messy.groceryDue === '2026-09-21', 'relative dues come from the model (' + messy.groceryDue + ')');
 
+  console.log('\n[batch] before-link to another new item previews instead of asking');
+  const linked = await page.evaluate(async () => {
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      locations:[],
+      weatherProfiles:[]
+    });
+    save((typeof normalize === 'function' ? normalize : (x=>x))([
+      {name:'Walk', type:'keepup', target:1, durationMinutes:20, logs:[], lastLog:null}
+    ]));
+    const out = await runAssistantTurn(
+      'Create a task for 5 PM. Call it driving test practice for Aarish. And also add another task which should be done before it. Call a driving test prep the driving test practice will be for one hour and the driving test prep will be for 15 minutes.',
+      {
+        forceLlm:true,
+        complete:async () => ({message:{thinking:'two tasks', tool_calls:[{function:{name:'draft_batch', arguments:{
+          items:[
+            {create:true, due:'today', dueTime:'5pm', durationMinutes:60, kind:'task', name:'Aarish driving practice'},
+            {before:'Aarish driving practice', create:true, due:'today', durationMinutes:15, kind:'task', name:'Driving test prep'}
+          ]
+        }}}]}})
+      }
+    );
+    const drafts = out.drafts || [];
+    const practice = drafts.find(row => /practice/i.test(row && row.name || ''));
+    const prep = drafts.find(row => /prep/i.test(row && row.name || ''));
+    const link = prep && (prep.scheduleLinks || [])[0];
+    return {
+      type:out.type,
+      ask:out.question || '',
+      names:drafts.map(row => row && row.name).filter(Boolean),
+      linked:Boolean(link && link.direction === 'before' && /practice/i.test(link.name || '')),
+      practiceDur:practice && practice.durationMinutes,
+      prepDur:prep && prep.durationMinutes
+    };
+  });
+  assert(linked.type === 'preview', 'linked batch is a preview, not an ask (' + linked.type + ': ' + linked.ask + ')');
+  assert(linked.linked, 'prep is ordered before practice');
+  assert(linked.practiceDur === 60 && linked.prepDur === 15, 'durations 60 and 15');
+
+  console.log('\n[batch] similar titles retain distinct identities and exact links');
+  const similar = await page.evaluate(() => {
+    save([]);
+    const session = assistantCreateSession();
+    const result = assistantExecuteTool('draft_batch', {items:[
+      {kind:'task', create:true, name:'Dentist visit 1', due:'today'},
+      {kind:'task', create:true, name:'Dentist visit 2', due:'today', after:'Dentist visit 1'},
+      {kind:'task', create:true, name:'Prepare', due:'today', before:'Dentist visit 2'}
+    ]}, session, assistantBuildContext());
+    if(!result.ok)return result;
+    const drafts = session.drafts;
+    const ids = drafts.map(row => row.pendingHid);
+    const draftLinks = drafts.map(row => (row.scheduleLinks || [])[0]?.anchorHid);
+    const committed = assistantCommitDrafts(drafts);
+    const saved = load();
+    return {
+      ok:result.ok, committed:committed.ok,
+      distinct:ids.every(Boolean) && new Set(ids).size === 3,
+      draftLinks:draftLinks[1] === ids[0] && draftLinks[2] === ids[1],
+      savedNames:saved.map(row => row.name),
+      savedDistinct:new Set(saved.map(row => row.hid)).size === 3,
+      savedLinks:saved.length === 3
+        && saved[1].scheduleLinks?.[0]?.anchorHid === saved[0].hid
+        && saved[2].scheduleLinks?.[0]?.anchorHid === saved[1].hid
+    };
+  });
+  assert(similar.ok, 'similar titles resolve without ambiguity: ' + JSON.stringify(similar));
+  assert(similar.distinct, 'each batch draft has its own pending ID');
+  assert(similar.draftLinks, 'exact titles link to the intended sibling, including similar source titles');
+  assert(similar.committed && similar.savedDistinct, 'all three items save with distinct IDs');
+  assert(JSON.stringify(similar.savedNames) === JSON.stringify(['Dentist visit 1', 'Dentist visit 2', 'Prepare']), 'saving preserves every title');
+  assert(similar.savedLinks, 'links retain the correct targets after saving');
+
+  console.log('\n[batch] sibling draft_item calls can name each other');
+  const siblingDrafts = await page.evaluate(async () => {
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      locations:[],
+      weatherProfiles:[]
+    });
+    save([]);
+    const out = await runAssistantTurn(
+      'Add Shop for 20 minutes and Cook for 30 minutes after Shop.',
+      {
+        forceLlm:true,
+        complete:async () => ({message:{thinking:'two creates', tool_calls:[
+          {function:{name:'draft_item', arguments:{create:true, kind:'task', name:'Shop', due:'today', durationMinutes:20}}},
+          {function:{name:'draft_item', arguments:{create:true, kind:'task', name:'Cook', due:'today', durationMinutes:30, after:'Shop'}}}
+        ]}})
+      }
+    );
+    const drafts = out.drafts || (out.draft ? [out.draft] : []);
+    const cook = drafts.find(row => row && row.name === 'Cook');
+    const link = cook && (cook.scheduleLinks || [])[0];
+    return {
+      type:out.type,
+      ask:out.question || '',
+      names:drafts.map(row => row && row.name).filter(Boolean),
+      linked:Boolean(link && link.direction === 'after' && /shop/i.test(link.name || ''))
+    };
+  });
+  assert(siblingDrafts.type === 'preview', 'sibling draft_item turn is a preview (' + siblingDrafts.type + ': ' + siblingDrafts.ask + ')');
+  assert(siblingDrafts.names.includes('Shop') && siblingDrafts.names.includes('Cook'), 'both titles staged ' + JSON.stringify(siblingDrafts.names));
+  assert(siblingDrafts.linked, 'Cook is ordered after Shop');
+
   console.log('\n[batch] invented places on a single draft_item still ask');
   const invented = await page.evaluate(async () => {
     saveSortSettings({

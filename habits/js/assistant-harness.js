@@ -17,7 +17,7 @@ function assistantSystemPrompt(){
     'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove one item. Use apply_items to change, snooze, show, or delete a matching set. These tools preview changes for confirmation.',
     '',
     'CREATION AND EDITING',
-    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Set create true when the request makes something new and false when it changes something that already exists; omit it only when the request could genuinely be either. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several new items. Use apply_items when the change, snooze, show, or delete hits more than one saved item — do not call draft_item once per row and do not create replacements. search is a name or topic ("dental" matches every saved dental item). fromRecent means those/them. groups apply different changes; rest true takes the items earlier groups left. Example: all dental appointments to three hours is apply_items search "dental", durationMinutes 180. Example: all dental appointments to a saved place is apply_items search "dental", placeNames that place. Use draft_setting only for a setting that is not already saved. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
+    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Set create true when the request makes something new and false when it changes something that already exists; omit it only when the request could genuinely be either. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several new items. before/after name another item by its title — saved, already staged this turn, or another row in the same call. Put adjacency wording such as “right after, same day” in order; do not use order alone to name the other item. Use apply_items when the change, snooze, show, or delete hits more than one saved item — do not call draft_item once per row and do not create replacements. search is a name or topic ("dental" matches every saved dental item). fromRecent means those/them. groups apply different changes; rest true takes the items earlier groups left. Example: all dental appointments to three hours is apply_items search "dental", durationMinutes 180. Example: all dental appointments to a saved place is apply_items search "dental", placeNames that place. Use draft_setting only for a setting that is not already saved. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
     'currentDraft is the item being edited. “it”, “this”, and “that” refer to currentDraft, otherwise recent.referent when appropriate. A question about it uses lookup_item; done uses complete_item; plan/unplan uses plan_item; remove uses delete_item. A named saved place may update placeNames on the current item; do not turn it into a new item.',
     '',
     'GROUNDING',
@@ -159,10 +159,10 @@ function assistantDraftItemSteerText(intent, factsHint){
   const hint = factsHint || '';
   if(intent === 'create_setting')return assistantDraftSettingSteerText() + hint;
   if(intent === 'create_habit'){
-    return 'Call draft_item with kind habit. name is a short title only. Put every other field the user said in that one call as flat strings — do not nest objects. Strings are ok: rhythm "five times a week", windowText "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier", order "right after Walk, same day". If they asked you to pick time, weather, or duration, fill those. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If they named weather conditions and catalog.weather has no match, put those conditions in weatherText — Tings creates a profile.' + hint;
+    return 'Call draft_item with kind habit. name is a short title only. Put every other field the user said in that one call as flat strings — do not nest objects. Strings are ok: rhythm "five times a week", windowText "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier". If this should happen before or after another item, set before or after to that item’s title (including one created in this same turn). Use order only for adjacency such as "right after, same day". If they asked you to pick time, weather, or duration, fill those. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If they named weather conditions and catalog.weather has no match, put those conditions in weatherText — Tings creates a profile.' + hint;
   }
   if(intent === 'create_task'){
-    return 'Call draft_item with kind task. name is a short title only. Put every other field the user said in that one call as flat strings — do not nest objects. A firm due day is hardDue true. Default due is today if they did not name a day. If they asked you to pick time, weather, or duration, fill those. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If they named weather conditions and catalog.weather has no match, put those conditions in weatherText — Tings creates a profile.' + hint;
+    return 'Call draft_item with kind task. name is a short title only. Put every other field the user said in that one call as flat strings — do not nest objects. A firm due day is hardDue true. Default due is today if they did not name a day. If this should happen before or after another item, set before or after to that item’s title (including one created in this same turn). If they asked you to pick time, weather, or duration, fill those. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If they named weather conditions and catalog.weather has no match, put those conditions in weatherText — Tings creates a profile.' + hint;
   }
   return 'Call draft_item with every field the user named as flat strings. name is a short title. Put the window in windowText as one string. Do not nest objects.' + hint;
 }
@@ -199,24 +199,6 @@ function assistantQueryContinueHint(){
 
 function assistantWriteContinueHint(){
   return 'If they also asked a question, call the matching answer_schedule / answer_weather / answer_items / lookup_item tool now. If this was only the complete, plan, or delete request, do not call a tool.';
-}
-
-function assistantDraftKey(row){
-  const name = typeof assistantNormText === 'function'
-    ? assistantNormText(row && row.name)
-    : String(row && row.name || '').toLowerCase();
-  return `${row && row.kind || ''}:${name}`;
-}
-
-function assistantStageTurnDraft(session, draft){
-  if(!session || !draft || !draft.name)return;
-  session._focusOnly = false;
-  const list = Array.isArray(session.turnDrafts) ? session.turnDrafts.slice() : [];
-  const key = assistantDraftKey(draft);
-  const idx = list.findIndex(row => assistantDraftKey(row) === key);
-  if(idx >= 0)list[idx] = draft;
-  else list.push(draft);
-  session.turnDrafts = list;
 }
 
 function assistantPublishTurnDrafts(session){
@@ -1413,7 +1395,7 @@ async function assistantCallStep(session, step, complete, onProgress, context){
         ? 'Reply with one JSON object and nothing else. No markdown, no tools. kind is weather, location, busy, or topic. name is a short title. weatherText, address, and windowText are flat strings. Only keys the user named.'
         : (assistantWideSession(session)
           ? 'Reply with one JSON object and nothing else. No markdown, no tools. If they asked for several items, keys are places (array of {name, address}) and items (array of habits/tasks with the same fields as draft_item). If this is one item, use draft_item fields only. Skip TBA rows with no days and no times. Dummy addresses are fine for new places in a batch.'
-          : 'Reply with one JSON object and nothing else. No markdown, no tools. Only keys the user named — do not invent places, topics, duration, or order unless they asked you to pick time, weather, or duration. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If currentDraft is set, keep its name and kind and only add the new fields (placeNames, windowText, rhythm). Keys you may use: kind (habit or task), name (short title), durationMinutes, rhythm, windowText, due (today/tomorrow/YYYY-MM-DD), hardDue (true if that due day is firm), weekdays, placeNames, order, weatherText. windowText is one string, e.g. "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier". Do not nest objects.')},
+          : 'Reply with one JSON object and nothing else. No markdown, no tools. Only keys the user named — do not invent places, topics, duration, or order unless they asked you to pick time, weather, or duration. placeNames only from catalog.places; omit placeNames if they did not name a saved place. If currentDraft is set, keep its name and kind and only add the new fields (placeNames, windowText, rhythm). Keys you may use: kind (habit or task), name (short title), durationMinutes, rhythm, windowText, due (today/tomorrow/YYYY-MM-DD), hardDue (true if that due day is firm), weekdays, placeNames, before, after, order, weatherText. before/after are the other item’s title. windowText is one string, e.g. "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier". Do not nest objects.')},
       {role:'user', content:JSON.stringify({
         request,
         currentDraft:current,

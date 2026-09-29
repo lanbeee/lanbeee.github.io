@@ -70,13 +70,15 @@ function assistantNormalizeEndpoint(raw){
   return end;
 }
 
-function assistantResolveEndpointHabits(end, data){
+function assistantResolveEndpointHabits(end, data, extras, self){
   if(!end || typeof end !== 'object')return {ok:true, end:end || {kind:'unset'}};
   let next = end;
   if(end.kind === 'habit' && !end.habitId){
-    const found = typeof assistantFindHabit === 'function'
-      ? assistantFindHabit(data, end.habitName || end.habit || end.name)
-      : {ok:false};
+    const found = typeof assistantFindNamedItem === 'function'
+      ? assistantFindNamedItem(end.habitName || end.habit || end.name, data, extras, self)
+      : (typeof assistantFindHabit === 'function'
+        ? assistantFindHabit(data, end.habitName || end.habit || end.name)
+        : {ok:false});
     if(!found || !found.ok){
       return found && found.ok === false
         ? found
@@ -85,18 +87,18 @@ function assistantResolveEndpointHabits(end, data){
     next = Object.assign({}, end, {habitId:found.hid, habitName:found.name});
   }
   if(next.second){
-    const second = assistantResolveEndpointHabits(next.second, data);
+    const second = assistantResolveEndpointHabits(next.second, data, extras, self);
     if(!second.ok)return second;
     if(second.end !== next.second)next = Object.assign({}, next, {second:second.end});
   }
   return {ok:true, end:next};
 }
 
-function assistantResolveWindowHabits(window, data){
+function assistantResolveWindowHabits(window, data, extras, self){
   if(!window || typeof window !== 'object')return {ok:true, window};
-  const start = assistantResolveEndpointHabits(window.start, data);
+  const start = assistantResolveEndpointHabits(window.start, data, extras, self);
   if(!start.ok)return start;
-  const end = assistantResolveEndpointHabits(window.end, data);
+  const end = assistantResolveEndpointHabits(window.end, data, extras, self);
   if(!end.ok)return end;
   if(start.end === window.start && end.end === window.end)return {ok:true, window};
   return {ok:true, window:{start:start.end, end:end.end}};
@@ -1202,19 +1204,142 @@ function assistantResolveDraftBase(args, session, context){
   return {ok:true, draft:assistantEmptyDraft(), existing:false};
 }
 
-function assistantResolveOrderLink(name, data, mods){
-  const found = assistantFindHabit(data, name);
-  if(!found || !found.ok)return found;
+function assistantEnsureDraftHid(draft){
+  if(!draft)return '';
+  if(draft.hid)return draft.hid;
+  if(draft.pendingHid)return draft.pendingHid;
+  // Unsaved drafts must not set `hid`: ResolveDraftBase treats hid as "already
+  // on the list", which would make a second create in the same turn look like
+  // a failed lookup. pendingHid is only materialized at commit.
+  draft.pendingHid = typeof generateHabitId === 'function'
+    ? generateHabitId()
+    : ((typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`);
+  return draft.pendingHid;
+}
+
+function assistantDraftKey(row){
+  const name = typeof assistantNormText === 'function'
+    ? assistantNormText(row && row.name)
+    : String(row && row.name || '').toLowerCase();
+  return `${row && row.kind || ''}:${name}`;
+}
+
+function assistantStageTurnDraft(session, draft){
+  if(!session || !draft || !draft.name)return;
+  session._focusOnly = false;
+  if(draft.kind === 'task' || draft.kind === 'habit')assistantEnsureDraftHid(draft);
+  const list = Array.isArray(session.turnDrafts) ? session.turnDrafts.slice() : [];
+  const key = assistantDraftKey(draft);
+  const idx = list.findIndex(row => assistantDraftKey(row) === key);
+  if(idx >= 0)list[idx] = draft;
+  else list.push(draft);
+  session.turnDrafts = list;
+}
+
+function assistantWorkingItemRow(item){
+  if(!item || typeof item !== 'object')return null;
+  const kind = item.kind || (item.type === 'task' ? 'task' : (item.type ? 'habit' : ''));
+  if(kind && kind !== 'task' && kind !== 'habit')return null;
+  const name = String(item.name || '').trim();
+  if(!name)return null;
+  return {
+    index:item.index,
+    hid:item.hid || assistantEnsureDraftHid(item),
+    name,
+    type:kind === 'task' || item.type === 'task' ? 'task' : 'habit',
+    habit:item
+  };
+}
+
+function assistantWorkingItemIsSelf(row, self){
+  if(!row || !self)return false;
+  if(row.habit === self)return true;
+  const selfHid = self.hid || self.pendingHid;
+  if(selfHid && row.hid && row.hid === selfHid)return true;
+  return Boolean(self.name && row.name
+    && assistantNormText(row.name) === assistantNormText(self.name));
+}
+
+// Titles the model already emitted on this turn: same-call siblings plus
+// earlier staged drafts. complete/plan/delete still search saved items only.
+function assistantCollectWorkingItems(opts, self){
+  const rows = [];
+  const seen = new Set();
+  const add = item => {
+    const row = assistantWorkingItemRow(item);
+    if(!row || assistantWorkingItemIsSelf(row, self))return;
+    const key = row.hid || (typeof assistantNormText === 'function' ? assistantNormText(row.name) : row.name);
+    if(!key || seen.has(key))return;
+    seen.add(key);
+    rows.push(row);
+  };
+  const extra = opts || {};
+  (Array.isArray(extra.siblings) ? extra.siblings : []).forEach(add);
+  const session = extra.session;
+  if(session){
+    (Array.isArray(session.drafts) ? session.drafts : []).forEach(add);
+    (Array.isArray(session.turnDrafts) ? session.turnDrafts : []).forEach(add);
+    if(session.draft)add(session.draft);
+  }
+  return rows;
+}
+
+function assistantFindNamedItem(name, data, extras, self){
+  const query = String(name || '').trim();
+  if(!query){
+    return {ok:false, error:'UNKNOWN', ask:'I do not see that on your list.', choices:[], candidates:[]};
+  }
+  const staged = (Array.isArray(extras) ? extras : []).filter(row =>
+    row && row.name && !assistantWorkingItemIsSelf(row, self));
+  const exact = staged.filter(row => assistantNormText(row.name) === assistantNormText(query));
+  if(exact.length === 1){
+    return {ok:true, ...exact[0], candidates:assistantCandidateRows([{name:exact[0].name, type:exact[0].type, score:99, item:exact[0]}])};
+  }
+  if(exact.length > 1){
+    return assistantHabitAskFromCandidates(exact.map(row => ({
+      name:row.name,
+      type:row.type,
+      score:99
+    })), 'AMBIGUOUS');
+  }
+  const found = typeof assistantFindHabit === 'function'
+    ? assistantFindHabit(data, query)
+    : {ok:false, error:'UNKNOWN'};
+  if(found && found.ok)return found;
+  if(staged.length){
+    const ranked = assistantRankByName(staged, query, 8);
+    const picked = assistantPickRankedName(ranked);
+    if(picked.ok)return {ok:true, ...picked.item, candidates:picked.candidates};
+    if(picked.candidates && picked.candidates.length){
+      return assistantHabitAskFromCandidates(picked.candidates, picked.error);
+    }
+  }
+  return found && found.ok === false
+    ? found
+    : {ok:false, error:'UNKNOWN', ask:'I do not see that on your list.', choices:[], candidates:[]};
+}
+
+function assistantOrderLinkFromMatch(match, mods){
   return {
     ok:true,
     link:{
-      name:found.name,
-      anchorHid:found.hid,
+      name:match.name,
+      anchorHid:match.hid,
       direction:mods.direction,
       adjacency:mods.adjacency || 'sometime',
       requireSameDay:Boolean(mods.requireSameDay)
     }
   };
+}
+
+function assistantResolveOrderLink(name, data, mods, extras, self){
+  const found = assistantFindNamedItem(name, data, extras, self);
+  if(found && found.ok)return assistantOrderLinkFromMatch(found, mods);
+  return found && found.ok === false
+    ? found
+    : {ok:false, error:'UNKNOWN', ask:'I do not see that on your list.', choices:[], candidates:[]};
 }
 
 function assistantMergeScheduleLink(draft, link){
@@ -1225,7 +1350,8 @@ function assistantMergeScheduleLink(draft, link){
   draft.scheduleLinks = next;
 }
 
-function assistantApplyExtraDraftFields(next, raw, catalog, data){
+function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
+  const extras = assistantCollectWorkingItems(opts, next);
   if(raw.newName)next.name = raw.newName;
   if(raw.habitKind === 'keepup' || raw.habitKind === 'reduce' || raw.habitKind === 'zero')next.habitKind = raw.habitKind;
   if(raw.emoji != null)next.emoji = raw.emoji;
@@ -1312,7 +1438,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data){
     || (typeof assistantParseOrderModifiers === 'function' ? assistantParseOrderModifiers(raw.order || '') : {adjacency:'sometime', requireSameDay:false});
   if(mods && mods.links){
     for(const row of mods.links){
-      const resolved = assistantResolveOrderLink(row.name, data, row);
+      const resolved = assistantResolveOrderLink(row.name, data, row, extras, next);
       if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN', ask:resolved && resolved.ask};
       assistantMergeScheduleLink(next, resolved.link);
     }
@@ -1325,7 +1451,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data){
         direction:'after',
         adjacency:orderMods.adjacency || 'sometime',
         requireSameDay:Boolean(orderMods.requireSameDay)
-      });
+      }, extras, next);
       if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN'};
       assistantMergeScheduleLink(next, resolved.link);
     }
@@ -1338,7 +1464,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data){
         direction:'before',
         adjacency:orderMods.adjacency || 'sometime',
         requireSameDay:Boolean(orderMods.requireSameDay)
-      });
+      }, extras, next);
       if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN'};
       assistantMergeScheduleLink(next, resolved.link);
     }
@@ -1530,15 +1656,16 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requ
       }, catalog, settings);
     }
   }
-  const extra = assistantApplyExtraDraftFields(next, raw, catalog, data);
+  const extra = assistantApplyExtraDraftFields(next, raw, catalog, data, opts);
   if(!extra.ok)return extra;
+  const extras = assistantCollectWorkingItems(opts, next);
   if(next.window){
-    const resolved = assistantResolveWindowHabits(next.window, data);
+    const resolved = assistantResolveWindowHabits(next.window, data, extras, next);
     if(!resolved.ok)return resolved;
     next.window = resolved.window;
   }
   if(next.preferredWindow){
-    const resolved = assistantResolveWindowHabits(next.preferredWindow, data);
+    const resolved = assistantResolveWindowHabits(next.preferredWindow, data, extras, next);
     if(!resolved.ok)return resolved;
     next.preferredWindow = resolved.window;
   }
@@ -3311,8 +3438,10 @@ function assistantWriteEndpointToRecord(record, prefix, end, data){
   assistantClearEndpointFields(record, prefix);
   if(!end || end.kind === 'unset')return;
   let resolved = end;
-  if(end.kind === 'habit' && !end.habitId && data){
-    const found = assistantFindHabit(data, end.habitName);
+  if(end.kind === 'habit' && !end.habitId){
+    const found = typeof assistantFindNamedItem === 'function'
+      ? assistantFindNamedItem(end.habitName, data)
+      : assistantFindHabit(data, end.habitName);
     if(found && found.ok){
       resolved = Object.assign({}, end, {habitId:found.hid, habitName:found.name});
     }
@@ -3338,8 +3467,10 @@ function assistantWriteEndpointToRecord(record, prefix, end, data){
       record[prefix + 'OffsetMin2'] = second.offsetMin || 0;
     }else if(second.kind === 'habit'){
       let hid = second.habitId;
-      if(!hid && data && second.habitName){
-        const found = assistantFindHabit(data, second.habitName);
+      if(!hid && second.habitName){
+        const found = typeof assistantFindNamedItem === 'function'
+          ? assistantFindNamedItem(second.habitName, data)
+          : (data ? assistantFindHabit(data, second.habitName) : null);
         if(found && found.ok)hid = found.hid;
       }
       if(hid){
@@ -3802,8 +3933,16 @@ function assistantApplyDraftBatch(args, session, context){
     });
   });
   const drafts = (session.pendingPlaces || []).slice();
-  const itemOpts = {placeholders:true, session, settings, skipSalvage:true};
-  for(const item of items){
+  const siblings = items.map(item => {
+    const stub = {
+      name:String(item && item.name || '').trim(),
+      kind:item && item.kind === 'habit' ? 'habit' : 'task'
+    };
+    assistantEnsureDraftHid(stub);
+    return stub;
+  });
+  const itemOpts = {placeholders:true, session, settings, skipSalvage:true, siblings};
+  for(const [index, item] of items.entries()){
     const applied = assistantApplyDraftItem(
       item,
       null,
@@ -3815,7 +3954,17 @@ function assistantApplyDraftBatch(args, session, context){
       itemOpts
     );
     if(!applied.ok)return applied;
-    if(applied.draft && applied.draft.name)drafts.push(applied.draft);
+    if(applied.draft && applied.draft.name){
+      const stub = siblings[index];
+      if(stub){
+        applied.draft.pendingHid = stub.pendingHid || stub.hid;
+        stub.name = applied.draft.name;
+        stub.kind = applied.draft.kind;
+      }else{
+        assistantEnsureDraftHid(applied.draft);
+      }
+      drafts.push(applied.draft);
+    }
   }
   if(!drafts.length)return {ok:false, error:'nothing to add'};
   session.drafts = drafts;
@@ -3897,6 +4046,38 @@ function assistantPreflightApplyDrafts(rows){
   return {ok:true};
 }
 
+function assistantRebindDraftOrderLinks(drafts){
+  const rows = (Array.isArray(drafts) ? drafts : []).filter(row =>
+    row && (row.kind === 'habit' || row.kind === 'task')
+    && Array.isArray(row.scheduleLinks) && row.scheduleLinks.length);
+  if(!rows.length || typeof load !== 'function')return;
+  const data = load();
+  if(!Array.isArray(data) || !data.length)return;
+  let changed = false;
+  for(const draft of rows){
+    const index = assistantDraftExistingIndex(data, draft);
+    if(index < 0)continue;
+    const subjectHid = typeof cleanHabitId === 'function'
+      ? cleanHabitId(data[index].hid)
+      : data[index].hid;
+    const links = draft.scheduleLinks.map(link => ({
+      anchorHid:link.anchorHid,
+      direction:link.direction,
+      adjacency:link.adjacency === 'direct' ? 'direct' : 'sometime',
+      requireSameDay:Boolean(link.requireSameDay)
+    })).filter(link => link.anchorHid
+      && (link.direction === 'before' || link.direction === 'after')
+      && link.anchorHid !== subjectHid
+      && data.some(item => item && item.hid === link.anchorHid));
+    if(JSON.stringify(data[index].scheduleLinks || []) === JSON.stringify(links))continue;
+    data[index] = Object.assign({}, data[index], {scheduleLinks:links});
+    changed = true;
+  }
+  if(!changed)return;
+  const next = typeof normalize === 'function' ? normalize(data) : data;
+  if(typeof save === 'function')save(next);
+}
+
 function assistantCommitDrafts(drafts){
   const rows = Array.isArray(drafts) ? drafts.filter(Boolean) : [];
   if(!rows.length)return {ok:false, error:'empty draft'};
@@ -3933,6 +4114,7 @@ function assistantCommitDrafts(drafts){
     if(!result.ok)return result;
     saved.push(result);
   }
+  assistantRebindDraftOrderLinks(items);
   for(const other of others){
     const result = assistantCommitDraft(other);
     if(!result.ok)return result;
@@ -4334,6 +4516,7 @@ function assistantExecuteTool(name, args, session, context){
       session.drafts = applied.drafts;
       session.draft = applied.draft;
       session.bulk = true;
+      (Array.isArray(applied.drafts) ? applied.drafts : []).forEach(row => assistantStageTurnDraft(session, row));
     }
     return applied;
   }
@@ -4381,7 +4564,10 @@ function assistantExecuteTool(name, args, session, context){
           catalog
         }
       );
-      if(applied.ok && !applied.existing)session.draft = applied.draft;
+      if(applied.ok && !applied.existing){
+        session.draft = applied.draft;
+        assistantStageTurnDraft(session, applied.draft);
+      }
       return applied;
     }
     const resolved = assistantResolveDraftBase(nextArgs, session, context);
@@ -4407,8 +4593,9 @@ function assistantExecuteTool(name, args, session, context){
         settings:context.settings
       }
     );
-    if(applied.draft){
+    if(applied.ok && applied.draft){
       session.draft = applied.draft;
+      if(!applied.existing)assistantStageTurnDraft(session, applied.draft);
       assistantLinkStagedWeather(session, applied.draft);
     }
     return applied;
@@ -4760,6 +4947,7 @@ function assistantDraftToHabit(draft, settings, now, data){
     showWeatherAtLocation:Boolean(draft.showWeatherAtLocation),
     weatherLocationId:draft.weatherLocationId || null
   };
+  if(draft.hid || draft.pendingHid)record.hid = draft.hid || draft.pendingHid;
   if(isHabit){
     record.allowedWeekdays = typeof normalizeAllowedWeekdays === 'function'
       ? normalizeAllowedWeekdays(draft.allowedWeekdays || [])

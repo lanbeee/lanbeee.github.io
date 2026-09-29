@@ -286,6 +286,119 @@ async function launchBrowser(){
   }, {now:FROZEN});
   report(fields);
 
+  console.log('\n[L] in-flight titles resolve before/after and habit windows');
+  const linkedBatch = await page.evaluate(({now}) => {
+    const rows = [];
+    const check = (name, cond, extra) => rows.push({name, ok:Boolean(cond), extra});
+    localStorage.removeItem(KEY);
+    saveSortSettings({
+      ...DEFAULT_SORT_SETTINGS,
+      localAssistant:true,
+      locations:[],
+      weatherProfiles:[]
+    });
+    const seed = (typeof normalize === 'function' ? normalize : (x=>x))([
+      {name:'Walk', type:'keepup', target:1, durationMinutes:20, logs:[], lastLog:null}
+    ]);
+    save(seed);
+    const context = assistantBuildContext(now);
+    const session = assistantCreateSession();
+    const batch = assistantExecuteTool('draft_batch', {
+      items:[
+        {create:true, due:'today', dueTime:'5pm', durationMinutes:60, kind:'task', name:'Aarish driving practice'},
+        {before:'Aarish driving practice', create:true, due:'today', durationMinutes:15, kind:'task', name:'Driving test prep'}
+      ]
+    }, session, context);
+    const drafts = batch.drafts || [];
+    const practiceDraft = drafts.find(row => /practice/i.test(row && row.name || ''));
+    const prepDraft = drafts.find(row => /prep/i.test(row && row.name || ''));
+    const prepLink = prepDraft && (prepDraft.scheduleLinks || [])[0];
+    check('batch ok', batch.ok === true, batch.error || batch.ask);
+    check('two tasks staged', Boolean(practiceDraft && prepDraft));
+    check('prep before practice on draft', Boolean(prepLink && prepLink.direction === 'before' && prepLink.anchorHid && /practice/i.test(prepLink.name || '')));
+    const reversed = assistantExecuteTool('draft_batch', {
+      items:[
+        {before:'Aarish driving practice', create:true, due:'today', durationMinutes:15, kind:'task', name:'Driving test prep'},
+        {create:true, due:'today', dueTime:'5pm', durationMinutes:60, kind:'task', name:'Aarish driving practice'}
+      ]
+    }, assistantCreateSession(), context);
+    const reversedPrep = (reversed.drafts || []).find(row => /prep/i.test(row && row.name || ''));
+    check('reverse order still links', Boolean(reversed.ok && reversedPrep && (reversedPrep.scheduleLinks || [])[0] && (reversedPrep.scheduleLinks || [])[0].anchorHid));
+    const afterBatch = assistantExecuteTool('draft_batch', {
+      items:[
+        {create:true, kind:'task', name:'Shop', due:'today', durationMinutes:20},
+        {create:true, kind:'task', name:'Cook', due:'today', durationMinutes:30, after:'Shop'}
+      ]
+    }, assistantCreateSession(), context);
+    const cook = (afterBatch.drafts || []).find(row => row && row.name === 'Cook');
+    const cookLink = cook && (cook.scheduleLinks || [])[0];
+    check('after-link in same call', Boolean(afterBatch.ok && cookLink && cookLink.direction === 'after' && cookLink.anchorHid));
+    const fuzzyBatch = assistantExecuteTool('draft_batch', {
+      items:[
+        {create:true, kind:'task', name:'Library books return', due:'today', durationMinutes:25},
+        {create:true, kind:'task', name:'Pack bag', due:'today', durationMinutes:10, before:'library books'}
+      ]
+    }, assistantCreateSession(), context);
+    const pack = (fuzzyBatch.drafts || []).find(row => row && row.name === 'Pack bag');
+    const packLink = pack && (pack.scheduleLinks || [])[0];
+    check('partial title still hits sibling', Boolean(fuzzyBatch.ok && packLink && /library/i.test(packLink.name || '')));
+    const windowBatch = assistantExecuteTool('draft_batch', {
+      items:[
+        {create:true, kind:'task', name:'Exam', due:'today', dueTime:'5pm', durationMinutes:60},
+        {create:true, kind:'task', name:'Warmup', due:'today', durationMinutes:15,
+          window:{start:{kind:'habit', habit:'Exam', offsetMin:15}, end:{kind:'unset'}}}
+      ]
+    }, assistantCreateSession(), context);
+    const warmup = (windowBatch.drafts || []).find(row => row && row.name === 'Warmup');
+    const exam = (windowBatch.drafts || []).find(row => row && row.name === 'Exam');
+    check('habit window anchors to sibling', Boolean(windowBatch.ok && warmup && warmup.window && warmup.window.start
+      && warmup.window.start.kind === 'habit' && warmup.window.start.habitId
+      && exam && warmup.window.start.habitId === (exam.pendingHid || exam.hid)));
+    const missing = assistantExecuteTool('draft_batch', {
+      items:[
+        {create:true, due:'today', durationMinutes:15, kind:'task', name:'Driving test prep', before:'Not a real ting'}
+      ]
+    }, assistantCreateSession(), context);
+    check('unknown before still asks', missing.ok === false && missing.error === 'UNKNOWN', missing.ask || missing.error);
+    const commit = batch.ok ? assistantCommitDrafts(drafts) : {ok:false};
+    const saved = commit.ok ? load() : [];
+    const practice = saved.find(item => item && /practice/i.test(item.name || ''));
+    const prep = saved.find(item => item && /prep/i.test(item.name || ''));
+    const savedLink = prep && (prep.scheduleLinks || [])[0];
+    check('commit keeps link', Boolean(commit.ok && practice && prep && savedLink && savedLink.direction === 'before' && savedLink.anchorHid === practice.hid));
+    const event = practice && practice.eventTime != null ? new Date(practice.eventTime) : null;
+    check('practice at 5pm', Boolean(event && event.getHours() === 17 && event.getMinutes() === 0), event && event.toISOString());
+    check('durations', Boolean(practice && practice.durationMinutes === 60 && prep && prep.durationMinutes === 15));
+    const seqSession = assistantCreateSession();
+    const first = assistantExecuteTool('draft_item', {
+      create:true, kind:'task', name:'Aarish driving practice', due:'today', dueTime:'5pm', durationMinutes:60
+    }, seqSession, context);
+    const second = assistantExecuteTool('draft_item', {
+      create:true, kind:'task', name:'Driving test prep', due:'today', durationMinutes:15, before:'Aarish driving practice'
+    }, seqSession, context);
+    const seqLink = second.draft && (second.draft.scheduleLinks || [])[0];
+    check('sequential draft_item links staged sibling', Boolean(first.ok && second.ok && seqLink && seqLink.direction === 'before' && seqLink.anchorHid));
+    const third = assistantExecuteTool('draft_item', {
+      create:true, kind:'task', name:'Print forms', due:'today', durationMinutes:5, before:'Aarish driving practice'
+    }, seqSession, context);
+    const thirdLink = third.draft && (third.draft.scheduleLinks || [])[0];
+    check('later draft still sees first staged title', Boolean(third.ok && thirdLink && thirdLink.anchorHid === seqLink.anchorHid));
+    const mixedSession = assistantCreateSession();
+    assistantExecuteTool('draft_item', {
+      create:true, kind:'task', name:'Drop off keys', due:'today', durationMinutes:10
+    }, mixedSession, context);
+    const mixedBatch = assistantExecuteTool('draft_batch', {
+      items:[
+        {create:true, kind:'task', name:'Lock up', due:'today', durationMinutes:5, after:'Drop off keys'}
+      ]
+    }, mixedSession, context);
+    const lockUp = (mixedBatch.drafts || []).find(row => row && row.name === 'Lock up');
+    const lockLink = lockUp && (lockUp.scheduleLinks || [])[0];
+    check('batch row can name a prior staged draft_item', Boolean(mixedBatch.ok && lockLink && lockLink.direction === 'after' && /keys/i.test(lockLink.name || '')));
+    return rows;
+  }, {now:FROZEN});
+  report(linkedBatch);
+
   console.log('\n[C] none/clear restores defaults');
   const clears = await page.evaluate(({now}) => {
     const rows = [];

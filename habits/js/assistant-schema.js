@@ -121,9 +121,9 @@ const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   placeNames:{type:['array','string','null'], items:{type:'string'}, description:'catalog.places names only, or one string such as "home and mom\'s house". Never invent a place that is not in the catalog'},
   anywhere:{type:['boolean','null']},
   placePrefs:{type:['string','null'], description:'"Home high, Gym avoid"'},
-  before:{type:['string','null'], description:'other item this should finish before, or none'},
-  after:{type:['string','null'], description:'other item this should start after, or none'},
-  order:{type:['string','null'], description:'"right after Walk, same day" or "none"'},
+  before:{type:['string','null'], description:'title of another item this should finish before, or none. That title may be saved, already staged this turn, or another row in this same call'},
+  after:{type:['string','null'], description:'title of another item this should start after, or none. That title may be saved, already staged this turn, or another row in this same call'},
+  order:{type:['string','null'], description:'adjacency only: "right after, same day" or "none". Put the other item’s title in before/after'},
   links:{type:['array','string','null'], items:{type:'string'}, description:'URL, tel:, "call 5551234", or none'},
   option:{type:['array','string','null'], items:{type:'string'}, description:'extra window "Tue 9am-11am at Home", or none'},
   needAsk:{type:'boolean'},
@@ -199,14 +199,14 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   draft_item:{
-      description:'Create or change one item in one call. Set create true when the request makes something new and false when it changes something that already exists — omit it only when the request could genuinely be either, and Tings will ask when the name is close to saved items. Fill every setting the user named or explicitly asked you to choose; omit the rest. name is a 1-3 word title. Put habitKind, topics, windowText, order, placePrefs, hardDue, and the rest in their own fields. weatherText creates and attaches a weather profile when needed, so one item plus its new weather profile is one draft_item call. If currentDraft is set, "it" means that item — keep its name and hid. Prefer plain strings. Do not nest window or place objects — a nested object is how tool JSON gets cut off. Several items in one request belong in draft_batch, not repeated draft_item calls.',
+      description:'Create or change one item in one call. Set create true when the request makes something new and false when it changes something that already exists — omit it only when the request could genuinely be either, and Tings will ask when the name is close to saved items. Fill every setting the user named or explicitly asked you to choose; omit the rest. name is a 1-3 word title. Put habitKind, topics, windowText, order, placePrefs, hardDue, and the rest in their own fields. before/after name another item by title, including one being created in this same turn. weatherText creates and attaches a weather profile when needed, so one item plus its new weather profile is one draft_item call. If currentDraft is set, "it" means that item — keep its name and hid. Prefer plain strings. Do not nest window or place objects — a nested object is how tool JSON gets cut off. Several items in one request belong in draft_batch, not repeated draft_item calls.',
     parameters:{
       type:'object',
       properties:ASSISTANT_DRAFT_ITEM_PROPERTIES
     }
   },
   draft_batch:{
-    description:'Create several new items from one request — a list, a pasted schedule, two habits, errands plus places. Call this once instead of many draft_item calls. Each item uses the same fields as draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown place names go in places with a dummy address — do not ask. The user will set the real address later. One new item, even with a long instruction, is still draft_item. Changing, snoozing, or deleting items that already exist is apply_items, not draft_batch.',
+    description:'Create several new items from one request — a list, a pasted schedule, two habits, errands plus places. Call this once instead of many draft_item calls. Each item uses the same fields as draft_item. Recurring meetings are habits. Skip a row that is TBA with no days and no times. Unknown place names go in places with a dummy address — do not ask. The user will set the real address later. One new item, even with a long instruction, is still draft_item. Changing, snoozing, or deleting items that already exist is apply_items, not draft_batch. before/after may name another row in this call, or a draft already staged this turn.',
     parameters:{
       type:'object',
       required:['items'],
