@@ -740,7 +740,8 @@ function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
 // HYBRID: log entry and show undo. opts: {value, minutes, note} for numeric / chunk / note logs.
 function logTing(i,opts = {}){
   const data = load();
-  const now = Date.now();
+  const clock=Date.now();
+  const now=Number.isFinite(opts.at) && opts.at>0 && opts.at<=clock ? opts.at : clock;
   if(!data[i])return false;
   const h = data[i];
   if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(h.hid)){
@@ -765,7 +766,7 @@ function logTing(i,opts = {}){
     value:opts.value,minutes,note:opts.note,
     occurrenceKey:opts.occurrenceKey,
     scheduleOptionId:opts.scheduleOptionId,
-    scheduledDay:opts.scheduledDay
+    scheduledDay:opts.scheduledDay,source:opts.source,operationId:opts.operationId
   });
   const action = withEntryToastAction({
     type:'entry',

@@ -27,14 +27,26 @@ const assert = require('node:assert/strict');
       prefs.items['busy:work']={start:'alarm',travelStart:'notification',travelEnd:'alarm'};
       prefs.items['item:notification-task'].travelStart='alarm';
       const withTravel = nativeReminderEvents(week,data,settings,prefs,now);
+      const baselineTravel=withTravel.find(e=>e.owner==='item:notification-task' && e.reminderEdge==='travelStart');
+      prefs.items['item:notification-task'].travelLeadMinutes=10;
+      const withLead=nativeReminderEvents(week,data,settings,prefs,now);
+      const leadTravel=withLead.find(e=>e.owner==='item:notification-task' && e.reminderEdge==='travelStart');
+      const lateLead=nativeReminderEvents(week,data,settings,prefs,baselineTravel.at-60000)
+        .find(e=>e.owner==='item:notification-task' && e.reminderEdge==='travelStart');
       const renamed = {...settings,blockedTimes:settings.blockedTimes.map(b=>({...b,label:b.label+' renamed'}))};
       const afterRename = nativeReminderEvents(week,data,renamed,prefs,now);
-      return {initial,rescheduled,removed,defaults,done,withTravel,afterRename};
+      return {initial,rescheduled,removed,defaults,done,withTravel,afterRename,baselineTravel,leadTravel,lateLead};
     });
     assert.equal(result.initial.length,3,'independent start/end choices');
     assert.equal(result.initial.find(e=>e.title==='Task').delivery,'alarm');
     assert.equal(result.initial.filter(e=>e.title==='Habit').every(e=>e.delivery==='notification'),true);
     assert.equal(result.rescheduled.find(e=>e.title==='Habit').at-result.initial.find(e=>e.title==='Habit').at,600000);
+    assert.equal(result.rescheduled.find(e=>e.title==='Habit').key,result.initial.find(e=>e.title==='Habit').key,'same occurrence keeps its identity when moved');
+    assert.equal(result.baselineTravel.at-result.leadTravel.at,10*60000,'departure warning precedes actual travel');
+    assert.equal(result.baselineTravel.key,result.leadTravel.key,'lead changes keep occurrence identity');
+    assert.equal(result.leadTravel.completion,undefined,'travel must not complete destination');
+    assert.equal(result.initial[0].completion.hid,'notification-task');
+    assert.equal(result.lateLead.at,result.baselineTravel.at-60000+2000,'warn shortly when lead time has passed but travel is ahead');
     assert.equal(result.removed.length,1,'deleted item removed');
     assert.equal(result.defaults.length,0,'new items have no blanket reminders');
     assert.equal(result.done.some(e=>e.title==='Task'),false);
@@ -52,7 +64,7 @@ const assert = require('node:assert/strict');
       initNativeReminders();renderNativeDetailReminders(load()[0]);
     });
     assert.equal(await page.locator('#native-reminder-controls select').count(),0,'no blanket selectors');
-    assert.equal(await page.locator('#detail-native-reminders select').count(),4,'four per-item edges');
+    assert.equal(await page.locator('#detail-native-reminders select[data-reminder-edge]').count(),4,'four per-item edges');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].travelStart),'alarm','legacy travel choice migrated');
     await page.locator('#detail-native-reminders select[data-reminder-edge="start"]').selectOption('off',{force:true});
     await page.waitForFunction(()=>nativeReminderPreferences().items['item:ui-one'].start==='off');
@@ -66,6 +78,31 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(id=>nativeReminderPreferences().items[`busy:${id}`]?.start==='alarm',ids[0]);
     await page.evaluate(()=>{saveBlockedTimePatch(0,{label:'Renamed'});removeBlockedTime(1);});
     assert.equal(await page.evaluate(id=>nativeReminderPreferences().items[`busy:${id}`].start,ids[0]),'alarm');
+    await page.locator('#detail-native-reminders select[data-reminder-lead]').selectOption('15',{force:true});
+    await page.waitForFunction(()=>nativeReminderPreferences().items['item:ui-one'].travelLeadMinutes===15);
+    const completion=await page.evaluate(async()=>{
+      save(normalize([{hid:'done-alarm',name:'Read',type:'keepup',target:1,logs:[]},
+        {hid:'chunk-alarm',name:'Work',type:'keepup',target:1,breakable:true,durationMinutes:120,logs:[]},
+        {hid:'separate-alarm',name:'Practice',type:'keepup',target:1,logs:[makeActualLog(Date.now()-1000,{occurrenceKey:'session-a'})]}]));
+      let actions=[{id:'a'.repeat(32),hid:'done-alarm',dayKey:todayIso(),at:Date.now(),minutes:0},
+        {id:'b'.repeat(32),hid:'chunk-alarm',dayKey:todayIso(),at:Date.now(),minutes:30},
+        {id:'c'.repeat(32),hid:'separate-alarm',dayKey:todayIso(),at:Date.now(),occurrenceKey:'session-b'}];
+      let failOnce=true;
+      window.TingsNative.alarms.completions=async()=>({actions});
+      window.TingsNative.alarms.acknowledge=async id=>{
+        if(failOnce){failOnce=false;throw new Error('interrupted ack');}
+        actions=actions.filter(a=>a.id!==id);
+      };
+      try{await consumeNativeAlarmCompletions();}catch(_){}
+      await consumeNativeAlarmCompletions();await consumeNativeAlarmCompletions();
+      const data=load();
+      return {logs:data.map(h=>normalizeLogs(h.logs)),pending:actions.length};
+    });
+    assert.equal(completion.logs[0].length,1,'retry after saved completion cannot duplicate');
+    assert.equal(completion.logs[0][0].source,'native_alarm','durable action identity survives normalization');
+    assert.equal(completion.logs[1][0].minutes,30,'only the split session is credited');
+    assert.equal(completion.logs[2].length,2,'a separate completed occurrence does not swallow this completion');
+    assert.equal(completion.pending,0,'acknowledge only after save');
     assert.deepEqual(errors,[],'no runtime errors');
     // Isolated preview of the real controls using existing styles, for mobile-width review.
     await page.evaluate(()=>{

@@ -105,8 +105,8 @@ function normalizeLogs(logs){
         if(optionId)entry.scheduleOptionId = optionId;
         if(scheduledDay)entry.scheduledDay = scheduledDay;
         if(log.source === 'calendar')entry.source = 'calendar';
-        if(log.source === 'shared_display' && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
-          entry.source = 'shared_display';
+        if(['shared_display','native_alarm'].includes(log.source) && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
+          entry.source = log.source;
           entry.operationId = String(log.operationId);
         }
         if(entry.value !== undefined || entry.minutes !== undefined || entry.note !== undefined
@@ -166,8 +166,8 @@ function makeActualLog(ts,opts = {}){
   if(occurrenceKey)entry.occurrenceKey = occurrenceKey;
   if(optionId)entry.scheduleOptionId = optionId;
   if(scheduledDay)entry.scheduledDay = scheduledDay;
-  if(opts.source === 'shared_display' && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
-    entry.source = 'shared_display';
+  if(['shared_display','native_alarm'].includes(opts.source) && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
+    entry.source = opts.source;
     entry.operationId = String(opts.operationId);
   }
   if(entry.value === undefined && entry.minutes === undefined && entry.note === undefined

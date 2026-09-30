@@ -2,7 +2,7 @@
 // Preferences are device-local and intentionally separate from clone settings.
 const NATIVE_REMINDERS_KEY = 'tings_native_reminders_v1';
 const NATIVE_REMINDER_DEFAULTS = {version:2,enabled:false,items:{}};
-const NATIVE_REMINDER_EDGES = [['start','start'],['end','end'],['travelStart','travel: time to leave'],['travelEnd','travel: arrival']];
+const NATIVE_REMINDER_EDGES = [['start','start'],['end','end'],['travelStart','travel: departure'],['travelEnd','travel: arrival']];
 function nativeBusyReminderKey(block,index){
   return block ? `busy:${block.reminderId || JSON.stringify([index,block.label,block.start,block.end,block.days])}` : '';
 }
@@ -73,7 +73,22 @@ function nativeItemReminderControls(owner,name){
       finally{select.disabled = false;}
     });label.append(select);grid.append(label);
   }
-  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = 'Saved immediately for this phone. Travel reminders follow the journey to this item; start and end follow its latest agenda times.';
+  const leadLabel=document.createElement('label');leadLabel.className='planning-field';leadLabel.append(document.createTextNode('departure reminder'));
+  const lead=document.createElement('select');lead.className='mini-select';lead.dataset.reminderLead=owner;
+  lead.setAttribute('aria-label',`${name}: departure reminder lead time`);
+  for(const minutes of [0,5,10,15,30,60]){
+    const option=document.createElement('option');option.value=String(minutes);option.textContent=minutes ? `${minutes} min before travel` : 'when travel starts';lead.append(option);
+  }
+  lead.value=String(nativeReminderLeadMinutes(nativeReminderPreferences().items[owner]));
+  lead.addEventListener('change',async()=>{
+    lead.disabled=true;
+    try{
+      const prefs=nativeReminderPreferences();prefs.items[owner]={...prefs.items[owner],travelLeadMinutes:Number(lead.value)};
+      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));nativeReminderLastSignature='';await reconcileNativeReminders();
+      showToast('departure reminder timing saved');
+    }finally{lead.disabled=false;}
+  });leadLabel.append(lead);grid.append(leadLabel);
+  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = 'Choose ringing alarm for travel: departure to ring before the journey to this item. The lead time applies to its departure notification or alarm. No travel means no departure reminder. Saved immediately for this phone. Item start and end follow the latest agenda.';
   box.append(grid,hint);return box;
 }
 function renderNativeDetailReminders(h){
@@ -88,6 +103,19 @@ function renderNativeBusyReminders(wrap,blocks){
     const row = wrap.querySelector(`[data-blocked-row="${i}"]`);
     if(row)row.append(nativeItemReminderControls(nativeBusyReminderKey(block,i),block.label));
   });
+}
+function nativeReminderLeadMinutes(choices){
+  const minutes=Number(choices?.travelLeadMinutes);
+  return [0,5,10,15,30,60].includes(minutes) ? minutes : 0;
+}
+function nativeReminderOccurrence(row,data,day){
+  const dayKey=day.dayKey || dateKey(day.dayBase);
+  if(row?.kind==='blocked')return `busy:${dayKey}`;
+  const h=data.find(item=>item.hid===(row?.h?.hid || data[row?.i]?.hid));
+  if(!h)return '';
+  // A dismissal is for this occurrence, even if the next rebuild moves it.
+  // Split chunks remain separate appointments; their clocks distinguish them.
+  return `${h.hid}:${dayKey}:${row.occurrenceKey || row.scheduleOptionId || 'main'}${h.breakable ? ':'+row.start : ''}`;
 }
 function nativeReminderEvents(week,data,settings,prefs,now = Date.now()){
   const events = new Map();
@@ -110,19 +138,19 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now()){
     sequence.forEach((row,i)=>{
       if(row.kind !== 'travel')return;
       const destination = sequence.slice(i+1).find(next=>next.kind !== 'travel' && next.start === row.end && next.locationId === row.to);
-      active.push({...row,reminderOwner:nativeReminderOwner(destination,data,settings)});
+      active.push({...row,reminderOwner:nativeReminderOwner(destination,data,settings),reminderOccurrence:nativeReminderOccurrence(destination,data,day)});
     });
     active.push(...blockedTimelineRows(day.dayKey || dateKey(day.dayBase),settings,day.dayBase,{clipAfter:null}));
     for(const row of active){
       if(!row || !['fill','scheduled','blocked','travel'].includes(row.kind))continue;
       let owner = row.kind === 'travel' ? row.reminderOwner : nativeReminderOwner(row,data,settings);
       if(!owner)continue;
-      let kind = 'busy', title = row.label || 'Busy time', identity = `busy:${row.label || ''}:${row.start}`;
+      let kind = 'busy', title = row.label || 'Busy time', identity = nativeReminderOccurrence(row,data,day);
       if(row.kind === 'travel'){
         kind = 'travel';
         const destination = row.toName || settings.locations?.find(location=>location.id === row.to)?.name;
         title = destination ? `Travel to ${destination}` : 'Time to leave';
-        identity = `travel:${row.from || ''}:${row.to || ''}:${row.start}`;
+        identity = `travel:${row.reminderOccurrence}`;
       }else if(row.kind !== 'blocked'){
         // Never bind a removed item's stale row to a new item at the same index.
         const hid = row.h?.hid || data[row.i]?.hid;
@@ -131,14 +159,23 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now()){
         if(h.type === 'task' && isTaskDone(h))continue;
         kind = h.type === 'task' ? 'task' : 'habit';
         title = h.name || 'Ting';
-        identity = `${h.hid}:${row.occurrenceKey || day.dayKey || day.dayBase}:${row.start}`;
+        identity = nativeReminderOccurrence(row,data,day);
       }
+      const h=kind==='habit' || kind==='task' ? data.find(item=>`item:${item.hid}`===owner) : null;
+      const completion=h ? {hid:h.hid,dayKey:day.dayKey || dateKey(day.dayBase),
+        occurrenceKey:row.occurrenceKey || '',scheduleOptionId:row.scheduleOptionId || '',
+        minutes:h.breakable ? Math.max(1,Math.round((row.end-row.start)/60000)) : 0} : null;
       for(const edge of ['Start','End']){
-        const at = Number(row[edge.toLowerCase()]);
+        const agendaAt=Number(row[edge.toLowerCase()]);
+        const lead=kind==='travel' && edge==='Start' ? nativeReminderLeadMinutes(prefs.items?.[owner]) : 0;
+        const desiredAt=agendaAt-lead*60000;
+        // Enabling a warning after its lead window starts still warns before
+        // departure; native delivery remembers that occurrence after a replan.
+        const at=kind==='travel' && edge==='Start' && agendaAt>now ? Math.max(desiredAt,now+2000) : desiredAt;
         const mode = prefs.items?.[owner]?.[kind === 'travel' ? 'travel' + edge : edge.toLowerCase()] || 'off';
         if(!['notification','alarm'].includes(mode) || !Number.isFinite(at) || at <= now || at > now + 7*86400000)continue;
         const key = `${owner}:${kind}:${identity}:${edge}`;
-        events.set(key,{key,at,title,owner,reminderEdge:kind === 'travel' ? 'travel' + edge : edge.toLowerCase(),delivery:mode,body:kind === 'travel' && edge === 'Start' ? 'Leave now to follow your agenda' : edge === 'Start' ? 'Scheduled to start' : 'Scheduled to end'});
+        events.set(key,{key,at,agendaAt,title,owner,dayKey:day.dayKey || dateKey(day.dayBase),...(completion ? {completion} : {}),reminderEdge:kind === 'travel' ? 'travel' + edge : edge.toLowerCase(),delivery:mode,body:kind === 'travel' && edge === 'Start' ? (lead ? `Travel starts at ${new Date(agendaAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}` : 'Leave now to follow your agenda') : edge === 'Start' ? 'Scheduled to start' : 'Scheduled to end'});
       }
     }
   }
@@ -147,8 +184,66 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now()){
 let nativeReminderTimer;
 let nativeReminderLastSignature = '';
 let nativeReminderLastWeek = null;
+let nativeBackgroundSnapshotTimer;
+let nativeBackgroundInputSignature = '';
+let nativeBackgroundLastApplied = 0;
+let nativeBackgroundLastPlan = 0;
+let nativeBackgroundWaitingWeek = null;
+let nativeBackgroundWaitingSince = 0;
+function nativeBackgroundSnapshot(){
+  const storage = {};
+  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,WEATHER_CACHE_KEY]){
+    const value = localStorage.getItem(key);if(value != null)storage[key] = value;
+  }
+  const data=load(),mounted=typeof _homeRenderedWeek !== 'undefined' ? _homeRenderedWeek : null;
+  // Memoized future days are safe only when this agenda matches saved inputs.
+  const compatible=mounted && typeof _optimizerHomeReadyDirtyKey !== 'undefined'
+    && _optimizerHomeReadyDirtyKey === homePlannerDirtyKey(data);
+  const saved=nativeReminderPreferences();
+  const owners=new Set(data.filter(h=>h.type!=='zero' && !(h.type==='task' && isTaskDone(h))).map(h=>`item:${h.hid}`));
+  normalizeBlockedTimes(sortSettings.blockedTimes).forEach((block,i)=>owners.add(nativeBusyReminderKey(block,i)));
+  const prefs={...saved,items:Object.fromEntries(Object.entries(saved.items).filter(([owner])=>owners.has(owner)))};
+  return {storage,prefs,week:compatible ? leanAgendaWeek(mounted) : null,
+    weatherRevision:sortSettings?._weatherContext?.revision || '',
+    coord:typeof currentCoordLocation === 'function' ? currentCoordLocation() : null};
+}
+function queueNativeBackgroundSnapshot(){
+  if(!window.TingsNative?.isNative || !window.TingsNative.background)return;
+  clearTimeout(nativeBackgroundSnapshotTimer);
+  nativeBackgroundSnapshotTimer=setTimeout(()=>{
+    const snapshot=nativeBackgroundSnapshot(),signature=JSON.stringify(snapshot);
+    if(signature===nativeBackgroundInputSignature)return;
+    window.TingsNative.background.snapshot(snapshot).then(()=>{nativeBackgroundInputSignature=signature;})
+      .catch(()=>{});
+  },100);
+}
+async function refreshNativeBackgroundStatus(){
+  const api=window.TingsNative?.background;if(!api)return;
+  const state=await api.status(),node=document.getElementById('native-background-status');
+  const toggle=document.getElementById('native-background-toggle');
+  toggle?.setAttribute('aria-pressed',String(state.enabled));
+  if(node)node.textContent=state.enabled
+    ? `Agenda refreshes about every 30 minutes while closed; Android may delay a refresh.${state.background ? ' Background location is allowed.' : ' Uses the last saved place. Allow background location to detect movement.'}${state.plannedAt ? ` Last background update: ${new Date(state.plannedAt).toLocaleString()}.` : ''}${state.error ? ` ${state.error}` : ''}`
+    : 'Background refresh is off. The phone follows its last saved agenda.';
+  const fix=state.location;
+  if(!sortSettings.pinnedLocationId && fix && Number.isFinite(fix.lat) && Number.isFinite(fix.lng) && Date.now()-fix.at<=10*60000 && fix.at>nativeBackgroundLastApplied){
+    nativeBackgroundLastApplied=fix.at;
+    applyGeoPosition({coords:{latitude:fix.lat,longitude:fix.lng}},{updateAnchor:true});
+  }
+  // Returning to a background-updated schedule must not immediately replace
+  // it with yesterday's mounted UI cache. Wait for the foreground rebuild.
+  const updated=Number(localStorage.getItem('tings_native_reminders_updated'));
+  if(state.plannedAt>updated && state.plannedAt>nativeBackgroundLastPlan){
+    nativeBackgroundLastPlan=state.plannedAt;
+    if(!sortSettings.pinnedLocationId && state.lastLocationId && !(fix?.at> Date.now()-10*60000))setAutoLocationId(state.lastLocationId);
+    nativeBackgroundWaitingWeek=typeof _homeRenderedWeek !== 'undefined' ? _homeRenderedWeek : null;
+    nativeBackgroundWaitingSince=Date.now();
+    if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true,{locationChanged:true,__forceReplan:true});
+  }
+}
 function queueNativeReminders(){
   if(!window.TingsNative?.isNative)return;
+  queueNativeBackgroundSnapshot();
   clearTimeout(nativeReminderTimer);
   nativeReminderTimer = setTimeout(()=>void reconcileNativeReminders(),250);
 }
@@ -157,13 +252,60 @@ function reconcileNativeReminders(){
   nativeReminderReconcileQueue = nativeReminderReconcileQueue.catch(()=>{}).then(reconcileNativeRemindersNow);
   return nativeReminderReconcileQueue;
 }
+// Native actions stay queued until the shared completion has been saved. A
+// durable operation ID in the log prevents duplicates after an interrupted ack.
+async function consumeNativeAlarmCompletions(){
+  const api=window.TingsNative?.alarms;
+  if(!api?.completions || !api.acknowledge)return;
+  const {actions}=await api.completions();let changed=false;
+  for(const action of actions || []){
+    if(!/^[0-9a-f]{32}$/.test(action.id) || !/^\d{4}-\d{2}-\d{2}$/.test(action.dayKey)){
+      await api.acknowledge(action.id);continue;
+    }
+    const data=load(),i=data.findIndex(h=>h.hid===action.hid),h=data[i];
+    if(!h || h.type==='zero'){await api.acknowledge(action.id);continue;}
+    const logs=normalizeLogs(h.logs);
+    const row={kind:'fill',i,h,start:new Date(`${action.dayKey}T12:00:00`).getTime(),
+      occurrenceKey:action.occurrenceKey || '',scheduleOptionId:action.scheduleOptionId || ''};
+    const already=logs.some(log=>log?.source==='native_alarm' && log.operationId===action.id)
+      || (h.type==='task' && isTaskDone(h))
+      || (!h.breakable && (action.occurrenceKey
+        ? logs.some(log=>!isPlanLog(log) && logOccurrenceKey(log)===action.occurrenceKey && dateKey(logTime(log))===action.dayKey)
+        : completedOnDay(h,dayStart(row.start))));
+    if(already)changed=true;
+    if(!already){
+      const remaining=h.breakable ? Math.max(0,breakableTotalMinutes(h)-breakableProgressMinutes(h,dayStart(row.start))) : 0;
+      if(h.breakable && remaining===0){await api.acknowledge(action.id);continue;}
+      const minutes=h.breakable ? Math.min(Math.max(1,Number(action.minutes) || 1),remaining) : undefined;
+      const at=Math.min(Number(action.at),Date.now(),new Date(`${action.dayKey}T23:59:59.999`).getTime());
+      if(!Number.isFinite(at) || at<=0)throw new Error('Invalid alarm completion time.');
+      if(!logTing(i,{at,minutes,
+        occurrenceKey:action.occurrenceKey || undefined,scheduleOptionId:action.scheduleOptionId || undefined,
+        scheduledDay:action.dayKey,source:'native_alarm',operationId:action.id,feedback:false}))
+        throw new Error('Alarm stopped; open this item to finish marking it done.');
+      changed=true;
+    }
+    await api.acknowledge(action.id);
+  }
+  if(changed){nativeReminderLastSignature='';refreshOpenViews();queueNativeBackgroundSnapshot();}
+}
 async function reconcileNativeRemindersNow(){
   const api = window.TingsNative?.notifications;
   if(!api || !window.TingsNative.isNative)return;
   try{
+    await consumeNativeAlarmCompletions();
+    await refreshNativeBackgroundStatus();
     const prefs = nativeReminderPreferences();
     const mounted = typeof _homeRenderedWeek !== 'undefined' ? _homeRenderedWeek : null;
     if(mounted)nativeReminderLastWeek = mounted;
+    if(prefs.enabled && nativeBackgroundWaitingSince && (!mounted || mounted===nativeBackgroundWaitingWeek)){
+      if(Date.now()-nativeBackgroundWaitingSince<70000){
+        clearTimeout(nativeReminderTimer);nativeReminderTimer=setTimeout(()=>void reconcileNativeReminders(),1000);
+      }
+      return;
+    }
+    nativeBackgroundWaitingWeek=null;
+    nativeBackgroundWaitingSince=0;
     const week = mounted || nativeReminderLastWeek;
     // Preserve OS alarms during temporary render transitions and while closed.
     if(prefs.enabled && !week)return;
@@ -174,8 +316,11 @@ async function reconcileNativeRemindersNow(){
       const alarms = window.TingsNative.alarms;
       const ringing = events.filter(e=>e.delivery === 'alarm');
       if(ringing.length && !alarms)throw new Error('Update the Android app to use ringing alarms.');
-      if(alarms)await alarms.replaceAgenda(ringing,prefs.enabled,prefs.items);
-      await api.replaceAgenda(events.filter(e=>e.delivery !== 'alarm'));
+      if(window.TingsNative.background)await window.TingsNative.background.publish(nativeBackgroundSnapshot(),events);
+      else{
+        if(alarms)await alarms.replaceAgenda(ringing,prefs.enabled,prefs.items);
+        await api.replaceAgenda(events.filter(e=>e.delivery !== 'alarm'));
+      }
       nativeReminderLastSignature = signature;
       localStorage.setItem('tings_native_reminders_updated',String(Date.now()));
     }
@@ -195,7 +340,7 @@ async function renderNativeReminderStatus(){
   const updated = Number(localStorage.getItem('tings_native_reminders_updated'));
   const count = pending.notifications.filter(n=>n.extra?.tingsAgenda === true).length;
   const alarms = window.TingsNative.alarms ? await window.TingsNative.alarms.status() : null;
-  node.textContent = `${permission.display === 'granted' ? `${count} notifications${alarms ? ` and ${alarms.pending} alarms` : ''} scheduled` : 'Notification permission needed'} · ${exact.exact_alarm === 'granted' ? 'exact timing allowed' : 'timing may be delayed'}${updated ? ` · updated ${new Date(updated).toLocaleString()}` : ''}${alarms && !alarms.fullScreen ? ' · Allow full-screen alarms for the lock-screen controls' : ''}. Uses the last saved agenda when this app is closed.`;
+  node.textContent = `${permission.display === 'granted' ? `${count} notifications${alarms ? ` and ${alarms.pending} alarms` : ''} scheduled` : 'Notification permission needed'} · ${exact.exact_alarm === 'granted' ? 'exact timing allowed' : 'timing may be delayed'}${updated ? ` · updated ${new Date(updated).toLocaleString()}` : ''}${alarms && !alarms.fullScreen ? ' · Allow full-screen alarms for the lock-screen controls' : ''}. Reminders follow the latest saved agenda.`;
 }
 function initNativeReminders(){
   if(!window.TingsNative?.isNative)return;
@@ -239,16 +384,47 @@ function initNativeReminders(){
   const actions = document.createElement('div');actions.className = 'btn-row';actions.style.flexWrap = 'wrap';actions.append(exact,test);panel.append(actions);
   if(window.TingsNative.alarms){
     const hint = document.createElement('p');hint.className = 'field-hint';
-    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until Snooze (5 minutes) or Dismiss. Dismiss does not mark a task or habit done.';
+    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Stop & mark done opens Tings and records completion; split habits log only this session. Travel and busy-time reminders have no completion action.';
     const fullScreen = document.createElement('button');fullScreen.type = 'button';fullScreen.className = 'mini-text-btn';fullScreen.textContent = 'Allow full-screen alarms';
     fullScreen.addEventListener('click',async ()=>{try{await window.TingsNative.alarms.requestFullScreen();}catch(error){showToast(error.message);}});
     const alarmTest = document.createElement('button');alarmTest.type = 'button';alarmTest.className = 'mini-text-btn';alarmTest.textContent = 'Test ringing alarm in 10 seconds';
     alarmTest.addEventListener('click',async ()=>{
-      try{await window.TingsNative.notifications.requestPermissions();await window.TingsNative.alarms.test();showToast('Alarm will ring in 10 seconds. Snooze or dismiss to stop it.');}
+      try{await window.TingsNative.notifications.requestPermissions();await window.TingsNative.alarms.test();showToast('Alarm will ring in 10 seconds. Snooze or stop to end it.');}
       catch(error){showToast(error.message);}
     });panel.append(hint);actions.append(fullScreen,alarmTest);
   }
-  panel.append(status);host.replaceChildren(panel);
+  panel.append(status);
+  if(window.TingsNative.background){
+    const background=document.createElement('button');background.id='native-background-toggle';background.type='button';
+    background.className='setting-toggle setting-switch compact-toggle';background.setAttribute('aria-pressed','false');
+    background.innerHTML='<span>refresh agenda while closed</span><span class="switch-ui" aria-hidden="true"></span>';
+    background.addEventListener('click',async()=>{
+      background.disabled=true;
+      try{
+        const state=await window.TingsNative.background.status();
+        await window.TingsNative.background.snapshot(nativeBackgroundSnapshot());
+        await window.TingsNative.background.configure(!state.enabled);
+        await refreshNativeBackgroundStatus();
+      }catch(error){showToast(error.message);await refreshNativeBackgroundStatus();}finally{background.disabled=false;}
+    });
+    const hint=document.createElement('p');hint.className='field-hint';
+    hint.textContent='Updates the agenda and your chosen reminders using time, saved data, and weather. One brief location check can update your place. No continuous GPS tracking. Turn on phone reminders and choose at least one item reminder to use this.';
+    const location=document.createElement('button');location.type='button';location.className='mini-text-btn';location.textContent='Allow background location';
+    location.addEventListener('click',async()=>{
+      try{
+        const state=await window.TingsNative.background.requestLocation();
+        if(!state.fine){showToast('Allow precise location to use saved-place detection.');return;}
+        if(state.background){showToast('Background location is already allowed.');await refreshNativeBackgroundStatus();return;}
+        showToast('In Android settings → Permissions → Location, choose Allow all the time.');
+        await window.TingsNative.background.openLocationSettings();
+      }catch(error){showToast(error.message);}
+    });
+    const backgroundStatus=document.createElement('p');backgroundStatus.id='native-background-status';backgroundStatus.className='field-hint';
+    panel.append(background,hint,location,backgroundStatus);
+    window.addEventListener('tings-native-input',queueNativeBackgroundSnapshot);
+    void refreshNativeBackgroundStatus().catch(()=>{});
+  }
+  host.replaceChildren(panel);
   nativeEnsureBusyReminderIds();
   renderBlockedTimeControls();
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){nativeReminderLastSignature = '';queueNativeReminders();}});

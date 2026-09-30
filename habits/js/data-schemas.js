@@ -13,7 +13,7 @@
  * (e.g. weight), minutes (chunk progress on breakable items), and/or a
  * free-form text note. Day plans may carry `timed` (hard clock) and
  * `locationId` (one-day place override); plan-by (`planByDate`) is separate.
- * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display',operationId?:string})} LogEntry
+ * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display'|'native_alarm',operationId?:string})} LogEntry
  */
 
 /**
