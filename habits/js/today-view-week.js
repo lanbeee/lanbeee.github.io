@@ -39,7 +39,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
     candidates.sort(compareScarcityThenPriority);
     agendaItems.push(...candidates.map(({h,i,priority,scarcity})=>({h,i,priority,scarcity})));
   }
-  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday };
+  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday,plannedAt:planningNow };
 }
 
 // PURE: untimed plan logs (not the visual 📌 pin) strongly prefer that

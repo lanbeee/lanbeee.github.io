@@ -64,6 +64,57 @@ const assert = require('node:assert/strict');
     assert.equal(result.withTravel.find(e=>e.owner==='busy:work' && e.reminderEdge==='travelEnd').delivery,'alarm');
     assert.equal(result.withTravel.find(e=>e.owner==='busy:sleep').delivery,'notification');
     assert.equal(result.afterRename.find(e=>e.owner==='busy:work' && e.reminderEdge==='start').delivery,'alarm','busy identity survives rename');
+    const warnings=await page.evaluate(()=>{
+      const base=dayStart(Date.now())+86400000,now=base+8*3600000;
+      const settings={...loadSortSettings(),blockedTimes:[],blockedTimeOverrides:{},blockedTimeExceptions:{},locations:[]};
+      const data=normalize([
+        {hid:'flex',name:'Walk',type:'keepup',target:1,durationMinutes:30,allowedTimeStart:540,allowedTimeEnd:720,logs:[]},
+        {hid:'fixed',name:'Appointment',type:'task',eventTime:base+10*3600000,durationMinutes:30,logs:[]},
+        {hid:'split',name:'Work',type:'keepup',target:1,breakable:true,durationMinutes:120,minChunkMinutes:30,allowedTimeStart:540,allowedTimeEnd:720,logs:[]},
+        {hid:'options',name:'Practice',type:'keepup',target:1,durationMinutes:30,anywhereAllowed:false,scheduleOptions:[
+          {id:'morning',start:540,end:720,sameDayMode:'separate'},
+          {id:'evening',start:1080,end:1200,sameDayMode:'separate'}],logs:[]}
+      ]);
+      const day={dayBase:base,dayKey:dateKey(base),timeline:data.flatMap((h,i)=>{
+        const row={kind:'fill',h,i,start:base+10*3600000,end:base+10.5*3600000};
+        if(h.hid==='options')return [{...row,scheduleOptionId:'morning',occurrenceKey:'morning'},
+          {...row,start:base+18*3600000,end:base+18.5*3600000,scheduleOptionId:'evening',occurrenceKey:'evening'}];
+        return h.breakable ? [row,{...row,start:base+11*3600000,end:base+11.5*3600000}] : [row];
+      })};
+      const week={days:[day]},prefs={enabled:true,items:Object.fromEntries(data.map(h=>[`item:${h.hid}`,{missed:'notification',missedLeadMinutes:10}]))};
+      const events=nativeReminderEvents(week,data,settings,prefs,now);
+      const moved=structuredClone(week);moved.days[0].timeline[0].start+=30*60000;moved.days[0].timeline[0].end+=30*60000;
+      const shifted=nativeReminderEvents(moved,data,settings,prefs,now);
+      const blocked={...settings,blockedTimes:[{label:'Busy',start:660,end:720,days:[]}]};
+      const constrained=nativeReminderEvents(week,data,blocked,prefs,now).find(e=>e.owner==='item:flex');
+      const cutoff=events.find(e=>e.owner==='item:flex').agendaAt;
+      const late=nativeReminderEvents(week,data,settings,prefs,cutoff-60000).find(e=>e.owner==='item:flex');
+      const expired=nativeReminderEvents(week,data,settings,prefs,cutoff).find(e=>e.owner==='item:flex');
+      const removed=nativeReminderEvents(week,data.filter(h=>h.hid!=='flex'),settings,prefs,now);
+      const completed=structuredClone(data);completed[0].logs=[{ts:base+9*3600000}];completed[0].lastLog=base+9*3600000;
+      const realNow=Date.now;Date.now=()=>base+9*3600000;
+      const done=nativeReminderEvents(week,completed,settings,prefs,base+9*3600000);
+      Date.now=realNow;
+      const old=sortSettings;sortSettings=settings;
+      const before=missedOpportunityPassedToday(data[0],base,cutoff-1),after=missedOpportunityPassedToday(data[0],base,cutoff);
+      sortSettings=old;
+      return {base,now,events,shifted,constrained,late,expired,removed,done,before,after};
+    });
+    const flex=warnings.events.find(e=>e.owner==='item:flex');
+    assert.equal(flex.at,warnings.base+11*3600000+20*60000+1,'warn ten minutes before remaining window cannot fit the item');
+    assert.equal(flex.expiresAt,flex.agendaAt,'warning expires when prevention is no longer possible');
+    assert.equal(flex.upNext,false,'rolling start stabilization must not move the missed cutoff');
+    assert.equal(warnings.before,false);assert.equal(warnings.after,true,'cutoff agrees with missed-pill opportunity rules');
+    assert.equal(warnings.shifted.find(e=>e.owner==='item:flex').at,flex.at,'moving a flexible slot does not postpone last-chance warning');
+    assert.equal(warnings.constrained.at,flex.at-60*60000,'busy times shorten the remaining opportunity');
+    assert.equal(warnings.events.find(e=>e.owner==='item:fixed').at,warnings.base+10*3600000+20*60000,'fixed event uses missed end cutoff');
+    assert.equal(warnings.events.filter(e=>e.owner==='item:split').length,1,'split sessions warn once for remaining work');
+    assert.equal(warnings.events.find(e=>e.owner==='item:split').completion,undefined,'warning must not credit an arbitrary split session');
+    assert.equal(warnings.events.filter(e=>e.owner==='item:options').length,2,'separate occurrences keep separate windows');
+    assert.equal(warnings.late.at,flex.agendaAt-60000+2000,'warn immediately while the item can still be prevented from slipping');
+    assert.equal(warnings.expired,undefined,'do not notify after item already missed');
+    assert(!warnings.removed.some(e=>e.owner==='item:flex'),'deleted item has no warning');
+    assert(!warnings.done.some(e=>e.owner==='item:flex'),'completed item has no warning');
     await page.evaluate(()=>{
       save(normalize([{hid:'ui-one',name:'Morning walk',type:'keepup',target:1,logs:[]},{hid:'ui-two',name:'Read',type:'keepup',target:1,logs:[]}]));
       localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({enabled:true,habitStart:true,travelStart:true,alarmTypes:{travelStart:true}}));
@@ -71,7 +122,12 @@ const assert = require('node:assert/strict');
       initNativeReminders();renderNativeDetailReminders(load()[0]);
     });
     assert.equal(await page.locator('#native-reminder-controls select').count(),0,'no blanket selectors');
-    assert.equal(await page.locator('#detail-native-reminders select[data-reminder-edge]').count(),4,'four per-item edges');
+    assert.equal(await page.locator('#detail-native-reminders select[data-reminder-edge]').count(),5,'five per-item edges');
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].missed || 'off'),'off','migration leaves before-missed warnings off');
+    await page.locator('#detail-native-reminders select[data-reminder-edge="missed"]').selectOption('notification',{force:true});
+    await page.locator('#detail-native-reminders select[data-reminder-missed-lead]').selectOption('15',{force:true});
+    await page.waitForFunction(()=>nativeReminderPreferences().items['item:ui-one'].missedLeadMinutes===15);
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-two'].missed || 'off'),'off','warning choice stays per item');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].travelStart),'alarm','legacy travel choice migrated');
     await page.locator('#detail-native-reminders select[data-reminder-edge="start"]').selectOption('off',{force:true});
     await page.waitForFunction(()=>nativeReminderPreferences().items['item:ui-one'].start==='off');
@@ -80,6 +136,7 @@ const assert = require('node:assert/strict');
       updateSortSetting({blockedTimes:[{label:'Busy',start:900,end:960,days:[]},{label:'Busy',start:900,end:960,days:[]}]},{renderNow:false});
       return normalizeBlockedTimes(sortSettings.blockedTimes).map(b=>b.reminderId);
     });
+    assert.equal(await page.locator('[data-blocked-row="0"] select[data-reminder-edge="missed"]').count(),0,'busy times do not enter missed list');
     assert.equal(new Set(ids).size,2,'identical busy rules get distinct stable identities');
     await page.locator('[data-blocked-row="0"] select[data-reminder-edge="start"]').selectOption('alarm',{force:true});
     await page.waitForFunction(id=>nativeReminderPreferences().items[`busy:${id}`]?.start==='alarm',ids[0]);

@@ -1,4 +1,8 @@
 function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
+  if(typeof replayAgendaClockWeek==='function'){
+    const replay=replayAgendaClockWeek(data,settings,numDays,opts);
+    if(replay)return replay;
+  }
   const planningNow = opts.now != null ? Number(opts.now) : Date.now();
   const todayBase = dayStart(planningNow);
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
@@ -130,6 +134,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
+  if(!opts.skipDropAnnotation)annotateAgendaDropTimes(days,data,settings);
   if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
   return { days, totalTravelSeconds, candidateCount:candidates.length,
     fastPlannerAlgorithm:'bounded-state-graph',

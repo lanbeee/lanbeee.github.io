@@ -322,7 +322,7 @@ function fillPreferredWindow(h,dayBase,contextLocId){
 // has minutes left, but those minutes fall inside a block (e.g. 11pm for a
 // 10pm–6am sleep), is NOT still doable today. This mirrors what
 // buildOpenAgendaSlots does for the agenda timeline, so the home list agrees.
-function windowStillDoableToday(h,now = Date.now()){
+function windowStillDoableToday(h,now = Date.now(),settings = (sortSettings || loadSortSettings())){
   const costMin = (h && h.breakable && typeof minViableSessionMinutes === 'function')
     ? minViableSessionMinutes(h)
     : clampDuration(h.durationMinutes);
@@ -330,7 +330,6 @@ function windowStillDoableToday(h,now = Date.now()){
   if(cost <= 0)return false;
   const dayBase = dayStart(now);
   const weekday = new Date(now).getDay();
-  const settings = (sortSettings || loadSortSettings());
   const registry = normalizeLocationRegistry(settings.locations);
   const locIds = typeof habitLocationIdsForDay === 'function'
     ? habitLocationIdsForDay(h,dayBase,registry)
@@ -374,6 +373,75 @@ function windowStillDoableToday(h,now = Date.now()){
       return remaining >= cost;
     });
   });
+}
+
+// Latest clock at which this displayed occurrence loses its last feasible fit
+// around committed same/higher-priority work. Both planners publish this; the
+// phone adapter only subtracts the user's warning lead. No solve/network work.
+function agendaOccurrenceDropAt(h,row,day,settings,data){
+  const base=day.dayBase;
+  if(h.type==='task' && !h.breakable && h.eventTime!=null && dateKey(h.eventTime)===dateKey(base))
+    return Number(h.eventTime)+clampDuration(h.durationMinutes)*60000;
+  const plan=typeof timedPlanLogForDay==='function' && timedPlanLogForDay(h,dateKey(base));
+  if(plan)return logTime(plan)+clampDuration(h.durationMinutes)*60000;
+  const option=normalizeHabitScheduleOptions(h.scheduleOptions).find(o=>o.id===row.scheduleOptionId);
+  let subject=option && habitScheduleOptionSameDayMode(option)==='separate' ? habitBoundToScheduleOption(h,option) : h;
+  if(h.breakable)subject={...subject,breakable:false,durationMinutes:minViableSessionMinutes(h,base)};
+  if(subject.durationMinutes<=0)return null;
+  const links=plannerOrderConstraintsForDay(base);
+  const linked=new Set(links.flatMap(link=>
+    link.beforeHid===h.hid || link.afterHid===h.hid ? [link.beforeHid,link.afterHid] : []));
+  const priority=effectivePriority(h);
+  const protectedRows=(day.timeline || []).filter(r=>{
+    if(!['fill','scheduled'].includes(r.kind))return false;
+    const other=r.h || data[r.i];
+    if(!other || r.i===row.i || (h.hid && other.hid===h.hid))return false;
+    return r.kind==='scheduled' || r.hard || linked.has(other.hid) || effectivePriority(other)<=priority;
+  }).map(r=>({...r,h:r.h || data[r.i]}));
+  const scheduled=protectedRows.filter(r=>r.kind==='scheduled' || r.hard).map(r=>({...r,eventTime:r.start}));
+  const slots=buildOpenAgendaSlots(dateKey(base),scheduled,settings,{clipAfter:base});
+  const state=createDayPlacementState({...day,scheduled,slots},settings,{startClock:base});
+  state.remaining=1000000;
+  state.rows=protectedRows;
+  state.fills=protectedRows.filter(r=>r.kind==='fill' && !r.hard).map(r=>({
+    fill:{h:r.h,i:r.i},fit:{placeStart:r.start,placeEnd:r.end,locId:r.locationId,durMin:(r.end-r.start)/60000}
+  }));
+  const fill={h:subject,i:row.i,priority,placeKey:`drop:${h.hid || row.i}`};
+  const direct=links.some(link=>link.adjacency==='direct' &&
+    ((link.beforeHid===h.hid && protectedRows.some(r=>r.h.hid===link.afterHid))
+      || (link.afterHid===h.hid && protectedRows.some(r=>r.h.hid===link.beforeHid))));
+  // A direct pair cannot shift one partner independently. Its displayed end
+  // bounds this probe; the real placer still accounts for the connecting trip.
+  if(direct)state.slots=state.slots.map(slot=>({...slot,end:Math.min(slot.end,row.end)})).filter(slot=>slot.end>slot.start);
+  const fitsAt=clock=>{
+    state.startClock=clock;
+    return tryPlaceOnDay(state,{...fill},{allowNetwork:false,settings});
+  };
+  // Day rebuilds round the moving clock up to five minutes. Search those
+  // exact clock boundaries (at most nine probes), rather than thousands of
+  // milliseconds that the real planner can never choose as its start clock.
+  let low=0,high=288;
+  if(!fitsAt(base) || fitsAt(base+86400000))return null;
+  while(high-low>1){
+    const mid=Math.floor((low+high)/2);
+    if(fitsAt(base+mid*5*60000))low=mid;else high=mid;
+  }
+  return base+low*5*60000+1;
+}
+function annotateAgendaDropTimes(days,data,settings){
+  for(const day of days || []){
+    const cutoffs=new Map();
+    for(const row of day.timeline || []){
+      if(!['fill','scheduled'].includes(row.kind))continue;
+      const h=data[row.i] || row.h;if(!h)continue;
+      row.hid=h.hid;
+      const key=`${h.hid || row.i}:${row.scheduleOptionId || 'main'}`;
+      if(!cutoffs.has(key))cutoffs.set(key,agendaOccurrenceDropAt(h,row,day,settings,data));
+      row.dropAt=cutoffs.get(key);
+      row.riskAt=row.dropAt;
+      row.riskReason='committed-fit';
+    }
+  }
 }
 
 // PURE: travel edge between two location ids (or zero when either is null/same).

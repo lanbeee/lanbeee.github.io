@@ -94,7 +94,10 @@ function base(props) {
 
   console.log('\n[Optimizer] today-only rebuild preserves later memo commitments');
   const memoReuse = await page.evaluate(async()=>{
-    const now = Date.now();
+    const RealDate=Date,now=dayStart(Date.now())+9*3600000;
+    class MemoDate extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
+    globalThis.Date=MemoDate;
+    try{
     const today = dayStart(now);
     const tomorrow = today + 86400000;
     const at = (base,minute)=>base + minute * 60000;
@@ -148,6 +151,7 @@ function base(props) {
       farAgendaMeta:oneShotWeek.days[1].agendaItems,
       chunks:fillsFor(chunkWeek)
     };
+    }finally{globalThis.Date=RealDate;}
   });
   check('today-only rebuild does not duplicate a one-shot already memoized tomorrow',
     memoReuse.oneShot.length === 1 && memoReuse.oneShot[0].offset === 1,

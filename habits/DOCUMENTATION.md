@@ -982,6 +982,22 @@ second row.
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
 
+### Before-missed phone reminders (installed app only)
+
+In an item's Actions tab, **before missed** independently chooses Off, Notification, or Ringing alarm, with a 5, 10, 15, 30, or 60 minute lead (default 10). New choices are off. Busy times have no missed-list option; their start/end and travel choices remain independent.
+
+Both planners publish an initial fit estimate around fixed events, priorities, linked partners, blocked time, travel and allowed location/time windows. For a 10-minute habit allowed until 3:45 PM, with a protected event at 3–4 PM, the last start is 2:50 PM: a five-minute warning fires at 2:45 PM. Fixed events/timed plans use their missed end cutoff. Breakables warn once for the remaining work, without crediting an arbitrary chunk from the warning.
+
+The phone also forecasts future agenda loss using the same shared planner. Ordinary clock-only refreshes retain feasible selected work, respecting priorities, instead of reshuffling every remaining item when one expires. Cheap placement replays examine five-minute boundaries together for all opted-in items; coupled links/schedule options and unsupported cases retain the normal planner and a small number of future probes. Forecasts assume unfinished work and unchanged inputs. They warn from the earlier side of an uncertain loss interval, with extra caution for travel. **At risk** is an estimate, not a promise of an exact drop clock. Some linked/alternative-window cases can warn substantially early.
+
+The chosen lead is subtracted from `riskAt`. Passage of time alone cannot slide that warning indefinitely into the future; a later estimate requires validated safer replay evidence for the same plan, or changed inputs. Warning risk is separate from actionable expiry: an early forecast does not remove an otherwise feasible item or expire a useful warning/snooze early. Completion, deletion, disabling and day dismissal keep their authority. A sudden replan drop while the item's general window remains open also alerts immediately, once per item/day. Unknown future edits and Android delivery delays cannot be predicted.
+
+Forecasting runs only for enabled before-missed phone choices, after a usable agenda exists, in the existing planner worker. It reuses evidence for unchanged input revisions, shares each probe across all enabled occurrences, and has a 500 ms optional budget, at most six full future builds, and a 900 ms parent cancellation deadline. Cheap replays have a 64-row/12 ms guard; unsupported or large agendas use the bounded fallback. Hide/edit/foreground planning cancels optional work. No second planner or WASM instance is added. Cold GLPK remains capped at four seconds. Background refresh reuses persisted evidence; OS delivery does not wait for the next periodic rebuild. Native controls stay hidden in the PWA.
+
+**Validation:** the earlier 224-placement cold-rebuild audit exposed that a static fit estimate was insufficient; it remains an opt-in diagnostic of arbitrary fresh rebuilds. The new `planner-forecast-test.js` and Pixel `PlannerForecastDeviceTest` instead check the shared production clock-only policy with a seven-day agenda, priorities, split work, venue hours/travel, alternative/separate windows and linked pairs. They measure chosen-lead timing before the first loss, plus early-warning error and optional computation cost. These synthetic checks do not establish all-day battery drain or universal prediction accuracy.
+
+Agenda notification bodies use short clocks (Start, End, Leave, Arrive, Up next, Start by, At risk). Expanding a notification exposes the full item name. Actions are **Snooze 5m**, **Dismiss today**, and **Mark done / Log N min**, with durable Snooze/Stop/completion behavior and continuous ringing retained.
+
 ### 6.3 Open Time Pills (🕒 "N open")
 - Appears on day headers when there are free time stretches ≥ 10 minutes
 - Tap to open the **Free Time Sheet** (see §X.2). Calendar days also reach that sheet through **See open hours**.

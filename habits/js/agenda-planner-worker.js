@@ -52,7 +52,8 @@ importScripts(
   './today-view-week.js',
   './today-view-today.js',
   './agenda-optimizer.js',
-  './agenda-optimizer-ilp.js'
+  './agenda-optimizer-ilp.js',
+  './agenda-forecast.js'
 );
 
 let plannerQueue = Promise.resolve();
@@ -137,6 +138,12 @@ async function runPlannerMessage(message){
       memoDays:Array.isArray(message.memoDays) ? message.memoDays : []
     };
     const data = load();
+    if(message.forecast){
+      const forecast=await forecastAgendaRisks(message.week,data,sortSettings,message.mode,{
+        owners:message.owners,onProgress:forecastPartial=>self.postMessage({id,forecastPartial})});
+      self.postMessage({id,forecast});
+      return;
+    }
     const week = message.mode === 'exact' && typeof buildWeekAgendaAsync === 'function'
       ? await buildWeekAgendaAsync(data,sortSettings,count,buildOpts)
       : buildWeekAgenda(data,sortSettings,count,{...buildOpts,fastGraph:true});

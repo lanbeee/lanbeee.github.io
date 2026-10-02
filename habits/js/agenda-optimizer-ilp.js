@@ -200,6 +200,7 @@ function memoDaysFromWeek(week){
   };
   return week.days.map(day=>({
     dayBase:Number(day && day.dayBase) || 0,
+    plannedAt:day && day.plannedAt,
     usedMinutes:day && day.usedMinutes,
     remainingMinutes:day && day.remainingMinutes,
     travelSeconds:(day && day.travelSeconds) || 0,
@@ -1859,7 +1860,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // limit. The while-open tick may raise it when the next row is imminent.
   // Background refinement may raise it further after a usable agenda is mounted.
   const ordinaryLimitOverride = Math.max(0,Number(solveOptions.nativeLimitSecondsOverride) || 0);
-  const nativeLimitSeconds = solveOptions.refine
+  const nativeLimitSeconds = solveOptions.forecast ? 1 : solveOptions.refine
     ? Math.max(4,Math.min(
         50,
         Number(solveOptions.refineNativeCapSeconds) > 0
@@ -2689,6 +2690,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
 let _plannerWeekDayMemo = {dirtyKey:'',todayBase:0,days:null};
 
 async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
+  if(typeof replayAgendaClockWeek==='function'){
+    const replay=replayAgendaClockWeek(data,settings,numDays,opts);
+    if(replay)return {...replay,optimized:Boolean(settings?.agendaOptimizer && !agendaPlannerForcedFast())};
+  }
   // Always able to fall back to the sync scarcity heuristic.
   if(!settings || !settings.agendaOptimizer
     || (typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
@@ -2900,6 +2905,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
+  if(!opts.skipDropAnnotation)annotateAgendaDropTimes(days,data,settings);
   const plannerSolveStatus = reuseFarDays
     ? combinedPlannerSolveStatus(
         solveSummary.plannerSolveStatus || 'feasible',

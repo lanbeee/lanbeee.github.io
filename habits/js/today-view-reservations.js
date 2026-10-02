@@ -287,7 +287,9 @@ function tryPlaceOnDay(state,fill,opts = {}){
     }
   }
   if(!fits.length)return null;
-  const bestFit = pickBestScoredFit(fits,fill,state,opts);
+  const bestFit = opts.replayEarliest
+    ? fits.slice().sort((a,b)=>a.placeStart-b.placeStart)[0]
+    : pickBestScoredFit(fits,fill,state,opts);
   // Steering for movables (fast / heuristic-fallback / rescue paths). Fixed
   // movables place BEFORE daily breakables commit (mirroring GLPK's fixed-first
   // order), so a movable would otherwise grab the ASAP slot inside a breakable's
