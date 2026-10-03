@@ -591,6 +591,18 @@ function weatherContextForLocation(locationId,settings){
 // stamped onto bound planner variants by habitBoundToScheduleOption; callers
 // inspecting a published/original row may instead pass scheduleOptionId.
 function effectiveWeatherGuidance(h,locationId,settings,opts={}){
+  const cache = typeof _plannerGuidanceCache === 'undefined' ? null : _plannerGuidanceCache;
+  if(!cache || !h || !settings)return effectiveWeatherGuidanceUncached(h,locationId,settings,opts);
+  let contexts = cache.get(h);
+  if(!contexts){contexts=new WeakMap();cache.set(h,contexts);}
+  let variants = contexts.get(settings);
+  if(!variants){variants=new Map();contexts.set(settings,variants);}
+  const key = `${locationId || ''}:${opts.scheduleOptionId || ''}`;
+  if(!variants.has(key))variants.set(key,effectiveWeatherGuidanceUncached(h,locationId,settings,opts));
+  return {...variants.get(key)};
+}
+
+function effectiveWeatherGuidanceUncached(h,locationId,settings,opts={}){
   if(!h)return {profile:null,profileId:null,source:null,disabled:false,forecastLocationId:null,inherited:false};
   const cfg=settings || (typeof loadSortSettings==='function'
     ? loadSortSettings()
@@ -715,20 +727,30 @@ function weatherLockedPlacement(fill,state,settings){
     && (!state?.dayBase || (lock.start>=state.dayBase && lock.start<state.dayBase+86400000))) || null;
 }
 
+const _weatherDayFormatters = new Map();
 function weatherDayKey(ts,timezone){
   try{
-    const parts = new Intl.DateTimeFormat('en-CA',{timeZone:timezone || undefined,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(ts));
+    const key = timezone || null;
+    let formatter = key ? _weatherDayFormatters.get(key) : null;
+    if(!formatter){
+      formatter = new Intl.DateTimeFormat('en-CA',{timeZone:timezone || undefined,year:'numeric',month:'2-digit',day:'2-digit'});
+      if(key){
+        if(_weatherDayFormatters.size>=16)_weatherDayFormatters.delete(_weatherDayFormatters.keys().next().value);
+        _weatherDayFormatters.set(key,formatter);
+      }
+    }
+    const parts = formatter.formatToParts(new Date(ts));
     const read=type=>parts.find(part=>part.type===type)?.value || '';
     return `${read('year')}-${read('month')}-${read('day')}`;
   }catch{return new Date(ts).toISOString().slice(0,10);}
 }
 
-function weatherPercentile(value,values){
-  const list = values.filter(Number.isFinite).sort((a,b)=>a-b);
+function weatherPercentile(value,values,sortedValues = null){
+  const list = sortedValues || values.filter(Number.isFinite).sort((a,b)=>a-b);
   if(!list.length || !Number.isFinite(value))return 0.5;
-  let below = 0;
-  for(const item of list)if(item < value)below += 1;
-  return list.length <= 1 ? 0.5 : below / (list.length - 1);
+  let lo = 0,hi = list.length;
+  while(lo<hi){const mid = (lo+hi)>>>1;if(list[mid]<value)lo=mid+1;else hi=mid;}
+  return list.length <= 1 ? 0.5 : lo / (list.length - 1);
 }
 
 function weatherMetricStats(context,metric){
@@ -753,7 +775,11 @@ function weatherRuleResult(rule,intervalSamples,context,start){
   if(value == null)return {known:false,penalty:0,pass:true,value:null};
   const stats=(rule.relative !== 'none' || rule.boundMode==='percentile')
     ? weatherMetricStats(context,rule.metric) : null;
-  const intervalRank=stats ? weatherPercentile(value,stats.values) : null;
+  // Forecast stats already live on the immutable forecast context. Sort once,
+  // then rank each speculative fit without allocating another hourly list.
+  if(stats && !stats.sortedValues)stats.sortedValues=stats.values.slice().sort((a,b)=>a-b);
+  if(stats && !stats.sortedDayValues)stats.sortedDayValues=stats.dayValues.slice().sort((a,b)=>a-b);
+  const intervalRank=stats ? weatherPercentile(value,stats.values,stats.sortedValues) : null;
   const boundValue=rule.boundMode==='percentile' ? intervalRank*100 : value;
   let pass = true;
   let penalty = 0;
@@ -768,7 +794,7 @@ function weatherRuleResult(rule,intervalSamples,context,start){
   if(rule.relative !== 'none'){
     const day = weatherDayKey(start,context.timezone);
     const dayValue = weatherAggregate(stats.byDay.get(day) || [],rule.metric);
-    const dayRank = weatherPercentile(dayValue,stats.dayValues);
+    const dayRank = weatherPercentile(dayValue,stats.dayValues,stats.sortedDayValues);
     const intervalBadness = rule.relative === 'low' ? intervalRank : 1-intervalRank;
     const dayBadness = rule.relative === 'low' ? dayRank : 1-dayRank;
     penalty += 100 * (intervalBadness * 0.5 + dayBadness * 0.5);
@@ -795,9 +821,30 @@ function weatherCommitmentOverride(fill,state){
 
 function weatherFitAssessment(fill,fit,state,settings){
   const guidance=weatherGuidanceForFit(fill,fit,settings);
+  const profile=guidance.profile;
+  if(!profile || !Array.isArray(profile.rules) || !profile.rules.some(weatherRuleActive))return null;
+  const context=weatherContextForGuidance(guidance,settings);
+  const cache=typeof _plannerWeatherCache === 'undefined' ? null : _plannerWeatherCache;
+  if(!cache || !context)return weatherFitAssessmentUncached(fill,fit,state,settings,guidance,context);
+  let profiles=cache.get(context);
+  if(!profiles){profiles=new WeakMap();cache.set(context,profiles);}
+  let intervals=profiles.get(profile);
+  if(!intervals){intervals=new Map();profiles.set(profile,intervals);}
+  // Commitment overrides depend on the current fill/day, not on the forecast.
+  // Include that decision rather than allowing a cached flexible rejection to
+  // displace an active, planned, critical or direct-linked occurrence.
+  const key=`${fit.placeStart}:${fit.placeEnd}:${weatherCommitmentOverride(fill,state) ? 1 : 0}`;
+  let result=intervals.get(key);
+  if(!intervals.has(key)){
+    result=weatherFitAssessmentUncached(fill,fit,state,settings,guidance,context);
+    if(_plannerWeatherCacheEntries<1024){intervals.set(key,result);_plannerWeatherCacheEntries++;}
+  }
+  return result && {...result,guidance,results:result.results && result.results.map(row=>({...row}))};
+}
+
+function weatherFitAssessmentUncached(fill,fit,state,settings,guidance,context){
   const profile = guidance.profile;
   const activeRules = (profile && Array.isArray(profile.rules) ? profile.rules : []).filter(weatherRuleActive);
-  const context = weatherContextForGuidance(guidance,settings);
   if(!activeRules.length)return null;
   if(!context)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable · planned normally'};
   const samples = weatherSamplesForInterval(context,fit.placeStart,fit.placeEnd);

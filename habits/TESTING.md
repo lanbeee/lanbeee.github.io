@@ -96,3 +96,36 @@ blocked-time settings, frozen-clock pair runner, GLPK availability check, and
 placement summaries. Every new `tests/*.js` file must also be entered in
 `tests/test-suites.tsv`; an unclassified top-level test makes the runner fail
 fast instead of silently joining every suite.
+
+## Fast replacement quality and device audit
+
+`node tests/planner-quality-gap-test.js` compares both canonical engines on 16
+synthetic scenarios, including 20/35/50-item mixed weeks, weather, travel, dynamic
+windows, cadence, plans and active work. It is opt-in (`diagnostics`) and currently
+fails on known split-task overfill. `--require-parity` additionally exposes valid
+GLPK quality advantages; improved Fast schedules are allowed. Reports include
+legality, work by priority, travel/weather, solve provenance and first/warm timing.
+
+Use `QUALITY_CASE=off-grid,cadence node tests/planner-quality-gap-test.js --device
+--no-repeat` with the existing debug Android app for isolated physical-device
+checks. The adapter does not alter personal storage or the system clock. See
+[FAST_PLANNER_READINESS.md](FAST_PLANNER_READINESS.md) for commands, source checks,
+feature coverage and the photo-frame performance baseline. Current implementation
+results are in [FAST_PLANNER_PROGRESS.md](FAST_PLANNER_PROGRESS.md).
+
+`--require-target` adds a gate for **aggregate** first/repeat rebuild speed of
+at least 5× GLPK, and at least 95% of GLPK's placed minutes at every cumulative
+priority tier in each case. All selected results must be independently legal,
+and every GLPK reference must actually be optimized (`optimal` or `feasible`).
+Fallbacks cannot establish the target. Worker boot is separate; the first GLPK
+request includes lazy WASM loading after Fast has warmed the worker. These are
+corpus-specific placement metrics, not a proof of optimality or a battery test.
+The regular `fast-planner-specialization-test.js` covers task allocation,
+transactional replay, cache isolation/revisions, route lookup counts, bounded
+selection recovery and deterministic legal 35/50-item weeks.
+
+`fast-linked-recovery-test.js` covers atomic due-day pair movement, subsequent
+cadence preservation, frozen neighbors, closed-window/no-space rollback and
+explicit future plans. Run `schedule-links-test.js` on both the regular page
+and `?planner=fast`: its travel-adjusted required chain and due optional
+successor cases must pass in Fast as well as GLPK.

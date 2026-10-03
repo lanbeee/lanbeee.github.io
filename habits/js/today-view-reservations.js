@@ -699,7 +699,7 @@ function dailyBreakableReservations(state,candidates){
   if(!state || !Array.isArray(candidates))return [];
   const out = [];
   for(const c of candidates){
-    if(!c || !c.h || !c.h.breakable)continue;
+    if(!c || !c.h || !c.h.breakable || c.h.type === 'task')continue;
     if(!c.eligible || !c.eligible.has(state.dayBase))continue;
     const target = Number(c.h && c.h.target);
     if(!Number.isFinite(target) || target > 1)continue;   // only daily rhythms
@@ -1915,6 +1915,16 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
 }
 
 function agendaBlockedIntervals(todayKey,settings,start,end){
+  if(!_plannerBlockedCache || !settings)return agendaBlockedIntervalsUncached(todayKey,settings,start,end);
+  let cache = _plannerBlockedCache.get(settings);
+  if(!cache){cache = new Map();_plannerBlockedCache.set(settings,cache);}
+  const key = `${todayKey}:${start}:${end}`;
+  if(!cache.has(key))cache.set(key,agendaBlockedIntervalsUncached(todayKey,settings,start,end));
+  // Callers clip intervals for their own gaps; never hand them the cache.
+  return cache.get(key).map(row=>({...row}));
+}
+
+function agendaBlockedIntervalsUncached(todayKey,settings,start,end){
   const day = new Date(`${todayKey}T12:00:00`).getDay();
   const dayBase = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
   const overrides = typeof normalizeBlockedTimeOverrides === 'function'

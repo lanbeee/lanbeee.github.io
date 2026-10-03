@@ -1572,14 +1572,16 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
   // A feasible/soft solve may park a strict due rhythm later even though it
   // fits an untouched gap today. Pull it forward only when no committed row
   // needs to move; impossible/busy days remain safely deferrable.
-  pullStrictDueMovablesForward(candidates,dayStates,settings);
+  pullStrictDueMovablesForward(candidates,dayStates,settings,graphBudget);
   compactFastTravelRoutes(dayStates,candidates,settings);
+  repairFastLinkedGroups(dayStates,candidates,settings,graphBudget);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
   // Rebuild/link cleanup can uncover gaps after the normal rescue already ran.
   // Give daily breakables and fixed obligations one final exact-gap chance.
   totalAssigned += rescueDailyBreakableGapFits(candidates,dayStates,settings);
   totalAssigned += rescueDailyGapFits(candidates,dayStates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  pullStrictDueMovablesForward(candidates,dayStates,settings,graphBudget);
   return totalAssigned;
 }
 
@@ -1836,7 +1838,7 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
 // on-time day even though that earlier finished agenda still has a direct fit.
 // This targets dominated feasible incumbents, not normal capacity deferral: it
 // never removes/repositions an earlier row or breaks a required later-day pair.
-function pullStrictDueMovablesForward(candidates,dayStates,settings){
+function pullStrictDueMovablesForward(candidates,dayStates,settings,graphBudget){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
   let moved = 0;
   const hasOccurrence = (state,idx)=>Boolean(state && (state.fills || [])
@@ -1864,7 +1866,11 @@ function pullStrictDueMovablesForward(candidates,dayStates,settings){
     const laterPair = typeof plannerOrderConstraintsForDay === 'function'
       && plannerOrderConstraintsForDay(placedState.dayBase).some(edge=>edge && edge.persistent
         && edge.requiresPair && (edge.beforeHid === h.hid || edge.afterHid === h.hid));
-    if(laterPair)continue;
+    if(laterPair){
+      if(typeof pullFastLinkedOccurrenceForward === 'function'
+        && pullFastLinkedOccurrenceForward(c,dueState,placedState,candidates,dayStates,settings,graphBudget))moved += 1;
+      continue;
+    }
 
     const earlier = clonePlacementState(dueState);
     const fill = {h,i:c.i,priority:c.priority,scarcity:c.scarcity};
@@ -2008,6 +2014,7 @@ function weekTravelSecondsFromStates(dayStates){
 // Used by week hours repair when peeling a movable to another day.
 function rebuildDayFromFills(state,fillsToKeep,candidates,opts = {}){
   const clean = clonePlacementState(state);
+  clean.day = {...state.day,agendaItems:[]};
   clean.rows = state.rows.filter(r=>r.kind === 'scheduled');
   clean.fills = [];
   clean.placed = new Set();
@@ -2023,20 +2030,34 @@ function rebuildDayFromFills(state,fillsToKeep,candidates,opts = {}){
       ? scarceWindowsToSpare(candidates || [],clean.dayBase,clean.seedLocId,clean.dayBase)
       : null
   };
+  // A replay may redistribute a task's chunks, but it must not reset the
+  // lifetime pool on each day. Rhythm budgets are deliberately per-day.
+  const taskMinutes = new Map();
+  for(const fill of fillsToKeep){
+    if(!fill || !fill.h || !fill.h.breakable || fill.h.type !== 'task')continue;
+    const original = placedBreakableMinutes(state,fill.i);
+    const requested = fill.chunkMinutes != null ? fillDurationMinutes(fill) : original;
+    taskMinutes.set(fill.i,(taskMinutes.get(fill.i) || 0) + requested);
+  }
+  const replayedTasks = new Set();
   for(const fill of fillsToKeep){
     if(!fill || !fill.h)continue;
     if(fill.h.breakable){
-      const before = clean.fills.length;
-      if(!placeBreakableSessions(clean,fill,scoreOpts))return null;
-      // placeBreakableSessions may split; ok
-      void before;
+      let remainingMinutes;
+      if(fill.h.type === 'task'){
+        if(replayedTasks.has(fill.i))continue;
+        replayedTasks.add(fill.i);
+        remainingMinutes = Math.min(taskMinutes.get(fill.i) || 0,
+          placedBreakableMinutes(state,fill.i));
+        if(remainingMinutes <= 0)continue;
+      }
+      if(!placeBreakableSessions(clean,fill,{...scoreOpts,remainingMinutes}))return null;
       continue;
     }
     const fit = tryPlaceOnDay(clean,fill,scoreOpts);
     if(!fit)return null;
     commitPlacement(clean,fill,fit);
   }
-  clean.day = state.day;
   syncDayAgendaItemsFromFills(clean);
   return clean;
 }
@@ -2122,7 +2143,14 @@ function routeCandidateOrders(state){
     }
     return anchor;
   };
+  // Each transition is immutable during this search. Hundreds of beam
+  // branches can share it; resolving a venue/travel edge for every branch is
+  // particularly expensive on old WebViews.
+  const transitions = new Map();
   const step = (anchor,fill)=>{
+    let byFill = transitions.get(anchor || '');
+    if(!byFill){byFill = new Map();transitions.set(anchor || '',byFill);}
+    if(byFill.has(fill))return byFill.get(fill);
     const locId = locIdFor(fill,anchor);
     let drive = 0;
     if(anchor && locId && anchor !== locId && typeof travelEdgeBetweenIds === 'function'){
@@ -2132,7 +2160,9 @@ function routeCandidateOrders(state){
     }
     const cost = typeof travelLegCostSeconds === 'function'
       ? travelLegCostSeconds(drive,anchor,locId) : drive;
-    return {anchor:locId || anchor,cost};
+    const result = {anchor:locId || anchor,cost};
+    byFill.set(fill,result);
+    return result;
   };
   const ranked = [];
   const remember = (order,cost)=>{
@@ -2158,7 +2188,7 @@ function routeCandidateOrders(state){
     };
     walk(state.seedLocId || null,0);
   }else{
-    let frontier = [{idxs:[],anchor:state.seedLocId || null,path:0}];
+    let frontier = [{idxs:[],key:'',anchor:state.seedLocId || null,path:0}];
     const width = 16;
     for(let depth = 0;depth < items.length;depth += 1){
       const next = [];
@@ -2180,16 +2210,17 @@ function routeCandidateOrders(state){
           }
           next.push({
             idxs:node.idxs.concat(i),
+            key:node.key ? node.key + ',' + i : String(i),
             anchor:moved.anchor,
             path,
             bound:path + look
           });
         }
       }
-      next.sort((a,b)=>a.bound - b.bound || a.idxs.join(',').localeCompare(b.idxs.join(',')));
+      next.sort((a,b)=>a.bound - b.bound || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
       frontier = next.slice(0,width);
     }
-    frontier.sort((a,b)=>a.path - b.path || a.idxs.join(',').localeCompare(b.idxs.join(',')));
+    frontier.sort((a,b)=>a.path - b.path || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     for(const node of frontier)remember(node.idxs.map(i=>items[i]),node.path);
   }
   ranked.sort((a,b)=>a.cost - b.cost || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -2243,6 +2274,49 @@ function routeCompactFillOrder(state){
   return reorderAgendaItemsByOrderConstraints(out,state.dayBase);
 }
 
+// Every feasible route must connect these mandatory venues and hard anchors.
+// A minimum spanning tree using the cheaper directed leg is a lower bound on
+// any visiting path, even with asymmetric travel and extra returns. Optional
+// venues are omitted rather than mistaking a current choice for a promise.
+function mandatoryRouteCostLowerBound(state){
+  const ids = new Set();
+  if(state.seedLocId)ids.add(state.seedLocId);
+  for(const row of state.rows || [])if(row.kind === 'scheduled' && row.end>state.startClock && row.locationId)ids.add(row.locationId);
+  for(const block of agendaBlockedIntervals(dateKey(state.dayBase),state.settings,state.dayBase,state.dayBase+86400000)){
+    if(block.end>state.startClock && block.locationId)ids.add(block.locationId);
+  }
+  for(const entry of state.fills || []){
+    const fill=entry.fill,h=fill.h;
+    if(fill.locationId){ids.add(fill.locationId);continue;}
+    const venues=habitLocationIdsForDay(h,state.dayBase,state.registry).filter(id=>{
+      const loc=state.registryById ? state.registryById.get(id) : state.registry.find(loc=>loc.id===id);
+      return loc && resolveLocationWindow(loc,state.weekday);
+    });
+    const anywhere=hasHabitScheduleOptions(h)
+      ? habitHasAnywhereForDay(h,state.dayBase,state.registry) : h.anywhereAllowed;
+    if(!anywhere && venues.length===1)ids.add(venues[0]);
+  }
+  const places=[...ids];
+  if(places.length<2)return 0;
+  const reached=new Set([places[0]]);
+  let cost=0;
+  const leg=(a,b)=>{
+    const seconds=Math.max(0,Number(travelEdgeBetweenIds(a,b,state.registry,state.mode,{allowNetwork:false}).seconds) || 0);
+    return typeof travelLegCostSeconds==='function' ? travelLegCostSeconds(seconds,a,b) : seconds;
+  };
+  while(reached.size<places.length){
+    let best=Infinity,next=null;
+    for(const a of reached)for(const b of places){
+      if(reached.has(b))continue;
+      const weight=Math.min(leg(a,b),leg(b,a));
+      if(weight<best){best=weight;next=b;}
+    }
+    if(next==null || !Number.isFinite(best))return 0;
+    cost+=best;reached.add(next);
+  }
+  return cost;
+}
+
 // MUTATE: after Fast has chosen which work belongs on a day, search replay
 // orders by full route cost and keep a strictly cheaper chain. The first
 // insertion order and a single nearest-neighbor walk are only seeds. A replay
@@ -2255,6 +2329,7 @@ function compactFastTravelRoutes(dayStates,candidates,settings){
     const beforeSignature = dayFillMinuteSignature(state);
     const beforeCost = dayRouteCostSeconds(state);
     if(beforeCost <= 0)continue;
+    if(beforeCost <= mandatoryRouteCostLowerBound(state)+1e-6)continue;
     const weatherSum = day=>typeof weatherPenaltyForFit !== 'function' ? 0
       : (day.fills || []).reduce((sum,entry)=>sum
         + weatherPenaltyForFit(entry.fill,entry.fit,day,settings || day.settings),0);
@@ -2757,10 +2832,12 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
         const collapsed = [];
         const seenBreak = new Set();
         for(const f of keepFills){
-          if(f.h && f.h.breakable){
+          if(f.h && f.h.breakable && f.h.type !== 'task'){
             if(seenBreak.has(f.i))continue;
             seenBreak.add(f.i);
             collapsed.push({h:f.h,i:f.i,priority:f.priority,scarcity:f.scarcity});
+          }else if(f.h && f.h.breakable){
+            collapsed.push({...f});
           }else{
             // Re-run location choice from the habit constraints. Adding an
             // `undefined` locationId property here used to mean "force none"
@@ -2793,7 +2870,15 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
         }
 
         const targetClean = clonePlacementState(other);
-        const movableFill = {h:vc.h,i:vc.i,priority:vc.priority,scarcity:vc.scarcity};
+        // Transfer exactly this fragment, never a fresh lifetime-sized task.
+        const movableFill = {...victim.fill,h:vc.h,i:vc.i,priority:vc.priority,scarcity:vc.scarcity};
+        if(vc.h.breakable){
+          let chunkIndex = 0;
+          while(targetClean.placed.has(`${vc.i}:${chunkIndex}`))chunkIndex += 1;
+          movableFill.chunkMinutes = victim.fit.durMin;
+          movableFill.chunkIndex = chunkIndex;
+          movableFill.placeKey = `${vc.i}:${chunkIndex}`;
+        }
         const movedFit = tryPlaceOnDay(targetClean,movableFill,{
           settings,allowNetwork:true,
           weights:typeof resolveAgendaScoreWeights === 'function'
@@ -2801,7 +2886,7 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
         });
         if(!movedFit)continue;
         commitPlacement(targetClean,movableFill,movedFit);
-        targetClean.day = other.day;
+        targetClean.day = {...other.day,agendaItems:[]};
         syncDayAgendaItemsFromFills(targetClean);
 
         // Score hypothetical week with source/target replaced.
@@ -2920,7 +3005,7 @@ function repairBreakableContiguityNeighborhood(candidates,dayStates,settings,opt
         if(!candidateMatchesPinnedDay(c,targetBase))continue;
         if(targetBase.placed && targetBase.placed.has(c.i))continue;
         const trial = clonePlacementState(targetBase);
-        trial.day = targetBase.day;
+        trial.day = {...targetBase.day,agendaItems:[]};
         const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
         const fit = tryPlaceOnDay(trial,fill,scoreOpts(trial));
         if(!fit)continue;
@@ -2953,7 +3038,7 @@ function repairBreakableContiguityNeighborhood(candidates,dayStates,settings,opt
           return {entry,c};
         }).filter(({entry,c})=>{
           if(!entry || !entry.fit || !c || !c.h || c.i === short.i)return false;
-          if(!isMovableWeekCandidate(c,state.dayBase) || c.pinned)return false;
+          if(!isMovableWeekCandidate(c,state.dayBase) || c.pinned || c.h.breakable)return false;
           if(c.h.hid && linked.has(c.h.hid))return false;
           if(typeof mustPlaceCriticalOccurrence === 'function'
             && mustPlaceCriticalOccurrence(c))return false;
@@ -3134,6 +3219,25 @@ function collectLocationHints(dayStates){
     }
   }
   return map;
+}
+
+// Hints change day scores, not the single-day fitter's venue/time ranking.
+// Rebuilding identical days is unnecessary when a hint can only reward the
+// day the candidate already selected. Daily occurrences cannot choose a day.
+function needsFastColocationReplay(candidates,states,hints){
+  for(const c of candidates){
+    if(!c || !c.h || c.pinned || !c.eligible || c.eligible.size<2)continue;
+    if(c.h.type !== 'task' && Number(c.h.target)<=1)continue;
+    const placed=states.filter(state=>state.fills.some(entry=>entry.fill.i===c.i));
+    for(const state of states){
+      if(!c.eligible.has(state.dayBase) || !candidateMatchesPinnedDay(c,state))continue;
+      if(placed.includes(state) && !(c.h.breakable && placed.length>1))continue;
+      for(const id of candidateLocationIdsForState(c,state)){
+        if(colocateHintBonus(state,id,c.i,hints,state.registry,state.mode)>0)return true;
+      }
+    }
+  }
+  return false;
 }
 
 // PURE: build a 7-day agenda via placement-backed assignment. Every timed row

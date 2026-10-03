@@ -2148,8 +2148,41 @@ baseScore =
 Fast is not the production default. It is the preview, optimizer-off, and
 fallback path, and the quality-parity track toward replacing GLPK once it
 matches constraint and preference results. Fast mode (`?planner=fast`, or
-optimizer off) uses two graph searches in `js/agenda-fast-graph.js`. Neither
-requires GLPK.
+optimizer off) uses bounded graph searches in `js/agenda-fast-graph.js` without
+loading GLPK. Insertion, coupled-link recovery and daily-selection repair share
+one 768-probe budget. When same-day links exist, at most 96 of those probes are
+reserved for atomic recovery: up to four connected linked occurrences, with at
+most two flexible unlinked neighbors reopened only if the chain cannot fit.
+The beam retains two alternatives. An overdue sparse occurrence can move to its
+first feasible on-time day with its required partner, instead of skipping
+recovery solely because it is linked. Existing later obligations, subsequent
+cadence, active/planned/weather-locked rows and separate/split occurrences are
+protected. Failed attempts roll back; completed groups pass the shared window,
+weather, travel, capacity and persistent-link checks before publication.
+When several optional daily occurrences compete, up to 384 probes are reserved
+for keep-all insertion and the remaining budget can change the selected subset.
+Selection repair reopens at most eight optional daily items plus four missing
+ones, with an eight-state beam and at most 384 probes per day. It preserves
+placed critical/planned/active occurrences, fixed clocks, linked groups and
+split sessions; a replacement must increase work without reducing any cumulative
+priority tier or worsening travel/weather. Sparse/fractional cadence and task day
+choices remain with the existing week orchestrator.
+
+Resolved windows, blocked intervals, venue hours, valid place IDs, schedule
+options and weather guidance are memoized only for one solve snapshot. Interval
+weather assessments have a 1,024-entry solve-wide cap and distinguish commitment
+overrides. Both engines use those caches; edits and future-clock solves start
+fresh, and speculative callers receive independent records. Route search reuses
+transition costs and precomputed tie-break keys. A mandatory-venue spanning-tree
+lower bound skips route replay when the current route is already as cheap as any
+feasible alternative could be. Co-location replay is also skipped when hints
+cannot attract an item to a new day. Exact minute-level boundaries, durations,
+weather checks and travel validation remain; no blanket 15/30-minute rounding
+has been introduced. Existing clock replay remains the first reuse path.
+
+Split tasks have a lifetime minute pool, never a daily reservation. Day replay
+retains that day's allocated task minutes instead of replenishing the full task
+on each date; hypothetical day rebuilds do not modify the incumbent's item list.
 
 `tryPlaceOnDay` enumerates every unforced allowed venue (and the anywhere
 option, when the habit allows it) and keeps the shared score pick. That is the

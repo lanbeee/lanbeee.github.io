@@ -6,8 +6,9 @@
 //
 // Occurrence/day eligibility remains with the week orchestrator. Search moves
 // occurrences within their assigned day only, so it cannot change cadence or
-// spend extra delay. Links, active work, weather locks and split sessions are
-// frozen. No ILP, time grid, network requests or wall-clock-dependent cutoff.
+// spend extra delay. Ordinary insertion freezes linked/active/weather-locked
+// work and split sessions; the separate bounded repair below treats a linked
+// group atomically. No ILP, time grid, network requests or timed search cutoff.
 function cloneFastGraphState(state){
   return {
     ...clonePlacementState(state),
@@ -142,6 +143,197 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
     return {fit:incoming.fit,replacement:trial};
   }
   return null;
+}
+
+// Recover an overdue sparse occurrence together with its must-do subjects.
+// Only this coupled group moves; unrelated clocks and later required partners
+// remain intact. All probes share the build's bounded graph budget.
+function pullFastLinkedOccurrenceForward(c,earlier,later,candidates,states,settings,budget){
+  if(!budget || budget.linkRemaining <= 0)return false;
+  const byHid = new Map(candidates.map(item=>[item.h.hid,item]));
+  const group = new Map([[c.h.hid,c]]);
+  for(const member of group.values()){
+    for(const {candidate:subject} of sameDaySubjectsForAnchor(member.h.hid,candidates)){
+      if(!subject.eligible || !subject.eligible.has(earlier.dayBase))continue;
+      group.set(subject.h.hid,subject);
+    }
+    if(group.size > 4)return false;
+  }
+  if(group.size < 2)return false;
+  const hids = new Set(group.keys());
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  for(const member of group.values()){
+    if(member.h.breakable || member.pinned || !candidateMatchesPinnedDay(member,earlier)
+      || !member.eligible.has(earlier.dayBase)
+      || (doing && doing.hid === member.h.hid)
+      || states.some(state=>weatherLockedPlacement(member,state,settings)))return false;
+    // Moving only the first occurrence preserves subsequent cadence spacing.
+    if(states.some(state=>state.dayBase < earlier.dayBase
+      && state.fills.some(entry=>entry.fill.i === member.i)))return false;
+  }
+  const laterMembers = later.fills.filter(entry=>hids.has(entry.fill.h.hid));
+  // Daily obligations belong to their date; do not transfer one to today.
+  if(laterMembers.some(entry=>isIndependentDailyOccurrence(byHid.get(entry.fill.h.hid))))return false;
+  const laterEdges = plannerOrderConstraintsForDay(later.dayBase);
+  const laterPresent = hid=>later.fills.some(entry=>entry.fill.h.hid === hid)
+    || scheduleAnchorCommitForDay(hid,later.dayBase);
+  // An OR-linked subject may also be needed by a different partner later.
+  // Leave that occurrence intact rather than stealing it for today's pair.
+  if(laterEdges.some(edge=>edge.requiresPair && hids.has(edge.subjectHid)
+    && !hids.has(edge.anchorHid) && laterPresent(edge.anchorHid)))return false;
+  const laterTrial = fastLinkedGroupBase(later,hids);
+  if(!laterTrial || persistentLinkViolationsForState(laterTrial).size)return false;
+  const earlierTrial = fitFastLinkedGroup(earlier,group,settings,budget);
+  if(!earlierTrial)return false;
+  applyPlacementState(earlier,earlierTrial);
+  earlier.day.linkOmissions=earlierTrial.day.linkOmissions;
+  applyPlacementState(later,laterTrial);
+  budget.linkAccepted=(budget.linkAccepted || 0)+1;
+  return true;
+}
+
+function fastLinkedGroupBase(state,hids){
+  const trial=cloneFastGraphState(state);
+  const keep=trial.fills.filter(entry=>!hids.has(entry.fill.h.hid));
+  const clocks=keep.map(entry=>[entry.fill.i,entry.fill.chunkIndex,
+    entry.fit.placeStart,entry.fit.placeEnd,entry.fit.locId]);
+  trial.rows=trial.rows.filter(row=>row.kind === 'scheduled');
+  trial.fills=[];trial.placed=new Set();trial.usedMinutes=0;
+  trial.remaining=trial.totalMinutes;trial.prevLocId=trial.seedLocId;
+  for(const entry of keep)commitPlacement(trial,entry.fill,entry.fit);
+  if(!clocks.every(([i,chunk,start,end,loc])=>trial.fills.some(entry=>entry.fill.i===i
+    && entry.fill.chunkIndex===chunk && entry.fit.placeStart===start
+    && entry.fit.placeEnd===end && entry.fit.locId===loc)))return null;
+  syncDayAgendaItemsFromFills(trial);
+  return trial;
+}
+
+function fitFastLinkedGroup(state,group,settings,budget,leading = []){
+  const hids=new Set(group.keys());
+  // This neighborhood handles one ordinary occurrence per item/date. Keep
+  // separate-option repetitions and split/active sessions with their existing
+  // occurrence-aware packing, rather than collapsing them to one row.
+  if([...group.values()].some(c=>normalizeHabitScheduleOptions(c.h.scheduleOptions)
+    .some(option=>habitScheduleOptionSameDayMode(option)==='separate')
+    || state.fills.filter(entry=>entry.fill.i===c.i).length>1))return null;
+  const base=fastLinkedGroupBase(state,hids);
+  if(!base)return null;
+  const frozen = base.fills.map(entry=>[entry.fill.i,entry.fill.chunkIndex,
+    entry.fit.placeStart,entry.fit.placeEnd,entry.fit.locId]);
+  const keepsClocks = trial=>frozen.every(([i,chunk,start,end,loc])=>trial.fills.some(entry=>
+    entry.fill.i===i && entry.fill.chunkIndex===chunk && entry.fit.placeStart===start
+      && entry.fit.placeEnd===end && entry.fit.locId===loc));
+  const ordered = reorderAgendaItemsByOrderConstraints(
+    [...group.values()].sort((a,b)=>Number(leading.includes(b.i))-Number(leading.includes(a.i))
+      || compareScarcityThenPriority(a,b)),state.dayBase);
+  // Keep a direct successor ahead of loose successors released by the same
+  // predecessor (A -> B -> optional C, with B sometime before D).
+  for(const edge of plannerOrderConstraintsForDay(state.dayBase)){
+    if(edge.adjacency!=='direct')continue;
+    const before=ordered.findIndex(c=>c.h.hid===edge.beforeHid);
+    const after=ordered.findIndex(c=>c.h.hid===edge.afterHid);
+    if(before<0 || after<=before+1)continue;
+    const proposed=ordered.slice();
+    proposed.splice(before+1,0,proposed.splice(after,1)[0]);
+    const index=new Map(proposed.map((c,i)=>[c.h.hid,i]));
+    if(plannerOrderConstraintsForDay(state.dayBase).every(e=>!index.has(e.beforeHid)
+      || !index.has(e.afterHid) || index.get(e.beforeHid)<index.get(e.afterHid))){
+      ordered.splice(0,ordered.length,...proposed);
+    }
+  }
+  // These neighbors have no links; claim their narrow windows before the
+  // flexible chain so its travel cannot strand a previously accepted row.
+  ordered.sort((a,b)=>Number(leading.includes(b.i))-Number(leading.includes(a.i)));
+  let frontier=[{state:base,cost:0}];
+  for(const member of ordered){
+    const next=[];
+    for(const node of frontier){
+      const seen=new Set();
+      // Gap boundaries plus the normal scored choice retain minute precision.
+      // Earliest probes keep hard weather checks but can override soft time
+      // preferences when those preferences would strand the required partner.
+      const probes=[null,...remainingPlacementGaps(node.state).slice(0,4)];
+      for(const gap of probes){
+        if(budget.linkRemaining <= 0)break;
+        budget.linkRemaining--;
+        const trial=cloneFastGraphState(node.state);
+        const fill={h:member.h,i:member.i,priority:member.priority,scarcity:member.scarcity};
+        const slots=trial.slots;
+        if(gap)trial.slots=slots.map(slot=>({...slot,start:Math.max(slot.start,gap.start),
+          end:Math.min(slot.end,gap.end)})).filter(slot=>slot.end>slot.start);
+        const fit=tryPlaceOnDay(trial,fill,{settings,allowNetwork:false,earliestFromAnchor:Boolean(gap)});
+        trial.slots=slots;
+        if(!fit)continue;
+        const key=`${fit.placeStart}:${fit.placeEnd}:${fit.locId || ''}`;
+        if(seen.has(key))continue;
+        seen.add(key);
+        const clock=[fit.placeStart,fit.placeEnd,fit.locId];
+        commitPlacement(trial,fill,fit);
+        if(!keepsClocks(trial) || trial.usedMinutes>trial.totalMinutes+1e-6
+          || fit.placeStart!==clock[0] || fit.placeEnd!==clock[1] || fit.locId!==clock[2])continue;
+        const weather=weatherPenaltyForFit(fill,fit,trial,settings) || 0;
+        const preference=weekPreferencePenalty(member.h,fit,trial,trial.registry);
+        next.push({state:trial,cost:node.cost+weather+preference+(fit.placeStart-trial.startClock)/60000});
+      }
+    }
+    next.sort((a,b)=>a.cost-b.cost);
+    frontier=next.slice(0,2);
+    if(!frontier.length)return null;
+  }
+  const accepted=frontier.find(node=>!persistentLinkViolationsForState(node.state).size);
+  if(!accepted)return null;
+  syncDayAgendaItemsFromFills(accepted.state);
+  accepted.state.day.linkOmissions=(state.day.linkOmissions || []).filter(item=>!hids.has(item.subjectHid));
+  return accepted.state;
+}
+
+// Before invariant cleanup removes a broken subject, try its small connected
+// group atomically. Existing partners stay selected; absent OR anchors are not
+// made mandatory. Fixed/active/planned/weather-locked endpoints stay frozen.
+function repairFastLinkedGroups(states,candidates,settings,budget){
+  if(!budget || budget.linkRemaining<=0)return;
+  const byHid=new Map(candidates.map(c=>[c.h.hid,c]));
+  const doing=typeof getDoingNow==='function' ? getDoingNow() : null;
+  for(const state of states){
+    const violations=persistentLinkViolationsForState(state);
+    if(!violations.size)continue;
+    const edges=plannerOrderConstraintsForDay(state.dayBase);
+    const present=new Set(state.fills.map(entry=>entry.fill.h.hid));
+    for(const hid of violations.keys()){
+      if(budget.linkRemaining<=0)return;
+      const root=byHid.get(hid);
+      if(!root || !root.eligible.has(state.dayBase))continue;
+      const group=new Map([[hid,root]]);
+      for(const member of group.values()){
+        for(const edge of edges){
+          const other=edge.beforeHid===member.h.hid ? edge.afterHid
+            : edge.afterHid===member.h.hid ? edge.beforeHid : null;
+          if(other && present.has(other) && byHid.has(other))group.set(other,byHid.get(other));
+        }
+        if(group.size>4)break;
+      }
+      if(group.size<2 || group.size>4)continue;
+      if([...group.values()].some(c=>c.h.breakable || c.pinned || !c.eligible.has(state.dayBase)
+        || (doing && doing.hid===c.h.hid) || weatherLockedPlacement(c,state,settings)))continue;
+      let trial=fitFastLinkedGroup(state,group,settings,budget);
+      if(!trial && budget.linkRemaining>0){
+        // A narrow unlinked meal/work session can occupy the chain's only
+        // usable interval. Reopen at most two such neighbors, retaining both.
+        const linked=new Set(edges.flatMap(e=>[e.beforeHid,e.afterHid]));
+        const blockers=state.fills.filter(entry=>{
+          const c=byHid.get(entry.fill.h.hid);
+          return c && !linked.has(c.h.hid) && !c.h.breakable && !c.pinned
+            && !mustPlaceCriticalOccurrence(c) && !(doing && doing.hid===c.h.hid)
+            && !weatherLockedPlacement(c,state,settings);
+        }).sort((a,b)=>a.fit.placeStart-b.fit.placeStart).slice(0,2);
+        for(const entry of blockers)group.set(entry.fill.h.hid,byHid.get(entry.fill.h.hid));
+        if(blockers.length)trial=fitFastLinkedGroup(state,group,settings,budget,blockers.map(entry=>entry.fill.i));
+      }
+      if(!trial)continue;
+      applyPlacementState(state,trial);state.day.linkOmissions=trial.day.linkOmissions;
+      budget.linkAccepted=(budget.linkAccepted || 0)+1;
+    }
+  }
 }
 
 // Insert an unplaced day-choice without rebuilding the week from scratch.
@@ -368,5 +560,119 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
     }
     for(const c of best.candidates)byIndex.get(c.i).unplacedOccurrenceCount = c.unplacedOccurrenceCount;
   }
+  return diagnostics;
+}
+
+// Selection repair for a congested day's independent daily occurrences.
+// Unlike keep-all insertion, partial paths may choose a different subset. Day
+// choices, fractional/sparse cadence, split pools and linked groups stay with
+// their existing orchestrators. No full-week rebuild or coarse clock rounding.
+function improveFastGraphDaySelections(candidates,states,settings,options = {}){
+  const maxProbes = Math.max(0,Math.min(1024,options.maxProbes == null ? 768 : options.maxProbes));
+  const diagnostics = {probes:0,accepted:0,budgetExhausted:false};
+  if(!maxProbes)return diagnostics;
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  const byIndex = new Map(candidates.map(c=>[c.i,c]));
+  const quality = state=>{
+    const priority = Array(6).fill(0);
+    let weather = 0;
+    for(const entry of state.fills){
+      const c = byIndex.get(entry.fill.i);
+      priority[c ? c.priority : effectivePriority(entry.fill.h)] += entry.fit.durMin;
+      weather += typeof weatherPenaltyForFit === 'function'
+        ? weatherPenaltyForFit(entry.fill,entry.fit,state,settings) || 0 : 0;
+    }
+    for(let i=1;i<6;i++)priority[i] += priority[i-1];
+    return {priority,weather,travel:dayRouteCostSeconds(state)};
+  };
+  const compare = (a,b)=>{
+    for(let i=0;i<6;i++)if(a.priority[i] !== b.priority[i])return b.priority[i]-a.priority[i];
+    return a.weather-b.weather || a.travel-b.travel;
+  };
+  for(const state of states){
+    if(diagnostics.probes >= maxProbes)break;
+    const linked = new Set();
+    for(const edge of plannerOrderConstraintsForDay(state.dayBase) || []){
+      linked.add(edge.beforeHid);linked.add(edge.afterHid);
+    }
+    const independent = c=>c && c.h && !c.h.breakable && c.h.type !== 'task'
+      && Number(c.h.target) === 1 && !linked.has(c.h.hid)
+      && !(doing && doing.hid === c.h.hid) && !c.pinned
+      && !fillIsPlannedOnDay(c.h,state.dayBase,settings)
+      && !(typeof weatherLockedPlacement === 'function' && weatherLockedPlacement(c,state,settings));
+    const present = new Set(state.fills.map(entry=>entry.fill.i));
+    const missing = candidates.filter(c=>independent(c) && !present.has(c.i)
+      && c.eligible.has(state.dayBase) && candidateMatchesPinnedDay(c,state));
+    if(!missing.length)continue;
+    const optional = state.fills.filter(entry=>{
+      const c = byIndex.get(entry.fill.i);
+      return independent(c) && !mustPlaceCriticalOccurrence(c);
+    });
+    if(!optional.length)continue;
+    // Reopen the blockers closest to the missing windows; the rest retain
+    // exact clocks. The candidate cap is per neighborhood, not per whole week.
+    const missingWindows = missing.flatMap(c=>fillDayWindows(c.h,state.dayBase,state.seedLocId) || []);
+    const distance = entry=>missingWindows.length ? Math.min(...missingWindows.map(w=>
+      Math.max(0,w.start-entry.fit.placeEnd,entry.fit.placeStart-w.end))) : 0;
+    optional.sort((a,b)=>distance(a)-distance(b) || a.fill.i-b.fill.i);
+    const moving = optional.slice(0,8);
+    const movingIds = new Set(moving.map(entry=>entry.fill.i));
+    const fixed = state.fills.filter(entry=>!movingIds.has(entry.fill.i));
+    const pool = moving.map(entry=>byIndex.get(entry.fill.i)).concat(missing.slice(0,4));
+    const base = cloneFastGraphState(state);
+    base.rows = base.rows.filter(row=>row.kind === 'scheduled');
+    base.fills = [];base.placed = new Set();base.remaining = state.totalMinutes;
+    base.usedMinutes = 0;base.prevLocId = state.seedLocId;base.day.agendaItems = [];
+    for(const entry of fixed)commitPlacement(base,{...entry.fill},{...entry.fit});
+    const frozenClocksFit = trial=>fixed.every(entry=>trial.fills.some(other=>
+      other.fill.i === entry.fill.i && other.fill.chunkIndex === entry.fill.chunkIndex
+      && other.fit.placeStart === entry.fit.placeStart && other.fit.placeEnd === entry.fit.placeEnd
+      && other.fit.locId === entry.fit.locId));
+    if(!frozenClocksFit(base))continue;
+    const before = quality(state);
+    let best = null;
+    let frontier = [{state:base,pending:pool,quality:quality(base),key:''}];
+    const dayLimit = Math.min(maxProbes,diagnostics.probes+384);
+    for(let depth=0;depth<pool.length && diagnostics.probes<dayLimit;depth++){
+      const next = [],seen = new Set();
+      for(const node of frontier){
+        for(const c of node.pending){
+          if(diagnostics.probes >= dayLimit)break;
+          diagnostics.probes++;
+          const trial = cloneFastGraphState(node.state);
+          const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
+          const fit = tryPlaceOnDay(trial,fill,{settings,allowNetwork:false});
+          if(!fit)continue;
+          const clocks = trial.fills.map(entry=>[entry,entry.fit.placeStart,entry.fit.placeEnd,entry.fit.locId]);
+          const proposed = [fit.placeStart,fit.placeEnd,fit.locId];
+          commitPlacement(trial,fill,fit);
+          if(fit.placeStart !== proposed[0] || fit.placeEnd !== proposed[1] || fit.locId !== proposed[2])continue;
+          if(clocks.some(([entry,start,end,loc])=>entry.fit.placeStart!==start
+            || entry.fit.placeEnd!==end || entry.fit.locId!==loc))continue;
+          if(!frozenClocksFit(trial) || trial.usedMinutes>trial.totalMinutes+1e-6)continue;
+          const key = trial.fills.map(entry=>`${entry.fill.i}:${entry.fit.placeStart}:${entry.fit.locId || ''}`).sort().join('|');
+          if(seen.has(key))continue;
+          seen.add(key);
+          const score = quality(trial);
+          // Every priority prefix is preserved; extra low-priority minutes
+          // cannot purchase a lost urgent occurrence or worse travel/weather.
+          if(score.priority[5]>before.priority[5]+1e-6
+            && score.priority.every((minutes,i)=>minutes>=before.priority[i]-1e-6)
+            && score.weather<=before.weather+1e-6 && score.travel<=before.travel+1e-6
+            && (!best || compare(score,best.quality)<0))best = {state:trial,quality:score};
+          next.push({state:trial,pending:node.pending.filter(other=>other!==c),quality:score,key});
+        }
+      }
+      next.sort((a,b)=>compare(a.quality,b.quality) || (a.key<b.key?-1:a.key>b.key?1:0));
+      frontier = next.slice(0,8);
+      if(!frontier.length)break;
+    }
+    if(best){
+      syncDayAgendaItemsFromFills(best.state);
+      applyPlacementState(state,best.state);
+      diagnostics.accepted++;
+    }
+  }
+  diagnostics.budgetExhausted = diagnostics.probes>=maxProbes;
   return diagnostics;
 }

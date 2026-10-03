@@ -252,6 +252,16 @@ function fillOptionDayWindows(h,dayBase,contextLocId){
 }
 
 function fillDayWindows(h,dayBase,contextLocId){
+  if(!_plannerWindowCache || !h)return fillDayWindowsUncached(h,dayBase,contextLocId);
+  let cache = _plannerWindowCache.get(h);
+  if(!cache){cache = new Map();_plannerWindowCache.set(h,cache);}
+  const key = `${dayBase}:${contextLocId || ''}`;
+  if(!cache.has(key))cache.set(key,fillDayWindowsUncached(h,dayBase,contextLocId));
+  const windows = cache.get(key);
+  return windows && windows.map(window=>({...window}));
+}
+
+function fillDayWindowsUncached(h,dayBase,contextLocId){
   if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(h)
     : (h && h.type === 'task' && h.breakable && h.eventTime !== null))
     && dayStart(h.eventTime) === dayBase && !hasTimeWindow(h)){
@@ -762,11 +772,29 @@ function scheduleAnchorCommitForDay(hid,dayBase,data = null){
   return result;
 }
 
+// These facts depend on the solve snapshot, not speculative placements.
+// End-of-solve disposal bounds memory and prevents stale edits/clock forecasts.
+let _plannerWindowCache = null;
+let _plannerBlockedCache = null;
+let _plannerRegistryIdsCache = null;
+let _plannerVenueWindowCache = null;
+let _plannerOptionCache = null;
+let _plannerGuidanceCache = null;
+let _plannerWeatherCache = null;
+let _plannerWeatherCacheEntries = 0;
 let _plannerOrderCache = new Map();
 let _plannerAnchorCache = new Map();
 let _plannerSolveData = null;
 
 function beginPlannerSolveCaches(data = null){
+  _plannerWindowCache = new WeakMap();
+  _plannerBlockedCache = new WeakMap();
+  _plannerRegistryIdsCache = new WeakMap();
+  _plannerVenueWindowCache = new WeakMap();
+  _plannerOptionCache = new WeakMap();
+  _plannerGuidanceCache = new WeakMap();
+  _plannerWeatherCache = new WeakMap();
+  _plannerWeatherCacheEntries = 0;
   _plannerOrderCache = new Map();
   _plannerAnchorCache = new Map();
   _plannerSolveData = Array.isArray(data) ? data : (typeof load === 'function' ? load() : null);
@@ -783,6 +811,14 @@ function plannerSolveHabits(){
 }
 
 function endPlannerSolveCaches(){
+  _plannerWindowCache = null;
+  _plannerBlockedCache = null;
+  _plannerRegistryIdsCache = null;
+  _plannerVenueWindowCache = null;
+  _plannerOptionCache = null;
+  _plannerGuidanceCache = null;
+  _plannerWeatherCache = null;
+  _plannerWeatherCacheEntries = 0;
   _plannerOrderCache = new Map();
   _plannerAnchorCache = new Map();
   _plannerSolveData = null;

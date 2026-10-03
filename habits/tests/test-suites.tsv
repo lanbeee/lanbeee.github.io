@@ -122,3 +122,6 @@ planner-forecast-test.js	planner	once
 planner-forecast-worker-test.js	planner	once
 
 planner-closed-forecast-test.js	planner	once
+planner-quality-gap-test.js	diagnostics	once
+fast-planner-specialization-test.js	planner	once
+fast-linked-recovery-test.js	planner	once

@@ -287,10 +287,29 @@ function habitScheduleOptionSameDayMode(option){
 // locationId means an anywhere option. Optional `pref` overrides the place
 // ranking for that instance only. Weather follows option > item > location;
 // a row stores `none` when it explicitly opts out rather than inheriting.
+// A solve reads one immutable location registry. Cache only its valid IDs;
+// normalization APIs still return fresh editable objects outside this helper.
+function plannerValidLocationIds(registry){
+  const cache = typeof _plannerRegistryIdsCache === 'undefined' ? null : _plannerRegistryIdsCache;
+  if(!cache)return new Set(normalizeLocationRegistry(registry).map(loc=>loc.id));
+  if(!cache.has(registry))cache.set(registry,new Set(normalizeLocationRegistry(registry).map(loc=>loc.id)));
+  return cache.get(registry);
+}
+
 function normalizeHabitScheduleOptions(value,registry){
+  const cache = typeof _plannerOptionCache === 'undefined' ? null : _plannerOptionCache;
+  if(!cache || !Array.isArray(value))return normalizeHabitScheduleOptionsUncached(value,registry);
+  let variants = cache.get(value);
+  if(!variants){variants=new Map();cache.set(value,variants);}
+  const key = Array.isArray(registry) ? registry : null;
+  if(!variants.has(key))variants.set(key,normalizeHabitScheduleOptionsUncached(value,registry));
+  return variants.get(key).map(option=>({...option,weekdays:option.weekdays.slice()}));
+}
+
+function normalizeHabitScheduleOptionsUncached(value,registry){
   if(!Array.isArray(value))return [];
   const valid = Array.isArray(registry)
-    ? new Set(normalizeLocationRegistry(registry).map(loc=>loc.id))
+    ? plannerValidLocationIds(registry)
     : null;
   const out = [];
   const seen = new Set();
@@ -498,7 +517,7 @@ function habitScheduleOptionsForDay(h,dayBase,locationId = undefined){
 // separate clock windows; ids are de-duped only for route enumeration.
 function habitLocationIdsForDay(h,dayBase,registry){
   const valid = Array.isArray(registry)
-    ? new Set(normalizeLocationRegistry(registry).map(loc=>loc.id))
+    ? plannerValidLocationIds(registry)
     : null;
   const seen = new Set();
   const ids = [];
@@ -756,6 +775,16 @@ function hasLocationHours(loc){
 // allowedTimeStart/End → 24h. Returns {start,end} minutes (0..1440) or null
 // when the location is closed that day. A 24h result is {start:0,end:1440}.
 function resolveLocationWindow(loc,weekday){
+  const cache = typeof _plannerVenueWindowCache === 'undefined' ? null : _plannerVenueWindowCache;
+  if(!cache || !loc)return resolveLocationWindowUncached(loc,weekday);
+  let days = cache.get(loc);
+  if(!days){days = new Map();cache.set(loc,days);}
+  if(!days.has(weekday))days.set(weekday,resolveLocationWindowUncached(loc,weekday));
+  const window = days.get(weekday);
+  return window && {...window};
+}
+
+function resolveLocationWindowUncached(loc,weekday){
   if(!loc || !hasLocationHours(loc))return {start:0,end:1440};
   if(loc.hoursByDay && Object.prototype.hasOwnProperty.call(loc.hoursByDay,weekday)){
     const hd = loc.hoursByDay[weekday];
