@@ -138,9 +138,15 @@ async function runPlannerMessage(message){
       memoDays:Array.isArray(message.memoDays) ? message.memoDays : []
     };
     const data = load();
+    if(message.closedForecast){
+      const forecast=await forecastClosedAgendaRisks(message.week,data,sortSettings,message.mode,{
+        owners:message.owners,progress:partial=>self.postMessage({id,forecastPartial:partial})});
+      self.postMessage({id,forecast});
+      return;
+    }
     if(message.forecast){
       const forecast=await forecastAgendaRisks(message.week,data,sortSettings,message.mode,{
-        owners:message.owners,onProgress:forecastPartial=>self.postMessage({id,forecastPartial})});
+        owners:message.owners});
       self.postMessage({id,forecast});
       return;
     }

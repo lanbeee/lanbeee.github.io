@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v116';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v120';
 const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;
@@ -187,6 +187,7 @@ function leanAgendaWeek(week){
   return {
     forecastDiagnostics:week.forecastDiagnostics,
     forecastRevision:week.forecastRevision,
+    dropForecast:week.dropForecast,
     days:week.days.map(day=>({
       ...day,
       timeline:Array.isArray(day.timeline) ? day.timeline.map(strip) : day.timeline,

@@ -428,8 +428,18 @@ function agendaOccurrenceDropAt(h,row,day,settings,data){
   }
   return base+low*5*60000+1;
 }
-function annotateAgendaDropTimes(days,data,settings){
+let _agendaPhysicalDropCache=new WeakMap();
+function agendaOccurrenceCachedPhysicalDropAt(h,row,day,settings,data){
+  const prev=_agendaPhysicalDropCache.get(row);
+  if(prev && prev.settings===settings)return prev.value;
+  const value=agendaOccurrenceDropAt(h,row,{...day,timeline:[row]},settings,data);
+  _agendaPhysicalDropCache.set(row,{settings,value});
+  return value;
+}
+function annotateAgendaDropTimes(days,data,settings,now=Date.now()){
+  const today=dayStart(now);
   for(const day of days || []){
+    if(Number(day.dayBase)!==today)continue;
     const cutoffs=new Map();
     for(const row of day.timeline || []){
       if(!['fill','scheduled'].includes(row.kind))continue;

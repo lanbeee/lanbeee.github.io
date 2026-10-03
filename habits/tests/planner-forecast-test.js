@@ -12,11 +12,13 @@ const {chromium}=require('./helpers/planner-test-helpers');
     fs.mkdirSync('test-results',{recursive:true});
     fs.writeFileSync('test-results/planner-forecast-audit.json',JSON.stringify(report,null,2));
     console.log(JSON.stringify({cases:report.cases.length,drops:report.drops,lateWarnings:report.lateWarnings,
-      replays:report.replays,probes:report.probes,forecastMs:report.forecastMs}));
+      replays:report.replays,probes:report.probes,forecastMs:report.forecastMs,
+      rebuiltChecks:report.rebuiltChecks,returnedAfterDrop:report.returnedAfterDrop}));
     assert.equal(report.cases.length,26);
     assert(report.replays>0,'both engines use complete feasible clock replay');
-    assert(report.cases.every(c=>c.forecast.probes<=6),'shared batch has a fixed probe cap');
-    assert.equal(report.lateWarnings,0,'warnings precede first actual clock-only disappearance by chosen lead');
-    assert.equal(report.lateLeadChecks,0,'5/10/15/30/60 minute choices precede the first loss, or alert immediately inside the lead');
+    assert(report.cases.every(c=>c.forecast.probes===1),'shared batch has a fixed probe cap');
+    assert.equal(report.lateWarnings,0,'five-minute warnings match exactly the cached future agenda losses');
+    assert.equal(report.lateLeadChecks,0,'every allowed warning uses the same five-minute duration');
+    assert.equal(report.returnedAfterDrop,0,'warned tasks must stay absent on independent full-week reconsideration');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -2470,7 +2470,7 @@ function assistantQueryWeek(data, settings){
   const rendered = typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) ? _homeRenderedWeek : null;
   const week = rendered
     || (typeof cachedHomeAgenda === 'function' ? cachedHomeAgenda(data) : null)
-    || (typeof buildWeekAgenda === 'function' ? buildWeekAgenda(data, settings, 7) : null);
+    || (typeof buildWeekAgenda === 'function' ? buildWeekAgenda(data, settings, 7, {skipDropAnnotation:true}) : null);
   return week && Array.isArray(week.days) ? week : null;
 }
 

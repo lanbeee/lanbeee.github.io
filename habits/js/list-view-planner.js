@@ -685,7 +685,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 22;
+const HOME_PLANNER_ALGORITHM_VERSION = 23;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -763,6 +763,7 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     coordSig,
     currentEdgeSig,
     settingsSig,
+    typeof getDoingNow==='function' ? JSON.stringify(getDoingNow()) : '',
     Array.isArray(data) ? data.length : 0
   ].join('\n');
 }
@@ -1291,7 +1292,30 @@ function homeAgendaTickPlan(week,now = Date.now()){
 
 function tickHomeAgendaWhileOpen(){
   if(!_homeRenderedWeek || !Array.isArray(_homeRenderedWeek.days))return false;
-  const plan = homeAgendaTickPlan(_homeRenderedWeek,Date.now());
+  const forecastData=typeof load==='function' ? load() : [];
+  const projected=typeof consumeAgendaDropForecast==='function'
+    ? consumeAgendaDropForecast(_homeRenderedWeek,forecastData,homePlannerDirtyKey(forecastData)) : null;
+  if(projected && !_optimizerHomeRequestKey){
+    cancelHomeAgendaRefinement('using five-minute lookahead');
+    render({__fromOptimizer:true,__fromBackgroundRefresh:true,__optimizedWeek:projected});
+    _homeRenderedWeek=projected;
+    adoptHomeAgendaReadyState(projected,load(),true);
+    saveHomeAgendaCache(load(),projected);
+    _homeListFingerprint=homeListFingerprint();
+    if(typeof queueNativeReminders==='function')queueNativeReminders();
+    return true;
+  }
+  const pendingForecast=typeof reusableAgendaDropForecast==='function'
+    ? reusableAgendaDropForecast(_homeRenderedWeek,forecastData,homePlannerDirtyKey(forecastData)) : null;
+  const plan = pendingForecast?.requiresWeekReplan && Date.now()>=pendingForecast.targetAt
+    ? {kind:'imminent-solve',reuseFarDays:false,extraBudgetAllowed:false}
+    : homeAgendaTickPlan(_homeRenderedWeek,Date.now());
+  // Until the projected clock, keep this usable pack. A packed-day collision
+  // must not trigger another solve for the result already waiting in memory.
+  if(pendingForecast && Date.now()<pendingForecast.targetAt && plan.kind==='imminent-solve'){
+    maybeScheduleHomeAgendaRefinement(_homeRenderedWeek);
+    return true;
+  }
   if(plan.kind === 'keep'){
     maybeScheduleHomeAgendaRefinement(_homeRenderedWeek);
     return true;
@@ -1303,6 +1327,9 @@ function tickHomeAgendaWhileOpen(){
         ? {...day,timeline:plan.timeline,homeDisplayedTimeline:null}
         : day)
     };
+    if(week.dropForecast){
+      week.dropForecast={...week.dropForecast,planKey:agendaForecastPlanKey(week,(typeof load==='function' ? load() : []))};
+    }
     render({__fromOptimizer:true,__fromBackgroundRefresh:true,__optimizedWeek:week});
     _homeRenderedWeek = week;
     _optimizerHomeReadyWeek = week;

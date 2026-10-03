@@ -2,7 +2,7 @@
 // Preferences are device-local and intentionally separate from clone settings.
 const NATIVE_REMINDERS_KEY = 'tings_native_reminders_v1';
 const NATIVE_REMINDER_DEFAULTS = {version:2,enabled:false,items:{}};
-const NATIVE_REMINDER_EDGES = [['start','start'],['end','end'],['travelStart','travel: departure'],['travelEnd','travel: arrival'],['missed','before missed']];
+const NATIVE_REMINDER_EDGES = [['start','start'],['end','end'],['travelStart','travel: departure'],['travelEnd','travel: arrival'],['missed','drop warning (5 min)']];
 function nativeBusyReminderKey(block,index){
   return block ? `busy:${block.reminderId || JSON.stringify([index,block.label,block.start,block.end,block.days])}` : '';
 }
@@ -24,7 +24,11 @@ function nativeReminderPreferences(){
     localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(next));return next;
   }catch(_){return {...NATIVE_REMINDER_DEFAULTS,items:{}};}
 }
+let _nativeDeliveryPrefs={key:'',value:null};
 function nativeReminderDeliveryPreferences(data,prefs,now=Date.now()){
+  const rev=typeof plannerDataRevision==='function'?plannerDataRevision():(data||[]).length;
+  const key=`${rev}\n${dateKey(now)}\n${prefs.enabled}\n${JSON.stringify(prefs.items||{})}`;
+  if(_nativeDeliveryPrefs.key===key)return _nativeDeliveryPrefs.value;
   const items={};
   for(const [owner,choices] of Object.entries(prefs.items || {})){
     if(!owner.startsWith('item:')){items[owner]=choices;continue;}
@@ -39,13 +43,15 @@ function nativeReminderDeliveryPreferences(data,prefs,now=Date.now()){
     const resolvedOccurrences=normalizeLogs(h.logs).filter(log=>!isPlanLog(log)).map(logOccurrenceKey).filter(Boolean);
     items[owner]={...choices,resolvedDays,resolvedOccurrences};
   }
-  return {...prefs,items};
+  const value={...prefs,items};
+  _nativeDeliveryPrefs={key,value};
+  return value;
 }
-function nativeReminderOwner(row,data,settings){
+function nativeReminderOwner(row,data,settings,dataById=null){
   if(!row)return '';
   if(row.kind === 'blocked')return nativeBusyReminderKey(normalizeBlockedTimes(settings.blockedTimes)[row.blockIndex],row.blockIndex);
   const hid = row.h?.hid || data[row.i]?.hid;
-  return hid && data.some(h=>h.hid === hid) ? `item:${hid}` : '';
+  return hid && (dataById ? dataById.has(hid) : data.some(h=>h.hid === hid)) ? `item:${hid}` : '';
 }
 // Give busy times a stable identity without tying reminders to names or list positions.
 function nativeEnsureBusyReminderIds(){
@@ -106,24 +112,7 @@ function nativeItemReminderControls(owner,name){
       showToast('departure reminder timing saved');
     }finally{lead.disabled=false;}
   });leadLabel.append(lead);grid.append(leadLabel);
-  if(owner.startsWith('item:')){
-    const label=document.createElement('label');label.className='planning-field';label.append(document.createTextNode('before missed timing'));
-    const select=document.createElement('select');select.className='mini-select';select.dataset.reminderMissedLead=owner;
-    select.setAttribute('aria-label',`${name}: before missed lead time`);
-    for(const minutes of [5,10,15,30,60]){
-      const option=document.createElement('option');option.value=String(minutes);option.textContent=`${minutes} min before`;select.append(option);
-    }
-    select.value=String(nativeReminderMissedLeadMinutes(nativeReminderPreferences().items[owner]));
-    select.addEventListener('change',async()=>{
-      select.disabled=true;
-      try{
-        const prefs=nativeReminderPreferences();prefs.items[owner]={...prefs.items[owner],missedLeadMinutes:Number(select.value)};
-        localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));nativeReminderLastSignature='';await reconcileNativeReminders();
-        showToast('before missed timing saved');
-      }finally{select.disabled=false;}
-    });label.append(select);grid.append(label);
-  }
-  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = 'Before missed warns before the agenda may lose this item, including conflicts and travel. Estimates can be early. Sudden drops alert too. Saved on this phone.';
+  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = 'Warns if this item leaves today’s agenda in the next 5 minutes. Sudden drops alert too. Saved on this phone.';
   box.append(grid,hint);return box;
 }
 function renderNativeDetailReminders(h){
@@ -143,24 +132,44 @@ function nativeReminderLeadMinutes(choices){
   const minutes=Number(choices?.travelLeadMinutes);
   return [0,5,10,15,30,60].includes(minutes) ? minutes : 0;
 }
-function nativeReminderMissedLeadMinutes(choices){
-  const minutes=Number(choices?.missedLeadMinutes);
-  return [5,10,15,30,60].includes(minutes) ? minutes : 10;
+function nativeReminderMissedLeadMinutes(){return 5;}
+// A simple window check, never placement or a planner build on the UI thread.
+function nativeReminderAllowedWarningAt(h,row,day,settings,now){
+  const option=normalizeHabitScheduleOptions(h.scheduleOptions).find(o=>o.id===row.scheduleOptionId);
+  const subject=option ? habitBoundToScheduleOption(h,option) : h;
+  const loc=(settings.locations || []).find(place=>place.id===row.locationId) || null;
+  const intervals=effectiveLocationWindow(subject,loc,new Date(day.dayBase).getDay(),day.dayBase);
+  const relevant=intervals.map(w=>({start:day.dayBase+w.start*60000,end:day.dayBase+w.end*60000}))
+    .filter(w=>w.end>now);
+  const opening=relevant.length ? Math.min(...relevant.map(w=>w.start)) : Infinity;
+  const fixed=h.type==='task' && !h.breakable && Number.isFinite(h.eventTime) ? h.eventTime : null;
+  return Math.max(opening,fixed || day.dayBase)-60*60000;
 }
-function nativeReminderOccurrence(row,data,day){
+function nativeReminderOccurrence(row,data,day,dataById = null){
   const dayKey=day.dayKey || dateKey(day.dayBase);
   if(row?.kind==='blocked')return `busy:${dayKey}`;
-  const h=data.find(item=>item.hid===(row?.h?.hid || data[row?.i]?.hid));
+  const hid=row?.h?.hid || data[row?.i]?.hid;
+  const h=dataById ? dataById.get(hid) : data.find(item=>item.hid===hid);
   if(!h)return '';
   // A dismissal is for this occurrence, even if the next rebuild moves it.
   // Split chunks remain separate appointments; their clocks distinguish them.
   return `${h.hid}:${dayKey}:${row.occurrenceKey || row.scheduleOptionId || 'main'}${h.breakable ? ':'+row.start : ''}`;
 }
-function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previousWeek = null){
+function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previousWeek = null,warningNow = now){
   const events = new Map();
   if(!prefs.enabled || !week || !Array.isArray(week.days))return [];
+  const dataById=new Map(data.map(h=>[h.hid,h]));
+  const todayBase=dayStart(now),forecast=week.dropForecast;
+  const planKey=agendaForecastPlanKey(week,data),closed=week.closedDropForecast;
+  const validClosed=Boolean(closed?.kind==='closed' && closed.revision===week.forecastRevision
+    && closed.checkedAt<=warningNow && closed.checkedAt>=warningNow-5*60000
+    && closed.throughAt>warningNow && closed.throughAt-closed.checkedAt<=60*60000+1
+    && closed.planKey===planKey);
+  const validForecast=Boolean(forecast?.futureWeek && forecast.revision===week.forecastRevision
+    && forecast.targetAt>warningNow && forecast.checkedAt<=warningNow
+    && forecast.targetAt-forecast.checkedAt>0 && forecast.targetAt-forecast.checkedAt<=5*60000+1
+    && forecast.planKey===planKey);
   for(const day of week.days){
-    const missedCutoffs=new Map();
     const rows = (day.timeline || []).filter(row=>row && ['fill','scheduled'].includes(row.kind));
     const groups = new Map();
     for(const row of rows){
@@ -170,7 +179,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
     }
     const active = [];
     for(const [hid,items] of groups){
-      const h = data.find(item=>item.hid === hid);
+      const h = dataById.get(hid);
       if(h && !(h.type === 'task' && isTaskDone(h)))active.push(...agendaRowsAfterCompletions(h,items,day.dayBase));
     }
     // Resolve busy-time overrides/relative clocks without Home's 'clip to now'.
@@ -178,15 +187,15 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
     sequence.forEach((row,i)=>{
       if(row.kind !== 'travel')return;
       const destination = sequence.slice(i+1).find(next=>next.kind !== 'travel' && next.start === row.end && next.locationId === row.to);
-      active.push({...row,reminderOwner:nativeReminderOwner(destination,data,settings),reminderOccurrence:nativeReminderOccurrence(destination,data,day)});
+      active.push({...row,reminderOwner:nativeReminderOwner(destination,data,settings,dataById),reminderOccurrence:nativeReminderOccurrence(destination,data,day,dataById)});
     });
     active.push(...blockedTimelineRows(day.dayKey || dateKey(day.dayBase),settings,day.dayBase,{clipAfter:null}));
     for(const row of active){
       if(!row || !['fill','scheduled','blocked','travel'].includes(row.kind))continue;
-      const destinationHabit=row.kind==='travel' ? data.find(item=>`item:${item.hid}`===row.reminderOwner) : null;
-      let owner = row.kind === 'travel' ? row.reminderOwner : nativeReminderOwner(row,data,settings);
+      const destinationHabit=row.kind==='travel' ? dataById.get(row.reminderOwner?.slice(5)) : null;
+      let owner = row.kind === 'travel' ? row.reminderOwner : nativeReminderOwner(row,data,settings,dataById);
       if(!owner)continue;
-      let kind = 'busy', title = row.label || 'Busy time', identity = nativeReminderOccurrence(row,data,day);
+      let kind = 'busy', title = row.label || 'Busy time', identity = nativeReminderOccurrence(row,data,day,dataById);
       if(row.kind === 'travel'){
         kind = 'travel';
         const destination = row.toName || settings.locations?.find(location=>location.id === row.to)?.name;
@@ -195,45 +204,36 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       }else if(row.kind !== 'blocked'){
         // Never bind a removed item's stale row to a new item at the same index.
         const hid = row.h?.hid || data[row.i]?.hid;
-        const h = data.find(item=>item.hid === hid);
+        const h = dataById.get(hid);
         if(!h || h.type === 'zero')continue;
         if(h.type === 'task' && isTaskDone(h))continue;
         kind = h.type === 'task' ? 'task' : 'habit';
         title = h.name || 'Ting';
-        identity = nativeReminderOccurrence(row,data,day);
+        identity = nativeReminderOccurrence(row,data,day,dataById);
       }
-      const h=kind==='habit' || kind==='task' ? data.find(item=>`item:${item.hid}`===owner) : null;
+      const h=kind==='habit' || kind==='task' ? dataById.get(owner.slice(5)) : null;
       const completion=h ? {hid:h.hid,dayKey:day.dayKey || dateKey(day.dayBase),
         occurrenceKey:row.occurrenceKey || '',scheduleOptionId:row.scheduleOptionId || '',
         minutes:h.breakable ? Math.max(1,Math.round((row.end-row.start)/60000)) : 0} : null;
       const choices=prefs.items?.[owner];
-      if(h && ['notification','alarm'].includes(choices?.missed)){
-        const cutoffKey=`${h.hid}:${row.scheduleOptionId || 'main'}`;
-        if(!missedCutoffs.has(cutoffKey)){
-          let risk=Number.isFinite(row.riskAt) ? row.riskAt : (Number.isFinite(row.dropAt) ? row.dropAt : agendaOccurrenceDropAt(h,row,day,settings,data));
-          if(week.forecastRevision && week.forecastRevision===previousWeek?.forecastRevision){
-            const prior=previousWeek.days?.find(d=>d.dayBase===day.dayBase)?.timeline?.find(r=>
-              (r.hid || r.h?.hid)===h.hid && (r.scheduleOptionId || 'main')===(row.scheduleOptionId || 'main'));
-            if(Number.isFinite(prior?.riskAt) && !(row.riskValidated && row.riskCheckedAt>=(prior.riskCheckedAt || 0)))risk=Math.min(risk ?? Infinity,prior.riskAt);
-          }
-          missedCutoffs.set(cutoffKey,risk);
-        }
-        const missedAt=missedCutoffs.get(cutoffKey);
-        const at=Math.max(Number(missedAt)-nativeReminderMissedLeadMinutes(choices)*60000,now+2000,Number(h.snoozedUntil) || 0);
-        // Uncertain early risk must not expire a warning or explicit snooze.
-        // The single-item fit bound excludes mutable competing allocations.
-        const physical=agendaOccurrenceDropAt(h,row,{...day,timeline:[row]},settings,data);
-        const expiresAt=Math.max(Number(missedAt) || 0,Number(physical) || Number(row.end));
-        if(missedAt!=null && at<expiresAt && at<=now+7*86400000){
-          // One warning for the remaining split work, independent of moving chunk clocks.
+      if(h && ['notification','alarm'].includes(choices?.missed) && day.dayBase===todayBase){
+        // Closed-app evidence must pass independent rebuild verification.
+        // Never fall back to a rejected near-term risk from that same batch.
+        const risk=closed ? (validClosed ? closed.risks?.[agendaForecastIdentity(row,data)] : null)
+          : validForecast ? forecast.risks?.[agendaForecastIdentity(row,data)] : null;
+        // Only a completed, current five-minute future build is evidence.
+        // Initial fit bounds and the old budget frontier are not warnings.
+        const at=Math.max(closed ? Math.max(closed.warningAt || warningNow+2000,risk?.warningAt || 0)
+          : forecast?.warningAt ?? ((forecast?.checkedAt || 0)+2000),Number(h.snoozedUntil) || 0);
+        if(risk && risk.validated && risk.at>warningNow && at<risk.at
+          && (!closed || (risk.verified && risk.at<=closed.throughAt && risk.warningAt===risk.at-5*60000))
+          && at>=nativeReminderAllowedWarningAt(h,row,day,settings,now)){
           const occurrence=h.breakable ? `${h.hid}:${day.dayKey || dateKey(day.dayBase)}:remaining` : identity;
           const key=`${owner}:${kind}:${occurrence}:Missed`;
-          const clock=new Date(missedAt-1).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-          const fixed=(h.type==='task' && !h.breakable && h.eventTime!=null) || Boolean(timedPlanLogForDay(h,dateKey(day.dayBase)));
-          events.set(key,{key,at,agendaAt:missedAt,title,owner,dayKey:day.dayKey || dateKey(day.dayBase),
-            reminderEdge:'missed',delivery:choices.missed,upNext:false,expiresAt,
+          events.set(key,{key,at,agendaAt:risk.at,title,owner,dayKey:day.dayKey || dateKey(day.dayBase),
+            reminderEdge:'missed',delivery:choices.missed,upNext:false,expiresAt:risk.at+15*60000,
             notificationGroup:`${owner}:${day.dayKey || dateKey(day.dayBase)}:missed`,
-            ...(!h.breakable && completion ? {completion} : {}),body:`${fixed ? 'Ends' : ['clock-replay-loss','future-loss-interval','forecast-budget-frontier'].includes(row.riskReason) ? 'At risk' : 'Start by'} · ${clock}`});
+            ...(!h.breakable && completion ? {completion} : {}),body:'Drops within 5 min'});
         }
       }
       for(const edge of ['Start','End']){
@@ -264,15 +264,17 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       .map(r=>r.h?.hid || data[r.i]?.hid));
     for(const row of priorDay.timeline || []){
       if(!['fill','scheduled'].includes(row.kind))continue;
-      const hid=row.hid || row.h?.hid || data[row.i]?.hid,h=data.find(h=>h.hid===hid),owner=`item:${hid}`;
+      const hid=row.hid || row.h?.hid || data[row.i]?.hid,h=dataById.get(hid),owner=`item:${hid}`;
       if(!h || h.type==='zero' || present.has(hid) || !['notification','alarm'].includes(prefs.items?.[owner]?.missed)
         || completedOnDay(h,today) || Number(h.snoozedUntil)>now
         || (hasDaySchedule(h) && !isDateEligibleForHabit(h,today))
         || !windowStillDoableToday(h,now,settings))continue;
-      const cutoff=agendaOccurrenceDropAt(h,row,currentDay,settings,data);
-      const missedAt=cutoff && cutoff>now+2000 ? cutoff : now+15*60000;
+      if(now+2000<nativeReminderAllowedWarningAt(h,row,currentDay,settings,now))continue;
+      // A predicted drop already warned; reserve this alert for sudden losses.
+      if(Number.isFinite(row.warnedDropAt) && row.warnedDropAt<=now+60000)continue;
+      const missedAt=now+15*60000;
       const key=`${owner}:Slipped:${dateKey(today)}`;
-      events.set(key,{key,at:now+2000,agendaAt:missedAt,title:h.name || 'Ting',body:cutoff>now+2000 ? 'Slipped · still time' : 'Slipped · open Tings',owner,
+      events.set(key,{key,at:now+2000,agendaAt:missedAt,title:h.name || 'Ting',body:'Slipped · still time',owner,
         dayKey:dateKey(today),reminderEdge:'missed',delivery:prefs.items[owner].missed,upNext:false,slipped:true,expiresAt:missedAt,
         notificationGroup:`${owner}:${dateKey(today)}:missedDrop`,
         ...(!h.breakable ? {completion:{hid,dayKey:dateKey(today),minutes:0}} : {})});
@@ -292,22 +294,29 @@ let nativeAgendaChannelEnabled = true;
 let nativeBackgroundWaitingWeek = null;
 let nativeBackgroundWaitingSince = 0;
 let nativeForecastTimer;
+let nativeBackgroundStatusAt = 0;
+function nativeReminderSettingsOpen(){
+  const host=document.getElementById('settings-reminders-body');
+  return Boolean(host && !host.hidden);
+}
 function scheduleNativeAgendaForecast(week,data,settings,prefs,revision){
   if(!prefs.enabled || typeof forecastAgendaOffMain!=='function')return;
+  if(document.visibilityState==='hidden' || _optimizerHomeRequestKey || _optimizerHomeRefinementKey)return;
+  const owners=data.filter(h=>['notification','alarm'].includes(prefs.items?.[`item:${h.hid}`]?.missed)).map(h=>h.hid);
+  if(!owners.length || reusableAgendaDropForecast(week,data,revision))return;
   clearTimeout(nativeForecastTimer);
   nativeForecastTimer=setTimeout(async()=>{
     if(document.visibilityState==='hidden' || _optimizerHomeRequestKey || _optimizerHomeRefinementKey)return;
-    const owners=data.filter(h=>['notification','alarm'].includes(prefs.items?.[`item:${h.hid}`]?.missed)).map(h=>h.hid);
     const mode=settings.agendaOptimizer===false || agendaPlannerForcedFast() ? 'fast' : 'exact';
-    const forecast=await forecastAgendaOffMain(week,data,settings,mode,revision,owners);
-    if(!forecast || document.visibilityState==='hidden' || homePlannerDirtyKey(load())!==revision
-      || _homeRenderedWeek!==week)return;
-    const before=JSON.stringify((week.days[0]?.timeline || []).map(r=>r.riskAt));
+    const forecastSettings={...settings,_plannerLiveLocationId:typeof liveLocationId==='function' ? liveLocationId() : null,
+      _plannerCurrentCoord:typeof currentCoordLocation==='function' ? currentCoordLocation() : null,
+      _weatherContext:typeof weatherPlannerContext==='function' ? weatherPlannerContext(settings) : null};
+    const forecast=await forecastAgendaOffMain(week,data,forecastSettings,mode,revision,owners);
+    if(!forecast?.futureWeek || document.visibilityState==='hidden' || homePlannerDirtyKey(load())!==revision
+      || _homeRenderedWeek!==week || forecast.targetAt<=Date.now())return;
     applyAgendaRiskForecast(week,forecast,data);week.forecastRevision=revision;
     saveHomeAgendaCache(data,week);
-    if(before!==JSON.stringify((week.days[0]?.timeline || []).map(r=>r.riskAt))){
-      void reconcileNativeReminders();
-    }
+    void reconcileNativeReminders();
   },400);
 }
 function nativeBackgroundSnapshot(){
@@ -327,18 +336,35 @@ function nativeBackgroundSnapshot(){
     weatherRevision:sortSettings?._weatherContext?.revision || '',
     coord:typeof currentCoordLocation === 'function' ? currentCoordLocation() : null};
 }
+function nativeBackgroundSnapshotKey(){
+  const data=typeof load==='function'?load():[];
+  const prefs=nativeReminderPreferences();
+  const mounted=typeof _homeRenderedWeek!=='undefined'?_homeRenderedWeek:null;
+  return [
+    typeof homePlannerDirtyKey==='function'?homePlannerDirtyKey(data):'',
+    prefs.enabled,
+    JSON.stringify(prefs.items||{}),
+    typeof _optimizerHomeReadyDirtyKey!=='undefined'?_optimizerHomeReadyDirtyKey:'',
+    sortSettings?._weatherContext?.revision||'',
+    mounted && typeof homeAgendaPlanSignature==='function'?homeAgendaPlanSignature(mounted,data):''
+  ].join('\n');
+}
 function queueNativeBackgroundSnapshot(){
   if(!window.TingsNative?.isNative || !window.TingsNative.background)return;
   clearTimeout(nativeBackgroundSnapshotTimer);
   nativeBackgroundSnapshotTimer=setTimeout(()=>{
-    const snapshot=nativeBackgroundSnapshot(),signature=JSON.stringify(snapshot);
-    if(signature===nativeBackgroundInputSignature)return;
-    window.TingsNative.background.snapshot(snapshot).then(()=>{nativeBackgroundInputSignature=signature;})
+    const key=nativeBackgroundSnapshotKey();
+    if(key===nativeBackgroundInputSignature)return;
+    const snapshot=nativeBackgroundSnapshot();
+    window.TingsNative.background.snapshot(snapshot).then(()=>{nativeBackgroundInputSignature=key;})
       .catch(()=>{});
   },100);
 }
-async function refreshNativeBackgroundStatus(){
+async function refreshNativeBackgroundStatus(force=false){
   const api=window.TingsNative?.background;if(!api)return;
+  if(!force && !nativeBackgroundWaitingSince && Date.now()-nativeBackgroundStatusAt<60000
+    && !nativeReminderSettingsOpen())return;
+  nativeBackgroundStatusAt=Date.now();
   const state=await api.status(),node=document.getElementById('native-background-status');
   nativeAgendaChannelEnabled=state.notificationChannelEnabled!==false;
   const toggle=document.getElementById('native-background-toggle');
@@ -451,6 +477,8 @@ async function reconcileNativeRemindersNow(){
           kind:row.kind,hid:row.hid || row.h?.hid,i:row.i,start:row.start,end:row.end,
           occurrenceKey:row.occurrenceKey,scheduleOptionId:row.scheduleOptionId,
           riskCheckedAt:row.riskCheckedAt,
+          warnedDropAt:events.find(e=>e.owner===`item:${row.hid || row.h?.hid}` && e.reminderEdge==='missed' && !e.slipped
+            && (e.completion?.scheduleOptionId || 'main')===(row.scheduleOptionId || 'main'))?.agendaAt,
           riskAt:events.find(e=>e.owner===`item:${row.hid || row.h?.hid}` && e.reminderEdge==='missed' && !e.slipped
             && (e.completion?.scheduleOptionId || 'main')===(row.scheduleOptionId || 'main'))?.agendaAt ?? row.riskAt ?? row.dropAt
         }))}))};
@@ -465,7 +493,7 @@ async function reconcileNativeRemindersNow(){
 }
 async function renderNativeReminderStatus(){
   const node = document.getElementById('native-reminder-status');
-  if(!node)return;
+  if(!node || !nativeReminderSettingsOpen())return;
   const api = window.TingsNative.notifications;
   const permission = await api.permissions();
   const exact = await api.exactAlarmPermission();
@@ -544,8 +572,8 @@ function initNativeReminders(){
         const state=await window.TingsNative.background.status();
         await window.TingsNative.background.snapshot(nativeBackgroundSnapshot());
         await window.TingsNative.background.configure(!state.enabled);
-        await refreshNativeBackgroundStatus();
-      }catch(error){showToast(error.message);await refreshNativeBackgroundStatus();}finally{background.disabled=false;}
+        await refreshNativeBackgroundStatus(true);
+      }catch(error){showToast(error.message);await refreshNativeBackgroundStatus(true);}finally{background.disabled=false;}
     });
     const hint=document.createElement('p');hint.className='field-hint';
     hint.textContent='Updates the agenda and your chosen reminders using time, saved data, and weather. One brief location check can update your place. No continuous GPS tracking. Turn on phone reminders and choose at least one item reminder to use this.';
@@ -554,7 +582,7 @@ function initNativeReminders(){
       try{
         const state=await window.TingsNative.background.requestLocation();
         if(!state.fine){showToast('Allow precise location to use saved-place detection.');return;}
-        if(state.background){showToast('Background location is already allowed.');await refreshNativeBackgroundStatus();return;}
+        if(state.background){showToast('Background location is already allowed.');await refreshNativeBackgroundStatus(true);return;}
         showToast('In Android settings → Permissions → Location, choose Allow all the time.');
         await window.TingsNative.background.openLocationSettings();
       }catch(error){showToast(error.message);}
@@ -562,16 +590,23 @@ function initNativeReminders(){
     const backgroundStatus=document.createElement('p');backgroundStatus.id='native-background-status';backgroundStatus.className='field-hint';
     panel.append(background,hint,location,backgroundStatus);
     window.addEventListener('tings-native-input',queueNativeBackgroundSnapshot);
-    void refreshNativeBackgroundStatus().catch(()=>{});
   }
   host.replaceChildren(panel);
   nativeEnsureBusyReminderIds();
   renderBlockedTimeControls();
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){nativeReminderLastSignature = '';queueNativeReminders();}});
+  document.getElementById('settings-reminders-head')?.addEventListener('click',()=>{
+    queueMicrotask(()=>{
+      if(!nativeReminderSettingsOpen())return;
+      void renderNativeReminderStatus().catch(()=>{});
+      void refreshNativeBackgroundStatus(true).catch(()=>{});
+    });
+  });
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){nativeReminderLastSignature = '';nativeBackgroundStatusAt=0;queueNativeReminders();}});
   window.addEventListener('focus',queueNativeReminders);
   // Covers edits received by clone reconciliation and same-plan provenance updates.
+  // Completions stay cheap; placement/forecast work is cached after the first pass.
   setInterval(()=>{if(!document.hidden)queueNativeReminders();},15000);
   queueNativeReminders();
-  void renderNativeReminderStatus().catch(()=>{});
+  void refreshNativeBackgroundStatus(true).catch(()=>{});
 }
 document.addEventListener('DOMContentLoaded',initNativeReminders);

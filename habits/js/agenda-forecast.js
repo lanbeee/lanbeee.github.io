@@ -1,8 +1,7 @@
 // Shared by both engines, the visible app and Android's background worker.
 // A risk estimate is evidence for a warning, never authority to delete work.
-const AGENDA_FORECAST_MAX_PROBES = 6;
-const AGENDA_FORECAST_BUDGET_MS = 500;
-const AGENDA_FORECAST_TIMEOUT_MS = 900;
+const AGENDA_FORECAST_MAX_PROBES = 1;
+const AGENDA_FORECAST_TIMEOUT_MS = 5000;
 
 function agendaForecastIdentity(row,data){
   return `${row.hid || row.h?.hid || data[row.i]?.hid}:${row.scheduleOptionId || 'main'}`;
@@ -80,113 +79,74 @@ function replayAgendaClockWeek(data,settings,count,opts = {}){
   }finally{endPlannerSolveCaches();}
 }
 
-// Read-only future runs use a simulated planning clock, while performance.now
-// and native GLPK limits continue to measure real CPU/wall time. This function
-// runs only in the serialized planner worker (or isolated test context).
+// One rolling lookahead, in the existing worker. Completed work is never
+// assumed; this is the agenda we can display at targetAt if inputs stay put.
+const AGENDA_DROP_WARNING_MINUTES = 5;
+function agendaForecastSelectionConfirmed(week){
+  return week.plannerDiagnostics?.clockReplay || week.plannerSolveStatus==='optimal'
+    || (week.plannerDiagnostics?.daySolves || []).some(day=>day.dayKey===week.days?.[0]?.dayKey
+      && day.phase==='fixed-pack' && day.status==='optimal');
+}
 async function forecastAgendaRisks(week,data,settings,mode,opts = {}){
-  const RealDate=Date,now=RealDate.now(),day=week.days?.[0];
-  const result={risks:{},probes:0,replayProbes:0,elapsedMs:0,budgetExhausted:false,checkedAt:now,
-    planKey:agendaForecastPlanKey(week,data)};
-  if(!day || day.dayBase!==dayStart(now))return result;
-  const rows=(day.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind));
-  const owners=new Set(opts.owners || []);
-  // Fixed clocks already have an exact end boundary; do not spend battery
-  // simulating them or keep probing after every flexible subject was lost.
-  const subjects=rows.filter(r=>r.kind==='fill' && !r.hard && owners.has(r.hid || r.h?.hid || data[r.i]?.hid));
-  if(!subjects.length)return result;
-  const maxProbes=Math.min(AGENDA_FORECAST_MAX_PROBES,Math.max(0,opts.maxProbes ?? AGENDA_FORECAST_MAX_PROBES));
-  const budget=Math.min(AGENDA_FORECAST_BUDGET_MS,Math.max(0,opts.budgetMs ?? AGENDA_FORECAST_BUDGET_MS));
-  // Include near-term clocks and real agenda boundaries. One solve examines
-  // every opted-in occurrence; no per-item solves or optimizer binary search.
-  const clocks=[5,30,90,180,300,540].map(m=>ceilToMinutes(now+m*60000,5));
-  for(const row of subjects)for(const t of [row.start,row.dropAt]){
-    if(Number.isFinite(t) && t>now && t<day.dayBase+86400000)clocks.push(ceilToMinutes(t+60000,5));
-  }
-  const boundaries=[...new Set(clocks)].filter(t=>t<day.dayBase+86400000).sort((a,b)=>a-b);
-  const samples=maxProbes ? [...new Set(Array.from({length:maxProbes},(_,i)=>
-    boundaries[Math.round(i*(boundaries.length-1)/Math.max(1,maxProbes-1))]))] : [];
+  const RealDate=Date,now=RealDate.now();
+  // The planner rounds starts to five-minute slots. Include the first instant
+  // after the next boundary: sampling exactly on it can still show a final
+  // feasible start and miss the loss one millisecond later.
+  const targetAt=opts.targetAt ?? (ceilToMinutes(now+1,AGENDA_DROP_WARNING_MINUTES)+1);
+  const day=week.days?.[0];
+  const result={risks:{},probes:0,replayProbes:0,elapsedMs:0,budgetExhausted:false,
+    checkedAt:now,targetAt,planKey:agendaForecastPlanKey(week,data)};
+  if(!day || day.dayBase!==dayStart(now) || dayStart(targetAt)!==day.dayBase)return result;
+  const enabled=new Set(opts.owners || []);
+  const subjects=(day.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind));
+  if(!subjects.some(r=>enabled.has(r.hid || r.h?.hid || data[r.i]?.hid)))return result;
+  // One build covers every displayed occurrence. Changing a per-item delivery
+  // choice can use this evidence immediately without another planner run.
   const started=performance.now(),savedMemo=_plannerWeekDayMemo;
-  let clock=now,lastPresent=now,prior=week;
+  let planningAt=targetAt;
   class PlanningDate extends RealDate{
-    constructor(...args){super(...(args.length ? args : [clock]));}
-    static now(){return clock;}
+    constructor(...args){super(...(args.length ? args : [planningAt]));}
+    static now(){return planningAt;}
   }
+  globalThis.Date=PlanningDate;
   try{
-    globalThis.Date=PlanningDate;
-    // A future rebuild can use another route origin when a block/venue ends.
-    // Reserve one outstanding observed travel leg rather than assuming the
-    // original location witness stays exact across sparse probes.
-    const travelMargin=(day.timeline || []).filter(r=>r.kind==='travel')
-      .reduce((n,r)=>Math.max(n,Number(r.seconds) || (r.end-r.start)/1000),0)*1000;
-    const publish=(waitingForSolve=false)=>{
-      const progress={...result,risks:Object.fromEntries(Object.entries(result.risks).map(([key,risk])=>
-        [key,{...risk,at:risk.at-travelMargin}]))};
-      // A hard parent timeout may interrupt this next full build. Its partial
-      // result must still cover unresolved work beyond the validated frontier.
-      if(waitingForSolve)for(const row of subjects){
-        const key=agendaForecastIdentity(row,data);
-        if(!progress.risks[key])progress.risks[key]={at:lastPresent+1-travelMargin,reason:'forecast-budget-frontier'};
-      }
-      progress.travelMarginMs=travelMargin;
-      opts.onProgress?.(progress);
-    };
-    publish();
-    clock=now;
-    // Most clock steps are placement replays, not optimizer runs. Reuse this
-    // same production fast path to inspect five-minute boundaries without
-    // paying for ILP solves. Coupled/unsupported cases use sparse full probes.
-    const cheap=replayAgendaClockWeek(data,settings,week.days.length,{
-      reuseIncumbent:true,day0Only:true,memoDays:memoDaysFromWeek(week)});
-    const horizon=Math.min(day.dayBase+86400000,Math.max(now,...subjects.map(r=>Number(r.dropAt) || Number(r.end)))+5*60000);
-    const scan=cheap ? Array.from({length:Math.max(0,Math.ceil((horizon-ceilToMinutes(now+1,5))/300000))},
-      (_,i)=>ceilToMinutes(now+1,5)+i*300000) : samples;
-    let allReplay=Boolean(cheap);
-    for(const at of scan){
-      if(performance.now()-started>=budget){result.budgetExhausted=true;break;}
-      clock=at;
-      const needsFarDays=agendaClockRefreshNeedsFarDays(prior.days[0],at,data);
-      const buildOpts={dirtyKey:'forecast',day0Only:!needsFarDays,reuseIncumbent:!needsFarDays,
-        memoDays:memoDaysFromWeek(prior),priorPlacements:agendaPriorPlacementsFromWeek(prior),
-        forecast:true};
-      let future=cheap && !needsFarDays && replayAgendaClockWeek(data,settings,week.days.length,buildOpts);
-      if(future)result.replayProbes++;
-      else{
-        allReplay=false;
-        if(result.probes>=maxProbes){result.budgetExhausted=true;break;}
-        publish(true);
-        future=mode==='exact' ? await buildWeekAgendaAsync(data,settings,week.days.length,buildOpts)
-          : buildWeekAgenda(data,settings,week.days.length,buildOpts);
-        result.probes++;
-      }
-      const present=new Set((future.days[0].timeline || []).filter(r=>['fill','scheduled'].includes(r.kind))
+    // Far days remain cached. This build asks only about today's remaining
+    // opportunity; ordinary full-week planning still owns task deferral.
+    const buildOpts={dirtyKey:'drop-lookahead',day0Only:true,reuseIncumbent:true,
+      memoDays:memoDaysFromWeek(week),priorPlacements:agendaPriorPlacementsFromWeek(week),
+      incumbentSolveStatus:week.plannerSolveStatus || '',glpkLimitSeconds:4};
+    const future=mode==='exact' ? await buildWeekAgendaAsync(data,settings,1,buildOpts)
+      : buildWeekAgenda(data,settings,1,buildOpts);
+    result.probes=1;result.replayProbes=Number(Boolean(future.plannerDiagnostics?.clockReplay));
+    result.futureWeek=leanAgendaWeek(future);
+    const present=new Set((future.days[0]?.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind))
+      .map(r=>agendaForecastIdentity(r,data)));
+    // Moving unfinished tasks/sparse rhythms to another day still needs the
+    // normal full-week planner. A today-only warning must not freeze that work
+    // out of tomorrow by replacing its original today row prematurely.
+    result.requiresWeekReplan=(day.timeline || []).some(row=>{
+      const h=row.h || data[row.i];
+      return row.kind==='fill' && !present.has(agendaForecastIdentity(row,data))
+        && h && (h.type==='task' || Number(h.target)>1);
+    });
+    for(const row of subjects){
+      const key=agendaForecastIdentity(row,data);
+      if(!present.has(key))result.risks[key]={at:targetAt,absentAt:targetAt,reason:'five-minute-loss',validated:true};
+    }
+    if(result.requiresWeekReplan && opts.verifyMovableLoss!==false){
+      // A today-only pack can lose a task which the actual full-week refresh
+      // restores. Confirm its selection before issuing the warning.
+      planningAt=targetAt+60000;
+      const checked=mode==='exact' ? await buildWeekAgendaAsync(data,settings,7,{...buildOpts,day0Only:false})
+        : buildWeekAgenda(data,settings,7,{...buildOpts,day0Only:false});
+      result.verificationProbes=1;
+      const returned=new Set((checked.days[0]?.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind))
         .map(r=>agendaForecastIdentity(r,data)));
       for(const row of subjects){
         const key=agendaForecastIdentity(row,data);
-        if(!present.has(key) && (!result.risks[key] || !result.risks[key].absentAt))result.risks[key]={
-          // Loss is somewhere in this interval. Warn from its earlier side.
-          at:Math.min(lastPresent+1,result.risks[key]?.at ?? Infinity),absentAt:at,
-          reason:allReplay ? 'clock-replay-loss' : 'future-loss-interval',validated:allReplay};
+        if(returned.has(key) || (mode==='exact' && !agendaForecastSelectionConfirmed(checked)))delete result.risks[key];
       }
-      lastPresent=at;prior=future;
-      publish();
-      if(subjects.every(row=>result.risks[agendaForecastIdentity(row,data)]?.absentAt))break;
     }
-    if(result.budgetExhausted && cheap){
-      for(const row of subjects.filter(r=>r.kind==='fill')){
-        const key=agendaForecastIdentity(row,data);
-        if(!result.risks[key])result.risks[key]={at:lastPresent+1,reason:'forecast-budget-frontier'};
-      }
-      publish();
-    }
-    if(!result.budgetExhausted && allReplay){
-      for(const row of subjects.filter(r=>r.kind==='fill')){
-        const key=agendaForecastIdentity(row,data);
-        if(!result.risks[key])result.risks[key]={at:lastPresent+1,reason:'validated-replay-frontier',validated:true};
-      }
-      publish();
-    }
-    for(const risk of Object.values(result.risks))risk.at-=travelMargin;
-    result.travelMarginMs=travelMargin;
   }finally{
     globalThis.Date=RealDate;_plannerWeekDayMemo=savedMemo;endPlannerSolveCaches();
     result.elapsedMs=Math.round(performance.now()-started);
@@ -194,20 +154,148 @@ async function forecastAgendaRisks(week,data,settings,mode,opts = {}){
   return result;
 }
 
+// Closed Android pre-schedules alerts between its existing periodic refreshes.
+// All samples run in one worker, today only. A loss must also survive a normal
+// rebuild from the original agenda a minute after the predicted clock; chained
+// simulations alone are not sufficient evidence for a queued warning.
+async function forecastClosedAgendaRisks(week,data,settings,mode,opts = {}){
+  const RealDate=Date,now=Date.now(),started=performance.now(),step=5*60000;
+  const result={kind:'closed',checkedAt:now,throughAt:now,planKey:agendaForecastPlanKey(week,data),
+    risks:{},probes:0,verificationProbes:0,replayProbes:0,elapsedMs:0,budgetExhausted:false};
+  let current=week;
+  const enabled=new Set(opts.owners || []);
+  const tracked=new Set((week.days?.[0]?.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind)
+    && enabled.has(r.hid || r.h?.hid || data[r.i]?.hid)).map(r=>agendaForecastIdentity(r,data)));
+  if(!(week.days?.[0]?.timeline || []).some(r=>enabled.has(r.hid || r.h?.hid || data[r.i]?.hid)))return result;
+  const first=ceilToMinutes(now+1,5)+1;
+  for(let i=0;i<12;i++){
+    const targetAt=first+i*step;
+    if(dayStart(targetAt+60000)!==dayStart(now))break;
+    // No new work after one second. The parent additionally enforces five
+    // seconds including the last four-second solve and worker startup.
+    if(performance.now()-started>=1000){result.budgetExhausted=true;break;}
+    const probe=await forecastAgendaRisks(current,data,settings,mode,{owners:opts.owners,targetAt,verifyMovableLoss:false});
+    if(!probe.futureWeek)break;
+    const losses=Object.entries(probe.risks).filter(([key])=>tracked.has(key) && !result.risks[key]);
+    if(losses.length){
+      if(performance.now()-started>=1000){result.budgetExhausted=true;break;}
+      const savedMemo=_plannerWeekDayMemo;
+      let checkAt=targetAt+60000;
+      class CheckDate extends RealDate{
+        constructor(...args){super(...(args.length ? args : [checkAt]));}
+        static now(){return checkAt;}
+      }
+      globalThis.Date=CheckDate;
+      let checked,before;
+      try{
+        // Full-week reconsideration is required for a dropped movable, as in
+        // the actual home/background refresh. It may restore the task today.
+        const buildOpts={dirtyKey:'closed-drop-check',day0Only:!probe.requiresWeekReplan
+            && !agendaClockRefreshNeedsFarDays(week.days[0],checkAt,data),reuseIncumbent:true,
+          memoDays:memoDaysFromWeek(week),priorPlacements:agendaPriorPlacementsFromWeek(week),
+          incumbentSolveStatus:week.plannerSolveStatus || '',glpkLimitSeconds:4};
+        checked=mode==='exact' ? await buildWeekAgendaAsync(data,settings,7,buildOpts)
+          : buildWeekAgenda(data,settings,7,buildOpts);
+        result.verificationProbes++;
+        if(performance.now()-started>=1000){result.budgetExhausted=true;break;}
+        // Verify the other side of the boundary too. A chained pack may lose
+        // the item later than a normal refresh; that is uncertain timing and
+        // must not queue a misleading advance alert.
+        checkAt=targetAt-60000;
+        const beforeOpts={...buildOpts,day0Only:!agendaClockRefreshNeedsFarDays(week.days[0],checkAt,data)};
+        before=mode==='exact' ? await buildWeekAgendaAsync(data,settings,7,beforeOpts)
+          : buildWeekAgenda(data,settings,7,beforeOpts);
+        result.verificationProbes++;
+      }finally{globalThis.Date=RealDate;_plannerWeekDayMemo=savedMemo;endPlannerSolveCaches();}
+      const present=new Set((checked.days[0]?.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind))
+        .map(r=>agendaForecastIdentity(r,data)));
+      const beforeSet=new Set((before.days[0]?.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind))
+        .map(r=>agendaForecastIdentity(r,data)));
+      for(const [key,risk] of losses)if(!present.has(key)
+        && beforeSet.has(key)
+        && (mode!=='exact' || agendaForecastSelectionConfirmed(checked))){
+        result.risks[key]={...risk,warningAt:targetAt-step,verified:true};
+      }
+    }
+    if(!i)result.nearForecast=probe;
+    result.probes++;result.replayProbes+=probe.replayProbes;
+    result.throughAt=targetAt;result.elapsedMs=Math.round(performance.now()-started);
+    opts.progress?.({...result,risks:{...result.risks}});
+    current={...probe.futureWeek,days:probe.futureWeek.days.map(day=>({...day,
+      timeline:(day.timeline || []).map(r=>({...r})),agendaItems:(day.agendaItems || []).map(r=>({...r}))}))};
+    rehydrateAgendaWeekHabits(current,data);
+  }
+  result.elapsedMs=Math.round(performance.now()-started);
+  return result;
+}
+
+// Called only by Android's disposable background page, never the visible UI.
+function forecastClosedAgendaOffMain(week,data,settings,mode,revision,owners){
+  if(!owners.length || _plannerWorkerRequests.size || _agendaForecastRequest)return Promise.resolve(null);
+  const worker=ensureAgendaPlannerWorker();if(!worker)return Promise.resolve(null);
+  const id=++_plannerWorkerSeq;
+  return new Promise(resolve=>{
+    let partial=null;
+    const finish=result=>{
+      clearTimeout(timer);
+      if(result){
+        result.revision=revision;result.warningAt=Date.now()+2000;
+        if(result.nearForecast)Object.assign(result.nearForecast,{revision,warningAt:result.warningAt});
+      }
+      resolve(result);
+    };
+    const timer=setTimeout(()=>{
+      _plannerWorkerRequests.delete(id);
+      cancelAgendaPlannerWorkerRequests('closed lookahead deadline');
+      finish(partial && {...partial,budgetExhausted:true});
+    },AGENDA_FORECAST_TIMEOUT_MS);
+    _plannerWorkerRequests.set(id,{resolve:finish,reject:()=>finish(partial),progress:result=>{partial=result;}});
+    worker.postMessage({id,closedForecast:true,week:leanAgendaWeek(week),data,settings,mode,owners,
+      storage:plannerWorkerStorageSnapshot()});
+  });
+}
+
 function applyAgendaRiskForecast(week,forecast,data){
-  const samePlan=forecast.planKey===agendaForecastPlanKey(week,data);
+  if(forecast.planKey!==agendaForecastPlanKey(week,data) || !forecast.futureWeek)return week;
+  // No static-fit or exhausted-budget fallback: only an actual future loss
+  // creates a warning. Old multi-hour evidence must not survive migration.
   for(const row of week.days?.[0]?.timeline || []){
     const risk=forecast.risks[agendaForecastIdentity(row,data)];
-    if(!risk)continue;
-    const validated=Boolean(risk.validated && samePlan);
-    row.riskAt=validated ? risk.at : Math.min(Number.isFinite(row.riskAt) ? row.riskAt : Infinity,risk.at);
-    row.riskReason=risk.reason;row.riskCheckedAt=forecast.checkedAt;
-    row.riskValidated=validated;
-    row.riskAbsentAt=risk.absentAt;
+    row.riskAt=risk?.at;row.riskReason=risk?.reason;
+    row.riskCheckedAt=forecast.checkedAt;row.riskValidated=Boolean(risk);
+    row.riskAbsentAt=risk?.absentAt;
   }
-  week.forecastDiagnostics={probes:forecast.probes,replayProbes:forecast.replayProbes,elapsedMs:forecast.elapsedMs,
-    budgetExhausted:forecast.budgetExhausted,checkedAt:forecast.checkedAt};
+  week.dropForecast={...forecast};
+  week.forecastDiagnostics={probes:forecast.probes,replayProbes:forecast.replayProbes,
+    elapsedMs:forecast.elapsedMs,checkedAt:forecast.checkedAt};
   return week;
+}
+
+// A changed edit, location/weather revision or refinement invalidates reuse.
+// Clock-only slides explicitly carry the matching source signature forward.
+function reusableAgendaDropForecast(week,data,revision,now=Date.now()){
+  const forecast=week?.dropForecast;
+  return forecast?.futureWeek && forecast.revision===revision
+    && forecast.planKey===agendaForecastPlanKey(week,data)
+    && dayStart(now)===week.days?.[0]?.dayBase
+    && now<=forecast.targetAt+60000 ? forecast : null;
+}
+function consumeAgendaDropForecast(week,data,revision,now=Date.now()){
+  const forecast=reusableAgendaDropForecast(week,data,revision,now);
+  if(!forecast || now<forecast.targetAt || forecast.requiresWeekReplan)return null;
+  const future=forecast.futureWeek;
+  const today={...future.days[0],timeline:(future.days[0].timeline || []).map(r=>({...r})),
+    agendaItems:(future.days[0].agendaItems || []).map(r=>({...r}))};
+  const combined={...future,days:[today,...week.days.slice(1)],
+    optimized:Boolean(future.optimized && week.optimized),
+    plannerSolveStatus:future.plannerSolveStatus==='optimal' && week.plannerSolveStatus==='optimal'
+      ? 'optimal' : 'feasible',
+    plannerDiagnostics:{...future.plannerDiagnostics,daySolves:[
+      ...(future.plannerDiagnostics?.daySolves || [{dayKey:today.dayKey,phase:'fixed-pack',status:future.plannerSolveStatus || 'feasible'}]),
+      ...(week.plannerDiagnostics?.daySolves || []).filter(s=>s.dayKey!==today.dayKey)]},
+    totalTravelSeconds:(future.days[0]?.travelSeconds || 0)+week.days.slice(1).reduce((n,d)=>n+(d.travelSeconds || 0),0)};
+  rehydrateAgendaWeekHabits(combined,data);
+  return combined;
 }
 
 let _agendaForecastRequest=null;
@@ -216,20 +304,17 @@ function cancelAgendaRiskForecast(reason='forecast superseded'){
   if(!_agendaForecastRequest)return;
   const request=_agendaForecastRequest;_agendaForecastRequest=null;
   clearTimeout(request.timer);
-  // Termination also cancels a synchronous solve, rather than merely hiding
-  // its result. No real planning is queued behind this optional request.
   cancelAgendaPlannerWorkerRequests(reason);
-  request.resolve(request.partial || null);
+  request.resolve(null);
 }
 function forecastAgendaOffMain(week,data,settings,mode,revision,owners){
   if(!owners.length)return Promise.resolve(null);
   const enabled=new Set(owners);
-  if(!(week.days?.[0]?.timeline || []).some(row=>row.kind==='fill' && !row.hard
+  if(!(week.days?.[0]?.timeline || []).some(row=>['fill','scheduled'].includes(row.kind)
     && enabled.has(row.hid || row.h?.hid || data[row.i]?.hid)))return Promise.resolve(null);
   const key=`${dateKey(Date.now())}:${revision}:${owners.slice().sort().join(',')}`;
-  const cached=_agendaForecastCache.get(key);
-  if(cached)return Promise.resolve(cached);
-  // Do not compete with foreground work or quality refinement.
+  const planKey=agendaForecastPlanKey(week,data),cached=_agendaForecastCache.get(key);
+  if(cached && cached.targetAt>Date.now() && cached.planKey===planKey)return Promise.resolve(cached);
   if(_plannerWorkerRequests.size || _agendaForecastRequest)return Promise.resolve(null);
   const worker=ensureAgendaPlannerWorker();
   if(!worker)return Promise.resolve(null);
@@ -239,24 +324,22 @@ function forecastAgendaOffMain(week,data,settings,mode,revision,owners){
       if(_agendaForecastRequest?.id!==id)return;
       clearTimeout(_agendaForecastRequest.timer);_agendaForecastRequest=null;
       if(forecast){
-        // At most one batch per input revision. Limit memory across edits.
+        forecast.revision=revision;forecast.warningAt=Date.now()+2000;
         if(_agendaForecastCache.size>=8)_agendaForecastCache.delete(_agendaForecastCache.keys().next().value);
         _agendaForecastCache.set(key,forecast);
       }
       resolve(forecast);
     };
     _agendaForecastRequest={id,resolve,timer:setTimeout(()=>{
-      // Cache exhaustion too: repeated minute ticks must not burn more CPU
-      // retrying a large fixture that exceeded the optional budget.
-      const partial=_agendaForecastRequest?.partial || {risks:{},probes:0,checkedAt:Date.now()};
-      partial.elapsedMs=AGENDA_FORECAST_TIMEOUT_MS;partial.budgetExhausted=true;
+      // Failed lookaheads produce no alerts. Back off for one lookahead period
+      // instead of repeatedly terminating/reloading WASM on a dense agenda.
+      const failure={risks:{},probes:0,checkedAt:Date.now(),targetAt:Date.now()+300000,
+        planKey,revision,elapsedMs:AGENDA_FORECAST_TIMEOUT_MS,budgetExhausted:true};
       if(_agendaForecastCache.size>=8)_agendaForecastCache.delete(_agendaForecastCache.keys().next().value);
-      _agendaForecastCache.set(key,partial);
-      cancelAgendaRiskForecast('forecast budget exhausted');
+      _agendaForecastCache.set(key,failure);
+      cancelAgendaRiskForecast('lookahead deadline');
     },AGENDA_FORECAST_TIMEOUT_MS)};
-    _plannerWorkerRequests.set(id,{resolve:finish,reject:()=>finish(null),progress:partial=>{
-      if(_agendaForecastRequest?.id===id)_agendaForecastRequest.partial=partial;
-    }});
+    _plannerWorkerRequests.set(id,{resolve:finish,reject:()=>finish(null)});
     worker.postMessage({id,forecast:true,week:leanAgendaWeek(week),data,settings,mode,owners,
       storage:plannerWorkerStorageSnapshot()});
   });

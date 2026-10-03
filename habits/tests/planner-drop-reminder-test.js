@@ -30,13 +30,17 @@ const {chromium,glpkAvailable}=require('./helpers/planner-test-helpers');
           const week=exact ? await buildWeekAgendaAsync(data,settings,1) : buildWeekAgenda(data,settings,1);
           const row=week.days[0].timeline.find(r=>r.h?.hid==='short');
           const prefs={enabled:true,items:{'item:short':{missed:exact ? 'alarm' : 'notification',missedLeadMinutes:5}}};
-          const warning=nativeReminderEvents(week,data,settings,prefs,now).find(e=>e.reminderEdge==='missed');
+          const early=nativeReminderEvents(week,data,settings,prefs,now).find(e=>e.reminderEdge==='missed');
+          clock=base+(14*60+45)*60000;
+          const forecast=await forecastAgendaRisks(week,data,settings,exact?'exact':'fast',{owners:['short']});
+          forecast.revision='simple';applyAgendaRiskForecast(week,forecast,data);week.forecastRevision='simple';
+          const warning=nativeReminderEvents(week,data,settings,prefs,clock).find(e=>e.reminderEdge==='missed');
           const sliding=shiftAgendaFillToNow(week.days[0].timeline,week.days[0].timeline.indexOf(row),base+(14*60+51)*60000);
           clock=base+(14*60+51)*60000;
           const after=exact ? await buildWeekAgendaAsync(data,settings,1) : buildWeekAgenda(data,settings,1);
           const dropped=nativeReminderEvents(after,data,settings,prefs,clock,week).filter(e=>e.key.includes(':Slipped:'));
           results.push({exact,blocker:blocker.hid,dropAt:row?.dropAt,at:warning?.at,delivery:warning?.delivery,
-            stillOnAgenda:after.days[0].timeline.some(r=>r.h?.hid==='short'),sliding:sliding!==null,dropped:dropped.length});
+            early:Boolean(early),stillOnAgenda:after.days[0].timeline.some(r=>r.h?.hid==='short'),sliding:sliding!==null,dropped:dropped.length});
         }
         // No fragmentation loophole: two five-minute slivers cannot fit ten minutes.
         clock=now;
@@ -78,7 +82,8 @@ const {chromium,glpkAvailable}=require('./helpers/planner-test-helpers');
     },glpkOk);
     for(const r of result.results){
       assert.equal(r.dropAt,result.base+(14*60+50)*60000+1,JSON.stringify(r));
-      assert.equal(r.at,result.base+(14*60+45)*60000+1,'five-minute warning is 2:45, not near allowed end 3:45');
+      assert.equal(r.at,result.base+(14*60+45)*60000+2000,'five-minute warning is 2:45, not near allowed end 3:45');
+      assert.equal(r.early,false,'no hours-ahead/static warning');
       assert.equal(r.delivery,r.exact ? 'alarm' : 'notification');
       assert.equal(r.stillOnAgenda,false,'at 2:51 the real planner drops this occurrence');
       assert.equal(r.sliding,false,'clock slide cannot carry work beyond its cutoff');

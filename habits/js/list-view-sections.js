@@ -245,7 +245,7 @@ function computePlannerExpectationMap(data,settings,numDays = 7){
   // Skip the Fast week-graph search: it can rebuild the horizon dozens of
   // times and freeze scrolling/taps. Hid-per-day expectations only need the
   // ordinary greedy pack.
-  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true,fastGraph:false});
+  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true,fastGraph:false,skipDropAnnotation:true});
   const out = {};
   for(const day of week.days || []){
     const key = day.dayKey || dateKey(day.dayBase);

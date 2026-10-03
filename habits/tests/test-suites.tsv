@@ -120,3 +120,5 @@ safe-area-scroll-test.js	ui	once
 zz-planner-cutoff-audit.js	diagnostics	once
 planner-forecast-test.js	planner	once
 planner-forecast-worker-test.js	planner	once
+
+planner-closed-forecast-test.js	planner	once
