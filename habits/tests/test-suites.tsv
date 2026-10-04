@@ -125,3 +125,4 @@ planner-closed-forecast-test.js	planner	once
 planner-quality-gap-test.js	diagnostics	once
 fast-planner-specialization-test.js	planner	once
 fast-linked-recovery-test.js	planner	once
+fast-evening-packing-test.js	planner	once

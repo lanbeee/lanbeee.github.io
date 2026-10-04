@@ -80,6 +80,49 @@ function mixed(count){
   }));
   s.data=core;s.required={'daily-critical':70};s.expectedClocks={doing:{day:0,start:540}};return s;
 }
+// Evening packing regression: a sparse outdoor occurrence and a closing venue
+// require shifting flexible critical rows and a long soft-preference block.
+function eveningPackingScenario(){
+  const now=new Date('2026-10-03T18:28:00-04:00').getTime();
+  const day=now-1108*60000,ms=86400000;
+  const item=(hid,durationMinutes,priority,start,end,extra={})=>baseHabit({
+    hid,name:`Synthetic ${hid}`,target:1,durationMinutes,priority,logs:[day-ms],
+    allowedTimeStart:start,allowedTimeEnd:end,...extra});
+  const profile={id:'mild',name:'Mild',rules:[{metric:'temperature_2m',min:null,max:25,hard:true,relative:'none'}]};
+  const samples=Array.from({length:7*24},(_,i)=>({ts:day+i*3600000,
+    temperature_2m:i%24<20 ? 20 : 30,source:'weekly'}));
+  const home={locationIds:['home'],anywhereAllowed:false};
+  return {id:'evening-sparse-weather-and-closing-venue',now,dayBase:day,days:7,data:[
+    item('critical-a',5,0,1134,1173,home),item('critical-b',10,0,1210,1330,home),
+    item('meal',15,1,1230,1410,home),
+    item('long-flex',60,2,977,1439,{...home,target:7,logs:[day-7*ms],preferredTimeStart:970,preferredTimeEnd:1210}),
+    item('call-a',15,2,1290,1440),item('call-b',30,2,1320,1440),item('call-c',30,2,1305,1440),
+    item('outdoor',30,2,725,1396,{...home,target:1.6,logs:[day-2*ms],weatherProfileMode:'profile',weatherProfileId:'mild'}),
+    item('errand',30,3,0,1440,{type:'reduce',target:30,earlyWindowDays:4,delayAllowanceDays:0,
+      logs:[day-30*ms],locationIds:['shop'],anywhereAllowed:false})
+  ],settings:openEveningSettings({blockedTimes:[{label:'night',days:[],start:1396,end:1440}],
+    lastKnownLocationId:'home',locations:[{id:'home',name:'Home',lat:40.7,lng:-74},
+      {id:'shop',name:'Shop',lat:40.701,lng:-74,allowedTimeStart:0,allowedTimeEnd:1200}],
+    travel:{'home|shop':{a:'home',b:'shop',seconds:360,metres:3000,provider:'manual',fetchedAt:now}},
+    weatherProfiles:[profile],_weatherContext:{profiles:[profile],samples,locks:[],timezone:'America/New_York',
+      places:{home:{timezone:'America/New_York',samples}}}
+  }),dayMinutes:{outdoor:{0:30},errand:{0:30}}};
+}
+
+// Packed-week recovery: optional early errand must fit TODAY with eight
+// incumbent fills, without adding a second occurrence or extra weekly travel.
+function lateEveningPackingScenario(){
+  const s=eveningPackingScenario();
+  s.id='late-evening-optional-errand';s.now=s.dayBase+1147*60000;
+  s.data.find(h=>h.hid==='critical-a').allowedTimeStart=1150;
+  const errand=s.data.find(h=>h.hid==='errand');
+  Object.assign(errand,{logs:[s.dayBase-26*MS],planByDate:s.dayBase+6*MS,delayAllowanceDays:4,preferredWeekdays:[1,2,3,4,5]});
+  s.settings.locations.find(l=>l.id==='shop').allowedTimeEnd=1260;
+  s.settings.locations.find(l=>l.id==='home').isHome=true;
+  s.settings.blockedTimes.push({label:'sleep',days:[],start:0,end:420,locationId:'home'});
+  return s;
+}
+
 function qualityScenarios(){
   const gaps=[gap(0,'selection-trap'),gap(1,'long-block-trap'),gap(2,'short-hole-trap'),
     gap(0,'weather-selection-trap',s=>{
@@ -151,6 +194,7 @@ function qualityScenarios(){
       allowedTimeStartCombine:'later',allowedTimeStartAnchor2:'fixed',allowedTimeStartFixedMin2:900}),
     habit('overnight',{durationMinutes:10,allowedTimeStart:1260,allowedTimeEnd:120})
   ],{settings:settings({homeCityLat:40.7,homeCityLng:-74,blockedTimes:[]}),required:{anchored:49,overnight:70}});
-  return [...gaps,precision,weather,places,inheritance,cadence,plans,anchored,scaled,mixed(20),mixed(35),mixed(50)];
+  return [...gaps,precision,weather,places,inheritance,cadence,plans,anchored,scaled,
+    eveningPackingScenario(),lateEveningPackingScenario(),mixed(20),mixed(35),mixed(50)];
 }
-module.exports={qualityScenarios,NOW,DAY,mixed};
+module.exports={qualityScenarios,NOW,DAY,mixed,eveningPackingScenario,lateEveningPackingScenario};

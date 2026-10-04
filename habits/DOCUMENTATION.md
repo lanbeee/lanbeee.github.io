@@ -2227,6 +2227,26 @@ through the shared hours, location, travel and ordering checks. A blocked
 insertion reopens up to seven placements and retains six alternative schedules
 per depth. Search has a 192-probe insertion limit and a 768-probe seed-week
 budget shared across the initial placement and location-clustering passes.
+Within those limits, unplanned neighborhoods first try three chronological
+insertion positions, then their short-higher-priority-anchor variants within
+the same probe limit. Narrow critical anchors are kept fixed before flexible
+late rows when selecting the seven-row neighborhood. The beam keeps paths that already contain the missing
+item alongside paths still making room for it, so independent later calls
+cannot crowd out every useful insertion path. Planned neighborhoods retain
+the full scored search. A location-clustering replay must retain all previously
+placed work, pinned dates, daily obligations and the first claimed date of a
+strict due occurrence; otherwise the first pass is kept. Clustering does not
+receive a fresh search budget.
+After daily selection repair, at most 96 unused probes from the same 768-probe
+budget may recover a first ordinary task/sparse occurrence from a later date
+onto today. This makes room in a packed current day even when that occurrence
+already has a place in the week. It moves rather than duplicates the occurrence,
+preserves later cadence, all placed work, explicit plans/active/link/weather
+locks and the source day's other clocks. A move cannot worsen whole-week travel
+or weather. Hard eligibility, weather deferral and daily-work reservations still
+apply; soft weekday/time preferences may yield to an earlier usable day. No
+whole-week rebuild or new periodic work is added. `fastTodayChoiceDiagnostics`
+records its probes and accepted transfers.
 Planned items also outrank at-location sequencing, so a Home lunch cannot claim
 the only contiguous 4h slot a Zoo plan needs.
 

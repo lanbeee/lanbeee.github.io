@@ -203,6 +203,7 @@ function leanAgendaWeek(week){
     fastGraphDiagnostics:week.fastGraphDiagnostics || null,
     fastWeekGraphDiagnostics:week.fastWeekGraphDiagnostics || null,
     fastSelectionDiagnostics:week.fastSelectionDiagnostics || null,
+    fastTodayChoiceDiagnostics:week.fastTodayChoiceDiagnostics || null,
     __lean:true
   };
 }

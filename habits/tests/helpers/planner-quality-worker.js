@@ -75,7 +75,7 @@ self.postMessage = message=>{
     }
     message.summary={directGapMinutes,optimized:Boolean(week.optimized),status:week.plannerSolveStatus || 'fast',
       daySolves:week.plannerDiagnostics && week.plannerDiagnostics.daySolves,
-      algorithm:week.fastPlannerAlgorithm,graph:week.fastGraphDiagnostics,weekGraph:week.fastWeekGraphDiagnostics,selection:week.fastSelectionDiagnostics,
+      algorithm:week.fastPlannerAlgorithm,graph:week.fastGraphDiagnostics,weekGraph:week.fastWeekGraphDiagnostics,selection:week.fastSelectionDiagnostics,todayChoices:week.fastTodayChoiceDiagnostics,
       workMinutes,travelMinutes,weatherPenalty,priorityMinutes,totals,rows,violations,
       days:week.days.map(d=>({dayBase:d.dayBase,totalMinutes:d.totalMinutes,usedMinutes:d.usedMinutes}))};
     delete message.week;

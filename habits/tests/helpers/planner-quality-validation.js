@@ -5,11 +5,11 @@ function independentViolations(s,result){
   const rows=result.rows.filter(row=>row.kind!=='travel');
   const minutes=row=>(row.end-row.start)/60000;
   for(const row of rows){
-    const h=byId.get(row.hid),base=DAY+row.day*86400000;
+    const h=byId.get(row.hid),base=(s.dayBase == null ? DAY : s.dayBase)+row.day*86400000;
     const start=(row.start-base)/60000,end=(row.end-base)/60000;
-    const weekday=(row.day+1)%7;
+    const weekday=new Date(base).getDay();
     if(h.allowedWeekdays.length && !h.allowedWeekdays.includes(weekday))errors.push(`weekday:${h.hid}`);
-    if(h.allowedMonthDays.length && !h.allowedMonthDays.includes(14+row.day))errors.push(`monthday:${h.hid}`);
+    if(h.allowedMonthDays.length && !h.allowedMonthDays.includes(new Date(base).getDate()))errors.push(`monthday:${h.hid}`);
     if(row.kind==='fill' && !h.allowedTimeStartAnchor && !h.allowedTimeEndAnchor && !h.scheduleOptions?.length){
       if(h.allowedTimeStart!=null && (h.allowedTimeEnd==null || h.allowedTimeEnd>=h.allowedTimeStart) && start<h.allowedTimeStart-1e-6)errors.push(`early:${h.hid}`);
       if(h.allowedTimeEnd!=null && (h.allowedTimeStart==null || h.allowedTimeEnd>=h.allowedTimeStart) && end>h.allowedTimeEnd+1e-6)errors.push(`late:${h.hid}`);

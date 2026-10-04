@@ -99,10 +99,10 @@ fast instead of silently joining every suite.
 
 ## Fast replacement quality and device audit
 
-`node tests/planner-quality-gap-test.js` compares both canonical engines on 16
+`node tests/planner-quality-gap-test.js` compares both canonical engines on 18
 synthetic scenarios, including 20/35/50-item mixed weeks, weather, travel, dynamic
-windows, cadence, plans and active work. It is opt-in (`diagnostics`) and currently
-fails on known split-task overfill. `--require-parity` additionally exposes valid
+windows, cadence, plans and active work. It is opt-in (`diagnostics`).
+`--require-parity` additionally exposes valid
 GLPK quality advantages; improved Fast schedules are allowed. Reports include
 legality, work by priority, travel/weather, solve provenance and first/warm timing.
 
@@ -129,3 +129,9 @@ cadence preservation, frozen neighbors, closed-window/no-space rollback and
 explicit future plans. Run `schedule-links-test.js` on both the regular page
 and `?planner=fast`: its travel-adjusted required chain and due optional
 successor cases must pass in Fast as well as GLPK.
+
+`fast-evening-packing-test.js` checks nine current-day items across sparse
+cadence, hard weather, closing venue hours, flexible critical rows and return
+travel against a real GLPK incumbent. It also rejects a clustering replay that
+keeps the week count by postponing today's due occurrence. Week totals alone
+cannot establish useful placement on a particular day.

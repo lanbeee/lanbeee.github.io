@@ -114,9 +114,23 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     }
   }
   if(distinctLocs.size > 1 && needsFastColocationReplay(candidates,dayStates,locHints)){
+    // Discovery can consume the graph budget. A cheaper clustering replay
+    // must not silently discard work that required that search to fit.
+    const incumbent = dayStates.map(cloneFastGraphState);
+    const occurrenceCounts = candidates.map(c=>c.unplacedOccurrenceCount);
     days.forEach(d=>{ d.agendaItems = []; });
     dayStates = makeStates();
     assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,graphBudget);
+    if(!fastGraphReplayRetainsWork(incumbent,dayStates,candidates)){
+      dayStates = incumbent;
+      for(let i=0;i<days.length;i++){
+        const omissions = dayStates[i].day.linkOmissions;
+        dayStates[i].day = days[i];
+        syncDayAgendaItemsFromFills(dayStates[i]);
+        days[i].linkOmissions = omissions;
+      }
+      candidates.forEach((c,i)=>{ c.unplacedOccurrenceCount = occurrenceCounts[i]; });
+    }
   }
 
   placeAdditionalSameDayOccurrences(candidates,dayStates,settings);
@@ -128,6 +142,10 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   const selectionDiagnostics = useFastGraph
     ? improveFastGraphDaySelections(candidates,dayStates,settings,{maxProbes:graphSeedBudget-insertionProbes})
     : {probes:0,accepted:0,budgetExhausted:false};
+  const todayChoiceDiagnostics = useFastGraph
+    ? improveFastGraphTodayChoices(candidates,dayStates,settings,
+      {maxProbes:graphSeedBudget-insertionProbes-selectionDiagnostics.probes})
+    : {probes:0,accepted:0};
   annotateAgendaOccurrenceKeys(candidates,dayStates);
 
   let totalTravelSeconds = 0;
@@ -151,10 +169,11 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     fastPlannerAlgorithm:'bounded-state-graph',
     fastWeekGraphDiagnostics:weekGraphDiagnostics,
     fastSelectionDiagnostics:selectionDiagnostics,
+    fastTodayChoiceDiagnostics:todayChoiceDiagnostics,
     fastGraphDiagnostics:{searches:graphBudget.searches,accepted:graphBudget.accepted,
       linkedProbes,linkedAccepted:graphBudget.linkAccepted,
-      probes:insertionProbes+selectionDiagnostics.probes,
-      budgetExhausted:useFastGraph && insertionProbes+selectionDiagnostics.probes>=graphSeedBudget} };
+      probes:insertionProbes+selectionDiagnostics.probes+todayChoiceDiagnostics.probes,
+      budgetExhausted:useFastGraph && insertionProbes+selectionDiagnostics.probes+todayChoiceDiagnostics.probes>=graphSeedBudget} };
   }finally{
     if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
   }
