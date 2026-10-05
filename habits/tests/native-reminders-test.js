@@ -84,16 +84,16 @@ const assert = require('node:assert/strict');
       })};
       const week={days:[day]},prefs={enabled:true,items:Object.fromEntries(data.map(h=>[`item:${h.hid}`,{missed:'notification',missedLeadMinutes:60}]))};
       const withoutForecast=nativeReminderEvents(week,data,settings,prefs,now);
-      const forecast={checkedAt:now,targetAt:now+300000,revision:'fixture',planKey:agendaForecastPlanKey(week,data),
+      const forecast={checkedAt:now,targetAt:now+900000,revision:'fixture',planKey:agendaForecastPlanKey(week,data),
         futureWeek:{days:[{...day,timeline:[]}]},risks:Object.fromEntries(day.timeline.map(row=>
-          [agendaForecastIdentity(row,data),{at:now+300000,reason:'five-minute-loss',validated:true}]))};
+          [agendaForecastIdentity(row,data),{at:now+900000,reason:'fifteen-minute-loss',validated:true}]))};
       applyAgendaRiskForecast(week,forecast,data);week.forecastRevision='fixture';
       plannerPerfResetTryPlace();
       const events=nativeReminderEvents(week,data,settings,prefs,now);
       const background=nativeReminderEvents(week,data,settings,prefs,now-1000,null,now);
       const placementCalls=_plannerPerfTryPlace;
-      const late=nativeReminderEvents(week,data,settings,prefs,now+240000).find(e=>e.owner==='item:flex');
-      const expired=nativeReminderEvents(week,data,settings,prefs,now+300000).find(e=>e.owner==='item:flex');
+      const late=nativeReminderEvents(week,data,settings,prefs,now+840000).find(e=>e.owner==='item:flex');
+      const expired=nativeReminderEvents(week,data,settings,prefs,now+900000).find(e=>e.owner==='item:flex');
       const removed=nativeReminderEvents(week,data.filter(h=>h.hid!=='flex'),settings,prefs,now);
       const completed=structuredClone(data);completed[0].logs=[{ts:now}];completed[0].lastLog=now;
       const realNow=Date.now;Date.now=()=>now;
@@ -108,47 +108,40 @@ const assert = require('node:assert/strict');
       return {base,now,events,background,withoutForecast,placementCalls,late,expired,removed,done,stale,venueWarnings};
     });
     const flex=warnings.events.find(e=>e.owner==='item:flex');
-    assert.equal(warnings.withoutForecast.length,0,'old static and conservative risks never warn');
-    assert.equal(flex.at,warnings.now+2000,'one shared five-minute lookahead warns now');
-    assert.equal(flex.agendaAt,warnings.now+300000,'the cached future clock is the drop clock');
-    assert.equal(flex.body,'Drops within 5 min');
+    assert(warnings.withoutForecast.length>0 && warnings.withoutForecast.every(e=>e.estimated),'early estimates are armed without forecasting');
+    assert.equal(flex.at,warnings.now+2000,'one shared fifteen-minute lookahead warns now');
+    assert.equal(flex.agendaAt,warnings.now+900000,'the cached future clock is the drop clock');
+    assert.equal(flex.body,'Drops within 15 min');
     assert.deepEqual(warnings.background,warnings.events,'background preserves just-due edges while using the completed forecast clock');
     assert.equal(flex.upNext,false);
     assert.equal(warnings.placementCalls,0,'warning projection never runs placement on UI thread');
     assert.equal(warnings.events.filter(e=>e.owner==='item:split').length,1,'split work warns once');
     assert.equal(warnings.events.find(e=>e.owner==='item:split').completion,undefined);
     assert.equal(warnings.events.filter(e=>e.owner==='item:options').length,2,'separate occurrences retain independent warnings');
-    assert(!warnings.events.some(e=>e.owner==='item:later'),'no warning more than one hour before allowed start');
+    assert(!warnings.events.some(e=>e.owner==='item:later' && !e.estimated),'confirmed warning respects allowed-start guard');
     assert.equal(warnings.late.at,flex.at,'polling cannot slide or reschedule the warning');
-    assert.equal(warnings.expired,undefined,'no advance warning after projected drop');
+    assert(warnings.expired.estimated,'expired forecast returns to the current agenda estimate');
     assert(!warnings.removed.some(e=>e.owner==='item:flex'));
     assert(!warnings.done.some(e=>e.owner==='item:flex'));
-    assert(!warnings.venueWarnings.some(e=>e.owner==='item:flex'),'venue hours also respect the one-hour guard');
-    assert.equal(warnings.stale.length,0,'changed agenda invalidates the projection');
-    const closedWarnings=await page.evaluate(()=>{
-      const now=dayStart(Date.now())+10*3600000,base=dayStart(now);
-      const data=normalize([{hid:'closed-one',name:'Closed warning',type:'keepup',target:1,durationMinutes:10,
-        allowedTimeStart:540,allowedTimeEnd:720,logs:[]}]);
-      const settings={...loadSortSettings(),blockedTimes:[],blockedTimeOverrides:{},blockedTimeExceptions:{},locations:[]};
-      const week={forecastRevision:'closed',days:[{dayBase:base,dayKey:dateKey(base),timeline:[
-        {kind:'fill',h:data[0],i:0,start:now,end:now+10*60000}]}]};
-      const risk={at:now+30*60000,warningAt:now+25*60000,validated:true,verified:true};
-      week.closedDropForecast={kind:'closed',revision:'closed',checkedAt:now,throughAt:now+60*60000,
-        warningAt:now+2000,planKey:agendaForecastPlanKey(week,data),risks:{'closed-one:main':risk}};
-      const prefs={enabled:true,items:{'item:closed-one':{missed:'alarm'}}};
-      const compile=()=>nativeReminderEvents(week,data,settings,prefs,now);
-      const prepared=compile();risk.verified=false;const unverified=compile();risk.verified=true;
-      week.closedDropForecast.planKey+='changed';const stale=compile();
-      week.closedDropForecast.planKey=agendaForecastPlanKey(week,data);
-      prefs.items['item:closed-one'].missed='off';const off=compile();
-      return {prepared,unverified,stale,off,now};
+    assert(!warnings.venueWarnings.some(e=>e.owner==='item:flex' && !e.estimated),'venue hours guard immediate confirmed alarms');
+    assert(warnings.stale.length>0 && warnings.stale.every(e=>e.estimated),'changed agenda falls back to labelled estimates');
+    const early=await page.evaluate(()=>{
+      const base=dayStart(Date.now()),now=base+8*3600000;
+      const data=normalize([{hid:'sunset',name:'Sunset habit',type:'keepup',target:1,durationMinutes:10,logs:[]}]);
+      const settings={...loadSortSettings(),locations:[]};
+      const week={days:[{dayBase:base,dayKey:dateKey(base),timeline:[
+        {kind:'fill',h:data[0],i:0,start:base+18*3600000,end:base+18*3600000+600000,dropAt:base+19*3600000}]}]};
+      const prefs={enabled:true,items:{'item:sunset':{missed:'alarm'}}};
+      const estimate=nativeReminderEvents(week,data,settings,prefs,now)[0];
+      delete week.days[0].timeline[0].dropAt;
+      const fallback=nativeReminderEvents(week,data,settings,prefs,now)[0];
+      prefs.items['item:sunset'].missed='off';
+      return {estimate,fallback,off:nativeReminderEvents(week,data,settings,prefs,now),base};
     });
-    assert.equal(closedWarnings.prepared.length,1,'verified later loss queues a native alarm');
-    assert.equal(closedWarnings.prepared[0].at,closedWarnings.now+25*60000,'future warning waits until five minutes before loss');
-    assert.equal(closedWarnings.prepared[0].agendaAt-closedWarnings.prepared[0].at,5*60000);
-    assert.equal(closedWarnings.unverified.length,0,'unverified risk cannot fall back to an early warning');
-    assert.equal(closedWarnings.stale.length,0,'changed source plan invalidates queued prediction');
-    assert.equal(closedWarnings.off.length,0,'closed preparation respects per-item Off');
+    assert.equal(early.estimate.at,early.base+(18*60+45)*60000,'morning creates evening estimate 15 minutes before cutoff');
+    assert(early.estimate.estimated && early.estimate.body.startsWith('May drop around'));
+    assert.equal(early.fallback.at,early.base+(17*60+45)*60000,'missing estimate uses latest displayed start');
+    assert.equal(early.off.length,0);
     const hotPath=await page.evaluate(()=>{
       const base=dayStart(Date.now())+86400000,now=base+8*3600000;
       const settings={...loadSortSettings(),blockedTimes:[],blockedTimeOverrides:{},blockedTimeExceptions:{},locations:[],
@@ -172,7 +165,7 @@ const assert = require('node:assert/strict');
       buildWeekAgenda(data,settings,1);
       return {cached,skipped,annotated:_plannerPerfTryPlace,futureMissed};
     });
-    assert.equal(hotPath.futureMissed,0,'before-missed does not schedule tomorrow');
+    assert.equal(hotPath.futureMissed,2,'tomorrow morning cushion uses provisional opportunities before annotation');
     assert.equal(hotPath.cached,0,'repeat reminder projection must not place on the UI thread');
     assert(hotPath.annotated>hotPath.skipped,'missed-pill fallback skips drop-cutoff probes during paint');
     await page.evaluate(()=>{
@@ -184,9 +177,9 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#native-reminder-controls select').count(),0,'no blanket selectors');
     assert.equal(await page.locator('#detail-native-reminders select[data-reminder-edge]').count(),5,'five per-item edges');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].missed || 'off'),'off','migration leaves before-missed warnings off');
-    await page.locator('#detail-native-reminders select[data-reminder-edge="missed"]').selectOption('notification',{force:true});
-    assert.equal(await page.locator('#detail-native-reminders select[data-reminder-missed-lead]').count(),0,'one five-minute warning has no timing selector');
-    assert.equal(await page.evaluate(()=>nativeReminderMissedLeadMinutes({missedLeadMinutes:60})),5,'legacy leads use the new common duration');
+    await page.locator('#detail-native-reminders select[data-reminder-edge="missed"]').selectOption('alarm',{force:true});
+    assert.equal(await page.locator('#detail-native-reminders select[data-reminder-missed-lead]').count(),0,'one fifteen-minute warning has no timing selector');
+    assert.equal(await page.evaluate(()=>nativeReminderMissedLeadMinutes({missedLeadMinutes:60})),15,'legacy leads use the new common duration');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-two'].missed || 'off'),'off','warning choice stays per item');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].travelStart),'alarm','legacy travel choice migrated');
     await page.locator('#detail-native-reminders select[data-reminder-edge="start"]').selectOption('off',{force:true});
@@ -227,6 +220,23 @@ const assert = require('node:assert/strict');
     assert.equal(completion.logs[1][0].minutes,30,'only the split session is credited');
     assert.equal(completion.logs[2].length,2,'a separate completed occurrence does not swallow this completion');
     assert.equal(completion.pending,0,'acknowledge only after save');
+    const stalePublishes=await page.evaluate(async()=>{
+      const original={native:window.TingsNative,week:_homeRenderedWeek,ready:_optimizerHomeReadyDirtyKey,
+        status:refreshNativeBackgroundStatus,completion:consumeNativeAlarmCompletions,render:renderNativeReminderStatus};
+      let publishes=0;
+      try{
+        localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({version:3,enabled:true,items:{'item:done-alarm':{missed:'alarm'}}}));
+        _homeRenderedWeek={days:[]};_optimizerHomeReadyDirtyKey='old-inputs';
+        refreshNativeBackgroundStatus=consumeNativeAlarmCompletions=renderNativeReminderStatus=async()=>{};
+        window.TingsNative={isNative:true,notifications:{},background:{snapshot:async()=>{},publish:async()=>{publishes++;}}};
+        await reconcileNativeRemindersNow();return publishes;
+      }finally{
+        window.TingsNative=original.native;_homeRenderedWeek=original.week;_optimizerHomeReadyDirtyKey=original.ready;
+        refreshNativeBackgroundStatus=original.status;consumeNativeAlarmCompletions=original.completion;renderNativeReminderStatus=original.render;
+        clearTimeout(nativeBackgroundSnapshotTimer);
+      }
+    });
+    assert.equal(stalePublishes,0,'an edited agenda preserves existing estimates until its replacement is ready');
     assert.deepEqual(errors,[],'no runtime errors');
     // Isolated preview of the real controls using existing styles, for mobile-width review.
     await page.evaluate(()=>{

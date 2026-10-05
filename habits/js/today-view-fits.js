@@ -446,13 +446,18 @@ function agendaOccurrenceCachedPhysicalDropAt(h,row,day,settings,data){
   _agendaPhysicalDropCache.set(row,{settings,value});
   return value;
 }
+// The existing week supplies a small overnight cushion. Probe only tomorrow's
+// morning rows, in the same planner worker; no tomorrow solve or sweep.
 function annotateAgendaDropTimes(days,data,settings,now=Date.now()){
-  const today=dayStart(now);
+  const today=dayStart(now),tomorrow=new Date(today);
+  tomorrow.setDate(tomorrow.getDate()+1);
+  const morningEnd=new Date(tomorrow);morningEnd.setHours(12,0,0,0);
   for(const day of days || []){
-    if(Number(day.dayBase)!==today)continue;
+    const morning=Number(day.dayBase)===tomorrow.getTime();
+    if(Number(day.dayBase)!==today && !morning)continue;
     const cutoffs=new Map();
     for(const row of day.timeline || []){
-      if(!['fill','scheduled'].includes(row.kind))continue;
+      if(!['fill','scheduled'].includes(row.kind) || (morning && row.start>=morningEnd.getTime()))continue;
       const h=data[row.i] || row.h;if(!h)continue;
       row.hid=h.hid;
       const key=`${h.hid || row.i}:${row.scheduleOptionId || 'main'}`;

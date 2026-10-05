@@ -82,9 +82,9 @@ const {chromium,glpkAvailable}=require('./helpers/planner-test-helpers');
     },glpkOk);
     for(const r of result.results){
       assert.equal(r.dropAt,result.base+(14*60+50)*60000+1,JSON.stringify(r));
-      assert.equal(r.at,result.base+(14*60+45)*60000+2000,'five-minute warning is 2:45, not near allowed end 3:45');
-      assert.equal(r.early,false,'no hours-ahead/static warning');
-      assert.equal(r.delivery,r.exact ? 'alarm' : 'notification');
+      assert.equal(r.at,result.base+(14*60+45)*60000+2000,'inside the estimated lead warns promptly, without postponing for a restored future row');
+      assert.equal(r.early,true,'constraint-aware estimate is armed before forecast');
+      assert.equal(r.delivery,'alarm');
       assert.equal(r.stillOnAgenda,false,'at 2:51 the real planner drops this occurrence');
       assert.equal(r.sliding,false,'clock slide cannot carry work beyond its cutoff');
       assert.equal(r.dropped,1,'sudden/current drop produces one actionable alert');

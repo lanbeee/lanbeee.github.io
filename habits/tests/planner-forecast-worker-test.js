@@ -35,7 +35,7 @@ const {chromium}=require('./helpers/planner-test-helpers');
         && !consumeAgendaDropForecast(week,data,revision,first.targetAt+60001);
       const provenanceWeek={...week,optimized:true,plannerSolveStatus:'feasible',
         plannerDiagnostics:{daySolves:[{dayKey:week.days[1].dayKey,phase:'fixed-pack',status:'feasible'}]},
-        dropForecast:{...week.dropForecast,futureWeek:{...first.futureWeek,optimized:true,plannerSolveStatus:'optimal'}}};
+        dropForecast:{...week.dropForecast,normalWeek:false,futureWeek:{...first.futureWeek,optimized:true,plannerSolveStatus:'optimal'}}};
       const provenance=consumeAgendaDropForecast(provenanceWeek,data,revision,first.targetAt);
       const lean=leanAgendaWeek(week);
       const persisted=Boolean(lean.dropForecast?.futureWeek && !lean.dropForecast.futureWeek.days[0].timeline.some(r=>r.h));

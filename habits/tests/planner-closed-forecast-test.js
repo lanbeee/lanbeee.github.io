@@ -13,9 +13,9 @@ const {chromium}=require('./helpers/planner-test-helpers');
     fs.writeFileSync('test-results/planner-closed-forecast-audit.json',JSON.stringify(report,null,2));
     assert.equal(report.cases.length,24);
     assert(report.warnings>0,'complex future losses produce closed-app warnings');
-    assert.equal(report.returned,0,'no queued warning may return on an independent production rebuild');
-    assert.equal(report.alreadyAbsent,0,'warned items must still fit a minute before the predicted cutoff');
-    assert(report.cases.every(c=>c.probes<=12),'closed preparation has a fixed today-only cap');
-    console.log(JSON.stringify(report));
+    assert.equal(report.cachedMismatch,0,'confirmed warnings match the prepared normal agenda');
+    assert(report.estimated>0,'closed execution retains early estimates');
+    assert(report.cases.every(c=>c.probes===1),'closed preparation has a one normal future build');
+    console.log(JSON.stringify({cases:report.cases.length,warnings:report.warnings,estimated:report.estimated,probes:report.probes,elapsedMs:report.elapsedMs}));
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
