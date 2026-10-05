@@ -52,7 +52,12 @@ async function openSettings(page){
     const realFetch = window.fetch.bind(window);
     window.fetch = function(input, init){
       const url = typeof input === 'string' ? input : (input && input.url) || '';
-      for(const key of Object.keys(window.__mockRoutes)){
+      if(/\/reverse\?/.test(url)){
+        window.__reverseUrls = window.__reverseUrls || [];
+        window.__reverseUrls.push(url);
+      }
+      const keys = Object.keys(window.__mockRoutes).sort((a,b)=>b.length - a.length);
+      for(const key of keys){
         if(url.indexOf(key) >= 0){
           const spec = window.__mockRoutes[key];
           if(spec === 'REJECT')return Promise.reject(new Error('mock-reject'));
@@ -67,6 +72,10 @@ async function openSettings(page){
     navigator.geolocation.getCurrentPosition = (ok,_err) => ok({
       coords:{ latitude:40.7589, longitude:-73.9851, accuracy:50 }, timestamp:Date.now()
     });
+    window.__reverseUrls = [];
+    window.__mockRoutes['photon.komoot.io/reverse'] = {json:{
+      features:[{properties:{city:'New York',country:'United States',countrycode:'US'}}]
+    }};
   });
 
   await page.goto(baseUrl, { waitUntil:'load' });
@@ -163,8 +172,8 @@ async function openSettings(page){
   });
   console.log(inferredCity);
   assert(inferredCity.name && /London/i.test(inferredCity.name), 'home city inferred from first place (' + inferredCity.name + ')');
-  assert(Math.abs(inferredCity.lat - 51.5034) < 0.001, 'home city lat matches place');
-  assert(Number.isFinite(inferredCity.lng), 'home city lng set');
+  assert(Math.abs(inferredCity.lat - 51.5) < 0.001, 'home city lat is coarsened from the place pin');
+  assert(Math.abs(inferredCity.lng - (-0.13)) < 0.001, 'home city lng is coarsened from the place pin');
 
   // ── C. Uncheck All day → default 09–17, then set 11:00–17:00 ──
   console.log('\n[C] default open window (11:00–17:00)');
@@ -355,7 +364,13 @@ async function openSettings(page){
     // Reset opt-in so the rationale sheet shows again.
     if(typeof stopLocationWatch === 'function')stopLocationWatch();
     currentCoord = null;
-    updateSortSetting({locationOptIn:false},{renderNow:false,sync:false});
+    updateSortSetting({
+      locationOptIn:false,
+      homeCityName:'',
+      homeCityLat:null,
+      homeCityLng:null,
+      homeCityCountry:''
+    },{renderNow:false,sync:false});
     renderLocationAccessControl();
   });
   await page.waitForTimeout(100);
@@ -366,22 +381,87 @@ async function openSettings(page){
   }));
   console.log(before);
   assert(before.optIn === false && !before.hasCoord, 'opt-in cleared before re-enable');
+  await page.evaluate(() => {
+    window.__mockRoutes = Object.assign({}, window.__mockRoutes, {
+      'photon.komoot.io/reverse': {json:{
+        features:[{properties:{city:'New York',country:'United States',countrycode:'US'}}]
+      }},
+      'nominatim.openstreetmap.org/reverse': {json:{
+        address:{city:'New York',country:'United States',country_code:'us'}
+      }}
+    });
+    window.__reverseUrls = [];
+  });
   await page.locator('#location-access-enable').click();
-  await page.waitForSelector('#location-permission-sheet.open');
-  // Click Allow (user-gesture path iOS requires); mock geo resolves sync.
-  await page.locator('#location-permission-allow').click();
-  await page.waitForTimeout(150);
+  await page.waitForFunction(() => Boolean(loadSortSettings().locationOptIn && currentCoord));
   const accessAfter = await page.evaluate(() => ({
     optIn:loadSortSettings().locationOptIn,
     hasCoord:!!currentCoord,
+    gpsLat:currentCoord && currentCoord.lat,
     statusText:document.querySelector('#location-access-status')?.textContent || '',
-    sheetOpen:document.querySelector('#location-permission-sheet')?.classList.contains('open')
+    sheetOpen:document.querySelector('#location-permission-sheet')?.classList.contains('open'),
+    cityLat:loadSortSettings().homeCityLat,
+    reverseUrls:window.__reverseUrls || []
   }));
   console.log(accessAfter);
-  assert(accessAfter.optIn === true, 'enable location → allow sets locationOptIn');
-  assert(accessAfter.hasCoord === true, 'enable location → allow sets currentCoord');
+  assert(accessAfter.optIn === true, 'enable location sets locationOptIn without an extra in-app sheet');
+  assert(accessAfter.hasCoord === true, 'enable location sets currentCoord from the OS/geolocation prompt');
+  assert(Math.abs(accessAfter.gpsLat - 40.7589) < 0.0001, 'live GPS keeps the precise fix on device');
   assert(/on/i.test(accessAfter.statusText), 'access status shows on');
-  assert(accessAfter.sheetOpen === false, 'permission sheet closes after allow');
+  assert(accessAfter.sheetOpen === false, 'permission sheet stays closed');
+  await page.waitForFunction(() => {
+    const s = loadSortSettings();
+    return Number.isFinite(s.homeCityLat)
+      && Math.abs(s.homeCityLat - 40.76) < 0.001
+      && /new york/i.test(s.homeCityName || '');
+  }, null, {timeout:8000});
+  const cityAfter = await page.evaluate(() => ({
+    name:loadSortSettings().homeCityName,
+    lat:loadSortSettings().homeCityLat,
+    lng:loadSortSettings().homeCityLng,
+    gpsLat:currentCoord && currentCoord.lat,
+    reverseUrls:window.__reverseUrls || [],
+    coarse:coarsenLatLngForCity(40.7589,-73.9851)
+  }));
+  assert(cityAfter.coarse && cityAfter.coarse.lat === 40.76 && cityAfter.coarse.lng === -73.99, 'city lookup grid is two decimals');
+  assert(Math.abs(cityAfter.lat - 40.76) < 0.001, 'saved city coordinates are coarsened');
+  assert(Math.abs(cityAfter.gpsLat - 40.7589) < 0.0001, 'presence GPS is not coarsened');
+  assert(cityAfter.reverseUrls.some(url=>/lat=40\.76/.test(url)), 'city reverse-geocode sends the coarsened latitude');
+  assert(!cityAfter.reverseUrls.some(url=>/40\.7589/.test(url)), 'city reverse-geocode does not send the precise GPS fix');
+  assert(/new york/i.test(cityAfter.name || ''), 'city name reverse-geocodes from live location');
+
+  // City is a one-time convenience fill. A later GPS fix in another town
+  // must not relocate prayer/weather.
+  console.log('\n[H2b] saved city does not follow travel');
+  await page.evaluate(() => {
+    if(typeof stopLocationWatch === 'function')stopLocationWatch();
+    currentCoord = null;
+    updateSortSetting({locationOptIn:false},{renderNow:false,sync:false});
+    renderLocationAccessControl();
+    navigator.geolocation.getCurrentPosition = (ok,_err) => ok({
+      coords:{ latitude:41.8781, longitude:-87.6298, accuracy:50 }, timestamp:Date.now()
+    });
+    window.__mockRoutes = Object.assign({}, window.__mockRoutes, {
+      'photon.komoot.io/reverse': {json:{
+        features:[{properties:{city:'Chicago',country:'United States',countrycode:'US'}}]
+      }},
+      'nominatim.openstreetmap.org/reverse': {json:{
+        address:{city:'Chicago',country:'United States',country_code:'us'}
+      }}
+    });
+  });
+  await page.locator('#location-access-enable').click();
+  await page.waitForFunction(() => Boolean(loadSortSettings().locationOptIn && currentCoord
+    && Math.abs(currentCoord.lat - 41.8781) < 0.01));
+  await page.waitForTimeout(500);
+  const cityHeld = await page.evaluate(() => ({
+    name:loadSortSettings().homeCityName,
+    lat:loadSortSettings().homeCityLat,
+    gpsLat:currentCoord && currentCoord.lat
+  }));
+  assert(Math.abs(cityHeld.gpsLat - 41.8781) < 0.01, 'live GPS moved to a new city');
+  assert(/new york/i.test(cityHeld.name || ''), 'saved city does not follow travel');
+  assert(Math.abs(cityHeld.lat - 40.76) < 0.001, 'saved city coordinates stay at the first fill');
 
   // ── I. In-use location cannot be removed; unused can ──
   console.log('\n[I] remove location → in-use guard');

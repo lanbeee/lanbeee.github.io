@@ -23,6 +23,7 @@ function homeListFingerprint(now = Date.now()){
     h.durationMinutes, h.priority, habitEarlyWindowDays(h), habitDelayAllowanceDays(h),
     h.breakable ? 1 : 0,
     h.minChunkMinutes || '',
+    h.minGapMinutes || '',
     typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0,
     h.allowedTimeStart, h.allowedTimeEnd,
     h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
@@ -786,8 +787,9 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-const HOME_AGENDA_CACHE_VERSION = 3;
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v3';
+// v4 rejects agendas/forecasts built with the old cached prayer-date check.
+const HOME_AGENDA_CACHE_VERSION = 4;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v4';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 // A usable unplanned list is better than making a slow phone look frozen.
 // The worker keeps running and replaces this fallback with the planned week.
@@ -798,6 +800,7 @@ const HOME_COLD_BOOT_SKELETON_MAX_MS = 8 * 1000;
 try{
   localStorage.removeItem('tings_home_agenda_cache_v1');
   localStorage.removeItem('tings_home_agenda_cache_v2');
+  localStorage.removeItem('tings_home_agenda_cache_v3');
 }catch(_){}
 
 function showHomeAgendaLoading(){

@@ -1017,7 +1017,11 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
     let remaining = Math.max(0,wanted - logged - planned);
     if(!remaining)continue;
 
-    for(const state of dayStates){
+    const rankedDays = dayStates.map(state=>({
+      state,
+      slack:Number(state.remaining) || 0
+    })).sort((a,b)=>b.slack - a.slack || a.state.dayBase - b.state.dayBase);
+    for(const {state} of rankedDays){
       if(!remaining)break;
       const dayKey = dateKey(state.dayBase);
       const dayLogs = normalizeLogs(c.h.logs).filter(log=>!isPlanLog(log)

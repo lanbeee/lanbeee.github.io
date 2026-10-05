@@ -413,7 +413,7 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
         const B = opts[bi];
         if(!A || !B || !A.fit || !B.fit)continue;
         // sometime + direct: never start the successor before the predecessor ends.
-        if(B.fit.placeStart + 60000 < A.fit.placeEnd){
+        if(B.fit.placeStart + 60000 < A.fit.placeEnd + (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0)){
           subjectTo.push({
             name:`ord_${orderClash++}`,
             vars:[{name:A.varName,coef:1},{name:B.varName,coef:1}],
@@ -768,17 +768,18 @@ function listPlaceFitsOnDay(
             scarcity:candidate.scarcity
           };
           const probe = tryPlaceOnDay(state,predFill,{allowNetwork:false});
-          if(probe && Number.isFinite(probe.placeEnd))predecessorEnds.push(probe.placeEnd);
+          const gapMs = typeof orderMinGapMs === 'function' ? orderMinGapMs(edge) : 0;
+          if(probe && Number.isFinite(probe.placeEnd))predecessorEnds.push(probe.placeEnd + gapMs);
           const predDurationMs = clampDuration(candidate.h.durationMinutes) * 60000;
           for(const win of optimizerWindowsForCandidate(candidate,state)){
-            if(Number.isFinite(win.start))predecessorEnds.push(win.start + predDurationMs);
+            if(Number.isFinite(win.start))predecessorEnds.push(win.start + predDurationMs + gapMs);
           }
         }
         for(const entry of state.fills || []){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === edge.beforeHid && entry.fit
             && Number.isFinite(entry.fit.placeEnd)){
-            predecessorEnds.push(entry.fit.placeEnd);
+            predecessorEnds.push(entry.fit.placeEnd + (typeof orderMinGapMs === 'function' ? orderMinGapMs(edge) : 0));
           }
         }
       }
@@ -1147,8 +1148,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       const predecessor = candidateByHid.get(edge.beforeHid);
       const successor = candidateByHid.get(edge.afterHid);
       const predecessorFits = (fitsByIndex.get(predecessor.i) || []).slice();
+      const gapMs = typeof orderMinGapMs === 'function' ? orderMinGapMs(edge) : 0;
       const predecessorEnds = [...new Set(predecessorFits
-        .map(fit=>Number(fit.placeEnd)).filter(Number.isFinite))];
+        .map(fit=>Number(fit.placeEnd)).filter(Number.isFinite).map(end=>end + gapMs))];
       if(!predecessorEnds.length)continue;
       const predecessorContexts = [];
       const contextSeen = new Set();

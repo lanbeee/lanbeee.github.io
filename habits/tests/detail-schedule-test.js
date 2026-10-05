@@ -227,7 +227,11 @@ async function assertAttr(page, selector, attr, expected, msg){
     const cool = document.getElementById('detail-cool');
     if(cool)cool.click();
   });
-  await page.waitForTimeout(300);
+  await page.waitForFunction((name) => {
+    const cards = [...document.querySelectorAll('#list .ting-card')]
+      .filter(el => (el.textContent || '').includes(name));
+    return cards.some(c => c.querySelector('.breakable-crown'));
+  }, runId, {timeout:10000});
   const homeSlider = await page.evaluate((name) => {
     const cards = [...document.querySelectorAll('#list .ting-card')]
       .filter(el => (el.textContent || '').includes(name));

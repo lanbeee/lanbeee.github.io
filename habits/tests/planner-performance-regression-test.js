@@ -113,6 +113,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     localStorage.setItem('tings_home_agenda_cache_v2',JSON.stringify({
       version:2,savedAt:Date.now(),key:'old-build',week:{days:[]}
     }));
+    localStorage.setItem('tings_home_agenda_cache_v3',JSON.stringify({
+      version:3,savedAt:Date.now(),key:'old-build',week:{days:[],dropForecast:{futureWeek:{days:[]}}}
+    }));
 
     // Capture startup long tasks before deferred app scripts execute.
     window.__plannerPerfLongTasks = [];
@@ -179,7 +182,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       longestTask:Math.max(0,...(window.__plannerPerfLongTasks || [])),
       fastMode:Boolean(sortSettings && !sortSettings.agendaOptimizer),
       oldAgendaCachesRemoved:localStorage.getItem('tings_home_agenda_cache_v1') === null
-        && localStorage.getItem('tings_home_agenda_cache_v2') === null,
+        && localStorage.getItem('tings_home_agenda_cache_v2') === null
+        && localStorage.getItem('tings_home_agenda_cache_v3') === null,
       cacheVersion:typeof HOME_AGENDA_CACHE_VERSION === 'number' ? HOME_AGENDA_CACHE_VERSION : null,
       cacheKey:typeof HOME_AGENDA_CACHE_KEY === 'string' ? HOME_AGENDA_CACHE_KEY : ''
     };
@@ -191,7 +195,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     cold.loading && cold.cards === 0 && !cold.plannerMounted,
     JSON.stringify(cold));
   check('cold load invalidates the previous deployment agenda cache',
-    cold.oldAgendaCachesRemoved && cold.cacheVersion === 3 && cold.cacheKey === 'tings_home_agenda_cache_v3',
+    cold.oldAgendaCachesRemoved && cold.cacheVersion === 4 && cold.cacheKey === 'tings_home_agenda_cache_v4',
     JSON.stringify(cold));
   check('cold first paint leaves the event loop responsive',
     cold.frameDelay < 250 && cold.longestTask < 750,

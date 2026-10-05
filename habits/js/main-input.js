@@ -203,7 +203,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=34';
+    script.src = './onboarding/coach.js?v=35';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -916,12 +916,10 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
     const s = sortSettings || loadSortSettings();
     if(s.locationOptIn || currentCoord){
       await requestLocationAccess({quiet:false});
-    }else{
-      locationAllowCallback = ()=>{
-        renderPresencePickerBody();
-        render();
-      };
-      openLocationPermissionSheet();
+    }else if(typeof enableLocationFromUserGesture === 'function'){
+      await enableLocationFromUserGesture();
+    }else if(typeof requestLocationAccess === 'function'){
+      await requestLocationAccess({quiet:false});
     }
     renderPresencePickerBody();
     render();
@@ -942,11 +940,11 @@ $('location-access-enable')?.addEventListener('click',()=>{
     if(typeof disableLocationAccess === 'function')disableLocationAccess();
     return;
   }
-  locationAllowCallback = ()=>{
-    renderLocationAccessControl();
-    render();
-  };
-  openLocationPermissionSheet();
+  if(typeof enableLocationFromUserGesture === 'function'){
+    void enableLocationFromUserGesture();
+  }else if(typeof requestLocationAccess === 'function'){
+    void requestLocationAccess({quiet:false});
+  }
 });
 $('location-permission-allow')?.addEventListener('click',()=>{
   confirmLocationPermissionAllow();

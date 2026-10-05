@@ -1,20 +1,49 @@
-// HANDLER: export all habits + settings as a downloadable JSON file. This is
-// the only backup mechanism — everything otherwise lives only in this browser.
-function exportBackupFile(){
-  const backup = buildBackup();
-  const json = JSON.stringify(backup,null,2);
-  const blob = new Blob([json],{type:'application/json'});
+// HANDLER: write a text file through the Android share/Downloads path when
+// present, otherwise trigger a browser download. WebView `<a download>` is a
+// no-op, which is why export used to toast success with no file.
+async function downloadOrShareTextFile(filename,text,mimeType,successMessage){
+  const mime = mimeType || 'application/json';
+  const name = filename || 'tings-export.txt';
+  if(window.TingsNative?.files?.shareTextFile){
+    try{
+      const result = await window.TingsNative.files.shareTextFile({filename:name,text,mimeType:mime});
+      const saved = result && result.downloads;
+      const msg = saved ? `saved to Downloads as ${saved}` : (successMessage || 'pick where to save');
+      if(typeof showToast === 'function')showToast(msg,5000);
+      return {native:true,downloads:saved || ''};
+    }catch(error){
+      if(typeof showToast === 'function')showToast((error && error.message) || 'could not save file',5000);
+      return {native:true,error:true};
+    }
+  }
+  const blob = new Blob([text],{type:`${mime};charset=utf-8`});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `tings-backup-${todayIso()}.json`;
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
+  if(typeof showToast === 'function')showToast(successMessage || 'file exported');
+  return {native:false};
+}
+
+// HANDLER: export all habits + settings as a downloadable JSON file. This is
+// the only backup mechanism — everything otherwise lives only in this browser.
+async function exportBackupFile(){
+  const backup = buildBackup();
+  const json = JSON.stringify(backup,null,2);
+  const filename = `tings-backup-${todayIso()}.json`;
   const status = $('backup-status');
-  if(status)status.textContent = 'Backup exported.';
-  if(typeof showToast === 'function')showToast('backup exported');
+  if(status)status.textContent = 'Exporting backup…';
+  const result = await downloadOrShareTextFile(filename,json,'application/json','backup exported');
+  if(status){
+    if(result && result.error)status.textContent = 'Backup could not be saved.';
+    else if(result && result.downloads)status.textContent = `Backup saved to Downloads as ${result.downloads}.`;
+    else if(result && result.native)status.textContent = 'Backup ready — pick an app or Files to save it.';
+    else status.textContent = 'Backup exported.';
+  }
 }
 
 // HYBRID: read a chosen backup file, validate it, and stage it behind a

@@ -213,11 +213,16 @@ function exportToCalendar(i){
   if(!h)return;
   const ics = icsForHabit(h);
   if(!ics){showToast('add a time or due date first');return;}
+  const filename = `${(h.name || 'task').replace(/[^a-z0-9]+/gi,'-').slice(0,40)}.ics`;
+  if(typeof downloadOrShareTextFile === 'function'){
+    void downloadOrShareTextFile(filename,ics,'text/calendar','exported — open to add to calendar');
+    return;
+  }
   const blob = new Blob([ics],{type:'text/calendar;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${(h.name || 'task').replace(/[^a-z0-9]+/gi,'-').slice(0,40)}.ics`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(()=>{if(a.isConnected)document.body.removeChild(a);URL.revokeObjectURL(url);},1000);

@@ -1414,8 +1414,8 @@ function weatherSunTimesFor(summary){
     const lat=Number(settings.homeCityLat),lng=Number(settings.homeCityLng);
     if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
     const times=prayerTimesFor({latitude:lat,longitude:lng},new Date(summary.dayBase),prayerParams(settings));
-    const rise=times && times.sunrise instanceof Date ? times.sunrise.getTime() : NaN;
-    const set=times && times.sunset instanceof Date ? times.sunset.getTime() : NaN;
+    const rise=times && Object.prototype.toString.call(times.sunrise)==='[object Date]' ? times.sunrise.getTime() : NaN;
+    const set=times && Object.prototype.toString.call(times.sunset)==='[object Date]' ? times.sunset.getTime() : NaN;
     return Number.isFinite(rise) && Number.isFinite(set) ? {sunrise:rise,sunset:set} : null;
   }catch{ return null; }
 }

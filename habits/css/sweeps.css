@@ -132,7 +132,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
   background:var(--bg2);color:var(--text2);border:0;font-weight:580;
 }
 .ting-meta .context-pill:is(.plan,.agenda-suggested,.agenda-later,.agenda-closing,
-.due,.scheduled,.schedule,.pin){color:var(--text2);}
+  .agenda-anytime,.agenda-dropping,.due,.scheduled,.schedule,.pin,.weather-pill){color:var(--text2);}
 .ting-meta .context-pill.due.hard{
   color:var(--red-text);
   background:color-mix(in srgb,var(--red-bg) 55%,var(--bg2));

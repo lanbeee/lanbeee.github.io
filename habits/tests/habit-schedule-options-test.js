@@ -385,8 +385,20 @@ function settings(locations,blockedTimes = []){
   assert(await page.locator('#detail-place-chips [data-location-add]').isVisible(),'allowed schedule view exposes the place picker');
   await page.locator('#detail-time-start').fill('08:00');
   await page.locator('#detail-time-end').fill('18:00');
+  await page.locator('#detail-options-disclosure summary').click();
   await page.locator('#detail-habit-option-add').click();
   await page.locator('#detail-habit-option-add').click();
+  assert(await page.locator('#detail-habit-option-list .habit-option-row').count() === 2,'add option appends a second specific row');
+  const addSitsBelowList = await page.evaluate(()=>{
+    const add = document.querySelector('#detail-habit-option-add');
+    const last = document.querySelector('#detail-habit-option-list .habit-option-row:last-child');
+    if(!add || !last)return false;
+    const addBox = add.getBoundingClientRect();
+    const lastBox = last.getBoundingClientRect();
+    return add.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_PRECEDING
+      && addBox.top + 0.5 >= lastBox.bottom;
+  });
+  assert(addSitsBelowList,'add option stays under the list so a new row lands next to it');
   await page.locator('.habit-option-location').nth(0).selectOption('campus');
   await page.locator('.habit-option-location').nth(1).selectOption('campus');
   await page.locator('.habit-option-start').nth(0).fill('09:03');

@@ -106,6 +106,7 @@
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
+ * @property {number} minGapMinutes           — minimum minutes between this item's own sessions on the same day; 0-720. 0 = no extra spacing. Applies across busy-time availability splits.
  * @property {number|null} timerAutoStopMinutes — optional manual-session target (legacy field name; null = use durationMinutes)
  * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
@@ -163,6 +164,7 @@
  * @property {'before'|'after'} direction
  * @property {'sometime'|'direct'} adjacency
  * @property {boolean} requireSameDay
+ * @property {number} minGapMinutes           — minimum minutes after the predecessor ends before the successor may start; 0-720
  */
 
 /**
@@ -202,6 +204,7 @@
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
+ * @property {boolean} showRemindersOnCards                    — show a bell when an item has phone notifications or alarms
  * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
  * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
  * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)

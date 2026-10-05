@@ -47,6 +47,7 @@ function openDetail(i){
   $('detail-delay-allowance').value = habitDelayAllowanceDays(h);
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',h.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-min-gap'))$('detail-min-gap').value = String(clampMinGapMinutes(h.minGapMinutes));
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
@@ -124,6 +125,7 @@ function openDetail(i){
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     breakable:Boolean(h.breakable),
     minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
+    minGapMinutes:clampMinGapMinutes(h.minGapMinutes),
     timerAutoStopMinutes:h.timerAutoStopMinutes ?? null,
     autoMarkMinutes:h.autoMarkMinutes ?? null,
     trackValue:Boolean(h.trackValue),

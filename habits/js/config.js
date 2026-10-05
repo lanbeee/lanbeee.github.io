@@ -30,6 +30,9 @@ const TRAVEL_TTL_MS = 30 * 86400000;               // cached edges revalidate af
 const TRAVEL_FETCH_TIMEOUT_MS = 3000;              // hard cap on travel routing calls
 const GEOCODE_FETCH_TIMEOUT_MS = 8000;             // address search / reverse can be slower
 const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
+// City reverse-geocode grid (~1.1 km). Presence is calculated on-device;
+// only this coarsened pin is sent to Photon/Nominatim for the one-time city fill.
+const CITY_LOOKUP_COORD_DECIMALS = 2;
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
 const ESRI_WORLD_IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -121,7 +124,10 @@ const DEFAULT_PRAYER_MADHAB = 'shafi';
 const PRAYER_OFFSET_MAX_MIN = 720;
 
 const MAX_RHYTHM_DAYS = 183;
-const MIN_RHYTHM_DAYS = 0.5;
+const MIN_RHYTHM_DAYS = 0.2;
+const DEFAULT_TOAST_MS = 2800;
+const DEFAULT_MIN_GAP_MINUTES = 0;
+const MAX_MIN_GAP_MINUTES = 720;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_MIN_CHUNK_MINUTES = 30;
 const DEFAULT_EARLY_WINDOW_DAYS = 1;
@@ -190,6 +196,7 @@ const DEFAULT_SORT_SETTINGS = {
   showFlexibilityOnCards:false,
   showTopicsOnCards:false,
   showLocationOnCards:false,
+  showRemindersOnCards:true,
 
   showScheduledTasksInAgenda:true,
   showDueTasksInAgenda:true,

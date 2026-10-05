@@ -96,6 +96,7 @@ function currentDetailTune(){
     durationMinutes:clampDuration($('detail-duration').value),
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
+    minGapMinutes:clampMinGapMinutes($('detail-min-gap')?.value),
     timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
     autoMarkMinutes:normalizeAutoMark($('detail-auto-mark')?.value),
     trackValue:$('detail-track-value')?.getAttribute('aria-pressed') === 'true',
@@ -190,6 +191,7 @@ function restoreDetailTune(){
   if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-min-gap'))$('detail-min-gap').value = String(clampMinGapMinutes(detailTuneOriginal.minGapMinutes));
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = detailTuneOriginal.timerAutoStopMinutes != null ? detailTuneOriginal.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = detailTuneOriginal.autoMarkMinutes != null ? detailTuneOriginal.autoMarkMinutes : '';

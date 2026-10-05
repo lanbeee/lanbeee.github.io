@@ -284,6 +284,7 @@ body.reach-pad #list{padding-top:220px;}
 .swipe-action small{font-size:10px;font-weight:600;line-height:1;opacity:0.9;}
 .sa-plan,.sa-activity,.sa-keep{background:transparent;color:var(--teal-text);}
 .sa-pin{background:transparent;color:var(--purple-text);}
+.sa-reminder{background:transparent;color:var(--amber-text);}
 .sa-snooze{background:transparent;color:var(--text2);}
 .sa-nuke{background:transparent;color:var(--red-text);}
 
@@ -562,6 +563,8 @@ body.reach-pad #list{padding-top:220px;}
 .context-pill.agenda-later i{color:var(--blue-icon);}
 .context-pill.agenda-closing{color:var(--amber-text);background:var(--amber-bg);border-color:transparent;}
 .context-pill.agenda-closing i{color:var(--amber-icon);}
+.context-pill.reminder-pill{color:var(--amber-text);}
+.context-pill.reminder-pill i{color:var(--amber-icon);}
 .context-pill.due{color:var(--amber-text);background:var(--amber-bg);border-color:transparent;}
 .context-pill.due i{color:var(--amber-icon);}
 .context-pill.due.hard{color:var(--red-text);background:var(--red-bg);}
@@ -592,6 +595,7 @@ body.reach-pad #list{padding-top:220px;}
 .context-pill.agenda-lead.agenda-anytime,
 .context-pill.agenda-lead.agenda-later,
 .context-pill.agenda-lead.agenda-closing,
+.context-pill.agenda-lead.agenda-dropping,
 .context-pill.agenda-lead.scheduled{background:transparent;border-color:transparent;}
 .context-pill.agenda-lead.agenda-anytime{color:var(--text2);}
 .context-pill.agenda-lead.agenda-anytime i{color:var(--text3);}
@@ -599,6 +603,8 @@ body.reach-pad #list{padding-top:220px;}
 .context-pill.agenda-lead.agenda-later i{color:var(--blue-icon);}
 .context-pill.agenda-lead.agenda-closing{color:var(--amber-text);}
 .context-pill.agenda-lead.agenda-closing i{color:var(--amber-icon);}
+.context-pill.agenda-lead.agenda-dropping{color:var(--red-text);}
+.context-pill.agenda-lead.agenda-dropping i{color:var(--red-icon);}
 .context-pill.agenda-lead.agenda-suggested{color:var(--teal-text);}
 .context-pill.agenda-lead.agenda-suggested i{color:var(--teal-icon);}
 .context-pill.agenda-lead.scheduled{color:var(--purple-text);}

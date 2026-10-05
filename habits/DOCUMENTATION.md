@@ -347,7 +347,7 @@ else:
   
   // ─── TYPE & SCHEDULE ─────────────────────────────────────
   type: 'keepup'|'reduce'|'zero'|'task',  // 👤 habit type
-  target: number|null,       // 👤 Rhythm: times in N days (0.5-183), null for zero/task
+  target: number|null,       // 👤 Rhythm: times in N days (0.2-183), null for zero/task
   createdAt: number|null,    // 👨‍💻 Creation timestamp (ms), for ordering
   
   // ─── LOGS & HISTORY ─────────────────────────────────────
@@ -401,6 +401,7 @@ else:
   durationMinutes: number,   // 👤 Planned session length (1-720)
   breakable: boolean,        // 👤 Can split across sessions
   minChunkMinutes: number,   // 👤 Minimum split size (15-720)
+  minGapMinutes: number,     // 👤 Minimum minutes between this item's own sessions (0-720), including across busy-time splits
   
   // ─── TIMERS & AUTO-MARK ──────────────────────────────────
   timerAutoStopMinutes: number|null,  // Legacy field
@@ -878,6 +879,15 @@ When `showPlansOnCards: true`:
 - Calendar date chip
 - Shows planned future log date
 
+### 5.15 Reminder mark 🔔 👤
+When `showRemindersOnCards` is on (default) and the installed Android app has a phone notification or ringing alarm for that item:
+- Bell (`ti-bell`) for notifications, ringing bell (`ti-bell-ringing`) for alarms
+- Tap or swipe **quiet** to turn that item’s phone reminders off
+- Hidden on the PWA, where OS reminders are not delivered
+
+### 5.16 About-to-drop clock ⏰ 👤
+The agenda clock pill next to the name (`agenda-lead`) already changes by window: anytime, later, good time, almost out of time, or a fixed appointment. When the same 15-minute drop-warning window that sends the “about to drop” alarm is active, the clock switches to `ti-clock-exclamation` and the `agenda-dropping` tone.
+
 ### 5.12 Sample Marker 🧪 👤
 When `showSampleOnCards: true`:
 - "sample" chip
@@ -1109,8 +1119,8 @@ Visible when type = habit (keepup):
 [1] × in [7] d
 ```
 - Left input: Times per cycle (1-183)
-- Right input: Days per cycle (0.5-183)
-- Hint: "How often — times in N days (e.g. 2× in 7d)."
+- Right input: Days per cycle (0.2-183)
+- Hint: "How often — times in N days (e.g. 2× in 7d, or 15× in 7d)."
 - Help text changes by type:
   - keepup: "How often — times in N days."
   - reduce: "Times in N days — e.g. 1× in 3d."
@@ -1639,7 +1649,10 @@ Tracks the currently active habit session:
 │ use your location?                  │
 │ Tings uses your location to mark    │
 │   where you are and shape today's   │
-│   plan. Coordinates stay on device. │
+│   plan. Driving routes send GPS    │
+│   coordinates to OSRM. City uses a │
+│   coarse location to Photon or      │
+│   Nominatim.                        │
 ├─────────────────────────────────────┤
 │ [allow location] [not now]         │
 └─────────────────────────────────────┘
@@ -1647,7 +1660,8 @@ Tracks the currently active habit session:
 
 - **Access:** When geolocation needed but not yet granted
 - iOS/PWA: must come from a user gesture to trigger `getCurrentPosition`
-- Coordinates never leave the device
+- Presence is calculated on this device; driving route estimates send live origin and destination coordinates to OSRM
+- The first empty-city fill sends a coarsened coordinate (~1 km) to Photon, with Nominatim as fallback — not the precise pin, and not an ongoing GPS stream
 
 ### 10.9 Location Picker Sheet (Map) 👤
 
@@ -1799,7 +1813,7 @@ Same as Home Filter Sheet but for the calendar view:
 
 ### Toast System
 - Transient messages at the bottom of the screen (`aria-live="polite"`)
-- Regular toasts (`#toast`): informational feedback only
+- Regular toasts (`#toast`): informational feedback only. Default duration is `DEFAULT_TOAST_MS` (2800 ms) so short confirmations stay readable; permission and save-file notices can request up to 5 seconds.
 - Action toasts (`#action-toast`): offer immediate next steps with buttons
 
 ### Action Toast Buttons
@@ -1940,6 +1954,7 @@ Toasts appear after:
   third-party services (Photon, Nominatim, OSRM, OpenStreetMap Street tiles,
   Esri World Imagery Satellite tiles, jsDelivr /
   unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
+  a one-time coarsened GPS city lookup to Photon/Nominatim when city is empty,
   the encrypted Cloudflare relay used by shared display and
   share item, and optional send feedback via Google Forms. Map lookups are
   described as a narrower request than embedding Google Maps or Apple Maps.
@@ -2142,6 +2157,12 @@ baseScore =
 ---
 
 ### 14.3 Fast planner: bounded day and week graph search 👨‍💻
+
+Both engines retain cached prayer and sunrise/sunset dates across the temporary
+future clock used by drop forecasts. Forecast agendas keep the same resolved
+prayer windows as ordinary agendas; cache reuse does not remove those bounds.
+The v4 home agenda cache discards older saved agendas and their forecasts on
+startup, so a pre-fix schedule cannot survive the update.
 
 Fast is not the production default. It is the preview, optimizer-off, and
 fallback path, and the quality-parity track toward replacing GLPK once it
@@ -2477,7 +2498,7 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `AGENDA_TRAVEL_COST_SCALE` | 1.2 | Modest global multiplier on the agenda's soft travel cost |
 | `GEOCODE_FETCH_TIMEOUT_MS` | 8000 | Geocoding timeout |
 | `MAX_RHYTHM_DAYS` | 183 | Max cycle length |
-| `MIN_RHYTHM_DAYS` | 0.5 | Min cycle length |
+| `MIN_RHYTHM_DAYS` | 0.2 | Min cycle length (so 15×/7d stores as 7/15, not 2×/1d) |
 | `DEFAULT_DURATION_MINUTES` | 30 | Default session length |
 | `DEFAULT_MIN_CHUNK_MINUTES` | 30 | Default min chunk when breakable |
 | `DEFAULT_EARLY_WINDOW_DAYS` | 1 | Default number of days an item may be brought forward |
@@ -2870,13 +2891,13 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 | `defaultTravelMode` | string | 'driving' | Default routing mode |
 | `mapBaseLayer` | string | 'street' | Last successfully loaded location-picker base layer |
 | `lastKnownLocationId` | string\|null | null | Auto-detected location ID |
-| `locationOptIn` | boolean | false | Geolocation permission granted |
+| `locationOptIn` | boolean | false | Geolocation permission granted. Native first-enable asks the OS for precise location in the same tap (no in-app permission sheet) |
 | `pinnedLocationId` | string\|null | null | Manually pinned location |
 
 #### Prayer Times 👤
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `homeCityName` | string | '' | City name for prayer times |
+| `homeCityName` | string | '' | City name for prayer times. Filled once when still empty (first GPS grant, or first saved place). GPS fill reverse-geocodes a coarsened pin, not the live fix. Later travel does not rewrite it |
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
 | `weatherProfiles` | WeatherProfile[] | [] | Up to eight named weighted weather profiles shared by items, options, and places |
@@ -3214,7 +3235,7 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 The Capacitor wrapper at `../../Tings` builds from this directory. Its runtime source paths link here, so shared planner/UI edits have one source of truth. Run `npm run sync:android` from the wrapper after editing shared code.
 
-Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Enable phone reminders here, then choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** stops those alarms and opens Tings to save a normal completion with its undo action. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
+Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Turning on phone reminders asks for Android’s notification permission immediately — it does not toast and bounce into Settings first. If the prompt is denied, a longer toast explains that you can still open Android notification settings later. Then choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** stops those alarms and opens Tings to save a normal completion with its undo action. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
 
 Alerts follow the agenda and use shared completion and busy-time resolution helpers. They are replaced when the open app replans or reconciles data. Preferences stay on this device. **Refresh agenda while closed** optionally requests an Android background rebuild about every 30 minutes using time, the phone's saved items/settings, and weather. Android may delay a run; a failed run keeps the last saved seven-day reminder schedule. **Allow background location** enables a brief balanced-power location check per run and saved-place arrival/departure events. Choose precise location and **Allow all the time** in Android's app permissions. Periodic refresh also works without location access, using the saved place. Manual presence pins keep priority. No continuous GPS tracking runs. Location events coalesce; a background calculation stops when the app opens, and older calculations cannot overwrite newer edits or location fixes. The existing shared JS/GLPK planner runs with its ordinary four-second solve limit and no refinement loop. The PWA has no background-refresh controls or native jobs.
 

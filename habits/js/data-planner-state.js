@@ -66,6 +66,7 @@ function normalizeOrderConstraint(raw){
     beforeHid,
     afterHid,
     adjacency:normalizeOrderAdjacency(raw.adjacency),
+    minGapMinutes:clampMinGapMinutes(raw.minGapMinutes),
     createdAt:Number.isFinite(Number(raw.createdAt)) ? Number(raw.createdAt) : Date.now()
   };
 }
@@ -172,6 +173,7 @@ function persistentOrderConstraintsForDay(dayBase,data = null){
         beforeHid:direction === 'before' ? subjectHid : link.anchorHid,
         afterHid:direction === 'before' ? link.anchorHid : subjectHid,
         adjacency:link.adjacency,
+        minGapMinutes:link.minGapMinutes,
         persistent:true,
         requiresPair:link.requireSameDay,
         requireSameDay:link.requireSameDay,

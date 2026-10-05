@@ -103,6 +103,8 @@ async function launchBrowser(){
       photon: /Photon/i.test(text),
       nominatim: /Nominatim/i.test(text),
       osrm: /OSRM/i.test(text),
+      coarseGps: /coarse location/i.test(text),
+      gpsRoutes: /driving route estimates also send coordinates to OSRM/i.test(text),
       openSource: /open source/i.test(text),
       mapsCompare: /Google Maps|Apple Maps/i.test(text),
       legend: /this mark|stated job/i.test(text),
@@ -115,6 +117,8 @@ async function launchBrowser(){
   assert(privacy.local && privacy.owner, 'Privacy says the list stays in this browser and the owner cannot see it');
   assert(privacy.display && privacy.encrypt, 'Privacy explains encrypted Cloudflare shared display');
   assert(privacy.photon && privacy.nominatim && privacy.osrm, 'Privacy lists Photon, Nominatim, and OSRM');
+  assert(privacy.coarseGps, 'Privacy says the GPS city fill is a coarse lookup');
+  assert(privacy.gpsRoutes, 'Privacy discloses coordinates sent for driving routes');
   assert(privacy.openSource && privacy.mapsCompare, 'Privacy names open source and the narrower maps request');
   assert(privacy.legend, 'Privacy introduces the cloud-up mark');
   assert(privacy.feedback && privacy.googleForm, 'Privacy explains that send feedback is a Google Form');

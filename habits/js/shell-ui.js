@@ -556,12 +556,14 @@ function updateFullPageState(){
 
 // RENDER: shows and auto-hides the toast message. Optional durationMs for
 // longer notices (e.g. monthly retention cleanup).
-function showToast(text,durationMs = 900){
+function showToast(text,durationMs){
   const toast = $('toast');
   toast.textContent = text;
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  const ms = Number.isFinite(durationMs) ? Math.max(900,durationMs) : 900;
+  const fallback = typeof DEFAULT_TOAST_MS === 'number' ? DEFAULT_TOAST_MS : 2800;
+  const requested = Number.isFinite(durationMs) ? durationMs : fallback;
+  const ms = Math.max(fallback,requested);
   toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
 }
 

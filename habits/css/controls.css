@@ -101,6 +101,7 @@
 .habit-options-block{display:flex;flex-direction:column;gap:8px;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);}
 .habit-options-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .habit-option-list{display:flex;flex-direction:column;gap:10px;}
+.habit-option-add{align-self:flex-start;}
 .habit-option-row{display:flex;flex-direction:column;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);}
 .habit-option-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .habit-option-number{font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:0.04em;color:var(--text3);}

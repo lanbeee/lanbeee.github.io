@@ -408,10 +408,10 @@
                 <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
                 <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, places, and weather above apply generally. Add an option when one place needs its own time or weather guidance. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference and weather on a row override the item and place defaults. Options are alternatives: the planner picks one per occurrence.</span>
               </span>
-              <button type="button" class="mini-text-btn" id="detail-habit-option-add">add option</button>
             </div>
             <p class="field-hint" id="detail-habit-options-hint">Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.</p>
             <div class="habit-option-list" id="detail-habit-option-list"></div>
+            <button type="button" class="mini-text-btn habit-option-add" id="detail-habit-option-add">add option</button>
           </div>
           </details>
         </section>
@@ -439,6 +439,16 @@
                 <div class="info-tooltip" id="detail-min-chunk-help" role="tooltip" hidden>Smallest piece when work must be split. Prefer one continuous session when time allows — this is a floor, not a suggested chunk size.</div></span>
               <label class="range-value" aria-label="minimum chunk minutes">
                 <input type="text" id="detail-min-chunk" inputmode="numeric" maxlength="3" value="30" />
+                <span>min</span>
+              </label>
+            </div>
+          </div>
+          <div class="planning-grid planning-grid-single detail-full-only" id="detail-min-gap-row">
+            <div class="planning-field">
+              <span>min gap <button type="button" class="info-btn" data-tip="detail-min-gap-help" aria-label="about min gap"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-min-gap-help" role="tooltip" hidden>Shortest wait between this item’s own sessions on the same day. Use it for naps or medicine. 0 means no extra spacing.</div></span>
+              <label class="range-value" aria-label="minimum gap between sessions in minutes">
+                <input type="text" id="detail-min-gap" inputmode="numeric" maxlength="3" value="0" />
                 <span>min</span>
               </label>
             </div>
@@ -860,7 +870,7 @@
         <section class="settings-block">
           <span class="settings-label"><span style="position:relative;display:inline-block">backup <button type="button" class="info-btn" data-tip="settings-backup-help" aria-label="about backup"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
             <div class="info-tooltip" id="settings-backup-help" role="tooltip" hidden>Everything is saved only on this device. Export a backup file now and then, and especially before clearing browser data or moving to a new phone.</div></span></span>
-          <p class="field-hint">Your habits live only on this device — there is no account and nothing syncs. Export a backup file you can keep safe or move to a new device. <button type="button" class="mini-text-btn" id="open-privacy-from-settings">privacy</button></p>
+          <p class="field-hint">Your habits live only on this device — there is no account and nothing syncs. Export a backup file you can keep safe or move to a new device. On the Android app, the file is saved to Downloads and a share sheet lets you pick Files or another app. <button type="button" class="mini-text-btn" id="open-privacy-from-settings">privacy</button></p>
           <div class="btn-row">
             <button class="btn primary" id="backup-export" type="button">export backup</button>
             <button class="btn" id="backup-import" type="button">import backup</button>
@@ -974,8 +984,9 @@
               </div>
               <button class="btn" type="button" id="location-access-enable">enable location</button>
             </div>
+            <p class="field-hint">GPS is used on this phone for presence. Driving route estimates send coordinates to OSRM. If city below is still empty, the first fix sends a coarse location once to Photon or Nominatim to name the city — it does not follow you to other cities.</p>
             <span class="settings-sublabel">city <span data-ui-leave="geocode"></span></span>
-            <p class="field-hint">General area when live location is off. Used for sunrise/sunset and similar. Set automatically from the first place you add.</p>
+            <p class="field-hint">General area for sunrise, sunset, and similar. Filled once from the first GPS fix or the first place you add. Clear it here if you want to set a different city.</p>
             <div class="home-city-row">
               <input type="text" id="home-city-input" class="settings-text-input" placeholder="city name (e.g. Lahore)" autocomplete="off" />
               <button class="btn primary" id="home-city-set" type="button">set</button>
@@ -1000,7 +1011,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-blocked-body" hidden>
-            <p class="field-hint">Regular time you don’t want today’s list to use — sleep, meals, work, commute, or school.</p>
+            <p class="field-hint">Regular time you don’t want today’s list to use — sleep, meals, work, commute, or school. On the Android app, each busy time can send a notification or ringing alarm.</p>
             <div class="blocked-time-list" id="blocked-time-list"></div>
             <button class="btn" id="blocked-time-add" type="button">add busy time</button>
           </div>
@@ -1519,7 +1530,7 @@
       <div class="page-head">
         <div>
           <p class="sheet-title">use your location?</p>
-          <p class="about-copy" id="location-permission-copy">Tings uses your location to mark where you are and shape today’s plan. Coordinates stay on this device.</p>
+          <p class="about-copy" id="location-permission-copy">Tings uses your location to mark where you are and shape today’s plan. GPS is used on this phone for presence. Driving route estimates send coordinates to OSRM. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list.</p>
         </div>
       </div>
       <div class="btn-row">

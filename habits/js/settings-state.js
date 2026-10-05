@@ -170,10 +170,32 @@ async function toggleReminders(){
     showToast('reminders off');
     return;
   }
+  if(window.TingsNative?.isNative && window.TingsNative.notifications?.requestPermissions){
+    try{
+      const permission = await window.TingsNative.notifications.requestPermissions();
+      if(permission.display !== 'granted'){
+        showToast('Notifications were not allowed. You can turn them on in Android settings if you change your mind.', 5000);
+        return;
+      }
+      if(typeof nativeReminderPreferences === 'function'){
+        const current = nativeReminderPreferences();
+        if(!current.enabled){
+          localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({...current,enabled:true}));
+          if(typeof reconcileNativeReminders === 'function'){
+            nativeReminderLastSignature = '';
+            await reconcileNativeReminders();
+          }
+        }
+      }
+    }catch(error){
+      showToast(error.message || 'could not enable notifications', 5000);
+      return;
+    }
+  }
   let perm = 'unsupported';
   if(typeof requestReminderPermission === 'function')perm = await requestReminderPermission();
   updateSortSetting({reminders:true});
-  showToast(perm === 'granted' ? 'reminders on' : 'reminders on · in-app banner');
+  showToast(perm === 'granted' || window.TingsNative?.isNative ? 'reminders on' : 'reminders on · in-app banner');
   if(perm === 'granted' && typeof initPush === 'function')initPush();
   setTimeout(()=>{if(typeof checkReminders === 'function')checkReminders();},120);
 }

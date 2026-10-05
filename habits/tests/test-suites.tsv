@@ -114,12 +114,15 @@ ui-feedback-test.js	ui	once
 color-palette-test.js	ui	once
 native-reminders-test.js	ui	once
 planner-drop-reminder-test.js	planner	once
+min-gap-test.js	planner	page-both
+rhythm-weekly-target-test.js	planner	page-both
 
 safe-area-scroll-test.js	ui	once
 
 zz-planner-cutoff-audit.js	diagnostics	once
 planner-forecast-test.js	planner	once
 planner-forecast-worker-test.js	planner	once
+planner-prayer-forecast-test.js	planner	once
 
 planner-closed-forecast-test.js	planner	once
 planner-quality-gap-test.js	diagnostics	once

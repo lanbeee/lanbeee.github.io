@@ -523,13 +523,28 @@ function formatCityLabel(locality,country){
   return name ? name.slice(0,80) : '';
 }
 
+// PURE: snap coords to a ~1 km grid before city reverse-geocode so a live GPS
+// fix is not sent to Photon/Nominatim. Idempotent at CITY_LOOKUP_COORD_DECIMALS.
+function coarsenLatLngForCity(lat,lng){
+  const decimals = typeof CITY_LOOKUP_COORD_DECIMALS === 'number' ? CITY_LOOKUP_COORD_DECIMALS : 2;
+  const q = 10 ** decimals;
+  const coarseLat = Math.round(Number(lat) * q) / q;
+  const coarseLng = Math.round(Number(lng) * q) / q;
+  if(!Number.isFinite(coarseLat) || !Number.isFinite(coarseLng))return null;
+  if(Math.abs(coarseLat) > 90 || Math.abs(coarseLng) > 180)return null;
+  return {lat:coarseLat, lng:coarseLng};
+}
+
 // ASYNC: reverse-geocode coords into a general city label for homeCity*.
 // Prefers city/town/village over street-level place names. Returns
 // {name,lat,lng,countryCode} or null when neither Photon nor Nominatim yields
 // a locality. countryCode (ISO 3166-1 alpha-2) feeds the temperature-unit
 // inference; both geocoders provide it without an extra request.
 async function reverseGeocodeCity(lat,lng){
-  if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
+  const coarse = coarsenLatLngForCity(lat,lng);
+  if(!coarse)return null;
+  lat = coarse.lat;
+  lng = coarse.lng;
   try{
     const url = `${PHOTON_BASE}/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&lang=en`;
     const json = await fetchJsonWithTimeout(url);
@@ -693,6 +708,11 @@ function requestLocationAccess(opts = {}){
         // scheduleReopenRefresh already progressive-renders; location changes
         // land via setAutoLocationId → onTravelRefresh.
         if(!quiet && typeof render === 'function')render();
+        // First grant only fills an empty city for a new user. Later GPS
+        // ticks and re-enables must not move prayer/weather to a new town.
+        if(!quiet && typeof maybeInferHomeCityFromPlace === 'function' && currentCoord){
+          void maybeInferHomeCityFromPlace(currentCoord.lat, currentCoord.lng);
+        }
         resolve('granted');
       },
       err=>{
@@ -702,9 +722,9 @@ function requestLocationAccess(opts = {}){
         else if(code === 3)status = 'timeout';
         if(status === 'denied')setLocationOptIn(false);
         if(!quiet && typeof showToast === 'function'){
-          if(status === 'denied')showToast(locationDeniedHelpMessage());
-          else if(status === 'timeout')showToast('location timed out — try again outdoors or with Wi‑Fi');
-          else showToast('could not read your location');
+          if(status === 'denied')showToast(locationDeniedHelpMessage(), 5000);
+          else if(status === 'timeout')showToast('location timed out — try again outdoors or with Wi‑Fi', 5000);
+          else showToast('could not read your location', 5000);
         }
         if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
         resolve(status);
@@ -739,6 +759,30 @@ function resumeLocationWatchIfOptedIn(opts = {}){
   });
 }
 
+// IMPURE: first-time enable from a user tap. On Android this asks for precise
+// location through the OS dialog; the in-app rationale sheet is skipped so
+// the system prompt stays in the same gesture. Presence is computed locally;
+// city inference sends a coarsened pin and driving routes send coordinates.
+async function enableLocationFromUserGesture(){
+  if(window.TingsNative?.isNative && window.TingsNative.background?.requestLocation){
+    try{
+      const state = await window.TingsNative.background.requestLocation();
+      if(!state.fine){
+        if(typeof showToast === 'function'){
+          showToast('Allow precise location in the Android prompt to use live GPS on this phone.', 5000);
+        }
+        if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+        return 'denied';
+      }
+    }catch(error){
+      if(typeof showToast === 'function')showToast((error && error.message) || 'location unavailable', 5000);
+      if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+      return 'denied';
+    }
+  }
+  return requestLocationAccess({quiet:false});
+}
+
 function openLocationPermissionSheet(){
   const sheet = $('location-permission-sheet');
   if(!sheet || typeof openSheet !== 'function'){
@@ -749,8 +793,8 @@ function openLocationPermissionSheet(){
   const copy = $('location-permission-copy');
   if(copy){
     copy.textContent = isStandalonePwa()
-      ? 'Tings uses your location to mark where you are and shape today’s plan. Coordinates stay on this device and are never uploaded.'
-      : 'Tings uses your location to mark where you are and shape today’s plan. Your browser will ask for permission next. Coordinates stay on this device.';
+      ? 'Tings uses your location to mark where you are and shape today’s plan. GPS is used on this phone for presence. Driving route estimates send coordinates to OSRM. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list.'
+      : 'Tings uses your location to mark where you are and shape today’s plan. Your browser will ask for permission next. GPS is used on this phone for presence. Driving route estimates send coordinates to OSRM. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list.';
   }
   openSheet('location-permission-sheet');
 }

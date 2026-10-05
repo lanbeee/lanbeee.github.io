@@ -38,7 +38,8 @@ function normalizeScheduleLink(value,subjectHid,fallbackDirection = null){
     anchorHid,
     direction,
     adjacency:value.adjacency === 'direct' ? 'direct' : 'sometime',
-    requireSameDay:Boolean(value.requireSameDay)
+    requireSameDay:Boolean(value.requireSameDay),
+    minGapMinutes:clampMinGapMinutes(value.minGapMinutes)
   };
 }
 
@@ -81,7 +82,7 @@ function normalizeScheduleLinksWithMigration(raw,subjectHid){
         && !cleanAnchor(raw[field + 'Anchor2'])
         && anchorHid && anchorHid !== cleanHabitId(subjectHid);
       if(!cleanStandalone)continue;
-      links.push({anchorHid,direction:'after',adjacency:'sometime',requireSameDay:false});
+      links.push({anchorHid,direction:'after',adjacency:'sometime',requireSameDay:false,minGapMinutes:0});
       migratedFields.push(field);
       break;
     }

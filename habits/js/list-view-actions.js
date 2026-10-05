@@ -599,6 +599,13 @@ function setupCardTap(row,realIdx){
       }
       return;
     }
+    const reminderOff=e.target.closest('[data-action="reminders-off"]');
+    if(reminderOff){
+      e.preventDefault();e.stopPropagation();
+      const hid = load()[realIdx]?.hid;
+      if(hid && typeof nativeClearItemReminders === 'function')nativeClearItemReminders(`item:${hid}`);
+      return;
+    }
     if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){
       e.preventDefault();e.stopPropagation();return;
     }

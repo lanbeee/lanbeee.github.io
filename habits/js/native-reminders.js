@@ -78,10 +78,11 @@ function nativeEnsureBusyReminderIds(){
     updateSortSetting({blockedTimes:blocks},{renderNow:false});
   }
 }
-function nativeItemReminderControls(owner,name){
-  const box = document.createElement('div');box.className = 'habit-options-block';
+function nativeItemReminderControls(owner,name,opts = {}){
+  const box = document.createElement('div');
+  box.className = 'habit-options-block' + (opts.compact ? ' native-busy-reminders' : '');
   const heading = document.createElement('span');heading.className = 'settings-sublabel';heading.textContent = 'phone reminders';box.append(heading);
-  const grid = document.createElement('div');grid.className = 'planning-grid';
+  const grid = document.createElement('div');grid.className = 'planning-grid' + (opts.compact ? ' native-busy-reminder-grid' : '');
   for(const [edge,title] of NATIVE_REMINDER_EDGES){
     if(edge==='missed' && !owner.startsWith('item:'))continue;
     const label = document.createElement('label');label.className = 'planning-field';label.append(document.createTextNode(title));
@@ -100,8 +101,8 @@ function nativeItemReminderControls(owner,name){
         prefs.items[owner] = {...prefs.items[owner],[edge]:select.value};
         localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
         nativeReminderLastSignature = '';await reconcileNativeReminders();
-        showToast(prefs.enabled ? 'phone reminder saved' : 'saved — enable phone reminders in Settings to receive it');
-      }catch(error){select.value = nativeReminderPreferences().items[owner]?.[edge] || 'off';showToast(error.message);}
+        showToast(prefs.enabled ? 'phone reminder saved' : 'saved — enable phone reminders in Settings to receive it', 2800);
+      }catch(error){select.value = nativeReminderPreferences().items[owner]?.[edge] || 'off';showToast(error.message, 5000);}
       finally{select.disabled = false;}
     });label.append(select);grid.append(label);
   }
@@ -133,8 +134,39 @@ function renderNativeBusyReminders(wrap,blocks){
   if(!window.TingsNative?.isNative)return;
   blocks.forEach((block,i)=>{
     const row = wrap.querySelector(`[data-blocked-row="${i}"]`);
-    if(row)row.append(nativeItemReminderControls(nativeBusyReminderKey(block,i),block.label));
+    if(row)row.append(nativeItemReminderControls(nativeBusyReminderKey(block,i),block.label,{compact:true}));
   });
+}
+function nativeReminderAnyOn(owner){
+  const choice = nativeReminderPreferences().items[owner];
+  if(!choice)return false;
+  return NATIVE_REMINDER_EDGES.some(([edge])=>choice[edge] && choice[edge] !== 'off');
+}
+function nativeReminderUsesAlarm(owner){
+  const choice = nativeReminderPreferences().items[owner];
+  if(!choice)return false;
+  return NATIVE_REMINDER_EDGES.some(([edge])=>choice[edge] === 'alarm');
+}
+function nativeReminderCardPill(h){
+  if(!window.TingsNative?.isNative || !h || !h.hid || h.type === 'zero')return '';
+  if(sortSettings && sortSettings.showRemindersOnCards === false)return '';
+  const owner = `item:${h.hid}`;
+  if(!nativeReminderAnyOn(owner))return '';
+  const alarm = nativeReminderUsesAlarm(owner);
+  const label = alarm ? 'ringing alarm on' : 'notification on';
+  return `<button type="button" class="context-pill reminder-pill icon-only" data-action="reminders-off" aria-label="turn off ${label}" title="${label} — tap to turn off"><i class="ti ${alarm ? 'ti-bell-ringing' : 'ti-bell'}" aria-hidden="true"></i></button>`;
+}
+function nativeClearItemReminders(owner){
+  if(!owner)return;
+  const prefs = nativeReminderPreferences();
+  const blank = {travelLeadMinutes:0};
+  for(const [edge] of NATIVE_REMINDER_EDGES)blank[edge] = 'off';
+  prefs.items[owner] = blank;
+  localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+  nativeReminderLastSignature = '';
+  void reconcileNativeReminders();
+  if(typeof render === 'function')render();
+  showToast('phone reminders off for this item', 2800);
 }
 function nativeReminderLeadMinutes(choices){
   const minutes=Number(choices?.travelLeadMinutes);
@@ -562,10 +594,17 @@ function initNativeReminders(){
     input.disabled = true;
     try{
       const current = nativeReminderPreferences(),enabled = !current.enabled;
-      if(enabled && (await window.TingsNative.notifications.requestPermissions()).display !== 'granted')throw new Error('Allow notifications in Android settings.');
+      if(enabled){
+        const permission = await window.TingsNative.notifications.requestPermissions();
+        if(permission.display !== 'granted'){
+          showToast('Notifications were not allowed. You can turn them on in Android settings if you change your mind.',5000);
+          return;
+        }
+      }
       localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({...current,enabled}));
       input.setAttribute('aria-pressed',String(enabled));nativeReminderLastSignature = '';await reconcileNativeReminders();
-    }catch(error){showToast(error.message);}finally{input.disabled = false;}
+      showToast(enabled ? 'phone reminders on' : 'phone reminders off');
+    }catch(error){showToast(error.message,5000);}finally{input.disabled = false;}
   });toggle.append(input);panel.append(toggle);
   const explanation = document.createElement('p');explanation.className = 'field-hint';explanation.textContent = 'Choose reminders in each habit or task’s Actions tab, or under each busy time. New items start with reminders off. These choices stay on this phone.';panel.append(explanation);
   const exact = document.createElement('button');exact.type = 'button';exact.className = 'mini-text-btn';exact.textContent = 'Allow exact timing';

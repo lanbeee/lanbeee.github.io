@@ -129,6 +129,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showFlexibilityOnCards', title:'show scheduling windows', hint:'Show how many days early or late it may be planned.', extraClass:'settings-full-only'},
     {key:'showTopicsOnCards', title:'show topics', hint:'Show topic labels on the home list.', extraClass:'settings-full-only'},
     {key:'showLocationOnCards', title:'show place', hint:'Show the place on each item.', extraClass:'settings-full-only'},
+    {key:'showRemindersOnCards', title:'show reminder mark', hint:'Show a bell when this item sends a phone notification or alarm. Tap it to turn those reminders off.', extraClass:'settings-full-only'},
     {key:'showStatusOnCards', title:'show progress', hint:'Show done / almost / behind (or new).', extraClass:'settings-full-only'},
     {key:'showEarlyOnCards', title:'show early', hint:'Show early when it helps a packed day.', extraClass:'settings-full-only'}
   ],
@@ -175,6 +176,7 @@ const UI_PRIVACY_BLOCKS = [
   ]},
   {id:'privacy-maps-body', label:'Maps and places', summary:'Lookups use open mapping services, and only for that lookup.', body:[
     '<b>Address or city search</b> sends the text you type to Photon (Komoot) and Nominatim (OpenStreetMap).',
+    '<b>First city fill from GPS</b> sends a coarse location (about 1 km), not the live pin, to Photon or Nominatim. Presence is calculated on this phone; driving route estimates also send coordinates to OSRM.',
     '<b>Travel estimates</b> send the pins of two saved places to OSRM. You can type minutes yourself instead.',
     '<b>Map picture</b> loads OpenStreetMap street tiles or Esri World Imagery satellite tiles for the area on screen.',
     'These are open mapping services. They receive the search or pin needed for that job — not your habit list, and not an ongoing location history. That is a narrower request than embedding Google Maps or Apple Maps.'

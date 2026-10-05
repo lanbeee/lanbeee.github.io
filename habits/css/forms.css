@@ -155,6 +155,12 @@
   border-color:color-mix(in srgb,var(--teal-icon) 45%,var(--border));
 }
 .schedule-link-same-day-row.is-on .setting-title{color:var(--teal-text);}
+.schedule-link-gap-field{
+  display:flex;align-items:center;gap:8px;width:100%;margin:6px 0 0;
+}
+.schedule-link-gap-field[hidden]{display:none;}
+.schedule-link-gap-field .habit-option-field-label{font-size:12px;color:var(--text2);}
+.schedule-link-gap{width:64px;}
 .schedule-link-same-day:focus-visible{
   outline:2px solid var(--teal-icon);outline-offset:2px;
 }

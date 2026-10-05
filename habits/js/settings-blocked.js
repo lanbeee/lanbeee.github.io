@@ -90,7 +90,10 @@ function renderBlockedTimeControls(){
   const locs = typeof locationOptions === 'function' ? locationOptions() : [];
   wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
     <div class="blocked-time-row" data-blocked-row="${i}">
-      <input type="text" data-blocked-label="${i}" aria-label="busy time name" maxlength="24" value="${escapeHtml(block.label)}" />
+      <div class="blocked-time-head">
+        <input type="text" data-blocked-label="${i}" aria-label="busy time name" maxlength="24" value="${escapeHtml(block.label)}" />
+        <button class="mini-text-btn" type="button" data-blocked-remove="${i}">remove</button>
+      </div>
       <div class="blocked-time-hours time-endpoints">
         ${blockedEndpointHtml(block, i, 'start')}
         <span class="time-sep">to</span>
@@ -108,7 +111,6 @@ function renderBlockedTimeControls(){
           ${locs.map(loc=>`<option value="${escapeHtml(loc.id)}"${block.locationId === loc.id ? ' selected' : ''}>${escapeHtml(loc.label || loc.name)}</option>`).join('')}
         </select>
       </div>
-      <button class="mini-text-btn" type="button" data-blocked-remove="${i}">remove</button>
     </div>
   `).join('') : '<p class="field-hint">No busy times. The list can use any open time today.</p>';
   if(typeof renderNativeBusyReminders === 'function')renderNativeBusyReminders(wrap,blocks);

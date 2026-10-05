@@ -516,6 +516,7 @@ $('detail-breakable')?.addEventListener('click',function(){
   setDetailDirty();
 });
 $('detail-min-chunk')?.addEventListener('input',()=>setDetailDirty());
+$('detail-min-gap')?.addEventListener('input',()=>setDetailDirty());
 $('detail-track-value')?.addEventListener('click',function(){
   const pressed = this.getAttribute('aria-pressed') === 'true';
   this.setAttribute('aria-pressed',String(!pressed));
@@ -541,6 +542,7 @@ $('detail-shared-display')?.addEventListener('keydown',event=>{
   setDetailDirty();
 });
 bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
+bindCompactNumber('detail-min-gap',clampMinGapMinutes,{maxLength:3});
 function openDayLogsAfterCalendarGesture(key,{refreshOverview = false} = {}){
   if(!key)return;
   dayLogsKey = key;

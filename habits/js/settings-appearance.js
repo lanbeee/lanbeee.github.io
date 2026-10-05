@@ -48,14 +48,18 @@ function syncHomeCityStatus(){
   }
 }
 
-// ASYNC: if home city is unset, set it from a place's coordinates (reverse
-// geocode → "City, Country"). Never overwrites an existing city. Used when
-// the user adds a place so they don't also have to type a general city.
+// ASYNC: if home city is unset, set it from coordinates (reverse geocode →
+// "City, Country"). Never overwrites an existing city — GPS movement and later
+// place adds must not relocate prayer/weather. Used once for a new user: first
+// GPS grant, or the first saved place if they never turned location on.
 async function maybeInferHomeCityFromPlace(lat,lng){
   if(typeof hasHomeCityCoords === 'function' ? hasHomeCityCoords() : (Number.isFinite(sortSettings.homeCityLat) && Number.isFinite(sortSettings.homeCityLng))){
     return false;
   }
-  if(!Number.isFinite(lat) || !Number.isFinite(lng))return false;
+  const coarse = typeof coarsenLatLngForCity === 'function' ? coarsenLatLngForCity(lat,lng) : null;
+  if(!coarse)return false;
+  lat = coarse.lat;
+  lng = coarse.lng;
   let name = 'Home area';
   let countryCode = '';
   try{

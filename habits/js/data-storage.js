@@ -160,6 +160,7 @@ function loadSortSettings(){
     merged.showTrailOnCards = legacyCalmDefault('showTrailOnCards') || Boolean(merged.showTrailOnCards);
     merged.showCueOnCards = merged.showCueOnCards !== false;
     merged.showOrderPillsOnCards = legacyCalmDefault('showOrderPillsOnCards') || Boolean(merged.showOrderPillsOnCards);
+    merged.showRemindersOnCards = merged.showRemindersOnCards !== false;
     // Minimal mode defaults on, but only for a fresh install. An existing
     // install that was saved before the default flipped has settings on disk
     // without the key, and must keep the full surface it already had.

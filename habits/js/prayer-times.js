@@ -185,7 +185,9 @@ function anchorMs(times, anchor, offsetMin){
     : a === 'maghrib' ? times.maghrib
     : a === 'isha' ? times.isha
     : null;
-  if(!(t instanceof Date) || !Number.isFinite(t.getTime()))return null;
+  // Forecasting temporarily subclasses Date. Cached adhan dates were made
+  // under the ordinary clock and are still valid dates under that clock.
+  if(Object.prototype.toString.call(t) !== '[object Date]' || !Number.isFinite(t.getTime()))return null;
   return t.getTime() + normalizePrayerOffset(offsetMin) * 60000;
 }
 

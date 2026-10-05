@@ -895,6 +895,10 @@
       document.querySelector('#detail-schedule-view-seg [data-schedule-view="allowed"]')?.click();
     }
     if(next === 'aSchedule' || next === 'aSchedulePreferences' || next === 'aGeneralSchedule' || next === 'aScheduleOrder' || next === 'aTimesPlaces' || next === 'aOptionRow' || next === 'aTaskRules')showDetailPage('schedule');
+    if(next === 'aTimesPlaces' || next === 'aOptionRow'){
+      const optionsDisc = $('detail-options-disclosure');
+      if(optionsDisc)optionsDisc.open = true;
+    }
     if(next === 'aHistoryPlans')showDetailPage('calendar');
     if(next === 'aEffort' || next === 'aEffortTools')showDetailPage('effort');
     if(next === 'aIdentity')showDetailPage('identity');
@@ -914,6 +918,8 @@
         if(idx >= 0 && typeof openDetail === 'function')openDetail(idx);
       }
       showDetailPage('schedule');
+      const weatherDisc = $('detail-weather-disclosure');
+      if(weatherDisc)weatherDisc.open = true;
       setTimeout(()=>{
         $('detail-weather-profile')?.scrollIntoView({block:'center',behavior:'auto'});
         queuePosition();

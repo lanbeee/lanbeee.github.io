@@ -237,6 +237,34 @@ const assert = require('node:assert/strict');
       }
     });
     assert.equal(stalePublishes,0,'an edited agenda preserves existing estimates until its replacement is ready');
+    const uiBits=await page.evaluate(()=>{
+      const now=Date.now();
+      const drop=agendaLeadStatus({kind:'fill',start:now,end:now+30*60000,dropAt:now+8*60000},{
+        type:'keepup',allowedTimeStart:0,allowedTimeEnd:1440
+      },now);
+      window.TingsNative={isNative:true,notifications:{requestPermissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})},background:{},alarms:{}};
+      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({version:3,enabled:true,items:{'item:walk':{start:'notification'}}}));
+      sortSettings={...loadSortSettings(),blockedTimes:[{label:'Lunch',start:720,end:780,days:[],reminderId:'lunch'}]};
+      renderBlockedTimeControls();
+      const busy=document.querySelector('.native-busy-reminders');
+      const busyStyle=busy ? getComputedStyle(busy) : null;
+      const pill=nativeReminderCardPill({hid:'walk',name:'Walk',type:'keepup'});
+      return {
+        dropCls:drop.cls,
+        dropIcon:drop.icon,
+        toastMs:typeof DEFAULT_TOAST_MS === 'number' ? DEFAULT_TOAST_MS : 0,
+        busyFullWidth:Boolean(busy && busyStyle && busyStyle.gridColumnStart === '1' && (busyStyle.gridColumnEnd === '-1' || busyStyle.gridColumnEnd === 'span 2' || Number(busyStyle.gridColumnEnd) > 2)),
+        hasBusyHead:Boolean(document.querySelector('.blocked-time-head')),
+        hasBusyReminders:Boolean(busy),
+        pill
+      };
+    });
+    assert.equal(uiBits.dropCls,'agenda-dropping','agenda clock uses dropping state inside the 15-minute warning');
+    assert.equal(uiBits.dropIcon,'ti-clock-exclamation','dropping clock uses the exclamation clock icon');
+    assert.equal(uiBits.toastMs,2800,'toasts stay on screen at least 2.8s');
+    assert.equal(uiBits.hasBusyHead,true,'busy-time name and remove sit on one header row');
+    assert.equal(uiBits.hasBusyReminders,true,'busy times show phone reminder controls at full width');
+    assert.match(uiBits.pill,/reminder-pill/,'cards can show a reminder mark');
     assert.deepEqual(errors,[],'no runtime errors');
     // Isolated preview of the real controls using existing styles, for mobile-width review.
     await page.evaluate(()=>{

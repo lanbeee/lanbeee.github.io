@@ -171,6 +171,11 @@ function scheduleLinkEditorHtml(link,subjectHid,idx){
         <span class="switch-ui" aria-hidden="true"></span>
       </button>
     </div>
+    <label class="habit-option-field schedule-link-gap-field"${anchorHid ? '' : ' hidden'}>
+      <span class="habit-option-field-label">min gap</span>
+      <input type="text" class="mini-time-input schedule-link-gap" inputmode="numeric" maxlength="3" placeholder="0" value="${escapeHtml(String(clampMinGapMinutes(link && link.minGapMinutes)))}" aria-label="minimum minutes between these habits" />
+      <span>min</span>
+    </label>
   </div>`;
 }
 
@@ -192,6 +197,7 @@ function refreshScheduleLinkEditorRow(editor,h){
   const adj = editor.querySelector('.schedule-link-adjacency');
   const sameDay = editor.querySelector('.schedule-link-same-day');
   const sameDayRow = editor.querySelector('.schedule-link-same-day-row');
+  const gapField = editor.querySelector('.schedule-link-gap-field');
   const picker = editor.querySelector('.schedule-link-habit');
   const anchorHid = cleanHabitId(picker && picker.value);
   if(adj){
@@ -214,6 +220,7 @@ function refreshScheduleLinkEditorRow(editor,h){
     if(help)help.textContent = `When on, plan this habit whenever ${anchorName} lands (shows as early when flex allows). Other days stay unconstrained. Multiple must-do links are OR’d.`;
     sameDay.setAttribute('aria-label',`Must do on days with ${anchorName}: ${isRequired ? 'on' : 'off'}`);
   }
+  if(gapField)gapField.hidden = !anchorHid;
 }
 
 function readScheduleLinksFromDetail(subjectHid){
@@ -229,7 +236,8 @@ function readScheduleLinksFromDetail(subjectHid){
       anchorHid,
       direction,
       adjacency,
-      requireSameDay:editor.querySelector('.schedule-link-same-day')?.getAttribute('aria-pressed') === 'true'
+      requireSameDay:editor.querySelector('.schedule-link-same-day')?.getAttribute('aria-pressed') === 'true',
+      minGapMinutes:clampMinGapMinutes(editor.querySelector('.schedule-link-gap')?.value)
     },subjectHid,direction);
     if(link)out.push(link);
   });
@@ -576,6 +584,8 @@ function habitScheduleOptionFromAllowedWindow(h){
 function addBlankHabitScheduleOption(){
   const list = $('detail-habit-option-list');
   if(!list)return;
+  const disclosure = $('detail-options-disclosure');
+  if(disclosure)disclosure.open = true;
   if(list.children.length >= MAX_HABIT_SCHEDULE_OPTIONS){
     showToast(`up to ${MAX_HABIT_SCHEDULE_OPTIONS} options`);
     return;
