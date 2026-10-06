@@ -642,12 +642,11 @@ function setupEmojiSuggestion(){
       if(emojiInput)emojiInput.focus({preventScroll:true});
     });
   }
-  // detail identity tab: same affordance, keeps the page clean until tapped
+  // The detail disclosure owns visibility; the preview opens that section.
   const detailPreview = document.getElementById('detail-emoji-preview');
-  const detailEditArea = document.getElementById('detail-emoji-edit');
   if(detailPreview){
     detailPreview.addEventListener('click',()=>{
-      if(detailEditArea)detailEditArea.hidden = false;
+      if($('detail-appearance-disclosure'))$('detail-appearance-disclosure').open = true;
       const el = document.getElementById('detail-emoji');
       if(el)el.focus({preventScroll:true});
     });
@@ -683,8 +682,6 @@ function setupEmojiSuggestion(){
     window.openDetail = function(i){
       _detailEmojiUserEdited = false;
       clearTimeout(_detailSuggestTimer);
-      const edit = document.getElementById('detail-emoji-edit');
-      if(edit)edit.hidden = true;
       const r = orig(i);
       const el = document.getElementById('detail-emoji');
       _detailEmojiAtOpen = el ? el.value.trim() : '';

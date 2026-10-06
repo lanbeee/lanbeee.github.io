@@ -21,7 +21,10 @@ async function addTestHabit(page, name, type, opts = {}){
 async function scrollDetailToSchedule(page, paneIndex = 1){
   await page.evaluate((idx) => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager) pager.scrollTo({ left: pager.clientWidth * idx, behavior: 'instant' });
+    if(pager){
+      pager.querySelectorAll('.detail-page')[idx]?.querySelectorAll('details').forEach(d=>d.open=true);
+      pager.scrollTo({ left: pager.clientWidth * idx, behavior: 'instant' });
+    }
   }, paneIndex);
   await page.waitForTimeout(200);
 }

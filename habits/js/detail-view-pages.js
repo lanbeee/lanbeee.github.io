@@ -62,6 +62,18 @@ function applyDetailMinimalMode(){
     if(slot)slot.hidden = true;
   }
 
+  const inner = getSheetInner('detail-sheet');
+  inner?.classList.toggle('minimal-detail',minimal);
+  inner?.querySelectorAll('.detail-disclosure').forEach(el=>{
+    if(minimal){
+      if(el.dataset.regularOpen === undefined)el.dataset.regularOpen = String(el.open);
+      // Keep the optional emoji picker behind its disclosure in minimal mode.
+      if(el.id !== 'detail-appearance-disclosure')el.open = true;
+    }else if(el.dataset.regularOpen !== undefined){
+      el.open = el.dataset.regularOpen === 'true';delete el.dataset.regularOpen;
+    }
+  });
+  if(minimal && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
   if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
 }
 
@@ -133,6 +145,17 @@ function updateDetailPagerDots(){
       const livePages = visibleDetailPages(pager);
       const index = Math.max(0,Math.min(livePages.length - 1,Number(tab.dataset.detailPage) || 0));
       pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
+    });
+    dotsWrap.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      const tabs = [...dotsWrap.querySelectorAll('.detail-page-tab')];
+      const current = tabs.indexOf(event.target.closest('.detail-page-tab'));
+      if(current < 0)return;
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      event.preventDefault();
+      const panel = visibleDetailPages(pager)[next];
+      scrollDetailToNav(panel.dataset.detailNav,'auto');
+      tabs[next].focus({preventScroll:true});
     });
   }
   const dots = [...dotsWrap.querySelectorAll('.detail-page-tab')];

@@ -305,7 +305,7 @@ function fastLinkedGroupBase(state,hids){
   return trial;
 }
 
-function fitFastLinkedGroup(state,group,settings,budget,leading = []){
+function fitFastLinkedGroup(state,group,settings,budget,leading = [],policy = null){
   const hids=new Set(group.keys());
   // This neighborhood handles one ordinary occurrence per item/date. Keep
   // separate-option repetitions and split/active sessions with their existing
@@ -355,6 +355,8 @@ function fitFastLinkedGroup(state,group,settings,budget,leading = []){
         budget.linkRemaining--;
         const trial=cloneFastGraphState(node.state);
         const fill={h:member.h,i:member.i,priority:member.priority,scarcity:member.scarcity};
+        if(policy && fastPathDefersMovable(member,trial,policy.candidates,
+          policy.states.map(s=>s===state ? trial : s)))continue;
         const slots=trial.slots;
         if(gap)trial.slots=slots.map(slot=>({...slot,start:Math.max(slot.start,gap.start),
           end:Math.min(slot.end,gap.end)})).filter(slot=>slot.end>slot.start);
@@ -774,9 +776,74 @@ function improveFastGraphDaySelections(candidates,states,settings,options = {}){
   return diagnostics;
 }
 
+// A transfer may need to reopen a direct neighbor already placed today (A ->
+// B -> C, with C claimed before A/B). Follow present endpoints in either link
+// direction, without inventing absent OR partners. Sparse occurrences move;
+// daily occurrences retain their source date and fill today's missing rep.
+function fastTodayLinkedChoice(c,today,source,candidates,states,settings,budget){
+  const byHid=new Map(candidates.map(item=>[item.h.hid,item]));
+  const present=state=>new Set(state.fills.map(e=>e.fill.h.hid));
+  const todayHids=present(today),sourceHids=present(source);
+  const edges=plannerOrderConstraintsForDay(today.dayBase);
+  const group=new Map([[c.h.hid,c]]);
+  for(const member of group.values()){
+    for(const edge of edges){
+      if(edge.adjacency!=='direct' && !edge.requiresPair)continue;
+      const other=edge.beforeHid===member.h.hid ? edge.afterHid
+        : edge.afterHid===member.h.hid ? edge.beforeHid : null;
+      if(other && byHid.has(other) && (todayHids.has(other) || sourceHids.has(other)))
+        group.set(other,byHid.get(other));
+    }
+    if(group.size>4)return null;
+  }
+  if(group.size<2)return null;
+  const doing=typeof getDoingNow==='function' ? getDoingNow() : null;
+  const moved=new Set();
+  for(const member of group.values()){
+    if(member.h.breakable || member.pinned || !member.eligible.has(today.dayBase)
+      || !candidateMatchesPinnedDay(member,today)
+      || mustPlaceCriticalOccurrence(member)
+      || (doing && doing.hid===member.h.hid)
+      || states.some(s=>weatherLockedPlacement(member,s,settings)))return null;
+    if(todayHids.has(member.h.hid))continue;
+    if(!isIndependentDailyOccurrence(member)){
+      // Only the first sparse/task occurrence can transfer. A subject whose
+      // earlier cycle is elsewhere cannot be borrowed from this source date.
+      const first=states.find(s=>s.fills.some(e=>e.fill.i===member.i));
+      if(first!==source)return null;
+      let last=today.dayBase,offset=1;
+      for(const s of states){
+        if(s.dayBase<=source.dayBase || !s.fills.some(e=>e.fill.i===member.i))continue;
+        // Existing must-do build reps can be closer than the ordinary rhythm
+        // (including beside an open reduce partner). Keep those real pairs;
+        // eligibility alone must not invent an extra rep on an empty date.
+        const linkedRep=member.h.type==='keepup' && sameDayScheduleLinks(member.h).some(link=>
+          s.fills.some(e=>e.fill.h.hid===link.anchorHid)
+            || scheduleAnchorCommitForDay(link.anchorHid,s.dayBase));
+        if(member.h.type!=='task' && !rhythmEligibleOnDay(member.h,last,s.dayBase,s.weekday,offset)
+          && !linkedRep)return null;
+        last=s.dayBase;offset++;
+      }
+      moved.add(member.h.hid);
+    }
+    if(weatherShouldDeferCandidate(member,today,settings,states))return null;
+  }
+  const later=fastLinkedGroupBase(source,moved);
+  if(!later)return null;
+  const earlierBase=fastLinkedGroupBase(today,new Set(group.keys()));
+  if(!earlierBase)return null;
+  // Test reservation policy without the group's existing rows counted twice.
+  for(const member of group.values())if(!todayHids.has(member.h.hid)
+    && fastPathDefersMovable(member,earlierBase,candidates,states))return null;
+  const linkBudget={linkRemaining:budget.remaining};
+  const earlier=fitFastLinkedGroup(today,group,settings,linkBudget,[],{candidates,states});
+  budget.remaining=linkBudget.linkRemaining;
+  return earlier ? {earlier,later,group:new Set(group.keys()),moved} : null;
+}
+
 // A packed week can still leave useful time today unused. Recover the first
-// ordinary day-choice from a later day without rebuilding the week or adding
-// an occurrence. Travel/weather must not worsen and every existing row stays.
+// day-choice or a missing linked daily rep without rebuilding the week.
+// Travel/weather must not worsen and every existing occurrence stays.
 function improveFastGraphTodayChoices(candidates,states,settings,options={}){
   const limit=Math.min(96,Math.max(0,options.maxProbes || 0));
   const budget={remaining:limit,searches:0,accepted:0};
@@ -787,9 +854,9 @@ function improveFastGraphTodayChoices(candidates,states,settings,options={}){
     .flatMap(e=>[e.beforeHid,e.afterHid])));
   const doing=typeof getDoingNow==='function' ? getDoingNow() : null;
   const byIndex=new Map(candidates.map(c=>[c.i,c]));
-  const retainsClocks=(before,after,all=false)=>before.fills.every(e=>{
+  const retainsClocks=(before,after,all=false,reopened=new Set())=>before.fills.every(e=>{
     const c=byIndex.get(e.fill.i);
-    const frozen=all || c?.pinned || linked.has(e.fill.h.hid)
+    const frozen=all || c?.pinned || (linked.has(e.fill.h.hid) && !reopened.has(e.fill.h.hid))
       || (doing && doing.hid===e.fill.h.hid)
       || weatherLockedPlacement(e.fill,before,settings);
     return !frozen || after.fills.some(n=>n.fill.i===e.fill.i
@@ -802,8 +869,9 @@ function improveFastGraphTodayChoices(candidates,states,settings,options={}){
   };
   const weather=state=>state.fills.reduce((sum,e)=>sum
     +(weatherPenaltyForFit(e.fill,e.fit,state,settings) || 0),0);
-  const choices=candidates.filter(c=>isDayChoosingWeekCandidate(c)
-    && c.eligible.has(today.dayBase) && !c.pinned && !linked.has(c.h.hid)
+  const choices=candidates.filter(c=>(isDayChoosingWeekCandidate(c)
+      || (isIndependentDailyOccurrence(c) && linked.has(c.h.hid)))
+    && c.eligible.has(today.dayBase) && !today.fills.some(e=>e.fill.i===c.i) && !c.pinned
     && !(doing && doing.hid===c.h.hid)
     && !states.some(s=>weatherLockedPlacement(c,s,settings)))
     .sort((a,b)=>a.priority-b.priority || b.urgency-a.urgency || a.i-b.i);
@@ -811,6 +879,25 @@ function improveFastGraphTodayChoices(candidates,states,settings,options={}){
     if(budget.remaining<=0)break;
     const source=states.find(s=>s.fills.some(e=>e.fill.i===c.i));
     if(!source || source===today)continue;
+    if(linked.has(c.h.hid)){
+      const proposal=fastTodayLinkedChoice(c,today,source,candidates,states,settings,budget);
+      if(!proposal)continue;
+      const {earlier,later,group,moved}=proposal;
+      reconcileCommittedTravel(earlier);reconcileCommittedTravel(later);
+      const keep={...source,fills:source.fills.filter(e=>!moved.has(e.fill.h.hid))};
+      if(earlier.usedMinutes>earlier.totalMinutes+1e-6
+        || !retainsClocks(today,earlier,false,group) || !retainsClocks(keep,later,true)
+        || addsLinkViolation(today,earlier) || addsLinkViolation(source,later))continue;
+      const trial=states.map(s=>s===today ? earlier : s===source ? later : s);
+      if(!fastGraphReplayRetainsWork(states,trial,candidates))continue;
+      if(dayRouteCostSeconds(earlier)+dayRouteCostSeconds(later)
+        >dayRouteCostSeconds(today)+dayRouteCostSeconds(source)+1e-6)continue;
+      if(weather(earlier)+weather(later)>weather(today)+weather(source)+1e-6)continue;
+      applyPlacementState(today,earlier);applyPlacementState(source,later);
+      today.day.linkOmissions=earlier.day.linkOmissions;
+      diagnostics.accepted++;
+      continue;
+    }
     const fill={h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     const work=today.fills.reduce((sum,e)=>sum+fillDurationMinutes(e.fill),0);
     if(work+fillDurationMinutes(fill)>today.totalMinutes)continue;

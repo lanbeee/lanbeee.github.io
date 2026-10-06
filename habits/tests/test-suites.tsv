@@ -131,3 +131,5 @@ fast-linked-recovery-test.js	planner	once
 fast-evening-packing-test.js	planner	once
 
 drop-alarm-cycle-test.js	planner	page-both
+
+detail-search-navigation-test.js	ui	once

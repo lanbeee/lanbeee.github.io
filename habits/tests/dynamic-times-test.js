@@ -370,6 +370,7 @@ async function toastText(page){
   // Open Stretch detail → schedule pane.
   await page.evaluate((i) => { openDetail(i); }, stretchIdx);
   await page.waitForSelector('#detail-sheet.open', { timeout:5000 });
+  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
     if(pager)pager.scrollTo({left:pager.clientWidth * 2, behavior:'auto'});
@@ -455,6 +456,7 @@ async function toastText(page){
   const stretchIdx2 = await page.evaluate(() => load().findIndex(h => h.name === 'Stretch'));
   await page.evaluate((i) => { openDetail(i); }, stretchIdx2);
   await page.waitForSelector('#detail-sheet.open', { timeout:5000 });
+  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
     if(pager)pager.scrollTo({left:pager.clientWidth * 2, behavior:'auto'});

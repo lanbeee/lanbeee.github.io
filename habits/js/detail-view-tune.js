@@ -162,6 +162,7 @@ function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
+  if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 
 // HYBRID: rewrites form fields from saved original
@@ -565,6 +566,10 @@ function setScheduleView(view){
 
 // HYBRID: resets detail state and closes sheet
 function closeDetail(){
+  const inner = getSheetInner('detail-sheet');
+  if(inner?.contains(document.activeElement))document.activeElement.blur();
+  inner?.classList.remove('detail-field-editing');
+  setDetailSearchOpen(false,false);
   detailIdx = null;
   detailTuneOriginal = null;
   detailScheduleView = 'allowed';

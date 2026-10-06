@@ -166,6 +166,15 @@ body[data-pane-count="2"] .app,body[data-pane-count="3"] .app{
 .detail-disclosure > summary::-webkit-details-marker{display:none;}
 .detail-disclosure > summary::after{content:'+';font-size:18px;font-weight:400;}
 .detail-disclosure[open] > summary::after{content:'−';}
+.detail-sheet .detail-disclosure{margin-top:10px;padding-top:0;}
+.detail-sheet .detail-disclosure[data-detail-essential]{margin-top:0;border-top:0;}
+.detail-sheet .detail-disclosure > summary{
+  min-height:44px;padding:10px 0;color:var(--text);
+  font-size:var(--detail-copy-size);line-height:1.4;gap:12px;
+}
+.detail-sheet .detail-disclosure > summary::after{flex-shrink:0;}
+.detail-sheet .detail-disclosure .habit-options-block,
+.detail-sheet .detail-disclosure .schedule-order-block{margin-top:0;padding-top:0;border-top:0;}
 .detail-disclosure .habit-options-block{border:0;margin-top:0;padding-top:0;}
 .detail-sheet .detail-page{box-shadow:none;}
 .detail-sheet .detail-page-tab.on{background:var(--teal-bg);color:var(--teal-text);box-shadow:none;}

@@ -894,13 +894,13 @@
     if(next === 'aGeneralSchedule'){
       document.querySelector('#detail-schedule-view-seg [data-schedule-view="allowed"]')?.click();
     }
-    if(next === 'aSchedule' || next === 'aSchedulePreferences' || next === 'aGeneralSchedule' || next === 'aScheduleOrder' || next === 'aTimesPlaces' || next === 'aOptionRow' || next === 'aTaskRules')showDetailPage('schedule');
+    if(next === 'aSchedule' || next === 'aSchedulePreferences' || next === 'aGeneralSchedule' || next === 'aTimesPlaces' || next === 'aOptionRow' || next === 'aTaskRules')showDetailPage('schedule');
     if(next === 'aTimesPlaces' || next === 'aOptionRow'){
       const optionsDisc = $('detail-options-disclosure');
       if(optionsDisc)optionsDisc.open = true;
     }
     if(next === 'aHistoryPlans')showDetailPage('calendar');
-    if(next === 'aEffort' || next === 'aEffortTools')showDetailPage('effort');
+    if(next === 'aEffort' || next === 'aEffortTools' || next === 'aScheduleOrder')showDetailPage('effort');
     if(next === 'aIdentity')showDetailPage('identity');
     if(next === 'aLifecycle'){
       showDetailPage('actions');
@@ -963,6 +963,8 @@
 
   function showDetailPage(key){
     setTimeout(()=>{
+      const page = document.querySelector(`.detail-page[data-detail-nav="${key}"]`);
+      page?.querySelectorAll('details').forEach(el=>el.open = true);
       if(typeof scrollDetailToNav === 'function')scrollDetailToNav(key,'auto');
       setTimeout(queuePosition,90);
     },40);

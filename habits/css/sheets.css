@@ -223,3 +223,24 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
 .sheet-title{font-size:calc(15px * var(--font-scale));font-weight:500;margin-bottom:16px;color:var(--text);}
 .sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
 .sheet-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
+
+/* Pin the original header or move the existing exit into a sticky row. */
+.sheet-exit{
+  position:sticky;top:0;z-index:65;flex:0 0 auto;
+  display:flex;justify-content:flex-end;align-items:center;
+  min-height:44px;margin:0 0 6px;background:var(--bg);
+}
+body[data-pane-count="1"] :is(.add-sheet,.about-sheet,.privacy-sheet,.overview-sheet,.sample-habits-sheet) > .sheet-exit{top:var(--content-safe-top);}
+.sheet-exit-button{
+  min-width:60px;min-height:44px;padding:8px 12px;
+  border:1px solid var(--border);border-radius:12px;
+  background:var(--bg2);color:var(--text);font:inherit;font-size:13px;cursor:pointer;
+}
+
+.sheet-exit-redundant{display:none !important;}
+.sheet > .sheet-exit-head{position:sticky;top:0;z-index:65;flex:0 0 auto;}
+.sheet > .sheet-exit-head:not(.about-hero){background:var(--bg);}
+body[data-pane-count="1"] :is(.about-sheet,.privacy-sheet,.overview-sheet) > .sheet-exit-head{top:var(--content-safe-top);}
+
+/* Scoped day details already have a pinned close control in their header. */
+#day-logs-footer:has(> #day-logs-done:only-child){display:none;}

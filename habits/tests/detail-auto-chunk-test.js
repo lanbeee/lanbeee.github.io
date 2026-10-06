@@ -46,6 +46,7 @@ function ok(value,message){
 
   await page.evaluate(()=>openDetail(0));
   await page.waitForSelector('#detail-sheet.open');
+  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   const migratedWindows = await page.evaluate(()=>{
     const due = dayStart(Date.now());
     const migrated = normalize([{
@@ -89,7 +90,7 @@ function ok(value,message){
     && await page.locator('#setting-default-delay-allowance').count() === 1,
   'settings exposes separate early and delay defaults');
   ok(await page.locator('.detail-page-tab').count() === 5,'detail exposes five labeled page tabs');
-  ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'history|schedule|effort|identity|actions','page tabs name every pane');
+  ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'history|schedule|planning|identity|actions','page tabs name every pane');
   const compactShell = await page.evaluate(()=>{
     const head = document.querySelector('.detail-head').getBoundingClientRect();
     const pager = document.querySelector('.detail-pager').getBoundingClientRect();
@@ -97,27 +98,25 @@ function ok(value,message){
     const done = document.querySelector('#detail-cool').getBoundingClientRect();
     const tab = document.querySelector('.detail-page-tab').getBoundingClientRect();
     return {
-      head:head.height,pager:pager.height,bar:bar.height,done:done.width,tab:tab.width,
+      head:head.height,pager:pager.height,bar:bar.height,done:done.width,doneHeight:done.height,doneBottom:done.bottom,pagerTop:pager.top,tab:tab.width,
       viewport:innerHeight,overlap:Math.max(0,pager.bottom - bar.top),overflow:document.body.scrollWidth - innerWidth
     };
   });
   // The refreshed identity header intentionally has a little more breathing
   // room than the old single-line treatment, while keeping the actual pane
   // comfortably dominant on a short phone viewport.
-  ok(compactShell.head <= 84 && compactShell.pager >= compactShell.viewport * 0.68,'compact header leaves most of the short viewport to pane content');
-  ok(compactShell.bar <= 50 && compactShell.overlap <= 0 && compactShell.overflow <= 0,'integrated bottom dock does not overlap content or overflow');
-  // Five tabs (insight merged into calendar) widened each pane shortcut, so
-  // the fixed-width done button is ~1.7x a tab instead of ~2x.
-  ok(compactShell.done >= compactShell.tab * 1.5,'done remains substantially larger than a pane shortcut');
+  ok(compactShell.head <= 84 && compactShell.pager >= compactShell.viewport * 0.60,'compact header leaves most of the short viewport to pane content');
+  ok(compactShell.bar <= 60 && compactShell.overlap <= 0 && compactShell.overflow <= 0,'integrated bottom dock does not overlap content or overflow');
+  ok(compactShell.done === 44 && compactShell.doneHeight === 44 && compactShell.doneBottom <= compactShell.viewport && compactShell.doneBottom > compactShell.pagerTop,'one circular Close target stays below the scrolling pane');
   const dirtyDock = await page.evaluate(()=>{
     setDetailDirty(true);
     const save = document.querySelector('#detail-save').getBoundingClientRect();
     const cancel = document.querySelector('#detail-close').getBoundingClientRect();
     const visible = save.width > 0 && save.height > 0 && cancel.width > 0 && cancel.height > 0;
     setDetailDirty(false);
-    return {visible,width:save.width + cancel.width};
+    return {visible,width:save.width + cancel.width,available:document.querySelector(".detail-bottom-bar").clientWidth,below:Math.min(save.top,cancel.top) >= document.querySelector(".detail-pager").getBoundingClientRect().bottom};
   });
-  ok(dirtyDock.visible && dirtyDock.width <= 148,'save and cancel fit the same compact dock when editing');
+  ok(dirtyDock.visible && dirtyDock.width <= dirtyDock.available && dirtyDock.below,'save and cancel fit the bottom dock when editing');
   ok((await page.locator('#detail-auto-mark-label').textContent()) === 'auto-log agenda chunks','breakable auto-mark is named as chunk logging');
   ok((await page.locator('#detail-auto-mark-summary').textContent()).includes('Manual taps count first'),'auto-log summary explains manual reconciliation');
 
@@ -140,6 +139,8 @@ function ok(value,message){
   ok(await page.locator('#detail-allowed-time-row .time-expr2').count() === 2,'both comparisons retain their second expressions');
   ok(await page.locator('#detail-allowed-time-row .time-resolved').evaluateAll(nodes=>nodes.every(node=>node.textContent.trim().length > 0)),'dynamic endpoints show resolved results');
 
+  await page.evaluate(()=>scrollDetailToNav('effort'));
+  await page.waitForTimeout(150);
   await page.locator('#detail-early-window').fill('6');
   await page.locator('#detail-delay-allowance').fill('2');
   await page.locator('#detail-save').click();

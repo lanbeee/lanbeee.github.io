@@ -371,7 +371,7 @@ function settings(locations,blockedTimes = []){
   await page.evaluate(()=>openDetail(0));
   assert(await page.locator('[data-detail-nav="schedule"] #detail-place-chips').count() === 1,'place choices live in the schedule pane');
   assert(await page.locator('[data-detail-nav="identity"] #detail-topic-chips').count() === 1,'topic choices live in the identity pane');
-  await page.evaluate(()=>scrollDetailToNav('identity'));
+  await page.evaluate(()=>{scrollDetailToNav('identity');$('detail-priority-disclosure').open=true;});
   await page.waitForTimeout(250);
   await page.locator('#detail-topic-chips [data-topic="study"]').click();
   assert(await page.locator('#detail-topic-chips [data-topic="study"]').getAttribute('class').then(value=>value.includes('on')),'topic can be selected in Identity');
@@ -385,7 +385,7 @@ function settings(locations,blockedTimes = []){
   assert(await page.locator('#detail-place-chips [data-location-add]').isVisible(),'allowed schedule view exposes the place picker');
   await page.locator('#detail-time-start').fill('08:00');
   await page.locator('#detail-time-end').fill('18:00');
-  await page.locator('#detail-options-disclosure summary').click();
+  if(!await page.locator('#detail-options-disclosure').evaluate(el=>el.open))await page.locator('#detail-options-disclosure summary').click();
   await page.locator('#detail-habit-option-add').click();
   await page.locator('#detail-habit-option-add').click();
   assert(await page.locator('#detail-habit-option-list .habit-option-row').count() === 2,'add option appends a second specific row');

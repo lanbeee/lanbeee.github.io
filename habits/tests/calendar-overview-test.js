@@ -293,7 +293,7 @@ function seedScript(){
 
   // ── C. Detail calendar scopes the day sheet to that habit ───────────────
   console.log('\n[C] detail calendar day sheet is habit-scoped');
-  await page.locator('#overview-close').click().catch(()=>{});
+  await page.locator('#overview-head-close').click().catch(()=>{});
   await page.evaluate(() => {
     const idx = load().findIndex(h => h.name === 'Scope Alpha');
     openDetail(idx);
@@ -320,7 +320,7 @@ function seedScript(){
       bodyHasAlpha: body.includes('Scope Alpha'),
       bodyHasBeta: body.includes('Scope Beta'),
       bodyHasOther: body.includes('Other Place'),
-      footerHasDone: /done/i.test(footer),
+      singleClose: document.getElementById('day-logs-close')?.getClientRects().length > 0 && document.getElementById('day-logs-done')?.getClientRects().length === 0,
       footerHasHome: /home/i.test(footer),
       footerHasCalendar: /calendar/i.test(footer),
       openBtn: !!document.querySelector('#day-logs-body [data-open-day-item]'),
@@ -332,7 +332,7 @@ function seedScript(){
   assert(scoped.rowNames.length === 1 && scoped.rowNames[0] === 'Scope Alpha', 'scoped rows are only the detail habit');
   assert(scoped.bodyHasAlpha, 'scoped sheet names the habit');
   assert(!scoped.bodyHasBeta && !scoped.bodyHasOther, 'scoped sheet does not list other habits');
-  assert(scoped.footerHasDone, 'scoped footer uses done');
+  assert(scoped.singleClose, 'scoped day uses the single header close control');
   assert(!scoped.footerHasHome && !scoped.footerHasCalendar, 'scoped footer omits overview home/calendar');
   assert(!scoped.openBtn, 'scoped sheet hides open (already on detail)');
   assert(scoped.planBtn, 'scoped sheet offers Plan this item');

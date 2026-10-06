@@ -303,9 +303,13 @@ body.reach-pad #list{padding-top:220px;}
 .sheet .ting-card,
 .pane-detail .ting-card,
 .pane-overview .ting-card{background:var(--bg2);}
+/* Priority pip: a small pill nested in the emoji tile's top-left corner. Left
+   cap center sits on the tile's 16px corner-radius diagonal (tile origin is
+   card 10,10; cap center at card 23.5,23.5) so the pill's rounding reads as
+   concentric with the tile corner instead of touching its edge. */
 .ting-card::before{
-  content:"";position:absolute;left:16px;top:16px;width:7px;height:7px;z-index:2;
-  border-radius:50%;background:var(--card-priority,var(--card-accent,var(--text3)));
+  content:"";position:absolute;left:20px;top:20px;width:14px;height:7px;z-index:2;
+  border-radius:999px;background:var(--card-priority,var(--card-accent,var(--text3)));
   opacity:0.9;pointer-events:none;
 }
 .ting-card::after{

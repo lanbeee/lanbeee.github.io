@@ -207,9 +207,9 @@ const DEFAULT_SORT_SETTINGS = {
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
   showWeekOnHome:true,
-  // Exact ILP packer for tight windows (lazy-loads GLPK). This is the default
-  // planner; the scarcity-first heuristic remains the explicit fast fallback.
-  agendaOptimizer:true,
+  // The fast graph planner is the default. The exact ILP packer (lazy-loads
+  // GLPK) remains available for saved settings that opt into it.
+  agendaOptimizer:false,
   mapBaseLayer:'street',
   // Unified agenda placement score (lower = better). All soft signals share
   // one comparable scale — no special-case overrides for due/near/tonight.

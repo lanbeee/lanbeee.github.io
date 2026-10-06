@@ -128,7 +128,13 @@ function renderNativeDetailReminders(h){
   document.getElementById('detail-native-reminders')?.remove();
   if(!window.TingsNative?.isNative || h.type === 'zero')return;
   const host = document.querySelector('[data-detail-nav="actions"]');
-  if(host){const controls = nativeItemReminderControls(`item:${h.hid}`,h.name);controls.id = 'detail-native-reminders';host.querySelector('.section-label').after(controls);}
+  if(host){
+    const section = document.createElement('details');section.className = 'detail-disclosure';section.id = 'detail-native-reminders';
+    section.open = nativeReminderAnyOn(`item:${h.hid}`);
+    const summary = document.createElement('summary');summary.textContent = 'phone notifications & alarms';
+    section.append(summary,nativeItemReminderControls(`item:${h.hid}`,h.name));
+    host.querySelector('.section-label').after(section);
+  }
 }
 function renderNativeBusyReminders(wrap,blocks){
   if(!window.TingsNative?.isNative)return;

@@ -171,6 +171,11 @@ async function visibleFreePill(page, preferLower = false){
     if(pager && schedule)pager.scrollLeft = schedule.offsetLeft;
   });
   await sleep(400);
+  // Availability starts collapsed for an unrestricted item. Open it before
+  // testing gestures on its real, visible weekday chips.
+  if(!await page.locator('#detail-availability-disclosure').evaluate(el=>el.open)){
+    await page.locator('#detail-availability-disclosure > summary').click();
+  }
   const chipInfo = await page.evaluate(() => {
     const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]');
     if(!pageEl)return null;

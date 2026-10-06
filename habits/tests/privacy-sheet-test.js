@@ -135,13 +135,13 @@ async function launchBrowser(){
   assert(privacy.weather, 'Privacy says weather sends home-city coordinates and far saved-place pins to Open-Meteo');
   assert(privacy.weatherNoLiveGps, 'Privacy says weather does not send live GPS');
 
-  await page.locator('#privacy-close').click();
+  await page.locator('#privacy-head-close').click();
   await page.waitForFunction(() => !document.getElementById('privacy-sheet')?.classList.contains('open'));
   const privacyClosed = await page.evaluate(() => !document.getElementById('privacy-sheet')?.classList.contains('open'));
   assert(privacyClosed, 'Privacy done closes the privacy sheet');
 
   console.log('\n[B] Leaves-device marks');
-  await page.locator('#about-close').click();
+  await page.locator('#about-head-close').click();
   const marks = await page.evaluate(() => {
     const by = key => document.querySelector(`[data-ui-leave="${key}"] .leave-btn`);
     const tipFor = el => {
@@ -198,7 +198,7 @@ async function launchBrowser(){
     privacyOpen: document.getElementById('privacy-sheet')?.classList.contains('open')
   }));
   assert(fromSettings.settingsOpen && fromSettings.privacyOpen, 'Settings backup privacy link stacks privacy over settings');
-  await page.locator('#privacy-close').click();
+  await page.locator('#privacy-head-close').click();
   await page.waitForFunction(() => !document.getElementById('privacy-sheet')?.classList.contains('open'));
 
   // The shared display section (and its leave mark) is full-mode-only now, so

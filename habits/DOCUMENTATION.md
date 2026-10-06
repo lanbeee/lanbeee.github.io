@@ -135,7 +135,7 @@ Everything below is covered in this skeleton:
 
 ### 1.1.1 App identity 👤👨‍💻
 
-The logo is a circular return arrow around a centered eight-point star formed by two overlapping squares. The charcoal, warm-white and mint artwork is shared by the app bar, About/onboarding, browser favicon and PWA install icons. The Android shell uses the same source for launcher, splash and notification artwork. Canonical authoring files and regeneration notes live in `branding/`; `icons/tings-logo.svg` follows the October 6, 2026 Affinity edit with a smooth vector arrow outline and centered star; the original Affinity export and bitmap masters remain in `branding/`.
+The logo is a circular return arrow around a centered eight-point star formed by two overlapping squares. Its warm amber-gold center also represents the sun; the star shape is unchanged. App bar, About/onboarding, favicon, wordmarks and splash artwork use the simple charcoal, warm-white and amber-gold mark (`icons/tings-logo.svg`). PWA and Android install icons use `icons/tings-app-icon.svg`: the same arrow and star paths over a soft blue sky and low green ground, with a dark arrow and brighter golden sun. The landscape variant helps the center read as the sun while preserving contrast and the original open arrowhead. Android adaptive icons separate the full-bleed landscape background from the inset arrow/sun foreground; notification and themed monochrome artwork retain their single-color form. Canonical authoring files and regeneration notes live in `branding/`; the original Affinity export and bitmap masters remain preserved there.
 
 ### 1.2 Philosophy & Core Concepts 👤
 - **Rhythm-based planning:** Target + separate early and delay windows instead of one ambiguous flexibility value
@@ -1198,7 +1198,11 @@ Fields shown (always visible, even in minimal mode):
 
 ### 9.4 Schedule Tab Details 👤
 
-Weather and specific time/place options are expandable. Configured options open when the item opens; unused options start closed. Flexibility and item-order fields described below now live in Planning.
+Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps its simple scrolling fields and omits search.
+
+The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
+
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field, and the bar stays above the keyboard and safe areas. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Narrow or zoomed panes stack fields and wrap labels. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide and the item header compacts; Close or Cancel/Save stays available. The controls return after leaving the field. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -2272,9 +2276,15 @@ receive a fresh search budget.
 After daily selection repair, at most 96 unused probes from the same 768-probe
 budget may recover a first ordinary task/sparse occurrence from a later date
 onto today. This makes room in a packed current day even when that occurrence
-already has a place in the week. It moves rather than duplicates the occurrence,
-preserves later cadence, all placed work, explicit plans/active/link/weather
-locks and the source day's other clocks. A move cannot worsen whole-week travel
+already has a place in the week. Recovery may refit up to four connected direct
+or required-link endpoints, including a flexible successor already placed today.
+It follows present partners in either direction and does not add absent optional
+partners. Sparse occurrences move rather than duplicate; a missing linked daily
+occurrence fills today while retaining its later obligations. It preserves later
+cadence, all placed work, explicit plans/active/weather locks, other linked groups
+and the source day's other clocks. Existing required build repetitions beside
+placed partners remain valid even when their gap is shorter than the ordinary
+rhythm. A move cannot worsen whole-week travel
 or weather. Hard eligibility, weather deferral and daily-work reservations still
 apply; soft weekday/time preferences may yield to an earlier usable day. No
 whole-week rebuild or new periodic work is added. `fastTodayChoiceDiagnostics`
@@ -3279,4 +3289,4 @@ system status area. Sheets and bottom controls use the same inset tokens.
 
 ### Tablet and desktop pane surfaces
 
-At 720 px and above, the permanent Home, Calendar and detail panes share the page background (`--bg2`) and lighter card surface (`--bg`). Subtle column dividers, consistent gutters and compact headings keep the panes part of the same app. Detail content scrolls within its pane; its tabs and Close/Save actions stay inside the visible footer. Phone modal styling is restored when the viewport returns to one pane.
+At 720 px and above, the permanent Home, Calendar and detail panes share the page background (`--bg2`) and lighter card surface (`--bg`). Subtle column dividers, consistent gutters and compact headings keep the panes part of the same app. Detail content scrolls within its pane; its labeled tabs stay below the title and search/Close or Cancel/Save stay in the bottom dock. Phone modal styling is restored when the viewport returns to one pane.

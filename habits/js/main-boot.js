@@ -1558,7 +1558,10 @@ if($('detail-add'))$('detail-add').addEventListener('click',()=>{
     render();
   });
 });
-$('detail-cool').addEventListener('click',closeDetail);
+$('detail-cool').addEventListener('click',()=>{
+  if(!$('detail-search-panel').hidden)setDetailSearchOpen(false);
+  else closeDetail();
+});
 $('detail-close').addEventListener('click',()=>{restoreDetailTune();closeDetail();});
 $('detail-snooze').addEventListener('click',()=>{
   if(detailIdx === null)return;

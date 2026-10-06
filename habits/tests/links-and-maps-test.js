@@ -149,6 +149,7 @@ function assert(cond, msg){
   // ── detail editor ──────────────────────────────────────────────────────
   await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'read')));
   await page.waitForSelector('#detail-sheet.open');
+  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   const emptyState = await page.evaluate(() => ({
     field:!$('detail-link-field').hidden,
     rows:document.querySelectorAll('#detail-link-list .link-row').length,
@@ -194,6 +195,7 @@ function assert(cond, msg){
   await page.waitForSelector('#detail-sheet:not(.open)');
   await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'read')));
   await page.waitForSelector('#detail-sheet.open');
+  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   await page.locator('#detail-app-add').click();
   const presetState = await page.evaluate(() => ({
     count:document.querySelectorAll('#detail-app-presets [data-app-preset]').length,
@@ -240,6 +242,7 @@ function assert(cond, msg){
 
   await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'check inbox')));
   await page.waitForSelector('#detail-sheet.open');
+  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   await page.locator('#detail-app-add').click();
   await page.locator('#detail-app-presets [data-app-preset="gmail"]').click();
   const taskApp = await page.evaluate(() => currentDetailLinks()[0]);
@@ -254,6 +257,7 @@ function assert(cond, msg){
   // The listing lookup is stubbed so the test never depends on Apple.
   await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'spanish')));
   await page.waitForSelector('#detail-sheet.open');
+  await page.evaluate(()=>getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true));
   await page.locator('#detail-app-add').click();
   await page.locator('#detail-app-presets [data-app-custom]').click();
   const editorFocus = await page.evaluate(() => document.activeElement?.id);

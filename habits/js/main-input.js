@@ -123,7 +123,10 @@ function tingsInstallPromptAvailable(){return _tingsDeferredInstall !== null;}
 function syncInstallGuideVisibility(){
   const btn = $('open-install-guide');
   if(!btn)return;
-  const installed = typeof isStandalonePwa === 'function' && isStandalonePwa();
+  // Native (Capacitor) builds ARE the install — hide the PWA install coach
+  // entry point entirely, mirroring the share gate's native check.
+  const installed = (typeof isStandalonePwa === 'function' && isStandalonePwa())
+    || Boolean(window.Capacitor?.isNativePlatform?.());
   btn.hidden = installed;
   btn.setAttribute('aria-hidden', installed ? 'true' : 'false');
 }
@@ -233,6 +236,7 @@ $('start-advanced-coach')?.addEventListener('click',()=>{
   void startTingsCoach('advanced',{force:true});
 });
 $('open-install-guide')?.addEventListener('click',()=>{
+  if(window.Capacitor?.isNativePlatform?.())return; // button is hidden on native
   if(typeof isStandalonePwa === 'function' && isStandalonePwa()){
     if(typeof showToast === 'function')showToast('already installed — the guided start button is right below');
     return;

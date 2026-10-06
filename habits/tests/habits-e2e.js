@@ -57,7 +57,7 @@ function datetimeInput(d){
     if(!hasGrid)throw new Error('Calendar overview did not render day cells');
     const hasFilter = await page.locator('#overview-filter [data-overview-range]').count();
     if(!hasFilter)throw new Error('Calendar overview missing range filters');
-    await page.locator('#overview-close').click();
+    await page.locator('#overview-head-close').click();
   }
 
   async function completeScheduledTask(){

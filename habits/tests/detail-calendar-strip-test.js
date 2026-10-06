@@ -62,7 +62,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   if(!structure.insightGone) throw new Error('insight page should be merged away');
   if(!structure.statsInside || !structure.graphInside || !structure.aboutInside) throw new Error('stats/graph/about must live in the merged calendar page');
   if(!structure.pickerGone) throw new Error('plan-by date picker should be gone from the calendar pane');
-  if(structure.tabs !== 'history|schedule|effort|identity|actions') throw new Error(`unexpected tab strip: ${structure.tabs}`);
+  if(structure.tabs !== 'history|schedule|planning|identity|actions') throw new Error(`unexpected tab strip: ${structure.tabs}`);
 
   // ── Strip geometry + dots ────────────────────────────────────────────────
   const strip = await page.evaluate(({ threeDaysAgo, inTwoDays, tenDaysAgo }) => {
@@ -170,7 +170,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   if(pastSheet.step !== 'item' || pastSheet.scoped !== 0) throw new Error(`past-day tap should open the scoped item step, got ${JSON.stringify(pastSheet)}`);
   if(!pastSheet.canLog) throw new Error('past day should offer Log for this day');
   if(pastSheet.planBy) throw new Error('past day must not offer Plan by this day');
-  await page.locator('#day-logs-done').click();
+  await page.locator('#day-logs-close').click();
   await page.waitForTimeout(200);
 
   const planKey = await page.evaluate(d => dateKey(d), inTwoDays);

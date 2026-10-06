@@ -154,6 +154,13 @@ function openDetail(i){
   syncDetailVizMode();
   renderDetailOrderPage(h);
   setDetailDirty(false);
+  if(changedHabit){
+    resetDetailDisclosures(h);
+    $('detail-search-input').value = '';
+    setDetailSearchOpen(false,false);
+  }else if(!$('detail-search-panel').hidden){
+    renderDetailSearch();
+  }
   applyDetailMinimalMode();
   openSheet('detail-sheet');
   if(changedHabit){

@@ -216,7 +216,7 @@
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
  * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
  * @property {boolean} showWeekOnHome                          — day-by-day week plan on home
- * @property {boolean} agendaOptimizer                         — default ILP packer for tight windows (lazy GLPK)
+ * @property {boolean} agendaOptimizer                         — exact ILP packer for tight windows (lazy GLPK); off by default, fast planner is the default
  * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet

@@ -37,7 +37,7 @@ function base(props) {
   await page.goto(BASE, { waitUntil: 'networkidle' });
 
   const optimizerDefault = await page.evaluate(()=>loadSortSettings().agendaOptimizer);
-  check('GLPK optimizer defaults on', optimizerDefault === true, String(optimizerDefault));
+  check('fast planner is the default (GLPK optimizer off)', optimizerDefault === false, String(optimizerDefault));
 
   const ago1d = atTime(6) - 86400000;
   await page.evaluate(({ d, s }) => {
