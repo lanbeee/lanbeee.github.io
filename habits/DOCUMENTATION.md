@@ -133,6 +133,10 @@ Everything below is covered in this skeleton:
 - Alternative to: Calendars, to-do lists, traditional habit trackers
 - Platform: Works on desktop, mobile, installable as PWA
 
+### 1.1.1 App identity 👤👨‍💻
+
+The logo is a circular return arrow around a centered eight-point star formed by two overlapping squares. The charcoal, warm-white and mint artwork is shared by the app bar, About/onboarding, browser favicon and PWA install icons. The Android shell uses the same source for launcher, splash and notification artwork. Canonical authoring files and regeneration notes live in `branding/`; `icons/tings-logo.svg` follows the October 6, 2026 Affinity edit with a smooth vector arrow outline and centered star; the original Affinity export and bitmap masters remain in `branding/`.
+
 ### 1.2 Philosophy & Core Concepts 👤
 - **Rhythm-based planning:** Target + separate early and delay windows instead of one ambiguous flexibility value
 - **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
@@ -3272,3 +3276,7 @@ inset variables or the browser safe-area environment. Home day headers stick
 below the top safe area when the document scrolls; desktop pane headers stick
 to their pane edge. A page-colored cover keeps scrolling content out of the
 system status area. Sheets and bottom controls use the same inset tokens.
+
+### Tablet and desktop pane surfaces
+
+At 720 px and above, the permanent Home, Calendar and detail panes share the page background (`--bg2`) and lighter card surface (`--bg`). Subtle column dividers, consistent gutters and compact headings keep the panes part of the same app. Detail content scrolls within its pane; its tabs and Close/Save actions stay inside the visible footer. Phone modal styling is restored when the viewport returns to one pane.

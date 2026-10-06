@@ -28,6 +28,35 @@ body{
 .app-bar{background:var(--bg2);}
 .app-bar-title{font-size:23px;letter-spacing:-.045em;font-weight:650;}
 .pane-overview,.pane-detail{border-inline-start:1px solid var(--border);}
+/* Permanent panes use the Home surface hierarchy: page, card, controls.
+   Modal sheets retain their mobile treatment. Scope the overrides to mounted
+   content so moving a sheet between phone and tablet restores its styling. */
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-overview,.pane-detail){
+  min-height:0;padding:20px 20px 16px;
+  scrollbar-width:thin;scrollbar-color:var(--bg3) transparent;
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-overview,.pane-detail) > .sheet{
+  padding:0;min-height:0;background:transparent;
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail > .detail-sheet{
+  height:100%;max-height:100%;
+}
+:is(.pane-overview,.pane-detail) .overview-page-head .sheet-title{
+  font-size:23px;font-weight:600;
+}
+:is(.pane-overview,.pane-detail) .overview-eyebrow{display:none;}
+:is(.pane-overview,.pane-detail) :is(.overview-card,.overview-insight,.detail-head,.detail-page.tune-section,.detail-card,.month-card,.pace-card,.settings-block,.settings-group,.settings-card,.about-block){
+  background:var(--bg);
+}
+:is(.pane-overview,.pane-detail) .score-card:not(.hit,.warn,.miss){background:var(--bg);}
+:is(.pane-overview,.pane-detail) .overview-card :is(.cal-day,.mini-nav){background:var(--bg2);}
+:is(.pane-overview,.pane-detail) .overview-card .cal-day.today{background:var(--purple-bg);}
+:is(.pane-overview,.pane-detail) .overview-card .cal-day.selected{background:var(--text);}
+.pane-detail .detail-head{padding-top:8px;padding-bottom:8px;border-radius:22px;margin-bottom:10px;}
+.pane-detail .detail-bottom-bar{box-shadow:none;margin-top:10px;border-radius:18px;}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom-bar :is(.detail-actions,.tune-actions){
+  margin:0;align-self:stretch;
+}
 #list{gap:10px;padding-top:12px;}
 .swipe-row{--card-radius:26px;--card-inset:12px;}
 .ting-name{font-weight:600;letter-spacing:-.02em;line-height:1.3;}
