@@ -81,8 +81,8 @@ const {chromium,glpkAvailable}=require('./helpers/planner-test-helpers');
     assert(r.first.estimated && r.first.at>r.first.agendaAt-16*60000,'evening alarm exists in morning');
     assert(r.next.at<r.first.at,'new blocker brings cutoff and alarm forward');
     assert.equal(r.next.key,r.first.key,'movement keeps stable occurrence key');
-    assert.equal(r.count,1);assert.equal(r.calls,0);assert.equal(r.forecastCount,1);
-    assert(r.adopted && r.stale && r.newOff);assert.equal(r.completed,0);
+    assert.equal(r.count,7,'saved week is pre-armed');assert.equal(r.calls,0);assert.equal(r.forecastCount,1);
+    assert(r.adopted && r.stale && r.newOff);assert.equal(r.completed,6,'completion cancels today while preserving future occurrences');
   }
   for(const r of report.cushion){
     assert(r.early?.estimated && r.early.delivery==='alarm','tomorrow morning is armed during an afternoon opening');
@@ -92,11 +92,11 @@ const {chromium,glpkAvailable}=require('./helpers/planner-test-helpers');
     assert.equal(r.early.at,r.updated.at,'unchanged overnight opportunity does not slide at midnight');
     assert(r.doneToday && !r.doneTomorrow && !r.disabled,'completion and Off stay occurrence-aware');
     assert.equal(r.calls,0,'overnight projection does no UI placement');
-    assert(!r.otherFuture.includes('item:afternoon') && !r.otherFuture.includes('item:broad'),'cushion is limited to morning cutoffs, not broad/afternoon work');
-    assert(r.otherFuture.length<=2,'no other future days are armed');
+    assert(r.otherFuture.includes('item:afternoon') && r.otherFuture.includes('item:broad'),'future afternoons and broad windows are pre-armed too');
+    assert(r.otherFuture.length>=6,'future saved days have provisional estimates');
   }
   assert.equal(report.midnight.at,report.nextDay-10*60000+1,'a next-day warning can be armed to ring before midnight');
   assert(report.midnight.at>=report.nextDay-60*60000,'overnight warning keeps the allowed-start guard');
-  assert.equal(report.stress.calls,0);assert.equal(report.stress.alarms,50);
+  assert.equal(report.stress.calls,0);assert.equal(report.stress.alarms,350,'all fifty items across the saved week are armed');
   console.log('PASS: morning arming, added blocker, completion, reuse, stable identity, new-item Off; '+JSON.stringify(report.stress));
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

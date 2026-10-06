@@ -121,7 +121,7 @@ function nativeItemReminderControls(owner,name,opts = {}){
       showToast('departure reminder timing saved');
     }finally{lead.disabled=false;}
   });leadLabel.append(lead);grid.append(leadLabel);
-  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = 'Sets estimated drop alarms early, including tomorrow morning, then adjusts every 15 minutes. Estimates can be wrong. Sudden drops alert too. Saved on this phone.';
+  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = 'Sets estimated drop alarms early for the saved week, then adjusts every 15 minutes. Estimates can be wrong. Sudden drops alert too. Saved on this phone.';
   box.append(grid,hint);return box;
 }
 function renderNativeDetailReminders(h){
@@ -200,8 +200,6 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
   if(!prefs.enabled || !week || !Array.isArray(week.days))return [];
   const dataById=new Map(data.map(h=>[h.hid,h]));
   const todayBase=dayStart(now),forecast=week.dropForecast;
-  const tomorrow=new Date(todayBase);tomorrow.setDate(tomorrow.getDate()+1);
-  const morningEnd=new Date(tomorrow);morningEnd.setHours(12,0,0,0);
   const planKey=agendaForecastPlanKey(week,data);
   const validForecast=Boolean(forecast?.futureWeek && forecast.revision===week.forecastRevision
     && forecast.targetAt>warningNow && forecast.checkedAt<=warningNow
@@ -261,22 +259,24 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
         occurrenceKey:row.occurrenceKey || '',scheduleOptionId:row.scheduleOptionId || '',
         minutes:h.breakable ? Math.max(1,Math.round((row.end-row.start)/60000)) : 0} : null;
       const choices=prefs.items?.[owner];
-      const morningCushion=day.dayBase===tomorrow.getTime() && row.start<morningEnd.getTime();
-      if(h && ['notification','alarm'].includes(choices?.missed) && (day.dayBase===todayBase || morningCushion)){
-        const forecastKey=agendaForecastIdentity(row,data),risk=validForecast && !morningCushion ? forecast.risks?.[forecastKey] : null;
+      const currentDay=day.dayBase===todayBase;
+      if(h && ['notification','alarm'].includes(choices?.missed) && day.dayBase>=todayBase && day.dayBase<now+7*86400000){
+        const forecastKey=agendaForecastIdentity(row,data),risk=validForecast && currentDay ? forecast.risks?.[forecastKey] : null;
         // A later sample can restore an item after an earlier opportunity
         // has already passed. Never postpone the current estimate merely
         // because that future pack still contains it; adopt that pack first.
         const estimate=row.dropAt;
         // Every enabled displayed occurrence gets an early schedule. If the
         // constraint-aware estimate is unavailable, its latest displayed start
-        // is the provisional opportunity. No placement runs in projection.
+        // is the provisional opportunity. Future days need no extra cutoff
+        // probes or solves: pre-arm from their saved rows, then refine when
+        // each day becomes current. No placement runs in projection.
         const fallback=lastStarts.get(`${h.hid}:${h.breakable ? 'remaining' : row.scheduleOptionId || 'main'}`);
         const agendaAt=risk?.at ?? (Number.isFinite(estimate) && estimate>warningNow ? estimate : fallback);
         const earliest=nativeReminderAllowedWarningAt(h,row,day,settings,now);
         const at=Math.max(risk ? (forecast.warningAt ?? forecast.checkedAt+2000)
           : Math.max(agendaAt-AGENDA_DROP_WARNING_MINUTES*60000,warningNow+2000),earliest,Number(h.snoozedUntil) || 0);
-        if(Number.isFinite(agendaAt) && agendaAt>at && (!morningCushion || agendaAt<morningEnd.getTime())){
+        if(Number.isFinite(agendaAt) && agendaAt>at && at<=now+7*86400000){
           const occurrence=h.breakable ? `${h.hid}:${day.dayKey || dateKey(day.dayBase)}:remaining` : identity;
           const key=`${owner}:${kind}:${occurrence}:Missed`;
           const clock=new Date(agendaAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
