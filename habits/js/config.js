@@ -18,6 +18,10 @@ const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v4';
 const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
 const FEEDBACK_FORM_URL = 'https://forms.gle/KNnXKCH55VfzCNeo8';
+const PRIVACY_POLICY_URL = 'https://aretefoundry.github.io/tings/privacy';
+// Play background-location disclosure. Must include "location" and
+// "even when the app is closed or not in use", and name those features.
+const BACKGROUND_LOCATION_DISCLOSURE = 'Tings uses location data to enable place-aware agenda and reminder updates even when the app is closed or not in use. This includes a brief location check during closed-app refresh, and saved-place arrival or departure that can trigger an earlier refresh. There is no continuous GPS tracking. Tings does not sell location or keep a location history off this phone. Driving estimates send coordinates to OSRM, an open routing service, for that route. The latest fix is kept on this phone for up to ten minutes for those checks.';
 
 // ── Locations / travel-time ──
 const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())

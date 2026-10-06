@@ -203,7 +203,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=35';
+    script.src = './onboarding/coach.js?v=36';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -954,6 +954,15 @@ $('location-permission-cancel')?.addEventListener('click',()=>{
 });
 $('location-permission-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeLocationPermissionSheet();
+});
+$('background-location-disclosure-continue')?.addEventListener('click',()=>{
+  if(typeof confirmBackgroundLocationDisclosure === 'function')void confirmBackgroundLocationDisclosure();
+});
+$('background-location-disclosure-not-now')?.addEventListener('click',()=>{
+  if(typeof closeBackgroundLocationDisclosure === 'function')closeBackgroundLocationDisclosure();
+});
+$('background-location-disclosure-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget && typeof closeBackgroundLocationDisclosure === 'function')closeBackgroundLocationDisclosure();
 });
 $('presence-picker-close')?.addEventListener('click',()=>closeSheet('presence-picker-sheet'));
 $('presence-picker-sheet')?.addEventListener('click',e=>{

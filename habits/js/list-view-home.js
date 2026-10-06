@@ -2449,6 +2449,7 @@ async function copyDayCapacityScorecard(){
 let _sharedDisplayAuditGen = 0;
 
 function sharedDisplayAuditHtml(report){
+  if(typeof shareConfigured === 'function' && !shareConfigured()) return '';
   const diagnosis = report && report.diagnosis ? report.diagnosis : 'checking the worker snapshot…';
   const text = typeof formatSharedDisplayAuditText === 'function'
     ? formatSharedDisplayAuditText(report || { diagnosis:'checking the worker snapshot…' })

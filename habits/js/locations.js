@@ -759,26 +759,14 @@ function resumeLocationWatchIfOptedIn(opts = {}){
   });
 }
 
-// IMPURE: first-time enable from a user tap. On Android this asks for precise
-// location through the OS dialog; the in-app rationale sheet is skipped so
-// the system prompt stays in the same gesture. Presence is computed locally;
-// city inference sends a coarsened pin and driving routes send coordinates.
+// IMPURE: first-time enable from a user tap. The Android app shows the in-app
+// rationale first; Allow on that sheet is the gesture that opens the OS prompt.
+// Presence is computed locally; city inference sends a coarsened pin and
+// driving routes send coordinates.
 async function enableLocationFromUserGesture(){
   if(window.TingsNative?.isNative && window.TingsNative.background?.requestLocation){
-    try{
-      const state = await window.TingsNative.background.requestLocation();
-      if(!state.fine){
-        if(typeof showToast === 'function'){
-          showToast('Allow precise location in the Android prompt to use live GPS on this phone.', 5000);
-        }
-        if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
-        return 'denied';
-      }
-    }catch(error){
-      if(typeof showToast === 'function')showToast((error && error.message) || 'location unavailable', 5000);
-      if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
-      return 'denied';
-    }
+    openLocationPermissionSheet();
+    return;
   }
   return requestLocationAccess({quiet:false});
 }
@@ -792,9 +780,11 @@ function openLocationPermissionSheet(){
   }
   const copy = $('location-permission-copy');
   if(copy){
-    copy.textContent = isStandalonePwa()
-      ? 'Tings uses your location to mark where you are and shape today’s plan. GPS is used on this phone for presence. Driving route estimates send coordinates to OSRM. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list.'
-      : 'Tings uses your location to mark where you are and shape today’s plan. Your browser will ask for permission next. GPS is used on this phone for presence. Driving route estimates send coordinates to OSRM. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list.';
+    copy.textContent = window.TingsNative?.isNative
+      ? 'Tings uses your location to mark where you are and shape today’s plan. GPS is used on this phone for presence. Driving route estimates send GPS coordinates to OSRM, an open routing service, including from here. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list. Android will ask for permission next.'
+      : isStandalonePwa()
+      ? 'Tings uses your location to mark where you are and shape today’s plan. GPS is used on this phone for presence. Driving route estimates send GPS coordinates to OSRM, an open routing service, including from here. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list.'
+      : 'Tings uses your location to mark where you are and shape today’s plan. Your browser will ask for permission next. GPS is used on this phone for presence. Driving route estimates send GPS coordinates to OSRM, an open routing service, including from here. Filling city the first time sends a coarse location to Photon or Nominatim — not your habit list.';
   }
   openSheet('location-permission-sheet');
 }
@@ -805,9 +795,27 @@ function closeLocationPermissionSheet(){
 }
 
 async function confirmLocationPermissionAllow(){
-  // Still inside the Allow tap — call Geolocation immediately.
-  const status = await requestLocationAccess({quiet:false});
+  // Still inside the Allow tap — call the OS / Geolocation prompt immediately.
   const cb = locationAllowCallback;
+  if(window.TingsNative?.isNative && window.TingsNative.background?.requestLocation){
+    try{
+      const state = await window.TingsNative.background.requestLocation();
+      if(!state.fine){
+        closeLocationPermissionSheet();
+        if(typeof showToast === 'function'){
+          showToast('Allow precise location in the Android prompt to use live GPS on this phone.', 5000);
+        }
+        if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+        return 'denied';
+      }
+    }catch(error){
+      closeLocationPermissionSheet();
+      if(typeof showToast === 'function')showToast((error && error.message) || 'location unavailable', 5000);
+      if(typeof renderLocationAccessControl === 'function')renderLocationAccessControl();
+      return 'denied';
+    }
+  }
+  const status = await requestLocationAccess({quiet:false});
   closeLocationPermissionSheet();
   if(status === 'granted' && typeof cb === 'function')cb();
   return status;

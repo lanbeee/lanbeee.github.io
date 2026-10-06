@@ -1650,7 +1650,8 @@ Tracks the currently active habit session:
 │ Tings uses your location to mark    │
 │   where you are and shape today's   │
 │   plan. Driving routes send GPS    │
-│   coordinates to OSRM. City uses a │
+│   coordinates to OSRM, an open     │
+│   routing service. City uses a     │
 │   coarse location to Photon or      │
 │   Nominatim.                        │
 ├─────────────────────────────────────┤
@@ -1660,7 +1661,7 @@ Tracks the currently active habit session:
 
 - **Access:** When geolocation needed but not yet granted
 - iOS/PWA: must come from a user gesture to trigger `getCurrentPosition`
-- Presence is calculated on this device; driving route estimates send live origin and destination coordinates to OSRM
+- Presence is calculated on this device; driving route estimates send live origin and destination coordinates to OSRM, an open routing service
 - The first empty-city fill sends a coarsened coordinate (~1 km) to Photon, with Nominatim as fallback — not the precise pin, and not an ongoing GPS stream
 
 ### 10.9 Location Picker Sheet (Map) 👤
@@ -1953,12 +1954,20 @@ Toasts appear after:
   in this browser’s `localStorage`; the site owner cannot see them. It lists
   third-party services (Photon, Nominatim, OSRM, OpenStreetMap Street tiles,
   Esri World Imagery Satellite tiles, jsDelivr /
-  unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
+  unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (saved home-city
+  coordinates plus far saved-place pins; not live GPS),
   a one-time coarsened GPS city lookup to Photon/Nominatim when city is empty,
   the encrypted Cloudflare relay used by shared display and
   share item, and optional send feedback via Google Forms. Map lookups are
   described as a narrower request than embedding Google Maps or Apple Maps.
   Send feedback does not attach the habit list; answers go to Google.
+  Presence matching stays on this phone. Driving estimates send coordinates
+  to OSRM, an open routing service, including the live GPS origin when estimating a drive from here.
+  The Android app may save the latest closed-app location fix on the phone
+  (unused after ten minutes) so reminders can follow a saved place while Tings
+  is closed; a driving estimate during that refresh can send that origin to
+  OSRM. The sheet also links the public privacy policy at
+  `https://aretefoundry.github.io/tings/privacy`.
 - Settings → backup also links to Privacy.
 
 ---
@@ -2891,7 +2900,7 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 | `defaultTravelMode` | string | 'driving' | Default routing mode |
 | `mapBaseLayer` | string | 'street' | Last successfully loaded location-picker base layer |
 | `lastKnownLocationId` | string\|null | null | Auto-detected location ID |
-| `locationOptIn` | boolean | false | Geolocation permission granted. Native first-enable asks the OS for precise location in the same tap (no in-app permission sheet) |
+| `locationOptIn` | boolean | false | Geolocation permission granted. Native first-enable shows the in-app rationale sheet; Allow on that sheet opens the OS precise-location prompt |
 | `pinnedLocationId` | string\|null | null | Manually pinned location |
 
 #### Prayer Times 👤
@@ -3175,6 +3184,8 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 | Nominatim (geocoding) | `https://nominatim.openstreetmap.org` | No |
 | Photon (geocoding fallback) | `https://photon.komoot.io` | No |
 
+Driving estimates send origin and destination coordinates to OSRM, an open routing service, for that route: saved-place pins, or live GPS plus a saved place when estimating a drive from here. Walking, bike, and transit stay on-device (haversine). City reverse-geocode sends a coarsened coordinate, not the live pin.
+
 ### 27.2 Push Notifications 👨‍💻
 | Service | URL | Description |
 |---------|-----|-------------|
@@ -3237,7 +3248,17 @@ The Capacitor wrapper at `../../Tings` builds from this directory. Its runtime s
 
 Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Turning on phone reminders asks for Android’s notification permission immediately — it does not toast and bounce into Settings first. If the prompt is denied, a longer toast explains that you can still open Android notification settings later. Then choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** stops those alarms and opens Tings to save a normal completion with its undo action. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
 
-Alerts follow the agenda and use shared completion and busy-time resolution helpers. They are replaced when the open app replans or reconciles data. Preferences stay on this device. **Refresh agenda while closed** optionally requests an Android background rebuild about every 30 minutes using time, the phone's saved items/settings, and weather. Android may delay a run; a failed run keeps the last saved seven-day reminder schedule. **Allow background location** enables a brief balanced-power location check per run and saved-place arrival/departure events. Choose precise location and **Allow all the time** in Android's app permissions. Periodic refresh also works without location access, using the saved place. Manual presence pins keep priority. No continuous GPS tracking runs. Location events coalesce; a background calculation stops when the app opens, and older calculations cannot overwrite newer edits or location fixes. The existing shared JS/GLPK planner runs with its ordinary four-second solve limit and no refinement loop. The PWA has no background-refresh controls or native jobs.
+Alerts follow the agenda and use shared completion and busy-time resolution helpers. They are replaced when the open app replans or reconciles data. Preferences stay on this device. **Refresh agenda while closed** optionally requests an Android background rebuild about every 30 minutes using time, the phone's saved items/settings, and weather. Android may delay a run; a failed run keeps the last saved seven-day reminder schedule. **Allow background location** first shows the Play prominent disclosure (`#background-location-disclosure-sheet`), then asks for precise location, then opens Android app settings so the user can choose **Allow all the time**. That enables a brief balanced-power location check per closed-app run and saved-place arrival/departure events. Periodic refresh also works without location access, using the saved place. Live GPS first-enable on Android shows `#location-permission-sheet` before the OS prompt.
+
+Store listing (paste into Play’s full description; the same sentence is in the in-app disclosure and should appear on the public privacy policy page):
+
+> Tings uses location data to enable place-aware agenda and reminder updates even when the app is closed or not in use. This includes a brief location check during closed-app refresh, and saved-place arrival or departure that can trigger an earlier refresh. There is no continuous GPS tracking. Tings does not sell location or keep a location history off this phone. Driving estimates send coordinates to OSRM, an open routing service, for that route. The latest fix is kept on this phone for up to ten minutes for those checks.
+
+Short description idea (≤80 characters): `A local day planner. Place-aware reminders even when Tings is closed.`
+
+When you record the Play declaration video, show: Home → Settings → reminders → **Allow background location** → the disclosure sheet → **continue** → the Android location prompt → Permissions → Location → **Allow all the time**. Keep it around 30 seconds. Declare one feature in Play Console: place-aware agenda and reminder updates while the app is closed.
+
+Manual presence pins keep priority. No continuous GPS tracking runs. Location events coalesce; a background calculation stops when the app opens, and older calculations cannot overwrite newer edits or location fixes. The existing shared JS/GLPK planner runs with its ordinary four-second solve limit and no refinement loop. The PWA has no background-refresh controls or native jobs.
 
 
 Ordinary notifications handle a moving near-term agenda without changing the planner or ringing alarms. For a flexible start or its departure warning, if both the previously scheduled reminder and the updated reminder are within five minutes, the native trigger keeps the earlier time. The alert says **Up next** and shows the latest agenda clock when the item has moved ahead. Moving it outside that window reschedules normally; fixed events, busy times and end edges follow their updated clocks. Split chunks can carry an imminent trigger to their new identity, with completion actions bound to the current chunk. Delivery receipts survive removal/reintroduction and process restart for eight days. The same item/day/reminder type has a 30-minute cooldown across changed chunk identities, while other items, end edges and travel departures remain independent. **Remind in 5 min** bypasses that cooldown. Delayed OS delivery may still post while useful (start through the item end plus 15 minutes, other edges plus 15 minutes, at most one hour after the native trigger); expired alerts are skipped. The test notification uses the same **Agenda reminders** channel as real agenda alerts. The app reports a blocked channel and links directly to its Android settings. PWA controls and planner scheduling remain unchanged.

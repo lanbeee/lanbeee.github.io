@@ -41,6 +41,15 @@ try{
 if(typeof maybeClaimItemShareFromHash === 'function'){
   void maybeClaimItemShareFromHash().catch(()=>{});
 }
+// Native (Capacitor/Play) builds ship without sharing: remove every Share
+// item / shared display entry point from the detail pane. Inbound claim links
+// and publish loops already no-op through shareConfigured().
+if(window.Capacitor?.isNativePlatform?.()){
+  const shareWrap = document.querySelector('#detail-share-item')?.closest('.habit-action-with-leave');
+  if(shareWrap)shareWrap.style.display = 'none';
+  const displayCtl = document.querySelector('.detail-shared-display-control');
+  if(displayCtl)displayCtl.style.display = 'none';
+}
 {
   const reconciled = reconcileLocations(load(),sortSettings);
   if(reconciled.changed)save(reconciled.data);

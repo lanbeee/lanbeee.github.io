@@ -5,6 +5,10 @@ const SHARE_NONCE_BYTES = 12;
 const AGENDA_PAIR_PROTOCOL_VERSION = 2;
 
 function shareConfigured(){
+  // Sharing ships in the PWA only. The native (Capacitor/Play) build disables
+  // every share surface, mirroring pushConfigured()'s native check. The
+  // typeof guard keeps node-side pure-function tests working.
+  if(typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.())return false;
   const url = typeof shareWorkerBaseUrl === 'function'
     ? shareWorkerBaseUrl()
     : (typeof SHARE_WORKER_URL !== 'undefined' ? SHARE_WORKER_URL : '');

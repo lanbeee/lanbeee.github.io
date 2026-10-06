@@ -39,7 +39,7 @@ function locationBundleForHabit(habit){
 
 async function shareCurrentDetailItem(){
   if(typeof detailIdx !== 'number' || !shareConfigured()){
-    if(typeof showToast === 'function') showToast(shareConfigured() ? 'open an item first' : 'sharing worker is not configured');
+    if(typeof showToast === 'function') showToast(shareConfigured() ? 'open an item first' : 'sharing is not available in this build');
     return;
   }
   const habit = typeof load === 'function' ? load()[detailIdx] : null;

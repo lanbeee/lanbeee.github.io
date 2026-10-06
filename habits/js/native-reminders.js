@@ -575,6 +575,49 @@ async function renderNativeReminderStatus(){
   const alarms = window.TingsNative.alarms ? await window.TingsNative.alarms.status() : null;
   node.textContent = `${permission.display === 'granted' ? `${count} notifications${alarms ? ` and ${alarms.pending} alarms` : ''} scheduled` : 'Notification permission needed'} · ${exact.exact_alarm === 'granted' ? 'exact timing allowed' : 'timing may be delayed'}${updated ? ` · updated ${new Date(updated).toLocaleString()}` : ''}${alarms && !alarms.fullScreen ? ' · Allow full-screen alarms for the lock-screen controls' : ''}${window.TingsNative.background && nativeAgendaChannelEnabled===false ? ' · Agenda notifications are off in Android settings' : ''}. Reminders follow the latest saved agenda.`;
 }
+function openBackgroundLocationDisclosure(){
+  const copy = document.getElementById('background-location-disclosure-copy');
+  if(copy && typeof BACKGROUND_LOCATION_DISCLOSURE === 'string')copy.textContent = BACKGROUND_LOCATION_DISCLOSURE;
+  if(typeof openSheet === 'function')openSheet('background-location-disclosure-sheet');
+}
+function closeBackgroundLocationDisclosure(){
+  if(typeof closeSheet === 'function')closeSheet('background-location-disclosure-sheet');
+}
+async function requestBackgroundLocationFromUser(){
+  const api = window.TingsNative && window.TingsNative.background;
+  if(!api || !api.requestLocation)return;
+  try{
+    const state = typeof api.status === 'function' ? await api.status() : {};
+    if(state.background){
+      showToast('Background location is already allowed.');
+      if(typeof refreshNativeBackgroundStatus === 'function')await refreshNativeBackgroundStatus(true);
+      return;
+    }
+    openBackgroundLocationDisclosure();
+  }catch(error){showToast(error.message);}
+}
+async function confirmBackgroundLocationDisclosure(){
+  const api = window.TingsNative && window.TingsNative.background;
+  if(!api || !api.requestLocation){
+    closeBackgroundLocationDisclosure();
+    return;
+  }
+  try{
+    const state = await api.requestLocation();
+    closeBackgroundLocationDisclosure();
+    if(!state.fine){showToast('Allow precise location to use saved-place detection.');return;}
+    if(state.background){
+      showToast('Background location is already allowed.');
+      if(typeof refreshNativeBackgroundStatus === 'function')await refreshNativeBackgroundStatus(true);
+      return;
+    }
+    showToast('In Android settings → Permissions → Location, choose Allow all the time.');
+    if(typeof api.openLocationSettings === 'function')await api.openLocationSettings();
+  }catch(error){
+    closeBackgroundLocationDisclosure();
+    showToast(error.message);
+  }
+}
 function initNativeReminders(){
   if(!window.TingsNative?.isNative)return;
   const host = document.getElementById('settings-reminders-body');
@@ -656,16 +699,8 @@ function initNativeReminders(){
     });
     const hint=document.createElement('p');hint.className='field-hint';
     hint.textContent='Updates the agenda and your chosen reminders using time, saved data, and weather. One brief location check can update your place. No continuous GPS tracking. Turn on phone reminders and choose at least one item reminder to use this.';
-    const location=document.createElement('button');location.type='button';location.className='mini-text-btn';location.textContent='Allow background location';
-    location.addEventListener('click',async()=>{
-      try{
-        const state=await window.TingsNative.background.requestLocation();
-        if(!state.fine){showToast('Allow precise location to use saved-place detection.');return;}
-        if(state.background){showToast('Background location is already allowed.');await refreshNativeBackgroundStatus(true);return;}
-        showToast('In Android settings → Permissions → Location, choose Allow all the time.');
-        await window.TingsNative.background.openLocationSettings();
-      }catch(error){showToast(error.message);}
-    });
+    const location=document.createElement('button');location.id='native-background-location';location.type='button';location.className='mini-text-btn';location.textContent='Allow background location';
+    location.addEventListener('click',()=>{void requestBackgroundLocationFromUser();});
     const backgroundStatus=document.createElement('p');backgroundStatus.id='native-background-status';backgroundStatus.className='field-hint';
     panel.append(background,hint,location,backgroundStatus);
     let inputRevision=homePlannerDirtyKey(load());

@@ -236,7 +236,7 @@
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
- * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch
+ * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch. Native first-enable shows an in-app rationale, then the OS prompt.
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
  * @property {number[]} availabilityMinutes                    — legacy weekly minutes (Sun-Sat); unused for packing (default is full day / overrides)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly

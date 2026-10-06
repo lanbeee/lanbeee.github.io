@@ -338,6 +338,8 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
   border-radius:14px;background:var(--bg2);color:var(--text2);font-size:12.5px;line-height:1.4;
 }
 .privacy-legend-icon{flex:0 0 auto;margin-top:1px;font-size:16px;color:var(--teal-icon);}
+.privacy-policy-web{margin:0 0 10px;padding:0 4px;color:var(--text2);font-size:12.5px;line-height:1.4;}
+.privacy-policy-web a{color:var(--teal-icon);}
 .leave-btn{color:var(--teal-icon);}
 .leave-btn i{font-size:15px;}
 .settings-collapse-row{

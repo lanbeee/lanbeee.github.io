@@ -102,26 +102,38 @@ async function launchBrowser(){
       encrypt: /encrypt/i.test(text),
       photon: /Photon/i.test(text),
       nominatim: /Nominatim/i.test(text),
-      osrm: /OSRM/i.test(text),
+      osrm: /OSRM, an open routing service/i.test(text),
       coarseGps: /coarse location/i.test(text),
-      gpsRoutes: /driving route estimates also send coordinates to OSRM/i.test(text),
+      gpsRoutes: /live GPS origin/i.test(text) && /OSRM/i.test(text),
+      storedFix: /save the latest location fix on this phone/i.test(text) && /ten minutes/i.test(text),
+      notNeverStored: !/Coordinates are not stored/i.test(text),
+      notPinNeverUploaded: !/precise pin is not uploaded/i.test(text) && !/is not uploaded as a live pin/i.test(text),
+      policyUrl: document.getElementById('privacy-policy-url')?.getAttribute('href') || '',
       openSource: /open source/i.test(text),
       mapsCompare: /Google Maps|Apple Maps/i.test(text),
       legend: /this mark|stated job/i.test(text),
       feedback: labels.includes('Send feedback'),
-      googleForm: /Google Form/i.test(text)
+      googleForm: /Google Form/i.test(text),
+      weather: /Open-Meteo/i.test(text) && /saved home-city coordinates/i.test(text) && /saved-place pin/i.test(text),
+      weatherNoLiveGps: /does not send item names, schedules, logs, or live GPS/i.test(text)
     };
   });
   assert(privacy.aboutStillOpen, 'Privacy stacks over About');
   assert(privacy.labels.includes('On this device') && privacy.labels.includes('Shared display'), 'Privacy has device + shared display sections');
   assert(privacy.local && privacy.owner, 'Privacy says the list stays in this browser and the owner cannot see it');
   assert(privacy.display && privacy.encrypt, 'Privacy explains encrypted Cloudflare shared display');
-  assert(privacy.photon && privacy.nominatim && privacy.osrm, 'Privacy lists Photon, Nominatim, and OSRM');
+  assert(privacy.photon && privacy.nominatim && privacy.osrm, 'Privacy lists Photon, Nominatim, and OSRM as an open routing service');
   assert(privacy.coarseGps, 'Privacy says the GPS city fill is a coarse lookup');
-  assert(privacy.gpsRoutes, 'Privacy discloses coordinates sent for driving routes');
+  assert(privacy.gpsRoutes, 'Privacy discloses live GPS origin sent for driving routes');
+  assert(privacy.storedFix, 'Privacy says the Android last fix is saved on this phone for ten minutes');
+  assert(privacy.notNeverStored, 'Privacy no longer claims coordinates are never stored');
+  assert(privacy.notPinNeverUploaded, 'Privacy no longer claims the live pin is never uploaded');
+  assert(privacy.policyUrl === 'https://aretefoundry.github.io/tings/privacy', 'Privacy links the public policy URL');
   assert(privacy.openSource && privacy.mapsCompare, 'Privacy names open source and the narrower maps request');
   assert(privacy.legend, 'Privacy introduces the cloud-up mark');
   assert(privacy.feedback && privacy.googleForm, 'Privacy explains that send feedback is a Google Form');
+  assert(privacy.weather, 'Privacy says weather sends home-city coordinates and far saved-place pins to Open-Meteo');
+  assert(privacy.weatherNoLiveGps, 'Privacy says weather does not send live GPS');
 
   await page.locator('#privacy-close').click();
   await page.waitForFunction(() => !document.getElementById('privacy-sheet')?.classList.contains('open'));
@@ -164,6 +176,21 @@ async function launchBrowser(){
   await page.waitForSelector('#about-sheet.open');
   await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
+  const weatherCopy = await page.evaluate(() => {
+    const text = (document.querySelector('.weather-attribution')?.textContent || '').replace(/\s+/g, ' ');
+    const btn = document.querySelector('[data-ui-leave="weather"] .leave-btn');
+    const tip = btn && document.getElementById(btn.getAttribute('data-tip'));
+    return {
+      openMeteo: /Open-Meteo/i.test(text),
+      savedPin: /saved-place pin/i.test(text),
+      noLiveGps: /Live GPS is not sent/i.test(text),
+      noUnitsLie: !/infer your display units/i.test(text),
+      leaveTip: /saved-place pins/i.test(tip?.textContent || '') && /Live GPS/i.test(tip?.textContent || '')
+    };
+  });
+  assert(weatherCopy.openMeteo && weatherCopy.savedPin && weatherCopy.noLiveGps, 'Weather settings say Open-Meteo gets home-city and far saved-place pins, not live GPS');
+  assert(weatherCopy.noUnitsLie, 'Weather settings do not claim Open-Meteo infers display units');
+  assert(weatherCopy.leaveTip, 'Weather leave mark says saved-place pins go out and live GPS stays here');
   await page.locator('#open-privacy-from-settings').click();
   await page.waitForSelector('#privacy-sheet.open');
   const fromSettings = await page.evaluate(() => ({

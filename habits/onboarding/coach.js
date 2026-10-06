@@ -34,7 +34,7 @@
   const OVERVIEW_DAY_STAGES = new Set(['eOverviewLog','eOverviewMissed','eOverviewPlan']);
   // Sheets each stage group may keep open. Anything else that appears is closed
   // by reconcile(): the coach decides what page is on screen, wander included.
-  const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet'];
+  const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet','background-location-disclosure-sheet'];
   const SHEET_ALLOWANCES = new Map([
     [ADD_STAGES,['add-sheet',...PICKER_SHEETS]],
     // Gate stages wait for the user to open their destination sheet themselves.

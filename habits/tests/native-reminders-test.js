@@ -265,6 +265,68 @@ const assert = require('node:assert/strict');
     assert.equal(uiBits.hasBusyHead,true,'busy-time name and remove sit on one header row');
     assert.equal(uiBits.hasBusyReminders,true,'busy times show phone reminder controls at full width');
     assert.match(uiBits.pill,/reminder-pill/,'cards can show a reminder mark');
+    const locationFlow=await page.evaluate(()=>{
+      window.__tingsBackgroundCalls=[];
+      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({version:3,enabled:false,items:{}}));
+      if(typeof updateSortSetting === 'function')updateSortSetting({locationOptIn:false},{renderNow:false,sync:false});
+      window.TingsNative={isNative:true,notifications:{
+        permissions:async()=>({display:'granted'}),
+        requestPermissions:async()=>({display:'granted'}),
+        exactAlarmPermission:async()=>({exact_alarm:'granted'}),
+        pending:async()=>({notifications:[]}),
+        replaceAgenda:async()=>{}
+      },background:{
+        status:async()=>({fine:false,background:false,enabled:false,notificationChannelEnabled:true,plannedAt:0,dropEstimated:0,dropConfirmed:0,location:null}),
+        requestLocation:async()=>{window.__tingsBackgroundCalls.push('request');return {fine:true,background:false};},
+        openLocationSettings:async()=>{window.__tingsBackgroundCalls.push('settings');},
+        snapshot:async()=>{},
+        publish:async()=>{},
+        configure:async()=>{}
+      },alarms:{status:async()=>({pending:0,exact:true,fullScreen:true}),replaceAgenda:async()=>{},test:async()=>{}}};
+      document.getElementById('native-reminder-controls')?.remove();
+      document.getElementById('settings-reminders-body')?.removeAttribute('hidden');
+      initNativeReminders();
+      return {hasButton:Boolean(document.getElementById('native-background-location'))};
+    });
+    assert.equal(locationFlow.hasButton,true,'native settings expose Allow background location');
+    await page.evaluate(()=>{
+      document.getElementById('settings-sheet')?.classList.add('open');
+      document.getElementById('native-background-location')?.click();
+    });
+    await page.waitForFunction(()=>document.getElementById('background-location-disclosure-sheet')?.classList.contains('open'));
+    const disclosure=await page.evaluate(()=>{
+      const text=document.getElementById('background-location-disclosure-copy')?.textContent || '';
+      return {
+        text,
+        hasLocation:/location data/i.test(text),
+        hasClosed:/even when the app is closed or not in use/i.test(text),
+        hasFeature:/place-aware agenda and reminder updates/i.test(text),
+        hasNoSale:/does not sell location/i.test(text),
+        hasOsrm:/Driving estimates send coordinates to OSRM, an open routing service/i.test(text)
+      };
+    });
+    assert.equal(disclosure.hasLocation && disclosure.hasClosed && disclosure.hasFeature,true,'disclosure uses Play-required location / closed-app wording');
+    assert.equal(disclosure.hasNoSale && disclosure.hasOsrm,true,'disclosure says Tings does not sell location and that driving estimates use OSRM, an open routing service');
+    assert.deepEqual(await page.evaluate(()=>window.__tingsBackgroundCalls),[],'opening the disclosure does not request location yet');
+    const beforeContinue=await page.evaluate(()=>typeof BACKGROUND_LOCATION_DISCLOSURE === 'string' && BACKGROUND_LOCATION_DISCLOSURE.includes('even when the app is closed or not in use'));
+    assert.equal(beforeContinue,true,'disclosure copy is the shared Play sentence');
+    await page.evaluate(()=>document.getElementById('background-location-disclosure-not-now')?.click());
+    await page.waitForFunction(()=>!document.getElementById('background-location-disclosure-sheet')?.classList.contains('open'));
+    await page.evaluate(()=>document.getElementById('native-background-location')?.click());
+    await page.waitForFunction(()=>document.getElementById('background-location-disclosure-sheet')?.classList.contains('open'));
+    await page.evaluate(()=>document.getElementById('background-location-disclosure-continue')?.click());
+    await page.waitForFunction(()=>!document.getElementById('background-location-disclosure-sheet')?.classList.contains('open'));
+    assert.deepEqual(await page.evaluate(()=>window.__tingsBackgroundCalls),['request','settings'],'continue requests location then opens Android settings');
+    await page.evaluate(()=>{
+      window.TingsNative={isNative:true,background:{requestLocation:async()=>{window.__tingsFineRequests=(window.__tingsFineRequests||0)+1;return {fine:true};}}};
+    });
+    await page.evaluate(()=>document.getElementById('location-access-enable')?.click());
+    await page.waitForFunction(()=>document.getElementById('location-permission-sheet')?.classList.contains('open'));
+    const rationale=await page.evaluate(()=>document.getElementById('location-permission-copy')?.textContent || '');
+    assert.match(rationale,/Android will ask for permission next/,'native live GPS shows the in-app rationale first');
+    await page.evaluate(()=>document.getElementById('location-permission-allow')?.click());
+    await page.waitForFunction(()=>!document.getElementById('location-permission-sheet')?.classList.contains('open'));
+    assert.equal(await page.evaluate(()=>window.__tingsFineRequests || 0),1,'Allow on the rationale sheet requests Android location');
     assert.deepEqual(errors,[],'no runtime errors');
     // Isolated preview of the real controls using existing styles, for mobile-width review.
     await page.evaluate(()=>{

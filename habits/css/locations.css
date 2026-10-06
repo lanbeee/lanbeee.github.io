@@ -6,7 +6,7 @@
   min-width:0;flex:1 1 140px;height:36px;padding:0 10px;border-radius:8px;
   border:0.5px solid var(--border2);background:var(--bg);color:var(--text);
 }
-#location-permission-sheet{z-index:130;}
+#location-permission-sheet,#background-location-disclosure-sheet{z-index:130;}
 #location-picker-sheet,#travel-edit-sheet,#block-edit-sheet,#presence-picker-sheet,#home-filter-sheet,#calendar-filter-sheet{z-index:125;}
 .location-access-row{
   display:flex;align-items:center;justify-content:space-between;gap:12px;

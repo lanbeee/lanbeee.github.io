@@ -22,6 +22,12 @@ function syncHouseholdAgendaSettings(){
   const active = $('settings-agenda-active');
   const section = $('settings-agenda-head')?.closest('section');
   if(!empty || !active) return;
+  if(typeof shareConfigured === 'function' && !shareConfigured()){
+    empty.hidden = true;
+    active.hidden = true;
+    if(section) section.hidden = true;
+    return;
+  }
   if(typeof replicaDisplayRequested === 'function' && replicaDisplayRequested()){
     empty.hidden = true;
     active.hidden = true;
@@ -117,7 +123,7 @@ function bindHouseholdAgendaSettings(){
       await publishHouseholdAgendaNow(null,{ manual:true,forceCompletionSync:true });
       toastShare(true,'secure feed created; open the display page and scan its QR','could not create display');
     }catch(_){
-      toastShare(false,'',shareConfigured() ? 'could not create display' : 'sharing worker is not configured');
+      toastShare(false,'',shareConfigured() ? 'could not create display' : 'sharing is not available in this build');
     }
     syncHouseholdAgendaSettings();
   });
