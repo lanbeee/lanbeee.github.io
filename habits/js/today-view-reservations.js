@@ -2186,13 +2186,19 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
 
 // PURE: short section label for a week-home day (today / tomorrow / Wed 15).
 function homeWeekDayLabel(day,now = Date.now()){
-  if(!day)return '';
+  if(!day || day.dayBase == null)return '';
   const todayBase = dayStart(now);
   const offset = Math.round((day.dayBase - todayBase) / 86400000);
   if(offset === 0)return 'today';
   if(offset === 1)return 'tomorrow';
   const date = new Date(day.dayBase);
-  return `${weekdayShort(day.weekday)} ${date.getDate()}`;
+  // A day object without a weekday (skeletons, hand-built previews) still
+  // gets its day name — derive it from the date rather than showing a bare
+  // number in the section header.
+  const weekday = Number.isInteger(day.weekday) && day.weekday >= 0 && day.weekday <= 6
+    ? day.weekday
+    : date.getDay();
+  return `${weekdayShort(weekday)} ${date.getDate()}`;
 }
 
 function mergeIntervals(intervals){

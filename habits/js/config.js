@@ -268,11 +268,11 @@ const DEFAULT_SORT_SETTINGS = {
   // Before/after, doing-now, and linked marks between items.
   showOrderPillsOnCards:false,
 
-  // Simplified surface for new users: strips home cards, detail panes, and
-  // calendar overview chrome, and groups home by today / overdue / coming up
-  // instead of day by day. Does not change scoring, packing, or what is due.
-  // Installs that predate this default keep it off (see loadSortSettings).
-  minimalMode:true,
+  // Simplified surface: strips home cards, detail panes, and calendar overview
+  // chrome, and groups home by today / overdue / coming up instead of day by
+  // day. Does not change scoring, packing, or what is due. Opt-in from
+  // Settings — new users start on the full surface (see loadSortSettings).
+  minimalMode:false,
 
   soundEffects:true,
   compactMode:false,

@@ -58,10 +58,6 @@
   font-size:var(--detail-copy-size);line-height:1.45;
 }
 .detail-sheet .detail-page.detail-actions-page{padding:var(--detail-pane-pad);}
-.detail-sheet .detail-page > .section-label{
-  margin:0 0 var(--detail-pane-gap);font-size:var(--detail-title-size);
-  line-height:1.2;font-weight:700;letter-spacing:0.045em;
-}
 .detail-sheet .detail-page :where(.settings-sublabel,.planning-field,.priority-label){
   font-size:var(--detail-label-size);
 }
@@ -222,6 +218,40 @@ body .detail-sheet > .detail-bottom-bar .tune-actions{display:none;}
 body .detail-sheet.tune-dirty > .detail-bottom-bar #detail-cool-row{display:none;}
 body .detail-sheet.tune-dirty > .detail-bottom-bar .tune-actions{display:flex;}
 body .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(100%,320px);}
+/* Phone: the footer floats like Home's action bar — pages scroll behind it
+   instead of the layout reserving a footer band, and each scrolling page
+   carries its own end-of-list clearance so the lowest row can rise above the
+   pill instead of hiding beneath it. Desktop panes keep the in-flow footer.
+   The bar anchors to the fixed sheet wrap at the same offsets as the home
+   bottom-nav, so it tracks the keyboard lift exactly like Home's does. */
+body[data-pane-count="1"] .detail-sheet{
+  /* No footer band: like Home, scrolling content runs all the way behind the
+     pill; the pages' own end-of-list padding keeps the lowest row clear. */
+  padding-bottom:0;
+}
+body[data-pane-count="1"] .detail-sheet > .detail-bottom-bar{
+  position:absolute;left:50%;bottom:calc(var(--nav-bottom) + var(--keyboard-lift,0px) + var(--content-safe-bottom));
+  transform:translateX(-50%);margin:0;width:max-content;max-width:calc(100vw - 24px);
+  /* Home action-bar geometry: 7px skin, 22px corners, 44px icon row. */
+  padding:7px;border-radius:22px;
+}
+/* At rest the bar is icon-only (loupe + close) exactly like Home's action
+   bar; the wide field exists only while search is open. */
+body[data-pane-count="1"] .detail-sheet:not(.detail-search-open) .detail-search-control{background:transparent;}
+body[data-pane-count="1"] #detail-search-toggle{flex:0 0 44px;width:44px;min-width:44px;padding:0;}
+body[data-pane-count="1"] #detail-search-toggle span{display:none;}
+/* Search open mirrors Home's expanded action bar: field across the width. */
+body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{width:calc(100vw - 24px);max-width:456px;}
+/* Save/Cancel are flex:1 1 0, whose max-content contribution is unreliable
+   for the shrink-wrapped pill — give the editing dock the explicit width the
+   in-flow rule uses (min(100%,320px), floater flavor). */
+body[data-pane-count="1"] .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(calc(100vw - 24px),320px);}
+body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
+  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
+}
+body[data-pane-count="1"] .detail-sheet > .detail-search-panel .detail-search-results{
+  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
+}
 body .detail-bottom-bar .detail-head-btn{
   flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;
   aspect-ratio:1;border-radius:50%;padding:0;border:0;background:var(--bg3);
@@ -278,7 +308,11 @@ body .minimal-detail .detail-full-only{display:none !important;}
 .detail-search-open > .detail-pager{display:none;}
 .detail-search-open > .detail-page-nav{display:none;}
 body .detail-sheet.detail-field-editing > .detail-page-nav,
-.detail-sheet.detail-field-editing .detail-search-control{display:none;}
+body .detail-sheet.detail-field-editing > .detail-bottom-bar #detail-cool-row{display:none;}
+/* With the search row gone (search pill + close X together) the floating
+   footer has nothing to show mid-edit — hide the whole pill unless the
+   Save/Cancel row (tune-dirty) owns it. */
+body .detail-sheet.detail-field-editing:not(.tune-dirty) > .detail-bottom-bar{display:none;}
 .detail-sheet.detail-field-editing .detail-cue,
 .detail-sheet.detail-field-editing .detail-head-actions{display:none;}
 body .detail-sheet.detail-field-editing > .detail-head{

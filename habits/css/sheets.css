@@ -230,7 +230,9 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
   display:flex;justify-content:flex-end;align-items:center;
   min-height:44px;margin:0 0 6px;background:var(--bg);
 }
-body[data-pane-count="1"] :is(.add-sheet,.about-sheet,.privacy-sheet,.overview-sheet,.sample-habits-sheet) > .sheet-exit{top:var(--content-safe-top);}
+/* Sticky insets resolve against the scroll container's padded edge, so the
+   sheet's own 22px + safe-area padding already clears the status bar — these
+   pin at the padded edge (top:0), right where the opaque band cover ends. */
 .sheet-exit-button{
   min-width:60px;min-height:44px;padding:8px 12px;
   border:1px solid var(--border);border-radius:12px;
@@ -240,7 +242,16 @@ body[data-pane-count="1"] :is(.add-sheet,.about-sheet,.privacy-sheet,.overview-s
 .sheet-exit-redundant{display:none !important;}
 .sheet > .sheet-exit-head{position:sticky;top:0;z-index:65;flex:0 0 auto;}
 .sheet > .sheet-exit-head:not(.about-hero){background:var(--bg);}
-body[data-pane-count="1"] :is(.about-sheet,.privacy-sheet,.overview-sheet) > .sheet-exit-head{top:var(--content-safe-top);}
+/* Full-page sheets scroll their whole document, so on edge-to-edge screens
+   scrolled content slid visibly through the status-bar band above the pinned
+   header. This opaque cover sits on the (fixed) wrap — it never scrolls —
+   spans exactly the sheet's top padding band, paints under the z-65 sticky
+   headers, and at rest only covers padding. */
+body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#overview-sheet,#sample-habits-sheet,#assistant-sheet).open::before{
+  content:'';position:absolute;top:0;left:0;right:0;
+  height:calc(22px + var(--content-safe-top));
+  background:var(--bg);z-index:64;pointer-events:none;
+}
 
 /* Scoped day details already have a pinned close control in their header. */
 #day-logs-footer:has(> #day-logs-done:only-child){display:none;}

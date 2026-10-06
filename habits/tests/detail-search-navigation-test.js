@@ -31,7 +31,10 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     const navBox=await page.locator('.detail-page-nav').boundingBox();
     const pagerBox=await page.locator('.detail-pager').boundingBox();
     const footerBox=await page.locator('.detail-bottom-bar').boundingBox();
-    assert.ok(navBox.y+navBox.height<=pagerBox.y && pagerBox.y+pagerBox.height<=footerBox.y,'navigation and footer reserve their own space');
+    assert.ok(navBox.y+navBox.height<=pagerBox.y,'navigation sits above the pager');
+    // The footer floats over the pager's lower edge like Home's action bar;
+    // it must stay anchored to the bottom of the sheet, not push content.
+    assert.ok(footerBox.y>=pagerBox.y && footerBox.y+footerBox.height<=845,'the footer floats at the bottom of the sheet');
     assert.ok(await tabs.nth(1).locator('span').isVisible(),'tab labels are visible on a phone');
     await page.evaluate(()=>{
       const panel=getSheetInner('detail-sheet').querySelector('[data-detail-nav="identity"]');
@@ -104,11 +107,11 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     await page.locator('#detail-habit-message').focus();
     assert.equal(await page.locator('.detail-page-nav').isVisible(),false,'field keyboard hides page navigation');
     assert.equal(await page.locator('#detail-search-toggle').isVisible(),false,'field keyboard hides search');
-    assert.ok((await page.locator('.detail-pager').boundingBox()).height>regularPagerHeight,'editing gives space back to fields');
-    assert.ok(await page.locator('#detail-cool').isVisible(),'exit stays reachable while focusing an unchanged field');
+    assert.equal(await page.locator('#detail-cool').isVisible(),false,'field keyboard hides the close X with the search row');
     await page.locator('#detail-habit-message').blur();
     await page.waitForTimeout(50);
     assert.ok(await page.locator('.detail-page-nav').isVisible(),'navigation returns after editing');
+    assert.ok(await page.locator('#detail-cool').isVisible(),'exit returns after editing');
     assert.ok(await page.locator('#detail-search-toggle').isVisible());
     await search('name');
     assert.ok(await page.locator('#detail-search-input').isVisible(),'search keeps its own keyboard field');

@@ -225,6 +225,22 @@ const HABITS_URL = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
   fail('F   no page errors', pageErrors.length === 0, pageErrors.join(' | '));
 
+  // (G) Day labels never show a bare date number: a day object without a
+  // weekday (skeletons, hand-built previews) must derive it from the date.
+  const labels = await page.evaluate(() => {
+    const at = offset => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime() + offset * 86400000; };
+    return {
+      missing: homeWeekDayLabel({ dayBase: at(3) }),
+      present: homeWeekDayLabel({ dayBase: at(3), weekday: 2 }),
+      today: homeWeekDayLabel({ dayBase: at(0) }),
+      empty: homeWeekDayLabel(null)
+    };
+  });
+  fail('G1 missing weekday derives from the date', /^[a-z]{3} \d+$/.test(labels.missing), JSON.stringify(labels.missing));
+  fail('G2 explicit weekday wins', /^tue \d+$/.test(labels.present), JSON.stringify(labels.present));
+  fail('G3 today still reads today', labels.today === 'today', JSON.stringify(labels.today));
+  fail('G4 missing day stays empty', labels.empty === '', JSON.stringify(labels.empty));
+
   await browser.close();
   console.log(process.exitCode ? 'day-header-weather-fit-test: FAILURES' : 'day-header-weather-fit-test: all passed');
 })();

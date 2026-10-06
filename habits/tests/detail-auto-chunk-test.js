@@ -106,17 +106,36 @@ function ok(value,message){
   // room than the old single-line treatment, while keeping the actual pane
   // comfortably dominant on a short phone viewport.
   ok(compactShell.head <= 84 && compactShell.pager >= compactShell.viewport * 0.60,'compact header leaves most of the short viewport to pane content');
-  ok(compactShell.bar <= 60 && compactShell.overlap <= 0 && compactShell.overflow <= 0,'integrated bottom dock does not overlap content or overflow');
+  // The bottom dock floats over the pager's lower edge (like Home's action
+  // bar), so overlap is expected — what matters is that a fully scrolled page
+  // can bring its lowest row above the dock, and nothing overflows.
+  const clearAtEnd = await page.evaluate(()=>{
+    const pageEl=document.querySelector('.detail-sheet > .detail-pager > .detail-page');
+    pageEl.scrollTop=pageEl.scrollHeight;
+    const box=pageEl.getBoundingClientRect();
+    const contentBottom=box.bottom - parseFloat(getComputedStyle(pageEl).paddingBottom);
+    const barTop=document.querySelector('.detail-bottom-bar').getBoundingClientRect().top;
+    return contentBottom<=barTop+1;
+  });
+  ok(clearAtEnd,'a fully scrolled detail page clears the floating bottom dock');
+  ok(compactShell.bar <= 60 && compactShell.overflow <= 0,'integrated bottom dock does not overflow');
   ok(compactShell.done === 44 && compactShell.doneHeight === 44 && compactShell.doneBottom <= compactShell.viewport && compactShell.doneBottom > compactShell.pagerTop,'one circular Close target stays below the scrolling pane');
   const dirtyDock = await page.evaluate(()=>{
     setDetailDirty(true);
     const save = document.querySelector('#detail-save').getBoundingClientRect();
     const cancel = document.querySelector('#detail-close').getBoundingClientRect();
     const visible = save.width > 0 && save.height > 0 && cancel.width > 0 && cancel.height > 0;
+    // The dock floats over the pager's lower edge, so "below the pager" no
+    // longer applies — it must simply sit in the viewport's bottom band.
+    const bottom = Math.max(save.bottom,cancel.bottom);
+    // Measure the dock while the editing row is still shown: at rest the
+    // pill is compact (icon-only, like Home), so reading its width after
+    // resetting would compare against the resting search pill instead.
+    const available = document.querySelector(".detail-bottom-bar").clientWidth;
     setDetailDirty(false);
-    return {visible,width:save.width + cancel.width,available:document.querySelector(".detail-bottom-bar").clientWidth,below:Math.min(save.top,cancel.top) >= document.querySelector(".detail-pager").getBoundingClientRect().bottom};
+    return {visible,width:save.width + cancel.width,available,low:bottom <= innerHeight - 8};
   });
-  ok(dirtyDock.visible && dirtyDock.width <= dirtyDock.available && dirtyDock.below,'save and cancel fit the bottom dock when editing');
+  ok(dirtyDock.visible && dirtyDock.width <= dirtyDock.available && dirtyDock.low,'save and cancel fit the floating bottom dock when editing');
   ok((await page.locator('#detail-auto-mark-label').textContent()) === 'auto-log agenda chunks','breakable auto-mark is named as chunk logging');
   ok((await page.locator('#detail-auto-mark-summary').textContent()).includes('Manual taps count first'),'auto-log summary explains manual reconciliation');
 

@@ -202,8 +202,11 @@ async function launchBrowser(){
   await page.waitForFunction(() => !document.getElementById('privacy-sheet')?.classList.contains('open'));
 
   // The shared display section (and its leave mark) is full-mode-only now, so
-  // leave minimal before tapping the agenda mark.
-  await page.locator('[data-setting-toggle="minimalMode"]').click();
+  // be in full mode before tapping the agenda mark. Minimal mode is opt-in,
+  // so only leave it when this context actually turned it on.
+  const inMinimal = await page.evaluate(()=>
+    Boolean(JSON.parse(localStorage.getItem('tings_app_settings_v2') || '{}').minimalMode));
+  if(inMinimal)await page.locator('[data-setting-toggle="minimalMode"]').click();
   await page.waitForFunction(() =>
     document.querySelector('[data-ui-leave="agenda"] .leave-btn')?.offsetParent !== null, null, { timeout: 3000 });
   await page.locator('[data-ui-leave="agenda"] .leave-btn').click();

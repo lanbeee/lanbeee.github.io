@@ -161,13 +161,9 @@ function loadSortSettings(){
     merged.showCueOnCards = merged.showCueOnCards !== false;
     merged.showOrderPillsOnCards = legacyCalmDefault('showOrderPillsOnCards') || Boolean(merged.showOrderPillsOnCards);
     merged.showRemindersOnCards = merged.showRemindersOnCards !== false;
-    // Minimal mode defaults on, but only for a fresh install. An existing
-    // install that was saved before the default flipped has settings on disk
-    // without the key, and must keep the full surface it already had.
-    merged.minimalMode = saved && Object.keys(saved).length
-      && !Object.prototype.hasOwnProperty.call(saved,'minimalMode')
-      ? false
-      : Boolean(merged.minimalMode);
+    // Minimal mode is opt-in: the default is the fuller surface, and a saved
+    // explicit value always wins (see config.js minimalMode).
+    merged.minimalMode = Boolean(merged.minimalMode);
     merged.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(merged.colorPalette) ? merged.colorPalette : 'default';
     merged.soundEffects = merged.soundEffects !== false;
     merged.compactMode = legacyCalmDefault('compactMode') || Boolean(merged.compactMode);

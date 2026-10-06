@@ -246,7 +246,10 @@ async function progressBar(page){
   assert(essentialState.hasWater,'guided start almost finishes by adding the drink water sample');
 
   // Advanced coach: a chapter menu, not a serial march. Each chapter runs
-  // standalone, checks itself off, and lands back on the menu.
+  // standalone, checks itself off, and lands back on the menu. Minimal mode
+  // is opt-in now, so turn it on first — that is what puts the full-mode
+  // reveal chapter in front of these chapters.
+  await page.evaluate(()=>updateSortSetting({minimalMode:true},{renderNow:false}));
   await page.evaluate(()=>window.startTingsCoach('advanced',{force:true}));
   await stage(page,'aIntro');
   assert(await page.locator('[data-coach-chapter]').count() === 7,'the advanced coach offers seven focused chapters');
@@ -611,10 +614,12 @@ async function progressBar(page){
   await desk.waitForTimeout(300);
   await desk.evaluate(()=>closeSheet('detail-sheet'));
   await desk.evaluate(()=>window.startTingsCoach('advanced',{force:true}));
+  // Minimal mode is opt-in, so put this context back into minimal mode: the
+  // schedule chapter must then detour through the full-mode reveal before its
+  // full-only controls exist.
+  await desk.evaluate(()=>updateSortSetting({minimalMode:true},{renderNow:false}));
   await desk.locator('[data-coach-chapter="schedule"]').click();
   await desk.waitForTimeout(400);
-  // Fresh desktop context is in minimal mode: the schedule chapter must detour
-  // through the full-mode reveal before its full-only controls exist.
   assert(await desk.locator('#tings-coach[data-coach-stage="aFullMode"]').count() === 1,'desktop schedule chapter detours through the full-mode reveal in minimal mode');
   await desk.locator('[data-setting-toggle="minimalMode"]').click();
   await stage(desk,'aDetailRead');

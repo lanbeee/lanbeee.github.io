@@ -133,7 +133,9 @@ function renderNativeDetailReminders(h){
     section.open = nativeReminderAnyOn(`item:${h.hid}`);
     const summary = document.createElement('summary');summary.textContent = 'phone notifications & alarms';
     section.append(summary,nativeItemReminderControls(`item:${h.hid}`,h.name));
-    host.querySelector('.section-label').after(section);
+    // Detail pages no longer carry a section-label header (the page nav names
+    // the section), so lead the actions page with the controls instead.
+    host.prepend(section);
   }
 }
 function renderNativeBusyReminders(wrap,blocks){

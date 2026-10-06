@@ -210,7 +210,7 @@
  * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)
  * @property {boolean} showCueOnCards                          — show one-line status on home cards
  * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
- * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview
+ * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview (default off, opt-in)
  * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
  * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
