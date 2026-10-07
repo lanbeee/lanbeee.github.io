@@ -477,8 +477,15 @@ function ensureSheetExit(id){
     return;
   }
   // Settings and the add sheet already keep cancel in a dedicated footer
-  // beside the primary action. Do not pin it to a sticky top row.
+  // beside the primary action. So do the location picker, doing-now, the
+  // travel/block editors and the other confirm sheets: a cancel that sits in
+  // a footer row beside a distinct primary action stays there — pinning it to
+  // a sticky top row orphans the primary button at the bottom. When the exit
+  // control IS the primary (sample-habits "done"), promotion stays available
+  // so the exit survives tall scrolling sheets.
   if(target.closest('.settings-actions,.add-actions'))return;
+  const footerRow = target.closest('.btn-row');
+  if(footerRow && !target.classList.contains('primary') && footerRow.querySelector('.btn.primary'))return;
   const bar = document.createElement('div');bar.className = 'sheet-exit';
   target.classList.add('sheet-exit-button');
   bar.append(target);inner.prepend(bar);

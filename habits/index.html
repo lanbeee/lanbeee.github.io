@@ -1726,18 +1726,20 @@
   <!-- optional numeric log -->
   <div class="sheet-wrap" id="value-log-sheet">
     <div class="sheet value-log-sheet">
-      <div class="page-head">
-        <div>
-          <p class="sheet-title">log value</p>
-          <p class="about-copy" id="value-log-copy">Optional number for this entry.</p>
+      <div class="value-log-stack">
+        <div class="page-head">
+          <div>
+            <p class="sheet-title">log value</p>
+            <p class="about-copy" id="value-log-copy">Optional number for this entry.</p>
+          </div>
         </div>
+        <label class="range-value value-log-field" aria-label="value">
+          <input type="text" id="value-log-input" inputmode="decimal" placeholder="e.g. 72.5" />
+        </label>
+        <label class="value-log-field" aria-label="note">
+          <input type="text" id="value-log-note" maxlength="200" placeholder="note (optional)" />
+        </label>
       </div>
-      <label class="range-value value-log-field" aria-label="value">
-        <input type="text" id="value-log-input" inputmode="decimal" placeholder="e.g. 72.5" />
-      </label>
-      <label class="value-log-field" aria-label="note">
-        <input type="text" id="value-log-note" maxlength="200" placeholder="note (optional)" />
-      </label>
       <div class="btn-row">
         <button class="btn primary" type="button" id="value-log-save">log</button>
         <button class="btn" type="button" id="value-log-skip">skip</button>

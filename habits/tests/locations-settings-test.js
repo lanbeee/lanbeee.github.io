@@ -355,6 +355,14 @@ async function openSettings(page){
   assert(Math.abs(afterDrop.lat - 34.0522) < 0.002, 'second pan commits map center lat');
   assert(Math.abs(afterDrop.lng - (-118.2437)) < 0.002, 'second pan commits map center lng');
   assert(await page.locator('#picker-drop-pin').count() === 0, 'no redundant use-this-spot confirmation');
+  // Cancel stays in the footer beside the primary "add place" action — it must
+  // not be promoted into a sticky top exit bar (same policy as the add sheet).
+  const pickerCancelLayout = await page.evaluate(() => ({
+    inFooterRow:Boolean(document.getElementById('picker-cancel')?.closest('.location-picker-actions')),
+    topExitBar:Boolean(document.querySelector('#location-picker-sheet .sheet-exit'))
+  }));
+  assert(pickerCancelLayout.inFooterRow, 'picker cancel stays in the footer action row');
+  assert(!pickerCancelLayout.topExitBar, 'picker sheet has no sticky top exit bar');
   await page.locator('#picker-cancel').click();
   await page.waitForTimeout(100);
 

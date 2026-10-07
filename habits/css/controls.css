@@ -10,6 +10,17 @@
 .value-log-field{display:flex;width:100%;margin:8px 0 14px;}
 .value-log-field input{flex:1;height:42px;font-size:20px;font-weight:700;text-align:center;}
 .value-log-field[aria-label="note"] input{height:38px;font-size:15px;font-weight:600;text-align:left;}
+/* Same dedicated scrolling region + real pinned footer as the settings sheet:
+   cancel stays beside the primary action instead of being promoted into a
+   sticky top exit, and the footer never scrolls out of reach. */
+.value-log-sheet{display:flex;flex-direction:column;overflow:hidden;}
+.value-log-sheet > .value-log-stack{
+  flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;
+  overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.value-log-sheet > .value-log-stack::-webkit-scrollbar{display:none;}
+.value-log-sheet > .btn-row{flex:0 0 auto;}
 .compact-toggle{margin:4px 0 10px;}
 .tune-section > .planning-grid{margin-bottom:10px;}
 .tune-section > .planning-grid + .compact-toggle{margin-top:2px;}

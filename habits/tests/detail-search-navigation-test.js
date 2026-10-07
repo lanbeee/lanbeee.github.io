@@ -317,7 +317,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
           if(id==='day-logs-sheet'){resetDayLogsStep();dayLogsKey=todayIso();renderDayLogs(dayLogsKey);}
           openSheet(id);openSheet(id); // Reopening must not add another exit.
           const inner=getSheetInner(id);
-          const host=inner.querySelector('.settings-stack,#day-logs-body,#weather-agenda-content') || inner;
+          const host=inner.querySelector('.settings-stack,.value-log-stack,#day-logs-body,#weather-agenda-content') || inner;
           let spacer=host.querySelector('.exit-test-spacer');
           if(!spacer){spacer=document.createElement('div');spacer.className='exit-test-spacer';spacer.style.height='1800px';spacer.style.flexShrink='0';host.append(spacer);}
           inner.scrollTop=0;
@@ -333,7 +333,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
         const visibleExits=await page.locator(`#${id} button`).evaluateAll((buttons,ids)=>buttons.filter(b=>(ids.includes(b.id)||b.hasAttribute('data-sheet-dismissal')) && b.getClientRects().length).length,exitIds);
         assert.equal(visibleExits,1,`${id} has no duplicate visible exits`);
         for(const scroll of [0,99999]){
-          await page.evaluate(({id,scroll})=>{const inner=getSheetInner(id);(inner.querySelector('.settings-stack,#day-logs-body,#weather-agenda-content') || inner).scrollTop=scroll;},{id,scroll});
+          await page.evaluate(({id,scroll})=>{const inner=getSheetInner(id);(inner.querySelector('.settings-stack,.value-log-stack,#day-logs-body,#weather-agenda-content') || inner).scrollTop=scroll;},{id,scroll});
           const box=await button.boundingBox();
           assert.ok(box && box.y>=0 && box.y+box.height<=viewport.height,`${id} exit unreachable ${JSON.stringify(box)}`);
         }
