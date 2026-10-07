@@ -4,6 +4,7 @@
 #   once          run once on the production default page (GLPK)
 #   page-both     run on both pages (default/GLPK first, then Fast)
 #   default-only  GLPK page only; skipped by --mode fast
+header-brand-test.js	ui	once
 agenda-optimizer-test.js	planner	default-only
 agenda-order-constraints-test.js	planner	once
 agenda-scenarios.js	planner	once

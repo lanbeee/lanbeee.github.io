@@ -3,6 +3,49 @@ function isMinimalMode(){
   return Boolean(sortSettings && sortSettings.minimalMode);
 }
 
+const headerBrandDarkMedia = window.matchMedia('(prefers-color-scheme: dark)');
+
+// Theme controls day/night; dawn/dusk overrides it using the existing local
+// solar calculator. No location permission or network request is needed.
+function headerBrandVariant(now = Date.now(), settings = sortSettings || {}){
+  const dark = settings.themeMode === 'dark'
+    || ((!settings.themeMode || settings.themeMode === 'system') && headerBrandDarkMedia.matches);
+  const base = dark ? 'night' : 'day';
+  const date = new Date(now);
+  if(!Number.isFinite(date.getTime()))return base;
+  let sunrise = new Date(date.getFullYear(),date.getMonth(),date.getDate(),6).getTime();
+  let sunset = new Date(date.getFullYear(),date.getMonth(),date.getDate(),18).getTime();
+  const validPlace = p => p && Number.isFinite(p.lat) && Math.abs(p.lat) <= 90
+    && Number.isFinite(p.lng) && Math.abs(p.lng) <= 180;
+  const home = {lat:settings.homeCityLat,lng:settings.homeCityLng};
+  const place = validPlace(home) ? home
+    : (Array.isArray(settings.locations) ? settings.locations : []).find(validPlace);
+  if(place && typeof prayerParams === 'function' && typeof prayerTimesFor === 'function'){
+    try{
+      const params = prayerParams(settings);
+      const times = params && prayerTimesFor({latitude:place.lat,longitude:place.lng},date,params);
+      const rise = times?.sunrise?.getTime(), set = times?.maghrib?.getTime();
+      if(Number.isFinite(rise) && Number.isFinite(set) && set > rise){
+        sunrise = rise;
+        sunset = set;
+      }
+    }catch{ /* Missing/invalid solar times keep the local-clock fallback. */ }
+  }
+  const twilight = 45 * 60 * 1000;
+  return Math.abs(date.getTime() - sunrise) <= twilight
+    || Math.abs(date.getTime() - sunset) <= twilight ? 'twilight' : base;
+}
+
+function syncHeaderBrand(){
+  const variant = headerBrandVariant();
+  const src = `./icons/tings-app-icon${variant === 'day' ? '' : '-' + variant}.svg`;
+  document.querySelectorAll('[data-header-brand]').forEach(img=>{
+    if(img.getAttribute('src') !== src)img.setAttribute('src',src);
+  });
+}
+
+headerBrandDarkMedia.addEventListener('change',syncHeaderBrand);
+
 function applyAppearanceSettings(){
   const s = sortSettings || {};
   document.body.classList.toggle('compact-mode', !!s.compactMode);
@@ -20,6 +63,7 @@ function applyAppearanceSettings(){
   }
   const meta = document.querySelector('meta[name="color-scheme"]');
   if(meta)meta.content = mode === 'system' ? 'light dark' : mode;
+  syncHeaderBrand();
   if(typeof invalidateCrownRidgeCache === 'function')invalidateCrownRidgeCache();
   if(typeof applyDetailMinimalMode === 'function')applyDetailMinimalMode();
   applyAddMinimalMode();

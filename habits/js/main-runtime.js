@@ -983,10 +983,12 @@ document.addEventListener('visibilitychange',()=>{
   // every brief foreground transition blocked touch scrolling for the entire
   // Fast solve. Longer absences still get the normal freshness check.
   const hiddenFor = _homeHiddenAt ? Date.now() - _homeHiddenAt : Infinity;
+  syncHeaderBrand();
   scheduleReopenRefresh(hiddenFor >= HOME_AGENDA_REFRESH_MS);
   if(typeof scheduleHouseholdAgendaPublish === 'function') scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
 });
 window.addEventListener('pageshow',e=>{
+  syncHeaderBrand();
   // bfcache restore (back/forward) — also refresh, since a lot of wall-clock
   // time may have passed while the page was frozen.
   if(e && e.persisted)scheduleReopenRefresh();
@@ -1002,6 +1004,7 @@ let _homeAgendaRefreshTick = 0;
 
 function refreshHomeAgendaWhileOpen(){
   if(document.hidden)return;
+  syncHeaderBrand();
   updateHomeDateLabel();
   if(typeof swipeOpenCard !== 'undefined' && swipeOpenCard)return;
   if(typeof sweepAutoDoneTasks === 'function'){
