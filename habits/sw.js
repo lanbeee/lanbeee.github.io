@@ -152,6 +152,8 @@ const PRECACHE = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/tings-app-icon.svg',
+  './icons/tings-app-icon-twilight.svg',
+  './icons/tings-app-icon-night.svg',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
   './manifest.json'

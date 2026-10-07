@@ -33,6 +33,7 @@ Usage: ./run-tests.sh [suite ...] [options]
 Suites:
   planner        scheduling, Fast/GLPK parity, agenda regressions
   ui             general browser interactions and rendering
+  assistant      assistant panel: entry points, harness, LLM settings, prompts
   data           persistence, backup, retention, normalization
   integrations   calendar, locations, prayer times, offline behavior
   diagnostics    exploratory zz-* scripts (excluded from normal full runs)
@@ -94,7 +95,7 @@ esac
 
 [ -f "$MANIFEST" ] || die "missing $MANIFEST"
 
-ALL_REGRESSION_SUITES="planner ui data integrations"
+ALL_REGRESSION_SUITES="planner ui assistant data integrations"
 KNOWN_SUITES="$ALL_REGRESSION_SUITES diagnostics"
 
 contains_word(){
@@ -166,6 +167,10 @@ infer_changed_suites(){
       js/main.js|js/main-*.js)
         add_requested_suite data
         add_requested_suite ui
+        add_requested_suite assistant
+        ;;
+      js/assistant-*)
+        add_requested_suite assistant
         ;;
       js/shell-ui.js|js/viewport.js|js/emoji-suggest.js|css/*|index.html)
         add_requested_suite ui
@@ -208,7 +213,7 @@ for suite in "${REQUESTED_SUITES[@]}"; do
         contains_word "$item" "${expanded_suites[@]}" || expanded_suites+=("$item")
       done
       ;;
-    planner|ui|data|integrations|diagnostics)
+    planner|ui|assistant|data|integrations|diagnostics)
       contains_word "$suite" "${expanded_suites[@]}" || expanded_suites+=("$suite")
       ;;
     *) die "unknown suite '$suite' (use --help to list suites)" ;;

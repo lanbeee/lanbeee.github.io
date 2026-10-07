@@ -20,6 +20,7 @@ session when the page is not Fast-only.
 ```bash
 ./run-tests.sh planner
 ./run-tests.sh ui
+./run-tests.sh assistant
 ./run-tests.sh data
 ./run-tests.sh integrations
 ./run-tests.sh ui data
@@ -28,6 +29,11 @@ session when the page is not Fast-only.
 - `planner`: production GLPK packing, plus Fast via `page-both` and `--mode fast`.
   Breakables, links, capacity, deferral, worker/refinement.
 - `ui`: general rendering, sheets, navigation, gestures, and card behavior.
+  Does not include the assistant.
+- `assistant`: the assistant panel only — entry points, harness/tool turns,
+  batch/apply flows, item settings, LLM settings, the prompt corpus, queries,
+  and compound questions. Part of the default full run, but kept out of `ui`
+  because its live-Qwen checks are slower and environment-dependent (below).
 - `data`: persistence, backups, normalization, retention, and blocked-time data.
 - `integrations`: calendars, locations/maps, prayer times, and offline behavior.
 - `diagnostics`: exploratory `zz-*` probes. This suite is deliberately excluded
