@@ -1053,7 +1053,8 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - Searches: habit names, topics, location names
 - Clears with ✕ button
 - Opening empty Search keeps the mounted agenda. Home and detail search docks
-  follow keyboard geometry once per animation frame; visible editing fields
+  sit directly against the keyboard on phones, retaining the bottom safe area
+  when the keyboard closes. They follow its geometry once per animation frame; visible editing fields
   keep their scroll position, and covered fields scroll above the keyboard/footer.
 - Search is available when the settled, unsearched Home view contains at least
   10 visible Ting cards across its sections. Pinned copies and separate-session

@@ -10,6 +10,9 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     const errors = [];
     page.on('pageerror',e=>errors.push(e.message));
     await page.addInitScript(()=>{
+      // Installed phone apps can retain a home-indicator inset while the IME
+      // covers it. Search must not stack that inset above the keyboard.
+      document.addEventListener('DOMContentLoaded',()=>document.documentElement.style.setProperty('--safe-area-inset-bottom','34px'));
       localStorage.setItem('tings_coach_install_v2','done');
       localStorage.setItem('tings_coach_essentials_v2','done');
       localStorage.setItem('tings_app_settings_v2',JSON.stringify({agendaOptimizer:false,showWeekOnHome:false}));
@@ -55,7 +58,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         const r=document.querySelector('.bottom-nav').getBoundingClientRect();
         return {bottom:r.bottom,top:scrollY,scrolls:keyboardProbe.scrolls,updates:keyboardProbe.updates};
       },height);
-      assert.ok(dock.bottom<=height+1,`Home search follows keyboard at ${height}: ${JSON.stringify(dock)}`);
+      const expectedBottom=height===844 ? height-34 : height;
+      assert.ok(Math.abs(dock.bottom-expectedBottom)<=1,`Home search meets keyboard/safe edge at ${height}: ${JSON.stringify(dock)}`);
       assert.equal(dock.top,0);
       assert.equal(dock.scrolls,0);
       assert.equal(dock.updates,1,'resize and scroll bursts share one layout update');
@@ -81,7 +85,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         const r=document.querySelector('.detail-bottom-bar').getBoundingClientRect();
         return {top:r.top,bottom:r.bottom};
       },height);
-      assert.ok(dock.top>=0 && dock.bottom<=height+1,`detail search follows keyboard at ${height}: ${JSON.stringify(dock)}`);
+      const expectedBottom=height===844 ? height-34 : height;
+      assert.ok(dock.top>=0 && Math.abs(dock.bottom-expectedBottom)<=1,`detail search meets keyboard/safe edge at ${height}: ${JSON.stringify(dock)}`);
     }
     await page.evaluate(()=>{setDetailSearchOpen(false,false);scrollDetailToNav('identity','auto');});
     await page.locator('#detail-habit-message').focus();
@@ -115,7 +120,11 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         else {closeSearch();openDetail(0);setDetailSearchOpen(true);}
       },surface);
       for(const height of [660,544,844]){
-        await page.evaluate(height=>{visualViewport.height=height;},height);
+        await page.evaluate(height=>{
+          visualViewport.height=height;
+          // Capacitor removes the system-bar inset while the IME is visible.
+          document.documentElement.style.setProperty('--safe-area-inset-bottom',height===844 ? '34px' : '0px');
+        },height);
         await page.setViewportSize({width:390,height});
         await page.waitForTimeout(160);
         const native=await page.evaluate(surface=>{
@@ -125,7 +134,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         assert.equal(native.open,true,'window resizing preserves the open surface');
         assert.equal(native.focus,surface==='home'?'habit-search':'detail-search-input');
         assert.equal(native.lift,'0px','resized WebView needs no additional keyboard lift');
-        assert.ok(native.bottom<=height+1 && height-native.bottom<30,`native ${surface} dock follows resized window: ${JSON.stringify(native)}`);
+        const expectedBottom=height===844 ? height-34 : height;
+        assert.ok(Math.abs(native.bottom-expectedBottom)<=1,`native ${surface} dock meets keyboard/safe edge: ${JSON.stringify(native)}`);
       }
     }
     assert.deepEqual(errors,[]);

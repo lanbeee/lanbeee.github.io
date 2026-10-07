@@ -65,7 +65,7 @@ body[data-pane-count="1"].search-active #home-tag-filter{
   padding-top:0;padding-bottom:0;
   overflow:hidden;
 }
-body[data-pane-count="1"].search-active{--nav-bottom:6px;}
+body[data-pane-count="1"].search-active{--nav-bottom:0px;}
 .wordmark{
   border:none;background:transparent;padding:0;margin:0;
   font:inherit;
@@ -231,6 +231,9 @@ body.fullpage-open .bottom-nav{
 .bottom-nav.search-open{
   width:calc(100vw - 24px);
   max-width:456px;
+  /* The keyboard already covers the bottom system area. Keep the safe inset
+     when it is closed, but do not add it (or thumb clearance) above the IME. */
+  bottom:max(var(--keyboard-lift),var(--content-safe-bottom));
 }
 /* Search mode: just the field + close — calendar/+ aren't useful mid-lookup. */
 .bottom-nav.search-open #open-overview,
