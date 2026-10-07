@@ -34,7 +34,7 @@
   const OVERVIEW_DAY_STAGES = new Set(['eOverviewLog','eOverviewMissed','eOverviewPlan']);
   // Sheets each stage group may keep open. Anything else that appears is closed
   // by reconcile(): the coach decides what page is on screen, wander included.
-  const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet'];
+  const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet','background-location-disclosure-sheet'];
   const SHEET_ALLOWANCES = new Map([
     [ADD_STAGES,['add-sheet',...PICKER_SHEETS]],
     // Gate stages wait for the user to open their destination sheet themselves.
@@ -894,9 +894,13 @@
     if(next === 'aGeneralSchedule'){
       document.querySelector('#detail-schedule-view-seg [data-schedule-view="allowed"]')?.click();
     }
-    if(next === 'aSchedule' || next === 'aSchedulePreferences' || next === 'aGeneralSchedule' || next === 'aScheduleOrder' || next === 'aTimesPlaces' || next === 'aOptionRow' || next === 'aTaskRules')showDetailPage('schedule');
+    if(next === 'aSchedule' || next === 'aSchedulePreferences' || next === 'aGeneralSchedule' || next === 'aTimesPlaces' || next === 'aOptionRow' || next === 'aTaskRules')showDetailPage('schedule');
+    if(next === 'aTimesPlaces' || next === 'aOptionRow'){
+      const optionsDisc = $('detail-options-disclosure');
+      if(optionsDisc)optionsDisc.open = true;
+    }
     if(next === 'aHistoryPlans')showDetailPage('calendar');
-    if(next === 'aEffort' || next === 'aEffortTools')showDetailPage('effort');
+    if(next === 'aEffort' || next === 'aEffortTools' || next === 'aScheduleOrder')showDetailPage('effort');
     if(next === 'aIdentity')showDetailPage('identity');
     if(next === 'aLifecycle'){
       showDetailPage('actions');
@@ -914,6 +918,8 @@
         if(idx >= 0 && typeof openDetail === 'function')openDetail(idx);
       }
       showDetailPage('schedule');
+      const weatherDisc = $('detail-weather-disclosure');
+      if(weatherDisc)weatherDisc.open = true;
       setTimeout(()=>{
         $('detail-weather-profile')?.scrollIntoView({block:'center',behavior:'auto'});
         queuePosition();
@@ -957,6 +963,8 @@
 
   function showDetailPage(key){
     setTimeout(()=>{
+      const page = document.querySelector(`.detail-page[data-detail-nav="${key}"]`);
+      page?.querySelectorAll('details').forEach(el=>el.open = true);
       if(typeof scrollDetailToNav === 'function')scrollDetailToNav(key,'auto');
       setTimeout(queuePosition,90);
     },40);

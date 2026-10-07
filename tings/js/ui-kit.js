@@ -129,6 +129,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showFlexibilityOnCards', title:'show scheduling windows', hint:'Show how many days early or late it may be planned.', extraClass:'settings-full-only'},
     {key:'showTopicsOnCards', title:'show topics', hint:'Show topic labels on the home list.', extraClass:'settings-full-only'},
     {key:'showLocationOnCards', title:'show place', hint:'Show the place on each item.', extraClass:'settings-full-only'},
+    {key:'showRemindersOnCards', title:'show reminder mark', hint:'Show a bell when this item sends a phone notification or alarm. Tap it to turn those reminders off.', extraClass:'settings-full-only'},
     {key:'showStatusOnCards', title:'show progress', hint:'Show done / almost / behind (or new).', extraClass:'settings-full-only'},
     {key:'showEarlyOnCards', title:'show early', hint:'Show early when it helps a packed day.', extraClass:'settings-full-only'}
   ],
@@ -158,7 +159,8 @@ const UI_PRIVACY_BLOCKS = [
   {id:'privacy-here-body', label:'On this device', summary:'Habits, logs, places, and settings live in this browser. There is no Tings account.', body:[
     'Tings is a set of files in your browser. Your list is saved in this browser’s own storage (localStorage) on this phone or computer — not in a Tings inbox.',
     'The person who put this site online cannot see your habits, notes, addresses, or logs. Clearing this site’s data, switching browsers, or getting a new phone wipes the list unless you exported a backup (Settings → backup).',
-    'Live location is used only to match a saved place. Coordinates are not stored and are not uploaded.'
+    'Live GPS is used on this phone to match a saved place. Filling city the first time sends a coarse location to Photon or Nominatim. Driving estimates send coordinates to OSRM, an open routing service — saved-place pins, and the live GPS origin when estimating a drive from here.',
+    'On the Android app, optional closed-app refresh can save the latest location fix on this phone so reminders can follow you to a saved place even when the app is closed. That fix is never used after ten minutes. A driving estimate can send that origin to OSRM, same as when the app is open. Closed refresh also works from your last saved place without background location.'
   ]},
   {id:'privacy-why-body', label:'Why a website can still be private', summary:'Tings is open source. The hosted files are the app; planning runs here.', body:[
     'The site you open is the program. There is no Tings account and no hidden backend for your list. Anyone can read how it works.',
@@ -175,12 +177,13 @@ const UI_PRIVACY_BLOCKS = [
   ]},
   {id:'privacy-maps-body', label:'Maps and places', summary:'Lookups use open mapping services, and only for that lookup.', body:[
     '<b>Address or city search</b> sends the text you type to Photon (Komoot) and Nominatim (OpenStreetMap).',
-    '<b>Travel estimates</b> send the pins of two saved places to OSRM. You can type minutes yourself instead.',
+    '<b>First city fill from GPS</b> sends a coarse location (about 1 km), not the live pin, to Photon or Nominatim. Presence matching stays on this phone.',
+    '<b>Travel estimates</b> send coordinates to OSRM, an open routing service, for that route: two saved-place pins, or the live GPS origin plus a saved-place pin when estimating a drive from here. You can type minutes yourself instead.',
     '<b>Map picture</b> loads OpenStreetMap street tiles or Esri World Imagery satellite tiles for the area on screen.',
     'These are open mapping services. They receive the search or pin needed for that job — not your habit list, and not an ongoing location history. That is a narrower request than embedding Google Maps or Apple Maps.'
   ]},
-  {id:'privacy-weather-body', label:'Weather guidance', summary:'Forecast displays or guidance send home-city coordinates to Open-Meteo, plus only the far-away places needed on your plan.', body:[
-    'In regular mode, travel weather is on by default; the other period displays are optional. When a forecast display is on or you create a weather profile, Tings sends your saved home-city latitude and longitude to Open-Meteo. A planned item, busy time, or travel leg can use a saved place instead when it happens far from home. It does not send item names, schedules, logs, or live GPS location.',
+  {id:'privacy-weather-body', label:'Weather guidance', summary:'Forecast displays or guidance send home-city coordinates to Open-Meteo, plus only far saved-place pins needed on your plan.', body:[
+    'In regular mode, travel weather is on by default; the other period displays are optional. When a forecast display is on or you create a weather profile, Tings sends your saved home-city coordinates to Open-Meteo. A planned item, busy time, or travel leg far from home sends that saved-place pin instead. Places near home reuse the home-city forecast. It does not send item names, schedules, logs, or live GPS.',
     'The seven-day forecast is cached for six hours. A shorter 15-minute forecast refreshes only while Tings is visible, a weather-linked planned item is active or starts within 90 minutes, and the cached day is not already decisive (for example 0% rain and snow remaining). Air-quality rules use CAMS ENSEMBLE data through Open-Meteo.',
     'Forecasts are guidance and may be wrong. Missing data never blocks planning.'
   ]},
@@ -217,7 +220,7 @@ const UI_LEAVE_HINTS = {
   },
   travel:{
     aria:'this sends place coordinates off this device',
-    body:'Travel estimates use OSRM, an open routing service. It receives the two place pins for this estimate only. You can type minutes yourself instead. Full story: About → privacy.'
+    body:'Travel estimates use OSRM, an open routing service. It receives the two pins for this estimate — saved places, or live GPS plus a saved place when driving from here. You can type minutes yourself instead. Full story: About → privacy.'
   },
   map:{
     aria:'this loads map tiles from the web',
@@ -225,7 +228,7 @@ const UI_LEAVE_HINTS = {
   },
   weather:{
     aria:'this sends forecast coordinates off this device',
-    body:'Forecast displays and weather guidance send your saved home-city coordinates to Open-Meteo, plus only far-away places needed on the plan. Item names and logs stay here. Full story: About → privacy.'
+    body:'Forecast displays and weather guidance send your saved home-city coordinates to Open-Meteo, plus only far-away saved-place pins needed on the plan. Live GPS, item names, and logs stay here. Full story: About → privacy.'
   },
   feedback:{
     aria:'this opens a Google Form off this device',
@@ -243,6 +246,13 @@ function mountUiKit(){
   });
   const privacy = document.querySelector('[data-ui-privacy-stack]');
   if(privacy)privacy.innerHTML = UI_PRIVACY_BLOCKS.map(uiAboutBlockHtml).join('');
+  const policyLink = document.getElementById('privacy-policy-url');
+  if(policyLink && typeof PRIVACY_POLICY_URL === 'string'){
+    policyLink.href = PRIVACY_POLICY_URL;
+    policyLink.hidden = !PRIVACY_POLICY_URL || PRIVACY_POLICY_URL.includes('YOUR_');
+  }
+  const disclosure = document.getElementById('background-location-disclosure-copy');
+  if(disclosure && typeof BACKGROUND_LOCATION_DISCLOSURE === 'string')disclosure.textContent = BACKGROUND_LOCATION_DISCLOSURE;
   document.querySelectorAll('[data-ui-leave]').forEach((host,i)=>{
     const hint = UI_LEAVE_HINTS[host.dataset.uiLeave];
     if(!hint)return;

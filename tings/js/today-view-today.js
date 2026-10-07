@@ -1,4 +1,8 @@
 function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
+  if(typeof replayAgendaClockWeek==='function'){
+    const replay=replayAgendaClockWeek(data,settings,numDays,opts);
+    if(replay)return replay;
+  }
   const planningNow = opts.now != null ? Number(opts.now) : Date.now();
   const todayBase = dayStart(planningNow);
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
@@ -72,6 +76,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   // Eligibility needs the same origin-aware placement context as the exact
   // engine. In particular, a same-location pair at today's current/last-known
   // place is not a travel-saving cluster.
+  try{
   let dayStates = makeStates();
   applyPersistentLinkEligibility(candidates,dayStates,settings);
   if(typeof applyClusterFlexEligibility === 'function'){
@@ -89,7 +94,13 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
   const useFastGraph = opts.fastGraph !== false;
   const graphSeedBudget = useFastGraph ? 768 : 0;
   const graphSeeds = useFastGraph ? dayStates.map(cloneFastGraphState) : [];
-  const graphBudget = {remaining:graphSeedBudget,searches:0,accepted:0};
+  // Leave room for changing a crowded daily selection: keep-all permutations
+  // alone can spend the entire budget on a set that cannot coexist.
+  const selectionCandidates = candidates.filter(c=>!c.h.breakable && c.h.type !== 'task'
+    && Number(c.h.target)===1 && !c.pinned && !mustPlaceCriticalOccurrence(c));
+  const linkedBudget = useFastGraph && candidates.some(c=>sameDayScheduleLinks(c.h).length) ? 96 : 0;
+  const insertionBudget = (useFastGraph && selectionCandidates.length>1 ? 384 : graphSeedBudget)-linkedBudget;
+  const graphBudget = {remaining:insertionBudget,searches:0,accepted:0,linkRemaining:linkedBudget,linkAccepted:0};
   // Pass 1 — graph placement discovery of each location's natural day.
   assignWeekCandidatesByPlacement(candidates,dayStates,settings,null,graphBudget);
   const locHints = collectLocationHints(dayStates);
@@ -102,16 +113,39 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
       if(id)distinctLocs.add(id);
     }
   }
-  if(distinctLocs.size > 1){
+  if(distinctLocs.size > 1 && needsFastColocationReplay(candidates,dayStates,locHints)){
+    // Discovery can consume the graph budget. A cheaper clustering replay
+    // must not silently discard work that required that search to fit.
+    const incumbent = dayStates.map(cloneFastGraphState);
+    const occurrenceCounts = candidates.map(c=>c.unplacedOccurrenceCount);
     days.forEach(d=>{ d.agendaItems = []; });
     dayStates = makeStates();
     assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,graphBudget);
+    if(!fastGraphReplayRetainsWork(incumbent,dayStates,candidates)){
+      dayStates = incumbent;
+      for(let i=0;i<days.length;i++){
+        const omissions = dayStates[i].day.linkOmissions;
+        dayStates[i].day = days[i];
+        syncDayAgendaItemsFromFills(dayStates[i]);
+        days[i].linkOmissions = omissions;
+      }
+      candidates.forEach((c,i)=>{ c.unplacedOccurrenceCount = occurrenceCounts[i]; });
+    }
   }
 
   placeAdditionalSameDayOccurrences(candidates,dayStates,settings);
   const weekGraphDiagnostics = useFastGraph
     ? improveFastGraphWeek(candidates,dayStates,graphSeeds,settings)
     : {evaluated:0,accepted:0,depth:0,budgetExhausted:false};
+  const linkedProbes = linkedBudget-graphBudget.linkRemaining;
+  const insertionProbes = insertionBudget-graphBudget.remaining+linkedProbes;
+  const selectionDiagnostics = useFastGraph
+    ? improveFastGraphDaySelections(candidates,dayStates,settings,{maxProbes:graphSeedBudget-insertionProbes})
+    : {probes:0,accepted:0,budgetExhausted:false};
+  const todayChoiceDiagnostics = useFastGraph
+    ? improveFastGraphTodayChoices(candidates,dayStates,settings,
+      {maxProbes:graphSeedBudget-insertionProbes-selectionDiagnostics.probes})
+    : {probes:0,accepted:0};
   annotateAgendaOccurrenceKeys(candidates,dayStates);
 
   let totalTravelSeconds = 0;
@@ -130,12 +164,19 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
-  if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
+  if(!opts.skipDropAnnotation)annotateAgendaDropTimes(days,data,settings);
   return { days, totalTravelSeconds, candidateCount:candidates.length,
     fastPlannerAlgorithm:'bounded-state-graph',
     fastWeekGraphDiagnostics:weekGraphDiagnostics,
+    fastSelectionDiagnostics:selectionDiagnostics,
+    fastTodayChoiceDiagnostics:todayChoiceDiagnostics,
     fastGraphDiagnostics:{searches:graphBudget.searches,accepted:graphBudget.accepted,
-      probes:graphSeedBudget - graphBudget.remaining,budgetExhausted:useFastGraph && graphBudget.remaining === 0} };
+      linkedProbes,linkedAccepted:graphBudget.linkAccepted,
+      probes:insertionProbes+selectionDiagnostics.probes+todayChoiceDiagnostics.probes,
+      budgetExhausted:useFastGraph && insertionProbes+selectionDiagnostics.probes+todayChoiceDiagnostics.probes>=graphSeedBudget} };
+  }finally{
+    if(typeof endPlannerSolveCaches === 'function')endPlannerSolveCaches();
+  }
 }
 
 // PURE: format a timestamp as a short clock label

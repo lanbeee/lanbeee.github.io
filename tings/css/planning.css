@@ -152,5 +152,18 @@
   gap:5px;
 }
 .compact-days .schedule-chip{padding:7px 8px;}
-.blocked-time-row .mini-text-btn{align-self:start;}
+.blocked-time-head{
+  grid-column:1 / -1;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.blocked-time-head input[type=text]{flex:1;min-width:0;}
+.blocked-time-row .habit-options-block,
+.blocked-time-row .native-busy-reminders{
+  grid-column:1 / -1;
+}
+.native-busy-reminder-grid{
+  grid-template-columns:1fr 1fr;
+}
 

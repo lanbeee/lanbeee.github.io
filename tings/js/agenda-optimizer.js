@@ -26,7 +26,7 @@ const AGENDA_OPTIMIZER_WEEK_SOLVE_BUDGET_MS = 45000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MIN_MS = 1000;
 const AGENDA_OPTIMIZER_DAY_SOLVE_MAX_MS = 12000;
 const AGENDA_PLANNER_WORKER_REQUEST_TIMEOUT_MS = 65000;
-const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v114';
+const AGENDA_PLANNER_WORKER_ASSET_VERSION = 'v120';
 const AGENDA_OPTIMIZER_REFINEMENT_BUDGET_MS = 40000;
 let _glpkPromise = null;
 let _glpkInstance = null;
@@ -96,12 +96,13 @@ function ensureAgendaPlannerWorker(){
     const message = event.data || {};
     const request = _plannerWorkerRequests.get(message.id);
     if(!request)return;
+    if(message.forecastPartial){request.progress?.(message.forecastPartial);return;}
     _plannerWorkerRequests.delete(message.id);
     if(message.error)request.reject(new Error(message.error));
     else if(message.ready){
       _plannerWorkerWarmed = true;
       request.resolve(true);
-    }else request.resolve(message.week);
+    }else request.resolve(message.forecast || message.week);
   });
   worker.addEventListener('error',error=>{
     // A superseded worker may report its termination after its replacement is
@@ -184,6 +185,9 @@ function leanAgendaWeek(week){
     return out;
   };
   return {
+    forecastDiagnostics:week.forecastDiagnostics,
+    forecastRevision:week.forecastRevision,
+    dropForecast:week.dropForecast,
     days:week.days.map(day=>({
       ...day,
       timeline:Array.isArray(day.timeline) ? day.timeline.map(strip) : day.timeline,
@@ -198,6 +202,8 @@ function leanAgendaWeek(week){
     fastPlannerAlgorithm:week.fastPlannerAlgorithm || '',
     fastGraphDiagnostics:week.fastGraphDiagnostics || null,
     fastWeekGraphDiagnostics:week.fastWeekGraphDiagnostics || null,
+    fastSelectionDiagnostics:week.fastSelectionDiagnostics || null,
+    fastTodayChoiceDiagnostics:week.fastTodayChoiceDiagnostics || null,
     __lean:true
   };
 }
@@ -220,6 +226,7 @@ function rehydrateAgendaWeekHabits(week,data){
 // ASYNC: construct a week without occupying the UI thread. The worker receives
 // a compact storage snapshot (order constraints, auto-chunks, today-suggested).
 function buildWeekAgendaOffMain(data,settings,numDays = 7,mode = 'fast',opts = {}){
+  cancelAgendaRiskForecast('foreground planning');
   const worker = ensureAgendaPlannerWorker();
   if(!worker)return Promise.reject(new Error('agenda planner worker unavailable'));
   const id = ++_plannerWorkerSeq;

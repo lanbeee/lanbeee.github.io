@@ -97,6 +97,22 @@ function clampTimes(value){
 function clampMinChunk(value){
   return Math.max(MIN_BREAKABLE_CHUNK_MINUTES,Math.min(720,parseInt(value,10) || DEFAULT_MIN_CHUNK_MINUTES));
 }
+function clampMinGapMinutes(value){
+  if(value === null || value === undefined || value === '')return 0;
+  const n = parseInt(value,10);
+  if(!Number.isFinite(n) || n <= 0)return 0;
+  const cap = typeof MAX_MIN_GAP_MINUTES === 'number' ? MAX_MIN_GAP_MINUTES : 720;
+  return Math.min(cap,n);
+}
+function habitMinGapMinutes(h){
+  return clampMinGapMinutes(h && h.minGapMinutes);
+}
+function orderMinGapMinutes(edge){
+  return clampMinGapMinutes(edge && edge.minGapMinutes);
+}
+function orderMinGapMs(edge){
+  return orderMinGapMinutes(edge) * 60000;
+}
 function normalizeTimerAutoStop(value){
   if(value === null || value === undefined || value === '')return null;
   const n = parseInt(value,10);
@@ -454,6 +470,7 @@ function normalizeBlockedTimes(value){
     const dayOff = typeof normalizeAnchorDayOffset === 'function' ? normalizeAnchorDayOffset : (v => 0);
     return {
       label,days,start,end,locationId,
+      ...(typeof raw?.reminderId === 'string' && raw.reminderId ? {reminderId:raw.reminderId.slice(0,100)} : {}),
       startAnchor:safeStartAnchor,
       startOffsetMin:normalizePrayerOffset(raw?.startOffsetMin),
       startCombine:startCombine && startAnchor2 ? startCombine : null,

@@ -28,6 +28,35 @@ body{
 .app-bar{background:var(--bg2);}
 .app-bar-title{font-size:23px;letter-spacing:-.045em;font-weight:650;}
 .pane-overview,.pane-detail{border-inline-start:1px solid var(--border);}
+/* Permanent panes use the Home surface hierarchy: page, card, controls.
+   Modal sheets retain their mobile treatment. Scope the overrides to mounted
+   content so moving a sheet between phone and tablet restores its styling. */
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-overview,.pane-detail){
+  min-height:0;padding:20px 20px 16px;
+  scrollbar-width:thin;scrollbar-color:var(--bg3) transparent;
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-overview,.pane-detail) > .sheet{
+  padding:0;min-height:0;background:transparent;
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail > .detail-sheet{
+  height:100%;max-height:100%;
+}
+:is(.pane-overview,.pane-detail) .overview-page-head .sheet-title{
+  font-size:23px;font-weight:600;
+}
+:is(.pane-overview,.pane-detail) .overview-eyebrow{display:none;}
+:is(.pane-overview,.pane-detail) :is(.overview-card,.overview-insight,.detail-head,.detail-page.tune-section,.detail-card,.month-card,.pace-card,.settings-block,.settings-group,.settings-card,.about-block){
+  background:var(--bg);
+}
+:is(.pane-overview,.pane-detail) .score-card:not(.hit,.warn,.miss){background:var(--bg);}
+:is(.pane-overview,.pane-detail) .overview-card :is(.cal-day,.mini-nav){background:var(--bg2);}
+:is(.pane-overview,.pane-detail) .overview-card .cal-day.today{background:var(--purple-bg);}
+:is(.pane-overview,.pane-detail) .overview-card .cal-day.selected{background:var(--text);}
+.pane-detail .detail-head{padding-top:8px;padding-bottom:8px;border-radius:22px;margin-bottom:10px;}
+.pane-detail .detail-bottom-bar{box-shadow:none;margin-top:10px;border-radius:18px;}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom-bar :is(.detail-actions,.tune-actions){
+  margin:0;align-self:stretch;
+}
 #list{gap:10px;padding-top:12px;}
 .swipe-row{--card-radius:26px;--card-inset:12px;}
 .ting-name{font-weight:600;letter-spacing:-.02em;line-height:1.3;}
@@ -110,11 +139,66 @@ body.compact-mode .swipe-row{--card-radius:20px;}
     transition-duration:.01ms !important;scroll-behavior:auto !important;
   }
 }
-/* The full agenda's adaptive weather row uses compact, measured typography. */
+/* Every day uses the same heading face, including weather/context days. */
 .section-header.has-context{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  font-size:13px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  font-family:inherit;font-size:calc(18px * var(--font-scale));
+  font-weight:600;letter-spacing:-.025em;text-transform:none;
 }
 .section-header.has-context :is(.dropped-pill,.free-pill){
-  font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  font-family:inherit;font-weight:600;letter-spacing:0;text-transform:none;
+}
+/* Capacitor supplies these variables; Safari/PWA uses the environment inset.
+   Inset the content, not the collapsible topbar, so its hide/show stays stable. */
+
+body[data-pane-count="1"] .app{
+  padding-top:var(--content-safe-top);
+  padding-left:max(0px,var(--content-safe-left));
+  padding-right:max(0px,var(--content-safe-right));
+}
+body[data-pane-count="2"] .app,body[data-pane-count="3"] .app{
+  padding-top:var(--content-safe-top);
+}
+.detail-disclosure{border-top:1px solid var(--border);margin-top:18px;padding-top:4px;}
+.detail-disclosure > summary{
+  cursor:pointer;padding:14px 0;color:var(--text2);font-size:13px;
+  font-weight:600;list-style:none;display:flex;align-items:center;justify-content:space-between;
+}
+.detail-disclosure > summary::-webkit-details-marker{display:none;}
+.detail-disclosure > summary::after{content:'+';font-size:18px;font-weight:400;}
+.detail-disclosure[open] > summary::after{content:'−';}
+.detail-sheet .detail-disclosure{margin-top:10px;padding-top:0;}
+.detail-sheet .detail-disclosure[data-detail-essential]{margin-top:0;border-top:0;}
+.detail-sheet .detail-disclosure > summary{
+  min-height:44px;padding:10px 0;color:var(--text);
+  font-size:var(--detail-copy-size);line-height:1.4;gap:12px;
+}
+.detail-sheet .detail-disclosure > summary::after{flex-shrink:0;}
+.detail-sheet .detail-disclosure .habit-options-block,
+.detail-sheet .detail-disclosure .schedule-order-block{margin-top:0;padding-top:0;border-top:0;}
+.detail-disclosure .habit-options-block{border:0;margin-top:0;padding-top:0;}
+.detail-sheet .detail-page{box-shadow:none;}
+.detail-sheet .detail-page-tab.on{background:var(--teal-bg);color:var(--teal-text);box-shadow:none;}
+.detail-sheet :is(.detail-schedule-flexibility,.schedule-order-block){margin-top:20px;}
+/* Flat controls: the switch track is the control, without a browser button frame. */
+.detail-sheet button.setting-switch{
+  appearance:none;border:0;background:transparent;padding:0;box-shadow:none;
+}
+.detail-sheet .schedule-time-block{
+  background:transparent;box-shadow:none;border:0;border-top:1px solid var(--border);
+  border-radius:0;padding:16px 0 0;
+}
+
+/* Document scrolling needs an inset sticky edge. Inner desktop panes already
+   begin below the app bar and retain their own zero-based sticky edge. */
+body[data-pane-count="1"] .section-header{top:var(--content-safe-top);}
+.app-bar{top:var(--content-safe-top);}
+/* Keep scrolling cards out of the transparent system-status area. Sheets
+   paint above this layer and apply their own safe padding. */
+body::before{
+  content:'';position:fixed;inset:0 0 auto;height:var(--content-safe-top);
+  background:var(--bg2);z-index:40;pointer-events:none;
+}
+body[data-pane-count="2"] .app,body[data-pane-count="3"] .app{
+  padding-left:var(--content-safe-left);padding-right:var(--content-safe-right);
+  padding-bottom:var(--content-safe-bottom);
 }

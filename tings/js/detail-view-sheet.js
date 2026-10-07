@@ -26,6 +26,7 @@ function openDetail(i){
   const c = colors(days,h.target,h.type);
   const cardScoreTone = cardTone(h);
   const accent = visualClassColor(cardScoreTone);
+  if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
   $('detail-name').textContent = h.name;
   $('detail-sub').textContent = detailHeaderLine(h);
   $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
@@ -46,6 +47,7 @@ function openDetail(i){
   $('detail-delay-allowance').value = habitDelayAllowanceDays(h);
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',h.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-min-gap'))$('detail-min-gap').value = String(clampMinGapMinutes(h.minGapMinutes));
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',h.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = h.timerAutoStopMinutes != null ? h.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = h.autoMarkMinutes != null ? h.autoMarkMinutes : '';
@@ -61,6 +63,9 @@ function openDetail(i){
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
   renderHabitScheduleOptions(h);
+  // Expand configured options, but keep unused advanced fields quiet.
+  $('detail-options-disclosure').open = Boolean(h.scheduleOptions?.length);
+  $('detail-weather-disclosure').open = Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId);
   renderTimeWindowInputs(h);
   $('detail-due-date').value = dateInputValue(h.dueDate);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
@@ -120,6 +125,7 @@ function openDetail(i){
     durationMinutes:h.durationMinutes || DEFAULT_DURATION_MINUTES,
     breakable:Boolean(h.breakable),
     minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
+    minGapMinutes:clampMinGapMinutes(h.minGapMinutes),
     timerAutoStopMinutes:h.timerAutoStopMinutes ?? null,
     autoMarkMinutes:h.autoMarkMinutes ?? null,
     trackValue:Boolean(h.trackValue),
@@ -148,6 +154,13 @@ function openDetail(i){
   syncDetailVizMode();
   renderDetailOrderPage(h);
   setDetailDirty(false);
+  if(changedHabit){
+    resetDetailDisclosures(h);
+    $('detail-search-input').value = '';
+    setDetailSearchOpen(false,false);
+  }else if(!$('detail-search-panel').hidden){
+    renderDetailSearch();
+  }
   applyDetailMinimalMode();
   openSheet('detail-sheet');
   if(changedHabit){

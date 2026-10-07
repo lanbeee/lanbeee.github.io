@@ -133,6 +133,12 @@ Everything below is covered in this skeleton:
 - Alternative to: Calendars, to-do lists, traditional habit trackers
 - Platform: Works on desktop, mobile, installable as PWA
 
+### 1.1.1 App identity 👤👨‍💻
+
+The logo is a circular return arrow around a centered eight-point star formed by two overlapping squares. Its warm amber-gold center also represents the sun; its outline is unchanged and its size is 18% larger. The arrowhead is 20% larger while retaining both arms. About/onboarding, favicon and splash artwork use the simple charcoal, warm-white and amber-gold mark (`icons/tings-logo.svg`). PWA and Android install icons use `icons/tings-app-icon.svg`: the same arrow and star paths over a soft blue sky and low green ground, with a dark arrow and brighter golden sun. The landscape variant helps the center read as the sun while preserving contrast and the original open arrowhead. Android adaptive icons separate the full-bleed landscape background from the inset arrow/sun foreground; notification and themed monochrome artwork retain their single-color form. Android Settings → Appearance → App icon offers day (default), dawn/dusk, night, or opt-in follow daylight. Follow daylight uses saved home-area sunrise/sunset with a 45-minute dawn/dusk window on either side, or 6 AM/6 PM without solar times; it requires no GPS or new permission. Android may delay background icon updates, and themed icons retain a single silhouette. PWA and store icons remain day-colored. Canonical authoring files and regeneration notes live in `branding/`; the original Affinity export and bitmap masters remain preserved there.
+
+Header wordmarks in both the PWA and Android use the day artwork in light mode and night artwork in dark mode, respecting system theme when selected. Within 45 minutes before or after sunrise/sunset, dawn/dusk artwork takes priority over either theme. Solar times use the saved home area or first valid saved place through the existing calculator; missing/invalid times fall back to local 6 AM/6 PM. Theme changes, resume and the existing minute tick refresh the header without requesting GPS or fetching forecasts. About/onboarding and other simple-mark surfaces retain their existing artwork.
+
 ### 1.2 Philosophy & Core Concepts 👤
 - **Rhythm-based planning:** Target + separate early and delay windows instead of one ambiguous flexibility value
 - **Adjustable rigidness:** From completely rigid (calendar-like events) to completely flexible — and everything in between.  
@@ -347,7 +353,7 @@ else:
   
   // ─── TYPE & SCHEDULE ─────────────────────────────────────
   type: 'keepup'|'reduce'|'zero'|'task',  // 👤 habit type
-  target: number|null,       // 👤 Rhythm: times in N days (0.5-183), null for zero/task
+  target: number|null,       // 👤 Rhythm: times in N days (0.2-183), null for zero/task
   createdAt: number|null,    // 👨‍💻 Creation timestamp (ms), for ordering
   
   // ─── LOGS & HISTORY ─────────────────────────────────────
@@ -401,6 +407,7 @@ else:
   durationMinutes: number,   // 👤 Planned session length (1-720)
   breakable: boolean,        // 👤 Can split across sessions
   minChunkMinutes: number,   // 👤 Minimum split size (15-720)
+  minGapMinutes: number,     // 👤 Minimum minutes between this item's own sessions (0-720), including across busy-time splits
   
   // ─── TIMERS & AUTO-MARK ──────────────────────────────────
   timerAutoStopMinutes: number|null,  // Legacy field
@@ -583,7 +590,7 @@ homeCityLng: number|null,       // 👤 Longitude
 prayerMethod: string,           // Calculation method
 prayerMadhab: 'shafi'|'hanafi', // Asr calculation
 prayerIslamicNames: boolean,    // 👤 Use Islamic names for prayer times
-weatherProfiles: WeatherProfile[], // 👤 Up to four named AND-rule profiles shared by items, options, and places
+weatherProfiles: WeatherProfile[], // 👤 Up to eight named weighted-rule profiles shared by items, options, and places
 showWeatherTemperatureRanges: boolean, // Add feels-like low–high beside full-mode day forecast icons (default off)
 showWeatherOnBusyTimes: boolean,  // Interval forecast pill on busy blocks (default false)
 showWeatherOnTravel: boolean,     // Interval forecast pill on travel (default true)
@@ -680,9 +687,14 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   text. It only shows caution/override icons that come from weather-guided items
   scheduled on that day. Past, stale, unavailable, and beyond-horizon forecasts
   are never shown as day weather.
-- Rules in one profile are AND-combined. `prefer lower`/`prefer higher` steers
-  placement; min/max set absolute bounds; `hard` rejects flexible times outside
-  const bounds, while active, planned, critical, and direct-linked commitments
+- Rules in one profile combine into one normalized 0–100 score. Each rule has
+  low, medium, or high relative priority. `prefer lower`/`prefer higher` is
+  ranked from the actual available seven-day forecast for that place (with
+  interval and whole-day context), so its baseline follows the week and season
+  rather than fixed climatic normals. Each rule's min/max limits can use either
+  literal values in the selected display unit or 0–100 percentiles of that
+  place's available forecast. Preferences steer placement; `hard` rejects flexible times outside
+  those bounds, while active, planned, critical, and direct-linked commitments
   remain and show an override. Selecting "no preference" never deletes a rule —
   a rule with no bounds and no preference is kept but inactive (the editor
   labels it). The rule editor shows each metric's scale and typical bands
@@ -704,7 +716,7 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
   profiles cannot be deleted until those uses are changed. A forecast panel
   below the status line shows the exact rows the planner scores — the next 24
   hours of the stored home
-  forecast, one row per step (hourly, or 15-minute inside the near-term
+forecast, one row per step (hourly, or 15-minute inside the near-term
   horizon, shaded, where the detail supersedes the hourly value), with fetch
   ages and the detail horizon in the header line. It reads the stored cache
   even when no profile is attached yet, and says so when nothing is stored or
@@ -873,6 +885,15 @@ When `showPlansOnCards: true`:
 - Calendar date chip
 - Shows planned future log date
 
+### 5.15 Reminder mark 🔔 👤
+When `showRemindersOnCards` is on (default) and the installed Android app has a phone notification or ringing alarm for that item:
+- Bell (`ti-bell`) for notifications, ringing bell (`ti-bell-ringing`) for alarms
+- Tap or swipe **quiet** to turn that item’s phone reminders off
+- Hidden on the PWA, where OS reminders are not delivered
+
+### 5.16 About-to-drop clock ⏰ 👤
+The agenda clock pill next to the name (`agenda-lead`) already changes by window: anytime, later, good time, almost out of time, or a fixed appointment. When the same 15-minute drop-warning window that sends the “about to drop” alarm is active, the clock switches to `ti-clock-exclamation` and the `agenda-dropping` tone.
+
 ### 5.12 Sample Marker 🧪 👤
 When `showSampleOnCards: true`:
 - "sample" chip
@@ -976,6 +997,22 @@ second row.
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
+
+### Before-missed phone reminders (installed app only)
+
+**Drop warning (15 min)** chooses Off or Ringing alarm per habit/task. Existing enabled drop notifications migrate to ringing; Off and start/end/travel choices remain unchanged. New items default Off. Busy times have no drop warning.
+
+As soon as today's agenda exists, every enabled unfinished displayed occurrence gets an estimated alarm, including evening work scheduled in the morning. The constraint-aware `dropAt` estimate accounts for the current pack, priority commitments, links, blocked time, location hours and travel. The trigger is fifteen minutes before that estimate, not fifteen minutes before the allowed-window end. If no future estimate is available, the latest displayed viable start is the provisional opportunity deadline. Inside the lead, a newly created alarm fires promptly. Estimated alarms say **May drop around [clock]**. Estimates can be wrong and may ring without verification; this intentionally prioritizes early coverage over the former precision-only policy.
+
+One shared off-main normal-week build at the next fifteen-minute boundary refines imminent losses. It includes ordinary task/sparse-rhythm reassignment and cached far days, so there is no today-only build followed by a correction solve. Confirmed upcoming losses say **Drops within 15 min**; the actual advance notice varies within the sampled interval. A future sample which restores an item does not postpone its earlier current-agenda estimate. The normal future result prepares start/end/travel edges after its target and is cached for adoption at that clock with no additional solve. A usable exact incumbent may still support an estimated alarm; near-term confirmation requires confirmed selection. No full-day future sweep or tomorrow drop forecast is added. The already-built week pre-arms every enabled displayed occurrence across its available seven-day horizon, including future afternoons and evenings. Future rows without a constraint-aware cutoff use their latest saved start as a provisional estimate; refresh refines that estimate when the day becomes current. Completing today’s recurring occurrence does not cancel future occurrences, while completing that occurrence, deleting the item or disabling its drop choice does. The shared cutoff annotation still probes only today and tomorrow’s rows starting before noon, with no additional planner solve or placement work in reminder projection.
+
+Each fifteen-minute cycle updates estimates. Saved additions/edits, windows, priorities, schedule links, busy times, active work, weather/location and planner-mode changes invalidate forecasts and request normal reconciliation immediately. Completion/deletion/disabling cancel natively before a replacement solve. Partial progress updates remaining opportunity; Stop today and explicit Snooze keep their authority. Obsolete confirmed evidence is downgraded to an estimate while a replacement computes. Cosmetic changes do not require planning. Stable occurrence identities and durable ringing receipts prevent movement or disappearance/reintroduction from ringing twice. Ordinary-notification receipts do not suppress drop ringing; old schedules incorrectly marked notified are repaired on publication. A due trigger cannot be postponed by a changed cutoff while it remains useful, and publishing re-arms future schedules to recover interrupted Android registration. Separate schedule options remain independent; split work has one remaining-opportunity alarm and cannot log an arbitrary chunk.
+
+The one-hour-before-allowed-start guard applies at delivery scheduling time, not when an evening alarm is created in the morning. Automatic drop alarms expire at their estimated/predicted opportunity; explicit Snooze has its separate useful expiry, and an alarm already ringing continues until acted on. Input changes, a different day, or a result more than one minute overdue reject cached adoption.
+
+The same worker/WASM and performance limits remain: four-second GLPK native cap, five-second forecast parent deadline, one future build, fifteen-minute timeout backoff. Failed forecasting keeps early estimates. Reminder projection performs no placement work on the UI thread.
+
+With **refresh agenda while closed** enabled, the existing unique WorkManager job requests fifteen-minute recovery when drop choices are enabled (thirty minutes otherwise). Android can defer that job; previously armed alarm-clock reminders do not depend on it running. Drop recovery is eligible during low battery. Low-power/coverage-only work uses saved location and cached weather; ordinary refresh retains existing location/network limits. Reboot/package update/exact-access regrant restore future schedules; elapsed reminders are not replayed. Exact-alarm access, notifications and alarm volume are required for useful ringing. Missing exact access leaves drop schedules saved but unarmed and visible in status. Force-stop, power-off and denied permissions prevent an absolute guarantee. Estimation/confirmation counts are shown in reminder status.
 
 ### 6.3 Open Time Pills (🕒 "N open")
 - Appears on day headers when there are free time stretches ≥ 10 minutes
@@ -1088,8 +1125,8 @@ Visible when type = habit (keepup):
 [1] × in [7] d
 ```
 - Left input: Times per cycle (1-183)
-- Right input: Days per cycle (0.5-183)
-- Hint: "How often — times in N days (e.g. 2× in 7d)."
+- Right input: Days per cycle (0.2-183)
+- Hint: "How often — times in N days (e.g. 2× in 7d, or 15× in 7d)."
 - Help text changes by type:
   - keepup: "How often — times in N days."
   - reduce: "Times in N days — e.g. 1× in 3d."
@@ -1139,10 +1176,10 @@ Visible when type = task:
 | Tab | Icon | Key | Description |
 |-----|------|-----|-------------|
 | `identity` | 🎫 (id) | Identity info | Name, emoji, type, priority, topics |
-| `schedule` | 📅 | Rhythm or task deadline, early/delay windows, allowed/preferred days, times and places, item order |
-| `effort` | 📊 | Duration, breakable, min chunk, logging and session controls |
+| `schedule` | 📅 | Rhythm or task deadline, allowed/preferred days, times and places; expandable weather and specific time/place options |
+| `planning` (`effort` key) | 📊 | Duration, chunks, logging, sessions, early/delay windows and item order |
 | `history` (`calendar` key) | 🗓️ | 14-day strip (activity/plan/agenda dots) + compact stats + gap graph |
-| `actions` | ⋮ | Links/calls, pin, export, share, snooze and remove |
+| `actions` | ⋮ | Phone reminders (Android), links/calls, pin, export, share, snooze and remove |
 
 **Minimal Mode Hidden Tabs:** `history` (internal key: `calendar`; the merged
 calendar+stats pane), `effort` (folded into `schedule`)
@@ -1162,6 +1199,12 @@ Fields shown (always visible, even in minimal mode):
 - **Topics** (topic chips)
 
 ### 9.4 Schedule Tab Details 👤
+
+Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps its simple scrolling fields and omits search.
+
+The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
+
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field, and the bar stays above the keyboard and safe areas. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Narrow or zoomed panes stack fields and wrap labels. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide and the item header compacts; Close or Cancel/Save stays available. The controls return after leaving the field. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -1220,7 +1263,9 @@ time: | 9am | — | 9am | — | 9am | — |
 - `requireSameDay` option
 - Visual timeline showing order
 
-### 9.5 Effort Tab 👤
+### 9.5 Planning Tab 👤
+
+Formerly Effort. Also contains early window, delay allowance and item-order links. Internal navigation key remains `effort`.
 
 #### Duration Section
 - **Duration (minutes):** Planned session length
@@ -1614,7 +1659,11 @@ Tracks the currently active habit session:
 │ use your location?                  │
 │ Tings uses your location to mark    │
 │   where you are and shape today's   │
-│   plan. Coordinates stay on device. │
+│   plan. Driving routes send GPS    │
+│   coordinates to OSRM, an open     │
+│   routing service. City uses a     │
+│   coarse location to Photon or      │
+│   Nominatim.                        │
 ├─────────────────────────────────────┤
 │ [allow location] [not now]         │
 └─────────────────────────────────────┘
@@ -1622,7 +1671,8 @@ Tracks the currently active habit session:
 
 - **Access:** When geolocation needed but not yet granted
 - iOS/PWA: must come from a user gesture to trigger `getCurrentPosition`
-- Coordinates never leave the device
+- Presence is calculated on this device; driving route estimates send live origin and destination coordinates to OSRM, an open routing service
+- The first empty-city fill sends a coarsened coordinate (~1 km) to Photon, with Nominatim as fallback — not the precise pin, and not an ongoing GPS stream
 
 ### 10.9 Location Picker Sheet (Map) 👤
 
@@ -1774,7 +1824,7 @@ Same as Home Filter Sheet but for the calendar view:
 
 ### Toast System
 - Transient messages at the bottom of the screen (`aria-live="polite"`)
-- Regular toasts (`#toast`): informational feedback only
+- Regular toasts (`#toast`): informational feedback only. Default duration is `DEFAULT_TOAST_MS` (2800 ms) so short confirmations stay readable; permission and save-file notices can request up to 5 seconds.
 - Action toasts (`#action-toast`): offer immediate next steps with buttons
 
 ### Action Toast Buttons
@@ -1914,11 +1964,20 @@ Toasts appear after:
   in this browser’s `localStorage`; the site owner cannot see them. It lists
   third-party services (Photon, Nominatim, OSRM, OpenStreetMap Street tiles,
   Esri World Imagery Satellite tiles, jsDelivr /
-  unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (home-city coordinates only),
+  unpkg CDNs), Open-Meteo weather/CAMS ENSEMBLE air quality (saved home-city
+  coordinates plus far saved-place pins; not live GPS),
+  a one-time coarsened GPS city lookup to Photon/Nominatim when city is empty,
   the encrypted Cloudflare relay used by shared display and
   share item, and optional send feedback via Google Forms. Map lookups are
   described as a narrower request than embedding Google Maps or Apple Maps.
   Send feedback does not attach the habit list; answers go to Google.
+  Presence matching stays on this phone. Driving estimates send coordinates
+  to OSRM, an open routing service, including the live GPS origin when estimating a drive from here.
+  The Android app may save the latest closed-app location fix on the phone
+  (unused after ten minutes) so reminders can follow a saved place while Tings
+  is closed; a driving estimate during that refresh can send that origin to
+  OSRM. The sheet also links the public privacy policy at
+  `https://aretefoundry.github.io/tings/privacy`.
 - Settings → backup also links to Privacy.
 
 ---
@@ -1939,7 +1998,7 @@ Settings sections (actual order):
 ├── display
 │   └── minimal mode toggle
 ├── weather guidance
-│   ├── up to four named rule profiles
+│   ├── up to eight named weighted-rule profiles
 │   ├── six-hour weekly / conditional 15-minute near-term status
 │   └── manual refresh and Open-Meteo/CAMS attribution
 ├── home page
@@ -2118,11 +2177,50 @@ baseScore =
 
 ### 14.3 Fast planner: bounded day and week graph search 👨‍💻
 
+Both engines retain cached prayer and sunrise/sunset dates across the temporary
+future clock used by drop forecasts. Forecast agendas keep the same resolved
+prayer windows as ordinary agendas; cache reuse does not remove those bounds.
+The v4 home agenda cache discards older saved agendas and their forecasts on
+startup, so a pre-fix schedule cannot survive the update.
+
 Fast is not the production default. It is the preview, optimizer-off, and
 fallback path, and the quality-parity track toward replacing GLPK once it
 matches constraint and preference results. Fast mode (`?planner=fast`, or
-optimizer off) uses two graph searches in `js/agenda-fast-graph.js`. Neither
-requires GLPK.
+optimizer off) uses bounded graph searches in `js/agenda-fast-graph.js` without
+loading GLPK. Insertion, coupled-link recovery and daily-selection repair share
+one 768-probe budget. When same-day links exist, at most 96 of those probes are
+reserved for atomic recovery: up to four connected linked occurrences, with at
+most two flexible unlinked neighbors reopened only if the chain cannot fit.
+The beam retains two alternatives. An overdue sparse occurrence can move to its
+first feasible on-time day with its required partner, instead of skipping
+recovery solely because it is linked. Existing later obligations, subsequent
+cadence, active/planned/weather-locked rows and separate/split occurrences are
+protected. Failed attempts roll back; completed groups pass the shared window,
+weather, travel, capacity and persistent-link checks before publication.
+When several optional daily occurrences compete, up to 384 probes are reserved
+for keep-all insertion and the remaining budget can change the selected subset.
+Selection repair reopens at most eight optional daily items plus four missing
+ones, with an eight-state beam and at most 384 probes per day. It preserves
+placed critical/planned/active occurrences, fixed clocks, linked groups and
+split sessions; a replacement must increase work without reducing any cumulative
+priority tier or worsening travel/weather. Sparse/fractional cadence and task day
+choices remain with the existing week orchestrator.
+
+Resolved windows, blocked intervals, venue hours, valid place IDs, schedule
+options and weather guidance are memoized only for one solve snapshot. Interval
+weather assessments have a 1,024-entry solve-wide cap and distinguish commitment
+overrides. Both engines use those caches; edits and future-clock solves start
+fresh, and speculative callers receive independent records. Route search reuses
+transition costs and precomputed tie-break keys. A mandatory-venue spanning-tree
+lower bound skips route replay when the current route is already as cheap as any
+feasible alternative could be. Co-location replay is also skipped when hints
+cannot attract an item to a new day. Exact minute-level boundaries, durations,
+weather checks and travel validation remain; no blanket 15/30-minute rounding
+has been introduced. Existing clock replay remains the first reuse path.
+
+Split tasks have a lifetime minute pool, never a daily reservation. Day replay
+retains that day's allocated task minutes instead of replenishing the full task
+on each date; hypothetical day rebuilds do not modify the incumbent's item list.
 
 `tryPlaceOnDay` enumerates every unforced allowed venue (and the anywhere
 option, when the habit allows it) and keeps the shared score pick. That is the
@@ -2167,6 +2265,32 @@ through the shared hours, location, travel and ordering checks. A blocked
 insertion reopens up to seven placements and retains six alternative schedules
 per depth. Search has a 192-probe insertion limit and a 768-probe seed-week
 budget shared across the initial placement and location-clustering passes.
+Within those limits, unplanned neighborhoods first try three chronological
+insertion positions, then their short-higher-priority-anchor variants within
+the same probe limit. Narrow critical anchors are kept fixed before flexible
+late rows when selecting the seven-row neighborhood. The beam keeps paths that already contain the missing
+item alongside paths still making room for it, so independent later calls
+cannot crowd out every useful insertion path. Planned neighborhoods retain
+the full scored search. A location-clustering replay must retain all previously
+placed work, pinned dates, daily obligations and the first claimed date of a
+strict due occurrence; otherwise the first pass is kept. Clustering does not
+receive a fresh search budget.
+After daily selection repair, at most 96 unused probes from the same 768-probe
+budget may recover a first ordinary task/sparse occurrence from a later date
+onto today. This makes room in a packed current day even when that occurrence
+already has a place in the week. Recovery may refit up to four connected direct
+or required-link endpoints, including a flexible successor already placed today.
+It follows present partners in either direction and does not add absent optional
+partners. Sparse occurrences move rather than duplicate; a missing linked daily
+occurrence fills today while retaining its later obligations. It preserves later
+cadence, all placed work, explicit plans/active/weather locks, other linked groups
+and the source day's other clocks. Existing required build repetitions beside
+placed partners remain valid even when their gap is shorter than the ordinary
+rhythm. A move cannot worsen whole-week travel
+or weather. Hard eligibility, weather deferral and daily-work reservations still
+apply; soft weekday/time preferences may yield to an earlier usable day. No
+whole-week rebuild or new periodic work is added. `fastTodayChoiceDiagnostics`
+records its probes and accepted transfers.
 Planned items also outrank at-location sequencing, so a Home lunch cannot claim
 the only contiguous 4h slot a Zoo plan needs.
 
@@ -2399,7 +2523,7 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 | `AGENDA_TRAVEL_COST_SCALE` | 1.2 | Modest global multiplier on the agenda's soft travel cost |
 | `GEOCODE_FETCH_TIMEOUT_MS` | 8000 | Geocoding timeout |
 | `MAX_RHYTHM_DAYS` | 183 | Max cycle length |
-| `MIN_RHYTHM_DAYS` | 0.5 | Min cycle length |
+| `MIN_RHYTHM_DAYS` | 0.2 | Min cycle length (so 15×/7d stores as 7/15, not 2×/1d) |
 | `DEFAULT_DURATION_MINUTES` | 30 | Default session length |
 | `DEFAULT_MIN_CHUNK_MINUTES` | 30 | Default min chunk when breakable |
 | `DEFAULT_EARLY_WINDOW_DAYS` | 1 | Default number of days an item may be brought forward |
@@ -2792,16 +2916,16 @@ While the app stays open, home refreshes every 60 seconds. Most ticks only slide
 | `defaultTravelMode` | string | 'driving' | Default routing mode |
 | `mapBaseLayer` | string | 'street' | Last successfully loaded location-picker base layer |
 | `lastKnownLocationId` | string\|null | null | Auto-detected location ID |
-| `locationOptIn` | boolean | false | Geolocation permission granted |
+| `locationOptIn` | boolean | false | Geolocation permission granted. Native first-enable shows the in-app rationale sheet; Allow on that sheet opens the OS precise-location prompt |
 | `pinnedLocationId` | string\|null | null | Manually pinned location |
 
 #### Prayer Times 👤
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `homeCityName` | string | '' | City name for prayer times |
+| `homeCityName` | string | '' | City name for prayer times. Filled once when still empty (first GPS grant, or first saved place). GPS fill reverse-geocodes a coarsened pin, not the live fix. Later travel does not rewrite it |
 | `homeCityLat` | number\|null | null | Latitude |
 | `homeCityLng` | number\|null | null | Longitude |
-| `weatherProfiles` | WeatherProfile[] | [] | Up to four named weather profiles shared by items, options, and places |
+| `weatherProfiles` | WeatherProfile[] | [] | Up to eight named weighted weather profiles shared by items, options, and places |
 | `showWeatherTemperatureRanges` | boolean | false | Add daily feels-like low–high beside full-mode Home and Overview week-strip weather icons |
 | `showWeatherOnBusyTimes` | boolean | false | Add exact-interval forecast pills to busy-time cards in regular mode |
 | `showWeatherOnTravel` | boolean | true | Add exact-interval destination forecast pills to travel cards in regular mode |
@@ -3076,6 +3200,8 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 | Nominatim (geocoding) | `https://nominatim.openstreetmap.org` | No |
 | Photon (geocoding fallback) | `https://photon.komoot.io` | No |
 
+Driving estimates send origin and destination coordinates to OSRM, an open routing service, for that route: saved-place pins, or live GPS plus a saved place when estimating a drive from here. Walking, bike, and transit stay on-device (haversine). City reverse-geocode sends a coarsened coordinate, not the live pin.
+
 ### 27.2 Push Notifications 👨‍💻
 | Service | URL | Description |
 |---------|-----|-------------|
@@ -3130,3 +3256,39 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 ---
 **End of Skeleton Document**
+
+
+## Android phone notifications
+
+The Capacitor wrapper at `../../Tings` builds from this directory. Its runtime source paths link here, so shared planner/UI edits have one source of truth. Run `npm run sync:android` from the wrapper after editing shared code.
+
+Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Turning on phone reminders asks for Android’s notification permission immediately — it does not toast and bounce into Settings first. If the prompt is denied, a longer toast explains that you can still open Android notification settings later. Then choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** stops those alarms and opens Tings to save a normal completion with its undo action. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
+
+Alerts follow the agenda and use shared completion and busy-time resolution helpers. They are replaced when the open app replans or reconciles data. Preferences stay on this device. **Refresh agenda while closed** optionally requests an Android background rebuild about every 30 minutes using time, the phone's saved items/settings, and weather. Android may delay a run; a failed run keeps the last saved seven-day reminder schedule. **Allow background location** first shows the Play prominent disclosure (`#background-location-disclosure-sheet`), then asks for precise location, then opens Android app settings so the user can choose **Allow all the time**. That enables a brief balanced-power location check per closed-app run and saved-place arrival/departure events. Periodic refresh also works without location access, using the saved place. Live GPS first-enable on Android shows `#location-permission-sheet` before the OS prompt.
+
+Store listing (paste into Play’s full description; the same sentence is in the in-app disclosure and should appear on the public privacy policy page):
+
+> Tings uses location data to enable place-aware agenda and reminder updates even when the app is closed or not in use. This includes a brief location check during closed-app refresh, and saved-place arrival or departure that can trigger an earlier refresh. There is no continuous GPS tracking. Tings does not sell location or keep a location history off this phone. Driving estimates send coordinates to OSRM, an open routing service, for that route. The latest fix is kept on this phone for up to ten minutes for those checks.
+
+Short description idea (≤80 characters): `A local day planner. Place-aware reminders even when Tings is closed.`
+
+When you record the Play declaration video, show: Home → Settings → reminders → **Allow background location** → the disclosure sheet → **continue** → the Android location prompt → Permissions → Location → **Allow all the time**. Keep it around 30 seconds. Declare one feature in Play Console: place-aware agenda and reminder updates while the app is closed.
+
+Manual presence pins keep priority. No continuous GPS tracking runs. Location events coalesce; a background calculation stops when the app opens, and older calculations cannot overwrite newer edits or location fixes. The existing shared JS/GLPK planner runs with its ordinary four-second solve limit and no refinement loop. The PWA has no background-refresh controls or native jobs.
+
+
+Ordinary notifications handle a moving near-term agenda without changing the planner or ringing alarms. For a flexible start or its departure warning, if both the previously scheduled reminder and the updated reminder are within five minutes, the native trigger keeps the earlier time. The alert says **Up next** and shows the latest agenda clock when the item has moved ahead. Moving it outside that window reschedules normally; fixed events, busy times and end edges follow their updated clocks. Split chunks can carry an imminent trigger to their new identity, with completion actions bound to the current chunk. Delivery receipts survive removal/reintroduction and process restart for eight days. The same item/day/reminder type has a 30-minute cooldown across changed chunk identities, while other items, end edges and travel departures remain independent. **Remind in 5 min** bypasses that cooldown. Delayed OS delivery may still post while useful (start through the item end plus 15 minutes, other edges plus 15 minutes, at most one hour after the native trigger); expired alerts are skipped. The test notification uses the same **Agenda reminders** channel as real agenda alerts. The app reports a blocked channel and links directly to its Android settings. PWA controls and planner scheduling remain unchanged.
+
+Settings reports foreground reminder reconciliation and successful background update times. Stable occurrence identities preserve an alarm's Snooze/Stop when its agenda time changes and prevent a delivered ordinary reminder from repeating merely because it moves. Split sessions retain separate reminders. Disabling phone reminders or an item’s alarm edge stops its agenda alarms, including snoozed occurrences. Timezone/clock changes can request another background rebuild when enabled. Closed-app clone changes are still not received; background work uses the phone's last saved items and settings. See the wrapper's `REMINDERS_PLAN.md` for native delivery details and physical-device checks.
+
+### Safe-area layout (PWA and Android)
+
+The shared CSS resolves `--content-safe-top/right/bottom/left` from native
+inset variables or the browser safe-area environment. Home day headers stick
+below the top safe area when the document scrolls; desktop pane headers stick
+to their pane edge. A page-colored cover keeps scrolling content out of the
+system status area. Sheets and bottom controls use the same inset tokens.
+
+### Tablet and desktop pane surfaces
+
+At 720 px and above, the permanent Home, Calendar and detail panes share the page background (`--bg2`) and lighter card surface (`--bg`). Subtle column dividers, consistent gutters and compact headings keep the panes part of the same app. Detail content scrolls within its pane; its labeled tabs stay below the title and search/Close or Cancel/Save stay in the bottom dock. Phone modal styling is restored when the viewport returns to one pane.

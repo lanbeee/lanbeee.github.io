@@ -123,7 +123,10 @@ function tingsInstallPromptAvailable(){return _tingsDeferredInstall !== null;}
 function syncInstallGuideVisibility(){
   const btn = $('open-install-guide');
   if(!btn)return;
-  const installed = typeof isStandalonePwa === 'function' && isStandalonePwa();
+  // Native (Capacitor) builds ARE the install — hide the PWA install coach
+  // entry point entirely, mirroring the share gate's native check.
+  const installed = (typeof isStandalonePwa === 'function' && isStandalonePwa())
+    || Boolean(window.Capacitor?.isNativePlatform?.());
   btn.hidden = installed;
   btn.setAttribute('aria-hidden', installed ? 'true' : 'false');
 }
@@ -203,7 +206,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=34';
+    script.src = './onboarding/coach.js?v=36';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -233,6 +236,7 @@ $('start-advanced-coach')?.addEventListener('click',()=>{
   void startTingsCoach('advanced',{force:true});
 });
 $('open-install-guide')?.addEventListener('click',()=>{
+  if(window.Capacitor?.isNativePlatform?.())return; // button is hidden on native
   if(typeof isStandalonePwa === 'function' && isStandalonePwa()){
     if(typeof showToast === 'function')showToast('already installed — the guided start button is right below');
     return;
@@ -916,12 +920,10 @@ $('presence-picker-chips')?.addEventListener('click',async e=>{
     const s = sortSettings || loadSortSettings();
     if(s.locationOptIn || currentCoord){
       await requestLocationAccess({quiet:false});
-    }else{
-      locationAllowCallback = ()=>{
-        renderPresencePickerBody();
-        render();
-      };
-      openLocationPermissionSheet();
+    }else if(typeof enableLocationFromUserGesture === 'function'){
+      await enableLocationFromUserGesture();
+    }else if(typeof requestLocationAccess === 'function'){
+      await requestLocationAccess({quiet:false});
     }
     renderPresencePickerBody();
     render();
@@ -942,11 +944,11 @@ $('location-access-enable')?.addEventListener('click',()=>{
     if(typeof disableLocationAccess === 'function')disableLocationAccess();
     return;
   }
-  locationAllowCallback = ()=>{
-    renderLocationAccessControl();
-    render();
-  };
-  openLocationPermissionSheet();
+  if(typeof enableLocationFromUserGesture === 'function'){
+    void enableLocationFromUserGesture();
+  }else if(typeof requestLocationAccess === 'function'){
+    void requestLocationAccess({quiet:false});
+  }
 });
 $('location-permission-allow')?.addEventListener('click',()=>{
   confirmLocationPermissionAllow();
@@ -956,6 +958,15 @@ $('location-permission-cancel')?.addEventListener('click',()=>{
 });
 $('location-permission-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeLocationPermissionSheet();
+});
+$('background-location-disclosure-continue')?.addEventListener('click',()=>{
+  if(typeof confirmBackgroundLocationDisclosure === 'function')void confirmBackgroundLocationDisclosure();
+});
+$('background-location-disclosure-not-now')?.addEventListener('click',()=>{
+  if(typeof closeBackgroundLocationDisclosure === 'function')closeBackgroundLocationDisclosure();
+});
+$('background-location-disclosure-sheet')?.addEventListener('click',e=>{
+  if(e.target === e.currentTarget && typeof closeBackgroundLocationDisclosure === 'function')closeBackgroundLocationDisclosure();
 });
 $('presence-picker-close')?.addEventListener('click',()=>closeSheet('presence-picker-sheet'));
 $('presence-picker-sheet')?.addEventListener('click',e=>{

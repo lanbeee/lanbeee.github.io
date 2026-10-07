@@ -23,6 +23,7 @@ function homeListFingerprint(now = Date.now()){
     h.durationMinutes, h.priority, habitEarlyWindowDays(h), habitDelayAllowanceDays(h),
     h.breakable ? 1 : 0,
     h.minChunkMinutes || '',
+    h.minGapMinutes || '',
     typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0,
     h.allowedTimeStart, h.allowedTimeEnd,
     h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
@@ -177,7 +178,8 @@ function homeAgendaPlanSignature(week,data = (typeof load === 'function' ? load(
 
 // PURE: quality tuple for accepting a background refinement. Hard recurring
 // P0/pinned rows already visible anywhere in the week may never vanish, and
-// total week work may not shrink. An in-progress row may only be extended,
+// total week work may not shrink. Today's displayed work stays today; an
+// in-progress or imminent row may only be extended,
 // never moved, truncated, or dropped. Today's P0 breakable minutes then
 // outrank today's raw minutes; travel is only a final tiebreak.
 function homeAgendaRefinementQuality(week,data,settings){
@@ -189,6 +191,7 @@ function homeAgendaRefinementQuality(week,data,settings){
   let overdueMinutes = 0;
   let travelSeconds = 0;
   const activeRows = [];
+  const todayMinutes = new Map();
   const now = Date.now();
   for(let dayOffset = 0;dayOffset < days.length;dayOffset += 1){
     const rows = Array.isArray(days[dayOffset].timeline) ? days[dayOffset].timeline : [];
@@ -205,13 +208,17 @@ function homeAgendaRefinementQuality(week,data,settings){
       if(!h)continue;
       const minutes = Math.max(0,(Number(row.end) - Number(row.start)) / 60000);
       weekTotalFillMinutes += minutes;
-      if(dayOffset === 0)totalFillMinutes += minutes;
+      if(dayOffset === 0){
+        totalFillMinutes += minutes;
+        const identity=h.hid || row.i;
+        todayMinutes.set(identity,(todayMinutes.get(identity) || 0)+minutes);
+      }
       const priority = typeof effectivePriority === 'function'
         ? effectivePriority(h) : Math.max(0,Math.min(5,Number(h.priority) || 2));
       if(dayOffset === 0 && priority === 0 && h.breakable)p0BreakableMinutes += minutes;
       const pinned = typeof isWeekPinnedToday === 'function'
         ? isWeekPinnedToday(h,settings || {}) : false;
-      if((priority === 0 && !h.breakable) || pinned){
+      if((priority === 0 && !h.breakable) || pinned || (dayOffset === 0 && !h.breakable)){
         const ordinal = (occurrenceOrdinals.get(row.i) || 0) + 1;
         occurrenceOrdinals.set(row.i,ordinal);
         const occurrence = row.occurrenceKey || `${row.i}:occurrence-${ordinal}`;
@@ -220,7 +227,7 @@ function homeAgendaRefinementQuality(week,data,settings){
       }
       const urgency = typeof weekUrgency === 'function' ? weekUrgency(h) : 0;
       if(dayOffset === 0 && urgency >= 100)overdueMinutes += minutes;
-      if(dayOffset === 0 && Number(row.start) <= now + 1000 && Number(row.end) > now){
+      if(dayOffset === 0 && Number(row.start) <= now + 5*60000 && Number(row.end) > now){
         activeRows.push({
           i:row.i,
           start:Math.round(Number(row.start) / 60000),
@@ -232,7 +239,7 @@ function homeAgendaRefinementQuality(week,data,settings){
   }
   return {
     required,p0BreakableMinutes,totalFillMinutes,weekTotalFillMinutes,
-    overdueMinutes,travelSeconds,activeRows
+    overdueMinutes,travelSeconds,activeRows,todayMinutes
   };
 }
 
@@ -256,6 +263,9 @@ function homeAgendaRefinementIsBetter(baseline,candidate,data,settings){
   ))return false;
   for(const [idx,minutes] of before.required){
     if((after.required.get(idx) || 0) + 0.01 < minutes)return false;
+  }
+  for(const [hid,minutes] of before.todayMinutes){
+    if((after.todayMinutes.get(hid) || 0)+0.01<minutes)return false;
   }
   if(after.weekTotalFillMinutes + 0.01 < before.weekTotalFillMinutes)return false;
   if(Math.abs(after.p0BreakableMinutes - before.p0BreakableMinutes) > 0.01){
@@ -676,7 +686,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 20;
+const HOME_PLANNER_ALGORITHM_VERSION = 23;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -754,6 +764,7 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     coordSig,
     currentEdgeSig,
     settingsSig,
+    typeof getDoingNow==='function' ? JSON.stringify(getDoingNow()) : '',
     Array.isArray(data) ? data.length : 0
   ].join('\n');
 }
@@ -776,8 +787,9 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-const HOME_AGENDA_CACHE_VERSION = 3;
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v3';
+// v4 rejects agendas/forecasts built with the old cached prayer-date check.
+const HOME_AGENDA_CACHE_VERSION = 4;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v4';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 // A usable unplanned list is better than making a slow phone look frozen.
 // The worker keeps running and replaces this fallback with the planned week.
@@ -788,6 +800,7 @@ const HOME_COLD_BOOT_SKELETON_MAX_MS = 8 * 1000;
 try{
   localStorage.removeItem('tings_home_agenda_cache_v1');
   localStorage.removeItem('tings_home_agenda_cache_v2');
+  localStorage.removeItem('tings_home_agenda_cache_v3');
 }catch(_){}
 
 function showHomeAgendaLoading(){
@@ -1083,7 +1096,7 @@ function queueOptimizedHomeRender(data,opts){
       : 0,
     incumbentSolveStatus:sourceWeek && sourceWeek.plannerSolveStatus || '',
     priorPlacements,
-    memoDays:day0Only && typeof memoDaysFromWeek === 'function'
+    memoDays:(day0Only || homeAgendaShouldReuseIncumbent(day0Only,opts,dirtyKey,priorPlacements)) && typeof memoDaysFromWeek === 'function'
       ? memoDaysFromWeek(sourceWeek)
       : []
   };
@@ -1204,6 +1217,8 @@ function shiftAgendaFillToNow(rows,idx,now){
   const row = rows[idx];
   if(!row || row.kind !== 'fill')return null;
   const newStart = typeof ceilToMinutes === 'function' ? ceilToMinutes(now,1) : Math.ceil(now / 60000) * 60000;
+  // A clock-only slide must not carry an item beyond its published last fit.
+  if(Number.isFinite(row.dropAt) && newStart>=row.dropAt)return null;
   const delta = newStart - Number(row.start);
   if(!(delta > 0))return null;
   const maxShift = typeof HOME_AGENDA_SHIFT_MAX_MS === 'number' ? HOME_AGENDA_SHIFT_MAX_MS : 15 * 60 * 1000;
@@ -1244,12 +1259,20 @@ function homeAgendaTickPlan(week,now = Date.now()){
   if(!day || !Array.isArray(day.timeline))return {kind:'keep'};
   const todayBase = typeof dayStart === 'function' ? dayStart(now) : now;
   if(Number(day.dayBase) && Number(day.dayBase) !== todayBase)return {kind:'imminent-solve'};
+  const doing=typeof getDoingNow==='function' ? getDoingNow() : null;
+  if(day.timeline.some(row=>row && row.kind==='fill' && Number.isFinite(row.dropAt) && row.dropAt<=now
+    && !(doing && isDoingNowActive(doing) && row.h?.hid===doing.hid))){
+    // A leave-by cutoff can precede the visible start by a long journey. Do
+    // not keep that impossible row until its start gets into the imminent
+    // band; refresh at the cutoff with the ordinary four-second budget.
+    return {kind:'imminent-solve',reuseFarDays:!agendaClockRefreshNeedsFarDays(day,now),extraBudgetAllowed:false};
+  }
   // A cached fill that has passed without a matching log is unfinished work,
   // not reusable history. Repack it instead of keeping a stale morning plan
   // merely because the next still-future row is hours away.
   if(day.timeline.some(row=>row && row.kind === 'fill' && Number(row.end) <= now)){
     // Unfinished work may need another day. Do not freeze tomorrow's memo.
-    return {kind:'imminent-solve',reuseFarDays:false};
+    return {kind:'imminent-solve',reuseFarDays:!agendaClockRefreshNeedsFarDays(day,now)};
   }
   const idx = nextPendingAgendaIndex(day.timeline,now);
   if(idx < 0)return {kind:'keep'};
@@ -1272,7 +1295,30 @@ function homeAgendaTickPlan(week,now = Date.now()){
 
 function tickHomeAgendaWhileOpen(){
   if(!_homeRenderedWeek || !Array.isArray(_homeRenderedWeek.days))return false;
-  const plan = homeAgendaTickPlan(_homeRenderedWeek,Date.now());
+  const forecastData=typeof load==='function' ? load() : [];
+  const projected=typeof consumeAgendaDropForecast==='function'
+    ? consumeAgendaDropForecast(_homeRenderedWeek,forecastData,homePlannerDirtyKey(forecastData)) : null;
+  if(projected && !_optimizerHomeRequestKey){
+    cancelHomeAgendaRefinement('using five-minute lookahead');
+    render({__fromOptimizer:true,__fromBackgroundRefresh:true,__optimizedWeek:projected});
+    _homeRenderedWeek=projected;
+    adoptHomeAgendaReadyState(projected,load(),true);
+    saveHomeAgendaCache(load(),projected);
+    _homeListFingerprint=homeListFingerprint();
+    if(typeof queueNativeReminders==='function')queueNativeReminders();
+    return true;
+  }
+  const pendingForecast=typeof reusableAgendaDropForecast==='function'
+    ? reusableAgendaDropForecast(_homeRenderedWeek,forecastData,homePlannerDirtyKey(forecastData)) : null;
+  const plan = pendingForecast?.requiresWeekReplan && Date.now()>=pendingForecast.targetAt
+    ? {kind:'imminent-solve',reuseFarDays:false,extraBudgetAllowed:false}
+    : homeAgendaTickPlan(_homeRenderedWeek,Date.now());
+  // Until the projected clock, keep this usable pack. A packed-day collision
+  // must not trigger another solve for the result already waiting in memory.
+  if(pendingForecast && Date.now()<pendingForecast.targetAt && plan.kind==='imminent-solve'){
+    maybeScheduleHomeAgendaRefinement(_homeRenderedWeek);
+    return true;
+  }
   if(plan.kind === 'keep'){
     maybeScheduleHomeAgendaRefinement(_homeRenderedWeek);
     return true;
@@ -1284,6 +1330,9 @@ function tickHomeAgendaWhileOpen(){
         ? {...day,timeline:plan.timeline,homeDisplayedTimeline:null}
         : day)
     };
+    if(week.dropForecast){
+      week.dropForecast={...week.dropForecast,planKey:agendaForecastPlanKey(week,(typeof load==='function' ? load() : []))};
+    }
     render({__fromOptimizer:true,__fromBackgroundRefresh:true,__optimizedWeek:week});
     _homeRenderedWeek = week;
     _optimizerHomeReadyWeek = week;
@@ -1299,7 +1348,7 @@ function tickHomeAgendaWhileOpen(){
     queueOptimizedHomeRender(data,{
       __backgroundRefresh:true,
       __forceReplan:true,
-      __tickReplan:true,
+      __tickReplan:plan.extraBudgetAllowed !== false,
       __reuseFarDays:plan.reuseFarDays !== false,
       __priorPlacements:typeof agendaPriorPlacementsFromWeek === 'function'
         ? agendaPriorPlacementsFromWeek(_homeRenderedWeek)

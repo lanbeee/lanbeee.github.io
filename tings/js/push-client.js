@@ -13,6 +13,7 @@ const PUSH_SUB_KEY = 'tings_push_sub';
 
 // PURE: push is disabled until the deployment replaces placeholder config.
 function pushConfigured(){
+  if(window.Capacitor?.isNativePlatform?.())return false;
   return Boolean(
     PUSH_WORKER_URL &&
     VAPID_PUBLIC_KEY &&

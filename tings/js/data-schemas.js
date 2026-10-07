@@ -13,7 +13,7 @@
  * (e.g. weight), minutes (chunk progress on breakable items), and/or a
  * free-form text note. Day plans may carry `timed` (hard clock) and
  * `locationId` (one-day place override); plan-by (`planByDate`) is separate.
- * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display',operationId?:string})} LogEntry
+ * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display'|'native_alarm',operationId?:string})} LogEntry
  */
 
 /**
@@ -106,6 +106,7 @@
  * @property {number} durationMinutes         — planned session length; 1-720
  * @property {boolean} breakable              — when true, planner may split work across sessions; prefers one continuous run of remaining duration, and never schedules a split piece below minChunkMinutes (except a finish-up when remaining < min). Keepup/reduce: fresh duration budget each rhythm day. Tasks: one-shot pool across the week until logged minutes cover duration.
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
+ * @property {number} minGapMinutes           — minimum minutes between this item's own sessions on the same day; 0-720. 0 = no extra spacing. Applies across busy-time availability splits.
  * @property {number|null} timerAutoStopMinutes — optional manual-session target (legacy field name; null = use durationMinutes)
  * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
@@ -139,14 +140,15 @@
  */
 
 /**
- * A named set of AND-combined weather rules stored in Settings. `relative`
- * compares both the exact interval and its whole day (50/50). Hard rules only
+ * A named set of weighted weather rules stored in Settings. `relative`
+ * compares both the exact interval and its whole day (50/50); percentile bounds
+ * use the same available forecast distribution. Hard rules only
  * reject flexible placements; planned, active, critical, and direct-linked rows may
  * override them. Forecast payloads live separately under WEATHER_CACHE_KEY.
  * @typedef {Object} WeatherProfile
  * @property {string} id
  * @property {string} name
- * @property {{metric:string,min:number|null,max:number|null,hard:boolean,relative:'none'|'low'|'high'}[]} rules
+ * @property {{metric:string,min:number|null,max:number|null,hard:boolean,relative:'none'|'low'|'high',importance:'low'|'medium'|'high',boundMode:'absolute'|'percentile'}[]} rules
  */
 
 /**
@@ -162,6 +164,7 @@
  * @property {'before'|'after'} direction
  * @property {'sometime'|'direct'} adjacency
  * @property {boolean} requireSameDay
+ * @property {number} minGapMinutes           — minimum minutes after the predecessor ends before the successor may start; 0-720
  */
 
 /**
@@ -201,18 +204,19 @@
  * @property {boolean} showFlexibilityOnCards                  — show flexibility chip on home cards
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
+ * @property {boolean} showRemindersOnCards                    — show a bell when an item has phone notifications or alarms
  * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
  * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
  * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)
  * @property {boolean} showCueOnCards                          — show one-line status on home cards
  * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
- * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview
+ * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview (default off, opt-in)
  * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
  * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
  * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
  * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
  * @property {boolean} showWeekOnHome                          — day-by-day week plan on home
- * @property {boolean} agendaOptimizer                         — default ILP packer for tight windows (lazy GLPK)
+ * @property {boolean} agendaOptimizer                         — exact ILP packer for tight windows (lazy GLPK); off by default, fast planner is the default
  * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
  * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
@@ -221,7 +225,7 @@
  * @property {Location[]} locations                            — master location registry (max 32)
  * @property {Object<string,TravelEdge>} travel                — cached travel edges, keyed "idA|idB" (lexically ordered)
  * @property {'driving'|'walking'|'bicycling'|'transit'} defaultTravelMode — mode used for travel-time lookups
- * @property {WeatherProfile[]} weatherProfiles               — up to four named forecast-rule profiles
+ * @property {WeatherProfile[]} weatherProfiles               — up to eight named weighted-rule profiles
  * @property {boolean} showWeatherTemperatureRanges           — add feels-like low/high to full-mode home/overview weather cues (default true)
  * @property {boolean} showWeatherOnBusyTimes                  — show interval condition/feels-like pills on busy-time cards in regular mode
  * @property {boolean} showWeatherOnTravel                     — show interval condition/feels-like pills on travel cards in regular mode (default true)
@@ -232,7 +236,7 @@
  * @property {string} prayerMethod                          — adhan.CalculationMethod key (default 'NorthAmerica')
  * @property {'shafi'|'hanafi'} prayerMadhab                — Asr school (default 'shafi')
  * @property {string|null} lastKnownLocationId                 — matched location id from the last geolocation fix (never stores raw coords)
- * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch
+ * @property {boolean} locationOptIn                           — user granted geolocation; used to resume watch on launch. Native first-enable shows an in-app rationale, then the OS prompt.
  * @property {string|null} pinnedLocationId                    — manually-pinned "I am at" id; takes precedence over auto detection so a manual pick isn't immediately overwritten by the next GPS fix
  * @property {number[]} availabilityMinutes                    — legacy weekly minutes (Sun-Sat); unused for packing (default is full day / overrides)
  * @property {Object<string,number>} availabilityOverrides     — 'YYYY-MM-DD' -> minutes; wins over weekly

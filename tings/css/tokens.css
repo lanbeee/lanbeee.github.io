@@ -1,4 +1,10 @@
 :root {
+  /* Native WebView insets take precedence; installed PWAs use browser insets. */
+  --content-safe-top:var(--safe-area-inset-top,env(safe-area-inset-top,0px));
+  --content-safe-right:var(--safe-area-inset-right,env(safe-area-inset-right,0px));
+  --content-safe-bottom:var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px));
+  --content-safe-left:var(--safe-area-inset-left,env(safe-area-inset-left,0px));
+
   --bg:#fdfcf9; --bg2:#f2f1ed; --bg3:#e6e5df;
   --text:#292a27; --text2:#60615c; --text3:#696a63;
   --border:rgba(0,0,0,0.11); --border2:rgba(0,0,0,0.2);

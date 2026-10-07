@@ -1417,6 +1417,17 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
   if(row.kind === 'scheduled'){
     return {cls:'scheduled',icon:'ti-calendar-time',title:`fixed at ${label}`,chunkMinutes};
   }
+  const dropAt = Number(row.dropAt);
+  const warningMin = typeof AGENDA_DROP_WARNING_MINUTES === 'number' ? AGENDA_DROP_WARNING_MINUTES : 15;
+  if(Number.isFinite(dropAt) && dropAt > now && dropAt - now <= warningMin * 60000){
+    const mins = Math.max(1,Math.round((dropAt - now) / 60000));
+    return {
+      cls:'agenda-dropping',
+      icon:'ti-clock-exclamation',
+      title:`${baseTitle} · dropping in ${mins} min`,
+      chunkMinutes
+    };
+  }
   if(!h || typeof hasTimeWindow !== 'function' || !hasTimeWindow(h)){
     return {cls:'agenda-anytime',icon:'ti-clock',title:`${baseTitle} · anytime`,chunkMinutes};
   }
@@ -2402,18 +2413,23 @@ async function copyWeekPlacements(){
   if(typeof showToast === 'function')showToast(ok ? 'week placements copied' : 'copy failed');
 }
 
-function exportWeekPlacements(){
+async function exportWeekPlacements(){
   const week = weekSnapshotForExport();
   if(!week){
     if(typeof showToast === 'function')showToast('no week agenda yet');
     return;
   }
   const text = formatWeekPlacementsText(week);
+  const filename = weekPlacementsExportFilename(week);
+  if(typeof downloadOrShareTextFile === 'function'){
+    await downloadOrShareTextFile(filename,text,'text/plain','week placements exported');
+    return;
+  }
   const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = weekPlacementsExportFilename(week);
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(()=>{ if(a.isConnected)document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
@@ -2433,6 +2449,7 @@ async function copyDayCapacityScorecard(){
 let _sharedDisplayAuditGen = 0;
 
 function sharedDisplayAuditHtml(report){
+  if(typeof shareConfigured === 'function' && !shareConfigured()) return '';
   const diagnosis = report && report.diagnosis ? report.diagnosis : 'checking the worker snapshot…';
   const text = typeof formatSharedDisplayAuditText === 'function'
     ? formatSharedDisplayAuditText(report || { diagnosis:'checking the worker snapshot…' })

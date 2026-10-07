@@ -70,13 +70,15 @@ function assistantNormalizeEndpoint(raw){
   return end;
 }
 
-function assistantResolveEndpointHabits(end, data){
+function assistantResolveEndpointHabits(end, data, extras, self){
   if(!end || typeof end !== 'object')return {ok:true, end:end || {kind:'unset'}};
   let next = end;
   if(end.kind === 'habit' && !end.habitId){
-    const found = typeof assistantFindHabit === 'function'
-      ? assistantFindHabit(data, end.habitName || end.habit || end.name)
-      : {ok:false};
+    const found = typeof assistantFindNamedItem === 'function'
+      ? assistantFindNamedItem(end.habitName || end.habit || end.name, data, extras, self)
+      : (typeof assistantFindHabit === 'function'
+        ? assistantFindHabit(data, end.habitName || end.habit || end.name)
+        : {ok:false});
     if(!found || !found.ok){
       return found && found.ok === false
         ? found
@@ -85,18 +87,18 @@ function assistantResolveEndpointHabits(end, data){
     next = Object.assign({}, end, {habitId:found.hid, habitName:found.name});
   }
   if(next.second){
-    const second = assistantResolveEndpointHabits(next.second, data);
+    const second = assistantResolveEndpointHabits(next.second, data, extras, self);
     if(!second.ok)return second;
     if(second.end !== next.second)next = Object.assign({}, next, {second:second.end});
   }
   return {ok:true, end:next};
 }
 
-function assistantResolveWindowHabits(window, data){
+function assistantResolveWindowHabits(window, data, extras, self){
   if(!window || typeof window !== 'object')return {ok:true, window};
-  const start = assistantResolveEndpointHabits(window.start, data);
+  const start = assistantResolveEndpointHabits(window.start, data, extras, self);
   if(!start.ok)return start;
-  const end = assistantResolveEndpointHabits(window.end, data);
+  const end = assistantResolveEndpointHabits(window.end, data, extras, self);
   if(!end.ok)return end;
   if(start.end === window.start && end.end === window.end)return {ok:true, window};
   return {ok:true, window:{start:start.end, end:end.end}};
@@ -420,7 +422,7 @@ function assistantCatalog(data, settings, now){
       id:String(loc && loc.id || ''),
       name:String(loc && loc.name || '').slice(0,40)
     })).filter(item => item.id && item.name),
-    weather:profiles.slice(0,4).map(profile => {
+    weather:profiles.slice(0,8).map(profile => {
       const row = {
         id:String(profile && profile.id || ''),
         name:String(profile && profile.name || '').slice(0,32)
@@ -532,16 +534,16 @@ function assistantWeatherRulesFromHints(hints){
   const rules = [];
   if(!hints)return rules;
   if(hints.notRaining){
-    rules.push({metric:'precipitation_probability', min:null, max:20, hard:true, relative:'none'});
+    rules.push({metric:'precipitation_probability', min:null, max:20, hard:true, relative:'none',importance:'medium'});
   }
   if(hints.notSnowing){
-    rules.push({metric:'snowfall', min:null, max:0.1, hard:true, relative:'none'});
+    rules.push({metric:'snowfall', min:null, max:0.1, hard:true, relative:'none',importance:'medium'});
   }
   if(hints.notFreezing){
-    rules.push({metric:'temperature_2m', min:1, max:null, hard:true, relative:'none'});
+    rules.push({metric:'temperature_2m', min:1, max:null, hard:true, relative:'none',importance:'medium'});
   }
   if(hints.notWindy){
-    rules.push({metric:'wind_speed_10m', min:null, max:20, hard:false, relative:'low'});
+    rules.push({metric:'wind_speed_10m', min:null, max:20, hard:false,relative:'low',importance:'medium'});
   }
   return typeof normalizeWeatherRule === 'function' ? rules.map(normalizeWeatherRule) : rules;
 }
@@ -552,12 +554,13 @@ function assistantMergeWeatherRules(base, extra){
     if(!rule || !rule.metric)continue;
     const i = out.findIndex(row => row && row.metric === rule.metric);
     if(i < 0){
-      out.push(Object.assign({metric:rule.metric, min:null, max:null, hard:false, relative:'none'}, rule));
+      out.push(Object.assign({metric:rule.metric, min:null, max:null, hard:false,relative:'none',importance:'medium',boundMode:'absolute'}, rule));
       continue;
     }
     const next = Object.assign({}, out[i]);
     if(rule.min != null)next.min = rule.min;
     if(rule.max != null)next.max = rule.max;
+    if(rule.boundMode==='absolute' || rule.boundMode==='percentile')next.boundMode=rule.boundMode;
     if(rule.relative === 'high' || rule.relative === 'low')next.relative = rule.relative;
     else if(rule.relativeExplicit)next.relative = rule.relative === 'high' || rule.relative === 'low' ? rule.relative : 'none';
     if(rule.min != null || rule.max != null){
@@ -565,6 +568,7 @@ function assistantMergeWeatherRules(base, extra){
     }else if(rule.hard === true){
       next.hard = true;
     }
+    if(['low','medium','high'].includes(rule.importance))next.importance=rule.importance;
     out[i] = next;
   }
   return typeof normalizeWeatherRule === 'function'
@@ -635,7 +639,7 @@ function assistantHintWeatherName(hints, fallback){
 }
 
 function assistantWeatherCapAsk(profiles){
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
   return {
     question:`You already have ${cap} weather profiles. Use one of: ${profiles.map(item => item.name).join(', ')}, or say "no weather".`,
     choices:profiles.map(item => item.name).concat(['no weather'])
@@ -686,7 +690,7 @@ function assistantProposeWeather(draft, opts, catalog, settings){
     }
   }
   if(!patchRules.length && !profileName && !(hints && hints.mentioned) && draft.kind !== 'weather')return draft;
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
   if(!existing && profiles.length >= cap && draft.kind !== 'weather'){
     draft.weatherNeedAsk = assistantWeatherCapAsk(profiles);
     return draft;
@@ -787,7 +791,7 @@ function assistantMaterializeWeatherProfile(draft, settings){
     }
     return {id:byName.id, name:byName.name};
   }
-  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+  const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
   if(profiles.length >= cap)return null;
   const id = `weather-${Date.now().toString(36)}`;
   const name = assistantUniqueWeatherName(nameWanted, profiles);
@@ -1200,19 +1204,142 @@ function assistantResolveDraftBase(args, session, context){
   return {ok:true, draft:assistantEmptyDraft(), existing:false};
 }
 
-function assistantResolveOrderLink(name, data, mods){
-  const found = assistantFindHabit(data, name);
-  if(!found || !found.ok)return found;
+function assistantEnsureDraftHid(draft){
+  if(!draft)return '';
+  if(draft.hid)return draft.hid;
+  if(draft.pendingHid)return draft.pendingHid;
+  // Unsaved drafts must not set `hid`: ResolveDraftBase treats hid as "already
+  // on the list", which would make a second create in the same turn look like
+  // a failed lookup. pendingHid is only materialized at commit.
+  draft.pendingHid = typeof generateHabitId === 'function'
+    ? generateHabitId()
+    : ((typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`);
+  return draft.pendingHid;
+}
+
+function assistantDraftKey(row){
+  const name = typeof assistantNormText === 'function'
+    ? assistantNormText(row && row.name)
+    : String(row && row.name || '').toLowerCase();
+  return `${row && row.kind || ''}:${name}`;
+}
+
+function assistantStageTurnDraft(session, draft){
+  if(!session || !draft || !draft.name)return;
+  session._focusOnly = false;
+  if(draft.kind === 'task' || draft.kind === 'habit')assistantEnsureDraftHid(draft);
+  const list = Array.isArray(session.turnDrafts) ? session.turnDrafts.slice() : [];
+  const key = assistantDraftKey(draft);
+  const idx = list.findIndex(row => assistantDraftKey(row) === key);
+  if(idx >= 0)list[idx] = draft;
+  else list.push(draft);
+  session.turnDrafts = list;
+}
+
+function assistantWorkingItemRow(item){
+  if(!item || typeof item !== 'object')return null;
+  const kind = item.kind || (item.type === 'task' ? 'task' : (item.type ? 'habit' : ''));
+  if(kind && kind !== 'task' && kind !== 'habit')return null;
+  const name = String(item.name || '').trim();
+  if(!name)return null;
+  return {
+    index:item.index,
+    hid:item.hid || assistantEnsureDraftHid(item),
+    name,
+    type:kind === 'task' || item.type === 'task' ? 'task' : 'habit',
+    habit:item
+  };
+}
+
+function assistantWorkingItemIsSelf(row, self){
+  if(!row || !self)return false;
+  if(row.habit === self)return true;
+  const selfHid = self.hid || self.pendingHid;
+  if(selfHid && row.hid && row.hid === selfHid)return true;
+  return Boolean(self.name && row.name
+    && assistantNormText(row.name) === assistantNormText(self.name));
+}
+
+// Titles the model already emitted on this turn: same-call siblings plus
+// earlier staged drafts. complete/plan/delete still search saved items only.
+function assistantCollectWorkingItems(opts, self){
+  const rows = [];
+  const seen = new Set();
+  const add = item => {
+    const row = assistantWorkingItemRow(item);
+    if(!row || assistantWorkingItemIsSelf(row, self))return;
+    const key = row.hid || (typeof assistantNormText === 'function' ? assistantNormText(row.name) : row.name);
+    if(!key || seen.has(key))return;
+    seen.add(key);
+    rows.push(row);
+  };
+  const extra = opts || {};
+  (Array.isArray(extra.siblings) ? extra.siblings : []).forEach(add);
+  const session = extra.session;
+  if(session){
+    (Array.isArray(session.drafts) ? session.drafts : []).forEach(add);
+    (Array.isArray(session.turnDrafts) ? session.turnDrafts : []).forEach(add);
+    if(session.draft)add(session.draft);
+  }
+  return rows;
+}
+
+function assistantFindNamedItem(name, data, extras, self){
+  const query = String(name || '').trim();
+  if(!query){
+    return {ok:false, error:'UNKNOWN', ask:'I do not see that on your list.', choices:[], candidates:[]};
+  }
+  const staged = (Array.isArray(extras) ? extras : []).filter(row =>
+    row && row.name && !assistantWorkingItemIsSelf(row, self));
+  const exact = staged.filter(row => assistantNormText(row.name) === assistantNormText(query));
+  if(exact.length === 1){
+    return {ok:true, ...exact[0], candidates:assistantCandidateRows([{name:exact[0].name, type:exact[0].type, score:99, item:exact[0]}])};
+  }
+  if(exact.length > 1){
+    return assistantHabitAskFromCandidates(exact.map(row => ({
+      name:row.name,
+      type:row.type,
+      score:99
+    })), 'AMBIGUOUS');
+  }
+  const found = typeof assistantFindHabit === 'function'
+    ? assistantFindHabit(data, query)
+    : {ok:false, error:'UNKNOWN'};
+  if(found && found.ok)return found;
+  if(staged.length){
+    const ranked = assistantRankByName(staged, query, 8);
+    const picked = assistantPickRankedName(ranked);
+    if(picked.ok)return {ok:true, ...picked.item, candidates:picked.candidates};
+    if(picked.candidates && picked.candidates.length){
+      return assistantHabitAskFromCandidates(picked.candidates, picked.error);
+    }
+  }
+  return found && found.ok === false
+    ? found
+    : {ok:false, error:'UNKNOWN', ask:'I do not see that on your list.', choices:[], candidates:[]};
+}
+
+function assistantOrderLinkFromMatch(match, mods){
   return {
     ok:true,
     link:{
-      name:found.name,
-      anchorHid:found.hid,
+      name:match.name,
+      anchorHid:match.hid,
       direction:mods.direction,
       adjacency:mods.adjacency || 'sometime',
       requireSameDay:Boolean(mods.requireSameDay)
     }
   };
+}
+
+function assistantResolveOrderLink(name, data, mods, extras, self){
+  const found = assistantFindNamedItem(name, data, extras, self);
+  if(found && found.ok)return assistantOrderLinkFromMatch(found, mods);
+  return found && found.ok === false
+    ? found
+    : {ok:false, error:'UNKNOWN', ask:'I do not see that on your list.', choices:[], candidates:[]};
 }
 
 function assistantMergeScheduleLink(draft, link){
@@ -1223,7 +1350,8 @@ function assistantMergeScheduleLink(draft, link){
   draft.scheduleLinks = next;
 }
 
-function assistantApplyExtraDraftFields(next, raw, catalog, data){
+function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
+  const extras = assistantCollectWorkingItems(opts, next);
   if(raw.newName)next.name = raw.newName;
   if(raw.habitKind === 'keepup' || raw.habitKind === 'reduce' || raw.habitKind === 'zero')next.habitKind = raw.habitKind;
   if(raw.emoji != null)next.emoji = raw.emoji;
@@ -1310,7 +1438,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data){
     || (typeof assistantParseOrderModifiers === 'function' ? assistantParseOrderModifiers(raw.order || '') : {adjacency:'sometime', requireSameDay:false});
   if(mods && mods.links){
     for(const row of mods.links){
-      const resolved = assistantResolveOrderLink(row.name, data, row);
+      const resolved = assistantResolveOrderLink(row.name, data, row, extras, next);
       if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN', ask:resolved && resolved.ask};
       assistantMergeScheduleLink(next, resolved.link);
     }
@@ -1323,7 +1451,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data){
         direction:'after',
         adjacency:orderMods.adjacency || 'sometime',
         requireSameDay:Boolean(orderMods.requireSameDay)
-      });
+      }, extras, next);
       if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN'};
       assistantMergeScheduleLink(next, resolved.link);
     }
@@ -1336,7 +1464,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data){
         direction:'before',
         adjacency:orderMods.adjacency || 'sometime',
         requireSameDay:Boolean(orderMods.requireSameDay)
-      });
+      }, extras, next);
       if(!resolved || !resolved.ok)return resolved && resolved.ok === false ? resolved : {ok:false, error:'UNKNOWN'};
       assistantMergeScheduleLink(next, resolved.link);
     }
@@ -1528,15 +1656,16 @@ function assistantApplyDraftItem(args, draft, catalog, now, settings, data, requ
       }, catalog, settings);
     }
   }
-  const extra = assistantApplyExtraDraftFields(next, raw, catalog, data);
+  const extra = assistantApplyExtraDraftFields(next, raw, catalog, data, opts);
   if(!extra.ok)return extra;
+  const extras = assistantCollectWorkingItems(opts, next);
   if(next.window){
-    const resolved = assistantResolveWindowHabits(next.window, data);
+    const resolved = assistantResolveWindowHabits(next.window, data, extras, next);
     if(!resolved.ok)return resolved;
     next.window = resolved.window;
   }
   if(next.preferredWindow){
-    const resolved = assistantResolveWindowHabits(next.preferredWindow, data);
+    const resolved = assistantResolveWindowHabits(next.preferredWindow, data, extras, next);
     if(!resolved.ok)return resolved;
     next.preferredWindow = resolved.window;
   }
@@ -2004,7 +2133,7 @@ function assistantAnswerSettings(args, context){
 // query and fills day/window/name — the numbers below are never guessed.
 
 function assistantQueryCapabilities(){
-  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed (the same list as the missed pill on today), the agenda for a day or the week, the weather for the next seven days, which hour matches weather conditions, a comparison of two times, and whether the weather suits an item.';
+  return 'I can check how much time is open on a day, which day is freest, whether a time block would make you miss something, what you missed (the same list as the missed pill on today), the agenda for a day or the week, the weather for the next seven days, the best weather window this week for an item, which hour matches weather conditions, a comparison of two times, and whether the weather suits an item.';
 }
 
 function assistantPriorityFacts(habit){
@@ -2341,7 +2470,7 @@ function assistantQueryWeek(data, settings){
   const rendered = typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days) ? _homeRenderedWeek : null;
   const week = rendered
     || (typeof cachedHomeAgenda === 'function' ? cachedHomeAgenda(data) : null)
-    || (typeof buildWeekAgenda === 'function' ? buildWeekAgenda(data, settings, 7) : null);
+    || (typeof buildWeekAgenda === 'function' ? buildWeekAgenda(data, settings, 7, {skipDropAnnotation:true}) : null);
   return week && Array.isArray(week.days) ? week : null;
 }
 
@@ -2840,6 +2969,36 @@ function assistantWeatherFitPhrase(assessment){
   return assessment.summary || assessment.status || 'forecast';
 }
 
+function assistantAnswerWeatherBest(args,context){
+  const want=String((args && args.name) || '').trim();
+  if(!want)return {ok:true,text:'Which saved item should I find the best weather for this week?'};
+  const found=assistantFindHabit(context.data,want);
+  if(!found.ok)return found;
+  const settings=context.settings;
+  const duration=assistantWeatherDuration(args,found.habit);
+  const today=assistantDayBase(context.now);
+  const candidates=[];
+  for(let offset=0;offset<7;offset+=1){
+    const dayBase=today+offset*86400000;
+    const span=assistantWeatherSpan(args,dayBase,settings,{allowWholeDay:true,now:context.now});
+    if(!span || span.error)continue;
+    for(let min=span.startMin;min<Math.min(span.endMin,1440);min+=60){
+      if(min+duration>span.endMin || min+duration>1440)continue;
+      const start=dayBase+min*60000;
+      if(start<context.now)continue;
+      const assessment=assistantWeatherFitAt(found.habit,found.index,dayBase,min,duration,settings);
+      const rank=assistantWeatherFitRank(assessment);
+      if(rank==null)continue;
+      candidates.push({dayBase,min,assessment,rank});
+    }
+  }
+  if(!candidates.length)return {ok:true,text:`I could not score ${found.name} across the next seven days. It may not have an active weather profile or a fresh forecast.`};
+  candidates.sort((a,b)=>a.rank-b.rank || a.dayBase-b.dayBase || a.min-b.min);
+  const best=candidates[0];
+  const dateLabel=new Intl.DateTimeFormat('en-US',{weekday:'long',month:'short',day:'numeric'}).format(new Date(best.dayBase));
+  return {ok:true,score:best.assessment.score,text:`Best weather for ${found.name} in the next seven days is ${dateLabel}, ${assistantFriendlyClock(best.min)}–${assistantFriendlyClock(best.min+duration)}: ${assistantWeatherFitPhrase(best.assessment)}.`};
+}
+
 function assistantWeatherPlannedNote(found, context, dayBase, dayLabel){
   const week = assistantQueryWeek(context.data, context.settings);
   const day = week ? (week.days || []).find(item => item.dayBase === dayBase) : null;
@@ -2947,13 +3106,14 @@ function assistantAnswerWeather(args, context){
   const settings = context.settings;
   const now = context.now;
   const queryRaw = assistantNormText(args && args.query);
+  if(queryRaw==='best')return assistantAnswerWeatherBest(args,context);
   const date = assistantQueryDay(args && args.date, now);
   if((args && args.date != null && String(args.date).trim() !== '') && !date){
     return {ok:true, text:`I can only cover the next seven days. ${assistantQueryCapabilities()}`};
   }
   const dayBase = date ? date.dayBase : assistantDayBase(now);
   const dayLabel = date ? date.label : 'today';
-  let query = ['day','window','item','hours','compare'].includes(queryRaw) ? queryRaw : '';
+  let query = ['day','window','item','hours','compare','best'].includes(queryRaw) ? queryRaw : '';
 
   if(!query){
     return {ok:true, text:`That weather question is too vague for me. ${assistantQueryCapabilities()}`};
@@ -3278,8 +3438,10 @@ function assistantWriteEndpointToRecord(record, prefix, end, data){
   assistantClearEndpointFields(record, prefix);
   if(!end || end.kind === 'unset')return;
   let resolved = end;
-  if(end.kind === 'habit' && !end.habitId && data){
-    const found = assistantFindHabit(data, end.habitName);
+  if(end.kind === 'habit' && !end.habitId){
+    const found = typeof assistantFindNamedItem === 'function'
+      ? assistantFindNamedItem(end.habitName, data)
+      : assistantFindHabit(data, end.habitName);
     if(found && found.ok){
       resolved = Object.assign({}, end, {habitId:found.hid, habitName:found.name});
     }
@@ -3305,8 +3467,10 @@ function assistantWriteEndpointToRecord(record, prefix, end, data){
       record[prefix + 'OffsetMin2'] = second.offsetMin || 0;
     }else if(second.kind === 'habit'){
       let hid = second.habitId;
-      if(!hid && data && second.habitName){
-        const found = assistantFindHabit(data, second.habitName);
+      if(!hid && second.habitName){
+        const found = typeof assistantFindNamedItem === 'function'
+          ? assistantFindNamedItem(second.habitName, data)
+          : (data ? assistantFindHabit(data, second.habitName) : null);
         if(found && found.ok)hid = found.hid;
       }
       if(hid){
@@ -3569,7 +3733,7 @@ function assistantApplyDraftSetting(args, draft, catalog, now, settings, request
     assistantProposeWeather(next, {name:next.name, text}, catalog, settings);
     if(next.weatherProposed)next.weatherProposed.name = next.name;
     if(next.weather)next.weather.name = next.name;
-    const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+    const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
     const profiles = typeof normalizeWeatherProfiles === 'function'
       ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
       : ((settings && settings.weatherProfiles) || []);
@@ -3622,7 +3786,7 @@ function assistantCommitWeatherSetting(draft, settings){
       const profiles = typeof normalizeWeatherProfiles === 'function'
         ? normalizeWeatherProfiles(settings && settings.weatherProfiles)
         : ((settings && settings.weatherProfiles) || []);
-      const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 4;
+      const cap = typeof MAX_WEATHER_PROFILES === 'number' ? MAX_WEATHER_PROFILES : 8;
       if(profiles.length >= cap)return {ok:false, error:`${cap} weather profiles max`};
       return {ok:false, error:'could not save weather profile'};
     }
@@ -3769,8 +3933,16 @@ function assistantApplyDraftBatch(args, session, context){
     });
   });
   const drafts = (session.pendingPlaces || []).slice();
-  const itemOpts = {placeholders:true, session, settings, skipSalvage:true};
-  for(const item of items){
+  const siblings = items.map(item => {
+    const stub = {
+      name:String(item && item.name || '').trim(),
+      kind:item && item.kind === 'habit' ? 'habit' : 'task'
+    };
+    assistantEnsureDraftHid(stub);
+    return stub;
+  });
+  const itemOpts = {placeholders:true, session, settings, skipSalvage:true, siblings};
+  for(const [index, item] of items.entries()){
     const applied = assistantApplyDraftItem(
       item,
       null,
@@ -3782,7 +3954,17 @@ function assistantApplyDraftBatch(args, session, context){
       itemOpts
     );
     if(!applied.ok)return applied;
-    if(applied.draft && applied.draft.name)drafts.push(applied.draft);
+    if(applied.draft && applied.draft.name){
+      const stub = siblings[index];
+      if(stub){
+        applied.draft.pendingHid = stub.pendingHid || stub.hid;
+        stub.name = applied.draft.name;
+        stub.kind = applied.draft.kind;
+      }else{
+        assistantEnsureDraftHid(applied.draft);
+      }
+      drafts.push(applied.draft);
+    }
   }
   if(!drafts.length)return {ok:false, error:'nothing to add'};
   session.drafts = drafts;
@@ -3864,6 +4046,38 @@ function assistantPreflightApplyDrafts(rows){
   return {ok:true};
 }
 
+function assistantRebindDraftOrderLinks(drafts){
+  const rows = (Array.isArray(drafts) ? drafts : []).filter(row =>
+    row && (row.kind === 'habit' || row.kind === 'task')
+    && Array.isArray(row.scheduleLinks) && row.scheduleLinks.length);
+  if(!rows.length || typeof load !== 'function')return;
+  const data = load();
+  if(!Array.isArray(data) || !data.length)return;
+  let changed = false;
+  for(const draft of rows){
+    const index = assistantDraftExistingIndex(data, draft);
+    if(index < 0)continue;
+    const subjectHid = typeof cleanHabitId === 'function'
+      ? cleanHabitId(data[index].hid)
+      : data[index].hid;
+    const links = draft.scheduleLinks.map(link => ({
+      anchorHid:link.anchorHid,
+      direction:link.direction,
+      adjacency:link.adjacency === 'direct' ? 'direct' : 'sometime',
+      requireSameDay:Boolean(link.requireSameDay)
+    })).filter(link => link.anchorHid
+      && (link.direction === 'before' || link.direction === 'after')
+      && link.anchorHid !== subjectHid
+      && data.some(item => item && item.hid === link.anchorHid));
+    if(JSON.stringify(data[index].scheduleLinks || []) === JSON.stringify(links))continue;
+    data[index] = Object.assign({}, data[index], {scheduleLinks:links});
+    changed = true;
+  }
+  if(!changed)return;
+  const next = typeof normalize === 'function' ? normalize(data) : data;
+  if(typeof save === 'function')save(next);
+}
+
 function assistantCommitDrafts(drafts){
   const rows = Array.isArray(drafts) ? drafts.filter(Boolean) : [];
   if(!rows.length)return {ok:false, error:'empty draft'};
@@ -3900,6 +4114,7 @@ function assistantCommitDrafts(drafts){
     if(!result.ok)return result;
     saved.push(result);
   }
+  assistantRebindDraftOrderLinks(items);
   for(const other of others){
     const result = assistantCommitDraft(other);
     if(!result.ok)return result;
@@ -4301,6 +4516,7 @@ function assistantExecuteTool(name, args, session, context){
       session.drafts = applied.drafts;
       session.draft = applied.draft;
       session.bulk = true;
+      (Array.isArray(applied.drafts) ? applied.drafts : []).forEach(row => assistantStageTurnDraft(session, row));
     }
     return applied;
   }
@@ -4348,7 +4564,10 @@ function assistantExecuteTool(name, args, session, context){
           catalog
         }
       );
-      if(applied.ok && !applied.existing)session.draft = applied.draft;
+      if(applied.ok && !applied.existing){
+        session.draft = applied.draft;
+        assistantStageTurnDraft(session, applied.draft);
+      }
       return applied;
     }
     const resolved = assistantResolveDraftBase(nextArgs, session, context);
@@ -4374,8 +4593,9 @@ function assistantExecuteTool(name, args, session, context){
         settings:context.settings
       }
     );
-    if(applied.draft){
+    if(applied.ok && applied.draft){
       session.draft = applied.draft;
+      if(!applied.existing)assistantStageTurnDraft(session, applied.draft);
       assistantLinkStagedWeather(session, applied.draft);
     }
     return applied;
@@ -4577,10 +4797,12 @@ function assistantWeatherRulesSummary(rules){
       return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '';
     };
     const bits = [];
-    if(rule.min != null)bits.push(`≥${fmt(rule.min)}${unit}`);
-    if(rule.max != null)bits.push(`≤${fmt(rule.max)}${unit}`);
+    if(rule.min != null)bits.push(rule.boundMode==='percentile'?`≥${rule.min}th percentile`:`≥${fmt(rule.min)}${unit}`);
+    if(rule.max != null)bits.push(rule.boundMode==='percentile'?`≤${rule.max}th percentile`:`≤${fmt(rule.max)}${unit}`);
     if(rule.relative === 'low')bits.push('prefer lower');
     if(rule.relative === 'high')bits.push('prefer higher');
+    if(rule.importance === 'low')bits.push('low priority');
+    if(rule.importance === 'high')bits.push('high priority');
     if(rule.hard)bits.push('hard');
     return `${label} ${bits.join(' ')}`.trim();
   }).filter(Boolean);
@@ -4725,6 +4947,7 @@ function assistantDraftToHabit(draft, settings, now, data){
     showWeatherAtLocation:Boolean(draft.showWeatherAtLocation),
     weatherLocationId:draft.weatherLocationId || null
   };
+  if(draft.hid || draft.pendingHid)record.hid = draft.hid || draft.pendingHid;
   if(isHabit){
     record.allowedWeekdays = typeof normalizeAllowedWeekdays === 'function'
       ? normalizeAllowedWeekdays(draft.allowedWeekdays || [])

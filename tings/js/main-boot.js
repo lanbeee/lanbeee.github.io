@@ -41,6 +41,15 @@ try{
 if(typeof maybeClaimItemShareFromHash === 'function'){
   void maybeClaimItemShareFromHash().catch(()=>{});
 }
+// Native (Capacitor/Play) builds ship without sharing: remove every Share
+// item / shared display entry point from the detail pane. Inbound claim links
+// and publish loops already no-op through shareConfigured().
+if(window.Capacitor?.isNativePlatform?.()){
+  const shareWrap = document.querySelector('#detail-share-item')?.closest('.habit-action-with-leave');
+  if(shareWrap)shareWrap.style.display = 'none';
+  const displayCtl = document.querySelector('.detail-shared-display-control');
+  if(displayCtl)displayCtl.style.display = 'none';
+}
 {
   const reconciled = reconcileLocations(load(),sortSettings);
   if(reconciled.changed)save(reconciled.data);
@@ -311,6 +320,7 @@ $('do-save').addEventListener('click',()=>{
     durationMinutes:settings.defaultDurationMinutes,
     breakable:Boolean(settings.defaultBreakable),
     minChunkMinutes:settings.defaultMinChunkMinutes,
+    minGapMinutes:0,
     createdAt:Date.now()
   };
   if(type === 'task'){
@@ -757,6 +767,7 @@ bindRhythm('detail');
 // WIRE: attach numeric input focus/blur validators
 function bindCompactNumber(id,clamp,options={}){
   const field = $(id);
+  if(!field)return;
   const maxLength = options.maxLength || field.maxLength || 3;
 
   field.addEventListener('input',e=>{
@@ -981,6 +992,11 @@ $('detail-schedule-order')?.addEventListener('change',e=>{
   const h = detailIdx != null ? load()[detailIdx] : null;
   if(!editor || !h)return;
   refreshScheduleLinkEditorRow(editor,{...h,scheduleLinks:readScheduleLinksFromDetail(h.hid)});
+  setDetailDirty();
+});
+$('detail-schedule-order')?.addEventListener('input',e=>{
+  if(!e.target.closest('.schedule-link-gap'))return;
+  e.target.value = String(e.target.value || '').replace(/\D/g,'').slice(0,3);
   setDetailDirty();
 });
 $('detail-schedule-order')?.addEventListener('click',e=>{
@@ -1498,6 +1514,7 @@ $('detail-save').addEventListener('click',()=>{
   h.durationMinutes = current.durationMinutes;
   h.breakable = Boolean(current.breakable);
   h.minChunkMinutes = clampMinChunk(current.minChunkMinutes);
+  h.minGapMinutes = clampMinGapMinutes(current.minGapMinutes);
   h.timerAutoStopMinutes = normalizeTimerAutoStop(current.timerAutoStopMinutes);
   h.autoMarkMinutes = normalizeAutoMark(current.autoMarkMinutes);
   h.trackValue = Boolean(current.trackValue);
@@ -1541,7 +1558,10 @@ if($('detail-add'))$('detail-add').addEventListener('click',()=>{
     render();
   });
 });
-$('detail-cool').addEventListener('click',closeDetail);
+$('detail-cool').addEventListener('click',()=>{
+  if(!$('detail-search-panel').hidden)setDetailSearchOpen(false);
+  else closeDetail();
+});
 $('detail-close').addEventListener('click',()=>{restoreDetailTune();closeDetail();});
 $('detail-snooze').addEventListener('click',()=>{
   if(detailIdx === null)return;

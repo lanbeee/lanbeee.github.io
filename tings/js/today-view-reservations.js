@@ -12,6 +12,30 @@ function orderSuccessorCommitCapsFill(edge,fillHid,committed){
   return true;
 }
 
+// Occupants that carve this availability slot: fills that start here, plus
+// same-habit sessions in other slots whose min-gap buffer still touches it.
+// Busy-time splits must not let two sessions of the same item ignore minGapMinutes.
+function occupancyChronForSlot(chron,slot,fill){
+  const hid = fill && fill.h && fill.h.hid;
+  const selfGapMs = hid && typeof habitMinGapMinutes === 'function'
+    ? habitMinGapMinutes(fill.h) * 60000 : 0;
+  const occupiedStart = c=>{
+    const start = inboundOccupiedStart(c.fit,slot.start);
+    return selfGapMs && c.fill && c.fill.h && c.fill.h.hid === hid
+      ? Math.min(start,c.fit.placeStart - selfGapMs) : start;
+  };
+  const occupants = (chron || []).filter(c=>{
+    const start = Number(c && c.fit && c.fit.placeStart) || 0;
+    if(start >= slot.start && start < slot.end)return true;
+    if(!selfGapMs || !hid || !c.fill || !c.fill.h || c.fill.h.hid !== hid)return false;
+    const end = Number(c.fit.placeEnd) || start;
+    return start - selfGapMs < slot.end && end + selfGapMs > slot.start;
+  });
+  // Spacing can move a later session's occupied edge ahead of other fills.
+  // Walk the padded intervals in edge order so no gap escapes their union.
+  return selfGapMs ? occupants.sort((a,b)=>occupiedStart(a) - occupiedStart(b)) : occupants;
+}
+
 function tryPlaceOnDay(state,fill,opts = {}){
   if(typeof plannerPerfCountTryPlace === 'function')plannerPerfCountTryPlace();
   if(!state || !fill || !fill.h)return null;
@@ -104,11 +128,11 @@ function tryPlaceOnDay(state,fill,opts = {}){
     for(const e of plannerOrderConstraintsForDay(dayBase)){
       if(e.afterHid === fill.h.hid){
         const committed = scheduleAnchorCommitForDay(e.beforeHid,dayBase);
-        if(committed)orderFloor = Math.max(orderFloor,committed.end);
+        if(committed)orderFloor = Math.max(orderFloor,committed.end + (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
         for(const entry of chron){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === e.beforeHid && entry.fit){
-            orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+            orderFloor = Math.max(orderFloor, (Number(entry.fit.placeEnd) || 0) + (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
           }
         }
       }
@@ -120,12 +144,12 @@ function tryPlaceOnDay(state,fill,opts = {}){
         // rhythm still wants it. "Right before" keeps the ceiling — that
         // pairing is over for today, and the link pass omits it explicitly.
         if(orderSuccessorCommitCapsFill(e,fill.h.hid,committed)){
-          orderCeiling = Math.min(orderCeiling,committed.start);
+          orderCeiling = Math.min(orderCeiling,committed.start - (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
         }
         for(const entry of chron){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === e.afterHid && entry.fit){
-            orderCeiling = Math.min(orderCeiling,Number(entry.fit.placeStart) || Infinity);
+            orderCeiling = Math.min(orderCeiling,(Number(entry.fit.placeStart) || Infinity) - (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
           }
         }
       }
@@ -135,17 +159,21 @@ function tryPlaceOnDay(state,fill,opts = {}){
 
   for(const slot of slots){
     const lowerBound = Math.max(slot.start,startClock,orderFloor,doingFloor);
-    const inSlot = chron
-      .filter(c=>c.fit.placeStart >= slot.start && c.fit.placeStart < slot.end);
+    const inSlot = occupancyChronForSlot(chron,slot,fill);
     // Build the open sub-intervals (gaps) within this slot. Carve inbound
     // travel into each committed fill so a later insert cannot sit under the
     // commute homeDaySequence will draw.
     const gaps = [];
     let cursor = lowerBound;
     for(const c of inSlot){
-      const occupiedStart = inboundOccupiedStart(c.fit,slot.start);
+      const occupiedStartRaw = inboundOccupiedStart(c.fit,slot.start);
+      const sameHabit = Boolean(fill.h && fill.h.hid && c.fill && c.fill.h && c.fill.h.hid === fill.h.hid);
+      const selfGapMs = sameHabit && typeof habitMinGapMinutes === 'function' ? habitMinGapMinutes(fill.h) * 60000 : 0;
+      const occupiedStart = selfGapMs
+        ? Math.min(occupiedStartRaw, (Number(c.fit.placeStart) || occupiedStartRaw) - selfGapMs)
+        : occupiedStartRaw;
       if(occupiedStart > cursor)gaps.push({start:cursor, end:Math.min(occupiedStart,slot.end)});
-      cursor = Math.max(cursor, c.fit.placeEnd);
+      cursor = Math.max(cursor, (Number(c.fit.placeEnd) || 0) + selfGapMs);
     }
     if(cursor < slot.end)gaps.push({start:cursor, end:slot.end});
     if(!gaps.length)continue;
@@ -287,7 +315,9 @@ function tryPlaceOnDay(state,fill,opts = {}){
     }
   }
   if(!fits.length)return null;
-  const bestFit = pickBestScoredFit(fits,fill,state,opts);
+  const bestFit = opts.replayEarliest
+    ? fits.slice().sort((a,b)=>a.placeStart-b.placeStart)[0]
+    : pickBestScoredFit(fits,fill,state,opts);
   // Steering for movables (fast / heuristic-fallback / rescue paths). Fixed
   // movables place BEFORE daily breakables commit (mirroring GLPK's fixed-first
   // order), so a movable would otherwise grab the ASAP slot inside a breakable's
@@ -697,7 +727,7 @@ function dailyBreakableReservations(state,candidates){
   if(!state || !Array.isArray(candidates))return [];
   const out = [];
   for(const c of candidates){
-    if(!c || !c.h || !c.h.breakable)continue;
+    if(!c || !c.h || !c.h.breakable || c.h.type === 'task')continue;
     if(!c.eligible || !c.eligible.has(state.dayBase))continue;
     const target = Number(c.h && c.h.target);
     if(!Number.isFinite(target) || target > 1)continue;   // only daily rhythms
@@ -1147,11 +1177,11 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     for(const e of plannerOrderConstraintsForDay(dayBase)){
       if(e.afterHid === fill.h.hid){
         const committed = scheduleAnchorCommitForDay(e.beforeHid,dayBase);
-        if(committed)orderFloor = Math.max(orderFloor,committed.end);
+        if(committed)orderFloor = Math.max(orderFloor,committed.end + (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
         for(const entry of chron){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === e.beforeHid && entry.fit){
-            orderFloor = Math.max(orderFloor, Number(entry.fit.placeEnd) || 0);
+            orderFloor = Math.max(orderFloor, (Number(entry.fit.placeEnd) || 0) + (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
           }
         }
       }
@@ -1160,12 +1190,12 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         // See tryPlaceOnDay: a finished successor is history, not a ceiling,
         // unless the link demanded "right before" it.
         if(orderSuccessorCommitCapsFill(e,fill.h.hid,committed)){
-          orderCeiling = Math.min(orderCeiling,committed.start);
+          orderCeiling = Math.min(orderCeiling,committed.start - (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
         }
         for(const entry of chron){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === e.afterHid && entry.fit){
-            orderCeiling = Math.min(orderCeiling,Number(entry.fit.placeStart) || Infinity);
+            orderCeiling = Math.min(orderCeiling,(Number(entry.fit.placeStart) || Infinity) - (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0));
           }
         }
       }
@@ -1175,13 +1205,18 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
 
   for(const slot of slots){
     const lowerBound = Math.max(slot.start,startClock,orderFloor,doingFloor);
-    const inSlot = chron.filter(c=>c.fit.placeStart >= slot.start && c.fit.placeStart < slot.end);
+    const inSlot = occupancyChronForSlot(chron,slot,fill);
     const gaps = [];
     let cursor = lowerBound;
     for(const c of inSlot){
-      const occupiedStart = inboundOccupiedStart(c.fit,slot.start);
+      const occupiedStartRaw = inboundOccupiedStart(c.fit,slot.start);
+      const sameHabit = Boolean(fill.h && fill.h.hid && c.fill && c.fill.h && c.fill.h.hid === fill.h.hid);
+      const selfGapMs = sameHabit && typeof habitMinGapMinutes === 'function' ? habitMinGapMinutes(fill.h) * 60000 : 0;
+      const occupiedStart = selfGapMs
+        ? Math.min(occupiedStartRaw, (Number(c.fit.placeStart) || occupiedStartRaw) - selfGapMs)
+        : occupiedStartRaw;
       if(occupiedStart > cursor)gaps.push({start:cursor, end:Math.min(occupiedStart,slot.end)});
-      cursor = Math.max(cursor, c.fit.placeEnd);
+      cursor = Math.max(cursor, (Number(c.fit.placeEnd) || 0) + selfGapMs);
     }
     if(cursor < slot.end)gaps.push({start:cursor, end:slot.end});
     for(const gap of gaps){
@@ -1913,6 +1948,16 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
 }
 
 function agendaBlockedIntervals(todayKey,settings,start,end){
+  if(!_plannerBlockedCache || !settings)return agendaBlockedIntervalsUncached(todayKey,settings,start,end);
+  let cache = _plannerBlockedCache.get(settings);
+  if(!cache){cache = new Map();_plannerBlockedCache.set(settings,cache);}
+  const key = `${todayKey}:${start}:${end}`;
+  if(!cache.has(key))cache.set(key,agendaBlockedIntervalsUncached(todayKey,settings,start,end));
+  // Callers clip intervals for their own gaps; never hand them the cache.
+  return cache.get(key).map(row=>({...row}));
+}
+
+function agendaBlockedIntervalsUncached(todayKey,settings,start,end){
   const day = new Date(`${todayKey}T12:00:00`).getDay();
   const dayBase = dayStart(new Date(`${todayKey}T12:00:00`).getTime());
   const overrides = typeof normalizeBlockedTimeOverrides === 'function'
@@ -2141,13 +2186,19 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
 
 // PURE: short section label for a week-home day (today / tomorrow / Wed 15).
 function homeWeekDayLabel(day,now = Date.now()){
-  if(!day)return '';
+  if(!day || day.dayBase == null)return '';
   const todayBase = dayStart(now);
   const offset = Math.round((day.dayBase - todayBase) / 86400000);
   if(offset === 0)return 'today';
   if(offset === 1)return 'tomorrow';
   const date = new Date(day.dayBase);
-  return `${weekdayShort(day.weekday)} ${date.getDate()}`;
+  // A day object without a weekday (skeletons, hand-built previews) still
+  // gets its day name — derive it from the date rather than showing a bare
+  // number in the section header.
+  const weekday = Number.isInteger(day.weekday) && day.weekday >= 0 && day.weekday <= 6
+    ? day.weekday
+    : date.getDay();
+  return `${weekdayShort(weekday)} ${date.getDate()}`;
 }
 
 function mergeIntervals(intervals){

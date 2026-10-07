@@ -166,7 +166,7 @@ button{font:inherit;}
   min-height:100svh;
   margin:0 auto;
   padding:28px 30px 34px;
-  padding:max(28px,env(safe-area-inset-top)) clamp(18px,4vw,64px) max(34px,env(safe-area-inset-bottom));
+  padding:max(28px,var(--content-safe-top)) clamp(18px,4vw,64px) max(34px,var(--content-safe-bottom));
 }
 header.agenda-chrome{margin-bottom:clamp(22px,3.2vw,42px);}
 /* Header hierarchy, tuned for a glance from across the room: the clock is
@@ -278,7 +278,7 @@ header.agenda-chrome{margin-bottom:clamp(22px,3.2vw,42px);}
 /* Transient "marked done" confirmation with an undo escape hatch. The push
    only happens when the toast expires, so undo never touches the network. */
 .agenda-undo{
-  position:fixed;left:50%;bottom:18px;bottom:max(18px,env(safe-area-inset-bottom));z-index:70;
+  position:fixed;left:50%;bottom:18px;bottom:max(18px,var(--content-safe-bottom));z-index:70;
   display:flex;align-items:center;gap:14px;max-width:min(92vw,560px);
   padding:10px 10px 10px 20px;border:0;border-radius:999px;
   background:var(--card-solid);box-shadow:0 14px 38px rgba(0,0,0,.28);

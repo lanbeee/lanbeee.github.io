@@ -15,6 +15,10 @@ function weatherMetricOptions(selected){
 // the display unit (weatherMetricHintText) so they match what the user types.
 function weatherRuleHintText(rule){
   const scale=weatherMetricHintText(rule && rule.metric);
+  if(rule && rule.boundMode==='percentile'){
+    const relative='percentiles use this place’s available 7-day forecast · 0 = lowest, 100 = highest';
+    return weatherRuleActive(rule) ? relative : `inactive — set min %, max %, or a preference · ${relative}`;
+  }
   return weatherRuleActive(rule) ? scale : `inactive — set min, max, or a preference${scale ? ' · ' + scale : ''}`;
 }
 
@@ -286,17 +290,31 @@ function renderWeatherControls(){
           const meta=WEATHER_METRICS[rule.metric] || {};
           // Bounds display in the effective unit (weatherMetricValueToStored
           // converts back on save); storage keeps API units either way.
-          const boundValue=v=>v==null ? '' : weatherMetricDisplayValue(rule.metric,v);
+          const percentile=rule.boundMode==='percentile';
+          const boundValue=v=>v==null ? '' : (percentile ? v : weatherMetricDisplayValue(rule.metric,v));
           return `
           <div class="weather-rule" data-weather-rule-index="${ruleIndex}">
             <select class="settings-select" data-weather-rule-metric aria-label="weather metric">${weatherMetricOptions(rule.metric)}</select>
-            <label>min <input type="number" inputmode="decimal" data-weather-rule-min value="${boundValue(rule.min)}" placeholder="${escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}" /></label>
-            <label>max <input type="number" inputmode="decimal" data-weather-rule-max value="${boundValue(rule.max)}" placeholder="${escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}" /></label>
+            <label class="weather-bound-mode">limits
+              <select class="settings-select" data-weather-rule-bound-mode aria-label="weather limit type">
+                <option value="absolute"${!percentile?' selected':''}>fixed values</option>
+                <option value="percentile"${percentile?' selected':''}>percentiles</option>
+              </select>
+            </label>
+            <label class="weather-min">min${percentile?' %':''} <input type="number" inputmode="decimal" data-weather-rule-min value="${boundValue(rule.min)}"${percentile?' min="0" max="100"':''} placeholder="${percentile?'0':escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}" /></label>
+            <label class="weather-max">max${percentile?' %':''} <input type="number" inputmode="decimal" data-weather-rule-max value="${boundValue(rule.max)}"${percentile?' min="0" max="100"':''} placeholder="${percentile?'100':escapeHtml(weatherMetricRangeText(rule.metric) || meta.range || '—')}" /></label>
             <select class="settings-select" data-weather-rule-relative aria-label="relative preference">
               <option value="none"${rule.relative==='none'?' selected':''}>no preference</option>
               <option value="low"${rule.relative==='low'?' selected':''}>prefer lower</option>
               <option value="high"${rule.relative==='high'?' selected':''}>prefer higher</option>
             </select>
+            <label class="weather-importance">priority
+              <select class="settings-select" data-weather-rule-importance aria-label="weather rule priority">
+                <option value="low"${rule.importance==='low'?' selected':''}>low</option>
+                <option value="medium"${rule.importance==='medium'?' selected':''}>medium</option>
+                <option value="high"${rule.importance==='high'?' selected':''}>high</option>
+              </select>
+            </label>
             <label class="weather-hard"><input type="checkbox" data-weather-rule-hard${rule.hard?' checked':''} /> hard</label>
             <button class="mini-nav" type="button" data-weather-rule-remove aria-label="remove weather rule"><i class="ti ti-x" aria-hidden="true"></i></button>
             <div class="weather-rule-hint">${escapeHtml(weatherRuleHintText(rule))}</div>
@@ -404,7 +422,7 @@ document.addEventListener('click',event=>{
   if(event.target.closest('#weather-profile-add')){
     weatherProfilesMutate(profiles=>{
       if(profiles.length>=MAX_WEATHER_PROFILES)return;
-      profiles.push({id:`weather-${Date.now().toString(36)}`,name:profiles.length?'Outdoor '+(profiles.length+1):'Outdoor',rules:[{metric:'precipitation_probability',min:null,max:40,hard:false,relative:'low'}]});
+      profiles.push({id:`weather-${Date.now().toString(36)}`,name:profiles.length?'Outdoor '+(profiles.length+1):'Outdoor',rules:[{metric:'precipitation_probability',min:null,max:40,hard:false,relative:'low',importance:'medium',boundMode:'absolute'}]});
     });
     return;
   }
@@ -429,7 +447,7 @@ document.addEventListener('click',event=>{
     }
     weatherProfilesMutate(profiles=>profiles.splice(profileIndex,1));
   }else if(event.target.closest('[data-weather-rule-add]')){
-    weatherProfilesMutate(profiles=>profiles[profileIndex]?.rules.push({metric:'temperature_2m',min:null,max:null,hard:false,relative:'low'}));
+    weatherProfilesMutate(profiles=>profiles[profileIndex]?.rules.push({metric:'temperature_2m',min:null,max:null,hard:false,relative:'low',importance:'medium',boundMode:'absolute'}));
   }else if(event.target.closest('[data-weather-rule-remove]')){
     weatherProfilesMutate(profiles=>profiles[profileIndex]?.rules.splice(ruleIndex,1));
   }
@@ -457,9 +475,15 @@ document.addEventListener('change',event=>{
     const rule=profile.rules[ruleIndex];
     if(!rule)return;
     if(event.target.matches('[data-weather-rule-metric]'))rule.metric=event.target.value;
-    if(event.target.matches('[data-weather-rule-min]'))rule.min=weatherMetricValueToStored(rule.metric,event.target.value);
-    if(event.target.matches('[data-weather-rule-max]'))rule.max=weatherMetricValueToStored(rule.metric,event.target.value);
+    if(event.target.matches('[data-weather-rule-bound-mode]')){
+      rule.boundMode=event.target.value;
+      rule.min=null;
+      rule.max=null;
+    }
+    if(event.target.matches('[data-weather-rule-min]'))rule.min=rule.boundMode==='percentile'?(event.target.value===''?null:Number(event.target.value)):weatherMetricValueToStored(rule.metric,event.target.value);
+    if(event.target.matches('[data-weather-rule-max]'))rule.max=rule.boundMode==='percentile'?(event.target.value===''?null:Number(event.target.value)):weatherMetricValueToStored(rule.metric,event.target.value);
     if(event.target.matches('[data-weather-rule-relative]'))rule.relative=event.target.value;
+    if(event.target.matches('[data-weather-rule-importance]'))rule.importance=event.target.value;
     if(event.target.matches('[data-weather-rule-hard]'))rule.hard=event.target.checked;
   },{deferRender});
 });

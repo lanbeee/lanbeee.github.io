@@ -5,7 +5,12 @@ function updateStuckSectionHeaders(){
   // Native sticky headers can occupy the same top coordinate while the next
   // day replaces the previous one. Only the later, visibly painted header is
   // the active stuck header; marking both makes hit targeting ambiguous.
-  const active=headers.filter(el=>el.getBoundingClientRect().top<=1).pop() || null;
+  const pane=document.querySelector('.pane-list');
+  const paneTop=document.body.dataset.paneCount==='1' ? 0 : (pane?.getBoundingClientRect().top || 0);
+  const active=headers.filter(el=>{
+    const stickyTop=parseFloat(getComputedStyle(el).top) || 0;
+    return el.getBoundingClientRect().top<=paneTop+stickyTop+1;
+  }).pop() || null;
   headers.forEach(el=>el.classList.toggle('stuck',el===active));
 }
 document.addEventListener('scroll',()=>{
@@ -240,7 +245,7 @@ function computePlannerExpectationMap(data,settings,numDays = 7){
   // Skip the Fast week-graph search: it can rebuild the horizon dozens of
   // times and freeze scrolling/taps. Hid-per-day expectations only need the
   // ordinary greedy pack.
-  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true,fastGraph:false});
+  const week = buildWeekAgenda(data,settings,numDays,{fullToday:true,fastGraph:false,skipDropAnnotation:true});
   const out = {};
   for(const day of week.days || []){
     const key = day.dayKey || dateKey(day.dayBase);
@@ -1425,6 +1430,7 @@ function render(opts){
   if(!indices.length){
     empty.style.display = 'block';
     if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+    if(typeof queueNativeReminders === 'function')queueNativeReminders();
     const hasSearch = searchQuery.trim().length > 0;
     const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
     const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
@@ -1556,9 +1562,10 @@ function render(opts){
     const statusPill = (!minimal && sortSettings.showStatusOnCards) ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
     const gatedEarlyPill = (!minimal && sortSettings.showEarlyOnCards) ? earlyPill : '';
     const agendaTimeHidden = agendaPill === '';
+    const reminderPill = (!minimal && typeof nativeReminderCardPill === 'function') ? nativeReminderCardPill(h) : '';
     const context = minimal
       ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
-      : cardMeta(h,{extraPills:[statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
+      : cardMeta(h,{extraPills:[reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     const trail = cardTrail(h);
     // Minimal hides dots unless opted in for minimal specifically
     // (minimalShowTrailOnCards, default off); full keeps its own toggle.
@@ -1596,6 +1603,11 @@ function render(opts){
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
     const activityAction = minimal ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
+    const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
+      && nativeReminderAnyOn(`item:${h.hid}`);
+    const reminderAction = reminderOn
+      ? `<button class="swipe-action sa-reminder" data-action="reminders-off" aria-label="turn off phone reminders"><i class="ti ti-bell-off" aria-hidden="true"></i>quiet</button>`
+      : '';
     const canDrag = !minimal && dayBase != null && typeof isAgendaFillDraggable === 'function' && isAgendaFillDraggable(h,agendaRow);
     const dragHandle = canDrag
       ? `<button type="button" class="agenda-drag-handle" aria-label="drag to reorder" title="drag to reorder"><i class="ti ti-grip-vertical" aria-hidden="true"></i></button>`
@@ -1630,6 +1642,7 @@ function render(opts){
         ${pinAction}
         ${keepAction}
         ${activityAction}
+        ${reminderAction}
         ${timerAction}
       </div>
       <div class="swipe-actions swipe-actions-right">
@@ -1646,7 +1659,7 @@ function render(opts){
             <span class="ting-name">${escapeHtml(h.name)}</span>
             ${agendaPill}
           </div>
-          ${(!minimal && isBreakable) ? ((orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
+          ${(!minimal && isBreakable) ? ((reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           ${!visualHtml ? '' : `<div class="ting-visual"${visualAria}>
             ${visualHtml}
@@ -1654,6 +1667,7 @@ function render(opts){
         </div>
         ${minimal || isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
+          ${reminderOn ? `<button class="card-action-btn" data-action="reminders-off" aria-label="turn off phone reminders" title="turn off phone reminders"><i class="ti ti-bell-off" aria-hidden="true"></i></button>` : ''}
           <button class="card-action-btn" data-action="${snoozed ? 'unsnooze' : 'snooze'}" aria-label="${snoozed ? 'show' : 'snooze'}" title="${snoozed ? 'show' : 'snooze'}"><i class="ti ${snoozed ? 'ti-moon-off' : 'ti-moon'}" aria-hidden="true"></i></button>
           <button class="card-action-btn" data-action="nuke" aria-label="remove" title="remove"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>`}
@@ -2096,6 +2110,10 @@ function render(opts){
           startHabitTimer(idx);
         }
       }
+      if(btn.dataset.action === 'reminders-off'){
+        const hid = load()[idx]?.hid;
+        if(hid && typeof nativeClearItemReminders === 'function')nativeClearItemReminders(`item:${hid}`);
+      }
     });
   });
   list.querySelectorAll('.card-action-btn').forEach(btn=>{
@@ -2106,9 +2124,14 @@ function render(opts){
       if(btn.dataset.action === 'snooze')openSnooze(idx);
       if(btn.dataset.action === 'unsnooze')doUnsnooze(idx);
       if(btn.dataset.action === 'nuke')doNuke(idx);
+      if(btn.dataset.action === 'reminders-off'){
+        const hid = load()[idx]?.hid;
+        if(hid && typeof nativeClearItemReminders === 'function')nativeClearItemReminders(`item:${hid}`);
+      }
     });
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+  if(typeof queueNativeReminders === 'function')queueNativeReminders();
   if(typeof scheduleHouseholdAgendaPublish === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     scheduleHouseholdAgendaPublish(_homeRenderedWeek);
   }

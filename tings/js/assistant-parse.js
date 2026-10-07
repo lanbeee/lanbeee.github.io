@@ -733,7 +733,7 @@ function assistantPushWeatherRule(rules, metric, patch){
   const i = rules.findIndex(rule => rule && rule.metric === metric);
   const next = i >= 0
     ? Object.assign({}, rules[i])
-    : {metric, min:null, max:null, hard:false, relative:'none'};
+    : {metric, min:null, max:null, hard:false,relative:'none',importance:'medium',boundMode:'absolute'};
   next.metric = metric;
   const extra = patch && typeof patch === 'object' ? patch : {};
   if(extra.min != null)next.min = extra.min;
@@ -743,6 +743,7 @@ function assistantPushWeatherRule(rules, metric, patch){
   if(typeof extra.hard === 'boolean' && (extra.min != null || extra.max != null || extra.hard === true)){
     next.hard = extra.hard;
   }
+  if(['low','medium','high'].includes(extra.importance))next.importance=extra.importance;
   if(i >= 0)rules[i] = next;
   else rules.push(next);
 }
@@ -761,8 +762,9 @@ function assistantParseWeatherRelativeFromText(s, rules){
     || /\btemp(?:erature)?.{0,48}(?:preference )?(?:towards |to )?(?:lower|cooler|colder)\b/.test(t)
     || /\bpreference towards (?:lower|cooler|colder)\b/.test(t)
     || /\b(?:temp(?:erature)?|feels like)[^\n.]{0,48}prefer(?:ring)? lower\b/.test(t);
-  if(tempHigh)assistantPushWeatherRule(rules, 'temperature_2m', {relative:'high'});
-  else if(tempLow)assistantPushWeatherRule(rules, 'temperature_2m', {relative:'low'});
+  const tempMetric=/\bfeels like\b/.test(t) ? 'apparent_temperature' : 'temperature_2m';
+  if(tempHigh)assistantPushWeatherRule(rules, tempMetric, {relative:'high'});
+  else if(tempLow)assistantPushWeatherRule(rules, tempMetric, {relative:'low'});
   if(/\bprefer(?:s|ring)? (?:dry|drier|lower rain)\b/.test(t)
     || /\brain[^\n.]{0,32}prefer(?:ring)? lower\b/.test(t)
     || /\bprefer(?:ring)? lower[^\n.]{0,24}rain\b/.test(t)){
@@ -771,6 +773,30 @@ function assistantParseWeatherRelativeFromText(s, rules){
   if(/\bprefer(?:s|ring)? (?:calm|calmer|lower wind)\b/.test(t)
     || /\bwind[^\n.]{0,32}prefer(?:ring)? lower\b/.test(t)){
     assistantPushWeatherRule(rules, 'wind_speed_10m', {relative:'low'});
+  }
+}
+
+function assistantParseWeatherImportanceFromText(s,rules){
+  const t=String(s || '');
+  const metrics=[
+    ['wind_speed_10m','(?:wind(?: speed)?)'],
+    ['wind_gusts_10m','(?:gusts?)'],
+    ['apparent_temperature','(?:feels like|apparent temperature)'],
+    ['temperature_2m','(?:temperature|temp)'],
+    ['precipitation_probability','(?:rain chance|chance of rain)'],
+    ['precipitation','(?:precipitation|rain amount)'],
+    ['snowfall','(?:snowfall|snow amount)'],
+    ['uv_index','(?:uv|uv index)'],
+    ['us_aqi','(?:us aqi|air quality)']
+  ];
+  for(const [metric,label] of metrics){
+    if(metric==='temperature_2m' && /\b(?:feels like|apparent temperature)\b[^.;\n]{0,48}\b(?:priority|important|importance|matters)\b/.test(t))continue;
+    const high=new RegExp(`\\b${label}[^.;\\n]{0,48}\\b(?:high priority|more important|very important|really important|matters most)\\b|\\b(?:high priority|more important|very important|really important)\\b[^.;\\n]{0,48}\\b${label}\\b`).test(t);
+    const low=new RegExp(`\\b${label}[^.;\\n]{0,48}\\b(?:low priority|less important|minor importance)\\b|\\b(?:low priority|less important)\\b[^.;\\n]{0,48}\\b${label}\\b`).test(t);
+    const normal=new RegExp(`\\b${label}[^.;\\n]{0,48}\\b(?:normal|medium|standard) (?:priority|importance)\\b`).test(t);
+    if(high)assistantPushWeatherRule(rules,metric,{importance:'high'});
+    else if(low)assistantPushWeatherRule(rules,metric,{importance:'low'});
+    else if(normal)assistantPushWeatherRule(rules,metric,{importance:'medium'});
   }
 }
 
@@ -800,6 +826,7 @@ function assistantParseWeatherRulesFromText(text){
     take(new RegExp('\\b(?:below|under|at most|max(?:imum)?)\\s+' + num + '\\s*(°?\\s*c|°?\\s*f|celsius|fahrenheit|degrees?)'), 'temperature_2m', 'max');
   }
   assistantParseWeatherRelativeFromText(s, rules);
+  assistantParseWeatherImportanceFromText(s,rules);
   return {hints, rules, mentioned:hints.mentioned || rules.length > 0};
 }
 

@@ -1,4 +1,4 @@
-const CACHE = 'tings-v470';
+const CACHE = 'tings-v542';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -106,6 +106,7 @@ const PRECACHE = [
   './js/detail-view-tune.js',
   './js/detail-view-stats.js',
   './js/detail-view-pages.js',
+  './js/detail-view-search.js',
   './js/overview-view.js',
   './js/today-view-fits.js',
   './js/today-view-reservations.js',
@@ -114,11 +115,13 @@ const PRECACHE = [
   './js/today-view-today.js',
   './js/agenda-optimizer.js',
   './js/agenda-optimizer-ilp.js',
+  './js/agenda-forecast.js',
   './js/agenda-planner-worker.js',
   './js/agenda-order.js',
   './lib/js/glpk.mjs',
   './js/push-client.js',
   './js/reminders.js',
+  './js/native-reminders.js',
   './js/shell-ui.js',
   './js/time-picker.js',
   './js/emoji-suggest.js',
@@ -148,6 +151,10 @@ const PRECACHE = [
   './js/sw-register.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/tings-app-icon.svg',
+  './icons/tings-app-icon-twilight.svg',
+  './icons/tings-app-icon-night.svg',
+  './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
   './manifest.json'
 ];

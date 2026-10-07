@@ -1,4 +1,4 @@
-if('serviceWorker' in navigator){
+if('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform?.()){
   navigator.serviceWorker.register('./sw.js').then(reg=>{
     // Pull the newest worker immediately so hard-refresh isn't required to
     // escape a stale optimizer/toast build.

@@ -96,6 +96,7 @@ function currentDetailTune(){
     durationMinutes:clampDuration($('detail-duration').value),
     breakable:$('detail-breakable')?.getAttribute('aria-pressed') === 'true',
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
+    minGapMinutes:clampMinGapMinutes($('detail-min-gap')?.value),
     timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
     autoMarkMinutes:normalizeAutoMark($('detail-auto-mark')?.value),
     trackValue:$('detail-track-value')?.getAttribute('aria-pressed') === 'true',
@@ -161,6 +162,7 @@ function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
+  if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 
 // HYBRID: rewrites form fields from saved original
@@ -190,6 +192,7 @@ function restoreDetailTune(){
   if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
   if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
   if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
+  if($('detail-min-gap'))$('detail-min-gap').value = String(clampMinGapMinutes(detailTuneOriginal.minGapMinutes));
   if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');
   if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = detailTuneOriginal.timerAutoStopMinutes != null ? detailTuneOriginal.timerAutoStopMinutes : '';
   if($('detail-auto-mark'))$('detail-auto-mark').value = detailTuneOriginal.autoMarkMinutes != null ? detailTuneOriginal.autoMarkMinutes : '';
@@ -557,11 +560,16 @@ function setScheduleView(view){
   if(preferredGroup)preferredGroup.hidden = view !== 'preferred';
   const options = $('detail-habit-options');
   if(options)options.hidden = view !== 'allowed';
+  if($('detail-options-disclosure'))$('detail-options-disclosure').hidden = view !== 'allowed';
   if(typeof syncDetailSchedulePlacesUi === 'function')syncDetailSchedulePlacesUi();
 }
 
 // HYBRID: resets detail state and closes sheet
 function closeDetail(){
+  const inner = getSheetInner('detail-sheet');
+  if(inner?.contains(document.activeElement))document.activeElement.blur();
+  inner?.classList.remove('detail-field-editing');
+  setDetailSearchOpen(false,false);
   detailIdx = null;
   detailTuneOriginal = null;
   detailScheduleView = 'allowed';

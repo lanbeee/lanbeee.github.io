@@ -410,24 +410,31 @@ function doNuke(i, opts){
 
 // RENDER: adjusts keyboard lift CSS variable for open sheets
 function updateKeyboardLift(){
-  if (paneTierActive()) {
+  const detailMounted = getPane()?.dataset.activeSheet === 'detail-sheet';
+  if (paneTierActive() && !detailMounted) {
     document.documentElement.style.setProperty('--keyboard-lift','0px');
     return;
   }
   const addOpen = $('add-sheet').classList.contains('open');
   const assistantOpen = $('assistant-sheet')?.classList.contains('open');
+  const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
-  if((!addOpen && !assistantOpen && !searchOpen) || !window.visualViewport){
+  if((!addOpen && !assistantOpen && !detailOpen && !searchOpen) || !window.visualViewport){
     document.documentElement.style.setProperty('--keyboard-lift','0px');
     return;
   }
   const keyboard = Math.max(0,window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop);
   document.documentElement.style.setProperty('--keyboard-lift',`${keyboard}px`);
+  if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
 }
 
 // RENDER: scrolls focused input into view
 function keepFocusedInputVisible(){
   const active = document.activeElement;
+  if(active?.closest('.detail-sheet .detail-page')){
+    active.scrollIntoView({block:'center',inline:'nearest'});
+    return;
+  }
   if(!active || (!$('add-sheet').contains(active) && !$('assistant-sheet')?.contains(active) && active !== $('habit-search')))return;
   if (paneTierActive()) return;
   active.scrollIntoView({block:'center',inline:'nearest'});
@@ -447,8 +454,38 @@ function reparentSearch() {
   }
 }
 
+// Keep one existing dismissal control reachable. Reuse its handler and DOM
+// node so cleanup, pointer guards and delegated navigation keep working.
+function ensureSheetExit(id){
+  const inner = getSheetInner(id);
+  if(!inner || id === 'detail-sheet' || inner.querySelector('[data-sheet-dismissal]'))return;
+  const buttons = [...inner.querySelectorAll('button[id]')];
+  const target = buttons.find(b=>/(?:head-close|close)$/.test(b.id))
+    || buttons.find(b=>/(?:cancel|not-now)$/.test(b.id));
+  if(!target)return;
+  target.dataset.sheetDismissal = 'true';
+  const prefix = id.replace(/-sheet$/,'');
+  buttons.filter(b=>b !== target && ([prefix+'-close',prefix+'-head-close'].includes(b.id)
+    || (b.id === prefix+'-done' && /^(done|close|back to chart)$/i.test(b.textContent.trim())))).forEach(button=>{
+    button.classList.add('sheet-exit-redundant');
+    const row = button.parentElement;
+    if(row.classList.contains('btn-row') && [...row.children].every(child=>child.classList.contains('sheet-exit-redundant')))row.hidden = true;
+  });
+  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head');
+  if(head){
+    head.classList.add('sheet-exit-head');
+    return;
+  }
+  // Settings already has a footer outside its dedicated scrolling region.
+  if(target.closest('.settings-actions'))return;
+  const bar = document.createElement('div');bar.className = 'sheet-exit';
+  target.classList.add('sheet-exit-button');
+  bar.append(target);inner.prepend(bar);
+}
+
 // RENDER: opens a sheet or mounts it in the pane
 function openSheet(id){
+  ensureSheetExit(id);
   if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
     syncInstallGuideVisibility();
   }
@@ -501,7 +538,7 @@ function closeSheet(id){
   $(id).classList.remove('open');
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
-  if(id === 'add-sheet' || id === 'assistant-sheet')updateKeyboardLift();
+  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet')updateKeyboardLift();
 }
 
 // HYBRID: opens a day drill-down item in detail without leaving the day sheet
@@ -556,12 +593,14 @@ function updateFullPageState(){
 
 // RENDER: shows and auto-hides the toast message. Optional durationMs for
 // longer notices (e.g. monthly retention cleanup).
-function showToast(text,durationMs = 900){
+function showToast(text,durationMs){
   const toast = $('toast');
   toast.textContent = text;
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  const ms = Number.isFinite(durationMs) ? Math.max(900,durationMs) : 900;
+  const fallback = typeof DEFAULT_TOAST_MS === 'number' ? DEFAULT_TOAST_MS : 2800;
+  const requested = Number.isFinite(durationMs) ? durationMs : fallback;
+  const ms = Math.max(fallback,requested);
   toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
 }
 

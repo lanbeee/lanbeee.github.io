@@ -271,12 +271,24 @@ function weatherRuleActive(rule){
   return Boolean(rule && (rule.min != null || rule.max != null || rule.relative !== 'none'));
 }
 
+function normalizeWeatherRuleImportance(value){
+  if(value==='low' || value==='high')return value;
+  return 'medium';
+}
+
+function weatherRuleImportanceWeight(rule){
+  const importance=normalizeWeatherRuleImportance(rule && rule.importance);
+  return importance==='high' ? 2 : (importance==='low' ? 0.5 : 1);
+}
+
 function normalizeWeatherRule(raw){
   const metric = raw && WEATHER_METRICS[raw.metric] ? raw.metric : 'precipitation_probability';
+  const boundMode=raw && raw.boundMode==='percentile' ? 'percentile' : 'absolute';
   const numberOrNull = value=>{
     if(value === '' || value == null)return null;
     const n = Number(value);
-    return Number.isFinite(n) ? Math.max(-500,Math.min(5000,n)) : null;
+    if(!Number.isFinite(n))return null;
+    return boundMode==='percentile' ? Math.max(0,Math.min(100,n)) : Math.max(-500,Math.min(5000,n));
   };
   const relative = ['low','high'].includes(raw && raw.relative) ? raw.relative : 'none';
   return {
@@ -284,7 +296,9 @@ function normalizeWeatherRule(raw){
     min:numberOrNull(raw && raw.min),
     max:numberOrNull(raw && raw.max),
     hard:Boolean(raw && raw.hard),
-    relative
+    relative,
+    importance:normalizeWeatherRuleImportance(raw && raw.importance),
+    boundMode
   };
 }
 
@@ -577,6 +591,18 @@ function weatherContextForLocation(locationId,settings){
 // stamped onto bound planner variants by habitBoundToScheduleOption; callers
 // inspecting a published/original row may instead pass scheduleOptionId.
 function effectiveWeatherGuidance(h,locationId,settings,opts={}){
+  const cache = typeof _plannerGuidanceCache === 'undefined' ? null : _plannerGuidanceCache;
+  if(!cache || !h || !settings)return effectiveWeatherGuidanceUncached(h,locationId,settings,opts);
+  let contexts = cache.get(h);
+  if(!contexts){contexts=new WeakMap();cache.set(h,contexts);}
+  let variants = contexts.get(settings);
+  if(!variants){variants=new Map();contexts.set(settings,variants);}
+  const key = `${locationId || ''}:${opts.scheduleOptionId || ''}`;
+  if(!variants.has(key))variants.set(key,effectiveWeatherGuidanceUncached(h,locationId,settings,opts));
+  return {...variants.get(key)};
+}
+
+function effectiveWeatherGuidanceUncached(h,locationId,settings,opts={}){
   if(!h)return {profile:null,profileId:null,source:null,disabled:false,forecastLocationId:null,inherited:false};
   const cfg=settings || (typeof loadSortSettings==='function'
     ? loadSortSettings()
@@ -701,20 +727,30 @@ function weatherLockedPlacement(fill,state,settings){
     && (!state?.dayBase || (lock.start>=state.dayBase && lock.start<state.dayBase+86400000))) || null;
 }
 
+const _weatherDayFormatters = new Map();
 function weatherDayKey(ts,timezone){
   try{
-    const parts = new Intl.DateTimeFormat('en-CA',{timeZone:timezone || undefined,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(ts));
+    const key = timezone || null;
+    let formatter = key ? _weatherDayFormatters.get(key) : null;
+    if(!formatter){
+      formatter = new Intl.DateTimeFormat('en-CA',{timeZone:timezone || undefined,year:'numeric',month:'2-digit',day:'2-digit'});
+      if(key){
+        if(_weatherDayFormatters.size>=16)_weatherDayFormatters.delete(_weatherDayFormatters.keys().next().value);
+        _weatherDayFormatters.set(key,formatter);
+      }
+    }
+    const parts = formatter.formatToParts(new Date(ts));
     const read=type=>parts.find(part=>part.type===type)?.value || '';
     return `${read('year')}-${read('month')}-${read('day')}`;
   }catch{return new Date(ts).toISOString().slice(0,10);}
 }
 
-function weatherPercentile(value,values){
-  const list = values.filter(Number.isFinite).sort((a,b)=>a-b);
+function weatherPercentile(value,values,sortedValues = null){
+  const list = sortedValues || values.filter(Number.isFinite).sort((a,b)=>a-b);
   if(!list.length || !Number.isFinite(value))return 0.5;
-  let below = 0;
-  for(const item of list)if(item < value)below += 1;
-  return list.length <= 1 ? 0.5 : below / (list.length - 1);
+  let lo = 0,hi = list.length;
+  while(lo<hi){const mid = (lo+hi)>>>1;if(list[mid]<value)lo=mid+1;else hi=mid;}
+  return list.length <= 1 ? 0.5 : lo / (list.length - 1);
 }
 
 function weatherMetricStats(context,metric){
@@ -737,27 +773,33 @@ function weatherMetricStats(context,metric){
 function weatherRuleResult(rule,intervalSamples,context,start){
   const value = weatherAggregate(intervalSamples,rule.metric);
   if(value == null)return {known:false,penalty:0,pass:true,value:null};
+  const stats=(rule.relative !== 'none' || rule.boundMode==='percentile')
+    ? weatherMetricStats(context,rule.metric) : null;
+  // Forecast stats already live on the immutable forecast context. Sort once,
+  // then rank each speculative fit without allocating another hourly list.
+  if(stats && !stats.sortedValues)stats.sortedValues=stats.values.slice().sort((a,b)=>a-b);
+  if(stats && !stats.sortedDayValues)stats.sortedDayValues=stats.dayValues.slice().sort((a,b)=>a-b);
+  const intervalRank=stats ? weatherPercentile(value,stats.values,stats.sortedValues) : null;
+  const boundValue=rule.boundMode==='percentile' ? intervalRank*100 : value;
   let pass = true;
   let penalty = 0;
-  if(rule.min != null && value < rule.min){
+  if(rule.min != null && boundValue < rule.min){
     pass = false;
-    penalty += 100 + Math.min(200,Math.abs(value-rule.min) * 4);
+    penalty += 100 + Math.min(200,Math.abs(boundValue-rule.min) * 4);
   }
-  if(rule.max != null && value > rule.max){
+  if(rule.max != null && boundValue > rule.max){
     pass = false;
-    penalty += 100 + Math.min(200,Math.abs(value-rule.max) * 4);
+    penalty += 100 + Math.min(200,Math.abs(boundValue-rule.max) * 4);
   }
   if(rule.relative !== 'none'){
-    const stats=weatherMetricStats(context,rule.metric);
-    const intervalRank = weatherPercentile(value,stats.values);
     const day = weatherDayKey(start,context.timezone);
     const dayValue = weatherAggregate(stats.byDay.get(day) || [],rule.metric);
-    const dayRank = weatherPercentile(dayValue,stats.dayValues);
+    const dayRank = weatherPercentile(dayValue,stats.dayValues,stats.sortedDayValues);
     const intervalBadness = rule.relative === 'low' ? intervalRank : 1-intervalRank;
     const dayBadness = rule.relative === 'low' ? dayRank : 1-dayRank;
     penalty += 100 * (intervalBadness * 0.5 + dayBadness * 0.5);
   }
-  return {known:true,pass,penalty,value};
+  return {known:true,pass,penalty,value,percentile:Number.isFinite(intervalRank)?Math.round(intervalRank*100):null};
 }
 
 function weatherCommitmentOverride(fill,state){
@@ -779,9 +821,30 @@ function weatherCommitmentOverride(fill,state){
 
 function weatherFitAssessment(fill,fit,state,settings){
   const guidance=weatherGuidanceForFit(fill,fit,settings);
+  const profile=guidance.profile;
+  if(!profile || !Array.isArray(profile.rules) || !profile.rules.some(weatherRuleActive))return null;
+  const context=weatherContextForGuidance(guidance,settings);
+  const cache=typeof _plannerWeatherCache === 'undefined' ? null : _plannerWeatherCache;
+  if(!cache || !context)return weatherFitAssessmentUncached(fill,fit,state,settings,guidance,context);
+  let profiles=cache.get(context);
+  if(!profiles){profiles=new WeakMap();cache.set(context,profiles);}
+  let intervals=profiles.get(profile);
+  if(!intervals){intervals=new Map();profiles.set(profile,intervals);}
+  // Commitment overrides depend on the current fill/day, not on the forecast.
+  // Include that decision rather than allowing a cached flexible rejection to
+  // displace an active, planned, critical or direct-linked occurrence.
+  const key=`${fit.placeStart}:${fit.placeEnd}:${weatherCommitmentOverride(fill,state) ? 1 : 0}`;
+  let result=intervals.get(key);
+  if(!intervals.has(key)){
+    result=weatherFitAssessmentUncached(fill,fit,state,settings,guidance,context);
+    if(_plannerWeatherCacheEntries<1024){intervals.set(key,result);_plannerWeatherCacheEntries++;}
+  }
+  return result && {...result,guidance,results:result.results && result.results.map(row=>({...row}))};
+}
+
+function weatherFitAssessmentUncached(fill,fit,state,settings,guidance,context){
   const profile = guidance.profile;
   const activeRules = (profile && Array.isArray(profile.rules) ? profile.rules : []).filter(weatherRuleActive);
-  const context = weatherContextForGuidance(guidance,settings);
   if(!activeRules.length)return null;
   if(!context)return {profile,guidance,status:'unknown',hardFail:false,penalty:0,summary:'forecast unavailable · planned normally'};
   const samples = weatherSamplesForInterval(context,fit.placeStart,fit.placeEnd);
@@ -796,11 +859,16 @@ function weatherFitAssessment(fill,fit,state,settings){
     const meta = WEATHER_METRICS[result.rule.metric];
     const value = weatherMetricValueConverted(result.rule.metric,result.value);
     const unit = weatherMetricUnitLabel(result.rule.metric);
-    return `${meta.label} ${Math.round(value * 10) / 10}${unit}`;
+    const percentile=result.rule.boundMode==='percentile' && Number.isFinite(result.percentile)
+      ? ` · ${result.percentile}th percentile` : '';
+    return `${meta.label} ${Math.round(value * 10) / 10}${unit}${percentile}`;
   };
+  const totalWeight=known.reduce((sum,result)=>sum+weatherRuleImportanceWeight(result.rule),0) || 1;
+  const combinedBadness=known.reduce((sum,result)=>sum+Math.min(100,result.penalty)*weatherRuleImportanceWeight(result.rule),0)/totalWeight;
+  const score=Math.max(0,Math.min(100,Math.round(100-combinedBadness)));
   const summary = failing.length
-    ? `${overridden ? 'weather override' : 'weather caution'} · ${failing.map(describe).join(' · ')}`
-    : `good for ${profile.name} · ${known.slice(0,2).map(describe).join(' · ')}`;
+    ? `${score}/100 · ${overridden ? 'weather override' : 'weather caution'} · ${failing.map(describe).join(' · ')}`
+    : `${score}/100 · good for ${profile.name} · ${known.slice(0,2).map(describe).join(' · ')}`;
   return {
     profile,
     guidance,
@@ -808,7 +876,11 @@ function weatherFitAssessment(fill,fit,state,settings){
     hardFail:hardFail && !overridden,
     // Weather guidance outranks ordinary ASAP/preference tie-breaking, while
     // all planned/critical/order guarantees remain hard constraints upstream.
-    penalty:results.reduce((sum,result)=>sum+result.penalty,0) * 10,
+    // The weighted average makes profiles comparable even when they contain
+    // different numbers of rules. Hard limits stay mandatory regardless of a
+    // rule's relative priority or whether the limit uses values/percentiles.
+    penalty:combinedBadness * 10,
+    score,
     summary,
     results
   };
@@ -1342,8 +1414,8 @@ function weatherSunTimesFor(summary){
     const lat=Number(settings.homeCityLat),lng=Number(settings.homeCityLng);
     if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
     const times=prayerTimesFor({latitude:lat,longitude:lng},new Date(summary.dayBase),prayerParams(settings));
-    const rise=times && times.sunrise instanceof Date ? times.sunrise.getTime() : NaN;
-    const set=times && times.sunset instanceof Date ? times.sunset.getTime() : NaN;
+    const rise=times && Object.prototype.toString.call(times.sunrise)==='[object Date]' ? times.sunrise.getTime() : NaN;
+    const set=times && Object.prototype.toString.call(times.sunset)==='[object Date]' ? times.sunset.getTime() : NaN;
     return Number.isFinite(rise) && Number.isFinite(set) ? {sunrise:rise,sunset:set} : null;
   }catch{ return null; }
 }

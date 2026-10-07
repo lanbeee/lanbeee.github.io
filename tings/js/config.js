@@ -18,6 +18,10 @@ const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v4';
 const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
 const FEEDBACK_FORM_URL = 'https://forms.gle/KNnXKCH55VfzCNeo8';
+const PRIVACY_POLICY_URL = 'https://aretefoundry.github.io/tings/privacy';
+// Play background-location disclosure. Must include "location" and
+// "even when the app is closed or not in use", and name those features.
+const BACKGROUND_LOCATION_DISCLOSURE = 'Tings uses location data to enable place-aware agenda and reminder updates even when the app is closed or not in use. This includes a brief location check during closed-app refresh, and saved-place arrival or departure that can trigger an earlier refresh. There is no continuous GPS tracking. Tings does not sell location or keep a location history off this phone. Driving estimates send coordinates to OSRM, an open routing service, for that route. The latest fix is kept on this phone for up to ten minutes for those checks.';
 
 // ── Locations / travel-time ──
 const MAPS_API_KEY = 'YOUR_MAPS_API_KEY_HERE';   // optional Google provider; 'YOUR_' prefix => disabled (see mapsConfigured())
@@ -30,6 +34,9 @@ const TRAVEL_TTL_MS = 30 * 86400000;               // cached edges revalidate af
 const TRAVEL_FETCH_TIMEOUT_MS = 3000;              // hard cap on travel routing calls
 const GEOCODE_FETCH_TIMEOUT_MS = 8000;             // address search / reverse can be slower
 const DEFAULT_LOCATION_RADIUS_M = 75;              // geofence radius for "you are here" matching
+// City reverse-geocode grid (~1.1 km). Presence is calculated on-device;
+// only this coarsened pin is sent to Photon/Nominatim for the one-time city fill.
+const CITY_LOOKUP_COORD_DECIMALS = 2;
 const TRAVEL_MODES = ['driving','walking','bicycling','transit'];
 const DEFAULT_TRAVEL_MODE = 'driving';
 const ESRI_WORLD_IMAGERY_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -66,7 +73,7 @@ const WEATHER_NEAR_MIN_HORIZON_MS = 2 * 60 * 60 * 1000;
 const WEATHER_NEAR_AFTER_END_MS = 30 * 60 * 1000;
 const WEATHER_NEAR_MAX_HORIZON_MS = 4 * 60 * 60 * 1000;
 const WEATHER_SAME_PLACE_M = 40000;               // reuse home/other forecast inside ~25 miles
-const MAX_WEATHER_PROFILES = 4;
+const MAX_WEATHER_PROFILES = 8;
 const WEATHER_FETCH_BATCH_SIZE = 8;               // provider-supported multi-coordinate request chunk
 const WEATHER_PERIOD_RANGE_MIN_MS = 2 * 60 * 60 * 1000; // range on a card only after ~2h
 const WEATHER_PERIOD_RANGE_DELTA_C = 2;                 // and only when feels-like actually moves
@@ -121,7 +128,10 @@ const DEFAULT_PRAYER_MADHAB = 'shafi';
 const PRAYER_OFFSET_MAX_MIN = 720;
 
 const MAX_RHYTHM_DAYS = 183;
-const MIN_RHYTHM_DAYS = 0.5;
+const MIN_RHYTHM_DAYS = 0.2;
+const DEFAULT_TOAST_MS = 2800;
+const DEFAULT_MIN_GAP_MINUTES = 0;
+const MAX_MIN_GAP_MINUTES = 720;
 const DEFAULT_DURATION_MINUTES = 30;
 const DEFAULT_MIN_CHUNK_MINUTES = 30;
 const DEFAULT_EARLY_WINDOW_DAYS = 1;
@@ -190,15 +200,16 @@ const DEFAULT_SORT_SETTINGS = {
   showFlexibilityOnCards:false,
   showTopicsOnCards:false,
   showLocationOnCards:false,
+  showRemindersOnCards:true,
 
   showScheduledTasksInAgenda:true,
   showDueTasksInAgenda:true,
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
   showWeekOnHome:true,
-  // Exact ILP packer for tight windows (lazy-loads GLPK). This is the default
-  // planner; the scarcity-first heuristic remains the explicit fast fallback.
-  agendaOptimizer:true,
+  // The fast graph planner is the default. The exact ILP packer (lazy-loads
+  // GLPK) remains available for saved settings that opt into it.
+  agendaOptimizer:false,
   mapBaseLayer:'street',
   // Unified agenda placement score (lower = better). All soft signals share
   // one comparable scale — no special-case overrides for due/near/tonight.
@@ -257,11 +268,11 @@ const DEFAULT_SORT_SETTINGS = {
   // Before/after, doing-now, and linked marks between items.
   showOrderPillsOnCards:false,
 
-  // Simplified surface for new users: strips home cards, detail panes, and
-  // calendar overview chrome, and groups home by today / overdue / coming up
-  // instead of day by day. Does not change scoring, packing, or what is due.
-  // Installs that predate this default keep it off (see loadSortSettings).
-  minimalMode:true,
+  // Simplified surface: strips home cards, detail panes, and calendar overview
+  // chrome, and groups home by today / overdue / coming up instead of day by
+  // day. Does not change scoring, packing, or what is due. Opt-in from
+  // Settings — new users start on the full surface (see loadSortSettings).
+  minimalMode:false,
 
   soundEffects:true,
   compactMode:false,

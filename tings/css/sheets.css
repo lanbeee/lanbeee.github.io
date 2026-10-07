@@ -3,7 +3,7 @@
   background:rgba(0,0,0,0.42);z-index:100;
   align-items:flex-end;justify-content:center;
   -webkit-tap-highlight-color:transparent;
-  padding-top:env(safe-area-inset-top);
+  padding-top:var(--content-safe-top);
   opacity:0;pointer-events:none;
   transition:opacity var(--dur-med) ease;
 }
@@ -23,8 +23,8 @@
 #weather-agenda-sheet{z-index:150;}
 .sheet{
   background:var(--bg);width:100%;max-width:480px;
-  border-radius:20px 20px 0 0;padding:20px 18px calc(36px + env(safe-area-inset-bottom));
-  max-height:calc(100dvh - env(safe-area-inset-top));
+  border-radius:20px 20px 0 0;padding:20px 18px calc(36px + var(--content-safe-bottom));
+  max-height:calc(100dvh - var(--content-safe-top));
   overflow-y:auto;overflow-x:hidden;
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
@@ -60,28 +60,28 @@ body[data-pane-count="3"] #assistant-sheet{
 }
 .add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet,.assistant-sheet{
   border-radius:0;min-height:100dvh;max-height:100dvh;
-  padding-top:calc(22px + env(safe-area-inset-top));
-  padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + env(safe-area-inset-bottom));
+  padding-top:calc(22px + var(--content-safe-top));
+  padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + var(--content-safe-bottom));
   transform:none;opacity:1;
   transition:none;
   will-change:auto;
 }
 .add-sheet{
-  padding-bottom:calc(88px + var(--keyboard-lift) + env(safe-area-inset-bottom));
+  padding-bottom:calc(88px + var(--keyboard-lift) + var(--content-safe-bottom));
   position:relative;
 }
 .about-sheet,.privacy-sheet,.overview-sheet,.sample-habits-sheet{
   /* These pages all provide their own top close control or an end-of-page
      action. Their footer belongs in the document flow so it never covers a
      calendar cell, sample row, or expanded help block on a short screen. */
-  padding-bottom:calc(18px + env(safe-area-inset-bottom));
+  padding-bottom:calc(18px + var(--content-safe-bottom));
 }
 .settings-sheet{
   /* Give Settings one dedicated scrolling region and a real footer. The old
      fixed Done button floated over whichever toggle happened to be beneath
      it at 320x568 or under browser zoom. */
   display:flex;flex-direction:column;overflow:hidden;
-  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+  padding-bottom:calc(14px + var(--content-safe-bottom));
 }
 .settings-sheet > .sheet-title,
 .settings-sheet > .about-copy{flex:0 0 auto;}
@@ -99,7 +99,7 @@ body[data-pane-count="3"] #assistant-sheet{
 .settings-sheet > .settings-stack::-webkit-scrollbar{display:none;}
 .detail-sheet{
   padding-top:0;
-  padding-bottom:calc(var(--nav-bottom) + 58px + env(safe-area-inset-bottom));
+  padding-bottom:calc(var(--nav-bottom) + 58px + var(--content-safe-bottom));
   display:flex;flex-direction:column;overflow:hidden;
 }
 .sheet-wrap.open .add-sheet,
@@ -120,7 +120,7 @@ body[data-pane-count="3"] .sheet{
   max-width:var(--sheet-max-width);
   max-height:calc(100dvh - 48px);
   border-radius:var(--sheet-radius);
-  padding:24px 24px calc(24px + env(safe-area-inset-bottom));
+  padding:24px 24px calc(24px + var(--content-safe-bottom));
   transform:translateY(8px) scale(0.985);
 }
 body[data-pane-count="2"] .sheet-wrap.open .sheet,
@@ -144,19 +144,19 @@ body[data-pane-count="3"] .assistant-sheet{
   min-height:0;
   max-height:calc(100dvh - 48px);
   padding-top:24px;
-  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  padding-bottom:calc(24px + var(--content-safe-bottom));
   border-radius:var(--sheet-radius);
   transform:none;
 }
 body[data-pane-count="2"] .add-sheet,
 body[data-pane-count="3"] .add-sheet{
-  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+  padding-bottom:calc(24px + var(--content-safe-bottom));
 }
 
 .add-sheet .add-actions{
   position:fixed;
   left:50%;
-  bottom:calc(14px + var(--keyboard-lift) + env(safe-area-inset-bottom));
+  bottom:calc(14px + var(--keyboard-lift) + var(--content-safe-bottom));
   width:min(calc(100% - 36px),444px);
   transform:translateX(-50%);
   margin:0;
@@ -178,7 +178,7 @@ body[data-pane-count="3"] .add-sheet .add-actions{
 .about-sheet .about-actions,.detail-sheet .detail-actions,.overview-sheet .overview-actions,.settings-sheet .settings-actions,.sample-habits-sheet .sample-habits-actions{
   position:fixed;
   left:50%;
-  bottom:calc(var(--nav-bottom) + env(safe-area-inset-bottom));
+  bottom:calc(var(--nav-bottom) + var(--content-safe-bottom));
   width:min(calc(100% - 36px),444px);
   transform:translateX(-50%);
   margin:0;
@@ -223,3 +223,35 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
 .sheet-title{font-size:calc(15px * var(--font-scale));font-weight:500;margin-bottom:16px;color:var(--text);}
 .sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
 .sheet-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
+
+/* Pin the original header or move the existing exit into a sticky row. */
+.sheet-exit{
+  position:sticky;top:0;z-index:65;flex:0 0 auto;
+  display:flex;justify-content:flex-end;align-items:center;
+  min-height:44px;margin:0 0 6px;background:var(--bg);
+}
+/* Sticky insets resolve against the scroll container's padded edge, so the
+   sheet's own 22px + safe-area padding already clears the status bar — these
+   pin at the padded edge (top:0), right where the opaque band cover ends. */
+.sheet-exit-button{
+  min-width:60px;min-height:44px;padding:8px 12px;
+  border:1px solid var(--border);border-radius:12px;
+  background:var(--bg2);color:var(--text);font:inherit;font-size:13px;cursor:pointer;
+}
+
+.sheet-exit-redundant{display:none !important;}
+.sheet > .sheet-exit-head{position:sticky;top:0;z-index:65;flex:0 0 auto;}
+.sheet > .sheet-exit-head:not(.about-hero){background:var(--bg);}
+/* Full-page sheets scroll their whole document, so on edge-to-edge screens
+   scrolled content slid visibly through the status-bar band above the pinned
+   header. This opaque cover sits on the (fixed) wrap — it never scrolls —
+   spans exactly the sheet's top padding band, paints under the z-65 sticky
+   headers, and at rest only covers padding. */
+body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#overview-sheet,#sample-habits-sheet,#assistant-sheet).open::before{
+  content:'';position:absolute;top:0;left:0;right:0;
+  height:calc(22px + var(--content-safe-top));
+  background:var(--bg);z-index:64;pointer-events:none;
+}
+
+/* Scoped day details already have a pinned close control in their header. */
+#day-logs-footer:has(> #day-logs-done:only-child){display:none;}

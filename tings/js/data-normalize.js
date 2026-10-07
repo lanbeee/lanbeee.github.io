@@ -393,6 +393,7 @@ function normalize(items){
       durationMinutes:clampDuration(raw.durationMinutes),
       breakable,
       minChunkMinutes:clampMinChunk(raw.minChunkMinutes),
+      minGapMinutes:clampMinGapMinutes(raw.minGapMinutes),
       timerAutoStopMinutes:normalizeTimerAutoStop(raw.timerAutoStopMinutes),
       trackValue:Boolean(raw.trackValue),
       priority:clampPriority(raw.priority),

@@ -200,6 +200,7 @@ function memoDaysFromWeek(week){
   };
   return week.days.map(day=>({
     dayBase:Number(day && day.dayBase) || 0,
+    plannedAt:day && day.plannedAt,
     usedMinutes:day && day.usedMinutes,
     remainingMinutes:day && day.remainingMinutes,
     travelSeconds:(day && day.travelSeconds) || 0,
@@ -412,7 +413,7 @@ function appendOrderConstraintRows(GLPK,subjectTo,opts,dayBase,state = null){
         const B = opts[bi];
         if(!A || !B || !A.fit || !B.fit)continue;
         // sometime + direct: never start the successor before the predecessor ends.
-        if(B.fit.placeStart + 60000 < A.fit.placeEnd){
+        if(B.fit.placeStart + 60000 < A.fit.placeEnd + (typeof orderMinGapMs === 'function' ? orderMinGapMs(e) : 0)){
           subjectTo.push({
             name:`ord_${orderClash++}`,
             vars:[{name:A.varName,coef:1},{name:B.varName,coef:1}],
@@ -767,17 +768,18 @@ function listPlaceFitsOnDay(
             scarcity:candidate.scarcity
           };
           const probe = tryPlaceOnDay(state,predFill,{allowNetwork:false});
-          if(probe && Number.isFinite(probe.placeEnd))predecessorEnds.push(probe.placeEnd);
+          const gapMs = typeof orderMinGapMs === 'function' ? orderMinGapMs(edge) : 0;
+          if(probe && Number.isFinite(probe.placeEnd))predecessorEnds.push(probe.placeEnd + gapMs);
           const predDurationMs = clampDuration(candidate.h.durationMinutes) * 60000;
           for(const win of optimizerWindowsForCandidate(candidate,state)){
-            if(Number.isFinite(win.start))predecessorEnds.push(win.start + predDurationMs);
+            if(Number.isFinite(win.start))predecessorEnds.push(win.start + predDurationMs + gapMs);
           }
         }
         for(const entry of state.fills || []){
           const ph = entry && entry.fill && entry.fill.h;
           if(ph && ph.hid === edge.beforeHid && entry.fit
             && Number.isFinite(entry.fit.placeEnd)){
-            predecessorEnds.push(entry.fit.placeEnd);
+            predecessorEnds.push(entry.fit.placeEnd + (typeof orderMinGapMs === 'function' ? orderMinGapMs(edge) : 0));
           }
         }
       }
@@ -1146,8 +1148,9 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       const predecessor = candidateByHid.get(edge.beforeHid);
       const successor = candidateByHid.get(edge.afterHid);
       const predecessorFits = (fitsByIndex.get(predecessor.i) || []).slice();
+      const gapMs = typeof orderMinGapMs === 'function' ? orderMinGapMs(edge) : 0;
       const predecessorEnds = [...new Set(predecessorFits
-        .map(fit=>Number(fit.placeEnd)).filter(Number.isFinite))];
+        .map(fit=>Number(fit.placeEnd)).filter(Number.isFinite).map(end=>end + gapMs))];
       if(!predecessorEnds.length)continue;
       const predecessorContexts = [];
       const contextSeen = new Set();
@@ -1859,7 +1862,7 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
   // limit. The while-open tick may raise it when the next row is imminent.
   // Background refinement may raise it further after a usable agenda is mounted.
   const ordinaryLimitOverride = Math.max(0,Number(solveOptions.nativeLimitSecondsOverride) || 0);
-  const nativeLimitSeconds = solveOptions.refine
+  const nativeLimitSeconds = solveOptions.forecast ? 1 : solveOptions.refine
     ? Math.max(4,Math.min(
         50,
         Number(solveOptions.refineNativeCapSeconds) > 0
@@ -2689,6 +2692,10 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
 let _plannerWeekDayMemo = {dirtyKey:'',todayBase:0,days:null};
 
 async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
+  if(typeof replayAgendaClockWeek==='function'){
+    const replay=replayAgendaClockWeek(data,settings,numDays,opts);
+    if(replay)return {...replay,optimized:Boolean(settings?.agendaOptimizer && !agendaPlannerForcedFast())};
+  }
   // Always able to fall back to the sync scarcity heuristic.
   if(!settings || !settings.agendaOptimizer
     || (typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())){
@@ -2900,6 +2907,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     day.travelSeconds = day.timeline.filter(r=>r.kind === 'travel').reduce((s,r)=>s + (r.seconds || 0),0);
     totalTravelSeconds += day.travelSeconds;
   }
+  if(!opts.skipDropAnnotation)annotateAgendaDropTimes(days,data,settings);
   const plannerSolveStatus = reuseFarDays
     ? combinedPlannerSolveStatus(
         solveSummary.plannerSolveStatus || 'feasible',

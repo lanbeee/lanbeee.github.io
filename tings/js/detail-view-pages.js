@@ -1,7 +1,7 @@
 const DETAIL_PAGE_NAV = {
   calendar:{label:'history',icon:'ti-calendar-week'},
   schedule:{label:'schedule',icon:'ti-calendar-time'},
-  effort:{label:'effort',icon:'ti-progress-check'},
+  effort:{label:'planning',icon:'ti-progress-check'},
   identity:{label:'identity',icon:'ti-id'},
   actions:{label:'actions',icon:'ti-dots'}
 };
@@ -62,6 +62,18 @@ function applyDetailMinimalMode(){
     if(slot)slot.hidden = true;
   }
 
+  const inner = getSheetInner('detail-sheet');
+  inner?.classList.toggle('minimal-detail',minimal);
+  inner?.querySelectorAll('.detail-disclosure').forEach(el=>{
+    if(minimal){
+      if(el.dataset.regularOpen === undefined)el.dataset.regularOpen = String(el.open);
+      // Keep the optional emoji picker behind its disclosure in minimal mode.
+      if(el.id !== 'detail-appearance-disclosure')el.open = true;
+    }else if(el.dataset.regularOpen !== undefined){
+      el.open = el.dataset.regularOpen === 'true';delete el.dataset.regularOpen;
+    }
+  });
+  if(minimal && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
   if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
 }
 
@@ -133,6 +145,17 @@ function updateDetailPagerDots(){
       const livePages = visibleDetailPages(pager);
       const index = Math.max(0,Math.min(livePages.length - 1,Number(tab.dataset.detailPage) || 0));
       pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
+    });
+    dotsWrap.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      const tabs = [...dotsWrap.querySelectorAll('.detail-page-tab')];
+      const current = tabs.indexOf(event.target.closest('.detail-page-tab'));
+      if(current < 0)return;
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      event.preventDefault();
+      const panel = visibleDetailPages(pager)[next];
+      scrollDetailToNav(panel.dataset.detailNav,'auto');
+      tabs[next].focus({preventScroll:true});
     });
   }
   const dots = [...dotsWrap.querySelectorAll('.detail-page-tab')];
@@ -213,11 +236,16 @@ function exportToCalendar(i){
   if(!h)return;
   const ics = icsForHabit(h);
   if(!ics){showToast('add a time or due date first');return;}
+  const filename = `${(h.name || 'task').replace(/[^a-z0-9]+/gi,'-').slice(0,40)}.ics`;
+  if(typeof downloadOrShareTextFile === 'function'){
+    void downloadOrShareTextFile(filename,ics,'text/calendar','exported — open to add to calendar');
+    return;
+  }
   const blob = new Blob([ics],{type:'text/calendar;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${(h.name || 'task').replace(/[^a-z0-9]+/gi,'-').slice(0,40)}.ics`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(()=>{if(a.isConnected)document.body.removeChild(a);URL.revokeObjectURL(url);},1000);

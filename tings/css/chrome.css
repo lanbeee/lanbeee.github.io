@@ -171,7 +171,7 @@ body[data-pane-count="3"] .app-bar{
 .app-bar-search .search-clear i{font-size:18px;}
 
 .bottom-nav{
-  position:fixed;left:50%;bottom:calc(var(--nav-bottom) + var(--keyboard-lift) + env(safe-area-inset-bottom));
+  position:fixed;left:50%;bottom:calc(var(--nav-bottom) + var(--keyboard-lift) + var(--content-safe-bottom));
   transform:translateX(-50%);z-index:50;
   display:flex;align-items:center;gap:6px;
   width:max-content;max-width:calc(100vw - 24px);
