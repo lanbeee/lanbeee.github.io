@@ -219,7 +219,9 @@
  * @property {boolean} agendaOptimizer                         — exact ILP packer for tight windows (lazy GLPK); off by default, fast planner is the default
  * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
- * @property {'keepup'|'reduce'|'zero'} defaultType            — type prefilled in the add-habit sheet
+ * @property {'keepup'|'reduce'|'zero'|'task'} defaultType            — type prefilled in the add-habit sheet
+ * @property {Object|null} taskDefaults                         — independent task creation profile (including dueDateMode)
+ * @property {'manual'|'duration'|'minutes'} defaultAutoMarkMode — new habit scheduled completion policy
  * @property {number} defaultTarget                            — rhythm prefilled in the add-habit sheet
  * @property {string[]} topics                                 — master topic list (max 24)
  * @property {Location[]} locations                            — master location registry (max 32)

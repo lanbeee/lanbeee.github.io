@@ -1052,6 +1052,9 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - Case-insensitive
 - Searches: habit names, topics, location names
 - Clears with ✕ button
+- Opening empty Search keeps the mounted agenda. Home and detail search docks
+  follow keyboard geometry once per animation frame; visible editing fields
+  keep their scroll position, and covered fields scroll above the keyboard/footer.
 - Search is available when the settled, unsearched Home view contains at least
   10 visible Ting cards across its sections. Pinned copies and separate-session
   cards count because they are visible/searchable; travel and busy cards do not.
@@ -2982,6 +2985,16 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 **Query tools** answer questions by computing against live data; the model selects tools and arguments but does not author factual results. `answer_weather` reads day/hour forecasts and assesses weather against an item's rules. `query hours` ranks hours inside a window, including several conditions at once (relatively hot and very low wind) and extremes (lowest wind after 5pm). `query compare` scores two times, including a clock such as one hour before sunset, and can apply a saved habit’s weather profile. `query item` with a start answers how that habit fits the window even when it is not already planned. `answer_schedule` reads open time, contiguous openings, the freest day, what-if conflicts, the same missed list as the today-header pill, and day/week agendas. `answer_schedule` and `answer_items` share a composable item-query layer: the model can combine AND conditions over name, kind, status, importance/priority, app urgency, overdue age, due distance, time since completion, frequency, duration, pin/split/completed state, topic, place, weather profile, and scheduled time; then request an authoritative sort, ordinal (`position: 2`), limit, count, total duration, or average duration. This handles questions such as “the second most overdue thing I missed,” “the shortest urgent habit tomorrow,” and “how many pinned P0 tasks are open” without trusting the model to inspect or rank a returned list. Legacy `most_important`, `most_frequent`, and `longest` selections remain supported. Compound questions run every requested tool and join their verified results. A later model prose pass cannot replace those results, so invented names, gaps, times, totals, weather, history, or rankings are discarded even if the model sounds confident. A read used to choose fields for a later action is marked `purpose: prepare_action`; that creates an explicit pending obligation, so prose cannot end the turn until `draft_item`, `draft_batch`, `draft_setting`, or the requested action tool succeeds. This supports research-then-create flows such as finding a suitable open block and then drafting a weekly outdoor habit with the chosen duration/window and an attached weather profile. Creation tools remain available after reads, and read calls are executed before dependent drafts when both arrive together. A transient model connection failure is retried once; if continuation still fails, Tings labels verified lookup output as partial and never presents it as completion of the whole request. No-op action results are preserved alongside the remaining compound answer, and several `tool_calls` in one model reply all run before finalization. The next user message includes `recent.items` / `recent.referent` so “when did I last do that one?” can call `lookup_item` without guessing. `answer_items` also summarizes today's progress. `answer_settings` lists saved places, weather profiles, topics, and busy times. `lookup_item` reports an item's current state and important settings, recent log details, pace/streak/progress statistics, or a concrete planner explanation for the next seven days. Its default summary searches the complete rendered week plus explicit future plan/due markers and reports both the next occurrence and latest real completion, so “not today” is not treated as a complete answer. Spoken names are ranked against the full saved list (fragments, nicknames, typos, or the whole question); a unique hit is used, and several close hits ask which item it is instead of guessing or creating a new one. `find_item` exposes that same ranking. When the whole request is confusing, Tings asks one short question (optional chips) instead of guessing — at most two clarification questions in a row, then it stops. Where data is missing or a question is vague, the reply says so honestly. Query tools are read-only: no draft, no save.
 
+#### New habit & task defaults 👤👨‍💻
+
+Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The add page includes small **habit/task defaults** and **busy times** links. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
+
+Choose which kind opens first independently of the profile being edited. Habits support a rhythm of N times in M days. Tasks support a due-date policy of **today** (initial choice), **tomorrow**, or **no date / someday**; the date is resolved when creating the task rather than saved as a fixed calendar date. Both profiles include priority, duration, early/late scheduling allowance, splitting and shortest session, allowed weekdays/time/place, topics, and completion.
+
+Completion starts **manual**. **After duration** copies the new item's actual duration into its automatic completion delay when saved; **after set minutes** accepts a separate delay, including zero. The add page can override duration, splitting, completion, priority, topics and places. Clearing a due date, choosing manual completion, or removing a preselected topic remains an explicit override. Automatic completion follows the existing scheduled/agenda rules; split chunks are credited after they end, while manual timers remain manual.
+
+Busy times reserve time for commitments such as sleep or work and use the existing Settings editor. They are saved independently of the new item and do not track completion. Defaults affect new items from the + page; saved items remain unchanged. Older shared defaults seed both profiles once and then remain independent. Habit fields retain their legacy keys; task choices live under `taskDefaults`, with the same field names without the `default` prefix, plus `dueDateMode`.
+
 #### Default Habit Values 👨‍💻
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
@@ -2994,7 +3007,13 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 | `defaultBreakable` | boolean | false | Default breakable setting |
 | `defaultMinChunkMinutes` | number | 30 | Default minimum chunk |
 | `defaultAutoMarkMinutes` | number\|null | null | Default auto-mark timeout |
-| `defaultTopics` | string[] | [] | Topics applied to new habits |
+| `defaultTopics` | string[] | [] | Topics preselected for new habits |
+| `defaultAutoMarkMode` | string | 'manual' | `manual`, `duration`, or `minutes` |
+| `defaultAllowedWeekdays` | number[] | [] | Empty allows every day |
+| `defaultAllowedTimeStart` / `defaultAllowedTimeEnd` | number\|null | null | Allowed time window in clock minutes |
+| `defaultLocationIds` | string[] | [] | Preselected allowed places |
+| `defaultAnywhereAllowed` | boolean | true | Allow any place |
+| `taskDefaults` | object | migrated profile | Independent task defaults; `dueDateMode` starts as `today` |
 
 #### Internal/Caching 👨‍💻
 | Field | Type | Default | Purpose |

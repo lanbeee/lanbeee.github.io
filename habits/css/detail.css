@@ -232,7 +232,8 @@ body[data-pane-count="1"] .detail-sheet{
 body[data-pane-count="1"] .detail-sheet > .detail-bottom-bar{
   position:absolute;left:50%;bottom:calc(var(--nav-bottom) + var(--keyboard-lift,0px) + var(--content-safe-bottom));
   transform:translateX(-50%);margin:0;width:max-content;max-width:calc(100vw - 24px);
-  transition:bottom var(--dur-slow) var(--ease-snappy);
+  /* Follow the OS keyboard animation directly, like Home's dock. */
+  transition:none;
 }
 /* Home search drops --nav-bottom to 6px so the field sits on the keyboard
    instead of floating a thumb-clearance above it. */

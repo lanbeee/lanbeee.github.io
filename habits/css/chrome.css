@@ -49,6 +49,7 @@ body.header-hidden .topbar{
 body.search-active .topbar,
 body.search-active #home-tag-filter{
   opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
+  transition-property:transform,opacity;
 }
 body[data-pane-count="1"].search-active .topbar{
   max-height:0;
@@ -180,7 +181,9 @@ body[data-pane-count="3"] .app-bar{
   backdrop-filter:var(--glass-blur);
   border-radius:22px;
   box-shadow:var(--floating-shadow);
-  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,bottom var(--dur-slow) var(--ease-snappy);
+  /* Keyboard geometry is already animated by the OS. A bottom transition
+     restarts on every viewport step and leaves the field chasing the IME. */
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease;
   will-change:transform;
 }
 body[data-pane-count="2"] .bottom-nav,

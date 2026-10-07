@@ -398,3 +398,15 @@ select{
 }
 .assistant-reach-cmd[hidden]{display:none;}
 .assistant-reach-actions{margin:0 0 4px;flex-wrap:wrap;}
+
+.add-shortcuts{display:flex;flex-wrap:wrap;gap:8px 18px;margin:-5px 0 12px;}
+.add-shortcuts .mini-text-btn{min-height:36px;text-decoration:underline;text-underline-offset:3px;}
+#default-rhythm-row .range-row{justify-content:flex-start;}
+#default-rhythm-row input,#ting-duration,#ting-min-chunk{width:4ch;}
+
+#settings-defaults-body .settings-range{grid-template-columns:minmax(0,1fr) 76px 32px;}
+#settings-defaults-body .settings-range input[type=number]{width:100%;min-width:0;height:38px;border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font:inherit;font-size:14px;padding:0 8px;text-align:right;}
+#settings-defaults-body .settings-range output{font-weight:500;}
+
+#default-auto-mark-row .range-value{width:86px;grid-template-columns:54px auto;}
+#setting-default-auto-mark{width:54px;}

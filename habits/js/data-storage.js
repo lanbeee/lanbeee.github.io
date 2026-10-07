@@ -96,6 +96,67 @@ function plannerPerfDump(label = 'planner'){
   try{ console.table(rows); }catch(_){ console.log(label,rows); }
 }
 
+// PURE: creation profiles share field semantics, but never share mutable state.
+function normalizeNewItemDefaults(raw = {}){
+  const autoMarkMinutes = normalizeAutoMark(raw.autoMarkMinutes);
+  return {
+    target:clampRhythmValue(raw.target ?? 7),
+    priority:clampPriority(raw.priority ?? DEFAULT_PRIORITY),
+    durationMinutes:clampDuration(raw.durationMinutes),
+    earlyWindowDays:clampFlexibility(raw.earlyWindowDays),
+    delayAllowanceDays:clampDelayAllowance(raw.delayAllowanceDays),
+    breakable:Boolean(raw.breakable),
+    minChunkMinutes:clampMinChunk(raw.minChunkMinutes),
+    topics:normalizeTopics(raw.topics),
+    autoMarkMode:['manual','duration','minutes'].includes(raw.autoMarkMode)
+      ? raw.autoMarkMode : (autoMarkMinutes !== null ? 'minutes' : 'manual'),
+    autoMarkMinutes,
+    dueDateMode:['none','today','tomorrow'].includes(raw.dueDateMode) ? raw.dueDateMode : 'today',
+    allowedWeekdays:normalizeAllowedWeekdays(raw.allowedWeekdays),
+    allowedTimeStart:normalizeTimeMinutes(raw.allowedTimeStart),
+    allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
+    locationIds:normalizeLocationIds(raw.locationIds),
+    anywhereAllowed:raw.anywhereAllowed !== false
+  };
+}
+
+function newItemDefaults(settings,type){
+  const habit = {};
+  for(const key of ['target','priority','durationMinutes','earlyWindowDays','delayAllowanceDays',
+    'breakable','minChunkMinutes','topics','autoMarkMode','autoMarkMinutes','allowedWeekdays',
+    'allowedTimeStart','allowedTimeEnd','locationIds','anywhereAllowed']){
+    habit[key] = settings['default' + key[0].toUpperCase() + key.slice(1)];
+  }
+  const normalized = normalizeNewItemDefaults(habit);
+  return type === 'task' ? normalizeNewItemDefaults(settings.taskDefaults || normalized) : normalized;
+}
+
+function normalizeCreationSettings(settings){
+  // Old backups may specify minutes without the newer mode field.
+  if(settings.defaultAutoMarkMode == null){
+    settings.defaultAutoMarkMode = settings.defaultAutoMarkMinutes != null ? 'minutes' : 'manual';
+  }
+  const habit = newItemDefaults(settings,'keepup');
+  settings.taskDefaults = normalizeNewItemDefaults(settings.taskDefaults || habit);
+  for(const key of Object.keys(habit)){
+    if(key === 'dueDateMode')continue;
+    settings['default' + key[0].toUpperCase() + key.slice(1)] = habit[key];
+  }
+  settings.defaultType = ['keepup','reduce','zero','task'].includes(settings.defaultType) ? settings.defaultType : 'keepup';
+}
+
+function defaultAutoMarkMinutes(profile,durationMinutes = profile.durationMinutes){
+  return profile.autoMarkMode === 'duration' ? durationMinutes
+    : profile.autoMarkMode === 'minutes' ? profile.autoMarkMinutes : null;
+}
+
+function defaultTaskDueDate(profile,now = Date.now()){
+  if(profile.dueDateMode === 'none')return null;
+  const day = new Date(now);
+  if(profile.dueDateMode === 'tomorrow')day.setDate(day.getDate() + 1);
+  return dayStart(day.getTime());
+}
+
 function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
@@ -147,7 +208,9 @@ function loadSortSettings(){
     merged.defaultBreakable = Boolean(merged.defaultBreakable);
     merged.defaultMinChunkMinutes = clampMinChunk(merged.defaultMinChunkMinutes);
     merged.defaultTopics = normalizeTopics(merged.defaultTopics);
-    merged.defaultAutoMarkMinutes = Number.isFinite(merged.defaultAutoMarkMinutes) && merged.defaultAutoMarkMinutes > 0 ? Math.round(merged.defaultAutoMarkMinutes) : null;
+    merged.defaultAutoMarkMinutes = Number.isFinite(merged.defaultAutoMarkMinutes) && merged.defaultAutoMarkMinutes >= 0 ? Math.round(merged.defaultAutoMarkMinutes) : null;
+    if(!Object.prototype.hasOwnProperty.call(saved,'defaultAutoMarkMode'))merged.defaultAutoMarkMode = null;
+    normalizeCreationSettings(merged);
     // Calm-card defaults: fresh installs get the quieter card (no insight
     // decorations, no compact rows). An install saved before the default
     // flipped has settings on disk without these keys — keep the fuller look
@@ -238,6 +301,7 @@ function loadSortSettings(){
 
 function saveSortSettings(settings){
   const next = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...settings,preset:'todayFirst'};
+  if(!Object.prototype.hasOwnProperty.call(settings,'defaultAutoMarkMode'))next.defaultAutoMarkMode = null;
   delete next.keepStopsQuiet;
   next.reminders = false;
   next.topics = normalizeTopics(next.topics);
@@ -270,7 +334,8 @@ function saveSortSettings(settings){
   next.defaultBreakable = Boolean(next.defaultBreakable);
   next.defaultMinChunkMinutes = clampMinChunk(next.defaultMinChunkMinutes);
   next.defaultTopics = normalizeTopics(next.defaultTopics);
-  next.defaultAutoMarkMinutes = Number.isFinite(next.defaultAutoMarkMinutes) && next.defaultAutoMarkMinutes > 0 ? Math.round(next.defaultAutoMarkMinutes) : null;
+  next.defaultAutoMarkMinutes = Number.isFinite(next.defaultAutoMarkMinutes) && next.defaultAutoMarkMinutes >= 0 ? Math.round(next.defaultAutoMarkMinutes) : null;
+  normalizeCreationSettings(next);
   next.showStatusOnCards = next.showStatusOnCards !== false;
   next.showEarlyOnCards = next.showEarlyOnCards !== false;
   next.showAgendaTimesOnCards = normalizeAgendaTimeMode(next.showAgendaTimesOnCards);

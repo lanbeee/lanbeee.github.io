@@ -31,6 +31,7 @@ day-header-pill-tap-test.js	ui	once
 day-header-weather-fit-test.js	ui	once
 detail-auto-chunk-test.js	planner	once
 detail-calendar-strip-test.js	ui	once
+day-plan-footer-test.js	ui	once
 detail-schedule-test.js	ui	once
 dynamic-times-test.js	planner	once
 emoji-suggest-test.js	ui	once
@@ -135,3 +136,5 @@ fast-evening-packing-test.js	planner	once
 drop-alarm-cycle-test.js	planner	page-both
 
 detail-search-navigation-test.js	ui	once
+keyboard-layout-test.js	ui	once
+new-item-defaults-test.js	ui	once

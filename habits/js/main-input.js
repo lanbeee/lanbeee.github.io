@@ -298,8 +298,8 @@ $('open-settings').addEventListener('click',()=>{
   syncSettingsControls();
   openSheet('settings-sheet');
 });
-$('settings-close').addEventListener('click',()=>closeSheet('settings-sheet'));
-$('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('settings-sheet');});
+$('settings-close').addEventListener('click',closeSettingsSheet);
+$('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSettingsSheet();});
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');
@@ -640,15 +640,74 @@ $('location-list')?.addEventListener('click',e=>{
     return;
   }
 });
-bindSettingRange('default-target','defaultTarget','d',{custom:false});
-bindSettingRange('default-duration','defaultDurationMinutes','m',{custom:false});
-bindSettingRange('default-early-window','defaultEarlyWindowDays','d',{custom:false});
-bindSettingRange('default-delay-allowance','defaultDelayAllowanceDays','d',{custom:false});
-bindSettingRange('default-min-chunk','defaultMinChunkMinutes','m',{custom:false});
+for(const [name,key,suffix] of [['duration','durationMinutes','m'],['early-window','earlyWindowDays','d'],['delay-allowance','delayAllowanceDays','d'],['min-chunk','minChunkMinutes','m']]){
+  $('setting-default-' + name).addEventListener('change',e=>{
+    const value = Number(e.target.value);
+    syncSettingRange('default-' + name,value,suffix);
+    updateDefaultProfile({[key]:value});
+  });
+}
+$('default-profile-seg').addEventListener('click',e=>{
+  const btn = e.target.closest('[data-default-profile]');
+  if(!btn)return;
+  defaultProfileKind = btn.dataset.defaultProfile;
+  syncDefaultProfileControls();
+});
+for(const id of ['setting-default-times','setting-default-days']){
+  $(id).addEventListener('change',()=>updateDefaultProfile({target:targetFromRhythmParts($('setting-default-times').value,$('setting-default-days').value)}));
+}
+$('setting-default-due').addEventListener('change',e=>updateDefaultProfile({dueDateMode:e.target.value}));
+$('setting-default-completion').addEventListener('change',e=>{
+  const profile = currentDefaultProfile();
+  updateDefaultProfile({autoMarkMode:e.target.value,
+    autoMarkMinutes:e.target.value === 'minutes' ? profile.autoMarkMinutes ?? profile.durationMinutes : profile.autoMarkMinutes});
+});
+$('setting-default-auto-mark').addEventListener('change',e=>updateDefaultProfile({autoMarkMinutes:normalizeAutoMark(e.target.value)}));
+$('setting-default-breakable').addEventListener('click',()=>updateDefaultProfile({breakable:!currentDefaultProfile().breakable}));
+$('default-weekdays').addEventListener('click',e=>{
+  const btn = e.target.closest('[data-default-day]');
+  if(!btn)return;
+  const days = new Set(currentDefaultProfile().allowedWeekdays);
+  const day = Number(btn.dataset.defaultDay);
+  if(days.has(day))days.delete(day); else days.add(day);
+  updateDefaultProfile({allowedWeekdays:[...days].sort((a,b)=>a-b)});
+});
+for(const [id,key] of [['setting-default-time-start','allowedTimeStart'],['setting-default-time-end','allowedTimeEnd']]){
+  $(id).addEventListener('change',e=>updateDefaultProfile({[key]:timeInputToMinutes(e.target.value)}));
+}
+$('default-time-clear').addEventListener('click',()=>updateDefaultProfile({allowedTimeStart:null,allowedTimeEnd:null}));
+$('default-places-chips').addEventListener('click',e=>{
+  if(e.target.closest('.tag-row')?._sg)return;
+  const profile = currentDefaultProfile();
+  if(e.target.closest('[data-location-add]')){
+    openLocationPicker({onCreated:id=>updateDefaultProfile({locationIds:[...new Set([...profile.locationIds,id])],anywhereAllowed:false})});
+    return;
+  }
+  if(e.target.closest('[data-anywhere]')){
+    updateDefaultProfile({anywhereAllowed:!profile.anywhereAllowed});
+    return;
+  }
+  const btn = e.target.closest('[data-location-id]');
+  if(!btn)return;
+  const ids = new Set(profile.locationIds);
+  const id = btn.dataset.locationId;
+  if(ids.has(id))ids.delete(id); else ids.add(id);
+  updateDefaultProfile({locationIds:[...ids],anywhereAllowed:ids.size === 0});
+});
+$('add-open-defaults').addEventListener('click',()=>openAddSettings('defaults'));
+$('add-open-busy').addEventListener('click',()=>openAddSettings('busy'));
+$('ting-completion-mode').addEventListener('change',()=>{
+  if($('ting-completion-mode').value === 'minutes' && !$('ting-auto-mark').value)$('ting-auto-mark').value = clampDuration($('ting-duration').value);
+  syncAddEffortUi();
+});
+$('ting-breakable').addEventListener('click',()=>{
+  $('ting-breakable').setAttribute('aria-pressed',String($('ting-breakable').getAttribute('aria-pressed') !== 'true'));
+  syncAddEffortUi();
+});
 $('default-priority-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-priority]');
   if(!opt)return;
-  updateSortSetting({defaultPriority:parseInt(opt.dataset.defaultPriority,10)});
+  updateDefaultProfile({priority:parseInt(opt.dataset.defaultPriority,10)});
 });
 $('font-scale-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');

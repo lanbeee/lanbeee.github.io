@@ -240,12 +240,14 @@ span:has(> .info-btn){position:relative;display:inline-block;}
   color:var(--text2);font-size:12px;font-weight:600;line-height:1;
   flex-shrink:0;
 }
-.range-value input[type=text]{
+.range-value input:is([type=text],[type=number]){
   width:32px;height:22px;padding:0;border:0;background:transparent;margin:0;
   color:var(--text);font-size:14px;font-weight:600;text-align:right;line-height:22px;
   appearance:textfield;-webkit-appearance:none;font-variant-numeric:tabular-nums;
 }
-.range-value input[type=text]:focus{box-shadow:none;border:0;}
+.range-value input:is([type=text],[type=number]):focus{box-shadow:none;border:0;}
+.range-value input[type=number]::-webkit-inner-spin-button,
+.range-value input[type=number]::-webkit-outer-spin-button{appearance:none;margin:0;}
 .timer-auto-stop-field{display:flex;width:auto;padding:0 10px;height:38px;border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);}
 .crown-dial{
   flex:1;min-width:60px;height:34px;

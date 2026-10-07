@@ -246,6 +246,14 @@ const DEFAULT_SORT_SETTINGS = {
   defaultMinChunkMinutes:DEFAULT_MIN_CHUNK_MINUTES,
   defaultTopics:[],
   defaultAutoMarkMinutes:null,
+  defaultAutoMarkMode:'manual',
+  defaultAllowedWeekdays:[],
+  defaultAllowedTimeStart:null,
+  defaultAllowedTimeEnd:null,
+  defaultLocationIds:[],
+  defaultAnywhereAllowed:true,
+  // Separate creation profile; legacy shared defaults migrate on load/save.
+  taskDefaults:null,
 
   // Calm-card defaults: the insight decorations (progress pill, early pill,
   // trail dots, order marks) are OFF so switching out of minimal mode reveals
