@@ -374,8 +374,10 @@ function renderHomeTagFilter(data,precomputedIndices = null){
     : null;
   const activeCount = Number(Boolean(activeLoc)) + Number(Boolean(activeTopic));
   const activeHtml = `
-    <div class="home-filter-active" aria-label="active filters">
+    <div class="home-filter-active" aria-label="current place">
       ${statusHtml}
+    </div>
+    <div class="home-filter-selections" ${activeCount ? '' : 'hidden'} aria-label="selected filters">
       ${activeLoc ? `<button type="button" class="home-active-filter location-filter" data-clear-home-location="1" aria-label="clear place filter ${escapeHtml(activeLoc.label)}"><i class="ti ti-map-pin" aria-hidden="true"></i><span>${escapeHtml(activeLoc.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       ${activeTopic ? `<button type="button" class="home-active-filter topic-active" data-clear-home-topic="1" aria-label="clear topic filter ${escapeHtml(activeTopic.label)}"><i class="ti ti-tag" aria-hidden="true"></i><span>${escapeHtml(activeTopic.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
     </div>

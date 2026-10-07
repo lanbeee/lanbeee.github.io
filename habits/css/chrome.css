@@ -4,13 +4,13 @@
      (not a viewport media query) or the place name clips on phones whose
      screen is wider than the old breakpoint. */
   container-type:inline-size;
-  display:flex;flex-direction:row;gap:10px;align-items:center;
+  display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:center;
   padding:10px 12px;
   background:var(--bg);
   z-index:10;border-radius:var(--card-radius,20px);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,max-height var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy);
   margin:8px 0 0;
-  max-height:88px;
+  max-height:none;
   will-change:transform,opacity;
 }
 /* The header's three controls (wordmark · place · filters) share one surface:
@@ -29,15 +29,21 @@
   border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
 }
 .topbar .home-filter-trigger.has-active{ border:0;background:transparent;box-shadow:none; }
-.topbar .home-filter-bar{overflow:hidden;}
-.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end;overflow:hidden; }
-/* Shrink inside the bar. A flex-end row that overflows clips the left edge,
-   which is what shaved the current-place control once the assistant button
-   took a slot on a phone. */
-.topbar .presence-filter{
-  flex:0 1 190px;width:auto;min-width:0;max-width:min(190px,100%);
+.topbar .home-filter-bar,.topbar .home-filter-active{display:contents;}
+.topbar .home-filter-selections{
+  order:5;flex:1 0 100%;min-width:0;
+  display:flex;flex-wrap:wrap;gap:8px;
 }
-.topbar .home-filter-trigger{ position:relative; }
+.topbar .home-filter-selections .home-active-filter{
+  flex:1 1 140px;max-width:100%;height:44px;
+}
+.topbar .assistant-launch{flex:0 0 44px;}
+/* Current place takes the remaining header space; selected filters use the
+   full-width row below it rather than competing with the header controls. */
+.topbar .presence-filter{
+  flex:1 1 0;width:auto;min-width:0;max-width:min(190px,100%);margin-left:auto;
+}
+.topbar .home-filter-trigger{position:relative;margin-left:auto;}
 body[data-pane-count="2"] .topbar,
 body[data-pane-count="3"] .topbar{
   display:none;

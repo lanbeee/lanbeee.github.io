@@ -42,7 +42,7 @@ function check(ok,label){
     await page.locator('#open-add').click();
     await page.locator('#ting-message').fill('Keep my draft');
     await page.locator('#type-seg [data-v="task"]').click();
-    check(await page.locator('#add-title').textContent() === 'new task' && await page.locator('#ting-due-date').inputValue() === '2026-10-07','task branch starts due today with its own heading');
+    check(await page.locator('#add-title').textContent() === 'new' && await page.locator('#ting-due-date').inputValue() === '2026-10-07','task branch starts due today under the shared new heading');
     await page.locator('#add-more-toggle').click();
     check(await page.locator('#ting-duration').inputValue() === '45' && await page.locator('#ting-completion-mode').inputValue() === 'duration','task effort uses task profile');
     await page.locator('#ting-due-date').fill('2026-10-09');

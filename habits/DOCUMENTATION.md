@@ -1043,6 +1043,8 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - `__none__` sentinel for "no topic" / "anywhere" habits
 - Presence indicator (👤 "today's place") — shows current location with GPS signal
 - Tap presence to open **Presence Picker** (§X.7)
+- Selected topic and place filters appear in their own row below the Home
+  header controls, with reachable clear buttons even on narrow phones.
 
 ---
 
@@ -1075,17 +1077,18 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 
 ---
 
-## VIII. THE ADD HABIT SHEET
+## VIII. THE NEW SHEET
 
 ### 8.1 Sheet Structure
 ```
 ┌─────────────────────────────────────┐
-│ new habit                           │
+│ new           [defaults] [busy times]│
 ├─────────────────────────────────────┤
 │ [Input] Name     [Emoji] 🎯          │
 │ [Emoji picker: quick picks + colors]│
 │                                     │
 │ Type: [habit] [task]                │
+│ A task is one-off; a habit repeats. │
 │                                     │
 │ (habit) How often: [1] × in [7] d   │
 │ (task)  Due: [date] [time]          │
@@ -2988,7 +2991,7 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 #### New habit & task defaults 👤👨‍💻
 
-Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The add page includes small **habit/task defaults** and **busy times** links. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
+Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The **new** sheet includes small **defaults** and **busy times** pills in its header, and explains below the type selector: “A task is one-off; a habit repeats.” Defaults opens the profile for the selected kind. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
 
 Choose which kind opens first independently of the profile being edited. Habits support a rhythm of N times in M days. Tasks support a due-date policy of **today** (initial choice), **tomorrow**, or **no date / someday**; the date is resolved when creating the task rather than saved as a fixed calendar date. Both profiles include priority, duration, early/late scheduling allowance, splitting and shortest session, allowed weekdays/time/place, topics, and completion.
 

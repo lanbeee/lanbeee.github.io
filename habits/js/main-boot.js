@@ -124,8 +124,6 @@ $('ting-priority-seg').addEventListener('click',e=>{
 // RENDER: toggle add-sheet field rows for the active type
 function syncAddTypeUi(type){
   const isHabit = type === 'keepup' || type === 'reduce';
-  $('add-title').textContent = type === 'task' ? 'new task' : 'new habit';
-  $('add-open-defaults').textContent = type === 'task' ? 'task defaults' : 'habit defaults';
   $('target-slider-row').style.display = isHabit ? 'flex' : 'none';
   $('target-help').style.display = 'block';
   $('target-help').textContent = rhythmHelp(type);

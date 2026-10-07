@@ -110,7 +110,7 @@
     <button class="icon-btn" id="open-overview" aria-label="calendar">
       <i class="ti ti-calendar-month" aria-hidden="true"></i>
     </button>
-    <button class="icon-btn nav-add" id="open-add" aria-label="add habit">
+    <button class="icon-btn nav-add" id="open-add" aria-label="add habit or task">
       <i class="ti ti-plus" aria-hidden="true"></i>
     </button>
     <button class="icon-btn" id="open-search" aria-label="search habits" aria-pressed="false">
@@ -124,8 +124,10 @@
   <!-- add sheet -->
   <div class="sheet-wrap" id="add-sheet">
     <div class="sheet add-sheet">
-      <p class="sheet-title" id="add-title">new habit</p>
-      <div class="add-shortcuts"><button type="button" class="mini-text-btn" id="add-open-defaults">habit defaults</button><button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">busy times</button></div>
+      <div class="add-sheet-head">
+        <p class="sheet-title" id="add-title">new</p>
+        <div class="add-shortcuts"><button type="button" class="mini-text-btn" id="add-open-defaults">defaults</button><button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">busy times</button></div>
+      </div>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="edit emoji"></button>
@@ -146,10 +148,11 @@
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       </div>
-      <div class="seg" id="type-seg">
+      <div class="seg" id="type-seg" aria-describedby="add-type-help">
         <button class="seg-opt on" data-v="keepup">habit</button>
         <button class="seg-opt" data-v="task">task</button>
       </div>
+      <p class="field-hint" id="add-type-help">A task is one-off; a habit repeats.</p>
       <p class="field-hint" id="target-help">How often — times in N days (e.g. 2× in 7d).</p>
       <div class="range-row" id="target-slider-row">
         <label class="range-value" aria-label="times in period">

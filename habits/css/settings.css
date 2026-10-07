@@ -399,8 +399,10 @@ select{
 .assistant-reach-cmd[hidden]{display:none;}
 .assistant-reach-actions{margin:0 0 4px;flex-wrap:wrap;}
 
-.add-shortcuts{display:flex;flex-wrap:wrap;gap:8px 18px;margin:-5px 0 12px;}
-.add-shortcuts .mini-text-btn{min-height:36px;text-decoration:underline;text-underline-offset:3px;}
+.add-sheet-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+.add-sheet-head .sheet-title{margin:0;}
+.add-shortcuts{display:flex;align-items:center;gap:6px;margin-left:auto;}
+.add-shortcuts .mini-text-btn{min-height:36px;padding:7px 10px;background:var(--bg2);text-decoration:none;}
 #default-rhythm-row .range-row{justify-content:flex-start;}
 #default-rhythm-row input,#ting-duration,#ting-min-chunk{width:4ch;}
 
