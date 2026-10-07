@@ -10,6 +10,17 @@
 .value-log-field{display:flex;width:100%;margin:8px 0 14px;}
 .value-log-field input{flex:1;height:42px;font-size:20px;font-weight:700;text-align:center;}
 .value-log-field[aria-label="note"] input{height:38px;font-size:15px;font-weight:600;text-align:left;}
+/* Same dedicated scrolling region + real pinned footer as the settings sheet:
+   cancel stays beside the primary action instead of being promoted into a
+   sticky top exit, and the footer never scrolls out of reach. */
+.value-log-sheet{display:flex;flex-direction:column;overflow:hidden;}
+.value-log-sheet > .value-log-stack{
+  flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;
+  overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.value-log-sheet > .value-log-stack::-webkit-scrollbar{display:none;}
+.value-log-sheet > .btn-row{flex:0 0 auto;}
 .compact-toggle{margin:4px 0 10px;}
 .tune-section > .planning-grid{margin-bottom:10px;}
 .tune-section > .planning-grid + .compact-toggle{margin-top:2px;}
@@ -99,7 +110,8 @@
 .perday-closed{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text3);}
 .location-empty-hint{margin-top:4px;}
 .habit-options-block{display:flex;flex-direction:column;gap:8px;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);}
-.habit-options-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.habit-options-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:nowrap;}
+.habit-options-heading .settings-sublabel{min-width:0;flex:1 1 auto;}
 .habit-option-list{display:flex;flex-direction:column;gap:10px;}
 .habit-option-add{align-self:flex-start;}
 .habit-option-row{display:flex;flex-direction:column;gap:10px;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);}
@@ -228,12 +240,14 @@ span:has(> .info-btn){position:relative;display:inline-block;}
   color:var(--text2);font-size:12px;font-weight:600;line-height:1;
   flex-shrink:0;
 }
-.range-value input[type=text]{
+.range-value input:is([type=text],[type=number]){
   width:32px;height:22px;padding:0;border:0;background:transparent;margin:0;
   color:var(--text);font-size:14px;font-weight:600;text-align:right;line-height:22px;
   appearance:textfield;-webkit-appearance:none;font-variant-numeric:tabular-nums;
 }
-.range-value input[type=text]:focus{box-shadow:none;border:0;}
+.range-value input:is([type=text],[type=number]):focus{box-shadow:none;border:0;}
+.range-value input[type=number]::-webkit-inner-spin-button,
+.range-value input[type=number]::-webkit-outer-spin-button{appearance:none;margin:0;}
 .timer-auto-stop-field{display:flex;width:auto;padding:0 10px;height:38px;border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);}
 .crown-dial{
   flex:1;min-width:60px;height:34px;

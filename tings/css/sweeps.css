@@ -9,6 +9,7 @@ input:not([type="range"]),select,textarea,
   border:0;background:var(--field-bg);
 }
 .app-bar-search input:focus-visible,.nav-search input:focus-visible,
+#detail-search-input:focus-visible,
 input:focus-visible,select:focus-visible,textarea:focus-visible{
   border-color:transparent;box-shadow:none;
 }

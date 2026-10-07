@@ -91,9 +91,9 @@ onTravelRefresh = reason=>{
 $('type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-v]');
   if(!opt)return;
-  selectedType = opt.dataset.v;
-  document.querySelectorAll('#type-seg .seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
-  syncAddTypeUi(selectedType);
+  const habitType = loadSortSettings().defaultType;
+  switchAddType(opt.dataset.v === 'task' ? 'task'
+    : selectedType !== 'task' ? selectedType : habitType === 'task' ? 'keepup' : habitType);
 });
 
 // WIRE: add-sheet "more options" disclosure (priority, hard deadline,
@@ -138,10 +138,6 @@ $('open-add').addEventListener('click',()=>{
   applyAddDefaults();
   openSheet('add-sheet');
   $('ting-message').focus({preventScroll:true});
-  setTimeout(()=>{
-    updateKeyboardLift();
-    keepFocusedInputVisible();
-  },260);
 });
 
 $('open-search').addEventListener('click',()=>{
@@ -159,10 +155,6 @@ $('bar-open-add')?.addEventListener('click',()=>{
   applyAddDefaults();
   openSheet('add-sheet');
   $('ting-message').focus({preventScroll:true});
-  setTimeout(()=>{
-    updateKeyboardLift();
-    keepFocusedInputVisible();
-  },260);
 });
 $('bar-open-overview')?.addEventListener('click',()=>{
   if(!load().length)return;
@@ -230,15 +222,6 @@ if(searchQuery){
   }
   closeSearch();
 });
-$('habit-search').addEventListener('focus',()=>{
-  updateKeyboardLift();
-  keepFocusedInputVisible();
-  setTimeout(()=>{
-    updateKeyboardLift();
-    keepFocusedInputVisible();
-  },260);
-});
-$('habit-search').addEventListener('blur',updateKeyboardLift);
 document.addEventListener('keydown',e=>{
   const nav = document.querySelector('.bottom-nav');
   const input = $('habit-search');
@@ -282,15 +265,13 @@ $('do-save').addEventListener('click',()=>{
   if(!name){$('ting-message').focus();return;}
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
-  const settings = loadSortSettings();
+  const profile = readAddProfile();
+  const defaults = profile.defaults;
   const type = selectedType;
   const isHabit = type === 'keepup' || type === 'reduce';
   const target = isHabit ? targetFromRhythmParts($('ting-times')?.value || 1,$('ting-days').value) : null;
   const locationIds = selectedLocationIds();
   const locationPrefs = selectedLocationPrefs();
-  const userTopics = selectedAddTopics();
-  const defTopics = Array.isArray(settings.defaultTopics) ? settings.defaultTopics : [];
-  const mergedTopics = [...new Set([...defTopics,...userTopics])];
   const weatherChoice=typeof readWeatherProfileChoice==='function'
     ? readWeatherProfileChoice('ting-weather-profile')
     : {weatherProfileMode:$('ting-weather-profile')?.value?'profile':'inherit',weatherProfileId:cleanWeatherProfileId($('ting-weather-profile')?.value)};
@@ -306,7 +287,7 @@ $('do-save').addEventListener('click',()=>{
     showOnSharedDisplay:true,
     allowSharedDisplayCompletion:true,
     priority:selectedAddPriority(),
-    topics:mergedTopics,
+    topics:selectedAddTopics(),
     locationIds,
     anywhereAllowed:selectedAnywhere(),
     locationPrefs,
@@ -317,9 +298,12 @@ $('do-save').addEventListener('click',()=>{
       : null,
     showWeather:$('ting-show-weather')?.getAttribute('aria-pressed') === 'true',
     showWeatherAtLocation:$('ting-show-weather-location')?.getAttribute('aria-pressed') === 'true',
-    durationMinutes:settings.defaultDurationMinutes,
-    breakable:Boolean(settings.defaultBreakable),
-    minChunkMinutes:settings.defaultMinChunkMinutes,
+    durationMinutes:profile.durationMinutes,
+    breakable:profile.breakable,
+    minChunkMinutes:profile.minChunkMinutes,
+    allowedWeekdays:defaults.allowedWeekdays.slice(),
+    allowedTimeStart:defaults.allowedTimeStart,
+    allowedTimeEnd:defaults.allowedTimeEnd,
     minGapMinutes:0,
     createdAt:Date.now()
   };
@@ -327,13 +311,12 @@ $('do-save').addEventListener('click',()=>{
     record.dueDate = parseDateInput($('ting-due-date').value);
     record.eventTime = parseTaskWhen($('ting-due-date').value,$('ting-due-time')?.value || '');
     if(record.eventTime !== null && record.dueDate === null)record.dueDate = dayStart(record.eventTime);
-    record.earlyWindowDays = record.dueDate === null ? 0 : settings.defaultEarlyWindowDays;
+    record.earlyWindowDays = record.dueDate === null ? 0 : defaults.earlyWindowDays;
   }else{
-    record.earlyWindowDays = settings.defaultEarlyWindowDays;
+    record.earlyWindowDays = defaults.earlyWindowDays;
   }
-  record.delayAllowanceDays = settings.defaultDelayAllowanceDays;
-  const manualAutoMark = normalizeAutoMark($('ting-auto-mark')?.value);
-  record.autoMarkMinutes = manualAutoMark != null ? manualAutoMark : settings.defaultAutoMarkMinutes;
+  record.delayAllowanceDays = defaults.delayAllowanceDays;
+  record.autoMarkMinutes = defaultAutoMarkMinutes(profile);
   data.push(record);
   if(save(data)){
     cancelAdd();
@@ -1369,12 +1352,15 @@ document.addEventListener('wheel',e=>{
 window.addEventListener('pageshow',closeAllSwipes);
 
 if(window.visualViewport){
-  window.visualViewport.addEventListener('resize',()=>{
-    updateKeyboardLift();
-    keepFocusedInputVisible();
-  });
-  window.visualViewport.addEventListener('scroll',updateKeyboardLift);
+  window.visualViewport.addEventListener('resize',scheduleKeyboardLayout);
+  window.visualViewport.addEventListener('scroll',scheduleKeyboardLayout);
 }
+// Native WebViews may resize the layout viewport rather than overlay it.
+window.addEventListener('resize',scheduleKeyboardLayout,{passive:true});
+// Focus can move while the same keyboard remains open; only viewport events
+// change its geometry. Wait for detail chrome to settle before checking cover.
+document.addEventListener('focusin',()=>scheduleKeyboardLayout(false));
+document.addEventListener('focusout',()=>scheduleKeyboardLayout(false));
 
 $('detail-save').addEventListener('click',()=>{
   if(detailIdx === null)return;

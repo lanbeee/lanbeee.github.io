@@ -756,6 +756,10 @@ function logTing(i,opts = {}){
     return false;
   }
   const logs = normalizeLogs(h.logs);
+  if(!h.breakable && opts.occurrenceKey && logs.some(log=>!isPlanLog(log) && logOccurrenceKey(log) === opts.occurrenceKey)){
+    showToast('already done');
+    return false;
+  }
   const consumedPlanTs = planToConsumeForEntry(logs,now);
   let minutes = opts.minutes;
   if(minutes == null && h.breakable && !isAutoMark(h)){
@@ -1025,7 +1029,10 @@ function executeUndo(){
     const {idx,ts,snoozedUntil,consumedPlanTs} = pendingAction;
     if(!data[idx])return;
     const logs = normalizeLogs(data[idx].logs);
-    const pos = findEntryByKind(logs,ts,Boolean(pendingAction.plan));
+    const occurrenceKey = logOccurrenceKey(pendingAction.entry);
+    const pos = occurrenceKey
+      ? logs.findLastIndex(log=>!isPlanLog(log) && logOccurrenceKey(log) === occurrenceKey && logTime(log) === ts)
+      : findEntryByKind(logs,ts,Boolean(pendingAction.plan));
     if(pos >= 0)logs.splice(pos,1);
     if(consumedPlanTs)logs.push({ts:consumedPlanTs,plan:true});
     data[idx].logs = logs;

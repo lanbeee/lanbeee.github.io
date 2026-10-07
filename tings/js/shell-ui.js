@@ -411,33 +411,57 @@ function doNuke(i, opts){
 // RENDER: adjusts keyboard lift CSS variable for open sheets
 function updateKeyboardLift(){
   const detailMounted = getPane()?.dataset.activeSheet === 'detail-sheet';
-  if (paneTierActive() && !detailMounted) {
-    document.documentElement.style.setProperty('--keyboard-lift','0px');
-    return;
-  }
   const addOpen = $('add-sheet').classList.contains('open');
   const assistantOpen = $('assistant-sheet')?.classList.contains('open');
   const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
-  if((!addOpen && !assistantOpen && !detailOpen && !searchOpen) || !window.visualViewport){
-    document.documentElement.style.setProperty('--keyboard-lift','0px');
-    return;
-  }
-  const keyboard = Math.max(0,window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop);
-  document.documentElement.style.setProperty('--keyboard-lift',`${keyboard}px`);
+  const needsLift = (!paneTierActive() || detailMounted)
+    && (addOpen || assistantOpen || detailOpen || searchOpen) && window.visualViewport;
+  const keyboard = needsLift
+    ? Math.max(0,window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop) : 0;
+  const style = document.documentElement.style;
+  const value = `${keyboard}px`;
+  if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
   if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
 }
 
-// RENDER: scrolls focused input into view
+// The IME can emit resize and scroll several times in one frame. Apply the
+// latest geometry once, then reveal only an input that is actually covered.
+let keyboardLayoutFrame = null;
+let keyboardGeometryPending = false;
+function scheduleKeyboardLayout(updateGeometry = true){
+  keyboardGeometryPending ||= Boolean(updateGeometry);
+  if(keyboardLayoutFrame !== null)return;
+  keyboardLayoutFrame = requestAnimationFrame(()=>{
+    keyboardLayoutFrame = null;
+    if(keyboardGeometryPending)updateKeyboardLift();
+    keyboardGeometryPending = false;
+    keepFocusedInputVisible();
+  });
+}
+
+// RENDER: reveals covered editing fields without recentering visible ones.
 function keepFocusedInputVisible(){
   const active = document.activeElement;
-  if(active?.closest('.detail-sheet .detail-page')){
-    active.scrollIntoView({block:'center',inline:'nearest'});
-    return;
-  }
-  if(!active || (!$('add-sheet').contains(active) && !$('assistant-sheet')?.contains(active) && active !== $('habit-search')))return;
-  if (paneTierActive()) return;
-  active.scrollIntoView({block:'center',inline:'nearest'});
+  // These fields live in a dock which already follows the keyboard. Scrolling
+  // their ancestors fights the browser's keyboard pan and the Home scroll reset.
+  if(!active || active.matches('#habit-search,#detail-search-input'))return;
+  if(!active.matches('input,textarea,[contenteditable="true"]'))return;
+  const host = active.closest('.detail-sheet .detail-page,.add-sheet,.assistant-sheet');
+  if(!host)return;
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page'))return;
+  const rect = active.getBoundingClientRect();
+  const bounds = host.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const top = Math.max(bounds.top,viewport?.offsetTop || 0) + 8;
+  const footer = active.closest('.detail-sheet,.add-sheet')?.querySelector('.detail-bottom-bar,.add-actions');
+  const footerTop = footer?.getClientRects().length ? footer.getBoundingClientRect().top : Infinity;
+  const bottom = Math.min(bounds.bottom,footerTop,(viewport?.offsetTop || 0) + (viewport?.height || innerHeight)) - 8;
+  if(rect.top >= top && rect.bottom <= bottom)return;
+  // Change just this scroll host, not the document or the horizontal detail
+  // pager. Instant scrolling avoids restarting a smooth scroll at every step.
+  const delta = rect.bottom > bottom ? rect.bottom - bottom : rect.top - top;
+  host.scrollTo({top:host.scrollTop + delta,behavior:'instant'});
 }
 
 // Move the search input to the top app bar on wide tiers, back to bottom nav on phone-portrait.
@@ -476,8 +500,16 @@ function ensureSheetExit(id){
     head.classList.add('sheet-exit-head');
     return;
   }
-  // Settings already has a footer outside its dedicated scrolling region.
-  if(target.closest('.settings-actions'))return;
+  // Settings and the add sheet already keep cancel in a dedicated footer
+  // beside the primary action. So do the location picker, doing-now, the
+  // travel/block editors and the other confirm sheets: a cancel that sits in
+  // a footer row beside a distinct primary action stays there — pinning it to
+  // a sticky top row orphans the primary button at the bottom. When the exit
+  // control IS the primary (sample-habits "done"), promotion stays available
+  // so the exit survives tall scrolling sheets.
+  if(target.closest('.settings-actions,.add-actions'))return;
+  const footerRow = target.closest('.btn-row');
+  if(footerRow && !target.classList.contains('primary') && footerRow.querySelector('.btn.primary'))return;
   const bar = document.createElement('div');bar.className = 'sheet-exit';
   target.classList.add('sheet-exit-button');
   bar.append(target);inner.prepend(bar);
@@ -1364,7 +1396,7 @@ document.addEventListener('keydown',e=>{
     const id = top.id;
     if (id === 'add-sheet' && typeof cancelAdd === 'function') cancelAdd();
     else if (id === 'overview-sheet') closeSheet('overview-sheet');
-    else if (id === 'settings-sheet') closeSheet('settings-sheet');
+    else if (id === 'settings-sheet') closeSettingsSheet();
     else if (id === 'about-sheet') closeSheet('about-sheet');
     else if (id === 'privacy-sheet') closeSheet('privacy-sheet');
     else if (id === 'sample-habits-sheet') closeSheet('sample-habits-sheet');

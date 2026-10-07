@@ -118,9 +118,9 @@
 }
 .detail-order-block[hidden]{display:none !important;}
 .detail-order-head{
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap;
 }
-.detail-order-head .settings-sublabel{margin:0;}
+.detail-order-head .settings-sublabel{margin:0;min-width:0;flex:1 1 auto;}
 .detail-order-list{display:flex;flex-direction:column;gap:4px;margin:0;}
 .detail-order-row{
   display:flex;align-items:center;gap:8px;min-height:28px;

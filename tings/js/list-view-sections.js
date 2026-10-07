@@ -231,7 +231,7 @@ function missedPlannerFingerprint(data,settings){
     hash ^= source.charCodeAt(i);
     hash = Math.imul(hash,16777619);
   }
-  return `m2-${(hash >>> 0).toString(36)}`;
+  return `m3-${(hash >>> 0).toString(36)}`;
 }
 
 // Planner-backed fallback for a user who first opens after an allowed window
@@ -239,7 +239,18 @@ function missedPlannerFingerprint(data,settings){
 // minute, then keeps its dated week expectations so skipped app-days remain
 // auditable. This deliberately records committed rows, not the whole overdue
 // candidate pool.
-function computePlannerExpectationMap(data,settings,numDays = 7){
+function plannerDayExpectation(data,day,rendered = false){
+  const rows = (day.timeline || []).filter(row=>
+    (row.kind === 'fill' || row.kind === 'scheduled') && row.i != null && data[row.i]);
+  return {
+    hids:[...new Set(rows.map(row=>data[row.i].hid).filter(Boolean))],
+    occurrences:normalizeSuggestedOccurrences(rows.filter(row=>habitHasMultipleDailyOccurrences(data[row.i]))
+      .map(row=>({hid:data[row.i].hid,occurrenceKey:row.occurrenceKey,
+        scheduleOptionId:row.scheduleOptionId,start:row.start,end:row.end,dropAt:row.dropAt,rendered})))
+  };
+}
+
+function computePlannerExpectationMap(data,settings,numDays = 7,withOccurrences = false){
   if(typeof buildWeekAgenda !== 'function')return {};
   // This runs during home paint when the missed-item fingerprint changes.
   // Skip the Fast week-graph search: it can rebuild the horizon dozens of
@@ -249,25 +260,22 @@ function computePlannerExpectationMap(data,settings,numDays = 7){
   const out = {};
   for(const day of week.days || []){
     const key = day.dayKey || dateKey(day.dayBase);
-    out[key] = [...new Set((day.timeline || [])
-      .filter(r=>(r.kind === 'fill' || r.kind === 'scheduled') && r.i != null)
-      .map(r=>data[r.i]?.hid)
-      .filter(Boolean))];
+    const entry = plannerDayExpectation(data,day);
+    out[key] = withOccurrences ? entry : entry.hids;
   }
   return out;
 }
 
-function renderedPlannerExpectationMap(data,now = Date.now()){
-  const week = _homeRenderedWeek;
+function renderedPlannerExpectationMap(data,now = Date.now(),withOccurrences = false){
+  const week = _homeRenderedWeek || (typeof _homeClassicAgendaDay !== 'undefined' && _homeClassicAgendaDay
+    ? {days:[_homeClassicAgendaDay]} : null);
   if(!week || !Array.isArray(week.days) || !week.days.length)return {};
   if(dayStart(week.days[0].dayBase) !== dayStart(now))return {};
   const out = {};
   for(const day of week.days){
     const key = day.dayKey || dateKey(day.dayBase);
-    out[key] = [...new Set((day.timeline || [])
-      .filter(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i != null)
-      .map(row=>data[row.i]?.hid)
-      .filter(Boolean))];
+    const entry = plannerDayExpectation(data,{...day,timeline:day.homeDisplayedTimeline || day.timeline},true);
+    out[key] = withOccurrences ? entry : entry.hids;
   }
   return out;
 }
@@ -428,18 +436,20 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     || !tomorrowExpectation
     || tomorrowExpectation.fingerprint !== fingerprint;
   const projectionByDay = needsProjection
-    ? computePlannerExpectationMap(data, settings, 7)
+    ? computePlannerExpectationMap(data, settings, 7, true)
     : {};
-  const renderedProjection = renderedPlannerExpectationMap(data, now);
-  for(const [day,hids] of Object.entries(renderedProjection)){
+  const renderedProjection = renderedPlannerExpectationMap(data, now, true);
+  for(const [day,entry] of Object.entries(renderedProjection)){
     if(day === today && projectionByDay[day]){
-      projectionByDay[day] = [...new Set([...projectionByDay[day], ...hids])];
+      const prior = projectionByDay[day];
+      projectionByDay[day] = {hids:[...new Set([...prior.hids,...entry.hids])],
+        occurrences:normalizeSuggestedOccurrences([...prior.occurrences,...entry.occurrences])};
     }else{
-      projectionByDay[day] = hids;
+      projectionByDay[day] = entry;
     }
   }
   const hasProjectionUpdate = Object.keys(projectionByDay).length > 0;
-  const projectionHids = hasProjectionUpdate ? projectionByDay[tomorrow] || [] : null;
+  const projectionHids = hasProjectionUpdate ? projectionByDay[tomorrow]?.hids || [] : null;
   if(typeof recordTodaySuggested === 'function'){
     snap = recordTodaySuggested(
       data, todayHids, now, projectionHids, fingerprint,
@@ -465,7 +475,34 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
 
   for(const [expectedDay, entry] of Object.entries(snap.expectations || {})){
     if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
+    const occurrenceHids = new Set((entry.occurrences || []).map(row=>row.hid));
+    for(const hid of occurrenceHids){
+      const idx = data.findIndex(h=>h && h.hid === hid);
+      const h = data[idx];
+      if(!h || !habitHasMultipleDailyOccurrences(h)
+        || (h.snoozedUntil && now < h.snoozedUntil))continue;
+      const dayBase = missedOccurrenceDayBase(expectedDay,now);
+      if(h.createdAt != null && Number(h.createdAt) >= dayBase + 86400000)continue;
+      if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))continue;
+      const rows = entry.occurrences.filter(row=>row.hid === hid);
+      const unresolved = agendaRowsAfterCompletions(h,rows,dayBase);
+      const currentKeys = new Set(renderedProjection[today]?.occurrences.map(row=>row.occurrenceKey) || []);
+      for(const row of unresolved){
+        const option = normalizeHabitScheduleOptions(h.scheduleOptions).find(option=>option.id === row.scheduleOptionId);
+        const subject = option ? habitBoundToScheduleOption(h,option) : h;
+        const expired = expectedDay < today || (row.dropAt != null
+          ? now >= row.dropAt : !occurrenceStillDoableToday(subject,now));
+        const dropped = expectedDay === today && row.rendered && !currentKeys.has(row.occurrenceKey);
+        if(!expired && !dropped)continue;
+        droppedMap.set(row.occurrenceKey,{hid,name:h.name,emoji:h.emoji,idx,
+          first:row.start || entry.recordedAt || now,expectedDay,
+          dayLabel:missedOccurrenceDayLabel(expectedDay,now),
+          occurrenceKey:row.occurrenceKey,scheduleOptionId:row.scheduleOptionId,
+          scheduledDay:expectedDay,start:row.start,end:row.end});
+      }
+    }
     for(const hid of entry.hids){
+      if(occurrenceHids.has(hid))continue;
       if(currentSet.has(hid))continue;
       const idx = data.findIndex(h => h && h.hid === hid);
       if(idx < 0)continue;
@@ -504,6 +541,7 @@ function renderDroppedPanel(items,opts = {}){
     row.setAttribute('role','button');
     row.setAttribute('tabindex','0');
     row.dataset.hid = item.hid || '';
+    if(item.occurrenceKey)row.dataset.occurrenceKey = item.occurrenceKey;
     const tagHtml = showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '';
 
     // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
@@ -518,7 +556,7 @@ function renderDroppedPanel(items,opts = {}){
     const logInner = h ? iconHtml(h,c) : '<i class="ti ti-circle-dashed" aria-hidden="true"></i>';
     row.innerHTML =
       `<button type="button" class="dropped-mark dropped-log${h && h.emoji ? ' emoji-pulse' : ''}" aria-label="${h && h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(item.name)}" style="${logStyle}">${logInner}</button>`
-      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>Tap to review</small></span>`
+      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>${item.occurrenceKey && Number.isFinite(item.start) ? `${escapeHtml(compactHomeTime(item.start))} · ` : ''}Tap to review</small></span>`
       + `${tagHtml}<i class="ti ti-chevron-right dropped-chevron" aria-hidden="true"></i>`;
 
     const review = ()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); };
@@ -539,7 +577,10 @@ function renderDroppedPanel(items,opts = {}){
     row.querySelector('.dropped-log').addEventListener('click',e=>{
       e.stopPropagation();
       if(!load()[item.idx])return;
-      if(typeof logTing === 'function' && logTing(item.idx))finishLog();
+      const logOpts = item.occurrenceKey ? {occurrenceKey:item.occurrenceKey,
+        scheduleOptionId:item.scheduleOptionId,scheduledDay:item.scheduledDay} : {};
+      if(typeof requestLogTing === 'function')requestLogTing(item.idx,finishLog,logOpts);
+      else if(typeof logTing === 'function' && logTing(item.idx,logOpts))finishLog();
     });
 
     panel.appendChild(row);

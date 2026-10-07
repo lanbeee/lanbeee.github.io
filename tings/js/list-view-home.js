@@ -374,8 +374,10 @@ function renderHomeTagFilter(data,precomputedIndices = null){
     : null;
   const activeCount = Number(Boolean(activeLoc)) + Number(Boolean(activeTopic));
   const activeHtml = `
-    <div class="home-filter-active" aria-label="active filters">
+    <div class="home-filter-active" aria-label="current place">
       ${statusHtml}
+    </div>
+    <div class="home-filter-selections" ${activeCount ? '' : 'hidden'} aria-label="selected filters">
       ${activeLoc ? `<button type="button" class="home-active-filter location-filter" data-clear-home-location="1" aria-label="clear place filter ${escapeHtml(activeLoc.label)}"><i class="ti ti-map-pin" aria-hidden="true"></i><span>${escapeHtml(activeLoc.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
       ${activeTopic ? `<button type="button" class="home-active-filter topic-active" data-clear-home-topic="1" aria-label="clear topic filter ${escapeHtml(activeTopic.label)}"><i class="ti ti-tag" aria-hidden="true"></i><span>${escapeHtml(activeTopic.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
     </div>
@@ -848,6 +850,7 @@ function setSearchOpen(open,options = {}){
   // "search opened but there is nothing to type and no keyboard".
   if(typeof reparentSearch === 'function')reparentSearch();
   const wide = paneTierActive();
+  const previousQuery = searchQuery;
   if(options.clear)searchQuery = '';
   if (wide) {
     const barSearch = $('app-bar-search');
@@ -859,39 +862,21 @@ function setSearchOpen(open,options = {}){
     if (barSearch) barSearch.classList.remove('is-open');
   }
   updateSearchUi();
+  if(open){
+    // Reset before focusing: a later reset fights keyboard viewport panning.
+    const pane = document.querySelector('.pane-list');
+    if(pane)pane.scrollTo({top:0,behavior:'instant'});
+    window.scrollTo({top:0,left:0,behavior:'instant'});
+  }
   if(open && options.focus !== false){
     input.focus({preventScroll:true});
-    updateKeyboardLift();
-    keepFocusedInputVisible();
-    requestAnimationFrame(()=>{
-      // The render below can churn the DOM; re-guarantee the field's home
-      // before each retry or the retry itself focuses a hidden input.
-      if(typeof reparentSearch === 'function')reparentSearch();
-      if(document.activeElement !== input)input.focus({preventScroll:true});
-      updateKeyboardLift();
-      keepFocusedInputVisible();
-    });
-    setTimeout(()=>{
-      if(!isSearchOpen())return; // user already closed — don't steal focus back
-      if(typeof reparentSearch === 'function')reparentSearch();
-      if(document.activeElement !== input)input.focus({preventScroll:true});
-      updateKeyboardLift();
-      keepFocusedInputVisible();
-    },260);
   }else if(!open && document.activeElement === input){
     input.blur();
   }
-  if(!open)updateKeyboardLift();
-  if(options.render !== false)render();
-  if(open){
-    // Search is a fresh result view, not a continuation of the home scroll.
-    // Reset both possible scroll hosts after render while retaining input focus.
-    requestAnimationFrame(()=>{
-      const pane = document.querySelector('.pane-list');
-      if(pane)pane.scrollTop = 0;
-      window.scrollTo({top:0,left:0,behavior:'auto'});
-    });
-  }
+  updateKeyboardLift();
+  // Opening/closing empty search only changes chrome. Rebuilding the agenda
+  // here makes its rows flash while the keyboard is animating.
+  if(options.render !== false && previousQuery !== searchQuery)render();
 }
 
 // HYBRID: close and clear search UI
@@ -1385,7 +1370,14 @@ function updateHomeSessionProgress(now = Date.now()){
 // PURE: today's agenda timeline rows, shared by the home card pill map and
 // the chronological "today" section ordering so both stay in lockstep.
 // Travel/wait rows are excluded here — home inserts thin travel cards itself.
+let _homeClassicAgendaDay = null;
 function homeAgendaRows(data){
+  _homeClassicAgendaDay = null;
+  if(data.some(habitHasMultipleDailyOccurrences)){
+    const week = buildWeekAgenda(data,sortSettings || loadSortSettings(),1);
+    _homeClassicAgendaDay = week.days[0] || null;
+    return (_homeClassicAgendaDay?.timeline || []).filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
+  }
   if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
   return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()))
     .filter(row=>row.kind === 'fill' || row.kind === 'scheduled');

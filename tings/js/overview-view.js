@@ -1113,6 +1113,9 @@ function renderDayLogs(key){
   else if(dayLogsStep === 'avail' && !dayLogsScoped())renderDayLogsAvailStep(key);
   else if(dayLogsStep === 'item' || dayLogsScoped())renderDayLogsItemStep(key);
   else renderDayLogsListStep(key);
+  // ensureSheetExit can hide the scoped item's done-only row. This footer is
+  // reused across steps; its current children (via CSS) decide visibility.
+  $('day-logs-footer').hidden = false;
   const dlSheet = document.querySelector('.day-logs-sheet');
   if(dlSheet)setTimeout(()=>{ dlSheet._sg = 0; dlSheet.classList.remove('scrolling'); },0);
 }

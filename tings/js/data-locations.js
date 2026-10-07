@@ -483,12 +483,17 @@ function habitSchedulePlacementVariants(fill,dayBase,registry){
     ? fill.locationId : undefined;
   const dayOptions = habitScheduleOptionsForDay(h,dayBase,explicitLocation);
   const ordinaryOptions = dayOptions.filter(option=>habitScheduleOptionSameDayMode(option) !== 'separate');
+  const logs = habitHasMultipleDailyOccurrences(h) ? habitOccurrenceLogsForDay(h,dayBase) : [];
+  const loggedIds = new Set(logs.map(log=>log.scheduleOptionId).filter(Boolean));
+  const ordinaryLogged = logs.some(log=>!log.scheduleOptionId || log.scheduleOptionId === 'general'
+    || ordinaryOptions.some(option=>option.id === log.scheduleOptionId));
+  if(ordinaryLogged)variants.length = 0;
   // Separate rows are extra lanes. The ordinary occurrence uses general or
   // alternative rows when available; if a day consists only of separate rows,
   // its first row can still serve as the day's ordinary lane.
-  const placementOptions = ordinaryOptions.length || variants.length
-    ? ordinaryOptions
-    : dayOptions.slice(0,1);
+  const placementOptions = ordinaryOptions.length || hasGeneralAllowedSchedule(h,registry)
+    ? (ordinaryLogged ? [] : ordinaryOptions)
+    : dayOptions.filter(option=>!loggedIds.has(option.id)).slice(0,1);
   for(const option of placementOptions){
     variants.push({
       ...fill,

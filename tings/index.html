@@ -110,7 +110,7 @@
     <button class="icon-btn" id="open-overview" aria-label="calendar">
       <i class="ti ti-calendar-month" aria-hidden="true"></i>
     </button>
-    <button class="icon-btn nav-add" id="open-add" aria-label="add habit">
+    <button class="icon-btn nav-add" id="open-add" aria-label="add habit or task">
       <i class="ti ti-plus" aria-hidden="true"></i>
     </button>
     <button class="icon-btn" id="open-search" aria-label="search habits" aria-pressed="false">
@@ -124,7 +124,10 @@
   <!-- add sheet -->
   <div class="sheet-wrap" id="add-sheet">
     <div class="sheet add-sheet">
-      <p class="sheet-title">new habit</p>
+      <div class="add-sheet-head">
+        <p class="sheet-title" id="add-title">new</p>
+        <div class="add-shortcuts"><button type="button" class="mini-text-btn" id="add-open-defaults">defaults</button><button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">busy times</button></div>
+      </div>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="edit emoji"></button>
@@ -145,10 +148,11 @@
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       </div>
-      <div class="seg" id="type-seg">
+      <div class="seg" id="type-seg" aria-describedby="add-type-help">
         <button class="seg-opt on" data-v="keepup">habit</button>
         <button class="seg-opt" data-v="task">task</button>
       </div>
+      <p class="field-hint" id="add-type-help">A task is one-off; a habit repeats.</p>
       <p class="field-hint" id="target-help">How often — times in N days (e.g. 2× in 7d).</p>
       <div class="range-row" id="target-slider-row">
         <label class="range-value" aria-label="times in period">
@@ -181,15 +185,20 @@
           <div class="seg priority-seg" id="ting-priority-seg" data-ui-priority="add"></div>
         </div>
         <div class="planning-grid">
-          <div class="planning-field">
+          <div class="planning-field"><label for="ting-duration">duration</label><label class="range-value"><input type="number" id="ting-duration" min="1" max="720" inputmode="numeric" /><span>min</span></label></div>
+          <div class="planning-field"><label for="ting-completion-mode">completion</label><select class="mini-select" id="ting-completion-mode"><option value="manual">mark done myself</option><option value="duration">after duration</option><option value="minutes">after set minutes</option></select></div>
+          <div class="planning-field" id="ting-auto-mark-row">
             <span>auto mark done <button type="button" class="info-btn" data-tip="ting-auto-mark-help" aria-label="about auto mark done"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
               <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and a planned or scheduled occurrence logs itself that long after its scheduled time. Manual sessions keep counting until you stop them.</div></span>
             <label class="range-value" aria-label="auto mark done minutes, blank = manual">
-              <input type="text" id="ting-auto-mark" inputmode="numeric" maxlength="4" placeholder="—" />
+              <input type="text" id="ting-auto-mark" inputmode="numeric" maxlength="5" placeholder="—" />
               <span>min</span>
             </label>
           </div>
         </div>
+        <button type="button" class="setting-toggle setting-switch compact-toggle" id="ting-breakable" aria-pressed="false"><span>allow splitting</span><span class="switch-ui" aria-hidden="true"></span></button>
+        <div class="planning-field" id="ting-chunk-row" hidden><label for="ting-min-chunk">shortest session</label><label class="range-value"><input type="number" id="ting-min-chunk" min="15" max="720" inputmode="numeric" /><span>min</span></label></div>
+        <p class="field-hint" id="add-defaults-summary"></p>
         <div class="add-topics-section" id="add-topics-section">
           <span class="settings-sublabel">topics &amp; places</span>
           <div class="topic-chip-row" id="ting-tag-chips"></div>
@@ -828,7 +837,7 @@
   <div class="sheet-wrap" id="settings-sheet">
     <div class="sheet settings-sheet">
       <p class="sheet-title">settings</p>
-      <p class="about-copy">Adjust what shows on home, your places, and how new habits start.</p>
+      <p class="about-copy">Adjust what shows on home, your places, and how new habits and tasks start.</p>
       <div class="settings-stack">
         <section class="settings-block">
           <span class="settings-label">display</span>
@@ -1052,7 +1061,7 @@
             <button class="btn" id="blocked-time-add" type="button">add busy time</button>
           </div>
         </section>
-        <div class="settings-group-head">look &amp; new habits</div>
+        <div class="settings-group-head">look &amp; new items</div>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-cards-head" data-collapse-target="settings-cards-body" aria-expanded="false" aria-controls="settings-cards-body">
             <span class="settings-label">what shows on each item</span>
@@ -1073,22 +1082,22 @@
         </section>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-defaults-head" data-collapse-target="settings-defaults-body" aria-expanded="false" aria-controls="settings-defaults-body">
-            <span class="settings-label">new habit defaults</span>
+            <span class="settings-label">new habit &amp; task defaults</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-defaults-body" hidden>
-            <p class="field-hint">Used only when you tap + to create a new habit.</p>
+            <p class="field-hint">Your starting choices for new items. Saved items stay as they are. Each new item can have its own changes.</p>
+            <span class="settings-sublabel">start the add page with</span>
             <div class="seg compact-seg" id="default-type-seg">
               <button class="seg-opt" data-default-type="keepup">build</button>
               <button class="seg-opt" data-default-type="reduce">limit</button>
               <button class="seg-opt" data-default-type="zero">stop</button>
               <button class="seg-opt" data-default-type="task">task</button>
             </div>
-            <label class="settings-range simple-range">
-              <span>how often</span>
-              <input type="range" id="setting-default-target" min="1" max="183" />
-              <output id="setting-default-target-label"></output>
-            </label>
+            <span class="settings-sublabel">defaults for</span>
+            <div class="seg compact-seg" id="default-profile-seg" role="group" aria-label="defaults for"><button type="button" class="seg-opt" data-default-profile="habit">habits</button><button type="button" class="seg-opt" data-default-profile="task">tasks</button></div>
+            <div id="default-rhythm-row"><span class="settings-sublabel">how often</span><div class="range-row"><label class="range-value"><input type="number" id="setting-default-times" min="1" max="183" aria-label="default times per period" /><span>×</span></label><span class="rhythm-in">in</span><label class="range-value"><input type="number" id="setting-default-days" min="1" max="183" aria-label="default period days" /><span>d</span></label></div></div>
+            <div id="default-due-row" hidden><label class="settings-sublabel" for="setting-default-due">due date</label><select class="settings-select" id="setting-default-due"><option value="today">today</option><option value="tomorrow">tomorrow</option><option value="none">no date · someday</option></select><p class="field-hint">Uses the day you create the task. Add an appointment time on the add page.</p></div>
             <span class="settings-sublabel">importance</span>
             <div class="seg compact-seg" id="default-priority-seg" role="group" aria-label="importance">
               <button type="button" class="seg-opt" data-default-priority="0" title="critical">P0</button>
@@ -1100,25 +1109,32 @@
             </div>
             <label class="settings-range simple-range">
               <span>duration</span>
-              <input type="range" id="setting-default-duration" min="5" max="120" step="5" />
+              <input type="number" inputmode="numeric" id="setting-default-duration" min="1" max="720" step="1" />
               <output id="setting-default-duration-label"></output>
             </label>
             <label class="settings-range simple-range">
               <span>can do early</span>
-              <input type="range" id="setting-default-early-window" min="0" max="14" />
+              <input type="number" inputmode="numeric" id="setting-default-early-window" min="0" max="60" />
               <output id="setting-default-early-window-label"></output>
             </label>
             <label class="settings-range simple-range">
               <span>may run late</span>
-              <input type="range" id="setting-default-delay-allowance" min="0" max="14" />
+              <input type="number" inputmode="numeric" id="setting-default-delay-allowance" min="0" max="60" />
               <output id="setting-default-delay-allowance-label"></output>
             </label>
-            <div class="settings-grid" data-ui-toggles="defaults"></div>
+            <label class="settings-sublabel" for="setting-default-completion">completion</label>
+            <select class="settings-select" id="setting-default-completion"><option value="manual">mark done myself</option><option value="duration">auto mark after duration</option><option value="minutes">auto mark after set minutes</option></select>
+            <div class="planning-field" id="default-auto-mark-row" hidden><label for="setting-default-auto-mark">auto mark after</label><label class="range-value"><input type="number" id="setting-default-auto-mark" min="0" max="10080" inputmode="numeric" /><span>min</span></label></div>
+            <p class="field-hint">Automatic completion follows a planned or scheduled start. Split sessions are credited when each chunk ends. Manual timers keep running until you stop them.</p>
+            <button class="setting-toggle setting-switch" type="button" id="setting-default-breakable" aria-pressed="false"><span><b>allow splitting</b><small>Spread the duration across smaller sessions.</small></span><span class="switch-ui" aria-hidden="true"></span></button>
             <label class="settings-range simple-range" id="default-chunk-row" hidden>
               <span>shortest session</span>
-              <input type="range" id="setting-default-min-chunk" min="15" max="120" step="5" />
+              <input type="number" inputmode="numeric" id="setting-default-min-chunk" min="15" max="720" step="1" />
               <output id="setting-default-min-chunk-label"></output>
             </label>
+            <span class="settings-sublabel">allowed days</span><div class="schedule-chip-row" id="default-weekdays" role="group" aria-label="default allowed weekdays"></div><p class="field-hint">No selected days means every day is allowed.</p>
+            <span class="settings-sublabel">allowed time</span><div class="plan-field-row"><input type="time" class="plan-time-input" id="setting-default-time-start" step="300" aria-label="default allowed start time" /><span>to</span><input type="time" class="plan-time-input" id="setting-default-time-end" step="300" aria-label="default allowed end time" /><button type="button" class="mini-text-btn" id="default-time-clear">clear</button></div><p class="field-hint">Blank leaves the day open. Busy times still apply.</p>
+            <span class="settings-sublabel">allowed places</span><div class="topic-chip-row" id="default-places-chips" data-tag-content="places"></div>
             <span class="settings-sublabel">default topics</span>
             <div class="topic-chip-row" id="default-topics-chips"></div>
           </div>
@@ -1726,18 +1742,20 @@
   <!-- optional numeric log -->
   <div class="sheet-wrap" id="value-log-sheet">
     <div class="sheet value-log-sheet">
-      <div class="page-head">
-        <div>
-          <p class="sheet-title">log value</p>
-          <p class="about-copy" id="value-log-copy">Optional number for this entry.</p>
+      <div class="value-log-stack">
+        <div class="page-head">
+          <div>
+            <p class="sheet-title">log value</p>
+            <p class="about-copy" id="value-log-copy">Optional number for this entry.</p>
+          </div>
         </div>
+        <label class="range-value value-log-field" aria-label="value">
+          <input type="text" id="value-log-input" inputmode="decimal" placeholder="e.g. 72.5" />
+        </label>
+        <label class="value-log-field" aria-label="note">
+          <input type="text" id="value-log-note" maxlength="200" placeholder="note (optional)" />
+        </label>
       </div>
-      <label class="range-value value-log-field" aria-label="value">
-        <input type="text" id="value-log-input" inputmode="decimal" placeholder="e.g. 72.5" />
-      </label>
-      <label class="value-log-field" aria-label="note">
-        <input type="text" id="value-log-note" maxlength="200" placeholder="note (optional)" />
-      </label>
       <div class="btn-row">
         <button class="btn primary" type="button" id="value-log-save">log</button>
         <button class="btn" type="button" id="value-log-skip">skip</button>

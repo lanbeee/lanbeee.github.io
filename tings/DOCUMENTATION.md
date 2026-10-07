@@ -991,7 +991,7 @@ second row.
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
 - Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
 - It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, still-doable work that was never shown, and yesterday's dated row for an item whose usable window is still open today are excluded. Calendar midnight is not an opportunity ending.
-- Dated expectations are retained across skipped app days. To keep the list useful instead of becoming a backlog dump, only the newest unresolved miss for each item is shown; a later completion resolves earlier expectations.
+- Dated expectations are retained across skipped app days. Once-a-day items show only their newest unresolved miss, and a later completion resolves earlier expectations. Items with several sessions a day retain each unfinished session separately; completing a later session leaves earlier misses unresolved.
 - Tap to open the **Slipped Sheet** (see §X.1)
 - Shows items in expected-day, then first-suggested order
 - Each item can be tapped to review → opens detail
@@ -1043,6 +1043,8 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - `__none__` sentinel for "no topic" / "anywhere" habits
 - Presence indicator (👤 "today's place") — shows current location with GPS signal
 - Tap presence to open **Presence Picker** (§X.7)
+- Selected topic and place filters appear in their own row below the Home
+  header controls, with reachable clear buttons even on narrow phones.
 
 ---
 
@@ -1052,6 +1054,10 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - Case-insensitive
 - Searches: habit names, topics, location names
 - Clears with ✕ button
+- Opening empty Search keeps the mounted agenda. Home and detail search docks
+  sit directly against the keyboard on phones, retaining the bottom safe area
+  when the keyboard closes. They follow its geometry once per animation frame; visible editing fields
+  keep their scroll position, and covered fields scroll above the keyboard/footer.
 - Search is available when the settled, unsearched Home view contains at least
   10 visible Ting cards across its sections. Pinned copies and separate-session
   cards count because they are visible/searchable; travel and busy cards do not.
@@ -1071,17 +1077,18 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 
 ---
 
-## VIII. THE ADD HABIT SHEET
+## VIII. THE NEW SHEET
 
 ### 8.1 Sheet Structure
 ```
 ┌─────────────────────────────────────┐
-│ ✕ new habit                         │
+│ new           [defaults] [busy times]│
 ├─────────────────────────────────────┤
 │ [Input] Name     [Emoji] 🎯          │
 │ [Emoji picker: quick picks + colors]│
 │                                     │
 │ Type: [habit] [task]                │
+│ A task is one-off; a habit repeats. │
 │                                     │
 │ (habit) How often: [1] × in [7] d   │
 │ (task)  Due: [date] [time]          │
@@ -1200,11 +1207,11 @@ Fields shown (always visible, even in minimal mode):
 
 ### 9.4 Schedule Tab Details 👤
 
-Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps its simple scrolling fields and omits search.
+Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps those section headers visible on its stacked scrolling fields and omits search. Footer clearance for the close pill sits only on the last section.
 
 The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
 
-Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field, and the bar stays above the keyboard and safe areas. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Narrow or zoomed panes stack fields and wrap labels. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide and the item header compacts; Close or Cancel/Save stays available. The controls return after leaving the field. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide and the item header compacts; Close or Cancel/Save stays available. The controls return after leaving the field. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -1509,7 +1516,7 @@ Tracks the currently active habit session:
 - **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
 - Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
-- Repeated unresolved occurrences of the same item collapse to one actionable row, labeled with its newest missed day.
+- Habits with several sessions a day show one missed row per unfinished session, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
 - Items show day labels (behind/today/tomorrow)
@@ -2792,6 +2799,8 @@ Same agenda logic, but simplified display:
 
 ### 20.4 Detail Sheet Changes
 - Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
+- Remaining panes stack into one scroll; section headers stay visible
+- Extra space for the floating close control is only on the last section
 - Simplified scheduling UI
 - Basic info only
 - Action rows limited to remove: shared display, export to calendar, share
@@ -2980,6 +2989,16 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 **Query tools** answer questions by computing against live data; the model selects tools and arguments but does not author factual results. `answer_weather` reads day/hour forecasts and assesses weather against an item's rules. `query hours` ranks hours inside a window, including several conditions at once (relatively hot and very low wind) and extremes (lowest wind after 5pm). `query compare` scores two times, including a clock such as one hour before sunset, and can apply a saved habit’s weather profile. `query item` with a start answers how that habit fits the window even when it is not already planned. `answer_schedule` reads open time, contiguous openings, the freest day, what-if conflicts, the same missed list as the today-header pill, and day/week agendas. `answer_schedule` and `answer_items` share a composable item-query layer: the model can combine AND conditions over name, kind, status, importance/priority, app urgency, overdue age, due distance, time since completion, frequency, duration, pin/split/completed state, topic, place, weather profile, and scheduled time; then request an authoritative sort, ordinal (`position: 2`), limit, count, total duration, or average duration. This handles questions such as “the second most overdue thing I missed,” “the shortest urgent habit tomorrow,” and “how many pinned P0 tasks are open” without trusting the model to inspect or rank a returned list. Legacy `most_important`, `most_frequent`, and `longest` selections remain supported. Compound questions run every requested tool and join their verified results. A later model prose pass cannot replace those results, so invented names, gaps, times, totals, weather, history, or rankings are discarded even if the model sounds confident. A read used to choose fields for a later action is marked `purpose: prepare_action`; that creates an explicit pending obligation, so prose cannot end the turn until `draft_item`, `draft_batch`, `draft_setting`, or the requested action tool succeeds. This supports research-then-create flows such as finding a suitable open block and then drafting a weekly outdoor habit with the chosen duration/window and an attached weather profile. Creation tools remain available after reads, and read calls are executed before dependent drafts when both arrive together. A transient model connection failure is retried once; if continuation still fails, Tings labels verified lookup output as partial and never presents it as completion of the whole request. No-op action results are preserved alongside the remaining compound answer, and several `tool_calls` in one model reply all run before finalization. The next user message includes `recent.items` / `recent.referent` so “when did I last do that one?” can call `lookup_item` without guessing. `answer_items` also summarizes today's progress. `answer_settings` lists saved places, weather profiles, topics, and busy times. `lookup_item` reports an item's current state and important settings, recent log details, pace/streak/progress statistics, or a concrete planner explanation for the next seven days. Its default summary searches the complete rendered week plus explicit future plan/due markers and reports both the next occurrence and latest real completion, so “not today” is not treated as a complete answer. Spoken names are ranked against the full saved list (fragments, nicknames, typos, or the whole question); a unique hit is used, and several close hits ask which item it is instead of guessing or creating a new one. `find_item` exposes that same ranking. When the whole request is confusing, Tings asks one short question (optional chips) instead of guessing — at most two clarification questions in a row, then it stops. Where data is missing or a question is vague, the reply says so honestly. Query tools are read-only: no draft, no save.
 
+#### New habit & task defaults 👤👨‍💻
+
+Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The **new** sheet includes small **defaults** and **busy times** pills in its header, and explains below the type selector: “A task is one-off; a habit repeats.” Defaults opens the profile for the selected kind. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
+
+Choose which kind opens first independently of the profile being edited. Habits support a rhythm of N times in M days. Tasks support a due-date policy of **today** (initial choice), **tomorrow**, or **no date / someday**; the date is resolved when creating the task rather than saved as a fixed calendar date. Both profiles include priority, duration, early/late scheduling allowance, splitting and shortest session, allowed weekdays/time/place, topics, and completion.
+
+Completion starts **manual**. **After duration** copies the new item's actual duration into its automatic completion delay when saved; **after set minutes** accepts a separate delay, including zero. The add page can override duration, splitting, completion, priority, topics and places. Clearing a due date, choosing manual completion, or removing a preselected topic remains an explicit override. Automatic completion follows the existing scheduled/agenda rules; split chunks are credited after they end, while manual timers remain manual.
+
+Busy times reserve time for commitments such as sleep or work and use the existing Settings editor. They are saved independently of the new item and do not track completion. Defaults affect new items from the + page; saved items remain unchanged. Older shared defaults seed both profiles once and then remain independent. Habit fields retain their legacy keys; task choices live under `taskDefaults`, with the same field names without the `default` prefix, plus `dueDateMode`.
+
 #### Default Habit Values 👨‍💻
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
@@ -2992,7 +3011,13 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 | `defaultBreakable` | boolean | false | Default breakable setting |
 | `defaultMinChunkMinutes` | number | 30 | Default minimum chunk |
 | `defaultAutoMarkMinutes` | number\|null | null | Default auto-mark timeout |
-| `defaultTopics` | string[] | [] | Topics applied to new habits |
+| `defaultTopics` | string[] | [] | Topics preselected for new habits |
+| `defaultAutoMarkMode` | string | 'manual' | `manual`, `duration`, or `minutes` |
+| `defaultAllowedWeekdays` | number[] | [] | Empty allows every day |
+| `defaultAllowedTimeStart` / `defaultAllowedTimeEnd` | number\|null | null | Allowed time window in clock minutes |
+| `defaultLocationIds` | string[] | [] | Preselected allowed places |
+| `defaultAnywhereAllowed` | boolean | true | Allow any place |
+| `taskDefaults` | object | migrated profile | Independent task defaults; `dueDateMode` starts as `today` |
 
 #### Internal/Caching 👨‍💻
 | Field | Type | Default | Purpose |
@@ -3131,6 +3156,13 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
   Completing one same-day card removes only that session. An ordinary log still
   counts toward the rhythm quota, after which replanning chooses the remaining
   opportunities. Names and rhythm statistics remain Ting-level.
+- A rhythm such as 2×/1d or 3×/1d also schedules multiple sessions in a general
+  allowed window without requiring separate option rows. Each completion
+  consumes one session; the remaining cards survive cached renders and fresh
+  replanning. Explicit option rows remain one-session opportunities. A session
+  is missed when its usable window closes, rather than simply when its suggested
+  start time passes. Logging a dated missed session resolves that date and does
+  not consume today's sessions. Undo restores the selected session.
 - The same location may be used in any number of rows at different times.
 - Preferred days, time, and place levels remain soft hints. They rank feasible
   general and specific windows but never make an otherwise valid window

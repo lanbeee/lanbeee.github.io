@@ -4,13 +4,13 @@
      (not a viewport media query) or the place name clips on phones whose
      screen is wider than the old breakpoint. */
   container-type:inline-size;
-  display:flex;flex-direction:row;gap:10px;align-items:center;
+  display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:center;
   padding:10px 12px;
   background:var(--bg);
   z-index:10;border-radius:var(--card-radius,20px);
   transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,max-height var(--dur-slow) var(--ease-snappy),padding var(--dur-slow) var(--ease-snappy),margin var(--dur-slow) var(--ease-snappy);
   margin:8px 0 0;
-  max-height:88px;
+  max-height:none;
   will-change:transform,opacity;
 }
 /* The header's three controls (wordmark · place · filters) share one surface:
@@ -29,15 +29,21 @@
   border:0;background:transparent;box-shadow:none;border-radius:10px;height:40px;
 }
 .topbar .home-filter-trigger.has-active{ border:0;background:transparent;box-shadow:none; }
-.topbar .home-filter-bar{overflow:hidden;}
-.topbar .home-filter-active{ padding:0 2px;justify-content:flex-end;overflow:hidden; }
-/* Shrink inside the bar. A flex-end row that overflows clips the left edge,
-   which is what shaved the current-place control once the assistant button
-   took a slot on a phone. */
-.topbar .presence-filter{
-  flex:0 1 190px;width:auto;min-width:0;max-width:min(190px,100%);
+.topbar .home-filter-bar,.topbar .home-filter-active{display:contents;}
+.topbar .home-filter-selections{
+  order:5;flex:1 0 100%;min-width:0;
+  display:flex;flex-wrap:wrap;gap:8px;
 }
-.topbar .home-filter-trigger{ position:relative; }
+.topbar .home-filter-selections .home-active-filter{
+  flex:1 1 140px;max-width:100%;height:44px;
+}
+.topbar .assistant-launch{flex:0 0 44px;}
+/* Current place takes the remaining header space; selected filters use the
+   full-width row below it rather than competing with the header controls. */
+.topbar .presence-filter{
+  flex:1 1 0;width:auto;min-width:0;max-width:min(190px,100%);margin-left:auto;
+}
+.topbar .home-filter-trigger{position:relative;margin-left:auto;}
 body[data-pane-count="2"] .topbar,
 body[data-pane-count="3"] .topbar{
   display:none;
@@ -49,6 +55,7 @@ body.header-hidden .topbar{
 body.search-active .topbar,
 body.search-active #home-tag-filter{
   opacity:0;transform:translateY(-14px) scale(0.97);pointer-events:none;
+  transition-property:transform,opacity;
 }
 body[data-pane-count="1"].search-active .topbar{
   max-height:0;
@@ -64,7 +71,7 @@ body[data-pane-count="1"].search-active #home-tag-filter{
   padding-top:0;padding-bottom:0;
   overflow:hidden;
 }
-body[data-pane-count="1"].search-active{--nav-bottom:6px;}
+body[data-pane-count="1"].search-active{--nav-bottom:0px;}
 .wordmark{
   border:none;background:transparent;padding:0;margin:0;
   font:inherit;
@@ -180,7 +187,9 @@ body[data-pane-count="3"] .app-bar{
   backdrop-filter:var(--glass-blur);
   border-radius:22px;
   box-shadow:var(--floating-shadow);
-  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease,bottom var(--dur-slow) var(--ease-snappy);
+  /* Keyboard geometry is already animated by the OS. A bottom transition
+     restarts on every viewport step and leaves the field chasing the IME. */
+  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease;
   will-change:transform;
 }
 body[data-pane-count="2"] .bottom-nav,
@@ -228,6 +237,9 @@ body.fullpage-open .bottom-nav{
 .bottom-nav.search-open{
   width:calc(100vw - 24px);
   max-width:456px;
+  /* The keyboard already covers the bottom system area. Keep the safe inset
+     when it is closed, but do not add it (or thumb clearance) above the IME. */
+  bottom:max(var(--keyboard-lift),var(--content-safe-bottom));
 }
 /* Search mode: just the field + close — calendar/+ aren't useful mid-lookup. */
 .bottom-nav.search-open #open-overview,

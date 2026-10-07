@@ -194,7 +194,7 @@ function renderDefaultTopicsChips(){
   const wrap = $('default-topics-chips');
   if(!wrap)return;
   const allTopics = Array.isArray(sortSettings.topics) ? sortSettings.topics : [];
-  const selected = Array.isArray(sortSettings.defaultTopics) ? sortSettings.defaultTopics : [];
+  const selected = currentDefaultProfile().topics;
   if(!allTopics.length){
     wrap.innerHTML = '<p class="field-hint">Add topics in the Topics section first.</p>';
     return;
@@ -206,10 +206,10 @@ function renderDefaultTopicsChips(){
 }
 
 function toggleDefaultTopic(topic){
-  const current = Array.isArray(sortSettings.defaultTopics) ? [...sortSettings.defaultTopics] : [];
+  const current = currentDefaultProfile().topics.slice();
   const idx = current.indexOf(topic);
   if(idx >= 0)current.splice(idx,1);
   else current.push(topic);
-  updateSortSetting({defaultTopics:current});
+  updateDefaultProfile({topics:current});
   renderDefaultTopicsChips();
 }
