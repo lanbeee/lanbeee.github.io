@@ -35,6 +35,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     // The footer floats over the pager's lower edge like Home's action bar;
     // it must stay anchored to the bottom of the sheet, not push content.
     assert.ok(footerBox.y>=pagerBox.y && footerBox.y+footerBox.height<=845,'the footer floats at the bottom of the sheet');
+    assert.equal(await page.locator('.detail-bottom-bar').evaluate(el=>getComputedStyle(el).borderRadius),'28px','detail action bar uses the same round pill as Home');
     assert.ok(await tabs.nth(1).locator('span').isVisible(),'tab labels are visible on a phone');
     await page.evaluate(()=>{
       const panel=getSheetInner('detail-sheet').querySelector('[data-detail-nav="identity"]');
@@ -50,6 +51,9 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.ok(fieldBox.y>600,'search expands in the bottom dock');
     const radius=await page.locator('.detail-search-control').evaluate(el=>parseFloat(getComputedStyle(el).borderRadius));
     assert.ok(radius>=fieldBox.height/2,'search container is a rounded pill');
+    assert.equal(await page.locator('.detail-search-control').evaluate(el=>getComputedStyle(el).boxShadow),'none','focused search stays flat like Home');
+    const dock=await page.locator('.detail-bottom-bar').boundingBox();
+    assert.ok(844-dock.y-dock.height<=12,'open search sinks to the bottom like Home');
     await page.locator('#detail-cool').click();
     assert.equal(await tabs.nth(3).getAttribute('aria-selected'),'true','X returns to the same detail tab');
     assert.equal(await page.locator('[data-detail-nav="identity"]').evaluate(el=>el.scrollTop),returnScroll,'X restores the detail scroll position');
@@ -189,10 +193,19 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
         openDetail(0);document.documentElement.style.setProperty('--keyboard-lift',`${lift}px`);
         setDetailSearchOpen(true,false);
       },lift);
-      await page.waitForTimeout(100);
+      await page.waitForFunction(([height,lift])=>{
+        const bar=document.querySelector('.detail-bottom-bar');
+        if(!bar)return false;
+        const r=bar.getBoundingClientRect();
+        return r.y+r.height<=height-lift+1;
+      },[height,lift]);
       for(const selector of ['#detail-search-input','#detail-cool']){
         const box=await page.locator(selector).boundingBox();
         assert.ok(box && box.y>=0 && box.y+box.height<=height-lift+1,`${selector} covered by short-screen keyboard ${width}x${height}`);
+      }
+      if(width===390){
+        const dock=await page.locator('.detail-bottom-bar').boundingBox();
+        assert.ok(height-lift-(dock.y+dock.height)<=12,'search sits close to the keyboard');
       }
       await page.evaluate(()=>setDetailDirty(true));
       for(const selector of ['#detail-save','#detail-close']){
@@ -207,6 +220,17 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.equal(await page.locator('#detail-search-toggle').isVisible(),false);
     assert.ok(await page.locator('#detail-duration').isVisible());
     assert.equal(await page.locator('#detail-priority-seg').isVisible(),false);
+    assert.ok(await page.locator('#detail-rhythm-disclosure > summary').isVisible(),'minimal mode keeps section headers');
+    assert.ok(await page.locator('#detail-name-disclosure > summary').isVisible(),'identity section header stays visible');
+    assert.ok(await page.locator('#detail-actions-disclosure > summary').isVisible(),'actions section header stays visible');
+    const minimalPad=await page.evaluate(()=>{
+      const pages=[...getSheetInner('detail-sheet').querySelectorAll('.detail-pager > .detail-page')];
+      const visible=pages.filter(p=>!p.hidden);
+      const pad=el=>parseFloat(getComputedStyle(el).paddingBottom) || 0;
+      return {last:pad(visible.at(-1)),others:visible.slice(0,-1).map(pad)};
+    });
+    assert.ok(minimalPad.last>=70,'the last stacked section keeps footer clearance');
+    assert.ok(minimalPad.others.every(n=>n<20),'earlier stacked sections do not keep footer clearance');
     assert.equal(await page.locator('#detail-emoji').isVisible(),false,'minimal mode keeps the optional picker collapsed');
     await page.locator('#detail-emoji-preview').click();
     assert.ok(await page.locator('#detail-emoji').isVisible(),'the emoji preview also opens the picker in minimal mode');
@@ -238,6 +262,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
       await search('duration');
       assert.equal(await page.locator('#detail-search-input').evaluate(el=>getComputedStyle(el).boxShadow),'none');
       assert.equal(await page.locator('#detail-search-input').evaluate(el=>getComputedStyle(el).outlineStyle),'none','search has no focus glow');
+      assert.equal(await page.locator('.detail-search-control').evaluate(el=>getComputedStyle(el).boxShadow),'none','search container has no focus ring');
       await page.keyboard.press('Escape');
       await page.evaluate(()=>setDetailDirty(true));
       assert.equal(await page.locator('#detail-search-toggle').isVisible(),false);
@@ -249,6 +274,35 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     }
     await page.evaluate(()=>{document.documentElement.style.removeProperty('--font-scale');window.TingsNative={isNative:false};});
     await page.setViewportSize({width:390,height:568});await page.waitForTimeout(250);
+    await page.evaluate(()=>{
+      const data=load();
+      data[0].links=[{kind:'url',value:'https://example.com',primary:true}];
+      save(data);openDetail(0);scrollDetailToNav('actions');
+      getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true);
+    });
+    await page.waitForTimeout(80);
+    const headerRow=await page.evaluate(()=>{
+      const sameRow=(a,b)=>Math.abs(a.getBoundingClientRect().top - b.getBoundingClientRect().top) < 12;
+      const linksHead=document.querySelector('.link-field-head .settings-sublabel');
+      const addLink=document.getElementById('detail-link-add');
+      const launch=document.querySelector('#detail-link-actions .detail-head-btn');
+      const name=document.getElementById('detail-name');
+      return {
+        linksInline:sameRow(linksHead,addLink),
+        launchInline:!launch || sameRow(name,launch)
+      };
+    });
+    assert.ok(headerRow.linksInline,'add link stays on the links heading row');
+    assert.ok(headerRow.launchInline,'header launch buttons stay on the title row');
+    await page.locator('#detail-cool').click();
+    await page.evaluate(()=>openSheet('add-sheet'));
+    const addRow=await page.evaluate(()=>{
+      const add=document.getElementById('do-save').getBoundingClientRect();
+      const cancel=document.getElementById('do-cancel').getBoundingClientRect();
+      return {sameRow:Math.abs(add.top-cancel.top)<8,cancelInFooter:Boolean(document.getElementById('do-cancel').closest('.add-actions')),topExit:!document.querySelector('#add-sheet .sheet-exit')};
+    });
+    assert.ok(addRow.sameRow && addRow.cancelInFooter && addRow.topExit,'cancel sits with add in the footer, not a top exit');
+    await page.locator('#do-cancel').click();
     // Saving still commits the edit; cancelling above left its snapshot intact.
     await page.evaluate(()=>{openDetail(0);scrollDetailToNav('identity');});
     await page.locator('#detail-habit-message').fill('Saved fixture');await page.locator('#detail-habit-message').blur();

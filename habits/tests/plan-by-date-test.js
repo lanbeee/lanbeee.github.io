@@ -459,7 +459,7 @@ function seedScript(){
   console.log(cleared);
   assert(cleared.storedPlanBy === null, 'Clear plan-by persists planByDate as null');
   assert(cleared.planByAgain, 'clearing restores Plan by this day');
-  await page.locator('#day-logs-done').click();
+  await page.locator('#day-logs-close').click();
   await page.evaluate(() => closeDetail());
   await page.waitForTimeout(120);
 
@@ -492,7 +492,7 @@ function seedScript(){
     console.log(`  ${typeName}: ${JSON.stringify(result)}`);
     assert(result.pickerGone, `${typeName} has no plan-by date picker`);
     assert(!body.includes('Plan by this day'), `Plan by this day hidden for ${typeName}`);
-    await page.locator('#day-logs-done').click();
+    await page.locator('#day-logs-close').click();
     await page.evaluate(() => closeDetail());
     await page.waitForTimeout(120);
   }

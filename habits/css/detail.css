@@ -89,9 +89,9 @@
   .detail-sheet .detail-page .timer-row{grid-template-columns:1fr;}
 }
 .link-field{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
-.link-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
-.link-field-head .settings-sublabel{margin:0;}
-.link-field-adds{display:flex;align-items:center;gap:4px;margin-left:auto;}
+.link-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap;}
+.link-field-head .settings-sublabel{margin:0;min-width:0;flex:1 1 auto;}
+.link-field-adds{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0;}
 .detail-app-picker{
   min-width:0;padding:6px;border-radius:var(--radius-sm);background:var(--field-bg);
 }
@@ -232,9 +232,11 @@ body[data-pane-count="1"] .detail-sheet{
 body[data-pane-count="1"] .detail-sheet > .detail-bottom-bar{
   position:absolute;left:50%;bottom:calc(var(--nav-bottom) + var(--keyboard-lift,0px) + var(--content-safe-bottom));
   transform:translateX(-50%);margin:0;width:max-content;max-width:calc(100vw - 24px);
-  /* Home action-bar geometry: 7px skin, 22px corners, 44px icon row. */
-  padding:7px;border-radius:22px;
+  transition:bottom var(--dur-slow) var(--ease-snappy);
 }
+/* Home search drops --nav-bottom to 6px so the field sits on the keyboard
+   instead of floating a thumb-clearance above it. */
+body[data-pane-count="1"] .detail-sheet.detail-search-open{--nav-bottom:6px;}
 /* At rest the bar is icon-only (loupe + close) exactly like Home's action
    bar; the wide field exists only while search is open. */
 body[data-pane-count="1"] .detail-sheet:not(.detail-search-open) .detail-search-control{background:transparent;}
@@ -247,6 +249,14 @@ body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{
    in-flow rule uses (min(100%,320px), floater flavor). */
 body[data-pane-count="1"] .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(calc(100vw - 24px),320px);}
 body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
+  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
+}
+/* Stacked minimal pages share one scroll. Keep footer clearance on the last
+   section only so earlier cards don't carry a blank band. */
+body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
+  padding-bottom:0;
+}
+body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page:last-child{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
 body[data-pane-count="1"] .detail-sheet > .detail-search-panel .detail-search-results{
@@ -290,12 +300,8 @@ body .detail-search-field input{
 .pane-detail:has(.detail-sheet){overflow:hidden;}
 body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail[data-active-sheet="detail-sheet"] > .detail-sheet{height:calc(100% - var(--keyboard-lift,0px));max-height:100%;}
 body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap .detail-sheet{height:calc(100dvh - 48px - var(--keyboard-lift,0px));}
-.detail-head > .detail-head-actions{max-width:80px;overflow-x:auto;}
 .detail-head .ting-name{overflow-wrap:anywhere;}
 body .minimal-detail .detail-full-only{display:none !important;}
-.minimal-detail .detail-disclosure > summary{display:none;}
-.minimal-detail #detail-appearance-disclosure > summary{display:flex;}
-.minimal-detail .detail-disclosure{border:0;margin:0;padding:0;}
 .detail-disclosure[data-detail-essential]{margin-top:0;border-top:0;}
 .detail-disclosure > summary{min-height:44px;cursor:pointer;}
 .detail-disclosure > summary:focus-visible,.detail-search-result:focus-visible{outline:2px solid var(--text);outline-offset:-2px;}
@@ -320,21 +326,24 @@ body .detail-sheet.detail-field-editing > .detail-head{
 }
 body .detail-sheet.detail-field-editing .detail-mark{width:40px;min-width:40px;height:40px;}
 .detail-search-hit{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px;}
-/* The home card's emoji geometry must not override detail's two columns. */
+/* The home card's emoji geometry must not override detail's header columns. */
 body .detail-sheet > .detail-head{
-  display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;
+  display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:8px;
   padding:8px;margin-bottom:6px;min-width:0;
 }
 body .detail-head > .detail-mark{grid-column:1;grid-row:1;width:56px;min-width:56px;height:56px;}
 .detail-head > .detail-title-wrap{grid-column:2;grid-row:1;}
-.detail-head > .detail-head-actions{grid-column:1 / -1;grid-row:2;max-width:100%;overflow-x:auto;justify-self:start;}
+.detail-head > .detail-head-actions{
+  grid-column:3;grid-row:1;max-width:none;
+  overflow-x:auto;justify-self:end;align-self:center;
+}
 .detail-head .ting-main{min-width:0;}
 .detail-head .ting-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
 .detail-search-result :is(b,small){overflow-wrap:anywhere;max-width:100%;}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 #detail-search-input::-webkit-search-cancel-button{display:none;}
 body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none;}
-.detail-search-control:focus-within{box-shadow:inset 0 0 0 1px var(--text3);}
+.detail-search-control:focus-within{box-shadow:none;}
 /* Fit each field to its pane, including the narrower permanently mounted
    desktop pane. Container queries also follow the effective width at zoom. */
 .detail-sheet .detail-page{container-type:inline-size;}
@@ -352,14 +361,18 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
   .detail-page .plan-date-input,.detail-page .plan-time-input{flex:1 1 100%;width:100%;}
   .detail-page .schedule-link-main{grid-template-columns:minmax(0,1fr) auto;}
   .detail-page .schedule-link-direction{grid-column:1 / -1;min-width:0;}
-  .detail-page .schedule-order-heading,.detail-page .habit-options-heading{flex-wrap:wrap;}
-  .detail-page .link-field-adds{flex-wrap:wrap;margin-left:0;}
+  .detail-page .schedule-order-heading,.detail-page .habit-options-heading,.detail-page .link-field-head,.detail-page .detail-order-head{flex-wrap:wrap;}
+  .detail-page .link-field-adds{flex-wrap:wrap;flex-shrink:1;min-width:0;max-width:100%;margin-left:0;}
   .detail-page .schedule-chip-row{gap:2px;}
   .detail-page .schedule-chip{padding-inline:2px;min-width:0;}
   .detail-page .link-row,.detail-page .custom-app-editor{grid-template-columns:minmax(0,1fr) 30px 30px;}
   .detail-page .link-row .link-kind,.detail-page .custom-app-editor > select{grid-column:1 / -1;}
   .detail-page .link-row .link-value,.detail-page .link-row.is-app .link-app-name{grid-column:1;grid-row:auto;}
   .detail-page .link-row.is-app .link-value,.detail-page .custom-app-editor #detail-custom-app-launch{grid-column:1 / -1;grid-row:auto;}
+}
+@media (max-width:300px){
+  .detail-page .schedule-order-heading,.detail-page .habit-options-heading,.detail-page .link-field-head,.detail-page .detail-order-head{flex-wrap:wrap;}
+  .detail-page .link-field-adds{flex-wrap:wrap;flex-shrink:1;min-width:0;max-width:100%;margin-left:0;}
 }
 @media (max-width:280px){
   .detail-page-tab{min-height:44px;}

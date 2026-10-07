@@ -725,11 +725,16 @@ function assert(cond,msg){
     done:Boolean(document.querySelector('.agenda-row.is-complete .agenda-mark.is-done')),
     toastVisible:!document.getElementById('agenda-undo').hidden,
     toastText:document.getElementById('agenda-undo-text')?.textContent || '',
+    toastBottom:document.getElementById('agenda-undo').getBoundingClientRect().bottom,
+    viewportHeight:window.innerHeight,
     stored:JSON.parse(localStorage.getItem(typeof AGENDA_DISPLAY_KEY !== 'undefined' ? AGENDA_DISPLAY_KEY : 'tings_agenda_display_v4') || 'null')?.completionRowIds || []
   }));
   assert(pendingUi.done && pendingUi.toastVisible && /Marked .+ done/.test(pendingUi.toastText)
     && !pendingUi.stored.length && !completionRequest,
     'marking done renders the row optimistically behind an undo toast and does not push yet');
+  assert(pendingUi.toastBottom <= pendingUi.viewportHeight
+    && pendingUi.toastBottom >= pendingUi.viewportHeight - 120,
+    'the undo toast stays inside the viewport on the standalone display');
 
   await displayPage.click('#agenda-undo-button');
   const undoneUi = await displayPage.evaluate(() => ({

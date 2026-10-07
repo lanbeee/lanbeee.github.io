@@ -13,6 +13,11 @@ const {chromium}=require('./helpers/planner-test-helpers');
       localStorage.setItem(KEY,JSON.stringify(data));sortSettings=settings;
       const week=await buildWeekAgendaOffMain(data,settings,7,'fast');
       rehydrateAgendaWeekHabits(week,data);
+      // A boot render may queue beside this fixture's build. Foreground work
+      // deliberately excludes forecasting; let that work drain before asking.
+      for(let attempt=0;_plannerWorkerRequests.size && attempt<500;attempt++){
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
       const plan=agendaForecastPlanKey(week,data),clock=Date.now();
       const owners=data.map(h=>h.hid);
       const revision=homePlannerDirtyKey(data);

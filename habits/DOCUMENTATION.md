@@ -991,7 +991,7 @@ second row.
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
 - Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
 - It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, still-doable work that was never shown, and yesterday's dated row for an item whose usable window is still open today are excluded. Calendar midnight is not an opportunity ending.
-- Dated expectations are retained across skipped app days. To keep the list useful instead of becoming a backlog dump, only the newest unresolved miss for each item is shown; a later completion resolves earlier expectations.
+- Dated expectations are retained across skipped app days. Once-a-day items show only their newest unresolved miss, and a later completion resolves earlier expectations. Items with several sessions a day retain each unfinished session separately; completing a later session leaves earlier misses unresolved.
 - Tap to open the **Slipped Sheet** (see §X.1)
 - Shows items in expected-day, then first-suggested order
 - Each item can be tapped to review → opens detail
@@ -1076,7 +1076,7 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 ### 8.1 Sheet Structure
 ```
 ┌─────────────────────────────────────┐
-│ ✕ new habit                         │
+│ new habit                           │
 ├─────────────────────────────────────┤
 │ [Input] Name     [Emoji] 🎯          │
 │ [Emoji picker: quick picks + colors]│
@@ -1200,11 +1200,11 @@ Fields shown (always visible, even in minimal mode):
 
 ### 9.4 Schedule Tab Details 👤
 
-Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps its simple scrolling fields and omits search.
+Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps those section headers visible on its stacked scrolling fields and omits search. Footer clearance for the close pill sits only on the last section.
 
 The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
 
-Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field, and the bar stays above the keyboard and safe areas. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Narrow or zoomed panes stack fields and wrap labels. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide and the item header compacts; Close or Cancel/Save stays available. The controls return after leaving the field. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide and the item header compacts; Close or Cancel/Save stays available. The controls return after leaving the field. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -1509,7 +1509,7 @@ Tracks the currently active habit session:
 - **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
 - Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
-- Repeated unresolved occurrences of the same item collapse to one actionable row, labeled with its newest missed day.
+- Habits with several sessions a day show one missed row per unfinished session, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
 - Items show day labels (behind/today/tomorrow)
@@ -2792,6 +2792,8 @@ Same agenda logic, but simplified display:
 
 ### 20.4 Detail Sheet Changes
 - Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
+- Remaining panes stack into one scroll; section headers stay visible
+- Extra space for the floating close control is only on the last section
 - Simplified scheduling UI
 - Basic info only
 - Action rows limited to remove: shared display, export to calendar, share
@@ -3131,6 +3133,13 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
   Completing one same-day card removes only that session. An ordinary log still
   counts toward the rhythm quota, after which replanning chooses the remaining
   opportunities. Names and rhythm statistics remain Ting-level.
+- A rhythm such as 2×/1d or 3×/1d also schedules multiple sessions in a general
+  allowed window without requiring separate option rows. Each completion
+  consumes one session; the remaining cards survive cached renders and fresh
+  replanning. Explicit option rows remain one-session opportunities. A session
+  is missed when its usable window closes, rather than simply when its suggested
+  start time passes. Logging a dated missed session resolves that date and does
+  not consume today's sessions. Undo restores the selected session.
 - The same location may be used in any number of rows at different times.
 - Preferred days, time, and place levels remain soft hints. They rank feasible
   general and specific windows but never make an otherwise valid window

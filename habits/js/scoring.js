@@ -765,6 +765,8 @@ function todayCategory(h,settings){
 
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 3;
   if(h.type === 'zero')return 3;
+  if(habitHasMultipleDailyOccurrences(h) && (Number(h.target) <= 1 || habitOccurrenceLogsForDay(h,Date.now()).length)
+    && !completedToday(h))return isAvailableToday ? 0 : 1;
 
   if(hasPlannedToday(h) && h.type !== 'zero')return 0;
 

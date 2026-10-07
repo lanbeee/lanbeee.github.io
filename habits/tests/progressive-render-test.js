@@ -1,5 +1,6 @@
 // Cold open: keep the responsive HTML skeleton until the planner supplies a
-// week, then paint the agenda once. Solve duration is not UI-thread latency.
+// week, then paint the agenda once. Explicitly exercise the GLPK setting;
+// solve duration is not UI-thread latency.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/progressive-render-test.js
 //
@@ -44,6 +45,7 @@ function seedProgressiveHome(target){
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst',
       showWeekOnHome:true,
+      agendaOptimizer:true,
       topics:[],
       locations:[
         { id:'home', name:'Home', lat:40.700, lng:-74.000 },
@@ -101,7 +103,7 @@ function seedProgressiveHome(target){
       sawLoading:Boolean(window.__progressiveObs && window.__progressiveObs.sawLoading),
       loadingNow:Boolean(list && list.querySelector('.home-loading')),
       cards:list ? list.querySelectorAll('.ting-card').length : 0,
-      optimizerDefault:loadSortSettings().agendaOptimizer,
+      optimizerEnabled:loadSortSettings().agendaOptimizer,
       optimized:Boolean(typeof _homeRenderedWeek !== 'undefined' && _homeRenderedWeek?.optimized),
       destructiveRenders:Number(window.__progressiveObs?.destructive || 0),
       hasFingerprint:typeof homeListFingerprint === 'function',
@@ -116,7 +118,7 @@ function seedProgressiveHome(target){
     };
   });
   check('cold load does not use is-progressive', !loadState.sawProgressive && !loadState.progressiveNow, JSON.stringify(loadState));
-  check('GLPK optimizer is the default planner', loadState.optimizerDefault && loadState.optimized, JSON.stringify(loadState));
+  check('the configured GLPK planner supplies the cold-open agenda', loadState.optimizerEnabled && loadState.optimized, JSON.stringify(loadState));
   // Skeleton→agenda is one replace; further churn is not.
   check('cold load upgrades at most once', loadState.destructiveRenders <= 1, JSON.stringify(loadState));
   check('cards render on cold load after agenda', loadState.cards >= 3 && !loadState.loadingNow, JSON.stringify(loadState));
@@ -250,7 +252,7 @@ function seedProgressiveHome(target){
     anchor.found && anchor.beforeScroll > 0 && Math.abs(anchor.afterTop - anchor.beforeTop) <= 2 && anchor.afterScroll > 0,
     JSON.stringify(anchor));
 
-  // Restore the default GLPK mode for the reopen assertions below.
+  // Restore this fixture's GLPK mode for the reopen assertions below.
   await page.evaluate(()=>{
     sortSettings = {...sortSettings,agendaOptimizer:true};
     _optimizerHomeReadyKey = '';

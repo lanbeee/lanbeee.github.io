@@ -545,6 +545,30 @@ function dataFingerprint(data){
   return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
 }
 
+function normalizeSuggestedOccurrences(rows){
+  const byKey = new Map();
+  for(const row of Array.isArray(rows) ? rows : []){
+    if(!row || typeof row.hid !== 'string' || !row.hid
+      || typeof row.occurrenceKey !== 'string' || !row.occurrenceKey)continue;
+    const clean = {hid:row.hid,occurrenceKey:row.occurrenceKey.slice(0,160),
+      scheduleOptionId:row.scheduleOptionId || null,rendered:Boolean(row.rendered)};
+    for(const field of ['start','end','dropAt']){
+      if(row[field] != null && Number.isFinite(Number(row[field])))clean[field] = Number(row[field]);
+    }
+    byKey.set(clean.occurrenceKey,clean);
+  }
+  return [...byKey.values()];
+}
+
+function canonicalSuggestedOccurrence(row,h,day){
+  if(!h || !hasHabitScheduleOptions(h))return row;
+  const option = normalizeHabitScheduleOptions(h.scheduleOptions).find(option=>option.id === row.scheduleOptionId);
+  if(row.scheduleOptionId === 'general' || (option && habitScheduleOptionSameDayMode(option) !== 'separate')){
+    return {...row,occurrenceKey:`${h.hid}:${day}:ordinary`};
+  }
+  return row;
+}
+
 function normalizeSuggestedExpectations(raw){
   const out = {};
   const add = (day,value)=>{
@@ -554,6 +578,7 @@ function normalizeSuggestedExpectations(raw){
     const hids = [...new Set(source.hids.filter(hid=>typeof hid === 'string' && hid))];
     out[day] = {
       hids,
+      occurrences:normalizeSuggestedOccurrences(source.occurrences),
       fingerprint:typeof source.fingerprint === 'string' ? source.fingerprint : '',
       recordedAt:Number.isFinite(Number(source.recordedAt)) ? Number(source.recordedAt) : null
     };
@@ -609,8 +634,10 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
   for(const [day,entry] of Object.entries(snap.expectations)){
     if(!entry || !Array.isArray(entry.hids)){ delete snap.expectations[day]; changed = true; continue; }
     const clean = entry.hids.filter(hid=>validHids.has(hid));
-    if(clean.length !== entry.hids.length){
-      snap.expectations[day] = {...entry,hids:clean};
+    const occurrences = normalizeSuggestedOccurrences(normalizeSuggestedOccurrences(entry.occurrences)
+      .filter(row=>validHids.has(row.hid)).map(row=>canonicalSuggestedOccurrence(row,data.find(h=>h.hid === row.hid),day)));
+    if(clean.length !== entry.hids.length || JSON.stringify(occurrences) !== JSON.stringify(entry.occurrences || [])){
+      snap.expectations[day] = {...entry,hids:clean,occurrences};
       changed = true;
     }
   }
@@ -630,6 +657,7 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
     const previous = snap.expectations[today];
     const next = {
       hids:[...currentExpected],
+      occurrences:snap.expectations[today]?.occurrences || [],
       fingerprint:previous?.fingerprint || fingerprint || '',
       recordedAt:previous?.recordedAt || now
     };
@@ -639,14 +667,21 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
     }
   }
   if(projectionByDay && typeof projectionByDay === 'object'){
-    for(const [day,hids] of Object.entries(projectionByDay)){
+    for(const [day,value] of Object.entries(projectionByDay)){
+      const hids = Array.isArray(value) ? value : value?.hids;
       if(!Array.isArray(hids) || day < today)continue;
       const clean = [...new Set(hids.filter(hid=>validHids.has(hid)))];
+      const occurrences = normalizeSuggestedOccurrences(value?.occurrences).filter(row=>validHids.has(row.hid));
       if(day === today){
         const merged = new Set(snap.expectations[day]?.hids || []);
         clean.forEach(hid=>merged.add(hid));
         const previous = snap.expectations[day];
-        const next = {hids:[...merged],fingerprint:fingerprint || '',recordedAt:previous?.recordedAt || now};
+        const rows = new Map((previous?.occurrences || []).map(row=>[row.occurrenceKey,row]));
+        for(const row of occurrences){
+          const prior = rows.get(row.occurrenceKey);
+          rows.set(row.occurrenceKey,{...row,rendered:Boolean(row.rendered || prior?.rendered)});
+        }
+        const next = {hids:[...merged],occurrences:[...rows.values()],fingerprint:fingerprint || '',recordedAt:previous?.recordedAt || now};
         if(JSON.stringify(previous) !== JSON.stringify(next)){
           snap.expectations[day] = next;
           changed = true;
@@ -655,6 +690,7 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
         const previous = snap.expectations[day];
         const next = {
           hids:clean,
+          occurrences,
           fingerprint:fingerprint || '',
           recordedAt:previous?.fingerprint === (fingerprint || '')
             ? previous.recordedAt || now
@@ -700,6 +736,7 @@ function completedToday(h,now = Date.now()){
   }
   const start = dayStart(now);
   const end = start + 86400000;
+  if(habitHasMultipleDailyOccurrences(h))return habitOccurrenceLogsForDay(h,start).length >= habitOccurrenceTargetForDay(h,start);
   return actualLogs(h.logs).some(ts=>ts >= start && ts < end);
 }
 
@@ -720,29 +757,101 @@ function completedOnDay(h,dayBase){
     return total > 0 && breakableProgressMinutes(h,start) >= total;
   }
   const end = start + 86400000;
+  if(habitHasMultipleDailyOccurrences(h))return habitOccurrenceLogsForDay(h,start).length >= habitOccurrenceTargetForDay(h,start);
   return actualLogs(h.logs).some(ts=>ts >= start && ts < end);
 }
 
-// PURE: completion filtering for a concrete agenda row. Identity-bearing logs
+// Repeated sessions are count-based; breakable work retains its minute budget.
+function habitDailyOccurrenceTarget(h){
+  if(!h || h.type === 'task' || h.type === 'zero' || h.breakable)return 1;
+  const target = Number(h.target);
+  return target > 0 && target < 1 ? Math.min(30,Math.ceil(1 / target - 1e-9)) : 1;
+}
+
+function habitHasMultipleDailyOccurrences(h){
+  return Boolean(h && h.type !== 'task' && h.type !== 'zero' && !h.breakable
+    && (habitDailyOccurrenceTarget(h) > 1
+      || normalizeHabitScheduleOptions(h.scheduleOptions).some(option=>habitScheduleOptionSameDayMode(option) === 'separate')));
+}
+
+function habitOccurrenceTargetForDay(h,dayBase){
+  const options = habitScheduleOptionsForDay(h,dayBase);
+  const separate = options.filter(option=>habitScheduleOptionSameDayMode(option) === 'separate').length;
+  const ordinary = !options.length || hasGeneralAllowedSchedule(h)
+    || options.some(option=>habitScheduleOptionSameDayMode(option) !== 'separate') ? 1 : 0;
+  const quota = rhythmParts(h.target).times;
+  return Math.max(habitDailyOccurrenceTarget(h),Math.min(quota,ordinary + separate));
+}
+
+function habitOccurrenceLogsForDay(h,dayBase){
+  const key = dateKey(dayBase);
+  return normalizeLogs(h?.logs).filter(log=>!isPlanLog(log) && logTime(log) <= Date.now()
+    && (log.scheduledDay || dateKey(logTime(log))) === key);
+}
+
+function habitGeneralOccurrenceKeys(h,dayBase){
+  const base = `${h.hid}:${dateKey(dayBase)}:general`;
+  return Array.from({length:habitDailyOccurrenceTarget(h)},(_,i)=>i === 0 ? base : `${base}:${i + 1}`);
+}
+
+function habitCompletedGeneralOccurrenceKeys(h,dayBase){
+  const logs = habitOccurrenceLogsForDay(h,dayBase);
+  const matched = new Set(logs.map(logOccurrenceKey).filter(Boolean));
+  let ordinary = logs.filter(log=>!logOccurrenceKey(log)).length;
+  for(const key of habitGeneralOccurrenceKeys(h,dayBase)){
+    if(matched.has(key))continue;
+    if(ordinary-- <= 0)break;
+    matched.add(key);
+  }
+  return matched;
+}
+
+function agendaCompletedOccurrenceKeys(h,rows,dayBase){
+  if(!hasHabitScheduleOptions(h) && habitDailyOccurrenceTarget(h) > 1){
+    return habitCompletedGeneralOccurrenceKeys(h,dayBase);
+  }
+  const logs = habitOccurrenceLogsForDay(h,dayBase);
+  const matched = new Set(logs.map(logOccurrenceKey).filter(Boolean));
+  const options = habitScheduleOptionsForDay(h,dayBase);
+  if(logs.some(log=>log.scheduleOptionId === 'general'
+    || options.some(option=>option.id === log.scheduleOptionId && habitScheduleOptionSameDayMode(option) !== 'separate'))){
+    matched.add(`${h.hid}:${dateKey(dayBase)}:ordinary`);
+  }
+  let ordinary = logs.filter(log=>!logOccurrenceKey(log)).length;
+  if(!ordinary)return matched;
+  // Retain the original pool while repainting a freshly rebuilt residual plan:
+  // an ordinary log must not consume another row on each successive rebuild.
+  const saved = typeof loadTodaySuggested === 'function'
+    ? loadTodaySuggested().expectations?.[dateKey(dayBase)]?.occurrences || [] : [];
+  const pool = new Map([...saved.filter(row=>row.hid === h.hid),...rows]
+    .filter(row=>row.occurrenceKey).map(row=>[row.occurrenceKey,row]));
+  // An ordinary log also works on a cold open, before any expectation was
+  // saved. The ordinary lane may already be absent from the residual plan.
+  if(hasGeneralAllowedSchedule(h) || options.some(option=>habitScheduleOptionSameDayMode(option) !== 'separate')){
+    const key = `${h.hid}:${dateKey(dayBase)}:ordinary`;
+    const present = [...pool.values()].some(row=>row.occurrenceKey === key
+      || row.scheduleOptionId === 'general'
+      || options.some(option=>option.id === row.scheduleOptionId && habitScheduleOptionSameDayMode(option) !== 'separate'));
+    if(!present)pool.set(key,{occurrenceKey:key,start:dayStart(dayBase)});
+  }
+  for(const row of [...pool.values()].sort((a,b)=>(a.start || 0) - (b.start || 0))){
+    if(matched.has(row.occurrenceKey))continue;
+    if(ordinary-- <= 0)break;
+    matched.add(row.occurrenceKey);
+  }
+  return matched;
+}
+
+// Completion filtering for a concrete agenda row. Identity-bearing logs
 // remove their matching session only; ordinary logs consume the earliest
 // unmatched row for that day and continue to count normally toward rhythm.
 function agendaRowsAfterCompletions(h,rows,dayBase){
   const list = Array.isArray(rows) ? rows : [];
-  if(!h || h.type === 'task' || h.breakable || list.length <= 1){
+  if(!h || h.type === 'task' || h.breakable || !habitHasMultipleDailyOccurrences(h)){
     return completedOnDay(h,dayBase) ? [] : list;
   }
-  const start = dayStart(dayBase);
-  const end = start + 86400000;
-  const logs = normalizeLogs(h.logs).filter(log=>!isPlanLog(log)
-    && logTime(log) >= start && logTime(log) < end);
-  if(!logs.length)return list;
-  const matched = new Set(logs.map(logOccurrenceKey).filter(Boolean));
-  let ordinary = logs.filter(log=>!logOccurrenceKey(log)).length;
-  return [...list].sort((a,b)=>(a.start || 0) - (b.start || 0)).filter(row=>{
-    if(row.occurrenceKey && matched.has(row.occurrenceKey))return false;
-    if(ordinary > 0){ ordinary -= 1; return false; }
-    return true;
-  });
+  const matched = agendaCompletedOccurrenceKeys(h,list,dayBase);
+  return list.filter(row=>!matched.has(row.occurrenceKey));
 }
 
 function autoChunkPlanScope(h,dayBase){

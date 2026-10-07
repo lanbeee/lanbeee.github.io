@@ -107,6 +107,9 @@ function includeInTodayAgenda(h,settings){
   // Logs win over plans: once the work is actually done for today it leaves
   // the agenda, even if a plan entry for today is still on the habit.
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
+  if(habitHasMultipleDailyOccurrences(h) && (Number(h.target) <= 1 || habitOccurrenceLogsForDay(h,Date.now()).length)
+    && settings.showDueHabitsInAgenda !== false
+    && (!hasDaySchedule(h) || nextEligibleDistance(h) === 0) && windowStillDoableToday(h))return true;
   if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false){
     // Timed day plans are hard scheduled rows — do not also soft-fill today.
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;

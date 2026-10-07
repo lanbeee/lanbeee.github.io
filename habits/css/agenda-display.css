@@ -7,6 +7,8 @@
    cards and controls separate by FILL contrast only — never borders. */
 :root{
   color-scheme:dark;
+  --content-safe-top:0px;
+  --content-safe-bottom:0px;
   --bg:#040706;
   --bg-deep:#000;
   --bg-glow:rgba(79,208,182,.05);
@@ -33,6 +35,12 @@
   --cyan-bg:#0A565D;--cyan-icon:#7CD4DC;
   --lime-bg:#3F5E10;--lime-icon:#B3D66A;
   --slate-bg:#37474F;--slate-icon:#90A4AE;
+}
+@supports (padding:env(safe-area-inset-bottom)){
+  :root{
+    --content-safe-top:env(safe-area-inset-top,0px);
+    --content-safe-bottom:env(safe-area-inset-bottom,0px);
+  }
 }
 :root[data-theme="light"]{
   color-scheme:light;

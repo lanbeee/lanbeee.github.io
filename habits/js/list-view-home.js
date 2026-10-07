@@ -1385,7 +1385,14 @@ function updateHomeSessionProgress(now = Date.now()){
 // PURE: today's agenda timeline rows, shared by the home card pill map and
 // the chronological "today" section ordering so both stay in lockstep.
 // Travel/wait rows are excluded here — home inserts thin travel cards itself.
+let _homeClassicAgendaDay = null;
 function homeAgendaRows(data){
+  _homeClassicAgendaDay = null;
+  if(data.some(habitHasMultipleDailyOccurrences)){
+    const week = buildWeekAgenda(data,sortSettings || loadSortSettings(),1);
+    _homeClassicAgendaDay = week.days[0] || null;
+    return (_homeClassicAgendaDay?.timeline || []).filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
+  }
   if(typeof buildTodayAgenda !== 'function' || typeof buildTodayTimeline !== 'function')return [];
   return buildTodayTimeline(buildTodayAgenda(data,sortSettings || loadSortSettings()))
     .filter(row=>row.kind === 'fill' || row.kind === 'scheduled');

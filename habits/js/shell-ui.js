@@ -476,8 +476,9 @@ function ensureSheetExit(id){
     head.classList.add('sheet-exit-head');
     return;
   }
-  // Settings already has a footer outside its dedicated scrolling region.
-  if(target.closest('.settings-actions'))return;
+  // Settings and the add sheet already keep cancel in a dedicated footer
+  // beside the primary action. Do not pin it to a sticky top row.
+  if(target.closest('.settings-actions,.add-actions'))return;
   const bar = document.createElement('div');bar.className = 'sheet-exit';
   target.classList.add('sheet-exit-button');
   bar.append(target);inner.prepend(bar);

@@ -249,6 +249,9 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
   if(hasPlannedForDay(h,dayBase))return settings.showPlannedItemsInAgenda !== false;
   if(settings.showDueHabitsInAgenda === false)return false;
+  if(habitHasMultipleDailyOccurrences(h) && Number(h.target) <= 1)return true;
+  if(habitHasMultipleDailyOccurrences(h) && habitOccurrenceLogsForDay(h,dayBase).length
+    && !completedOnDay(h,dayBase))return true;
   // One-off soft plan-by: eligible any day from today through the deadline
   // (and any remaining week day once overdue) — week placement picks the day.
   const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
@@ -991,6 +994,7 @@ function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday,completionOffset = 0){
 // through tryPlaceOnDay/commitPlacement while both engines share semantics.
 function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates) || !dayStates.length)return 0;
+  annotateAgendaOccurrenceKeys(candidates,dayStates,true);
   let added = 0;
   const options = opts && typeof opts === 'object' ? opts : {};
   const horizonDays = Math.max(1,Number(options.horizonDays) || dayStates.length);
@@ -1003,7 +1007,8 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
   for(const c of candidates){
     if(!c || !c.h || c.h.type === 'task' || c.h.breakable)continue;
     const allOptions = normalizeHabitScheduleOptions(c.h.scheduleOptions);
-    if(!allOptions.some(o=>habitScheduleOptionSameDayMode(o) === 'separate'))continue;
+    const dailyTarget = habitDailyOccurrenceTarget(c.h);
+    if(dailyTarget <= 1 && !allOptions.some(o=>habitScheduleOptionSameDayMode(o) === 'separate'))continue;
     const parts = rhythmParts(c.h.target);
     const wanted = Math.max(1,Math.ceil(parts.times * horizonDays / parts.days));
     let planned = dayStates.reduce((sum,state)=>sum + state.fills.filter(entry=>
@@ -1011,7 +1016,7 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
     ).length,0) + extraPlannedFor(c);
     const logged = normalizeLogs(c.h.logs).filter(log=>{
       if(isPlanLog(log))return false;
-      const ts = logTime(log);
+      const ts = log.scheduledDay ? new Date(`${log.scheduledDay}T12:00:00`).getTime() : logTime(log);
       return ts >= horizonStart && ts < horizonEnd;
     }).length;
     let remaining = Math.max(0,wanted - logged - planned);
@@ -1024,15 +1029,16 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
     for(const {state} of rankedDays){
       if(!remaining)break;
       const dayKey = dateKey(state.dayBase);
-      const dayLogs = normalizeLogs(c.h.logs).filter(log=>!isPlanLog(log)
-        && dateKey(logTime(log)) === dayKey);
+      // Supplemental option lanes satisfy an occurrence quota, so the ordinary
+      // cadence's eligible set must not erase them after a same-day completion.
+      if(hasDaySchedule(c.h) && !isDateEligibleForHabit(c.h,state.dayBase))continue;
+      const dayLogs = habitOccurrenceLogsForDay(c.h,state.dayBase);
       const loggedIds = new Set(dayLogs.map(log=>String(log.scheduleOptionId || '')).filter(Boolean));
       const usedIds = new Set(state.fills
         .filter(entry=>entry && entry.fill && entry.fill.i === c.i)
         .map(entry=>entry.fit && entry.fit.scheduleOptionId)
         .filter(Boolean));
       const dayOptions = habitScheduleOptionsForDay(c.h,state.dayBase);
-      if(!dayOptions.length)continue;
       const alternatives = dayOptions
         .filter(option=>habitScheduleOptionSameDayMode(option) !== 'separate');
       const existingOrdinary = state.fills.some(entry=>entry && entry.fill && entry.fill.i === c.i
@@ -1052,7 +1058,8 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
           && !usedIds.has(option.id) && !loggedIds.has(option.id)));
       for(const option of opportunities){
         if(!remaining)break;
-        const occurrenceKey = `${c.h.hid || c.i}:${dateKey(state.dayBase)}:${option.id}`;
+        const lane = habitScheduleOptionSameDayMode(option) === 'separate' ? option.id : 'ordinary';
+        const occurrenceKey = `${c.h.hid || c.i}:${dateKey(state.dayBase)}:${lane}`;
         const boundHabit = habitBoundToScheduleOption(c.h,option);
         const fill = {
           h:boundHabit,
@@ -1082,6 +1089,28 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
         remaining -= 1;
         added += 1;
       }
+      // A multiple-times-per-day rhythm also works in one flexible window.
+      // Explicit option rows keep their one-session lanes and the ordinary
+      // general window stays one lane when those rows are configured.
+      if(dailyTarget > 1 && !allOptions.length){
+        let dayCount = dayLogs.length + state.fills.filter(entry=>entry.fill.i === c.i).length;
+        while(remaining > 0 && dayCount < dailyTarget){
+          const completed = habitCompletedGeneralOccurrenceKeys(c.h,state.dayBase);
+          const usedKeys = new Set(state.rows.filter(row=>row.i === c.i).map(row=>row.occurrenceKey));
+          const occurrenceKey = habitGeneralOccurrenceKeys(c.h,state.dayBase)
+            .find(key=>!completed.has(key) && !usedKeys.has(key));
+          if(!occurrenceKey)break;
+          const fill = {h:c.h,
+            i:c.i,priority:c.priority,scarcity:c.scarcity,placeKey:occurrenceKey,occurrenceKey};
+          const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
+          if(!fit)break;
+          fill.h = c.h;
+          commitPlacement(state,fill,fit);
+          state.day.agendaItems.push({h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
+            occurrenceKey,locationId:fit.locId,scheduledDay:dayKey});
+          dayCount += 1;remaining -= 1;added += 1;
+        }
+      }
     }
     c.unplacedOccurrenceCount = remaining;
   }
@@ -1091,18 +1120,29 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
 // MUTATE: stamp every published non-chunk row with a stable day/option-aware
 // key. Existing single-occurrence cards gain metadata without changing their
 // visual identity; multiple rows no longer collapse to the habit index.
-function annotateAgendaOccurrenceKeys(candidates,dayStates){
+function annotateAgendaOccurrenceKeys(candidates,dayStates,onlyRepeatedGeneral = false){
   for(const state of dayStates || []){
     const ordinals = new Map();
-    const rows = (state.rows || []).filter(row=>row && row.kind === 'fill' && row.i != null)
+    const usedKeys = new Set();
+    const rows = (state.rows || []).filter(row=>row && row.kind === 'fill' && row.i != null
+      && (!onlyRepeatedGeneral || (!hasHabitScheduleOptions(row.h) && habitDailyOccurrenceTarget(row.h) > 1)))
       .sort((a,b)=>(a.start || 0) - (b.start || 0));
     for(const row of rows){
       if(row.chunkIndex != null)continue;
-      const optionId = row.scheduleOptionId || 'general';
+      const option = normalizeHabitScheduleOptions(row.h?.scheduleOptions).find(option=>option.id === row.scheduleOptionId);
+      const ordinary = hasHabitScheduleOptions(row.h) && habitHasMultipleDailyOccurrences(row.h)
+        && (!option || habitScheduleOptionSameDayMode(option) !== 'separate');
+      const optionId = ordinary ? 'ordinary' : row.scheduleOptionId || 'general';
       const base = `${row.h && row.h.hid || row.i}:${dateKey(state.dayBase)}:${optionId}`;
       const ordinal = (ordinals.get(base) || 0) + 1;
       ordinals.set(base,ordinal);
+      if(!row.occurrenceKey && !hasHabitScheduleOptions(row.h) && habitDailyOccurrenceTarget(row.h) > 1){
+        const completed = habitCompletedGeneralOccurrenceKeys(row.h,state.dayBase);
+        row.occurrenceKey = habitGeneralOccurrenceKeys(row.h,state.dayBase)
+          .find(key=>!completed.has(key) && !usedKeys.has(key));
+      }
       row.occurrenceKey = row.occurrenceKey || (ordinal === 1 ? base : `${base}:${ordinal}`);
+      usedKeys.add(row.occurrenceKey);
       row.scheduledDay = dateKey(state.dayBase);
     }
     for(const entry of state.fills || []){
