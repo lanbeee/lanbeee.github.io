@@ -228,17 +228,22 @@ body[data-pane-count="1"] .detail-sheet{
   /* No footer band: like Home, scrolling content runs all the way behind the
      pill; the pages' own end-of-list padding keeps the lowest row clear. */
   padding-bottom:0;
+  /* Size from one visible edge, rather than dvh minus a separately sampled
+     keyboard height. Native viewport metrics can arrive in either order. */
+  height:min(100%,var(--keyboard-viewport-bottom,100dvh));max-height:100%;
 }
+/* Keep Home covered even during the frame before viewport JS runs. */
+body[data-pane-count="1"] #detail-sheet{background:var(--bg);}
 body[data-pane-count="1"] .detail-sheet > .detail-bottom-bar{
-  position:absolute;left:50%;bottom:calc(var(--nav-bottom) + var(--keyboard-lift,0px) + var(--content-safe-bottom));
-  transform:translateX(-50%);margin:0;width:max-content;max-width:calc(100vw - 24px);
+  position:absolute;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--content-safe-bottom));bottom:auto;
+  transform:translate(-50%,-100%);margin:0;width:max-content;max-width:calc(100vw - 24px);
   /* Follow the OS keyboard animation directly, like Home's dock. */
   transition:none;
 }
 /* Search uses the same keyboard/safe edge as Home, with no extra clearance. */
 body[data-pane-count="1"] .detail-sheet.detail-search-open{--nav-bottom:0px;}
 body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{
-  bottom:max(var(--keyboard-lift,0px),var(--content-safe-bottom));
+  top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px))));
 }
 /* At rest the bar is icon-only (loupe + close) exactly like Home's action
    bar; the wide field exists only while search is open. */

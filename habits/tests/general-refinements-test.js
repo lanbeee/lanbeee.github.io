@@ -224,10 +224,10 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const search = await page.evaluate(()=>({
     scrollTop:document.querySelector('.pane-list').scrollTop,
     cards:document.querySelectorAll('#list .ting-card').length,
-    gap:getComputedStyle(document.body).getPropertyValue('--nav-bottom').trim()
+    edgeGap:document.documentElement.clientHeight - document.querySelector('.bottom-nav').getBoundingClientRect().bottom
   }));
   check('search results start at the top even from a scrolled home list',search.scrollTop === 0 && search.cards === 1,JSON.stringify(search));
-  check('phone search uses the reduced bottom gap',search.gap === '6px',JSON.stringify(search));
+  check('phone search sits against the bottom screen edge',Math.abs(search.edgeGap) <= 1,JSON.stringify(search));
   check('narrowed results keep Search available',await page.evaluate(()=>
     !document.querySelector('#open-search').classList.contains('is-hidden')
       && !document.querySelector('#open-search').disabled));

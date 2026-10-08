@@ -725,7 +725,7 @@ function initNativeReminders(){
   panel.append(actions);
   if(window.TingsNative.alarms){
     const hint = document.createElement('p');hint.className = 'field-hint';
-    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Stop & mark done opens Tings and records completion; split habits log only this session. Travel and busy-time reminders have no completion action.';
+    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Mark done works without unlocking or opening Tings: it saves the completion and silences today’s reminders. History updates when you next open Tings; split habits log only this session. Travel and busy-time reminders have no completion action.';
     const fullScreen = document.createElement('button');fullScreen.type = 'button';fullScreen.className = 'mini-text-btn';fullScreen.textContent = 'Allow full-screen alarms';
     fullScreen.addEventListener('click',async ()=>{try{await window.TingsNative.alarms.requestFullScreen();}catch(error){showToast(error.message);}});
     const alarmTest = document.createElement('button');alarmTest.type = 'button';alarmTest.className = 'mini-text-btn';alarmTest.textContent = 'Test ringing alarm in 10 seconds';

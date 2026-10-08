@@ -170,7 +170,10 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     }
     await page.setViewportSize({width:390,height:844});await page.waitForTimeout(250);
     await page.evaluate(()=>{
-      openDetail(0);document.documentElement.style.setProperty('--keyboard-lift','300px');
+      openDetail(0);
+      window.realDetailVisualViewport=window.visualViewport;
+      Object.defineProperty(window,'visualViewport',{configurable:true,value:{height:544,offsetTop:0}});
+      updateKeyboardLift();
       document.documentElement.style.setProperty('--safe-area-inset-top','36px');
       document.documentElement.style.setProperty('--safe-area-inset-bottom','24px');
       setDetailDirty(true);
@@ -181,7 +184,9 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
       assert.ok(box.y>=36 && box.y+box.height<=544,`${selector} hidden under keyboard or inset: ${JSON.stringify(box)}`);
     }
     await page.evaluate(()=>{
-      setDetailDirty(false);closeDetail();document.documentElement.style.setProperty('--keyboard-lift','0px');
+      setDetailDirty(false);closeDetail();
+      Object.defineProperty(window,'visualViewport',{configurable:true,value:window.realDetailVisualViewport});
+      updateKeyboardLift();
       document.documentElement.style.setProperty('--safe-area-inset-top','0px');
       document.documentElement.style.setProperty('--safe-area-inset-bottom','0px');
     });
@@ -190,7 +195,9 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     for(const [width,height,lift] of [[390,400,220],[844,390,180],[1440,900,350]]){
       await page.setViewportSize({width,height});await page.waitForTimeout(250);
       await page.evaluate(lift=>{
-        openDetail(0);document.documentElement.style.setProperty('--keyboard-lift',`${lift}px`);
+        openDetail(0);
+        window.realDetailVisualViewport=window.visualViewport;
+        Object.defineProperty(window,'visualViewport',{configurable:true,value:{height:document.documentElement.clientHeight-lift,offsetTop:0}});
         setDetailSearchOpen(true,false);
       },lift);
       await page.waitForFunction(([height,lift])=>{
@@ -213,7 +220,10 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
         assert.ok(box && box.y>=0 && box.y+box.height<=height-lift+1,`${selector} covered by short-screen keyboard`);
       }
       await page.locator('#detail-close').click();
-      await page.evaluate(()=>document.documentElement.style.setProperty('--keyboard-lift','0px'));
+      await page.evaluate(()=>{
+        Object.defineProperty(window,'visualViewport',{configurable:true,value:window.realDetailVisualViewport});
+        updateKeyboardLift();
+      });
     }
     await page.setViewportSize({width:390,height:568});await page.waitForTimeout(250);
     await page.evaluate(()=>{sortSettings.minimalMode=true;applyAppearanceSettings();openDetail(0);});

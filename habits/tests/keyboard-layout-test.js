@@ -112,6 +112,54 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     const footer=await page.locator('.add-actions').boundingBox();
     assert.ok(revealed.y>=0 && revealed.y+revealed.height<=footer.y,'covered add input scrolls above the footer immediately');
     await page.evaluate(()=>{closeSheet('add-sheet');window.TingsNative={isNative:true};});
+    // IME and layout metrics need not arrive together. Keep innerHeight stale
+    // across a real CSS viewport resize, then reverse the event order on close.
+    for(const surface of ['home','detail']){
+      await page.evaluate(surface=>{
+        if(surface==='home')setSearchOpen(true);
+        else {closeSearch();openDetail(0);setDetailSearchOpen(true);}
+        document.documentElement.style.setProperty('--safe-area-inset-bottom','0px');
+      },surface);
+      await page.waitForTimeout(300);
+      if(surface==='detail')assert.equal(await page.evaluate(()=>getComputedStyle($('detail-sheet')).backgroundColor),await page.evaluate(()=>getComputedStyle(getSheetInner('detail-sheet')).backgroundColor),'opaque detail backdrop covers Home between viewport frames');
+      const sample=async (height,reportedHeight,offsetTop=0)=>page.evaluate(async ({height,reportedHeight,offsetTop,surface})=>{
+        Object.defineProperty(window,'innerHeight',{value:reportedHeight,configurable:true});
+        visualViewport.height=height;visualViewport.offsetTop=offsetTop;
+        visualViewport.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('resize'));
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const dock=document.querySelector(surface==='home'?'.bottom-nav':'.detail-bottom-bar').getBoundingClientRect();
+        const inner=document.querySelector('.detail-sheet').getBoundingClientRect();
+        return {bottom:dock.bottom,sheetBottom:inner.bottom,open:surface==='home'?isSearchOpen():$('detail-sheet').classList.contains('open')};
+      },{height,reportedHeight,offsetTop,surface});
+      for(const height of [660,544,430]){
+        // Visual viewport leads, then CSS layout catches up before innerHeight.
+        let frame=await sample(height,844);
+        assert.ok(Math.abs(frame.bottom-height)<=1,`${surface} visual-first frame stays at keyboard: ${JSON.stringify(frame)}`);
+        await page.setViewportSize({width:390,height});
+        frame=await sample(height,844);
+        assert.ok(Math.abs(frame.bottom-height)<=1,`${surface} stale innerHeight must not double lift: ${JSON.stringify(frame)}`);
+        if(surface==='detail')assert.ok(Math.abs(frame.sheetBottom-height)<=1,'detail surface fills the visible screen without exposing Home');
+        // Layout leads on close, with both JS metrics still reporting the IME.
+        await page.setViewportSize({width:390,height:844});
+        frame=await sample(height,height);
+        assert.ok(Math.abs(frame.bottom-height)<=1,`${surface} layout-first close frame stays at keyboard: ${JSON.stringify(frame)}`);
+        frame=await sample(844,844);
+        assert.ok(Math.abs(frame.bottom-844)<=1,`${surface} returns to bottom after keyboard closes`);
+        assert.equal(frame.open,true,'asynchronous viewport steps retain the current screen');
+        // CSS can also shrink before either JS height reports the keyboard.
+        await page.setViewportSize({width:390,height});
+        frame=await sample(844,844);
+        assert.ok(Math.abs(frame.bottom-height)<=1,`${surface} layout-first open frame stays at keyboard: ${JSON.stringify(frame)}`);
+        await page.setViewportSize({width:390,height:844});
+        await sample(844,844);
+      }
+      const panned=await sample(500,844,44);
+      assert.ok(Math.abs(panned.bottom-544)<=1,`${surface} dock follows the panned visual viewport`);
+      await sample(844,844);
+    }
+    await page.evaluate(()=>{delete window.innerHeight;visualViewport.offsetTop=0;closeDetail();});
+    await page.waitForTimeout(300);
     // Android adjustResize shrinks innerHeight too: do not lift the dock a
     // second time, close the detail sheet, or lose the focused field.
     for(const surface of ['home','detail']){
@@ -139,6 +187,6 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       }
     }
     assert.deepEqual(errors,[]);
-    console.log('PASS keyboard docks, stable focus, retained Home, and conditional input scrolling');
+    console.log('PASS keyboard docks, staggered native viewport frames, covered detail backdrop, stable focus, retained Home, and conditional input scrolling');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

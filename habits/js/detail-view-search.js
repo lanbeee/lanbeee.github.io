@@ -191,6 +191,7 @@ function setDetailSearchOpen(open,focus = true){
   }
   if(open){
     renderDetailSearch();
+    updateKeyboardLift();
     if(focus)$('detail-search-input').focus({preventScroll:true});
   }else if(focus){
     $('detail-search-input').blur();

@@ -417,9 +417,16 @@ function updateKeyboardLift(){
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   const needsLift = (!paneTierActive() || detailMounted)
     && (addOpen || assistantOpen || detailOpen || searchOpen) && window.visualViewport;
-  const keyboard = needsLift
-    ? Math.max(0,window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop) : 0;
+  // innerHeight, dvh and visualViewport can update on different IME frames.
+  // Use the actual CSS layout height and a single visible bottom coordinate;
+  // subtracting a stale innerHeight from a newly resized dock lifts it twice.
+  const layoutHeight = document.documentElement.clientHeight;
+  const visibleBottom = needsLift
+    ? Math.min(layoutHeight,window.visualViewport.height + window.visualViewport.offsetTop) : layoutHeight;
+  const keyboard = Math.max(0,layoutHeight - visibleBottom);
   const style = document.documentElement.style;
+  const bottom = `${visibleBottom}px`;
+  if(style.getPropertyValue('--keyboard-viewport-bottom') !== bottom)style.setProperty('--keyboard-viewport-bottom',bottom);
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
   if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
