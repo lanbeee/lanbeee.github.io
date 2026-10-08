@@ -23,6 +23,32 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'networkidle'});
     await page.evaluate(data=>{save(data);render();},Array.from({length:12},(_,i)=>baseHabit({hid:`keyboard-${i}`,name:`Keyboard fixture ${i}`,type:'zero'})));
     await page.waitForTimeout(400);
+    // A fading detail overlay exposes cards when the scroll lock unsticks
+    // Home's day header. Check the very first paint from a scrolled feed.
+    const detailEntry = await page.evaluate(async()=>{
+      window.scrollTo({top:350,behavior:'instant'});
+      await new Promise(requestAnimationFrame);
+      const top=scrollY;
+      openDetail(0);
+      const frames=[];
+      for(let i=0;i<8;i++){
+        await new Promise(requestAnimationFrame);
+        const wrap=$('detail-sheet'),head=$('detail-head-card');
+        frames.push({opacity:getComputedStyle(wrap).opacity,
+          sheetOpacity:getComputedStyle(head.parentElement).opacity,
+          covered:Boolean(document.elementFromPoint(20,60)?.closest('#detail-sheet'))});
+      }
+      closeDetail();
+      await new Promise(requestAnimationFrame);
+      return {top,returned:scrollY,frames};
+    });
+    assert.ok(detailEntry.top>300,'detail entry starts from a scrolled Home');
+    for(const frame of detailEntry.frames){
+      assert.equal(frame.opacity,'1','phone detail is opaque from its first frame');
+      assert.equal(frame.sheetOpacity,'1','detail header has no delayed fade');
+      assert.ok(frame.covered,'detail covers the sticky day header area');
+    }
+    assert.equal(detailEntry.returned,detailEntry.top,'closing detail preserves Home scroll');
     await page.evaluate(()=>{
       window.keyboardProbe = {renders:0,scrolls:0,updates:0};
       const originalRender = render;
@@ -102,6 +128,20 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     });
     assert.equal(editing.after,editing.before,'visible detail input is not recentered');
     assert.equal(await page.evaluate(()=>keyboardProbe.scrolls),0,'visible detail input keeps its reading position');
+    await page.evaluate(()=>{
+      visualViewport.height=544;updateKeyboardLift();
+      document.activeElement.blur();
+    });
+    for(const height of [544,660,740,844]){
+      const closing=await page.evaluate(async height=>{
+        visualViewport.height=height;visualViewport.dispatchEvent(new Event('resize'));
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        return {editing:getSheetInner('detail-sheet').classList.contains('detail-field-editing'),
+          display:getComputedStyle(document.querySelector('.detail-bottom-bar')).display};
+      },height);
+      assert.equal(closing.editing,height<844,'PWA editing chrome stays compact through the closing keyboard animation');
+      assert.equal(closing.display==='none',height<844,'PWA Search/Close appears only at the resting bottom');
+    }
     await page.evaluate(()=>{
       closeDetail();openSheet('add-sheet');
       const inner=getSheetInner('add-sheet');
@@ -234,6 +274,15 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     const nativeEditing=await page.evaluate(()=>{
       visualViewport.height=544;
       setDetailSearchOpen(false,false);scrollDetailToNav('identity','auto');
+      window.editingHeaderGeometry=()=>{
+        const header=document.querySelector('.detail-head'),mark=header.querySelector('.detail-mark');
+        const style=getComputedStyle(header);
+        return {height:header.getBoundingClientRect().height,markWidth:mark.getBoundingClientRect().width,
+          markHeight:mark.getBoundingClientRect().height,padding:style.padding,margin:style.margin,
+          cue:getComputedStyle(header.querySelector('.detail-cue')).display,
+          actions:getComputedStyle(header.querySelector('.detail-head-actions')).display};
+      };
+      window.restingEditingHeader=editingHeaderGeometry();
       $('detail-habit-message').focus({preventScroll:true});updateKeyboardLift();
       keepFocusedInputVisible();
       const host=document.activeElement.closest('.detail-page'),before=host.scrollTop;
@@ -242,6 +291,33 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       return {before,after:host.scrollTop};
     });
     assert.equal(nativeEditing.after,nativeEditing.before,'Pixel editing field ignores the duplicate visual keyboard inset');
+    assert.deepEqual(await page.evaluate(()=>editingHeaderGeometry()),await page.evaluate(()=>restingEditingHeader),'typing preserves the full detail header');
+    await page.evaluate(()=>document.activeElement.blur());
+    for(const height of [260,360,430,544,660,740,844]){
+      await page.setViewportSize({width:390,height});
+      const closing=await page.evaluate(async height=>{
+        // Keep the last visual metric stale, as on the real Pixel exit.
+        visualViewport.height=194;
+        window.dispatchEvent(new Event('resize'));
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const bar=document.querySelector('.detail-bottom-bar');
+        return {editing:getSheetInner('detail-sheet').classList.contains('detail-field-editing'),
+          display:getComputedStyle(bar).display,bottom:bar.getBoundingClientRect().bottom};
+      },height);
+      assert.equal(closing.editing,height<844,'native editing chrome waits for the CSS layout to finish expanding');
+      assert.equal(closing.display==='none',height<844,'native Search/Close never flashes above the closing keyboard');
+      assert.deepEqual(await page.evaluate(()=>editingHeaderGeometry()),await page.evaluate(()=>restingEditingHeader),'short keyboard layouts preserve header size and contents');
+      if(height===844)assert.ok(Math.abs(closing.bottom-(844-34-42))<=1,'native Search/Close returns at the resting bottom with its normal clearance');
+    }
+    await page.evaluate(()=>{
+      visualViewport.height=844;scrollDetailToNav('identity','auto');
+      $('detail-habit-message').focus({preventScroll:true});
+      getSheetInner('detail-sheet').classList.add('tune-dirty');
+    });
+    await page.setViewportSize({width:390,height:544});
+    await page.evaluate(()=>{document.activeElement.blur();updateKeyboardLift();});
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-bottom-bar .tune-actions')).display),'flex','Save/Cancel stays reachable during field blur');
+    assert.equal(await page.evaluate(()=>getComputedStyle($('detail-cool-row')).display),'none','Search/Close stays hidden behind unsaved editing actions');
     assert.deepEqual(errors,[]);
     console.log('PASS keyboard docks, staggered native viewport frames, covered detail backdrop, stable focus, retained Home, and conditional input scrolling');
   }finally{await browser.close();}

@@ -114,6 +114,8 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.equal(await page.locator('#detail-cool').isVisible(),false,'field keyboard hides the close X with the search row');
     await page.locator('#detail-habit-message').blur();
     await page.waitForTimeout(50);
+    assert.equal(await page.locator('#detail-cool').isVisible(),false,'exit stays hidden while the keyboard is still closing');
+    await page.evaluate(()=>{document.documentElement.style.setProperty('--keyboard-lift','0px');syncDetailEditingChrome();});
     assert.ok(await page.locator('.detail-page-nav').isVisible(),'navigation returns after editing');
     assert.ok(await page.locator('#detail-cool').isVisible(),'exit returns after editing');
     assert.ok(await page.locator('#detail-search-toggle').isVisible());

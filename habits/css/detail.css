@@ -232,8 +232,10 @@ body[data-pane-count="1"] .detail-sheet{
      keyboard height. Native viewport metrics can arrive in either order. */
   height:min(100%,var(--keyboard-viewport-bottom,100dvh));max-height:100%;
 }
-/* Keep Home covered even during the frame before viewport JS runs. */
-body[data-pane-count="1"] #detail-sheet{background:var(--bg);}
+/* Locking Home's document scroll changes its sticky header's containing
+   block. Reveal detail in the same frame, fully opaque, so cards beneath
+   that header cannot flash through a fading overlay. */
+body[data-pane-count="1"] #detail-sheet{background:var(--bg);transition:none;}
 body[data-pane-count="1"] .detail-sheet > .detail-bottom-bar{
   position:absolute;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
   transform:translate(-50%,-100%);margin:0;width:max-content;max-width:calc(100vw - 24px);
@@ -306,7 +308,7 @@ body .detail-search-field input{
 }
 #detail-search-toggle:active,#detail-search-clear:active{background:var(--bg3);}
 .pane-detail:has(.detail-sheet){overflow:hidden;}
-body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail[data-active-sheet="detail-sheet"] > .detail-sheet{height:calc(100% - var(--keyboard-lift,0px));max-height:100%;}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail[data-active-sheet="detail-sheet"] > .detail-sheet{position:relative;height:calc(100% - var(--keyboard-lift,0px));max-height:100%;}
 body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap .detail-sheet{height:calc(100dvh - 48px - var(--keyboard-lift,0px));}
 .detail-head .ting-name{overflow-wrap:anywhere;}
 body .minimal-detail .detail-full-only{display:none !important;}
@@ -327,12 +329,8 @@ body .detail-sheet.detail-field-editing > .detail-bottom-bar #detail-cool-row{di
    footer has nothing to show mid-edit — hide the whole pill unless the
    Save/Cancel row (tune-dirty) owns it. */
 body .detail-sheet.detail-field-editing:not(.tune-dirty) > .detail-bottom-bar{display:none;}
-.detail-sheet.detail-field-editing .detail-cue,
-.detail-sheet.detail-field-editing .detail-head-actions{display:none;}
-body .detail-sheet.detail-field-editing > .detail-head{
-  grid-template-columns:40px minmax(0,1fr);padding-block:4px;margin-bottom:4px;
-}
-body .detail-sheet.detail-field-editing .detail-mark{width:40px;min-width:40px;height:40px;}
+/* Typing changes the navigation/footer, while the header keeps its normal
+   geometry and contents throughout the keyboard transition. */
 .detail-search-hit{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px;}
 /* The home card's emoji geometry must not override detail's header columns. */
 body .detail-sheet > .detail-head{
@@ -389,25 +387,32 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
   #detail-search-toggle{padding-inline:10px;}
 }
 @media (max-height:480px){
-  body .detail-sheet{padding-top:calc(4px + var(--content-safe-top));padding-bottom:calc(8px + var(--content-safe-bottom));}
+  body .detail-sheet{padding-bottom:calc(8px + var(--content-safe-bottom));}
   body .detail-sheet > .detail-bottom-bar{margin-top:6px;}
   .detail-page-tab{min-height:44px;}
+}
+/* Keep the existing landscape layout; a portrait keyboard must never
+   trigger its smaller header. Usable sheet height does not resize headers. */
+@media (max-height:480px) and (min-width:600px){
   .detail-head .detail-cue{display:none;}
   body .detail-sheet > .detail-head{grid-template-columns:40px minmax(0,1fr);padding-block:4px;margin-bottom:2px;}
   body .detail-head > .detail-mark{width:40px;min-width:40px;height:40px;}
   .detail-head > .detail-head-actions{display:none;}
 }
 
-/* Respond to the usable sheet height as well as the screen height: an open
-   keyboard can leave a portrait phone with less room than landscape. */
+/* Short sheets can tighten toolbar space without resizing the header. */
 @container detail-shell (max-height:420px){
-  .detail-head .detail-cue,.detail-head > .detail-head-actions{display:none;}
-  body .detail-sheet > .detail-head{grid-template-columns:40px minmax(0,1fr);padding-block:4px;margin-bottom:2px;}
-  body .detail-head > .detail-mark{width:40px;min-width:40px;height:40px;}
   body .detail-sheet > .detail-bottom-bar{margin-top:6px;}
 }
 @container detail-shell (max-height:280px){
-  body .detail-sheet > .detail-head{display:none;}
   .detail-page-tab span{display:none;}
   .detail-page-tab{min-height:44px;}
+  /* A very short desktop/landscape pane uses the same floating footer as
+     phones, so Save/Cancel fits without removing the header. */
+  body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-bottom-bar{
+    position:absolute;left:50%;bottom:0;transform:translateX(-50%);margin:0;
+  }
+  body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-search-panel .detail-search-results{
+    padding-bottom:80px;
+  }
 }
