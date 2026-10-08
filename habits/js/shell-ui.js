@@ -409,6 +409,9 @@ function doNuke(i, opts){
 }
 
 // RENDER: adjusts keyboard lift CSS variable for open sheets
+let nativeKeyboardRestHeight = 0;
+let nativeKeyboardLayoutWidth = 0;
+let nativeKeyboardRestSafeBottom = 0;
 function updateKeyboardLift(){
   const detailMounted = getPane()?.dataset.activeSheet === 'detail-sheet';
   const addOpen = $('add-sheet').classList.contains('open');
@@ -421,11 +424,34 @@ function updateKeyboardLift(){
   // Use the actual CSS layout height and a single visible bottom coordinate;
   // subtracting a stale innerHeight from a newly resized dock lifts it twice.
   const layoutHeight = document.documentElement.clientHeight;
-  const visibleBottom = needsLift
+  // Capacitor's Android SystemBars adapter already removes the IME area from
+  // the WebView. During that resize, visualViewport can briefly subtract the
+  // same IME again (Pixel: layout 540px, visualViewport 190px). At normal zoom
+  // the resized layout is the authoritative edge for the native app.
+  const nativeResized = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
+    && (!window.visualViewport || Math.abs(window.visualViewport.scale - 1) < 0.01);
+  if(nativeResized){
+    const width = document.documentElement.clientWidth;
+    if(width !== nativeKeyboardLayoutWidth){nativeKeyboardRestHeight = 0;nativeKeyboardRestSafeBottom = 0;nativeKeyboardLayoutWidth = width;}
+    nativeKeyboardRestHeight = Math.max(nativeKeyboardRestHeight,layoutHeight);
+    if(layoutHeight === nativeKeyboardRestHeight)nativeKeyboardRestSafeBottom = Math.max(nativeKeyboardRestSafeBottom,
+      parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--content-safe-bottom')) || 0);
+  }
+  const visibleBottom = needsLift && !nativeResized
     ? Math.min(layoutHeight,window.visualViewport.height + window.visualViewport.offsetTop) : layoutHeight;
   const keyboard = Math.max(0,layoutHeight - visibleBottom);
   const style = document.documentElement.style;
-  const bottom = `${visibleBottom}px`;
+  // SystemBars clears the bottom safe inset after the WebView resize. The
+  // keyboard already covers it in that intervening frame, so omit it now.
+  if(nativeResized){
+    // Resolve against the dock's containing block so CSS handles even the
+    // first resized frame, before the queued viewport callback has run.
+    const safeBottom = `max(0px,calc(100% - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
+    if(style.getPropertyValue('--keyboard-dock-safe-bottom') !== safeBottom)style.setProperty('--keyboard-dock-safe-bottom',safeBottom);
+  }else style.removeProperty('--keyboard-dock-safe-bottom');
+  // Native layout already follows both keyboard directions. A pixel snapshot
+  // would hold the old height for a frame as the keyboard closes.
+  const bottom = nativeResized ? '100%' : `${visibleBottom}px`;
   if(style.getPropertyValue('--keyboard-viewport-bottom') !== bottom)style.setProperty('--keyboard-viewport-bottom',bottom);
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
@@ -459,7 +485,9 @@ function keepFocusedInputVisible(){
   if(paneTierActive() && !active.closest('.detail-sheet .detail-page'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
-  const viewport = window.visualViewport;
+  const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
+    && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01
+    ? {offsetTop:0,height:document.documentElement.clientHeight} : window.visualViewport;
   const top = Math.max(bounds.top,viewport?.offsetTop || 0) + 8;
   const footer = active.closest('.detail-sheet,.add-sheet')?.querySelector('.detail-bottom-bar,.add-actions');
   const footerTop = footer?.getClientRects().length ? footer.getBoundingClientRect().top : Infinity;

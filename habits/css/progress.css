@@ -133,6 +133,14 @@
   .about-block{padding-top:8px;padding-bottom:8px;}
   .about-label{font-size:12px;}
   .about-summary,.about-collapse-body p{font-size:11.5px;line-height:1.28;}
+  .picker-map{height:min(30dvh,190px);min-height:150px;}
+  .location-picker-sheet .about-copy{margin-bottom:8px;}
+}
+
+/* A portrait phone's keyboard changes viewport height, not the size of its
+   content. Keep detail spacing/type/graphs stable through IME open and close.
+   The compact content treatment is for genuinely wide, short layouts. */
+@media (max-height:680px) and (min-width:600px){
   .detail-head{margin-bottom:8px;}
   .detail-page{min-height:360px;}
   .detail-card,.month-card,.tune-section{padding:12px;}
@@ -146,8 +154,6 @@
   .detail-actions-page .habit-action,
   .detail-actions-page .habit-toggle{min-height:42px;padding-top:7px;padding-bottom:7px;}
   .detail-actions-page{padding:10px;}
-  .picker-map{height:min(30dvh,190px);min-height:150px;}
-  .location-picker-sheet .about-copy{margin-bottom:8px;}
 }
 
 @keyframes ring{
@@ -164,4 +170,3 @@
     transition-duration:1ms !important;
   }
 }
-

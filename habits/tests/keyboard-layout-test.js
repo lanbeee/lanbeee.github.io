@@ -68,6 +68,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.waitForFunction(()=>document.querySelectorAll('#list .ting-card').length===1);
     await page.evaluate(()=>closeSearch());
     await page.waitForFunction(()=>document.querySelectorAll('#list .ting-card').length===12);
+    const homeExitTransitions=await page.evaluate(()=>['.topbar','#home-tag-filter'].map(selector=>getComputedStyle(document.querySelector(selector)).transitionProperty.split(',').map(s=>s.trim())));
+    for(const properties of homeExitTransitions)assert.ok(properties.every(property=>['transform','opacity'].includes(property)),'Home header restores its space without a second resize animation');
 
     // No delayed retry steals focus after the user chooses another control.
     await page.evaluate(()=>{setSearchOpen(true);document.getElementById('open-search').focus({preventScroll:true});});
@@ -158,7 +160,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       assert.ok(Math.abs(panned.bottom-544)<=1,`${surface} dock follows the panned visual viewport`);
       await sample(844,844);
     }
-    await page.evaluate(()=>{delete window.innerHeight;visualViewport.offsetTop=0;closeDetail();});
+    await page.evaluate(()=>{delete window.innerHeight;visualViewport.offsetTop=0;closeDetail();document.documentElement.style.setProperty('--safe-area-inset-bottom','34px');window.TingsNative={isNative:true,platform:'android'};updateKeyboardLift();});
     await page.waitForTimeout(300);
     // Android adjustResize shrinks innerHeight too: do not lift the dock a
     // second time, close the detail sheet, or lose the focused field.
@@ -167,6 +169,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         if(surface==='home')setSearchOpen(true);
         else {closeSearch();openDetail(0);setDetailSearchOpen(true);}
       },surface);
+      const contentPadding=await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-page.tune-section')).paddingLeft);
+      const historyCopy=await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-calendar-page .detail-about')).display);
       for(const height of [660,544,844]){
         await page.evaluate(height=>{
           visualViewport.height=height;
@@ -182,10 +186,62 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         assert.equal(native.open,true,'window resizing preserves the open surface');
         assert.equal(native.focus,surface==='home'?'habit-search':'detail-search-input');
         assert.equal(native.lift,'0px','resized WebView needs no additional keyboard lift');
+        assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-page.tune-section')).paddingLeft),contentPadding,'portrait detail content keeps its padding while the native keyboard opens and closes');
+        assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-calendar-page .detail-about')).display),historyCopy,'portrait history content is not hidden and reinserted by the keyboard');
         const expectedBottom=height===844 ? height-34 : height;
         assert.ok(Math.abs(native.bottom-expectedBottom)<=1,`native ${surface} dock meets keyboard/safe edge: ${JSON.stringify(native)}`);
+        if(height===544){
+          // Physical Pixel trace: Capacitor resizes the layout, then WebView
+          // briefly reports another full keyboard reduction in visualViewport.
+          const baseline=await page.evaluate(()=>document.querySelector('.detail-head').getBoundingClientRect().toJSON());
+          await page.evaluate(()=>document.documentElement.style.setProperty('--safe-area-inset-bottom','34px'));
+          for(const transientHeight of [194,544]){
+            const transient=await page.evaluate(async ({surface,transientHeight})=>{
+              visualViewport.height=transientHeight;
+              visualViewport.dispatchEvent(new Event('resize'));
+              await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+              const dock=document.querySelector(surface==='home'?'.bottom-nav':'.detail-bottom-bar').getBoundingClientRect();
+              const head=document.querySelector('.detail-head').getBoundingClientRect();
+              return {bottom:dock.bottom,headerTop:head.top,headerHeight:head.height,lift:document.documentElement.style.getPropertyValue('--keyboard-lift')};
+            },{surface,transientHeight});
+            assert.ok(Math.abs(transient.bottom-544)<=1,`Pixel ${surface} ignores duplicate visual IME inset: ${JSON.stringify(transient)}`);
+            assert.equal(transient.lift,'0px');
+            if(surface==='detail'){
+              assert.equal(transient.headerTop,baseline.top,'detail header stays in place through the transient viewport');
+              assert.equal(transient.headerHeight,baseline.height,'detail header remains visible at its original size');
+            }
+          }
+          await page.evaluate(()=>document.documentElement.style.setProperty('--safe-area-inset-bottom','0px'));
+          // Hold JS geometry at its keyboard-open state while CSS restores
+          // full height. Native exit must finish without a second JS resize.
+          await page.evaluate(()=>{window.realPixelUpdate=updateKeyboardLift;updateKeyboardLift=()=>{};visualViewport.height=194;});
+          await page.setViewportSize({width:390,height:844});
+          const closing=await page.evaluate(surface=>{
+            const dock=document.querySelector(surface==='home'?'.bottom-nav':'.detail-bottom-bar').getBoundingClientRect();
+            return {bottom:dock.bottom,sheetHeight:document.querySelector('.detail-sheet').getBoundingClientRect().height};
+          },surface);
+          assert.ok(Math.abs(closing.bottom-810)<=1,`${surface} native keyboard exit restores its safe area immediately: ${JSON.stringify(closing)}`);
+          if(surface==='detail')assert.equal(closing.sheetHeight,844,'detail exit does not wait for viewport JS to restore its height');
+          await page.evaluate(()=>{updateKeyboardLift=window.realPixelUpdate;visualViewport.height=544;});
+          await page.setViewportSize({width:390,height:544});
+          await page.evaluate(()=>updateKeyboardLift());
+        }
       }
     }
+    // A normal detail input must not scroll toward the transiently tiny
+    // visual viewport either. Only genuinely covered fields should move.
+    await page.setViewportSize({width:390,height:544});
+    const nativeEditing=await page.evaluate(()=>{
+      visualViewport.height=544;
+      setDetailSearchOpen(false,false);scrollDetailToNav('identity','auto');
+      $('detail-habit-message').focus({preventScroll:true});updateKeyboardLift();
+      keepFocusedInputVisible();
+      const host=document.activeElement.closest('.detail-page'),before=host.scrollTop;
+      visualViewport.height=194;
+      keepFocusedInputVisible();
+      return {before,after:host.scrollTop};
+    });
+    assert.equal(nativeEditing.after,nativeEditing.before,'Pixel editing field ignores the duplicate visual keyboard inset');
     assert.deepEqual(errors,[]);
     console.log('PASS keyboard docks, staggered native viewport frames, covered detail backdrop, stable focus, retained Home, and conditional input scrolling');
   }finally{await browser.close();}

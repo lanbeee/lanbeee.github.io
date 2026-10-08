@@ -1059,7 +1059,16 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
   when the keyboard closes. Both docks use one visible-screen bottom coordinate,
   clamped to the CSS layout viewport, so asynchronous Android viewport updates
   cannot apply the keyboard height twice. The phone detail backdrop stays opaque
-  throughout the transition. They follow its geometry once per animation frame; visible editing fields
+  throughout the transition. At normal zoom, the native Android app uses the
+  WebView's resized layout height: Capacitor already removes the keyboard area,
+  and Android's visual viewport can briefly subtract that area a second time.
+  Native search also drops the bottom safe inset as soon as the layout shrinks,
+  covering the frame before Android clears that inset.
+  Its dock and detail height follow CSS percentages directly on keyboard close,
+  avoiding a delayed second resize from a saved pixel height.
+  Portrait detail content keeps its spacing and chart sizes across keyboard
+  transitions; short-height content compaction applies only to wider layouts.
+  They follow its geometry once per animation frame; visible editing fields
   keep their scroll position, and covered fields scroll above the keyboard/footer.
 - Search is available when the settled, unsearched Home view contains at least
   10 visible Ting cards across its sections. Pinned copies and separate-session
