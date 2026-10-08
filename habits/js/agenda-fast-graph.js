@@ -51,7 +51,18 @@ function fastGraphReplayRetainsWork(before,after,candidates){
 
 function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
   const direct = tryPlaceOnDay(state,fill,opts);
-  if(direct)return {fit:direct,replacement:null};
+  // A transfer's whole-week route/weather policy must participate in search.
+  // Returning the first keep-all fit and rejecting it afterward hides other
+  // feasible orders (for example, preserving a weather-guided walk first).
+  if(direct){
+    if(!opts.acceptState)return {fit:direct,replacement:null};
+    const trial=cloneFastGraphState(state);
+    commitPlacement(trial,{...fill},{...direct});
+    if(opts.acceptState(trial)){
+      syncDayAgendaItemsFromFills(trial);
+      return {fit:trial.fills.find(e=>e.fill.i===fill.i).fit,replacement:trial};
+    }
+  }
   if(!budget || budget.remaining <= 0 || fill.h.breakable || state.placed.has(fill.i))return null;
   // Rearrangement can save travel, but cannot manufacture work minutes.
   const workMinutes = state.fills.reduce((sum,entry)=>sum + fillDurationMinutes(entry.fill),0);
@@ -105,6 +116,7 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
   const maxProbes = Math.min(192,budget.remaining);
   budget.searches += 1;
   const accept = trial=>{
+    if(opts.acceptState && !opts.acceptState(trial))return null;
     if(fixed.some(entry=>!trial.fills.some(other=>other.fill.i === entry.fill.i
       && other.fill.chunkIndex === entry.fill.chunkIndex
       && other.fit.placeStart === entry.fit.placeStart
@@ -289,18 +301,23 @@ function pullFastLinkedOccurrenceForward(c,earlier,later,candidates,states,setti
   return true;
 }
 
-function fastLinkedGroupBase(state,hids){
+function fastLinkedGroupBase(state,hids,{keepLocations=true,frozenIndices=new Set()}={}){
   const trial=cloneFastGraphState(state);
   const keep=trial.fills.filter(entry=>!hids.has(entry.fill.h.hid));
+  const keepsLocation=entry=>keepLocations || frozenIndices.has(entry.fill.i);
   const clocks=keep.map(entry=>[entry.fill.i,entry.fill.chunkIndex,
-    entry.fit.placeStart,entry.fit.placeEnd,entry.fit.locId]);
+    entry.fit.placeStart,entry.fit.placeEnd,entry.fit.locId,keepsLocation(entry)]);
   trial.rows=trial.rows.filter(row=>row.kind === 'scheduled');
   trial.fills=[];trial.placed=new Set();trial.usedMinutes=0;
   trial.remaining=trial.totalMinutes;trial.prevLocId=trial.seedLocId;
-  for(const entry of keep)commitPlacement(trial,entry.fill,entry.fit);
-  if(!clocks.every(([i,chunk,start,end,loc])=>trial.fills.some(entry=>entry.fill.i===i
+  // Protected neighbors are frozen, including venue. Replaying a partial route
+  // with unforced fills can pick different locations before all neighbors are
+  // present, then fail the retention check despite the old route still fitting.
+  for(const entry of keep)commitPlacement(trial,
+    keepsLocation(entry) ? {...entry.fill,locationId:entry.fit.locId} : entry.fill,entry.fit);
+  if(!clocks.every(([i,chunk,start,end,loc,frozen])=>trial.fills.some(entry=>entry.fill.i===i
     && entry.fill.chunkIndex===chunk && entry.fit.placeStart===start
-    && entry.fit.placeEnd===end && entry.fit.locId===loc)))return null;
+    && entry.fit.placeEnd===end && (!frozen || entry.fit.locId===loc))))return null;
   syncDayAgendaItemsFromFills(trial);
   return trial;
 }
@@ -753,11 +770,11 @@ function improveFastGraphDaySelections(candidates,states,settings,options = {}){
           if(seen.has(key))continue;
           seen.add(key);
           const score = quality(trial);
-          // Every priority prefix is preserved; extra low-priority minutes
-          // cannot purchase a lost urgent occurrence or worse travel/weather.
+          // More work wins before soft route/weather preferences. Every
+          // priority prefix is still preserved, so extra low-priority minutes
+          // cannot purchase a lost urgent occurrence.
           if(score.priority[5]>before.priority[5]+1e-6
             && score.priority.every((minutes,i)=>minutes>=before.priority[i]-1e-6)
-            && score.weather<=before.weather+1e-6 && score.travel<=before.travel+1e-6
             && (!best || compare(score,best.quality)<0))best = {state:trial,quality:score};
           next.push({state:trial,pending:node.pending.filter(other=>other!==c),quality:score,key});
         }
@@ -843,7 +860,8 @@ function fastTodayLinkedChoice(c,today,source,candidates,states,settings,budget)
 
 // A packed week can still leave useful time today unused. Recover the first
 // day-choice or a missing linked daily rep without rebuilding the week.
-// Travel/weather must not worsen and every existing occurrence stays.
+// Every existing occurrence stays. More work wins first; equal-work choices
+// compare soft weather, travel and saved delay in the shared placement score.
 function improveFastGraphTodayChoices(candidates,states,settings,options={}){
   const limit=Math.min(96,Math.max(0,options.maxProbes || 0));
   const budget={remaining:limit,searches:0,accepted:0};
@@ -854,21 +872,43 @@ function improveFastGraphTodayChoices(candidates,states,settings,options={}){
     .flatMap(e=>[e.beforeHid,e.afterHid])));
   const doing=typeof getDoingNow==='function' ? getDoingNow() : null;
   const byIndex=new Map(candidates.map(c=>[c.i,c]));
-  const retainsClocks=(before,after,all=false,reopened=new Set())=>before.fills.every(e=>{
+  const protectedPlacement=(state,e,reopened=new Set())=>{
     const c=byIndex.get(e.fill.i);
-    const frozen=all || c?.pinned || (linked.has(e.fill.h.hid) && !reopened.has(e.fill.h.hid))
+    return c?.pinned || (linked.has(e.fill.h.hid) && !reopened.has(e.fill.h.hid))
       || (doing && doing.hid===e.fill.h.hid)
-      || weatherLockedPlacement(e.fill,before,settings);
+      || weatherLockedPlacement(e.fill,state,settings);
+  };
+  const retainsClocks=(before,after,all=false,reopened=new Set(),allowVenueChanges=false)=>before.fills.every(e=>{
+    const protectedEntry=protectedPlacement(before,e,reopened);
+    const frozen=all || protectedEntry;
     return !frozen || after.fills.some(n=>n.fill.i===e.fill.i
       && n.fill.chunkIndex===e.fill.chunkIndex && n.fit.placeStart===e.fit.placeStart
-      && n.fit.placeEnd===e.fit.placeEnd && n.fit.locId===e.fit.locId);
+      && n.fit.placeEnd===e.fit.placeEnd
+      && (allowVenueChanges && !protectedEntry || n.fit.locId===e.fit.locId));
   });
   const addsLinkViolation=(before,after)=>{
     const known=persistentLinkViolationsForState(before);
     return [...persistentLinkViolationsForState(after)].some(([hid,reason])=>known.get(hid)!==reason);
   };
-  const weather=state=>state.fills.reduce((sum,e)=>sum
-    +(weatherPenaltyForFit(e.fill,e.fit,state,settings) || 0),0);
+  const weights=resolveAgendaScoreWeights(settings);
+  const clockRouteCost=state=>{
+    let cost=(weights.travel || 0)*dayRouteCostSeconds(state)/60;
+    for(const e of state.fills){
+      const c=byIndex.get(e.fill.i);
+      if(!c)continue;
+      const offset=Math.round((state.dayBase-today.dayBase)/86400000);
+      const portion=e.fill.h.breakable
+        ? fillDurationMinutes(e.fill)/Math.max(1,Number(e.fill.h.durationMinutes) || 1) : 1;
+      cost+=portion*scoreAgendaPlacement({
+        dayOffsetPenalty:flexAwareDayPenalty(c.h,offset,c.urgency,c.pinned,c.pinnedDay,state.dayBase),
+        // Waiting until a later date is also waiting past today's clock. Use
+        // the shared capped ASAP term, rather than making any extra trip a veto.
+        asapDelayMin:(e.fit.placeStart-today.startClock)/60000,urgency:c.urgency,
+        weatherPenalty:weatherPenaltyForFit(e.fill,e.fit,state,settings) || 0
+      },weights);
+    }
+    return cost;
+  };
   const choices=candidates.filter(c=>(isDayChoosingWeekCandidate(c)
       || (isIndependentDailyOccurrence(c) && linked.has(c.h.hid)))
     && c.eligible.has(today.dayBase) && !today.fills.some(e=>e.fill.i===c.i) && !c.pinned
@@ -890,9 +930,9 @@ function improveFastGraphTodayChoices(candidates,states,settings,options={}){
         || addsLinkViolation(today,earlier) || addsLinkViolation(source,later))continue;
       const trial=states.map(s=>s===today ? earlier : s===source ? later : s);
       if(!fastGraphReplayRetainsWork(states,trial,candidates))continue;
-      if(dayRouteCostSeconds(earlier)+dayRouteCostSeconds(later)
-        >dayRouteCostSeconds(today)+dayRouteCostSeconds(source)+1e-6)continue;
-      if(weather(earlier)+weather(later)>weather(today)+weather(source)+1e-6)continue;
+      const addsOccurrence=earlier.fills.length+later.fills.length>today.fills.length+source.fills.length;
+      if(!addsOccurrence && clockRouteCost(earlier)+clockRouteCost(later)
+        >=clockRouteCost(today)+clockRouteCost(source)-1e-6)continue;
       applyPlacementState(today,earlier);applyPlacementState(source,later);
       today.day.linkOmissions=earlier.day.linkOmissions;
       diagnostics.accepted++;
@@ -916,28 +956,35 @@ function improveFastGraphTodayChoices(candidates,states,settings,options={}){
       }
       if(!valid)continue;
     }
-    const later=fastLinkedGroupBase(source,new Set([c.h.hid]));
+    // The source keeps every other clock. Its unprotected venues may follow
+    // the cheaper route after the errand leaves; freezing those venues can
+    // retain the old detour and incorrectly reject an otherwise neutral move.
+    const frozenIndices=new Set(source.fills.filter(e=>protectedPlacement(source,e)).map(e=>e.fill.i));
+    const later=fastLinkedGroupBase(source,new Set([c.h.hid]),{keepLocations:false,frozenIndices});
     if(!later)continue;
     reconcileCommittedTravel(later);
     const keep={...source,fills:source.fills.filter(e=>e.fill.i!==c.i)};
-    if(!retainsClocks(keep,later,true) || addsLinkViolation(source,later))continue;
+    if(!retainsClocks(keep,later,true,new Set(),true) || addsLinkViolation(source,later))continue;
+    const originalCost=clockRouteCost(today)+clockRouteCost(source);
+    const laterCost=clockRouteCost(later);
+    const acceptEarlier=earlier=>{
+      reconcileCommittedTravel(earlier);
+      if(earlier.usedMinutes>earlier.totalMinutes+1e-6
+        || !retainsClocks(today,earlier) || addsLinkViolation(today,earlier))return false;
+      const trial=states.map(s=>s===today ? earlier : s===source ? later : s);
+      if(!fastGraphReplayRetainsWork(states,trial,candidates))return false;
+      // This transfer retains the same weekly work. Soft weather may yield
+      // to a worthwhile timing/route gain, but an inferior total score waits.
+      return clockRouteCost(earlier)+laterCost<originalCost-1e-6;
+    };
     // Count the direct probe as well as all graph edges against the same cap.
     budget.remaining--;
-    const proposal=fastGraphPlacement(today,fill,{settings,allowNetwork:false},
+    const proposal=fastGraphPlacement(today,fill,{settings,allowNetwork:false,acceptState:acceptEarlier},
       candidates,states,budget);
     if(!proposal)continue;
     const earlier=proposal.replacement || cloneFastGraphState(today);
     if(!proposal.replacement)commitPlacement(earlier,fill,{...proposal.fit});
-    reconcileCommittedTravel(earlier);
-    if(earlier.usedMinutes>earlier.totalMinutes+1e-6
-      || !retainsClocks(today,earlier) || addsLinkViolation(today,earlier))continue;
-    const trial=states.map(s=>s===today ? earlier : s===source ? later : s);
-    if(!fastGraphReplayRetainsWork(states,trial,candidates))continue;
-    // The first-day preference improves; it cannot buy extra route or weather
-    // cost, nor consume daily work reserved elsewhere in the week.
-    if(dayRouteCostSeconds(earlier)+dayRouteCostSeconds(later)
-      >dayRouteCostSeconds(today)+dayRouteCostSeconds(source)+1e-6)continue;
-    if(weather(earlier)+weather(later)>weather(today)+weather(source)+1e-6)continue;
+    if(!acceptEarlier(earlier))continue;
     syncDayAgendaItemsFromFills(earlier);
     applyPlacementState(today,earlier);applyPlacementState(source,later);
     diagnostics.accepted++;

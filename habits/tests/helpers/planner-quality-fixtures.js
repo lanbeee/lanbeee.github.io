@@ -123,6 +123,41 @@ function lateEveningPackingScenario(){
   return s;
 }
 
+// A completed wash is not outstanding work. The missing closing-venue errand
+// can fit after the weather-guided walk by shifting the flexible critical row.
+// Errand-first also fits, but worsens the walk's weather and must be rejected
+// without ending the search before its walk-first alternative.
+function closingErrandWeatherScenario(){
+  const now=new Date('2026-10-07T19:05:00-04:00').getTime();
+  const day=now-1145*60000,home={locationIds:['home'],anywhereAllowed:false};
+  const item=(hid,durationMinutes,priority,start,end,extra={})=>baseHabit({
+    hid,name:`Synthetic ${hid}`,target:1,durationMinutes,priority,
+    allowedTimeStart:start,allowedTimeEnd:end,logs:[day-MS],...extra});
+  const profiles=[{id:'warm',name:'Warm',rules:[{
+    metric:'temperature_2m',min:null,max:null,hard:false,relative:'high'
+  }]}];
+  const samples=Array.from({length:7*24},(_,i)=>({ts:day+i*3600000,
+    temperature_2m:30-i%24,source:'weekly'}));
+  return {id:'closing-errand-preserves-walk-weather',now,dayBase:day,days:7,data:[
+    item('walk',30,2,724,1361,{...home,target:1.6,logs:[day-2*MS],
+      weatherProfileMode:'profile',weatherProfileId:'warm'}),
+    item('wash',5,2,0,1440,{...home,target:2.5,logs:[day+900*60000],lastLog:day+900*60000}),
+    item('critical',10,0,1203,1323),item('meal',15,1,1230,1410,home),
+    item('call',32,2,1305,1440),
+    item('errand',30,3,600,1230,{type:'reduce',target:30,earlyWindowDays:4,
+      delayAllowanceDays:4,planByDate:day+2*MS,logs:[day-26*MS],
+      locationIds:['shop'],anywhereAllowed:false})
+  ],settings:openEveningSettings({
+    blockedTimes:[{label:'sleep',days:[],start:0,end:420,locationId:'home'},
+      {label:'night',days:[],start:1361,end:1440,locationId:'home'}],
+    lastKnownLocationId:'home',locations:[{id:'home',name:'Home',lat:40.7,lng:-74,isHome:true},
+      {id:'shop',name:'Shop',lat:40.701,lng:-74,allowedTimeStart:600,allowedTimeEnd:1230}],
+    travel:{'home|shop':{a:'home',b:'shop',seconds:360,metres:3000,provider:'manual',fetchedAt:now}},
+    weatherProfiles:profiles,_weatherContext:{profiles,samples,locks:[],timezone:'America/New_York',
+      places:{home:{timezone:'America/New_York',samples}}}
+  }),dayMinutes:{walk:{0:30},errand:{0:30},wash:{0:0}}};
+}
+
 function qualityScenarios(){
   const gaps=[gap(0,'selection-trap'),gap(1,'long-block-trap'),gap(2,'short-hole-trap'),
     gap(0,'weather-selection-trap',s=>{
@@ -197,4 +232,4 @@ function qualityScenarios(){
   return [...gaps,precision,weather,places,inheritance,cadence,plans,anchored,scaled,
     eveningPackingScenario(),lateEveningPackingScenario(),mixed(20),mixed(35),mixed(50)];
 }
-module.exports={qualityScenarios,NOW,DAY,mixed,eveningPackingScenario,lateEveningPackingScenario};
+module.exports={qualityScenarios,NOW,DAY,mixed,eveningPackingScenario,lateEveningPackingScenario,closingErrandWeatherScenario};

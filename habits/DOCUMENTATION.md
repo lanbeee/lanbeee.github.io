@@ -2210,7 +2210,9 @@ Selection repair reopens at most eight optional daily items plus four missing
 ones, with an eight-state beam and at most 384 probes per day. It preserves
 placed critical/planned/active occurrences, fixed clocks, linked groups and
 split sessions; a replacement must increase work without reducing any cumulative
-priority tier or worsening travel/weather. Sparse/fractional cadence and task day
+priority tier. More work takes precedence over soft travel/weather preferences;
+hard weather limits and explicit placement locks remain enforced by the fitter.
+Sparse/fractional cadence and task day
 choices remain with the existing week orchestrator.
 
 Resolved windows, blocked intervals, venue hours, valid place IDs, schedule
@@ -2293,11 +2295,28 @@ occurrence fills today while retaining its later obligations. It preserves later
 cadence, all placed work, explicit plans/active/weather locks, other linked groups
 and the source day's other clocks. Existing required build repetitions beside
 placed partners remain valid even when their gap is shorter than the ordinary
-rhythm. A move cannot worsen whole-week travel
-or weather. Hard eligibility, weather deferral and daily-work reservations still
+rhythm. Recovering a missing linked daily repetition increases weekly work and
+takes precedence over soft weather/travel preferences. Equal-work transfers
+compare the shared weighted day-delay, capped ASAP, route and soft weather costs;
+an earlier day wins only when that combined cost improves. Hard weather limits
+and explicit placement locks remain enforced.
+That ASAP comparison measures both placements from today's starting clock,
+including the wait until a later calendar date. It includes delays imposed on
+today's existing rows, so finishing one errand cannot hide a costly shift to
+other work. The source retains every other clock, while unplanned, unlinked,
+inactive venues without weather locks may follow the newly optimized route.
+Protected venues are forced during that replay, so a flexible planned or locked
+neighbor cannot invalidate a legal transfer by choosing another place first.
+Hard eligibility, weather deferral and daily-work reservations still
 apply; soft weekday/time preferences may yield to an earlier usable day. No
 whole-week rebuild or new periodic work is added. `fastTodayChoiceDiagnostics`
 records its probes and accepted transfers.
+Whole-week route/weather and retention checks participate in the ordinary
+transfer search: rejecting an errand-first arrangement continues to other
+orders within the same budget, including keeping a weather-guided walk first
+and shifting a flexible later row. Expensive trips still defer when their cost
+outweighs the saved waiting time. Soft guidance is a scored preference, not a
+blanket veto against any weather-score deterioration.
 Planned items also outrank at-location sequencing, so a Home lunch cannot claim
 the only contiguous 4h slot a Zoo plan needs.
 

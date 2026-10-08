@@ -1,9 +1,26 @@
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
 const {chromium}=require('./helpers/planner-test-helpers');
 (async()=>{
   const browser=await chromium.launch({headless:true});
   try{
     const page=await browser.newPage({timezoneId:'UTC'});
+    // The fifteen-minute lookahead must stay inside today. Near midnight the
+    // real clock crosses that boundary and correctly produces zero probes.
+    const freezeClock=()=>{
+      const RealDate=Date,now=Date.UTC(2026,9,7,9);
+      globalThis.Date=class extends RealDate{
+        constructor(...args){super(...(args.length?args:[now]));}
+        static now(){return now;}
+      };
+    };
+    await page.addInitScript(freezeClock);
+    // Workers own their clock; keep the canonical worker and the page on the
+    // same test date without changing production request/forecast behavior.
+    await page.context().route(/\/js\/agenda-planner-worker\.js(?:\?.*)?$/,route=>route.fulfill({
+      contentType:'application/javascript',
+      body:`(${freezeClock.toString()})();\n${fs.readFileSync(__dirname+'/../js/agenda-planner-worker.js','utf8')}`
+    }));
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'load'});
     const result=await page.evaluate(async()=>{
       const now=Date.now(),settings={...loadSortSettings(),agendaOptimizer:false,locations:[],travel:{},
