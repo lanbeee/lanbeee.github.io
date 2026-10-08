@@ -20,7 +20,23 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       Object.assign(viewport,{height:844,width:390,offsetTop:0,offsetLeft:0,scale:1});
       Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
     });
-    await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'networkidle'});
+    let releaseBoot;
+    const bootGate=new Promise(resolve=>{releaseBoot=resolve;});
+    await page.route('**/js/config.js',async route=>{await bootGate;await route.continue();});
+    const navigation=page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'networkidle'});
+    await page.waitForSelector('.wordmark');
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.wordmark img')).width==='38px');
+    const skeletonHeader=await page.evaluate(()=>{
+      document.documentElement.style.setProperty('--safe-area-inset-top','41px');
+      return {top:document.querySelector('.wordmark').getBoundingClientRect().top,
+        height:document.documentElement.scrollHeight};
+    });
+    assert.equal(skeletonHeader.height,844,'loading Home has no extra footer scroll band');
+    releaseBoot();
+    await navigation;
+    await page.unroute('**/js/config.js');
+    assert.equal(await page.locator('.wordmark').evaluate(el=>el.getBoundingClientRect().top),
+      skeletonHeader.top,'wordmark keeps its skeleton position after boot');
     await page.evaluate(data=>{save(data);render();},Array.from({length:12},(_,i)=>baseHabit({hid:`keyboard-${i}`,name:`Keyboard fixture ${i}`,type:'zero'})));
     await page.waitForTimeout(400);
     // A fading detail overlay exposes cards when the scroll lock unsticks
@@ -49,6 +65,23 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       assert.ok(frame.covered,'detail covers the sticky day header area');
     }
     assert.equal(detailEntry.returned,detailEntry.top,'closing detail preserves Home scroll');
+    const calendarEntry=await page.evaluate(async()=>{
+      renderOverview();
+      openSheet('overview-sheet');
+      const frames=[];
+      for(let i=0;i<8;i++){
+        await new Promise(requestAnimationFrame);
+        const wrap=$('overview-sheet');
+        frames.push({opacity:getComputedStyle(wrap).opacity,
+          covered:Boolean(document.elementFromPoint(20,60)?.closest('#overview-sheet'))});
+      }
+      closeSheet('overview-sheet');
+      return frames;
+    });
+    for(const frame of calendarEntry){
+      assert.equal(frame.opacity,'1','phone Calendar is opaque from its first frame');
+      assert.ok(frame.covered,'Calendar covers the sticky day header area');
+    }
     await page.evaluate(()=>{
       window.keyboardProbe = {renders:0,scrolls:0,updates:0};
       const originalRender = render;

@@ -1038,6 +1038,13 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - For developer/debugging use
 
 ### 6.5 Home Filter Bar
+- The loading skeleton uses the same phone header spacing as the loaded Home
+  view, with no duplicate viewport height beneath its footer clearance.
+  Android waits for the native window's page-commit signal and actual device
+  insets before painting the shell, including the skeleton. SystemBars' initial
+  zero injection cannot reveal it; later keyboard inset updates remain live.
+  Phone Calendar opens fully opaque in its first frame so locking Home scroll
+  cannot expose cards behind its sticky day header during a fade.
 - Appears above the habit list when there are topics or locations
 - Two filter types: **Topic chips** and **Location chips**
 - `__none__` sentinel for "no topic" / "anywhere" habits

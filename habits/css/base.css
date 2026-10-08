@@ -28,6 +28,9 @@ body[data-tier="desktop"]{
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 [hidden]{display:none !important;}
+/* Android's real status-bar insets arrive after page commit. Preserve layout
+   while the native adapter waits for them, then paint the settled shell. */
+html[data-native-insets="pending"] body{visibility:hidden;}
 html{font-size:16px;-webkit-text-size-adjust:100%;}
 html{scroll-behavior:smooth;color-scheme:light dark;}
 body{
@@ -52,8 +55,21 @@ body[data-pane-count="1"] .app{
   max-width:var(--pane-width);
   margin:0 auto;
   background:var(--bg2);
-  min-height:100dvh;
   padding:var(--app-pad);
+}
+/* The skeleton paints before deferred viewport detection. Give it the same
+   phone gutters and safe edge as the mounted Home page. Body already owns
+   the viewport minimum and footer clearance; duplicating that minimum on
+   .app adds an empty, scrollable footer band to the loading screen. */
+@media (max-width:719px){
+  body:not([data-pane-count]) .app{
+    width:100%;max-width:var(--pane-width);margin:0 auto;
+    background:var(--bg2);padding:var(--app-pad);
+    padding-top:var(--content-safe-top);
+    padding-left:max(0px,var(--content-safe-left));
+    padding-right:max(0px,var(--content-safe-right));
+  }
+  body:not([data-pane-count]) .pane-list{overflow:visible;}
 }
 /* 2-pane: two 480px columns with a single shared top bar. */
 body[data-pane-count="2"] .app{
