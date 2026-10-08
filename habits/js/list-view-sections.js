@@ -383,6 +383,7 @@ function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = nu
   const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
   const todayBase = dayStart(now);
   if(expectedDayBase > todayBase)return false;
+  if(expectedDayBase < todayBase && habitHasMultipleDailyOccurrences(h))return false;
   if(h.createdAt != null && Number(h.createdAt) >= expectedDayBase + 86400000)return false;
   if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
     && typeof isDateEligibleForHabit === 'function'
@@ -477,6 +478,9 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
     const occurrenceHids = new Set((entry.occurrences || []).map(row=>row.hid));
     for(const hid of occurrenceHids){
+      // Daily sessions belong to their calendar day. Keep past expectations
+      // as history, but do not turn yesterday's sessions into today's misses.
+      if(expectedDay !== today)continue;
       const idx = data.findIndex(h=>h && h.hid === hid);
       const h = data[idx];
       if(!h || !habitHasMultipleDailyOccurrences(h)
@@ -490,8 +494,8 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
       for(const row of unresolved){
         const option = normalizeHabitScheduleOptions(h.scheduleOptions).find(option=>option.id === row.scheduleOptionId);
         const subject = option ? habitBoundToScheduleOption(h,option) : h;
-        const expired = expectedDay < today || (row.dropAt != null
-          ? now >= row.dropAt : !occurrenceStillDoableToday(subject,now));
+        const expired = row.dropAt != null
+          ? now >= row.dropAt : !occurrenceStillDoableToday(subject,now);
         const dropped = expectedDay === today && row.rendered && !currentKeys.has(row.occurrenceKey);
         if(!expired && !dropped)continue;
         droppedMap.set(row.occurrenceKey,{hid,name:h.name,emoji:h.emoji,idx,

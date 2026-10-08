@@ -162,6 +162,59 @@ const {chromium,BASE,FAST_ONLY,baseHabit,openEveningSettings,glpkAvailable} = re
   assert.deepEqual(missed.ordinary,['afternoon'],'one ordinary log consumes only one occurrence');
   console.log('  ok: one/multiple misses, cold open, ordinary log, duplicate and undo');
 
+  for(const flexible of [false,true]){
+    const rollover = await page.evaluate(({habit,settings,now,flexible})=>{
+      window.testClock = dayStart(now)+16*3600000;
+      sortSettings = settings;
+      const data = normalize([{...habit,...(flexible ? {
+        scheduleOptions:[],allowedTimeStart:540,allowedTimeEnd:1140
+      } : {})}]);
+      localStorage.setItem('tings_v2',JSON.stringify(data));
+      localStorage.removeItem(TODAY_SUGGESTED_KEY);
+      _homeRenderedWeek = buildWeekAgenda(data,settings,1,{fullToday:true});
+      collectDroppedItems(data,settings,[]);
+      const yesterday = dateKey(now);
+      const priorRows = loadTodaySuggested().expectations[yesterday].occurrences.length;
+      const priorSnapshot = localStorage.getItem(TODAY_SUGGESTED_KEY);
+      const collect = ()=>{
+        _homeRenderedWeek = buildWeekAgenda(data,settings,1);
+        return collectDroppedItems(data,settings,['repeat']).map(row=>({
+          day:row.expectedDay,option:row.scheduleOptionId
+        }));
+      };
+      window.testClock = dayStart(now)+86400000+82*60000;
+      const early = collect();
+      // Independently reopen yesterday's snapshot before any agenda is mounted.
+      localStorage.setItem(TODAY_SUGGESTED_KEY,priorSnapshot);
+      _homeRenderedWeek = null;
+      const cold = collectDroppedItems(data,settings,[]);
+      const header = document.createElement('div');
+      attachDroppedIndicator(header,document.getElementById('list'),[]);
+      const earlyPill = Boolean(header.querySelector('.dropped-pill'));
+      const savedPriorRows = loadTodaySuggested().expectations[yesterday].occurrences.length;
+      window.testClock = dayStart(Date.now())+16*3600000;
+      const afternoon = collect();
+      const legacy = loadTodaySuggested();
+      legacy.expectations[yesterday].occurrences = [];
+      localStorage.setItem(TODAY_SUGGESTED_KEY,JSON.stringify(legacy));
+      const legacyAfternoon = collect();
+      return {early,cold:cold.length,earlyPill,priorRows,savedPriorRows,
+        afternoon,legacyAfternoon,today:todayIso()};
+    },{habit,settings,now,flexible});
+    const kind = flexible ? 'flexible' : 'separate-window';
+    assert(rollover.priorRows > 0,`${kind}: yesterday's session expectations were saved`);
+    assert.deepEqual(rollover.early,[],`${kind}: yesterday's sessions are excluded at 1:22am`);
+    assert.equal(rollover.cold,0,`${kind}: reopening after midnight does not restore yesterday's misses`);
+    assert.equal(rollover.earlyPill,false,`${kind}: no missed pill before today's windows open`);
+    assert.equal(rollover.savedPriorRows,rollover.priorRows,`${kind}: prior expectations remain available as history`);
+    assert(rollover.afternoon.every(row=>row.day === rollover.today),`${kind}: later misses belong to today only`);
+    assert.deepEqual(rollover.legacyAfternoon,rollover.afternoon,
+      `${kind}: legacy snapshots without session metadata also exclude yesterday`);
+    if(!flexible)assert.deepEqual(rollover.afternoon.map(row=>row.option),['morning','afternoon'],
+      'today retains both missed sessions after rollover');
+  }
+  console.log('  ok: daily session misses reset at midnight, including cold opens');
+
   await page.evaluate(({habit,settings,now})=>{
     window.testClock = dayStart(now)+16*3600000;
     // Only the UI adapter is replaced: both real engines were tested above.

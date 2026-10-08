@@ -991,7 +991,7 @@ second row.
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
 - Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
 - It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, still-doable work that was never shown, and yesterday's dated row for an item whose usable window is still open today are excluded. Calendar midnight is not an opportunity ending.
-- Dated expectations are retained across skipped app days. Once-a-day items show only their newest unresolved miss, and a later completion resolves earlier expectations. Items with several sessions a day retain each unfinished session separately; completing a later session leaves earlier misses unresolved.
+- Dated expectations are retained across skipped app days. Once-a-day items show only their newest unresolved miss, and a later completion resolves earlier expectations. Items with several sessions a day show today's unfinished sessions separately; completing a later session leaves earlier misses from today unresolved. Their missed count resets at midnight, excluding past-day sessions.
 - Tap to open the **Slipped Sheet** (see §X.1)
 - Shows items in expected-day, then first-suggested order
 - Each item can be tapped to review → opens detail
@@ -1542,7 +1542,7 @@ Tracks the currently active habit session:
 - **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
 - Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
-- Habits with several sessions a day show one missed row per unfinished session, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
+- Habits with several sessions a day show one missed row per unfinished session from today, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses from today. Past-day sessions are excluded after midnight. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
 - Items show day labels (behind/today/tomorrow)
