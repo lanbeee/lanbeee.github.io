@@ -127,8 +127,9 @@ const assert = require('node:assert/strict');
     assert(warnings.stale.length>0 && warnings.stale.every(e=>e.estimated),'changed agenda falls back to labelled estimates');
     const early=await page.evaluate(()=>{
       const base=dayStart(Date.now()),now=base+8*3600000;
-      const data=normalize([{hid:'sunset',name:'Sunset habit',type:'keepup',target:1,durationMinutes:10,logs:[]}]);
-      const settings={...loadSortSettings(),locations:[]};
+      const data=normalize([{hid:'sunset',name:'Sunset habit',type:'keepup',target:1,durationMinutes:10,
+        allowedTimeStart:1080,allowedTimeEnd:1200,logs:[]}]);
+      const settings={...loadSortSettings(),locations:[],blockedTimes:[]};
       const week={days:[{dayBase:base,dayKey:dateKey(base),timeline:[
         {kind:'fill',h:data[0],i:0,start:base+18*3600000,end:base+18*3600000+600000,dropAt:base+19*3600000}]}]};
       const prefs={enabled:true,items:{'item:sunset':{missed:'alarm'}}};
@@ -140,7 +141,7 @@ const assert = require('node:assert/strict');
     });
     assert.equal(early.estimate.at,early.base+(18*60+45)*60000,'morning creates evening estimate 15 minutes before cutoff');
     assert(early.estimate.estimated && early.estimate.body.startsWith('May drop around'));
-    assert.equal(early.fallback.at,early.base+(17*60+45)*60000,'missing estimate uses latest displayed start');
+    assert.equal(early.fallback.at,early.base+(19*60+35)*60000+1,'missing estimate uses the remaining window, not the suggested start');
     assert.equal(early.off.length,0);
     const hotPath=await page.evaluate(()=>{
       const base=dayStart(Date.now())+86400000,now=base+8*3600000;
