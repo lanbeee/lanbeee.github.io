@@ -8,6 +8,9 @@
   transition:opacity var(--dur-med) ease;
 }
 .sheet-wrap.open{opacity:1;pointer-events:auto;}
+/* Locking Home scroll unsticks its day header. Calendar must cover that
+   change on its first frame, like the phone detail page. */
+body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
 /* Stacking tiers so a drilled-in detail sheet always paints above the page
    sheet it was opened from (overview/today), while transient modals that can
    open from detail (snooze/activity) and the day drill-down stay on top. */

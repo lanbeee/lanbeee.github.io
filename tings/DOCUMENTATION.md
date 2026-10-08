@@ -991,7 +991,7 @@ second row.
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
 - Proof comes from a row the planner actually showed, a dated expectation saved from an earlier app visit, or a day-start planner reconstruction when the app is first opened after the item's window closed
 - It never sweeps the whole overdue list: work disallowed on that calendar day, work with no feasible slot, snoozed work, merely upcoming work, still-doable work that was never shown, and yesterday's dated row for an item whose usable window is still open today are excluded. Calendar midnight is not an opportunity ending.
-- Dated expectations are retained across skipped app days. Once-a-day items show only their newest unresolved miss, and a later completion resolves earlier expectations. Items with several sessions a day retain each unfinished session separately; completing a later session leaves earlier misses unresolved.
+- Dated expectations are retained across skipped app days. Once-a-day items show only their newest unresolved miss, and a later completion resolves earlier expectations. Items with several sessions a day show today's unfinished sessions separately; completing a later session leaves earlier misses from today unresolved. Their missed count resets at midnight, excluding past-day sessions.
 - Tap to open the **Slipped Sheet** (see §X.1)
 - Shows items in expected-day, then first-suggested order
 - Each item can be tapped to review → opens detail
@@ -1002,11 +1002,11 @@ second row.
 
 **Drop warning (15 min)** chooses Off or Ringing alarm per habit/task. Existing enabled drop notifications migrate to ringing; Off and start/end/travel choices remain unchanged. New items default Off. Busy times have no drop warning.
 
-As soon as today's agenda exists, every enabled unfinished displayed occurrence gets an estimated alarm, including evening work scheduled in the morning. The constraint-aware `dropAt` estimate accounts for the current pack, priority commitments, links, blocked time, location hours and travel. The trigger is fifteen minutes before that estimate, not fifteen minutes before the allowed-window end. If no future estimate is available, the latest displayed viable start is the provisional opportunity deadline. Inside the lead, a newly created alarm fires promptly. Estimated alarms say **May drop around [clock]**. Estimates can be wrong and may ring without verification; this intentionally prioritizes early coverage over the former precision-only policy.
+As soon as today's agenda exists, every enabled unfinished displayed occurrence gets an estimated alarm, including evening work scheduled in the morning. The constraint-aware `dropAt` estimate accounts for the current pack, priority commitments, links, blocked time, location hours and travel. The trigger is fifteen minutes before that estimate, not fifteen minutes before the allowed-window end. If no future estimate is available, a provisional deadline uses the latest contiguous allowed window around the saved same/higher-priority commitments, busy times and location hours. The suggested start alone is not a drop deadline for independent window-based work. Links, saved travel, weather guidance or unresolved windows retain the saved-start fallback until worker refresh, preserving early coverage without UI placement probes. Inside the lead, a newly created alarm fires promptly. Estimated alarms say **May drop around [clock]**. Estimates can be wrong and may ring without verification; this intentionally prioritizes early coverage over the former precision-only policy.
 
-One shared off-main normal-week build at the next fifteen-minute boundary refines imminent losses. It includes ordinary task/sparse-rhythm reassignment and cached far days, so there is no today-only build followed by a correction solve. Confirmed upcoming losses say **Drops within 15 min**; the actual advance notice varies within the sampled interval. A future sample which restores an item does not postpone its earlier current-agenda estimate. The normal future result prepares start/end/travel edges after its target and is cached for adoption at that clock with no additional solve. A usable exact incumbent may still support an estimated alarm; near-term confirmation requires confirmed selection. No full-day future sweep or tomorrow drop forecast is added. The already-built week pre-arms every enabled displayed occurrence across its available seven-day horizon, including future afternoons and evenings. Future rows without a constraint-aware cutoff use their latest saved start as a provisional estimate; refresh refines that estimate when the day becomes current. Completing today’s recurring occurrence does not cancel future occurrences, while completing that occurrence, deleting the item or disabling its drop choice does. The shared cutoff annotation still probes only today and tomorrow’s rows starting before noon, with no additional planner solve or placement work in reminder projection.
+One shared off-main normal-week build at the next fifteen-minute boundary refines imminent losses. It includes ordinary task/sparse-rhythm reassignment and cached far days, so there is no today-only build followed by a correction solve. Confirmed upcoming losses say **Drops within 15 min**; the actual advance notice varies within the sampled interval. A future sample which restores an item does not postpone its earlier current-agenda estimate. The normal future result prepares start/end/travel edges after its target and is cached for adoption at that clock with no additional solve. A usable exact incumbent may still support an estimated alarm; near-term confirmation requires confirmed selection. No full-day future sweep or tomorrow drop forecast is added. The already-built week pre-arms every enabled displayed occurrence across its available seven-day horizon, including future afternoons and evenings. Future rows without a constraint-aware cutoff use that window-based provisional estimate; refresh refines that estimate when the day becomes current. Completing today’s recurring occurrence does not cancel future occurrences, while completing that occurrence, deleting the item or disabling its drop choice does. The shared cutoff annotation still probes only today and tomorrow’s rows starting before noon, with no additional planner solve or placement work in reminder projection.
 
-Each fifteen-minute cycle updates estimates. Saved additions/edits, windows, priorities, schedule links, busy times, active work, weather/location and planner-mode changes invalidate forecasts and request normal reconciliation immediately. Completion/deletion/disabling cancel natively before a replacement solve. Partial progress updates remaining opportunity; Stop today and explicit Snooze keep their authority. Obsolete confirmed evidence is downgraded to an estimate while a replacement computes. Cosmetic changes do not require planning. Stable occurrence identities and durable ringing receipts prevent movement or disappearance/reintroduction from ringing twice. Ordinary-notification receipts do not suppress drop ringing; old schedules incorrectly marked notified are repaired on publication. A due trigger cannot be postponed by a changed cutoff while it remains useful, and publishing re-arms future schedules to recover interrupted Android registration. Separate schedule options remain independent; split work has one remaining-opportunity alarm and cannot log an arbitrary chunk.
+Each fifteen-minute cycle updates estimates. Saved additions/edits, windows, priorities, schedule links, busy times, active work, weather/location and planner-mode changes invalidate forecasts and request normal reconciliation immediately. Completion/deletion/disabling cancel natively before a replacement solve. Partial progress updates remaining opportunity; Stop today and explicit Snooze keep their authority. Obsolete confirmed evidence is downgraded to an estimate while a replacement computes. Cosmetic changes do not require planning. Stable occurrence identities and durable ringing receipts prevent movement or disappearance/reintroduction from ringing twice. Ordinary-notification receipts do not suppress drop ringing; old schedules incorrectly marked notified are repaired on publication. Due confirmed warnings and estimated warnings still due within fifteen minutes retain their trigger. An obsolete due estimate may move when the replacement warning is more than fifteen minutes away. Publishing re-arms future schedules to recover interrupted Android registration. Separate schedule options remain independent; split work has one remaining-opportunity alarm and cannot log an arbitrary chunk.
 
 The one-hour-before-allowed-start guard applies at delivery scheduling time, not when an evening alarm is created in the morning. Automatic drop alarms expire at their estimated/predicted opportunity; explicit Snooze has its separate useful expiry, and an alarm already ringing continues until acted on. Input changes, a different day, or a result more than one minute overdue reject cached adoption.
 
@@ -1038,6 +1038,13 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - For developer/debugging use
 
 ### 6.5 Home Filter Bar
+- The loading skeleton uses the same phone header spacing as the loaded Home
+  view, with no duplicate viewport height beneath its footer clearance.
+  Android waits for the native window's page-commit signal and actual device
+  insets before painting the shell, including the skeleton. SystemBars' initial
+  zero injection cannot reveal it; later keyboard inset updates remain live.
+  Phone Calendar opens fully opaque in its first frame so locking Home scroll
+  cannot expose cards behind its sticky day header during a fade.
 - Appears above the habit list when there are topics or locations
 - Two filter types: **Topic chips** and **Location chips**
 - `__none__` sentinel for "no topic" / "anywhere" habits
@@ -1056,7 +1063,26 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - Clears with ✕ button
 - Opening empty Search keeps the mounted agenda. Home and detail search docks
   sit directly against the keyboard on phones, retaining the bottom safe area
-  when the keyboard closes. They follow its geometry once per animation frame; visible editing fields
+  when the keyboard closes. Both docks use one visible-screen bottom coordinate,
+  clamped to the CSS layout viewport, so asynchronous Android viewport updates
+  cannot apply the keyboard height twice. The phone detail backdrop stays opaque
+  throughout the transition. At normal zoom, the native Android app uses the
+  WebView's resized layout height: Capacitor already removes the keyboard area,
+  and Android's visual viewport can briefly subtract that area a second time.
+  Native search also drops the bottom safe inset as soon as the layout shrinks,
+  covering the frame before Android clears that inset.
+  Its dock and detail height follow CSS percentages directly on keyboard close,
+  avoiding a delayed second resize from a saved pixel height.
+  Portrait detail content keeps its spacing and chart sizes across keyboard
+  transitions; short-height content compaction applies only to wider layouts.
+  After editing a detail field, the Search/Close bar stays hidden until the
+  keyboard finishes closing, then returns at the bottom. Save/Cancel remains
+  reachable while there are unsaved changes. The detail header keeps its full
+  size, cue and link buttons while typing on portrait phones, including in short
+  keyboard layouts. Wide landscape screens retain their compact header layout.
+  Opening detail from a scrolled Home shows the phone detail page fully opaque
+  immediately, keeping the cards behind the sticky day header covered.
+  They follow its geometry once per animation frame; visible editing fields
   keep their scroll position, and covered fields scroll above the keyboard/footer.
 - Search is available when the settled, unsearched Home view contains at least
   10 visible Ting cards across its sections. Pinned copies and separate-session
@@ -1211,7 +1237,7 @@ Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/c
 
 The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
 
-Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide and the item header compacts; Close or Cancel/Save stays available. The controls return after leaving the field. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide while the item header keeps its full size on portrait phones. Cancel/Save remains available for unsaved edits. Search/Close returns once the keyboard has finished closing. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -1516,7 +1542,7 @@ Tracks the currently active habit session:
 - **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
 - Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
-- Habits with several sessions a day show one missed row per unfinished session, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
+- Habits with several sessions a day show one missed row per unfinished session from today, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses from today. Past-day sessions are excluded after midnight. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
 - Items show day labels (behind/today/tomorrow)
@@ -1851,6 +1877,22 @@ Toasts appear after:
 - Planning a future item
 - Timer auto-completion
 
+### Starter Samples
+- About → **samples** (or the empty Home prompt) opens five everyday starters:
+  **go for a walk**, **read before bed**, **work out**, **buy groceries**, and
+  **finish a report**. Each row explains whether it repeats or is a one-off,
+  with its duration and timing. The close control shares a sticky title row.
+  Expanded busy-time and prayer rows use the same compact Add pills, keeping
+  their descriptions readable on narrow screens.
+- Starters need no city or demo places, and start without fictional completion
+  history. Add one to make it yours; **try all five** tags the bulk additions
+  so **remove samples** can clean up the ones you have not kept. Previously
+  saved samples remain until the user removes them.
+- The optional prayer and sun-based sleep sections stay collapsed separately;
+  their dynamic timing still requires a home city. **Add all prayers** creates
+  regular habits with clean prayer names, just like adding them individually;
+  **remove samples** does not remove these prayers.
+
 ### Guided Coaches
 - A fresh, empty install offers the **install guide** first when it runs in a
   browser: numbered, iconified per-platform steps (details in the install-guide
@@ -1860,10 +1902,10 @@ Toasts appear after:
   manual steps). The guide ends with a large close-this-tab / open-Tings
   visual — the browser page is not the app — where **Got it** ends the guide
   and **Stay in this tab** escapes into the guided start without leaving the
-  browser. A user already running the installed (standalone) app is offered
+  browser. A user already running the installed Android or standalone PWA app is offered
   the guided start directly. About → **install app** replays the guide on
   demand. When Tings is already installed (standalone) and the app can detect
-  that, About hides the install button.
+  that, About hides the install button. Android never offers the browser install tour, including on its first launch.
 - A fresh, empty install offers the **guided start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
 - The guided start branches between a repeating habit and a one-off task. It
@@ -1872,7 +1914,7 @@ Toasts appear after:
   it makes the user **log (or complete) the Ting they just created** with the
   real pulse button — with an “I’ll log later” escape. If they added a habit,
   the tour later also walks through **adding a task** and that task’s page.
-  Near the end it opens **samples** and almost makes them add **drink water**
+  Near the end it opens **samples** and almost makes them add **go for a walk**
   (with a Not now escape). Then it has them tap the **Tings name** and points
   at **settings**, plus help, samples, and privacy on that same page. The
   replay refresher never changes data.
@@ -2210,7 +2252,9 @@ Selection repair reopens at most eight optional daily items plus four missing
 ones, with an eight-state beam and at most 384 probes per day. It preserves
 placed critical/planned/active occurrences, fixed clocks, linked groups and
 split sessions; a replacement must increase work without reducing any cumulative
-priority tier or worsening travel/weather. Sparse/fractional cadence and task day
+priority tier. More work takes precedence over soft travel/weather preferences;
+hard weather limits and explicit placement locks remain enforced by the fitter.
+Sparse/fractional cadence and task day
 choices remain with the existing week orchestrator.
 
 Resolved windows, blocked intervals, venue hours, valid place IDs, schedule
@@ -2293,11 +2337,28 @@ occurrence fills today while retaining its later obligations. It preserves later
 cadence, all placed work, explicit plans/active/weather locks, other linked groups
 and the source day's other clocks. Existing required build repetitions beside
 placed partners remain valid even when their gap is shorter than the ordinary
-rhythm. A move cannot worsen whole-week travel
-or weather. Hard eligibility, weather deferral and daily-work reservations still
+rhythm. Recovering a missing linked daily repetition increases weekly work and
+takes precedence over soft weather/travel preferences. Equal-work transfers
+compare the shared weighted day-delay, capped ASAP, route and soft weather costs;
+an earlier day wins only when that combined cost improves. Hard weather limits
+and explicit placement locks remain enforced.
+That ASAP comparison measures both placements from today's starting clock,
+including the wait until a later calendar date. It includes delays imposed on
+today's existing rows, so finishing one errand cannot hide a costly shift to
+other work. The source retains every other clock, while unplanned, unlinked,
+inactive venues without weather locks may follow the newly optimized route.
+Protected venues are forced during that replay, so a flexible planned or locked
+neighbor cannot invalidate a legal transfer by choosing another place first.
+Hard eligibility, weather deferral and daily-work reservations still
 apply; soft weekday/time preferences may yield to an earlier usable day. No
 whole-week rebuild or new periodic work is added. `fastTodayChoiceDiagnostics`
 records its probes and accepted transfers.
+Whole-week route/weather and retention checks participate in the ordinary
+transfer search: rejecting an errand-first arrangement continues to other
+orders within the same budget, including keeping a weather-guided walk first
+and shifting a flexible later row. Expensive trips still defer when their cost
+outweighs the saved waiting time. Soft guidance is a scored preference, not a
+blanket veto against any weather-score deterioration.
 Planned items also outrank at-location sequencing, so a Home lunch cannot claim
 the only contiguous 4h slot a Zoo plan needs.
 
@@ -3294,7 +3355,7 @@ Driving estimates send origin and destination coordinates to OSRM, an open routi
 
 The Capacitor wrapper at `../../Tings` builds from this directory. Its runtime source paths link here, so shared planner/UI edits have one source of truth. Run `npm run sync:android` from the wrapper after editing shared code.
 
-Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Turning on phone reminders asks for Android’s notification permission immediately — it does not toast and bounce into Settings first. If the prompt is denied, a longer toast explains that you can still open Android notification settings later. Then choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** stops those alarms and opens Tings to save a normal completion with its undo action. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
+Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Turning on phone reminders asks for Android’s notification permission immediately — it does not toast and bounce into Settings first. If the prompt is denied, a longer toast explains that you can still open Android notification settings later. Choosing a notification or ringing alarm directly in an item or busy time also enables phone reminders and requests any missing permission there, with no trip through Tings Settings. Ringing opens Android’s required alarm-access screen when needed and saves the choice after access is allowed; denying either permission leaves the previous choice unchanged. Turning an edge off never requests permission. Choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** works while the phone is locked: it saves a durable completion request and stops those alarms without opening Tings. The shared completion history updates when Tings next opens, using the normal completion flow. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
 
 Alerts follow the agenda and use shared completion and busy-time resolution helpers. They are replaced when the open app replans or reconciles data. Preferences stay on this device. **Refresh agenda while closed** optionally requests an Android background rebuild about every 30 minutes using time, the phone's saved items/settings, and weather. Android may delay a run; a failed run keeps the last saved seven-day reminder schedule. **Allow background location** first shows the Play prominent disclosure (`#background-location-disclosure-sheet`), then asks for precise location, then opens Android app settings so the user can choose **Allow all the time**. That enables a brief balanced-power location check per closed-app run and saved-place arrival/departure events. Periodic refresh also works without location access, using the saved place. Live GPS first-enable on Android shows `#location-permission-sheet` before the OS prompt.
 

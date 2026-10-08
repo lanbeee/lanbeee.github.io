@@ -95,13 +95,27 @@ function nativeItemReminderControls(owner,name,opts = {}){
     select.addEventListener('change',async ()=>{
       select.disabled = true;
       try{
-        if(select.value === 'alarm' && (await window.TingsNative.notifications.exactAlarmPermission()).exact_alarm !== 'granted')
-          throw new Error('Allow exact timing in Settings → reminders before choosing a ringing alarm.');
+        const mode = select.value;
+        if(mode !== 'off'){
+          const api = window.TingsNative.notifications;
+          let permission = await api.permissions();
+          if(permission.display !== 'granted')permission = await api.requestPermissions();
+          if(permission.display !== 'granted')throw new Error('Notifications were not allowed. The reminder was not changed.');
+          if(mode === 'alarm'){
+            let exact = await api.exactAlarmPermission();
+            if(exact.exact_alarm !== 'granted')exact = await api.requestExactAlarmPermission();
+            if(exact.exact_alarm !== 'granted')throw new Error('Alarm access was not allowed. The reminder was not changed.');
+          }
+        }
+        // Permission screens can suspend the app. Merge into the latest saved
+        // choices on return so another control's edits are not overwritten.
         const prefs = nativeReminderPreferences();
-        prefs.items[owner] = {...prefs.items[owner],[edge]:select.value};
+        if(mode !== 'off')prefs.enabled = true;
+        prefs.items[owner] = {...prefs.items[owner],[edge]:mode};
         localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+        document.querySelector('#native-reminder-controls [aria-label="enable phone reminders"]')?.setAttribute('aria-pressed',String(prefs.enabled));
         nativeReminderLastSignature = '';await reconcileNativeReminders();
-        showToast(prefs.enabled ? 'phone reminder saved' : 'saved — enable phone reminders in Settings to receive it', 2800);
+        showToast('phone reminder saved', 2800);
       }catch(error){select.value = nativeReminderPreferences().items[owner]?.[edge] || 'off';showToast(error.message, 5000);}
       finally{select.disabled = false;}
     });label.append(select);grid.append(label);
@@ -193,6 +207,46 @@ function nativeReminderAllowedWarningAt(h,row,day,settings,now){
   const fixed=h.type==='task' && !h.breakable && Number.isFinite(h.eventTime) ? h.eventTime : null;
   return Math.max(opening,fixed || day.dayBase)-60*60000;
 }
+// Missing worker annotations must not turn a suggested start into a deadline.
+// Keep week-wide coverage with a cheap estimate of the last contiguous window
+// around the saved commitments. No placement, travel lookup or solve in paint.
+function nativeReminderProvisionalDropAt(h,row,day,settings,data,dataById){
+  const base=day.dayBase;
+  if(h.type==='task' && !h.breakable && Number.isFinite(h.eventTime))
+    return h.eventTime+clampDuration(h.durationMinutes)*60000;
+  const plan=timedPlanLogForDay(h,dateKey(base));
+  if(plan)return logTime(plan)+clampDuration(h.durationMinutes)*60000;
+  // Window geometry cannot prove a later opportunity for linked, traveling or
+  // weather-guided work. Keep its existing early coverage until worker refresh.
+  if(plannerOrderConstraintsForDay(base).some(e=>e.beforeHid===h.hid || e.afterHid===h.hid)
+    || (day.timeline || []).some(r=>r.kind==='travel')
+    || weatherHabitHasActiveGuidance(h,settings))return row.start;
+  const option=normalizeHabitScheduleOptions(h.scheduleOptions).find(o=>o.id===row.scheduleOptionId);
+  const subject=option && habitScheduleOptionSameDayMode(option)==='separate' ? habitBoundToScheduleOption(h,option) : h;
+  const loc=(settings.locations || []).find(place=>place.id===row.locationId) || null;
+  const windows=effectiveLocationWindow(subject,loc,new Date(base).getDay(),base);
+  const cost=(h.breakable ? minViableSessionMinutes(h,base) : clampDuration(h.durationMinutes))*60000;
+  if(cost<=0)return null;
+  const blockers=(day.timeline || []).filter(r=>{
+    if(!['fill','scheduled'].includes(r.kind))return false;
+    const other=dataById.get(r.hid || r.h?.hid || data[r.i]?.hid);
+    return other && other.hid!==h.hid
+      && (r.kind==='scheduled' || r.hard || effectivePriority(other)<=effectivePriority(h));
+  });
+  const state={slots:buildOpenAgendaSlots(dateKey(base),[],settings,{clipAfter:base}),
+    rows:[],fills:blockers.map(r=>({fit:{placeStart:r.start,placeEnd:r.end}}))};
+  let latest=null;
+  for(const window of windows){
+    const segments=freeSegmentsInWindow(state,base+window.start*60000,base+window.end*60000);
+    for(const segment of segments){
+      if(segment.end-segment.start<cost)continue;
+      const start=Math.floor((segment.end-cost)/(5*60000))*(5*60000);
+      latest=Math.max(latest ?? -Infinity,start+1);
+    }
+  }
+  // A saved feasible row still gets coverage if its windows cannot be resolved.
+  return latest ?? (Number.isFinite(row.start) ? row.start : null);
+}
 function nativeReminderOccurrence(row,data,day,dataById = null){
   const dayKey=day.dayKey || dateKey(day.dayBase);
   if(row?.kind==='blocked')return `busy:${dayKey}`;
@@ -234,12 +288,15 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       active.push({...row,reminderOwner:nativeReminderOwner(destination,data,settings,dataById),reminderOccurrence:nativeReminderOccurrence(destination,data,day,dataById)});
     });
     active.push(...blockedTimelineRows(day.dayKey || dateKey(day.dayBase),settings,day.dayBase,{clipAfter:null}));
-    const lastStarts=new Map();
+    const provisionalDrops=new Map();
     for(const r of active){
       if(!['fill','scheduled'].includes(r.kind))continue;
       const item=dataById.get(r.h?.hid || data[r.i]?.hid);if(!item)continue;
+      if(!['notification','alarm'].includes(prefs.items?.[`item:${item.hid}`]?.missed)
+        || (Number.isFinite(r.dropAt) && r.dropAt>warningNow))continue;
       const key=`${item.hid}:${item.breakable ? 'remaining' : r.scheduleOptionId || 'main'}`;
-      lastStarts.set(key,Math.max(lastStarts.get(key) ?? -Infinity,r.start));
+      const cutoff=nativeReminderProvisionalDropAt(item,r,{...day,timeline:active},settings,data,dataById);
+      if(Number.isFinite(cutoff))provisionalDrops.set(key,Math.max(provisionalDrops.get(key) ?? -Infinity,cutoff));
     }
     for(const row of active){
       if(!row || !['fill','scheduled','blocked','travel'].includes(row.kind))continue;
@@ -275,11 +332,11 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
         // because that future pack still contains it; adopt that pack first.
         const estimate=row.dropAt;
         // Every enabled displayed occurrence gets an early schedule. If the
-        // constraint-aware estimate is unavailable, its latest displayed start
+        // constraint-aware estimate is unavailable, the last compatible window
         // is the provisional opportunity. Future days need no extra cutoff
         // probes or solves: pre-arm from their saved rows, then refine when
         // each day becomes current. No placement runs in projection.
-        const fallback=lastStarts.get(`${h.hid}:${h.breakable ? 'remaining' : row.scheduleOptionId || 'main'}`);
+        const fallback=provisionalDrops.get(`${h.hid}:${h.breakable ? 'remaining' : row.scheduleOptionId || 'main'}`);
         const agendaAt=risk?.at ?? (Number.isFinite(estimate) && estimate>warningNow ? estimate : fallback);
         const earliest=nativeReminderAllowedWarningAt(h,row,day,settings,now);
         const at=Math.max(risk ? (forecast.warningAt ?? forecast.checkedAt+2000)
@@ -682,7 +739,7 @@ function initNativeReminders(){
   panel.append(actions);
   if(window.TingsNative.alarms){
     const hint = document.createElement('p');hint.className = 'field-hint';
-    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Stop & mark done opens Tings and records completion; split habits log only this session. Travel and busy-time reminders have no completion action.';
+    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Mark done works without unlocking or opening Tings: it saves the completion and silences today’s reminders. History updates when you next open Tings; split habits log only this session. Travel and busy-time reminders have no completion action.';
     const fullScreen = document.createElement('button');fullScreen.type = 'button';fullScreen.className = 'mini-text-btn';fullScreen.textContent = 'Allow full-screen alarms';
     fullScreen.addEventListener('click',async ()=>{try{await window.TingsNative.alarms.requestFullScreen();}catch(error){showToast(error.message);}});
     const alarmTest = document.createElement('button');alarmTest.type = 'button';alarmTest.className = 'mini-text-btn';alarmTest.textContent = 'Test ringing alarm in 10 seconds';

@@ -464,7 +464,7 @@
 .detail-calendar-page .target-line span{font-size:10.5px;}
 .detail-calendar-page .graph-caption,
 .detail-calendar-page .graph-empty{font-size:var(--detail-label-size,11.5px);}
-@media (max-height:700px){
+@media (max-height:700px) and (min-width:600px){
   .detail-calendar-page .detail-about{display:none;}
   .detail-calendar-page .pace-head{display:none;}
 }

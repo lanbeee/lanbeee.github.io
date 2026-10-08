@@ -920,8 +920,9 @@ if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){
     // installed app (or who finished the install guide before) goes straight
     // to the guided start.
     const standalone = typeof isStandalonePwa === 'function' && isStandalonePwa();
+    const native = Boolean(window.TingsNative?.isNative || window.Capacitor?.isNativePlatform?.());
     const seenInstallGuide = Boolean(coachStorageValue(TINGS_INSTALL_COACH_KEY));
-    void startTingsCoach(standalone || seenInstallGuide ? 'essentials' : 'install');
+    void startTingsCoach(native || standalone || seenInstallGuide ? 'essentials' : 'install');
   };
   setTimeout(offerCoach,900);
 }

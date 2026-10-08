@@ -191,6 +191,7 @@ function setDetailSearchOpen(open,focus = true){
   }
   if(open){
     renderDetailSearch();
+    updateKeyboardLift();
     if(focus)$('detail-search-input').focus({preventScroll:true});
   }else if(focus){
     $('detail-search-input').blur();
@@ -258,7 +259,17 @@ function syncDetailEditingChrome(){
   // Blurring the field on pointerdown must not move the intended button
   // before pointerup/click reaches it.
   if(!editing && detailEditingPointerDown)return;
-  inner.classList.toggle('detail-field-editing',Boolean(editing && virtualKeyboard));
+  // Blur precedes the IME's closing resize. Keep the editing chrome until
+  // that resize finishes, otherwise Search/X briefly appears above the
+  // keyboard and then jumps to the bottom. Android already resizes the
+  // layout, so its zero keyboard-lift is not evidence that the IME closed.
+  const nativeResized = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
+    && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01;
+  const keyboardVisible = nativeResized
+    ? nativeKeyboardRestHeight - document.documentElement.clientHeight > 2 : keyboardSpace > 2;
+  const closing = !inner.classList.contains('detail-search-open')
+    && inner.classList.contains('detail-field-editing') && keyboardVisible;
+  inner.classList.toggle('detail-field-editing',Boolean((editing && virtualKeyboard) || closing));
 }
 document.addEventListener('pointerdown',event=>{
   detailEditingPointerDown = Boolean(event.target.closest('.detail-sheet'));

@@ -32,6 +32,7 @@ function openDetail(i){
   $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
   $('detail-head-card').style.setProperty('--card-accent',accent);
   $('detail-head-card').style.setProperty('--card-priority',priorityColor(effectivePriority(h)));
+  $('detail-priority-badge').setAttribute('aria-label',`Priority P${effectivePriority(h)}`);
   $('detail-about').textContent = aboutText(h);
   $('detail-trend').textContent = trendText(h);
   $('detail-habit-message').value = h.name || '';

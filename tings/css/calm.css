@@ -15,6 +15,8 @@ body{
 .wordmark-copy > span{font-size:23px;font-weight:650;letter-spacing:-.045em;}
 .wordmark-copy{gap:5px;}
 .wordmark-date{font-size:10px;font-weight:500;color:var(--text2);}
+.wordmark{min-height:40px;}
+.wordmark-date{min-height:10px;}
 .topbar .home-filter-trigger{background:var(--bg);border-radius:14px;}
 .topbar .presence-filter{border-radius:14px;}
 .presence-icon{border-radius:9px;}
