@@ -511,6 +511,9 @@ body.reach-pad #list{padding-top:220px;}
 .session-progress.is-auto .bar-session{background:var(--amber-icon);}
 .ting-card.timer-running{box-shadow:inset 3px 0 0 var(--teal-icon);}
 .swipe-action.sa-timer{background:color-mix(in srgb,var(--teal-bg) 70%,var(--bg2));color:var(--teal-text);}
+.sample-habits-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.sample-habits-head .sheet-title{margin:0;min-width:0;}
+.sample-habits-head .icon-btn{flex:0 0 44px;width:44px;height:44px;border-radius:14px;}
 .sample-habits-stack{display:flex;flex-direction:column;gap:14px;margin-bottom:12px;}
 .sample-habits-list{display:flex;flex-direction:column;gap:8px;}
 .sample-habit-row{
@@ -527,8 +530,12 @@ body.reach-pad #list{padding-top:220px;}
 .sample-habit-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px;}
 .sample-habit-copy b{font-size:14px;font-weight:600;color:var(--text);}
 .sample-habit-copy small{font-size:12px;color:var(--text3);line-height:1.35;}
-.sample-habit-add{
+/* Settings cards normally make buttons full-width. Sample rows need a
+   compact pill so the sleep/prayer description keeps its share of the row. */
+.sample-habit-row .btn.sample-habit-add{
   flex:0 0 auto;
+  width:auto;
+  min-height:44px;
   min-width:52px;
   padding:6px 10px;
   font-size:12px;

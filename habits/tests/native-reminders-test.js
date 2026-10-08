@@ -8,6 +8,65 @@ const assert = require('node:assert/strict');
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'load'});
     assert.equal(await page.locator('#native-reminder-controls').count(),0,'PWA hides native controls');
+    const permissionFlows = await page.evaluate(async()=>{
+      const original={native:window.TingsNative,reconcile:reconcileNativeReminders,toast:showToast,prefs:localStorage.getItem(NATIVE_REMINDERS_KEY)};
+      const results=[];
+      try{
+        reconcileNativeReminders=async()=>{};showToast=()=>{};
+        for(const scenario of [
+          {mode:'notification',display:'prompt',grant:true},
+          {mode:'alarm',display:'prompt',grant:true,exact:'denied',alarmGrant:true},
+          {mode:'notification',display:'granted',enabled:true},
+          {mode:'alarm',display:'granted',exact:'granted'},
+          {mode:'notification',display:'denied',grant:false},
+          {mode:'alarm',display:'granted',exact:'denied',alarmGrant:false},
+          {mode:'off',display:'denied'},
+          {mode:'notification',display:'denied',grant:true,enabled:true}
+        ]){
+          const calls=[];
+          const initial={version:3,enabled:Boolean(scenario.enabled),items:{'item:permission':{start:scenario.mode==='off'?'alarm':'off',end:'notification'}}};
+          localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(initial));
+          window.TingsNative={isNative:true,notifications:{
+            permissions:async()=>{calls.push('check');return {display:scenario.display};},
+            requestPermissions:async()=>{
+              calls.push('notifications');
+              const prefs=nativeReminderPreferences();prefs.items['item:other']={end:'notification'};
+              localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+              return {display:scenario.grant?'granted':'denied'};
+            },
+            exactAlarmPermission:async()=>{calls.push('exact-check');return {exact_alarm:scenario.exact};},
+            requestExactAlarmPermission:async()=>{calls.push('exact-request');return {exact_alarm:scenario.alarmGrant?'granted':'denied'};}
+          }};
+          const controls=nativeItemReminderControls('item:permission','Permission test');document.body.append(controls);
+          const select=controls.querySelector('[data-reminder-edge="start"]');
+          select.value=scenario.mode;select.dispatchEvent(new Event('change'));
+          while(select.disabled)await new Promise(resolve=>setTimeout(resolve,10));
+          results.push({calls,prefs:nativeReminderPreferences(),value:select.value});controls.remove();
+        }
+        return results;
+      }finally{
+        window.TingsNative=original.native;reconcileNativeReminders=original.reconcile;showToast=original.toast;
+        if(original.prefs===null)localStorage.removeItem(NATIVE_REMINDERS_KEY);else localStorage.setItem(NATIVE_REMINDERS_KEY,original.prefs);
+      }
+    });
+    assert.deepEqual(permissionFlows[0].calls,['check','notifications'],'item choice requests notification permission directly');
+    assert.equal(permissionFlows[0].prefs.enabled,true,'item choice enables phone reminders');
+    assert.equal(permissionFlows[0].prefs.items['item:permission'].start,'notification');
+    assert.equal(permissionFlows[0].prefs.items['item:permission'].end,'notification','other edges survive enabling');
+    assert.equal(permissionFlows[0].prefs.items['item:other'].end,'notification','edits during the OS prompt survive');
+    assert.deepEqual(permissionFlows[1].calls,['check','notifications','exact-check','exact-request'],'alarms request exact access directly after notifications');
+    assert.equal(permissionFlows[1].prefs.items['item:permission'].start,'alarm');
+    assert.deepEqual(permissionFlows[2].calls,['check'],'allowed notifications do not prompt again');
+    assert.deepEqual(permissionFlows[3].calls,['check','exact-check'],'allowed alarms do not prompt again');
+    for(const i of [4,5]){
+      assert.equal(permissionFlows[i].prefs.enabled,false,'denied permission does not enable reminders');
+      assert.equal(permissionFlows[i].prefs.items['item:permission'].start,'off','denial leaves the prior choice saved');
+      assert.equal(permissionFlows[i].value,'off','denial restores the selector');
+    }
+    assert.deepEqual(permissionFlows[6].calls,[],'turning off needs no permissions');
+    assert.equal(permissionFlows[6].prefs.enabled,false,'turning off leaves the global pause intact');
+    assert.equal(permissionFlows[6].prefs.items['item:permission'].start,'off');
+    assert.deepEqual(permissionFlows[7].calls,['check','notifications'],'revoked permission can be requested from the item');
     const result = await page.evaluate(()=>{
       const now = Date.now(), base = dayStart(now)+86400000, start = base+10*3600000;
       const data = normalize([{hid:'notification-task',name:'Task',type:'task',eventTime:start,durationMinutes:30,logs:[]},{hid:'notification-habit',name:'Habit',type:'keepup',target:1,durationMinutes:30,logs:[]}]);

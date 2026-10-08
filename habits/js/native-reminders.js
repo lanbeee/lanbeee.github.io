@@ -95,13 +95,27 @@ function nativeItemReminderControls(owner,name,opts = {}){
     select.addEventListener('change',async ()=>{
       select.disabled = true;
       try{
-        if(select.value === 'alarm' && (await window.TingsNative.notifications.exactAlarmPermission()).exact_alarm !== 'granted')
-          throw new Error('Allow exact timing in Settings → reminders before choosing a ringing alarm.');
+        const mode = select.value;
+        if(mode !== 'off'){
+          const api = window.TingsNative.notifications;
+          let permission = await api.permissions();
+          if(permission.display !== 'granted')permission = await api.requestPermissions();
+          if(permission.display !== 'granted')throw new Error('Notifications were not allowed. The reminder was not changed.');
+          if(mode === 'alarm'){
+            let exact = await api.exactAlarmPermission();
+            if(exact.exact_alarm !== 'granted')exact = await api.requestExactAlarmPermission();
+            if(exact.exact_alarm !== 'granted')throw new Error('Alarm access was not allowed. The reminder was not changed.');
+          }
+        }
+        // Permission screens can suspend the app. Merge into the latest saved
+        // choices on return so another control's edits are not overwritten.
         const prefs = nativeReminderPreferences();
-        prefs.items[owner] = {...prefs.items[owner],[edge]:select.value};
+        if(mode !== 'off')prefs.enabled = true;
+        prefs.items[owner] = {...prefs.items[owner],[edge]:mode};
         localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+        document.querySelector('#native-reminder-controls [aria-label="enable phone reminders"]')?.setAttribute('aria-pressed',String(prefs.enabled));
         nativeReminderLastSignature = '';await reconcileNativeReminders();
-        showToast(prefs.enabled ? 'phone reminder saved' : 'saved — enable phone reminders in Settings to receive it', 2800);
+        showToast('phone reminder saved', 2800);
       }catch(error){select.value = nativeReminderPreferences().items[owner]?.[edge] || 'off';showToast(error.message, 5000);}
       finally{select.disabled = false;}
     });label.append(select);grid.append(label);

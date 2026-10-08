@@ -475,9 +475,9 @@
       action:'See samples',command:'openSamples',later:'Not now',next:'eAbout',back:shouldTeachTask() ? 'eAddTaskIntro' : 'eOverview'
     };
     if(stage === 'eSampleAdd')return {
-      progress:p,title:'Add drink water',
-      copy:'Tap add on drink water — a simple daily habit. Samples can be removed anytime from the same place.',
-      target:['#sample-habits-preview [data-add-sample="sample-feature-water"]','#sample-habits-preview [data-add-sample]:not([disabled])'],
+      progress:p,title:'Add a daily walk',
+      copy:'Tap add on go for a walk — 20 minutes each day, with a timer if you want it. You can change it to suit your routine.',
+      target:['#sample-habits-preview [data-add-sample="sample-starter-walk"]','#sample-habits-preview [data-add-sample]:not([disabled])'],
       hint:'Tap add',locked:true,later:'Not now',next:'eAbout',back:'eSampleIntro'
     };
     if(stage === 'eAbout')return {
@@ -862,7 +862,7 @@
     if(next === 'eSampleAdd'){
       if(!sheetOpen('sample-habits-sheet'))openGuidedSamples();
       setTimeout(()=>{
-        firstTarget(['#sample-habits-preview [data-add-sample="sample-feature-water"]'])?.scrollIntoView({block:'center',behavior:'auto'});
+        firstTarget(['#sample-habits-preview [data-add-sample="sample-starter-walk"]'])?.scrollIntoView({block:'center',behavior:'auto'});
         queuePosition();
       },80);
     }

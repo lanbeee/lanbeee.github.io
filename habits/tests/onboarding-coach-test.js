@@ -95,6 +95,15 @@ async function progressBar(page){
 
 (async()=>{
   const browser = await chromium.launch({headless:true});
+  const nativePage = await browser.newPage({viewport:{width:390,height:844}});
+  await nativePage.addInitScript(()=>{window.Capacitor={isNativePlatform:()=>true};});
+  await nativePage.goto(coachUrl,{waitUntil:'load'});
+  await stage(nativePage,'eIntro',3500);
+  assert(await nativePage.locator('#open-install-guide').isHidden(),'fresh Android launches hide the install guide and offer guided start');
+  await nativePage.evaluate(async()=>{window.TingsCoach.stop();await startTingsCoach('install',{force:true});});
+  await stage(nativePage,'eIntro');
+  assert(true,'explicit install-tour requests on Android also open guided start');
+  await nativePage.close();
   const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const errors = [];
   page.on('pageerror',error=>errors.push(error.message));
@@ -218,9 +227,9 @@ async function progressBar(page){
   await primary(page,'eTaskDetail','eSampleIntro');
   await primary(page,'eSampleIntro','eSampleAdd');
   await page.waitForSelector('#sample-habits-sheet.open');
-  const waterAdd = page.locator('#sample-habits-preview [data-add-sample="sample-feature-water"]');
-  await waterAdd.scrollIntoViewIfNeeded();
-  await waterAdd.evaluate(el=>el.click());
+  const walkAdd = page.locator('#sample-habits-preview [data-add-sample="sample-starter-walk"]');
+  await walkAdd.scrollIntoViewIfNeeded();
+  await walkAdd.evaluate(el=>el.click());
   await stage(page,'eAbout',5000);
   await tapInPage(page,'#open-about');
   await stage(page,'eAboutMenu');
@@ -233,17 +242,17 @@ async function progressBar(page){
     const data = JSON.parse(localStorage.getItem('tings_v2') || '[]');
     const item = data.find(h=>h.name === names.habit);
     const task = data.find(h=>h.name === names.task);
-    const water = data.find(h=>h.hid === 'sample-feature-water' || h.name === 'drink water');
+    const walk = data.find(h=>h.hid === 'sample-starter-walk' || h.name === 'go for a walk');
     return {
       marker:localStorage.getItem('tings_coach_essentials_v2'),
       target:item?.target,type:item?.type,logs:item?.logs?.length || 0,
-      taskType:task?.type,hasWater:Boolean(water)
+      taskType:task?.type,hasWalk:Boolean(walk)
     };
   },{habit:habitName,task:taskName});
   assert(essentialState.marker === 'done' && essentialState.target === 7 / 3 && essentialState.type === 'keepup','guided start preserves the chosen habit rhythm and remembers completion');
   assert(essentialState.logs >= 1,'logging practice recorded a real log entry');
   assert(essentialState.taskType === 'task','guided start then walks through adding a real task');
-  assert(essentialState.hasWater,'guided start almost finishes by adding the drink water sample');
+  assert(essentialState.hasWalk,'guided start almost finishes by adding the go for a walk sample');
 
   // Advanced coach: a chapter menu, not a serial march. Each chapter runs
   // standalone, checks itself off, and lands back on the menu. Minimal mode

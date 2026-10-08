@@ -1877,6 +1877,22 @@ Toasts appear after:
 - Planning a future item
 - Timer auto-completion
 
+### Starter Samples
+- About → **samples** (or the empty Home prompt) opens five everyday starters:
+  **go for a walk**, **read before bed**, **work out**, **buy groceries**, and
+  **finish a report**. Each row explains whether it repeats or is a one-off,
+  with its duration and timing. The close control shares a sticky title row.
+  Expanded busy-time and prayer rows use the same compact Add pills, keeping
+  their descriptions readable on narrow screens.
+- Starters need no city or demo places, and start without fictional completion
+  history. Add one to make it yours; **try all five** tags the bulk additions
+  so **remove samples** can clean up the ones you have not kept. Previously
+  saved samples remain until the user removes them.
+- The optional prayer and sun-based sleep sections stay collapsed separately;
+  their dynamic timing still requires a home city. **Add all prayers** creates
+  regular habits with clean prayer names, just like adding them individually;
+  **remove samples** does not remove these prayers.
+
 ### Guided Coaches
 - A fresh, empty install offers the **install guide** first when it runs in a
   browser: numbered, iconified per-platform steps (details in the install-guide
@@ -1886,10 +1902,10 @@ Toasts appear after:
   manual steps). The guide ends with a large close-this-tab / open-Tings
   visual — the browser page is not the app — where **Got it** ends the guide
   and **Stay in this tab** escapes into the guided start without leaving the
-  browser. A user already running the installed (standalone) app is offered
+  browser. A user already running the installed Android or standalone PWA app is offered
   the guided start directly. About → **install app** replays the guide on
   demand. When Tings is already installed (standalone) and the app can detect
-  that, About hides the install button.
+  that, About hides the install button. Android never offers the browser install tour, including on its first launch.
 - A fresh, empty install offers the **guided start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
 - The guided start branches between a repeating habit and a one-off task. It
@@ -1898,7 +1914,7 @@ Toasts appear after:
   it makes the user **log (or complete) the Ting they just created** with the
   real pulse button — with an “I’ll log later” escape. If they added a habit,
   the tour later also walks through **adding a task** and that task’s page.
-  Near the end it opens **samples** and almost makes them add **drink water**
+  Near the end it opens **samples** and almost makes them add **go for a walk**
   (with a Not now escape). Then it has them tap the **Tings name** and points
   at **settings**, plus help, samples, and privacy on that same page. The
   replay refresher never changes data.
@@ -3339,7 +3355,7 @@ Driving estimates send origin and destination coordinates to OSRM, an open routi
 
 The Capacitor wrapper at `../../Tings` builds from this directory. Its runtime source paths link here, so shared planner/UI edits have one source of truth. Run `npm run sync:android` from the wrapper after editing shared code.
 
-Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Turning on phone reminders asks for Android’s notification permission immediately — it does not toast and bounce into Settings first. If the prompt is denied, a longer toast explains that you can still open Android notification settings later. Then choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** works while the phone is locked: it saves a durable completion request and stops those alarms without opening Tings. The shared completion history updates when Tings next opens, using the normal completion flow. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
+Installed Android builds add **Phone notifications and alarms** to Settings → reminders. These controls are absent from the PWA. Turning on phone reminders asks for Android’s notification permission immediately — it does not toast and bounce into Settings first. If the prompt is denied, a longer toast explains that you can still open Android notification settings later. Choosing a notification or ringing alarm directly in an item or busy time also enables phone reminders and requests any missing permission there, with no trip through Tings Settings. Ringing opens Android’s required alarm-access screen when needed and saves the choice after access is allowed; denying either permission leaves the previous choice unchanged. Turning an edge off never requests permission. Choose Off, Notification, or Ringing alarm independently for start, end, travel departure and arrival in each saved habit/task’s Actions pane or under each busy-time rule. Travel choices belong to the destination item. Choose **travel: departure → ringing alarm**, then **departure reminder → when travel starts / 5, 10, 15, 30 or 60 min before travel**. The warning follows the current route’s departure rather than the item start time; when no journey is needed there is no departure alarm. Enabling it after the lead time has passed still warns shortly if departure is ahead. Item-start and departure alarms remain independent. New items default off. Existing category preferences migrate once onto existing items. Busy rules retain a stable reminderId through renames and edits; selections remain local to this phone. Exact timing needs separate Android access; the test button schedules a notification ten seconds ahead. Ringing uses the phone’s alarm tone/volume continuously until you choose an action. **Snooze 5 minutes** rings that occurrence again. **Stop for today** silences all reminder edges for that item’s agenda day, including moved/split sessions and travel, without logging completion; tomorrow is independent. **Stop & mark done** works while the phone is locked: it saves a durable completion request and stops those alarms without opening Tings. The shared completion history updates when Tings next opens, using the normal completion flow. Split habits show **Stop & log N min**, crediting only that session and never more than the remaining target. Travel, busy times and test alarms cannot complete an item. Completion requests are saved privately before the sound stops and acknowledged only after the shared log is saved; retrying an interrupted request cannot duplicate it. Agenda notifications expose the same choices as **Remind in 5 min**, **Dismiss for today**, and **Mark done** (or **Log N min** for split sessions). A day dismissal suppresses both notifications and ringing alarms for the item. Remind in 5 min preserves its chosen repeat time across a moved agenda and still works without exact access, with Android’s usual timing limits. Ringing needs exact-alarm access. Optional full-screen alarm access enables lock-screen controls where Android allows them; notification actions remain available. A separate ten-second test exercises ringing. Future alarms restore after reboot/unlock, while missed occurrences are not replayed.
 
 Alerts follow the agenda and use shared completion and busy-time resolution helpers. They are replaced when the open app replans or reconciles data. Preferences stay on this device. **Refresh agenda while closed** optionally requests an Android background rebuild about every 30 minutes using time, the phone's saved items/settings, and weather. Android may delay a run; a failed run keeps the last saved seven-day reminder schedule. **Allow background location** first shows the Play prominent disclosure (`#background-location-disclosure-sheet`), then asks for precise location, then opens Android app settings so the user can choose **Allow all the time**. That enables a brief balanced-power location check per closed-app run and saved-place arrival/departure events. Periodic refresh also works without location access, using the saved place. Live GPS first-enable on Android shows `#location-permission-sheet` before the OS prompt.
 

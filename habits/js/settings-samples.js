@@ -30,17 +30,14 @@ function sampleAlreadyOnHome(hid, displayName){
   return false;
 }
 
-// PURE: blurbs for feature-tour rows (keys match buildSortSamples hids)
+// PURE: everyday starter rows (keys match buildSortSamples hids).
 function featureSamplePreviews(){
   return [
-    {hid:'sample-feature-stretch', emoji:'🌅', title:'stretch after sunrise', blurb:'Window from sunrise +10m', place:''},
-    {hid:'sample-feature-report', emoji:'📝', title:'write report in chunks', blurb:'Breakable — split across sessions', place:'Home'},
-    {hid:'sample-feature-timed-run', emoji:'🏃', title:'timed run', blurb:'Timer + session progress bar', place:'Park'},
-    {hid:'sample-feature-dentist', emoji:'🦷', title:'dentist (auto)', blurb:'Timed task that auto-completes', place:''},
-    {hid:'sample-feature-do-early', emoji:'🧺', title:'do early because Tuesday is packed', blurb:'Do it early while the week is open', place:'Home'},
-    {hid:'sample-feature-gym', emoji:'💪', title:'gym session', blurb:'Place-gated workout', place:'Gym'},
-    {hid:'sample-feature-coffee', emoji:'☕', title:'coffee on office days', blurb:'Limit · Office or Cafe', place:'Office · Cafe'},
-    {hid:'sample-feature-water', emoji:'💧', title:'drink water', blurb:'Simple daily habit', place:''}
+    {hid:'sample-starter-walk', emoji:'🚶', title:'go for a walk', blurb:'Habit · 20 min every day · use the timer', place:''},
+    {hid:'sample-starter-read', emoji:'📖', title:'read before bed', blurb:'Habit · 15 min each evening', place:''},
+    {hid:'sample-starter-workout', emoji:'💪', title:'work out', blurb:'Habit · 45 min, 3 times a week', place:''},
+    {hid:'sample-starter-groceries', emoji:'🛒', title:'buy groceries', blurb:'Task · 30 min · due in 2 days', place:''},
+    {hid:'sample-starter-report', emoji:'📝', title:'finish a report', blurb:'Task · 90 min in smaller sessions · due in 3 days', place:''}
   ];
 }
 
@@ -297,52 +294,29 @@ function buildSampleLocations(){
   ];
 }
 
-// PURE: curated feature-tour samples (no five daily prayers)
+// PURE: a small starter set. No invented history, city, or sample places
+// are needed to try these; titles describe everyday activities, not features.
 function buildSortSamples(){
-  const H = 'sample-home';
-  const O = 'sample-office';
-  const G = 'sample-gym';
-  const C = 'sample-cafe';
-  const P = 'sample-park';
   return [
-    sortSampleHabit('stretch after sunrise','keepup',1,[],{
-      emoji:'🌅', topics:['health'], durationMinutes:15, pinned:true, priority:1,
-      hid:'sample-feature-stretch',
-      allowedTimeStartAnchor:'sunrise', allowedTimeStartOffsetMin:10,
-      allowedTimeEndAnchor:'sunrise', allowedTimeEndOffsetMin:40
+    sortSampleHabit('go for a walk','keepup',1,[],{
+      emoji:'🚶', topics:['health'], durationMinutes:20, timerAutoStopMinutes:20,
+      hid:'sample-starter-walk'
     }),
-    sortSampleHabit('write report in chunks','task',null,[],{
+    sortSampleHabit('read before bed','keepup',1,[],{
+      emoji:'📖', topics:['personal'], durationMinutes:15,
+      hid:'sample-starter-read', allowedTimeStart:1200, allowedTimeEnd:1380
+    }),
+    sortSampleHabit('work out','keepup',7 / 3,[],{
+      emoji:'💪', topics:['health'], durationMinutes:45,
+      hid:'sample-starter-workout'
+    }),
+    sortSampleHabit('buy groceries','task',null,[],{
+      emoji:'🛒', topics:['home'], durationMinutes:30,
+      hid:'sample-starter-groceries', dueDate:dayStart(samplePlan(2))
+    }),
+    sortSampleHabit('finish a report','task',null,[],{
       emoji:'📝', topics:['work'], durationMinutes:90, minChunkMinutes:20,
-      hid:'sample-feature-report',
-      breakable:true, dueDate:sampleActual(0), priority:1, locationIds:[H]
-    }),
-    sortSampleHabit('timed run','keepup',2,sampleLogs([5,3]),{
-      emoji:'🏃', topics:['health'], durationMinutes:30, timerAutoStopMinutes:30,
-      hid:'sample-feature-timed-run',
-      locationIds:[P], preferredLocationId:P, priority:1
-    }),
-    sortSampleHabit('dentist (auto)','task',null,[],{
-      emoji:'🦷', topics:['health'], durationMinutes:45,
-      hid:'sample-feature-dentist',
-      eventTime:Date.now() + 3 * 3600000, dueDate:dayStart(Date.now()),
-      autoMarkMinutes:45, priority:0
-    }),
-    sortSampleHabit('do early because Tuesday is packed','keepup',2,sampleLogs([0]),{
-      emoji:'🧺', topics:['home'], durationMinutes:50, flexibilityDays:2,
-      hid:'sample-feature-do-early', locationIds:[H], priority:2
-    }),
-    sortSampleHabit('gym session','keepup',2,sampleLogs([5,3]),{
-      emoji:'💪', topics:['health'], durationMinutes:35,
-      hid:'sample-feature-gym', locationIds:[G], priority:1
-    }),
-    sortSampleHabit('coffee on office days','reduce',2,sampleLogs([6,4,2]),{
-      emoji:'☕', topics:['health'], durationMinutes:5,
-      hid:'sample-feature-coffee',
-      allowedWeekdays:[1,3], locationIds:[O,C], preferredLocationId:O
-    }),
-    sortSampleHabit('drink water','keepup',1,sampleLogs([2,1]),{
-      emoji:'💧', topics:['health'], durationMinutes:2, pinned:true,
-      hid:'sample-feature-water'
+      hid:'sample-starter-report', breakable:true, dueDate:dayStart(samplePlan(3))
     })
   ];
 }
@@ -558,12 +532,12 @@ function addOneSample(hid){
   });
 }
 
-// HANDLER: add feature-tour sample habits (+ seed sample locations)
+// HANDLER: add everyday starter habits and tasks.
 function addSortSamples({closeSheets = true} = {}){
   const have = new Set(load().map(h => h.hid).filter(Boolean));
   const samples = buildSortSamples().filter(h => !have.has(h.hid));
   if(!samples.length){
-    if(typeof showToast === 'function')showToast('feature demos already on home');
+    if(typeof showToast === 'function')showToast('starter samples already on home');
     refreshSampleHabitsSheet();
     return;
   }
@@ -573,17 +547,18 @@ function addSortSamples({closeSheets = true} = {}){
     closeSheets,
     toast: closeSheets
       ? `samples added · keep any you want · sample tag`
-      : `${samples.length} demos added`
+      : `${samples.length} samples added`
   });
 }
 
-// HANDLER: add optional daily prayer samples (home city required; no sample places)
+// HANDLER: add optional daily prayers as real habits (home city required; no sample places).
 function addPrayerSamples({closeSheets = true} = {}){
   if(!ensureHomeCityForDynamicSamples())return;
   const have = new Set(load().map(h => h.hid).filter(Boolean));
-  const samples = buildPrayerSamples().filter(h => !have.has(h.hid));
+  const samples = buildPrayerSamples().filter(h => !have.has(h.hid))
+    .map(h => ({...h, sample:false, name:sampleDisplayName(h)}));
   if(!samples.length){
-    if(typeof showToast === 'function')showToast('prayer samples already on home');
+    if(typeof showToast === 'function')showToast('prayers already on home');
     refreshSampleHabitsSheet();
     return;
   }
@@ -591,7 +566,7 @@ function addPrayerSamples({closeSheets = true} = {}){
     setPresence:false,
     closeSheets,
     toast: closeSheets
-      ? 'prayer samples added · keep any you want'
+      ? 'prayers added'
       : `${samples.length} prayers added`
   });
 }

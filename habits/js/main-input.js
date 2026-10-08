@@ -206,7 +206,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=36';
+    script.src = './onboarding/coach.js?v=37';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -222,6 +222,7 @@ function loadTingsCoach(){
   return _tingsCoachLoadPromise;
 }
 function startTingsCoach(kind = 'essentials',options = {}){
+  if(kind === 'install' && (window.TingsNative?.isNative || window.Capacitor?.isNativePlatform?.()))kind = 'essentials';
   return loadTingsCoach()
     .then(coach=>coach.start({kind,force:Boolean(options.force)}))
     .catch(()=>{ if(typeof showToast === 'function')showToast('coach could not load'); });

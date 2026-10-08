@@ -109,7 +109,30 @@ async function launchBrowser(){
   });
   console.log(sheet);
   assert(sheet.aboutClosed, 'About closes when opening sample habits');
-  assert(sheet.rows >= 8 && sheet.addAll && sheet.rowAdds >= 8, 'feature rows each have add + add all');
+  const header = await page.evaluate(() => {
+    const title = document.querySelector('.sample-habits-head .sheet-title').getBoundingClientRect();
+    const close = document.getElementById('sample-habits-close').getBoundingClientRect();
+    return {sameRow:Math.abs((title.top + title.height / 2) - (close.top + close.height / 2)) < 2,
+      orphaned:!!document.querySelector('#sample-habits-sheet .sheet-exit'),
+      addWidth:document.querySelector('.sample-habit-add').getBoundingClientRect().width};
+  });
+  assert(header.sameRow && !header.orphaned, 'close control shares the title row, with no orphaned top bar');
+  assert(header.addWidth < 80, 'add pills leave room for the sample description');
+  await page.setViewportSize({width:320,height:568});
+  await page.evaluate(() => document.querySelector('.sample-habits-sheet').scrollTop = 400);
+  const compactHeader = await page.evaluate(() => {
+    const button = document.getElementById('sample-habits-close');
+    const r = button.getBoundingClientRect();
+    return {visible:r.top >= 0 && r.right <= innerWidth && r.bottom < innerHeight,
+      clickable:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === button,
+      overflow:document.querySelector('.sample-habits-sheet').scrollWidth > document.querySelector('.sample-habits-sheet').clientWidth};
+  });
+  assert(compactHeader.visible && compactHeader.clickable && !compactHeader.overflow, 'sticky close stays reachable after scrolling on a small phone');
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(() => document.querySelector('.sample-habits-sheet').scrollTop = 0);
+
+  assert(sheet.rows === 5 && sheet.addAll && sheet.rowAdds === 5, 'five everyday starters each have add + try all');
+  assert(!sheet.titles.some(t => /Tuesday|coffee|water|\(auto\)/i.test(t)), 'catalog removes abstract feature demos and generic filler');
   assert(sheet.noSleepHabit, 'sleep is a busy time sample, not a habit row');
   assert(sheet.blocksCollapsed === true && sheet.hasBlockSleep && sheet.blockAddBtn === 'add', 'busy-time section has sleep sample to add');
   assert(sheet.removeSamples && sheet.removeDisabled, 'remove samples on sheet, disabled when none');
@@ -117,8 +140,31 @@ async function launchBrowser(){
   assert(sheet.prayersCollapsed === true, 'daily prayers collapsed by default');
   assert(!sheet.titles.some(t => /^(Fajr|Dhuhr|Asr|Maghrib|Isha)$/i.test(t)), 'five prayers not in feature preview list');
 
+  console.log('\n[B2] Expanded busy-time and prayer rows');
+  await page.locator('#sample-blocks-head').click();
+  await page.locator('#sample-prayers-head').click();
+  for(const width of [320,390,768,1440]){
+    await page.setViewportSize({width,height:844});
+    const layout = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('#sample-blocks-preview .sample-habit-row,#sample-prayers-preview .sample-habit-row')];
+      return rows.map(row => {
+        const button = row.querySelector('.sample-habit-add').getBoundingClientRect();
+        const copy = row.querySelector('.sample-habit-copy').getBoundingClientRect();
+        const bounds = row.getBoundingClientRect();
+        return {readable:copy.width >= 70,compact:button.width < 80,touchable:button.height >= 44,
+          contained:copy.right <= button.left && button.right <= bounds.right && row.scrollWidth <= row.clientWidth};
+      });
+    });
+    assert(layout.length === 6 && layout.every(r => r.readable && r.compact && r.touchable && r.contained),
+      `expanded sleep and all five prayers keep text and compact Add pills inside their rows at ${width}px`);
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#sample-blocks-head').click();
+  await page.locator('#sample-prayers-head').click();
+  await page.evaluate(() => document.querySelector('.sample-habits-sheet').scrollTop = 0);
+
   console.log('\n[C] Add one or two demos — sheet stays open + undo toast');
-  await page.locator('#sample-habits-preview [data-add-sample="sample-feature-water"]').click();
+  await page.locator('#sample-habits-preview [data-add-sample="sample-starter-walk"]').click();
   await page.waitForSelector('#action-toast.show');
   const undoToast = await page.evaluate(() => ({
     text: document.getElementById('action-text')?.textContent || '',
@@ -129,28 +175,28 @@ async function launchBrowser(){
   await page.locator('#action-undo').click();
   await page.waitForTimeout(300);
   const afterUndo = await page.evaluate(() => ({
-    water: load().some(h => (h.hid || '') === 'sample-feature-water'),
-    waterBtn: document.querySelector('#sample-habits-preview [data-add-sample="sample-feature-water"]')?.textContent?.trim()
+    walk: load().some(h => (h.hid || '') === 'sample-starter-walk'),
+    walkBtn: document.querySelector('#sample-habits-preview [data-add-sample="sample-starter-walk"]')?.textContent?.trim()
   }));
-  assert(!afterUndo.water && afterUndo.waterBtn === 'add', 'undo removes the single add');
+  assert(!afterUndo.walk && afterUndo.walkBtn === 'add', 'undo removes the single add');
 
-  await page.locator('#sample-habits-preview [data-add-sample="sample-feature-water"]').click();
+  await page.locator('#sample-habits-preview [data-add-sample="sample-starter-walk"]').click();
   await page.waitForTimeout(300);
-  await page.locator('#sample-habits-preview [data-add-sample="sample-feature-timed-run"]').click();
+  await page.locator('#sample-habits-preview [data-add-sample="sample-starter-workout"]').click();
   await page.waitForTimeout(300);
   const afterFew = await page.evaluate(() => {
     const data = load();
     const byHid = hids => data.filter(h => hids.includes(h.hid));
-    const added = byHid(['sample-feature-water','sample-feature-timed-run']);
-    const waterBtn = document.querySelector('#sample-habits-preview [data-add-sample="sample-feature-water"]');
+    const added = byHid(['sample-starter-walk','sample-starter-workout']);
+    const walkBtn = document.querySelector('#sample-habits-preview [data-add-sample="sample-starter-walk"]');
     const samplePlaces = (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-'));
     return {
       addedCount: added.length,
       addedAreSample: added.every(h => h.sample === false),
       addedNames: added.map(h => h.name),
       sheetOpen: document.getElementById('sample-habits-sheet')?.classList.contains('open'),
-      waterLabel: waterBtn?.textContent?.trim(),
-      waterDisabled: waterBtn?.disabled === true,
+      walkLabel: walkBtn?.textContent?.trim(),
+      walkDisabled: walkBtn?.disabled === true,
       placeCount: samplePlaces.length,
       placeIds: samplePlaces.map(l => l.id)
     };
@@ -160,36 +206,10 @@ async function launchBrowser(){
   assert(afterFew.addedCount === 2, 'exactly two feature demos added');
   assert(afterFew.addedAreSample, 'individually added demos are not marked as sample');
   assert(afterFew.addedNames.every(n => !n.startsWith('Sample: ')), 'individually added demos have no Sample: prefix');
-  assert(afterFew.waterLabel === 'added' && afterFew.waterDisabled, 'added row shows added state');
-  assert(afterFew.placeCount === 1 && afterFew.placeIds[0] === 'sample-park', 'only places referenced by added demos are seeded');
+  assert(afterFew.walkLabel === 'added' && afterFew.walkDisabled, 'added row shows added state');
+  assert(afterFew.placeCount === 0, 'starters do not seed invented places');
 
-  console.log('\n[D] Add all demos requires home city (sunrise windows), then fills');
-  // Stretch / night work / sleep all use dynamic times, so add-all is gated
-  // on the home city like the prayers — it redirects to Settings → Locations.
-  await page.locator('#sample-habits-add').click();
-  await page.waitForTimeout(400);
-  const blockedAll = await page.evaluate(() => ({
-    sampleCount: load().filter(h => h.sample).length,
-    settingsOpen: document.getElementById('settings-sheet')?.classList.contains('open'),
-    locationsOpen: document.getElementById('settings-locations-body')
-      ? !document.getElementById('settings-locations-body').hidden
-      : false
-  }));
-  console.log(blockedAll);
-  assert(blockedAll.sampleCount === 0, 'add-all blocked without home city');
-  assert(blockedAll.settingsOpen && blockedAll.locationsOpen, 'add-all opens Settings → Locations to set city');
-
-  await page.evaluate(() => {
-    updateSortSetting({
-      homeCityName:'New York, United States',
-      homeCityLat:40.7128,
-      homeCityLng:-74.0060
-    },{renderNow:false,sync:false});
-  });
-  await page.locator('#settings-close').click();
-  await page.locator('#open-about').click();
-  await page.locator('#open-sample-habits').click();
-  await page.waitForSelector('#sample-habits-sheet.open');
+  console.log('\n[D] Try all starters works without a city');
   await page.locator('#sample-habits-add').click();
   await page.waitForTimeout(500);
   const afterTour = await page.evaluate(() => {
@@ -200,7 +220,10 @@ async function launchBrowser(){
     return {
       sampleCount: samples.length,
       prayerCount: prayers.length,
-      hasSunrise: samples.some(h => h.allowedTimeStartAnchor === 'sunrise'),
+      noDynamicTimes: data.every(h => !sampleUsesDynamicTimes(h)),
+      noFakeHistory: data.every(h => !h.logs.length),
+      tasks: data.filter(h => h.type === 'task').map(h => ({due:h.dueDate,future:h.dueDate > dayStart(Date.now())})),
+      habits: data.filter(h => h.type === 'keepup').length,
       hasBreakable: samples.some(h => h.breakable),
       noSleepHabit: !samples.some(h => (h.hid || '') === 'sample-feature-sleep'),
       sheetClosed: !document.getElementById('sample-habits-sheet')?.classList.contains('open'),
@@ -209,10 +232,10 @@ async function launchBrowser(){
   });
   console.log(afterTour);
   assert(afterTour.sheetClosed, 'sample sheet closes after add all');
-  assert(afterTour.sampleCount >= 6 && afterTour.prayerCount === 0, 'feature samples filled without prayers');
-  assert(afterTour.hasSunrise && afterTour.hasBreakable, 'showcase fields present');
+  assert(afterTour.sampleCount === 3 && afterTour.prayerCount === 0 && afterTour.habits === 3 && afterTour.tasks.length === 2, 'bulk add fills remaining starters: three habits and two one-off tasks total');
+  assert(afterTour.noDynamicTimes && afterTour.hasBreakable && afterTour.noFakeHistory && afterTour.tasks.every(h => h.future), 'starters need no city or fictional history; report can split and tasks have future due dates');
   assert(afterTour.noSleepHabit, 'add-all does not create a sleep habit');
-  assert(afterTour.placeCount >= 5, 'add-all demos seeds all referenced sample places');
+  assert(afterTour.placeCount === 0, 'bulk starters leave the place registry empty');
 
   console.log('\n[E] Sleep busy time requires home city, then replaces default sleep block');
   await page.locator('#open-about').click();
@@ -323,7 +346,7 @@ async function launchBrowser(){
   });
   console.log(afterOnePrayer);
   assert(afterOnePrayer.fajrExists && afterOnePrayer.fajrIsSample === false && afterOnePrayer.sheetOpen && afterOnePrayer.fajrAdded, 'single prayer add keeps sheet open, not marked sample');
-  assert(afterOnePrayer.placeCount >= 5, 'prayer add does not seed extra sample places');
+  assert(afterOnePrayer.placeCount === 0, 'prayer add does not seed sample places');
 
   await page.locator('#sample-prayers-add').click();
   await page.waitForTimeout(500);
@@ -336,7 +359,7 @@ async function launchBrowser(){
       totalPrayers: allPrayers.length,
       samplePrayerCount: samplePrayers.length,
       featureCount: features.length,
-      sampleNames: samplePrayers.map(h => h.name),
+      prayerNames: allPrayers.map(h => h.name),
       fajrName: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr')?.name,
       fajrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr'),
       placeCount: (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
@@ -344,21 +367,21 @@ async function launchBrowser(){
   });
   console.log(afterPrayers);
   assert(afterPrayers.totalPrayers === 5, 'five prayer habits total after add all');
-  assert(afterPrayers.samplePrayerCount === 4, 'four prayers marked sample (Fajr added individually)');
-  assert(afterPrayers.featureCount >= 6, 'feature samples still present');
+  assert(afterPrayers.samplePrayerCount === 0, 'bulk prayers are regular habits, like individually added Fajr');
+  assert(afterPrayers.featureCount === 3, 'bulk starter samples still present');
   assert(afterPrayers.fajrWindow && afterPrayers.fajrWindow.allowedTimeStartAnchor === 'fajr', 'Fajr has prayer window');
   assert(afterPrayers.fajrName === 'Fajr', 'individually added Fajr has no Sample: prefix');
   assert(
-    afterPrayers.sampleNames.every(n => /^Sample: (Dhuhr|Asr|Maghrib|Isha)$/.test(n)),
-    'bulk-added prayer samples use Islamic names with Sample: prefix'
+    afterPrayers.prayerNames.every(n => /^(Fajr|Dhuhr|Asr|Maghrib|Isha)$/.test(n)),
+    'bulk-added prayers use clean names without Sample: prefix'
   );
-  assert(afterPrayers.placeCount >= 5, 'add-all prayers still seeds no extra places');
+  assert(afterPrayers.placeCount === 0, 'add-all prayers still seeds no places');
 
-  console.log('\n[G] Keep one prayer — survives remove samples; city clear blocked');
+  console.log('\n[G] Keep one starter — it and all prayers survive remove samples; city clear blocked');
   const keepResult = await page.evaluate(() => {
-    const idx = load().findIndex(h => h.sample && (h.hid || '') === 'sample-prayer-dhuhr');
+    const idx = load().findIndex(h => h.sample && (h.hid || '') === 'sample-starter-read');
     keepSampleHabit(idx);
-    const dhuhr = load().find(h => (h.hid || '') === 'sample-prayer-dhuhr');
+    const kept = load().find(h => (h.hid || '') === 'sample-starter-read');
     removeSortSamples();
     const after = load();
     const beforeCity = {
@@ -371,8 +394,10 @@ async function launchBrowser(){
       lat: loadSortSettings().homeCityLat
     };
     return {
-      keptName: dhuhr && dhuhr.name,
-      keptSample: dhuhr && dhuhr.sample,
+      keptName: kept && kept.name,
+      keptSample: kept && kept.sample,
+      keptStillThere: after.some(h => h.hid === 'sample-starter-read' && !h.sample),
+      prayersRemaining: after.filter(h => String(h.hid || '').startsWith('sample-prayer-') && !h.sample).length,
       remainingSamples: after.filter(h => h.sample).length,
       dhuhrStillThere: after.some(h => (h.hid || '') === 'sample-prayer-dhuhr' && !h.sample),
       fajrStillThere: after.some(h => (h.hid || '') === 'sample-prayer-fajr' && !h.sample),
@@ -380,8 +405,9 @@ async function launchBrowser(){
     };
   });
   console.log(keepResult);
-  assert(keepResult.keptName === 'Dhuhr', 'keep strips Sample: prefix → Dhuhr');
-  assert(keepResult.keptSample === false && keepResult.dhuhrStillThere, 'kept Dhuhr survives remove samples');
+  assert(keepResult.keptName === 'read before bed', 'keep strips the starter Sample: prefix');
+  assert(keepResult.keptSample === false && keepResult.keptStillThere, 'kept starter survives remove samples');
+  assert(keepResult.prayersRemaining === 5 && keepResult.dhuhrStillThere, 'all bulk-added prayers survive remove samples');
   assert(keepResult.fajrStillThere, 'individually added Fajr (non-sample) also survives');
   assert(keepResult.remainingSamples === 0, 'unkept samples removed');
   assert(keepResult.cityBlocked, 'clearHomeCity blocked while prayer habits rely on city');

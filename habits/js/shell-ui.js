@@ -530,7 +530,7 @@ function ensureSheetExit(id){
     const row = button.parentElement;
     if(row.classList.contains('btn-row') && [...row.children].every(child=>child.classList.contains('sheet-exit-redundant')))row.hidden = true;
   });
-  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head');
+  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head');
   if(head){
     head.classList.add('sheet-exit-head');
     return;

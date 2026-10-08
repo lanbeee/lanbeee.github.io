@@ -797,12 +797,15 @@
   <!-- sample habits sheet -->
   <div class="sheet-wrap" id="sample-habits-sheet">
     <div class="sheet sample-habits-sheet">
-      <p class="sheet-title">sample habits</p>
-      <p class="about-copy">Try one starter habit or a few. Keep what you like. You can remove tagged samples later.</p>
+      <div class="sample-habits-head">
+        <p class="sheet-title">samples</p>
+        <button type="button" class="icon-btn" id="sample-habits-close" aria-label="close samples"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <p class="about-copy">A habit repeats; a task is one-off. Add one to make it yours, or try all and keep what you like.</p>
       <div class="sample-habits-stack">
-        <div class="sample-habits-list" id="sample-habits-preview" aria-label="feature demos"></div>
+        <div class="sample-habits-list" id="sample-habits-preview" aria-label="starter habits and tasks"></div>
         <div class="btn-row sample-habits-add-row">
-          <button type="button" class="btn" id="sample-habits-add">add all demos</button>
+          <button type="button" class="btn" id="sample-habits-add">try all five</button>
         </div>
         <section class="settings-block settings-collapsible sample-prayers-block">
           <button type="button" class="settings-collapse-head" id="sample-blocks-head" data-collapse-target="sample-blocks-body" aria-expanded="false" aria-controls="sample-blocks-body">
@@ -831,7 +834,6 @@
       </div>
       <div class="btn-row sample-habits-actions">
         <button type="button" class="btn" id="remove-sort-samples" disabled>remove samples</button>
-        <button class="btn primary" id="sample-habits-close">done</button>
       </div>
     </div>
   </div>
