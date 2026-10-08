@@ -1697,7 +1697,10 @@ function render(opts){
         </button>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">
           <div class="ting-main">
-            <span class="ting-name">${escapeHtml(h.name)}</span>
+            <span class="ting-title">
+              <span class="ting-name">${escapeHtml(h.name)}</span>
+              <span class="ting-priority-badge" role="img" aria-label="Priority P${effectivePriority(h)}"></span>
+            </span>
             ${agendaPill}
           </div>
           ${(!minimal && isBreakable) ? ((reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
