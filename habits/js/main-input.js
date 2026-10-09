@@ -323,21 +323,6 @@ document.getElementById('setting-prayer-method')?.addEventListener('change',e=>{
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
   updateSortSetting({prayerMethod:normalizePrayerMethod(e.target.value)});
 });
-$('home-extra-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-seg-value]');
-  if(!opt)return;
-  const mode = normalizeHomeExtraMode(opt.dataset.segValue);
-  if(mode === normalizeHomeExtraMode(sortSettings && sortSettings.homeExtraMode))return;
-  // This setting only changes how already-planned blocked/travel rows look.
-  // Reflect the tap immediately and reuse the mounted week; rebuilding the
-  // seven-day plan here made this two-button display control take seconds.
-  document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.segValue === mode);
-  });
-  updateSortSetting({homeExtraMode:mode},{sync:false,renderNow:false});
-  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
-  else render();
-});
 $('agenda-time-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');
   if(!opt)return;
@@ -729,7 +714,7 @@ $('theme-mode-seg')?.addEventListener('click',e=>{
 });
 // Weather display-unit segs (temperature / precipitation / wind). Tapping a
 // unit is display-only: reflect the tap and refresh weather surfaces without
-// entering the planner (same presentation-only pattern as homeExtraMode).
+// entering the planner (presentation-only repaint).
 function bindWeatherUnitSeg(segId,normalize,settingKey){
   $(segId)?.addEventListener('click',e=>{
     const opt = e.target.closest('[data-seg-value]');

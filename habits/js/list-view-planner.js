@@ -37,7 +37,6 @@ function homeListFingerprint(now = Date.now()){
     s.pinnedLocationId || '',
     s.lastKnownLocationId || '',
     s.preset || '',
-    weekOnHomeEnabled(s) ? 1 : 0,
     s.agendaOptimizer ? 1 : 0,
     s.showSnoozed ? 1 : 0,
     typeof searchQuery === 'string' ? searchQuery : '',
@@ -704,11 +703,10 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     : '';
   const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
   const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
-  // Planner-relevant settings only — presentation (minimalMode, homeExtraMode,
+  // Planner-relevant settings only — presentation (minimalMode,
   // showScheduledTasksInAgenda, showStatusOnCards, …) omitted.
   const settingsSig = JSON.stringify({
     agendaOptimizer:Boolean(s.agendaOptimizer),
-    showWeekOnHome:Boolean(s.showWeekOnHome),
     // Candidate gates (isWeekCandidate) — toggles must invalidate the plan.
     showDueTasksInAgenda:s.showDueTasksInAgenda !== false,
     showPlannedItemsInAgenda:s.showPlannedItemsInAgenda !== false,
@@ -1377,7 +1375,6 @@ function renderHomeIfChanged(force,opts = {}){
     && Array.isArray(_homeRenderedWeek.days)
     && settings
     && settings.preset === 'todayFirst'
-    && weekOnHomeEnabled(settings)
     && !(typeof searchQuery === 'string' && searchQuery.trim())
   );
 

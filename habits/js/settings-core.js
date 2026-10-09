@@ -237,10 +237,6 @@ function syncSettingsControls(){
   });
   renderPrayerTimesControls();
   renderCalendarImportControls();
-  const homeExtraMode = normalizeHomeExtraMode(sortSettings.homeExtraMode);
-  document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.segValue === homeExtraMode);
-  });
   const agendaTimeMode = normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards);
   document.querySelectorAll('#agenda-time-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === agendaTimeMode);

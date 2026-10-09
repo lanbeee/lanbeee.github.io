@@ -754,14 +754,14 @@ async function breakableFillRows(page, name){
     ]
   });
 
-  const sliderCard = page.locator('.ting-card:has-text("Slider work")');
+  const sliderCard = page.locator('.ting-card:has-text("Slider work")').first();
   await sliderCard.waitFor({ state:'visible' });
   const slider = sliderCard.locator('.breakable-crown');
   assert(await slider.count() === 1, 'breakable card should show progress crown');
   assert(await slider.getAttribute('aria-valuenow') === '0', `crown starts at 0, got ${await slider.getAttribute('aria-valuenow')}`);
   assert(await page.locator('.ting-card:has-text("Normal stretch") .breakable-crown').count() === 0,
     'non-breakable must not show slider');
-  assert(await page.locator('.ting-card:has-text("Normal stretch") .ting-trail').count() === 1,
+  assert(await page.locator('.ting-card:has-text("Normal stretch")').first().locator('.ting-trail').count() === 1,
     'non-breakable keeps trail dots');
 
   // Non-breakable pulse remains the existing one-entry instant completion.
@@ -769,7 +769,7 @@ async function breakableFillRows(page, name){
     const h = load().find(x => x.name === 'Normal stretch');
     return normalizeLogs(h.logs).filter(log => !isPlanLog(log)).length;
   });
-  await page.locator('.ting-card:has-text("Normal stretch") .pulse-btn').click();
+  await page.locator('.ting-card:has-text("Normal stretch")').first().locator('.pulse-btn').click();
   await page.waitForFunction(before => {
     const h = load().find(x => x.name === 'Normal stretch');
     return normalizeLogs(h.logs).filter(log => !isPlanLog(log)).length === before + 1;
@@ -825,7 +825,7 @@ async function breakableFillRows(page, name){
       })
     ]
   });
-  const workCard = page.locator('.ting-card').filter({ hasText:'Slider work' });
+  const workCard = page.locator('.ting-card').filter({ hasText:'Slider work' }).first();
   const crown2 = workCard.locator('.breakable-crown');
   await page.waitForFunction(() => {
     const card = [...document.querySelectorAll('#list .ting-card')].find(el =>

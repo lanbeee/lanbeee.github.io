@@ -185,11 +185,11 @@ Header wordmarks in both the PWA and Android use the day artwork in light mode a
 | "+" Add | Right | ➕ | Opens Add Habit sheet |
 | Search Toggle | Right | 🔎 | Shows/hides search |
 
-### 2.2 Week Plan Strip 👤
-- Appears at top when `showWeekOnHome: true`
-- Shows 7-day schedule preview
-- Color-coded by habit type
-- Tap to navigate to calendar
+### 2.2 Home Agenda 👤
+- Today and Tomorrow show their agenda timelines.
+- Coming up combines overdue and future items, with each remaining item shown once.
+- The planner still schedules seven days. Open Calendar and tap any day for its complete agenda.
+- Busy blocks and travel use cards for all displayed days in full mode.
 
 ### 2.3 TODAY SECTION 👤
 #### 2.3.1 Section Header
@@ -733,10 +733,8 @@ showScheduledTasksInAgenda: boolean,   // Scheduled (eventTime) tasks in agenda
 showDueTasksInAgenda: boolean,         // Due date tasks in agenda
 showPlannedItemsInAgenda: boolean,     // Future planned logs in agenda
 showDueHabitsInAgenda: boolean,       // Habit due-rhythm items in agenda
-showWeekOnHome: boolean,             // Week plan strip on home
 agendaOptimizer: boolean,       // Use ILP planner (off = Fast graph)
 
-homeExtraMode: 'cards'|'cards12h'|'text12h',  // 👤 How blocked times appear on home
 reachAssist: boolean,           // 👤 Pull-down navigation enabled
 
 calendarCreditHabitId: string|null,  // 👨‍💻 Breakable habit for meeting minutes
@@ -964,22 +962,20 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 ## VI. HOME PAGE DAY HEADERS & PILLS 👤
 
 ### 6.1 Day Section Headers
-In regular mode, home groups habits into collapsible day-by-day sections. In minimal mode, items are grouped by category:
+Home uses the same sections in regular and minimal mode:
 
 ```
-Regular mode (showWeekOnHome: true):
-├── Today
-├── Tomorrow  
-├── Wed, Thu, Fri... (day headers)
-└── The Rest (untimed)
-
-Minimal mode (always):
 ├── Pinned (if any pinned)
 ├── Today
-├── Overdue
-├── Coming Up
-├── The Rest
+├── Tomorrow
+├── Coming Up (later assignments and overdue/unplaced items, once per item)
+└── The Rest
 ```
+
+Today and Tomorrow retain their timeline occurrences. Items already shown there
+are omitted from Coming up. Later recurring occurrences remain in the full
+seven-day plan, available by tapping a day in Calendar. Minimal mode reduces
+card detail and hides busy/travel cards without changing the plan.
 
 Each day section header can have dynamic **pills** for open time, weather, and
 missed items. On a tight header, the weather pill progressively hides its
@@ -2055,9 +2051,7 @@ Settings sections (actual order):
 │   ├── fixed-time tasks in agenda
 │   ├── tasks due today in agenda
 │   ├── planned for today in agenda
-│   ├── habits ready today in agenda
-│   ├── week by day (full mode only)
-│   └── busy blocks & travel display
+│   └── habits ready today in agenda
 ├── reminders
 │   ├── dated task / fixed appointment heads-ups
 │   └── optional detailed notification text
@@ -2531,8 +2525,6 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
   showDueTasksInAgenda: true,
   showPlannedItemsInAgenda: true,
   showDueHabitsInAgenda: true,
-  showWeekOnHome: true,
-  homeExtraMode: 'cards12h',
   reachAssist: true,
   agendaOptimizer: true,
   agendaScoreWeights: {
@@ -2567,7 +2559,6 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
   compactMode: true,
   fontScale: 'medium',
   themeMode: 'system',
-  homeExtraMode: 'cards12h',
   reachAssist: true
 }
 ```
@@ -2842,8 +2833,8 @@ When `minimalMode: true`:
 ```
 [ Grouped Sections ]
 - Today (only items due/planning today)
-- Overdue (items behind schedule)  
-- Coming Up (future due items)
+- Tomorrow (tomorrow’s agenda)
+- Coming Up (future and overdue items, once per item)
 - Hidden: Calendar, detailed scheduling
 ```
 
@@ -2883,8 +2874,6 @@ Same agenda logic, but simplified display:
 | `soundEffects` | boolean | true | Settings → appearance → gentle sounds. Quiet local chimes after logging or planning with a recent user gesture; no background audio. |
 | `fontScale` | string | 'medium' | small/medium/large |
 | `compactMode` | boolean | true | Square card layout |
-| `showWeekOnHome` | boolean | true | Week plan strip on home |
-| `homeExtraMode` | string | 'cards12h' | How blocked times display on home |
 | `reachAssist` | boolean | true | Pull-down to scroll to top |
 
 #### Card Display Options (17 settings) 👤

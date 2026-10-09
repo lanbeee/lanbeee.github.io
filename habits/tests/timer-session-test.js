@@ -85,9 +85,12 @@ function seedScript(){
   await page.waitForTimeout(500);
 
   console.log('\n[A] startHabitTimer + home session bar');
-  const started = await page.evaluate(() => {
+  const started = await page.evaluate(async () => {
     const idx = load().findIndex(h => h.name === 'Walk timer');
     const ok = startHabitTimer(idx);
+    const deadline = performance.now() + 5000;
+    while(!document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress]`)
+      && performance.now() < deadline)await new Promise(resolve=>setTimeout(resolve,16));
     const card = document.querySelector(`.ting-card[data-real="${idx}"]`);
     const info = card?.querySelector('.ting-info');
     const cue = card?.querySelector('.ting-cue');
@@ -344,7 +347,7 @@ function seedScript(){
   assert(b7.removed && b7.timerGone, 'nuke removes habit and clears its timer');
 
   console.log('\n[C] pending auto-complete bar on task');
-  const autoBar = await page.evaluate(() => {
+  const autoBar = await page.evaluate(async () => {
     // Re-seed auto task if nuked walk shifted indices — find by name or recreate
     let idx = load().findIndex(h => h.name === 'Auto task');
     if(idx < 0){
@@ -367,6 +370,9 @@ function seedScript(){
     data[idx].autoMarkMinutes = 20;
     save(data);
     if(typeof render === 'function')render();
+    const deadline = performance.now() + 5000;
+    while(!document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress].is-auto`)
+      && performance.now() < deadline)await new Promise(resolve=>setTimeout(resolve,16));
     const h = load()[idx];
     const win = pendingAutoMarkWindow(h);
     const el = document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress]`);

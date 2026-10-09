@@ -1396,11 +1396,20 @@ function priorityColor(p){
   return 'color-mix(in srgb, var(--text3) 35%, transparent)';
 }
 
+// PURE: later assignments need a day label under the combined Coming up header.
+function agendaCardTimeLabel(row,now = Date.now()){
+  const rowDay = dayStart(row.start);
+  const date = new Date(now);
+  const tomorrow = new Date(date.getFullYear(),date.getMonth(),date.getDate() + 1).getTime();
+  const prefix = rowDay > tomorrow ? `${homeWeekDayLabel({dayBase:rowDay},now)} · ` : '';
+  return prefix + compactHomeTime(row.start);
+}
+
 // PURE: window status for an agenda lead — anytime / later / now / closing.
 // Scheduled rows are handled by the caller. Closing = remaining window is too
 // tight for the next session (chunk or full duration), floored at 45 minutes.
 function agendaLeadStatus(row,h = null,now = Date.now()){
-  const label = compactHomeTime(row.start);
+  const label = agendaCardTimeLabel(row,now);
   const end = row.kind === 'fill' ? compactHomeTime(row.end) : '';
   const chunkMinutes = h?.breakable && row.chunkIndex != null && Number.isFinite(row.chunkMinutes)
     ? Math.round(row.chunkMinutes)
@@ -1479,7 +1488,7 @@ function agendaCardPill(row,h = null,now = Date.now()){
   const mode = normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards);
   if(mode === 'hide')return '';
   const status = agendaLeadStatus(row,h,now);
-  const label = compactHomeTime(row.start);
+  const label = agendaCardTimeLabel(row,now);
   const chunk = status.chunkMinutes != null
     ? ` · ${compactHomeDuration(status.chunkMinutes)}`
     : '';
@@ -1767,77 +1776,14 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
 // Module state: which consecutive blocked groups are expanded on the home list.
 const expandedBlockedGroups = new Set();
 
-// Visible window (ms) for the "next 12 hours" cleanup levels.
-const HOME_EXTRA_WINDOW_MS = 12 * 60 * 60 * 1000;
-
-// PURE: normalized home blocked/travel presentation mode.
-function homeExtraMode(){
-  return (typeof normalizeHomeExtraMode === 'function' && normalizeHomeExtraMode(sortSettings.homeExtraMode))
-    || 'cards';
+// PURE: full cards show busy blocks and travel for every displayed day.
+function homeExtraRowVisible(){
+  return !(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode));
 }
 
-// PURE: whether a blocked/travel row (keyed by its start ts) is shown under the
-// current homeExtraMode. 'cards' shows everything; the 12h modes hide anything
-// whose start lies past the next 12 hours (still-active blocks keep their past
-// start, so an in-progress block stays visible).
-function homeExtraRowVisible(ts){
-  if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode))return false;
-  if(homeExtraMode() === 'cards')return true;
-  return Number.isFinite(ts) && ts < Date.now() + HOME_EXTRA_WINDOW_MS;
-}
-
-// RENDER: plain muted background line for a home travel leg (text cleanup level).
-function appendHomeTravelText(list,fromId,toId,startTs){
-  if(!list || !fromId || !toId || fromId === toId)return;
-  const fromCurrent = fromId === CURRENT_COORD_ID;
-  const to = typeof locationById === 'function' ? locationById(toId) : null;
-  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
-  let edge, fromName;
-  if(fromCurrent){
-    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
-    edge = (here && to && typeof travelFromCurrent === 'function')
-      ? travelFromCurrent(to,mode)
-      : { seconds:0 };
-    fromName = 'here';
-  }else{
-    const from = typeof locationById === 'function' ? locationById(fromId) : null;
-    edge = (from && to && typeof travelBetween === 'function')
-      ? travelBetween(from,to,mode)
-      : { seconds:0 };
-    fromName = from ? from.name : 'here';
-  }
-  const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
-  const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
-  const weather = sortSettings?.showWeatherOnTravel && typeof weatherPeriodPillHtml==='function'
-    ? weatherPeriodPillHtml(startTs,startTs+mins*60000,sortSettings,{locationId:toId,className:'extra-text-weather'}) : '';
-  const el = document.createElement('div');
-  el.className = 'extra-text-line travel-text';
-  el.dataset.travelFrom = fromId;
-  el.dataset.travelTo = toId;
-  if(Number.isFinite(startTs))el.dataset.agendaStart = String(Math.round(startTs / 60000));
-  el.innerHTML = `<span>${escapeHtml(`${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`)}</span>${weather}`;
-  list.appendChild(el);
-}
-
-// RENDER: plain muted background line for a blocked-time instance (text level).
-function appendHomeBlockedText(list,row){
-  if(!list || !row)return;
-  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
-  const start = compactHomeTime(row.start);
-  const end = compactHomeTime(row.end);
-  const place = loc ? ` · ${loc.name}` : '';
-  const weather = sortSettings?.showWeatherOnBusyTimes && typeof weatherPeriodPillHtml==='function'
-    ? weatherPeriodPillHtml(row.start,row.end,sortSettings,{locationId:row.locationId || null,className:'extra-text-weather'}) : '';
-  const el = document.createElement('div');
-  el.className = 'extra-text-line blocked-text';
-  el.innerHTML = `<span>${escapeHtml(`${row.label || 'blocked'} · ${start}–${end}${place}`)}</span>${weather}`;
-  list.appendChild(el);
-}
-
-// RENDER: dispatch a travel leg to a card or a muted line per homeExtraMode.
+// RENDER: a travel leg always uses the card surface.
 function appendHomeExtraTravel(list,fromId,toId,startTs){
-  if(homeExtraMode() === 'text12h')appendHomeTravelText(list,fromId,toId,startTs);
-  else appendHomeTravelCard(list,fromId,toId,startTs);
+  appendHomeTravelCard(list,fromId,toId,startTs);
 }
 
 // PURE: leave-by for a saved→saved (or here→saved) home travel card.

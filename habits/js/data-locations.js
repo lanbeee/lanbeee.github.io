@@ -731,10 +731,6 @@ function normalizeTravelMode(value){
 function normalizeCalendarAllDayMode(value){
   return value === 'tasks' ? 'tasks' : 'skip';
 }
-// PURE: normalize the home blocked/travel presentation mode.
-function normalizeHomeExtraMode(value){
-  return value === 'cards12h' ? 'cards12h' : 'cards';
-}
 // PURE: normalize the agenda-time presentation mode on home cards.
 function normalizeAgendaTimeMode(value){
   return value === 'icon' ? 'icon' : (value === 'hide' ? 'hide' : 'time');

@@ -402,7 +402,7 @@ async function progressBar(page){
 
   await page.locator('[data-coach-chapter="tuning"]').click();
   await stage(page,'aSettingsDisplay');
-  await page.locator('[data-setting-toggle="showWeekOnHome"]').click();
+  await page.locator('[data-setting-toggle="showDueHabitsInAgenda"]').click();
   await stage(page,'aCards');
   await primary(page,'aCards','aDefaults');
   await primary(page,'aDefaults','aAppearance');

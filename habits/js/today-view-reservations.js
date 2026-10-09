@@ -2173,14 +2173,6 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
     }
   }
 
-  // Cleanup levels: under the 12h modes, drop blocked/travel rows that start
-  // beyond the next 12 hours so only the near-future extras reach the home list
-  // (future-day blocks in week mode naturally fall outside this window).
-  const extraMode = (typeof normalizeHomeExtraMode === 'function' && normalizeHomeExtraMode(settings.homeExtraMode)) || 'cards';
-  if(extraMode !== 'cards'){
-    const windowEnd = Date.now() + 12 * 60 * 60 * 1000;
-    return out.filter(r => (r.kind !== 'blocked' && r.kind !== 'travel') || r.start < windowEnd);
-  }
   return out;
 }
 

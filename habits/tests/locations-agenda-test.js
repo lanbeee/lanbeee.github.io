@@ -345,7 +345,7 @@ function seedScript(extraHabits, extraSettings){
     assert(false, 'expected at least one merged blocked group (sleep+breakfast)');
   }
   assert(blockedMerge.stickyTop === 'sticky', 'section headers are sticky');
-  // Disable the setting → classic today/overdue/upcoming sections return.
+  // Legacy display values no longer change Home’s Today/Tomorrow grouping.
   await page.evaluate(() => {
     const s = loadSortSettings();
     s.showWeekOnHome = false;
@@ -368,7 +368,7 @@ function seedScript(extraHabits, extraSettings){
   assert(classicHome.separateHidden, 'week plan block stays hidden after toggle off');
   if(classicHome.hasToday) assert(true, 'classic home still has today');
   else console.log('  skip: classic today empty (past blocks clipped late at night)');
-  assert(!classicHome.hasTomorrow, 'classic home does not use tomorrow sections');
+  assert(classicHome.hasTomorrow, 'legacy week toggle keeps the tomorrow section');
 
   // ── G. Week respects location hours (closed weekday defers) ──
   console.log('\n[G] buildWeekAgenda respects location closed-days');

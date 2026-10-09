@@ -322,7 +322,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     dirtySkip.calls === 0 && dirtySkip.result === false && dirtySkip.elapsed < 250,
     JSON.stringify(dirtySkip));
 
-  // The 12-hour/all-cards control is presentation only. It must reuse the
+  // The agenda-time control is presentation only. It must reuse the
   // mounted week and must not enter any planner, including a synchronous one.
   const displayOnly = await page.evaluate(()=>{
     const original = {
@@ -337,9 +337,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
 
     const week = _homeRenderedWeek;
     const beforeKey = homePlannerStateKey(load(),dayStart(Date.now()));
-    const current = normalizeHomeExtraMode(sortSettings.homeExtraMode);
-    const next = current === 'cards' ? 'cards12h' : 'cards';
-    const target = document.querySelector(`#home-extra-seg [data-seg-value="${next}"]`);
+    const current = normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards);
+    const next = current === 'time' ? 'icon' : 'time';
+    const target = document.querySelector(`#agenda-time-seg [data-seg-value="${next}"]`);
     const started = performance.now();
     target.click();
     const elapsed = performance.now() - started;
@@ -354,7 +354,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       sameWeek:week === _homeRenderedWeek,
       samePlannerKey:beforeKey === afterKey,
       selected:target.classList.contains('on'),
-      saved:normalizeHomeExtraMode(sortSettings.homeExtraMode),
+      saved:normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards),
       next
     };
   });
@@ -371,9 +371,8 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     displayOnly.elapsed < 250,
     JSON.stringify(displayOnly));
 
-  // Minimal mode also drops the day-by-day week, so unlike homeExtraMode it
-  // does unmount the rendered week. It must still do that off the planner: no
-  // build call, and no change to the cached plan's identity key.
+  // Minimal mode changes card detail while preserving the mounted week.
+  // It must not invoke the planner or change the cached plan's identity key.
   const minimalOnly = await page.evaluate(()=>{
     const original = {
       offMain:buildWeekAgendaOffMain,
@@ -415,9 +414,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && minimalOnly.selected
       && minimalOnly.saved,
     JSON.stringify(minimalOnly));
-  check('minimal mode groups home by today / overdue / coming up',
+  check('minimal mode groups home by today / tomorrow / coming up',
     minimalOnly.groupedSections.length > 0
-      && minimalOnly.groupedSections.every(label=>['today','overdue','coming up','the rest','pinned'].includes(label)),
+      && minimalOnly.groupedSections.every(label=>['today','tomorrow','coming up','the rest','pinned'].includes(label)),
     JSON.stringify(minimalOnly));
   check('minimal mode responds immediately',
     minimalOnly.elapsed < 250,

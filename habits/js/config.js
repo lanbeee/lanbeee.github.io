@@ -206,7 +206,6 @@ const DEFAULT_SORT_SETTINGS = {
   showDueTasksInAgenda:true,
   showPlannedItemsInAgenda:true,
   showDueHabitsInAgenda:true,
-  showWeekOnHome:true,
   // The fast graph planner is the default. The exact ILP packer (lazy-loads
   // GLPK) remains available for saved settings that opt into it.
   agendaOptimizer:false,
@@ -228,11 +227,6 @@ const DEFAULT_SORT_SETTINGS = {
     scarce:0.05,
     preference:1.5
   },
-  // How blocked times + travel between places appear on home:
-  //   'cards'     → card surfaces for the whole day (default)
-  //   'cards12h'  → same cards, but only for the next 12 hours
-  //   'text12h'   → plain muted background lines for the next 12 hours
-  homeExtraMode:'cards12h',
   reachAssist:true,
   reminders:false,
   pushDetailed:false,
@@ -277,8 +271,7 @@ const DEFAULT_SORT_SETTINGS = {
   showOrderPillsOnCards:false,
 
   // Simplified surface: strips home cards, detail panes, and calendar overview
-  // chrome, and groups home by today / overdue / coming up instead of day by
-  // day. Does not change scoring, packing, or what is due. Opt-in from
+  // chrome. Does not change scoring, packing, or what is due. Opt-in from
   // Settings — new users start on the full surface (see loadSortSettings).
   minimalMode:false,
 

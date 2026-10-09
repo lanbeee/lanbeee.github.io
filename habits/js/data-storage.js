@@ -174,6 +174,8 @@ function loadSortSettings(){
     delete merged.keepStopsQuiet;
     delete merged.requireConfirm;
     delete merged.focusSearchOnOpen;
+    delete merged.showWeekOnHome;
+    delete merged.homeExtraMode;
     merged.reminders = false;
     merged.topics = normalizeTopics(merged.topics);
     merged.locations = normalizeLocationRegistry(merged.locations);
@@ -303,6 +305,8 @@ function saveSortSettings(settings){
   const next = {...DEFAULT_SORT_SETTINGS,...SORT_PRESETS.todayFirst,...settings,preset:'todayFirst'};
   if(!Object.prototype.hasOwnProperty.call(settings,'defaultAutoMarkMode'))next.defaultAutoMarkMode = null;
   delete next.keepStopsQuiet;
+  delete next.showWeekOnHome;
+  delete next.homeExtraMode;
   next.reminders = false;
   next.topics = normalizeTopics(next.topics);
   next.locations = normalizeLocationRegistry(next.locations);

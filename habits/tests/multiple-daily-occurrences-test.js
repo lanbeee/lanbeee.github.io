@@ -255,7 +255,7 @@ const {chromium,BASE,FAST_ONLY,baseHabit,openEveningSettings,glpkAvailable} = re
     localStorage.removeItem(TODAY_SUGGESTED_KEY);
     render({__optimizerFallback:true});
   },{habit,settings,now});
-  assert.equal(await page.locator('.swipe-row[data-occurrence-key]').count(),3,'classic Home renders each daily session');
+  assert.equal(await page.locator(`.swipe-row[data-occurrence-key][data-day-base="${new Date(now).setHours(0,0,0,0)}"]`).count(),3,'Today renders each daily session');
   assert.deepEqual(errors,[]);
   console.log('  ok: missed-sheet UI retains siblings and the future agenda');
   await browser.close();

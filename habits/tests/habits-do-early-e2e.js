@@ -87,11 +87,8 @@ function atDay(offset,hour = 12,minute = 0){
   }, { today: dateKey(0), target: dateKey(2), targetTs: atDay(2) });
   await page.reload({ waitUntil: 'networkidle' });
 
-  // The standalone "do it early" section is gone. Items that pass the do-early
-  // gate AND earn an agenda row today are pulled into the "today" section,
-  // still carrying their "early" pill. With 240 minutes free today, "Do early
-  // laundry" fits and lives under "today"; "Normal upcoming" stays under
-  // "upcoming" (no flexibility, so it never qualifies for do-early).
+  // Home follows the mounted week: an early-capable item only enters Today
+  // when the week planner assigns it there. Later assignments share Coming up.
   if (await page.locator('.section-header:has-text("do it early")').count()) {
     throw new Error('do it early section header should be gone');
   }
@@ -104,10 +101,12 @@ function atDay(offset,hour = 12,minute = 0){
     }
     return null;
   });
-  if (laundrySection !== 'today') throw new Error(`Do early laundry should be under today, got: ${laundrySection}`);
-  if (!(await page.locator('.ting-card:has-text("Do early laundry") .context-pill:has-text("early")').first().isVisible())) {
-    throw new Error('early reason pill missing');
-  }
+  const plannedLaundrySection = await page.evaluate(()=>{
+    const idx = load().findIndex(h=>h.name === 'Do early laundry');
+    const day = _homeRenderedWeek.days.find(d=>d.timeline.some(r=>r.i === idx));
+    return day?.isToday ? 'today' : day?.offset === 1 ? 'tomorrow' : 'coming up';
+  });
+  if(laundrySection !== plannedLaundrySection)throw new Error(`Laundry section must match the week plan, got ${laundrySection}, expected ${plannedLaundrySection}`);
   if (!(await page.locator('.section-header:has-text("coming up")').isVisible())) {
     throw new Error('coming up section missing');
   }
@@ -152,16 +151,14 @@ function atDay(offset,hour = 12,minute = 0){
     updateSortSetting({ homeCityName:'New York, United States', homeCityLat:40.7128, homeCityLng:-74.0060 }, { renderNow:true, sync:true });
   });
   await page.locator('#sample-habits-add').click();
-  await page.locator('.ting-card:has-text("do early because")').first().waitFor({state:'visible',timeout:10000});
-  // Samples load without the old standalone "do it early" section. The
-  // "do early because ..." item still renders — under "today" when today has
-  // room for it (carrying the early pill), otherwise under "upcoming". Either
-  // way the legacy section header must not appear.
+  await page.locator('.ting-card:has-text("go for a walk")').first().waitFor({state:'visible',timeout:10000});
+  // Current starter samples keep the normal Home grouping, without a
+  // standalone "do it early" section.
   if (await page.locator('.section-header:has-text("do it early")').count()) {
     throw new Error('sample data should not create a do it early section');
   }
-  if (!(await page.locator('.ting-card:has-text("do early because")').first().isVisible())) {
-    throw new Error('sample do-early item did not render');
+  if (!(await page.locator('.ting-card:has-text("go for a walk")').first().isVisible())) {
+    throw new Error('starter walk sample did not render');
   }
 
   if (errors.length) throw new Error(errors.join('\n'));

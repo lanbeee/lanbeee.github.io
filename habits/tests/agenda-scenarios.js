@@ -169,7 +169,7 @@ function defaultSettings(overrides = {}) {
           startLabel: new RealDate(r.start).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }),
           endLabel: new RealDate(r.end).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
         }));
-        if (reRenderDom && typeof render === 'function') render();
+        if (reRenderDom && typeof render === 'function') render({__optimizedWeek:buildWeekAgenda(data,settings,7)});
       } finally {
         globalThis.Date = orig;
       }
@@ -363,7 +363,7 @@ function defaultSettings(overrides = {}) {
     // Freeze to mid-morning so remaining open time fits the habit (late-night
     // wall clock would leave <20m and omit the agenda pill).
     await timelineFor(atTime(9, 0), true);
-    const suggested = await page.locator('.ting-card:has-text("Due habit fill") .context-pill.agenda-lead:not(.scheduled)').count();
+    const suggested = await page.locator('.ting-card:has-text("Due habit fill")').first().locator('.context-pill.agenda-lead:not(.scheduled)').count();
     const scheduled = await page.locator('.ting-card:has-text("Due habit fill") .context-pill.scheduled').count();
     check('2c fill item renders agenda-suggested pill', suggested === 1, `suggested=${suggested}`);
     check('2c fill item does not render a scheduled pill', scheduled === 0, `scheduled=${scheduled}`);
@@ -721,11 +721,11 @@ function defaultSettings(overrides = {}) {
     check('6a do-early item pulled into today agenda', Boolean(fill), fill ? `start=${fill.startLabel}` : 'missing');
 
     const sec = await sectionOf('Laundry upcoming');
-    check('6a do-early card sits under the today section', sec === 'today', `section=${sec}`);
+    check('6a completed-today early candidate stays in coming up on the week plan', sec === 'coming up', `section=${sec}`);
 
     const earlyPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill:has-text("early")').count();
     const suggestedPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill.agenda-lead').count();
-    check('6a do-early card shows the early pill', earlyPill === 1, `early=${earlyPill}`);
+    check('6a later assignment has no early-today pill', earlyPill === 0, `early=${earlyPill}`);
     check('6a do-early card shows an agenda-suggested time pill', suggestedPill >= 1, `suggested=${suggestedPill}`);
 
     // The standalone "do it early" header must be gone.
@@ -870,7 +870,7 @@ function defaultSettings(overrides = {}) {
       fill ? `end=${fill.endLabel}` : 'missing');
 
     // DOM: the home card must surface an agenda lead time pill.
-    const pill = await page.locator('.ting-card:has-text("Overnight 10pm-11am") .context-pill.agenda-lead').count();
+    const pill = await page.locator('.ting-card:has-text("Overnight 10pm-11am")').first().locator('.context-pill.agenda-lead').count();
     check('8a card renders agenda-suggested pill', pill === 1, `count=${pill}`);
   }
 

@@ -1261,7 +1261,7 @@ function quickLog(i,card){
     // from the mounted plan so they update without waiting for the background
     // solve. No-op outside week mode (render() is already synchronous there).
     setTimeout(()=>{
-      if(weekOnHomeEnabled(sortSettings || {}) && typeof renderHomePresentationOnly === 'function'){
+      if(typeof renderHomePresentationOnly === 'function'){
         renderHomePresentationOnly();
       }
     }, 400);

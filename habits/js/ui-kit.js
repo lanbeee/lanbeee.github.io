@@ -103,8 +103,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showScheduledTasksInAgenda', title:'fixed-time tasks', hint:'Tasks with a set time show on today’s list.'},
     {key:'showDueTasksInAgenda', title:'tasks due today', hint:'Tasks due today fill open time on the list.'},
     {key:'showPlannedItemsInAgenda', title:'planned for today', hint:'Things you’ve planned for today fill open time.'},
-    {key:'showDueHabitsInAgenda', title:'habits ready today', hint:'Habits that belong today fill open time.'},
-    {key:'showWeekOnHome', title:'week by day', hint:'Show a day-by-day week instead of today / overdue / coming up.', extraClass:'settings-full-only'}
+    {key:'showDueHabitsInAgenda', title:'habits ready today', hint:'Habits that belong today fill open time.'}
   ],
   reminders:[
     {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},

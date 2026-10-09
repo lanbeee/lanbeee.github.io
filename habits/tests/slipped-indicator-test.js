@@ -85,7 +85,7 @@ function assert(cond,msg){
       { hid:'seed-2', name:'Read', emoji:'📚', type:'keepup', target:2, logs:[now-3*dayMs], lastLog:now-3*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   let snap = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_today_suggested_v1') || 'null'));
@@ -105,7 +105,7 @@ function assert(cond,msg){
       { hid:'drop-1', name:'Swim', emoji:'🏊', type:'keepup', target:1, logs:[now-2*dayMs], lastLog:now-2*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false, allowedTimeStart:0, allowedTimeEnd:1439 },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   let pill = await page.$('.dropped-pill');
@@ -115,7 +115,7 @@ function assert(cond,msg){
     const data = JSON.parse(localStorage.getItem('tings_v2'));
     data[0].allowedTimeEnd = 1;
     localStorage.setItem('tings_v2', JSON.stringify(data));
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -146,7 +146,7 @@ function assert(cond,msg){
       projection: { day:'stale', hids:['roll-x','roll-y','roll-z'], fingerprint:'old' }
     }));
     _droppedDayBaselineDay = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -173,7 +173,7 @@ function assert(cond,msg){
     data[2].logs.push(Date.now());
     data[2].lastLog = Date.now();
     localStorage.setItem('tings_v2', JSON.stringify(data));
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -192,7 +192,7 @@ function assert(cond,msg){
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   snap = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_today_suggested_v1') || 'null'));
@@ -205,7 +205,7 @@ function assert(cond,msg){
     const data = JSON.parse(localStorage.getItem('tings_v2'));
     data[0].target = 7;
     localStorage.setItem('tings_v2', JSON.stringify(data));
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   snap = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_today_suggested_v1') || 'null'));
@@ -226,7 +226,7 @@ function assert(cond,msg){
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   await page.evaluate(() => {
@@ -238,7 +238,7 @@ function assert(cond,msg){
     // Run keeps its window closed with no snooze → genuine miss.
     data[2].allowedTimeEnd = 1;
     localStorage.setItem('tings_v2', JSON.stringify(data));
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -269,7 +269,7 @@ function assert(cond,msg){
       { hid:'empty-2', name:'Journal', emoji:'📝', type:'keepup', target:7, logs:[now-1*dayMs], lastLog:now-1*dayMs, createdAt:now-30*dayMs, flexibilityDays:0, durationMinutes:15, pinned:false },
     ]));
     localStorage.removeItem('tings_today_suggested_v1');
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   // Close the only today item's window — today section becomes empty
@@ -277,7 +277,7 @@ function assert(cond,msg){
     const data = JSON.parse(localStorage.getItem('tings_v2'));
     data[0].allowedTimeEnd = 1;
     localStorage.setItem('tings_v2', JSON.stringify(data));
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -328,7 +328,7 @@ function assert(cond,msg){
       projection: { day:today, hids:['miss-a','miss-b'], fingerprint:'old' }
     }));
     _droppedDayBaselineDay = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   // miss-a has closed window (allowedTimeEnd:1) so it's overdue, not in today
@@ -362,7 +362,7 @@ function assert(cond,msg){
     data[0].logs.push(Date.now());
     data[0].lastLog = Date.now();
     localStorage.setItem('tings_v2', JSON.stringify(data));
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -390,14 +390,14 @@ function assert(cond,msg){
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
     _droppedDayBaseline = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   await page.evaluate(() => {
     const data = JSON.parse(localStorage.getItem('tings_v2'));
     data[0].allowedTimeEnd = 1;
     localStorage.setItem('tings_v2', JSON.stringify(data));
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -459,7 +459,7 @@ function assert(cond,msg){
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
     _droppedDayBaseline = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -489,7 +489,7 @@ function assert(cond,msg){
     localStorage.removeItem('tings_today_suggested_v1');
     _droppedDayBaselineDay = null;
     _droppedDayBaseline = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');
@@ -565,7 +565,7 @@ function assert(cond,msg){
     if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
     _droppedDayBaselineDay = null;
     _droppedDayBaseline = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(1000);
   pill = await page.$('.dropped-pill');
@@ -608,7 +608,7 @@ function assert(cond,msg){
     if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
     _droppedDayBaselineDay = null;
     _droppedDayBaseline = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(1000);
   pill = await page.$('.dropped-pill');
@@ -726,7 +726,7 @@ function assert(cond,msg){
     if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
     _droppedDayBaselineDay = null;
     _droppedDayBaseline = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForTimeout(800);
   pill = await page.$('.dropped-pill');

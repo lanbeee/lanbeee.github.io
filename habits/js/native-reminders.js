@@ -281,7 +281,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       if(h && !(h.type === 'task' && isTaskDone(h)))active.push(...agendaRowsAfterCompletions(h,items,day.dayBase));
     }
     // Resolve busy-time overrides/relative clocks without Home's 'clip to now'.
-    const sequence = homeDaySequence({...day,timeline:active},{...settings,homeExtraMode:'cards'});
+    const sequence = homeDaySequence({...day,timeline:active},settings);
     sequence.forEach((row,i)=>{
       if(row.kind !== 'travel')return;
       const destination = sequence.slice(i+1).find(next=>next.kind !== 'travel' && next.start === row.end && next.locationId === row.to);

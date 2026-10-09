@@ -117,7 +117,7 @@ function assert(cond,msg){
   await page.waitForTimeout(200);
   await page.locator('#free-time-close').click();
   await page.waitForTimeout(200);
-  await page.locator('.free-pill').nth(2).click();
+  await page.locator('.free-pill').first().click();
   await page.waitForTimeout(200);
   const openSheets = await page.locator('#free-time-sheet.open').count();
   assert(openSheets === 1, `sheet open for second pill (found ${openSheets})`);

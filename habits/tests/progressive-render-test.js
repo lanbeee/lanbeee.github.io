@@ -137,9 +137,9 @@ function seedProgressiveHome(target){
       plannerCalls += 1;
       return original(...args);
     };
-    const current = normalizeHomeExtraMode(sortSettings.homeExtraMode);
-    const next = current === 'cards' ? 'cards12h' : 'cards';
-    const target = document.querySelector(`#home-extra-seg [data-seg-value="${next}"]`);
+    const current = normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards);
+    const next = current === 'time' ? 'icon' : 'time';
+    const target = document.querySelector(`#agenda-time-seg [data-seg-value="${next}"]`);
     const started = performance.now();
     target?.click();
     const elapsed = performance.now() - started;
@@ -148,16 +148,16 @@ function seedProgressiveHome(target){
       elapsed,
       plannerCalls,
       next,
-      saved:normalizeHomeExtraMode(sortSettings.homeExtraMode),
+      saved:normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards),
       selected:target?.classList.contains('on'),
       hasWeek:Boolean(_homeRenderedWeek?.days)
     };
   });
-  check('display-only range switch reuses the planned week',
+  check('agenda-time switch reuses the planned week',
     displayOnly.plannerCalls === 0 && displayOnly.saved === displayOnly.next
       && displayOnly.selected && displayOnly.hasWeek,
     JSON.stringify(displayOnly));
-  check('display-only range switch returns without a planner-sized task',
+  check('agenda-time switch returns without a planner-sized task',
     displayOnly.elapsed < 250,
     JSON.stringify(displayOnly));
 

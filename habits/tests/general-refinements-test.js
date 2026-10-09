@@ -271,6 +271,77 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     });
   });
   check('travel adjustment buttons remain compact rounded-square controls',travelButtons.length === 2 && travelButtons.every(x=>x.width === x.height && x.radius === '14px'),JSON.stringify(travelButtons));
+  const simplifiedHome = await page.evaluate(()=>{
+    const today = dayStart(Date.now());
+    const dayMs = 86400000;
+    const settings = {...sortSettings,showWeekOnHome:false,homeExtraMode:'cards12h',
+      minimalMode:false,showSnoozed:true,locations:[],travel:{},
+      blockedTimes:[{label:'Evening busy',days:[0,1,2,3,4,5,6],start:1020,end:1080}]};
+    saveSortSettings(settings);
+    const migrated = !('showWeekOnHome' in sortSettings) && !('homeExtraMode' in sortSettings);
+    const base = {type:'keepup',target:1,durationMinutes:30,priority:2,
+      logs:[],lastLog:null,createdAt:today-30*dayMs,locationIds:[],anywhereAllowed:true};
+    save([
+      {...base,hid:'daily-home',name:'Daily repeat'},
+      {...base,hid:'far-home',name:'Later appointment',type:'task',target:null,
+        dueDate:today+3*dayMs,eventTime:today+3*dayMs+600*60000,earlyWindowDays:0,delayAllowanceDays:0},
+      {...base,hid:'late-home',name:'Overdue without a slot',type:'task',target:null,
+        dueDate:today-dayMs,durationMinutes:180,allowedTimeStart:600,allowedTimeEnd:630},
+      {...base,hid:'rest-home',name:'Snoozed item',snoozedUntil:today+14*dayMs}
+    ]);
+    const data = load();
+    const week = buildWeekAgenda(data,sortSettings,7);
+    render({__optimizedWeek:week});
+    const sections = [...document.querySelectorAll('#list .section-header')].map(el=>el.dataset.label);
+    const rows = [...document.querySelectorAll('#list .swipe-row')];
+    const sectionFor = hid=>{
+      let label = '';
+      for(const el of document.querySelector('#list').children){
+        if(el.classList.contains('section-header'))label = el.dataset.label;
+        if(el.dataset.hid === hid)return label;
+      }
+      return '';
+    };
+    const farDay = week.days[3];
+    const calendarHtml = overviewDayTimedAgendaHtml(week,dateKey(farDay.dayBase),data);
+    const full = {
+      sections,
+      dailyCards:rows.filter(row=>row.dataset.hid === 'daily-home').length,
+      laterCards:rows.filter(row=>row.dataset.hid === 'far-home').length,
+      lateSection:sectionFor('late-home'),
+      farSection:sectionFor('far-home'),
+      restSection:sectionFor('rest-home'),
+      blocks:document.querySelectorAll('#list .blocked-card:not(.blocked-card-merge)').length,
+      dates:rows.filter(row=>row.dataset.hid === 'far-home').map(row=>row.textContent),
+      calendarDaily:calendarHtml.includes('Daily repeat'),
+      calendarLater:calendarHtml.includes('Later appointment'),
+      plannedDays:_homeRenderedWeek.days.length,
+      removedControls:!document.querySelector('[data-setting-toggle="showWeekOnHome"],#home-extra-seg'),
+      migrated
+    };
+    sortSettings.minimalMode = true;
+    render({__optimizedWeek:week});
+    return {...full,minimalDays:_homeRenderedWeek.days.length,
+      minimalSections:[...document.querySelectorAll('#list .section-header')].map(el=>el.dataset.label)};
+  });
+  check('Home uses Today, Tomorrow, Coming up and The rest',
+    JSON.stringify(simplifiedHome.sections) === JSON.stringify(['today','tomorrow','coming up','the rest']),
+    JSON.stringify(simplifiedHome));
+  check('Home compresses later repeats and merges overdue into Coming up',
+    simplifiedHome.dailyCards === 2 && simplifiedHome.laterCards === 1
+      && simplifiedHome.lateSection === 'coming up' && simplifiedHome.farSection === 'coming up'
+      && simplifiedHome.restSection === 'the rest',JSON.stringify(simplifiedHome));
+  check('Calendar keeps later recurring and fixed-time agenda rows',
+    simplifiedHome.plannedDays === 7 && simplifiedHome.calendarDaily && simplifiedHome.calendarLater,
+    JSON.stringify(simplifiedHome));
+  check('Removed display settings migrate and tomorrow busy cards pass the old 12-hour cutoff',
+    simplifiedHome.removedControls && simplifiedHome.migrated && simplifiedHome.blocks === 2,
+    JSON.stringify(simplifiedHome));
+  check('Minimal Home preserves the full plan and the same sections',
+    simplifiedHome.minimalDays === 7
+      && JSON.stringify(simplifiedHome.minimalSections) === JSON.stringify(simplifiedHome.sections),
+    JSON.stringify(simplifiedHome));
+
   check('no page errors',pageErrors.length === 0,JSON.stringify(pageErrors));
 
   await browser.close();

@@ -117,7 +117,7 @@ function toggleAppSettingButton(btn){
   }
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
-  // Presentation-only: reuse the mounted week plan (same pattern as homeExtraMode).
+  // Presentation-only: reuse the mounted week plan.
   // A full render() would still be cheap once the planner key ignores minimalMode,
   // but presentation-only avoids even entering the async planner coordinator.
   if(key === 'minimalMode'){

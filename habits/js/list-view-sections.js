@@ -1424,13 +1424,6 @@ function summarizeTrailTone(tones){
   return '';
 }
 
-// PURE: whether home should lay out day by day. Minimal mode always falls back
-// to the today / overdue / coming up grouping, whatever the toggle says.
-function weekOnHomeEnabled(settings){
-  const s = settings || sortSettings || {};
-  return !s.minimalMode && Boolean(s.showWeekOnHome);
-}
-
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
@@ -1446,7 +1439,6 @@ function render(opts){
     && !o.__optimizedWeek
     && !o.__optimizerFallback
     && sortSettings.preset === 'todayFirst'
-    && weekOnHomeEnabled(sortSettings)
     && !searchQuery.trim()
     && typeof buildWeekAgendaOffMain === 'function';
   if(wantsPlannedWeek){
@@ -1529,7 +1521,6 @@ function render(opts){
   // render just matching habits, ranked by relevance.
   const deferAgenda = Boolean(o.deferAgenda);
   const weekMode = !deferAgenda && todayFirstActive
-    && weekOnHomeEnabled(sortSettings)
     && !searching
     && typeof buildWeekAgenda === 'function'
     && typeof homeDaySequence === 'function';
@@ -1733,7 +1724,7 @@ function render(opts){
     // A same-day plan cache normally avoids this compatibility list; it exists
     // for the first launch after install or after a placement-changing edit.
     list.classList.remove('is-progressive');
-    const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
+    const labels = {0:'today',1:'coming up',2:'coming up',3:'the rest'};
     const fastOrder = todayFirstActive && !searching
       ? [...indices].sort((a,b)=>{
         const pa = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
@@ -1754,7 +1745,8 @@ function render(opts){
         return;
       }
       if(todayFirstActive && !searching){
-        const cat = todayCategory(h,sortSettings);
+        const category = todayCategory(h,sortSettings);
+        const cat = category === 1 ? 2 : category;
         if(cat !== fastCat){
           const label = labels[cat];
           if(label)appendSectionHeader(list,label);
@@ -1772,8 +1764,9 @@ function render(opts){
     _homeRenderedWeek = week;
     if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
     const agendaMap = new Map();
-    const weekAssigned = new Set();
     const scheduleOmissionByHid = new Map();
+    const nowDate = new Date(week.days.find(day=>day.isToday)?.dayBase ?? Date.now());
+    const tomorrowBase = new Date(nowDate.getFullYear(),nowDate.getMonth(),nowDate.getDate() + 1).getTime();
     const dayPlans = week.days.map(day=>{
       for(const omission of day.linkOmissions || []){
         if(omission && omission.subjectHid && !scheduleOmissionByHid.has(omission.subjectHid)){
@@ -1813,14 +1806,13 @@ function render(opts){
         displayTimeline === rawTimeline ? day : { ...day, timeline: displayTimeline },
         sortSettings, { visibleSet }
       );
-      // Preserve the exact rows shown on Home for audit/export. Placement maps
-      // below still consume only indexed fills/scheduled rows, while travel
-      // remains visible in HOME AGENDA OUTPUT.
+      // Preserve complete day sequences for Calendar, audit/export, and reminders.
+      // Home shows only the first two timelines, but later occurrences and
+      // their travel context stay available to those consumers.
       day.homeDisplayedTimeline = seq.filter(row=>row.kind === 'travel'
         || ((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null));
       for(const row of seq){
         if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
-          weekAssigned.add(row.i);
           if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
           if(day.isToday)noteBreakablePrimary(row.i,row);
         }
@@ -1850,8 +1842,11 @@ function render(opts){
       // Today still needs its header when the morning window has closed and
       // nothing remains on the timeline — otherwise the missed pill has
       // nowhere to attach.
+      // Only the next two days show a timeline on Home. The mounted plan
+      // retains all seven days for Calendar, reminders, and refinement.
+      if(day.dayBase > tomorrowBase)return;
       if(!seq.length && !day.isToday)return;
-      appendSectionHeader(list,homeWeekDayLabel(day),day,day.isToday ? weekTodayHids : null);
+      appendSectionHeader(list,homeWeekDayLabel(day,nowDate.getTime()),day,day.isToday ? weekTodayHids : null);
       for(let i = 0;i < seq.length;){
         const row = seq[i];
         if(row.kind === 'travel'){
@@ -1862,12 +1857,8 @@ function render(opts){
         if(row.kind === 'blocked'){
           const {blocks,nextIdx} = consumeBlockedRun(seq,i);
           if(homeExtraRowVisible(blocks[0].start)){
-            if(homeExtraMode() === 'text12h'){
-              blocks.forEach(b=>appendHomeBlockedText(list,b));
-            }else{
-              const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
-              appendHomeBlockedGroup(list,blocks,groupKey);
-            }
+            const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
+            appendHomeBlockedGroup(list,blocks,groupKey);
           }
           i = nextIdx;
           continue;
@@ -1883,28 +1874,23 @@ function render(opts){
       }
     });
 
-    // Timed-only day sections: anything without a suggested time goes to
-    // overdue / upcoming — never as an untimed card under a day.
-    const leftoverKey = (h)=>{
-      const cat = todayCategory(h,sortSettings);
-      if(cat === 3)return 3;
-      if(cat === 1 || cat === 0)return 1; // due/overdue that didn't place
-      return 2;
-    };
-    const leftovers = indices
-      .filter(i=>!data[i].pinned && !weekAssigned.has(i))
-      .sort((a,b)=>leftoverKey(data[a]) - leftoverKey(data[b]) || indices.indexOf(a) - indices.indexOf(b));
-    let leftoverCat = -1;
-    leftovers.forEach(realIdx=>{
-      const key = leftoverKey(data[realIdx]);
-      if(key !== leftoverCat){
-        const labels = {1:'overdue',2:'coming up',3:'the rest'};
-        const label = labels[key];
-        if(label)appendSectionHeader(list,label);
-        leftoverCat = key;
-      }
-      appendHabitCard(realIdx,null,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
-    });
+    // Coming up combines later assignments and unplaced due/upcoming work.
+    // Show each item once here, and omit items already on Today or Tomorrow.
+    const nearAssigned = new Set(dayPlans
+      .filter(({day})=>day.dayBase <= tomorrowBase)
+      .flatMap(({seq})=>seq.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').map(row=>row.i)));
+    const leftovers = indices.filter(i=>!data[i].pinned && !nearAssigned.has(i));
+    for(const [key,label] of [[2,'coming up'],[3,'the rest']]){
+      const group = leftovers.filter(i=>(todayCategory(data[i],sortSettings) === 3 ? 3 : 2) === key);
+      if(!group.length)continue;
+      appendSectionHeader(list,label);
+      group.forEach(realIdx=>{
+        // The next later-day placement supplies date/time context, while the
+        // full recurring timeline remains available in the calendar.
+        const agendaRow = key === 2 ? agendaMap.get(realIdx) : null;
+        appendHabitCard(realIdx,agendaRow,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
+      });
+    }
   }else{
     // Search results don't place on the agenda — skip homeAgendaRows (planner)
     // and auto-mark sync so each keystroke is just a cheap filter + rank.
@@ -1934,8 +1920,8 @@ function render(opts){
       // A separate pinned-section pre-pass below mirrors week view.
       const catA = todayCategory(data[a],sortSettings);
       const catB = todayCategory(data[b],sortSettings);
-      const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
-      const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
+      const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA === 1 ? 2 : catA;
+      const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB === 1 ? 2 : catB;
       if(dispA !== dispB)return dispA - dispB;
       if(dispA === 0){
         const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
@@ -2022,9 +2008,9 @@ function render(opts){
       const inTodaySection = !searching && todayFirstActive && (cat === 0 || isEarlyToday);
 
       if(!searching && todayFirstActive){
-        const sectionKey = isEarlyToday ? 0 : cat;
+        const sectionKey = isEarlyToday ? 0 : cat === 1 ? 2 : cat;
         if(sectionKey !== sectionCat){
-          const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
+          const labels = {0:'today',1:'coming up',2:'coming up',3:'the rest'};
           const label = labels[sectionKey];
           const dayCtx = label === 'today'
             ? {dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows}
