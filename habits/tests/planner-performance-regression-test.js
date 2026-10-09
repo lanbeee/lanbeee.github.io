@@ -557,12 +557,10 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       responsiveForeground:listSrc.includes('existing agenda mounted')
         && listSrc.includes('cancelAgendaPlannerWorkerRequests')
         && optSrc.includes('function cancelAgendaPlannerWorkerRequests'),
-      settingsSigGates:listSrc.includes('showDueTasksInAgenda')
-        && listSrc.includes('showPlannedItemsInAgenda')
-        && listSrc.includes('showDueHabitsInAgenda')
+      settingsSigInputs:listSrc.includes('availabilityMinutes')
+        && listSrc.includes('blockedTimes')
         && listSrc.includes('homeCityLat')
-        && listSrc.includes('planWeight')
-        && listSrc.includes('plansFirst'),
+        && listSrc.includes('planWeight'),
       rehydrateHelper:optSrc.includes('function rehydrateAgendaWeekHabits'),
       preloadGated:dataSrc.includes('!agendaPlannerWorkerAvailable()'),
       versionedWorker:optSrc.includes('AGENDA_PLANNER_WORKER_ASSET_VERSION')
@@ -599,7 +597,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       && sourceContracts.warmTimeout
       && sourceContracts.warmExactOnly
       && sourceContracts.responsiveForeground
-      && sourceContracts.settingsSigGates
+      && sourceContracts.settingsSigInputs
       && sourceContracts.rehydrateHelper
       && sourceContracts.preloadGated
       && sourceContracts.versionedWorker
@@ -793,13 +791,13 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     const data = load();
     const base = homePlannerDirtyKey(data);
     const s = sortSettings;
-    const beforeDue = s.showDueTasksInAgenda;
+    const beforeCapacity = s.availabilityMinutes;
     const beforePlan = s.planWeight;
     const beforeCity = s.homeCityLat;
 
-    saveSortSettings({...s,showDueTasksInAgenda:beforeDue === false});
-    const afterDue = homePlannerDirtyKey(data);
-    saveSortSettings({...sortSettings,showDueTasksInAgenda:beforeDue,planWeight:(Number(beforePlan) || 100) === 100 ? 120 : 100});
+    saveSortSettings({...s,availabilityMinutes:beforeCapacity.map(minutes=>minutes + 30)});
+    const afterCapacity = homePlannerDirtyKey(data);
+    saveSortSettings({...sortSettings,availabilityMinutes:beforeCapacity,planWeight:(Number(beforePlan) || 100) === 100 ? 120 : 100});
     const afterPlan = homePlannerDirtyKey(data);
     saveSortSettings({
       ...sortSettings,
@@ -812,7 +810,7 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     // Restore.
     saveSortSettings({
       ...sortSettings,
-      showDueTasksInAgenda:beforeDue,
+      availabilityMinutes:beforeCapacity,
       planWeight:beforePlan,
       homeCityLat:beforeCity,
       homeCityLng:sortSettings.homeCityLng,
@@ -827,15 +825,15 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
     saveSortSettings({...sortSettings,minimalMode:!Boolean(sortSettings.minimalMode)});
 
     return {
-      dueChanges:afterDue !== base,
-      planChanges:afterPlan !== base && afterPlan !== afterDue,
+      capacityChanges:afterCapacity !== base,
+      planChanges:afterPlan !== base && afterPlan !== afterCapacity,
       cityChanges:afterCity !== base,
       restoreOk:Boolean(afterRestore),
       presentationStable:beforePres === afterPres
     };
   });
   check('planner-affecting settings invalidate dirty key; presentation does not',
-    dirtyKeySettings.dueChanges
+    dirtyKeySettings.capacityChanges
       && dirtyKeySettings.planChanges
       && dirtyKeySettings.cityChanges
       && dirtyKeySettings.presentationStable,

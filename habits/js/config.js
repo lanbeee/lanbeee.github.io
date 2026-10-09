@@ -160,25 +160,25 @@ const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
 const WIDTH_TRANSITION = 'width 190ms cubic-bezier(.3,.7,.2,1)';
 const SORT_PRESETS = {
   balanced:{
-    focus:'balanced',plansFirst:true,planWindowDays:3,
+    focus:'balanced',planWindowDays:3,
     planWeight:100,dueWeight:100,progressWeight:70,trendWeight:55,rhythmWeight:55,
     buildWeight:100,limitWeight:70,stopWeight:130,newWeight:90,
     newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:70
   },
   build:{
-    focus:'build',plansFirst:true,planWindowDays:3,
+    focus:'build',planWindowDays:3,
     planWeight:95,dueWeight:135,progressWeight:105,trendWeight:75,rhythmWeight:60,
     buildWeight:140,limitWeight:50,stopWeight:12,newWeight:125,
     newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12,locationWeight:60
   },
   planned:{
-    focus:'balanced',plansFirst:true,planWindowDays:7,
+    focus:'balanced',planWindowDays:7,
     planWeight:175,dueWeight:85,progressWeight:55,trendWeight:40,rhythmWeight:40,
     buildWeight:95,limitWeight:65,stopWeight:35,newWeight:70,
     newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0,locationWeight:75
   },
   todayFirst:{
-    focus:'balanced',plansFirst:true,planWindowDays:3,
+    focus:'balanced',planWindowDays:3,
     planWeight:120,dueWeight:140,progressWeight:60,trendWeight:50,rhythmWeight:50,
     buildWeight:110,limitWeight:80,stopWeight:110,newWeight:100,
     newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:70,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:80
@@ -187,12 +187,14 @@ const SORT_PRESETS = {
 const DEFAULT_SORT_SETTINGS = {
   ...SORT_PRESETS.todayFirst,
   preset:'todayFirst',
+  cardDetailLevel:'simple',
+  customCardDetails:null,
   showSnoozed:false,
   showSampleOnCards:true,
   showPinnedOnCards:true,
   showTaskDateOnCards:true,
   showPlansOnCards:true,
-  showDayScheduleOnCards:true,
+  showDayScheduleOnCards:false,
   showTimeWindowOnCards:false,
   showSnoozedUntilOnCards:true,
   showDurationOnCards:false,
@@ -202,10 +204,6 @@ const DEFAULT_SORT_SETTINGS = {
   showLocationOnCards:false,
   showRemindersOnCards:true,
 
-  showScheduledTasksInAgenda:true,
-  showDueTasksInAgenda:true,
-  showPlannedItemsInAgenda:true,
-  showDueHabitsInAgenda:true,
   // The fast graph planner is the default. The exact ILP packer (lazy-loads
   // GLPK) remains available for saved settings that opt into it.
   agendaOptimizer:false,
@@ -249,13 +247,10 @@ const DEFAULT_SORT_SETTINGS = {
   // Separate creation profile; legacy shared defaults migrate on load/save.
   taskDefaults:null,
 
-  // Calm-card defaults: the insight decorations (progress pill, early pill,
-  // trail dots, order marks) are OFF so switching out of minimal mode reveals
-  // the fuller surface gradually instead of all extras at once. Each remains
-  // one toggle away in Settings. Pre-flip installs keep what they had (see
-  // loadSortSettings).
+  // Simple keeps early indicators; progress and order marks are Custom options.
+  // Activity dots remain a separate choice.
   showStatusOnCards:false,
-  showEarlyOnCards:false,
+  showEarlyOnCards:true,
   // Right-side scheduled time on each item: 'time' = clock + time,
   // 'icon' = symbol only, 'hide' = nothing.
   showAgendaTimesOnCards:'time',

@@ -659,8 +659,8 @@
       aWeatherAttach:{title:'Attach the profile on Schedule',copy:'Profiles do nothing until a Ting uses one. Choose Outdoor here. Home-city weather is the default; a saved forecast place is only for work far from home.',target:['#detail-weather-profile'],hint:'Choose Outdoor',locked:true,back:'aWeatherRule'},
       aPrayer:{title:'Sunrise and prayer times stay local',copy:'Set a city under Locations, then choose names, calculation method, and Asr school here. Sunrise, sunset, and prayer anchors work in general windows, specific options, and dynamic busy times.',target:['#settings-prayer-head'],action:'Finish chapter',command:'chapterDone',back:'aWeatherAttach'},
 
-      aSettingsDisplay:{title:'Choose what enters the agenda',copy:'Home shows Today, Tomorrow, Coming up, and The rest. The planner still schedules the full week; open Calendar and tap a day to see its agenda. Choose which tasks and habits enter the plan. Try the habits ready today toggle.',target:['[data-setting-toggle="showDueHabitsInAgenda"]'],hint:'Try habits ready today',locked:true,back:'aIntro'},
-      aCards:{title:'Choose what each card explains',copy:'Show or hide dates, plans, days, windows, duration, flexibility, topics, place, status, trails, order marks, and scheduled times. Show hidden habits when needed; Easier reach pulls long lists down toward your thumb.',target:['#settings-cards-head'],action:'Next',next:'aDefaults',back:'aSettingsDisplay'},
+      aSettingsDisplay:{title:'Make Home comfortable to read',copy:'Home shows Today, Tomorrow, Coming up, and The rest. Fixed appointments, due tasks, plans, and ready habits enter the agenda automatically. The planner schedules the full week; open Calendar and tap a day to see its agenda. Minimal mode changes presentation only.',target:['[data-setting-toggle="minimalMode"]'],action:'Next',next:'aCards',back:'aIntro'},
+      aCards:{title:'Choose what each card explains',copy:'Choose simple, detailed, or custom item information, then set scheduled times and activity dots separately. Show hidden habits when needed; Easier reach pulls long lists down toward your thumb.',target:['#settings-cards-head'],action:'Next',next:'aDefaults',back:'aSettingsDisplay'},
       aDefaults:{title:'Make new Tings start close to right',copy:'Set the default build, limit, stop, or task type, then rhythm, priority, duration, flexibility, splitting, shortest session, and topics. Each Ting can still override all of it.',target:['#settings-defaults-head'],action:'Next',next:'aAppearance',back:'aCards'},
       aAppearance:{title:'Make it comfortable to read',copy:'Compact mode fits more on screen. Font size and light, dark, or system theme change presentation only — never the plan.',target:['#settings-appearance-head'],action:'Next',next:'aReminders',back:'aDefaults'},
       aReminders:{title:'Reminders are only for commitments',copy:'Turn them on for dated tasks and fixed appointments. Tings does not nag about rhythm habits. Alerts can stay generic, or you can opt in to names, topics, and places in notification text.',target:['#settings-reminders-head'],action:'Next',next:'aOptimizer',back:'aAppearance'},
@@ -933,7 +933,7 @@
         // Scroll the actual required action into view. On a shorter viewport,
         // centering the section header can leave the add button just below the
         // fold, temporarily turning a required step into an unguided one.
-        aWeather:'#weather-profile-add',aWeatherRule:'.weather-profile-card .weather-rule',aPrayer:'#settings-prayer-head',aSettingsDisplay:'#settings-home-head',
+        aWeather:'#weather-profile-add',aWeatherRule:'.weather-profile-card .weather-rule',aPrayer:'#settings-prayer-head',aSettingsDisplay:'[data-setting-toggle="minimalMode"]',
         aCards:'#settings-cards-head',aDefaults:'#settings-defaults-head',aAppearance:'#settings-appearance-head',
         aReminders:'#settings-reminders-head',aOptimizer:'#settings-advanced-head',aOptimizerToggle:'[data-setting-toggle="agendaOptimizer"],[data-ui-toggle="agendaOptimizer"]',
         aBackup:'#backup-export',aCalendarImport:'#settings-calendar-head',aShare:'#settings-agenda-head',aCleanup:'#settings-cleanup-head'
@@ -1427,9 +1427,6 @@
     }
     if(stage === 'aBackup' && event.target.closest('#backup-export')){
       setTimeout(()=>setStage('aCalendarImport'),300);
-    }
-    if(stage === 'aSettingsDisplay' && event.target.closest('[data-setting-toggle="showDueHabitsInAgenda"]')){
-      setTimeout(()=>setStage('aCards'),150);
     }
     if(stage === 'aWeather' && event.target.closest('#weather-profile-add')){
       setTimeout(()=>setStage('aWeatherRule'),180);

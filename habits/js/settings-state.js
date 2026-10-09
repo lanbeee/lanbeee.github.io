@@ -102,7 +102,7 @@ function scheduleMonthlyRetentionCleanup(){
 
 // PURE: check if key is a sort setting
 function isSortSettingKey(key){
-  return ['plansFirst','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
+  return ['planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
 }
 
 // HANDLER: toggle a boolean app setting
@@ -120,7 +120,9 @@ function toggleAppSettingButton(btn){
   // Presentation-only: reuse the mounted week plan.
   // A full render() would still be cheap once the planner key ignores minimalMode,
   // but presentation-only avoids even entering the async planner coordinator.
-  if(key === 'minimalMode'){
+  const cardDetail = CARD_DETAIL_KEYS.includes(key);
+  if(cardDetail)patch.cardDetailLevel = 'custom';
+  if(key === 'minimalMode' || cardDetail){
     updateSortSetting(patch,{renderNow:false});
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     else render();

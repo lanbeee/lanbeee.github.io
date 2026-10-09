@@ -157,6 +157,36 @@ function defaultTaskDueDate(profile,now = Date.now()){
   return dayStart(day.getTime());
 }
 
+// Card presets only change annotations; the planner never reads these fields.
+const CARD_DETAIL_KEYS = [
+  'showPinnedOnCards','showTaskDateOnCards','showPlansOnCards',
+  'showDayScheduleOnCards','showTimeWindowOnCards','showSnoozedUntilOnCards',
+  'showDurationOnCards','showRepetitionOnCards','showFlexibilityOnCards',
+  'showTopicsOnCards','showLocationOnCards','showRemindersOnCards',
+  'showStatusOnCards','showEarlyOnCards','showCueOnCards','showOrderPillsOnCards'
+];
+function cardDetailPatch(mode,settings = {}){
+  if(!['simple','detailed','custom'].includes(mode))return null;
+  const custom = settings.customCardDetails || settings;
+  const detailedExtras = ['showDayScheduleOnCards','showTimeWindowOnCards',
+    'showDurationOnCards','showTopicsOnCards','showLocationOnCards'];
+  return Object.fromEntries(CARD_DETAIL_KEYS.map(key=>[
+    key,mode === 'custom' && typeof custom[key] === 'boolean' ? custom[key]
+      : Boolean(DEFAULT_SORT_SETTINGS[key]) || (mode === 'detailed' && detailedExtras.includes(key))
+  ]));
+}
+function normalizeCardDetails(settings){
+  if(!['simple','detailed','custom'].includes(settings.cardDetailLevel))settings.cardDetailLevel = 'simple';
+  if(settings.cardDetailLevel === 'custom'){
+    // Snapshot edits so switching through a preset does not lose custom choices.
+    settings.customCardDetails = cardDetailPatch('custom',{...settings,customCardDetails:null});
+  }else if(settings.customCardDetails){
+    settings.customCardDetails = cardDetailPatch('custom',settings);
+  }
+  Object.assign(settings,cardDetailPatch(settings.cardDetailLevel,settings));
+  settings.showSampleOnCards = true;
+}
+
 function loadSortSettings(){
   try{
     const saved = Storage.read(SORT_SETTINGS_KEY) || {};
@@ -176,6 +206,8 @@ function loadSortSettings(){
     delete merged.focusSearchOnOpen;
     delete merged.showWeekOnHome;
     delete merged.homeExtraMode;
+    // Agenda inclusion and planned-item promotion are always enabled.
+    for(const key of ['plansFirst','showScheduledTasksInAgenda','showDueTasksInAgenda','showPlannedItemsInAgenda','showDueHabitsInAgenda'])delete merged[key];
     merged.reminders = false;
     merged.topics = normalizeTopics(merged.topics);
     merged.locations = normalizeLocationRegistry(merged.locations);
@@ -219,13 +251,8 @@ function loadSortSettings(){
     // it already had. Saved explicit values always win.
     const legacyCalmDefault = key => Boolean(saved && Object.keys(saved).length
       && !Object.prototype.hasOwnProperty.call(saved,key));
-    merged.showStatusOnCards = legacyCalmDefault('showStatusOnCards') || Boolean(merged.showStatusOnCards);
-    merged.showEarlyOnCards = legacyCalmDefault('showEarlyOnCards') || Boolean(merged.showEarlyOnCards);
     merged.showAgendaTimesOnCards = normalizeAgendaTimeMode(merged.showAgendaTimesOnCards);
     merged.showTrailOnCards = legacyCalmDefault('showTrailOnCards') || Boolean(merged.showTrailOnCards);
-    merged.showCueOnCards = merged.showCueOnCards !== false;
-    merged.showOrderPillsOnCards = legacyCalmDefault('showOrderPillsOnCards') || Boolean(merged.showOrderPillsOnCards);
-    merged.showRemindersOnCards = merged.showRemindersOnCards !== false;
     // Minimal mode is opt-in: the default is the fuller surface, and a saved
     // explicit value always wins (see config.js minimalMode).
     merged.minimalMode = Boolean(merged.minimalMode);
@@ -290,6 +317,7 @@ function loadSortSettings(){
       && typeof agendaPlannerWorkerAvailable === 'function' && !agendaPlannerWorkerAvailable()){
       try{ preloadAgendaOptimizer(); }catch(_){}
     }
+    normalizeCardDetails(merged);
     return merged;
   }catch{
     return {
@@ -307,6 +335,8 @@ function saveSortSettings(settings){
   delete next.keepStopsQuiet;
   delete next.showWeekOnHome;
   delete next.homeExtraMode;
+  // Agenda inclusion and planned-item promotion are always enabled.
+  for(const key of ['plansFirst','showScheduledTasksInAgenda','showDueTasksInAgenda','showPlannedItemsInAgenda','showDueHabitsInAgenda'])delete next[key];
   next.reminders = false;
   next.topics = normalizeTopics(next.topics);
   next.locations = normalizeLocationRegistry(next.locations);
@@ -340,13 +370,9 @@ function saveSortSettings(settings){
   next.defaultTopics = normalizeTopics(next.defaultTopics);
   next.defaultAutoMarkMinutes = Number.isFinite(next.defaultAutoMarkMinutes) && next.defaultAutoMarkMinutes >= 0 ? Math.round(next.defaultAutoMarkMinutes) : null;
   normalizeCreationSettings(next);
-  next.showStatusOnCards = next.showStatusOnCards !== false;
-  next.showEarlyOnCards = next.showEarlyOnCards !== false;
   next.showAgendaTimesOnCards = normalizeAgendaTimeMode(next.showAgendaTimesOnCards);
   next.showTrailOnCards = next.showTrailOnCards !== false;
   next.minimalShowTrailOnCards = Boolean(next.minimalShowTrailOnCards);
-  next.showCueOnCards = next.showCueOnCards !== false;
-  next.showOrderPillsOnCards = next.showOrderPillsOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);
   next.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(next.colorPalette) ? next.colorPalette : 'default';
   next.soundEffects = next.soundEffects !== false;
@@ -395,6 +421,7 @@ function saveSortSettings(settings){
   delete next._plannerCurrentCoord;
   delete next._plannerLiveLocationId;
   delete next._weatherContext;
+  normalizeCardDetails(next);
   Storage.write(SORT_SETTINGS_KEY, next);
   // Derived, not persisted. Reattach it on the live object so a travel-cache
   // or settings write cannot blank the day-header forecast until the next load.

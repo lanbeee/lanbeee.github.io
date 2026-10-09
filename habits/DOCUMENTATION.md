@@ -496,7 +496,6 @@ Key sections with all fields:
 ```js
 preset: 'balanced'|'build'|'planned'|'todayFirst'|'custom',
 focus: 'balanced'|'build'|'space',
-plansFirst: boolean,
 planWindowDays: number,  // 1-14, look-ahead for plan signal
 
 // Weight sliders (0-200 each):
@@ -517,7 +516,12 @@ agendaScoreWeights: {
 ```
 
 #### 4.3.3 Card Display Options 👤
+
+`cardDetailLevel` selects Simple, Detailed, or Custom. Presets derive the annotation booleans below; Custom exposes individual switches and remembers its choices when switching presets. Sample items always keep their label. Times, activity dots, and hidden-item visibility remain separate controls.
+
 ```js
+cardDetailLevel: 'simple'|'detailed'|'custom',
+customCardDetails: object|null,   // Saved Custom choices
 showSnoozed: boolean,              // 👤 Fade out snoozed items
 showSampleOnCards: boolean,        // 👤 Show 🧪 marker
 showPinnedOnCards: boolean,        // 👤 Show 📌 marker
@@ -544,7 +548,7 @@ showStatusOnCards: boolean,        // 👤 Show status word ("run", "overdue", e
 minimalMode: boolean,  // 👤 Simplified UI for new users
 
 // In minimal mode:
-// - Home groups: Today / Overdue / Coming Up
+// - Home groups: Today / Tomorrow / Coming up / The rest
 // - Calendar view stripped
 // - Detail view simplified
 // - Settings hidden behind advanced toggle
@@ -729,10 +733,6 @@ forecast, one row per step (hourly, or 15-minute inside the near-term
 reminders: boolean,             // Enable notifications
 pushDetailed: boolean,          // 👤 Rich notification content
 reachable: boolean,             // 👨‍💻 Device can receive push
-showScheduledTasksInAgenda: boolean,   // Scheduled (eventTime) tasks in agenda
-showDueTasksInAgenda: boolean,         // Due date tasks in agenda
-showPlannedItemsInAgenda: boolean,     // Future planned logs in agenda
-showDueHabitsInAgenda: boolean,       // Habit due-rhythm items in agenda
 agendaOptimizer: boolean,       // Use ILP planner (off = Fast graph)
 
 reachAssist: boolean,           // 👤 Pull-down navigation enabled
@@ -938,7 +938,7 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showPinnedOnCards | **true** | 📌 pinned habits marker |
 | showTaskDateOnCards | **true** | Due/scheduled date for tasks |
 | showPlansOnCards | **true** | 📅 planned future log date |
-| showDayScheduleOnCards | **true** | Schedule link chips |
+| showDayScheduleOnCards | **false** | Schedule link chips |
 | showTimeWindowOnCards | **false** | 🕐 time window display |
 | showSnoozedUntilOnCards | **true** | Snooze countdown |
 | showDurationOnCards | **false** | ⏱️ session length |
@@ -951,11 +951,10 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showTrailOnCards | **false** | Activity dots (recent logs) — calm-card default |
 | showCueOnCards | **true** | Status text below name |
 | showOrderPillsOnCards | **false** | ↗️↘️ schedule link markers — calm-card default |
-| showEarlyOnCards | **false** | 🌅 ready early indicator — calm-card default |
+| showEarlyOnCards | **true** | 🌅 ready early indicator |
 
-> **Calm-card defaults:** the four insight decorations above default OFF so
-> switching out of minimal mode doesn't unleash every extra at once. Installs
-> saved before the flip keep the look they had (see `loadSortSettings`).
+> Simple keeps early indicators on and extra annotations off. Detailed adds
+> practical context without enabling every decoration; Custom saves individual choices.
 
 ---
 
@@ -2029,6 +2028,8 @@ Toasts appear after:
 
 ## XII. SETTINGS OVERVIEW 👤👨‍💻
 
+Card annotations use **simple**, **detailed**, or **custom**. Simple shows dates, plans, reminders, frequency, early indicators, and a status line. Detailed adds which days, time of day, duration, topics, and place. Progress badges, scheduling flexibility, and order marks stay off in both presets; Custom exposes all individual choices except the always-visible sample label. Custom choices are remembered across preset changes. Scheduled times, activity dots, hidden habits, and easier reach stay separate. Simple is the default; display changes reuse the mounted week without replanning. Minimal mode still provides the quietest appearance.
+
 ### 12.1 Accessing Settings
 - Bottom nav: ⚙️ settings button
 - Or: About sheet → settings button
@@ -2046,12 +2047,6 @@ Settings sections (actual order):
 │   ├── up to eight named weighted-rule profiles
 │   ├── six-hour weekly / conditional 15-minute near-term status
 │   └── manual refresh and Open-Meteo/CAMS attribution
-├── home page
-│   ├── bring planned items up
-│   ├── fixed-time tasks in agenda
-│   ├── tasks due today in agenda
-│   ├── planned for today in agenda
-│   └── habits ready today in agenda
 ├── reminders
 │   ├── dated task / fixed appointment heads-ups
 │   └── optional detailed notification text
@@ -2075,7 +2070,7 @@ Settings sections (actual order):
 │   │   └── default travel mode
 │   └── busy times
 ├── look & new habits (group)
-│   ├── what shows on each item (card display toggles)
+│   ├── what shows on each item (simple / detailed / custom, scheduled times, activity dots, hidden habits, easier reach)
 │   ├── new habit defaults
 │   │   ├── default type (build/limit/stop/task)
 │   │   ├── how often (rhythm)
@@ -2478,7 +2473,6 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 {
   // From SORT_PRESETS.todayFirst (the default preset)
   focus: 'balanced',
-  plansFirst: true,
   planWindowDays: 3,
   planWeight: 120,
   dueWeight: 140,
@@ -2500,12 +2494,14 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 
   // Explicit defaults
   preset: 'todayFirst',
+  cardDetailLevel: 'simple',
+  customCardDetails: null,
   showSnoozed: false,
   showSampleOnCards: true,
   showPinnedOnCards: true,
   showTaskDateOnCards: true,
   showPlansOnCards: true,
-  showDayScheduleOnCards: true,
+  showDayScheduleOnCards: false,
   showTimeWindowOnCards: false,
   showSnoozedUntilOnCards: true,
   showDurationOnCards: false,
@@ -2513,18 +2509,14 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
   showFlexibilityOnCards: false,
   showTopicsOnCards: false,
   showLocationOnCards: false,
-  showStatusOnCards: true,
+  showStatusOnCards: false,
   showAgendaTimesOnCards: 'time',
   showTrailOnCards: true,
   showCueOnCards: true,
-  showOrderPillsOnCards: true,
+  showOrderPillsOnCards: false,
   showEarlyOnCards: true,
 
   // Agenda settings
-  showScheduledTasksInAgenda: true,
-  showDueTasksInAgenda: true,
-  showPlannedItemsInAgenda: true,
-  showDueHabitsInAgenda: true,
   reachAssist: true,
   agendaOptimizer: true,
   agendaScoreWeights: {
@@ -2876,7 +2868,10 @@ Same agenda logic, but simplified display:
 | `compactMode` | boolean | true | Square card layout |
 | `reachAssist` | boolean | true | Pull-down to scroll to top |
 
-#### Card Display Options (17 settings) 👤
+#### Card Display Presets and Internal Fields 👤👨‍💻
+
+`cardDetailLevel` defaults to `simple`. Detailed adds days, time windows, duration, topics, and place. The table describes Simple; individual switches appear only in Custom.
+
 | Field | Default | Description | Symbol |
 |-------|---------|-------------|--------|
 | showSnoozed | false | Show snoozed items (faded) | Dimmed card |
@@ -2884,7 +2879,7 @@ Same agenda logic, but simplified display:
 | showPinnedOnCards | true | 📌 pinned marker | 📌 |
 | showPlansOnCards | true | 📅 planned future log | 📅 |
 | showTaskDateOnCards | true | Due date for tasks | Date chip |
-| showDayScheduleOnCards | true | Schedule link chips | ↗️↘️ chips |
+| showDayScheduleOnCards | false | Schedule link chips | ↗️↘️ chips |
 | showTimeWindowOnCards | false | 🕐 time window | 🕐 |
 | showSnoozedUntilOnCards | true | Snooze countdown | "2h left" text |
 | showDurationOnCards | false | ⏱️ session length | ⏱️ |
@@ -2892,19 +2887,18 @@ Same agenda logic, but simplified display:
 | showFlexibilityOnCards | false | Early/delay windows (legacy key name) | separate left/right day pills |
 | showTopicsOnCards | false | 💡 topic chips | 💡 tags |
 | showLocationOnCards | false | 📍 location pin | 📍 |
-| showStatusOnCards | true | Status word | "run", "great", etc. |
+| showStatusOnCards | false | Status word | "run", "great", etc. |
 | showAgendaTimesOnCards | **'time'** | 'show time' / 'symbol only' / 'hide' |
 | showTrailOnCards | true | Activity dots history | ●●●●● dots |
 | minimalShowTrailOnCards | false | Minimal mode: opt-in activity dots | ●●●●● dots |
 | showCueOnCards | true | Status text below name | Colored text |
 
-*Note: 2 card settings are controlled by tab visibility, not boolean toggles: `showOrderPillsOnCards` (depends on schedule links) and `showEarlyOnCards` (depends on agenda state).*
+`showEarlyOnCards` is true in both presets. `showOrderPillsOnCards`, `showStatusOnCards`, and `showFlexibilityOnCards` stay false in both presets; enable them in Custom if desired. Marks only appear when relevant to the agenda.
 
 #### Sort Weights 👤
 | Field | Type | Default | Preset-specific | Purpose |
 |-------|------|---------|-----------------|---------|
 | `focus` | string | 'balanced' | Yes | Focus mode (balanced/build/space) |
-| `plansFirst` | boolean | true | Yes | Show planned items first |
 | `planWindowDays` | number | 3 | Yes | Lookahead days for plan signals |
 | `planWeight` | number | 120 | Yes | Weight for planned items |
 | `dueWeight` | number | 140 | Yes | Weight for due urgency |
@@ -2928,14 +2922,12 @@ Same agenda logic, but simplified display:
 | `stopMode` | string | 'watch' | Zero display mode |
 | `rhythmBias` | number | 0 | Rhythm score adjustment |
 
+Fixed-time tasks, due tasks, planned items, and ready habits always enter the agenda when eligible. Planned items always receive their usual ranking boost. These behaviors have no settings switches; obsolete backup values are ignored.
+
 #### Agenda Settings 👤
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
 | `agendaOptimizer` | boolean | true | Use the production ILP optimizer. Off uses the Fast graph (preview / quality-parity track). |
-| `showScheduledTasksInAgenda` | boolean | true | Show event-timed tasks in agenda |
-| `showDueTasksInAgenda` | boolean | true | Show due-date tasks in agenda |
-| `showPlannedItemsInAgenda` | boolean | true | Show planned future logs |
-| `showDueHabitsInAgenda` | boolean | true | Show due-rhythm habits |
 
 While the app stays open, home refreshes every 60 seconds. Most ticks only slide the next pending fill by a few minutes or keep the last week. A deeper GLPK re-solve runs only when that row is a couple of minutes away *and* the last packing is no longer feasible; it still starts from those prior clocks. After the agenda is on screen, background refinement keeps searching while the app is visible if the fixed-item plan is not yet a GLPK proof — later passes reuse days already proved optimal and only replace the visible week when quality strictly improves. Compatible same-day cache on cold open is reused instead of paying another full-week solve. Cold open keeps the existing 4-second solve cap.
 

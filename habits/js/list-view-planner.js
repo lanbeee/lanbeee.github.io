@@ -704,13 +704,9 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
   const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
   const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
   // Planner-relevant settings only — presentation (minimalMode,
-  // showScheduledTasksInAgenda, showStatusOnCards, …) omitted.
+  // showStatusOnCards, …) omitted.
   const settingsSig = JSON.stringify({
     agendaOptimizer:Boolean(s.agendaOptimizer),
-    // Candidate gates (isWeekCandidate) — toggles must invalidate the plan.
-    showDueTasksInAgenda:s.showDueTasksInAgenda !== false,
-    showPlannedItemsInAgenda:s.showPlannedItemsInAgenda !== false,
-    showDueHabitsInAgenda:s.showDueHabitsInAgenda !== false,
     availabilityMinutes:s.availabilityMinutes || [],
     availabilityOverrides:s.availabilityOverrides || {},
     blockedTimes:s.blockedTimes || [],
@@ -733,7 +729,6 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     weatherProfiles:(s.weatherProfiles || []).map(p=>p && p.id).filter(Boolean).join('|'),
     weatherRevision:s._weatherContext && s._weatherContext.revision || '',
     // attentionScore / sort-lab inputs (isSortSettingKey list).
-    plansFirst:Boolean(s.plansFirst),
     planWindowDays:s.planWindowDays || 0,
     planWeight:s.planWeight || 0,
     dueWeight:s.dueWeight || 0,

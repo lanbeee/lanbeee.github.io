@@ -11,6 +11,23 @@ function cancelAdd(){
   applyAddDefaults();
 }
 
+function syncCardDetailControls(){
+  const mode = sortSettings.cardDetailLevel;
+  document.querySelectorAll('[data-card-detail]').forEach(btn=>{
+    const selected = btn.dataset.cardDetail === mode;
+    btn.classList.toggle('on',selected);
+    btn.setAttribute('aria-pressed',String(selected));
+  });
+  const custom = $('card-detail-custom');
+  if(custom)custom.hidden = mode !== 'custom';
+  const hint = $('card-detail-hint');
+  if(hint)hint.textContent = mode === 'simple'
+    ? 'Dates, plans, reminders, how often, early indicators, and a status line.'
+    : mode === 'detailed'
+      ? 'Also show which days, time of day, duration, topics, and place.'
+      : 'Choose the details you want on each item. Your choices are saved.';
+}
+
 let defaultProfileKind = 'habit';
 let addProfileDrafts = {};
 let addActiveDefaults = null;
@@ -220,6 +237,7 @@ function resetSettingsSheetState(){
 // HYBRID: sync settings UI from stored state
 function syncSettingsControls(){
   sortSettings = loadSortSettings();
+  syncCardDetailControls();
   const resetConfirm = $('settings-reset-confirm');
   if(resetConfirm)resetConfirm.hidden = true;
   updateSortSampleCount();

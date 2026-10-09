@@ -219,11 +219,7 @@ function missedPlannerFingerprint(data,settings){
     availabilityOverrides:settings?.availabilityOverrides,
     locations:settings?.locations,
     travel:settings?.travel,
-    defaultTravelMode:settings?.defaultTravelMode,
-    showScheduledTasksInAgenda:settings?.showScheduledTasksInAgenda,
-    showDueTasksInAgenda:settings?.showDueTasksInAgenda,
-    showPlannedItemsInAgenda:settings?.showPlannedItemsInAgenda,
-    showDueHabitsInAgenda:settings?.showDueHabitsInAgenda
+    defaultTravelMode:settings?.defaultTravelMode
   };
   const source = JSON.stringify([habits,plannerSettings]);
   let hash = 2166136261;

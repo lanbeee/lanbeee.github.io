@@ -105,7 +105,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       showDueHabitsInAgenda: true,
       showTaskDateOnCards: true,
       showPlansOnCards: true,
-      showTimeWindowOnCards: true
+      cardDetailLevel: 'detailed'
     };
     const data = [
       {

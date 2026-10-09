@@ -323,6 +323,15 @@ document.getElementById('setting-prayer-method')?.addEventListener('change',e=>{
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
   updateSortSetting({prayerMethod:normalizePrayerMethod(e.target.value)});
 });
+$('card-detail-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-card-detail]');
+  if(!opt)return;
+  const patch = cardDetailPatch(opt.dataset.cardDetail,sortSettings);
+  if(!patch || sortSettings.cardDetailLevel === opt.dataset.cardDetail)return;
+  updateSortSetting({...patch,cardDetailLevel:opt.dataset.cardDetail},{renderNow:false});
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  else render();
+});
 $('agenda-time-seg')?.addEventListener('click',e=>{
   const opt = e.target.closest('[data-seg-value]');
   if(!opt)return;

@@ -402,8 +402,8 @@ async function progressBar(page){
 
   await page.locator('[data-coach-chapter="tuning"]').click();
   await stage(page,'aSettingsDisplay');
-  await page.locator('[data-setting-toggle="showDueHabitsInAgenda"]').click();
-  await stage(page,'aCards');
+  assert(/automatically/.test(await page.locator('#tings-coach-copy').textContent()),'personalization explains automatic agenda inclusion');
+  await primary(page,'aSettingsDisplay','aCards');
   await primary(page,'aCards','aDefaults');
   await primary(page,'aDefaults','aAppearance');
   await primary(page,'aAppearance','aReminders');

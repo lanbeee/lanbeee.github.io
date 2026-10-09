@@ -36,17 +36,15 @@ function scheduledEventStart(ev){
  */
 function collectScheduledAgendaEvents(data,dayKey,settings){
   const out = [];
-  const showTasks = !settings || settings.showScheduledTasksInAgenda !== false;
-  const showPlanned = !settings || settings.showPlannedItemsInAgenda !== false;
   (data || []).forEach((h,i)=>{
     if(!h)return;
-    if(showTasks && (typeof isFixedTimedTask === 'function'
+    if((typeof isFixedTimedTask === 'function'
       ? isFixedTimedTask(h) : (h.type === 'task' && h.eventTime !== null && !h.breakable))
       && (typeof isTaskDone !== 'function' || !isTaskDone(h))
       && dateKey(h.eventTime) === dayKey){
       out.push({h,i,eventTime:h.eventTime});
     }
-    if(!showPlanned || typeof timedPlanLogForDay !== 'function')return;
+    if(typeof timedPlanLogForDay !== 'function')return;
     const plan = timedPlanLogForDay(h,dayKey);
     if(!plan)return;
     out.push({
@@ -102,15 +100,14 @@ function buildTodayAgenda(data,settings){
   return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, linkOmissions };
 }
 
-// PURE: applies user-facing Today agenda inclusion settings.
+// PURE: eligible due and planned work always enters the Today agenda.
 function includeInTodayAgenda(h,settings){
   // Logs win over plans: once the work is actually done for today it leaves
   // the agenda, even if a plan entry for today is still on the habit.
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
   if(habitHasMultipleDailyOccurrences(h) && (Number(h.target) <= 1 || habitOccurrenceLogsForDay(h,Date.now()).length)
-    && settings.showDueHabitsInAgenda !== false
     && (!hasDaySchedule(h) || nextEligibleDistance(h) === 0) && windowStillDoableToday(h))return true;
-  if(hasPlannedToday(h) && settings.showPlannedItemsInAgenda !== false){
+  if(hasPlannedToday(h)){
     // Timed day plans are hard scheduled rows — do not also soft-fill today.
     if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
     return true;
@@ -118,11 +115,11 @@ function includeInTodayAgenda(h,settings){
   if(h.type === 'task'){
     const when = taskWhen(h);
     const left = when !== null ? daysUntil(when) : null;
-    return settings.showDueTasksInAgenda !== false && left !== null && left <= 0 && windowStillDoableToday(h);
+    return left !== null && left <= 0 && windowStillDoableToday(h);
   }
   if(h.type === 'zero')return false;
   const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;
-  if(settings.showDueHabitsInAgenda !== false && scheduleDistance === 0 && windowStillDoableToday(h)){
+  if(scheduleDistance === 0 && windowStillDoableToday(h)){
     const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
     if(planBy != null){
       const left = daysUntil(planBy);
@@ -139,14 +136,13 @@ function includeInTodayAgenda(h,settings){
   // 3x/7d on Tue/Fri/Sat (or 2x/7d on Fri/Sat) must therefore surface on
   // Saturday even when Friday was completed. A completion earlier today still
   // clears a non-breakable habit normally.
-  if(settings.showDueHabitsInAgenda !== false
-    && scheduleDistance === 0 && windowStillDoableToday(h)
+  if(scheduleDistance === 0 && windowStillDoableToday(h)
     && typeof rhythmFillsEveryEligibleDay === 'function'
     && rhythmFillsEveryEligibleDay(h)
     && (days === null || days > 0))return true;
   // Breakable keepup/reduce: a partial log today must NOT clear the rest of
   // today's duration budget off the agenda (that looked like "all chunks done").
-  if(h.breakable && settings.showDueHabitsInAgenda !== false
+  if(h.breakable
     && scheduleDistance === 0 && windowStillDoableToday(h)
     && typeof breakableBudgetMinutes === 'function'){
     const todayBase = dayStart(Date.now());
@@ -160,7 +156,7 @@ function includeInTodayAgenda(h,settings){
   // created habit should enter the agenda so the user can do it, rather than
   // silently waiting for the first log. After the first log the normal
   // rhythm (days >= target) applies.
-  return settings.showDueHabitsInAgenda !== false && (days === null || days >= target) && scheduleDistance === 0 && windowStillDoableToday(h);
+  return (days === null || days >= target) && scheduleDistance === 0 && windowStillDoableToday(h);
 }
 
 // PURE: resolve a fill item's allowed time window for the current day, or null

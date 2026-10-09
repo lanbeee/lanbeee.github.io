@@ -98,13 +98,6 @@ const UI_SETTING_TOGGLES = {
   display:[
     {key:'minimalMode', title:'minimal mode', hint:'Show emoji, name, status line, and how often. Hide agenda times, trails, insights, and other extras. Does not change what’s due or how the planner works.'}
   ],
-  home:[
-    {key:'plansFirst', title:'bring planned items up', hint:'Items you’ve planned for soon move toward the top.'},
-    {key:'showScheduledTasksInAgenda', title:'fixed-time tasks', hint:'Tasks with a set time show on today’s list.'},
-    {key:'showDueTasksInAgenda', title:'tasks due today', hint:'Tasks due today fill open time on the list.'},
-    {key:'showPlannedItemsInAgenda', title:'planned for today', hint:'Things you’ve planned for today fill open time.'},
-    {key:'showDueHabitsInAgenda', title:'habits ready today', hint:'Habits that belong today fill open time.'}
-  ],
   reminders:[
     {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},
     {key:'pushDetailed', title:'include details in notifications', hint:'Include item names, topics, and places instead of generic notification text.'}
@@ -114,9 +107,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showWeatherOnBusyTimes', title:'weather on busy times', hint:'Show the condition and feels-like temperature during blocks such as sleep.', extraClass:'settings-full-only'},
     {key:'showWeatherOnTravel', title:'weather on travel', hint:'Show the condition and feels-like temperature during travel. On by default.', extraClass:'settings-full-only'}
   ],
-  cards:[
-    {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'},
-    {key:'showSampleOnCards', title:'show sample tag', hint:'Mark sample habits on the home list.', extraClass:'settings-full-only'},
+  cardDetails:[
     {key:'showPinnedOnCards', title:'show pinned', hint:'Show a pin mark on pinned items.', extraClass:'settings-full-only'},
     {key:'showTaskDateOnCards', title:'show task dates', hint:'Show due / someday / fixed-time marks on tasks.', extraClass:'settings-full-only'},
     {key:'showPlansOnCards', title:'show planned', hint:'Show when something is planned next.', extraClass:'settings-full-only'},
@@ -130,13 +121,16 @@ const UI_SETTING_TOGGLES = {
     {key:'showLocationOnCards', title:'show place', hint:'Show the place on each item.', extraClass:'settings-full-only'},
     {key:'showRemindersOnCards', title:'show reminder mark', hint:'Show a bell when this item sends a phone notification or alarm. Tap it to turn those reminders off.', extraClass:'settings-full-only'},
     {key:'showStatusOnCards', title:'show progress', hint:'Show done / almost / behind (or new).', extraClass:'settings-full-only'},
-    {key:'showEarlyOnCards', title:'show early', hint:'Show early when it helps a packed day.', extraClass:'settings-full-only'}
+    {key:'showEarlyOnCards', title:'show early', hint:'Show early when it helps a packed day.', extraClass:'settings-full-only'},
+    {key:'showCueOnCards', title:'show status line', hint:'Show the one-line status like due today or on track.', pressed:true},
+    {key:'showOrderPillsOnCards', title:'show agenda order marks', hint:'Show before / after, doing-now, and linked marks.', extraClass:'settings-full-only'}
+  ],
+  cards:[
+    {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'}
   ],
   cardsAfterTime:[
     {key:'showTrailOnCards', title:'show activity dots', hint:'Show the two-week dot history on each item.', extraClass:'settings-full-only'},
     {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Show the two-week dot history on each item.', extraClass:'settings-minimal-only'},
-    {key:'showCueOnCards', title:'show status line', hint:'Show the one-line status like due today or on track.', pressed:true},
-    {key:'showOrderPillsOnCards', title:'show agenda order marks', hint:'Show before / after, doing-now, and linked marks.', extraClass:'settings-full-only'},
     {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}
   ],
   defaults:[

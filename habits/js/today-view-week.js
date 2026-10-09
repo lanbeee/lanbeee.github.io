@@ -47,7 +47,6 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
 // stays eligible so a failed Saturday plan cannot drop a Sunday due date.
 function fillIsPlannedOnDay(h,dayBase,settings){
   if(!h || dayBase == null)return false;
-  if(settings && settings.showPlannedItemsInAgenda === false)return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
   return typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase);
@@ -85,7 +84,6 @@ function plannerPinnedDayBase(h,settings,todayBase,opts){
   // Daily rhythms still need every eligible day. An untimed plan on one of
   // those days is a same-day commitment, not a lock that deletes the rest.
   if(h.type !== 'task' && Number.isFinite(Number(h.target)) && Number(h.target) <= 1)return null;
-  if(!settings || settings.showPlannedItemsInAgenda === false)return null;
   if(typeof planLogEntries !== 'function' || typeof logTime !== 'function')return null;
   const todayKey = dateKey(today);
   let best = null;
@@ -150,9 +148,8 @@ function isWeekPinnedToday(h,settings){
   // computed task-due/plan-by markers; treating those as pins would erase an
   // explicit delay allowance and force every soft due date onto today.
   if(typeof hasPlannedEntryForDay === 'function'
-    && hasPlannedEntryForDay(h,dateKey(Date.now()))
-    && settings.showPlannedItemsInAgenda !== false)return true;
-  if(h.type === 'task' && h.hardDue && h.dueDate !== null && settings.showDueTasksInAgenda !== false){
+    && hasPlannedEntryForDay(h,dateKey(Date.now())))return true;
+  if(h.type === 'task' && h.hardDue && h.dueDate !== null){
     const left = daysUntil(h.dueDate);
     return left !== null && left <= 0;
   }
@@ -227,7 +224,6 @@ function isWeekCandidate(h,settings,dayBase,weekday){
       return dayStart(h.eventTime) === dayBase;
     }
     if(h.dueDate === null)return false;            // someday → not week-planned
-    if(settings.showDueTasksInAgenda === false)return false;
     if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
     const dueBase = dayStart(h.dueDate);
     const todayBase = dayStart(Date.now());
@@ -247,8 +243,7 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
   // Timed day plans are hard scheduled rows for that day — not soft week fills.
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
-  if(hasPlannedForDay(h,dayBase))return settings.showPlannedItemsInAgenda !== false;
-  if(settings.showDueHabitsInAgenda === false)return false;
+  if(hasPlannedForDay(h,dayBase))return true;
   if(habitHasMultipleDailyOccurrences(h) && Number(h.target) <= 1)return true;
   if(habitHasMultipleDailyOccurrences(h) && habitOccurrenceLogsForDay(h,dayBase).length
     && !completedOnDay(h,dayBase))return true;

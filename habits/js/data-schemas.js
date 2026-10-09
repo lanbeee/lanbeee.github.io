@@ -173,7 +173,6 @@
  * @typedef {Object} Settings
  * @property {'balanced'|'build'|'planned'|'todayFirst'|'custom'} preset
  * @property {'balanced'|'build'|'space'} focus                 — inherited from the preset
- * @property {boolean} plansFirst                              — let planned habits rise
  * @property {number} planWindowDays                           — 1-14, look-ahead for plan signal
  * @property {number} planWeight                               — 0-200, multiplies plan signal
  * @property {number} dueWeight                                — 0-200
@@ -205,16 +204,14 @@
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
  * @property {boolean} showRemindersOnCards                    — show a bell when an item has phone notifications or alarms
+ * @property {string} cardDetailLevel                          — card annotations: simple | detailed | custom
+ * @property {Object|null} customCardDetails                    — saved custom annotation choices
  * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
  * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
  * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)
  * @property {boolean} showCueOnCards                          — show one-line status on home cards
  * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
  * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview (default off, opt-in)
- * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
- * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
- * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
- * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
  * @property {boolean} agendaOptimizer                         — exact ILP packer for tight windows (lazy GLPK); off by default, fast planner is the default
  * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards

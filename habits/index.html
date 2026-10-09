@@ -891,16 +891,6 @@
           </div>
         </section>
         <section class="settings-block settings-collapsible">
-          <button type="button" class="settings-collapse-head" id="settings-home-head" data-collapse-target="settings-home-body" aria-expanded="false" aria-controls="settings-home-body">
-            <span class="settings-label">home page</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-home-body" hidden>
-            <p class="field-hint">Choose what appears in today’s list on home.</p>
-            <div class="settings-grid" data-ui-toggles="home"></div>
-          </div>
-        </section>
-        <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-reminders-head" data-collapse-target="settings-reminders-body" aria-expanded="false" aria-controls="settings-reminders-body">
             <span class="settings-label">reminders</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1067,8 +1057,17 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-cards-body" hidden>
-          <p class="field-hint">Pick which marks appear on home list items.</p>
-          <div class="settings-grid" data-ui-toggles="cards"></div>
+            <span class="settings-sublabel settings-full-only">item details</span>
+            <div class="seg settings-full-only" id="card-detail-seg" role="group" aria-label="item detail level">
+              <button type="button" class="seg-opt" data-card-detail="simple" aria-pressed="false">simple</button>
+              <button type="button" class="seg-opt" data-card-detail="detailed" aria-pressed="false">detailed</button>
+              <button type="button" class="seg-opt" data-card-detail="custom" aria-pressed="false">custom</button>
+            </div>
+            <p class="field-hint settings-full-only" id="card-detail-hint" aria-live="polite"></p>
+            <div id="card-detail-custom" class="settings-full-only" hidden>
+              <div class="settings-grid" data-ui-toggles="cardDetails"></div>
+            </div>
+            <div class="settings-grid" data-ui-toggles="cards"></div>
             <span class="settings-sublabel settings-full-only">scheduled time on items</span>
             <div class="seg settings-full-only" id="agenda-time-seg" role="group" aria-label="how scheduled times appear on items">
               <button type="button" class="seg-opt" data-seg-value="time">show time</button>

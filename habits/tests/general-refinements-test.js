@@ -55,7 +55,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     localStorage.setItem('tings_v2',JSON.stringify(tasks));
     localStorage.setItem('tings_app_settings_v2',JSON.stringify({
       preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:false,
-      showDurationOnCards:true,homeExtraMode:'cards',
+      cardDetailLevel:'detailed',homeExtraMode:'cards',
       availabilityMinutes:[600,600,600,600,600,600,600],availabilityOverrides:{},
       topics:[],travel:{},defaultTravelMode:'walking',lastKnownLocationId:'home',
       locations:[
