@@ -93,11 +93,20 @@
   border-color:color-mix(in srgb,var(--swatch-fg,var(--text)) 40%,transparent);
 }
 .emoji-bg-swatch:active{transform:scale(0.94);}
-.generic-emoji-wrap{margin:0 0 12px;}
+.generic-emoji-wrap{margin:0 0 12px;min-width:0;}
 .generic-emoji-wrap .settings-sublabel{margin-bottom:8px;}
+/* Same sideways scroller as topic/place chips: one row, no wrap. */
 .generic-emoji-row{
-  display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  display:flex;align-items:center;gap:7px;flex-wrap:nowrap;
+  flex:0 0 100%;min-width:0;
+  overflow-x:auto;scroll-snap-type:x proximity;
+  -webkit-overflow-scrolling:touch;
+  margin:0 0 8px;padding:2px 0;
+  scrollbar-width:none;
 }
+.generic-emoji-row::-webkit-scrollbar{display:none;}
+.generic-emoji-row > .generic-emoji-chip{scroll-snap-align:start;flex-shrink:0;}
+.generic-emoji-row.scrolling > *{pointer-events:none;}
 .generic-emoji-chip{
   width:34px;height:34px;border-radius:10px;border:0.5px solid var(--border);
   background:var(--bg2);color:var(--text);font-size:18px;line-height:1;

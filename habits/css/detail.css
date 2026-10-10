@@ -2,6 +2,7 @@
   position:sticky;
   top:0;
   z-index:45;
+  overflow:visible;
   /* Match the section cards below, while actions use a separate toolbar. */
   margin:0 0 6px;
   padding:8px;
@@ -12,7 +13,16 @@
   align-items:stretch;justify-content:center;gap:3px;
 }
 .detail-head .ting-main{margin-bottom:1px;}
-.detail-head .ting-name{font-size:calc(14.5px * var(--font-scale));font-weight:600;}
+.detail-head .ting-name{
+  appearance:none;-webkit-appearance:none;
+  margin:0;padding:0;border:0;background:transparent;
+  font:inherit;font-size:calc(14.5px * var(--font-scale));font-weight:600;
+  color:inherit;text-align:left;cursor:pointer;max-width:100%;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.detail-head .ting-name:focus-visible{
+  outline:2px solid var(--text2);outline-offset:2px;border-radius:4px;
+}
 /* Wrap to two lines instead of ellipsizing — the cue carries the time
    window ("sunrise +10m–sunrise +40m") and nowrap cut its end at 320px. */
 .detail-cue{
@@ -20,8 +30,30 @@
   overflow:hidden;white-space:normal;word-break:break-word;
 }
 .detail-head .detail-cue{font-size:11px;line-height:1.2;}
+.detail-head .detail-mark-wrap{
+  position:relative;align-self:center;width:46px;min-width:46px;height:46px;
+  overflow:visible;z-index:3;
+}
 .detail-head .detail-mark{
-  cursor:pointer;width:46px;min-width:46px;height:46px;
+  cursor:pointer;width:100%;min-width:0;height:100%;
+}
+.detail-mark-menu{
+  position:absolute;top:calc(100% + 6px);left:0;z-index:60;
+  display:flex;flex-direction:column;gap:2px;
+  min-width:168px;padding:6px;
+  background:var(--bg);border:0.5px solid var(--border);
+  border-radius:var(--radius-sm);box-shadow:var(--floating-shadow,0 8px 24px rgba(0,0,0,0.14));
+}
+.detail-mark-menu[hidden]{display:none;}
+.detail-mark-choice{
+  display:flex;align-items:center;min-height:44px;padding:8px 12px;
+  border:0;border-radius:10px;background:transparent;color:var(--text);
+  font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.detail-mark-choice:active{background:var(--bg2);}
+@media (hover:hover) and (pointer:fine){
+  .detail-mark-choice:hover{background:var(--bg2);}
 }
 .detail-head .detail-mark .ti{font-size:34px;}
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:36px;}
@@ -337,7 +369,8 @@ body .detail-sheet > .detail-head{
   display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:8px;
   padding:8px;margin-bottom:6px;min-width:0;
 }
-body .detail-head > .detail-mark{grid-column:1;grid-row:1;width:56px;min-width:56px;height:56px;}
+body .detail-head > .detail-mark-wrap{grid-column:1;grid-row:1;width:56px;min-width:56px;height:56px;}
+body .detail-head .detail-mark{width:100%;min-width:0;height:100%;}
 .detail-head > .detail-title-wrap{grid-column:2;grid-row:1;}
 .detail-head > .detail-head-actions{
   grid-column:3;grid-row:1;max-width:none;
@@ -396,7 +429,7 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 @media (max-height:480px) and (min-width:600px){
   .detail-head .detail-cue{display:none;}
   body .detail-sheet > .detail-head{grid-template-columns:40px minmax(0,1fr);padding-block:4px;margin-bottom:2px;}
-  body .detail-head > .detail-mark{width:40px;min-width:40px;height:40px;}
+  body .detail-head > .detail-mark-wrap{width:40px;min-width:40px;height:40px;}
   .detail-head > .detail-head-actions{display:none;}
 }
 

@@ -265,7 +265,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
         await page.waitForTimeout(80);
         const overflow=await page.evaluate(nav=>{
           const panel=getSheetInner('detail-sheet').querySelector(`[data-detail-nav="${nav}"]`),bounds=panel.getBoundingClientRect();
-          return [...panel.querySelectorAll('button,input,select,label')].filter(el=>el.getClientRects().length && !el.closest('[hidden]') && !el.closest('.tag-row,.app-preset-list')).filter(el=>{
+          return [...panel.querySelectorAll('button,input,select,label')].filter(el=>el.getClientRects().length && !el.closest('[hidden]') && !el.closest('.tag-row,.generic-emoji-row,.app-preset-list')).filter(el=>{
             const r=el.getBoundingClientRect();return r.left<bounds.left-1 || r.right>bounds.right+1;
           }).map(el=>el.id || el.className);
         },nav);

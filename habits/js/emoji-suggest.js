@@ -1,9 +1,9 @@
 // Auto emoji suggestion based on habit name.
 // Exact keyword match first (multi-word phrases are most specific), then a
-// high-confidence fuzzy pass for misspelled keywords, then the user's own
-// pick from a generic quick-pick row — so nobody is ever stuck without an
-// emoji. Debounced to avoid twitchiness. Fuzzy matching is bucketed by word
-// length and bails out early, so it stays cheap even with a big keyword map.
+// high-confidence fuzzy pass for misspelled keywords. Unmatched names get a
+// stable generic from the quick-pick row so the tile is never blank.
+// Debounced to avoid twitchiness. Fuzzy matching rejects a first-letter swap
+// with an identical remainder so "wakeup" cannot become 💄.
 
 const EMOJI_MAP = [
   { words: ['run', 'running', 'jog', 'jogging', 'sprint'], emoji: '🏃' },
@@ -15,7 +15,7 @@ const EMOJI_MAP = [
   { words: ['dance', 'dancing', 'dancer', 'zumba', 'ballet'], emoji: '💃' },
   { words: ['meditate', 'meditation', 'meditating', 'mindful', 'mindfulness'], emoji: '🧘' },
   { words: ['sleep', 'asleep', 'bed', 'rest', 'nap', 'napping', 'siesta'], emoji: '🛌' },
-  { words: ['wake', 'waking', 'morning', 'early', 'dawn', 'sunrise'], emoji: '🌅' },
+  { words: ['wake', 'waking', 'wakeup', 'wake-up', 'wake up', 'waking up', 'morning', 'early', 'dawn', 'sunrise'], emoji: '🌅' },
   { words: ['doctor', 'checkup', 'check-up', 'dentist', 'appointment', 'clinic'], emoji: '🏥' },
   { words: ['pill', 'pills', 'medicine', 'medication', 'vitamin', 'vitamins', 'supplement', 'supplements'], emoji: '💊' },
   { words: ['water', 'hydrate', 'hydration', 'drink water'], emoji: '💧' },
@@ -329,11 +329,42 @@ let _detailEmojiAtOpen = '';
 // win when nothing more specific matches, so "morning run" -> 🏃 not 🌅.
 const _MODIFIER_WORDS = new Set(['morning','evening','night','nighttime','afternoon','midday','noon','dawn','sunrise','sunset','early','wake','waking','today','tonight','tomorrow','daily','weekly','monthly']);
 
-// Generic emojis shown as tappable chips under the emoji field so a habit is
-// never left without an emoji — even when the name matches nothing at all.
-// Deliberately neutral: none of these are used by any keyword mapping, so the
-// row never duplicates or fights an auto-suggested emoji.
+// Neutral fallbacks when the name matches nothing. Kept out of the keyword
+// map so an unmatched name never steals a mapped activity emoji.
 const GENERIC_EMOJIS = ['🔥','🌟','📌','🏆','✨','💫','🌈','🍀','⚡','🌻','🦋','🌊','🌸','🧿','🎈','🏵️','🪐','🥇'];
+
+function uniqueEmojiList(list){
+  const seen = new Set();
+  const out = [];
+  for(const emoji of list){
+    if(!emoji || seen.has(emoji))continue;
+    seen.add(emoji);
+    out.push(emoji);
+  }
+  return out;
+}
+
+// Common daily-life emojis shown first in the one-row horizontal picker.
+// Remaining keyword-map emojis append so every auto-suggest pick is also tappable.
+const COMMON_PICKER_EMOJIS = [
+  '🏃','🚶','🏋️','🤸','🧘','🏊','🚴','💃','🛌','🌅','👟','🧍','🧗','🏄','⛷️','🛹','🚣','🥊','🥋',
+  '⚽','🏀','🎾','⛳','🏐','⚾','🏓','🏸','🎣','🎳','🎯',
+  '💊','💧','🏥','🩺','💉','🧠','💪','❤️','🧊','🧖','💆','🧴','🚿','🪥','💅','💇','🪒','💄','⚖️','🛏️',
+  '☕','🍵','🥤','🍳','🍽️','🥗','🍎','🍌','🍇','🍓','🥕','🥬','🍞','🧀','🥚','🍝','🍚','🍣','🍕','🍔','🍟','🍪','🍰','🍫','🍦','🍱','🥡','🍖','🐟','🍯','🧃','🍷','🍺',
+  '💼','💻','📧','📱','📚','📖','✍️','📝','🎓','📋','✅','⏰','⏳','📊','📈','💡','📰','⌨️','🖥️','📁','📄','💬','🤝','🚀',
+  '🏠','🧹','👕','🛒','🧺','🗑️','🔧','🔑','📦','🌱','🧸','👶','🍼','🚗','🛍️','🔔',
+  '🙏','👥','👨‍👩‍👧‍👦','💙','☎️','🎁','🎉','🎂','👋','💍',
+  '🎸','🎨','📸','🎮','🎧','🎵','🎬','📺','🧩','♟️','🎤','🎻','🖌️','✂️','🎭',
+  '🌳','🌸','🌻','🍀','🌈','🌊','🦋','☀️','🌙','⭐','☔','❄️','🌴','🌍','🐶','🐱','🐾','🐕',
+  '🧳','✈️','🏨','🗺️',
+  '😀','😊','🙂','😎','🤩','🥳','😅','😇','🤔','😴','🤗','🙌','👍','👏','🫶','💯',
+  '🔥','🌟','📌','🏆','✨','💫','🧿','🎈','🏵️','🪐','🥇','⚡','🚫','⛔','🚭'
+];
+const PICKER_EMOJIS = uniqueEmojiList([
+  ...COMMON_PICKER_EMOJIS,
+  ...EMOJI_MAP.map(entry => entry.emoji),
+  ...GENERIC_EMOJIS
+]);
 
 // Fuzzy index: single-word keywords bucketed by length so a misspelled word
 // only ever compares against keywords of a similar size. Built once at load.
@@ -387,6 +418,15 @@ function _editDistance(a,b,maxDist){
   return prev[bLen];
 }
 
+// Same-length first-letter swap with an identical remainder is a different
+// word ("wakeup"/"makeup"), not a typo. Other close edits, including a
+// leading extra letter ("vvorkout"), may still match.
+function _fuzzyStemOk(word, kw){
+  if(!word || !kw)return false;
+  if(word[0] === kw[0])return true;
+  return !(word.length === kw.length && word.slice(1) === kw.slice(1));
+}
+
 // High-confidence fuzzy match for one misspelled word. Only accepts close
 // edits (distance 1; 2 for long words) against keywords of nearly the same
 // length, and rejects ties between different emojis as too ambiguous. This
@@ -403,6 +443,7 @@ function _fuzzyEmojiFor(word){
     for(const cand of bucket){
       const dist = _editDistance(word, cand.kw, maxDist);
       if(dist < 1 || dist > maxDist)continue;
+      if(!_fuzzyStemOk(word, cand.kw))continue;
       if(!best || dist < best.dist || (dist === best.dist && !cand.modifier && best.modifier)){
         best = {emoji:cand.emoji,dist,modifier:cand.modifier};
         tieEmojis = new Set([cand.emoji]);
@@ -431,14 +472,37 @@ function _fuzzyEmoji(words){
   return best ? best.emoji : null;
 }
 
+function _keywordHitsWord(word, kw){
+  if(word === kw)return true;
+  // Short keywords ("no", "tea", "run") must be exact — otherwise
+  // "notebook" becomes 🚫 and "team" becomes 🍵.
+  return kw.length >= 4 && word.startsWith(kw);
+}
+
+function _nameWords(name){
+  const lower = name.toLowerCase().trim();
+  const out = [];
+  const seen = new Set();
+  const add = w => {
+    const n = _normalizeWord(w);
+    if(!n || seen.has(n))return;
+    seen.add(n);
+    out.push(n);
+  };
+  for(const raw of lower.split(/\s+/).filter(Boolean)){
+    add(raw);
+    if(raw.includes('-'))raw.split('-').forEach(add);
+  }
+  return {lower, words:out};
+}
+
 function findEmojiMatch(name){
   if(!name || !name.trim())return null;
-  const lower = name.toLowerCase().trim();
-  const words = lower.split(/\s+/).filter(Boolean);
-  const normWords = words.map(_normalizeWord).filter(Boolean);
+  const {lower, words:normWords} = _nameWords(name);
   let bestPhrase = null;   // multi-word phrase (most specific)
   let bestStrong = null;   // single non-modifier keyword
   let bestWeak = null;     // single modifier keyword
+  const claimed = new Set();
   for(const entry of EMOJI_MAP){
     for(const keyword of entry.words){
       const kw = keyword.toLowerCase();
@@ -446,8 +510,9 @@ function findEmojiMatch(name){
         if(lower.includes(kw) && (!bestPhrase || kw.length > bestPhrase.len))bestPhrase = {emoji:entry.emoji,len:kw.length};
         continue;
       }
-      const matched = normWords.some(w => w === kw || w.startsWith(kw));
-      if(!matched)continue;
+      const hit = normWords.find(w => _keywordHitsWord(w, kw));
+      if(!hit)continue;
+      claimed.add(hit);
       if(_MODIFIER_WORDS.has(kw)){
         if(!bestWeak || kw.length > bestWeak.len)bestWeak = {emoji:entry.emoji,len:kw.length};
       }else{
@@ -457,10 +522,28 @@ function findEmojiMatch(name){
   }
   if(bestPhrase)return bestPhrase.emoji;
   if(bestStrong)return bestStrong.emoji;
-  const fuzzy = _fuzzyEmoji(normWords);
+  const fuzzy = _fuzzyEmoji(normWords.filter(w => !claimed.has(w)));
   if(fuzzy)return fuzzy;
   if(bestWeak)return bestWeak.emoji;
   return null;
+}
+
+// PURE: a stable generic from the name so unmatched habits still get an
+// emoji, and the same name always picks the same chip.
+function pickGenericEmoji(name){
+  const text = (name || '').trim();
+  if(!text || !GENERIC_EMOJIS.length)return null;
+  let hash = 2166136261;
+  for(let i = 0; i < text.length; i++){
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return GENERIC_EMOJIS[(hash >>> 0) % GENERIC_EMOJIS.length];
+}
+
+function suggestEmojiFor(name){
+  if(!name || !name.trim())return null;
+  return findEmojiMatch(name) || pickGenericEmoji(name);
 }
 
 // PURE: pick a background color that keeps the (emoji + color) pair unique
@@ -550,20 +633,27 @@ function syncGenericEmojiRows(){
   }
 }
 
-// RENDER: fill the generic quick-pick row for one sheet. Tapping a chip picks
-// that emoji for the field; it also counts as a user choice, so later name
-// edits never fight the pick (and the user can still clear it themselves).
+function scrollPickerToSelected(containerId){
+  const wrap = document.getElementById(containerId);
+  if(!wrap)return;
+  const on = wrap.querySelector('.generic-emoji-chip.on');
+  if(on)on.scrollIntoView({inline:'center',block:'nearest',behavior:'auto'});
+}
+
+// RENDER: fill the one-row horizontal picker (same scroll as topic/place chips).
+// Tapping a chip picks that emoji; later name edits never fight the pick.
 function renderGenericEmojiRow(containerId, inputId){
   const wrap = document.getElementById(containerId);
   if(!wrap)return;
   wrap.textContent = '';
-  for(const g of GENERIC_EMOJIS){
+  for(const g of PICKER_EMOJIS){
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'generic-emoji-chip';
     chip.textContent = g;
     chip.setAttribute('aria-label',`use ${g} emoji`);
     chip.addEventListener('click',()=>{
+      if(typeof isScrollGuarded === 'function' && isScrollGuarded(chip))return;
       const input = document.getElementById(inputId);
       if(!input)return;
       input.value = g;
@@ -575,20 +665,27 @@ function renderGenericEmojiRow(containerId, inputId){
     });
     wrap.appendChild(chip);
   }
+  if(typeof addScrollGuard === 'function')addScrollGuard(wrap,'x');
   syncGenericEmojiRows();
 }
 
 // HANDLER: as the name changes, auto-fill a matching emoji (unless the user
-// has manually edited the field) and assign a disambiguating color. No match
-// just leaves the field blank — the user can open the emoji editor for the
-// generic quick-pick chips at any time via the preview tile.
+// has manually edited the field) and assign a disambiguating color. No
+// keyword match uses a stable generic from the quick-pick row so the tile
+// is never blank while a name is present.
 function applyAutoEmojiFor({nameId, emojiId, userEdited, skipIfHadEmoji, after}){
   if(userEdited)return;
   if(skipIfHadEmoji)return;
   const nameInput = document.getElementById(nameId);
   const emojiInput = document.getElementById(emojiId);
   if(!nameInput || !emojiInput)return;
-  const emoji = findEmojiMatch(nameInput.value);
+  const name = nameInput.value;
+  if(nameId === 'ting-message' && !name.trim()){
+    emojiInput.value = '';
+    selectAddEmojiColor('');
+    return;
+  }
+  const emoji = suggestEmojiFor(name);
   if(nameId === 'ting-message'){
     emojiInput.value = emoji || '';
     selectAddEmojiColor(emoji ? pickUniqueColor(emoji) : '');
@@ -597,6 +694,7 @@ function applyAutoEmojiFor({nameId, emojiId, userEdited, skipIfHadEmoji, after})
   if(!emoji)return;
   emojiInput.value = emoji;
   if(typeof after === 'function')after();
+  updateEmojiPreview();
 }
 
 function applyAutoEmoji(){
@@ -640,17 +738,18 @@ function setupEmojiSuggestion(){
     preview.addEventListener('click',()=>{
       if(editArea)editArea.hidden = false;
       if(emojiInput)emojiInput.focus({preventScroll:true});
+      requestAnimationFrame(()=>scrollPickerToSelected('ting-generic-emoji'));
     });
   }
   // The detail disclosure owns visibility; the preview opens that section.
   const detailPreview = document.getElementById('detail-emoji-preview');
   if(detailPreview){
     detailPreview.addEventListener('click',()=>{
-      if($('detail-appearance-disclosure'))$('detail-appearance-disclosure').open = true;
-      const el = document.getElementById('detail-emoji');
-      if(el)el.focus({preventScroll:true});
+      openDetailEmojiEditor({scroll:false});
     });
   }
+  setupDetailMarkMenu();
+  setupDetailNameEdit();
   if(typeSeg){
     typeSeg.addEventListener('click',()=>setTimeout(updateEmojiPreview,0));
   }
@@ -675,18 +774,132 @@ function setupEmojiSuggestion(){
   updateEmojiPreview();
 }
 
+function setDetailMarkMenuOpen(open){
+  const menu = document.getElementById('detail-mark-menu');
+  const mark = document.getElementById('detail-mark');
+  if(!menu || !mark)return;
+  menu.hidden = !open;
+  mark.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function openDetailEmojiEditor(opts){
+  setDetailMarkMenuOpen(false);
+  if(opts?.scroll !== false && typeof scrollDetailToNav === 'function'){
+    scrollDetailToNav('identity', 'smooth');
+  }
+  const disclosure = document.getElementById('detail-appearance-disclosure');
+  if(disclosure)disclosure.open = true;
+  const reveal = ()=>{
+    scrollPickerToSelected('detail-generic-emoji');
+    const el = document.getElementById('detail-emoji');
+    if(el)el.focus({preventScroll:true});
+  };
+  if(opts?.scroll === false)requestAnimationFrame(reveal);
+  else setTimeout(reveal, 280);
+}
+
+function openDetailNameEditor(opts){
+  setDetailMarkMenuOpen(false);
+  if(opts?.scroll !== false && typeof scrollDetailToNav === 'function'){
+    scrollDetailToNav('identity', 'smooth');
+  }
+  const disclosure = document.getElementById('detail-name-disclosure');
+  if(disclosure)disclosure.open = true;
+  const el = document.getElementById('detail-habit-message');
+  if(el){
+    const focus = ()=>el.focus({preventScroll:true});
+    if(opts?.scroll === false)focus();
+    else setTimeout(focus, 280);
+  }
+}
+
+function setupDetailNameEdit(){
+  const name = document.getElementById('detail-name');
+  if(!name || name._nameEditBound)return;
+  name._nameEditBound = true;
+  name.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(detailIdx === null)return;
+    openDetailNameEditor();
+  });
+}
+
+function setupDetailMarkMenu(){
+  const mark = document.getElementById('detail-mark');
+  const menu = document.getElementById('detail-mark-menu');
+  const logBtn = document.getElementById('detail-mark-log');
+  const editBtn = document.getElementById('detail-mark-edit-emoji');
+  if(!mark || !menu)return;
+  mark.setAttribute('aria-haspopup','menu');
+  mark.setAttribute('aria-controls','detail-mark-menu');
+  mark.setAttribute('aria-expanded','false');
+  mark.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(detailIdx === null)return;
+    const h = typeof load === 'function' ? load()[detailIdx] : null;
+    if(logBtn)logBtn.textContent = h && h.type === 'task' ? 'complete' : 'log an entry';
+    setDetailMarkMenuOpen(menu.hidden);
+  });
+  if(logBtn){
+    logBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      setDetailMarkMenuOpen(false);
+      if(detailIdx === null || typeof requestLogTing !== 'function')return;
+      const idx = detailIdx;
+      requestLogTing(idx,()=>{
+        if(typeof openDetail === 'function')openDetail(idx);
+        if(typeof render === 'function')render();
+      });
+    });
+  }
+  if(editBtn){
+    editBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      openDetailEmojiEditor();
+    });
+  }
+  document.addEventListener('click',e=>{
+    if(menu.hidden)return;
+    if(e.target.closest('#detail-mark, #detail-mark-menu'))return;
+    setDetailMarkMenuOpen(false);
+  }, true);
+  document.addEventListener('keydown',e=>{
+    if(e.key !== 'Escape' || menu.hidden)return;
+    setDetailMarkMenuOpen(false);
+  });
+}
+
 // Reset per-open detail-sheet emoji state (suggestion + user-edited flag).
 (function(){
   const orig = window.openDetail;
   if(typeof orig === 'function'){
     window.openDetail = function(i){
+      setDetailMarkMenuOpen(false);
       _detailEmojiUserEdited = false;
       clearTimeout(_detailSuggestTimer);
       const r = orig(i);
       const el = document.getElementById('detail-emoji');
       _detailEmojiAtOpen = el ? el.value.trim() : '';
       updateEmojiPreview();
+      const mark = document.getElementById('detail-mark');
+      const h = typeof load === 'function' ? load()[i] : null;
+      if(mark && h){
+        mark.setAttribute('aria-label', h.type === 'task'
+          ? `complete or edit emoji for ${h.name}`
+          : `log or edit emoji for ${h.name}`);
+      }
+      const nameBtn = document.getElementById('detail-name');
+      if(nameBtn && h){
+        nameBtn.setAttribute('aria-label', h.name ? `edit name ${h.name}` : 'edit name');
+      }
       return r;
+    };
+  }
+  const origClose = window.closeDetail;
+  if(typeof origClose === 'function'){
+    window.closeDetail = function(){
+      setDetailMarkMenuOpen(false);
+      return origClose();
     };
   }
 })();

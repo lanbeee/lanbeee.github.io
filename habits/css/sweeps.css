@@ -240,8 +240,12 @@ body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
    .detail-mark circle rules and the tile renders as a squashed 68×39 blob.
    Scope a proper tile here: home-card geometry scaled to the header row,
    tone-inverted (--bg tile on the --bg2 head card, or the habit's emoji bg). */
-.detail-head .detail-mark{
+.detail-head .detail-mark-wrap{
   align-self:center;width:56px;min-width:56px;height:56px;
+  overflow:visible;
+}
+.detail-head .detail-mark{
+  width:100%;min-width:0;height:100%;
   border-radius:14px;
 }
 .detail-head .detail-mark.emoji-pulse{
@@ -251,8 +255,8 @@ body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
 .detail-head .detail-mark .emoji-mark,
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:30px;line-height:1;}
 .detail-head .detail-mark .ti{font-size:28px;}
-/* Keep the corner tick badge — it signals that tapping the tile logs the
-   habit/task. Same look as the home card; the header padding gives it room. */
+/* Keep the corner tick badge — it signals the tile still logs, now via a
+   log-or-edit-emoji menu. Same look as the home card; header padding gives it room. */
 .detail-head .detail-mark{overflow:visible;}
 .detail-head .detail-mark::before,
 .detail-head .detail-mark::after{right:-4px;bottom:-4px;width:19px;height:19px;}

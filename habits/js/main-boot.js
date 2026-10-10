@@ -261,6 +261,7 @@ $('do-cancel').addEventListener('click',cancelAdd);
 $('add-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cancelAdd();});
 
 $('do-save').addEventListener('click',()=>{
+  if(typeof applyAutoEmoji === 'function')applyAutoEmoji();
   const name = $('ting-message').value.trim();
   if(!name){$('ting-message').focus();return;}
   const data = load();
@@ -1530,13 +1531,8 @@ $('detail-save').addEventListener('click',()=>{
   render();
   if((h.weatherProfileMode !== 'none' || h.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 });
-$('detail-mark').addEventListener('click',()=>{
-  if(detailIdx === null)return;
-  requestLogTing(detailIdx,()=>{
-    openDetail(detailIdx);
-    render();
-  });
-});
+// Detail-header emoji tap is a two-choice menu (log vs edit emoji), wired
+// in emoji-suggest.js. Home cards still log on a direct pulse tap.
 if($('detail-add'))$('detail-add').addEventListener('click',()=>{
   if(detailIdx === null)return;
   requestLogTing(detailIdx,()=>{

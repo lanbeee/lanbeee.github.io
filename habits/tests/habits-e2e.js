@@ -64,6 +64,7 @@ function datetimeInput(d){
     await page.locator('#list .ting-card', { hasText:scheduledName }).click();
     await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
     await page.locator('#detail-mark').click();
+    await page.locator('#detail-mark-log').click();
     await page.waitForTimeout(250);
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('tings_v2')));
     const item = stored.find(h => h.name === scheduledName);

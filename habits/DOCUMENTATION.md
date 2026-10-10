@@ -1135,9 +1135,9 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 - Optional, max 4 grapheme clusters
 - Default: 💡 (lightbulb) for habits
 - Emoji preview button next to name
-- Quick-pick chip row for common emojis
+- One horizontally scrolling chip row of commonly used emojis (same interaction as topic/place chips)
 - Background color swatches: teal, amber, red, purple, blue, green
-- Info tooltip: "Optional. An emoji like 🏃 or 📚 is suggested from the name; no match? Tap any quick-pick chip. Blank uses the default habit icon."
+- Info tooltip: "Optional. An emoji like 🏃 or 📚 is suggested from the name. No match uses a neutral emoji. Scroll the row sideways to pick a common one. Blank uses the default habit icon."
 
 ### 8.4 Field: Type Selector 👤
 | Button | Type | Shows Rhythm | Shows Due Date |
@@ -1215,8 +1215,8 @@ calendar+stats pane), `effort` (folded into `schedule`)
 ### 9.3 Identity Tab 👤
 
 Fields shown (always visible, even in minimal mode):
-- **Name** (text input, max 60 chars, auto-focus)
-- **Emoji** (emoji picker, max 4 graphemes, with quick-pick + background color)
+- **Name** (text input, max 60 chars; tapping the detail header name opens this field)
+- **Emoji** (emoji picker, max 4 graphemes, with a horizontally scrolling common-emoji row + background color)
 - **Type** (segment: `habit` / `task`)
   - When `habit`: Shows **Kind** sub-segment (build/limit/stop)
     - `build` = keepup (build positive habits)

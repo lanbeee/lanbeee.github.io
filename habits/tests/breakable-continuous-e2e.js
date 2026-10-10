@@ -1604,6 +1604,7 @@ assert(weekChunk === 60,
     `suggested detail mark 45, got ${openedDetail.suggested}`);
   await page.waitForSelector('#detail-sheet.open, body.pane-active', { timeout:5000 });
   await page.locator('#detail-mark').click();
+  await page.locator('#detail-mark-log').click();
   await page.waitForFunction((prev) => {
     const h = load().find(x => String(x.name || '').startsWith('BreakableDetail'));
     return h && breakableProgressMinutes(h) === prev + 45;

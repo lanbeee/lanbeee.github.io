@@ -138,12 +138,12 @@
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <label class="emoji-field">
           <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. An emoji like 🏃 or 📚 is suggested from the name; no match? Tap any quick-pick chip. Blank uses the default habit icon.</div></span></span>
-          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. An emoji like 🏃 or 📚 is suggested from the name. No match uses a neutral emoji. Scroll the row sideways to pick a common one — same as topics and places. Clear the field to use the default habit icon.</div></span></span>
+          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
         <div class="generic-emoji-wrap">
           <span class="settings-sublabel">quick pick</span>
-          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="quick pick emojis"></div>
+          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="common emojis"></div>
         </div>
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
@@ -268,11 +268,17 @@
   <div class="sheet-wrap" id="detail-sheet">
     <div class="sheet detail-sheet">
       <div class="detail-head ting-card" id="detail-head-card">
-        <button class="pulse-btn detail-mark" id="detail-mark" aria-label="add entry"></button>
+        <div class="detail-mark-wrap">
+          <button class="pulse-btn detail-mark" id="detail-mark" aria-label="add entry" aria-haspopup="menu" aria-expanded="false" aria-controls="detail-mark-menu"></button>
+          <div class="detail-mark-menu" id="detail-mark-menu" hidden role="menu" aria-label="emoji actions">
+            <button type="button" class="detail-mark-choice" role="menuitem" id="detail-mark-log">log an entry</button>
+            <button type="button" class="detail-mark-choice" role="menuitem" id="detail-mark-edit-emoji">edit emoji</button>
+          </div>
+        </div>
         <div class="ting-info detail-title-wrap">
           <div class="ting-main">
             <span class="ting-title">
-              <span class="ting-name" id="detail-name"></span>
+              <button type="button" class="ting-name" id="detail-name" aria-label="edit name"></button>
               <span class="ting-priority-badge" id="detail-priority-badge" role="img" aria-label="Priority"></span>
             </span>
           </div>
@@ -563,13 +569,13 @@
           <div class="ting-emoji-edit" id="detail-emoji-edit">
             <label class="emoji-field">
               <span>emoji</span>
-              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
             </label>
             <div class="generic-emoji-wrap">
               <span class="settings-sublabel">quick pick</span>
-              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="quick pick emojis"></div>
+              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="common emojis"></div>
             </div>
-            <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
+            <p class="field-hint emoji-help">Optional. Scroll sideways for common emojis. No name match uses a neutral one; blank uses the default habit icon.</p>
             <span class="settings-sublabel">emoji background</span>
             <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           </div>
