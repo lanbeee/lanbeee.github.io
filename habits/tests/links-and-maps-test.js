@@ -1,4 +1,4 @@
-// Habit links (calls + meeting links), card double-tap launch, and
+// Habit links (calls + meeting links), immediate card taps and explicit link launch, and
 // exact-pin maps directions.
 //
 //   PLAYWRIGHT_BROWSERS_PATH=~/Library/Caches/ms-playwright \
@@ -169,7 +169,7 @@ function assert(cond, msg){
   }));
   assert(oneLink.actions && oneLink.buttons === 1, 'a usable link puts one launch button in the header');
   assert(oneLink.dirty, 'editing a link marks the sheet dirty');
-  assert(oneLink.hint.includes('call'), 'the hint names what a double tap will open');
+  assert(oneLink.hint.includes('call'), 'the hint names the primary link available in the link buttons');
 
   await page.locator('#detail-link-add').click();
   await page.locator('#detail-link-list .link-row:nth-child(2) .link-value').fill('meet.google.com/abc-defg-hij');
@@ -374,42 +374,42 @@ function assert(cond, msg){
 
   await page.waitForTimeout(350);
 
-  // ── double tap a card: log + launch ────────────────────────────────────
-  const dbl = await page.evaluate(async () => {
+  // Card taps open detail immediately; even rapid repeat taps never log or launch.
+  const cardTaps = await page.evaluate(async () => {
     window.__opened = [];
     const idx = load().findIndex(h => h.name === 'standup');
     const before = load()[idx].logs.length;
     const card = document.querySelector(`.ting-card[data-real="${idx}"]`);
-    if(!card)return { missing:true };
-    // Real double taps land 100–250ms apart; the card ignores clicks under 80ms.
+    if(!card)return {missing:true};
     card.click();
-    await new Promise(r => setTimeout(r, 140));
+    const immediate = document.querySelector('#detail-sheet').classList.contains('open');
+    await new Promise(r=>setTimeout(r,140));
     card.click();
-    await new Promise(r => setTimeout(r, 500));
-    return { before, after:load()[idx].logs.length, opened:window.__opened.slice(), sheet:document.querySelector('#detail-sheet')?.classList.contains('open') };
+    await new Promise(r=>setTimeout(r,350));
+    const result = {before,after:load()[idx].logs.length,immediate,opened:window.__opened.slice()};
+    document.querySelector('#detail-link-actions [data-link-open="0"]').click();
+    result.explicitOpened = window.__opened.slice();
+    closeSheet('detail-sheet');
+    return result;
   });
-  assert(!dbl.missing, 'the standup card is on the home list');
-  assert(dbl.after === dbl.before + 1, 'double tapping a card logs it');
-  assert(dbl.opened.length === 1 && dbl.opened[0] === 'https://zoom.us/j/98765',
-    'double tapping a card also opens its primary link');
-  assert(!dbl.sheet, 'double tap does not fall through to the detail sheet');
+  assert(!cardTaps.missing && cardTaps.immediate, 'the first card tap opens detail immediately');
+  assert(cardTaps.after === cardTaps.before && cardTaps.opened.length === 0,
+    'rapid repeated card taps do not log the item or launch a link');
+  assert(cardTaps.explicitOpened.length === 1 && cardTaps.explicitOpened[0] === 'https://zoom.us/j/98765',
+    'the explicit detail link button still opens the saved primary link');
 
-  // A card with no links still just logs, and opens nothing.
-  const noLink = await page.evaluate(async () => {
+  const pulse = await page.evaluate(() => {
     window.__opened = [];
-    const idx = load().findIndex(h => h.name === 'stretch');
+    const idx = load().findIndex(h=>h.name === 'stretch');
     const card = document.querySelector(`.ting-card[data-real="${idx}"]`);
-    if(!card)return { missing:true };
+    const button = card?.querySelector('[data-pulse]');
+    if(!button)return {missing:true};
     const before = load()[idx].logs.length;
-    card.click();
-    await new Promise(r => setTimeout(r, 140));
-    card.click();
-    await new Promise(r => setTimeout(r, 500));
-    return { before, after:load()[idx].logs.length, opened:window.__opened.slice() };
+    button.click();
+    return {before,after:load()[idx].logs.length,opened:window.__opened.slice()};
   });
-  assert(!noLink.missing, 'the stretch card is on the home list');
-  assert(noLink.after === noLink.before + 1 && noLink.opened.length === 0,
-    'double tapping a card with no links just logs it');
+  assert(!pulse.missing && pulse.after === pulse.before + 1 && pulse.opened.length === 0,
+    'the pulse button logs immediately without opening a link');
 
   // tel: hands off to the OS rather than opening a tab, so it can't be driven
   // through window.open here — assert the routing instead.
@@ -443,7 +443,7 @@ function assert(cond, msg){
   assert(launchOrder.plain.length === 1 && launchOrder.plain[0] === 'https://apps.apple.com/app/id1626186138',
     'apps without a direct target still open their page directly');
 
-  // ── travel card: tap edits the leg, double tap opens directions ─────────
+  // ── travel card: tap edits immediately; the editor opens directions ─────────
   const travelPlaces = await page.evaluate(() => ({
     home:Boolean(locationById('home')), office:Boolean(locationById('office'))
   }));
@@ -456,7 +456,6 @@ function assert(cond, msg){
     const card = host.querySelector('.travel-card');
     if(!card){ host.remove(); return { missing:true }; }
     card.click();
-    await new Promise(r => setTimeout(r, 500));
     const open = Boolean(document.querySelector('#travel-edit-sheet.open'));
     const timing = document.querySelector('#travel-edit-timing')?.textContent || '';
     host.remove();
@@ -469,25 +468,28 @@ function assert(cond, msg){
     'the travel editor carries the tapped leg’s leave-by and arrival context');
   await page.waitForTimeout(350);
 
-  const travelDouble = await page.evaluate(async () => {
+  const travelDirections = await page.evaluate(() => {
     window.__opened = [];
     const host = document.createElement('div');
     document.body.appendChild(host);
     appendHomeTravelCard(host,'home','office',Date.now() + 3600000);
     const card = host.querySelector('.travel-card');
-    if(!card){ host.remove(); return { missing:true }; }
+    if(!card){host.remove();return {missing:true};}
     card.click();
-    await new Promise(r => setTimeout(r, 140));
+    const immediate = Boolean(document.querySelector('#travel-edit-sheet.open'));
     card.click();
-    await new Promise(r => setTimeout(r, 500));
-    const res = { opened:window.__opened.slice(), sheet:Boolean(document.querySelector('#travel-edit-sheet.open')) };
+    const afterRepeat = window.__opened.length;
+    document.querySelector('#travel-edit-maps').click();
+    const result = {immediate,afterRepeat,opened:window.__opened.slice()};
+    closeSheet('travel-edit-sheet');
     host.remove();
-    return res;
+    return result;
   });
-  assert(!travelDouble.missing && travelDouble.opened.length === 1
-    && travelDouble.opened[0].includes('destination=40.706192%2C-74.008770'),
-    'double tapping a travel card opens directions to the destination pin');
-  assert(!travelDouble.sheet, 'double tapping a travel card skips the editor sheet');
+  assert(!travelDirections.missing && travelDirections.immediate && travelDirections.afterRepeat === 0,
+    'travel taps open the editor immediately, even on repeat taps');
+  assert(travelDirections.opened.length === 1
+    && travelDirections.opened[0].includes('destination=40.706192%2C-74.008770'),
+    'the travel editor’s maps button opens directions to the destination pin');
 
   // ── travel card from current (non-saved) location: tap opens directions ──
   // A live-GPS leg has no editor (an override would go stale next tick), but

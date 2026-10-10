@@ -91,6 +91,7 @@ snooze-until-planned.js	ui	once
 snooze-options-test.js	ui	once
 snoozed-cluster-eligibility-test.js	planner	once
 tag-chip-scroll-test.js	ui	once
+tap-reliability-test.js	ui	once
 theme-mode-test.js	ui	once
 steered-outside-fit-no-duplicate-test.js	planner	once
 tight-rhythm-capacity-test.js	planner	once

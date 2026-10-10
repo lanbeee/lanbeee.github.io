@@ -155,7 +155,6 @@ const SWIPE_ACTION_WIDTH = 68;
 // far under the card's rounded corner (matches --card-radius:20px) or the card's
 // round corner leaves a blank gap with a sharp panel corner showing through.
 const SWIPE_CORNER_PAD = 20;
-const TAP_DELAY = 310;
 const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
 const WIDTH_TRANSITION = 'width 190ms cubic-bezier(.3,.7,.2,1)';
 const SORT_PRESETS = {
@@ -602,8 +601,6 @@ let sortSettings = null;
 let searchQuery = '';
 
 let swipeOpenCard = null;
-let tapTimer = null;
-let lastTap = {idx:-1,time:0};
 let toastTimer = null;
 let actionToastTimer = null;
 let navSuppressTimer = null;
@@ -623,5 +620,4 @@ let settingsPointer = null;
 let detailTuneOriginal = null;
 let detailScheduleView = 'allowed';
 let calendarPointer = null;
-let cardPointer = null;
 let searchDismissPointer = null;

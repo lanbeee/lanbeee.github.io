@@ -245,7 +245,7 @@ function detailLinkRowHtml(link,index){
     .map(k => `<option value="${k}"${k === kind ? ' selected' : ''}>${LINK_KIND_LABELS[k] || k}</option>`)
     .join('');
   const lead = index === 0
-    ? `<span class="link-primary-badge" title="opens on double tap" aria-label="primary link"><i class="ti ti-star" aria-hidden="true"></i></span>`
+    ? `<span class="link-primary-badge" title="primary link" aria-label="primary link"><i class="ti ti-star" aria-hidden="true"></i></span>`
     : `<button type="button" class="link-row-btn" data-link-promote="${index}" title="make primary" aria-label="make primary"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>`;
   return `<div class="link-row${kind === 'app' ? ' is-app' : ''}" data-link-index="${index}">
     <select class="mini-select link-kind" aria-label="link type">${options}</select>
@@ -308,13 +308,13 @@ function syncDetailLinkUi(){
   const hint = $('detail-link-hint');
   if(hint){
     if(!links.length){
-      hint.textContent = 'Add an app, number, or web link. Double tapping this item’s card logs it and opens the starred one.';
+      hint.textContent = 'Add an app, number, or web link. Open it using the link buttons above.';
     }else{
       const primary = linkLabel(links[0]);
       const whatsapp = links.some(l => l.kind === 'whatsapp')
         ? ' WhatsApp opens the chat — call from there.'
         : '';
-      hint.textContent = `Double tapping this item’s card logs it and opens ${primary}.${whatsapp}`;
+      hint.textContent = `Use the link buttons above to open ${primary}.${whatsapp}`;
     }
   }
 }
@@ -499,7 +499,7 @@ function removeDetailLinkRow(index){
   setDetailDirty();
 }
 
-// HANDLER: move a row to the front, making it the one a double tap fires.
+// HANDLER: move a row to the front, making it the primary link.
 function promoteDetailLinkRow(index){
   const rows = currentDetailLinkRows();
   if(index <= 0 || index >= rows.length)return;

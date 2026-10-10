@@ -194,6 +194,17 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   });
   check('scroll gestures do not activate blocked or travel cards',!scrollSafety.blockOpen && !scrollSafety.travelOpen,JSON.stringify(scrollSafety));
 
+  const tapBinder = await page.evaluate(()=>({
+    tap:typeof bindTap === 'function',
+    alias:typeof bindScrollSafeTap === 'function'
+      && Function.prototype.toString.call(bindScrollSafeTap).includes('bindTap'),
+    timerUsesSnapshot:typeof bindDetailTimerTap === 'function'
+      && Function.prototype.toString.call(bindDetailTimerTap).includes('tapScrollerSnapshot')
+  }));
+  check('home cards and the timer share the tap primitive',
+    tapBinder.tap && tapBinder.alias && tapBinder.timerUsesSnapshot,
+    JSON.stringify(tapBinder));
+
   const searchThreshold = await page.evaluate(()=>{
     const list = document.querySelector('#list');
     const cards = [...list.querySelectorAll('.ting-card')];
@@ -352,10 +363,12 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const today = new Date();
     const day = new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime();
     localStorage.clear();
-    localStorage.setItem('tings_v2',JSON.stringify([{
-      name:'Blocked tap fixture',type:'task',dueDate:day,durationMinutes:30,
-      logs:[],lastLog:null,priority:2,locationIds:[],anywhereAllowed:true
-    }]));
+    localStorage.setItem('tings_v2',JSON.stringify([
+      {name:'Blocked tap fixture',type:'task',dueDate:day,durationMinutes:30,
+        logs:[],lastLog:null,priority:2,locationIds:[],anywhereAllowed:true},
+      {name:'Second tap fixture',type:'task',dueDate:day,durationMinutes:20,
+        logs:[],lastLog:null,priority:2,locationIds:[],anywhereAllowed:true}
+    ]));
     localStorage.setItem('tings_app_settings_v2',JSON.stringify({
       preset:'todayFirst',showWeekOnHome:true,agendaOptimizer:false,homeExtraMode:'cards',
       availabilityMinutes:[600,600,600,600,600,600,600],locations:[],
@@ -367,6 +380,39 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await webkitBlock.tap();
   const webkitOpened = await webkitPage.locator('#block-edit-sheet.open').waitFor({state:'visible',timeout:3000}).then(()=>true).catch(()=>false);
   check('a clean WebKit tap opens the blocked-time editor',webkitOpened);
+  await webkitPage.evaluate(()=>document.getElementById('block-edit-sheet')?.classList.remove('open'));
+
+  const webkitCancel = await webkitPage.evaluate(async()=>{
+    const el = document.querySelector('.blocked-card:not(.blocked-card-merge)');
+    if(!el)return {missing:true};
+    const r = el.getBoundingClientRect();
+    const x = r.left + 24;
+    const y = r.top + r.height / 2;
+    const point = {bubbles:true,cancelable:true,pointerId:11,pointerType:'touch',isPrimary:true,clientX:x,clientY:y};
+    el.dispatchEvent(new PointerEvent('pointerdown',point));
+    el.dispatchEvent(new PointerEvent('pointercancel',point));
+    await new Promise(res=>setTimeout(res,250));
+    return {open:Boolean(document.querySelector('#block-edit-sheet.open'))};
+  });
+  check('a cancelled stationary WebKit press still opens the blocked-time editor',
+    webkitCancel.open && !webkitCancel.missing,JSON.stringify(webkitCancel));
+  await webkitPage.evaluate(()=>document.getElementById('block-edit-sheet')?.classList.remove('open'));
+
+  const flushed = await webkitPage.evaluate(async()=>{
+    const cards = [...document.querySelectorAll('#list .ting-card')];
+    if(cards.length < 2)return {missing:true};
+    const bName = load()[Number(cards[1].dataset.real)]?.name || '';
+    cards[0].click();
+    cards[1].click();
+    await new Promise(res=>setTimeout(res,50));
+    return {
+      bName,
+      name:(document.querySelector('#detail-name')?.textContent || '').trim(),
+      open:Boolean(document.querySelector('#detail-sheet.open') || document.body.classList.contains('pane-active'))
+    };
+  });
+  check('rapid card taps open the most recently tapped card immediately',
+    !flushed.missing && flushed.open && flushed.name === flushed.bName,JSON.stringify(flushed));
   await webkitBrowser.close();
 
   if(failures.length){

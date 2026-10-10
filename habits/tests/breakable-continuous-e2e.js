@@ -12,7 +12,7 @@
  *   H. Detail toggle persists breakable + minChunk; detail-mark uses suggestion
  *   I. Progress slider UX:
  *      - slider only on first today timeline instance; later chunks keep trail
- *      - pulse/double-tap stay instant; no-drag tap logs the placed chunk as-is
+ *      - pulse taps stay instant; no-drag tap logs the placed chunk as-is
  *        (bare tap without a placed piece logs the suggested min chunk)
  *      - slider tap/drag sets a pending target; pulse commits ahead or correction
  *      - secondary chunk cards still pulse suggested chunk; primary slider refreshes

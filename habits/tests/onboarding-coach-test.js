@@ -338,7 +338,7 @@ async function progressBar(page){
   await stage(page,'aIdentity');
   await tapTarget(page,'#detail-emoji-preview');
   await stage(page,'aLifecycle');
-  assert(/double-tap/.test(await page.locator('#tings-coach-copy').textContent()),'actions step teaches the double-tap starred link');
+  assert(/link buttons/.test(await page.locator('#tings-coach-copy').textContent()),'actions step teaches explicit link buttons');
   await tapTarget(page,'#detail-pinned');
   await stage(page,'aIntro');
   assert(await page.locator('[data-coach-chapter="progress"].is-done').count() === 1,'tapping pin completes the progress chapter');

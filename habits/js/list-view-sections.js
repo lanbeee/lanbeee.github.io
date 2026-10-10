@@ -2116,7 +2116,7 @@ function render(opts){
       }
       const idx = +btn.dataset.pulse;
       const card = btn.closest('.ting-card');
-      handleCardActivate(idx,card,()=>quickLog(idx,card));
+      quickLog(idx,card);
     });
   });
 

@@ -1689,7 +1689,7 @@ function earlyCardPill(reason){
 // open the editor — an override anchored to an ephemeral coord would be stale
 // on the next GPS tick — but its destination is a real saved place, so a tap
 // opens directions from "here" in maps. Saved-place → saved-place legs keep
-// tap-to-edit / double-tap-to-go.
+// tap-to-edit; directions are available in the travel editor.
 function appendHomeTravelCard(list,fromId,toId,startTs){
   if(!list || !fromId || !toId || fromId === toId)return;
   const fromCurrent = fromId === CURRENT_COORD_ID;
@@ -1727,50 +1727,14 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   const weatherLabel=travelEl.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}, ${weatherLabel}`);
   list.appendChild(travelEl);
-  let travelPointer = null;
-  travelEl.addEventListener('pointerdown',e=>{
-    const scrollHost = travelEl.closest('.pane-list,.sheet,.detail-page');
-    travelPointer = {el:travelEl,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),maxMove:0,
-      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
-  },{passive:true});
-  travelEl.addEventListener('pointermove',e=>{
-    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
-    travelPointer.maxMove = Math.max(travelPointer.maxMove,Math.hypot(e.clientX-travelPointer.x,e.clientY-travelPointer.y));
-  },{passive:true});
-  travelEl.addEventListener('pointerup',e=>{
-    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
-    const tap = travelPointer;
-    travelPointer = null;
-    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
-    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now() - tap.time > 650){
-      travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
-      return;
-    }
-    travelEl.dataset.approvedClickUntil = String(Date.now()+500);
-  });
-  travelEl.addEventListener('pointercancel',e=>{
-    if(travelPointer && travelPointer.el === travelEl && travelPointer.id === e.pointerId){
-      const tap = travelPointer;travelPointer = null;
-      const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-      if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1)travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
-    }
-  });
-  travelEl.addEventListener('click',e=>{
-    e.preventDefault();
-    e.stopPropagation();
-    if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
-    const go = ()=>openTravelLegInMaps(toId);
-    // Saved-place legs keep the fast double-tap shortcut to directions; a
-    // single tap opens the editor with the tapped leg's live timing. A live-GPS
-    // leg cannot be edited (its origin is ephemeral), so it opens directions.
-    if(fromCurrent){
-      handleDoubleTapActivate(`travel:${fromId}|${toId}`,go,go);
-      return;
-    }
-    handleDoubleTapActivate(`travel:${fromId}|${toId}`,
-      ()=>openTravelEditSheet(fromId,toId,startTs),go);
-  });
+  const go = ()=>openTravelLegInMaps(toId);
+  // Saved-place legs open the editor immediately. A live-GPS leg has an
+  // ephemeral origin, so its tap opens directions instead.
+  if(fromCurrent){
+    bindTap(travelEl, go);
+  }else{
+    bindTap(travelEl, ()=>openTravelEditSheet(fromId,toId,startTs));
+  }
 }
 
 // Module state: which consecutive blocked groups are expanded on the home list.
@@ -1816,61 +1780,6 @@ function lockBlockedCardActivation(ms = 180){
   clearTimeout(blockedCardActivationTimer);
   blockedCardActivationTimer = setTimeout(()=>{blockedCardActivationLocked = false;},ms);
 }
-function bindScrollSafeTap(el,activate,ignoreSelector = ''){
-  let pointer = null;
-  let handledUntil = 0;
-  const recoverStationaryTap = tap=>{
-    setTimeout(()=>{
-      if(!el.isConnected || Date.now() < handledUntil)return;
-      const settledTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-      if(Math.abs(settledTop-tap.scrollTop) > 1)return;
-      handledUntil = Date.now()+500;
-      activate(new Event('click'));
-    },60);
-  };
-  el.addEventListener('pointerdown',e=>{
-    if(ignoreSelector && e.target.closest(ignoreSelector))return;
-    const scrollHost = el.closest('.pane-list,.sheet,.detail-page');
-    pointer = {id:e.pointerId,x:e.clientX,y:e.clientY,maxMove:0,time:Date.now(),
-      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
-  },{passive:true});
-  el.addEventListener('pointermove',e=>{
-    if(!pointer || pointer.id !== e.pointerId)return;
-    pointer.maxMove = Math.max(pointer.maxMove,Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y));
-  },{passive:true});
-  el.addEventListener('pointerup',e=>{
-    if(!pointer || pointer.id !== e.pointerId)return;
-    const tap = pointer;pointer = null;
-    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX-tap.x,e.clientY-tap.y));
-    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now()-tap.time > 650){
-      el.dataset.ignoreClickUntil = String(Date.now()+500);return;
-    }
-    recoverStationaryTap(tap);
-  });
-  el.addEventListener('pointercancel',()=>{
-    const tap = pointer;pointer = null;
-    if(!tap)return;
-    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-    if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1){
-      el.dataset.ignoreClickUntil = String(Date.now()+500);
-      return;
-    }
-    // Mobile WebKit sometimes cancels an otherwise stationary tap and emits
-    // no click. Wait briefly so a real scroll has time to move, then recover
-    // only when both the finger and scroll host remained still.
-    recoverStationaryTap(tap);
-  },{passive:true});
-  el.addEventListener('click',e=>{
-    if(ignoreSelector && e.target.closest(ignoreSelector))return;
-    e.preventDefault();e.stopPropagation();
-    if(Date.now() < handledUntil)return;
-    if(Number(el.dataset.ignoreClickUntil || 0) > Date.now())return;
-    handledUntil = Date.now()+500;
-    activate(e);
-  });
-}
-
 function appendHomeBlockedCard(list,row){
   if(!list || !row)return;
   const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
@@ -1890,35 +1799,16 @@ function appendHomeBlockedCard(list,row){
   const weatherLabel=el.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}, ${weatherLabel}`);
   const xBtn = el.querySelector('.blocked-cancel-mark');
-  let cancelPointer = null;
-  if(xBtn)xBtn.addEventListener('pointerdown',e=>{
-    cancelPointer = {id:e.pointerId,x:e.clientX,y:e.clientY};
-    e.stopPropagation();
-  },{passive:true});
-  if(xBtn)xBtn.addEventListener('pointerup',e=>{
-    if(!cancelPointer || cancelPointer.id !== e.pointerId)return;
-    const tap = cancelPointer;cancelPointer = null;
-    if(Math.hypot(e.clientX-tap.x,e.clientY-tap.y) > 8)return;
-    e.preventDefault();
-    e.stopPropagation();
-    cancelHomeBlockedRow(row);
-  });
-  if(xBtn)xBtn.addEventListener('pointercancel',()=>{cancelPointer = null;},{passive:true});
-  if(xBtn)xBtn.addEventListener('click',e=>{
-    e.preventDefault();
-    e.stopPropagation();
-    if(!xBtn.isConnected)return;
-    cancelHomeBlockedRow(row);
-  });
-  bindScrollSafeTap(el,()=>{
+  if(xBtn){
+    bindTap(xBtn,()=>{
+      if(!xBtn.isConnected)return;
+      cancelHomeBlockedRow(row);
+    },{stop:true});
+  }
+  bindTap(el,()=>{
     if(blockedCardActivationLocked)return;
-    // Let the browser finish the click sequence before mounting an overlay;
-    // otherwise the new backdrop can intercept the tail of the same gesture.
-    setTimeout(()=>{
-      if(blockedCardActivationLocked)return;
-      if(typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
-    },0);
-  },'.blocked-cancel-mark');
+    if(typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
+  },{ignoreSelector:'.blocked-cancel-mark'});
   el.addEventListener('keydown',e=>{
     if((e.key === 'Enter' || e.key === ' ') && !e.target.closest('.blocked-cancel-mark')){
       e.preventDefault();
@@ -1999,25 +1889,7 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
   toggle.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span>${timelineCardCopyHtml(`${blocks.length} busy times`,`${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)}`,weather)}<i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
   const weatherLabel=toggle.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)toggle.setAttribute('aria-label',`${toggle.getAttribute('aria-label')}, ${weatherLabel}`);
-  let mergePointer = null;
-  toggle.addEventListener('pointerdown',e=>{
-    mergePointer = {el:toggle,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
-  },{passive:true});
-  toggle.addEventListener('pointerup',e=>{
-    if(!mergePointer || mergePointer.el !== toggle || mergePointer.id !== e.pointerId)return;
-    const tap = mergePointer;
-    mergePointer = null;
-    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
-    if(moved > 10 || Date.now() - tap.time > 800)return;
-    toggle.dataset.approvedClickUntil = String(Date.now()+500);
-  });
-  toggle.addEventListener('pointercancel',e=>{
-    if(mergePointer && mergePointer.el === toggle && mergePointer.id === e.pointerId)mergePointer = null;
-  });
-  toggle.addEventListener('click',e=>{
-    e.preventDefault();
-    e.stopPropagation();
-    if(e.detail !== 0 && Number(toggle.dataset.approvedClickUntil || 0) < Date.now())return;
+  bindTap(toggle,()=>{
     lockBlockedCardActivation();
     if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
     else expandedBlockedGroups.add(groupKey);

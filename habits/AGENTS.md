@@ -90,6 +90,12 @@ dumps in `failed/`). Normal runner output is intentionally compact; pass
    budget on the rest, and publish only if the lexicographic quality tuple
    strictly improves. Cancel on hide, edit, or an imminent tick replan.
 
+7. **Home-list card taps go through `js/tap.js`.** Do not add another
+   pointerdown/up/cancel binder on habit, busy-time, or travel cards — call
+   `bindTap`. `openSheet` arms a backdrop guard on every sheet so a recovered
+   tap cannot dismiss the sheet it just opened. The next missed tap is a
+   `bindTap` bug, not a reason to copy a third pointer machine.
+
 ---
 
 ## 3. Codebase map
@@ -103,6 +109,7 @@ own a clear area; jump to these first.
 | `js/today-view-{fits,reservations,week,today}.js` | 118–2329 each | **FAST planner engine**: fitting, reservations, week packing, and today rendering |
 | `js/agenda-fast-graph.js` | ~280 | Bounded day and whole-week graph search; shared feasibility checks |
 | `js/agenda-optimizer.js` + `agenda-optimizer-ilp.js` | 313 + 1624 | **GLPK ILP planner engine**: loader/worker entry, fits, constraints, and optimized week orchestration |
+| `js/tap.js` | — | Shared home-list tap primitive (`bindTap`): pan vs tap, WebKit pointercancel recovery after touch release, immediate activation |
 | `js/list-view-{home,sections,planner,actions}.js` | 908–2513 each | Home/dashboard, day sections, background planning/cache, and card actions |
 | `js/main-{boot,input,runtime}.js` | 909–1364 each | Initialization/bindings, input sheets, timers/visibility/refresh loop |
 | `js/settings-*.js` | 122–746 each | Settings UI, backup import/export, blocked times, locations, samples, and appearance |

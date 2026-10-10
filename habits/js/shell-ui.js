@@ -568,12 +568,9 @@ function openSheet(id){
     return;
   }
   $(id).classList.add('open');
-  // Day-header pill taps often go through the forgiving/synthesized click path.
-  // The trailing native click then lands on the freshly opened wrap and would
-  // immediately dismiss it — ignore backdrop taps briefly after open.
-  if(id === 'free-time-sheet' || id === 'slipped-sheet' || id === 'weather-context-sheet'){
-    armSheetBackdropGuard(id);
-  }
+  // Recovered taps and synthesized clicks can land on the wrap that just
+  // opened. Arm every sheet so the next card does not need a whitelist entry.
+  armSheetBackdropGuard(id);
   updateFullPageState();
   updateKeyboardLift();
 }
@@ -590,6 +587,16 @@ function sheetBackdropArmed(id){
   const until = parseInt(wrap.dataset.ignoreBackdropUntil || '0',10);
   return Date.now() < until;
 }
+// Capture so individual sheets do not each have to remember the guard.
+document.addEventListener('click',e=>{
+  const wrap = e.target;
+  if(!wrap || !wrap.classList || !wrap.classList.contains('sheet-wrap'))return;
+  if(!wrap.classList.contains('open'))return;
+  if(!sheetBackdropArmed(wrap.id))return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+},true);
+
 // RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
   // If this sheet is currently mounted in the pane, unmount it instead.
@@ -1085,6 +1092,8 @@ document.addEventListener('pointerdown',e=>{
   searchDismissPointer = null;
   const btn = forgivingButtonTarget(e.target, e.clientX, e.clientY);
   if(!btn)return;
+  // Suppression belongs to the previous pan, not a new physical press.
+  if(suppressNativeButton === btn)suppressNativeButton = null;
   // Snapshot every scrollable ancestor (vertical and horizontal) so a scroll
   // or swipe that starts anywhere over the button is never mistaken for a tap,
   // no matter which element actually moves — home window, pane list, sheets,
@@ -1123,6 +1132,7 @@ document.addEventListener('pointerdown',e=>{
   buttonPointer = {
     btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),
     maxMove:0,
+    maxVerticalMove:0,
     // True when the finger missed the button box but hit-slop still armed it.
     armedBySlop: e.target.closest('button') !== btn,
     scrollers
@@ -1135,6 +1145,7 @@ document.addEventListener('pointermove',e=>{
   if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
   const dist = Math.hypot(e.clientX - buttonPointer.x,e.clientY - buttonPointer.y);
   if(dist > buttonPointer.maxMove)buttonPointer.maxMove = dist;
+  buttonPointer.maxVerticalMove = Math.max(buttonPointer.maxVerticalMove,Math.abs(e.clientY - buttonPointer.y));
 },{passive:true});
 
 document.addEventListener('pointerup',e=>{
@@ -1149,21 +1160,20 @@ document.addEventListener('pointerup',e=>{
     }
   }
   if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
-  const {btn,x,y,time,armedBySlop,scrollers} = buttonPointer;
+  const {btn,x,y,time,armedBySlop,scrollers,maxMove,maxVerticalMove} = buttonPointer;
   buttonPointer = null;
   if(btn.disabled)return;
   const dx = Math.abs(e.clientX - x);
   const dy = Math.abs(e.clientY - y);
-  const moved = Math.hypot(dx,dy);
+  const moved = Math.max(maxMove,Math.hypot(dx,dy));
   if(btn.disabled)return;
   if(btn.classList.contains('timer-start-btn'))return;
-  // Movement cap for the forgiving click. A sloppy tap drifts a few tens of
-  // pixels at most (pointercancel recovery already caps at 32); anything
-  // larger is a scroll or swipe gesture — including pans the scroll checks
-  // below can't observe (e.g. a cancelled flick whose scroller never moved,
+  // Sideways drift can still hit a small button. Vertical travel beyond
+  // normal tap slop is a pan even at a scroll boundary. This includes pans
+  // the scroll checks below can't observe (e.g. a cancelled flick whose scroller never moved,
   // or a downward drag at scrollTop 0 that never moves the page). Eat the
   // trailing native click so a pan that starts on a button cannot activate it.
-  if(moved > 32){
+  if(moved > 32 || Math.max(maxVerticalMove,dy) > FORGIVING_VERTICAL_MOVE_PX){
     suppressNativeButton = btn;
     setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},400);
     return;
@@ -1197,6 +1207,7 @@ document.addEventListener('pointerup',e=>{
 // rest of the finger travel (and before a bounded overscroll that never
 // changes scrollTop). Wait for that touch to end and count its displacement
 // so a downward drag at scrollY 0 is not recovered as a tap.
+const FORGIVING_VERTICAL_MOVE_PX = TAP_MOVE_PX;
 const FORGIVING_SCROLL_FLOOR = 2;
 const FORGIVING_SETTLE_MS = 150;
 const FORGIVING_MIN_WAIT_MS = 32;
@@ -1218,7 +1229,8 @@ function deferForgivingClick(scrollers,btn,opts){
   const startX = opts && Number.isFinite(opts.x) ? opts.x : null;
   const startY = opts && Number.isFinite(opts.y) ? opts.y : null;
   let touchEnded = !!(opts && opts.ended);
-  let maxFinger = 0;
+  let maxFinger = opts && opts.maxMove || 0;
+  let maxVertical = opts && opts.maxVerticalMove || 0;
   let lastMoved = scrollerDelta(scrollers);
   let stableFrames = 0;
   let done = false;
@@ -1227,7 +1239,8 @@ function deferForgivingClick(scrollers,btn,opts){
     if(startX == null)return;
     const dist = Math.hypot(x - startX, y - startY);
     if(dist > maxFinger)maxFinger = dist;
-    if(maxFinger > 32)finish(false);
+    maxVertical = Math.max(maxVertical,Math.abs(y - startY));
+    if(maxFinger > 32 || maxVertical > FORGIVING_VERTICAL_MOVE_PX)finish(false);
   }
 
   const onScroll = ()=>{
@@ -1245,6 +1258,7 @@ function deferForgivingClick(scrollers,btn,opts){
     if(t)finger(t.clientX, t.clientY);
     touchEnded = true;
   };
+  const onTouchCancel = ()=>finish(false);
   const listened = [];
   for(const [el] of scrollers){
     if(!el || typeof el.addEventListener !== 'function')continue;
@@ -1254,14 +1268,14 @@ function deferForgivingClick(scrollers,btn,opts){
   window.addEventListener('scroll',onScroll,{passive:true,capture:true});
   window.addEventListener('touchmove',onTouchMove,{passive:true,capture:true});
   window.addEventListener('touchend',onTouchEnd,{passive:true,capture:true});
-  window.addEventListener('touchcancel',onTouchEnd,{passive:true,capture:true});
+  window.addEventListener('touchcancel',onTouchCancel,{passive:true,capture:true});
 
   function cleanup(){
     for(const el of listened)el.removeEventListener('scroll',onScroll,{capture:true});
     window.removeEventListener('scroll',onScroll,{capture:true});
     window.removeEventListener('touchmove',onTouchMove,{capture:true});
     window.removeEventListener('touchend',onTouchEnd,{capture:true});
-    window.removeEventListener('touchcancel',onTouchEnd,{capture:true});
+    window.removeEventListener('touchcancel',onTouchCancel,{capture:true});
   }
 
   function finish(shouldClick){
@@ -1285,7 +1299,7 @@ function deferForgivingClick(scrollers,btn,opts){
   function tick(){
     if(done)return;
     if(btn.disabled){finish(false);return;}
-    if(maxFinger > 32){finish(false);return;}
+    if(maxFinger > 32 || maxVertical > FORGIVING_VERTICAL_MOVE_PX){finish(false);return;}
     const moved = scrollerDelta(scrollers);
     if(moved > FORGIVING_SCROLL_FLOOR){finish(false);return;}
     if(moved === lastMoved)stableFrames += 1;
@@ -1299,7 +1313,7 @@ function deferForgivingClick(scrollers,btn,opts){
       return;
     }
     if((stableFrames >= 2 && elapsed >= FORGIVING_MIN_WAIT_MS) || elapsed >= FORGIVING_SETTLE_MS){
-      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR && maxFinger <= 32);
+      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR && maxFinger <= 32 && maxVertical <= FORGIVING_VERTICAL_MOVE_PX);
       return;
     }
     requestAnimationFrame(tick);
@@ -1330,8 +1344,9 @@ document.addEventListener('pointercancel',e=>{
   // settled.
   suppressNativeButton = tap.btn;
   setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},500);
-  if(tap.maxMove <= 32 && Date.now() - tap.time < 450){
-    deferForgivingClick(tap.scrollers,tap.btn,{x:tap.x,y:tap.y,ended:false});
+  if(tap.maxMove <= 32 && tap.maxVerticalMove <= FORGIVING_VERTICAL_MOVE_PX && Date.now() - tap.time < 450){
+    deferForgivingClick(tap.scrollers,tap.btn,{x:tap.x,y:tap.y,ended:false,
+      maxMove:tap.maxMove,maxVerticalMove:tap.maxVerticalMove});
   }
 },true);
 

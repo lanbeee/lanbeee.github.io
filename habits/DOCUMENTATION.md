@@ -82,7 +82,7 @@ Everything below is covered in this skeleton:
 - All card display toggle symbols (💡 📍 📌 🧪 📅 ⏱️ 🕐 🌅)
 
 ### ✅ All Gestures & Interactions
-- Tap, double tap, long press, swipe
+- Tap, long press, swipe
 - All swipe actions (left: pin, keep, activity, timer; right: snooze, remove)
 - Minimal mode swipe restrictions
 - Keyboard shortcuts (search + single char typing)
@@ -980,7 +980,9 @@ Each day section header can have dynamic **pills** for open time, weather, and
 missed items. On a tight header, the weather pill progressively hides its
 temperature and precipitation text before the day label or action pills are
 allowed to clip. Only exceptionally narrow layouts move the pills to a tidy
-second row.
+second row. Vertical drags on pills scroll the page and do not open their
+sheets, including short drags at the page’s scroll limit. Deliberate taps
+and small sideways drift still activate.
 
 ### 6.2 Missed Pills (🔴 "N missed")
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
@@ -1376,7 +1378,7 @@ Each link row has:
   try the app's name as a scheme, search "«app» URL scheme", or paste a link
   shared from inside the app (a universal link). A wrong scheme safely falls
   back to the stored page. The custom editor carries a short hint to this end.
-- **Star:** Marks as primary link (double tap uses this)
+- **Star:** Marks the primary link (shown first in the link buttons)
 
 **Add app** opens a compact chooser for Gmail, Outlook, Facebook, Instagram,
 YouTube, Reddit, LinkedIn and X. These use their normal HTTPS entry points, so
@@ -2174,7 +2176,7 @@ Actions when habit is done:
 - App: Open a common preset or a custom named app shortcut (an App Store
   share link names itself)
 - Link: Open URL (Zoom, etc.)
-- Double tap on card launches primary link
+- Open saved links using the link buttons in the item’s detail
 
 ---
 
@@ -2684,9 +2686,9 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 ### 18.1 Home Screen Card Gestures 👤
 | Gesture | Action | Description |
 |---------|--------|-------------|
-| Tap | Primary action | Log the habit (if ready) |
-| Double Tap | Link action | Open primary link (phone, app, URL) |
-| Long Press | Edit | Opens Detail sheet |
+| Tap card | Detail | Opens the item immediately |
+| Tap pulse icon | Log | Log the habit or complete the task immediately |
+| Long Press | Reorder | Arms the agenda drag handle |
 | Swipe Left/Right | Actions row | Shows pin, snooze, delete |
 
 ### 18.2 Swipe Actions 👤
@@ -2714,18 +2716,20 @@ When you swipe a card left or right, the following action buttons appear:
 - Only `keep` (samples) and `remove` are available
 - Timer is also disabled in minimal mode
 
-**Tap vs Double Tap:**
-- Single tap: Log the habit (pulse button)
-- Double tap: If habit has a link, trigger primary link action
+**Single taps:**
+- Tap a card to open detail; tap its pulse button to log immediately.
+- Open calls, apps, or websites using the detail link buttons.
+- Tap a busy-time card to edit it; tap a saved-place travel card to edit its time or open directions.
+- Home cards have no double-tap action or detection delay.
 
 ### 18.3 Main Tap Actions (Pulse Button) 👤
 
-| Habit Type | Tap Does | Double Tap Does |
-|------------|----------|-----------------|
-| keepup | Add log entry | Open link if present |
-| reduce | Add log entry | Open link if present |
-| zero | Reset timer (avoid doing) | Open link if present |
-| task | Mark complete | Open link if present |
+| Habit Type | Pulse Tap Does |
+|------------|----------------|
+| keepup | Add log entry |
+| reduce | Add log entry |
+| zero | Reset timer (avoid doing) |
+| task | Mark complete |
 
 ### 18.4 Agenda Drag Handle 👨‍💻
 - Appears as ⋮⋮ (grip icon) on agenda cards
@@ -2738,7 +2742,8 @@ When you swipe a card left or right, the following action buttons appear:
 |----------|-------|-------------|
 | `SWIPE_THRESHOLD` | 60px | Minimum drag distance before reveal |
 | `SWIPE_ACTION_WIDTH` | 68px | Width of each action button |
-| `TAP_DELAY` | 310ms | Double-tap detection window |
+
+Habit, busy-time, and travel cards share `bindTap` in `js/tap.js` (WebKit `pointercancel` recovery after touch release, pan rejection, immediate native clicks). Do not add a per-card pointer binder; `openSheet` already ignores a trailing backdrop click on every sheet.
 
 ### 18.6 Reach Assist 👤
 - Pull down on the screen to scroll to top
@@ -2766,6 +2771,7 @@ When you swipe a card left or right, the following action buttons appear:
 | File | Lines | Purpose |
 |------|-------|---------|
 | **config.js** | 324 | Constants, sort presets, default settings |
+| **tap.js** | — | Shared home-list tap primitive (`bindTap`) |
 | **data-*.js** | 50–939 each | Data models, storage, normalization, schedules, logs, backups |
 | **scoring.js** | 908 | Attention score, urgency, tone/color mapping |
 | **main-{boot,input,runtime}.js** | 909–1364 each | Initialization, input wiring, timers and refresh loop |

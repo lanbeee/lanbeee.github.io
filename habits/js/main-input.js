@@ -1261,7 +1261,10 @@ function saveBlockEditSeries(){
 $('block-edit-instance')?.addEventListener('click',saveBlockEditInstance);
 $('block-edit-series')?.addEventListener('click',saveBlockEditSeries);
 $('block-edit-cancel')?.addEventListener('click',()=>{blockEditContext=null;closeSheet('block-edit-sheet');});
-$('block-edit-sheet')?.addEventListener('click',e=>{if(e.target===e.currentTarget){blockEditContext=null;closeSheet('block-edit-sheet');}});
+$('block-edit-sheet')?.addEventListener('click',e=>{
+  if(e.target!==e.currentTarget)return;
+  blockEditContext=null;closeSheet('block-edit-sheet');
+});
 $('travel-edit-minus')?.addEventListener('click',()=>{
   const input = $('travel-edit-minutes');
   if(!input)return;
@@ -1277,7 +1280,8 @@ $('travel-edit-maps')?.addEventListener('click',openTravelDestinationInMaps);
 $('travel-edit-reset')?.addEventListener('click',()=>{ resetTravelEditFromSheet(); });
 $('travel-edit-cancel')?.addEventListener('click',closeTravelEditSheet);
 $('travel-edit-sheet')?.addEventListener('click',e=>{
-  if(e.target === e.currentTarget)closeTravelEditSheet();
+  if(e.target !== e.currentTarget)return;
+  closeTravelEditSheet();
 });
 
 // Value log sheet

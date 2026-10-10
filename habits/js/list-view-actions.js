@@ -553,112 +553,33 @@ function closeAllSwipes(){
   swipeOpenCard = null;
 }
 
-// WIRE: attach card tap and pointer listeners
+// WIRE: habit-card tap. Gesture recognition lives in bindTap; this only
+// decides what the tap means (weather chip, swipe-close, detail).
 function setupCardTap(row,realIdx){
   const card = row.querySelector('.ting-card');
-  card.addEventListener('pointerdown',e=>{
-    if(e.target.closest('.pulse-btn'))return;
-    const scrollHost = card.closest('.pane-list,.sheet,.detail-page');
-    cardPointer = {
-      card,realIdx,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),maxMove:0,
-      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY
-    };
-  });
-  card.addEventListener('pointermove',e=>{
-    if(!cardPointer || cardPointer.card !== card || cardPointer.id !== e.pointerId)return;
-    cardPointer.maxMove = Math.max(cardPointer.maxMove,Math.hypot(e.clientX-cardPointer.x,e.clientY-cardPointer.y));
-  },{passive:true});
-  card.addEventListener('pointerup',e=>{
-    if(!cardPointer || cardPointer.card !== card || cardPointer.id !== e.pointerId)return;
-    const tap = cardPointer;
-    cardPointer = null;
-    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
-    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now() - tap.time > 650){
-      card.dataset.ignoreClickUntil = String(Date.now()+500);
-      return;
-    }
-    card.dataset.approvedClickUntil = String(Date.now()+500);
-  });
-  card.addEventListener('pointercancel',e=>{
-    if(cardPointer && cardPointer.card === card && cardPointer.id === e.pointerId){
-      const tap = cardPointer;cardPointer = null;
-      const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-      if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1)card.dataset.ignoreClickUntil = String(Date.now()+500);
-    }
-  });
-  card.addEventListener('click',e=>{
-    const weatherInfo=e.target.closest('[data-weather-info]');
+  bindTap(card,e=>{
+    const target = e && e.target;
+    const weatherInfo = target && target.closest && target.closest('[data-weather-info]');
     if(weatherInfo){
-      e.preventDefault();e.stopPropagation();
-      const weatherDay=Number(weatherInfo.dataset.weatherDay);
-      if(Number.isFinite(weatherDay) && typeof openWeatherContextSheet==='function'){
+      const weatherDay = Number(weatherInfo.dataset.weatherDay);
+      if(Number.isFinite(weatherDay) && typeof openWeatherContextSheet === 'function'){
         openWeatherContextSheet(weatherDay,null,weatherInfo.dataset.weatherHid || '');
       }else{
         showToast(weatherInfo.dataset.weatherInfo || 'weather guidance');
       }
       return;
     }
-    const reminderOff=e.target.closest('[data-action="reminders-off"]');
+    const reminderOff = target && target.closest && target.closest('[data-action="reminders-off"]');
     if(reminderOff){
-      e.preventDefault();e.stopPropagation();
       const hid = load()[realIdx]?.hid;
       if(hid && typeof nativeClearItemReminders === 'function')nativeClearItemReminders(`item:${hid}`);
       return;
     }
-    if(Number(card.dataset.ignoreClickUntil || 0) > Date.now()){
-      e.preventDefault();e.stopPropagation();return;
-    }
-    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap')){
-      e.preventDefault();e.stopPropagation();return;
-    }
-    if(row.classList.contains('is-agenda-dragging') || row.classList.contains('agenda-longpress-armed')){
-      e.preventDefault();e.stopPropagation();return;
-    }
-    if(e.target.closest('.pulse-btn'))return;
-    const clickNow = performance.now();
-    const previousClick = Number(card.dataset.lastClickAt || 0);
-    if(previousClick && clickNow-previousClick < 80){
-      e.preventDefault();e.stopPropagation();return;
-    }
-    card.dataset.lastClickAt = String(clickNow);
+    if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap'))return;
+    if(row.classList.contains('is-agenda-dragging') || row.classList.contains('agenda-longpress-armed'))return;
     if(swipeOpenCard){closeAllSwipes();return;}
-    handleCardActivate(realIdx,card,()=>openDetail(realIdx));
-  });
-}
-
-// HANDLER: shared tap vs double-tap timing. key identifies the thing tapped
-// (a habit index, or a "from|to" pair for a travel leg) so a quick tap on one
-// card followed by a tap on another never reads as a double tap.
-function handleDoubleTapActivate(key,singleAction,doubleAction){
-  const now = Date.now();
-  if(lastTap.idx === key && now - lastTap.time < TAP_DELAY){
-    clearTimeout(tapTimer);
-    lastTap = {idx:-1,time:0};
-    doubleAction();
-    return;
-  }
-  lastTap = {idx:key,time:now};
-  clearTimeout(tapTimer);
-  tapTimer = setTimeout(singleAction,TAP_DELAY);
-}
-
-// HANDLER: distinguish tap (open detail / log) from double-tap, which logs the
-// item and launches whatever it points at — the call, the meeting room, the link.
-function handleCardActivate(realIdx,card,singleAction){
-  handleDoubleTapActivate(realIdx,singleAction,()=>{
-    quickLog(realIdx,card);
-    launchPrimaryHabitLink(realIdx);
-  });
-}
-
-// HANDLER: open a habit's primary link. Runs inside the tap that logged it, so
-// the gesture is still live for the popup blocker.
-function launchPrimaryHabitLink(realIdx){
-  const h = load()[realIdx];
-  const link = typeof habitPrimaryLink === 'function' ? habitPrimaryLink(h) : null;
-  if(!link)return false;
-  return typeof openHabitLink === 'function' ? openHabitLink(link) : false;
+    openDetail(realIdx);
+  },{ignoreSelector:'.pulse-btn'});
 }
 
 // PURE: short item name for compact toast messages
