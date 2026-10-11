@@ -442,10 +442,10 @@ else:
     weekdays: number[],          // Empty = every weekday
     start: number|null,          // Minutes from midnight, or null when dynamic
     end: number|null,            // Minutes from midnight, or null when dynamic
-    startAnchor?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha',
+    startAnchor?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'midnight',
     startOffsetMin?: number,
     startCombine?: 'later'|'earlier',
-    startAnchor2?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'fixed',
+    startAnchor2?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'midnight'|'fixed',
     startOffsetMin2?: number,
     startFixedMin2?: number|null,
     startDayOffset?: 0|1,
@@ -1339,11 +1339,12 @@ time: | 9am | — | 9am | — | 9am | — |
 
 #### Time Anchor Section
 - **Default wording:** General labels (Dawn, Sunrise, Noon, Afternoon, Sunset,
-  Night) appear in time pickers, previews, and samples. Settings → **relative
+  Night, Night midpoint) appear in time pickers, previews, and samples. Settings → **relative
   times** → **use Islamic prayer names** opts into prayer labels, calculation
-  settings, and optional prayer samples. These are ordinary habits; switching
+  settings. The optional Daily prayers sample section remains available at
+  the bottom of Samples. These are ordinary habits; switching
   labels preserves saved rules and unsaved editor choices.
-- **Anchors:** `fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`, or another habit
+- **Anchors:** `fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`, `midnight` (sunset–next-dawn midpoint), or another habit
 - **Offset:** ±720 minutes (±12 hours)
 - **Combine:** `later` / `earlier` of two expressions
 - **Editor:** Each boundary has Clock / Relative choices. Relative shows an event
@@ -1961,10 +1962,11 @@ Toasts appear after:
   history. Add one to make it yours; **try all five** tags the bulk additions
   so **remove samples** can clean up the ones you have not kept. Previously
   saved samples remain until the user removes them.
-- The sun-based sleep section stays collapsed. Prayer samples appear only
-  after enabling **use Islamic prayer names** under Settings → **relative
-  times**, and stay collapsed separately;
-  their dynamic timing still requires a home city. **Add all prayers** creates
+- The sun-based sleep section stays collapsed. **Daily prayers** is always
+  available as a separate collapsed section at the bottom of Samples. Its
+  dynamic timing requires a home city. Isha ends at Adhan’s
+  `SunnahTimes.middleOfTheNight`: halfway between sunset and the next Fajr,
+  rather than a fixed 12am clock. **Add all prayers** creates
   regular habits with clean prayer names, just like adding them individually;
   **remove samples** does not remove these prayers.
 
@@ -2767,6 +2769,15 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 ---
 
 ## XVIII. GESTURES & INTERACTIONS
+
+In the Android app, the system Back button and either edge Back gesture use
+`handleAppBack()` to activate the top screen’s existing close, cancel, Done,
+or Back control. Nested sheets close first, pickers close before their sheet,
+and detail editing cancels like its Cancel button. Returning from Settings
+restores an add-sheet draft when applicable. Only Back on Home backgrounds
+the app. In the browser/PWA, Back consumes a same-page history entry to
+dismiss the current sheet; closing all sheets removes that entry so Home
+keeps normal browser navigation.
 
 ### 18.1 Home Screen Card Gestures 👤
 | Gesture | Action | Description |

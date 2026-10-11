@@ -54,7 +54,7 @@ function prayerSamplePreviews(){
     {key:'dhuhr', emoji:'☀️', tint:'amber', blurb:'Until Asr −15m'},
     {key:'asr', emoji:'🌤️', tint:'cyan', blurb:'Until Maghrib −15m'},
     {key:'maghrib', emoji:'🌇', tint:'orange', blurb:'Until sunset +1h or Isha −15m'},
-    {key:'isha', emoji:'🌙', tint:'purple', blurb:'Until next Fajr −30m'}
+    {key:'isha', emoji:'🌙', tint:'purple', blurb:'Until Islamic midnight (sunset–Fajr midpoint)'}
   ].map(row=>({
     hid:`sample-prayer-${row.key}`,
     emoji:row.emoji,
@@ -95,8 +95,6 @@ function renderSampleHabitsPreview(){
 }
 
 function renderPrayerSamplesPreview(){
-  const section = $('sample-prayers-section');
-  if(section)section.hidden = !sortSettings.prayerIslamicNames;
   renderSamplePreviewList('sample-prayers-preview', prayerSamplePreviews());
 }
 
@@ -341,7 +339,7 @@ function buildPrayerSamples(){
     {key:'dhuhr', emoji:'☀️', tint:'amber', start:['dhuhr',0], end:['asr',-15], endDay:0},
     {key:'asr', emoji:'🌤️', tint:'cyan', start:['asr',0], end:['maghrib',-15], endDay:0},
     {key:'maghrib', emoji:'🌇', tint:'orange', start:['maghrib',0], end:['maghrib',60], end2:['isha',-15], endDay:0},
-    {key:'isha', emoji:'🌙', tint:'purple', start:['isha',0], end:['fajr',-30], endDay:1}
+    {key:'isha', emoji:'🌙', tint:'purple', start:['isha',0], end:['midnight',0], endDay:0}
   ];
   return rows.map(row=>sortSampleHabit(label(row.key),'keepup',1,[],{
     emoji:row.emoji,

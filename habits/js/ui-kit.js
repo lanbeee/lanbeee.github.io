@@ -192,7 +192,7 @@ const UI_SETTING_TOGGLES = {
     {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.'}
   ],
   prayer:[
-    {key:'prayerIslamicNames', title:'use Islamic prayer names', hint:'Optional: replace the general time labels with Fajr, Dhuhr, Asr, Maghrib, and Isha. Also show prayer calculation settings and sample habits.'}
+    {key:'prayerIslamicNames', title:'use Islamic prayer names', hint:'Optional: replace the general time labels with Fajr, Dhuhr, Asr, Maghrib, and Isha. Also show prayer calculation settings.'}
   ],
   advanced:[
     {key:'agendaOptimizer', title:'smarter packing', hint:'Takes longer, but packs tight days better and protects items with fewer open slots. Off = fast graph packing, usually under a second.'}

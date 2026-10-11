@@ -46,7 +46,7 @@
  * — Prayer-time anchors (optional; mutually exclusive per-endpoint with the fixed minutes above) —
  * When `*Anchor` is set it overrides the matching fixed-minutes field for that endpoint, and the
  * resolved minute is computed from the habit's location for the current day (see js/prayer-times.js).
- * @property {string|null} allowedTimeStartAnchor   — 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'habit'|null
+ * @property {string|null} allowedTimeStartAnchor   — 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'midnight'|'habit'|null
  * @property {number}      allowedTimeStartOffsetMin — signed minutes vs the anchor (e.g. +60 = an hour after)
  * @property {string|null} allowedTimeEndAnchor
  * @property {number}      allowedTimeEndOffsetMin

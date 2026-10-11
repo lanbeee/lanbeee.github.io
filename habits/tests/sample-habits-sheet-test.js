@@ -141,9 +141,9 @@ async function launchBrowser(){
   assert(!sheet.titles.some(t => /^(Fajr|Dhuhr|Asr|Maghrib|Isha)$/i.test(t)), 'five prayers not in feature preview list');
 
   console.log('\n[B2] Expanded busy-time and prayer rows');
-  assert(await page.locator('#sample-prayers-section').getAttribute('hidden') !== null, 'prayer samples stay hidden with general time names');
-  await page.evaluate(() => toggleAppSettingButton(document.querySelector('[data-setting-toggle="prayerIslamicNames"]')));
-  assert(await page.locator('#sample-prayers-section').getAttribute('hidden') === null, 'opting into prayer names exposes optional prayer habits');
+  assert(await page.locator('#sample-prayers-section').getAttribute('hidden') === null, 'prayer samples are available with general time names');
+  assert(await page.evaluate(()=>!sortSettings.prayerIslamicNames), 'sample section does not require or change prayer naming preference');
+  assert(await page.evaluate(()=>$('sample-prayers-section') === document.querySelector('.sample-habits-stack section:last-of-type')), 'Daily prayers is the last sample section');
   await page.locator('#sample-blocks-head').click();
   await page.locator('#sample-prayers-head').click();
   for(const width of [320,390,768,1440]){
@@ -365,10 +365,12 @@ async function launchBrowser(){
       prayerNames: allPrayers.map(h => h.name),
       fajrName: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr')?.name,
       fajrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr'),
+      ishaWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-isha'),
       placeCount: (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
     };
   });
   console.log(afterPrayers);
+  assert(afterPrayers.ishaWindow.allowedTimeEndAnchor === 'midnight' && afterPrayers.ishaWindow.allowedTimeEndDayOffset === 0 && afterPrayers.ishaWindow.allowedTimeEndOffsetMin === 0, 'Isha ends at the sunset–next-Fajr midpoint for its own night');
   assert(afterPrayers.totalPrayers === 5, 'five prayer habits total after add all');
   assert(afterPrayers.samplePrayerCount === 0, 'bulk prayers are regular habits, like individually added Fajr');
   assert(afterPrayers.featureCount === 3, 'bulk starter samples still present');

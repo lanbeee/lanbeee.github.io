@@ -166,8 +166,6 @@ function toggleAppSettingButton(btn){
 function renderPrayerTimesControls(){
   const calculation = $('settings-prayer-calculation');
   if(calculation)calculation.hidden = !sortSettings.prayerIslamicNames;
-  const samples = $('sample-prayers-section');
-  if(samples)samples.hidden = !sortSettings.prayerIslamicNames;
   const sel = document.getElementById('setting-prayer-method');
   if(sel){
     if(!sel.dataset.populated){

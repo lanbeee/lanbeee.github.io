@@ -81,6 +81,7 @@ function mountInPane(sheetId) {
   }
   pane.dataset.activeSheet = sheetId;
   document.body.classList.add('pane-active');
+  syncBrowserBack();
   return inner;
 }
 
@@ -100,6 +101,7 @@ function unmountPane() {
   if (!paneTierActive()) pane.setAttribute('hidden','');
   delete pane.dataset.activeSheet;
   document.body.classList.remove('pane-active');
+  syncBrowserBack();
 }
 
 // RENDER: syncs the detail snooze row for the current hide state
@@ -553,8 +555,96 @@ function ensureSheetExit(id){
   bar.append(target);inner.prepend(bar);
 }
 
+// System Back reuses the visible screen's dismissal control, including its
+// cleanup/return behavior. Android invokes this through MainActivity; the
+// browser/PWA invokes it when the current view’s history entry is popped.
+let sheetOpenSequence = 0;
+function handleAppBack(){
+  const visible = button=>button && !button.disabled && button.getClientRects().length > 0;
+  const click = button=>{if(!visible(button))return false; button.click(); return true;};
+  // Small overlays sit above the sheets and must consume one Back on their own.
+  if($('time-step-picker')?.classList.contains('open')){
+    return click($('time-step-picker-done'));
+  }
+  for(const id of ['agenda-pair-scanner','agenda-pair-approval']){
+    if(visible($(id)))return click($(id+'-cancel'));
+  }
+  if(window.TingsCoach?.state().active){
+    if(click(document.querySelector('[data-coach-back]')))return true;
+    // Reuse the tour's two-tap end control on its first screen too.
+    return click(document.querySelector('[data-coach-skip]'));
+  }
+  const sheets = [...document.querySelectorAll('.sheet-wrap.open')];
+  sheets.sort((a,b)=>Number(getComputedStyle(b).zIndex || 0) - Number(getComputedStyle(a).zIndex || 0)
+    || Number(b.dataset.backSequence || 0) - Number(a.dataset.backSequence || 0));
+  const id = sheets[0]?.id || getPane()?.dataset.activeSheet;
+  if(id){
+    const inner = getSheetInner(id);
+    if(id === 'detail-sheet'){
+      if(click($('detail-custom-app-cancel')))return true;
+      if(visible($('detail-mark-menu')) && typeof setDetailMarkMenuOpen === 'function'){
+        setDetailMarkMenuOpen(false);return true;
+      }
+      if(!$('detail-search-panel').hidden)return click($('detail-cool'));
+      return click($((inner?.classList.contains('detail-editing') || inner?.classList.contains('tune-dirty')) ? 'detail-close' : 'detail-cool'));
+    }
+    if(id === 'day-logs-sheet' && click($('day-logs-back')))return true;
+    if(id === 'settings-sheet'){
+      if(click($('backup-import-no')) || click($('calendar-pdf-cancel')))return true;
+    }
+    ensureSheetExit(id);
+    const exit = inner?.querySelector('[data-sheet-dismissal]');
+    if(click(exit))return true;
+    // All standard sheets have a close/cancel control. Keep dynamically
+    // contributed sheets dismissible too, without choosing a save action.
+    closeSheet(id);
+    return true;
+  }
+  if(typeof isSearchOpen === 'function' && isSearchOpen()){
+    closeSearch();return true;
+  }
+  return false; // Home: the native host may put the app in the background.
+}
+
+// Browser edge gestures need a same-page history entry while a view is open.
+// Use one entry for the whole stack: a Back dismisses one layer and rearms for
+// the remaining layers. Button dismissals consume it when returning to Home.
+// Android uses its native dispatcher instead, so it needs no synthetic history.
+let appBackHistoryArmed = false;
+let appBackHistoryCleaning = false;
+function syncBrowserBack(){
+  if(window.Capacitor?.isNativePlatform?.())return;
+  if(appBackHistoryCleaning)return;
+  const open = Boolean(document.querySelector('.sheet-wrap.open') || getPane()?.dataset.activeSheet);
+  if(open && !appBackHistoryArmed){
+    history.pushState({...history.state,tingsSheetBack:true},'');
+    appBackHistoryArmed = true;
+  }else if(!open && appBackHistoryArmed){
+    appBackHistoryArmed = false;
+    appBackHistoryCleaning = true;
+    history.back();
+  }
+}
+window.addEventListener('popstate',event=>{
+  if(window.Capacitor?.isNativePlatform?.())return;
+  if(appBackHistoryCleaning){
+    appBackHistoryCleaning = false;
+    syncBrowserBack();
+  }else if(appBackHistoryArmed){
+    appBackHistoryArmed = false;
+    // Closing a sheet can synchronize history itself. Rearming afterward is
+    // idempotent and also covers Back that only closes an inner subpage.
+    handleAppBack();
+    syncBrowserBack();
+  }else if(event.state?.tingsSheetBack){
+    appBackHistoryArmed = true;
+    syncBrowserBack();
+  }
+});
+
 // RENDER: opens a sheet or mounts it in the pane
 function openSheet(id){
+  $(id).dataset.backSequence = String(++sheetOpenSequence);
   ensureSheetExit(id);
   if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
     syncInstallGuideVisibility();
@@ -652,6 +742,7 @@ function shouldMountInPane(id) {
 // Use overflow locking only — never position:fixed. Fixing the body forces
 // scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
+  syncBrowserBack();
   const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.body.classList.toggle('fullpage-open',fullPageOpen);

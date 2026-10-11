@@ -93,14 +93,14 @@ const WEATHER_STABLE_MARGINS = {
 // ── Prayer times (dynamic habit windows) ──
 // Prayer-time anchors a habit's allowed/preferred time endpoint can be tied to.
 // 'maghrib' is the same moment as sunset; both keys are accepted as aliases.
-const PRAYER_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
+const PRAYER_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha','midnight'];
 const PRAYER_ANCHOR_LABELS = {
   fajr:'Fajr', sunrise:'Sunrise', dhuhr:'Dhuhr',
-  asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha'
+  asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha', midnight:'Islamic midnight'
 };
 const PRAYER_GENERIC_LABELS = {
   fajr:'Dawn', sunrise:'Sunrise', dhuhr:'Noon',
-  asr:'Afternoon', maghrib:'Sunset', isha:'Night'
+  asr:'Afternoon', maghrib:'Sunset', isha:'Night', midnight:'Night midpoint'
 };
 // Calculation methods exposed in Settings. Keys mirror adhan.CalculationMethod
 // factory names; labels are the friendly strings users recognise. The default
