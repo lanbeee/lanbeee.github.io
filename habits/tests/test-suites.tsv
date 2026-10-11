@@ -56,6 +56,7 @@ locations-settings-test.js	integrations	once
 locations-test.js	integrations	once
 log-live-removal-e2e.js	planner	once
 missed-sheet-log-e2e.js	planner	once
+missed-hide-test.js	ui	once
 multiple-daily-occurrences-test.js	planner	once
 movable-non-overlap-deferral-test.js	planner	once
 offline-resilience.js	integrations	once

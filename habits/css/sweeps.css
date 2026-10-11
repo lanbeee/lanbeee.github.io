@@ -25,7 +25,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .schedule-link-same-day-row,.sample-habit-row,.settings-block,.settings-group,
 .settings-row,.settings-card,.location-row,.location-result,.travel-card,.timeline-card,
 .blocked-card,.day-availability,.utility-sheet-panel,.travel-minute-field,
-.free-panel-metric,.free-day-strip,.free-day-switch,.free-gap-row,.free-fit-result,.dropped-item,
+.free-panel-metric,.free-day-strip,.free-day-switch,.free-gap-row,.free-fit-result,.dropped-item,.dropped-hide,.dropped-show,
 .detail-order-block,.order-link-row,.activity-item,
 .capacity-metric,.free-fit-checker,.breakable-progress,.session-progress{
   border:0;box-shadow:none;
@@ -49,6 +49,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .score-card.hit,.score-card.warn,.score-card.miss,.stat.hit,.stat.warn,.stat.miss{border-color:transparent;}
 .score-facts span,.overview-stat,.detail-stat-chip,.activity-metric,.context-pill,.topic-chip,.schedule-chip,
 .monthday-chip,.home-active-filter,.topic-filter,.dropped-pill,.free-pill{border:0;background:var(--bg3);}
+.dropped-pill.is-quiet{color:var(--text2);background:var(--bg3);}
 .topic-chip.on,.schedule-chip.on,.monthday-chip.on,.topic-filter.on{background:var(--text);color:var(--bg);}
 .topic-chip-add{border:0;background:var(--bg3);}
 .home-active-filter.location-filter,.topic-filter.location-filter{background:var(--teal-bg);}

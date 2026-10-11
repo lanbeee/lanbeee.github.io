@@ -122,6 +122,13 @@ body[data-pane-count="3"] .section-header{
   content:"";position:absolute;inset:-12px -14px -12px -4px;
 }
 .dropped-pill:active{transform:scale(0.97);}
+.dropped-pill.is-quiet{
+  width:32px;min-width:32px;padding:0;color:var(--text2);background:var(--bg3);
+  border-color:color-mix(in srgb,var(--text) 12%,transparent);
+  display:grid;place-items:center;letter-spacing:0;text-transform:none;
+}
+.dropped-pill.is-quiet .ti{font-size:16px;line-height:1;}
+.section-header.stuck .dropped-pill.is-quiet{background:var(--bg);}
 .dropped-panel{
   padding:2px 3px 8px;display:flex;flex-direction:column;gap:2px;
 }
@@ -198,6 +205,7 @@ body[data-pane-count="3"] .section-header{
   .section-header.has-context{gap:6px;}
   .day-header-context{gap:4px;}
   .weather-day-button,.free-pill,.dropped-pill{padding-left:7px;padding-right:7px;}
+  .dropped-pill.is-quiet{padding:0;}
 }
 .free-panel{
   padding:4px 3px 8px;display:flex;flex-direction:column;gap:3px;

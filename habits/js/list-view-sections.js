@@ -515,20 +515,49 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     a.expectedDay.localeCompare(b.expectedDay) || a.first - b.first);
 }
 
+let _slippedSheetDayLabel = 'today';
+let _slippedTodayHids = [];
+
+function partitionDroppedItems(dropped, now = Date.now()){
+  const visible = [];
+  const hidden = [];
+  for(const row of dropped || []){
+    if(typeof missedHideIsActive === 'function' && missedHideIsActive(row, now))hidden.push(row);
+    else visible.push(row);
+  }
+  return {visible, hidden};
+}
+
+function collectSlippedDropped(now = Date.now()){
+  return typeof collectDroppedItems === 'function'
+    ? collectDroppedItems(load(), sortSettings, _slippedTodayHids, now)
+    : [];
+}
+
 function attachDroppedIndicator(header,list,todayHids){
-  const dropped = collectDroppedItems(load(), sortSettings, todayHids);
-  if(!dropped.length)return;
+  _slippedTodayHids = Array.isArray(todayHids) ? todayHids.slice() : [];
+  const dropped = collectSlippedDropped();
+  const {visible, hidden} = partitionDroppedItems(dropped);
+  if(!visible.length && !hidden.length)return;
   header.classList.add('has-dropped');
   const pill = document.createElement('button');
   pill.type = 'button';
   pill.className = 'dropped-pill';
-  pill.textContent = `${dropped.length} missed`;
-  bindDayHeaderPill(pill,()=>openSlippedSheet(dropped,header.dataset.label || 'today'));
+  if(visible.length){
+    pill.textContent = `${visible.length} missed`;
+  }else{
+    pill.classList.add('is-quiet');
+    pill.innerHTML = '<i class="ti ti-eye-off" aria-hidden="true"></i>';
+    pill.setAttribute('aria-label','hidden until tonight');
+  }
+  const dayLabel = header.dataset.label || 'today';
+  bindDayHeaderPill(pill,()=>openSlippedSheet(dropped, dayLabel));
   dayHeaderContextHost(header)?.appendChild(pill);
 }
 
 function renderDroppedPanel(items,opts = {}){
   const showDayTag = Boolean(opts.showDayTag);
+  const hidden = Boolean(opts.hidden);
   const panel = document.createElement('div');
   panel.className = 'dropped-panel';
   const data = load();
@@ -537,12 +566,19 @@ function renderDroppedPanel(items,opts = {}){
     // The row is a div (not a button) so the log affordance below can be its
     // own button. Tapping anywhere on the row except the icon still reviews.
     const row = document.createElement('div');
-    row.className = 'dropped-item';
+    row.className = hidden ? 'dropped-item is-hidden' : 'dropped-item';
     row.setAttribute('role','button');
     row.setAttribute('tabindex','0');
     row.dataset.hid = item.hid || '';
     if(item.occurrenceKey)row.dataset.occurrenceKey = item.occurrenceKey;
     const tagHtml = showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '';
+    const hideLabel = hidden ? 'show on missed' : 'hide until tonight';
+    const hideClass = hidden ? 'dropped-show' : 'dropped-hide';
+    const hideIcon = hidden ? 'ti-eye' : 'ti-eye-off';
+    const cue = hidden ? 'Hidden until tonight' : 'Tap to review';
+    const timeCue = item.occurrenceKey && Number.isFinite(item.start)
+      ? `${escapeHtml(compactHomeTime(item.start))} · `
+      : '';
 
     // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
     // a missed habit can be cleared with one tap straight from this list.
@@ -556,21 +592,27 @@ function renderDroppedPanel(items,opts = {}){
     const logInner = h ? iconHtml(h,c) : '<i class="ti ti-circle-dashed" aria-hidden="true"></i>';
     row.innerHTML =
       `<button type="button" class="dropped-mark dropped-log${h && h.emoji ? ' emoji-pulse' : ''}" aria-label="${h && h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(item.name)}" style="${logStyle}">${logInner}</button>`
-      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>${item.occurrenceKey && Number.isFinite(item.start) ? `${escapeHtml(compactHomeTime(item.start))} · ` : ''}Tap to review</small></span>`
-      + `${tagHtml}<i class="ti ti-chevron-right dropped-chevron" aria-hidden="true"></i>`;
+      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>${timeCue}${cue}</small></span>`
+      + `${tagHtml}<button type="button" class="${hideClass}" aria-label="${hideLabel}"><i class="ti ${hideIcon}" aria-hidden="true"></i></button>`;
 
     const review = ()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); };
-    row.addEventListener('click',e=>{ if(e.target.closest('.dropped-log'))return; review(); });
+    row.addEventListener('click',e=>{
+      if(e.target.closest('.dropped-log,.dropped-hide,.dropped-show'))return;
+      review();
+    });
     row.addEventListener('keydown',e=>{
       if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); review(); }
     });
 
     const finishLog = ()=>{
-      // The habit is now completedToday, so it no longer belongs here. Drop the
-      // row at once; if the sheet is empty, dismiss it. Then refresh home so the
-      // "missed" pill recount follows the log without a cold restart.
-      row.remove();
-      if(!document.querySelector('#slipped-content .dropped-item'))closeSheet('slipped-sheet');
+      // The habit is now completedToday, so it no longer belongs here. Refresh
+      // the open sheet so a leftover hidden section can remain; dismiss only
+      // when nothing is left. Then refresh home so the missed pill recounts.
+      if(typeof refreshSlippedSheet === 'function')refreshSlippedSheet();
+      else {
+        row.remove();
+        if(!document.querySelector('#slipped-content .dropped-item'))closeSheet('slipped-sheet');
+      }
       if(typeof refreshOpenViews === 'function')refreshOpenViews();
       if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     };
@@ -582,34 +624,86 @@ function renderDroppedPanel(items,opts = {}){
       if(typeof requestLogTing === 'function')requestLogTing(item.idx,finishLog,logOpts);
       else if(typeof logTing === 'function' && logTing(item.idx,logOpts))finishLog();
     });
+    const hideBtn = row.querySelector('.dropped-hide, .dropped-show');
+    if(hideBtn){
+      hideBtn.addEventListener('pointerdown',e=>e.stopPropagation());
+      hideBtn.addEventListener('click',e=>{
+        e.stopPropagation();
+        toggleMissedHide(item, !hidden);
+      });
+    }
 
     panel.appendChild(row);
   });
   return panel;
 }
 
-function openSlippedSheet(items,dayLabel){
-  const content = document.getElementById('slipped-content');
-  if(!content)return;
-  document.getElementById('slipped-title').textContent = `missed · ${dayLabel}`;
-  content.innerHTML = '';
-
+function slippedItemsWithTags(items){
   const data = load();
-  const dayLabelMap = buildHidDayLabelMap(data,sortSettings);
-
-  const slippedWithTags = items.map(item=>({
+  const dayLabelMap = typeof buildHidDayLabelMap === 'function'
+    ? buildHidDayLabelMap(data,sortSettings)
+    : new Map();
+  return (items || []).map(item=>({
     ...item,
     dayLabel:item.dayLabel || dayLabelMap.get(item.hid) || 'behind'
   }));
+}
 
-  if(slippedWithTags.length){
+function fillSlippedSheet(){
+  const content = document.getElementById('slipped-content');
+  if(!content)return {visible:[], hidden:[]};
+  const dayLabel = _slippedSheetDayLabel || 'today';
+  const title = document.getElementById('slipped-title');
+  if(title)title.textContent = `missed · ${dayLabel}`;
+  content.innerHTML = '';
+  const {visible, hidden} = partitionDroppedItems(collectSlippedDropped());
+  if(visible.length){
     const head1 = document.createElement('div');
     head1.className = 'slipped-section-head';
     head1.textContent = `missed · ${dayLabel}`;
     content.appendChild(head1);
-    content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
+    content.appendChild(renderDroppedPanel(slippedItemsWithTags(visible),{showDayTag:true}));
   }
+  if(hidden.length){
+    const head2 = document.createElement('div');
+    head2.className = 'slipped-section-head';
+    head2.textContent = 'hidden until tonight';
+    content.appendChild(head2);
+    content.appendChild(renderDroppedPanel(slippedItemsWithTags(hidden),{showDayTag:true,hidden:true}));
+  }
+  return {visible, hidden};
+}
 
+function refreshSlippedSheet(){
+  const sheet = document.getElementById('slipped-sheet');
+  if(!sheet || !sheet.classList.contains('open'))return;
+  const {visible, hidden} = fillSlippedSheet();
+  if(!visible.length && !hidden.length)closeSheet('slipped-sheet');
+}
+
+function toggleMissedHide(item, hide){
+  if(!item)return;
+  const data = load();
+  const name = typeof toastItemName === 'function'
+    ? toastItemName(data[item.idx] || {name:item.name})
+    : (item.name || 'item');
+  const result = hide
+    ? (typeof hideMissedRow === 'function' ? hideMissedRow(item) : null)
+    : (typeof showMissedRow === 'function' ? showMissedRow(item) : null);
+  if(!result || !result.id)return;
+  if(typeof showActionToast === 'function'){
+    showActionToast(
+      hide ? `Hidden until tonight · ${name}` : `Showing on missed · ${name}`,
+      {type:'missed-hide', id:result.id, previousUntil:result.previousUntil, openAction:false, undoLabel:hide ? 'show' : 'hide'}
+    );
+  }
+  refreshSlippedSheet();
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+}
+
+function openSlippedSheet(items,dayLabel){
+  _slippedSheetDayLabel = dayLabel || (typeof items === 'string' ? items : 'today');
+  fillSlippedSheet();
   openSheet('slipped-sheet');
 }
 

@@ -52,7 +52,8 @@ function homeListFingerprint(now = Date.now()){
     JSON.stringify(s.availabilityOverrides || {}),
     JSON.stringify(s.availabilityMinutes || []),
     JSON.stringify(s.blockedTimes || []),
-    s.prayerMethod || '', s.prayerMadhab || ''
+    s.prayerMethod || '', s.prayerMadhab || '',
+    typeof missedHideSignature === 'function' ? missedHideSignature(now) : ''
   ].join('\n');
 }
 

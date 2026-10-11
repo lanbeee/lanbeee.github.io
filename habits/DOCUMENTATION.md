@@ -994,6 +994,7 @@ and small sideways drift still activate.
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
+- Each missed row can be **hidden until tonight** (local midnight). Hidden rows drop out of the `"N missed"` count and the assistant missed list, but they are not snoozed: Home and the planner stay unchanged. Hide some and the pill becomes `"N missed"` for what is still unacked. Hide all of them and the amber count is replaced by a muted eye-off chip (`hidden until tonight`) so the sheet stays reachable without looking like a notification. Show a hidden row, or wait until midnight, and it behaves as a miss again.
 
 ### Before-missed phone reminders (installed app only)
 
@@ -1526,22 +1527,21 @@ Tracks the currently active habit session:
 ┌─────────────────────────────────────┐
 │ ←  needs a next step                │
 │ missed · today                     │
-│ Open an item to reschedule it,     │
-│   log it, or adjust its rhythm.    │
+│ Log it, hide it until tonight, or  │
+│   open it to reschedule.           │
 ├─────────────────────────────────────┤
-│ [Emoji tile] Habit Name     ● 2h  │
-│                                 📅 │
-│ [Emoji tile] Another Habit  ○ 3d  │
-│                                 📍 │
+│ [Emoji tile] Habit Name     hide  │
+│ [Emoji tile] Another Habit  hide  │
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
+- **Access:** Tap "N missed" on the Today header, or the muted eye-off chip after every remaining miss has been hidden until tonight
 - Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
 - Habits with several sessions a day show one missed row per unfinished session from today, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses from today. Past-day sessions are excluded after midnight. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
+- Hide tucks that row until local midnight without snoozing the habit. Hidden rows move to **hidden until tonight** with a show control. The today-header count ignores them; an undo toast can restore the last hide.
 - Items show day labels (behind/today/tomorrow)
 
 ### 10.2 Free Time Sheet (Open Gaps) 👤

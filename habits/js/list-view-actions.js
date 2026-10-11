@@ -947,6 +947,15 @@ function movePlanTo(idx,fromKey,toKey){
 // HYBRID: revert last action and refresh
 function executeUndo(){
   if(!pendingAction)return;
+  if(pendingAction.type === 'missed-hide'){
+    const {id, previousUntil} = pendingAction;
+    if(typeof setMissedHideUntil === 'function')setMissedHideUntil(id, previousUntil);
+    hideActionToast();
+    showToast('undone');
+    if(typeof refreshSlippedSheet === 'function')refreshSlippedSheet();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+    return;
+  }
   const refreshBlockedPresentation = pendingAction.type === 'restore-blocked'
     || pendingAction.type === 'restore-block-adjust';
   const data = load();
