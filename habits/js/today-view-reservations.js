@@ -201,10 +201,9 @@ function tryPlaceOnDay(state,fill,opts = {}){
 
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
       if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
-      else if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
-        : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
-        && dayStart(fill.h.eventTime) === dayBase){
-        placeStart=Math.max(placeStart,Number(fill.h.eventTime));
+      else{
+        const appointmentStart = breakableAppointmentStart(fill.h,dayBase);
+        if(appointmentStart != null)placeStart=Math.max(placeStart,appointmentStart);
       }
       let cap = gap.end;
       if(locId || optionMode){
@@ -360,10 +359,12 @@ function tryPlaceOnDay(state,fill,opts = {}){
 /** PURE: minutes already committed for habit index i on this day state. */
 function placedBreakableMinutes(state,habitIndex){
   if(!state || !Array.isArray(state.fills))return 0;
+  const fixedMinutes = (state.rows || []).filter(row=>row.breakableStart && row.i === habitIndex)
+    .reduce((sum,row)=>sum+(Number(row.chunkMinutes) || 0),0);
   return state.fills.reduce((sum,entry)=>{
     if(!entry || !entry.fill || entry.fill.i !== habitIndex)return sum;
     return sum + (Number(entry.fit && entry.fit.durMin) || 0);
-  },0);
+  },fixedMinutes);
 }
 
 // ─── Daily-breakable reservation ──────────────────────────────────────────
@@ -1095,46 +1096,9 @@ function timedBreakableExactStartForFill(state,fill){
     ? isBreakableTimedTask(fill.h)
     : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null);
   if(!timed || dayStart(fill.h.eventTime) !== state.dayBase)return null;
-  const alreadyStarted = (state.fills || []).some(entry=>entry && entry.fill
-    && entry.fill.i === fill.i);
+  const alreadyStarted = (state.rows || []).some(row=>row.breakableStart && row.i === fill.i)
+    || (state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === fill.i);
   return alreadyStarted ? null : Number(fill.h.eventTime);
-}
-
-// MUTATE: claim one minimum-sized first session for each timed breakable task
-// before flexible/fixed packing. This turns the event clock into a real hard
-// boundary for both planner engines, while leaving the rest of the duration to
-// the normal continuous-first breakable pass.
-function preplaceTimedBreakableStarts(candidates,dayStates,settings){
-  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
-  let placed = 0;
-  for(const c of candidates){
-    if(!c || !c.h || !(typeof isBreakableTimedTask === 'function'
-      ? isBreakableTimedTask(c.h)
-      : (c.h.type === 'task' && c.h.breakable && c.h.eventTime !== null)))continue;
-    const state = dayStates.find(item=>item && item.dayBase === dayStart(c.h.eventTime));
-    if(!state || (c.eligible && !c.eligible.has(state.dayBase)))continue;
-    if((state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === c.i))continue;
-    const left = breakableMinutesLeft(c.h,c.i,dayStates);
-    if(left <= 0)continue;
-    const min = typeof clampMinChunk === 'function'
-      ? clampMinChunk(c.h.minChunkMinutes)
-      : Math.max(15,Number(c.h.minChunkMinutes) || 30);
-    const chunkMinutes = Math.min(left,min);
-    const fill = {
-      h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
-      chunkMinutes,chunkIndex:0,placeKey:`${c.i}:0`
-    };
-    const fit = tryPlaceOnDay(state,fill,{settings,allowNetwork:true});
-    if(!fit || Math.abs(fit.placeStart - Number(c.h.eventTime)) > 1000)continue;
-    commitPlacement(state,fill,fit);
-    state.placed.add(c.i);
-    state.day.agendaItems.push({
-      h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity,
-      locationId:fit.locId,chunkMinutes:fit.durMin,chunkIndex:0
-    });
-    placed += 1;
-  }
-  return placed;
 }
 
 /**
@@ -1231,10 +1195,9 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       const travelMin = Math.ceil((edge.seconds || 0) / 60);
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
       if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
-      else if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(fill.h)
-        : (fill.h.type === 'task' && fill.h.breakable && fill.h.eventTime !== null))
-        && dayStart(fill.h.eventTime) === dayBase){
-        placeStart=Math.max(placeStart,Number(fill.h.eventTime));
+      else{
+        const appointmentStart = breakableAppointmentStart(fill.h,dayBase);
+        if(appointmentStart != null)placeStart=Math.max(placeStart,appointmentStart);
       }
       let cap = gap.end;
       if(locId || optionMode){
@@ -1595,7 +1558,8 @@ function reconcileCommittedTravel(state){
     (a,b)=>a.fit.placeStart - b.fit.placeStart || a.fit.placeEnd - b.fit.placeEnd);
   const travelRows = [];
   let travelMinutes = 0;
-  let durationMinutes = 0;
+  let durationMinutes = (state.rows || []).filter(row=>row.breakableStart)
+    .reduce((sum,row)=>sum+(Number(row.chunkMinutes) || 0),0);
   let lastLocId = state.seedLocId || null;
   const routeOptimized = optimizeCommittedRouteLocations(state,chron);
   // Running end of the previous (already-reconciled) fill in clock time. Used
@@ -1815,7 +1779,11 @@ function finalizePlacementRows(state){
   // and invariant check, independent of candidate commit order.
   reconcileCommittedTravel(state);
   const rows = state.rows.slice().sort((a,b)=>a.start - b.start || (a.kind === 'scheduled' ? -1 : a.kind === 'travel' ? -0.5 : 1));
-  return coalesceAdjacentBreakableRows(rows);
+  const timeline = coalesceAdjacentBreakableRows(rows);
+  for(const row of timeline){
+    if(row.breakableStart)row.appointmentUnplacedMinutes = breakableMinutesLeft(row.h,row.i,state);
+  }
+  return timeline;
 }
 
 // PURE: placement passes can meet at an internal phase boundary and publish
@@ -1834,7 +1802,7 @@ function coalesceAdjacentBreakableRows(rows){
       && Number.isFinite(Number(row.start))
       && Math.abs(Number(row.start) - Number(prior.end)) <= 1000;
     const sameSession = contiguous
-      && prior.kind === 'fill' && row.kind === 'fill'
+      && (prior.kind === 'fill' || prior.breakableStart) && row.kind === 'fill'
       && prior.i != null && prior.i === row.i
       && Boolean((prior.h || row.h) && (prior.h || row.h).breakable)
       && sameNullable(prior.locationId,row.locationId)
@@ -1922,7 +1890,7 @@ function buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter} = {}){
   scheduled.forEach(ev=>{
     const start = scheduledEventStart(ev);
     if(start == null)return;
-    blocks.push({start,end:start + clampDuration(ev.h.durationMinutes) * 60000,label:ev.h.name});
+    blocks.push({start,end:start + scheduledEventDuration(ev) * 60000,label:ev.h.name});
   });
   const merged = mergeIntervals(blocks
     .map(b=>({start:Math.max(start,b.start),end:Math.min(end,b.end),label:b.label}))

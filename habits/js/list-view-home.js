@@ -1492,6 +1492,14 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
 }
 
 // PURE: compact right-side agenda marker for a home card
+function appointmentStatusPill(row){
+  if(!row?.breakableStart)return '';
+  const text = [row.appointmentConflict,
+    row.appointmentUnplacedMinutes > 0 ? `${compactHomeDuration(row.appointmentUnplacedMinutes)} still not scheduled` : '']
+    .filter(Boolean).join(' · ');
+  return text ? `<span class="context-pill" title="${escapeHtml(text)}"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${escapeHtml(text)}</span>` : '';
+}
+
 function agendaCardPill(row,h = null,now = Date.now()){
   if(!row)return '';
   const mode = normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards);

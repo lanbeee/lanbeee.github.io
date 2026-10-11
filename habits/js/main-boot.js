@@ -359,8 +359,8 @@ function syncTaskDueUi(){
   const hint = $('task-due-hint');
   if(hint){
     if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
-    else if(hasTime)hint.textContent = 'Starts at this time. It is a fixed appointment unless you mark it breakable in details.';
-    else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
+    else if(hasTime)hint.textContent = 'Fixed appointment — keeps this start time, including when breakable. Duration is total time; Allowed times can set a hard end.';
+    else hint.textContent = 'Due on this date, with no fixed clock. Zero delay keeps this day firm; Allowed times limits the hours.';
   }
 }
 $('ting-due-date').addEventListener('input',syncTaskDueUi);

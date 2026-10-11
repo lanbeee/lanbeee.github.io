@@ -13,7 +13,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
   const clipAfter = isToday && !opts.fullDay ? ceilToMinutes(planningNow,5) : firstOpen;
   const slots = buildOpenAgendaSlots(dayKey,scheduled,settings,{clipAfter});
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
-  const totalCap = Math.min(totalMinutes,slotMinutes);
+  const totalCap = Math.min(totalMinutes,slotMinutes + scheduledBreakableMinutes(scheduled));
   const agendaItems = [];
   if(isToday && !opts.weekMode){
     // Classic single-day agenda: every due/early item competes for today.
@@ -24,7 +24,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
       if(h.type === 'task' && isTaskDone(h))continue;
       if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
         : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
-      if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
+      if(!h.breakable && hasTimedPlanForDay(h,dayBase))continue;
       const dueToday = includeInTodayAgenda(h,settings);
       const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
       if(!dueToday && !earlyOk)continue;
@@ -48,7 +48,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
 function fillIsPlannedOnDay(h,dayBase,settings){
   if(!h || dayBase == null)return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
-  if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
+  if(hasTimedPlanForDay(h,dayBase))return false;
   return typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase);
 }
 
@@ -116,7 +116,7 @@ function plannerPinnedAllowsDay(h,dayBase,pinnedDay){
 
 function weekFillEligibleOnDay(h,settings,dayBase,weekday,pinnedDay){
   if(pinnedDay != null && !plannerPinnedAllowsDay(h,dayBase,pinnedDay))return false;
-  if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
+  if(hasTimedPlanForDay(h,dayBase))return Boolean(h.breakable) && !completedOnDay(h,dayBase);
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   return isWeekCandidate(h,settings,dayBase,weekday)
     || (pinnedDay != null && dayBase === pinnedDay);
@@ -1251,12 +1251,8 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
       return compareWeekPlacement(a,b);
     });
   }
-  // A breakable event's entered clock is a hard first-start promise. Claim its
-  // minimum first session before movable placement so errands cannot consume
-  // the arrival/start boundary and silently push the event later.
-  let totalAssigned = typeof preplaceTimedBreakableStarts === 'function'
-    ? preplaceTimedBreakableStarts(candidates,dayStates,settings)
-    : 0;
+  // Fixed breakable starts are already hard rows in each day state.
+  let totalAssigned = 0;
   // Daily recurring breakables (e.g. "Work 6h every weekday") fill LAST so that
   // movable candidates (plan-by errands, one-shot tasks, sparse rhythms) can
   // claim a gap on a quiet day before the breakable greedy-splits the window
@@ -2054,12 +2050,7 @@ function weekTravelSecondsFromStates(dayStates){
 function rebuildDayFromFills(state,fillsToKeep,candidates,opts = {}){
   const clean = clonePlacementState(state);
   clean.day = {...state.day,agendaItems:[]};
-  clean.rows = state.rows.filter(r=>r.kind === 'scheduled');
-  clean.fills = [];
-  clean.placed = new Set();
-  clean.usedMinutes = 0;
-  clean.remaining = Math.max(0,Number(state.totalMinutes) || 0);
-  clean.prevLocId = state.seedLocId;
+  resetPlacementStateFills(clean);
   const scoreOpts = {
     settings:state.settings || opts.settings,
     weights:typeof resolveAgendaScoreWeights === 'function'
@@ -2447,7 +2438,10 @@ function persistentLinkViolationsForState(state){
   if(!state)return violations;
   const edges = typeof persistentOrderConstraintsForDay === 'function'
     ? persistentOrderConstraintsForDay(state.dayBase) : [];
-  const chron = (state.fills || []).slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
+  const fixedStarts = (state.rows || []).filter(row=>row.breakableStart).map(row=>({
+    fill:{h:row.h,i:row.i},fit:{placeStart:row.start,placeEnd:row.end}
+  }));
+  const chron = [...(state.fills || []),...fixedStarts].sort((a,b)=>a.fit.placeStart - b.fit.placeStart);
   const bounds = new Map();
   const chunksByHid = new Map();
   for(const entry of chron){
@@ -2622,12 +2616,7 @@ function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings){
       ? resolveAgendaScoreWeights(settings) : null
   };
   const trial = clonePlacementState(state);
-  trial.fills = [];
-  trial.placed = new Set();
-  trial.usedMinutes = 0;
-  trial.remaining = Math.max(0,Number(state.totalMinutes) || 0);
-  trial.prevLocId = state.seedLocId;
-  trial.rows = (state.rows || []).filter(r=>r && r.kind === 'scheduled');
+  resetPlacementStateFills(trial);
   for(const entry of fixedEntries){
     commitPlacement(trial,entry.fill,entry.fit);
   }
@@ -2685,7 +2674,8 @@ function enforcePersistentLinkInvariants(dayStates,candidates,settings){
       // once. If it cannot fit, record an omission and stop (do not loop).
       let placedMissing = false;
       for(const [hid,reason] of violations){
-        const alreadyPlaced = (state.fills || []).some(entry=>
+        const alreadyPlaced = (state.rows || []).some(row=>row.breakableStart && row.h?.hid===hid)
+          || (state.fills || []).some(entry=>
           entry && entry.fill && entry.fill.h && entry.fill.h.hid === hid
         );
         if(alreadyPlaced)continue;
@@ -3172,17 +3162,7 @@ function rebalanceScarcePlacements(candidates,dayStates,_settings,_locHints){
         attempts += 1;
         const others = state.fills.filter(f=>f !== victim).map(f=>f.fill);
         const clean = clonePlacementState(state);
-        clean.rows = state.rows.filter(r=>r.kind === 'scheduled');
-        clean.fills = [];
-        clean.placed = new Set();
-        // Restore remaining from scheduled-only baseline.
-        let used = 0;
-        for(const r of clean.rows){
-          if(r.kind === 'scheduled')used += Math.max(0,(r.end - r.start) / 60000);
-        }
-        clean.usedMinutes = 0;
-        clean.remaining = Math.max(0,(Number(state.totalMinutes) || 0));
-        clean.prevLocId = state.seedLocId;
+        resetPlacementStateFills(clean);
         let ok = true;
         const scoreOpts = {
           settings:state.settings,

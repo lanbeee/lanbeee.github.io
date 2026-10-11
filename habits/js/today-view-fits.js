@@ -29,6 +29,24 @@ function scheduledEventStart(ev){
   return null;
 }
 
+/** PURE: fixed first-session clock for breakable tasks and explicit day plans. */
+function breakableAppointmentStart(h,dayBase){
+  if(!h || !h.breakable)return null;
+  const plan = timedPlanLogForDay(h,dateKey(dayBase));
+  if(plan)return logTime(plan);
+  return isBreakableTimedTask(h) && dayStart(h.eventTime) === dayBase ? Number(h.eventTime) : null;
+}
+
+/** PURE: only the first minimum session is reserved for a breakable appointment. */
+function scheduledEventDuration(ev){
+  if(ev.breakableStart)return Math.min(remainingDurationMinutes(ev.h,dayStart(ev.eventTime)),clampMinChunk(ev.h.minChunkMinutes));
+  return clampDuration(ev.h.durationMinutes);
+}
+
+function scheduledBreakableMinutes(events){
+  return (events || []).reduce((sum,ev)=>sum+(ev.breakableStart ? scheduledEventDuration(ev) : 0),0);
+}
+
 /**
  * PURE: hard clock blocks for a day — timed tasks plus timed day-plan logs.
  * Returns {h,i,eventTime,locationId?,fromTimedPlan?} sorted by start.
@@ -38,11 +56,11 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
   const out = [];
   (data || []).forEach((h,i)=>{
     if(!h)return;
-    if((typeof isFixedTimedTask === 'function'
-      ? isFixedTimedTask(h) : (h.type === 'task' && h.eventTime !== null && !h.breakable))
+    if(isTimedTask(h)
       && (typeof isTaskDone !== 'function' || !isTaskDone(h))
       && dateKey(h.eventTime) === dayKey){
-      out.push({h,i,eventTime:h.eventTime});
+      // An explicit timed plan overrides this task's clock for that day.
+      if(!timedPlanLogForDay(h,dayKey))out.push({h,i,eventTime:h.eventTime,breakableStart:Boolean(h.breakable)});
     }
     if(typeof timedPlanLogForDay !== 'function')return;
     const plan = timedPlanLogForDay(h,dayKey);
@@ -52,10 +70,11 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
       i,
       eventTime:logTime(plan),
       locationId:typeof planLocationId === 'function' ? planLocationId(plan) : null,
-      fromTimedPlan:true
+      fromTimedPlan:true,
+      breakableStart:Boolean(h.breakable)
     });
   });
-  return out.sort((a,b)=>a.eventTime - b.eventTime);
+  return out.filter(ev=>scheduledEventDuration(ev)>0).sort((a,b)=>a.eventTime - b.eventTime);
 }
 
 function buildTodayAgenda(data,settings){
@@ -68,7 +87,7 @@ function buildTodayAgenda(data,settings){
   // It is also bounded by the day's actual open minutes so a heavily-blocked
   // day never promises more capacity than the calendar leaves room for.
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
-  const totalCap = Math.min(totalMinutes,slotMinutes);
+  const totalCap = Math.min(totalMinutes,slotMinutes + scheduledBreakableMinutes(scheduled));
   // Gather every eligible fill candidate in home rank order, score scarcity
   // against today's open slots, then sort scarcity → priority → home rank.
   const candidates = [];
@@ -78,7 +97,7 @@ function buildTodayAgenda(data,settings){
     if(h.type === 'task' && isTaskDone(h))continue;
     if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
-    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))continue;
+    if(!h.breakable && hasTimedPlanForDay(h,dayBase))continue;
     const dueToday = includeInTodayAgenda(h,settings);
     const earlyOk = !dueToday && typeof earlyReason === 'function' && Boolean(earlyReason(data,i,settings));
     if(!dueToday && !earlyOk)continue;
@@ -108,10 +127,11 @@ function includeInTodayAgenda(h,settings){
   if(habitHasMultipleDailyOccurrences(h) && (Number(h.target) <= 1 || habitOccurrenceLogsForDay(h,Date.now()).length)
     && (!hasDaySchedule(h) || nextEligibleDistance(h) === 0) && windowStillDoableToday(h))return true;
   if(hasPlannedToday(h)){
-    // Timed day plans are hard scheduled rows — do not also soft-fill today.
-    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
+    // A breakable timed plan reserves its first session; the remainder still fills.
+    if(hasTimedPlanForDay(h,dayStart(Date.now())))return Boolean(h.breakable);
     return true;
   }
+  if(isBreakableTimedTask(h))return dateKey(h.eventTime) === todayIso();
   if(h.type === 'task'){
     const when = taskWhen(h);
     const left = when !== null ? daysUntil(when) : null;
@@ -168,13 +188,11 @@ function includeInTodayAgenda(h,settings){
 // anchor so "anywhere" habits resolve their prayer times against the last
 // location before the task; absent it they fall back to lastKnown/registry.
 function fillTimeWindow(h,dayBase,contextLocId){
-  const breakableStart = (typeof isBreakableTimedTask === 'function'
-    ? isBreakableTimedTask(h) : (h && h.type === 'task' && h.breakable && h.eventTime !== null))
-    && dayStart(h.eventTime) === dayBase ? Number(h.eventTime) : null;
+  const breakableStart = breakableAppointmentStart(h,dayBase);
   // A start time on a breakable task is an anchor, not a duration-wide hard
   // block. With no explicit allowed end, the day's open slots are the ceiling.
   if(Number.isFinite(breakableStart) && !hasTimeWindow(h)){
-    const explicitEnd = Number.isFinite(Number(h.allowedTimeEnd))
+    const explicitEnd = h.allowedTimeEnd != null && Number.isFinite(Number(h.allowedTimeEnd))
       ? dayBase + Number(h.allowedTimeEnd) * 60000 : dayBase + 24 * 3600000;
     return {start:breakableStart,end:explicitEnd <= breakableStart ? explicitEnd + 24 * 3600000 : explicitEnd};
   }
@@ -261,12 +279,11 @@ function fillDayWindows(h,dayBase,contextLocId){
 }
 
 function fillDayWindowsUncached(h,dayBase,contextLocId){
-  if((typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(h)
-    : (h && h.type === 'task' && h.breakable && h.eventTime !== null))
-    && dayStart(h.eventTime) === dayBase && !hasTimeWindow(h)){
-    const start=Number(h.eventTime);
+  const appointmentStart = breakableAppointmentStart(h,dayBase);
+  if(appointmentStart != null && !hasTimeWindow(h)){
+    const start=appointmentStart;
     const rawEnd=Number(h.allowedTimeEnd);
-    let end=Number.isFinite(rawEnd) ? dayBase+rawEnd*60000 : dayBase+24*3600000;
+    let end=h.allowedTimeEnd != null && Number.isFinite(rawEnd) ? dayBase+rawEnd*60000 : dayBase+24*3600000;
     if(end<=start)end+=24*3600000;
     return [{start,end}];
   }
@@ -759,15 +776,12 @@ function scheduleAnchorCommitForDay(hid,dayBase,data = null){
         const start = Number(doing.startedAt) || Date.now();
         const end = Number(doing.targetAt) || start + Math.max(1,Number(doing.sessionMinutes) || 30) * 60000;
         result = {start,end,kind:'active'};
-      }else if((typeof isFixedTimedTask === 'function'
-        ? isFixedTimedTask(h) : (h.type === 'task' && h.eventTime != null && !h.breakable))
-        && dayStart(h.eventTime) === base){
-        result = {start:h.eventTime,end:h.eventTime + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
-      }else if(typeof timedPlanLogForDay === 'function'){
+      }else{
         const plan = timedPlanLogForDay(h,dateKey(base));
-        if(plan){
-          const start = logTime(plan);
-          result = {start,end:start + clampDuration(h.durationMinutes) * 60000,kind:'scheduled'};
+        const start = plan ? logTime(plan)
+          : isTimedTask(h) && dayStart(h.eventTime) === base ? Number(h.eventTime) : null;
+        if(start != null){
+          result = {start,end:start + scheduledEventDuration({h,eventTime:start,breakableStart:Boolean(h.breakable)}) * 60000,kind:'scheduled'};
         }
       }
     }
@@ -1245,6 +1259,9 @@ function explainUnplacedAgendaFill(state,fill,remainingLoad){
 // PURE: compact summary attached to an agenda after its placement pass.
 function buildPlacementDiagnostics(ordered,state){
   const placedByIndex = new Map();
+  for(const row of state.rows || []){
+    if(row.breakableStart)placedByIndex.set(row.i,(placedByIndex.get(row.i) || 0) + row.chunkMinutes);
+  }
   for(const entry of state.fills || []){
     const i = entry && entry.fill && entry.fill.i;
     if(i == null)continue;
@@ -1303,7 +1320,7 @@ function diagnosticsFromRenderedDay(data,settings,day){
     const h = data[i];
     if(!h || (typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable)))continue;
-    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,day.dayBase))continue;
+    if(!h.breakable && hasTimedPlanForDay(h,day.dayBase))continue;
     const pinned = isWeekPinnedToday(h,settings);
     if((pinned && day.isToday) || (!pinned && isWeekCandidate(h,settings,day.dayBase,day.weekday))){
       candidates.push({h,i,priority:effectivePriority(h)});
@@ -1311,6 +1328,7 @@ function diagnosticsFromRenderedDay(data,settings,day){
   }
 
   const timeline = Array.isArray(day.timeline) ? day.timeline : [];
+  state.rows = timeline.filter(row=>row.kind === 'scheduled').map(row=>({...row,h:data[row.i] || row.h}));
   const travels = timeline.filter(row=>row.kind === 'travel');
   const chunkCounts = new Map();
   state.fills = timeline.filter(row=>row.kind === 'fill').map(row=>{
@@ -1480,7 +1498,7 @@ function buildPlannerDecisionTrace(data,settings,context){
   const unplacedByIndex = new Map((unplacedItems || []).map(item=>[item.i,item]));
   const placedByIndex = new Map();
   for(const row of agendaRows || []){
-    if(row.kind !== 'fill' || row.i == null)continue;
+    if((row.kind !== 'fill' && !row.breakableStart) || row.i == null)continue;
     if(!placedByIndex.has(row.i))placedByIndex.set(row.i,[]);
     placedByIndex.get(row.i).push(row);
   }
@@ -1496,7 +1514,7 @@ function buildPlannerDecisionTrace(data,settings,context){
     .map(h=>[h.hid,h.name || 'item']));
   const trace = [];
 
-  for(const row of (agendaRows || []).filter(item=>item.kind === 'scheduled')){
+  for(const row of (agendaRows || []).filter(item=>item.kind === 'scheduled' && !item.breakableStart)){
     trace.push({
       i:row.i,
       name:row.name,
@@ -1777,7 +1795,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     const startTs = scheduledEventStart(event);
     if(startTs == null)return sum;
     const start = Math.max(rangeStart,startTs);
-    const end = Math.min(dayEnd,startTs + clampDuration(event.h.durationMinutes) * 60000);
+    const end = Math.min(dayEnd,startTs + scheduledEventDuration(event) * 60000);
     return sum + Math.max(0,Math.round((end - start) / 60000));
   },0);
   const diagByIndex = new Map(diagnostics.items.map(item=>[item.i,item]));
@@ -1790,7 +1808,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     if(!h || h.type === 'zero')return false;
     if(h.type === 'task' && (isTaskDone(h) || (typeof isFixedTimedTask === 'function'
       ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable))))return false;
-    if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
+    if(!h.breakable && hasTimedPlanForDay(h,dayBase))return false;
     if(!isToday && opts.weekMode){
       return isWeekCandidate(h,settings,dayBase,new Date(dayBase).getDay());
     }
@@ -1989,6 +2007,7 @@ function buildDayCapacityScorecard(data,settings,dayBase = dayStart(Date.now()),
     : timeline;
   const mapAgendaRow = row=>({
     kind:row.kind,
+    breakableStart:Boolean(row.breakableStart),appointmentConflict:row.appointmentConflict || null,
     i:row.i != null ? row.i : null,
     name:row.kind === 'travel'
       ? `travel${row.toName ? ` to ${row.toName}` : ''}`
@@ -2149,14 +2168,14 @@ function createDayPlacementState(day,settings,opts = {}){
     : (isTodayDay
       ? ceilToMinutes(now,5)
       : dayBase + dayFirstOpenMinute(blocks,weekday,dayBase) * 60000);
-  const slots = (day.slots && day.slots.length)
+  const slots = Array.isArray(day.slots)
     ? day.slots.map(s=>({start:s.start,end:s.end}))
     : [{start:startClock,end:dayBase + 24 * 3600000}];
   const rows = [];
   (day.scheduled || []).forEach(ev=>{
     const start = scheduledEventStart(ev);
     if(start == null)return;
-    const end = start + clampDuration(ev.h.durationMinutes) * 60000;
+    const end = start + scheduledEventDuration(ev) * 60000;
     const locIds = normalizeLocationIds(ev.h.locationIds,registry);
     let locationId = ev.locationId || null;
     if(locationId){
@@ -2168,12 +2187,30 @@ function createDayPlacementState(day,settings,opts = {}){
       ? effectiveWeatherGuidance(ev.h,locationId,settings) : null;
     rows.push({
       kind:'scheduled',h:ev.h,i:ev.i,start,end,hard:true,locationId,
+      breakableStart:Boolean(ev.breakableStart),
+      chunkMinutes:ev.breakableStart ? scheduledEventDuration(ev) : null,
+      chunkIndex:ev.breakableStart ? 0 : null,scheduledDay:dateKey(dayBase),
       weatherProfileId:guidance?.profileId || null,
       weatherProfileSource:guidance?.source || null,
       weatherForecastLocationId:guidance?.forecastLocationId || null,
       weatherOptOut:Boolean(guidance?.disabled)
     });
   });
+  const busy = rows.some(row=>row.breakableStart)
+    ? agendaBlockedIntervals(dateKey(dayBase),settings,dayBase,dayBase+86400000) : [];
+  for(const row of rows){
+    if(!row.breakableStart)continue;
+    const overlaps = other=>other.start < row.end && other.end > row.start;
+    const conflict = rows.find(other=>other !== row && overlaps(other));
+    const block = busy.find(overlaps);
+    const loc = registry.find(place=>place.id === row.locationId) || null;
+    const windows = effectiveLocationWindow(row.h,loc,weekday,dayBase);
+    const startMin = (row.start-dayBase)/60000,endMin = (row.end-dayBase)/60000;
+    row.appointmentConflict = conflict ? `Overlaps ${conflict.h.name}`
+      : block ? `Overlaps ${block.label}`
+      : !windows.some(win=>startMin>=win.start && endMin<=win.end)
+        ? 'Fixed start is outside allowed hours' : null;
+  }
   // `_plannerLiveLocationId` is an ephemeral matched place supplied when the
   // main page delegates planning to its Worker. A Worker cannot read the
   // page's GPS coordinate, so prefer this one-request anchor over persisted
@@ -2237,15 +2274,15 @@ function createDayPlacementState(day,settings,opts = {}){
     mode,
     slots,
     startClock,
-    remaining:Math.max(0,(Number(day.totalMinutes) || 0)),
+    remaining:Math.max(0,(Number(day.totalMinutes) || 0) - scheduledBreakableMinutes(day.scheduled)),
     totalMinutes:Math.max(0,Number(day.totalMinutes) || 0),
-    usedMinutes:0,
+    usedMinutes:scheduledBreakableMinutes(day.scheduled),
     seedLocId:prevLocId,
     prevLocId,
     liveLocId,
     rows,
     fills:[],
-    placed:new Set()
+    placed:new Set(rows.filter(row=>row.breakableStart).map(row=>`${row.i}:0`))
   };
 }
 
@@ -2316,6 +2353,17 @@ function sequencingAwayCanWait(awayC, atC, state){
     return wins.some(w => Number(w && w.end) - now >= needMs);
   }
   return false;
+}
+
+// MUTATE: rebuild only flexible fills while retaining fixed appointment budgets.
+function resetPlacementStateFills(state){
+  state.rows = (state.rows || []).filter(row=>row.kind === 'scheduled');
+  state.fills = [];
+  state.placed = new Set(state.rows.filter(row=>row.breakableStart).map(row=>`${row.i}:0`));
+  state.usedMinutes = state.rows.filter(row=>row.breakableStart)
+    .reduce((sum,row)=>sum+(Number(row.chunkMinutes) || 0),0);
+  state.remaining = Math.max(0,state.totalMinutes-state.usedMinutes);
+  state.prevLocId = state.seedLocId;
 }
 
 // PURE: snapshot mutable fields so week scoring can dry-run without commit.

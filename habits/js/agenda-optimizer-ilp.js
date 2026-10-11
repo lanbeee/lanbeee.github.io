@@ -2224,13 +2224,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
     return added.length;
   };
 
-  // Timed breakables participate in fixed-pack geometry through a committed
-  // minimum first session. The ILP must see that hard 5:30-style boundary
-  // before choosing flexible errands; the remaining duration still fills
-  // continuously around prayers and other obligations afterward.
-  if(typeof preplaceTimedBreakableStarts === 'function'){
-    total += preplaceTimedBreakableStarts(candidates,dayStates,settings);
-  }
+  // Both engines receive breakable first sessions as hard scheduled rows.
+  // Their remaining minutes use the normal breakable pass.
 
   for(let dayOffset = 0;dayOffset < dayStates.length;dayOffset += 1){
     const state = dayStates[dayOffset];

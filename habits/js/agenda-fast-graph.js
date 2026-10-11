@@ -100,12 +100,7 @@ function fastGraphPlacement(state,fill,opts,candidates,dayStates,budget){
   const moving = new Set(movable.map(entry=>entry.fill.i));
   const fixed = state.fills.filter(entry=>!moving.has(entry.fill.i));
   const base = cloneFastGraphState(state);
-  base.rows = base.rows.filter(row=>row.kind === 'scheduled');
-  base.fills = [];
-  base.placed = new Set();
-  base.remaining = Math.max(0,Number(state.totalMinutes) || 0);
-  base.usedMinutes = 0;
-  base.prevLocId = state.seedLocId;
+  resetPlacementStateFills(base);
   base.day.agendaItems = [];
   for(const entry of fixed){
     commitPlacement(base,{...entry.fill},{...entry.fit});
@@ -307,9 +302,7 @@ function fastLinkedGroupBase(state,hids,{keepLocations=true,frozenIndices=new Se
   const keepsLocation=entry=>keepLocations || frozenIndices.has(entry.fill.i);
   const clocks=keep.map(entry=>[entry.fill.i,entry.fill.chunkIndex,
     entry.fit.placeStart,entry.fit.placeEnd,entry.fit.locId,keepsLocation(entry)]);
-  trial.rows=trial.rows.filter(row=>row.kind === 'scheduled');
-  trial.fills=[];trial.placed=new Set();trial.usedMinutes=0;
-  trial.remaining=trial.totalMinutes;trial.prevLocId=trial.seedLocId;
+  resetPlacementStateFills(trial);
   // Protected neighbors are frozen, including venue. Replaying a partial route
   // with unforced fills can pick different locations before all neighbors are
   // present, then fail the retention check despite the old route still fitting.
@@ -458,8 +451,8 @@ function repairFastLinkedGroups(states,candidates,settings,budget){
 function insertUnplacedFastGraphChoices(unplaced,candidates,states,settings,frozen,budget){
   let accepted = 0;
   const byIndex = new Map(candidates.map(c=>[c.i,c]));
-  const placed = (idx)=>states.some(state=>(state.fills || [])
-    .some(entry=>entry && entry.fill && entry.fill.i === idx));
+  const placed = (idx)=>states.some(state=>state.rows.some(row=>row.breakableStart && row.i===idx)
+    || (state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === idx));
   for(const c of unplaced){
     if(!c || placed(c.i))continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
@@ -550,6 +543,7 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
   // rebuilds cost ~2s and accept nothing once venues are enumerated.
   const placedIds = new Set();
   for(const state of states){
+    for(const row of state.rows || [])if(row.breakableStart)placedIds.add(row.i);
     for(const entry of state.fills || []){
       if(entry && entry.fill && entry.fill.i != null)placedIds.add(entry.fill.i);
     }
@@ -736,9 +730,7 @@ function improveFastGraphDaySelections(candidates,states,settings,options = {}){
     const fixed = state.fills.filter(entry=>!movingIds.has(entry.fill.i));
     const pool = moving.map(entry=>byIndex.get(entry.fill.i)).concat(missing.slice(0,4));
     const base = cloneFastGraphState(state);
-    base.rows = base.rows.filter(row=>row.kind === 'scheduled');
-    base.fills = [];base.placed = new Set();base.remaining = state.totalMinutes;
-    base.usedMinutes = 0;base.prevLocId = state.seedLocId;base.day.agendaItems = [];
+    resetPlacementStateFills(base);base.day.agendaItems = [];
     for(const entry of fixed)commitPlacement(base,{...entry.fill},{...entry.fit});
     const frozenClocksFit = trial=>fixed.every(entry=>trial.fills.some(other=>
       other.fill.i === entry.fill.i && other.fill.chunkIndex === entry.fill.chunkIndex

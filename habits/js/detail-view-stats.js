@@ -35,7 +35,7 @@ function renderStats(h){
     : h.type === 'task' ? (timed ? 'ti-clock-hour-4' : 'ti-flag')
     : 'ti-calendar-event';
   const planFact = h.type === 'zero' ? `${completed} entries`
-    : h.type === 'task' ? (h.lastLog !== null ? 'completed' : (timed ? 'scheduled' : (h.dueDate ? 'has due date' : 'no due date')))
+    : h.type === 'task' ? (isTaskDone(h) ? 'completed' : (timed ? 'scheduled' : (h.dueDate ? 'has due date' : 'no due date')))
     : `${planned} planned`;
   const scoreCard = `
     <div class="score-card ${scoreCls}">
@@ -93,7 +93,7 @@ function scoreTitle(h,score){
     return 'no pattern yet';
   }
   if(h.type === 'task'){
-    if(h.lastLog !== null)return 'done';
+    if(isTaskDone(h))return 'done';
     if(score >= 80)return 'plenty of time';
     if(score >= 45)return 'coming due';
     return 'due now';
@@ -135,9 +135,9 @@ function progressCopy(h,score){
 function aboutText(h){
   const days = daysSince(h.lastLog);
   if(h.type === 'task'){
-    if(h.lastLog !== null)return `Done. Logged ${entryWhen(h.lastLog)}.`;
+    if(isTaskDone(h))return `Done. Logged ${entryWhen(h.lastLog)}.`;
     if(h.eventTime !== null)return h.breakable
-      ? `Starts exactly ${scheduledWhenLabel(h.eventTime)}. Breakable — may pause and resume around other obligations.`
+      ? `Starts exactly ${scheduledWhenLabel(h.eventTime)}. Fixed start, breakable — may pause and resume; duration is total time, Allowed times sets a hard end.`
       : `Scheduled ${scheduledWhenLabel(h.eventTime)}. Fixed time — never rescheduled.`;
     if(h.dueDate === null)return 'A someday task. Pin it or add a due date to bring it forward.';
     const left = daysUntil(h.dueDate);
@@ -197,7 +197,7 @@ function trendText(h){
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
   if(h.type === 'task'){
-    if(h.lastLog !== null)return 'completed';
+    if(isTaskDone(h))return 'completed';
     if(h.eventTime !== null)return scheduledWhenLabel(h.eventTime);
     if(h.dueDate === null)return 'someday';
     const left = daysUntil(h.dueDate);

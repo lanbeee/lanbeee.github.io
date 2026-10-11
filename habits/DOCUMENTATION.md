@@ -1176,8 +1176,8 @@ Visible when type = habit (keepup):
 ### 8.6 Field: Task Due Date 👤
 Visible when type = task:
 - **Date input:** Calendar picker (day-level)
-- **Time input:** Time picker. Unbreakable tasks become fixed-time events; breakable tasks start at this time and may pause/resume. Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
-- Hint: "add a start time; breakable tasks may pause and resume"
+- **Time input:** Time picker. Tasks keep this fixed start even when breakable; breakable tasks may pause/resume. Duration is total time; Allowed times sets a hard end. Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
+- Hint: "fixed start time; breakable allows pauses, Allowed times sets a hard end"
 - Default time: Next clean hour
 
 ### 8.7 More Options Fields 👤
@@ -1251,6 +1251,28 @@ Labeled page navigation sits below the item title, outside the scrolling pane. A
 - **Target times:** How many times per cycle (default 1, range 1-183)
 - **Cycle days:** Days per cycle (default 7, range 0.5-183)
 - For `habit` type only — visible as `[N] × in [N] d`
+
+#### Appointment and date flexibility 👤👨‍💻
+
+An entered task date **and clock** is an appointment. The first session stays at
+that clock in Fast, GLPK, fallback and classic Today, including a cold open after
+it starts. Breakable reserves only the first minimum session (or the smaller
+remaining finish-up); it allows the rest to pause and resume on that date.
+Duration is total participation time: four hours starting at 5 PM may finish
+later than 9 PM after interruptions. **Allowed times** supplies a hard start/end
+window when needed. If the remaining duration cannot fit, the first card says
+how much is still not scheduled. A conflicting busy time or another appointment
+stays visible with an overlap warning; the planner does not erase either fixed
+commitment or claim the conflict is feasible. Only actual completion logs credit
+participation; a past scheduled session is not a completion.
+
+Early window and delay allowance affect date-only tasks and recurring work.
+Zero delay makes the due day firm; it does not invent a fixed clock. An entered
+appointment clock remains fixed with any early/delay values. Legacy
+`flexibilityDays` migrates to the early window, with zero delay by default.
+Timed one-day plans obey the same rule: whole duration when unbreakable, fixed
+first session plus resumable remainder when breakable. A timed plan overrides
+the item's saved clock on that same date without producing a duplicate event.
 
 #### Task Timing Section
 - For `task` type only

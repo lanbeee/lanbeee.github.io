@@ -95,7 +95,8 @@ function isAgendaFillDraggable(h,agendaRow){
   if(!h || !agendaRow)return false;
   if(agendaRow.kind !== 'fill' && agendaRow.kind !== 'scheduled')return false;
   // Fixed-time meetings stay put; they can still be link anchors via neighbors.
-  if(agendaRow.kind === 'scheduled' && h.type === 'task' && h.eventTime != null)return false;
+  if(agendaRow.hard || agendaRow.breakableStart
+    || (agendaRow.kind === 'scheduled' && h.type === 'task' && h.eventTime != null))return false;
   if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))return false;
   return true;
 }

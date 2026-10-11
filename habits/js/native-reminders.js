@@ -285,7 +285,9 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
     sequence.forEach((row,i)=>{
       if(row.kind !== 'travel')return;
       const destination = sequence.slice(i+1).find(next=>next.kind !== 'travel' && next.start === row.end && next.locationId === row.to);
-      active.push({...row,reminderOwner:nativeReminderOwner(destination,data,settings,dataById),reminderOccurrence:nativeReminderOccurrence(destination,data,day,dataById)});
+      active.push({...row,reminderOwner:nativeReminderOwner(destination,data,settings,dataById),
+        reminderOccurrence:nativeReminderOccurrence(destination,data,day,dataById),
+        reminderFixedStart:destination?.kind==='scheduled' || destination?.hard===true});
     });
     active.push(...blockedTimelineRows(day.dayKey || dateKey(day.dayBase),settings,day.dayBase,{clipAfter:null}));
     const provisionalDrops=new Map();
@@ -365,7 +367,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
         const mode = prefs.items?.[owner]?.[kind === 'travel' ? 'travel' + edge : edge.toLowerCase()] || 'off';
         if(!['notification','alarm'].includes(mode) || !Number.isFinite(at) || at <= now || at > now + 7*86400000)continue;
         const key = `${owner}:${kind}:${identity}:${edge}`;
-        const movableStart=edge==='Start' && (kind==='travel' ? destinationHabit && !(destinationHabit.type==='task' && !destinationHabit.breakable && Number.isFinite(destinationHabit.eventTime)) : h && !(h.type==='task' && !h.breakable && Number.isFinite(h.eventTime)) && row.hard!==true && row.kind!=='scheduled');
+        const movableStart=edge==='Start' && (kind==='travel' ? !row.reminderFixedStart && destinationHabit && !(destinationHabit.type==='task' && !destinationHabit.breakable && Number.isFinite(destinationHabit.eventTime)) : h && !(h.type==='task' && !h.breakable && Number.isFinite(h.eventTime)) && row.hard!==true && row.kind!=='scheduled');
         const clock=new Date(agendaAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
         events.set(key,{key,at,agendaAt,title,owner,
           upNext:Boolean(movableStart),upNextBody:`Up next · ${clock}`,notificationGroup:`${owner}:${day.dayKey || dateKey(day.dayBase)}:${kind === 'travel' ? 'travel'+edge : edge.toLowerCase()}`,

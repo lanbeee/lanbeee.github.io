@@ -43,7 +43,7 @@ function check(value,message,detail=''){
       const maghrib=base({name:'Maghrib',lastLog:day-86400000,logs:[day-86400000],durationMinutes:5,
         priority:0,allowedTimeStart:19*60+30,allowedTimeEnd:20*60+9});
       const summarizeBirthday=week=>{
-        const rows=week.days[0].timeline.filter(row=>row.kind==='fill' && (row.h.name==='Birthday' || row.h.name==='Maghrib'));
+        const rows=week.days[0].timeline.filter(row=>(row.kind==='fill' || row.kind==='scheduled') && (row.h.name==='Birthday' || row.h.name==='Maghrib'));
         const birthdayRows=rows.filter(row=>row.h.name==='Birthday');
         const prayer=rows.find(row=>row.h.name==='Maghrib');
         return {
@@ -170,7 +170,7 @@ function check(value,message,detail=''){
       check(value.starts[0]===result.day+(17*60+30)*60000,`${engine}: timed breakable starts at 5:30 PM`,JSON.stringify(value));
       check(value.total===240,`${engine}: timed breakable retains all 240 minutes`,JSON.stringify(value));
       check(Boolean(value.prayer) && !value.overlaps,`${engine}: Maghrib interrupts without overlap`,JSON.stringify(value));
-      check(!value.scheduledBirthday,`${engine}: timed breakable is not a fixed scheduled block`,JSON.stringify(value));
+      check(value.scheduledBirthday,`${engine}: breakable appointment retains a hard first start`,JSON.stringify(value));
     }
     for(const [engine,trace] of [['Fast',result.birthdayFastTrace],['GLPK',result.birthdayGlpkTrace]]){
       if(!trace)continue;

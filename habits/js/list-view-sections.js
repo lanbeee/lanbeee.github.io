@@ -1679,9 +1679,10 @@ function render(opts){
     const gatedEarlyPill = (!minimal && sortSettings.showEarlyOnCards) ? earlyPill : '';
     const agendaTimeHidden = agendaPill === '';
     const reminderPill = (!minimal && typeof nativeReminderCardPill === 'function') ? nativeReminderCardPill(h) : '';
+    const appointmentPill = appointmentStatusPill(agendaRow);
     const context = minimal
-      ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
-      : cardMeta(h,{extraPills:[reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
+      ? cardMeta(h,{forceRepetition:true,minimalOnly:true}) + appointmentPill
+      : cardMeta(h,{extraPills:[appointmentPill,reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     // Minimal hides dots unless opted in for minimal specifically
     // (minimalShowTrailOnCards, default off); full keeps its own toggle.
     const showTrail = minimal
@@ -1776,7 +1777,7 @@ function render(opts){
             </span>
             ${agendaPill}
           </div>
-          ${(!minimal && isBreakable) ? ((reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
+          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           ${!visualHtml ? '' : `<div class="ting-visual">
             ${visualHtml}

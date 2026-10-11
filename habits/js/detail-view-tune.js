@@ -534,10 +534,10 @@ function syncDetailDueUi(){
     else if(hasTime){
       const breakable=$('detail-breakable')?.getAttribute('aria-pressed') === 'true';
       hint.textContent = breakable
-        ? 'Anchored start — begins at this time and may split around other agenda obligations.'
+        ? 'Fixed appointment — keeps this start time. Breakable allows pauses; duration is total time. Set Allowed times for a hard end.'
         : 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
     }
-    else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
+    else hint.textContent = 'Due on this date, with no fixed clock. Zero delay keeps this day firm; Allowed times limits the hours.';
   }
 }
 

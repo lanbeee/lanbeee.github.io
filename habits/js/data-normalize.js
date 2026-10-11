@@ -474,8 +474,9 @@ function isTimedTask(h){
   return h.type === 'task' && h.eventTime !== null;
 }
 // PURE: a timed non-breakable task is a literal appointment. A breakable task
-// starts its first session exactly at eventTime, then lets the planner split
-// the remaining duration around higher-priority obligations.
+// retains a hard first session at eventTime independently of capacity, then
+// splits the remaining duration around obligations inside Allowed times.
+// Early/delay windows govern dates; neither unlocks an entered event clock.
 function isFixedTimedTask(h){
   return isTimedTask(h) && !h.breakable;
 }
