@@ -1161,6 +1161,8 @@ function clearTimeEndpoint(endpoint){
   if(dayBtn)dayBtn.setAttribute('aria-pressed','false');
   const day2Btn = endpoint.querySelector('.time-day-next2');
   if(day2Btn)day2Btn.setAttribute('aria-pressed','false');
+  const advanced = endpoint.querySelector('.time-advanced');
+  if(advanced)advanced.open = false;
   syncTimeModeVisibility(endpoint);
 }
 
@@ -1290,6 +1292,10 @@ document.addEventListener('click',e=>{
   if(tip)tip.toggleAttribute('hidden');
 });
 document.addEventListener('click',e=>{
+  if(e.target.closest('.time-set-city')){
+    openHomeCitySettings();
+    return;
+  }
   const btn = e.target.closest('.time-offset-sign-btn');
   if(!btn)return;
   const input = btn.previousElementSibling;
@@ -1491,7 +1497,7 @@ $('detail-save').addEventListener('click',()=>{
     const hasCity = Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng);
     const registry = normalizeLocationRegistry(s.locations);
     if(!hasCity && !registry.length){
-      showToast('set your city to use prayer times');
+      showToast('set your city to use relative times');
       return;
     }
   }

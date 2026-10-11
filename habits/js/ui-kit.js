@@ -32,7 +32,7 @@ function uiFilterSheetHtml({wrapId, extraClass, titleId, title, summaryId, close
 
 // PURE: plain-language word for an offset direction. The button keeps
 // data-sign='+/-' (storage + readSignedOffset depend on it); only the visible
-// word changes, so an expression reads "Dawn · 30 · after · min".
+// word changes, so the adjustment reads "30 min after".
 function timeOffsetSignWord(sign){
   return sign === '-' ? 'before' : 'after';
 }
@@ -62,23 +62,74 @@ function syncTimeModeWord(endpoint){
   });
 }
 
-function uiTimeExprHtml(prefix, second){
+function uiTimeDayHtml(prefix, second, {on = false, attrs = '', hidden = false} = {}){
+  return `<button type="button" class="${second ? 'time-day-next2' : 'time-day-next'} mini-text-btn"${attrs} aria-pressed="${on ? 'true' : 'false'}" title="Use this event on the following day" aria-label="${prefix} use next day's event"${hidden ? ' hidden' : ''}>next day's event</button>`;
+}
+
+function uiTimeExprHtml(prefix, second, {options = '', offset = 0, fixedValue = '', isFixed = false, dayOn = false, attr = ()=>''} = {}){
   const anchorCls = second ? 'time-anchor2' : 'time-anchor';
   const habitWrap = second ? 'time-habit-wrap2' : 'time-habit-wrap';
   const habitCls = second ? 'time-habit2' : 'time-habit';
   const offsetCls = second ? 'time-offset2' : 'time-offset';
-  const dayCls = second ? 'time-day-next2' : 'time-day-next';
   const habitAria = second ? `${prefix} second habit` : `${prefix} anchor habit`;
   const offsetAria = second ? `${prefix} second offset minutes` : `${prefix} offset minutes`;
   const anchorAria = second ? `${prefix} second anchor` : `${prefix} anchor`;
-  const clock = second ? `<input type="time" class="time-input time-fixed2" step="300" hidden aria-label="${prefix} clock time" />` : '';
-  return `<select class="${anchorCls} mini-select" aria-label="${anchorAria}"></select>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><input type="number" class="${offsetCls} mini-time-input" inputmode="numeric" placeholder="0" aria-label="${offsetAria}" /><button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="+" aria-label="minutes after">after</button><span class="time-offset-unit">min</span><button type="button" class="${dayCls} mini-text-btn" aria-pressed="false" title="use next day's prayer" aria-label="next day">next day</button>`;
+  const clock = second ? `<input type="time" class="time-input time-fixed2" step="300"${attr('fixed2')} value="${fixedValue}"${isFixed ? '' : ' hidden'} aria-label="${prefix} clock time" />` : '';
+  const hide = isFixed ? ' hidden' : '';
+  return `<label class="time-event-label">${second ? 'second time' : 'based on'}<select class="${anchorCls} mini-select"${attr(second ? 'anchor2' : 'anchor')} aria-label="${anchorAria}">${options}</select></label>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><span class="time-adjust-label"${hide}>adjust by</span><input type="number" class="${offsetCls} mini-time-input"${attr(second ? 'offset2' : 'offset')} inputmode="numeric" min="0" max="720" placeholder="0" value="${Math.abs(offset) || ''}" aria-label="${offsetAria}"${hide} /><button type="button" class="time-offset-sign-btn" data-sign="${offset < 0 ? '-' : '+'}" aria-label="${offset < 0 ? 'minutes before' : 'minutes after'}" title="Switch between before and after"${hide}>${timeOffsetSignWord(offset < 0 ? '-' : '+')}</button><span class="time-offset-unit"${hide}>min</span>${second ? uiTimeDayHtml(prefix,true,{on:dayOn,attrs:attr('day2'),hidden:isFixed}) : ''}`;
+}
+
+function uiTimeCombineOptions(combine = ''){
+  return [['','use this time only'],['later','use the later time'],['earlier','use the earlier time']]
+    .map(([value,label])=>`<option value="${value}"${value === combine ? ' selected' : ''}>${label}</option>`).join('');
+}
+
+function timeResolvedDayLabel(minutes){
+  return minutes >= 1440 ? 'tomorrow: ' : minutes < 0 ? 'yesterday: ' : 'today: ';
+}
+
+// The same progressive editor serves item hours, preferences, place options,
+// and busy times. Disclosure state is UI only; collapsed rules still apply.
+function uiTimeDynamicHtml(prefix, {expr = uiTimeExprHtml(prefix,false), expr2 = uiTimeExprHtml(prefix,true), day = uiTimeDayHtml(prefix,false), combine = '', combineAttrs = '', resolved = '', resolvedDay = '', needsCity = false, open = false} = {}){
+  return `<p class="time-relative-hint">Follows this event as its time changes each day.</p><div class="time-expr">${expr}</div><div class="time-rule-preview" aria-live="polite"><span class="time-rule-summary"></span><span class="time-resolved" data-day-label="${resolvedDay}">${resolved}</span><button type="button" class="mini-text-btn time-set-city"${needsCity ? '' : ' hidden'}>set home city</button></div><details class="time-advanced"${open ? ' open' : ''}><summary>More options</summary><div class="time-advanced-body"><p class="field-hint">For overnight windows, use the event on the following day.</p>${day}<label class="time-compare-label">compare two times<select class="time-combine mini-select"${combineAttrs} aria-label="${prefix} combine">${uiTimeCombineOptions(combine)}</select></label><div class="time-expr time-expr2"${combine ? '' : ' hidden'}>${expr2}</div><p class="field-hint time-comparison-hint"${combine ? '' : ' hidden'}>This boundary uses whichever time is ${combine === 'earlier' ? 'earlier' : 'later'}.</p></div></details>`;
+}
+
+// RENDER: translate the current controls into a readable rule, independent of
+// today's clock preview (which may need a city before it can resolve).
+function syncTimeRuleSummary(endpoint){
+  const node = endpoint?.querySelector('.time-rule-summary');
+  if(!node)return;
+  const expression = second=>{
+    const select = endpoint.querySelector(second ? '.time-anchor2' : '.time-anchor');
+    if(!select?.value)return 'choose an event';
+    if(select.value === 'fixed'){
+      const min = timeInputToMinutes(endpoint.querySelector('.time-fixed2')?.value);
+      return min == null ? 'choose a clock time' : formatTimeShort(min);
+    }
+    let event = select.selectedOptions[0]?.textContent || '';
+    if(select.value === 'habit'){
+      const habit = endpoint.querySelector(second ? '.time-habit2' : '.time-habit');
+      event = habit?.value ? `${habit.selectedOptions[0].textContent} completion` : 'habit completion';
+    }
+    const next = endpoint.querySelector(second ? '.time-day-next2' : '.time-day-next')?.getAttribute('aria-pressed') === 'true';
+    if(next && select.value !== 'habit')event = `next day's ${event}`;
+    const input = endpoint.querySelector(second ? '.time-offset2' : '.time-offset');
+    const offset = normalizePrayerOffset(readSignedOffset(input));
+    return offset ? `${Math.abs(offset)} min ${offset < 0 ? 'before' : 'after'} ${event}` : event;
+  };
+  const combine = endpoint.querySelector('.time-combine')?.value;
+  node.textContent = combine ? `${combine === 'later' ? 'Later' : 'Earlier'} of ${expression(false)} and ${expression(true)}` : expression(false);
+  const hint = endpoint.querySelector('.time-comparison-hint');
+  if(hint){
+    hint.hidden = !combine;
+    hint.textContent = `This boundary uses whichever time is ${combine === 'earlier' ? 'earlier' : 'later'}.`;
+  }
 }
 
 function uiTimeEndpointHtml({field, inputId, prefix, endpointLabel, fixedClass = ''}){
-  const which = endpointLabel === 'starts' ? 'start' : 'end';
+  const which = /start$/i.test(field) ? 'start' : 'end';
   const fixedCls = fixedClass ? ` ${fixedClass}` : '';
-  return `<div class="time-endpoint" data-field="${field}" data-endpoint-label="${endpointLabel}"><input type="time" class="time-input time-fixed${fixedCls}" id="${inputId}" step="300" aria-label="${prefix} time" /><div class="time-dynamic" hidden><div class="time-expr">${uiTimeExprHtml(prefix, false)}</div><select class="time-combine mini-select" aria-label="${prefix} combine"><option value="">just this time</option><option value="later">whichever is later</option><option value="earlier">whichever is earlier</option></select><div class="time-expr time-expr2" hidden>${uiTimeExprHtml(prefix, true)}</div><span class="time-resolved" aria-live="polite"></span></div>${uiTimeModeToggleHtml({which})}</div>`;
+  return `<div class="time-endpoint" data-field="${field}" data-endpoint-label="${endpointLabel}"><input type="time" class="time-input time-fixed${fixedCls}" id="${inputId}" step="300" aria-label="${prefix} time" /><div class="time-dynamic" hidden>${uiTimeDynamicHtml(prefix)}</div>${uiTimeModeToggleHtml({which})}</div>`;
 }
 
 function uiTimePairHtml(kind){
@@ -89,9 +140,9 @@ function uiTimePairHtml(kind){
   const endId = allowed ? 'detail-time-end' : 'detail-preferred-time-end';
   const startPrefix = allowed ? 'allowed start' : 'preferred start';
   const endPrefix = allowed ? 'allowed end' : 'preferred end';
-  return uiTimeEndpointHtml({field:startField,inputId:startId,prefix:startPrefix,endpointLabel:'starts'})
+  return uiTimeEndpointHtml({field:startField,inputId:startId,prefix:startPrefix,endpointLabel:'from'})
     + '<span class="time-sep">—</span>'
-    + uiTimeEndpointHtml({field:endField,inputId:endId,prefix:endPrefix,endpointLabel:'ends'});
+    + uiTimeEndpointHtml({field:endField,inputId:endId,prefix:endPrefix,endpointLabel:'until'});
 }
 
 const UI_SETTING_TOGGLES = {
@@ -141,7 +192,7 @@ const UI_SETTING_TOGGLES = {
     {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.'}
   ],
   prayer:[
-    {key:'prayerIslamicNames', title:'Islamic prayer names', hint:'Show Fajr, Dhuhr, Asr, Maghrib, Isha instead of Dawn, Noon, Afternoon, Sunset, Night.'}
+    {key:'prayerIslamicNames', title:'use Islamic prayer names', hint:'Optional: replace the general time labels with Fajr, Dhuhr, Asr, Maghrib, and Isha. Also show prayer calculation settings and sample habits.'}
   ],
   advanced:[
     {key:'agendaOptimizer', title:'smarter packing', hint:'Takes longer, but packs tight days better and protects items with fewer open slots. Off = fast graph packing, usually under a second.'}
@@ -189,7 +240,7 @@ const UI_PRIVACY_BLOCKS = [
   {id:'privacy-others-body', label:'Other services', summary:'Icons and map/PDF libraries load from public CDNs. They do not receive your list.', body:[
     'Tabler icons (jsDelivr) and Leaflet (unpkg) draw buttons and the map. PDF import uses pdf.js in this browser; the file you pick is not uploaded.',
     'Naming a pasted App Store link asks Apple’s public listing for that app’s name. It receives only the numeric id already inside the link, and only when you paste one. Offline, you simply type the name yourself.',
-    'Prayer times are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
+    'Relative times such as sunrise and sunset are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
   ]},
   {id:'privacy-feedback-body', label:'Send feedback', summary:'Optional. Opens a Google Form in your browser. Answers go to Google, not into Tings.', body:[
     'The send-feedback button on About opens a Google Form in a new browser tab. Tings does not receive those answers, and nothing from your list is attached.',

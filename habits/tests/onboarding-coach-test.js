@@ -382,7 +382,8 @@ async function progressBar(page){
   await primary(page,'aWeatherRule','aWeatherAttach');
   await page.locator('#detail-weather-profile').selectOption({index:1});
   await stage(page,'aPrayer');
-  assert(/general windows, specific options/.test(await page.locator('#tings-coach-copy').textContent()),'sun and prayer anchors are tied back to both schedule levels');
+  assert(/general windows, specific options/.test(await page.locator('#tings-coach-copy').textContent()),'relative times are tied back to both schedule levels');
+  assert(!/prayer|fajr|isha|asr/i.test(await page.locator('#tings-coach-copy').textContent()),'general relative-time guidance uses inclusive day-part names');
   await primary(page,'aPrayer','aIntro');
   assert(await page.locator('[data-coach-chapter="places"].is-done').count() === 1,'places and weather chapter checks off');
 

@@ -386,7 +386,7 @@
                   <span class="settings-sublabel compact-label">time window</span>
                   <button type="button" class="mini-text-btn schedule-time-clear" id="detail-time-clear" hidden>clear</button>
                 </div>
-                <p class="field-hint schedule-time-lead">Hours this item may run, at every place below. Clock is an exact time; relative is sunrise, sunset, or a prayer.</p>
+                <p class="field-hint schedule-time-lead">Choose the earliest start and latest finish. Use relative for times such as dawn, sunrise, or sunset.</p>
                 <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed"></div>
                 <p class="field-hint time-empty-hint" id="detail-time-empty-hint">Leave blank for any time of day.</p>
               </div>
@@ -449,7 +449,7 @@
             <div class="habit-options-heading">
               <span class="settings-sublabel">specific times, places &amp; weather
                 <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, places, and weather above apply generally. Add an option when one place needs its own time or weather guidance. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference and weather on a row override the item and place defaults. Options are alternatives: the planner picks one per occurrence.</span>
+                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, places, and weather above apply generally. Add an option when one place needs its own time or weather guidance. Clock is an exact time; relative follows a daily event such as dawn, sunrise, or sunset. Preference and weather on a row override the item and place defaults. Options are alternatives: the planner picks one per occurrence.</span>
               </span>
             </div>
             <p class="field-hint" id="detail-habit-options-hint">Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.</p>
@@ -828,11 +828,11 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="sample-blocks-body" hidden>
-            <p class="field-hint">Sun-based sleep on your busy-time schedule: starts at the later of Isha +15m and 8h before next sunrise, ends 40m before sunrise. Needs your city (Settings → Locations), same as the prayers.</p>
+            <p class="field-hint">Sun-based sleep on your busy-time schedule: combines a night-time start with the next sunrise, and ends 40m before sunrise. Needs your city (Settings → Locations).</p>
             <div class="sample-habits-list" id="sample-blocks-preview" aria-label="sample busy time demos"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible sample-prayers-block">
+        <section class="settings-block settings-collapsible sample-prayers-block" id="sample-prayers-section" hidden>
           <button type="button" class="settings-collapse-head" id="sample-prayers-head" data-collapse-target="sample-prayers-body" aria-expanded="false" aria-controls="sample-prayers-body">
             <span class="settings-label">daily prayers</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1244,18 +1244,21 @@
         </section>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
-            <span class="settings-label">prayer times</span>
+            <span class="settings-label">relative times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-prayer-body" hidden>
+            <p class="field-hint">Dawn, sunrise, noon, afternoon, sunset, and night follow your city and the date. Set your city under Locations.</p>
             <div class="settings-grid" data-ui-toggles="prayer"></div>
-            <span class="settings-sublabel">calculation method</span>
-            <select id="setting-prayer-method" class="mini-select"></select>
-            <p class="field-hint">Only change if your mosque uses a specific method. City for prayer times lives under Locations.</p>
-            <span class="settings-sublabel">Asr school (madhab)</span>
-            <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
-              <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
-              <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
+            <div id="settings-prayer-calculation" hidden>
+              <span class="settings-sublabel">calculation method</span>
+              <select id="setting-prayer-method" class="mini-select"></select>
+              <p class="field-hint">For prayer tracking, choose the calculation convention you follow.</p>
+              <span class="settings-sublabel">Asr school (madhab)</span>
+              <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
+                <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
+                <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
+              </div>
             </div>
           </div>
         </section>

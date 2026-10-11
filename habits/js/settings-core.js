@@ -216,6 +216,14 @@ function openAddSettings(section){
 
 function closeSettingsSheet(){
   closeSheet('settings-sheet');
+  // City setup leaves the item draft mounted. Refresh its clock previews on
+  // every return path, including backdrop dismissal, without re-rendering it.
+  if($('detail-sheet')?.classList.contains('open')){
+    document.querySelectorAll('#detail-sheet .time-endpoint.is-dynamic').forEach(endpoint=>{
+      if(endpoint.closest('.habit-option-row'))refreshHabitScheduleOptionEndpoint(endpoint);
+      else refreshTimeResolvedFor(endpoint);
+    });
+  }
   if(!addSettingsReturn)return;
   addSettingsReturn = false;
   $('settings-close').textContent = 'done';

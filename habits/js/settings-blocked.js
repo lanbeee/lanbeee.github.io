@@ -3,7 +3,7 @@
 function blockedAnchorOptions(selected, allowFixed = false){
   const prayer = cleanPrayerAnchor(selected) || '';
   const isFixed = allowFixed && selected === 'fixed';
-  let html = '<option value="">— prayer —</option>'
+  let html = '<option value="">— choose an event —</option>'
     + PRAYER_ANCHORS.map(a => `<option value="${a}"${a === prayer ? ' selected' : ''}>${prayerDisplayName(a)}</option>`).join('');
   if(allowFixed){
     html += `<option value="fixed"${isFixed ? ' selected' : ''}>clock time…</option>`;
@@ -26,16 +26,6 @@ function blockedResolvedLabel(block, field){
   return formatTimeShort(((min % 1440) + 1440) % 1440);
 }
 
-// PURE: <option> list for later/earlier-of combine picker.
-function blockedCombineOptions(selected){
-  const sel = cleanTimeCombine(selected) || '';
-  return [
-    ['', 'this time only'],
-    ['later', 'whichever is later'],
-    ['earlier', 'whichever is earlier']
-  ].map(([v, label]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${label}</option>`).join('');
-}
-
 // RENDER: one blocked-time endpoint (start or end) — fixed clock OR prayer
 // anchor + offset (+ optional later/earlier-of second expression), toggled by
 // the mode button. Prayer anchors on primary; secondary may also be a clock.
@@ -56,28 +46,20 @@ function blockedEndpointHtml(block, i, field){
   const dayOn = normalizeAnchorDayOffset(block[field + 'DayOffset']) === 1;
   const day2On = normalizeAnchorDayOffset(block[field + 'DayOffset2']) === 1;
   const resolved = isDyn ? blockedResolvedLabel(block, field) : '';
+  const hasCoords = block.locationId || (Number.isFinite(sortSettings.homeCityLat) && Number.isFinite(sortSettings.homeCityLng));
+  const resolvedMin = isDyn && hasCoords ? resolveBlockedTimeMinutes(block,field,dayStart(Date.now())) : null;
   const aria = escapeHtml(block.label) + ' ' + field;
-  return `<div class="time-endpoint blocked-endpoint${isDyn ? ' is-dynamic' : ''}" data-blocked-field="${field}" data-blocked-index="${i}">
+  const attr = suffix=>` data-blocked-${field}-${suffix}="${i}"`;
+  return `<div class="time-endpoint blocked-endpoint${isDyn ? ' is-dynamic' : ''}" data-endpoint-label="${field === 'start' ? 'from' : 'until'}" data-blocked-field="${field}" data-blocked-index="${i}">
     <input type="time" class="time-fixed" step="300" data-blocked-${field}="${i}" aria-label="${aria}" value="${fixedVal}"${isDyn ? ' hidden' : ''} />
-    <div class="time-dynamic"${isDyn ? '' : ' hidden'}>
-      <div class="time-expr">
-        <select class="time-anchor mini-select" data-blocked-${field}-anchor="${i}" aria-label="${aria} anchor">${blockedAnchorOptions(anchor)}</select>
-        <input type="number" class="time-offset mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset="${i}" aria-label="${aria} offset minutes" value="${Math.abs(offsetVal)}" />
-        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offsetVal < 0 ? '-' : '+'}" aria-label="${offsetVal < 0 ? 'minutes before' : 'minutes after'}">${timeOffsetSignWord(offsetVal < 0 ? '-' : '+')}</button>
-        <span class="time-offset-unit">min</span>
-        <button type="button" class="time-day-next mini-text-btn" data-blocked-${field}-day="${i}" aria-pressed="${dayOn ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day">next day</button>
-      </div>
-      <select class="time-combine mini-select" data-blocked-${field}-combine="${i}" aria-label="${aria} combine">${blockedCombineOptions(combine)}</select>
-      <div class="time-expr time-expr2"${combine ? '' : ' hidden'}>
-        <select class="time-anchor2 mini-select" data-blocked-${field}-anchor2="${i}" aria-label="${aria} second anchor">${blockedAnchorOptions(anchor2, true)}</select>
-        <input type="time" class="time-fixed2" step="300" data-blocked-${field}-fixed2="${i}" aria-label="${aria} clock time" value="${fixed2Val}"${isFixed2 ? '' : ' hidden'} />
-        <input type="number" class="time-offset2 mini-time-input" inputmode="numeric" placeholder="0" data-blocked-${field}-offset2="${i}" aria-label="${aria} second offset minutes" value="${Math.abs(offset2Val)}"${isFixed2 ? ' hidden' : ''} />
-        <button type="button" class="time-offset-sign-btn" tabindex="-1" data-sign="${offset2Val < 0 ? '-' : '+'}" aria-label="${offset2Val < 0 ? 'minutes before' : 'minutes after'}"${isFixed2 ? ' hidden' : ''}>${timeOffsetSignWord(offset2Val < 0 ? '-' : '+')}</button>
-        <span class="time-offset-unit"${isFixed2 ? ' hidden' : ''}>min</span>
-        <button type="button" class="time-day-next2 mini-text-btn" data-blocked-${field}-day2="${i}" aria-pressed="${day2On ? 'true' : 'false'}" title="use next day's prayer" aria-label="next day"${isFixed2 ? ' hidden' : ''}>next day</button>
-      </div>
-      <span class="time-resolved" aria-live="polite">${escapeHtml(resolved)}</span>
-    </div>
+    <div class="time-dynamic"${isDyn ? '' : ' hidden'}>${uiTimeDynamicHtml(aria,{
+      expr:uiTimeExprHtml(aria,false,{options:blockedAnchorOptions(anchor),offset:offsetVal,attr}),
+      expr2:uiTimeExprHtml(aria,true,{options:blockedAnchorOptions(anchor2,true),offset:offset2Val,fixedValue:fixed2Val,isFixed:isFixed2,dayOn:day2On,attr}),
+      day:uiTimeDayHtml(aria,false,{on:dayOn,attrs:attr('day')}),
+      combine,combineAttrs:attr('combine'),resolved:escapeHtml(resolved),
+      resolvedDay:resolvedMin == null ? '' : timeResolvedDayLabel(resolvedMin),
+      open:Boolean(combine || dayOn)
+    })}</div>
     ${uiTimeModeToggleHtml({which:field,isDynamic:isDyn,extraAttrs:` data-blocked-${field}-mode="${i}"`})}
   </div>`;
 }
@@ -86,6 +68,10 @@ function renderBlockedTimeControls(){
   const wrap = $('blocked-time-list');
   if(!wrap)return;
   if(typeof nativeEnsureBusyReminderIds === 'function')nativeEnsureBusyReminderIds();
+  const disclosureState = new Map([...wrap.querySelectorAll('.time-advanced')].map(el=>{
+    const endpoint = el.closest('.blocked-endpoint');
+    return [`${endpoint.dataset.blockedIndex}:${endpoint.dataset.blockedField}`,el.open];
+  }));
   const blocks = normalizeBlockedTimes(sortSettings.blockedTimes);
   const locs = typeof locationOptions === 'function' ? locationOptions() : [];
   wrap.innerHTML = blocks.length ? blocks.map((block,i)=>`
@@ -113,6 +99,11 @@ function renderBlockedTimeControls(){
       </div>
     </div>
   `).join('') : '<p class="field-hint">No busy times. The list can use any open time today.</p>';
+  wrap.querySelectorAll('.blocked-endpoint').forEach(endpoint=>{
+    const key = `${endpoint.dataset.blockedIndex}:${endpoint.dataset.blockedField}`;
+    if(disclosureState.has(key))endpoint.querySelector('.time-advanced').open = disclosureState.get(key);
+    syncTimeRuleSummary(endpoint);
+  });
   if(typeof renderNativeBusyReminders === 'function')renderNativeBusyReminders(wrap,blocks);
 }
 

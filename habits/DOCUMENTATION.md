@@ -1338,9 +1338,23 @@ time: | 9am | — | 9am | — | 9am | — |
 - End ≤ Start = overnight window (e.g., 1380→300 = 11pm-5am)
 
 #### Time Anchor Section
+- **Default wording:** General labels (Dawn, Sunrise, Noon, Afternoon, Sunset,
+  Night) appear in time pickers, previews, and samples. Settings → **relative
+  times** → **use Islamic prayer names** opts into prayer labels, calculation
+  settings, and optional prayer samples. These are ordinary habits; switching
+  labels preserves saved rules and unsaved editor choices.
 - **Anchors:** `fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`, or another habit
 - **Offset:** ±720 minutes (±12 hours)
 - **Combine:** `later` / `earlier` of two expressions
+- **Editor:** Each boundary has Clock / Relative choices. Relative shows an event
+  picker and a minutes-before/after adjustment, followed by a readable rule and
+  its resolved clock time (today, tomorrow, or yesterday). Missing city setup
+  has a **set home city** shortcut that keeps the unsaved item draft intact.
+- **More options:** Next-day events and later/earlier comparisons stay folded
+  for simple rules. Saved complex rules open these controls automatically;
+  folding them never disables the rule. Item hours, preferred hours, specific
+  time/place options, and busy times share this editor. Legacy habit-completion
+  anchors still display when saved; new item relationships use Item Order.
 
 #### Item Order Section
 - Before/After relationships with other habits or tasks
@@ -1947,7 +1961,9 @@ Toasts appear after:
   history. Add one to make it yours; **try all five** tags the bulk additions
   so **remove samples** can clean up the ones you have not kept. Previously
   saved samples remain until the user removes them.
-- The optional prayer and sun-based sleep sections stay collapsed separately;
+- The sun-based sleep section stays collapsed. Prayer samples appear only
+  after enabling **use Islamic prayer names** under Settings → **relative
+  times**, and stay collapsed separately;
   their dynamic timing still requires a home city. **Add all prayers** creates
   regular habits with clean prayer names, just like adding them individually;
   **remove samples** does not remove these prayers.
@@ -2148,7 +2164,7 @@ Settings sections (actual order):
 │   │   ├── compact mode
 │   │   ├── font size (small/medium/large)
 │   │   └── theme (light/dark/system)
-│   ├── prayer times
+│   ├── relative times (optional prayer names)
 │   │   ├── islamic names toggle
 │   │   ├── calculation method
 │   │   └── asr school (shafi/hanafi)
@@ -2170,7 +2186,7 @@ sortable settings sections:
 ├── topics
 ├── locations
 ├── display
-├── prayer times
+├── relative times (optional prayer names)
 ├── calendar import
 ├── reminders
 ├── retention

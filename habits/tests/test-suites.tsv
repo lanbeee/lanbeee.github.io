@@ -147,3 +147,4 @@ new-item-defaults-test.js	ui	once
 add-availability-test.js	ui	page-both
 breakable-appointment-test.js	planner	once
 native-card-reminders-test.js	ui	once
+time-window-ux-test.js	ui	once

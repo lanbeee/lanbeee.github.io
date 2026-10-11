@@ -148,9 +148,13 @@ function toggleAppSettingButton(btn){
     preloadAgendaOptimizer();
   }
   if(key === 'prayerIslamicNames'){
-    document.querySelectorAll('.time-anchor[data-populated]').forEach(sel=>{delete sel.dataset.populated;});
-    if(typeof populateAnchorOptions === 'function')populateAnchorOptions();
-    renderBlockedTimeControls();
+    // Change labels in place so both expressions retain unsaved choices,
+    // including legacy habit anchors and fixed-clock comparisons.
+    document.querySelectorAll('.time-anchor option,.time-anchor2 option').forEach(option=>{
+      if(cleanPrayerAnchor(option.value))option.textContent = prayerDisplayName(option.value);
+    });
+    document.querySelectorAll('.time-endpoint').forEach(syncTimeRuleSummary);
+    if(typeof refreshSampleHabitsSheet === 'function')refreshSampleHabitsSheet();
   }
 }
 
@@ -160,6 +164,10 @@ function toggleAppSettingButton(btn){
 // RENDER: populate + sync the prayer-times sub-section (method dropdown and
 // madhab seg). Idempotent — options are populated once, then values synced.
 function renderPrayerTimesControls(){
+  const calculation = $('settings-prayer-calculation');
+  if(calculation)calculation.hidden = !sortSettings.prayerIslamicNames;
+  const samples = $('sample-prayers-section');
+  if(samples)samples.hidden = !sortSettings.prayerIslamicNames;
   const sel = document.getElementById('setting-prayer-method');
   if(sel){
     if(!sel.dataset.populated){

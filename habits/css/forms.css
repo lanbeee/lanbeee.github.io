@@ -239,30 +239,19 @@
 .blocked-time-hours.time-endpoints{flex-wrap:wrap;gap:6px;width:100%;min-width:0;}
 .blocked-endpoint{
   position:relative;width:100%;min-width:0;max-width:100%;
-  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px;
+  display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:8px;
+  padding:38px 0 12px;border-bottom:0.5px solid var(--border);
 }
-.blocked-endpoint .time-mode-toggle{
-  width:auto;height:auto;padding:0;display:inline-flex;align-items:stretch;
-  justify-self:end;align-self:start;border-radius:999px;
+.blocked-endpoint::before{
+  content:attr(data-endpoint-label);position:absolute;top:13px;left:0;
+  color:var(--text2);font-size:10px;font-weight:750;text-transform:uppercase;
+  letter-spacing:0.04em;
 }
-.blocked-endpoint .time-mode-toggle i{display:none;}
+.blocked-endpoint .time-mode-toggle{position:absolute;top:6px;right:0;}
 .blocked-endpoint .time-dynamic{
-  flex-direction:column;align-items:stretch;width:100%;min-width:0;
+  display:flex;flex-direction:column;align-items:stretch;gap:8px;
 }
-.blocked-endpoint .time-expr{
-  position:relative;padding-left:21px;width:100%;min-width:0;
-}
-.blocked-endpoint .time-expr::before{
-  content:'A';position:absolute;left:0;width:16px;height:16px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;background:var(--bg3);
-  color:var(--text2);font-size:9px;font-weight:750;
-}
-.blocked-endpoint .time-expr2::before{content:'B';}
-.blocked-endpoint .time-anchor,
-.blocked-endpoint .time-anchor2{flex:1 1 110px;min-width:0;max-width:100%;}
-.blocked-endpoint .time-combine{align-self:flex-start;margin-left:21px;min-width:0;max-width:140px;}
-.blocked-endpoint .time-fixed2{flex:1 1 110px;min-width:0;max-width:100%;height:34px;}
-.blocked-endpoint .time-resolved{margin-left:21px;min-width:0;}
+.blocked-endpoint .time-fixed{width:100%;height:38px;}
 .mini-time-input{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text);
   border-radius:var(--radius-sm);padding:5px 6px;font:inherit;font-size:12px;
@@ -339,35 +328,56 @@ input[type=text].mini-time-input{
   display:flex;flex-direction:column;align-items:stretch;gap:7px;
 }
 .detail-time-endpoints .time-dynamic[hidden]{display:none;}
-.detail-time-endpoints .time-expr{
-  position:relative;width:100%;min-width:0;overflow:visible;
-  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
-  padding-left:21px;
+/* Event first, adjustment second. Keep input and sign adjacent in the DOM
+   for readSignedOffset, while the visible sentence reads “30 min before”. */
+.time-endpoint .time-expr{padding:0;gap:8px;}
+.time-event-label,.time-compare-label{
+  display:flex;flex-direction:column;gap:6px;width:100%;min-width:0;
+  flex:1 1 100%;color:var(--text3);font-size:11px;font-weight:650;
 }
-.detail-time-endpoints .time-expr::before{
-  content:'A';position:absolute;left:0;width:16px;height:16px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;background:var(--bg3);
-  color:var(--text2);font-size:9px;font-weight:750;
+.time-endpoint :is(.time-anchor,.time-anchor2,.time-combine){
+  width:100%;max-width:none;min-width:0;height:40px;min-height:40px;
+  margin:0;padding:0 10px;font-size:13px;color:var(--text);
 }
-.detail-time-endpoints .time-expr2::before{content:'B';}
-.detail-time-endpoints .time-anchor,
-.detail-time-endpoints .time-anchor2{
-  flex:1 1 120px;width:auto;max-width:100%;min-width:0;
+.time-adjust-label{color:var(--text3);font-size:11px;}
+.time-endpoint .time-offset-sign-btn{height:40px;min-height:40px;padding:0 10px;font-size:12px;}
+.time-offset-sign-btn::before{content:'↔';margin-right:5px;color:var(--text3);}
+.time-endpoint input.mini-time-input{height:40px;width:54px;font-size:14px;}
+.time-endpoint .time-fixed2{width:100%;flex:1 1 100%;height:40px;}
+.time-endpoint :is(.time-habit-wrap,.time-habit-wrap2){width:100%;flex:1 1 100%;}
+.time-endpoint :is(.time-habit,.time-habit2){width:100%;max-width:none;}
+.time-relative-hint{color:var(--text3);font-size:12px;line-height:1.4;margin:0;}
+.time-rule-preview{
+  display:flex;flex-direction:column;gap:4px;padding:10px 12px;
+  background:var(--bg3);border-radius:var(--radius-sm);min-width:0;
 }
-.detail-time-endpoints .time-habit-wrap,
-.detail-time-endpoints .time-habit-wrap2{flex:1 1 100%;width:100%;min-width:0;}
-.detail-time-endpoints .time-habit,
-.detail-time-endpoints .time-habit2{width:100%;max-width:none;min-width:0;}
-.detail-time-endpoints .time-fixed2{
-  flex:1 1 120px;width:auto;max-width:100%;min-width:0;height:34px;
+.time-rule-summary{font-size:12px;line-height:1.45;font-weight:650;color:var(--text);overflow-wrap:anywhere;}
+.time-endpoint .time-resolved{padding:0;min-width:0;font-size:11px;line-height:1.4;color:var(--text2);}
+.time-endpoint .time-resolved::before{content:attr(data-day-label);color:var(--text3);}
+.time-endpoint .time-resolved:empty{display:none;}
+.time-endpoint .time-set-city{align-self:flex-start;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.4;min-height:40px;margin-top:4px;}
+.time-set-city[hidden]{display:none;}
+.time-advanced{width:100%;min-width:0;}
+.time-advanced > summary{
+  display:flex;align-items:center;justify-content:space-between;min-height:44px;
+  color:var(--text2);font-size:12px;font-weight:650;cursor:pointer;list-style:none;
 }
-.detail-time-endpoints .time-combine{align-self:flex-start;margin-left:21px;max-width:100%;min-width:0;width:min(160px,100%);}
-.detail-time-endpoints .time-resolved{
-  min-width:0;margin-left:21px;padding:5px 8px;border-radius:6px;background:var(--bg3);
-  color:var(--text2);font-weight:650;
+.time-advanced > summary::-webkit-details-marker{display:none;}
+.time-advanced > summary::after{content:'+';color:var(--text3);font-size:16px;}
+.time-advanced[open] > summary::after{content:'−';}
+.time-advanced-body{display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:4px 0 8px;}
+.time-advanced-body .field-hint{margin:0;}
+.time-endpoint :is(.time-day-next,.time-day-next2){
+  max-width:100%;white-space:normal;min-height:40px;height:auto;
+  padding:8px 12px;line-height:1.4;text-align:left;
 }
-.detail-time-endpoints .time-resolved::before{content:'today:  ';color:var(--text3);font-weight:600;}
-.detail-time-endpoints .time-resolved:empty{display:none;}
+.time-endpoint .time-day-next{align-self:flex-start;}
+.time-endpoint .time-day-next2{order:3;}
+.time-endpoint .time-day-next2::after{inset:0;}
+.time-endpoint :is(.time-adjust-label,.time-offset-unit,.time-offset-sign-btn)[hidden]{display:none;}
+.time-advanced summary:focus-visible,.time-offset-sign-btn:focus-visible{
+  outline:2px solid var(--green-icon);outline-offset:3px;border-radius:var(--radius-sm);
+}
 /* Settings → locations → prayer times sub-block */
 .prayer-times-settings{
   margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);

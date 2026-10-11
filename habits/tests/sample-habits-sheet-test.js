@@ -141,6 +141,9 @@ async function launchBrowser(){
   assert(!sheet.titles.some(t => /^(Fajr|Dhuhr|Asr|Maghrib|Isha)$/i.test(t)), 'five prayers not in feature preview list');
 
   console.log('\n[B2] Expanded busy-time and prayer rows');
+  assert(await page.locator('#sample-prayers-section').getAttribute('hidden') !== null, 'prayer samples stay hidden with general time names');
+  await page.evaluate(() => toggleAppSettingButton(document.querySelector('[data-setting-toggle="prayerIslamicNames"]')));
+  assert(await page.locator('#sample-prayers-section').getAttribute('hidden') === null, 'opting into prayer names exposes optional prayer habits');
   await page.locator('#sample-blocks-head').click();
   await page.locator('#sample-prayers-head').click();
   for(const width of [320,390,768,1440]){

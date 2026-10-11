@@ -1079,8 +1079,13 @@ function renderBlockEditDynamicControls(){
   if(!host || !blockEditContext)return;
   const block = blockEditContext.draftBlock;
   if(!block){host.hidden = true;return;}
+  const disclosureState = new Map([...host.querySelectorAll('.time-advanced')].map(el=>[el.closest('.blocked-endpoint').dataset.blockedField,el.open]));
   host.hidden = !blockEditDynamicOpen;
   host.innerHTML = `<span class="field-label utility-field-label">recurring rule</span><div class="blocked-time-hours time-endpoints">${blockedEndpointHtml(block,blockEditContext.blockIndex,'start')}<span class="time-sep">to</span>${blockedEndpointHtml(block,blockEditContext.blockIndex,'end')}</div><p class="field-hint">Saved only when you choose update recurring. “Save this date” keeps this rule and changes just this occurrence.</p>`;
+  host.querySelectorAll('.blocked-endpoint').forEach(endpoint=>{
+    if(disclosureState.has(endpoint.dataset.blockedField))endpoint.querySelector('.time-advanced').open = disclosureState.get(endpoint.dataset.blockedField);
+    syncTimeRuleSummary(endpoint);
+  });
 }
 
 function saveBlockEditorRulePatch(patch){
@@ -1124,6 +1129,10 @@ function openBlockEditSheet(row){
     dynamicToggle.setAttribute('aria-expanded','false');
     dynamicToggle.textContent = 'edit dynamic rule';
   }
+  // A fresh card editor starts from its saved rule, rather than the disclosure
+  // choices left over from the previously inspected busy time.
+  const dynamicControls = $('block-edit-dynamic-controls');
+  if(dynamicControls)dynamicControls.innerHTML = '';
   renderBlockEditDynamicControls();
   if(typeof renderNativeBlockEditorReminders==='function')renderNativeBlockEditorReminders(block,dayKey);
   // Blur the home card before the sheet mounts so closing cannot restore focus

@@ -95,6 +95,8 @@ function renderSampleHabitsPreview(){
 }
 
 function renderPrayerSamplesPreview(){
+  const section = $('sample-prayers-section');
+  if(section)section.hidden = !sortSettings.prayerIslamicNames;
   renderSamplePreviewList('sample-prayers-preview', prayerSamplePreviews());
 }
 
@@ -125,7 +127,7 @@ function blockSamplePreviews(){
       emoji:'😴',
       emojiBgColor:'slate',
       title:'sleep',
-      blurb:'Later of Isha +15m · next sunrise −8h, until sunrise −40m',
+      blurb:`Later of ${prayerDisplayName('isha')} +15m · next sunrise −8h, until sunrise −40m`,
       place:''
     }
   ];
