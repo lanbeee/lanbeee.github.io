@@ -250,6 +250,16 @@ Items appear in this order:
 | `showOrderPillsOnCards` | Always | ↗️ ↘️ order markers |
 | `showEarlyOnCards` | Always | 🌅 early indicator |
 
+Home activity dots use muted, theme-aware neutral tones. Filled marks mean a
+day has a log; hollow marks mean a plan; faint marks mean no entry, not a
+missed occurrence. Seven dots run oldest to newest, ending with today.
+The wider mark on the left summarizes the preceding seven days:
+filled if any day was logged, hollow if there were only plans, faint if empty.
+Date/state tooltips and a screen-reader description explain the strip without
+adding labels to every card. The activity-dot settings explain the key. Rhythm
+quality colors remain in detailed History; home dots do not rate completions
+or imply that a log on an avoid/reduce habit was a success.
+
 ### 2.7 Priority Badges (P0-P5) 👤
 - P0: 🔴 Critical - First in agenda
 - P1: 🟠 High - Second priority
@@ -1342,6 +1352,7 @@ shows), never windowed to the strip. The 14-day chips above the strip are the
 only window-scoped readout.
 
 #### 14-Day Strip
+- Calendar/gaps switch sits above the date arrows and today controls at every pane width.
 - Window: past 7 days · today · next 6 (same default as the overview calendar)
 - Arrows shift by 14 days; "today" snaps back to the around-today window
 - Dots per day (max 4): `hit/warn/miss` (activity), `plan` (planned log, due /

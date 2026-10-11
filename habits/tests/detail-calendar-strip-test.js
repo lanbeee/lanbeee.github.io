@@ -200,6 +200,36 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   if(!afterPlanBy.stored) throw new Error('Plan by this day should persist planByDate to the tapped day');
   if(!afterPlanBy.clear) throw new Error('the plan-by day should then offer Clear plan-by');
 
+  // Date navigation stays below Calendar/Gaps across sheet and mounted-pane
+  // widths, including the wider phone sheet that previously used one row.
+  await page.evaluate(()=>closeSheet('day-logs-sheet'));
+  for(const width of [320,390,600,900,1200]){
+    await page.setViewportSize({width,height:844});
+    await page.waitForTimeout(180); // viewport tier changes are debounced
+    for(const fontScale of ['medium','large']){
+      await page.evaluate(fontScale=>{
+        sortSettings.fontScale = fontScale;
+        applyAppearanceSettings();
+        openDetail(0);
+      },fontScale);
+      const layout = await page.evaluate(()=>{
+        const seg = document.getElementById('detail-viz-seg').getBoundingClientRect();
+        const nav = document.getElementById('detail-calendar-nav').getBoundingClientRect();
+        const tabs = [...document.querySelectorAll('[data-detail-viz]')].map(el=>el.getBoundingClientRect());
+        return {
+          stacked:nav.top >= seg.bottom + 4,
+          tabsTogether:Math.abs(tabs[0].top - tabs[1].top) < 1,
+          matchingWidth:Math.abs(seg.width - nav.width) < 1,
+          cells:document.querySelectorAll('#detail-calendar .cal-day.pickable').length
+        };
+      });
+      if(!layout.stacked || !layout.tabsTogether || !layout.matchingWidth || layout.cells !== 14){
+        throw new Error(`history toolbar layout at ${width}px/${fontScale}: ${JSON.stringify(layout)}`);
+      }
+    }
+  }
+  console.log('history toolbar: separate rows at 5 viewport widths and 2 font sizes');
+
   if(errors.length){ console.log('JS ERRORS:', errors.join('\n')); throw new Error('js errors during run'); }
   console.log('DETAIL CALENDAR STRIP TEST PASSED');
   await browser.close();

@@ -119,8 +119,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
    Builds on the flat surface sweep above; nothing here reintroduces borders
    on component chrome. Two goals:
    1. Quiet the home feed: meta pills lose their accent fills (semantic color
-      survives only in the small status/icon dot), trail dots and the priority
-      dot step down in chroma/size, heavy font weights relax by one notch.
+      survives only in the small status/icon dot), heavy font weights relax
+      by one notch. Home history marks are defined in home.css.
       Hard-due keeps a faint red tint — it is a genuine alert, not decoration.
    2. Finish border removal on the components the first sweep missed, with
       focus-visible teal rings preserved for keyboard users.
@@ -146,15 +146,6 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
    800 / .09em / uppercase typography. */
 .section-header{font-weight:800;}
 .dropped-pill,.free-pill{font-weight:800;letter-spacing:0.09em;}
-/* Trail: same hit/warn/miss vocabulary, mixed toward the page tone so a full
-   week of dots no longer out-shouts the card content. */
-.trail-dot.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
-.trail-dot.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
-.trail-dot.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
-.trail-dot.today{box-shadow:0 0 0 0.5px var(--border2);}
-.trail-week.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
-.trail-week.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
-.trail-week.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
 /* Order-link chips inside cards: one more step toward neutral. */
 .ting-meta .order-mark{opacity:0.78;}
 

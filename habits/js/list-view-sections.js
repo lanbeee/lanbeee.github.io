@@ -1504,16 +1504,6 @@ function switchFreeTimeDay(nextKey){
   });
 }
 
-// PURE: reduce trail tones to one
-function summarizeTrailTone(tones){
-  if(!tones.length)return '';
-  if(tones.includes('plan'))return 'plan';
-  if(tones.includes('miss'))return 'miss';
-  if(tones.includes('warn'))return 'warn';
-  if(tones.includes('hit'))return 'hit';
-  return '';
-}
-
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
@@ -1692,12 +1682,12 @@ function render(opts){
     const context = minimal
       ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
       : cardMeta(h,{extraPills:[reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
-    const trail = cardTrail(h);
     // Minimal hides dots unless opted in for minimal specifically
     // (minimalShowTrailOnCards, default off); full keeps its own toggle.
     const showTrail = minimal
       ? sortSettings.minimalShowTrailOnCards === true
       : sortSettings.showTrailOnCards !== false;
+    const trail = showTrail ? cardTrail(h) : '';
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
     const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
@@ -1706,11 +1696,10 @@ function render(opts){
     // Minimal's visual row is trail-only when opted in — sliders/sessions stay
     // full-mode features (guarded below by !minimal).
     const visualHtml = minimal
-      ? (showTrail ? `<div class="ting-trail">${trail}</div>` : '')
+      ? trail
       : (showBreakableSlider
         ? `${cardBreakableSlider(h)}${sessionHtml}`
-        : (sessionHtml || (showTrail ? `<div class="ting-trail">${trail}</div>` : '')));
-    const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
+        : (sessionHtml || trail));
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
       ? habitTimerEligible(h)
@@ -1789,7 +1778,7 @@ function render(opts){
           </div>
           ${(!minimal && isBreakable) ? ((reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
-          ${!visualHtml ? '' : `<div class="ting-visual"${visualAria}>
+          ${!visualHtml ? '' : `<div class="ting-visual">
             ${visualHtml}
           </div>`}
         </div>

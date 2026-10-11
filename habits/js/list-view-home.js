@@ -1180,25 +1180,36 @@ function cardMeta(h,options = {}){
   return parts.join('');
 }
 
-// PURE: build card trail dots markup
+// PURE: home history shows entries, not an assessment of their rhythm.
+// Keep interval tones in the detailed History view; a red log is still a log.
 function cardTrail(h){
   const today = new Date();
-  const logKeys = logToneMap(h);
+  const logKeys = new Map(plannedLogs(h.logs).map(ts=>[dateKey(ts),'plan']));
+  actualLogs(h.logs).forEach(ts=>logKeys.set(dateKey(ts),'logged'));
   const lastWeekTones = Array.from({length:7},(_,i)=>{
     const d = new Date(today.getFullYear(),today.getMonth(),today.getDate() - (13 - i));
     const key = dateKey(d.getTime());
     return logKeys.get(key) || '';
   }).filter(Boolean);
-  const lastWeekTone = summarizeTrailTone(lastWeekTones);
-  const lastWeek = `<span class="trail-week ${lastWeekTone}" aria-hidden="true"></span>`;
+  const loggedDays = lastWeekTones.filter(tone=>tone === 'logged').length;
+  const plannedDays = lastWeekTones.filter(tone=>tone === 'plan').length;
+  const lastWeekTone = loggedDays ? 'logged' : plannedDays ? 'plan' : 'empty';
+  const weekLabel = `previous 7 days: ${loggedDays} logged ${loggedDays === 1 ? 'day' : 'days'}, ${plannedDays} planned ${plannedDays === 1 ? 'day' : 'days'}`;
+  const lastWeek = `<span class="trail-week ${lastWeekTone}" title="${escapeHtml(weekLabel)}" aria-hidden="true"></span>`;
+  const dayLabels = [];
   const thisWeek = Array.from({length:7},(_,i)=>{
     const d = new Date(today.getFullYear(),today.getMonth(),today.getDate() - (6 - i));
     const key = dateKey(d.getTime());
     const tone = logKeys.get(key) || 'empty';
     const todayClass = i === 6 ? ' today' : '';
-    return `<span class="trail-dot ${tone}${todayClass}"></span>`;
+    const dateLabel = i === 6 ? 'today' : d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    const label = `${dateLabel}: ${tone === 'logged' ? 'logged' : tone === 'plan' ? 'planned' : 'no entry'}`;
+    dayLabels.push(label);
+    return `<span class="trail-dot ${tone}${todayClass}" title="${escapeHtml(label)}" aria-hidden="true"></span>`;
   }).join('');
-  return `${lastWeek}${thisWeek}`;
+  const label = `recent activity. ${weekLabel}. ${dayLabels.join('; ')}`;
+  const hint = 'Recent activity: filled = logged, hollow = planned, faint = no entry. Left bar = previous 7 days; dots = past 7 days, ending today.';
+  return `<div class="ting-trail" role="img" aria-label="${escapeHtml(label)}" title="${hint}">${lastWeek}${thisWeek}</div>`;
 }
 
 /** PURE: breakable progress crown-dial markup with 3-color status bar. */
