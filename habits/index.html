@@ -1811,10 +1811,15 @@
     </div>
   </div>
 </div>
-<div id="toast" role="status" aria-live="polite"></div>
-<div id="action-toast" role="status" aria-live="polite">
+<div id="toast" role="status" aria-live="polite" aria-hidden="true" inert>
+  <span id="toast-text"></span>
+  <button type="button" id="toast-close" class="toast-close" aria-label="Dismiss notification"><i class="ti ti-x" aria-hidden="true"></i></button>
+</div>
+<div id="action-toast" role="status" aria-live="polite" aria-hidden="true" inert>
   <span id="action-text"></span>
-  <button type="button" id="action-open" hidden>open</button>
+  <button type="button" id="action-close" class="toast-close" aria-label="Dismiss notification"><i class="ti ti-x" aria-hidden="true"></i></button>
+  <button type="button" id="action-link" hidden>open link</button>
+  <button type="button" id="action-open" hidden>view item</button>
   <button type="button" id="action-plan" hidden>action</button>
   <button type="button" id="snooze-until-planned" hidden>snooze until planned</button>
   <button type="button" id="action-undo">undo</button>

@@ -631,7 +631,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     const key = logDayBtn.dataset.logDay || dayLogsKey;
     if(Number.isNaN(idx) || !key || !dayLogsCanLog(key))return;
     const ts = new Date(`${key}T12:00:00`).getTime();
-    if(!logTingAt(idx,ts))return;
+    if(!logTingAt(idx,ts,{toastContext:'calendar'}))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();
@@ -688,7 +688,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     const h = load()[idx];
     if(!h || !dayLogsHabitLoggable(h))return;
     const ts = dayLogsEntryTimestamp(dayLogsKey,$('day-log-entry-time')?.value || '');
-    if(!Number.isFinite(ts) || !logTingAt(idx,ts))return;
+    if(!Number.isFinite(ts) || !logTingAt(idx,ts,{toastContext:'calendar'}))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();
@@ -741,7 +741,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     const h = load()[idx];
     if(!h || !dayLogsHabitPlannable(h))return;
     const locationId = $('day-log-location')?.value || '';
-    if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false,locationId}))return;
+    if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false,locationId,toastContext:'calendar'}))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();
@@ -860,6 +860,25 @@ $('free-time-sheet').addEventListener('click',e=>{
 });
 
 $('action-undo').addEventListener('click',executeUndo);
+$('toast-close').addEventListener('click',hideToast);
+$('action-close').addEventListener('click',hideActionToast);
+$('action-link').addEventListener('click',()=>{
+  const link = actionToastLink(pendingAction);
+  if(link)openHabitLink(link);
+});
+// Keep actions available while a keyboard user is focused inside the toast.
+for(const id of ['toast','action-toast']){
+  const toast = $(id);
+  toast.addEventListener('focusin',event=>{
+    if(event.target.matches(':focus-visible'))clearTimeout(id === 'toast' ? toastTimer : actionToastTimer);
+  });
+  toast.addEventListener('focusout',event=>{
+    if(!toast.classList.contains('show') || toast.contains(event.relatedTarget))return;
+    clearTimeout(id === 'toast' ? toastTimer : actionToastTimer);
+    if(id === 'toast')toastTimer = setTimeout(hideToast,Number(toast.dataset.durationMs));
+    else actionToastTimer = setTimeout(hideActionToast,7200);
+  });
+}
 $('action-open')?.addEventListener('click',()=>{
   if(!canOpenFromAction(pendingAction))return;
   const idx = pendingAction.idx;

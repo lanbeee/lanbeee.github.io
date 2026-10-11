@@ -1856,14 +1856,20 @@ Same as Home Filter Sheet but for the calendar view:
 - Transient messages at the bottom of the screen (`aria-live="polite"`)
 - Regular toasts (`#toast`): informational feedback only. Default duration is `DEFAULT_TOAST_MS` (2800 ms) so short confirmations stay readable; permission and save-file notices can request up to 5 seconds.
 - Action toasts (`#action-toast`): offer immediate next steps with buttons
+- Both kinds have a close button. Dismissing a toast leaves the saved change in place; Undo reverses it. A new toast replaces the previous message so notices do not overlap.
+- Toast expiry pauses while a keyboard user focuses its buttons, then resumes when focus leaves. Hidden toasts are excluded from keyboard and screen-reader navigation.
 
 ### Action Toast Buttons
 The action toast (`#action-toast`) contains:
 - **#action-text** — message describing the completed action
-- **#action-open** (hidden by default) — "open" button to open the affected habit
+- **#action-link** (hidden by default) — after logging a habit/task with links, opens its first saved link; calls and app shortcuts use contextual labels. Opening the link leaves Undo available until the toast expires.
+- **#action-open** (hidden by default) — "view item" button when details are useful and no link action is offered
 - **#action-plan** (hidden by default) — "action" button for quick next-step
 - **#snooze-until-planned** (hidden by default) — "snooze until planned" button
 - **#action-undo** — always available undo button
+- **#action-close** — dismisses the notification
+
+Calendar logging and planning toasts omit the planning/logging shortcut already available beside the item. Completion still offers Undo and the saved link when present. Home completion keeps its quick planning correction; snooze, removal, and moved plans retain their specific Show, Restore, and Move back actions.
 
 ### Toast Triggers
 Toasts appear after:

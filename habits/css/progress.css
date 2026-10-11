@@ -60,7 +60,7 @@
   .day-availability-input-row .mini-text-btn{grid-column:1 / -1;justify-self:start;}
   .home-filter-option-grid{grid-template-columns:1fr;}
   #action-toast{gap:7px;padding:9px;}
-  #action-undo,#action-open,#action-plan,#snooze-until-planned{padding:8px 10px;}
+  #action-undo,#action-open,#action-link,#action-plan,#snooze-until-planned{padding:8px 10px;}
   .app{padding:0 12px;}
   .ting-card{gap:9px;padding-right:9px;}
   .ting-card .pulse-btn{width:62px;min-width:62px;height:auto;}

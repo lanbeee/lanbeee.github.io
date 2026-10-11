@@ -593,6 +593,8 @@ function toastItemName(h){
 // plan-related action — they cannot be planned, only logged.
 function entryToastAction(action){
   if(!action || action.type !== 'entry' || !Number.isInteger(action.idx))return null;
+  // The calendar already exposes logging and planning beside the item.
+  if(action.toastContext === 'calendar')return null;
   if(load()[action.idx]?.type === 'zero')return null;
   if(action.consumedPlanTs)return {type:'keep-plan',label:'keep plan'};
   if(action.plan){
@@ -745,7 +747,7 @@ function logTing(i,opts = {}){
 }
 
 // HYBRID: log entry at timestamp, show undo
-function logTingAt(i,ts){
+function logTingAt(i,ts,options = {}){
   const data = load();
   if(!data[i])return false;
   if(typeof replicaDeviceBlocksCompletion === 'function' && replicaDeviceBlocksCompletion(data[i].hid)){
@@ -764,6 +766,7 @@ function logTingAt(i,ts){
     idx:i,
     ts:entryTs,
     plan:isPlan,
+    toastContext:options.toastContext,
     consumedPlanTs,
     snoozedUntil:data[i].snoozedUntil || null
   });
@@ -818,6 +821,7 @@ function planTingOnDay(i,key,timeValue = '',options = {}){
     idx:i,
     ts,
     plan:true,
+    toastContext:options.toastContext,
     snoozedUntil:data[i].snoozedUntil || null,
     openAction:options.openAction
   });

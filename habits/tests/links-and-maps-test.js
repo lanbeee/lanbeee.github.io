@@ -322,7 +322,7 @@ function assert(cond, msg){
   await page.locator('#detail-custom-app-confirm').click();
   await page.waitForTimeout(120);
   const blocked = await page.evaluate(() => ({
-    toast:$('toast').textContent,
+    toast:$('toast-text').textContent,
     links:currentDetailLinks().length
   }));
   assert(blocked.toast === 'name the custom app' && blocked.links === 1,

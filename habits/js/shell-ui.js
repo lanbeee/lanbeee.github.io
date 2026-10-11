@@ -668,14 +668,28 @@ function updateFullPageState(){
 // RENDER: shows and auto-hides the toast message. Optional durationMs for
 // longer notices (e.g. monthly retention cleanup).
 function showToast(text,durationMs){
+  hideActionToast();
   const toast = $('toast');
-  toast.textContent = text;
+  $('toast-text').textContent = text;
+  toast.inert = false;
+  toast.setAttribute('aria-hidden','false');
   toast.classList.add('show');
   clearTimeout(toastTimer);
   const fallback = typeof DEFAULT_TOAST_MS === 'number' ? DEFAULT_TOAST_MS : 2800;
   const requested = Number.isFinite(durationMs) ? durationMs : fallback;
   const ms = Math.max(fallback,requested);
-  toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
+  toast.dataset.durationMs = ms;
+  toastTimer = toast.querySelector(':focus-visible') ? null : setTimeout(hideToast,ms);
+}
+
+function hideToast(){
+  clearTimeout(toastTimer);
+  toastTimer = null;
+  const toast = $('toast');
+  toast.classList.remove('show');
+  if(toast.contains(document.activeElement))document.activeElement.blur();
+  toast.inert = true;
+  toast.setAttribute('aria-hidden','true');
 }
 
 // How long an app's own scheme gets to take over the page before the store
@@ -736,6 +750,7 @@ function openHabitLink(link){
 function canOpenFromAction(action){
   if(!action || !Number.isInteger(action.idx))return false;
   if(action.openAction === false)return false;
+  if(action.toastContext === 'calendar')return false;
   if(action.type !== 'entry')return false;
   if(!load()[action.idx])return false;
   if($('day-logs-sheet')?.classList.contains('open'))return false;
@@ -747,18 +762,50 @@ function canOpenFromAction(action){
 
 function secondaryActionLabel(action){
   if(!action || action.type !== 'entry')return '';
+  if(action.toastContext === 'calendar')return '';
   return action.toastActionLabel || '';
 }
 
+// Completion offers the item's primary shortcut. Planning, undoing completion,
+// and logging a stop-habit lapse must not offer a completion shortcut.
+function actionToastLink(action){
+  if(!action || !Number.isInteger(action.idx))return null;
+  const completed = (action.type === 'entry' && !action.plan)
+    || (action.type === 'replace-entry' && !action.toPlan);
+  if(!completed)return null;
+  const data = load();
+  const h = action.hid ? data.find(item=>item.hid === action.hid) : data[action.idx];
+  if(!h || h.type === 'zero')return null;
+  return habitPrimaryLink(h);
+}
+
+function actionToastLinkLabel(link){
+  if(!link)return '';
+  if(link.kind === 'phone')return 'call';
+  if(link.kind === 'whatsapp' || link.kind === 'facetime' || link.kind === 'app')return `open ${linkLabel(link)}`;
+  return 'open link';
+}
+
 function showActionToast(text,action){
+  hideToast();
+  if(Number.isInteger(action.idx))action.hid ||= load()[action.idx]?.hid;
   pendingAction = action;
   $('action-text').textContent = text;
   const actionBtn = $('action-undo');
   if(actionBtn)actionBtn.textContent = action.undoLabel || 'undo';
   const openBtn = $('action-open');
+  const linkBtn = $('action-link');
   const planBtn = $('action-plan');
+  const link = actionToastLink(action);
+  if(linkBtn){
+    linkBtn.textContent = actionToastLinkLabel(link);
+    linkBtn.hidden = !link;
+    linkBtn.title = link ? `${linkLabel(link)} · ${link.value}` : '';
+    linkBtn.setAttribute('aria-hidden',String(!link));
+  }
   if(openBtn){
-    const showOpen = canOpenFromAction(action);
+    const showOpen = !link && canOpenFromAction(action);
+    openBtn.textContent = 'view item';
     openBtn.hidden = !showOpen;
     openBtn.setAttribute('aria-hidden',String(!showOpen));
   }
@@ -772,13 +819,17 @@ function showActionToast(text,action){
   if(snoozeUntilBtn){
     // Minimal mode has no snooze anywhere else, so it must not appear here.
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-    const showSnooze = !minimal && action && action.plan && action.ts > Date.now();
+    const showSnooze = !minimal && action.type === 'entry' && action.plan
+      && action.ts > Date.now() && load()[action.idx]?.type !== 'zero';
     snoozeUntilBtn.hidden = !showSnooze;
     snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));
   }
-  $('action-toast').classList.add('show');
+  const toast = $('action-toast');
+  toast.inert = false;
+  toast.setAttribute('aria-hidden','false');
+  toast.classList.add('show');
   clearTimeout(actionToastTimer);
-  actionToastTimer = setTimeout(hideActionToast,7200);
+  actionToastTimer = toast.querySelector(':focus-visible') ? null : setTimeout(hideActionToast,7200);
 }
 
 // HYBRID: hides action toast and clears pending action state
@@ -786,7 +837,12 @@ function hideActionToast(){
   clearTimeout(actionToastTimer);
   actionToastTimer = null;
   pendingAction = null;
-  $('action-toast').classList.remove('show');
+  const toast = $('action-toast');
+  toast.classList.remove('show');
+  if(toast.contains(document.activeElement))document.activeElement.blur();
+  toast.inert = true;
+  toast.setAttribute('aria-hidden','true');
+  if($('action-link'))$('action-link').hidden = true;
   if($('action-open'))$('action-open').hidden = true;
   if($('action-plan'))$('action-plan').hidden = true;
   if($('snooze-until-planned'))$('snooze-until-planned').hidden = true;
