@@ -301,6 +301,7 @@ function check(label, cond, extra){
     };
   });
   check('tapping the detail header name opens the name editor', nameEditor.nav === 'identity' && nameEditor.nameOpen && nameEditor.focused, JSON.stringify(nameEditor));
+  await page.evaluate(() => { closeDetail(); openDetail(0); });
   const beforeLogs = await page.evaluate(() => (load()[0].logs || []).length);
   await page.locator('#detail-mark').click();
   await page.locator('#detail-mark-log').click();

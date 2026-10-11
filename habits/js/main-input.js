@@ -362,15 +362,10 @@ $('retention-clean-now')?.addEventListener('click',()=>{
   applyRetentionCleanup({force:true});
 });
 $('add-regular-mode')?.addEventListener('click',()=>{
-  setMinimalMode(false);
-  $('add-more-options').hidden = false;
-  $('add-more-toggle').setAttribute('aria-expanded','true');
-  $('add-more-toggle').focus({preventScroll:true});
+  if(typeof openMinimalModeSettings === 'function')openMinimalModeSettings();
 });
 $('detail-regular-mode')?.addEventListener('click',()=>{
-  setMinimalMode(false);
-  scrollDetailToNav('schedule');
-  $('detail-availability-disclosure').querySelector('summary').focus({preventScroll:true});
+  if(typeof openMinimalModeSettings === 'function')openMinimalModeSettings();
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{

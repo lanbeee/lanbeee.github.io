@@ -120,6 +120,7 @@ async function stickyState(page, headerSel){
   const browser = await chromium.launch({ headless:true });
   const page = await browser.newPage({
     viewport:{ width:390, height:844 },
+    timezoneId:'America/New_York',
     isMobile:true,
     hasTouch:true
   });
@@ -127,7 +128,10 @@ async function stickyState(page, headerSel){
   page.on('pageerror', e => pageErrors.push(String(e)));
   const client = await page.context().newCDPSession(page);
 
-  const now = Date.now();
+  // Keep enough morning/evening space for both Home day headers. At a
+  // later real clock the fixtures can fill today's remaining window.
+  const now = Date.UTC(2026,9,11,12); // 08:00 in the pinned browser timezone.
+  await page.clock.setFixedTime(new Date(now));
   const dayMs = 86400000;
   // Enough habits + week mode so day headers stack and sticky stickiness is reachable.
   const seedData = [];
@@ -136,10 +140,10 @@ async function stickyState(page, headerSel){
       hid:`tap-${i}`,
       name:`Tap Habit ${i}`,
       emoji:'🧪',
-      type:'habit',
+      type:'keepup',
       target:1,
       logs:[],
-      durationMinutes:25,
+      durationMinutes:20,
       createdAt:now - dayMs * (i + 2)
     });
   }

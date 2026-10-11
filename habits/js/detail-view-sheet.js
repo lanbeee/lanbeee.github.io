@@ -15,6 +15,9 @@
 function openDetail(i){
   const h = load()[i];
   if(!h)return;
+  const inner = getSheetInner('detail-sheet');
+  if(inner?.contains(document.activeElement))document.activeElement.blur();
+  inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open');
   closeSearch();
   const changedHabit = detailIdx !== i;
   if(changedHabit){

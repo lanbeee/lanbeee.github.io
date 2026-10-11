@@ -455,7 +455,7 @@ function updateKeyboardLift(){
   if(style.getPropertyValue('--keyboard-viewport-bottom') !== bottom)style.setProperty('--keyboard-viewport-bottom',bottom);
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
-  if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome(Boolean(keyboard > 80 || (nativeResized && nativeKeyboardRestHeight - layoutHeight > 80)));
+  if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
 }
 
 // The IME can emit resize and scroll several times in one frame. Apply the

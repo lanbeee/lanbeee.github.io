@@ -349,8 +349,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     });
     await page.setViewportSize({width:390,height:544});
     await page.evaluate(()=>{document.activeElement.blur();updateKeyboardLift();});
-    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-bottom-bar .tune-actions')).display),'flex','Save/Cancel stays reachable during field blur');
-    assert.equal(await page.evaluate(()=>getComputedStyle($('detail-cool-row')).display),'none','Search/Close stays hidden behind unsaved editing actions');
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-head .tune-actions')).display),'flex','Save/Cancel stays in the header during field blur');
     assert.deepEqual(errors,[]);
     console.log('PASS keyboard docks, staggered native viewport frames, covered detail backdrop, stable focus, retained Home, and conditional input scrolling');
   }finally{await browser.close();}

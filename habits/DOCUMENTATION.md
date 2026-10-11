@@ -1083,12 +1083,15 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
   avoiding a delayed second resize from a saved pixel height.
   Portrait detail content keeps its spacing and chart sizes across keyboard
   transitions; short-height content compaction applies only to wider layouts.
-  Focusing an editable detail field switches the same bottom action slot to
-  Cancel/Save before the first change. Save enables only for unsaved changes.
-  The actions remain through blur and keyboard closing until Save or Cancel.
-  The detail header keeps its full
-  size, cue and link buttons while typing on portrait phones, including in short
-  keyboard layouts. Wide landscape screens retain their compact header layout.
+  After editing a detail field, the Search/Close bar stays hidden until the
+  keyboard finishes closing, then returns at the bottom. Cancel/Save replace
+  the existing header at the same height while a field is focused or there
+  are unsaved changes, then leave with the sheet. The detail header keeps its
+  size while typing on portrait phones, including in short keyboard layouts.
+  Wide landscape screens retain their compact header layout.
+  Hardware-keyboard editing shows the same header actions on focus while
+  retaining page navigation and the Search/Close bar. Focusing Cancel/Save
+  keeps those actions available for keyboard activation.
   Opening detail from a scrolled Home shows the phone detail page fully opaque
   immediately, keeping the cards behind the sticky day header covered.
   They follow its geometry once per animation frame; visible editing fields
@@ -1259,11 +1262,11 @@ priority, topics and color controls are available in regular mode):
 
 ### 9.4 Schedule Tab Details 👤
 
-Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode stacks rhythm/deadline, duration, allowed weekdays and hours, name/type, optional emoji and remove into one scroll, and omits search. Month days, preferred availability, places, weather, link setup and planning extras stay in regular mode. Saved advanced settings continue to apply. Browsing reserves space below fields for Close; editing moves Cancel/Save into the existing header and gives that space back to the fields.
+Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode stacks rhythm/deadline, duration, allowed weekdays and hours, name/type, optional emoji and remove into one scroll, and omits search. Month days, preferred availability, places, weather, link setup and planning extras stay in regular mode. Saved advanced settings continue to apply. Footer clearance for the close pill sits only on the last section.
 
 The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
 
-Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar has a reserved slot for Find in details and Close while browsing. From the moment an editable field gets focus or a setting changes, Cancel and Save replace the existing header contents at the same header height. The bottom bar and its reserved space disappear, giving the fields more room. Page tabs hide while the editing keyboard is open and return after it closes; Cancel/Save persist through blur and keyboard closing. Save stays disabled until the draft differs from the saved item; reverting the draft disables it again. Cancel discards the draft and closes details; Save commits and closes details. The normal header and Search/Close return on the next detail opening. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation, and uses the same header editing actions. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. Very short visible viewports can also hide page tabs to keep the header reachable. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close. Cancel and Save replace the existing header at the same height while a field is focused or there are unsaved changes; they do not stay on Home after the sheet closes. While a field is focused with a mobile keyboard, the page navigation and Search/Close bar hide, then return once the keyboard has finished closing. Save stays disabled until the draft differs from the saved item. Cancel discards the draft and closes details; Save commits and closes details. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation, and uses the same header editing actions. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. Very short visible viewports can also hide page tabs to keep the header reachable. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -2498,10 +2501,11 @@ task uniqueness and sparse cadence before adding an occurrence.
 - Users can unlock full features anytime
 
 **How to Exit:**
-Use **switch to regular mode** in Add or item details, or turn off
-Settings > Display > Minimal Mode. This changes the mode across Tings.
-The inline switch preserves the current draft and opens the full controls
-in the same sheet; switching back is available in Settings.
+A quiet **More options in settings** note sits at the bottom of Add and
+the last Details section (item actions). It opens Settings on the Minimal
+Mode switch without changing the mode itself. Turning that off changes
+presentation across Tings; drafts stay in the sheet underneath. Switching
+back is the same Settings control.
 
 Minimal Add keeps name, optional emoji, habit/task type, rhythm or deadline,
 and duration visible. Defaults and busy-time shortcuts stay in regular mode.

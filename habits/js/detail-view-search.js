@@ -243,7 +243,7 @@ function revealDetailSearchEntry(entry){
 }
 
 $('detail-search-toggle').addEventListener('click',()=>setDetailSearchOpen(true));
-// Reclaim space as soon as an editing field gains focus, including native
+// Show editing actions on field focus. Reclaim space for mobile, including native
 // keyboards that resize the WebView itself rather than visualViewport.
 // Search keeps its own keyboard layout, and Save/Cancel stay reachable.
 let detailEditingPointerDown = false;
@@ -252,7 +252,11 @@ function syncDetailEditingChrome(){
   if(!inner)return;
   const active = document.activeElement;
   const keyboardSpace = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--keyboard-lift')) || 0;
-  const virtualKeyboard = window.TingsNative?.isNative || matchMedia('(any-pointer:coarse)').matches || keyboardSpace > 80;
+  const virtualKeyboard = window.TingsNative?.isNative
+    || matchMedia('(any-pointer:coarse)').matches
+    || matchMedia('(pointer:coarse)').matches
+    || matchMedia('(hover:none)').matches
+    || keyboardSpace > 2;
   const editing = inner.contains(active) && active.closest('.detail-page')
     && active.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]),textarea,[contenteditable="true"]')
     && !active.readOnly && !active.disabled;
@@ -269,6 +273,12 @@ function syncDetailEditingChrome(){
     ? nativeKeyboardRestHeight - document.documentElement.clientHeight > 2 : keyboardSpace > 2;
   const closing = !inner.classList.contains('detail-search-open')
     && inner.classList.contains('detail-field-editing') && keyboardVisible;
+  // Keep clean actions available when a hardware-keyboard user tabs from
+  // the field to Cancel/Save. Only mobile editing needs to hide navigation.
+  const actionFocused = inner.classList.contains('detail-editing')
+    && inner.contains(active) && active.closest('.tune-actions');
+  inner.classList.toggle('detail-editing',Boolean(editing || actionFocused || closing));
+  inner.classList.toggle('detail-keyboard-open',Boolean(keyboardVisible && !inner.classList.contains('detail-search-open')));
   inner.classList.toggle('detail-field-editing',Boolean((editing && virtualKeyboard) || closing));
 }
 document.addEventListener('pointerdown',event=>{

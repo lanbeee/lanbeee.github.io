@@ -183,6 +183,19 @@ function applyAddDefaults(){
   if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
 }
 
+function openMinimalModeSettings(){
+  resetSettingsSheetState();
+  syncSettingsControls();
+  openSheet('settings-sheet');
+  const toggle = document.querySelector('[data-setting-toggle="minimalMode"]');
+  requestAnimationFrame(()=>{
+    toggle?.scrollIntoView({block:'center',inline:'nearest'});
+    toggle?.classList.add('detail-search-hit');
+    setTimeout(()=>toggle?.classList.remove('detail-search-hit'),2400);
+    toggle?.focus({preventScroll:true});
+  });
+}
+
 function openAddSettings(section){
   // Leave the DOM draft intact, including weather, emoji and disclosure state.
   const kind = selectedType === 'task' ? 'task' : 'habit';

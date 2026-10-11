@@ -3,7 +3,7 @@
   top:0;
   z-index:45;
   overflow:visible;
-  /* Match the section cards below, while actions use a separate toolbar. */
+  /* Match the section cards below. Cancel/Save overlay this header in place. */
   margin:0 0 6px;
   padding:8px;
   gap:8px;
@@ -237,6 +237,7 @@ body .detail-sheet{
   padding-inline:max(12px,var(--content-safe-left)) max(12px,var(--content-safe-right));
 }
 body .detail-sheet > .detail-bottom-bar{
+  position:relative;z-index:160;
   flex:0 0 auto;align-self:center;min-width:0;max-width:100%;
   margin:10px 0 0;padding:8px;border-radius:28px;
   background:var(--glass-bg);box-shadow:var(--floating-shadow);
@@ -246,10 +247,6 @@ body .detail-sheet > .detail-bottom-bar .detail-actions{
   position:static;inset:auto;transform:none;min-width:0;width:100%;margin:0;padding:0;
   display:flex;align-items:center;gap:8px;
 }
-body .detail-sheet > .detail-bottom-bar .tune-actions{display:none;}
-body .detail-sheet.tune-dirty > .detail-bottom-bar #detail-cool-row{display:none;}
-body .detail-sheet.tune-dirty > .detail-bottom-bar .tune-actions{display:flex;}
-body .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(100%,320px);}
 /* Phone: the footer floats like Home's action bar — pages scroll behind it
    instead of the layout reserving a footer band, and each scrolling page
    carries its own end-of-list clearance so the lowest row can rise above the
@@ -286,10 +283,6 @@ body[data-pane-count="1"] #detail-search-toggle{flex:0 0 44px;width:44px;min-wid
 body[data-pane-count="1"] #detail-search-toggle span{display:none;}
 /* Search open mirrors Home's expanded action bar: field across the width. */
 body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{width:calc(100vw - 24px);max-width:456px;}
-/* Save/Cancel are flex:1 1 0, whose max-content contribution is unreliable
-   for the shrink-wrapped pill — give the editing dock the explicit width the
-   in-flow rule uses (min(100%,320px), floater flavor). */
-body[data-pane-count="1"] .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(calc(100vw - 24px),320px);}
 body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
@@ -309,10 +302,11 @@ body .detail-bottom-bar .detail-head-btn{
   aspect-ratio:1;border-radius:50%;padding:0;border:0;background:var(--bg3);
 }
 .detail-bottom-bar svg{flex-shrink:0;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
-body .detail-bottom-bar .btn{
+body .detail-head .tune-actions .btn{
   flex:1 1 0;min-width:0;min-height:44px;padding:10px 20px;border-radius:22px;
   font-size:calc(14px * var(--font-scale));line-height:1.2;overflow-wrap:anywhere;
 }
+#detail-save:disabled{background:var(--bg3);color:var(--text3);opacity:.6;cursor:default;transform:none;}
 .detail-search-control{display:flex;align-items:center;min-width:0;border-radius:24px;background:var(--field-bg);overflow:hidden;}
 #detail-search-toggle{
   display:flex;align-items:center;justify-content:center;gap:8px;min-width:44px;min-height:44px;
@@ -356,13 +350,8 @@ body .minimal-detail .detail-full-only{display:none !important;}
 .detail-search-open > .detail-pager{display:none;}
 .detail-search-open > .detail-page-nav{display:none;}
 body .detail-sheet.detail-field-editing > .detail-page-nav,
-body .detail-sheet.detail-field-editing > .detail-bottom-bar #detail-cool-row{display:none;}
-/* With the search row gone (search pill + close X together) the floating
-   footer has nothing to show mid-edit — hide the whole pill unless the
-   Save/Cancel row (tune-dirty) owns it. */
-body .detail-sheet.detail-field-editing:not(.tune-dirty) > .detail-bottom-bar{display:none;}
-/* Typing changes the navigation/footer, while the header keeps its normal
-   geometry and contents throughout the keyboard transition. */
+body .detail-sheet.detail-keyboard-open > .detail-page-nav,
+body .detail-sheet.detail-field-editing > .detail-bottom-bar{display:none;}
 .detail-search-hit{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px;}
 /* The home card's emoji geometry must not override detail's header columns. */
 body .detail-sheet > .detail-head{
@@ -376,8 +365,21 @@ body .detail-head .detail-mark{width:100%;min-width:0;height:100%;}
   grid-column:3;grid-row:1;max-width:none;
   overflow-x:auto;justify-self:end;align-self:center;
 }
+/* Overlay the existing header so Cancel/Save never change its height. */
+.detail-head > .tune-actions{
+  display:none;position:absolute;inset:8px;z-index:2;
+  align-items:center;gap:8px;margin:0;padding:0;transform:none;width:auto;
+}
+#detail-sheet:not(.open) .tune-actions{display:none;}
+body .detail-sheet:is(.tune-dirty,.detail-editing) > .detail-head > :not(.tune-actions){visibility:hidden;pointer-events:none;}
+body .detail-sheet:is(.tune-dirty,.detail-editing) > .detail-head::before{visibility:hidden;}
+body .detail-sheet:is(.tune-dirty,.detail-editing) > .detail-head > .tune-actions{display:flex;}
 .detail-head .ting-main{min-width:0;}
-.detail-head .ting-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
+.detail-head .ting-name{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+  /* WebKit's intrinsic grid sizing can otherwise measure every clamped line. */
+  line-height:1.2;max-height:2.4em;
+}
 .detail-search-result :is(b,small){overflow-wrap:anywhere;max-width:100%;}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 #detail-search-input::-webkit-search-cancel-button{display:none;}
@@ -440,6 +442,7 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 @container detail-shell (max-height:280px){
   .detail-page-tab span{display:none;}
   .detail-page-tab{min-height:44px;}
+  .detail-page-nav{display:none;}
   /* A very short desktop/landscape pane uses the same floating footer as
      phones, so Save/Cancel fits without removing the header. */
   body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-bottom-bar{

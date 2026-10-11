@@ -175,10 +175,7 @@
       <p class="field-hint" id="task-due-hint" hidden></p>
 
       <div class="planning-grid planning-grid-single" id="add-minimal-effort" hidden></div>
-      <div class="minimal-mode-note">
-        <button type="button" class="mini-text-btn" id="add-regular-mode">switch to regular mode</button>
-        <p class="field-hint">Show all options across Tings. Your draft stays here; saved settings still apply.</p>
-      </div>
+      <button type="button" class="minimal-mode-note" id="add-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
 
       <p class="add-conflict-note" id="add-conflict-note" role="status" aria-live="polite" hidden></p>
 
@@ -296,7 +293,7 @@
           <div class="ting-cue detail-cue" id="detail-sub"></div>
         </div>
         <div class="detail-head-actions" id="detail-link-actions" hidden></div>
-        <div class="detail-actions tune-actions" id="detail-tune-actions" aria-label="edit actions">
+        <div class="tune-actions" id="detail-tune-actions" aria-label="edit actions">
           <button type="button" class="btn" id="detail-close">cancel</button>
           <button type="button" class="btn primary" id="detail-save" disabled>save</button>
         </div>
@@ -422,10 +419,6 @@
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
           </div>
           </details>
-          <div class="minimal-mode-note">
-            <button type="button" class="mini-text-btn" id="detail-regular-mode">switch to regular mode</button>
-            <p class="field-hint">Show all options across Tings. Your draft stays here; saved settings still apply.</p>
-          </div>
           <details class="detail-disclosure detail-full-only weather-habit-field" id="detail-weather-disclosure">
             <summary>weather &amp; forecast</summary>
             <label class="setting-toggle compact-toggle" id="detail-show-weather-row">
@@ -691,10 +684,10 @@
               </div>
             </div>
           </div>
+          <button type="button" class="minimal-mode-note" id="detail-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
         </details>
           </section>
       </div>
-      <div class="detail-dock-space" aria-hidden="true"></div>
       <div class="detail-bottom-bar" aria-label="detail actions">
         <div class="detail-actions" id="detail-cool-row">
           <div class="detail-search-control detail-full-only">

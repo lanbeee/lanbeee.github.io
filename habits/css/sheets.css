@@ -15,7 +15,9 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
    sheet it was opened from (overview/today), while transient modals that can
    open from detail (snooze/activity) and the day drill-down stay on top. */
 #detail-sheet{z-index:110;}
-#privacy-sheet{z-index:105;}
+#settings-sheet{z-index:115;}
+/* Privacy can open from Settings while its underlying draft stays open. */
+#privacy-sheet{z-index:120;}
 #value-log-sheet{z-index:115;}
 #snooze-sheet,#activity-sheet,#day-capacity-sheet,#day-logs-sheet{z-index:120;}
 #free-time-sheet{z-index:125;}
@@ -221,7 +223,6 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
 .detail-sheet .tune-actions{display:none;}
-.detail-sheet.tune-dirty #detail-cool-row{display:none;}
 .detail-sheet.tune-dirty .tune-actions{display:flex;}
 .sheet-title{font-size:calc(15px * var(--font-scale));font-weight:500;margin-bottom:16px;color:var(--text);}
 .sheet-name{font-size:17px;font-weight:500;color:var(--text);margin-bottom:4px;}
