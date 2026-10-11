@@ -3378,3 +3378,5 @@ system status area. Sheets and bottom controls use the same inset tokens.
 ### Tablet and desktop pane surfaces
 
 At 720 px and above, the permanent Home, Calendar and detail panes share the page background (`--bg2`) and lighter card surface (`--bg`). Subtle column dividers, consistent gutters and compact headings keep the panes part of the same app. Detail content scrolls within its pane; its labeled tabs stay below the title and search/Close or Cancel/Save stay in the bottom dock. Phone modal styling is restored when the viewport returns to one pane.
+
+Home cards show effective priority in the emoji button’s corner check badge, using a muted tint against the current theme and a contrasting tick. The title has no separate priority pill. The button’s accessible label includes the priority. Completed tasks retain their completion badge.

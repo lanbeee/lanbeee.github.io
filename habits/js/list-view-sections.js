@@ -1777,14 +1777,13 @@ function render(opts){
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
-        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
+        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">
           <div class="ting-main">
             <span class="ting-title">
               <span class="ting-name">${escapeHtml(h.name)}</span>
-              <span class="ting-priority-badge" role="img" aria-label="Priority P${effectivePriority(h)}"></span>
             </span>
             ${agendaPill}
           </div>
