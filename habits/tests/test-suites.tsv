@@ -143,4 +143,5 @@ detail-search-navigation-test.js	ui	once
 keyboard-layout-test.js	ui	once
 home-filter-layout-test.js	ui	once
 new-item-defaults-test.js	ui	once
+add-availability-test.js	ui	page-both
 breakable-appointment-test.js	planner	once

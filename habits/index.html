@@ -174,11 +174,17 @@
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
 
+      <p class="add-conflict-note" id="add-conflict-note" role="status" aria-live="polite" hidden></p>
+
       <button type="button" class="add-more-toggle add-full-only" id="add-more-toggle" aria-expanded="false" aria-controls="add-more-options">
         <span>more options</span>
         <i class="ti ti-chevron-down" aria-hidden="true"></i>
       </button>
       <div class="add-more-options add-full-only" id="add-more-options" hidden>
+        <div class="add-room-check">
+          <button type="button" class="mini-text-btn" id="add-check-room">check room</button>
+          <p class="field-hint" id="add-room-result" role="status" aria-live="polite" hidden></p>
+        </div>
         <div class="priority-field">
           <span class="priority-label">priority <button type="button" class="info-btn" data-tip="ting-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
             <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
@@ -1890,6 +1896,7 @@
 <script src="./js/settings-share.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
 <script src="./js/main-boot.js" defer></script>
+<script src="./js/add-availability.js" defer></script>
 <script src="./js/main-input.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
 <script src="./js/display-mode.js" defer></script>

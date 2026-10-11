@@ -148,6 +148,7 @@ function applyAddProfile(profile){
   $('add-defaults-summary').textContent = `Schedule: ${dayText} · ${timeText}. Early ${profile.defaults.earlyWindowDays}d · late ${profile.defaults.delayAllowanceDays}d. Change these in defaults or in details after saving.`;
   syncAddEffortUi();
   syncAddTypeUi(selectedType);
+  if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
 }
 
 function switchAddType(type){

@@ -50,6 +50,10 @@
 .add-more-toggle[aria-expanded="true"] i{transform:rotate(180deg);}
 .add-more-options[hidden]{display:none;}
 .add-more-options{margin:-4px 0 4px;}
+.add-conflict-note{margin:0 0 14px;color:var(--amber-text);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere;}
+.add-room-check{margin:0 0 14px;}
+.add-room-check .field-hint{margin:4px 0 0;overflow-wrap:anywhere;}
+.add-room-check .field-hint[data-tone="warning"]{color:var(--amber-text);}
 /* task due-date + scheduled-time rows (add sheet + detail schedule) */
 .plan-field-row{
   display:flex;align-items:center;gap:10px;margin:-2px 0 16px;

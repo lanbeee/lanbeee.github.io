@@ -1194,6 +1194,22 @@ Visible when type = task:
 | add | Creates the habit and closes sheet |
 | cancel | Discards changes and closes sheet |
 
+### 8.9 Room and overlap guidance 👤
+
+- Choosing a task's date and fixed start automatically shows a quiet inline
+  note if it overlaps a busy time, calendar appointment, or timed day plan.
+  The note follows duration changes, busy-time edits and overnight dates.
+  A breakable task checks its first minimum session; later sessions can move.
+- **More options → check room** previews a habit or dated task against the
+  next seven days using the selected planner. It reports the time found and
+  warns if the task fits only partly or existing work may lose planned time.
+  A preview is an estimate, rather than a guarantee that every recurring
+  session fits. Fixed overlaps are checked even outside the preview horizon.
+- Checks never save the draft, block Add, or require another confirmation.
+  Editing or closing the sheet cancels a pending preview. A failed check still
+  lets you add. The ordinary Add flow stays folded and quiet until a fixed
+  overlap exists or you request a preview.
+
 ---
 
 ## IX. THE DETAIL SHEET

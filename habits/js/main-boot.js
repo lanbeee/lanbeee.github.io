@@ -260,12 +260,8 @@ $('clear-search').addEventListener('click',()=>{
 $('do-cancel').addEventListener('click',cancelAdd);
 $('add-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cancelAdd();});
 
-$('do-save').addEventListener('click',()=>{
-  if(typeof applyAutoEmoji === 'function')applyAutoEmoji();
-  const name = $('ting-message').value.trim();
-  if(!name){$('ting-message').focus();return;}
-  const data = load();
-  if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
+// One draft reader keeps the optional room preview identical to Save.
+function readAddRecord(){
   const profile = readAddProfile();
   const defaults = profile.defaults;
   const type = selectedType;
@@ -277,7 +273,7 @@ $('do-save').addEventListener('click',()=>{
     ? readWeatherProfileChoice('ting-weather-profile')
     : {weatherProfileMode:$('ting-weather-profile')?.value?'profile':'inherit',weatherProfileId:cleanWeatherProfileId($('ting-weather-profile')?.value)};
   const record = {
-    name:name.slice(0,60),
+    name:$('ting-message').value.trim().slice(0,60),
     type,
     target,
     lastLog:null,
@@ -318,6 +314,16 @@ $('do-save').addEventListener('click',()=>{
   }
   record.delayAllowanceDays = defaults.delayAllowanceDays;
   record.autoMarkMinutes = defaultAutoMarkMinutes(profile);
+  return record;
+}
+
+$('do-save').addEventListener('click',()=>{
+  if(typeof applyAutoEmoji === 'function')applyAutoEmoji();
+  const name = $('ting-message').value.trim();
+  if(!name){$('ting-message').focus();return;}
+  const data = load();
+  if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
+  const record = readAddRecord();
   data.push(record);
   if(save(data)){
     cancelAdd();
