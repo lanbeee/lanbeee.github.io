@@ -1383,17 +1383,15 @@ function homeAgendaRows(data){
     .filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
 }
 
-// PURE: color for the card's left accent bar by priority. P0 burns red, P1
-// amber, the mid bands settle into neutral text tones, and the low bands fade
-// so the bar reads as "how urgently does this want today's time" — only the
-// top levels pop, everything else stays quiet. No text label needed.
+// PURE: priority hue for the corner tick. Lower priorities use distinct
+// green, purple and neutral tones; CSS softens them for the active theme.
 function priorityColor(p){
   if(p <= 0)return 'var(--red-icon)';
   if(p === 1)return 'var(--amber-icon)';
   if(p === 2)return 'var(--teal-icon)';
-  if(p === 3)return 'var(--text2)';
-  if(p === 4)return 'var(--text3)';
-  return 'color-mix(in srgb, var(--text3) 35%, transparent)';
+  if(p === 3)return 'var(--green-icon)';
+  if(p === 4)return 'var(--purple-icon)';
+  return 'var(--text3)';
 }
 
 // PURE: later assignments need a day label under the combined Coming up header.

@@ -852,7 +852,7 @@ When enabled: `🕐 9am-5pm`
 | P1 | 🟠 High | Second priority |
 | P2 | 🟡 Medium | Default for new |
 | P3 | 🟢 Low | Lower priority |
-| P4 | 🔵 Lower | Even lower |
+| P4 | 🟣 Lower | Even lower |
 | P5 | ⚪ Someday | Dropped first |
 
 ### 5.7 Topic Chips 💡 👤
@@ -3379,4 +3379,4 @@ system status area. Sheets and bottom controls use the same inset tokens.
 
 At 720 px and above, the permanent Home, Calendar and detail panes share the page background (`--bg2`) and lighter card surface (`--bg`). Subtle column dividers, consistent gutters and compact headings keep the panes part of the same app. Detail content scrolls within its pane; its labeled tabs stay below the title and search/Close or Cancel/Save stay in the bottom dock. Phone modal styling is restored when the viewport returns to one pane.
 
-Home cards show effective priority in the emoji button’s corner check badge, using a muted tint against the current theme and a contrasting tick. The title has no separate priority pill. The button’s accessible label includes the priority. Completed tasks retain their completion badge.
+Home cards show effective priority in the emoji button’s corner check badge, using a flat priority tint mixed into the theme’s text color, with no border: a pale badge and dark tick in dark mode, a dark badge and light tick in light mode. P3 uses green, P4 purple, and P5 neutral gray to keep lower priorities distinguishable. The title has no separate priority pill. The button’s accessible label includes the priority. Completed tasks retain their completion badge.
