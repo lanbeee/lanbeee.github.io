@@ -167,6 +167,7 @@ function setDetailSearchOpen(open,focus = true){
   open = Boolean(open && !detailIsSingleView() && !getSheetInner('detail-sheet')?.classList.contains('tune-dirty'));
   const inner = getSheetInner('detail-sheet');
   if(!inner)return;
+  if(open)inner.classList.remove('detail-edit-session');
   const wasOpen = inner.classList.contains('detail-search-open');
   if(open && !wasOpen){
     const pager = inner.querySelector('.detail-pager');
@@ -243,44 +244,20 @@ function revealDetailSearchEntry(entry){
 }
 
 $('detail-search-toggle').addEventListener('click',()=>setDetailSearchOpen(true));
-// Reclaim space as soon as an editing field gains focus, including native
-// keyboards that resize the WebView itself rather than visualViewport.
-// Search keeps its own keyboard layout, and Save/Cancel stay reachable.
-let detailEditingPointerDown = false;
-function syncDetailEditingChrome(){
+// Enter editing before the first keystroke. Header actions persist until
+// Save/Cancel; page tabs return once the keyboard has finished closing.
+function syncDetailEditingChrome(keyboardOpen){
   const inner = getSheetInner('detail-sheet');
-  if(!inner)return;
+  if(inner && typeof keyboardOpen === 'boolean')inner.classList.toggle('detail-keyboard-open',keyboardOpen);
   const active = document.activeElement;
-  const keyboardSpace = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--keyboard-lift')) || 0;
-  const virtualKeyboard = window.TingsNative?.isNative || matchMedia('(any-pointer:coarse)').matches || keyboardSpace > 80;
-  const editing = inner.contains(active) && active.closest('.detail-page')
-    && active.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]),textarea,[contenteditable="true"]')
+  if(!inner || !detailTuneOriginal || !inner.contains(active) || !active.closest('.detail-page'))return;
+  const field = active.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]),textarea,select,[contenteditable="true"]')
     && !active.readOnly && !active.disabled;
-  // Blurring the field on pointerdown must not move the intended button
-  // before pointerup/click reaches it.
-  if(!editing && detailEditingPointerDown)return;
-  // Blur precedes the IME's closing resize. Keep the editing chrome until
-  // that resize finishes, otherwise Search/X briefly appears above the
-  // keyboard and then jumps to the bottom. Android already resizes the
-  // layout, so its zero keyboard-lift is not evidence that the IME closed.
-  const nativeResized = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
-    && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01;
-  const keyboardVisible = nativeResized
-    ? nativeKeyboardRestHeight - document.documentElement.clientHeight > 2 : keyboardSpace > 2;
-  const closing = !inner.classList.contains('detail-search-open')
-    && inner.classList.contains('detail-field-editing') && keyboardVisible;
-  inner.classList.toggle('detail-field-editing',Boolean((editing && virtualKeyboard) || closing));
+  if(!field)return;
+  inner.classList.add('detail-edit-session');
+  $('detail-save').disabled = !inner.classList.contains('tune-dirty');
 }
-document.addEventListener('pointerdown',event=>{
-  detailEditingPointerDown = Boolean(event.target.closest('.detail-sheet'));
-},true);
-['pointerup','pointercancel'].forEach(type=>document.addEventListener(type,()=>{
-  if(!detailEditingPointerDown)return;
-  detailEditingPointerDown = false;
-  setTimeout(syncDetailEditingChrome,250);
-},true));
 document.addEventListener('focusin',syncDetailEditingChrome);
-document.addEventListener('focusout',()=>requestAnimationFrame(syncDetailEditingChrome));
 $('detail-search-input').addEventListener('input',renderDetailSearch);
 $('detail-search-input').addEventListener('keydown',event=>{
   if(event.key === 'ArrowDown'){

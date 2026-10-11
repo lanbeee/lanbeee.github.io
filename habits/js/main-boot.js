@@ -1531,9 +1531,7 @@ $('detail-save').addEventListener('click',()=>{
   h.lastLog = latestActualLog(h.logs);
   save(data);
   showToast('saved');
-  closeSheet('detail-sheet');
-  detailIdx = null;
-  detailTuneOriginal = null;
+  closeDetail();
   render();
   if((h.weatherProfileMode !== 'none' || h.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 });

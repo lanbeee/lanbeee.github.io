@@ -18,6 +18,12 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.equal(await page.locator('#detail-logging-disclosure').getAttribute('open'),null);
     assert.equal(await page.locator('#detail-availability-disclosure').getAttribute('open'),null);
     const search=async query=>{
+      // Browse the next field after explicitly leaving a clean edit session.
+      if(await page.locator('.detail-edit-session:not(.tune-dirty)').count()){
+        const index=await page.evaluate(()=>detailIdx);
+        await page.locator('#detail-close').click();
+        await page.evaluate(index=>openDetail(index),index);
+      }
       if(!await page.locator('#detail-search-panel').isVisible())await page.locator('#detail-search-toggle').click();
       await page.locator('#detail-search-input').fill(query);
     };
@@ -32,9 +38,8 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     const pagerBox=await page.locator('.detail-pager').boundingBox();
     const footerBox=await page.locator('.detail-bottom-bar').boundingBox();
     assert.ok(navBox.y+navBox.height<=pagerBox.y,'navigation sits above the pager');
-    // The footer floats over the pager's lower edge like Home's action bar;
-    // it must stay anchored to the bottom of the sheet, not push content.
-    assert.ok(footerBox.y>=pagerBox.y && footerBox.y+footerBox.height<=845,'the footer floats at the bottom of the sheet');
+    assert.ok(footerBox.y>=pagerBox.y+pagerBox.height,'the action slot sits below scrolling fields');
+    assert.ok(footerBox.y+footerBox.height<=845,'the footer fits the visible sheet');
     assert.equal(await page.locator('.detail-bottom-bar').evaluate(el=>getComputedStyle(el).borderRadius),'28px','detail action bar uses the same round pill as Home');
     assert.ok(await tabs.nth(1).locator('span').isVisible(),'tab labels are visible on a phone');
     await page.evaluate(()=>{
@@ -108,31 +113,48 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.ok(await page.locator('#detail-generic-emoji button').count()>0);
     await page.evaluate(()=>document.documentElement.style.setProperty('--keyboard-lift','300px'));
     const regularPagerHeight=(await page.locator('.detail-pager').boundingBox()).height;
+    const stableHead=await page.locator('.detail-head').boundingBox();
+    const stableName=await page.locator('#detail-habit-message').boundingBox();
     await page.locator('#detail-habit-message').focus();
-    assert.equal(await page.locator('.detail-page-nav').isVisible(),false,'field keyboard hides page navigation');
+    assert.ok(await page.locator('.detail-page-nav').isVisible(),'field focus preserves page navigation');
+    assert.ok(await page.locator('#detail-close').isVisible(),'Cancel is available before typing');
+    assert.ok(await page.locator('#detail-save').isDisabled(),'Save starts disabled before a change');
+    assert.deepEqual(await page.locator('.detail-head').boundingBox(),stableHead,'editing keeps the header geometry');
+    assert.equal(await page.locator('.detail-bottom-bar').isVisible(),false,'editing removes the bottom toolbar');
+    assert.ok(await page.locator('#detail-save').evaluate(el=>Boolean(el.closest('.detail-head'))),'Save lives in the existing header');
+    assert.ok((await page.locator('.detail-pager').boundingBox()).height>regularPagerHeight+60,'editing gives the bottom action slot back to the pager');
+    assert.equal((await page.locator('#detail-habit-message').boundingBox()).y,stableName.y,'focus does not move the name field');
+    await page.locator('#detail-habit-message').fill('Draft name');
+    assert.ok(await page.locator('#detail-save').isEnabled(),'a real change enables Save');
+    assert.deepEqual(await page.locator('.detail-head').boundingBox(),stableHead,'typing keeps the same header geometry');
+    await page.locator('#detail-habit-message').fill('Search fixture');
+    assert.ok(await page.locator('#detail-save').isDisabled(),'reverting the change disables Save');
     assert.equal(await page.locator('#detail-search-toggle').isVisible(),false,'field keyboard hides search');
     assert.equal(await page.locator('#detail-cool').isVisible(),false,'field keyboard hides the close X with the search row');
     await page.locator('#detail-habit-message').blur();
     await page.waitForTimeout(50);
     assert.equal(await page.locator('#detail-cool').isVisible(),false,'exit stays hidden while the keyboard is still closing');
-    await page.evaluate(()=>{document.documentElement.style.setProperty('--keyboard-lift','0px');syncDetailEditingChrome();});
-    assert.ok(await page.locator('.detail-page-nav').isVisible(),'navigation returns after editing');
-    assert.ok(await page.locator('#detail-cool').isVisible(),'exit returns after editing');
+    await page.evaluate(()=>{document.documentElement.style.setProperty('--keyboard-lift','0px');syncDetailEditingChrome(false);});
+    assert.ok(await page.locator('.detail-page-nav').isVisible(),'navigation remains after keyboard closing');
+    assert.ok(await page.locator('#detail-close').isVisible(),'Cancel remains after a clean edit and blur');
+    await page.locator('#detail-close').click();
+    await page.evaluate(()=>openDetail(0));
     assert.ok(await page.locator('#detail-search-toggle').isVisible());
+    assert.ok(await page.locator('#detail-name').isVisible(),'opening details restores the normal header');
+    assert.equal(await page.locator('#detail-save').isVisible(),false,'browse mode has no editing actions');
     await search('name');
     assert.ok(await page.locator('#detail-search-input').isVisible(),'search keeps its own keyboard field');
     await page.locator('#detail-cool').click();
     await page.evaluate(()=>document.documentElement.style.setProperty('--keyboard-lift','0px'));
-    // A tap that leaves the keyboard field must complete before the restored
-    // navigation can move its intended button.
+    // A tap that leaves the keyboard field must complete with stable navigation.
     await page.locator('#detail-habit-message').focus();
-    await page.evaluate(()=>{document.documentElement.style.setProperty('--keyboard-lift','300px');syncDetailEditingChrome();});
+    await page.evaluate(()=>{document.documentElement.style.setProperty('--keyboard-lift','300px');syncDetailEditingChrome(true);});
     const taskButton=page.locator('#detail-type-seg [data-detail-type="task"]');
     const taskBox=await taskButton.boundingBox();
     await page.mouse.move(taskBox.x+taskBox.width/2,taskBox.y+taskBox.height/2);
     await page.mouse.down();
     await page.waitForTimeout(100);
-    assert.equal(await page.locator('.detail-page-nav').isVisible(),false,'navigation stays hidden until the tap finishes');
+    assert.equal(await page.locator('.detail-page-nav').isVisible(),false,'keyboard editing hides navigation throughout the tap');
     await page.mouse.up();
     assert.ok(await taskButton.evaluate(el=>el.classList.contains('on')),'the intended type button receives the tap');
     await page.locator('#detail-close').click();
@@ -168,7 +190,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
         assert.ok(box && box.y>=0 && box.y+box.height<=height+1 && box.x>=0 && box.x+box.width<=width+1,`${selector} clipped ${width}x${height}: ${JSON.stringify(box)}`);
       }
       await choose('due date','Due date');assert.ok(await page.locator('#detail-due-date').isVisible());
-      await page.locator('#detail-cool').click();
+      await page.locator('#detail-close').click();
     }
     await page.setViewportSize({width:390,height:844});await page.waitForTimeout(250);
     await page.evaluate(()=>{
@@ -241,14 +263,33 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
       const pad=el=>parseFloat(getComputedStyle(el).paddingBottom) || 0;
       return {last:pad(visible.at(-1)),others:visible.slice(0,-1).map(pad)};
     });
-    assert.ok(minimalPad.last>=70,'the last stacked section keeps footer clearance');
+    assert.ok(minimalPad.last<20,'the last section needs no oversized action clearance');
     assert.ok(minimalPad.others.every(n=>n<20),'earlier stacked sections do not keep footer clearance');
     assert.equal(await page.locator('#detail-emoji').isVisible(),false,'minimal mode keeps the optional picker collapsed');
     await page.locator('#detail-emoji-preview').click();
     assert.ok(await page.locator('#detail-emoji').isVisible(),'the emoji preview also opens the picker in minimal mode');
-    await page.locator('#detail-cool').click();
-    // Enlarged text and effective zoom widths: footer actions never share a row
-    // with the title, and the actual controls stay inside each scrolled pane.
+    await page.waitForTimeout(350); // Finish the emoji picker's focus/scroll before moving to Name.
+    await page.evaluate(()=>{
+      window.realMinimalVisualViewport=window.visualViewport;
+      Object.defineProperty(window,'visualViewport',{configurable:true,value:{height:400,offsetTop:0}});
+      updateKeyboardLift();
+      $('detail-habit-message').focus({preventScroll:true});
+      keepFocusedInputVisible();
+    });
+    const minimalName=await page.locator('#detail-habit-message').boundingBox();
+    const minimalPager=await page.locator('.detail-pager').boundingBox();
+    assert.ok(minimalName.y>=minimalPager.y && minimalName.y+minimalName.height<=minimalPager.y+minimalPager.height,`Minimal mode reveals the name inside the pager: ${JSON.stringify({minimalName,minimalPager})}`);
+    assert.equal(await page.locator('.detail-bottom-bar').isVisible(),false,'Minimal editing has no bottom action bar');
+    await page.locator('#detail-habit-message').fill('Minimal draft');
+    assert.ok(await page.locator('#detail-save').isEnabled());
+    await page.locator('#detail-close').click();
+    assert.equal(await page.evaluate(()=>load()[0].name),'Search fixture','minimal Cancel discards the draft');
+    await page.evaluate(()=>{
+      Object.defineProperty(window,'visualViewport',{configurable:true,value:window.realMinimalVisualViewport});
+      updateKeyboardLift();
+    });
+    // Enlarged text and effective zoom widths: header editing actions replace
+    // the title, and actual controls stay inside each scrolled pane.
     await page.evaluate(()=>{sortSettings.minimalMode=false;applyAppearanceSettings();window.TingsNative={isNative:true};});
     for(const [width,height] of [[320,568],[240,420],[200,380],[844,390],[1440,900]]){
       await page.setViewportSize({width,height});await page.waitForTimeout(250);
@@ -281,6 +322,12 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
       assert.equal(await page.locator('#detail-cool').isVisible(),false);
       for(const id of ['detail-save','detail-close']){
         const box=await page.locator('#'+id).boundingBox();assert.ok(box && box.x>=0 && box.y>=0 && box.x+box.width<=width+1 && box.y+box.height<=height+1,`${id} fits at ${width}`);
+        const labelFits=await page.locator('#'+id).evaluate(button=>{
+          const range=document.createRange();range.selectNodeContents(button);
+          const label=range.getBoundingClientRect(),bounds=button.getBoundingClientRect();
+          return label.top>=bounds.top && label.bottom<=bounds.bottom && label.left>=bounds.left && label.right<=bounds.right;
+        });
+        assert.ok(labelFits,`${id} label fits with enlarged text at ${width}`);
       }
       await page.locator('#detail-close').click();
     }
@@ -317,7 +364,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     await page.locator('#do-cancel').click();
     // Saving still commits the edit; cancelling above left its snapshot intact.
     await page.evaluate(()=>{openDetail(0);scrollDetailToNav('identity');});
-    await page.locator('#detail-habit-message').fill('Saved fixture');await page.locator('#detail-habit-message').blur();
+    await page.locator('#detail-habit-message').fill('Saved fixture');
     await page.locator('#detail-save').click();assert.equal(await page.evaluate(()=>load()[0].name),'Saved fixture');
     // Exactly one existing exit stays reachable at both scroll extremes.
     const sheetIds=['about-sheet','privacy-sheet','overview-sheet','free-time-sheet','weather-context-sheet','weather-metric-sheet','weather-agenda-sheet','slipped-sheet','day-capacity-sheet','day-logs-sheet','settings-sheet','sample-habits-sheet','activity-sheet','snooze-sheet','value-log-sheet','home-filter-sheet','calendar-filter-sheet','presence-picker-sheet'];

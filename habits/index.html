@@ -126,7 +126,7 @@
     <div class="sheet add-sheet">
       <div class="add-sheet-head">
         <p class="sheet-title" id="add-title">new</p>
-        <div class="add-shortcuts"><button type="button" class="mini-text-btn" id="add-open-defaults">defaults</button><button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">busy times</button></div>
+        <div class="add-shortcuts add-full-only"><button type="button" class="mini-text-btn" id="add-open-defaults">defaults</button><button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">busy times</button></div>
       </div>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
@@ -173,6 +173,12 @@
         </div>
       </div>
       <p class="field-hint" id="task-due-hint" hidden></p>
+
+      <div class="planning-grid planning-grid-single" id="add-minimal-effort" hidden></div>
+      <div class="minimal-mode-note">
+        <button type="button" class="mini-text-btn" id="add-regular-mode">switch to regular mode</button>
+        <p class="field-hint">Show all options across Tings. Your draft stays here; saved settings still apply.</p>
+      </div>
 
       <p class="add-conflict-note" id="add-conflict-note" role="status" aria-live="polite" hidden></p>
 
@@ -290,6 +296,10 @@
           <div class="ting-cue detail-cue" id="detail-sub"></div>
         </div>
         <div class="detail-head-actions" id="detail-link-actions" hidden></div>
+        <div class="detail-actions tune-actions" id="detail-tune-actions" aria-label="edit actions">
+          <button type="button" class="btn" id="detail-close">cancel</button>
+          <button type="button" class="btn primary" id="detail-save" disabled>save</button>
+        </div>
       </div>
       <div class="detail-page-nav">
         <div class="detail-dots" role="tablist" aria-label="detail pages"></div>
@@ -356,17 +366,17 @@
           <div class="planning-grid detail-minimal-effort" id="detail-minimal-effort" hidden></div>
 
           </details>
-          <details class="detail-disclosure detail-full-only" id="detail-availability-disclosure"><summary>days, hours &amp; places</summary>
+          <details class="detail-disclosure" id="detail-availability-disclosure"><summary>days, hours &amp; places</summary>
           <div class="seg schedule-seg detail-full-only" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed" aria-label="allowed — hard limits">allowed</button>
             <button class="seg-opt" data-schedule-view="preferred" aria-label="preferred — soft preference">preferred</button>
           </div>
           <p class="field-hint schedule-view-hint" id="detail-schedule-view-hint">Hard limits — the planner only places this inside these days and hours.</p>
-          <div id="detail-schedule-allowed" class="detail-full-only">
+          <div id="detail-schedule-allowed">
             <div id="detail-simple-allowed-fields">
               <span class="settings-sublabel">days</span>
               <div class="schedule-chip-row" id="detail-weekday-chips"></div>
-              <div class="monthday-disclosure">
+              <div class="monthday-disclosure detail-full-only">
                 <button type="button" class="monthday-disclosure-head" id="detail-monthday-toggle" aria-expanded="false" aria-controls="detail-monthday-chips">
                   <span class="monthday-disclosure-label">month days</span>
                   <span class="monthday-disclosure-summary" id="detail-monthday-summary">any</span>
@@ -412,6 +422,10 @@
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
           </div>
           </details>
+          <div class="minimal-mode-note">
+            <button type="button" class="mini-text-btn" id="detail-regular-mode">switch to regular mode</button>
+            <p class="field-hint">Show all options across Tings. Your draft stays here; saved settings still apply.</p>
+          </div>
           <details class="detail-disclosure detail-full-only weather-habit-field" id="detail-weather-disclosure">
             <summary>weather &amp; forecast</summary>
             <label class="setting-toggle compact-toggle" id="detail-show-weather-row">
@@ -603,7 +617,7 @@
             </div>
             <div id="detail-order-list" class="detail-order-list"></div>
           </div>
-          <details class="detail-disclosure" id="detail-links-disclosure"><summary>apps, links &amp; calls</summary>
+          <details class="detail-disclosure detail-full-only" id="detail-links-disclosure"><summary>apps, links &amp; calls</summary>
           <div class="link-field" id="detail-link-field">
             <div class="link-field-head">
               <span class="settings-sublabel">links &amp; calls
@@ -680,6 +694,7 @@
         </details>
           </section>
       </div>
+      <div class="detail-dock-space" aria-hidden="true"></div>
       <div class="detail-bottom-bar" aria-label="detail actions">
         <div class="detail-actions" id="detail-cool-row">
           <div class="detail-search-control detail-full-only">
@@ -691,10 +706,6 @@
             </div>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-        </div>
-        <div class="detail-actions tune-actions" id="detail-tune-actions">
-          <button type="button" class="btn" id="detail-close">cancel</button>
-          <button type="button" class="btn primary" id="detail-save">save</button>
         </div>
       </div>
     </div>

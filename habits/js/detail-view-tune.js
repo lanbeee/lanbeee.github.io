@@ -162,6 +162,9 @@ function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
+  if(dirty)sheet.classList.add('detail-edit-session');
+  else if(force === false)sheet.classList.remove('detail-edit-session');
+  $('detail-save').disabled = !dirty;
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 
@@ -568,7 +571,7 @@ function setScheduleView(view){
 function closeDetail(){
   const inner = getSheetInner('detail-sheet');
   if(inner?.contains(document.activeElement))document.activeElement.blur();
-  inner?.classList.remove('detail-field-editing');
+  setDetailDirty(false);
   setDetailSearchOpen(false,false);
   detailIdx = null;
   detailTuneOriginal = null;

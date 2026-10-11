@@ -7,7 +7,7 @@ const DETAIL_PAGE_NAV = {
 };
 
 // Visual-only: drop the merged calendar+stats pane and the effort pane, fold
-// duration + due into schedule, and strip schedule/identity chrome. What is
+// duration + due into schedule, and keep basic allowed weekdays and hours. What is
 // left is short enough to read as one scrolling page, so the pager stacks
 // vertically and the tab strip goes away. Does not change saved habit fields.
 const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','effort'];
@@ -17,6 +17,10 @@ function applyDetailMinimalMode(){
   const sheet = $('detail-sheet');
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if(sheet)sheet.classList.toggle('minimal-detail', minimal);
+  // A previously selected Preferred view must never hide the basic controls.
+  if(minimal && typeof setScheduleView === 'function')setScheduleView('allowed');
+  const availabilityTitle = $('detail-availability-disclosure')?.querySelector('summary');
+  if(availabilityTitle)availabilityTitle.textContent = minimal ? 'allowed days & hours' : 'days, hours & places';
   if(pager){
     MINIMAL_HIDDEN_DETAIL_PAGES.forEach(nav=>{
       const page = pager.querySelector(`.detail-page[data-detail-nav="${nav}"]`);

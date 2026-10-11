@@ -105,11 +105,23 @@ function isSortSettingKey(key){
   return ['planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
 }
 
+// HANDLER: change presentation without reopening an Add or Details draft.
+function setMinimalMode(enabled){
+  enabled = Boolean(enabled);
+  if(enabled === isMinimalMode())return;
+  updateSortSetting({minimalMode:enabled},{renderNow:false});
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  else render();
+  if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
+  if(!enabled && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
+}
+
 // HANDLER: toggle a boolean app setting
 function toggleAppSettingButton(btn){
   if(!btn)return;
   const key = btn.dataset.settingToggle;
   if(!key)return;
+  if(key === 'minimalMode'){setMinimalMode(!isMinimalMode());return;}
   if(key === 'reminders'){toggleReminders();return;}
   if(key === 'soundEffects'){
     updateSortSetting({soundEffects:!sortSettings.soundEffects},{renderNow:false});
@@ -122,12 +134,11 @@ function toggleAppSettingButton(btn){
   // but presentation-only avoids even entering the async planner coordinator.
   const cardDetail = CARD_DETAIL_KEYS.includes(key);
   if(cardDetail)patch.cardDetailLevel = 'custom';
-  if(key === 'minimalMode' || cardDetail){
+  if(cardDetail){
     updateSortSetting(patch,{renderNow:false});
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     else render();
     if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
-    if(patch.minimalMode === false && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
     return;
   }
   updateSortSetting(patch);

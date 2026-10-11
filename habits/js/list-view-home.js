@@ -1705,9 +1705,10 @@ function earlyCardPill(reason){
 // via travelFromCurrent() (movement-thresholded cache). A live-GPS leg can't
 // open the editor — an override anchored to an ephemeral coord would be stale
 // on the next GPS tick — but its destination is a real saved place, so a tap
-// opens directions from "here" in maps. Saved-place → saved-place legs keep
+// opens directions from "here" in maps. Native legs also expose the destination's
+// reminders in the editor, with duration editing disabled. Saved-place legs keep
 // tap-to-edit; directions are available in the travel editor.
-function appendHomeTravelCard(list,fromId,toId,startTs){
+function appendHomeTravelCard(list,fromId,toId,startTs,destination=null,dayKey=null){
   if(!list || !fromId || !toId || fromId === toId)return;
   const fromCurrent = fromId === CURRENT_COORD_ID;
   const to = typeof locationById === 'function' ? locationById(toId) : null;
@@ -1746,11 +1747,11 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   list.appendChild(travelEl);
   const go = ()=>openTravelLegInMaps(toId);
   // Saved-place legs open the editor immediately. A live-GPS leg has an
-  // ephemeral origin, so its tap opens directions instead.
-  if(fromCurrent){
+  // ephemeral origin: native opens reminders, while the PWA opens directions.
+  if(fromCurrent && !(window.TingsNative?.isNative && destination)){
     bindTap(travelEl, go);
   }else{
-    bindTap(travelEl, ()=>openTravelEditSheet(fromId,toId,startTs));
+    bindTap(travelEl, ()=>openTravelEditSheet(fromId,toId,startTs,destination,dayKey));
   }
 }
 
@@ -1763,8 +1764,8 @@ function homeExtraRowVisible(){
 }
 
 // RENDER: a travel leg always uses the card surface.
-function appendHomeExtraTravel(list,fromId,toId,startTs){
-  appendHomeTravelCard(list,fromId,toId,startTs);
+function appendHomeExtraTravel(list,fromId,toId,startTs,destination=null,dayKey=null){
+  appendHomeTravelCard(list,fromId,toId,startTs,destination,dayKey);
 }
 
 // PURE: leave-by for a saved→saved (or here→saved) home travel card.

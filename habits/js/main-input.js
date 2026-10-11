@@ -361,6 +361,17 @@ $('habit-log-keep-seg')?.addEventListener('click',e=>{
 $('retention-clean-now')?.addEventListener('click',()=>{
   applyRetentionCleanup({force:true});
 });
+$('add-regular-mode')?.addEventListener('click',()=>{
+  setMinimalMode(false);
+  $('add-more-options').hidden = false;
+  $('add-more-toggle').setAttribute('aria-expanded','true');
+  $('add-more-toggle').focus({preventScroll:true});
+});
+$('detail-regular-mode')?.addEventListener('click',()=>{
+  setMinimalMode(false);
+  scrollDetailToNav('schedule');
+  $('detail-availability-disclosure').querySelector('summary').focus({preventScroll:true});
+});
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{
     if(suppressNativeButton === btn){
@@ -1090,6 +1101,7 @@ function blockEditorField(target){
 
 function openBlockEditSheet(row){
   if(!row)return;
+  if(typeof nativeEnsureBusyReminderIds==='function')nativeEnsureBusyReminderIds();
   const dayKey = dateKey(row.start);
   const originalStart = Number(row.blockStartMin);
   const originalEnd = Number(row.blockEndMin);
@@ -1118,6 +1130,7 @@ function openBlockEditSheet(row){
     dynamicToggle.textContent = 'edit dynamic rule';
   }
   renderBlockEditDynamicControls();
+  if(typeof renderNativeBlockEditorReminders==='function')renderNativeBlockEditorReminders(block,dayKey);
   // Blur the home card before the sheet mounts so closing cannot restore focus
   // there and scroll the list underneath.
   const focusedCard = document.activeElement?.closest?.('.blocked-card');

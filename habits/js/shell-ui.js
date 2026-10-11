@@ -455,7 +455,7 @@ function updateKeyboardLift(){
   if(style.getPropertyValue('--keyboard-viewport-bottom') !== bottom)style.setProperty('--keyboard-viewport-bottom',bottom);
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
-  if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
+  if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome(Boolean(keyboard > 80 || (nativeResized && nativeKeyboardRestHeight - layoutHeight > 80)));
 }
 
 // The IME can emit resize and scroll several times in one frame. Apply the
@@ -480,8 +480,11 @@ function keepFocusedInputVisible(){
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
   if(!active || active.matches('#habit-search,#detail-search-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  const host = active.closest('.detail-sheet .detail-page,.add-sheet,.assistant-sheet');
+  let host = active.closest('.detail-sheet .detail-page,.add-sheet,.assistant-sheet');
   if(!host)return;
+  // Minimal detail sections share the pager's scroll, rather than scrolling
+  // independently. Reveal the field in the element that can actually move.
+  if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-pager');
   if(paneTierActive() && !active.closest('.detail-sheet .detail-page'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();

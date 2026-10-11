@@ -1083,9 +1083,10 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
   avoiding a delayed second resize from a saved pixel height.
   Portrait detail content keeps its spacing and chart sizes across keyboard
   transitions; short-height content compaction applies only to wider layouts.
-  After editing a detail field, the Search/Close bar stays hidden until the
-  keyboard finishes closing, then returns at the bottom. Save/Cancel remains
-  reachable while there are unsaved changes. The detail header keeps its full
+  Focusing an editable detail field switches the same bottom action slot to
+  Cancel/Save before the first change. Save enables only for unsaved changes.
+  The actions remain through blur and keyboard closing until Save or Cancel.
+  The detail header keeps its full
   size, cue and link buttons while typing on portrait phones, including in short
   keyboard layouts. Wide landscape screens retain their compact header layout.
   Opening detail from a scrolled Home shows the phone detail page fully opaque
@@ -1243,7 +1244,8 @@ calendar+stats pane), `effort` (folded into `schedule`)
 
 ### 9.3 Identity Tab 👤
 
-Fields shown (always visible, even in minimal mode):
+Identity fields (minimal mode keeps name, emoji and habit/task type; kind,
+priority, topics and color controls are available in regular mode):
 - **Name** (text input, max 60 chars; tapping the detail header name opens this field)
 - **Emoji** (emoji picker, max 4 graphemes, with a horizontally scrolling common-emoji row + background color)
 - **Type** (segment: `habit` / `task`)
@@ -1257,11 +1259,11 @@ Fields shown (always visible, even in minimal mode):
 
 ### 9.4 Schedule Tab Details 👤
 
-Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps those section headers visible on its stacked scrolling fields and omits search. Footer clearance for the close pill sits only on the last section.
+Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode stacks rhythm/deadline, duration, allowed weekdays and hours, name/type, optional emoji and remove into one scroll, and omits search. Month days, preferred availability, places, weather, link setup and planning extras stay in regular mode. Saved advanced settings continue to apply. Browsing reserves space below fields for Close; editing moves Cancel/Save into the existing header and gives that space back to the fields.
 
 The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
 
-Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide while the item header keeps its full size on portrait phones. Cancel/Save remains available for unsaved edits. Search/Close returns once the keyboard has finished closing. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar has a reserved slot for Find in details and Close while browsing. From the moment an editable field gets focus or a setting changes, Cancel and Save replace the existing header contents at the same header height. The bottom bar and its reserved space disappear, giving the fields more room. Page tabs hide while the editing keyboard is open and return after it closes; Cancel/Save persist through blur and keyboard closing. Save stays disabled until the draft differs from the saved item; reverting the draft disables it again. Cancel discards the draft and closes details; Save commits and closes details. The normal header and Search/Close return on the next detail opening. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation, and uses the same header editing actions. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. Very short visible viewports can also hide page tabs to keep the header reachable. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
@@ -1806,6 +1808,7 @@ Tracks the currently active habit session:
 - Travel modes: driving, walking, bicycling, transit
 - "Open in maps" opens external maps app
 - "Reset to estimate" reverts to calculated time
+- Installed Android: travel cards expose departure/arrival reminders and departure lead time, with **this date only** or **recurring / all dates**. They edit the destination habit/task/busy time’s existing choices. A date override replaces those edges; it does not add a second alert. **Use recurring reminders for this date** clears the travel override. Live-GPS legs expose reminders and Maps with duration editing disabled.
 
 ### 10.11 Busy Time Editor Sheet 👤
 
@@ -1826,6 +1829,7 @@ Tracks the currently active habit session:
 - Set start/end time (five-minute picker steps; iOS uses Clock-style wheels because Safari ignores `step`. Exact valid typed minutes are preserved until a wheel choice is confirmed)
 - Choose days of week
 - "Save this date" vs "Update recurring" (modifies one instance vs the series)
+- Installed Android: phone reminders are accessible directly in this editor. Choose **this date only** or **recurring / all dates** for independent start, end, travel departure/arrival and departure lead time. Reminders save immediately; the timing Save/Cancel buttons apply to the clock fields. **Use recurring reminders for this date** clears the reminder override. Choices stay on this phone and follow the block through time edits and renames.
 
 ### 10.12 Day Logs Sheet (Multi-Step) 👤
 
@@ -2494,7 +2498,13 @@ task uniqueness and sparse cadence before adding an occurrence.
 - Users can unlock full features anytime
 
 **How to Exit:**
-Settings > Display > Minimal Mode (toggle off)
+Use **switch to regular mode** in Add or item details, or turn off
+Settings > Display > Minimal Mode. This changes the mode across Tings.
+The inline switch preserves the current draft and opens the full controls
+in the same sheet; switching back is available in Settings.
+
+Minimal Add keeps name, optional emoji, habit/task type, rhythm or deadline,
+and duration visible. Defaults and busy-time shortcuts stay in regular mode.
 
 ---
 
@@ -2905,9 +2915,10 @@ Same agenda logic, but simplified display:
 ### 20.4 Detail Sheet Changes
 - Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
 - Remaining panes stack into one scroll; section headers stay visible
-- Extra space for the floating close control is only on the last section
-- Simplified scheduling UI
-- Basic info only
+- The reserved action bar stays outside the scrolling fields
+- Allowed weekdays and time window stay visible alongside rhythm/deadline and duration
+- Month days, preferences, places, weather and link setup remain regular-mode options
+- A small regular-mode switch reveals all options without saving or discarding the draft
 - Action rows limited to remove: shared display, export to calendar, share
   item, snooze, and pin are regular-mode only (saved values are untouched)
 

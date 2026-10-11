@@ -169,6 +169,15 @@ body.minimal-mode .detail-sheet > .detail-pager > .detail-page{
 body.minimal-mode .detail-bottom-bar .detail-dots[hidden]{ display:none; }
 body.minimal-mode .detail-bottom-bar .detail-actions{ flex:1 1 auto;width:auto; }
 body.minimal-mode #add-sheet.minimal-add .add-full-only { display:none !important; }
+.minimal-mode-note { display:none; }
+body.minimal-mode .minimal-mode-note { display:block;margin:12px 0; }
+.minimal-mode-note > button { min-height:44px;text-align:left;white-space:normal; }
+.minimal-mode-note .field-hint { margin:0; }
+body.minimal-mode #add-minimal-effort .range-value { width:100%;height:44px;background:var(--field-bg); }
+body.minimal-mode #detail-schedule-view-hint,
+body.minimal-mode #detail-availability-disclosure .schedule-time-lead { display:none; }
+body.minimal-mode #detail-weekday-chips { grid-template-columns:repeat(auto-fit,minmax(32px,1fr));gap:4px; }
+body.minimal-mode #detail-weekday-chips .schedule-chip { padding-inline:2px;min-height:44px;white-space:nowrap; }
 /* Settings minimal mode already decides — showing them would be a dead switch. */
 body.minimal-mode .settings-full-only { display:none !important; }
 /* Mirror image: rows that only exist for minimal mode (opt-in card extras). */

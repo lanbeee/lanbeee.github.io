@@ -1929,7 +1929,10 @@ function render(opts){
       for(let i = 0;i < seq.length;){
         const row = seq[i];
         if(row.kind === 'travel'){
-          if(homeExtraRowVisible(row.start))appendHomeExtraTravel(list,row.from,row.to,row.start);
+          if(homeExtraRowVisible(row.start)){
+            const destination=seq.slice(i+1).find(next=>next.kind!=='travel' && next.start===row.end && next.locationId===row.to);
+            appendHomeExtraTravel(list,row.from,row.to,row.start,destination,day.dayKey);
+          }
           i += 1;
           continue;
         }
@@ -2111,7 +2114,7 @@ function render(opts){
             const cLocId = cardLocationId(h,chunkRow);
             if(prevTodayLocId && cLocId && prevTodayLocId !== cLocId){
               const travelTs = homeTravelLeaveByMs(prevTodayLocId,cLocId,chunkRow.start);
-              if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs);
+              if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs,{...chunkRow,h},todayIso());
             }
             prevTodayLocId = cLocId || prevTodayLocId;
             const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
@@ -2132,7 +2135,7 @@ function render(opts){
           locId,
           agendaRow && Number.isFinite(agendaRow.start) ? agendaRow.start : NaN
         );
-        if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs);
+        if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs,{...agendaRow,h},todayIso());
       }
       if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
 

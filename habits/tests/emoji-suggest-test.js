@@ -283,6 +283,9 @@ function check(label, cond, extra){
     detailRowLayout.wrap === 'nowrap' && (detailRowLayout.overflowX === 'auto' || detailRowLayout.overflowX === 'scroll')
       && detailRowLayout.scrollable && detailRowLayout.oneRow,
     JSON.stringify(detailRowLayout));
+  // Editing replaces the header shortcuts with Cancel/Save. Leave the clean
+  // emoji edit before testing the next header entry point.
+  await page.locator('#detail-close').click();
   await page.evaluate(() => { if(typeof openDetail === 'function')openDetail(0); });
   await page.locator('#detail-sheet.open').waitFor({ timeout: 5000 });
   await page.locator('#detail-name').click();
@@ -301,6 +304,8 @@ function check(label, cond, extra){
     };
   });
   check('tapping the detail header name opens the name editor', nameEditor.nav === 'identity' && nameEditor.nameOpen && nameEditor.focused, JSON.stringify(nameEditor));
+  await page.locator('#detail-close').click();
+  await page.evaluate(() => openDetail(0));
   const beforeLogs = await page.evaluate(() => (load()[0].logs || []).length);
   await page.locator('#detail-mark').click();
   await page.locator('#detail-mark-log').click();

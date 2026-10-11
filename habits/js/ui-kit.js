@@ -96,7 +96,7 @@ function uiTimePairHtml(kind){
 
 const UI_SETTING_TOGGLES = {
   display:[
-    {key:'minimalMode', title:'minimal mode', hint:'Show emoji, name, status line, and how often. Hide agenda times, trails, insights, and other extras. Does not change what’s due or how the planner works.'}
+    {key:'minimalMode', title:'minimal mode', hint:'Keep the basics: name, rhythm or deadline, duration, allowed weekdays and hours. Turn off for all options. Saved settings still apply; the planner works the same way.'}
   ],
   reminders:[
     {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},
