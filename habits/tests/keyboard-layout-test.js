@@ -15,7 +15,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       document.addEventListener('DOMContentLoaded',()=>document.documentElement.style.setProperty('--safe-area-inset-bottom','34px'));
       localStorage.setItem('tings_coach_install_v2','done');
       localStorage.setItem('tings_coach_essentials_v2','done');
-      localStorage.setItem('tings_app_settings_v2',JSON.stringify({minimalMode:false,agendaOptimizer:false,showWeekOnHome:false}));
+      localStorage.setItem('tings_app_settings_v2',JSON.stringify({agendaOptimizer:false,showWeekOnHome:false}));
       const viewport = new EventTarget();
       Object.assign(viewport,{height:844,width:390,offsetTop:0,offsetLeft:0,scale:1});
       Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
@@ -169,11 +169,11 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       const closing=await page.evaluate(async height=>{
         visualViewport.height=height;visualViewport.dispatchEvent(new Event('resize'));
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-        return {display:getComputedStyle(document.querySelector('.detail-bottom-bar')).display};
+        return {editing:getSheetInner('detail-sheet').classList.contains('detail-field-editing'),
+          display:getComputedStyle(document.querySelector('.detail-bottom-bar')).display};
       },height);
-      assert.equal(closing.display,'none','PWA editing has no bottom toolbar during keyboard closing');
-      assert.equal(await page.locator('.detail-page-nav').isVisible(),height===844,`PWA tabs return when the keyboard closes: ${JSON.stringify(await page.evaluate(()=>({sheet:getSheetInner('detail-sheet').className,dots:getSheetInner('detail-sheet').querySelector('.detail-dots').hidden,layout:document.documentElement.clientHeight,vv:visualViewport.height,nav:getComputedStyle(getSheetInner('detail-sheet').querySelector('.detail-page-nav')).display})))}`);
-      assert.ok(await page.locator('#detail-close').isVisible(),'Cancel stays available after blur');
+      assert.equal(closing.editing,height<844,'PWA editing chrome stays compact through the closing keyboard animation');
+      assert.equal(closing.display==='none',height<844,'PWA Search/Close appears only at the resting bottom');
     }
     await page.evaluate(()=>{
       closeDetail();openSheet('add-sheet');
@@ -334,13 +334,13 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         window.dispatchEvent(new Event('resize'));
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
         const bar=document.querySelector('.detail-bottom-bar');
-        return {display:getComputedStyle(bar).display,bottom:bar.getBoundingClientRect().bottom};
+        return {editing:getSheetInner('detail-sheet').classList.contains('detail-field-editing'),
+          display:getComputedStyle(bar).display,bottom:bar.getBoundingClientRect().bottom};
       },height);
-      assert.equal(closing.display,'none','native editing has no bottom toolbar during keyboard closing');
-      assert.equal(await page.locator('.detail-page-nav').isVisible(),height===844,'native tabs return when the keyboard closes');
-      assert.ok(await page.locator('#detail-close').isVisible(),'native Cancel stays available after blur');
+      assert.equal(closing.editing,height<844,'native editing chrome waits for the CSS layout to finish expanding');
+      assert.equal(closing.display==='none',height<844,'native Search/Close never flashes above the closing keyboard');
       assert.deepEqual(await page.evaluate(()=>editingHeaderGeometry()),await page.evaluate(()=>restingEditingHeader),'short keyboard layouts preserve header size and contents');
-      if(height===844)assert.ok(await page.locator('#detail-save').isVisible(),'header Save remains available after keyboard close');
+      if(height===844)assert.ok(Math.abs(closing.bottom-(844-34-42))<=1,'native Search/Close returns at the resting bottom with its normal clearance');
     }
     await page.evaluate(()=>{
       visualViewport.height=844;scrollDetailToNav('identity','auto');
@@ -349,8 +349,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     });
     await page.setViewportSize({width:390,height:544});
     await page.evaluate(()=>{document.activeElement.blur();updateKeyboardLift();});
-    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-head .tune-actions')).display),'flex','Save/Cancel stays reachable during field blur');
-    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-bottom-bar')).display),'none','Search/Close stays hidden behind unsaved editing actions');
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-bottom-bar .tune-actions')).display),'flex','Save/Cancel stays reachable during field blur');
+    assert.equal(await page.evaluate(()=>getComputedStyle($('detail-cool-row')).display),'none','Search/Close stays hidden behind unsaved editing actions');
     assert.deepEqual(errors,[]);
     console.log('PASS keyboard docks, staggered native viewport frames, covered detail backdrop, stable focus, retained Home, and conditional input scrolling');
   }finally{await browser.close();}

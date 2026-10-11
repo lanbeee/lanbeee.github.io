@@ -3,7 +3,7 @@
   top:0;
   z-index:45;
   overflow:visible;
-  /* Match section cards; editing actions replace the contents in place. */
+  /* Match the section cards below, while actions use a separate toolbar. */
   margin:0 0 6px;
   padding:8px;
   gap:8px;
@@ -78,7 +78,6 @@
 /* Readable defaults for everyday phone and desktop use. Smaller containers
    adapt the layout below rather than shrinking the whole type scale. */
 .detail-sheet{
-  --detail-action-height:44px;
   --detail-pane-pad:16px;
   --detail-pane-gap:10px;
   --detail-title-size:calc(13px * var(--font-scale));
@@ -228,8 +227,8 @@
 .detail-page-tab.on{background:var(--bg3);color:var(--text);}
 .detail-page-tab:active{transform:scale(0.96);}
 .detail-page-nav:has(.detail-dots[hidden]){display:none;}
-/* Only the pager/search results scroll. Browsing reserves footer space so
-   search cannot cover content when a keyboard reduces the height. */
+/* Only the pager/search results scroll. Footer space belongs to the layout,
+   so it cannot cover a field, including when a keyboard reduces the height. */
 body .detail-sheet{
   container:detail-shell / size;
   min-height:0;height:calc(100dvh - var(--keyboard-lift,0px));
@@ -239,28 +238,31 @@ body .detail-sheet{
 }
 body .detail-sheet > .detail-bottom-bar{
   flex:0 0 auto;align-self:center;min-width:0;max-width:100%;
-  margin:10px 0 0;padding:8px;border-radius:28px;width:min(100%,456px);
-  min-height:calc(var(--detail-action-height) + 16px);
+  margin:10px 0 0;padding:8px;border-radius:28px;
   background:var(--glass-bg);box-shadow:var(--floating-shadow);
   -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
 }
 body .detail-sheet > .detail-bottom-bar .detail-actions{
   position:static;inset:auto;transform:none;min-width:0;width:100%;margin:0;padding:0;
-  display:flex;align-items:center;gap:8px;min-height:var(--detail-action-height);
+  display:flex;align-items:center;gap:8px;
 }
-.detail-dock-space{display:none;}
-#detail-cool-row{justify-content:flex-end;}
-#detail-cool-row .detail-search-control{flex:1 1 auto;}
-/* The phone dock follows the existing native/PWA keyboard coordinates.
-   A dedicated slot below the scrolling content reserves its full footprint;
-   both the dock and slot disappear when editing moves actions to the header. */
+body .detail-sheet > .detail-bottom-bar .tune-actions{display:none;}
+body .detail-sheet.tune-dirty > .detail-bottom-bar #detail-cool-row{display:none;}
+body .detail-sheet.tune-dirty > .detail-bottom-bar .tune-actions{display:flex;}
+body .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(100%,320px);}
+/* Phone: the footer floats like Home's action bar — pages scroll behind it
+   instead of the layout reserving a footer band, and each scrolling page
+   carries its own end-of-list clearance so the lowest row can rise above the
+   pill instead of hiding beneath it. Desktop panes keep the in-flow footer.
+   The bar anchors to the fixed sheet wrap at the same offsets as the home
+   bottom-nav, so it tracks the keyboard lift exactly like Home's does. */
 body[data-pane-count="1"] .detail-sheet{
+  /* No footer band: like Home, scrolling content runs all the way behind the
+     pill; the pages' own end-of-list padding keeps the lowest row clear. */
   padding-bottom:0;
+  /* Size from one visible edge, rather than dvh minus a separately sampled
+     keyboard height. Native viewport metrics can arrive in either order. */
   height:min(100%,var(--keyboard-viewport-bottom,100dvh));max-height:100%;
-}
-body[data-pane-count="1"] .detail-dock-space{
-  display:block;flex:0 0 auto;
-  height:calc(var(--detail-action-height) + 26px + var(--nav-bottom) + var(--content-safe-bottom));
 }
 /* Locking Home's document scroll changes its sticky header's containing
    block. Reveal detail in the same frame, fully opaque, so cards beneath
@@ -268,7 +270,7 @@ body[data-pane-count="1"] .detail-dock-space{
 body[data-pane-count="1"] #detail-sheet{background:var(--bg);transition:none;}
 body[data-pane-count="1"] .detail-sheet > .detail-bottom-bar{
   position:absolute;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
-  transform:translate(-50%,-100%);margin:0;width:min(calc(100vw - 24px),456px);max-width:calc(100vw - 24px);z-index:160;
+  transform:translate(-50%,-100%);margin:0;width:max-content;max-width:calc(100vw - 24px);
   /* Follow the OS keyboard animation directly, like Home's dock. */
   transition:none;
 }
@@ -277,25 +279,40 @@ body[data-pane-count="1"] .detail-sheet.detail-search-open{--nav-bottom:0px;}
 body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{
   top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--keyboard-dock-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
 }
-/* Search and dismissal share one width and one 60px action slot. */
+/* At rest the bar is icon-only (loupe + close) exactly like Home's action
+   bar; the wide field exists only while search is open. */
 body[data-pane-count="1"] .detail-sheet:not(.detail-search-open) .detail-search-control{background:transparent;}
+body[data-pane-count="1"] #detail-search-toggle{flex:0 0 44px;width:44px;min-width:44px;padding:0;}
+body[data-pane-count="1"] #detail-search-toggle span{display:none;}
+/* Search open mirrors Home's expanded action bar: field across the width. */
+body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{width:calc(100vw - 24px);max-width:456px;}
+/* Save/Cancel are flex:1 1 0, whose max-content contribution is unreliable
+   for the shrink-wrapped pill — give the editing dock the explicit width the
+   in-flow rule uses (min(100%,320px), floater flavor). */
+body[data-pane-count="1"] .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(calc(100vw - 24px),320px);}
 body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
-  padding-bottom:var(--detail-pane-pad,16px);
+  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
+/* Stacked minimal pages share one scroll. Keep footer clearance on the last
+   section only so earlier cards don't carry a blank band. */
 body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
-  padding-bottom:var(--detail-pane-pad,16px);
+  padding-bottom:0;
+}
+body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page:last-child{
+  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
+}
+body[data-pane-count="1"] .detail-sheet > .detail-search-panel .detail-search-results{
+  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
 body .detail-bottom-bar .detail-head-btn{
   flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;
   aspect-ratio:1;border-radius:50%;padding:0;border:0;background:var(--bg3);
 }
 .detail-bottom-bar svg{flex-shrink:0;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
-body .detail-head .tune-actions .btn{
-  flex:1 1 0;min-width:0;height:var(--detail-action-height);min-height:44px;padding:6px 16px;border-radius:22px;
+body .detail-bottom-bar .btn{
+  flex:1 1 0;min-width:0;min-height:44px;padding:10px 20px;border-radius:22px;
   font-size:calc(14px * var(--font-scale));line-height:1.2;overflow-wrap:anywhere;
 }
-#detail-save:disabled{background:var(--bg3);color:var(--text3);opacity:.6;cursor:default;transform:none;}
-.detail-head .tune-actions .btn:focus-visible{outline:2px solid var(--text2);outline-offset:-3px;}
 .detail-search-control{display:flex;align-items:center;min-width:0;border-radius:24px;background:var(--field-bg);overflow:hidden;}
 #detail-search-toggle{
   display:flex;align-items:center;justify-content:center;gap:8px;min-width:44px;min-height:44px;
@@ -338,22 +355,20 @@ body .minimal-detail .detail-full-only{display:none !important;}
 .detail-search-result small{font-size:11px;color:var(--text2);}
 .detail-search-open > .detail-pager{display:none;}
 .detail-search-open > .detail-page-nav{display:none;}
+body .detail-sheet.detail-field-editing > .detail-page-nav,
+body .detail-sheet.detail-field-editing > .detail-bottom-bar #detail-cool-row{display:none;}
+/* With the search row gone (search pill + close X together) the floating
+   footer has nothing to show mid-edit — hide the whole pill unless the
+   Save/Cancel row (tune-dirty) owns it. */
+body .detail-sheet.detail-field-editing:not(.tune-dirty) > .detail-bottom-bar{display:none;}
+/* Typing changes the navigation/footer, while the header keeps its normal
+   geometry and contents throughout the keyboard transition. */
 .detail-search-hit{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px;}
 /* The home card's emoji geometry must not override detail's header columns. */
 body .detail-sheet > .detail-head{
   display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:8px;
-  padding:8px;margin-bottom:6px;min-width:0;min-height:calc(var(--detail-action-height) + 16px);
+  padding:8px;margin-bottom:6px;min-width:0;
 }
-/* Retain the header's natural height, including long titles, while swapping
-   its contents. No second action bar takes space from the editing pane. */
-.detail-head > .tune-actions{display:none;}
-body .detail-sheet:is(.tune-dirty,.detail-edit-session) > .detail-head > :not(.tune-actions){visibility:hidden;pointer-events:none;}
-body .detail-sheet:is(.tune-dirty,.detail-edit-session) > .detail-head::before{visibility:hidden;}
-body .detail-sheet:is(.tune-dirty,.detail-edit-session) > .detail-head > .tune-actions{
-  display:flex;position:absolute;inset:8px;transform:none;width:auto;align-items:center;gap:8px;margin:0;padding:0;min-width:0;
-}
-body .detail-sheet:is(.tune-dirty,.detail-edit-session) > :is(.detail-bottom-bar,.detail-dock-space){display:none;}
-body .detail-sheet:is(.tune-dirty,.detail-edit-session).detail-keyboard-open > .detail-page-nav{display:none;}
 body .detail-head > .detail-mark-wrap{grid-column:1;grid-row:1;width:56px;min-width:56px;height:56px;}
 body .detail-head .detail-mark{width:100%;min-width:0;height:100%;}
 .detail-head > .detail-title-wrap{grid-column:2;grid-row:1;}
@@ -425,20 +440,12 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 @container detail-shell (max-height:280px){
   .detail-page-tab span{display:none;}
   .detail-page-tab{min-height:44px;}
-  /* Viewport space, rather than field focus, determines compact navigation. */
-  .detail-page-nav{display:none;}
-  body[data-pane-count="1"] .detail-sheet > :is(.detail-bottom-bar,.detail-dock-space){--nav-bottom:0px;}
-}
-
-/* Enlarged labels can wrap; keep the header tall enough in both states. */
-@container detail-shell (max-width:260px){
-  .detail-sheet > .detail-head{
-    --detail-action-height:max(44px,calc(34px * var(--font-scale) + 12px));
+  /* A very short desktop/landscape pane uses the same floating footer as
+     phones, so Save/Cancel fits without removing the header. */
+  body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-bottom-bar{
+    position:absolute;left:50%;bottom:0;transform:translateX(-50%);margin:0;
   }
-  body .detail-head .tune-actions .btn{padding-inline:8px;}
-}
-/* A short pane at high zoom still needs room for at least one editable field. */
-@container detail-shell (max-width:260px) and (max-height:400px){
-  .detail-page-nav{display:none;}
-  body[data-pane-count="1"] .detail-sheet > :is(.detail-bottom-bar,.detail-dock-space){--nav-bottom:0px;}
+  body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-search-panel .detail-search-results{
+    padding-bottom:80px;
+  }
 }
