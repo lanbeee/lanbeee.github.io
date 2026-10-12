@@ -1165,9 +1165,9 @@ goal. These tracking types do not show session duration in the main flow.
 - A live summary reads “Aim for 3 times a week” or “Aim for 3 times every 10
   days”. Reduce reads “Keep it to … or less”.
 - Selecting a preset updates both inputs. Custom values clear the preset
-  selection. Numeric fields across the app replace their existing number when
-  typing starts after focus. Tapping without editing retains the value; a
-  second tap or arrow key lets you adjust the existing number instead.
+  selection. Numeric fields across the app clear immediately when tapped or focused,
+  ready for a new number without text selection. Leaving without typing
+  restores the previous value.
 - The stored target remains the interval `days / times`; no internal interval
   calculation is shown to users. Existing rhythm limits and scheduling apply.
 

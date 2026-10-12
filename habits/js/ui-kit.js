@@ -328,53 +328,27 @@ function mountUiKit(){
 
 mountUiKit();
 
-// Numeric fields start with replace-on-type, including dynamically mounted
-// settings. A tap without editing must not change a saved value. Number inputs
-// cannot expose a text selection, so beforeinput supplies the same behavior.
+// Numeric fields clear for editing without selecting text. An untouched edit
+// restores its previous value before field-specific blur validation runs.
 (()=>{
-  const replace = new WeakSet();
-  const firstTap = new WeakSet();
+  const previous = new WeakMap();
   const numeric = target => target instanceof HTMLInputElement
     && !target.disabled && !target.readOnly
     && target.autocomplete !== 'one-time-code'
     && (target.type === 'number' || ['numeric','decimal'].includes(target.inputMode));
-  const select = field => { if(field.type !== 'number')field.select(); };
-  document.addEventListener('pointerdown',event=>{
+  const clear = field => {
+    if(!numeric(field) || field.value === '')return;
+    previous.set(field,field.value);
+    field.value = '';
+  };
+  document.addEventListener('focusin',event=>clear(event.target));
+  document.addEventListener('click',event=>clear(event.target));
+  document.addEventListener('input',event=>previous.delete(event.target),true);
+  document.addEventListener('blur',event=>{
     const field = event.target;
-    if(!numeric(field))return;
-    if(document.activeElement === field){
-      replace.delete(field);
-      firstTap.delete(field);
-    }else firstTap.add(field);
+    if(previous.has(field)){
+      if(field.value === '')field.value = previous.get(field);
+      previous.delete(field);
+    }
   },true);
-  document.addEventListener('focusin',event=>{
-    const field = event.target;
-    if(!numeric(field))return;
-    replace.add(field);
-    select(field);
-  });
-  document.addEventListener('click',event=>{
-    const field = event.target;
-    if(!firstTap.has(field))return;
-    firstTap.delete(field);
-    if(document.activeElement === field && replace.has(field))select(field);
-  });
-  document.addEventListener('beforeinput',event=>{
-    const field = event.target;
-    if(!replace.has(field))return;
-    replace.delete(field);
-    if(!event.defaultPrevented && event.inputType.startsWith('insert') && !event.isComposing){
-      field.value = '';
-    }
-  });
-  document.addEventListener('input',event=>replace.delete(event.target));
-  document.addEventListener('keydown',event=>{
-    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Backspace','Delete'].includes(event.key)){
-      replace.delete(event.target);
-    }
-  });
-  document.addEventListener('focusout',event=>{
-    replace.delete(event.target);
-    firstTap.delete(event.target);
-  });
 })();

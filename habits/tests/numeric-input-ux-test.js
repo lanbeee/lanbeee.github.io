@@ -1,4 +1,4 @@
-// Real taps/keystrokes: replace initial numbers, retain untouched values and
+// Real taps/keystrokes: clear immediately, retain untouched values and
 // keep compact/log fields legible in both themes and narrow/wide layouts.
 const assert = require('node:assert/strict');
 const {chromium} = require('playwright');
@@ -42,7 +42,14 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         checked++;
       };
       await page.evaluate(()=>{applyAddDefaults();openSheet('add-sheet');});
-      await tap('#ting-times');await type('3');
+      await tap('#ting-times');
+      assert.equal(await page.locator('#ting-times').inputValue(),'','tap immediately clears the number');
+      assert.equal(await page.locator('#ting-times').evaluate(e=>e.selectionStart===e.selectionEnd),true,'no text selection');
+      await type('3');
+      await tap('#ting-times');
+      assert.equal(await page.locator('#ting-times').inputValue(),'','tapping an already focused number clears it too');
+      await page.locator('#ting-times').blur();
+      assert.equal(await page.locator('#ting-times').inputValue(),'3','leaving a retapped field restores its last number');
       assert.equal(await page.locator('#ting-times').inputValue(),'3','first tap replaces 1 rather than appending');
       await page.locator('#ting-times').blur();await tap('#ting-times');await type('6');
       assert.equal(await page.locator('#ting-times').inputValue(),'6','refocus replaces the edited number');
@@ -54,6 +61,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       await tap('#ting-duration');await type('60');
       assert.equal(await page.locator('#ting-duration').inputValue(),'60','number inputs replace too');
       await page.locator('#ting-duration').blur();await tap('#ting-duration');
+      assert.equal(await page.locator('#ting-duration').inputValue(),'','native number input clears immediately too');
       await page.locator('#ting-duration').blur();
       assert.equal(await page.locator('#ting-duration').inputValue(),'60','untouched focus retains number');
       for(const theme of ['light','dark']){
@@ -84,7 +92,9 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       assert.equal(await page.locator('#detail-duration').inputValue(),'90');
       await legible('#detail-duration');
       await page.locator('#detail-logging-disclosure > summary').click();
-      await tap('#detail-auto-mark');await page.locator('#detail-auto-mark').blur();
+      await tap('#detail-auto-mark');
+      assert.equal(await page.locator('#detail-auto-mark').inputValue(),'','optional number clears immediately');
+      await page.locator('#detail-auto-mark').blur();
       assert.equal(await page.locator('#detail-auto-mark').inputValue(),'12','viewing optional auto-completion does not clear it');
       await tap('#detail-timer-auto-stop');await page.locator('#detail-timer-auto-stop').blur();
       assert.equal(await page.locator('#detail-timer-auto-stop').inputValue(),'20','viewing session target retains it');
@@ -111,6 +121,10 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         resetSettingsSheetState();syncSettingsControls();openSheet('settings-sheet');
       });
       await page.locator('#settings-defaults-head').click();
+      await tap('#setting-default-times');
+      assert.equal(await page.locator('#setting-default-times').inputValue(),'','settings number clears immediately');
+      await page.locator('#setting-default-times').blur();
+      assert.equal(await page.locator('#setting-default-times').inputValue(),'1','untouched settings value is restored');
       await tap('#setting-default-times');await type('6');
       assert.equal(await page.locator('#setting-default-times').inputValue(),'6','settings fields share replacement behavior');
       await tap('#setting-default-days');await type('14');
@@ -132,6 +146,6 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       assert.deepEqual(errors,[]);
       await context.close();
     }
-    console.log(`PASS numeric replacement, untouched values, continued editing, decimal logging and ${checked} field layout checks`);
+    console.log(`PASS immediate numeric clearing without selection, untouched values, continued editing, decimal logging and ${checked} field layout checks`);
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
