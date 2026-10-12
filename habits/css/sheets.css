@@ -177,7 +177,7 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .add-content{
   padding:8px;
   background:var(--bg);
   border-radius:calc(var(--radius-sm) + 4px);
-  box-shadow:var(--floating-shadow);
+  box-shadow:none;
   z-index:1;
 }
 body[data-pane-count="2"] .add-sheet .add-actions,

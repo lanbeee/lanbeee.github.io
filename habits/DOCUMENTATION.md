@@ -1131,6 +1131,9 @@ The main flow is the same in regular and minimal mode:
 6. A short note that days, hours and other details can be adjusted after adding.
    The persistent footer says **add habit** or **add task**, with **cancel**.
 
+Controls follow the app’s flat surface styling: tonal fields and selected
+choices, spacing between optional groups, and a footer without elevation.
+
 ### 8.2 Field: Name 👤
 - Text input, max 60 characters; labelled “What would you like to do?”
 - Examples: “Read a book” for habits, “Book a dentist visit” for tasks.
