@@ -622,12 +622,10 @@ function bindRhythm(prefix){
   });
   field.addEventListener('focus',e=>{
     e.target.dataset.orig = e.target.value;
-    if(prefix === 'ting')e.target.select();
-    else e.target.value = '';
   });
   field.addEventListener('blur',e=>{
     const times = parseInt($(`${prefix}-times`)?.value,10) || 1;
-    syncRhythm(prefix,{times,days:e.target.value || (prefix === 'ting' ? e.target.dataset.orig : 7) || 7});
+    syncRhythm(prefix,{times,days:e.target.value || e.target.dataset.orig || 7});
   });
   if(!crown)return;
 
@@ -795,13 +793,12 @@ bindRhythm('detail');
   if(!times)return;
   times.addEventListener('focus',e=>{
     e.target.dataset.orig = e.target.value;
-    if(prefix === 'ting')e.target.select();
-    else e.target.value = '';
   });
   times.addEventListener('blur',()=>{
-    if(!times.value.trim())times.value = prefix === 'ting' ? times.dataset.orig || 1 : 1;
+    if(!times.value.trim())times.value = times.dataset.orig || 1;
   });
   times.addEventListener('input',()=>{
+    if(!times.value.trim())return;
     const days = parseInt($(`${prefix}-days`)?.value,10) || 7;
     const t = Math.max(1,Math.min(30,parseInt(times.value,10) || 1));
     times.value = t;
@@ -824,10 +821,6 @@ function bindCompactNumber(id,clamp,options={}){
   field.addEventListener('input',e=>{
     e.target.value = e.target.value.replace(/\D/g,'').slice(0,maxLength);
   });
-  field.addEventListener('focus',e=>{
-    e.target.dataset.was = e.target.value;
-    e.target.value = '';
-  });
   field.addEventListener('blur',e=>{
     e.target.value = clamp(e.target.value);
   });
@@ -839,10 +832,6 @@ function bindAutoMarkField(id,onDirty){
   field.addEventListener('input',e=>{
     e.target.value = e.target.value.replace(/\D/g,'').slice(0,4);
     if(onDirty)onDirty();
-  });
-  field.addEventListener('focus',e=>{
-    e.target.dataset.was = e.target.value;
-    e.target.value = '';
   });
   field.addEventListener('blur',e=>{
     const n = normalizeAutoMark(e.target.value);
@@ -863,10 +852,6 @@ function bindTimerAutoStopField(id,onDirty){
   field.addEventListener('input',e=>{
     e.target.value = e.target.value.replace(/\D/g,'').slice(0,3);
     if(onDirty)onDirty();
-  });
-  field.addEventListener('focus',e=>{
-    e.target.dataset.was = e.target.value;
-    e.target.value = '';
   });
   field.addEventListener('blur',e=>{
     const n = normalizeTimerAutoStop(e.target.value);

@@ -158,6 +158,44 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .ting-emoji-preview{background:var(--field-bg);}
 #ting-message{min-height:44px;}
 
+/* Numeric text must fit inside compact controls and stay readable while the
+   keyboard is open. Keep the value logger out of the tiny rhythm-box geometry. */
+:root input:is([type="number"],[inputmode="numeric"],[inputmode="decimal"]){
+  font-size:max(16px,calc(16px * var(--font-scale)));caret-color:var(--text);font-variant-numeric:tabular-nums;
+}
+input[type="number"]{appearance:textfield;-moz-appearance:textfield;}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.range-value input:is([type="text"],[type="number"]){font-size:max(16px,calc(16px * var(--font-scale)));height:26px;line-height:26px;}
+.timer-auto-stop-field input[type="text"]{flex:0 0 4ch;width:4ch;min-width:4ch;}
+.timer-auto-stop-label{white-space:normal;min-width:0;flex:1;}
+.snooze-hours-field input[type="number"]{min-height:44px;padding:8px 0;line-height:24px;}
+#settings-defaults-body .settings-range input[type="number"]{font-size:max(16px,calc(16px * var(--font-scale)));}
+.time-endpoint input.mini-time-input{font-size:max(16px,calc(16px * var(--font-scale)));}
+.day-availability input[type="number"]{padding:4px 8px;line-height:24px;}
+.travel-minute-field input[type="number"]{font-size:calc(28px * var(--font-scale));}
+.value-log-field{height:auto;min-height:48px;padding:0;}
+.value-log-field input[type="text"]{
+  flex:1;min-width:0;width:100%;height:48px;margin:0;padding:8px 12px;
+  font-size:calc(20px * var(--font-scale));line-height:1.4;text-align:center;
+}
+.value-log-field[aria-label="note"] input[type="text"]{
+  height:44px;font-size:max(16px,calc(16px * var(--font-scale)));line-height:1.4;text-align:left;
+}
+input:is([type="number"],[inputmode="numeric"],[inputmode="decimal"])::selection{
+  background:var(--text);color:var(--bg);
+}
+@media(max-width:520px){
+  .weather-rule{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px;}
+  .weather-rule .weather-bound-mode{grid-column:1/3;grid-row:2;}
+  .weather-rule .weather-min{grid-column:1;grid-row:3;}
+  .weather-rule .weather-max{grid-column:2;grid-row:3;}
+  .weather-rule [data-weather-rule-relative]{grid-column:1/3;grid-row:4;}
+  .weather-rule .weather-importance{grid-column:1/3;grid-row:5;}
+  .weather-rule .weather-hard{grid-column:3;grid-row:5;}
+  .weather-rule .mini-nav{grid-column:3;grid-row:1;}
+}
+
 /* ── Glass fallbacks ──────────────────────────────────────────────────────── */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   .bottom-nav{background:var(--bg);}

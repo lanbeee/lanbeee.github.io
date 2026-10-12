@@ -1165,7 +1165,9 @@ goal. These tracking types do not show session duration in the main flow.
 - A live summary reads “Aim for 3 times a week” or “Aim for 3 times every 10
   days”. Reduce reads “Keep it to … or less”.
 - Selecting a preset updates both inputs. Custom values clear the preset
-  selection. Focusing a field selects its text and retains its existing value.
+  selection. Numeric fields across the app replace their existing number when
+  typing starts after focus. Tapping without editing retains the value; a
+  second tap or arrow key lets you adjust the existing number instead.
 - The stored target remains the interval `days / times`; no internal interval
   calculation is shown to users. Existing rhythm limits and scheduling apply.
 
@@ -1694,6 +1696,7 @@ Tracks the currently active habit session:
 
 - **Access:** When a habit has `trackValue: true`, logging opens this sheet
 - Enter a numeric value (e.g. weight, reps, pages)
+- The value and note use full-width, readable fields, including with large text.
 - Optional note field (max 200 chars)
 - "Skip" logs without a value
 

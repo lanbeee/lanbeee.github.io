@@ -153,3 +153,4 @@ app-back-navigation-test.js	ui	once
 prayer-midnight-test.js	planner	once
 add-sheet-ux-test.js	ui	once
 add-sheet-scroll-test.js	ui	once
+numeric-input-ux-test.js	ui	once
