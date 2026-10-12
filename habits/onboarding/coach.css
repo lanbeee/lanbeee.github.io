@@ -209,6 +209,27 @@
   .tings-handoff-app img{width:64px;height:64px;border-radius:16px;}
   .tings-handoff-x{width:48px;height:48px;font-size:28px;}
 }
+/* Quick start keeps its phone prompts small. The add form reserves space for
+   the rail, so its fields and sticky Add button stay above the instructions. */
+@media (max-width:520px){
+  .tings-coach-root[data-mode="essentials"] .tings-coach-bubble{padding:10px 12px;border-radius:14px;}
+  .tings-coach-root[data-mode="essentials"] .tings-coach-head{margin-bottom:3px;}
+  .tings-coach-root[data-mode="essentials"] .tings-coach-title{font-size:16px;margin-bottom:4px;}
+  .tings-coach-root[data-mode="essentials"] .tings-coach-copy{font-size:13px;line-height:1.35;}
+  .tings-coach-root[data-mode="essentials"] .tings-coach-actions{margin-top:8px;}
+  .tings-coach-root[data-mode="essentials"] .tings-coach-action{min-height:40px;padding:7px 12px;}
+  .tings-coach-root[data-add-rail="true"] .tings-coach-hint{display:none;}
+  /* Typing needs the field and one next action, not a paragraph. Keep the
+     full explanation for the keyboard-closed state and screen readers. */
+  .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-copy{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);}
+  .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-head{position:absolute;top:3px;right:8px;margin:0;}
+  .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-progress{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);}
+  .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-title{font-size:16px;padding-right:100px;min-height:32px;display:flex;align-items:center;margin:0;}
+  .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-actions{margin-top:4px;}
+  .tings-coach-root[data-add-rail="true"] :is(.tings-coach-bubble,.tings-coach-spotlight){transition:none;}
+  .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-hint{display:none;}
+  #add-sheet .add-sheet[data-coach-space]{padding-bottom:var(--coach-space);}
+}
 @media (prefers-reduced-motion:reduce){
   .tings-coach-shade,.tings-coach-spotlight,.tings-coach-bubble{transition:none;}
   .tings-coach-progress i{transition:none;}

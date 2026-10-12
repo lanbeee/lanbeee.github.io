@@ -341,22 +341,27 @@ function setupSwipe(row){
   const card = row.querySelector('.ting-card');
   const leftActions = row.querySelector('.swipe-actions-left');
   const rightActions = row.querySelector('.swipe-actions-right');
+  row.style.setProperty('--swipe-corner-pad',`${SWIPE_CORNER_PAD}px`);
+  row.querySelectorAll('.swipe-action-strip').forEach(strip=>addScrollGuard(strip,'x'));
   let startX = 0,startY = 0,dx = 0,moved = false,touchId = null;
   let startedOpen = false;
   // Match CSS collapsed default so first paint never shows action chrome.
   if(leftActions){
     leftActions.style.width = '0';
     leftActions.style.pointerEvents = 'none';
+    leftActions.inert = true;
   }
   if(rightActions){
     rightActions.style.width = '0';
     rightActions.style.pointerEvents = 'none';
+    rightActions.inert = true;
   }
 
   // PURE: measure total swipe action width
   function revealWidth(actions){
     if(!actions)return 0;
-    return actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH;
+    return Math.min(actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH,
+      Math.max(0,row.clientWidth - 24));
   }
 
   // HYBRID: reset swipe DOM and clear state
@@ -367,11 +372,13 @@ function setupSwipe(row){
       leftActions.style.transition = WIDTH_TRANSITION;
       leftActions.style.width = '0';
       leftActions.style.pointerEvents = 'none';
+      leftActions.inert = true;
     }
     if(rightActions){
       rightActions.style.transition = WIDTH_TRANSITION;
       rightActions.style.width = '0';
       rightActions.style.pointerEvents = 'none';
+      rightActions.inert = true;
     }
     swipeOpenCard = null;
     delete row.dataset.swipeOpen;
@@ -383,6 +390,12 @@ function setupSwipe(row){
 
   row.addEventListener('touchstart',e=>{
     const t = e.changedTouches[0];
+    // Exposed buttons and their scroller own their touches. Native scrolling
+    // may send touchcancel; it must not reset the open card.
+    if(t.target.closest?.('.swipe-actions')){
+      touchId = null;
+      return;
+    }
     // Reorder and crown scrub are committed gestures. A long-press `hold` is
     // deliberately trackable here: pointerdown fires before touchstart on
     // phones, and horizontal movement upgrades that soft hold to swipe below.
@@ -474,6 +487,7 @@ function setupSwipe(row){
     if(inactiveActions){
       inactiveActions.style.width = '0';
       inactiveActions.style.pointerEvents = 'none';
+      inactiveActions.inert = true;
     }
   },{passive:false});
 
@@ -505,10 +519,14 @@ function setupSwipe(row){
       if(activeActions){
         activeActions.style.width = `${reveal + SWIPE_CORNER_PAD}px`;
         activeActions.style.pointerEvents = 'auto';
+        activeActions.inert = false;
+        const strip = activeActions.querySelector('.swipe-action-strip');
+        if(strip)strip.scrollLeft = 0;
       }
       if(inactiveActions){
         inactiveActions.style.width = '0';
         inactiveActions.style.pointerEvents = 'none';
+        inactiveActions.inert = true;
       }
       swipeOpenCard = card;
       row.dataset.swipeOpen = String(dir);
@@ -518,10 +536,12 @@ function setupSwipe(row){
       if(leftActions){
         leftActions.style.width = '0';
         leftActions.style.pointerEvents = 'none';
+        leftActions.inert = true;
       }
       if(rightActions){
         rightActions.style.width = '0';
         rightActions.style.pointerEvents = 'none';
+        rightActions.inert = true;
       }
       swipeOpenCard = null;
       delete row.dataset.swipeOpen;
@@ -530,7 +550,11 @@ function setupSwipe(row){
     touchId = null;
   });
 
-  row.addEventListener('touchcancel',resetSwipe,{passive:true});
+  row.addEventListener('touchcancel',()=>{
+    if(touchId === null)return;
+    resetSwipe();
+    touchId = null;
+  },{passive:true});
 }
 
 // HYBRID: close all open swipe rows
@@ -546,6 +570,7 @@ function closeAllSwipes(){
       actions.style.transition = WIDTH_TRANSITION;
       actions.style.width = '0';
       actions.style.pointerEvents = 'none';
+      actions.inert = true;
     });
     delete row.dataset.swipeOpen;
     if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
@@ -567,12 +592,6 @@ function setupCardTap(row,realIdx){
       }else{
         showToast(weatherInfo.dataset.weatherInfo || 'weather guidance');
       }
-      return;
-    }
-    const reminderOff = target && target.closest && target.closest('[data-action="reminders-off"]');
-    if(reminderOff){
-      const hid = load()[realIdx]?.hid;
-      if(hid && typeof nativeClearItemReminders === 'function')nativeClearItemReminders(`item:${hid}`);
       return;
     }
     if(typeof cardGestureBlocks === 'function' && cardGestureBlocks(row,'tap'))return;
@@ -1238,5 +1257,6 @@ function togglePin(i){
   if(save(data)){
     showToast(data[i].pinned ? 'pinned' : 'unpinned');
     render();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   }
 }

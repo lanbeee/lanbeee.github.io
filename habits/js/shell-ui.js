@@ -172,6 +172,9 @@ function doSnoozeUntil(i,until,label = ''){
   if(save(data)){
     showActionToast(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'show'});
     render();
+    // A snooze may leave the plan's clocks unchanged; still repaint its saved
+    // visibility and Show action from the mounted week immediately.
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   }
 }
 
@@ -187,6 +190,7 @@ function doUnsnooze(i){
     showActionToast(`Showing · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'hide'});
     if(typeof refreshOpenViews === 'function')refreshOpenViews();
     else render();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   }
 }
 

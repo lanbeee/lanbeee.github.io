@@ -83,7 +83,7 @@ Everything below is covered in this skeleton:
 
 ### ✅ All Gestures & Interactions
 - Tap, long press, swipe
-- All swipe actions (left: pin, keep, activity, timer; right: snooze, remove)
+- All swipe actions (finger right: session, plan, history, open/call, sample keep; finger left: snooze, pin, quiet, remove)
 - Minimal mode swipe restrictions
 - Keyboard shortcuts (search + single char typing)
 - Agenda drag handles
@@ -896,7 +896,8 @@ When `showPlansOnCards: true`:
 ### 5.15 Reminder mark 🔔 👤
 When `showRemindersOnCards` is on (default) and the installed Android app has a phone notification or ringing alarm for that item:
 - Bell (`ti-bell`) for notifications, ringing bell (`ti-bell-ringing`) for alarms
-- Tap or swipe **quiet** to turn that item’s phone reminders off
+- The mark shows reminder status; tapping it follows the normal card tap and opens the item
+- Swipe left and choose **quiet** to turn that item’s phone reminders off
 - Hidden on the PWA, where OS reminders are not delivered
 
 ### 5.16 About-to-drop clock ⏰ 👤
@@ -1987,27 +1988,32 @@ Toasts appear after:
   comes first (declined prompts fall back to the
   manual steps). The guide ends with a large close-this-tab / open-Tings
   visual — the browser page is not the app — where **Got it** ends the guide
-  and **Stay in this tab** escapes into the guided start without leaving the
+  and **Stay in this tab** escapes into the quick start without leaving the
   browser. A user already running the installed Android or standalone PWA app is offered
-  the guided start directly. About → **install app** replays the guide on
+  the quick start directly. About → **install app** replays the guide on
   demand. When Tings is already installed (standalone) and the app can detect
   that, About hides the install button. Android never offers the browser install tour, including on its first launch.
-- A fresh, empty install offers the **guided start** after first paint. It follows
+- A fresh, empty install offers the **quick start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
-- The guided start branches between a repeating habit and a one-off task. It
-  teaches how often a habit happens, or an optional task date, then covers
-  how long it takes, card logging, Home, and the calendar. After the card intro
-  it makes the user **log (or complete) the Ting they just created** with the
-  real pulse button — with an “I’ll log later” escape. If they added a habit,
-  the tour later also walks through **adding a task** and that task’s page.
-  Near the end it opens **samples** and almost makes them add **go for a walk**
-  (with a Not now escape). Then it has them tap the **Tings name** and points
-  at **settings**, plus help, samples, and privacy on that same page. The
-  replay refresher never changes data.
-- On the calendar, the tour has them tap a **past day** (see what was done,
-  log a missed day) and a **coming day** (plan something). Day sheets use the
-  same words: past days offer **Log a missed day**, future days offer **Plan
-  something**.
+- **Quick start** teaches only the essentials: add one habit or task, choose a
+  rhythm or optional deadline, estimate duration, use its card, and find Home
+  and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
+  it no longer requires a second item, a sample, or past/future calendar edits.
+  Logging the first item has an **I’ll log later** escape. Deeper calendar and
+  scheduling practice lives in the advanced coach chapters.
+- It has users tap the **Tings name → Settings**, then reveals **Display →
+  Minimal mode**. The toggle is optional: turn it on for fewer controls when
+  feeling overwhelmed, or finish with the current mode. Back returns to About;
+  Help on that page provides replay, advanced chapters, and written docs.
+- Phone prompts use shorter copy and compact spacing. While adding, a bottom
+  coach rail reserves space in the form layout, keeps the Add footer above it,
+  and scrolls the highlighted field into the remaining viewport. This responds
+  to keyboard and viewport resizing and removes the reserved space on exit.
+  While typing, the prompt collapses to its title and navigation; Next blurs
+  the edited field. Browser visual-viewport shrink and Android WebView resize
+  follow the same keyboard edge as the form, including transient Android metrics.
+- Past calendar days offer **Log a missed day**, future days offer **Plan
+  something**; the advanced calendar chapter explains these actions.
 - **Every step gates the whole experience.** Locked (required-action) steps
   intercept taps outside the highlighted control with an amber warning; guided
   (read-and-continue) steps block outside taps silently while the bubble’s
@@ -2031,8 +2037,8 @@ Toasts appear after:
 - The name step uses the visual viewport while the keyboard is open. Enter moves
   to the habit/task choice rather than saving early, and the keyboard is closed
   before teaching controls farther down the add sheet.
-- About → **guided start** replays a non-destructive refresher for an existing
-  user.
+- About → **quick start** replays a refresher for an existing user without changing saved items.
+  Minimal mode changes only if they choose to toggle it.
 - The **install guide** (first-run in a browser, or About → **install app**)
   quotes each platform's real controls, exactly as the browser labels them.
   Mobile cards render as a compact label rail docked to the edge the browser's
@@ -2072,7 +2078,7 @@ Toasts appear after:
   user picks a chapter in any
   order; finishing one marks it with a check on the menu, and completion is
   remembered per chapter. The first unfinished chapter is gently marked
-  **start here**, but it is never required. Chapters are **hands-on, like the guided start**:
+  **start here**, but it is never required. Chapters are **hands-on, like the quick start**:
   most steps lock to a real control and advance only when it is used (toggle,
   chip, add-option, relative anchor, tab, pill, day, export). Advanced Coach
   mounts a predictable temporary demo list so those controls exist, then
@@ -2090,7 +2096,7 @@ Toasts appear after:
 
 ### About and privacy 👤
 - Tapping the Tings wordmark opens **About**: a short intro, then grouped
-  destinations — **help** (guided start, advanced coach, help & docs) and
+  destinations — **help** (quick start, advanced coach, help & docs) and
   **this device** (install, hidden when already installed; samples; settings) —
   plus **send feedback** (hidden until `FEEDBACK_FORM_URL` is set; opens a
   Google Form in a new browser tab) and **privacy**. Help & docs is the written
@@ -2795,32 +2801,29 @@ keeps normal browser navigation.
 | Tap card | Detail | Opens the item immediately |
 | Tap pulse icon | Log | Log the habit or complete the task immediately |
 | Long Press | Reorder | Arms the agenda drag handle |
-| Swipe Left/Right | Actions row | Shows pin, snooze, delete |
+| Swipe Left/Right | Actions row | Quick access to sessions, plans, history, links, visibility, and reminders |
 
 ### 18.2 Swipe Actions 👤
-When you swipe a card left or right, the following action buttons appear:
+Directions describe the **finger's movement**, not the panel's position.
+Swiping reveals buttons; it never performs an action automatically.
 
-**Left Swipe Actions:**
+| Mode | Swipe right | Swipe left |
+|------|-------------|------------|
+| Regular | Session/Stop · Plan · History · Open/Call · Keep (samples) | Snooze/Show · Pin/Unpin · Quiet · Remove |
+| Minimal | Plan · History | Snooze/Show · Remove |
 
-| Icon | Action | Key | Condition | Description |
-|------|--------|-----|-----------|-------------|
-| 📌 | Pin/Unpin | `pin` | Non-minimal mode | Stays at top of lists |
-| 🧪✅ | Keep | `keep` | When `sample: true` | Confirms sample habit |
-| 🕒 | Activity | `activity` | Non-minimal mode | View log history |
-| ▶️/⏹️ | Session | `timer` | Non-minimal mode | Start/stop timer |
-
-**Right Swipe Actions:**
-
-| Icon | Action | Key | Condition | Description |
-|------|--------|-----|-----------|-------------|
-| 🌙 | Snooze | `snooze` | Non-minimal mode, not currently hidden | Hide until chosen time |
-| 🌙 | Show | `unsnooze` | Non-minimal mode, currently snoozed | Clear the snooze immediately |
-| 🗑️ | Remove | `nuke` | Always | Delete habit (with confirm) |
-
-**Minimal Mode Differences:**
-- Pin, snooze, activity buttons are **disabled**
-- Only `keep` (samples) and `remove` are available
-- Timer is also disabled in minimal mode
+- Regular has up to five actions per side; minimal has up to two. Inapplicable actions disappear without empty slots.
+- **Session/Stop** (`timer`) starts or stops the existing session timer. Stop remains available in minimal mode, replacing Plan or Keep while that item has a running session.
+- **Plan** (`plan`) opens this item's plan form with a date, optional time, and optional saved place. The initial date is the card's agenda day when today or later, otherwise today. Only today and future dates can be chosen. Opening or cancelling saves nothing; adding a plan has the normal undo. Stop habits and completed tasks have no Plan action.
+- **History** (`activity`) opens the existing recent activity and future plans sheet.
+- **Open/Call** (`open-link`) appears only in regular mode with a saved link and launches the starred primary link. Phone links say Call; other links say Open.
+- **Keep** (`keep`) appears for samples, after Open/Call in regular mode. In minimal mode it replaces Plan unless a running session needs Stop.
+- **Snooze/Show** (`snooze` / `unsnooze`) opens the snooze options or immediately clears an active snooze in either mode.
+- **Pin/Unpin** (`pin`) is regular-mode only.
+- **Quiet** (`reminders-off`) is regular-mode, Android-only, and appears only when the item has active reminders. One tap turns off its reminders, including date overrides, without completing it.
+- **Remove** (`nuke`) is last, using the existing removal and undo flow.
+- Share, Edit, and Log are absent from the swipe panels. Tap the card to edit or its icon to log.
+- Actions start at the outer edge on each side. On narrow screens, scroll the exposed strip to reach the remaining buttons; buttons retain their 68 px width.
 
 **Single taps:**
 - Tap a card to open detail; tap its pulse button to log immediately.
@@ -2848,6 +2851,12 @@ When you swipe a card left or right, the following action buttons appear:
 |----------|-------|-------------|
 | `SWIPE_THRESHOLD` | 60px | Minimum drag distance before reveal |
 | `SWIPE_ACTION_WIDTH` | 68px | Width of each action button |
+
+Card translation is capped at the row width minus 24px. The panel extends
+`SWIPE_CORNER_PAD` (20px) under the card corner, with a separate horizontal
+action scroller outside that covered area. Strip scrolling keeps the panel
+open and suppresses accidental clicks. Collapsed panels are inert so their
+buttons cannot receive keyboard focus.
 
 Habit, busy-time, and travel cards share `bindTap` in `js/tap.js` (WebKit `pointercancel` recovery after touch release, pan rejection, immediate native clicks). Do not add a per-card pointer binder; `openSheet` already ignores a trailing backdrop click on every sheet.
 
@@ -2950,7 +2959,7 @@ Same agenda logic, but simplified display:
 
 ### 20.3 Calendar Changes
 - No full month heatmap
-- No day-by-day planning
+- Calendar-based day-by-day planning stays in regular mode; the swipe Plan shortcut can choose a date in minimal mode
 - Week strip only
 
 ### 20.4 Detail Sheet Changes

@@ -74,7 +74,7 @@ async function launchBrowser(){
   assert(aboutBtns.guided && aboutBtns.advanced && aboutBtns.docs && aboutBtns.install, 'About shows tours, docs, and install');
   assert(aboutBtns.blocks === 0, 'About has no explainer cards; help/docs and privacy cover that');
   assert(aboutBtns.labels.join('|') === 'help|this device', 'About groups destinations as help and this device');
-  assert(aboutBtns.helpBtns.join('|') === 'guided start|advanced coach|help & docs', 'Help group is tours plus written docs');
+  assert(aboutBtns.helpBtns.join('|') === 'quick start|advanced coach|help & docs', 'Help group is tours plus written docs');
   assert(aboutBtns.deviceBtns.join('|') === 'install app|samples|settings', 'This-device group is install, samples, settings');
   assert(/private by default/i.test(aboutBtns.copy) && aboutBtns.copy.length < 120, 'Hero stays a short product line');
 

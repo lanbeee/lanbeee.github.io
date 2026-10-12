@@ -6,7 +6,6 @@ const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 const coachUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'planner=fast';
 const habitName = `Coach reading ${Date.now()}`;
-const taskName = `Coach call ${Date.now()}`;
 
 function assert(condition,message){
   if(!condition)throw new Error(message);
@@ -93,17 +92,143 @@ async function progressBar(page){
   });
 }
 
+// Check real hit targets and the full field/footer geometry, not just CSS sizes.
+async function checkAddLayout(page,selector,label){
+  await page.waitForTimeout(250);
+  const layout = await page.evaluate(sel=>{
+    const target = document.querySelector(sel);
+    const field = target.getBoundingClientRect();
+    const bubble = document.querySelector('.tings-coach-bubble').getBoundingClientRect();
+    const content = document.querySelector('.add-content').getBoundingClientRect();
+    const footer = document.querySelector('.add-actions').getBoundingClientRect();
+    const nativeResized=window.TingsNative?.isNative && window.TingsNative.platform === 'android';
+    const viewport = nativeResized ? {offsetTop:0,height:document.documentElement.clientHeight} : window.visualViewport;
+    const top = viewport?.offsetTop || 0;
+    const bottom = top + (viewport?.height || innerHeight);
+    const hit = document.elementFromPoint(field.left + field.width / 2,field.top + field.height / 2);
+    return {typing:document.getElementById('tings-coach').dataset.typing,bubbleHeight:bubble.height,clear:!rectOverlap(field,bubble),hit:hit === target || target.contains(hit),inside:field.top >= Math.max(top,content.top) - 1 && field.bottom <= Math.min(bottom,sel === '#do-save' ? bottom : content.bottom) + 1,footerClear:footer.bottom <= bubble.top - 4,bubbleInside:bubble.top >= top && bubble.bottom <= bottom,rail:document.getElementById('tings-coach').dataset.addRail};
+    function rectOverlap(a,b){return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;}
+  },selector);
+  if(label.includes('keyboard'))assert(layout.typing === 'true' && layout.bubbleHeight <= 130,`${label}: typing collapses the coach to at most 130px`);
+  assert(layout.rail === 'true' && layout.clear && layout.hit && layout.inside && layout.footerClear && layout.bubbleInside,`${label}: field and Add footer stay visible and tappable above the coach rail (${JSON.stringify(layout)})`);
+}
+
+async function phoneQuickStart(browser,width,height,task){
+  const page = await browser.newPage({viewport:{width,height},isMobile:true,hasTouch:true});
+  await page.addInitScript(()=>{window.Capacitor={isNativePlatform:()=>true};});
+  await page.goto(coachUrl,{waitUntil:'load'});
+  await primary(page,'eIntro','eAdd');
+  await page.locator('#open-add').click();
+  await stage(page,'eName');
+  await checkAddLayout(page,'#ting-message',`${width}×${height} name`);
+  await page.setViewportSize({width,height:360});
+  await checkAddLayout(page,'#ting-message',`${width}×360 keyboard`);
+  await page.locator('#ting-message').fill(task ? 'Quick start task' : 'Quick start habit');
+  await page.setViewportSize({width,height});
+  await primary(page,'eName','eKind');
+  await checkAddLayout(page,'#type-seg',`${width}×${height} kind`);
+  await page.locator(`#type-seg [data-v="${task ? 'task' : 'keepup'}"]`).click();
+  await stage(page,task ? 'eTask' : 'eRhythm');
+  await checkAddLayout(page,task ? '#ting-due-date' : '#add-frequency',`${width}×${height} ${task ? 'deadline' : 'rhythm'}`);
+  if(task)await page.locator('#ting-due-date').fill('2026-10-20');
+  await page.screenshot({path:`test-results/quick-start-${width}-${task ? 'task' : 'habit'}.png`});
+  await primary(page,task ? 'eTask' : 'eRhythm','eSave');
+  await checkAddLayout(page,'#do-save',`${width}×${height} save`);
+  await page.locator('#do-save').click();
+  await stage(page,'eDetailEffort');
+  assert(await page.locator('#add-sheet .add-sheet[data-coach-space]').count() === 0,'leaving the form removes coach layout space');
+  await primary(page,'eDetailEffort','eHomeCard');
+  await primary(page,'eHomeCard','eLog');
+  await page.locator('[data-coach-later]').click();
+  await primary(page,'eHomeGroups','eCalendar');
+  await page.locator('#open-overview').click();
+  await primary(page,'eOverview','eAbout');
+  await page.locator('#open-about').click();
+  await stage(page,'eAboutMenu');
+  await page.locator('#open-settings').click();
+  await stage(page,'eMinimal');
+  await page.locator('[data-coach-primary]').click();
+  assert(await page.evaluate(()=>!isMinimalMode() && load().length === 1),`${width}×${height} ${task ? 'task' : 'habit'} path finishes with one item and keeps Minimal mode optional`);
+  await page.close();
+}
+
+async function overlayKeyboardQuickStart(browser,width,height){
+  const page = await browser.newPage({viewport:{width,height},isMobile:true,hasTouch:true});
+  await page.addInitScript(({width,height})=>{
+    localStorage.setItem('tings_coach_install_v2','done');
+    const viewport = new EventTarget();
+    Object.assign(viewport,{height,width,offsetTop:0,offsetLeft:0,scale:1});
+    Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
+  },{width,height});
+  await page.goto(coachUrl,{waitUntil:'load'});
+  await primary(page,'eIntro','eAdd');
+  await page.locator('#open-add').click();
+  await stage(page,'eName');
+  await page.locator('#ting-message').fill('Keyboard habit');
+  for(const visible of [400,320,280]){
+    await page.evaluate(h=>{visualViewport.height=h;visualViewport.dispatchEvent(new Event('resize'));},visible);
+    await checkAddLayout(page,'#ting-message',`${width}×${visible} overlay keyboard name`);
+  }
+  await page.screenshot({path:`test-results/quick-start-${width}-keyboard.png`});
+  await primary(page,'eName','eKind');
+  assert(await page.evaluate(()=>document.activeElement.id !== 'ting-message'),'Continue dismisses the name keyboard');
+  await page.evaluate(h=>{visualViewport.height=h;visualViewport.dispatchEvent(new Event('resize'));},height);
+  await page.locator('#type-seg [data-v="keepup"]').click();
+  await stage(page,'eRhythm');
+  await page.locator('#ting-times').fill('3');
+  await page.evaluate(()=>{visualViewport.height=300;visualViewport.dispatchEvent(new Event('resize'));});
+  await checkAddLayout(page,'#target-slider-row',`${width}×300 overlay keyboard frequency`);
+  await primary(page,'eRhythm','eSave');
+  assert(await page.evaluate(()=>document.activeElement.id !== 'ting-times'),'Continue dismisses the frequency keyboard before Add');
+  await page.evaluate(()=>window.TingsCoach.stop());
+  assert(await page.locator('#add-sheet .add-sheet[data-coach-space]').count() === 0,'ending Quick start while adding removes its reserved space');
+  await page.close();
+}
+
+async function nativeKeyboardQuickStart(browser){
+  const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  await page.addInitScript(()=>{
+    window.Capacitor={isNativePlatform:()=>true};
+    const viewport=new EventTarget();
+    Object.assign(viewport,{height:844,width:390,offsetTop:0,offsetLeft:0,scale:1});
+    Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
+  });
+  await page.goto(coachUrl,{waitUntil:'load'});
+  await primary(page,'eIntro','eAdd');
+  await page.locator('#open-add').click();
+  await stage(page,'eName');
+  await page.locator('#ting-message').fill('Native keyboard habit');
+  await page.setViewportSize({width:390,height:420});
+  await page.evaluate(()=>{
+    window.TingsNative={isNative:true,platform:'android'};
+    visualViewport.height=160;
+    visualViewport.offsetTop=25;
+    updateKeyboardLift();
+    visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await checkAddLayout(page,'#ting-message','Android staggered keyboard viewport');
+  assert(await page.locator('.tings-coach-bubble').evaluate(el=>el.getBoundingClientRect().bottom > 390),'native coach follows the resized WebView without subtracting the keyboard twice');
+  await page.evaluate(()=>window.TingsCoach.stop());
+  await page.close();
+}
+
 (async()=>{
   const browser = await chromium.launch({headless:true});
   const nativePage = await browser.newPage({viewport:{width:390,height:844}});
   await nativePage.addInitScript(()=>{window.Capacitor={isNativePlatform:()=>true};});
   await nativePage.goto(coachUrl,{waitUntil:'load'});
   await stage(nativePage,'eIntro',3500);
-  assert(await nativePage.locator('#open-install-guide').isHidden(),'fresh Android launches hide the install guide and offer guided start');
+  assert(await nativePage.locator('#open-install-guide').isHidden(),'fresh Android launches hide the install guide and offer quick start');
   await nativePage.evaluate(async()=>{window.TingsCoach.stop();await startTingsCoach('install',{force:true});});
   await stage(nativePage,'eIntro');
-  assert(true,'explicit install-tour requests on Android also open guided start');
+  assert(true,'explicit install-tour requests on Android also open quick start');
   await nativePage.close();
+  await nativeKeyboardQuickStart(browser);
+  await overlayKeyboardQuickStart(browser,320,568);
+  await overlayKeyboardQuickStart(browser,390,844);
+  await phoneQuickStart(browser,320,568,false);
+  await phoneQuickStart(browser,360,640,true);
+  await phoneQuickStart(browser,390,844,false);
   const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const errors = [];
   page.on('pageerror',error=>errors.push(error.message));
@@ -131,7 +256,7 @@ async function progressBar(page){
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
   const essentialsBar = await progressBar(page);
-  assert(essentialsBar.now === 1 && essentialsBar.max === 28,'staying in the tab chains into the full essentials tour');
+  assert(essentialsBar.now === 1 && essentialsBar.max === 15,'staying in the tab chains into the full essentials tour');
 
   await primary(page,'eIntro','eAdd');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','required action steps lock interaction to the highlighted target');
@@ -145,7 +270,7 @@ async function progressBar(page){
     const kind = document.getElementById('type-seg').getBoundingClientRect();
     const atKind = document.elementFromPoint(kind.left + kind.width / 2,kind.top + kind.height / 2);
     const overlap = !(bubble.right <= input.left || bubble.left >= input.right || bubble.bottom <= input.top || bubble.top >= input.bottom);
-    return {bubbleBottom:bubble.bottom,viewport:window.visualViewport?.height || window.innerHeight,overlap,guarded:Boolean(atKind?.closest('[data-coach-guard]'))};
+    return {bubbleBottom:bubble.bottom,viewport:window.visualViewport?.height || window.innerHeight,overlap,guarded:!atKind || Boolean(atKind.closest('#tings-coach'))};
   });
   assert(keyboardLayout.bubbleBottom <= keyboardLayout.viewport + 1 && !keyboardLayout.overlap,'name guidance stays inside a keyboard-sized visual viewport without covering the input');
   assert(keyboardLayout.guarded,'controls outside the name step are shielded from accidental taps');
@@ -172,10 +297,9 @@ async function progressBar(page){
   await page.locator('#ting-days').fill('7');
   await primary(page,'eRhythm','eSave');
   await page.locator('#do-save').click();
-  await stage(page,'eDetailBasics',5000);
+  await stage(page,'eDetailEffort',5000);
   assert(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),'coach follows the saved Ting into its real detail screen');
 
-  await primary(page,'eDetailBasics','eDetailEffort');
   await primary(page,'eDetailEffort','eHomeCard');
   await primary(page,'eHomeCard','eLog');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','logging practice is a required action');
@@ -200,59 +324,33 @@ async function progressBar(page){
   await primary(page,'eHomeGroups','eCalendar');
   await page.locator('#open-overview').click();
   await stage(page,'eOverview');
-  await primary(page,'eOverview','eOverviewPast');
-  await tapCalDay(page,'past');
-  await stage(page,'eOverviewLog',5000);
-  await page.waitForSelector('#day-logs-log',{timeout:4000});
-  await tapInPage(page,'#day-logs-log');
-  await stage(page,'eOverviewMissed');
-  assert(/missed/i.test(await page.locator('#tings-coach-copy').textContent()),'past-day step teaches logging a missed day');
-  await tapInPage(page,'#day-log-entry-save');
-  await stage(page,'eOverviewFuture',5000);
-  await tapCalDay(page,'future');
-  await stage(page,'eOverviewPlan',5000);
-  await page.waitForSelector('#day-logs-plan',{timeout:4000});
-  await tapInPage(page,'#day-logs-plan');
-  await stage(page,'eAddTaskIntro');
-  await primary(page,'eAddTaskIntro','eAddTask');
-  await page.locator('#open-add').click();
-  await stage(page,'eTaskName');
-  assert(await page.evaluate(()=>document.querySelector('#type-seg [data-v="task"]')?.classList.contains('on')),'task follow-up selects task');
-  await page.locator('#ting-message').fill(taskName);
-  await primary(page,'eTaskName','eTask');
-  await primary(page,'eTask','eSaveTask');
-  await page.locator('#do-save').click();
-  await stage(page,'eTaskDetail',5000);
-  assert(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),'coach follows the new task into its detail screen');
-  await primary(page,'eTaskDetail','eSampleIntro');
-  await primary(page,'eSampleIntro','eSampleAdd');
-  await page.waitForSelector('#sample-habits-sheet.open');
-  const walkAdd = page.locator('#sample-habits-preview [data-add-sample="sample-starter-walk"]');
-  await walkAdd.scrollIntoViewIfNeeded();
-  await walkAdd.evaluate(el=>el.click());
-  await stage(page,'eAbout',5000);
+  await primary(page,'eOverview','eAbout');
   await tapInPage(page,'#open-about');
   await stage(page,'eAboutMenu');
-  assert(await page.locator('#about-sheet.open').count() === 1,'About opens so the tour can show settings');
-  assert(/settings/i.test(await page.locator('#tings-coach-copy').textContent()),'the last teaching step names settings');
-  assert(await page.locator('#open-settings').isVisible(),'settings is visible on About');
+  assert(await page.locator('#about-sheet.open').count() === 1,'About opens so Quick start can show settings');
+  assert((await page.locator('#start-essentials-coach').textContent()).trim() === 'quick start','Help uses the Quick start name');
+  await page.locator('#open-settings').click();
+  await stage(page,'eMinimal');
+  assert(await page.locator('#settings-sheet.open').count() === 1,'Quick start opens the real Settings page');
+  assert(/overwhelmed.*Minimal mode.*Tings → Settings → Display/.test(await page.locator('#tings-coach-copy').textContent()),'Quick start explains Minimal mode and how to find it again');
+  const minimalToggle = page.locator('[data-setting-toggle="minimalMode"]');
+  assert(await minimalToggle.isVisible(),'Minimal mode is revealed in Display');
+  await minimalToggle.click();
+  assert(await page.evaluate(()=>isMinimalMode()),'Minimal mode is optional and can be enabled during Quick start');
+  await page.locator('[data-coach-back]').click();
+  await stage(page,'eAboutMenu');
+  await page.locator('#open-settings').click();
+  await stage(page,'eMinimal');
   await page.locator('[data-coach-primary]').click();
-  assert(await page.locator('#tings-coach').count() === 0,'finishing guided start removes the coach');
-  const essentialState = await page.evaluate((names)=>{
+  assert(await page.locator('#tings-coach').count() === 0,'finishing Quick start removes the coach');
+  const essentialState = await page.evaluate(name=>{
     const data = JSON.parse(localStorage.getItem('tings_v2') || '[]');
-    const item = data.find(h=>h.name === names.habit);
-    const task = data.find(h=>h.name === names.task);
-    const walk = data.find(h=>h.hid === 'sample-starter-walk' || h.name === 'go for a walk');
-    return {
-      marker:localStorage.getItem('tings_coach_essentials_v2'),
-      target:item?.target,type:item?.type,logs:item?.logs?.length || 0,
-      taskType:task?.type,hasWalk:Boolean(walk)
-    };
-  },{habit:habitName,task:taskName});
-  assert(essentialState.marker === 'done' && essentialState.target === 7 / 3 && essentialState.type === 'keepup','guided start preserves the chosen habit rhythm and remembers completion');
+    const item = data.find(h=>h.name === name);
+    return {marker:localStorage.getItem('tings_coach_essentials_v2'),target:item?.target,type:item?.type,logs:item?.logs?.length || 0,count:data.length};
+  },habitName);
+  assert(essentialState.marker === 'done' && essentialState.target === 7 / 3 && essentialState.type === 'keepup','Quick start preserves the chosen rhythm and remembers completion');
   assert(essentialState.logs >= 1,'logging practice recorded a real log entry');
-  assert(essentialState.taskType === 'task','guided start then walks through adding a real task');
-  assert(essentialState.hasWalk,'guided start almost finishes by adding the go for a walk sample');
+  assert(essentialState.count === 1,'Quick start only requires one item, without a second task or sample');
 
   // Advanced coach: a chapter menu, not a serial march. Each chapter runs
   // standalone, checks itself off, and lands back on the menu. Minimal mode
@@ -373,7 +471,13 @@ async function progressBar(page){
   await primary(page,'aBusy','aWeather');
   // The settings body opens and scrolls on the next task so the spotlight does
   // not race the sheet's own layout. Assert after the real target is visible.
-  await page.waitForFunction(()=>document.querySelector('#tings-coach[data-coach-stage="aWeather"]')?.dataset.locked === 'true',null,{timeout:5000});
+  await page.waitForFunction(()=>{
+    const target=document.getElementById('weather-profile-add');
+    const rect=target?.getBoundingClientRect();
+    return document.querySelector('#tings-coach[data-coach-stage="aWeather"]')?.dataset.locked === 'true'
+      && rect?.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight
+      && document.elementFromPoint(rect.left + rect.width / 2,rect.top + rect.height / 2)?.closest('#weather-profile-add');
+  },null,{timeout:5000});
   assert(await page.locator('#tings-coach[data-coach-stage="aWeather"]').getAttribute('data-locked') === 'true','weather starts with a real add-profile action');
   await page.locator('#weather-profile-add').click();
   await stage(page,'aWeatherRule');
@@ -437,7 +541,7 @@ async function progressBar(page){
   assert(await page.locator('#tings-coach').count() === 0,'second skip tap ends the tour');
   assert(await page.evaluate(()=>localStorage.getItem('tings_coach_essentials_v2')) === 'skipped','skipping is recorded only after confirmation');
 
-  // Install guide from About: iconified steps, then the guided-start handover.
+  // Install guide from About: iconified steps, then the quick-start handover.
   await page.locator('#open-about').click();
   assert(await page.locator('#open-install-guide').isVisible(),'browser About still offers install app');
   await page.locator('#open-install-guide').click();
@@ -476,7 +580,7 @@ async function progressBar(page){
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
   const replayBar = await progressBar(page);
-  assert(replayBar.now === 1 && replayBar.max === 8,'staying in the tab chains into the guided start replay');
+  assert(replayBar.now === 1 && replayBar.max === 9,'staying in the tab chains into the quick start replay');
   await page.evaluate(()=>window.TingsCoach.stop());
 
   // Live gesture upgrade: Chrome often fires beforeinstallprompt a beat
@@ -497,7 +601,7 @@ async function progressBar(page){
   await page.evaluate(()=>window.TingsCoach.stop());
 
   // Already installed (standalone display mode): the first-run offer goes
-  // straight to the guided start, and About refuses a second install tour.
+  // straight to the quick start, and About refuses a second install tour.
   const savedStore = await page.evaluate(()=>localStorage.getItem('tings_v2'));
   await page.addInitScript(()=>{
     const original = window.matchMedia.bind(window);
@@ -513,7 +617,7 @@ async function progressBar(page){
   });
   await page.reload({waitUntil:'load'});
   await stage(page,'eIntro',3500);
-  assert(true,'standalone fresh users are offered the guided start directly, not the install guide');
+  assert(true,'standalone fresh users are offered the quick start directly, not the install guide');
   await page.evaluate(()=>window.TingsCoach.stop());
   await page.evaluate(data=>{localStorage.setItem('tings_v2',data);},savedStore);
   await page.locator('#open-about').click();
@@ -668,7 +772,7 @@ async function progressBar(page){
   await desk.evaluate(()=>window.startTingsCoach('essentials',{force:true}));
   await stage(desk,'eIntro');
   const deskReplayBar = await progressBar(desk);
-  assert(deskReplayBar.max === 7,'desktop guided start replay drops the calendar-open step from its count');
+  assert(deskReplayBar.max === 8,'desktop quick start replay drops the calendar-open step from its count');
   await primary(desk,'eIntro','eAddInfo');
   await primary(desk,'eAddInfo','eHomeCard');
   await primary(desk,'eHomeCard','eHomeGroups');

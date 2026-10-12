@@ -267,6 +267,14 @@ body.reach-pad #list{padding-top:220px;}
   transition:width var(--dur-med) var(--ease-tight),opacity var(--dur-fast) ease;
   will-change:width;
 }
+.swipe-row[data-swipe-open]{touch-action:auto;}
+.swipe-action-strip{
+  display:flex;flex:none;width:calc(100% - var(--swipe-corner-pad,20px));
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+  touch-action:pan-x;overscroll-behavior-x:contain;
+}
+.swipe-action-strip::-webkit-scrollbar{display:none;}
+.swipe-actions-right .swipe-action-strip{direction:rtl;}
 .swipe-actions-left{
   left:0;border-radius:var(--card-radius) 0 0 var(--card-radius);
   background:color-mix(in srgb,var(--teal-bg) 48%,var(--bg3));
@@ -286,11 +294,11 @@ body.reach-pad #list{padding-top:220px;}
   font-size:11px;font-weight:500;border:none;
   -webkit-tap-highlight-color:transparent;touch-action:manipulation;
   white-space:nowrap;
-  min-width:64px;
+  flex:0 0 68px;width:68px;min-width:68px;direction:ltr;
 }
 .swipe-action i{font-size:20px;}
 .swipe-action small{font-size:10px;font-weight:600;line-height:1;opacity:0.9;}
-.sa-plan,.sa-activity,.sa-keep{background:transparent;color:var(--teal-text);}
+.sa-plan,.sa-activity,.sa-keep,.sa-open{background:transparent;color:var(--teal-text);}
 .sa-pin{background:transparent;color:var(--purple-text);}
 .sa-reminder{background:transparent;color:var(--amber-text);}
 .sa-snooze{background:transparent;color:var(--text2);}

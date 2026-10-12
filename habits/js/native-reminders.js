@@ -237,7 +237,7 @@ function nativeReminderCardPill(h){
   if(!nativeReminderAnyOn(owner))return '';
   const alarm = nativeReminderUsesAlarm(owner);
   const label = alarm ? 'ringing alarm on' : 'notification on';
-  return `<button type="button" class="context-pill reminder-pill icon-only" data-action="reminders-off" aria-label="turn off ${label}" title="${label} — tap to turn off"><i class="ti ${alarm ? 'ti-bell-ringing' : 'ti-bell'}" aria-hidden="true"></i></button>`;
+  return `<span class="context-pill reminder-pill icon-only" aria-label="${label}" title="${label}"><i class="ti ${alarm ? 'ti-bell-ringing' : 'ti-bell'}" aria-hidden="true"></i></span>`;
 }
 function nativeClearItemReminders(owner){
   if(!owner)return;

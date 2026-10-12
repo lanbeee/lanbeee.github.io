@@ -7,6 +7,7 @@ bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   const h = load()[detailIdx];
   if(!h)return;
   const key = day.dataset.entryDay;
+  dayLogsPlanDateEditable = false;
   dayLogsKey = key;
   dayLogsScopeIndex = detailIdx;
   dayLogsStep = 'item';
@@ -189,7 +190,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=21';
+      stylesheet.href = './onboarding/coach.css?v=22';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -206,7 +207,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=37';
+    script.src = './onboarding/coach.js?v=38';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -239,7 +240,7 @@ $('start-advanced-coach')?.addEventListener('click',()=>{
 $('open-install-guide')?.addEventListener('click',()=>{
   if(window.Capacitor?.isNativePlatform?.())return; // button is hidden on native
   if(typeof isStandalonePwa === 'function' && isStandalonePwa()){
-    if(typeof showToast === 'function')showToast('already installed — the guided start button is right below');
+    if(typeof showToast === 'function')showToast('already installed — the quick start button is right below');
     return;
   }
   closeSheet('about-sheet');

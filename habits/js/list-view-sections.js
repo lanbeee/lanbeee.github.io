@@ -1690,7 +1690,7 @@ function render(opts){
       : sortSettings.showTrailOnCards !== false;
     const trail = showTrail ? cardTrail(h) : '';
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
-    const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
+    const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
     // so the user can see the session without opening detail.
     const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
@@ -1705,20 +1705,30 @@ function render(opts){
     const canTimer = typeof habitTimerEligible === 'function'
       ? habitTimerEligible(h)
       : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
-    const timerAction = (!minimal && (canTimer || timerRunning))
+    const timerAction = (timerRunning || (!minimal && canTimer))
       ? (timerRunning
         ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
     const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
-    const snoozeAction = minimal ? '' : (snoozed
+    const snoozeAction = (snoozed
       ? `<button class="swipe-action sa-snooze" data-action="unsnooze" aria-label="show"><i class="ti ti-moon-off" aria-hidden="true"></i>show</button>`
       : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`);
     const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
-    const activityAction = minimal ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
+    const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
+    const planAction = dayLogsHabitPlannable(h)
+      ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
+      : '';
+    const primaryLink = habitPrimaryLink(h);
+    const linkAction = !minimal && primaryLink
+      ? `<button class="swipe-action sa-open" data-action="open-link" aria-label="${primaryLink.kind === 'phone' ? 'call' : 'open'} ${escapeHtml(linkLabel(primaryLink))}"><i class="ti ${linkIconClass(primaryLink)}" aria-hidden="true"></i>${primaryLink.kind === 'phone' ? 'call' : 'open'}</button>`
+      : '';
+    const rightSwipeActions = minimal
+      ? `${timerRunning ? timerAction : (h.sample ? keepAction : planAction)}${activityAction}`
+      : `${timerAction}${planAction}${activityAction}${linkAction}${keepAction}`;
     const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
       && nativeReminderAnyOn(`item:${h.hid}`);
     const reminderAction = reminderOn
@@ -1755,15 +1765,15 @@ function render(opts){
     const hasSession = Boolean(sessionHtml) && !isBreakable;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
-        ${pinAction}
-        ${keepAction}
-        ${activityAction}
-        ${reminderAction}
-        ${timerAction}
+        <div class="swipe-action-strip" role="group" aria-label="session, planning and history">
+          ${rightSwipeActions}
+        </div>
       </div>
       <div class="swipe-actions swipe-actions-right">
-        ${snoozeAction}
-        <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
+        <div class="swipe-action-strip" role="group" aria-label="visibility and reminders">
+          ${snoozeAction}${pinAction}${reminderAction}
+          <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
+        </div>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
@@ -2209,11 +2219,20 @@ function render(opts){
   list.querySelectorAll('.swipe-action').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
-      const idx = +btn.closest('.swipe-row').dataset.realIdx;
+      if(isScrollGuarded(btn))return;
+      const row = btn.closest('.swipe-row');
+      const idx = +row.dataset.realIdx;
       closeAllSwipes();
+      if(btn.dataset.action === 'plan')openSwipePlan(idx,Number(row.dataset.dayBase));
+      if(btn.dataset.action === 'open-link'){
+        const link = habitPrimaryLink(load()[idx]);
+        if(link)openHabitLink(link);
+      }
       if(btn.dataset.action === 'pin')togglePin(idx);
       if(btn.dataset.action === 'keep'){
-        if(typeof keepSampleHabit === 'function')keepSampleHabit(idx);
+        if(typeof keepSampleHabit === 'function' && keepSampleHabit(idx)){
+          renderHomePresentationOnly();
+        }
       }
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);
