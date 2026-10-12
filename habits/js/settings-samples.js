@@ -50,9 +50,9 @@ function prayerSamplePreviews(){
     return key.charAt(0).toUpperCase() + key.slice(1);
   };
   return [
-    {key:'fajr', emoji:'🌅', tint:'indigo', blurb:'Until sunrise −10m'},
-    {key:'dhuhr', emoji:'☀️', tint:'amber', blurb:'Until Asr −15m'},
-    {key:'asr', emoji:'🌤️', tint:'cyan', blurb:'Until Maghrib −15m'},
+    {key:'fajr', emoji:'🌅', tint:'indigo', blurb:'Until sunrise −5m'},
+    {key:'dhuhr', emoji:'☀️', tint:'amber', blurb:'Until Asr'},
+    {key:'asr', emoji:'🌤️', tint:'cyan', blurb:'Until sunset −20m'},
     {key:'maghrib', emoji:'🌇', tint:'orange', blurb:'Until sunset +1h or Isha −15m'},
     {key:'isha', emoji:'🌙', tint:'purple', blurb:'Until Islamic midnight (sunset–Fajr midpoint)'}
   ].map(row=>({
@@ -334,10 +334,10 @@ function buildPrayerSamples(){
   };
   const rows = [
     // Start at the prayer's own time, end before the next prayer (Fajr stops
-    // 10m before sunrise; Maghrib ends at the earlier of sunset +1h or Isha −15m).
-    {key:'fajr', emoji:'🌅', tint:'indigo', start:['fajr',0], end:['sunrise',-10], endDay:0},
-    {key:'dhuhr', emoji:'☀️', tint:'amber', start:['dhuhr',0], end:['asr',-15], endDay:0},
-    {key:'asr', emoji:'🌤️', tint:'cyan', start:['asr',0], end:['maghrib',-15], endDay:0},
+    // 5m before sunrise; Maghrib ends at the earlier of sunset +1h or Isha −15m).
+    {key:'fajr', emoji:'🌅', tint:'indigo', start:['fajr',0], end:['sunrise',-5], endDay:0},
+    {key:'dhuhr', emoji:'☀️', tint:'amber', start:['dhuhr',0], end:['asr',0], endDay:0},
+    {key:'asr', emoji:'🌤️', tint:'cyan', start:['asr',0], end:['maghrib',-20], endDay:0},
     {key:'maghrib', emoji:'🌇', tint:'orange', start:['maghrib',0], end:['maghrib',60], end2:['isha',-15], endDay:0},
     {key:'isha', emoji:'🌙', tint:'purple', start:['isha',0], end:['midnight',0], endDay:0}
   ];

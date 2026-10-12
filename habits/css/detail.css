@@ -395,6 +395,9 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 .detail-sheet .detail-page .seg-opt{min-width:0;white-space:normal;overflow-wrap:anywhere;}
 .detail-sheet .detail-page .setting-toggle > span{min-width:0;}
 .detail-sheet .detail-page .setting-switch{flex-shrink:0;}
+/* Keep all seven weekday labels intact in either display mode. */
+.detail-sheet .schedule-chip-row{gap:4px;}
+.detail-sheet .schedule-chip-row .schedule-chip{min-width:0;padding-inline:2px;min-height:44px;white-space:nowrap;overflow-wrap:normal;}
 .detail-sheet .detail-time-endpoints .time-combine{width:min(160px,calc(100% - 21px));max-width:calc(100% - 21px);}
 @container (max-width:300px){
   .detail-page .planning-grid,.detail-page .timer-row{grid-template-columns:minmax(0,1fr) !important;}

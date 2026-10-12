@@ -99,7 +99,7 @@ const PRAYER_ANCHOR_LABELS = {
   asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha', midnight:'Islamic midnight'
 };
 const PRAYER_GENERIC_LABELS = {
-  fajr:'Dawn', sunrise:'Sunrise', dhuhr:'Noon',
+  fajr:'Dawn', sunrise:'Sunrise', dhuhr:'Solar noon',
   asr:'Afternoon', maghrib:'Sunset', isha:'Night', midnight:'Night midpoint'
 };
 // Calculation methods exposed in Settings. Keys mirror adhan.CalculationMethod

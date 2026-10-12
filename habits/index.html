@@ -123,22 +123,27 @@
 
   <!-- add sheet -->
   <div class="sheet-wrap" id="add-sheet">
-    <div class="sheet add-sheet">
+    <div class="sheet add-sheet" role="dialog" aria-modal="true" aria-labelledby="add-title">
       <div class="add-sheet-head">
-        <p class="sheet-title" id="add-title">new</p>
-        <div class="add-shortcuts add-full-only"><button type="button" class="mini-text-btn" id="add-open-defaults">defaults</button><button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">busy times</button></div>
+        <p class="sheet-title" id="add-title">new habit</p>
       </div>
+      <div class="seg add-kind-seg" id="type-seg" role="group" aria-label="What would you like to add?" aria-describedby="add-type-help">
+        <button type="button" class="seg-opt on" data-v="keepup" aria-pressed="true"><span>habit</span><small>something you repeat</small></button>
+        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task</span><small>something you do once</small></button>
+      </div>
+      <p class="field-hint" id="add-type-help" hidden>A habit repeats. A task is a one-off to-do.</p>
+      <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
-        <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="edit emoji"></button>
-        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="create with the local assistant">
+        <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="choose an icon (optional)" title="Choose an icon (optional)"></button>
+        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="create with the local assistant" title="Create from your description with the local assistant">
           <i class="ti ti-sparkles" aria-hidden="true"></i>
         </button>
       </div>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <label class="emoji-field">
           <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. An emoji like 🏃 or 📚 is suggested from the name. No match uses a neutral emoji. Scroll the row sideways to pick a common one — same as topics and places. Clear the field to use the default habit icon.</div></span></span>
+            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>An icon is suggested from the name. Pick another below, or clear the field to use the default icon.</div></span></span>
           <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
         <div class="generic-emoji-wrap">
@@ -148,70 +153,79 @@
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       </div>
-      <div class="seg" id="type-seg" aria-describedby="add-type-help">
-        <button class="seg-opt on" data-v="keepup">habit</button>
-        <button class="seg-opt" data-v="task">task</button>
-      </div>
-      <p class="field-hint" id="add-type-help">A task is one-off; a habit repeats.</p>
-      <p class="field-hint" id="target-help">How often — times in N days (e.g. 2× in 7d).</p>
-      <div class="range-row" id="target-slider-row">
-        <label class="range-value" aria-label="times in period">
-          <input type="text" id="ting-times" inputmode="numeric" maxlength="2" value="1" />
-          <span>×</span>
-        </label>
-        <span class="rhythm-in">in</span>
-        <label class="range-value" aria-label="day rhythm">
-          <input type="text" id="ting-days" inputmode="numeric" maxlength="3" value="7" />
-          <span>d</span>
-        </label>
-      </div>
-      <div class="plan-field-row" id="task-due-row" hidden>
-        <div class="plan-field-main">
-          <label class="plan-date-label" for="ting-due-date">due</label>
-          <input type="date" id="ting-due-date" class="plan-date-input" />
-          <input type="time" id="ting-due-time" class="plan-time-input" step="300" title="fixed start time; breakable allows pauses, Allowed times sets a hard end" />
+      <section class="add-frequency" id="add-frequency" aria-labelledby="add-frequency-label">
+        <p class="add-field-label" id="add-frequency-label">How often?</p>
+        <div class="add-presets" role="group" aria-label="Common frequencies">
+          <button type="button" data-add-rhythm="1,1" aria-pressed="false">daily</button>
+          <button type="button" data-add-rhythm="3,7" aria-pressed="false">3 times a week</button>
+          <button type="button" data-add-rhythm="1,7" aria-pressed="false">weekly</button>
         </div>
+        <div class="range-row" id="target-slider-row">
+          <label class="range-value"><input type="text" id="ting-times" aria-label="Number of times" aria-describedby="target-help" inputmode="numeric" maxlength="2" value="1" /><span>times</span></label>
+          <span class="rhythm-in">every</span>
+          <label class="range-value"><input type="text" id="ting-days" aria-label="Number of days" aria-describedby="target-help" inputmode="numeric" maxlength="3" value="7" /><span>days</span></label>
+        </div>
+        <p class="field-hint" id="target-help" aria-live="polite"></p>
+      </section>
+      <section class="add-task-date" id="task-due-row" aria-label="Task date" hidden>
+        <label class="add-field-label" for="ting-due-date">Due date <span class="field-optional">(optional)</span></label>
+        <input type="date" id="ting-due-date" class="plan-date-input" aria-describedby="task-due-hint" />
+        <div class="add-presets" role="group" aria-label="Choose a due date">
+          <button type="button" data-add-due="today" aria-pressed="false">today</button>
+          <button type="button" data-add-due="tomorrow" aria-pressed="false">tomorrow</button>
+          <button type="button" data-add-due="none" aria-pressed="false">no date</button>
+        </div>
+        <label class="add-field-label" for="ting-due-time">Fixed start <span class="field-optional">(optional)</span></label>
+        <input type="time" id="ting-due-time" class="plan-time-input" step="300" aria-describedby="task-due-hint" />
+        <p class="field-hint" id="task-due-hint" hidden></p>
+      </section>
+      <div class="planning-grid planning-grid-single add-effort" id="add-minimal-effort">
+        <div class="planning-field"><label for="ting-duration" id="add-duration-label">Time for each session</label><label class="range-value"><input type="number" id="ting-duration" min="1" max="720" inputmode="numeric" aria-labelledby="add-duration-label" /><span>min</span></label></div>
       </div>
-      <p class="field-hint" id="task-due-hint" hidden></p>
-
-      <div class="planning-grid planning-grid-single" id="add-minimal-effort" hidden></div>
-      <button type="button" class="minimal-mode-note" id="add-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
-
       <p class="add-conflict-note" id="add-conflict-note" role="status" aria-live="polite" hidden></p>
 
       <button type="button" class="add-more-toggle add-full-only" id="add-more-toggle" aria-expanded="false" aria-controls="add-more-options">
-        <span>more options</span>
+        <span>more options <small>planning, places &amp; completion</small></span>
         <i class="ti ti-chevron-down" aria-hidden="true"></i>
       </button>
       <div class="add-more-options add-full-only" id="add-more-options" hidden>
-        <div class="add-room-check">
-          <button type="button" class="mini-text-btn" id="add-check-room">check room</button>
-          <p class="field-hint" id="add-room-result" role="status" aria-live="polite" hidden></p>
-        </div>
+        <section class="add-option-group" aria-labelledby="add-planning-label">
+        <h3 id="add-planning-label">Planning</h3>
         <div class="priority-field">
           <span class="priority-label">priority <button type="button" class="info-btn" data-tip="ting-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
-          <div class="seg priority-seg" id="ting-priority-seg" data-ui-priority="add"></div>
+            <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>When time is limited, higher-priority items get time first. Someday items can wait.</div></span>
+          <div class="seg priority-seg" id="ting-priority-seg" role="group" aria-label="Priority" data-ui-priority="add"></div>
         </div>
-        <div class="planning-grid">
-          <div class="planning-field"><label for="ting-duration">duration</label><label class="range-value"><input type="number" id="ting-duration" min="1" max="720" inputmode="numeric" /><span>min</span></label></div>
-          <div class="planning-field"><label for="ting-completion-mode">completion</label><select class="mini-select" id="ting-completion-mode"><option value="manual">mark done myself</option><option value="duration">after duration</option><option value="minutes">after set minutes</option></select></div>
+        <button type="button" class="setting-toggle setting-switch compact-toggle" id="ting-breakable" aria-pressed="false"><span>split into shorter sessions</span><span class="switch-ui" aria-hidden="true"></span></button>
+        <div class="planning-field" id="ting-chunk-row" hidden><label for="ting-min-chunk">Shortest session</label><label class="range-value"><input type="number" id="ting-min-chunk" min="15" max="720" inputmode="numeric" aria-label="Shortest session in minutes" /><span>min</span></label></div>
+        <p class="field-hint" id="add-defaults-summary"></p>
+        <div class="add-room-check">
+          <button type="button" class="mini-text-btn" id="add-check-room">preview schedule</button>
+          <p class="field-hint">See how this fits with your next 7 days.</p>
+          <p class="field-hint" id="add-room-result" role="status" aria-live="polite" hidden></p>
+        </div>
+        </section>
+        <section class="add-option-group" aria-labelledby="add-completion-label">
+        <h3 id="add-completion-label">Completion</h3>
+        <div class="planning-grid planning-grid-single">
+          <div class="planning-field"><label for="ting-completion-mode">Mark done</label><select class="mini-select" id="ting-completion-mode"><option value="manual">mark done myself</option><option value="duration">automatically after the session</option><option value="minutes">automatically after a set time</option></select></div>
           <div class="planning-field" id="ting-auto-mark-row">
             <span>auto mark done <button type="button" class="info-btn" data-tip="ting-auto-mark-help" aria-label="about auto mark done"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and a planned or scheduled occurrence logs itself that long after its scheduled time. Manual sessions keep counting until you stop them.</div></span>
+              <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Choose how long after a scheduled start to mark this done automatically. Timers you start yourself keep running until you stop them.</div></span>
             <label class="range-value" aria-label="auto mark done minutes, blank = manual">
-              <input type="text" id="ting-auto-mark" inputmode="numeric" maxlength="5" placeholder="—" />
+              <input type="text" id="ting-auto-mark" aria-label="Minutes after the scheduled start" inputmode="numeric" maxlength="5" placeholder="—" />
               <span>min</span>
             </label>
           </div>
         </div>
-        <button type="button" class="setting-toggle setting-switch compact-toggle" id="ting-breakable" aria-pressed="false"><span>allow splitting</span><span class="switch-ui" aria-hidden="true"></span></button>
-        <div class="planning-field" id="ting-chunk-row" hidden><label for="ting-min-chunk">shortest session</label><label class="range-value"><input type="number" id="ting-min-chunk" min="15" max="720" inputmode="numeric" /><span>min</span></label></div>
-        <p class="field-hint" id="add-defaults-summary"></p>
-        <div class="add-topics-section" id="add-topics-section">
-          <span class="settings-sublabel">topics &amp; places</span>
+        <p class="field-hint" id="add-completion-hint">Mark it yourself when you finish.</p>
+        </section>
+        <section class="add-option-group add-topics-section" id="add-topics-section" aria-labelledby="add-places-label">
+          <h3 id="add-places-label">Topics &amp; places</h3>
+          <p class="field-hint">Group this item by topic and choose where it can happen.</p>
           <div class="topic-chip-row" id="ting-tag-chips"></div>
-        </div>
+        </section>
+        <details class="add-option-group add-weather-options"><summary>Weather <span class="field-optional">(optional)</span></summary>
         <label class="setting-toggle compact-toggle" id="ting-show-weather-row">
           <span>show weather</span>
           <button class="setting-switch" id="ting-show-weather" type="button" aria-pressed="false">
@@ -233,10 +247,16 @@
           <select id="ting-weather-location" class="settings-select"><option value="">home city</option></select>
           <p class="field-hint">Used only when the item can happen anywhere; a scheduled place uses its own forecast.</p>
         </div>
+        </details>
+        <div class="add-shortcuts">
+          <button type="button" class="mini-text-btn" id="add-open-defaults" title="Change the defaults for future habits or tasks">new item defaults</button>
+          <button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">manage busy times</button>
+        </div>
       </div>
-
+      <button type="button" class="minimal-mode-note" id="add-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
+      <p class="field-hint add-next-step">You can adjust days, hours and other details after adding.</p>
       <div class="btn-row add-actions">
-        <button class="btn primary" id="do-save">add</button>
+        <button class="btn primary" id="do-save">add habit</button>
         <button class="btn" id="do-cancel">cancel</button>
       </div>
     </div>

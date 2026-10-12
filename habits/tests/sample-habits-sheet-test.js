@@ -365,12 +365,17 @@ async function launchBrowser(){
       prayerNames: allPrayers.map(h => h.name),
       fajrName: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr')?.name,
       fajrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-fajr'),
+      dhuhrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-dhuhr'),
+      asrWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-asr'),
       ishaWindow: allPrayers.find(h => (h.hid || '') === 'sample-prayer-isha'),
       placeCount: (loadSortSettings().locations || []).filter(l => String(l.id || '').startsWith('sample-')).length
     };
   });
   console.log(afterPrayers);
   assert(afterPrayers.ishaWindow.allowedTimeEndAnchor === 'midnight' && afterPrayers.ishaWindow.allowedTimeEndDayOffset === 0 && afterPrayers.ishaWindow.allowedTimeEndOffsetMin === 0, 'Isha ends at the sunset–next-Fajr midpoint for its own night');
+  assert(afterPrayers.fajrWindow.allowedTimeEndAnchor === 'sunrise' && afterPrayers.fajrWindow.allowedTimeEndOffsetMin === -5, 'Fajr ends five minutes before sunrise');
+  assert(afterPrayers.dhuhrWindow.allowedTimeEndAnchor === 'asr' && afterPrayers.dhuhrWindow.allowedTimeEndOffsetMin === 0, 'Dhuhr ends at Asr');
+  assert(afterPrayers.asrWindow.allowedTimeEndAnchor === 'maghrib' && afterPrayers.asrWindow.allowedTimeEndOffsetMin === -20, 'Asr ends twenty minutes before sunset');
   assert(afterPrayers.totalPrayers === 5, 'five prayer habits total after add all');
   assert(afterPrayers.samplePrayerCount === 0, 'bulk prayers are regular habits, like individually added Fajr');
   assert(afterPrayers.featureCount === 3, 'bulk starter samples still present');

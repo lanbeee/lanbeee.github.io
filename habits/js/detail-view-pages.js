@@ -70,9 +70,13 @@ function applyDetailMinimalMode(){
   inner?.classList.toggle('minimal-detail',minimal);
   inner?.querySelectorAll('.detail-disclosure').forEach(el=>{
     if(minimal){
-      if(el.dataset.regularOpen === undefined)el.dataset.regularOpen = String(el.open);
-      // Keep the optional emoji picker behind its disclosure in minimal mode.
-      if(el.id !== 'detail-appearance-disclosure')el.open = true;
+      if(el.dataset.regularOpen === undefined){
+        el.dataset.regularOpen = String(el.open);
+        if(el.id === 'detail-availability-disclosure')el.open = false;
+      }
+      // Availability starts folded, then keeps the user's disclosure choice.
+      // Keep the optional emoji picker behind its disclosure too.
+      if(!['detail-appearance-disclosure','detail-availability-disclosure'].includes(el.id))el.open = true;
     }else if(el.dataset.regularOpen !== undefined){
       el.open = el.dataset.regularOpen === 'true';delete el.dataset.regularOpen;
     }

@@ -54,6 +54,23 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         assert.equal(await page.locator('.home-active-filter').count(),0);
       }
     }
+    for(const id of ['home-filter-sheet','calendar-filter-sheet']){
+      await page.evaluate(id=>{
+        homeTopicFilter='Personal development';homeLocationFilter='home';
+        overviewTopicFilter='Personal development';overviewLocationFilter='home';
+        if(id==='calendar-filter-sheet')renderOverview();
+        else renderHomeTagFilter(load());
+        openSheet(id);
+      },id);
+      const settings = page.locator('#'+id+' [data-filter-settings]');
+      assert.ok(await settings.isVisible(),'filters include a quiet Settings shortcut');
+      await settings.click();
+      assert.equal(await page.locator('#'+id).evaluate(el=>el.classList.contains('open')),false,'filter sheet closes before Settings');
+      assert.ok(await page.locator('#settings-sheet').evaluate(el=>el.classList.contains('open')),'the shortcut opens Settings');
+      await page.locator('#settings-close').click();
+      assert.deepEqual(await page.evaluate(()=>[homeTopicFilter,homeLocationFilter,overviewTopicFilter,overviewLocationFilter]),
+        ['Personal development','home','Personal development','home'],'Settings navigation retains selected filters');
+    }
     assert.deepEqual(errors,[]);
     console.log('PASS phone topic/place filter layout, reachable clear controls, and assistant spacing');
   }finally{await browser.close();}

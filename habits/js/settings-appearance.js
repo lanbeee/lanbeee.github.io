@@ -69,32 +69,13 @@ function applyAppearanceSettings(){
   applyAddMinimalMode();
 }
 
-// Visual-only: collapse add-sheet chrome (emoji bg, more options) in minimal mode.
-let minimalAddDurationHome = null;
+// Keep optional add controls out of minimal mode; duration stays in the main flow.
 function applyAddMinimalMode(){
   const minimal = isMinimalMode();
-  const sheet = $('add-sheet');
-  if(sheet)sheet.classList.toggle('minimal-add', minimal);
-  // Reuse the same duration control so switching modes preserves the draft.
-  const field = $('ting-duration')?.closest('.planning-field');
-  const slot = $('add-minimal-effort');
-  if(!minimalAddDurationHome && field){
-    minimalAddDurationHome = {parent:field.parentElement,next:field.nextElementSibling};
-  }
-  if(field && slot && minimalAddDurationHome){
-    if(minimal)slot.appendChild(field);
-    else{
-      const {parent,next} = minimalAddDurationHome;
-      if(next?.parentElement === parent)parent.insertBefore(field,next);
-      else parent.appendChild(field);
-    }
-    slot.hidden = !minimal;
-  }
+  $('add-sheet')?.classList.toggle('minimal-add',minimal);
   if(!minimal)return;
-  const body = $('add-more-options');
-  const toggle = $('add-more-toggle');
-  if(body)body.hidden = true;
-  if(toggle)toggle.setAttribute('aria-expanded','false');
+  $('add-more-options').hidden = true;
+  $('add-more-toggle').setAttribute('aria-expanded','false');
 }
 
 // ── Home city (general area for prayer, weather, etc.) ───────────────────

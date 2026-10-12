@@ -1118,85 +1118,84 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 ## VIII. THE NEW SHEET
 
 ### 8.1 Sheet Structure
-```
-┌─────────────────────────────────────┐
-│ new           [defaults] [busy times]│
-├─────────────────────────────────────┤
-│ [Input] Name     [Emoji] 🎯          │
-│ [Emoji picker: quick picks + colors]│
-│                                     │
-│ Type: [habit] [task]                │
-│ A task is one-off; a habit repeats. │
-│                                     │
-│ (habit) How often: [1] × in [7] d   │
-│ (task)  Due: [date] [time]          │
-│ ─────────────────────────────────   │
-│ [more options ▼]                    │
-│ ┌───────────────────────────────┐  │
-│ │ Priority: P0 P1 P2 P3 P4 P5   │  │
-│ │ Auto mark done: [ — ] min     │  │
-│ │ Topics & places               │  │
-│ └───────────────────────────────┘  │
-│                                     │
-│ [add] [cancel]                      │
-└─────────────────────────────────────┘
-```
+The main flow is the same in regular and minimal mode:
 
-### 8.2 Field: Habit Name 👤
-- Text input, max 60 characters
-- Auto-focus on open
-- `enterkeyhint="done"` for mobile keyboards
-- Autocapitalization: sentences
+1. **New habit / new task** heading and a type selector with short explanations:
+   “something you repeat” / “something you do once”.
+2. **What would you like to do?** Name with a suggested, optional icon.
+3. Habit: **How often?** Quick choices and editable frequency. Task: optional
+   due date and optional fixed start, with clearly labelled inputs.
+4. **Time for each session** (habit) or **Time needed** (task), in minutes.
+5. Regular mode: collapsed **More options**, described as “planning, places &
+   completion”. Minimal mode: the existing quiet Settings shortcut.
+6. A short note that days, hours and other details can be adjusted after adding.
+   The persistent footer says **add habit** or **add task**, with **cancel**.
+
+### 8.2 Field: Name 👤
+- Text input, max 60 characters; labelled “What would you like to do?”
+- Examples: “Read a book” for habits, “Book a dentist visit” for tasks.
+- Auto-focus on open; `enterkeyhint="done"` for mobile keyboards. Keyboard
+  Done/Enter finishes editing the name; the explicit Add action saves the item.
+- Autocapitalization: sentences.
 
 ### 8.3 Field: Emoji 👤
-- Optional, max 4 grapheme clusters
-- Default: 💡 (lightbulb) for habits
-- Emoji preview button next to name
-- One horizontally scrolling chip row of commonly used emojis (same interaction as topic/place chips)
-- Background color swatches: teal, amber, red, purple, blue, green
-- Info tooltip: "Optional. An emoji like 🏃 or 📚 is suggested from the name. No match uses a neutral emoji. Scroll the row sideways to pick a common one. Blank uses the default habit icon."
+- Optional, max 4 grapheme clusters; suggested from the name.
+- Preview button next to name, labelled “choose an icon (optional)”.
+- Opens one horizontally scrolling row of commonly used emojis and background
+  swatches (teal, amber, red, purple, blue, green).
+- Clearing the field uses the default icon.
 
 ### 8.4 Field: Type Selector 👤
-| Button | Type | Shows Rhythm | Shows Due Date |
-|--------|------|-------------|----------------|
-| habit | keepup | ✅ Yes (times × days) | ❌ No |
-| task | task | ❌ No | ✅ Yes (date + time) |
+| Button | Meaning | Main fields |
+|--------|---------|-------------|
+| habit | Something you repeat | Frequency and session duration |
+| task | Something you do once | Due date, fixed start and total duration |
 
-**Note:** reduce and zero types are NOT available in the add sheet. They are accessed by changing the "kind" in the detail sheet after creation. New users start with `keepup` as default.
+Switching types retains a separate in-flight draft for each kind. Reduce and
+zero types are available through Details and inherited defaults; reduce shows
+“How often at most?” and a limit summary, while zero explains its avoidance
+goal. These tracking types do not show session duration in the main flow.
 
-### 8.5 Field: Rhythm (Times × Days) 👤
-Visible when type = habit (keepup):
-```
-[1] × in [7] d
-```
-- Left input: Times per cycle (1-183)
-- Right input: Days per cycle (0.2-183)
-- Hint: "How often — times in N days (e.g. 2× in 7d, or 15× in 7d)."
-- Help text changes by type:
-  - keepup: "How often — times in N days."
-  - reduce: "Times in N days — e.g. 1× in 3d."
-  - zero: "Something to avoid. Log it each time it happens; the aim is longer gaps."
+### 8.5 Field: Frequency 👤
+- Quick choices: **daily**, **3 times a week**, **weekly**.
+- Editable sentence: `[3] times every [7] days`; units become singular for 1.
+- A live summary reads “Aim for 3 times a week” or “Aim for 3 times every 10
+  days”. Reduce reads “Keep it to … or less”.
+- Selecting a preset updates both inputs. Custom values clear the preset
+  selection. Focusing a field selects its text and retains its existing value.
+- The stored target remains the interval `days / times`; no internal interval
+  calculation is shown to users. Existing rhythm limits and scheduling apply.
 
-### 8.6 Field: Task Due Date 👤
-Visible when type = task:
-- **Date input:** Calendar picker (day-level)
-- **Time input:** Time picker. Tasks keep this fixed start even when breakable; breakable tasks may pause/resume. Duration is total time; Allowed times sets a hard end. Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
-- Hint: "fixed start time; breakable allows pauses, Allowed times sets a hard end"
-- Default time: Next clean hour
+### 8.6 Field: Task Date 👤
+- **Due date (optional)** with **today**, **tomorrow**, **no date** shortcuts.
+  Today's date is the initial task default; saved task defaults may override it.
+- **Fixed start (optional)** is separate and clearly labelled. Leaving it blank
+  lets Tings choose a start within the item's scheduling settings.
+- A fixed start keeps the appointment clock, including for split tasks. Duration
+  is total time; allowed hours may set a hard end. Five-minute picker steps.
+- Choosing no date clears the start time and disables the time picker until a
+  date is chosen. The task stays in the list until dated or finished.
 
 ### 8.7 More Options Fields 👤
+Optional fields are grouped and collapsed on fresh entry:
 
-| Field | UI Element | Default | Description |
-|-------|-----------|---------|-------------|
-| Priority | P0-P5 segmented control | P2 | P0 claims time first, P5 dropped first |
-| Auto Mark Done | Number input | — (manual) | Minutes before auto-complete |
-| Topics | Chip row | Inherits from defaults | Tags for filtering |
+| Group | Controls |
+|-------|----------|
+| Planning | Priority (critical, high, normal, flexible, low, someday); split into shorter sessions; shortest session; inherited days/hours summary; preview schedule |
+| Completion | Mark done myself, automatically after the session, or automatically after a set time; contextual explanation and minute input |
+| Topics & places | Topic and place chips, plus brief guidance |
+| Weather | Nested disclosure for forecast display and weather guidance |
+
+Priority labels map to the existing P0–P5 values. **New item defaults** and
+**manage busy times** links sit at the bottom of More options, away from the
+core creation fields. Opening Settings preserves the current draft and
+expanded disclosures; untouched draft fields receive changed defaults.
 
 ### 8.8 Buttons 👤
 | Button | Action |
 |--------|--------|
-| add | Creates the habit and closes sheet |
-| cancel | Discards changes and closes sheet |
+| add habit / add task | Saves once, then opens the item's schedule details for further adjustment |
+| cancel | Discards the draft and closes the sheet |
 
 ### 8.9 Room and overlap guidance 👤
 
@@ -1204,7 +1203,7 @@ Visible when type = task:
   note if it overlaps a busy time, calendar appointment, or timed day plan.
   The note follows duration changes, busy-time edits and overnight dates.
   A breakable task checks its first minimum session; later sessions can move.
-- **More options → check room** previews a habit or dated task against the
+- **More options → preview schedule** previews a habit or dated task against the
   next seven days using the selected planner. It reports the time found and
   warns if the task fits only partly or existing work may lose planned time.
   A preview is an estimate, rather than a guarantee that every recurring
@@ -1338,7 +1337,7 @@ time: | 9am | — | 9am | — | 9am | — |
 - End ≤ Start = overnight window (e.g., 1380→300 = 11pm-5am)
 
 #### Time Anchor Section
-- **Default wording:** General labels (Dawn, Sunrise, Noon, Afternoon, Sunset,
+- **Default wording:** General labels (Dawn, Sunrise, Solar noon, Afternoon, Sunset,
   Night, Night midpoint) appear in time pickers, previews, and samples. Settings → **relative
   times** → **use Islamic prayer names** opts into prayer labels, calculation
   settings. The optional Daily prayers sample section remains available at
@@ -1964,7 +1963,8 @@ Toasts appear after:
   saved samples remain until the user removes them.
 - The sun-based sleep section stays collapsed. **Daily prayers** is always
   available as a separate collapsed section at the bottom of Samples. Its
-  dynamic timing requires a home city. Isha ends at Adhan’s
+  dynamic timing requires a home city. Fajr ends 5 minutes before sunrise,
+  Dhuhr ends at Asr, and Asr ends 20 minutes before sunset. Isha ends at Adhan’s
   `SunnahTimes.middleOfTheNight`: halfway between sunset and the next Fajr,
   rather than a fixed 12am clock. **Add all prayers** creates
   regular habits with clean prayer names, just like adding them individually;
@@ -2115,6 +2115,7 @@ Card annotations use **simple**, **detailed**, or **custom**. Simple shows dates
 ### 12.1 Accessing Settings
 - Bottom nav: ⚙️ settings button
 - Or: About sheet → settings button
+- Home and calendar filter sheets have a subtle **app settings** shortcut beneath their actions
 - On wide screens: settings can open as a side pane
 
 ### 12.2 Settings Sections
@@ -2947,7 +2948,7 @@ Same agenda logic, but simplified display:
 - Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
 - Remaining panes stack into one scroll; section headers stay visible
 - The reserved action bar stays outside the scrolling fields
-- Allowed weekdays and time window stay visible alongside rhythm/deadline and duration
+- Allowed weekdays and time window live in **allowed days & hours**, folded by default; expanding it preserves the draft and stays expanded during the current visit
 - Month days, preferences, places, weather and link setup remain regular-mode options
 - A small regular-mode switch reveals all options without saving or discarding the draft
 - Action rows limited to remove: shared display, export to calendar, share
@@ -3136,7 +3137,7 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 #### New habit & task defaults 👤👨‍💻
 
-Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The **new** sheet includes small **defaults** and **busy times** pills in its header, and explains below the type selector: “A task is one-off; a habit repeats.” Defaults opens the profile for the selected kind. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
+Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The **new** sheet explains habit/task choices within the type selector. **More options** includes **new item defaults** and **manage busy times** links after the optional item fields. Defaults opens the profile for the selected kind. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
 
 Choose which kind opens first independently of the profile being edited. Habits support a rhythm of N times in M days. Tasks support a due-date policy of **today** (initial choice), **tomorrow**, or **no date / someday**; the date is resolved when creating the task rather than saved as a fixed calendar date. Both profiles include priority, duration, early/late scheduling allowance, splitting and shortest session, allowed weekdays/time/place, topics, and completion.
 

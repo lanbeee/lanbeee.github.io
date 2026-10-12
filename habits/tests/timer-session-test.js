@@ -667,8 +667,8 @@ function seedScript(){
     const tip = document.getElementById('ting-auto-mark-help')?.textContent || '';
     return {
       tip,
-      scheduled:/planned or scheduled occurrence/i.test(tip),
-      manual:/manual sessions keep counting until you stop/i.test(tip)
+      scheduled:/scheduled start/i.test(tip),
+      manual:/timers you start yourself keep running until you stop/i.test(tip)
     };
   });
   console.log(f5);

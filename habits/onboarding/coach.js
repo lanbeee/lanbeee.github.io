@@ -354,8 +354,8 @@
     };
     if(stage === 'eRhythm')return {
       progress:p,title:'How often?',
-      copy:'How many times, over how many days — say, 3 times in 7 days. A rough guess is fine; you can change it later.',
-      target:['#target-slider-row'],action:'Continue',next:'eSave',back:'eKind',locked:true
+      copy:'Choose daily, weekly, or a few times a week. You can also enter your own frequency. A rough goal is fine; you can change it later.',
+      target:['#add-frequency'],action:'Continue',next:'eSave',back:'eKind',locked:true
     };
     if(stage === 'eTask')return {
       progress:p,title:'Add a date only if you need one',

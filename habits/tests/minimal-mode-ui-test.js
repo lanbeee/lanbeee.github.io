@@ -24,7 +24,11 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       priority:1,earlyWindowDays:2,delayAllowanceDays:1,
       links:[{kind:'web',value:'https://example.com'}]
     }));
-    assert.ok(await page.locator('#detail-weekday-chips').isVisible());
+    assert.equal(await page.locator('#detail-availability-disclosure').getAttribute('open'),null,'availability starts folded even with saved limits');
+    assert.equal(await page.locator('#detail-weekday-chips').isVisible(),false);
+    await page.locator('#detail-availability-disclosure > summary').click();
+    await page.evaluate(()=>applyAppearanceSettings());
+    assert.ok(await page.locator('#detail-weekday-chips').isVisible(),'appearance refresh preserves the expanded section');
     assert.ok(await page.locator('#detail-time-start').isVisible());
     assert.ok(await page.locator('#detail-duration').isVisible());
     for(const id of ['detail-monthday-toggle','detail-schedule-view-seg','detail-place-chips','detail-link-add','detail-priority-seg']){
@@ -52,7 +56,9 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     assert.ok(await page.locator('#detail-save').isEnabled());
     assert.ok(await page.locator('#detail-schedule-view-seg').isVisible(),'leaving Settings stays on Details');
     await page.evaluate(()=>{setScheduleView('preferred');setMinimalMode(true);});
-    assert.ok(await page.locator('#detail-weekday-chips').isVisible(),'Preferred cannot conceal basic availability');
+    assert.equal(await page.locator('#detail-availability-disclosure').getAttribute('open'),null,'entering minimal mode folds availability');
+    await page.locator('#detail-availability-disclosure > summary').click();
+    assert.ok(await page.locator('#detail-weekday-chips').isVisible(),'expanding shows allowed hours rather than Preferred');
     assert.deepEqual(await page.evaluate(()=>currentDetailTune()),tune,'switching back retains advanced policy');
     await page.locator('#detail-save').click();
     const saved = await page.evaluate(()=>load()[0]);
@@ -79,7 +85,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.locator('#settings-close').click();
     assert.ok(await page.locator('#add-more-toggle').isVisible(),'regular Add chrome returns after Settings');
     await page.locator('#add-more-toggle').click();
-    assert.ok(await page.locator('#ting-duration').isVisible(),'duration returns to More options');
+    assert.ok(await page.locator('#ting-duration').isVisible(),'duration remains in the main flow');
     await page.evaluate(()=>setMinimalMode(true));
     assert.deepEqual(await page.evaluate(()=>readAddRecord()),draft);
     assert.ok(await page.locator('#ting-duration').isVisible());

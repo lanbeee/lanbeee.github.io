@@ -126,6 +126,10 @@ function readAddProfile(){
 function syncAddEffortUi(){
   $('ting-auto-mark-row').hidden = $('ting-completion-mode').value !== 'minutes';
   $('ting-chunk-row').hidden = $('ting-breakable').getAttribute('aria-pressed') !== 'true';
+  const mode = $('ting-completion-mode').value;
+  $('add-completion-hint').textContent = mode === 'manual' ? 'Mark it yourself when you finish.'
+    : mode === 'duration' ? 'Scheduled sessions are marked done automatically when their time is up.'
+    : 'Marked done automatically this many minutes after the scheduled start.';
 }
 
 function applyAddProfile(profile){
@@ -138,14 +142,18 @@ function applyAddProfile(profile){
   $('ting-breakable').setAttribute('aria-pressed',String(profile.breakable));
   $('ting-completion-mode').value = profile.autoMarkMode;
   $('ting-auto-mark').value = profile.autoMarkMinutes ?? '';
-  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(btn=>btn.classList.toggle('on',Number(btn.dataset.priority) === profile.priority));
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(btn=>{
+    const selected = Number(btn.dataset.priority) === profile.priority;
+    btn.classList.toggle('on',selected);
+    btn.setAttribute('aria-pressed',String(selected));
+  });
   renderTagChips('ting-tag-chips',profile.topics,profile.locationIds,null,profile.locationPrefs,profile.anywhereAllowed);
   const days = profile.defaults.allowedWeekdays;
   const dayText = days.length ? days.map(day=>WEEKDAY_LABELS[day]).join(', ') : 'any day';
   const start = profile.defaults.allowedTimeStart;
   const end = profile.defaults.allowedTimeEnd;
   const timeText = start === null && end === null ? 'any time' : `${start === null ? 'start of day' : minutesToTimeInput(start)}–${end === null ? 'end of day' : minutesToTimeInput(end)}`;
-  $('add-defaults-summary').textContent = `Schedule: ${dayText} · ${timeText}. Early ${profile.defaults.earlyWindowDays}d · late ${profile.defaults.delayAllowanceDays}d. Change these in defaults or in details after saving.`;
+  $('add-defaults-summary').textContent = `Schedule defaults: ${dayText} · ${timeText}. Adjust days and hours after adding, or change new item defaults below.`;
   syncAddEffortUi();
   syncAddTypeUi(selectedType);
   if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
@@ -179,6 +187,7 @@ function applyAddDefaults(){
   $('add-topics-section').hidden = false;
   $('add-more-options').hidden = true;
   $('add-more-toggle').setAttribute('aria-expanded','false');
+  document.querySelector('.add-weather-options').open = false;
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
   if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
 }

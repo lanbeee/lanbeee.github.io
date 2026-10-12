@@ -151,3 +151,4 @@ time-window-ux-test.js	ui	once
 
 app-back-navigation-test.js	ui	once
 prayer-midnight-test.js	planner	once
+add-sheet-ux-test.js	ui	once

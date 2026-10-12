@@ -48,7 +48,7 @@ function stopAddRoomCheck(){
     _addRoomRun = null;
   }
   $('add-check-room').disabled = false;
-  $('add-check-room').textContent = 'check room';
+  $('add-check-room').textContent = 'preview schedule';
 }
 
 function showAddRoomResult(text,tone = ''){

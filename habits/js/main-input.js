@@ -972,6 +972,12 @@ $('home-filter-done')?.addEventListener('click',()=>closeSheet('home-filter-shee
 $('home-filter-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeSheet('home-filter-sheet');
 });
+document.querySelectorAll('[data-filter-settings]').forEach(button=>{
+  button.addEventListener('click',()=>{
+    closeSheet(button.closest('.sheet-wrap').id);
+    $('open-settings').click();
+  });
+});
 $('presence-picker-chips')?.addEventListener('click',async e=>{
   const gps = e.target.closest('[data-presence-gps]');
   if(gps){

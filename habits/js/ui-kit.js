@@ -8,7 +8,8 @@ function uiToggleHtml({key, title, hint, extraClass = '', pressed = false}){
 
 function uiPrioritySegHtml(markDefault){
   const def = Number.isFinite(DEFAULT_PRIORITY) ? DEFAULT_PRIORITY : 2;
-  return PRIORITY_LABELS.map((label,i)=>`<button class="seg-opt${markDefault && i === def ? ' on' : ''}" data-priority="${i}">${label}</button>`).join('');
+  const labels = markDefault ? ['critical','high','normal','flexible','low','someday'] : PRIORITY_LABELS;
+  return labels.map((label,i)=>`<button type="button" class="seg-opt${markDefault && i === def ? ' on' : ''}" data-priority="${i}"${markDefault ? ` aria-pressed="${i === def}"` : ''}>${label}</button>`).join('');
 }
 
 function uiCalendarLegendHtml(items, extraClass, id){
@@ -27,7 +28,7 @@ function uiLeaveBtnHtml({id, aria, body}){
 
 function uiFilterSheetHtml({wrapId, extraClass, titleId, title, summaryId, closeId, closeAria, groupsId, resetId, doneId}){
   const sheetCls = extraClass ? ` ${extraClass}` : '';
-  return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Choose a place or topic.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div></div></div>`;
+  return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Choose a place or topic.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div><button type="button" class="filter-settings-link" data-filter-settings><i class="ti ti-settings" aria-hidden="true"></i><span>app settings</span></button></div></div>`;
 }
 
 // PURE: plain-language word for an offset direction. The button keeps
