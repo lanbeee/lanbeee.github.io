@@ -36,20 +36,56 @@
 }
 .reminder-dismiss i{font-size:16px;}
 .reminder-dismiss:active{background:var(--bg3);}
-/* add-sheet progressive disclosure: priority/hard-deadline/scheduled-time/topics
-   stay collapsed until asked for, so a first habit only shows what it needs */
-.add-more-toggle{
-  display:flex;align-items:center;justify-content:center;gap:6px;
-  width:100%;margin:0 0 14px;padding:10px 0;
-  background:transparent;border:0;border-top:0.5px solid var(--border);
-  color:var(--text2);font:inherit;font-size:12.5px;font-weight:650;
-  cursor:pointer;-webkit-tap-highlight-color:transparent;
-}
+/* New item: a short main flow with optional controls grouped below it. */
+.add-sheet .add-field-label{display:block;margin:0 0 8px;color:var(--text);font-size:13px;font-weight:650;line-height:1.4;}
+.add-sheet .add-kind-seg{margin:0 0 20px;}
+.add-kind-seg .seg-opt{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:62px;padding:10px 6px;}
+.add-kind-seg .seg-opt small{white-space:normal;font-size:11.5px;font-weight:400;line-height:1.35;}
+.add-sheet .name-icon-row{margin-bottom:8px;align-items:center;}
+.add-sheet .name-icon-row input,.add-sheet .name-icon-row button{margin-bottom:0;}
+.add-sheet .ting-emoji-edit{margin-top:12px;}
+.add-frequency,.add-task-date{margin:18px 0;}
+.add-presets{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;}
+.add-presets button{border:0;border-radius:999px;background:var(--field-bg);color:var(--text2);font:inherit;font-size:12px;min-height:44px;padding:7px 10px;cursor:pointer;}
+.add-presets button[aria-pressed="true"]{background:var(--teal-bg);color:var(--teal-text);font-weight:650;}
+.add-presets button:active{opacity:0.82;}
+.add-sheet .range-row{flex-wrap:wrap;gap:8px;margin:0 0 8px;}
+.add-frequency .range-value{width:auto;min-width:90px;min-height:44px;gap:5px;padding:0 10px;}
+.add-sheet .field-hint{line-height:1.5;margin:6px 0 10px;}
+.add-sheet .add-effort{margin:18px 0;}
+.add-effort .planning-field{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.add-effort .planning-field > label:first-child{color:var(--text);font-size:13px;font-weight:650;}
+.add-sheet .add-effort .range-value{width:90px;min-width:90px;min-height:44px;gap:5px;background:var(--field-bg);}
+.add-task-date .plan-date-input,.add-task-date .plan-time-input{width:100%;max-width:100%;height:44px;min-width:0;margin:0 0 10px;}
+.add-task-date .plan-time-input:disabled{opacity:0.5;}
+.add-more-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin:0;padding:14px 0;background:transparent;border:0;color:var(--text2);font:inherit;font-size:13px;font-weight:650;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.add-more-toggle small{display:block;margin-top:3px;font-size:11.5px;font-weight:400;line-height:1.4;color:var(--text3);}
 .add-more-toggle:active{color:var(--text);}
-.add-more-toggle i{font-size:13px;transition:transform var(--dur-fast) ease;}
+.add-more-toggle i{font-size:14px;transition:transform var(--dur-fast) ease;}
 .add-more-toggle[aria-expanded="true"] i{transform:rotate(180deg);}
 .add-more-options[hidden]{display:none;}
-.add-more-options{margin:-4px 0 4px;}
+.add-more-options{margin:0 0 8px;}
+.add-option-group{padding:16px 0;}
+.add-option-group h3,.add-option-group > summary{margin:0 0 12px;color:var(--text);font-size:13px;font-weight:650;line-height:1.4;}
+.add-option-group > summary{min-height:44px;margin:0;cursor:pointer;}
+.add-option-group[open] > summary{margin-bottom:10px;}
+.add-sheet #ting-priority-seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));}
+.add-sheet #ting-priority-seg .seg-opt{min-height:44px;padding:8px 4px;white-space:normal;}
+.add-sheet #ting-priority-seg .seg-opt.on{box-shadow:none;}
+.add-sheet .planning-field .mini-select{max-width:100%;width:100%;min-height:44px;white-space:normal;}
+.add-sheet .planning-field{min-width:0;}
+/* The switch track supplies its surface; the button needs no browser frame. */
+.add-sheet button.setting-switch:not(.setting-toggle){appearance:none;border:0;background:transparent;padding:0;box-shadow:none;}
+.add-sheet #ting-chunk-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;}
+.add-sheet #ting-chunk-row[hidden]{display:none;}
+.add-conflict-note{margin:0 0 14px;color:var(--amber-text);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere;}
+.add-room-check{margin:14px 0 0;}
+.add-room-check .field-hint{margin:4px 0 0;overflow-wrap:anywhere;}
+.add-room-check .field-hint[data-tone="warning"]{color:var(--amber-text);}
+.add-sheet .add-shortcuts{display:flex;flex-wrap:wrap;gap:6px 12px;margin:6px 0 0;}
+.add-sheet .add-shortcuts .mini-text-btn{background:none;padding:8px 0;min-height:44px;text-decoration:underline;text-underline-offset:3px;font-size:12px;color:var(--text3);}
+.add-sheet .add-next-step{margin:8px 0 4px;font-size:11.5px;}
+.add-sheet :is(.add-presets button,.add-more-toggle,.ting-emoji-preview,.mini-text-btn,.seg-opt):focus-visible{outline:2px solid var(--text2);outline-offset:2px;}
 /* task due-date + scheduled-time rows (add sheet + detail schedule) */
 .plan-field-row{
   display:flex;align-items:center;gap:10px;margin:-2px 0 16px;
@@ -167,3 +203,5 @@
   grid-template-columns:1fr 1fr;
 }
 
+
+.native-card-reminders{margin-top:12px;}

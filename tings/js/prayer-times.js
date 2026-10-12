@@ -134,6 +134,7 @@ function habitPrayerLocation(h, settings, contextLocId){
 // A day's worth of habit reads is dozens of hasTimeWindow/fillTimeWindow
 // calls; without this each one would recompute sun position. The cache is
 // tiny (one entry per active day — usually 1, at most ~3 around midnight).
+let _prayerMidpoints = new WeakMap(); // PrayerTimes → Adhan's sunset–next-dawn midpoint
 let _prayerCache = new Map();  // key → {times, method, madhab}
 
 // IMPURE: cache read/put. `date` is a Date for the day to resolve (time-of-day
@@ -169,16 +170,29 @@ function prayerTimesFor(coords, date, params){
 // every cached computation.
 function clearPrayerTimesCache(){
   _prayerCache.clear();
+  _prayerMidpoints = new WeakMap();
 }
 
-// PURE: resolve an anchor + offset to milliseconds-since-midnight for a given
+// IMPURE: resolve an anchor + offset to a timestamp, caching night midpoints for a given
 // PrayerTimes instance. Returns null when the anchor is unknown or adhan
 // failed. Result is unbounded: an offset can push the moment past 24h or
 // below 0, and callers handle wrap (overnight) at their layer.
 function anchorMs(times, anchor, offsetMin){
   if(!times || !cleanPrayerAnchor(anchor))return null;
   const a = cleanPrayerAnchor(anchor);
-  const t = a === 'fajr' ? times.fajr
+  let midpoint = null;
+  if(a === 'midnight'){
+    if(!_prayerMidpoints.has(times)){
+      try{
+        _prayerMidpoints.set(times, new adhan.SunnahTimes(times).middleOfTheNight);
+      }catch(_){
+        _prayerMidpoints.set(times, null);
+      }
+    }
+    midpoint = _prayerMidpoints.get(times);
+  }
+  const t = a === 'midnight' ? midpoint
+    : a === 'fajr' ? times.fajr
     : a === 'sunrise' ? times.sunrise
     : a === 'dhuhr' ? times.dhuhr
     : a === 'asr' ? times.asr

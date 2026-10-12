@@ -446,23 +446,22 @@ function restoreHabitTimer(){
     toast:false
   });
 }
-function bindScrollSafeTap(btn,handler){
+// WIRE: timer toggle in the detail sheet. Uses tap.js scroll snapshots, but
+// does not recover pointercancel — a pager swipe that starts on the button
+// must not start a session.
+function bindDetailTimerTap(btn,handler){
   if(!btn)return;
   let ptr = null;
   btn.addEventListener('pointerdown',e=>{
     if(e.button !== 0 && e.pointerType === 'mouse')return;
-    const scrollHost = btn.closest('.sheet');
-    const pager = btn.closest('.detail-pager');
+    const extra = [btn.closest('.sheet'), btn.closest('.detail-pager')].filter(Boolean);
     ptr = {
       id:e.pointerId,
       x:e.clientX,
       y:e.clientY,
       maxMove:0,
-      scrollHost,
-      scrollTop:scrollHost ? scrollHost.scrollTop : 0,
-      pager,
-      pagerScrollLeft:pager ? pager.scrollLeft : 0,
-      time:Date.now()
+      time:Date.now(),
+      scrollers:typeof tapScrollerSnapshot === 'function' ? tapScrollerSnapshot(btn, extra) : []
     };
   },{passive:true});
   btn.addEventListener('pointermove',e=>{
@@ -475,9 +474,8 @@ function bindScrollSafeTap(btn,handler){
     const tap = ptr;
     ptr = null;
     const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
-    const scrolled = tap.scrollHost ? Math.abs(tap.scrollHost.scrollTop - tap.scrollTop) : 0;
-    const pagerScrolled = tap.pager ? Math.abs(tap.pager.scrollLeft - tap.pagerScrollLeft) : 0;
-    if(moved > 6 || scrolled > 1 || pagerScrolled > 1 || Date.now() - tap.time > 650)return;
+    if(moved > 6 || Date.now() - tap.time > 650)return;
+    if(typeof tapScrollersMoved === 'function' && tapScrollersMoved(tap.scrollers))return;
     handler(e);
   };
   btn.addEventListener('pointerup',finish,{passive:true});
@@ -495,7 +493,7 @@ window.startHabitTimer = startHabitTimer;
 window.clearHabitTimerSilent = clearHabitTimerSilent;
 window.syncTimerAfterExternalCompletion = syncTimerAfterExternalCompletion;
 window.restoreHabitTimer = restoreHabitTimer;
-bindScrollSafeTap($('detail-timer-toggle'),()=>{
+bindDetailTimerTap($('detail-timer-toggle'),()=>{
   if(detailIdx === null)return;
   if(habitTimer && habitTimer.idx === detailIdx){
     stopHabitTimer(true,true); // manual stop → confirm before logging
@@ -633,7 +631,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     const key = logDayBtn.dataset.logDay || dayLogsKey;
     if(Number.isNaN(idx) || !key || !dayLogsCanLog(key))return;
     const ts = new Date(`${key}T12:00:00`).getTime();
-    if(!logTingAt(idx,ts))return;
+    if(!logTingAt(idx,ts,{toastContext:'calendar'}))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();
@@ -690,7 +688,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     const h = load()[idx];
     if(!h || !dayLogsHabitLoggable(h))return;
     const ts = dayLogsEntryTimestamp(dayLogsKey,$('day-log-entry-time')?.value || '');
-    if(!Number.isFinite(ts) || !logTingAt(idx,ts))return;
+    if(!Number.isFinite(ts) || !logTingAt(idx,ts,{toastContext:'calendar'}))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();
@@ -743,7 +741,7 @@ $('day-logs-sheet').addEventListener('click',e=>{
     const h = load()[idx];
     if(!h || !dayLogsHabitPlannable(h))return;
     const locationId = $('day-log-location')?.value || '';
-    if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false,locationId}))return;
+    if(!planTingOnDay(idx,dayLogsKey,$('day-log-time')?.value || '',{openAction:false,locationId,toastContext:'calendar'}))return;
     if(dayLogsScoped())setDayLogsStep('item',dayLogsScopeIndex);
     else setDayLogsStep('list');
     refreshOpenViews();
@@ -852,18 +850,35 @@ $('day-capacity-sheet').addEventListener('click',e=>{
 $('slipped-close').addEventListener('click',()=>closeSheet('slipped-sheet'));
 $('slipped-sheet').addEventListener('click',e=>{
   if(e.target !== e.currentTarget)return;
-  if(typeof sheetBackdropArmed === 'function' && sheetBackdropArmed('slipped-sheet'))return;
   closeSheet('slipped-sheet');
 });
 
 $('free-time-close').addEventListener('click',()=>closeSheet('free-time-sheet'));
 $('free-time-sheet').addEventListener('click',e=>{
   if(e.target !== e.currentTarget)return;
-  if(typeof sheetBackdropArmed === 'function' && sheetBackdropArmed('free-time-sheet'))return;
   closeSheet('free-time-sheet');
 });
 
 $('action-undo').addEventListener('click',executeUndo);
+$('toast-close').addEventListener('click',hideToast);
+$('action-close').addEventListener('click',hideActionToast);
+$('action-link').addEventListener('click',()=>{
+  const link = actionToastLink(pendingAction);
+  if(link)openHabitLink(link);
+});
+// Keep actions available while a keyboard user is focused inside the toast.
+for(const id of ['toast','action-toast']){
+  const toast = $(id);
+  toast.addEventListener('focusin',event=>{
+    if(event.target.matches(':focus-visible'))clearTimeout(id === 'toast' ? toastTimer : actionToastTimer);
+  });
+  toast.addEventListener('focusout',event=>{
+    if(!toast.classList.contains('show') || toast.contains(event.relatedTarget))return;
+    clearTimeout(id === 'toast' ? toastTimer : actionToastTimer);
+    if(id === 'toast')toastTimer = setTimeout(hideToast,Number(toast.dataset.durationMs));
+    else actionToastTimer = setTimeout(hideActionToast,7200);
+  });
+}
 $('action-open')?.addEventListener('click',()=>{
   if(!canOpenFromAction(pendingAction))return;
   const idx = pendingAction.idx;

@@ -291,12 +291,12 @@ function habitScheduleOptionTimePairHtml(){
   return `<div class="habit-option-time-window time-endpoints detail-time-endpoints">
     ${uiTimeEndpointHtml({
       field:'start',inputId:`detail-habit-option-${key}-start`,prefix:'specific start',
-      endpointLabel:'starts',fixedClass:'habit-option-start'
+      endpointLabel:'from',fixedClass:'habit-option-start'
     })}
     <span class="time-sep">–</span>
     ${uiTimeEndpointHtml({
       field:'end',inputId:`detail-habit-option-${key}-end`,prefix:'specific end',
-      endpointLabel:'ends',fixedClass:'habit-option-end'
+      endpointLabel:'until',fixedClass:'habit-option-end'
     })}
   </div>`;
 }
@@ -640,13 +640,13 @@ function populateAnchorOptions(){
   const prayerOpts = PRAYER_ANCHORS.map(a => `<option value="${a}">${prayerDisplayName(a)}</option>`).join('');
   document.querySelectorAll('.time-endpoint .time-anchor').forEach(sel => {
     if(sel.dataset.populated === '1')return;
-    sel.innerHTML = '<option value="">— anchor —</option>'
+    sel.innerHTML = '<option value="">— choose an event —</option>'
       + prayerOpts;
     sel.dataset.populated = '1';
   });
   document.querySelectorAll('.time-endpoint .time-anchor2').forEach(sel => {
     if(sel.dataset.populated === '1')return;
-    sel.innerHTML = '<option value="">— anchor —</option>'
+    sel.innerHTML = '<option value="">— choose an event —</option>'
       + prayerOpts
       + '<option value="fixed">clock time…</option>';
     sel.dataset.populated = '1';
@@ -707,7 +707,7 @@ function syncExprControls(endpoint, field, h, which = ''){
     dayBtn.hidden = !anchor || anchor === 'habit' || isFixed;
   }
   if(expr && which === '2'){
-    expr.querySelectorAll('.time-offset2, .time-offset-sign-btn, .time-offset-unit').forEach(el => {
+    expr.querySelectorAll('.time-offset2, .time-offset-sign-btn, .time-offset-unit, .time-adjust-label').forEach(el => {
       el.hidden = isFixed;
     });
   }
@@ -772,6 +772,8 @@ function renderTimeEndpoint(endpoint, field, h){
   // data — the generated markup always starts with "clock" on, so an
   // endpoint saved as relative must re-sync here or the pill lies.
   syncTimeModeWord(endpoint);
+  const advanced = endpoint.querySelector('.time-advanced');
+  if(advanced)advanced.open = Boolean(h[field + 'Combine'] || h[field + 'DayOffset']);
   updateTimeResolved(endpoint, field, h);
 }
 
@@ -780,8 +782,12 @@ function renderTimeEndpoint(endpoint, field, h){
 // path will block, but the preview explains why). For 'habit' anchors, shows
 // contextual hints: "pick a habit", "never logged", "done · waiting".
 function updateTimeResolved(endpoint, field, h){
+  syncTimeRuleSummary(endpoint);
   const node = endpoint && endpoint.querySelector('.time-resolved');
   if(!node)return;
+  node.dataset.dayLabel = '';
+  const city = endpoint.querySelector('.time-set-city');
+  if(city)city.hidden = true;
   const anchor = cleanAnchor(h && h[field + 'Anchor']);
   if(!anchor){ node.textContent = ''; return; }
   if(anchor === 'habit'){
@@ -802,6 +808,7 @@ function updateTimeResolved(endpoint, field, h){
       }
       return;
     }
+    node.dataset.dayLabel = timeResolvedDayLabel(min);
     node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
     return;
   }
@@ -809,7 +816,8 @@ function updateTimeResolved(endpoint, field, h){
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const loc = habitPrayerLocation(h, settings);
   if(!loc){
-    node.textContent = 'add a location';
+    node.textContent = 'Set your home city to calculate this time.';
+    if(city)city.hidden = false;
     return;
   }
   const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
@@ -817,6 +825,7 @@ function updateTimeResolved(endpoint, field, h){
     node.textContent = '—';
     return;
   }
+  node.dataset.dayLabel = timeResolvedDayLabel(min);
   node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
 }
 // RENDER: toggles time-clear button visibility. A clear is offered whenever

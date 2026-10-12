@@ -1012,17 +1012,18 @@ function renderPresencePickerBody(){
 let travelEditFromId = null;
 let travelEditToId = null;
 
-function openTravelEditSheet(fromId,toId,leaveByTs){
-  const from = typeof locationById === 'function' ? locationById(fromId) : null;
+function openTravelEditSheet(fromId,toId,leaveByTs,destination=null,dayKey=null){
+  const fromCurrent=fromId===CURRENT_COORD_ID;
+  const from = fromCurrent ? currentCoordLocation() : typeof locationById === 'function' ? locationById(fromId) : null;
   const to = typeof locationById === 'function' ? locationById(toId) : null;
   if(!from || !to || from.id === to.id)return;
   travelEditFromId = from.id;
   travelEditToId = to.id;
   const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
-  const edge = travelBetween(from,to,mode);
+  const edge = fromCurrent ? travelFromCurrent(to,mode) : travelBetween(from,to,mode);
   const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
   const copy = $('travel-edit-copy');
-  if(copy)copy.textContent = `${from.name} → ${to.name}`;
+  if(copy)copy.textContent = `${fromCurrent ? 'here' : from.name} → ${to.name}`;
   const modeEl = $('travel-edit-mode');
   if(modeEl){
     const label = edge.provider === 'manual' ? 'edited time' : `${mode} estimate`;
@@ -1057,6 +1058,13 @@ function openTravelEditSheet(fromId,toId,leaveByTs){
   }
   const input = $('travel-edit-minutes');
   if(input)input.value = String(mins);
+  for(const id of ['travel-edit-minus','travel-edit-plus','travel-edit-minutes','travel-edit-save','travel-edit-reset']){
+    const control=$(id);if(control)control.disabled=fromCurrent;
+  }
+  const durationRow=document.querySelector('#travel-edit-sheet .travel-edit-row');
+  if(durationRow){durationRow.hidden=fromCurrent;durationRow.previousElementSibling.hidden=fromCurrent;}
+  for(const id of ['travel-edit-save','travel-edit-reset']){const control=$(id);if(control)control.hidden=fromCurrent;}
+  if(typeof renderNativeTravelEditorReminders==='function')renderNativeTravelEditorReminders(destination,dayKey || (Number.isFinite(leaveByTs) ? dateKey(leaveByTs) : null));
   openSheet('travel-edit-sheet');
 }
 

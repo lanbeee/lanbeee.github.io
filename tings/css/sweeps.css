@@ -25,7 +25,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .schedule-link-same-day-row,.sample-habit-row,.settings-block,.settings-group,
 .settings-row,.settings-card,.location-row,.location-result,.travel-card,.timeline-card,
 .blocked-card,.day-availability,.utility-sheet-panel,.travel-minute-field,
-.free-panel-metric,.free-day-strip,.free-day-switch,.free-gap-row,.free-fit-result,.dropped-item,
+.free-panel-metric,.free-day-strip,.free-day-switch,.free-gap-row,.free-fit-result,.dropped-item,.dropped-hide,.dropped-show,
 .detail-order-block,.order-link-row,.activity-item,
 .capacity-metric,.free-fit-checker,.breakable-progress,.session-progress{
   border:0;box-shadow:none;
@@ -49,6 +49,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .score-card.hit,.score-card.warn,.score-card.miss,.stat.hit,.stat.warn,.stat.miss{border-color:transparent;}
 .score-facts span,.overview-stat,.detail-stat-chip,.activity-metric,.context-pill,.topic-chip,.schedule-chip,
 .monthday-chip,.home-active-filter,.topic-filter,.dropped-pill,.free-pill{border:0;background:var(--bg3);}
+.dropped-pill.is-quiet{color:var(--text2);background:var(--bg3);}
 .topic-chip.on,.schedule-chip.on,.monthday-chip.on,.topic-filter.on{background:var(--text);color:var(--bg);}
 .topic-chip-add{border:0;background:var(--bg3);}
 .home-active-filter.location-filter,.topic-filter.location-filter{background:var(--teal-bg);}
@@ -118,8 +119,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
    Builds on the flat surface sweep above; nothing here reintroduces borders
    on component chrome. Two goals:
    1. Quiet the home feed: meta pills lose their accent fills (semantic color
-      survives only in the small status/icon dot), trail dots and the priority
-      dot step down in chroma/size, heavy font weights relax by one notch.
+      survives only in the small status/icon dot), heavy font weights relax
+      by one notch. Home history marks are defined in home.css.
       Hard-due keeps a faint red tint — it is a genuine alert, not decoration.
    2. Finish border removal on the components the first sweep missed, with
       focus-visible teal rings preserved for keyboard users.
@@ -145,15 +146,6 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
    800 / .09em / uppercase typography. */
 .section-header{font-weight:800;}
 .dropped-pill,.free-pill{font-weight:800;letter-spacing:0.09em;}
-/* Trail: same hit/warn/miss vocabulary, mixed toward the page tone so a full
-   week of dots no longer out-shouts the card content. */
-.trail-dot.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
-.trail-dot.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
-.trail-dot.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
-.trail-dot.today{box-shadow:0 0 0 0.5px var(--border2);}
-.trail-week.hit{background:color-mix(in srgb,var(--teal-icon) 58%,var(--bg3));}
-.trail-week.warn{background:color-mix(in srgb,var(--amber-icon) 58%,var(--bg3));}
-.trail-week.miss{background:color-mix(in srgb,var(--red-icon) 58%,var(--bg3));}
 /* Order-link chips inside cards: one more step toward neutral. */
 .ting-meta .order-mark{opacity:0.78;}
 
@@ -165,6 +157,44 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .range-value{border:0;background:var(--field-bg);}
 .ting-emoji-preview{background:var(--field-bg);}
 #ting-message{min-height:44px;}
+
+/* Numeric text must fit inside compact controls and stay readable while the
+   keyboard is open. Keep the value logger out of the tiny rhythm-box geometry. */
+:root input:is([type="number"],[inputmode="numeric"],[inputmode="decimal"]){
+  font-size:max(16px,calc(16px * var(--font-scale)));caret-color:var(--text);font-variant-numeric:tabular-nums;
+}
+input[type="number"]{appearance:textfield;-moz-appearance:textfield;}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.range-value input:is([type="text"],[type="number"]){font-size:max(16px,calc(16px * var(--font-scale)));height:26px;line-height:26px;}
+.timer-auto-stop-field input[type="text"]{flex:0 0 4ch;width:4ch;min-width:4ch;}
+.timer-auto-stop-label{white-space:normal;min-width:0;flex:1;}
+.snooze-hours-field input[type="number"]{min-height:44px;padding:8px 0;line-height:24px;}
+#settings-defaults-body .settings-range input[type="number"]{font-size:max(16px,calc(16px * var(--font-scale)));}
+.time-endpoint input.mini-time-input{font-size:max(16px,calc(16px * var(--font-scale)));}
+.day-availability input[type="number"]{padding:4px 8px;line-height:24px;}
+.travel-minute-field input[type="number"]{font-size:calc(28px * var(--font-scale));}
+.value-log-field{height:auto;min-height:48px;padding:0;}
+.value-log-field input[type="text"]{
+  flex:1;min-width:0;width:100%;height:48px;margin:0;padding:8px 12px;
+  font-size:calc(20px * var(--font-scale));line-height:1.4;text-align:center;
+}
+.value-log-field[aria-label="note"] input[type="text"]{
+  height:44px;font-size:max(16px,calc(16px * var(--font-scale)));line-height:1.4;text-align:left;
+}
+input:is([type="number"],[inputmode="numeric"],[inputmode="decimal"])::selection{
+  background:var(--text);color:var(--bg);
+}
+@media(max-width:520px){
+  .weather-rule{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px;}
+  .weather-rule .weather-bound-mode{grid-column:1/3;grid-row:2;}
+  .weather-rule .weather-min{grid-column:1;grid-row:3;}
+  .weather-rule .weather-max{grid-column:2;grid-row:3;}
+  .weather-rule [data-weather-rule-relative]{grid-column:1/3;grid-row:4;}
+  .weather-rule .weather-importance{grid-column:1/3;grid-row:5;}
+  .weather-rule .weather-hard{grid-column:3;grid-row:5;}
+  .weather-rule .mini-nav{grid-column:3;grid-row:1;}
+}
 
 /* ── Glass fallbacks ──────────────────────────────────────────────────────── */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
@@ -240,8 +270,12 @@ body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
    .detail-mark circle rules and the tile renders as a squashed 68×39 blob.
    Scope a proper tile here: home-card geometry scaled to the header row,
    tone-inverted (--bg tile on the --bg2 head card, or the habit's emoji bg). */
-.detail-head .detail-mark{
+.detail-head .detail-mark-wrap{
   align-self:center;width:56px;min-width:56px;height:56px;
+  overflow:visible;
+}
+.detail-head .detail-mark{
+  width:100%;min-width:0;height:100%;
   border-radius:14px;
 }
 .detail-head .detail-mark.emoji-pulse{
@@ -251,8 +285,8 @@ body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}
 .detail-head .detail-mark .emoji-mark,
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:30px;line-height:1;}
 .detail-head .detail-mark .ti{font-size:28px;}
-/* Keep the corner tick badge — it signals that tapping the tile logs the
-   habit/task. Same look as the home card; the header padding gives it room. */
+/* Keep the corner tick badge — it signals the tile still logs, now via a
+   log-or-edit-emoji menu. Same look as the home card; header padding gives it room. */
 .detail-head .detail-mark{overflow:visible;}
 .detail-head .detail-mark::before,
 .detail-head .detail-mark::after{right:-4px;bottom:-4px;width:19px;height:19px;}

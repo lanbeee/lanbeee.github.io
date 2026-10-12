@@ -8,8 +8,8 @@ for(const eventName of ['pointerdown','keydown']){
     if(!event.isTrusted)return;
     tingFeedbackGestureAt = performance.now();
     if(typeof sortSettings === 'undefined' || sortSettings.soundEffects === false)return;
-    // Unlock inside the gesture itself: completion may wait for double-tap
-    // detection, by which time Safari no longer grants audio activation.
+    // Unlock inside the gesture itself: completion may follow a delayed
+    // confirmation, by which time Safari no longer grants audio activation.
     try{
       const Audio = window.AudioContext || window.webkitAudioContext;
       if(!Audio)return;

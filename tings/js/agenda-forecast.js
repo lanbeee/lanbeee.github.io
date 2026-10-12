@@ -30,6 +30,9 @@ function replayAgendaClockWeek(data,settings,count,opts = {}){
   if(data.some(h=>h.snoozedUntil && h.snoozedUntil<=now
     && (!prior.plannedAt || h.snoozedUntil>prior.plannedAt)))return null;
   if(plannerOrderConstraintsForDay(prior.dayBase).length || doingNowForDay({dayBase:prior.dayBase}))return null;
+  // A coalesced fixed first session can contain flexible minutes. Rebuild its
+  // residual budget with the engine rather than replaying only later fills.
+  if((prior.timeline || []).some(row=>row.breakableStart))return null;
   const rows=(prior.timeline || []).filter(r=>r.kind==='fill');
   if(!rows.length || rows.length>64)return null;
   const started=performance.now(),day=buildDayAgenda(data,settings,prior.dayBase,{weekMode:true,now});

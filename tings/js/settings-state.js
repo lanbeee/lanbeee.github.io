@@ -102,7 +102,18 @@ function scheduleMonthlyRetentionCleanup(){
 
 // PURE: check if key is a sort setting
 function isSortSettingKey(key){
-  return ['plansFirst','planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
+  return ['planWindowDays','planWeight','dueWeight','progressWeight','trendWeight','rhythmWeight','buildWeight','limitWeight','stopWeight','newWeight','newBuildMode','dueMode','buildLookAheadDays','buildRiseAt','limitMode','stopMode','rhythmBias','focus'].includes(key);
+}
+
+// HANDLER: change presentation without reopening an Add or Details draft.
+function setMinimalMode(enabled){
+  enabled = Boolean(enabled);
+  if(enabled === isMinimalMode())return;
+  updateSortSetting({minimalMode:enabled},{renderNow:false});
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+  else render();
+  if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
+  if(!enabled && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 }
 
 // HANDLER: toggle a boolean app setting
@@ -110,6 +121,7 @@ function toggleAppSettingButton(btn){
   if(!btn)return;
   const key = btn.dataset.settingToggle;
   if(!key)return;
+  if(key === 'minimalMode'){setMinimalMode(!isMinimalMode());return;}
   if(key === 'reminders'){toggleReminders();return;}
   if(key === 'soundEffects'){
     updateSortSetting({soundEffects:!sortSettings.soundEffects},{renderNow:false});
@@ -117,15 +129,16 @@ function toggleAppSettingButton(btn){
   }
   const patch = {[key]:!Boolean(sortSettings[key])};
   if(isSortSettingKey(key))patch.preset = 'custom';
-  // Presentation-only: reuse the mounted week plan (same pattern as homeExtraMode).
+  // Presentation-only: reuse the mounted week plan.
   // A full render() would still be cheap once the planner key ignores minimalMode,
   // but presentation-only avoids even entering the async planner coordinator.
-  if(key === 'minimalMode'){
+  const cardDetail = CARD_DETAIL_KEYS.includes(key);
+  if(cardDetail)patch.cardDetailLevel = 'custom';
+  if(cardDetail){
     updateSortSetting(patch,{renderNow:false});
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     else render();
     if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
-    if(patch.minimalMode === false && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
     return;
   }
   updateSortSetting(patch);
@@ -135,9 +148,13 @@ function toggleAppSettingButton(btn){
     preloadAgendaOptimizer();
   }
   if(key === 'prayerIslamicNames'){
-    document.querySelectorAll('.time-anchor[data-populated]').forEach(sel=>{delete sel.dataset.populated;});
-    if(typeof populateAnchorOptions === 'function')populateAnchorOptions();
-    renderBlockedTimeControls();
+    // Change labels in place so both expressions retain unsaved choices,
+    // including legacy habit anchors and fixed-clock comparisons.
+    document.querySelectorAll('.time-anchor option,.time-anchor2 option').forEach(option=>{
+      if(cleanPrayerAnchor(option.value))option.textContent = prayerDisplayName(option.value);
+    });
+    document.querySelectorAll('.time-endpoint').forEach(syncTimeRuleSummary);
+    if(typeof refreshSampleHabitsSheet === 'function')refreshSampleHabitsSheet();
   }
 }
 
@@ -147,6 +164,8 @@ function toggleAppSettingButton(btn){
 // RENDER: populate + sync the prayer-times sub-section (method dropdown and
 // madhab seg). Idempotent — options are populated once, then values synced.
 function renderPrayerTimesControls(){
+  const calculation = $('settings-prayer-calculation');
+  if(calculation)calculation.hidden = !sortSettings.prayerIslamicNames;
   const sel = document.getElementById('setting-prayer-method');
   if(sel){
     if(!sel.dataset.populated){

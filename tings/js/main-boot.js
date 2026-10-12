@@ -96,9 +96,7 @@ $('type-seg').addEventListener('click',e=>{
     : selectedType !== 'task' ? selectedType : habitType === 'task' ? 'keepup' : habitType);
 });
 
-// WIRE: add-sheet "more options" disclosure (priority, hard deadline,
-// scheduled time, topics) — collapsed by default so a first-time user only
-// sees name, type, and the one field that matters for that type.
+// WIRE: keep optional planning, completion, places and weather folded on entry.
 $('add-more-toggle')?.addEventListener('click',()=>{
   const body = $('add-more-options');
   const toggle = $('add-more-toggle');
@@ -118,20 +116,64 @@ function selectedAddPriority(){
 $('ting-priority-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-priority]');
   if(!opt)return;
-  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(o=>{
+    o.classList.toggle('on',o === opt);
+    o.setAttribute('aria-pressed',String(o === opt));
+  });
 });
 
 // RENDER: toggle add-sheet field rows for the active type
 function syncAddTypeUi(type){
   const isHabit = type === 'keepup' || type === 'reduce';
+  const isTask = type === 'task';
+  $('add-title').textContent = isTask ? 'new task' : 'new habit';
+  $('do-save').textContent = isTask ? 'add task' : 'add habit';
+  $('ting-message').placeholder = isTask ? 'e.g. Book a dentist visit' : 'e.g. Read a book';
+  document.querySelectorAll('#type-seg [data-v]').forEach(button=>{
+    button.setAttribute('aria-pressed',String((button.dataset.v === 'task') === isTask));
+  });
+  $('add-frequency').hidden = isTask;
+  $('add-frequency-label').textContent = type === 'reduce' ? 'How often at most?' : type === 'zero' ? 'What is the goal?' : 'How often?';
   $('target-slider-row').style.display = isHabit ? 'flex' : 'none';
-  $('target-help').style.display = 'block';
-  $('target-help').textContent = rhythmHelp(type);
-  $('task-due-row').hidden = type !== 'task';
-  $('task-due-hint').hidden = type !== 'task';
-  if(type === 'task')syncTaskDueUi();
+  document.querySelector('.add-frequency .add-presets').hidden = !isHabit;
+  syncAddRhythmUi();
+  $('task-due-row').hidden = !isTask;
+  $('task-due-hint').hidden = !isTask;
+  $('add-duration-label').textContent = isTask ? 'Time needed' : 'Time for each session';
+  $('add-minimal-effort').hidden = type === 'zero' || type === 'reduce';
+  if(isTask)syncTaskDueUi();
   if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
 }
+
+// Describe the entered frequency in words; the stored interval stays internal.
+function syncAddRhythmUi(){
+  const times = Math.max(1,Math.min(30,parseInt($('ting-times').value,10) || 1));
+  const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt($('ting-days').value,10) || 7));
+  $('ting-times').nextElementSibling.textContent = times === 1 ? 'time' : 'times';
+  $('ting-days').nextElementSibling.textContent = days === 1 ? 'day' : 'days';
+  const count = times === 1 ? 'once' : `${times} times`;
+  const period = days === 1 ? 'a day' : days === 7 ? 'a week' : `every ${days} days`;
+  $('target-help').textContent = selectedType === 'zero' ? rhythmHelp('zero')
+    : selectedType === 'reduce' ? `Keep it to ${count} ${period} or less.`
+    : `Aim for ${count} ${period}.`;
+  document.querySelectorAll('[data-add-rhythm]').forEach(button=>{
+    const [presetTimes,presetDays] = button.dataset.addRhythm.split(',').map(Number);
+    button.setAttribute('aria-pressed',String(times === presetTimes && days === presetDays));
+  });
+}
+
+document.querySelectorAll('[data-add-rhythm]').forEach(button=>button.addEventListener('click',()=>{
+  const [times,days] = button.dataset.addRhythm.split(',').map(Number);
+  syncRhythm('ting',{times,days});
+  if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
+}));
+document.querySelectorAll('[data-add-due]').forEach(button=>button.addEventListener('click',()=>{
+  const day = new Date();
+  if(button.dataset.addDue === 'tomorrow')day.setDate(day.getDate() + 1);
+  $('ting-due-date').value = button.dataset.addDue === 'none' ? '' : dateInputValue(day.getTime());
+  syncTaskDueUi();
+  if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
+}));
 
 $('open-add').addEventListener('click',()=>{
   closeSearch();
@@ -260,11 +302,8 @@ $('clear-search').addEventListener('click',()=>{
 $('do-cancel').addEventListener('click',cancelAdd);
 $('add-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)cancelAdd();});
 
-$('do-save').addEventListener('click',()=>{
-  const name = $('ting-message').value.trim();
-  if(!name){$('ting-message').focus();return;}
-  const data = load();
-  if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
+// One draft reader keeps the optional room preview identical to Save.
+function readAddRecord(){
   const profile = readAddProfile();
   const defaults = profile.defaults;
   const type = selectedType;
@@ -276,7 +315,7 @@ $('do-save').addEventListener('click',()=>{
     ? readWeatherProfileChoice('ting-weather-profile')
     : {weatherProfileMode:$('ting-weather-profile')?.value?'profile':'inherit',weatherProfileId:cleanWeatherProfileId($('ting-weather-profile')?.value)};
   const record = {
-    name:name.slice(0,60),
+    name:$('ting-message').value.trim().slice(0,60),
     type,
     target,
     lastLog:null,
@@ -317,6 +356,16 @@ $('do-save').addEventListener('click',()=>{
   }
   record.delayAllowanceDays = defaults.delayAllowanceDays;
   record.autoMarkMinutes = defaultAutoMarkMinutes(profile);
+  return record;
+}
+
+$('do-save').addEventListener('click',()=>{
+  if(typeof applyAutoEmoji === 'function')applyAutoEmoji();
+  const name = $('ting-message').value.trim();
+  if(!name){$('ting-message').focus();return;}
+  const data = load();
+  if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
+  const record = readAddRecord();
   data.push(record);
   if(save(data)){
     cancelAdd();
@@ -346,22 +395,34 @@ function parseDateInput(value){
   const ts = new Date(`${value}T12:00:00`).getTime();
   return Number.isFinite(ts) ? ts : null;
 }
-$('ting-message').addEventListener('keydown',e=>{if(e.key === 'Enter')$('do-save').click();});
+// Keyboard Done finishes the name field; the explicit Add action saves the item.
+$('ting-message').addEventListener('keydown',e=>{
+  if(e.key !== 'Enter' || e.isComposing)return;
+  e.preventDefault();
+  e.currentTarget.blur();
+});
 
 // WIRE: task due-date hint
 function syncTaskDueUi(){
   const dueInput = $('ting-due-date');
   const timeInput = $('ting-due-time');
-  if(!dueInput)return;
   const hasDate = Boolean(dueInput.value);
-  const hasTime = Boolean(timeInput?.value);
+  if(!hasDate)timeInput.value = '';
+  timeInput.disabled = !hasDate;
   const hint = $('task-due-hint');
-  if(hint){
-    if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
-    else if(hasTime)hint.textContent = 'Starts at this time. It is a fixed appointment unless you mark it breakable in details.';
-    else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
-  }
+  hint.textContent = !hasDate
+    ? 'Stays in your list until you choose a date or finish it. Choose a date to set a start time.'
+    : timeInput.value
+      ? 'Starts at this time on your chosen date. Leave the time blank if Tings can choose it.'
+      : 'Tings can choose a start time. For an appointment, choose the time it starts.';
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  document.querySelectorAll('[data-add-due]').forEach(button=>{
+    const value = button.dataset.addDue === 'none' ? '' : dateInputValue(button.dataset.addDue === 'today' ? Date.now() : tomorrow.getTime());
+    button.setAttribute('aria-pressed',String(dueInput.value === value));
+  });
 }
+
 $('ting-due-date').addEventListener('input',syncTaskDueUi);
 $('ting-due-time')?.addEventListener('input',syncTaskDueUi);
 syncTaskDueUi();
@@ -373,10 +434,10 @@ function clampRhythm(value){
 
 // PURE: return help text for a rhythm type
 function rhythmHelp(type){
-  if(type === 'reduce')return 'Times in N days — e.g. 1× in 3d.';
+  if(type === 'reduce')return 'Choose how often this can happen at most.';
   if(type === 'zero')return 'Something to avoid. Log it each time it happens; the aim is longer gaps.';
   if(type === 'task')return 'A one-off to-do. Add a due date, a fixed scheduled time, or leave it dateless.';
-  return 'Times in N days — e.g. 2× in 7d = 3.5d.';
+  return 'Choose how often you want to repeat this.';
 }
 
 // PURE: map stored habit type <-> mode seg value (build/limit/stop)
@@ -456,6 +517,7 @@ function syncRhythm(prefix,value){
   const times = Math.max(1,Math.min(30,parts.times));
   field.value = days;
   if(timesField)timesField.value = times;
+  if(prefix === 'ting')syncAddRhythmUi();
   const label = $(`${prefix}-days-label`);
   if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(times,days));
   const crown = $(`${prefix}-days-slider`);
@@ -560,11 +622,10 @@ function bindRhythm(prefix){
   });
   field.addEventListener('focus',e=>{
     e.target.dataset.orig = e.target.value;
-    e.target.value = '';
   });
   field.addEventListener('blur',e=>{
     const times = parseInt($(`${prefix}-times`)?.value,10) || 1;
-    syncRhythm(prefix,{times,days:e.target.value || 7});
+    syncRhythm(prefix,{times,days:e.target.value || e.target.dataset.orig || 7});
   });
   if(!crown)return;
 
@@ -732,12 +793,12 @@ bindRhythm('detail');
   if(!times)return;
   times.addEventListener('focus',e=>{
     e.target.dataset.orig = e.target.value;
-    e.target.value = '';
   });
   times.addEventListener('blur',()=>{
-    if(!times.value.trim())times.value = 1;
+    if(!times.value.trim())times.value = times.dataset.orig || 1;
   });
   times.addEventListener('input',()=>{
+    if(!times.value.trim())return;
     const days = parseInt($(`${prefix}-days`)?.value,10) || 7;
     const t = Math.max(1,Math.min(30,parseInt(times.value,10) || 1));
     times.value = t;
@@ -745,6 +806,10 @@ bindRhythm('detail');
     if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(t,days));
     if(prefix === 'detail')setDetailDirty();
   });
+});
+
+['ting-times','ting-days'].forEach(id=>{
+  ['input','blur'].forEach(event=>$(id).addEventListener(event,syncAddRhythmUi));
 });
 
 // WIRE: attach numeric input focus/blur validators
@@ -755,10 +820,6 @@ function bindCompactNumber(id,clamp,options={}){
 
   field.addEventListener('input',e=>{
     e.target.value = e.target.value.replace(/\D/g,'').slice(0,maxLength);
-  });
-  field.addEventListener('focus',e=>{
-    e.target.dataset.was = e.target.value;
-    e.target.value = '';
   });
   field.addEventListener('blur',e=>{
     e.target.value = clamp(e.target.value);
@@ -771,10 +832,6 @@ function bindAutoMarkField(id,onDirty){
   field.addEventListener('input',e=>{
     e.target.value = e.target.value.replace(/\D/g,'').slice(0,4);
     if(onDirty)onDirty();
-  });
-  field.addEventListener('focus',e=>{
-    e.target.dataset.was = e.target.value;
-    e.target.value = '';
   });
   field.addEventListener('blur',e=>{
     const n = normalizeAutoMark(e.target.value);
@@ -795,10 +852,6 @@ function bindTimerAutoStopField(id,onDirty){
   field.addEventListener('input',e=>{
     e.target.value = e.target.value.replace(/\D/g,'').slice(0,3);
     if(onDirty)onDirty();
-  });
-  field.addEventListener('focus',e=>{
-    e.target.dataset.was = e.target.value;
-    e.target.value = '';
   });
   field.addEventListener('blur',e=>{
     const n = normalizeTimerAutoStop(e.target.value);
@@ -1154,6 +1207,8 @@ function clearTimeEndpoint(endpoint){
   if(dayBtn)dayBtn.setAttribute('aria-pressed','false');
   const day2Btn = endpoint.querySelector('.time-day-next2');
   if(day2Btn)day2Btn.setAttribute('aria-pressed','false');
+  const advanced = endpoint.querySelector('.time-advanced');
+  if(advanced)advanced.open = false;
   syncTimeModeVisibility(endpoint);
 }
 
@@ -1283,6 +1338,10 @@ document.addEventListener('click',e=>{
   if(tip)tip.toggleAttribute('hidden');
 });
 document.addEventListener('click',e=>{
+  if(e.target.closest('.time-set-city')){
+    openHomeCitySettings();
+    return;
+  }
   const btn = e.target.closest('.time-offset-sign-btn');
   if(!btn)return;
   const input = btn.previousElementSibling;
@@ -1484,7 +1543,7 @@ $('detail-save').addEventListener('click',()=>{
     const hasCity = Number.isFinite(s.homeCityLat) && Number.isFinite(s.homeCityLng);
     const registry = normalizeLocationRegistry(s.locations);
     if(!hasCity && !registry.length){
-      showToast('set your city to use prayer times');
+      showToast('set your city to use relative times');
       return;
     }
   }
@@ -1524,19 +1583,12 @@ $('detail-save').addEventListener('click',()=>{
   h.lastLog = latestActualLog(h.logs);
   save(data);
   showToast('saved');
-  closeSheet('detail-sheet');
-  detailIdx = null;
-  detailTuneOriginal = null;
+  closeDetail();
   render();
   if((h.weatherProfileMode !== 'none' || h.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 });
-$('detail-mark').addEventListener('click',()=>{
-  if(detailIdx === null)return;
-  requestLogTing(detailIdx,()=>{
-    openDetail(detailIdx);
-    render();
-  });
-});
+// Detail-header emoji tap is a two-choice menu (log vs edit emoji), wired
+// in emoji-suggest.js. Home cards still log on a direct pulse tap.
 if($('detail-add'))$('detail-add').addEventListener('click',()=>{
   if(detailIdx === null)return;
   requestLogTing(detailIdx,()=>{

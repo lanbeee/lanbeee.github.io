@@ -2862,7 +2862,6 @@ if(typeof document!=='undefined')document.addEventListener('click',event=>{
   }
   const agendaWrap=event.target.closest('#weather-agenda-sheet');
   if(agendaWrap && event.target===agendaWrap){
-    if(typeof sheetBackdropArmed==='function' && sheetBackdropArmed('weather-agenda-sheet'))return;
     if(typeof closeSheet==='function')closeSheet('weather-agenda-sheet');
     return;
   }
@@ -2872,7 +2871,6 @@ if(typeof document!=='undefined')document.addEventListener('click',event=>{
   }
   const metricWrap=event.target.closest('#weather-metric-sheet');
   if(metricWrap && event.target===metricWrap){
-    if(typeof sheetBackdropArmed==='function' && sheetBackdropArmed('weather-metric-sheet'))return;
     if(typeof closeSheet==='function')closeSheet('weather-metric-sheet');
     return;
   }
@@ -2887,7 +2885,6 @@ if(typeof document!=='undefined')document.addEventListener('click',event=>{
   }
   const wrap=event.target.closest('#weather-context-sheet');
   if(wrap && event.target===wrap){
-    if(typeof sheetBackdropArmed==='function' && sheetBackdropArmed('weather-context-sheet'))return;
     if(typeof closeSheet==='function')closeSheet('weather-context-sheet');
   }
 });

@@ -11,6 +11,23 @@ function cancelAdd(){
   applyAddDefaults();
 }
 
+function syncCardDetailControls(){
+  const mode = sortSettings.cardDetailLevel;
+  document.querySelectorAll('[data-card-detail]').forEach(btn=>{
+    const selected = btn.dataset.cardDetail === mode;
+    btn.classList.toggle('on',selected);
+    btn.setAttribute('aria-pressed',String(selected));
+  });
+  const custom = $('card-detail-custom');
+  if(custom)custom.hidden = mode !== 'custom';
+  const hint = $('card-detail-hint');
+  if(hint)hint.textContent = mode === 'simple'
+    ? 'Dates, plans, reminders, how often, early indicators, and a status line.'
+    : mode === 'detailed'
+      ? 'Also show which days, time of day, duration, topics, and place.'
+      : 'Choose the details you want on each item. Your choices are saved.';
+}
+
 let defaultProfileKind = 'habit';
 let addProfileDrafts = {};
 let addActiveDefaults = null;
@@ -109,6 +126,10 @@ function readAddProfile(){
 function syncAddEffortUi(){
   $('ting-auto-mark-row').hidden = $('ting-completion-mode').value !== 'minutes';
   $('ting-chunk-row').hidden = $('ting-breakable').getAttribute('aria-pressed') !== 'true';
+  const mode = $('ting-completion-mode').value;
+  $('add-completion-hint').textContent = mode === 'manual' ? 'Mark it yourself when you finish.'
+    : mode === 'duration' ? 'Scheduled sessions are marked done automatically when their time is up.'
+    : 'Marked done automatically this many minutes after the scheduled start.';
 }
 
 function applyAddProfile(profile){
@@ -121,16 +142,21 @@ function applyAddProfile(profile){
   $('ting-breakable').setAttribute('aria-pressed',String(profile.breakable));
   $('ting-completion-mode').value = profile.autoMarkMode;
   $('ting-auto-mark').value = profile.autoMarkMinutes ?? '';
-  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(btn=>btn.classList.toggle('on',Number(btn.dataset.priority) === profile.priority));
+  document.querySelectorAll('#ting-priority-seg .seg-opt').forEach(btn=>{
+    const selected = Number(btn.dataset.priority) === profile.priority;
+    btn.classList.toggle('on',selected);
+    btn.setAttribute('aria-pressed',String(selected));
+  });
   renderTagChips('ting-tag-chips',profile.topics,profile.locationIds,null,profile.locationPrefs,profile.anywhereAllowed);
   const days = profile.defaults.allowedWeekdays;
   const dayText = days.length ? days.map(day=>WEEKDAY_LABELS[day]).join(', ') : 'any day';
   const start = profile.defaults.allowedTimeStart;
   const end = profile.defaults.allowedTimeEnd;
   const timeText = start === null && end === null ? 'any time' : `${start === null ? 'start of day' : minutesToTimeInput(start)}–${end === null ? 'end of day' : minutesToTimeInput(end)}`;
-  $('add-defaults-summary').textContent = `Schedule: ${dayText} · ${timeText}. Early ${profile.defaults.earlyWindowDays}d · late ${profile.defaults.delayAllowanceDays}d. Change these in defaults or in details after saving.`;
+  $('add-defaults-summary').textContent = `Schedule defaults: ${dayText} · ${timeText}. Adjust days and hours after adding, or change new item defaults below.`;
   syncAddEffortUi();
   syncAddTypeUi(selectedType);
+  if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
 }
 
 function switchAddType(type){
@@ -144,6 +170,7 @@ function switchAddType(type){
 
 // Reset only for a fresh add/cancel. Branch changes retain each in-flight draft.
 function applyAddDefaults(){
+  document.querySelector('.add-content').scrollTop = 0;
   const settings = loadSortSettings();
   addProfileDrafts = {};
   addSettingsReturn = false;
@@ -161,8 +188,22 @@ function applyAddDefaults(){
   $('add-topics-section').hidden = false;
   $('add-more-options').hidden = true;
   $('add-more-toggle').setAttribute('aria-expanded','false');
+  document.querySelector('.add-weather-options').open = false;
   if(typeof clearEmojiSuggestion === 'function')clearEmojiSuggestion();
   if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
+}
+
+function openMinimalModeSettings(){
+  resetSettingsSheetState();
+  syncSettingsControls();
+  openSheet('settings-sheet');
+  const toggle = document.querySelector('[data-setting-toggle="minimalMode"]');
+  requestAnimationFrame(()=>{
+    toggle?.scrollIntoView({block:'center',inline:'nearest'});
+    toggle?.classList.add('detail-search-hit');
+    setTimeout(()=>toggle?.classList.remove('detail-search-hit'),2400);
+    toggle?.focus({preventScroll:true});
+  });
 }
 
 function openAddSettings(section){
@@ -185,6 +226,14 @@ function openAddSettings(section){
 
 function closeSettingsSheet(){
   closeSheet('settings-sheet');
+  // City setup leaves the item draft mounted. Refresh its clock previews on
+  // every return path, including backdrop dismissal, without re-rendering it.
+  if($('detail-sheet')?.classList.contains('open')){
+    document.querySelectorAll('#detail-sheet .time-endpoint.is-dynamic').forEach(endpoint=>{
+      if(endpoint.closest('.habit-option-row'))refreshHabitScheduleOptionEndpoint(endpoint);
+      else refreshTimeResolvedFor(endpoint);
+    });
+  }
   if(!addSettingsReturn)return;
   addSettingsReturn = false;
   $('settings-close').textContent = 'done';
@@ -220,6 +269,7 @@ function resetSettingsSheetState(){
 // HYBRID: sync settings UI from stored state
 function syncSettingsControls(){
   sortSettings = loadSortSettings();
+  syncCardDetailControls();
   const resetConfirm = $('settings-reset-confirm');
   if(resetConfirm)resetConfirm.hidden = true;
   updateSortSampleCount();
@@ -237,10 +287,6 @@ function syncSettingsControls(){
   });
   renderPrayerTimesControls();
   renderCalendarImportControls();
-  const homeExtraMode = normalizeHomeExtraMode(sortSettings.homeExtraMode);
-  document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.segValue === homeExtraMode);
-  });
   const agendaTimeMode = normalizeAgendaTimeMode(sortSettings.showAgendaTimesOnCards);
   document.querySelectorAll('#agenda-time-seg .seg-opt').forEach(btn=>{
     btn.classList.toggle('on',btn.dataset.segValue === agendaTimeMode);

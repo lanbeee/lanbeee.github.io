@@ -15,6 +15,10 @@ function saveAutoChunkPlans(plans){
 }
 
 const TODAY_SUGGESTED_KEY = 'tings_today_suggested_v1';
+// Device-local “okay, I know” acks for missed rows. Expires at local
+// midnight. Not a habit field, not snooze, not in habit backup, and not a
+// planner input — the miss still exists; the pill and slipped sheet ignore it.
+const MISSED_HIDDEN_KEY = 'tings_missed_hidden_v1';
 
 // Temporary same-day agenda precedence links (device-local; not in habit backup).
 // dayBase → edges; each edge says beforeHid should be planned before afterHid that day.
@@ -621,6 +625,74 @@ function saveTodaySuggested(snapshot){
   // the planner revision here causes a cache paint to launch another solve.
   try{ Storage.write(TODAY_SUGGESTED_KEY,snapshot); return true; }
   catch{ return false; }
+}
+
+function missedHideId(row){
+  if(!row || !row.hid)return '';
+  const day = row.expectedDay || '';
+  if(row.occurrenceKey)return `${row.hid}::${row.occurrenceKey}::${day}`;
+  return `${row.hid}::${day}`;
+}
+
+function normalizeMissedHides(raw, now = Date.now()){
+  const out = {};
+  if(!raw || typeof raw !== 'object' || Array.isArray(raw))return out;
+  for(const [id, until] of Object.entries(raw)){
+    const key = typeof id === 'string' ? id.trim() : '';
+    const ts = Number(until);
+    if(!key || !Number.isFinite(ts) || ts <= now)continue;
+    out[key] = ts;
+  }
+  return out;
+}
+
+function saveMissedHides(map){
+  const next = map && typeof map === 'object' && !Array.isArray(map) ? map : {};
+  const current = Storage.read(MISSED_HIDDEN_KEY);
+  if(JSON.stringify(current || {}) === JSON.stringify(next))return false;
+  try{ Storage.write(MISSED_HIDDEN_KEY, next); return true; }
+  catch{ return false; }
+}
+
+function loadMissedHides(now = Date.now()){
+  return normalizeMissedHides(Storage.read(MISSED_HIDDEN_KEY), now);
+}
+
+function setMissedHideUntil(id, until, now = Date.now()){
+  const key = typeof id === 'string' ? id.trim() : '';
+  if(!key)return {id:'', previousUntil:null};
+  const map = loadMissedHides(now);
+  const previousUntil = Object.prototype.hasOwnProperty.call(map, key) ? map[key] : null;
+  const ts = Number(until);
+  if(until != null && Number.isFinite(ts) && ts > now)map[key] = ts;
+  else delete map[key];
+  saveMissedHides(map);
+  return {id:key, previousUntil};
+}
+
+function hideMissedRow(row, now = Date.now()){
+  const id = missedHideId(row);
+  const until = typeof snoozeUntilEndOfDay === 'function'
+    ? snoozeUntilEndOfDay(now)
+    : (typeof dayStart === 'function' ? dayStart(now) + 86400000 : now + 86400000);
+  const result = setMissedHideUntil(id, until, now);
+  return {...result, until};
+}
+
+function showMissedRow(row, now = Date.now()){
+  return setMissedHideUntil(missedHideId(row), null, now);
+}
+
+function missedHideIsActive(row, now = Date.now()){
+  const id = missedHideId(row);
+  if(!id)return false;
+  const until = loadMissedHides(now)[id];
+  return Number.isFinite(until) && until > now;
+}
+
+function missedHideSignature(now = Date.now()){
+  const map = loadMissedHides(now);
+  return Object.keys(map).sort().map(id=>`${id}:${map[id]}`).join('|');
 }
 
 function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids = null,fingerprint = null,projectionByDay = null){

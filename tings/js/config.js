@@ -93,14 +93,14 @@ const WEATHER_STABLE_MARGINS = {
 // ── Prayer times (dynamic habit windows) ──
 // Prayer-time anchors a habit's allowed/preferred time endpoint can be tied to.
 // 'maghrib' is the same moment as sunset; both keys are accepted as aliases.
-const PRAYER_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha'];
+const PRAYER_ANCHORS = ['fajr','sunrise','dhuhr','asr','maghrib','isha','midnight'];
 const PRAYER_ANCHOR_LABELS = {
   fajr:'Fajr', sunrise:'Sunrise', dhuhr:'Dhuhr',
-  asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha'
+  asr:'Asr', maghrib:'Maghrib (sunset)', isha:'Isha', midnight:'Islamic midnight'
 };
 const PRAYER_GENERIC_LABELS = {
-  fajr:'Dawn', sunrise:'Sunrise', dhuhr:'Noon',
-  asr:'Afternoon', maghrib:'Sunset', isha:'Night'
+  fajr:'Dawn', sunrise:'Sunrise', dhuhr:'Solar noon',
+  asr:'Afternoon', maghrib:'Sunset', isha:'Night', midnight:'Night midpoint'
 };
 // Calculation methods exposed in Settings. Keys mirror adhan.CalculationMethod
 // factory names; labels are the friendly strings users recognise. The default
@@ -155,30 +155,29 @@ const SWIPE_ACTION_WIDTH = 68;
 // far under the card's rounded corner (matches --card-radius:20px) or the card's
 // round corner leaves a blank gap with a sharp panel corner showing through.
 const SWIPE_CORNER_PAD = 20;
-const TAP_DELAY = 310;
 const SNAP_TRANSITION = 'transform 190ms cubic-bezier(.3,.7,.2,1)';
 const WIDTH_TRANSITION = 'width 190ms cubic-bezier(.3,.7,.2,1)';
 const SORT_PRESETS = {
   balanced:{
-    focus:'balanced',plansFirst:true,planWindowDays:3,
+    focus:'balanced',planWindowDays:3,
     planWeight:100,dueWeight:100,progressWeight:70,trendWeight:55,rhythmWeight:55,
     buildWeight:100,limitWeight:70,stopWeight:130,newWeight:90,
     newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:75,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:70
   },
   build:{
-    focus:'build',plansFirst:true,planWindowDays:3,
+    focus:'build',planWindowDays:3,
     planWeight:95,dueWeight:135,progressWeight:105,trendWeight:75,rhythmWeight:60,
     buildWeight:140,limitWeight:50,stopWeight:12,newWeight:125,
     newBuildMode:'rise',dueMode:'relative',buildLookAheadDays:7,buildRiseAt:65,limitMode:'quiet',stopMode:'quiet',rhythmBias:12,locationWeight:60
   },
   planned:{
-    focus:'balanced',plansFirst:true,planWindowDays:7,
+    focus:'balanced',planWindowDays:7,
     planWeight:175,dueWeight:85,progressWeight:55,trendWeight:40,rhythmWeight:40,
     buildWeight:95,limitWeight:65,stopWeight:35,newWeight:70,
     newBuildMode:'gentle',dueMode:'date',buildLookAheadDays:3,buildRiseAt:80,limitMode:'overdue',stopMode:'recent',rhythmBias:0,locationWeight:75
   },
   todayFirst:{
-    focus:'balanced',plansFirst:true,planWindowDays:3,
+    focus:'balanced',planWindowDays:3,
     planWeight:120,dueWeight:140,progressWeight:60,trendWeight:50,rhythmWeight:50,
     buildWeight:110,limitWeight:80,stopWeight:110,newWeight:100,
     newBuildMode:'gentle',dueMode:'relative',buildLookAheadDays:3,buildRiseAt:70,limitMode:'overdue',stopMode:'watch',rhythmBias:0,locationWeight:80
@@ -187,12 +186,14 @@ const SORT_PRESETS = {
 const DEFAULT_SORT_SETTINGS = {
   ...SORT_PRESETS.todayFirst,
   preset:'todayFirst',
+  cardDetailLevel:'simple',
+  customCardDetails:null,
   showSnoozed:false,
   showSampleOnCards:true,
   showPinnedOnCards:true,
   showTaskDateOnCards:true,
   showPlansOnCards:true,
-  showDayScheduleOnCards:true,
+  showDayScheduleOnCards:false,
   showTimeWindowOnCards:false,
   showSnoozedUntilOnCards:true,
   showDurationOnCards:false,
@@ -202,11 +203,6 @@ const DEFAULT_SORT_SETTINGS = {
   showLocationOnCards:false,
   showRemindersOnCards:true,
 
-  showScheduledTasksInAgenda:true,
-  showDueTasksInAgenda:true,
-  showPlannedItemsInAgenda:true,
-  showDueHabitsInAgenda:true,
-  showWeekOnHome:true,
   // The fast graph planner is the default. The exact ILP packer (lazy-loads
   // GLPK) remains available for saved settings that opt into it.
   agendaOptimizer:false,
@@ -228,11 +224,6 @@ const DEFAULT_SORT_SETTINGS = {
     scarce:0.05,
     preference:1.5
   },
-  // How blocked times + travel between places appear on home:
-  //   'cards'     → card surfaces for the whole day (default)
-  //   'cards12h'  → same cards, but only for the next 12 hours
-  //   'text12h'   → plain muted background lines for the next 12 hours
-  homeExtraMode:'cards12h',
   reachAssist:true,
   reminders:false,
   pushDetailed:false,
@@ -255,13 +246,10 @@ const DEFAULT_SORT_SETTINGS = {
   // Separate creation profile; legacy shared defaults migrate on load/save.
   taskDefaults:null,
 
-  // Calm-card defaults: the insight decorations (progress pill, early pill,
-  // trail dots, order marks) are OFF so switching out of minimal mode reveals
-  // the fuller surface gradually instead of all extras at once. Each remains
-  // one toggle away in Settings. Pre-flip installs keep what they had (see
-  // loadSortSettings).
+  // Simple keeps early indicators; progress and order marks are Custom options.
+  // Activity dots remain a separate choice.
   showStatusOnCards:false,
-  showEarlyOnCards:false,
+  showEarlyOnCards:true,
   // Right-side scheduled time on each item: 'time' = clock + time,
   // 'icon' = symbol only, 'hide' = nothing.
   showAgendaTimesOnCards:'time',
@@ -277,8 +265,7 @@ const DEFAULT_SORT_SETTINGS = {
   showOrderPillsOnCards:false,
 
   // Simplified surface: strips home cards, detail panes, and calendar overview
-  // chrome, and groups home by today / overdue / coming up instead of day by
-  // day. Does not change scoring, packing, or what is due. Opt-in from
+  // chrome. Does not change scoring, packing, or what is due. Opt-in from
   // Settings — new users start on the full surface (see loadSortSettings).
   minimalMode:false,
 
@@ -614,8 +601,6 @@ let sortSettings = null;
 let searchQuery = '';
 
 let swipeOpenCard = null;
-let tapTimer = null;
-let lastTap = {idx:-1,time:0};
 let toastTimer = null;
 let actionToastTimer = null;
 let navSuppressTimer = null;
@@ -635,5 +620,4 @@ let settingsPointer = null;
 let detailTuneOriginal = null;
 let detailScheduleView = 'allowed';
 let calendarPointer = null;
-let cardPointer = null;
 let searchDismissPointer = null;

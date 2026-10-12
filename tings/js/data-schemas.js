@@ -46,7 +46,7 @@
  * — Prayer-time anchors (optional; mutually exclusive per-endpoint with the fixed minutes above) —
  * When `*Anchor` is set it overrides the matching fixed-minutes field for that endpoint, and the
  * resolved minute is computed from the habit's location for the current day (see js/prayer-times.js).
- * @property {string|null} allowedTimeStartAnchor   — 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'habit'|null
+ * @property {string|null} allowedTimeStartAnchor   — 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'midnight'|'habit'|null
  * @property {number}      allowedTimeStartOffsetMin — signed minutes vs the anchor (e.g. +60 = an hour after)
  * @property {string|null} allowedTimeEndAnchor
  * @property {number}      allowedTimeEndOffsetMin
@@ -120,7 +120,7 @@
  *
  * — TaskFields (additional semantics when type === 'task') —
  * @property {number|null} dueDate            — ms day-level timestamp, or null for a "someday" task
- * @property {number|null} eventTime          — task clock: fixed appointment when unbreakable; exact first-session start when breakable; null = dated/someday
+ * @property {number|null} eventTime          — task clock: fixed appointment; breakable reserves a hard first session and resumes remaining minutes after it; null = dated/someday
  * @property {boolean} hardDue                — computed: true when dueDate is set and delayAllowanceDays is 0
  *
  * — LocationFields (optional, on every type) —
@@ -136,7 +136,7 @@
  * @property {{id:string,sameDayMode:'alternative'|'separate',weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high',weatherProfileMode:'inherit'|'profile'|'none',weatherProfileId:string|null}[]} scheduleOptions — specific weekday/time/place/weather windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
  *
  * — LinkFields (optional, on every type) —
- * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and fires on card double tap
+ * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and appears first in the detail link buttons
  */
 
 /**
@@ -173,7 +173,6 @@
  * @typedef {Object} Settings
  * @property {'balanced'|'build'|'planned'|'todayFirst'|'custom'} preset
  * @property {'balanced'|'build'|'space'} focus                 — inherited from the preset
- * @property {boolean} plansFirst                              — let planned habits rise
  * @property {number} planWindowDays                           — 1-14, look-ahead for plan signal
  * @property {number} planWeight                               — 0-200, multiplies plan signal
  * @property {number} dueWeight                                — 0-200
@@ -205,17 +204,14 @@
  * @property {boolean} showTopicsOnCards                       — show topic labels on home cards
  * @property {boolean} showLocationOnCards                     — show location pin labels on home cards
  * @property {boolean} showRemindersOnCards                    — show a bell when an item has phone notifications or alarms
+ * @property {string} cardDetailLevel                          — card annotations: simple | detailed | custom
+ * @property {Object|null} customCardDetails                    — saved custom annotation choices
  * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
  * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
  * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)
  * @property {boolean} showCueOnCards                          — show one-line status on home cards
  * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
  * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview (default off, opt-in)
- * @property {boolean} showScheduledTasksInAgenda              — include fixed-time tasks in Today agenda
- * @property {boolean} showDueTasksInAgenda                    — include untimed tasks due today in Today agenda
- * @property {boolean} showPlannedItemsInAgenda                — include planned-today items in Today agenda
- * @property {boolean} showDueHabitsInAgenda                   — include ready habits in Today agenda
- * @property {boolean} showWeekOnHome                          — day-by-day week plan on home
  * @property {boolean} agendaOptimizer                         — exact ILP packer for tight windows (lazy GLPK); off by default, fast planner is the default
  * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
  * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards

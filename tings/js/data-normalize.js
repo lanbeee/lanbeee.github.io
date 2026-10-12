@@ -7,8 +7,7 @@
 // Whatever you launch when you actually do the habit: a phone or WhatsApp
 // number, a FaceTime call, an app shortcut, or a meeting/web link (Zoom,
 // Teams, Meet, Webex, or anything else). Any habit can carry a few. The first
-// one is primary — it is what a double tap on the card opens, right after
-// logging.
+// one is primary and appears first among the detail link buttons.
 
 const LINK_KINDS = ['phone','whatsapp','facetime','app','link'];
 const MAX_HABIT_LINKS = 4;
@@ -264,7 +263,7 @@ function linkHandsOffToOs(url){
     || (/^[a-z][a-z0-9+.-]*:/i.test(String(url || '')) && !/^https?:/i.test(String(url || '')));
 }
 
-/** PURE: the link a double tap fires — the first one. */
+/** PURE: the primary link — the first one. */
 function habitPrimaryLink(h){
   const links = normalizeLinks(h && h.links);
   return links.length ? links[0] : null;
@@ -475,8 +474,9 @@ function isTimedTask(h){
   return h.type === 'task' && h.eventTime !== null;
 }
 // PURE: a timed non-breakable task is a literal appointment. A breakable task
-// starts its first session exactly at eventTime, then lets the planner split
-// the remaining duration around higher-priority obligations.
+// retains a hard first session at eventTime independently of capacity, then
+// splits the remaining duration around obligations inside Allowed times.
+// Early/delay windows govern dates; neither unlocks an entered event clock.
 function isFixedTimedTask(h){
   return isTimedTask(h) && !h.breakable;
 }

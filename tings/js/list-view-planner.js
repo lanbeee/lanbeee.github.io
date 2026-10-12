@@ -37,7 +37,6 @@ function homeListFingerprint(now = Date.now()){
     s.pinnedLocationId || '',
     s.lastKnownLocationId || '',
     s.preset || '',
-    weekOnHomeEnabled(s) ? 1 : 0,
     s.agendaOptimizer ? 1 : 0,
     s.showSnoozed ? 1 : 0,
     typeof searchQuery === 'string' ? searchQuery : '',
@@ -53,7 +52,8 @@ function homeListFingerprint(now = Date.now()){
     JSON.stringify(s.availabilityOverrides || {}),
     JSON.stringify(s.availabilityMinutes || []),
     JSON.stringify(s.blockedTimes || []),
-    s.prayerMethod || '', s.prayerMadhab || ''
+    s.prayerMethod || '', s.prayerMadhab || '',
+    typeof missedHideSignature === 'function' ? missedHideSignature(now) : ''
   ].join('\n');
 }
 
@@ -704,15 +704,10 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     : '';
   const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
   const rev = typeof plannerDataRevision === 'function' ? plannerDataRevision() : 0;
-  // Planner-relevant settings only — presentation (minimalMode, homeExtraMode,
-  // showScheduledTasksInAgenda, showStatusOnCards, …) omitted.
+  // Planner-relevant settings only — presentation (minimalMode,
+  // showStatusOnCards, …) omitted.
   const settingsSig = JSON.stringify({
     agendaOptimizer:Boolean(s.agendaOptimizer),
-    showWeekOnHome:Boolean(s.showWeekOnHome),
-    // Candidate gates (isWeekCandidate) — toggles must invalidate the plan.
-    showDueTasksInAgenda:s.showDueTasksInAgenda !== false,
-    showPlannedItemsInAgenda:s.showPlannedItemsInAgenda !== false,
-    showDueHabitsInAgenda:s.showDueHabitsInAgenda !== false,
     availabilityMinutes:s.availabilityMinutes || [],
     availabilityOverrides:s.availabilityOverrides || {},
     blockedTimes:s.blockedTimes || [],
@@ -735,7 +730,6 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     weatherProfiles:(s.weatherProfiles || []).map(p=>p && p.id).filter(Boolean).join('|'),
     weatherRevision:s._weatherContext && s._weatherContext.revision || '',
     // attentionScore / sort-lab inputs (isSortSettingKey list).
-    plansFirst:Boolean(s.plansFirst),
     planWindowDays:s.planWindowDays || 0,
     planWeight:s.planWeight || 0,
     dueWeight:s.dueWeight || 0,
@@ -787,9 +781,9 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-// v4 rejects agendas/forecasts built with the old cached prayer-date check.
-const HOME_AGENDA_CACHE_VERSION = 4;
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v4';
+// v5 rejects cached agendas/forecasts without fixed breakable appointment starts.
+const HOME_AGENDA_CACHE_VERSION = 5;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v5';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 // A usable unplanned list is better than making a slow phone look frozen.
 // The worker keeps running and replaces this fallback with the planned week.
@@ -801,6 +795,7 @@ try{
   localStorage.removeItem('tings_home_agenda_cache_v1');
   localStorage.removeItem('tings_home_agenda_cache_v2');
   localStorage.removeItem('tings_home_agenda_cache_v3');
+  localStorage.removeItem('tings_home_agenda_cache_v4');
 }catch(_){}
 
 function showHomeAgendaLoading(){
@@ -1215,7 +1210,7 @@ function nextPendingAgendaIndex(rows,now){
 
 function shiftAgendaFillToNow(rows,idx,now){
   const row = rows[idx];
-  if(!row || row.kind !== 'fill')return null;
+  if(!row || row.kind !== 'fill' || row.hard)return null;
   const newStart = typeof ceilToMinutes === 'function' ? ceilToMinutes(now,1) : Math.ceil(now / 60000) * 60000;
   // A clock-only slide must not carry an item beyond its published last fit.
   if(Number.isFinite(row.dropAt) && newStart>=row.dropAt)return null;
@@ -1377,7 +1372,6 @@ function renderHomeIfChanged(force,opts = {}){
     && Array.isArray(_homeRenderedWeek.days)
     && settings
     && settings.preset === 'todayFirst'
-    && weekOnHomeEnabled(settings)
     && !(typeof searchQuery === 'string' && searchQuery.trim())
   );
 

@@ -50,10 +50,20 @@
   z-index:200;background:var(--text);color:var(--bg);
   font-size:13px;font-weight:500;padding:10px 14px;
   max-width:calc(100vw - 32px);
+  display:flex;align-items:center;gap:8px;box-sizing:border-box;
   border-radius:999px;opacity:0;pointer-events:none;
   transition:opacity var(--dur-med) ease,transform var(--dur-med) var(--ease-snappy);
 }
-#toast.show{opacity:1;transform:translate(-50%,0);}
+#toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto;}
+#toast-text{min-width:0;overflow-wrap:anywhere;}
+.toast-close{
+  border:0;background:transparent;color:inherit;border-radius:50%;
+  width:44px;height:44px;flex:0 0 44px;padding:0;
+  display:grid;place-items:center;font-size:18px;cursor:pointer;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.toast-close:hover{background:color-mix(in srgb,currentColor 12%,transparent);}
+.toast-close:focus-visible{outline:2px solid currentColor;outline-offset:-3px;}
 
 #action-toast{
   position:fixed;left:50%;
@@ -69,10 +79,11 @@
 }
 #action-text{
   flex:0 0 100%;
-  min-width:0;padding:0 4px;
+  min-width:0;padding:4px 46px 4px 4px;box-sizing:border-box;min-height:34px;
   line-height:1.3;
   overflow-wrap:anywhere;
 }
+#action-close{position:absolute;right:5px;top:5px;}
 body[data-pane-count="2"] #toast,
 body[data-pane-count="3"] #toast,
 body[data-pane-count="2"] #action-toast,
@@ -85,16 +96,16 @@ html.modal-open,body.modal-open{overflow:hidden;overscroll-behavior:none;}
 body.modal-open .pane-list,
 body.modal-open .pane-overview,
 body.modal-open .pane-detail{overflow:hidden;overscroll-behavior:none;}
-#action-undo,#action-open,#action-plan,#snooze-until-planned{
+#action-undo,#action-open,#action-link,#action-plan,#snooze-until-planned{
   border:0;background:var(--bg);color:var(--text);
   border-radius:999px;padding:8px 12px;font:inherit;font-weight:650;
-  flex:0 0 auto;white-space:nowrap;
+  flex:0 0 auto;max-width:100%;white-space:normal;min-height:44px;
   cursor:pointer;-webkit-tap-highlight-color:transparent;
 }
-#action-open,#action-plan,#snooze-until-planned{
+#action-open,#action-link,#action-plan,#snooze-until-planned{
   background:color-mix(in srgb,var(--bg) 86%,var(--text));
 }
-#action-open[hidden],#action-plan[hidden],#snooze-until-planned[hidden]{display:none;}
+#action-open[hidden],#action-link[hidden],#action-plan[hidden],#snooze-until-planned[hidden]{display:none;}
 
 /* Calendar overview — compact view controls, useful day signals, and one clear
    drill-down path. These rules intentionally stay scoped to calendar surfaces. */

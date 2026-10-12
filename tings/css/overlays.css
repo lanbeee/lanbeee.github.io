@@ -231,21 +231,22 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 }
 .ting-card .pulse-btn::after{
   content:"";position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;
-  border:0;border-radius:999px;background:var(--text);
+  border:0;border-radius:999px;
+  background:color-mix(in srgb,var(--card-priority,var(--text3)) 55%,var(--text));
   box-shadow:none;
 }
 .ting-card .pulse-btn::before{
   content:"";position:absolute;right:-5px;bottom:-5px;width:21px;height:21px;
-  border-radius:999px;background:var(--bg);z-index:1;
-  -webkit-mask:center/13px 13px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
-  mask:center/13px 13px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
+  border-radius:999px;background:var(--tick-ink);z-index:1;
+  -webkit-mask:center/13px 13px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
+  mask:center/13px 13px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
 }
 .ting-card.is-done .pulse-btn::before{display:none;}
 .ting-card.is-done .pulse-btn::after{
   content:"✓";display:grid;place-items:center;
   border:0;border-radius:999px;
-  background:var(--teal-icon);color:var(--teal-bg);
-  font-size:13px;font-weight:760;line-height:1;
+  background:var(--teal-icon);color:var(--tick-ink);
+  font-size:13px;font-weight:900;line-height:1;
   box-shadow:none;
 }
 .ting-card .pulse-btn .ti{font-size:35px;}

@@ -81,6 +81,7 @@ function mountInPane(sheetId) {
   }
   pane.dataset.activeSheet = sheetId;
   document.body.classList.add('pane-active');
+  syncBrowserBack();
   return inner;
 }
 
@@ -100,6 +101,7 @@ function unmountPane() {
   if (!paneTierActive()) pane.setAttribute('hidden','');
   delete pane.dataset.activeSheet;
   document.body.classList.remove('pane-active');
+  syncBrowserBack();
 }
 
 // RENDER: syncs the detail snooze row for the current hide state
@@ -170,6 +172,9 @@ function doSnoozeUntil(i,until,label = ''){
   if(save(data)){
     showActionToast(`${snoozeUndoLabel(until,label)} · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'show'});
     render();
+    // A snooze may leave the plan's clocks unchanged; still repaint its saved
+    // visibility and Show action from the mounted week immediately.
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   }
 }
 
@@ -185,6 +190,7 @@ function doUnsnooze(i){
     showActionToast(`Showing · ${name}`,{type:'hide',idx:i,snoozedUntil:previous,openAction:false,undoLabel:'hide'});
     if(typeof refreshOpenViews === 'function')refreshOpenViews();
     else render();
+    if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   }
 }
 
@@ -418,8 +424,8 @@ function updateKeyboardLift(){
   const assistantOpen = $('assistant-sheet')?.classList.contains('open');
   const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
-  const needsLift = (!paneTierActive() || detailMounted)
-    && (addOpen || assistantOpen || detailOpen || searchOpen) && window.visualViewport;
+  const needsLift = (addOpen || ((!paneTierActive() || detailMounted)
+    && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
   // subtracting a stale innerHeight from a newly resized dock lifts it twice.
@@ -453,6 +459,12 @@ function updateKeyboardLift(){
   // would hold the old height for a frame as the keyboard closes.
   const bottom = nativeResized ? '100%' : `${visibleBottom}px`;
   if(style.getPropertyValue('--keyboard-viewport-bottom') !== bottom)style.setProperty('--keyboard-viewport-bottom',bottom);
+  // Add is a flex layout, so its height must use viewport units on native;
+  // a percentage would resolve inside the wide modal's padded container.
+  const addHeight = nativeResized ? '100dvh' : bottom;
+  if(style.getPropertyValue('--add-viewport-height') !== addHeight)style.setProperty('--add-viewport-height',addHeight);
+  if(nativeResized && layoutHeight < nativeKeyboardRestHeight)style.setProperty('--add-footer-safe-bottom','0px');
+  else style.removeProperty('--add-footer-safe-bottom');
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
   if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
@@ -480,9 +492,12 @@ function keepFocusedInputVisible(){
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
   if(!active || active.matches('#habit-search,#detail-search-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  const host = active.closest('.detail-sheet .detail-page,.add-sheet,.assistant-sheet');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet');
   if(!host)return;
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page'))return;
+  // Minimal detail sections share the pager's scroll, rather than scrolling
+  // independently. Reveal the field in the element that can actually move.
+  if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-pager');
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
   const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
@@ -550,8 +565,96 @@ function ensureSheetExit(id){
   bar.append(target);inner.prepend(bar);
 }
 
+// System Back reuses the visible screen's dismissal control, including its
+// cleanup/return behavior. Android invokes this through MainActivity; the
+// browser/PWA invokes it when the current view’s history entry is popped.
+let sheetOpenSequence = 0;
+function handleAppBack(){
+  const visible = button=>button && !button.disabled && button.getClientRects().length > 0;
+  const click = button=>{if(!visible(button))return false; button.click(); return true;};
+  // Small overlays sit above the sheets and must consume one Back on their own.
+  if($('time-step-picker')?.classList.contains('open')){
+    return click($('time-step-picker-done'));
+  }
+  for(const id of ['agenda-pair-scanner','agenda-pair-approval']){
+    if(visible($(id)))return click($(id+'-cancel'));
+  }
+  if(window.TingsCoach?.state().active){
+    if(click(document.querySelector('[data-coach-back]')))return true;
+    // Reuse the tour's two-tap end control on its first screen too.
+    return click(document.querySelector('[data-coach-skip]'));
+  }
+  const sheets = [...document.querySelectorAll('.sheet-wrap.open')];
+  sheets.sort((a,b)=>Number(getComputedStyle(b).zIndex || 0) - Number(getComputedStyle(a).zIndex || 0)
+    || Number(b.dataset.backSequence || 0) - Number(a.dataset.backSequence || 0));
+  const id = sheets[0]?.id || getPane()?.dataset.activeSheet;
+  if(id){
+    const inner = getSheetInner(id);
+    if(id === 'detail-sheet'){
+      if(click($('detail-custom-app-cancel')))return true;
+      if(visible($('detail-mark-menu')) && typeof setDetailMarkMenuOpen === 'function'){
+        setDetailMarkMenuOpen(false);return true;
+      }
+      if(!$('detail-search-panel').hidden)return click($('detail-cool'));
+      return click($((inner?.classList.contains('detail-editing') || inner?.classList.contains('tune-dirty')) ? 'detail-close' : 'detail-cool'));
+    }
+    if(id === 'day-logs-sheet' && click($('day-logs-back')))return true;
+    if(id === 'settings-sheet'){
+      if(click($('backup-import-no')) || click($('calendar-pdf-cancel')))return true;
+    }
+    ensureSheetExit(id);
+    const exit = inner?.querySelector('[data-sheet-dismissal]');
+    if(click(exit))return true;
+    // All standard sheets have a close/cancel control. Keep dynamically
+    // contributed sheets dismissible too, without choosing a save action.
+    closeSheet(id);
+    return true;
+  }
+  if(typeof isSearchOpen === 'function' && isSearchOpen()){
+    closeSearch();return true;
+  }
+  return false; // Home: the native host may put the app in the background.
+}
+
+// Browser edge gestures need a same-page history entry while a view is open.
+// Use one entry for the whole stack: a Back dismisses one layer and rearms for
+// the remaining layers. Button dismissals consume it when returning to Home.
+// Android uses its native dispatcher instead, so it needs no synthetic history.
+let appBackHistoryArmed = false;
+let appBackHistoryCleaning = false;
+function syncBrowserBack(){
+  if(window.Capacitor?.isNativePlatform?.())return;
+  if(appBackHistoryCleaning)return;
+  const open = Boolean(document.querySelector('.sheet-wrap.open') || getPane()?.dataset.activeSheet);
+  if(open && !appBackHistoryArmed){
+    history.pushState({...history.state,tingsSheetBack:true},'');
+    appBackHistoryArmed = true;
+  }else if(!open && appBackHistoryArmed){
+    appBackHistoryArmed = false;
+    appBackHistoryCleaning = true;
+    history.back();
+  }
+}
+window.addEventListener('popstate',event=>{
+  if(window.Capacitor?.isNativePlatform?.())return;
+  if(appBackHistoryCleaning){
+    appBackHistoryCleaning = false;
+    syncBrowserBack();
+  }else if(appBackHistoryArmed){
+    appBackHistoryArmed = false;
+    // Closing a sheet can synchronize history itself. Rearming afterward is
+    // idempotent and also covers Back that only closes an inner subpage.
+    handleAppBack();
+    syncBrowserBack();
+  }else if(event.state?.tingsSheetBack){
+    appBackHistoryArmed = true;
+    syncBrowserBack();
+  }
+});
+
 // RENDER: opens a sheet or mounts it in the pane
 function openSheet(id){
+  $(id).dataset.backSequence = String(++sheetOpenSequence);
   ensureSheetExit(id);
   if(id === 'about-sheet' && typeof syncInstallGuideVisibility === 'function'){
     syncInstallGuideVisibility();
@@ -568,12 +671,9 @@ function openSheet(id){
     return;
   }
   $(id).classList.add('open');
-  // Day-header pill taps often go through the forgiving/synthesized click path.
-  // The trailing native click then lands on the freshly opened wrap and would
-  // immediately dismiss it — ignore backdrop taps briefly after open.
-  if(id === 'free-time-sheet' || id === 'slipped-sheet' || id === 'weather-context-sheet'){
-    armSheetBackdropGuard(id);
-  }
+  // Recovered taps and synthesized clicks can land on the wrap that just
+  // opened. Arm every sheet so the next card does not need a whitelist entry.
+  armSheetBackdropGuard(id);
   updateFullPageState();
   updateKeyboardLift();
 }
@@ -590,6 +690,16 @@ function sheetBackdropArmed(id){
   const until = parseInt(wrap.dataset.ignoreBackdropUntil || '0',10);
   return Date.now() < until;
 }
+// Capture so individual sheets do not each have to remember the guard.
+document.addEventListener('click',e=>{
+  const wrap = e.target;
+  if(!wrap || !wrap.classList || !wrap.classList.contains('sheet-wrap'))return;
+  if(!wrap.classList.contains('open'))return;
+  if(!sheetBackdropArmed(wrap.id))return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+},true);
+
 // RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
   // If this sheet is currently mounted in the pane, unmount it instead.
@@ -642,6 +752,7 @@ function shouldMountInPane(id) {
 // Use overflow locking only — never position:fixed. Fixing the body forces
 // scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
+  syncBrowserBack();
   const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.body.classList.toggle('fullpage-open',fullPageOpen);
@@ -661,14 +772,28 @@ function updateFullPageState(){
 // RENDER: shows and auto-hides the toast message. Optional durationMs for
 // longer notices (e.g. monthly retention cleanup).
 function showToast(text,durationMs){
+  hideActionToast();
   const toast = $('toast');
-  toast.textContent = text;
+  $('toast-text').textContent = text;
+  toast.inert = false;
+  toast.setAttribute('aria-hidden','false');
   toast.classList.add('show');
   clearTimeout(toastTimer);
   const fallback = typeof DEFAULT_TOAST_MS === 'number' ? DEFAULT_TOAST_MS : 2800;
   const requested = Number.isFinite(durationMs) ? durationMs : fallback;
   const ms = Math.max(fallback,requested);
-  toastTimer = setTimeout(()=>toast.classList.remove('show'),ms);
+  toast.dataset.durationMs = ms;
+  toastTimer = toast.querySelector(':focus-visible') ? null : setTimeout(hideToast,ms);
+}
+
+function hideToast(){
+  clearTimeout(toastTimer);
+  toastTimer = null;
+  const toast = $('toast');
+  toast.classList.remove('show');
+  if(toast.contains(document.activeElement))document.activeElement.blur();
+  toast.inert = true;
+  toast.setAttribute('aria-hidden','true');
 }
 
 // How long an app's own scheme gets to take over the page before the store
@@ -729,6 +854,7 @@ function openHabitLink(link){
 function canOpenFromAction(action){
   if(!action || !Number.isInteger(action.idx))return false;
   if(action.openAction === false)return false;
+  if(action.toastContext === 'calendar')return false;
   if(action.type !== 'entry')return false;
   if(!load()[action.idx])return false;
   if($('day-logs-sheet')?.classList.contains('open'))return false;
@@ -740,18 +866,50 @@ function canOpenFromAction(action){
 
 function secondaryActionLabel(action){
   if(!action || action.type !== 'entry')return '';
+  if(action.toastContext === 'calendar')return '';
   return action.toastActionLabel || '';
 }
 
+// Completion offers the item's primary shortcut. Planning, undoing completion,
+// and logging a stop-habit lapse must not offer a completion shortcut.
+function actionToastLink(action){
+  if(!action || !Number.isInteger(action.idx))return null;
+  const completed = (action.type === 'entry' && !action.plan)
+    || (action.type === 'replace-entry' && !action.toPlan);
+  if(!completed)return null;
+  const data = load();
+  const h = action.hid ? data.find(item=>item.hid === action.hid) : data[action.idx];
+  if(!h || h.type === 'zero')return null;
+  return habitPrimaryLink(h);
+}
+
+function actionToastLinkLabel(link){
+  if(!link)return '';
+  if(link.kind === 'phone')return 'call';
+  if(link.kind === 'whatsapp' || link.kind === 'facetime' || link.kind === 'app')return `open ${linkLabel(link)}`;
+  return 'open link';
+}
+
 function showActionToast(text,action){
+  hideToast();
+  if(Number.isInteger(action.idx))action.hid ||= load()[action.idx]?.hid;
   pendingAction = action;
   $('action-text').textContent = text;
   const actionBtn = $('action-undo');
   if(actionBtn)actionBtn.textContent = action.undoLabel || 'undo';
   const openBtn = $('action-open');
+  const linkBtn = $('action-link');
   const planBtn = $('action-plan');
+  const link = actionToastLink(action);
+  if(linkBtn){
+    linkBtn.textContent = actionToastLinkLabel(link);
+    linkBtn.hidden = !link;
+    linkBtn.title = link ? `${linkLabel(link)} · ${link.value}` : '';
+    linkBtn.setAttribute('aria-hidden',String(!link));
+  }
   if(openBtn){
-    const showOpen = canOpenFromAction(action);
+    const showOpen = !link && canOpenFromAction(action);
+    openBtn.textContent = 'view item';
     openBtn.hidden = !showOpen;
     openBtn.setAttribute('aria-hidden',String(!showOpen));
   }
@@ -765,13 +923,17 @@ function showActionToast(text,action){
   if(snoozeUntilBtn){
     // Minimal mode has no snooze anywhere else, so it must not appear here.
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-    const showSnooze = !minimal && action && action.plan && action.ts > Date.now();
+    const showSnooze = !minimal && action.type === 'entry' && action.plan
+      && action.ts > Date.now() && load()[action.idx]?.type !== 'zero';
     snoozeUntilBtn.hidden = !showSnooze;
     snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));
   }
-  $('action-toast').classList.add('show');
+  const toast = $('action-toast');
+  toast.inert = false;
+  toast.setAttribute('aria-hidden','false');
+  toast.classList.add('show');
   clearTimeout(actionToastTimer);
-  actionToastTimer = setTimeout(hideActionToast,7200);
+  actionToastTimer = toast.querySelector(':focus-visible') ? null : setTimeout(hideActionToast,7200);
 }
 
 // HYBRID: hides action toast and clears pending action state
@@ -779,7 +941,12 @@ function hideActionToast(){
   clearTimeout(actionToastTimer);
   actionToastTimer = null;
   pendingAction = null;
-  $('action-toast').classList.remove('show');
+  const toast = $('action-toast');
+  toast.classList.remove('show');
+  if(toast.contains(document.activeElement))document.activeElement.blur();
+  toast.inert = true;
+  toast.setAttribute('aria-hidden','true');
+  if($('action-link'))$('action-link').hidden = true;
   if($('action-open'))$('action-open').hidden = true;
   if($('action-plan'))$('action-plan').hidden = true;
   if($('snooze-until-planned'))$('snooze-until-planned').hidden = true;
@@ -1085,6 +1252,8 @@ document.addEventListener('pointerdown',e=>{
   searchDismissPointer = null;
   const btn = forgivingButtonTarget(e.target, e.clientX, e.clientY);
   if(!btn)return;
+  // Suppression belongs to the previous pan, not a new physical press.
+  if(suppressNativeButton === btn)suppressNativeButton = null;
   // Snapshot every scrollable ancestor (vertical and horizontal) so a scroll
   // or swipe that starts anywhere over the button is never mistaken for a tap,
   // no matter which element actually moves — home window, pane list, sheets,
@@ -1123,6 +1292,7 @@ document.addEventListener('pointerdown',e=>{
   buttonPointer = {
     btn,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),
     maxMove:0,
+    maxVerticalMove:0,
     // True when the finger missed the button box but hit-slop still armed it.
     armedBySlop: e.target.closest('button') !== btn,
     scrollers
@@ -1135,6 +1305,7 @@ document.addEventListener('pointermove',e=>{
   if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
   const dist = Math.hypot(e.clientX - buttonPointer.x,e.clientY - buttonPointer.y);
   if(dist > buttonPointer.maxMove)buttonPointer.maxMove = dist;
+  buttonPointer.maxVerticalMove = Math.max(buttonPointer.maxVerticalMove,Math.abs(e.clientY - buttonPointer.y));
 },{passive:true});
 
 document.addEventListener('pointerup',e=>{
@@ -1149,21 +1320,20 @@ document.addEventListener('pointerup',e=>{
     }
   }
   if(!buttonPointer || buttonPointer.id !== e.pointerId)return;
-  const {btn,x,y,time,armedBySlop,scrollers} = buttonPointer;
+  const {btn,x,y,time,armedBySlop,scrollers,maxMove,maxVerticalMove} = buttonPointer;
   buttonPointer = null;
   if(btn.disabled)return;
   const dx = Math.abs(e.clientX - x);
   const dy = Math.abs(e.clientY - y);
-  const moved = Math.hypot(dx,dy);
+  const moved = Math.max(maxMove,Math.hypot(dx,dy));
   if(btn.disabled)return;
   if(btn.classList.contains('timer-start-btn'))return;
-  // Movement cap for the forgiving click. A sloppy tap drifts a few tens of
-  // pixels at most (pointercancel recovery already caps at 32); anything
-  // larger is a scroll or swipe gesture — including pans the scroll checks
-  // below can't observe (e.g. a cancelled flick whose scroller never moved,
+  // Sideways drift can still hit a small button. Vertical travel beyond
+  // normal tap slop is a pan even at a scroll boundary. This includes pans
+  // the scroll checks below can't observe (e.g. a cancelled flick whose scroller never moved,
   // or a downward drag at scrollTop 0 that never moves the page). Eat the
   // trailing native click so a pan that starts on a button cannot activate it.
-  if(moved > 32){
+  if(moved > 32 || Math.max(maxVerticalMove,dy) > FORGIVING_VERTICAL_MOVE_PX){
     suppressNativeButton = btn;
     setTimeout(()=>{if(suppressNativeButton === btn)suppressNativeButton = null;},400);
     return;
@@ -1197,6 +1367,7 @@ document.addEventListener('pointerup',e=>{
 // rest of the finger travel (and before a bounded overscroll that never
 // changes scrollTop). Wait for that touch to end and count its displacement
 // so a downward drag at scrollY 0 is not recovered as a tap.
+const FORGIVING_VERTICAL_MOVE_PX = TAP_MOVE_PX;
 const FORGIVING_SCROLL_FLOOR = 2;
 const FORGIVING_SETTLE_MS = 150;
 const FORGIVING_MIN_WAIT_MS = 32;
@@ -1218,7 +1389,8 @@ function deferForgivingClick(scrollers,btn,opts){
   const startX = opts && Number.isFinite(opts.x) ? opts.x : null;
   const startY = opts && Number.isFinite(opts.y) ? opts.y : null;
   let touchEnded = !!(opts && opts.ended);
-  let maxFinger = 0;
+  let maxFinger = opts && opts.maxMove || 0;
+  let maxVertical = opts && opts.maxVerticalMove || 0;
   let lastMoved = scrollerDelta(scrollers);
   let stableFrames = 0;
   let done = false;
@@ -1227,7 +1399,8 @@ function deferForgivingClick(scrollers,btn,opts){
     if(startX == null)return;
     const dist = Math.hypot(x - startX, y - startY);
     if(dist > maxFinger)maxFinger = dist;
-    if(maxFinger > 32)finish(false);
+    maxVertical = Math.max(maxVertical,Math.abs(y - startY));
+    if(maxFinger > 32 || maxVertical > FORGIVING_VERTICAL_MOVE_PX)finish(false);
   }
 
   const onScroll = ()=>{
@@ -1245,6 +1418,7 @@ function deferForgivingClick(scrollers,btn,opts){
     if(t)finger(t.clientX, t.clientY);
     touchEnded = true;
   };
+  const onTouchCancel = ()=>finish(false);
   const listened = [];
   for(const [el] of scrollers){
     if(!el || typeof el.addEventListener !== 'function')continue;
@@ -1254,14 +1428,14 @@ function deferForgivingClick(scrollers,btn,opts){
   window.addEventListener('scroll',onScroll,{passive:true,capture:true});
   window.addEventListener('touchmove',onTouchMove,{passive:true,capture:true});
   window.addEventListener('touchend',onTouchEnd,{passive:true,capture:true});
-  window.addEventListener('touchcancel',onTouchEnd,{passive:true,capture:true});
+  window.addEventListener('touchcancel',onTouchCancel,{passive:true,capture:true});
 
   function cleanup(){
     for(const el of listened)el.removeEventListener('scroll',onScroll,{capture:true});
     window.removeEventListener('scroll',onScroll,{capture:true});
     window.removeEventListener('touchmove',onTouchMove,{capture:true});
     window.removeEventListener('touchend',onTouchEnd,{capture:true});
-    window.removeEventListener('touchcancel',onTouchEnd,{capture:true});
+    window.removeEventListener('touchcancel',onTouchCancel,{capture:true});
   }
 
   function finish(shouldClick){
@@ -1285,7 +1459,7 @@ function deferForgivingClick(scrollers,btn,opts){
   function tick(){
     if(done)return;
     if(btn.disabled){finish(false);return;}
-    if(maxFinger > 32){finish(false);return;}
+    if(maxFinger > 32 || maxVertical > FORGIVING_VERTICAL_MOVE_PX){finish(false);return;}
     const moved = scrollerDelta(scrollers);
     if(moved > FORGIVING_SCROLL_FLOOR){finish(false);return;}
     if(moved === lastMoved)stableFrames += 1;
@@ -1299,7 +1473,7 @@ function deferForgivingClick(scrollers,btn,opts){
       return;
     }
     if((stableFrames >= 2 && elapsed >= FORGIVING_MIN_WAIT_MS) || elapsed >= FORGIVING_SETTLE_MS){
-      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR && maxFinger <= 32);
+      finish(scrollerDelta(scrollers) <= FORGIVING_SCROLL_FLOOR && maxFinger <= 32 && maxVertical <= FORGIVING_VERTICAL_MOVE_PX);
       return;
     }
     requestAnimationFrame(tick);
@@ -1330,8 +1504,9 @@ document.addEventListener('pointercancel',e=>{
   // settled.
   suppressNativeButton = tap.btn;
   setTimeout(()=>{if(suppressNativeButton === tap.btn)suppressNativeButton = null;},500);
-  if(tap.maxMove <= 32 && Date.now() - tap.time < 450){
-    deferForgivingClick(tap.scrollers,tap.btn,{x:tap.x,y:tap.y,ended:false});
+  if(tap.maxMove <= 32 && tap.maxVerticalMove <= FORGIVING_VERTICAL_MOVE_PX && Date.now() - tap.time < 450){
+    deferForgivingClick(tap.scrollers,tap.btn,{x:tap.x,y:tap.y,ended:false,
+      maxMove:tap.maxMove,maxVerticalMove:tap.maxVerticalMove});
   }
 },true);
 

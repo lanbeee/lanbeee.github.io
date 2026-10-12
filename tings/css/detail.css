@@ -2,7 +2,8 @@
   position:sticky;
   top:0;
   z-index:45;
-  /* Match the section cards below, while actions use a separate toolbar. */
+  overflow:visible;
+  /* Match the section cards below. Cancel/Save overlay this header in place. */
   margin:0 0 6px;
   padding:8px;
   gap:8px;
@@ -12,7 +13,16 @@
   align-items:stretch;justify-content:center;gap:3px;
 }
 .detail-head .ting-main{margin-bottom:1px;}
-.detail-head .ting-name{font-size:calc(14.5px * var(--font-scale));font-weight:600;}
+.detail-head .ting-name{
+  appearance:none;-webkit-appearance:none;
+  margin:0;padding:0;border:0;background:transparent;
+  font:inherit;font-size:calc(14.5px * var(--font-scale));font-weight:600;
+  color:inherit;text-align:left;cursor:pointer;max-width:100%;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.detail-head .ting-name:focus-visible{
+  outline:2px solid var(--text2);outline-offset:2px;border-radius:4px;
+}
 /* Wrap to two lines instead of ellipsizing — the cue carries the time
    window ("sunrise +10m–sunrise +40m") and nowrap cut its end at 320px. */
 .detail-cue{
@@ -20,8 +30,30 @@
   overflow:hidden;white-space:normal;word-break:break-word;
 }
 .detail-head .detail-cue{font-size:11px;line-height:1.2;}
+.detail-head .detail-mark-wrap{
+  position:relative;align-self:center;width:46px;min-width:46px;height:46px;
+  overflow:visible;z-index:3;
+}
 .detail-head .detail-mark{
-  cursor:pointer;width:46px;min-width:46px;height:46px;
+  cursor:pointer;width:100%;min-width:0;height:100%;
+}
+.detail-mark-menu{
+  position:absolute;top:calc(100% + 6px);left:0;z-index:60;
+  display:flex;flex-direction:column;gap:2px;
+  min-width:168px;padding:6px;
+  background:var(--bg);border:0.5px solid var(--border);
+  border-radius:var(--radius-sm);box-shadow:var(--floating-shadow,0 8px 24px rgba(0,0,0,0.14));
+}
+.detail-mark-menu[hidden]{display:none;}
+.detail-mark-choice{
+  display:flex;align-items:center;min-height:44px;padding:8px 12px;
+  border:0;border-radius:10px;background:transparent;color:var(--text);
+  font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.detail-mark-choice:active{background:var(--bg2);}
+@media (hover:hover) and (pointer:fine){
+  .detail-mark-choice:hover{background:var(--bg2);}
 }
 .detail-head .detail-mark .ti{font-size:34px;}
 .detail-head .detail-mark.emoji-pulse .emoji-mark{font-size:36px;}
@@ -205,6 +237,7 @@ body .detail-sheet{
   padding-inline:max(12px,var(--content-safe-left)) max(12px,var(--content-safe-right));
 }
 body .detail-sheet > .detail-bottom-bar{
+  position:relative;z-index:160;
   flex:0 0 auto;align-self:center;min-width:0;max-width:100%;
   margin:10px 0 0;padding:8px;border-radius:28px;
   background:var(--glass-bg);box-shadow:var(--floating-shadow);
@@ -214,10 +247,6 @@ body .detail-sheet > .detail-bottom-bar .detail-actions{
   position:static;inset:auto;transform:none;min-width:0;width:100%;margin:0;padding:0;
   display:flex;align-items:center;gap:8px;
 }
-body .detail-sheet > .detail-bottom-bar .tune-actions{display:none;}
-body .detail-sheet.tune-dirty > .detail-bottom-bar #detail-cool-row{display:none;}
-body .detail-sheet.tune-dirty > .detail-bottom-bar .tune-actions{display:flex;}
-body .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(100%,320px);}
 /* Phone: the footer floats like Home's action bar — pages scroll behind it
    instead of the layout reserving a footer band, and each scrolling page
    carries its own end-of-list clearance so the lowest row can rise above the
@@ -254,10 +283,6 @@ body[data-pane-count="1"] #detail-search-toggle{flex:0 0 44px;width:44px;min-wid
 body[data-pane-count="1"] #detail-search-toggle span{display:none;}
 /* Search open mirrors Home's expanded action bar: field across the width. */
 body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{width:calc(100vw - 24px);max-width:456px;}
-/* Save/Cancel are flex:1 1 0, whose max-content contribution is unreliable
-   for the shrink-wrapped pill — give the editing dock the explicit width the
-   in-flow rule uses (min(100%,320px), floater flavor). */
-body[data-pane-count="1"] .detail-sheet.tune-dirty > .detail-bottom-bar{width:min(calc(100vw - 24px),320px);}
 body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
@@ -277,10 +302,11 @@ body .detail-bottom-bar .detail-head-btn{
   aspect-ratio:1;border-radius:50%;padding:0;border:0;background:var(--bg3);
 }
 .detail-bottom-bar svg{flex-shrink:0;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
-body .detail-bottom-bar .btn{
+body .detail-head .tune-actions .btn{
   flex:1 1 0;min-width:0;min-height:44px;padding:10px 20px;border-radius:22px;
   font-size:calc(14px * var(--font-scale));line-height:1.2;overflow-wrap:anywhere;
 }
+#detail-save:disabled{background:var(--bg3);color:var(--text3);opacity:.6;cursor:default;transform:none;}
 .detail-search-control{display:flex;align-items:center;min-width:0;border-radius:24px;background:var(--field-bg);overflow:hidden;}
 #detail-search-toggle{
   display:flex;align-items:center;justify-content:center;gap:8px;min-width:44px;min-height:44px;
@@ -324,27 +350,36 @@ body .minimal-detail .detail-full-only{display:none !important;}
 .detail-search-open > .detail-pager{display:none;}
 .detail-search-open > .detail-page-nav{display:none;}
 body .detail-sheet.detail-field-editing > .detail-page-nav,
-body .detail-sheet.detail-field-editing > .detail-bottom-bar #detail-cool-row{display:none;}
-/* With the search row gone (search pill + close X together) the floating
-   footer has nothing to show mid-edit — hide the whole pill unless the
-   Save/Cancel row (tune-dirty) owns it. */
-body .detail-sheet.detail-field-editing:not(.tune-dirty) > .detail-bottom-bar{display:none;}
-/* Typing changes the navigation/footer, while the header keeps its normal
-   geometry and contents throughout the keyboard transition. */
+body .detail-sheet.detail-keyboard-open > .detail-page-nav,
+body .detail-sheet.detail-field-editing > .detail-bottom-bar{display:none;}
 .detail-search-hit{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px;}
 /* The home card's emoji geometry must not override detail's header columns. */
 body .detail-sheet > .detail-head{
   display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:8px;
   padding:8px;margin-bottom:6px;min-width:0;
 }
-body .detail-head > .detail-mark{grid-column:1;grid-row:1;width:56px;min-width:56px;height:56px;}
+body .detail-head > .detail-mark-wrap{grid-column:1;grid-row:1;width:56px;min-width:56px;height:56px;}
+body .detail-head .detail-mark{width:100%;min-width:0;height:100%;}
 .detail-head > .detail-title-wrap{grid-column:2;grid-row:1;}
 .detail-head > .detail-head-actions{
   grid-column:3;grid-row:1;max-width:none;
   overflow-x:auto;justify-self:end;align-self:center;
 }
+/* Overlay the existing header so Cancel/Save never change its height. */
+.detail-head > .tune-actions{
+  display:none;position:absolute;inset:8px;z-index:2;
+  align-items:center;gap:8px;margin:0;padding:0;transform:none;width:auto;
+}
+#detail-sheet:not(.open) .tune-actions{display:none;}
+body .detail-sheet:is(.tune-dirty,.detail-editing) > .detail-head > :not(.tune-actions){visibility:hidden;pointer-events:none;}
+body .detail-sheet:is(.tune-dirty,.detail-editing) > .detail-head::before{visibility:hidden;}
+body .detail-sheet:is(.tune-dirty,.detail-editing) > .detail-head > .tune-actions{display:flex;}
 .detail-head .ting-main{min-width:0;}
-.detail-head .ting-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
+.detail-head .ting-name{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+  /* WebKit's intrinsic grid sizing can otherwise measure every clamped line. */
+  line-height:1.2;max-height:2.4em;
+}
 .detail-search-result :is(b,small){overflow-wrap:anywhere;max-width:100%;}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 #detail-search-input::-webkit-search-cancel-button{display:none;}
@@ -360,6 +395,9 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 .detail-sheet .detail-page .seg-opt{min-width:0;white-space:normal;overflow-wrap:anywhere;}
 .detail-sheet .detail-page .setting-toggle > span{min-width:0;}
 .detail-sheet .detail-page .setting-switch{flex-shrink:0;}
+/* Keep all seven weekday labels intact in either display mode. */
+.detail-sheet .schedule-chip-row{gap:4px;}
+.detail-sheet .schedule-chip-row .schedule-chip{min-width:0;padding-inline:2px;min-height:44px;white-space:nowrap;overflow-wrap:normal;}
 .detail-sheet .detail-time-endpoints .time-combine{width:min(160px,calc(100% - 21px));max-width:calc(100% - 21px);}
 @container (max-width:300px){
   .detail-page .planning-grid,.detail-page .timer-row{grid-template-columns:minmax(0,1fr) !important;}
@@ -396,7 +434,7 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 @media (max-height:480px) and (min-width:600px){
   .detail-head .detail-cue{display:none;}
   body .detail-sheet > .detail-head{grid-template-columns:40px minmax(0,1fr);padding-block:4px;margin-bottom:2px;}
-  body .detail-head > .detail-mark{width:40px;min-width:40px;height:40px;}
+  body .detail-head > .detail-mark-wrap{width:40px;min-width:40px;height:40px;}
   .detail-head > .detail-head-actions{display:none;}
 }
 
@@ -407,6 +445,7 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 @container detail-shell (max-height:280px){
   .detail-page-tab span{display:none;}
   .detail-page-tab{min-height:44px;}
+  .detail-page-nav{display:none;}
   /* A very short desktop/landscape pane uses the same floating footer as
      phones, so Save/Cancel fits without removing the header. */
   body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-bottom-bar{

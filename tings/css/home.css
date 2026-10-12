@@ -122,6 +122,13 @@ body[data-pane-count="3"] .section-header{
   content:"";position:absolute;inset:-12px -14px -12px -4px;
 }
 .dropped-pill:active{transform:scale(0.97);}
+.dropped-pill.is-quiet{
+  width:32px;min-width:32px;padding:0;color:var(--text2);background:var(--bg3);
+  border-color:color-mix(in srgb,var(--text) 12%,transparent);
+  display:grid;place-items:center;letter-spacing:0;text-transform:none;
+}
+.dropped-pill.is-quiet .ti{font-size:16px;line-height:1;}
+.section-header.stuck .dropped-pill.is-quiet{background:var(--bg);}
 .dropped-panel{
   padding:2px 3px 8px;display:flex;flex-direction:column;gap:2px;
 }
@@ -198,6 +205,7 @@ body[data-pane-count="3"] .section-header{
   .section-header.has-context{gap:6px;}
   .day-header-context{gap:4px;}
   .weather-day-button,.free-pill,.dropped-pill{padding-left:7px;padding-right:7px;}
+  .dropped-pill.is-quiet{padding:0;}
 }
 .free-panel{
   padding:4px 3px 8px;display:flex;flex-direction:column;gap:3px;
@@ -259,6 +267,14 @@ body.reach-pad #list{padding-top:220px;}
   transition:width var(--dur-med) var(--ease-tight),opacity var(--dur-fast) ease;
   will-change:width;
 }
+.swipe-row[data-swipe-open]{touch-action:auto;}
+.swipe-action-strip{
+  display:flex;flex:none;width:calc(100% - var(--swipe-corner-pad,20px));
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+  touch-action:pan-x;overscroll-behavior-x:contain;
+}
+.swipe-action-strip::-webkit-scrollbar{display:none;}
+.swipe-actions-right .swipe-action-strip{direction:rtl;}
 .swipe-actions-left{
   left:0;border-radius:var(--card-radius) 0 0 var(--card-radius);
   background:color-mix(in srgb,var(--teal-bg) 48%,var(--bg3));
@@ -278,11 +294,11 @@ body.reach-pad #list{padding-top:220px;}
   font-size:11px;font-weight:500;border:none;
   -webkit-tap-highlight-color:transparent;touch-action:manipulation;
   white-space:nowrap;
-  min-width:64px;
+  flex:0 0 68px;width:68px;min-width:68px;direction:ltr;
 }
 .swipe-action i{font-size:20px;}
 .swipe-action small{font-size:10px;font-weight:600;line-height:1;opacity:0.9;}
-.sa-plan,.sa-activity,.sa-keep{background:transparent;color:var(--teal-text);}
+.sa-plan,.sa-activity,.sa-keep,.sa-open{background:transparent;color:var(--teal-text);}
 .sa-pin{background:transparent;color:var(--purple-text);}
 .sa-reminder{background:transparent;color:var(--amber-text);}
 .sa-snooze{background:transparent;color:var(--text2);}
@@ -330,7 +346,7 @@ body.reach-pad #list{padding-top:220px;}
    only way to access them (matches mobile-portrait behavior on every pane). */
 
 /* Habit cards stay calm and neutral. State/custom color belongs to the emoji
-   or icon surface (plus the priority pill), rather than washing the
+   or icon surface and the priority-tinted tick, rather than washing the
    entire row with a second competing signal. */
 .ting-card.hit,.ting-card.warn,.ting-card.miss,.ting-card.plan{background:var(--bg);}
 .sheet .ting-card.hit,.sheet .ting-card.warn,.sheet .ting-card.miss,.sheet .ting-card.plan,
@@ -359,7 +375,6 @@ body.reach-pad #list{padding-top:220px;}
 .pane-detail .ting-card.snoozed,
 .pane-overview .ting-card.snoozed{background:color-mix(in srgb,var(--bg3) 55%,var(--bg2));}
 .ting-card.snoozed .pulse-btn,.ting-card.snoozed .ting-info{opacity:0.48;}
-.ting-card.snoozed .ting-priority-badge{opacity:0.5;}
 .ting-card.logged::after{animation:ring 0.36s var(--ease-snappy);}
 
 .pulse-btn{
@@ -408,15 +423,9 @@ body.reach-pad #list{padding-top:220px;}
   column-gap:8px;row-gap:3px;
 }
 .ting-main{display:flex;align-items:center;justify-content:space-between;gap:10px;grid-column:1 / -1;}
-/* Keep the priority badge beside the title, with its own space even when
-   the name wraps or yields to the agenda clock. */
 .ting-title{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;}
 .ting-title .ting-name{flex:0 1 auto;}
-.ting-priority-badge{
-  display:block;width:14px;height:7px;flex:0 0 14px;border-radius:999px;
-  background:var(--card-priority,var(--card-accent,var(--text3)));
-  filter:saturate(0.85);pointer-events:none;
-}
+.ting-name{flex:0 1 auto;}
 .ting-name{
   font-size:calc(15px * var(--font-scale));font-weight:650;color:var(--text);letter-spacing:-0.012em;
   flex:1 1 auto;min-width:0;
@@ -624,27 +633,18 @@ body.reach-pad #list{padding-top:220px;}
 .breakable-card .ting-visual{
   flex-direction:column;align-items:stretch;gap:6px;
 }
+/* Home history is a quiet record of entries. Shape, rather than semantic
+   color, separates logs, plans and blank days; detail History owns rhythm. */
 .ting-trail{display:flex;align-items:center;gap:3px;min-width:0;flex:1;}
-.trail-dot{
-  width:8px;height:4px;border-radius:999px;background:var(--bg3);
-  opacity:0.88;flex:0 0 auto;
+.trail-dot,.trail-week{
+  position:relative;width:8px;height:6px;border-radius:999px;
+  background:var(--text3);flex:0 0 auto;
 }
-.trail-dot.empty{background:var(--bg3);opacity:0.68;}
-.trail-dot.today{box-shadow:0 0 0 1px var(--border2);opacity:1;}
-.trail-week{
-  width:22px;height:4px;border-radius:999px;background:var(--bg3);
-  opacity:0.62;flex:0 0 auto;margin-right:7px;
+.trail-week{width:22px;margin-right:7px;}
+.trail-dot.empty,.trail-week.empty{height:4px;background:var(--bg3);}
+.trail-dot.plan,.trail-week.plan{
+  background:transparent;box-shadow:inset 0 0 0 1.5px var(--text3);
 }
-.trail-dot.hit{background:var(--teal-icon);}
-.trail-dot.warn{background:var(--amber-icon);}
-.trail-dot.miss{background:var(--red-icon);}
-.trail-dot.plan{background:transparent;box-shadow:inset 0 0 0 1.5px var(--purple-icon);}
-.trail-dot.hit,.trail-dot.warn,.trail-dot.miss{height:6px;opacity:1;}
-.trail-week.hit{background:var(--teal-icon);}
-.trail-week.warn{background:var(--amber-icon);}
-.trail-week.miss{background:var(--red-icon);}
-.trail-week.plan{background:transparent;box-shadow:inset 0 0 0 1.5px var(--purple-icon);}
-.trail-week.hit,.trail-week.warn,.trail-week.miss{height:6px;opacity:0.78;}
 .dot{margin:0 5px;color:var(--text3);}
 #empty{
   text-align:center;color:var(--text3);font-size:14px;

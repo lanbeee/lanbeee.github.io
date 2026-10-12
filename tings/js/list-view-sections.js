@@ -219,11 +219,7 @@ function missedPlannerFingerprint(data,settings){
     availabilityOverrides:settings?.availabilityOverrides,
     locations:settings?.locations,
     travel:settings?.travel,
-    defaultTravelMode:settings?.defaultTravelMode,
-    showScheduledTasksInAgenda:settings?.showScheduledTasksInAgenda,
-    showDueTasksInAgenda:settings?.showDueTasksInAgenda,
-    showPlannedItemsInAgenda:settings?.showPlannedItemsInAgenda,
-    showDueHabitsInAgenda:settings?.showDueHabitsInAgenda
+    defaultTravelMode:settings?.defaultTravelMode
   };
   const source = JSON.stringify([habits,plannerSettings]);
   let hash = 2166136261;
@@ -519,20 +515,49 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     a.expectedDay.localeCompare(b.expectedDay) || a.first - b.first);
 }
 
+let _slippedSheetDayLabel = 'today';
+let _slippedTodayHids = [];
+
+function partitionDroppedItems(dropped, now = Date.now()){
+  const visible = [];
+  const hidden = [];
+  for(const row of dropped || []){
+    if(typeof missedHideIsActive === 'function' && missedHideIsActive(row, now))hidden.push(row);
+    else visible.push(row);
+  }
+  return {visible, hidden};
+}
+
+function collectSlippedDropped(now = Date.now()){
+  return typeof collectDroppedItems === 'function'
+    ? collectDroppedItems(load(), sortSettings, _slippedTodayHids, now)
+    : [];
+}
+
 function attachDroppedIndicator(header,list,todayHids){
-  const dropped = collectDroppedItems(load(), sortSettings, todayHids);
-  if(!dropped.length)return;
+  _slippedTodayHids = Array.isArray(todayHids) ? todayHids.slice() : [];
+  const dropped = collectSlippedDropped();
+  const {visible, hidden} = partitionDroppedItems(dropped);
+  if(!visible.length && !hidden.length)return;
   header.classList.add('has-dropped');
   const pill = document.createElement('button');
   pill.type = 'button';
   pill.className = 'dropped-pill';
-  pill.textContent = `${dropped.length} missed`;
-  bindDayHeaderPill(pill,()=>openSlippedSheet(dropped,header.dataset.label || 'today'));
+  if(visible.length){
+    pill.textContent = `${visible.length} missed`;
+  }else{
+    pill.classList.add('is-quiet');
+    pill.innerHTML = '<i class="ti ti-eye-off" aria-hidden="true"></i>';
+    pill.setAttribute('aria-label','hidden until tonight');
+  }
+  const dayLabel = header.dataset.label || 'today';
+  bindDayHeaderPill(pill,()=>openSlippedSheet(dropped, dayLabel));
   dayHeaderContextHost(header)?.appendChild(pill);
 }
 
 function renderDroppedPanel(items,opts = {}){
   const showDayTag = Boolean(opts.showDayTag);
+  const hidden = Boolean(opts.hidden);
   const panel = document.createElement('div');
   panel.className = 'dropped-panel';
   const data = load();
@@ -541,12 +566,19 @@ function renderDroppedPanel(items,opts = {}){
     // The row is a div (not a button) so the log affordance below can be its
     // own button. Tapping anywhere on the row except the icon still reviews.
     const row = document.createElement('div');
-    row.className = 'dropped-item';
+    row.className = hidden ? 'dropped-item is-hidden' : 'dropped-item';
     row.setAttribute('role','button');
     row.setAttribute('tabindex','0');
     row.dataset.hid = item.hid || '';
     if(item.occurrenceKey)row.dataset.occurrenceKey = item.occurrenceKey;
     const tagHtml = showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '';
+    const hideLabel = hidden ? 'show on missed' : 'hide until tonight';
+    const hideClass = hidden ? 'dropped-show' : 'dropped-hide';
+    const hideIcon = hidden ? 'ti-eye' : 'ti-eye-off';
+    const cue = hidden ? 'Hidden until tonight' : 'Tap to review';
+    const timeCue = item.occurrenceKey && Number.isFinite(item.start)
+      ? `${escapeHtml(compactHomeTime(item.start))} · `
+      : '';
 
     // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
     // a missed habit can be cleared with one tap straight from this list.
@@ -560,21 +592,27 @@ function renderDroppedPanel(items,opts = {}){
     const logInner = h ? iconHtml(h,c) : '<i class="ti ti-circle-dashed" aria-hidden="true"></i>';
     row.innerHTML =
       `<button type="button" class="dropped-mark dropped-log${h && h.emoji ? ' emoji-pulse' : ''}" aria-label="${h && h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(item.name)}" style="${logStyle}">${logInner}</button>`
-      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>${item.occurrenceKey && Number.isFinite(item.start) ? `${escapeHtml(compactHomeTime(item.start))} · ` : ''}Tap to review</small></span>`
-      + `${tagHtml}<i class="ti ti-chevron-right dropped-chevron" aria-hidden="true"></i>`;
+      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>${timeCue}${cue}</small></span>`
+      + `${tagHtml}<button type="button" class="${hideClass}" aria-label="${hideLabel}"><i class="ti ${hideIcon}" aria-hidden="true"></i></button>`;
 
     const review = ()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); };
-    row.addEventListener('click',e=>{ if(e.target.closest('.dropped-log'))return; review(); });
+    row.addEventListener('click',e=>{
+      if(e.target.closest('.dropped-log,.dropped-hide,.dropped-show'))return;
+      review();
+    });
     row.addEventListener('keydown',e=>{
       if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); review(); }
     });
 
     const finishLog = ()=>{
-      // The habit is now completedToday, so it no longer belongs here. Drop the
-      // row at once; if the sheet is empty, dismiss it. Then refresh home so the
-      // "missed" pill recount follows the log without a cold restart.
-      row.remove();
-      if(!document.querySelector('#slipped-content .dropped-item'))closeSheet('slipped-sheet');
+      // The habit is now completedToday, so it no longer belongs here. Refresh
+      // the open sheet so a leftover hidden section can remain; dismiss only
+      // when nothing is left. Then refresh home so the missed pill recounts.
+      if(typeof refreshSlippedSheet === 'function')refreshSlippedSheet();
+      else {
+        row.remove();
+        if(!document.querySelector('#slipped-content .dropped-item'))closeSheet('slipped-sheet');
+      }
       if(typeof refreshOpenViews === 'function')refreshOpenViews();
       if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     };
@@ -586,34 +624,86 @@ function renderDroppedPanel(items,opts = {}){
       if(typeof requestLogTing === 'function')requestLogTing(item.idx,finishLog,logOpts);
       else if(typeof logTing === 'function' && logTing(item.idx,logOpts))finishLog();
     });
+    const hideBtn = row.querySelector('.dropped-hide, .dropped-show');
+    if(hideBtn){
+      hideBtn.addEventListener('pointerdown',e=>e.stopPropagation());
+      hideBtn.addEventListener('click',e=>{
+        e.stopPropagation();
+        toggleMissedHide(item, !hidden);
+      });
+    }
 
     panel.appendChild(row);
   });
   return panel;
 }
 
-function openSlippedSheet(items,dayLabel){
-  const content = document.getElementById('slipped-content');
-  if(!content)return;
-  document.getElementById('slipped-title').textContent = `missed · ${dayLabel}`;
-  content.innerHTML = '';
-
+function slippedItemsWithTags(items){
   const data = load();
-  const dayLabelMap = buildHidDayLabelMap(data,sortSettings);
-
-  const slippedWithTags = items.map(item=>({
+  const dayLabelMap = typeof buildHidDayLabelMap === 'function'
+    ? buildHidDayLabelMap(data,sortSettings)
+    : new Map();
+  return (items || []).map(item=>({
     ...item,
     dayLabel:item.dayLabel || dayLabelMap.get(item.hid) || 'behind'
   }));
+}
 
-  if(slippedWithTags.length){
+function fillSlippedSheet(){
+  const content = document.getElementById('slipped-content');
+  if(!content)return {visible:[], hidden:[]};
+  const dayLabel = _slippedSheetDayLabel || 'today';
+  const title = document.getElementById('slipped-title');
+  if(title)title.textContent = `missed · ${dayLabel}`;
+  content.innerHTML = '';
+  const {visible, hidden} = partitionDroppedItems(collectSlippedDropped());
+  if(visible.length){
     const head1 = document.createElement('div');
     head1.className = 'slipped-section-head';
     head1.textContent = `missed · ${dayLabel}`;
     content.appendChild(head1);
-    content.appendChild(renderDroppedPanel(slippedWithTags,{showDayTag:true}));
+    content.appendChild(renderDroppedPanel(slippedItemsWithTags(visible),{showDayTag:true}));
   }
+  if(hidden.length){
+    const head2 = document.createElement('div');
+    head2.className = 'slipped-section-head';
+    head2.textContent = 'hidden until tonight';
+    content.appendChild(head2);
+    content.appendChild(renderDroppedPanel(slippedItemsWithTags(hidden),{showDayTag:true,hidden:true}));
+  }
+  return {visible, hidden};
+}
 
+function refreshSlippedSheet(){
+  const sheet = document.getElementById('slipped-sheet');
+  if(!sheet || !sheet.classList.contains('open'))return;
+  const {visible, hidden} = fillSlippedSheet();
+  if(!visible.length && !hidden.length)closeSheet('slipped-sheet');
+}
+
+function toggleMissedHide(item, hide){
+  if(!item)return;
+  const data = load();
+  const name = typeof toastItemName === 'function'
+    ? toastItemName(data[item.idx] || {name:item.name})
+    : (item.name || 'item');
+  const result = hide
+    ? (typeof hideMissedRow === 'function' ? hideMissedRow(item) : null)
+    : (typeof showMissedRow === 'function' ? showMissedRow(item) : null);
+  if(!result || !result.id)return;
+  if(typeof showActionToast === 'function'){
+    showActionToast(
+      hide ? `Hidden until tonight · ${name}` : `Showing on missed · ${name}`,
+      {type:'missed-hide', id:result.id, previousUntil:result.previousUntil, openAction:false, undoLabel:hide ? 'show' : 'hide'}
+    );
+  }
+  refreshSlippedSheet();
+  if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
+}
+
+function openSlippedSheet(items,dayLabel){
+  _slippedSheetDayLabel = dayLabel || (typeof items === 'string' ? items : 'today');
+  fillSlippedSheet();
   openSheet('slipped-sheet');
 }
 
@@ -1414,23 +1504,6 @@ function switchFreeTimeDay(nextKey){
   });
 }
 
-// PURE: reduce trail tones to one
-function summarizeTrailTone(tones){
-  if(!tones.length)return '';
-  if(tones.includes('plan'))return 'plan';
-  if(tones.includes('miss'))return 'miss';
-  if(tones.includes('warn'))return 'warn';
-  if(tones.includes('hit'))return 'hit';
-  return '';
-}
-
-// PURE: whether home should lay out day by day. Minimal mode always falls back
-// to the today / overdue / coming up grouping, whatever the toggle says.
-function weekOnHomeEnabled(settings){
-  const s = settings || sortSettings || {};
-  return !s.minimalMode && Boolean(s.showWeekOnHome);
-}
-
 // RENDER: render the full habit list.
 //
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
@@ -1446,7 +1519,6 @@ function render(opts){
     && !o.__optimizedWeek
     && !o.__optimizerFallback
     && sortSettings.preset === 'todayFirst'
-    && weekOnHomeEnabled(sortSettings)
     && !searchQuery.trim()
     && typeof buildWeekAgendaOffMain === 'function';
   if(wantsPlannedWeek){
@@ -1529,7 +1601,6 @@ function render(opts){
   // render just matching habits, ranked by relevance.
   const deferAgenda = Boolean(o.deferAgenda);
   const weekMode = !deferAgenda && todayFirstActive
-    && weekOnHomeEnabled(sortSettings)
     && !searching
     && typeof buildWeekAgenda === 'function'
     && typeof homeDaySequence === 'function';
@@ -1608,46 +1679,56 @@ function render(opts){
     const gatedEarlyPill = (!minimal && sortSettings.showEarlyOnCards) ? earlyPill : '';
     const agendaTimeHidden = agendaPill === '';
     const reminderPill = (!minimal && typeof nativeReminderCardPill === 'function') ? nativeReminderCardPill(h) : '';
+    const appointmentPill = appointmentStatusPill(agendaRow);
     const context = minimal
-      ? cardMeta(h,{forceRepetition:true,minimalOnly:true})
-      : cardMeta(h,{extraPills:[reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
-    const trail = cardTrail(h);
+      ? cardMeta(h,{forceRepetition:true,minimalOnly:true}) + appointmentPill
+      : cardMeta(h,{extraPills:[appointmentPill,reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     // Minimal hides dots unless opted in for minimal specifically
     // (minimalShowTrailOnCards, default off); full keeps its own toggle.
     const showTrail = minimal
       ? sortSettings.minimalShowTrailOnCards === true
       : sortSettings.showTrailOnCards !== false;
+    const trail = showTrail ? cardTrail(h) : '';
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
-    const timerRunning = !minimal && typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
+    const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
     // so the user can see the session without opening detail.
     const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
     // Minimal's visual row is trail-only when opted in — sliders/sessions stay
     // full-mode features (guarded below by !minimal).
     const visualHtml = minimal
-      ? (showTrail ? `<div class="ting-trail">${trail}</div>` : '')
+      ? trail
       : (showBreakableSlider
         ? `${cardBreakableSlider(h)}${sessionHtml}`
-        : (sessionHtml || (showTrail ? `<div class="ting-trail">${trail}</div>` : '')));
-    const visualAria = showBreakableSlider || sessionHtml ? '' : ' aria-hidden="true"';
+        : (sessionHtml || trail));
     const isDoneTask = h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
       ? habitTimerEligible(h)
       : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
-    const timerAction = (!minimal && (canTimer || timerRunning))
+    const timerAction = (timerRunning || (!minimal && canTimer))
       ? (timerRunning
         ? `<button class="swipe-action sa-timer" data-action="timer" aria-label="stop session"><i class="ti ti-player-stop" aria-hidden="true"></i>stop</button>`
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
     const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
-    const snoozeAction = minimal ? '' : (snoozed
+    const snoozeAction = (snoozed
       ? `<button class="swipe-action sa-snooze" data-action="unsnooze" aria-label="show"><i class="ti ti-moon-off" aria-hidden="true"></i>show</button>`
       : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`);
     const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
-    const activityAction = minimal ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="activity"><i class="ti ti-history" aria-hidden="true"></i>activity</button>`;
+    const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
+    const planAction = dayLogsHabitPlannable(h)
+      ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
+      : '';
+    const primaryLink = habitPrimaryLink(h);
+    const linkAction = !minimal && primaryLink
+      ? `<button class="swipe-action sa-open" data-action="open-link" aria-label="${primaryLink.kind === 'phone' ? 'call' : 'open'} ${escapeHtml(linkLabel(primaryLink))}"><i class="ti ${linkIconClass(primaryLink)}" aria-hidden="true"></i>${primaryLink.kind === 'phone' ? 'call' : 'open'}</button>`
+      : '';
+    const rightSwipeActions = minimal
+      ? `${timerRunning ? timerAction : (h.sample ? keepAction : planAction)}${activityAction}`
+      : `${timerAction}${planAction}${activityAction}${linkAction}${keepAction}`;
     const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
       && nativeReminderAnyOn(`item:${h.hid}`);
     const reminderAction = reminderOn
@@ -1684,32 +1765,31 @@ function render(opts){
     const hasSession = Boolean(sessionHtml) && !isBreakable;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
-        ${pinAction}
-        ${keepAction}
-        ${activityAction}
-        ${reminderAction}
-        ${timerAction}
+        <div class="swipe-action-strip" role="group" aria-label="session, planning and history">
+          ${rightSwipeActions}
+        </div>
       </div>
       <div class="swipe-actions swipe-actions-right">
-        ${snoozeAction}
-        <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
+        <div class="swipe-action-strip" role="group" aria-label="visibility and reminders">
+          ${snoozeAction}${pinAction}${reminderAction}
+          <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
+        </div>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
-        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
+        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
         </button>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">
           <div class="ting-main">
             <span class="ting-title">
               <span class="ting-name">${escapeHtml(h.name)}</span>
-              <span class="ting-priority-badge" role="img" aria-label="Priority P${effectivePriority(h)}"></span>
             </span>
             ${agendaPill}
           </div>
-          ${(!minimal && isBreakable) ? ((reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
+          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
-          ${!visualHtml ? '' : `<div class="ting-visual"${visualAria}>
+          ${!visualHtml ? '' : `<div class="ting-visual">
             ${visualHtml}
           </div>`}
         </div>
@@ -1733,7 +1813,7 @@ function render(opts){
     // A same-day plan cache normally avoids this compatibility list; it exists
     // for the first launch after install or after a placement-changing edit.
     list.classList.remove('is-progressive');
-    const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
+    const labels = {0:'today',1:'coming up',2:'coming up',3:'the rest'};
     const fastOrder = todayFirstActive && !searching
       ? [...indices].sort((a,b)=>{
         const pa = Number(Boolean(data[b].pinned)) - Number(Boolean(data[a].pinned));
@@ -1754,7 +1834,8 @@ function render(opts){
         return;
       }
       if(todayFirstActive && !searching){
-        const cat = todayCategory(h,sortSettings);
+        const category = todayCategory(h,sortSettings);
+        const cat = category === 1 ? 2 : category;
         if(cat !== fastCat){
           const label = labels[cat];
           if(label)appendSectionHeader(list,label);
@@ -1772,8 +1853,9 @@ function render(opts){
     _homeRenderedWeek = week;
     if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,week);
     const agendaMap = new Map();
-    const weekAssigned = new Set();
     const scheduleOmissionByHid = new Map();
+    const nowDate = new Date(week.days.find(day=>day.isToday)?.dayBase ?? Date.now());
+    const tomorrowBase = new Date(nowDate.getFullYear(),nowDate.getMonth(),nowDate.getDate() + 1).getTime();
     const dayPlans = week.days.map(day=>{
       for(const omission of day.linkOmissions || []){
         if(omission && omission.subjectHid && !scheduleOmissionByHid.has(omission.subjectHid)){
@@ -1813,14 +1895,13 @@ function render(opts){
         displayTimeline === rawTimeline ? day : { ...day, timeline: displayTimeline },
         sortSettings, { visibleSet }
       );
-      // Preserve the exact rows shown on Home for audit/export. Placement maps
-      // below still consume only indexed fills/scheduled rows, while travel
-      // remains visible in HOME AGENDA OUTPUT.
+      // Preserve complete day sequences for Calendar, audit/export, and reminders.
+      // Home shows only the first two timelines, but later occurrences and
+      // their travel context stay available to those consumers.
       day.homeDisplayedTimeline = seq.filter(row=>row.kind === 'travel'
         || ((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null));
       for(const row of seq){
         if((row.kind === 'fill' || row.kind === 'scheduled') && row.i != null){
-          weekAssigned.add(row.i);
           if(!agendaMap.has(row.i))agendaMap.set(row.i,row);
           if(day.isToday)noteBreakablePrimary(row.i,row);
         }
@@ -1850,24 +1931,26 @@ function render(opts){
       // Today still needs its header when the morning window has closed and
       // nothing remains on the timeline — otherwise the missed pill has
       // nowhere to attach.
+      // Only the next two days show a timeline on Home. The mounted plan
+      // retains all seven days for Calendar, reminders, and refinement.
+      if(day.dayBase > tomorrowBase)return;
       if(!seq.length && !day.isToday)return;
-      appendSectionHeader(list,homeWeekDayLabel(day),day,day.isToday ? weekTodayHids : null);
+      appendSectionHeader(list,homeWeekDayLabel(day,nowDate.getTime()),day,day.isToday ? weekTodayHids : null);
       for(let i = 0;i < seq.length;){
         const row = seq[i];
         if(row.kind === 'travel'){
-          if(homeExtraRowVisible(row.start))appendHomeExtraTravel(list,row.from,row.to,row.start);
+          if(homeExtraRowVisible(row.start)){
+            const destination=seq.slice(i+1).find(next=>next.kind!=='travel' && next.start===row.end && next.locationId===row.to);
+            appendHomeExtraTravel(list,row.from,row.to,row.start,destination,day.dayKey);
+          }
           i += 1;
           continue;
         }
         if(row.kind === 'blocked'){
           const {blocks,nextIdx} = consumeBlockedRun(seq,i);
           if(homeExtraRowVisible(blocks[0].start)){
-            if(homeExtraMode() === 'text12h'){
-              blocks.forEach(b=>appendHomeBlockedText(list,b));
-            }else{
-              const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
-              appendHomeBlockedGroup(list,blocks,groupKey);
-            }
+            const groupKey = `${day.dayKey}:${blocks[0].start}:${blocks.length}:${blocks.map(b=>b.label||'').join('|')}`;
+            appendHomeBlockedGroup(list,blocks,groupKey);
           }
           i = nextIdx;
           continue;
@@ -1883,28 +1966,23 @@ function render(opts){
       }
     });
 
-    // Timed-only day sections: anything without a suggested time goes to
-    // overdue / upcoming — never as an untimed card under a day.
-    const leftoverKey = (h)=>{
-      const cat = todayCategory(h,sortSettings);
-      if(cat === 3)return 3;
-      if(cat === 1 || cat === 0)return 1; // due/overdue that didn't place
-      return 2;
-    };
-    const leftovers = indices
-      .filter(i=>!data[i].pinned && !weekAssigned.has(i))
-      .sort((a,b)=>leftoverKey(data[a]) - leftoverKey(data[b]) || indices.indexOf(a) - indices.indexOf(b));
-    let leftoverCat = -1;
-    leftovers.forEach(realIdx=>{
-      const key = leftoverKey(data[realIdx]);
-      if(key !== leftoverCat){
-        const labels = {1:'overdue',2:'coming up',3:'the rest'};
-        const label = labels[key];
-        if(label)appendSectionHeader(list,label);
-        leftoverCat = key;
-      }
-      appendHabitCard(realIdx,null,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
-    });
+    // Coming up combines later assignments and unplaced due/upcoming work.
+    // Show each item once here, and omit items already on Today or Tomorrow.
+    const nearAssigned = new Set(dayPlans
+      .filter(({day})=>day.dayBase <= tomorrowBase)
+      .flatMap(({seq})=>seq.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').map(row=>row.i)));
+    const leftovers = indices.filter(i=>!data[i].pinned && !nearAssigned.has(i));
+    for(const [key,label] of [[2,'coming up'],[3,'the rest']]){
+      const group = leftovers.filter(i=>(todayCategory(data[i],sortSettings) === 3 ? 3 : 2) === key);
+      if(!group.length)continue;
+      appendSectionHeader(list,label);
+      group.forEach(realIdx=>{
+        // The next later-day placement supplies date/time context, while the
+        // full recurring timeline remains available in the calendar.
+        const agendaRow = key === 2 ? agendaMap.get(realIdx) : null;
+        appendHabitCard(realIdx,agendaRow,'',null,scheduleOmissionByHid.get(data[realIdx]?.hid) || '');
+      });
+    }
   }else{
     // Search results don't place on the agenda — skip homeAgendaRows (planner)
     // and auto-mark sync so each keystroke is just a cheap filter + rank.
@@ -1934,8 +2012,8 @@ function render(opts){
       // A separate pinned-section pre-pass below mirrors week view.
       const catA = todayCategory(data[a],sortSettings);
       const catB = todayCategory(data[b],sortSettings);
-      const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA;
-      const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB;
+      const dispA = (catA === 0 || (catA === 2 && earlyToday(a))) ? 0 : catA === 1 ? 2 : catA;
+      const dispB = (catB === 0 || (catB === 2 && earlyToday(b))) ? 0 : catB === 1 ? 2 : catB;
       if(dispA !== dispB)return dispA - dispB;
       if(dispA === 0){
         const posA = agendaOrder.get(a), posB = agendaOrder.get(b);
@@ -2022,9 +2100,9 @@ function render(opts){
       const inTodaySection = !searching && todayFirstActive && (cat === 0 || isEarlyToday);
 
       if(!searching && todayFirstActive){
-        const sectionKey = isEarlyToday ? 0 : cat;
+        const sectionKey = isEarlyToday ? 0 : cat === 1 ? 2 : cat;
         if(sectionKey !== sectionCat){
-          const labels = {0:'today',1:'overdue',2:'coming up',3:'the rest'};
+          const labels = {0:'today',1:'coming up',2:'coming up',3:'the rest'};
           const label = labels[sectionKey];
           const dayCtx = label === 'today'
             ? {dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows}
@@ -2046,7 +2124,7 @@ function render(opts){
             const cLocId = cardLocationId(h,chunkRow);
             if(prevTodayLocId && cLocId && prevTodayLocId !== cLocId){
               const travelTs = homeTravelLeaveByMs(prevTodayLocId,cLocId,chunkRow.start);
-              if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs);
+              if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,cLocId,travelTs,{...chunkRow,h},todayIso());
             }
             prevTodayLocId = cLocId || prevTodayLocId;
             const earlyText = (cat === 2 && earlyMap.get(realIdx)) ? earlyMap.get(realIdx) : '';
@@ -2067,7 +2145,7 @@ function render(opts){
           locId,
           agendaRow && Number.isFinite(agendaRow.start) ? agendaRow.start : NaN
         );
-        if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs);
+        if(homeExtraRowVisible(travelTs))appendHomeExtraTravel(list,prevTodayLocId,locId,travelTs,{...agendaRow,h},todayIso());
       }
       if(inTodaySection)prevTodayLocId = locId || prevTodayLocId;
 
@@ -2134,18 +2212,27 @@ function render(opts){
       }
       const idx = +btn.dataset.pulse;
       const card = btn.closest('.ting-card');
-      handleCardActivate(idx,card,()=>quickLog(idx,card));
+      quickLog(idx,card);
     });
   });
 
   list.querySelectorAll('.swipe-action').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
-      const idx = +btn.closest('.swipe-row').dataset.realIdx;
+      if(isScrollGuarded(btn))return;
+      const row = btn.closest('.swipe-row');
+      const idx = +row.dataset.realIdx;
       closeAllSwipes();
+      if(btn.dataset.action === 'plan')openSwipePlan(idx,Number(row.dataset.dayBase));
+      if(btn.dataset.action === 'open-link'){
+        const link = habitPrimaryLink(load()[idx]);
+        if(link)openHabitLink(link);
+      }
       if(btn.dataset.action === 'pin')togglePin(idx);
       if(btn.dataset.action === 'keep'){
-        if(typeof keepSampleHabit === 'function')keepSampleHabit(idx);
+        if(typeof keepSampleHabit === 'function' && keepSampleHabit(idx)){
+          renderHomePresentationOnly();
+        }
       }
       if(btn.dataset.action === 'activity')openActivity(idx);
       if(btn.dataset.action === 'snooze')openSnooze(idx);

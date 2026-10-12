@@ -189,9 +189,8 @@ function householdAgendaRowWeather(row,habit,settings,now){
 // or that the owner is away from a saved place.
 function householdAgendaSourceRows(day,settings){
   const timeline = Array.isArray(day && day.timeline) ? day.timeline : [];
-  const seqSettings = { ...(settings || {}), homeExtraMode:'cards' };
   let rows = typeof homeDaySequence === 'function'
-    ? homeDaySequence(day,seqSettings).filter(row=>{
+    ? homeDaySequence(day,settings || {}).filter(row=>{
         if(!row) return false;
         if(row.fromCurrentCoord) return false;
         if(typeof CURRENT_COORD_ID !== 'undefined' && row.from === CURRENT_COORD_ID) return false;

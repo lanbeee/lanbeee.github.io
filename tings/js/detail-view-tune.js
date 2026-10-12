@@ -162,6 +162,7 @@ function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
+  $('detail-save').disabled = !dirty;
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 
@@ -245,7 +246,7 @@ function detailLinkRowHtml(link,index){
     .map(k => `<option value="${k}"${k === kind ? ' selected' : ''}>${LINK_KIND_LABELS[k] || k}</option>`)
     .join('');
   const lead = index === 0
-    ? `<span class="link-primary-badge" title="opens on double tap" aria-label="primary link"><i class="ti ti-star" aria-hidden="true"></i></span>`
+    ? `<span class="link-primary-badge" title="primary link" aria-label="primary link"><i class="ti ti-star" aria-hidden="true"></i></span>`
     : `<button type="button" class="link-row-btn" data-link-promote="${index}" title="make primary" aria-label="make primary"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>`;
   return `<div class="link-row${kind === 'app' ? ' is-app' : ''}" data-link-index="${index}">
     <select class="mini-select link-kind" aria-label="link type">${options}</select>
@@ -308,13 +309,13 @@ function syncDetailLinkUi(){
   const hint = $('detail-link-hint');
   if(hint){
     if(!links.length){
-      hint.textContent = 'Add an app, number, or web link. Double tapping this item’s card logs it and opens the starred one.';
+      hint.textContent = 'Add an app, number, or web link. Open it using the link buttons above.';
     }else{
       const primary = linkLabel(links[0]);
       const whatsapp = links.some(l => l.kind === 'whatsapp')
         ? ' WhatsApp opens the chat — call from there.'
         : '';
-      hint.textContent = `Double tapping this item’s card logs it and opens ${primary}.${whatsapp}`;
+      hint.textContent = `Use the link buttons above to open ${primary}.${whatsapp}`;
     }
   }
 }
@@ -499,7 +500,7 @@ function removeDetailLinkRow(index){
   setDetailDirty();
 }
 
-// HANDLER: move a row to the front, making it the one a double tap fires.
+// HANDLER: move a row to the front, making it the primary link.
 function promoteDetailLinkRow(index){
   const rows = currentDetailLinkRows();
   if(index <= 0 || index >= rows.length)return;
@@ -534,10 +535,10 @@ function syncDetailDueUi(){
     else if(hasTime){
       const breakable=$('detail-breakable')?.getAttribute('aria-pressed') === 'true';
       hint.textContent = breakable
-        ? 'Anchored start — begins at this time and may split around other agenda obligations.'
+        ? 'Fixed appointment — keeps this start time. Breakable allows pauses; duration is total time. Set Allowed times for a hard end.'
         : 'Fixed appointment — shows on your agenda at this time. Clear the date to remove both.';
     }
-    else hint.textContent = 'Due on this date. Delay allowance controls whether it may move past this day.';
+    else hint.textContent = 'Due on this date, with no fixed clock. Zero delay keeps this day firm; Allowed times limits the hours.';
   }
 }
 
@@ -568,7 +569,8 @@ function setScheduleView(view){
 function closeDetail(){
   const inner = getSheetInner('detail-sheet');
   if(inner?.contains(document.activeElement))document.activeElement.blur();
-  inner?.classList.remove('detail-field-editing');
+  inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open','tune-dirty');
+  if($('detail-save'))$('detail-save').disabled = true;
   setDetailSearchOpen(false,false);
   detailIdx = null;
   detailTuneOriginal = null;

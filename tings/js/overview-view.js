@@ -1032,7 +1032,23 @@ function dayRowMeta(row){
   return [head,tail].filter(Boolean).join(' · ');
 }
 
-// PURE: day sheet is locked to one habit (opened from detail calendar)
+let dayLogsPlanDateEditable = false;
+
+// HYBRID: the swipe entry point reuses the scoped plan form with a date picker.
+function openSwipePlan(i,dayBase){
+  if(!dayLogsHabitPlannable(load()[i]))return;
+  resetDayLogsStep();
+  dayLogsScopeIndex = i;
+  dayLogsItemIndex = i;
+  dayLogsStep = 'add';
+  dayLogsPlanDateEditable = true;
+  const key = Number.isFinite(dayBase) && dayBase >= dayStart(Date.now())
+    ? dateKey(dayBase) : todayIso();
+  renderDayLogs(key);
+  openSheet('day-logs-sheet');
+}
+
+// PURE: day sheet is locked to one habit (opened from detail calendar or swipe)
 function dayLogsScoped(){
   return Number.isInteger(dayLogsScopeIndex);
 }
@@ -1083,6 +1099,7 @@ function overviewDayWeatherBlockHtml(key,dayContext,data){
 
 // HYBRID: reset day-sheet step state
 function resetDayLogsStep(){
+  dayLogsPlanDateEditable = false;
   dayLogsStep = 'list';
   dayLogsItemIndex = null;
   dayLogsMoving = false;
@@ -1327,6 +1344,8 @@ function renderDayLogsAddStep(key){
     <div class="day-add-step">
       <div class="day-step-intro"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span><b>Add to this day</b><small>A time locks the slot. Location is optional for this day only.</small></span></div>
       ${pickerHtml}
+      ${dayLogsPlanDateEditable ? `<label class="field-label" for="day-log-date">date</label>
+      <input type="date" id="day-log-date" class="plan-date-input" value="${key}" min="${todayIso()}" />` : ''}
       <label class="field-label" for="day-log-time">time <span class="field-optional">optional</span></label>
       <input type="time" id="day-log-time" class="time-input" step="300" aria-label="optional plan time" />
       ${locationHtml}
@@ -1335,6 +1354,16 @@ function renderDayLogsAddStep(key){
   $('day-logs-footer').innerHTML = `
     <button class="btn" type="button" id="day-logs-back-list">back</button>
     <button class="btn primary" type="button" id="day-log-add" ${addOptions.length ? '' : 'disabled'}>add plan</button>`;
+
+  $('day-log-date')?.addEventListener('input',()=>{
+    const input = $('day-log-date');
+    const valid = input.validity.valid && dayLogsCanPlan(input.value);
+    $('day-log-add').disabled = !valid || !addOptions.length;
+    if(!valid)return;
+    dayLogsKey = input.value;
+    $('day-logs-sub').textContent = new Date(`${input.value}T12:00:00`)
+      .toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  });
 
   if(!dayLogsScoped()){
     const ting = $('day-log-ting');
@@ -1492,6 +1521,7 @@ function clearDayAvailabilityOverride(){
 
 // HYBRID: navigate day-sheet steps
 function setDayLogsStep(step,itemIndex = null){
+  if(step !== 'add')dayLogsPlanDateEditable = false;
   dayLogsStep = step;
   dayLogsItemIndex = itemIndex;
   if(step !== 'item')dayLogsMoving = false;

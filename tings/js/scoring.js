@@ -342,7 +342,7 @@ function locationSignal(h,settings,affinity = null){
 
 function planSignal(h,settings){
   const plan = nextPlannedLog(h);
-  if(!settings.plansFirst || !plan || h.type === 'zero')return 0;
+  if(!plan || h.type === 'zero')return 0;
   const daysUntil = calendarDayDiff(plan);
   const windowDays = clampNumber(settings.planWindowDays,1,14,1);
   if(daysUntil <= 0)return 120;

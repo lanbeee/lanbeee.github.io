@@ -123,86 +123,110 @@
 
   <!-- add sheet -->
   <div class="sheet-wrap" id="add-sheet">
-    <div class="sheet add-sheet">
+    <div class="sheet add-sheet" role="dialog" aria-modal="true" aria-labelledby="add-title">
+      <div class="add-content">
       <div class="add-sheet-head">
-        <p class="sheet-title" id="add-title">new</p>
-        <div class="add-shortcuts"><button type="button" class="mini-text-btn" id="add-open-defaults">defaults</button><button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">busy times</button></div>
+        <p class="sheet-title" id="add-title">new habit</p>
       </div>
+      <div class="seg add-kind-seg" id="type-seg" role="group" aria-label="What would you like to add?" aria-describedby="add-type-help">
+        <button type="button" class="seg-opt on" data-v="keepup" aria-pressed="true"><span>habit</span><small>something you repeat</small></button>
+        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task</span><small>something you do once</small></button>
+      </div>
+      <p class="field-hint" id="add-type-help" hidden>A habit repeats. A task is a one-off to-do.</p>
+      <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" aria-label="name" placeholder="name" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
-        <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="edit emoji"></button>
-        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="create with the local assistant">
+        <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="choose an icon (optional)" title="Choose an icon (optional)"></button>
+        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="create with the local assistant" title="Create from your description with the local assistant">
           <i class="ti ti-sparkles" aria-hidden="true"></i>
         </button>
       </div>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <label class="emoji-field">
           <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>Optional. An emoji like 🏃 or 📚 is suggested from the name; no match? Tap any quick-pick chip. Blank uses the default habit icon.</div></span></span>
-          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>An icon is suggested from the name. Pick another below, or clear the field to use the default icon.</div></span></span>
+          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
         </label>
         <div class="generic-emoji-wrap">
           <span class="settings-sublabel">quick pick</span>
-          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="quick pick emojis"></div>
+          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="common emojis"></div>
         </div>
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       </div>
-      <div class="seg" id="type-seg" aria-describedby="add-type-help">
-        <button class="seg-opt on" data-v="keepup">habit</button>
-        <button class="seg-opt" data-v="task">task</button>
-      </div>
-      <p class="field-hint" id="add-type-help">A task is one-off; a habit repeats.</p>
-      <p class="field-hint" id="target-help">How often — times in N days (e.g. 2× in 7d).</p>
-      <div class="range-row" id="target-slider-row">
-        <label class="range-value" aria-label="times in period">
-          <input type="text" id="ting-times" inputmode="numeric" maxlength="2" value="1" />
-          <span>×</span>
-        </label>
-        <span class="rhythm-in">in</span>
-        <label class="range-value" aria-label="day rhythm">
-          <input type="text" id="ting-days" inputmode="numeric" maxlength="3" value="7" />
-          <span>d</span>
-        </label>
-      </div>
-      <div class="plan-field-row" id="task-due-row" hidden>
-        <div class="plan-field-main">
-          <label class="plan-date-label" for="ting-due-date">due</label>
-          <input type="date" id="ting-due-date" class="plan-date-input" />
-          <input type="time" id="ting-due-time" class="plan-time-input" step="300" title="add a start time; breakable tasks may pause and resume" />
+      <section class="add-frequency" id="add-frequency" aria-labelledby="add-frequency-label">
+        <p class="add-field-label" id="add-frequency-label">How often?</p>
+        <div class="add-presets" role="group" aria-label="Common frequencies">
+          <button type="button" data-add-rhythm="1,1" aria-pressed="false">daily</button>
+          <button type="button" data-add-rhythm="3,7" aria-pressed="false">3 times a week</button>
+          <button type="button" data-add-rhythm="1,7" aria-pressed="false">weekly</button>
         </div>
+        <div class="range-row" id="target-slider-row">
+          <label class="range-value"><input type="text" id="ting-times" aria-label="Number of times" aria-describedby="target-help" inputmode="numeric" maxlength="2" value="1" /><span>times</span></label>
+          <span class="rhythm-in">every</span>
+          <label class="range-value"><input type="text" id="ting-days" aria-label="Number of days" aria-describedby="target-help" inputmode="numeric" maxlength="3" value="7" /><span>days</span></label>
+        </div>
+        <p class="field-hint" id="target-help" aria-live="polite"></p>
+      </section>
+      <section class="add-task-date" id="task-due-row" aria-label="Task date" hidden>
+        <label class="add-field-label" for="ting-due-date">Due date <span class="field-optional">(optional)</span></label>
+        <input type="date" id="ting-due-date" class="plan-date-input" aria-describedby="task-due-hint" />
+        <div class="add-presets" role="group" aria-label="Choose a due date">
+          <button type="button" data-add-due="today" aria-pressed="false">today</button>
+          <button type="button" data-add-due="tomorrow" aria-pressed="false">tomorrow</button>
+          <button type="button" data-add-due="none" aria-pressed="false">no date</button>
+        </div>
+        <label class="add-field-label" for="ting-due-time">Start time <span class="field-optional">(optional)</span></label>
+        <input type="time" id="ting-due-time" class="plan-time-input" step="300" aria-describedby="task-due-hint" />
+        <p class="field-hint" id="task-due-hint" hidden></p>
+      </section>
+      <div class="planning-grid planning-grid-single add-effort" id="add-minimal-effort">
+        <div class="planning-field"><label for="ting-duration" id="add-duration-label">Time for each session</label><label class="range-value"><input type="number" id="ting-duration" min="1" max="720" inputmode="numeric" aria-labelledby="add-duration-label" /><span>min</span></label></div>
       </div>
-      <p class="field-hint" id="task-due-hint" hidden></p>
+      <p class="add-conflict-note" id="add-conflict-note" role="status" aria-live="polite" hidden></p>
 
       <button type="button" class="add-more-toggle add-full-only" id="add-more-toggle" aria-expanded="false" aria-controls="add-more-options">
-        <span>more options</span>
+        <span>more options <small>planning, places &amp; completion</small></span>
         <i class="ti ti-chevron-down" aria-hidden="true"></i>
       </button>
       <div class="add-more-options add-full-only" id="add-more-options" hidden>
+        <section class="add-option-group" aria-labelledby="add-planning-label">
+        <h3 id="add-planning-label">Planning</h3>
         <div class="priority-field">
           <span class="priority-label">priority <button type="button" class="info-btn" data-tip="ting-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
-          <div class="seg priority-seg" id="ting-priority-seg" data-ui-priority="add"></div>
+            <div class="info-tooltip" id="ting-priority-help" role="tooltip" hidden>When time is limited, higher-priority items get time first. Someday items can wait.</div></span>
+          <div class="seg priority-seg" id="ting-priority-seg" role="group" aria-label="Priority" data-ui-priority="add"></div>
         </div>
-        <div class="planning-grid">
-          <div class="planning-field"><label for="ting-duration">duration</label><label class="range-value"><input type="number" id="ting-duration" min="1" max="720" inputmode="numeric" /><span>min</span></label></div>
-          <div class="planning-field"><label for="ting-completion-mode">completion</label><select class="mini-select" id="ting-completion-mode"><option value="manual">mark done myself</option><option value="duration">after duration</option><option value="minutes">after set minutes</option></select></div>
+        <button type="button" class="setting-toggle setting-switch compact-toggle" id="ting-breakable" aria-pressed="false"><span>split into shorter sessions</span><span class="switch-ui" aria-hidden="true"></span></button>
+        <div class="planning-field" id="ting-chunk-row" hidden><label for="ting-min-chunk">Shortest session</label><label class="range-value"><input type="number" id="ting-min-chunk" min="15" max="720" inputmode="numeric" aria-label="Shortest session in minutes" /><span>min</span></label></div>
+        <p class="field-hint" id="add-defaults-summary"></p>
+        <div class="add-room-check">
+          <button type="button" class="mini-text-btn" id="add-check-room">preview schedule</button>
+          <p class="field-hint">See how this fits with your next 7 days.</p>
+          <p class="field-hint" id="add-room-result" role="status" aria-live="polite" hidden></p>
+        </div>
+        </section>
+        <section class="add-option-group" aria-labelledby="add-completion-label">
+        <h3 id="add-completion-label">Completion</h3>
+        <div class="planning-grid planning-grid-single">
+          <div class="planning-field"><label for="ting-completion-mode">Mark done</label><select class="mini-select" id="ting-completion-mode"><option value="manual">mark done myself</option><option value="duration">automatically after the session</option><option value="minutes">automatically after a set time</option></select></div>
           <div class="planning-field" id="ting-auto-mark-row">
             <span>auto mark done <button type="button" class="info-btn" data-tip="ting-auto-mark-help" aria-label="about auto mark done"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Blank = you tap to complete. Set minutes and a planned or scheduled occurrence logs itself that long after its scheduled time. Manual sessions keep counting until you stop them.</div></span>
+              <div class="info-tooltip" id="ting-auto-mark-help" role="tooltip" hidden>Choose how long after a scheduled start to mark this done automatically. Timers you start yourself keep running until you stop them.</div></span>
             <label class="range-value" aria-label="auto mark done minutes, blank = manual">
-              <input type="text" id="ting-auto-mark" inputmode="numeric" maxlength="5" placeholder="—" />
+              <input type="text" id="ting-auto-mark" aria-label="Minutes after the scheduled start" inputmode="numeric" maxlength="5" placeholder="—" />
               <span>min</span>
             </label>
           </div>
         </div>
-        <button type="button" class="setting-toggle setting-switch compact-toggle" id="ting-breakable" aria-pressed="false"><span>allow splitting</span><span class="switch-ui" aria-hidden="true"></span></button>
-        <div class="planning-field" id="ting-chunk-row" hidden><label for="ting-min-chunk">shortest session</label><label class="range-value"><input type="number" id="ting-min-chunk" min="15" max="720" inputmode="numeric" /><span>min</span></label></div>
-        <p class="field-hint" id="add-defaults-summary"></p>
-        <div class="add-topics-section" id="add-topics-section">
-          <span class="settings-sublabel">topics &amp; places</span>
+        <p class="field-hint" id="add-completion-hint">Mark it yourself when you finish.</p>
+        </section>
+        <section class="add-option-group add-topics-section" id="add-topics-section" aria-labelledby="add-places-label">
+          <h3 id="add-places-label">Topics &amp; places</h3>
+          <p class="field-hint">Group this item by topic and choose where it can happen.</p>
           <div class="topic-chip-row" id="ting-tag-chips"></div>
-        </div>
+        </section>
+        <details class="add-option-group add-weather-options"><summary>Weather <span class="field-optional">(optional)</span></summary>
         <label class="setting-toggle compact-toggle" id="ting-show-weather-row">
           <span>show weather</span>
           <button class="setting-switch" id="ting-show-weather" type="button" aria-pressed="false">
@@ -224,10 +248,17 @@
           <select id="ting-weather-location" class="settings-select"><option value="">home city</option></select>
           <p class="field-hint">Used only when the item can happen anywhere; a scheduled place uses its own forecast.</p>
         </div>
+        </details>
+        <div class="add-shortcuts">
+          <button type="button" class="mini-text-btn" id="add-open-defaults" title="Change the defaults for future habits or tasks">new item defaults</button>
+          <button type="button" class="mini-text-btn" id="add-open-busy" title="Reserve time for sleep, work, or other commitments">manage busy times</button>
+        </div>
       </div>
-
+      <button type="button" class="minimal-mode-note" id="add-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
+      <p class="field-hint add-next-step">You can adjust days, hours and other details after adding.</p>
+      </div>
       <div class="btn-row add-actions">
-        <button class="btn primary" id="do-save">add</button>
+        <button class="btn primary" id="do-save">add habit</button>
         <button class="btn" id="do-cancel">cancel</button>
       </div>
     </div>
@@ -268,17 +299,26 @@
   <div class="sheet-wrap" id="detail-sheet">
     <div class="sheet detail-sheet">
       <div class="detail-head ting-card" id="detail-head-card">
-        <button class="pulse-btn detail-mark" id="detail-mark" aria-label="add entry"></button>
+        <div class="detail-mark-wrap">
+          <button class="pulse-btn detail-mark" id="detail-mark" aria-label="add entry" aria-haspopup="menu" aria-expanded="false" aria-controls="detail-mark-menu"></button>
+          <div class="detail-mark-menu" id="detail-mark-menu" hidden role="menu" aria-label="emoji actions">
+            <button type="button" class="detail-mark-choice" role="menuitem" id="detail-mark-log">log an entry</button>
+            <button type="button" class="detail-mark-choice" role="menuitem" id="detail-mark-edit-emoji">edit emoji</button>
+          </div>
+        </div>
         <div class="ting-info detail-title-wrap">
           <div class="ting-main">
             <span class="ting-title">
-              <span class="ting-name" id="detail-name"></span>
-              <span class="ting-priority-badge" id="detail-priority-badge" role="img" aria-label="Priority"></span>
+              <button type="button" class="ting-name" id="detail-name" aria-label="edit name"></button>
             </span>
           </div>
           <div class="ting-cue detail-cue" id="detail-sub"></div>
         </div>
         <div class="detail-head-actions" id="detail-link-actions" hidden></div>
+        <div class="tune-actions" id="detail-tune-actions" aria-label="edit actions">
+          <button type="button" class="btn" id="detail-close">cancel</button>
+          <button type="button" class="btn primary" id="detail-save" disabled>save</button>
+        </div>
       </div>
       <div class="detail-page-nav">
         <div class="detail-dots" role="tablist" aria-label="detail pages"></div>
@@ -345,17 +385,17 @@
           <div class="planning-grid detail-minimal-effort" id="detail-minimal-effort" hidden></div>
 
           </details>
-          <details class="detail-disclosure detail-full-only" id="detail-availability-disclosure"><summary>days, hours &amp; places</summary>
+          <details class="detail-disclosure" id="detail-availability-disclosure"><summary>days, hours &amp; places</summary>
           <div class="seg schedule-seg detail-full-only" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed" aria-label="allowed — hard limits">allowed</button>
             <button class="seg-opt" data-schedule-view="preferred" aria-label="preferred — soft preference">preferred</button>
           </div>
           <p class="field-hint schedule-view-hint" id="detail-schedule-view-hint">Hard limits — the planner only places this inside these days and hours.</p>
-          <div id="detail-schedule-allowed" class="detail-full-only">
+          <div id="detail-schedule-allowed">
             <div id="detail-simple-allowed-fields">
               <span class="settings-sublabel">days</span>
               <div class="schedule-chip-row" id="detail-weekday-chips"></div>
-              <div class="monthday-disclosure">
+              <div class="monthday-disclosure detail-full-only">
                 <button type="button" class="monthday-disclosure-head" id="detail-monthday-toggle" aria-expanded="false" aria-controls="detail-monthday-chips">
                   <span class="monthday-disclosure-label">month days</span>
                   <span class="monthday-disclosure-summary" id="detail-monthday-summary">any</span>
@@ -368,7 +408,7 @@
                   <span class="settings-sublabel compact-label">time window</span>
                   <button type="button" class="mini-text-btn schedule-time-clear" id="detail-time-clear" hidden>clear</button>
                 </div>
-                <p class="field-hint schedule-time-lead">Hours this item may run, at every place below. Clock is an exact time; relative is sunrise, sunset, or a prayer.</p>
+                <p class="field-hint schedule-time-lead">Choose the earliest start and latest finish. Use relative for times such as dawn, sunrise, or sunset.</p>
                 <div class="time-endpoints detail-time-endpoints" id="detail-allowed-time-row" data-field-prefix="allowed"></div>
                 <p class="field-hint time-empty-hint" id="detail-time-empty-hint">Leave blank for any time of day.</p>
               </div>
@@ -431,7 +471,7 @@
             <div class="habit-options-heading">
               <span class="settings-sublabel">specific times, places &amp; weather
                 <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, places, and weather above apply generally. Add an option when one place needs its own time or weather guidance. Clock is an exact time; relative is sunrise, sunset, or a prayer. Preference and weather on a row override the item and place defaults. Options are alternatives: the planner picks one per occurrence.</span>
+                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Days, hours, places, and weather above apply generally. Add an option when one place needs its own time or weather guidance. Clock is an exact time; relative follows a daily event such as dawn, sunrise, or sunset. Preference and weather on a row override the item and place defaults. Options are alternatives: the planner picks one per occurrence.</span>
               </span>
             </div>
             <p class="field-hint" id="detail-habit-options-hint">Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.</p>
@@ -563,13 +603,13 @@
           <div class="ting-emoji-edit" id="detail-emoji-edit">
             <label class="emoji-field">
               <span>emoji</span>
-              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
             </label>
             <div class="generic-emoji-wrap">
               <span class="settings-sublabel">quick pick</span>
-              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="quick pick emojis"></div>
+              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="common emojis"></div>
             </div>
-            <p class="field-hint emoji-help">Optional. Blank uses the default habit icon.</p>
+            <p class="field-hint emoji-help">Optional. Scroll sideways for common emojis. No name match uses a neutral one; blank uses the default habit icon.</p>
             <span class="settings-sublabel">emoji background</span>
             <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           </div>
@@ -592,12 +632,12 @@
             </div>
             <div id="detail-order-list" class="detail-order-list"></div>
           </div>
-          <details class="detail-disclosure" id="detail-links-disclosure"><summary>apps, links &amp; calls</summary>
+          <details class="detail-disclosure detail-full-only" id="detail-links-disclosure"><summary>apps, links &amp; calls</summary>
           <div class="link-field" id="detail-link-field">
             <div class="link-field-head">
               <span class="settings-sublabel">links &amp; calls
                 <button type="button" class="info-btn" data-tip="detail-link-help" aria-label="about links"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-link-help" role="tooltip" hidden>Apps, numbers to call, and meeting or web links to open. Add a common app, or paste an App Store share link to name your own. Double tapping this item’s card logs it and opens the starred one.</span>
+                <span class="info-tooltip" id="detail-link-help" role="tooltip" hidden>Apps, numbers to call, and meeting or web links to open. Add a common app, or paste an App Store share link to name your own. Open links using the buttons above.</span>
               </span>
               <span class="link-field-adds">
                 <button type="button" class="mini-text-btn" id="detail-app-add" aria-expanded="false" aria-controls="detail-app-picker">add app</button>
@@ -666,6 +706,7 @@
               </div>
             </div>
           </div>
+          <button type="button" class="minimal-mode-note" id="detail-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
         </details>
           </section>
       </div>
@@ -680,10 +721,6 @@
             </div>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-        </div>
-        <div class="detail-actions tune-actions" id="detail-tune-actions">
-          <button type="button" class="btn" id="detail-close">cancel</button>
-          <button type="button" class="btn primary" id="detail-save">save</button>
         </div>
       </div>
     </div>
@@ -746,7 +783,7 @@
         <section class="about-hub-group">
           <span class="about-hub-label">help</span>
           <div class="btn-row about-actions">
-            <button class="btn" id="start-essentials-coach" type="button"><i class="ti ti-route" aria-hidden="true"></i> guided start</button>
+            <button class="btn" id="start-essentials-coach" type="button"><i class="ti ti-route" aria-hidden="true"></i> quick start</button>
             <button class="btn" id="start-advanced-coach" type="button"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> advanced coach</button>
             <!-- real anchor + target=_blank so installed PWAs hand the docs to the actual browser instead of keeping them in the standalone window -->
             <a class="btn" id="open-docs" href="https://aretefoundry.github.io/tings/" target="_blank" rel="noopener"><i class="ti ti-book-2" aria-hidden="true"></i> help &amp; docs</a>
@@ -813,17 +850,17 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="sample-blocks-body" hidden>
-            <p class="field-hint">Sun-based sleep on your busy-time schedule: starts at the later of Isha +15m and 8h before next sunrise, ends 40m before sunrise. Needs your city (Settings → Locations), same as the prayers.</p>
+            <p class="field-hint">Sun-based sleep on your busy-time schedule: combines a night-time start with the next sunrise, and ends 40m before sunrise. Needs your city (Settings → Locations).</p>
             <div class="sample-habits-list" id="sample-blocks-preview" aria-label="sample busy time demos"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible sample-prayers-block">
+        <section class="settings-block settings-collapsible sample-prayers-block" id="sample-prayers-section">
           <button type="button" class="settings-collapse-head" id="sample-prayers-head" data-collapse-target="sample-prayers-body" aria-expanded="false" aria-controls="sample-prayers-body">
             <span class="settings-label">daily prayers</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="sample-prayers-body" hidden>
-            <p class="field-hint">Optional Fajr–Isha demos with prayer-time windows from your city (Settings → Locations). Set a city first, then add one prayer or all five.</p>
+            <p class="field-hint">Optional Fajr–Isha demos with prayer-time windows from your city (Settings → Locations). Set a city first, then add one prayer or all five. Isha ends at Islamic midnight, halfway between sunset and the next dawn.</p>
             <div class="sample-habits-list" id="sample-prayers-preview" aria-label="daily prayer demos"></div>
             <div class="btn-row sample-habits-add-row">
               <button type="button" class="btn" id="sample-prayers-add">add all prayers</button>
@@ -888,22 +925,6 @@
             <p class="field-hint" id="weather-status" aria-live="polite"></p>
             <div id="weather-forecast-data" class="weather-forecast-data"></div>
             <p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away saved-place pin needed on the plan, are sent only to retrieve forecasts. Places near home reuse the home-city forecast. Live GPS is not sent. No API key or account is used.</p>
-          </div>
-        </section>
-        <section class="settings-block settings-collapsible">
-          <button type="button" class="settings-collapse-head" id="settings-home-head" data-collapse-target="settings-home-body" aria-expanded="false" aria-controls="settings-home-body">
-            <span class="settings-label">home page</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-home-body" hidden>
-            <p class="field-hint">Choose what appears in today’s list on home.</p>
-            <div class="settings-grid" data-ui-toggles="home"></div>
-            <span class="settings-sublabel compact-label settings-full-only">busy blocks &amp; travel</span>
-            <div class="seg home-extra-seg settings-full-only" id="home-extra-seg" data-setting-seg="homeExtraMode" role="group" aria-label="how busy blocks and travel appear on home">
-              <button type="button" class="seg-opt" data-seg-value="cards">show for all days</button>
-              <button type="button" class="seg-opt" data-seg-value="cards12h">next 12 hours</button>
-            </div>
-            <p class="field-hint settings-full-only">How busy blocks and travel between places show on home.</p>
           </div>
         </section>
         <section class="settings-block settings-collapsible">
@@ -1073,8 +1094,17 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-cards-body" hidden>
-          <p class="field-hint">Pick which marks appear on home list items.</p>
-          <div class="settings-grid" data-ui-toggles="cards"></div>
+            <span class="settings-sublabel settings-full-only">item details</span>
+            <div class="seg settings-full-only" id="card-detail-seg" role="group" aria-label="item detail level">
+              <button type="button" class="seg-opt" data-card-detail="simple" aria-pressed="false">simple</button>
+              <button type="button" class="seg-opt" data-card-detail="detailed" aria-pressed="false">detailed</button>
+              <button type="button" class="seg-opt" data-card-detail="custom" aria-pressed="false">custom</button>
+            </div>
+            <p class="field-hint settings-full-only" id="card-detail-hint" aria-live="polite"></p>
+            <div id="card-detail-custom" class="settings-full-only" hidden>
+              <div class="settings-grid" data-ui-toggles="cardDetails"></div>
+            </div>
+            <div class="settings-grid" data-ui-toggles="cards"></div>
             <span class="settings-sublabel settings-full-only">scheduled time on items</span>
             <div class="seg settings-full-only" id="agenda-time-seg" role="group" aria-label="how scheduled times appear on items">
               <button type="button" class="seg-opt" data-seg-value="time">show time</button>
@@ -1236,18 +1266,21 @@
         </section>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
-            <span class="settings-label">prayer times</span>
+            <span class="settings-label">relative times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-prayer-body" hidden>
+            <p class="field-hint">Dawn, sunrise, noon, afternoon, sunset, and night follow your city and the date. Set your city under Locations.</p>
             <div class="settings-grid" data-ui-toggles="prayer"></div>
-            <span class="settings-sublabel">calculation method</span>
-            <select id="setting-prayer-method" class="mini-select"></select>
-            <p class="field-hint">Only change if your mosque uses a specific method. City for prayer times lives under Locations.</p>
-            <span class="settings-sublabel">Asr school (madhab)</span>
-            <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
-              <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
-              <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
+            <div id="settings-prayer-calculation" hidden>
+              <span class="settings-sublabel">calculation method</span>
+              <select id="setting-prayer-method" class="mini-select"></select>
+              <p class="field-hint">For prayer tracking, choose the calculation convention you follow.</p>
+              <span class="settings-sublabel">Asr school (madhab)</span>
+              <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
+                <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
+                <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
+              </div>
             </div>
           </div>
         </section>
@@ -1439,7 +1472,7 @@
         <div class="context-sheet-copy">
           <span class="sheet-eyebrow">needs a next step</span>
           <p class="sheet-name" id="slipped-title">missed</p>
-          <p class="sheet-sub">Open an item to reschedule it, log it, or adjust its rhythm.</p>
+          <p class="sheet-sub">Log it, hide it until tonight, or open it to reschedule.</p>
         </div>
         <button class="mini-nav" id="slipped-close" type="button" aria-label="close missed list">
           <i class="ti ti-x" aria-hidden="true"></i>
@@ -1754,11 +1787,11 @@
             <p class="about-copy" id="value-log-copy">Optional number for this entry.</p>
           </div>
         </div>
-        <label class="range-value value-log-field" aria-label="value">
-          <input type="text" id="value-log-input" inputmode="decimal" placeholder="e.g. 72.5" />
+        <label class="value-log-field" aria-label="value">
+          <input type="text" id="value-log-input" inputmode="decimal" aria-label="Value to log" placeholder="e.g. 72.5" />
         </label>
         <label class="value-log-field" aria-label="note">
-          <input type="text" id="value-log-note" maxlength="200" placeholder="note (optional)" />
+          <input type="text" id="value-log-note" aria-label="Note (optional)" maxlength="200" placeholder="note (optional)" />
         </label>
       </div>
       <div class="btn-row">
@@ -1812,10 +1845,15 @@
     </div>
   </div>
 </div>
-<div id="toast" role="status" aria-live="polite"></div>
-<div id="action-toast" role="status" aria-live="polite">
+<div id="toast" role="status" aria-live="polite" aria-hidden="true" inert>
+  <span id="toast-text"></span>
+  <button type="button" id="toast-close" class="toast-close" aria-label="Dismiss notification"><i class="ti ti-x" aria-hidden="true"></i></button>
+</div>
+<div id="action-toast" role="status" aria-live="polite" aria-hidden="true" inert>
   <span id="action-text"></span>
-  <button type="button" id="action-open" hidden>open</button>
+  <button type="button" id="action-close" class="toast-close" aria-label="Dismiss notification"><i class="ti ti-x" aria-hidden="true"></i></button>
+  <button type="button" id="action-link" hidden>open link</button>
+  <button type="button" id="action-open" hidden>view item</button>
   <button type="button" id="action-plan" hidden>action</button>
   <button type="button" id="snooze-until-planned" hidden>snooze until planned</button>
   <button type="button" id="action-undo">undo</button>
@@ -1842,6 +1880,7 @@
 <script src="./js/data-schedules.js" defer></script>
 <script src="./js/data-format.js" defer></script>
 <script src="./js/ui-kit.js" defer></script>
+<script src="./js/tap.js" defer></script>
 <script src="./js/calendar-import.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
@@ -1886,6 +1925,7 @@
 <script src="./js/settings-share.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
 <script src="./js/main-boot.js" defer></script>
+<script src="./js/add-availability.js" defer></script>
 <script src="./js/main-input.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
 <script src="./js/display-mode.js" defer></script>

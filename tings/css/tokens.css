@@ -6,6 +6,7 @@
   --content-safe-left:var(--safe-area-inset-left,env(safe-area-inset-left,0px));
 
   --bg:#fdfcf9; --bg2:#f2f1ed; --bg3:#e6e5df;
+  --tick-ink:#fff;
   --text:#292a27; --text2:#60615c; --text3:#696a63;
   --border:rgba(0,0,0,0.11); --border2:rgba(0,0,0,0.2);
   --radius:22px; --radius-sm:14px;
@@ -69,6 +70,7 @@
 :root:not([data-theme="light"]) {
     color-scheme:dark;
     --bg:#242424; --bg2:#171717; --bg3:#373737;
+    --tick-ink:#000;
     --text:#ededed; --text2:#c4c4c4; --text3:#a1a1a1;
     --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
     --teal-bg:#3d3f3a; --teal-icon:#c8cbc1; --teal-text:#e6e8e0;
@@ -102,6 +104,7 @@
 :root[data-theme="dark"] {
   color-scheme:dark;
   --bg:#242424; --bg2:#171717; --bg3:#373737;
+  --tick-ink:#000;
   --text:#ededed; --text2:#c4c4c4; --text3:#a1a1a1;
   --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.18);
   --teal-bg:#3d3f3a; --teal-icon:#c8cbc1; --teal-text:#e6e8e0;
@@ -166,6 +169,15 @@ body.minimal-mode .detail-sheet > .detail-pager > .detail-page{
 body.minimal-mode .detail-bottom-bar .detail-dots[hidden]{ display:none; }
 body.minimal-mode .detail-bottom-bar .detail-actions{ flex:1 1 auto;width:auto; }
 body.minimal-mode #add-sheet.minimal-add .add-full-only { display:none !important; }
+.minimal-mode-note { display:none; }
+body.minimal-mode .minimal-mode-note{
+  display:block;width:auto;margin:12px 0 0;padding:10px 0;border:0;background:none;
+  color:var(--text3);font:inherit;font-size:12px;line-height:1.35;font-weight:400;
+  text-align:left;cursor:pointer;
+}
+body.minimal-mode .minimal-mode-note span{text-decoration:underline;text-underline-offset:2px;}
+body.minimal-mode .minimal-mode-note:focus-visible{outline:2px solid var(--text2);outline-offset:2px;border-radius:4px;}
+body.minimal-mode #detail-schedule-view-hint { display:none; }
 /* Settings minimal mode already decides — showing them would be a dead switch. */
 body.minimal-mode .settings-full-only { display:none !important; }
 /* Mirror image: rows that only exist for minimal mode (opt-in card extras). */
@@ -173,4 +185,3 @@ body:not(.minimal-mode) .settings-minimal-only { display:none !important; }
 body.minimal-mode #overview-list:empty { display:none; }
 body.minimal-mode #overview-insight,
 body.minimal-mode #overview-pane-filter { display:none !important; }
-

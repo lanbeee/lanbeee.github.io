@@ -1180,25 +1180,36 @@ function cardMeta(h,options = {}){
   return parts.join('');
 }
 
-// PURE: build card trail dots markup
+// PURE: home history shows entries, not an assessment of their rhythm.
+// Keep interval tones in the detailed History view; a red log is still a log.
 function cardTrail(h){
   const today = new Date();
-  const logKeys = logToneMap(h);
+  const logKeys = new Map(plannedLogs(h.logs).map(ts=>[dateKey(ts),'plan']));
+  actualLogs(h.logs).forEach(ts=>logKeys.set(dateKey(ts),'logged'));
   const lastWeekTones = Array.from({length:7},(_,i)=>{
     const d = new Date(today.getFullYear(),today.getMonth(),today.getDate() - (13 - i));
     const key = dateKey(d.getTime());
     return logKeys.get(key) || '';
   }).filter(Boolean);
-  const lastWeekTone = summarizeTrailTone(lastWeekTones);
-  const lastWeek = `<span class="trail-week ${lastWeekTone}" aria-hidden="true"></span>`;
+  const loggedDays = lastWeekTones.filter(tone=>tone === 'logged').length;
+  const plannedDays = lastWeekTones.filter(tone=>tone === 'plan').length;
+  const lastWeekTone = loggedDays ? 'logged' : plannedDays ? 'plan' : 'empty';
+  const weekLabel = `previous 7 days: ${loggedDays} logged ${loggedDays === 1 ? 'day' : 'days'}, ${plannedDays} planned ${plannedDays === 1 ? 'day' : 'days'}`;
+  const lastWeek = `<span class="trail-week ${lastWeekTone}" title="${escapeHtml(weekLabel)}" aria-hidden="true"></span>`;
+  const dayLabels = [];
   const thisWeek = Array.from({length:7},(_,i)=>{
     const d = new Date(today.getFullYear(),today.getMonth(),today.getDate() - (6 - i));
     const key = dateKey(d.getTime());
     const tone = logKeys.get(key) || 'empty';
     const todayClass = i === 6 ? ' today' : '';
-    return `<span class="trail-dot ${tone}${todayClass}"></span>`;
+    const dateLabel = i === 6 ? 'today' : d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    const label = `${dateLabel}: ${tone === 'logged' ? 'logged' : tone === 'plan' ? 'planned' : 'no entry'}`;
+    dayLabels.push(label);
+    return `<span class="trail-dot ${tone}${todayClass}" title="${escapeHtml(label)}" aria-hidden="true"></span>`;
   }).join('');
-  return `${lastWeek}${thisWeek}`;
+  const label = `recent activity. ${weekLabel}. ${dayLabels.join('; ')}`;
+  const hint = 'Recent activity: filled = logged, hollow = planned, faint = no entry. Left bar = previous 7 days; dots = past 7 days, ending today.';
+  return `<div class="ting-trail" role="img" aria-label="${escapeHtml(label)}" title="${hint}">${lastWeek}${thisWeek}</div>`;
 }
 
 /** PURE: breakable progress crown-dial markup with 3-color status bar. */
@@ -1383,24 +1394,31 @@ function homeAgendaRows(data){
     .filter(row=>row.kind === 'fill' || row.kind === 'scheduled');
 }
 
-// PURE: color for the card's left accent bar by priority. P0 burns red, P1
-// amber, the mid bands settle into neutral text tones, and the low bands fade
-// so the bar reads as "how urgently does this want today's time" — only the
-// top levels pop, everything else stays quiet. No text label needed.
+// PURE: priority hue for the corner tick. Lower priorities use distinct
+// green, purple and neutral tones; CSS softens them for the active theme.
 function priorityColor(p){
   if(p <= 0)return 'var(--red-icon)';
   if(p === 1)return 'var(--amber-icon)';
   if(p === 2)return 'var(--teal-icon)';
-  if(p === 3)return 'var(--text2)';
-  if(p === 4)return 'var(--text3)';
-  return 'color-mix(in srgb, var(--text3) 35%, transparent)';
+  if(p === 3)return 'var(--green-icon)';
+  if(p === 4)return 'var(--purple-icon)';
+  return 'var(--text3)';
+}
+
+// PURE: later assignments need a day label under the combined Coming up header.
+function agendaCardTimeLabel(row,now = Date.now()){
+  const rowDay = dayStart(row.start);
+  const date = new Date(now);
+  const tomorrow = new Date(date.getFullYear(),date.getMonth(),date.getDate() + 1).getTime();
+  const prefix = rowDay > tomorrow ? `${homeWeekDayLabel({dayBase:rowDay},now)} · ` : '';
+  return prefix + compactHomeTime(row.start);
 }
 
 // PURE: window status for an agenda lead — anytime / later / now / closing.
 // Scheduled rows are handled by the caller. Closing = remaining window is too
 // tight for the next session (chunk or full duration), floored at 45 minutes.
 function agendaLeadStatus(row,h = null,now = Date.now()){
-  const label = compactHomeTime(row.start);
+  const label = agendaCardTimeLabel(row,now);
   const end = row.kind === 'fill' ? compactHomeTime(row.end) : '';
   const chunkMinutes = h?.breakable && row.chunkIndex != null && Number.isFinite(row.chunkMinutes)
     ? Math.round(row.chunkMinutes)
@@ -1474,12 +1492,20 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
 }
 
 // PURE: compact right-side agenda marker for a home card
+function appointmentStatusPill(row){
+  if(!row?.breakableStart)return '';
+  const text = [row.appointmentConflict,
+    row.appointmentUnplacedMinutes > 0 ? `${compactHomeDuration(row.appointmentUnplacedMinutes)} still not scheduled` : '']
+    .filter(Boolean).join(' · ');
+  return text ? `<span class="context-pill" title="${escapeHtml(text)}"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${escapeHtml(text)}</span>` : '';
+}
+
 function agendaCardPill(row,h = null,now = Date.now()){
   if(!row)return '';
   const mode = normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards);
   if(mode === 'hide')return '';
   const status = agendaLeadStatus(row,h,now);
-  const label = compactHomeTime(row.start);
+  const label = agendaCardTimeLabel(row,now);
   const chunk = status.chunkMinutes != null
     ? ` · ${compactHomeDuration(status.chunkMinutes)}`
     : '';
@@ -1679,9 +1705,10 @@ function earlyCardPill(reason){
 // via travelFromCurrent() (movement-thresholded cache). A live-GPS leg can't
 // open the editor — an override anchored to an ephemeral coord would be stale
 // on the next GPS tick — but its destination is a real saved place, so a tap
-// opens directions from "here" in maps. Saved-place → saved-place legs keep
-// tap-to-edit / double-tap-to-go.
-function appendHomeTravelCard(list,fromId,toId,startTs){
+// opens directions from "here" in maps. Native legs also expose the destination's
+// reminders in the editor, with duration editing disabled. Saved-place legs keep
+// tap-to-edit; directions are available in the travel editor.
+function appendHomeTravelCard(list,fromId,toId,startTs,destination=null,dayKey=null){
   if(!list || !fromId || !toId || fromId === toId)return;
   const fromCurrent = fromId === CURRENT_COORD_ID;
   const to = typeof locationById === 'function' ? locationById(toId) : null;
@@ -1718,126 +1745,27 @@ function appendHomeTravelCard(list,fromId,toId,startTs){
   const weatherLabel=travelEl.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)travelEl.setAttribute('aria-label',`travel time ${fromName} to ${toName}, ${weatherLabel}`);
   list.appendChild(travelEl);
-  let travelPointer = null;
-  travelEl.addEventListener('pointerdown',e=>{
-    const scrollHost = travelEl.closest('.pane-list,.sheet,.detail-page');
-    travelPointer = {el:travelEl,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),maxMove:0,
-      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
-  },{passive:true});
-  travelEl.addEventListener('pointermove',e=>{
-    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
-    travelPointer.maxMove = Math.max(travelPointer.maxMove,Math.hypot(e.clientX-travelPointer.x,e.clientY-travelPointer.y));
-  },{passive:true});
-  travelEl.addEventListener('pointerup',e=>{
-    if(!travelPointer || travelPointer.el !== travelEl || travelPointer.id !== e.pointerId)return;
-    const tap = travelPointer;
-    travelPointer = null;
-    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX - tap.x,e.clientY - tap.y));
-    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now() - tap.time > 650){
-      travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
-      return;
-    }
-    travelEl.dataset.approvedClickUntil = String(Date.now()+500);
-  });
-  travelEl.addEventListener('pointercancel',e=>{
-    if(travelPointer && travelPointer.el === travelEl && travelPointer.id === e.pointerId){
-      const tap = travelPointer;travelPointer = null;
-      const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-      if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1)travelEl.dataset.ignoreClickUntil = String(Date.now()+500);
-    }
-  });
-  travelEl.addEventListener('click',e=>{
-    e.preventDefault();
-    e.stopPropagation();
-    if(Number(travelEl.dataset.ignoreClickUntil || 0) > Date.now())return;
-    const go = ()=>openTravelLegInMaps(toId);
-    // Saved-place legs keep the fast double-tap shortcut to directions; a
-    // single tap opens the editor with the tapped leg's live timing. A live-GPS
-    // leg cannot be edited (its origin is ephemeral), so it opens directions.
-    if(fromCurrent){
-      handleDoubleTapActivate(`travel:${fromId}|${toId}`,go,go);
-      return;
-    }
-    handleDoubleTapActivate(`travel:${fromId}|${toId}`,
-      ()=>openTravelEditSheet(fromId,toId,startTs),go);
-  });
+  const go = ()=>openTravelLegInMaps(toId);
+  // Saved-place legs open the editor immediately. A live-GPS leg has an
+  // ephemeral origin: native opens reminders, while the PWA opens directions.
+  if(fromCurrent && !(window.TingsNative?.isNative && destination)){
+    bindTap(travelEl, go);
+  }else{
+    bindTap(travelEl, ()=>openTravelEditSheet(fromId,toId,startTs,destination,dayKey));
+  }
 }
 
 // Module state: which consecutive blocked groups are expanded on the home list.
 const expandedBlockedGroups = new Set();
 
-// Visible window (ms) for the "next 12 hours" cleanup levels.
-const HOME_EXTRA_WINDOW_MS = 12 * 60 * 60 * 1000;
-
-// PURE: normalized home blocked/travel presentation mode.
-function homeExtraMode(){
-  return (typeof normalizeHomeExtraMode === 'function' && normalizeHomeExtraMode(sortSettings.homeExtraMode))
-    || 'cards';
+// PURE: full cards show busy blocks and travel for every displayed day.
+function homeExtraRowVisible(){
+  return !(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode));
 }
 
-// PURE: whether a blocked/travel row (keyed by its start ts) is shown under the
-// current homeExtraMode. 'cards' shows everything; the 12h modes hide anything
-// whose start lies past the next 12 hours (still-active blocks keep their past
-// start, so an in-progress block stays visible).
-function homeExtraRowVisible(ts){
-  if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode))return false;
-  if(homeExtraMode() === 'cards')return true;
-  return Number.isFinite(ts) && ts < Date.now() + HOME_EXTRA_WINDOW_MS;
-}
-
-// RENDER: plain muted background line for a home travel leg (text cleanup level).
-function appendHomeTravelText(list,fromId,toId,startTs){
-  if(!list || !fromId || !toId || fromId === toId)return;
-  const fromCurrent = fromId === CURRENT_COORD_ID;
-  const to = typeof locationById === 'function' ? locationById(toId) : null;
-  const mode = normalizeTravelMode((sortSettings || {}).defaultTravelMode);
-  let edge, fromName;
-  if(fromCurrent){
-    const here = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
-    edge = (here && to && typeof travelFromCurrent === 'function')
-      ? travelFromCurrent(to,mode)
-      : { seconds:0 };
-    fromName = 'here';
-  }else{
-    const from = typeof locationById === 'function' ? locationById(fromId) : null;
-    edge = (from && to && typeof travelBetween === 'function')
-      ? travelBetween(from,to,mode)
-      : { seconds:0 };
-    fromName = from ? from.name : 'here';
-  }
-  const mins = Math.max(1,Math.round((edge.seconds || 0) / 60));
-  const depart = startTs ? `leave by ${compactHomeTime(startTs)} · ` : '';
-  const weather = sortSettings?.showWeatherOnTravel && typeof weatherPeriodPillHtml==='function'
-    ? weatherPeriodPillHtml(startTs,startTs+mins*60000,sortSettings,{locationId:toId,className:'extra-text-weather'}) : '';
-  const el = document.createElement('div');
-  el.className = 'extra-text-line travel-text';
-  el.dataset.travelFrom = fromId;
-  el.dataset.travelTo = toId;
-  if(Number.isFinite(startTs))el.dataset.agendaStart = String(Math.round(startTs / 60000));
-  el.innerHTML = `<span>${escapeHtml(`${depart}${compactHomeDuration(mins)} · ${fromName} → ${to ? to.name : 'next'}`)}</span>${weather}`;
-  list.appendChild(el);
-}
-
-// RENDER: plain muted background line for a blocked-time instance (text level).
-function appendHomeBlockedText(list,row){
-  if(!list || !row)return;
-  const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
-  const start = compactHomeTime(row.start);
-  const end = compactHomeTime(row.end);
-  const place = loc ? ` · ${loc.name}` : '';
-  const weather = sortSettings?.showWeatherOnBusyTimes && typeof weatherPeriodPillHtml==='function'
-    ? weatherPeriodPillHtml(row.start,row.end,sortSettings,{locationId:row.locationId || null,className:'extra-text-weather'}) : '';
-  const el = document.createElement('div');
-  el.className = 'extra-text-line blocked-text';
-  el.innerHTML = `<span>${escapeHtml(`${row.label || 'blocked'} · ${start}–${end}${place}`)}</span>${weather}`;
-  list.appendChild(el);
-}
-
-// RENDER: dispatch a travel leg to a card or a muted line per homeExtraMode.
-function appendHomeExtraTravel(list,fromId,toId,startTs){
-  if(homeExtraMode() === 'text12h')appendHomeTravelText(list,fromId,toId,startTs);
-  else appendHomeTravelCard(list,fromId,toId,startTs);
+// RENDER: a travel leg always uses the card surface.
+function appendHomeExtraTravel(list,fromId,toId,startTs,destination=null,dayKey=null){
+  appendHomeTravelCard(list,fromId,toId,startTs,destination,dayKey);
 }
 
 // PURE: leave-by for a saved→saved (or here→saved) home travel card.
@@ -1870,61 +1798,6 @@ function lockBlockedCardActivation(ms = 180){
   clearTimeout(blockedCardActivationTimer);
   blockedCardActivationTimer = setTimeout(()=>{blockedCardActivationLocked = false;},ms);
 }
-function bindScrollSafeTap(el,activate,ignoreSelector = ''){
-  let pointer = null;
-  let handledUntil = 0;
-  const recoverStationaryTap = tap=>{
-    setTimeout(()=>{
-      if(!el.isConnected || Date.now() < handledUntil)return;
-      const settledTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-      if(Math.abs(settledTop-tap.scrollTop) > 1)return;
-      handledUntil = Date.now()+500;
-      activate(new Event('click'));
-    },60);
-  };
-  el.addEventListener('pointerdown',e=>{
-    if(ignoreSelector && e.target.closest(ignoreSelector))return;
-    const scrollHost = el.closest('.pane-list,.sheet,.detail-page');
-    pointer = {id:e.pointerId,x:e.clientX,y:e.clientY,maxMove:0,time:Date.now(),
-      scrollHost,scrollTop:scrollHost ? scrollHost.scrollTop : window.scrollY};
-  },{passive:true});
-  el.addEventListener('pointermove',e=>{
-    if(!pointer || pointer.id !== e.pointerId)return;
-    pointer.maxMove = Math.max(pointer.maxMove,Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y));
-  },{passive:true});
-  el.addEventListener('pointerup',e=>{
-    if(!pointer || pointer.id !== e.pointerId)return;
-    const tap = pointer;pointer = null;
-    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-    const moved = Math.max(tap.maxMove,Math.hypot(e.clientX-tap.x,e.clientY-tap.y));
-    if(moved > 8 || Math.abs(scrollTop-tap.scrollTop) > 1 || Date.now()-tap.time > 650){
-      el.dataset.ignoreClickUntil = String(Date.now()+500);return;
-    }
-    recoverStationaryTap(tap);
-  });
-  el.addEventListener('pointercancel',()=>{
-    const tap = pointer;pointer = null;
-    if(!tap)return;
-    const scrollTop = tap.scrollHost ? tap.scrollHost.scrollTop : window.scrollY;
-    if(tap.maxMove > 8 || Math.abs(scrollTop-tap.scrollTop) > 1){
-      el.dataset.ignoreClickUntil = String(Date.now()+500);
-      return;
-    }
-    // Mobile WebKit sometimes cancels an otherwise stationary tap and emits
-    // no click. Wait briefly so a real scroll has time to move, then recover
-    // only when both the finger and scroll host remained still.
-    recoverStationaryTap(tap);
-  },{passive:true});
-  el.addEventListener('click',e=>{
-    if(ignoreSelector && e.target.closest(ignoreSelector))return;
-    e.preventDefault();e.stopPropagation();
-    if(Date.now() < handledUntil)return;
-    if(Number(el.dataset.ignoreClickUntil || 0) > Date.now())return;
-    handledUntil = Date.now()+500;
-    activate(e);
-  });
-}
-
 function appendHomeBlockedCard(list,row){
   if(!list || !row)return;
   const loc = row.locationId && typeof locationById === 'function' ? locationById(row.locationId) : null;
@@ -1944,35 +1817,16 @@ function appendHomeBlockedCard(list,row){
   const weatherLabel=el.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)el.setAttribute('aria-label',`${row.label || 'blocked'} ${start} to ${end}${place}, ${weatherLabel}`);
   const xBtn = el.querySelector('.blocked-cancel-mark');
-  let cancelPointer = null;
-  if(xBtn)xBtn.addEventListener('pointerdown',e=>{
-    cancelPointer = {id:e.pointerId,x:e.clientX,y:e.clientY};
-    e.stopPropagation();
-  },{passive:true});
-  if(xBtn)xBtn.addEventListener('pointerup',e=>{
-    if(!cancelPointer || cancelPointer.id !== e.pointerId)return;
-    const tap = cancelPointer;cancelPointer = null;
-    if(Math.hypot(e.clientX-tap.x,e.clientY-tap.y) > 8)return;
-    e.preventDefault();
-    e.stopPropagation();
-    cancelHomeBlockedRow(row);
-  });
-  if(xBtn)xBtn.addEventListener('pointercancel',()=>{cancelPointer = null;},{passive:true});
-  if(xBtn)xBtn.addEventListener('click',e=>{
-    e.preventDefault();
-    e.stopPropagation();
-    if(!xBtn.isConnected)return;
-    cancelHomeBlockedRow(row);
-  });
-  bindScrollSafeTap(el,()=>{
+  if(xBtn){
+    bindTap(xBtn,()=>{
+      if(!xBtn.isConnected)return;
+      cancelHomeBlockedRow(row);
+    },{stop:true});
+  }
+  bindTap(el,()=>{
     if(blockedCardActivationLocked)return;
-    // Let the browser finish the click sequence before mounting an overlay;
-    // otherwise the new backdrop can intercept the tail of the same gesture.
-    setTimeout(()=>{
-      if(blockedCardActivationLocked)return;
-      if(typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
-    },0);
-  },'.blocked-cancel-mark');
+    if(typeof openBlockEditSheet === 'function')openBlockEditSheet(row);
+  },{ignoreSelector:'.blocked-cancel-mark'});
   el.addEventListener('keydown',e=>{
     if((e.key === 'Enter' || e.key === ' ') && !e.target.closest('.blocked-cancel-mark')){
       e.preventDefault();
@@ -2053,25 +1907,7 @@ function appendHomeBlockedGroup(list,blocks,groupKey){
   toggle.innerHTML = `<span class="timeline-card-icon"><i class="ti ti-lock" aria-hidden="true"></i></span>${timelineCardCopyHtml(`${blocks.length} busy times`,`${escapeHtml(summary)} · ${escapeHtml(start)}–${escapeHtml(end)}`,weather)}<i class="ti ${expanded ? 'ti-chevron-up' : 'ti-chevron-down'} blocked-card-chevron" aria-hidden="true"></i>`;
   const weatherLabel=toggle.querySelector('.weather-period-pill')?.getAttribute('aria-label');
   if(weatherLabel)toggle.setAttribute('aria-label',`${toggle.getAttribute('aria-label')}, ${weatherLabel}`);
-  let mergePointer = null;
-  toggle.addEventListener('pointerdown',e=>{
-    mergePointer = {el:toggle,id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now()};
-  },{passive:true});
-  toggle.addEventListener('pointerup',e=>{
-    if(!mergePointer || mergePointer.el !== toggle || mergePointer.id !== e.pointerId)return;
-    const tap = mergePointer;
-    mergePointer = null;
-    const moved = Math.hypot(e.clientX - tap.x,e.clientY - tap.y);
-    if(moved > 10 || Date.now() - tap.time > 800)return;
-    toggle.dataset.approvedClickUntil = String(Date.now()+500);
-  });
-  toggle.addEventListener('pointercancel',e=>{
-    if(mergePointer && mergePointer.el === toggle && mergePointer.id === e.pointerId)mergePointer = null;
-  });
-  toggle.addEventListener('click',e=>{
-    e.preventDefault();
-    e.stopPropagation();
-    if(e.detail !== 0 && Number(toggle.dataset.approvedClickUntil || 0) < Date.now())return;
+  bindTap(toggle,()=>{
     lockBlockedCardActivation();
     if(expandedBlockedGroups.has(groupKey))expandedBlockedGroups.delete(groupKey);
     else expandedBlockedGroups.add(groupKey);

@@ -7,6 +7,7 @@ bindCalendarTap($('detail-calendar'),'[data-entry-day]',day=>{
   const h = load()[detailIdx];
   if(!h)return;
   const key = day.dataset.entryDay;
+  dayLogsPlanDateEditable = false;
   dayLogsKey = key;
   dayLogsScopeIndex = detailIdx;
   dayLogsStep = 'item';
@@ -189,7 +190,7 @@ function loadTingsCoach(){
     if(!stylesheet){
       stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
-      stylesheet.href = './onboarding/coach.css?v=21';
+      stylesheet.href = './onboarding/coach.css?v=22';
       stylesheet.dataset.tingsCoach = '1';
       document.head.appendChild(stylesheet);
       stylesReady = new Promise(done=>{
@@ -206,7 +207,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=37';
+    script.src = './onboarding/coach.js?v=38';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -239,7 +240,7 @@ $('start-advanced-coach')?.addEventListener('click',()=>{
 $('open-install-guide')?.addEventListener('click',()=>{
   if(window.Capacitor?.isNativePlatform?.())return; // button is hidden on native
   if(typeof isStandalonePwa === 'function' && isStandalonePwa()){
-    if(typeof showToast === 'function')showToast('already installed — the guided start button is right below');
+    if(typeof showToast === 'function')showToast('already installed — the quick start button is right below');
     return;
   }
   closeSheet('about-sheet');
@@ -323,18 +324,12 @@ document.getElementById('setting-prayer-method')?.addEventListener('change',e=>{
   if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
   updateSortSetting({prayerMethod:normalizePrayerMethod(e.target.value)});
 });
-$('home-extra-seg')?.addEventListener('click',e=>{
-  const opt = e.target.closest('[data-seg-value]');
+$('card-detail-seg')?.addEventListener('click',e=>{
+  const opt = e.target.closest('[data-card-detail]');
   if(!opt)return;
-  const mode = normalizeHomeExtraMode(opt.dataset.segValue);
-  if(mode === normalizeHomeExtraMode(sortSettings && sortSettings.homeExtraMode))return;
-  // This setting only changes how already-planned blocked/travel rows look.
-  // Reflect the tap immediately and reuse the mounted week; rebuilding the
-  // seven-day plan here made this two-button display control take seconds.
-  document.querySelectorAll('#home-extra-seg .seg-opt').forEach(btn=>{
-    btn.classList.toggle('on',btn.dataset.segValue === mode);
-  });
-  updateSortSetting({homeExtraMode:mode},{sync:false,renderNow:false});
+  const patch = cardDetailPatch(opt.dataset.cardDetail,sortSettings);
+  if(!patch || sortSettings.cardDetailLevel === opt.dataset.cardDetail)return;
+  updateSortSetting({...patch,cardDetailLevel:opt.dataset.cardDetail},{renderNow:false});
   if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   else render();
 });
@@ -366,6 +361,12 @@ $('habit-log-keep-seg')?.addEventListener('click',e=>{
 });
 $('retention-clean-now')?.addEventListener('click',()=>{
   applyRetentionCleanup({force:true});
+});
+$('add-regular-mode')?.addEventListener('click',()=>{
+  if(typeof openMinimalModeSettings === 'function')openMinimalModeSettings();
+});
+$('detail-regular-mode')?.addEventListener('click',()=>{
+  if(typeof openMinimalModeSettings === 'function')openMinimalModeSettings();
 });
 document.querySelectorAll('[data-setting-toggle]').forEach(btn=>{
   btn.addEventListener('click',e=>{
@@ -729,7 +730,7 @@ $('theme-mode-seg')?.addEventListener('click',e=>{
 });
 // Weather display-unit segs (temperature / precipitation / wind). Tapping a
 // unit is display-only: reflect the tap and refresh weather surfaces without
-// entering the planner (same presentation-only pattern as homeExtraMode).
+// entering the planner (presentation-only repaint).
 function bindWeatherUnitSeg(segId,normalize,settingKey){
   $(segId)?.addEventListener('click',e=>{
     const opt = e.target.closest('[data-seg-value]');
@@ -972,6 +973,12 @@ $('home-filter-done')?.addEventListener('click',()=>closeSheet('home-filter-shee
 $('home-filter-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeSheet('home-filter-sheet');
 });
+document.querySelectorAll('[data-filter-settings]').forEach(button=>{
+  button.addEventListener('click',()=>{
+    closeSheet(button.closest('.sheet-wrap').id);
+    $('open-settings').click();
+  });
+});
 $('presence-picker-chips')?.addEventListener('click',async e=>{
   const gps = e.target.closest('[data-presence-gps]');
   if(gps){
@@ -1079,8 +1086,13 @@ function renderBlockEditDynamicControls(){
   if(!host || !blockEditContext)return;
   const block = blockEditContext.draftBlock;
   if(!block){host.hidden = true;return;}
+  const disclosureState = new Map([...host.querySelectorAll('.time-advanced')].map(el=>[el.closest('.blocked-endpoint').dataset.blockedField,el.open]));
   host.hidden = !blockEditDynamicOpen;
   host.innerHTML = `<span class="field-label utility-field-label">recurring rule</span><div class="blocked-time-hours time-endpoints">${blockedEndpointHtml(block,blockEditContext.blockIndex,'start')}<span class="time-sep">to</span>${blockedEndpointHtml(block,blockEditContext.blockIndex,'end')}</div><p class="field-hint">Saved only when you choose update recurring. “Save this date” keeps this rule and changes just this occurrence.</p>`;
+  host.querySelectorAll('.blocked-endpoint').forEach(endpoint=>{
+    if(disclosureState.has(endpoint.dataset.blockedField))endpoint.querySelector('.time-advanced').open = disclosureState.get(endpoint.dataset.blockedField);
+    syncTimeRuleSummary(endpoint);
+  });
 }
 
 function saveBlockEditorRulePatch(patch){
@@ -1096,6 +1108,7 @@ function blockEditorField(target){
 
 function openBlockEditSheet(row){
   if(!row)return;
+  if(typeof nativeEnsureBusyReminderIds==='function')nativeEnsureBusyReminderIds();
   const dayKey = dateKey(row.start);
   const originalStart = Number(row.blockStartMin);
   const originalEnd = Number(row.blockEndMin);
@@ -1123,7 +1136,12 @@ function openBlockEditSheet(row){
     dynamicToggle.setAttribute('aria-expanded','false');
     dynamicToggle.textContent = 'edit dynamic rule';
   }
+  // A fresh card editor starts from its saved rule, rather than the disclosure
+  // choices left over from the previously inspected busy time.
+  const dynamicControls = $('block-edit-dynamic-controls');
+  if(dynamicControls)dynamicControls.innerHTML = '';
   renderBlockEditDynamicControls();
+  if(typeof renderNativeBlockEditorReminders==='function')renderNativeBlockEditorReminders(block,dayKey);
   // Blur the home card before the sheet mounts so closing cannot restore focus
   // there and scroll the list underneath.
   const focusedCard = document.activeElement?.closest?.('.blocked-card');
@@ -1267,7 +1285,10 @@ function saveBlockEditSeries(){
 $('block-edit-instance')?.addEventListener('click',saveBlockEditInstance);
 $('block-edit-series')?.addEventListener('click',saveBlockEditSeries);
 $('block-edit-cancel')?.addEventListener('click',()=>{blockEditContext=null;closeSheet('block-edit-sheet');});
-$('block-edit-sheet')?.addEventListener('click',e=>{if(e.target===e.currentTarget){blockEditContext=null;closeSheet('block-edit-sheet');}});
+$('block-edit-sheet')?.addEventListener('click',e=>{
+  if(e.target!==e.currentTarget)return;
+  blockEditContext=null;closeSheet('block-edit-sheet');
+});
 $('travel-edit-minus')?.addEventListener('click',()=>{
   const input = $('travel-edit-minutes');
   if(!input)return;
@@ -1283,7 +1304,8 @@ $('travel-edit-maps')?.addEventListener('click',openTravelDestinationInMaps);
 $('travel-edit-reset')?.addEventListener('click',()=>{ resetTravelEditFromSheet(); });
 $('travel-edit-cancel')?.addEventListener('click',closeTravelEditSheet);
 $('travel-edit-sheet')?.addEventListener('click',e=>{
-  if(e.target === e.currentTarget)closeTravelEditSheet();
+  if(e.target !== e.currentTarget)return;
+  closeTravelEditSheet();
 });
 
 // Value log sheet

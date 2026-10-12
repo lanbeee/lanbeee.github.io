@@ -2406,11 +2406,14 @@ function assistantAnswerMissed(context, select, args){
   const dropped = typeof collectDroppedItems === 'function'
     ? collectDroppedItems(data, settings, todayHids, now)
     : [];
-  if(!dropped.length){
+  const visible = typeof partitionDroppedItems === 'function'
+    ? partitionDroppedItems(dropped, now).visible
+    : dropped;
+  if(!visible.length){
     const empty = assistantApplyItemQuery([], assistantScheduleAnalysisArgs(args, select), 'missed item');
     return empty.ok ? empty : {ok:true, text:'Nothing missed — the missed list on today is empty.', items:[]};
   }
-  const items = dropped.map(row => {
+  const items = visible.map(row => {
     const habit = (data && row.idx != null ? data[row.idx] : null)
       || (Array.isArray(data) ? data.find(item => item && item.hid === row.hid) : null);
     return assistantHabitQueryFacts(habit, {missed:row.dayLabel || 'today'}, context, row.idx)

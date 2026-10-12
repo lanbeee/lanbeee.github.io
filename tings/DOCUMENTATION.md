@@ -82,8 +82,8 @@ Everything below is covered in this skeleton:
 - All card display toggle symbols (💡 📍 📌 🧪 📅 ⏱️ 🕐 🌅)
 
 ### ✅ All Gestures & Interactions
-- Tap, double tap, long press, swipe
-- All swipe actions (left: pin, keep, activity, timer; right: snooze, remove)
+- Tap, long press, swipe
+- All swipe actions (finger right: session, plan, history, open/call, sample keep; finger left: snooze, pin, quiet, remove)
 - Minimal mode swipe restrictions
 - Keyboard shortcuts (search + single char typing)
 - Agenda drag handles
@@ -185,11 +185,11 @@ Header wordmarks in both the PWA and Android use the day artwork in light mode a
 | "+" Add | Right | ➕ | Opens Add Habit sheet |
 | Search Toggle | Right | 🔎 | Shows/hides search |
 
-### 2.2 Week Plan Strip 👤
-- Appears at top when `showWeekOnHome: true`
-- Shows 7-day schedule preview
-- Color-coded by habit type
-- Tap to navigate to calendar
+### 2.2 Home Agenda 👤
+- Today and Tomorrow show their agenda timelines.
+- Coming up combines overdue and future items, with each remaining item shown once.
+- The planner still schedules seven days. Open Calendar and tap any day for its complete agenda.
+- Busy blocks and travel use cards for all displayed days in full mode.
 
 ### 2.3 TODAY SECTION 👤
 #### 2.3.1 Section Header
@@ -249,6 +249,16 @@ Items appear in this order:
 | `showCueOnCards` | Always | Status text below title |
 | `showOrderPillsOnCards` | Always | ↗️ ↘️ order markers |
 | `showEarlyOnCards` | Always | 🌅 early indicator |
+
+Home activity dots use muted, theme-aware neutral tones. Filled marks mean a
+day has a log; hollow marks mean a plan; faint marks mean no entry, not a
+missed occurrence. Seven dots run oldest to newest, ending with today.
+The wider mark on the left summarizes the preceding seven days:
+filled if any day was logged, hollow if there were only plans, faint if empty.
+Date/state tooltips and a screen-reader description explain the strip without
+adding labels to every card. The activity-dot settings explain the key. Rhythm
+quality colors remain in detailed History; home dots do not rate completions
+or imply that a log on an avoid/reduce habit was a success.
 
 ### 2.7 Priority Badges (P0-P5) 👤
 - P0: 🔴 Critical - First in agenda
@@ -432,10 +442,10 @@ else:
     weekdays: number[],          // Empty = every weekday
     start: number|null,          // Minutes from midnight, or null when dynamic
     end: number|null,            // Minutes from midnight, or null when dynamic
-    startAnchor?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha',
+    startAnchor?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'midnight',
     startOffsetMin?: number,
     startCombine?: 'later'|'earlier',
-    startAnchor2?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'fixed',
+    startAnchor2?: 'fajr'|'sunrise'|'dhuhr'|'asr'|'maghrib'|'isha'|'midnight'|'fixed',
     startOffsetMin2?: number,
     startFixedMin2?: number|null,
     startDayOffset?: 0|1,
@@ -496,7 +506,6 @@ Key sections with all fields:
 ```js
 preset: 'balanced'|'build'|'planned'|'todayFirst'|'custom',
 focus: 'balanced'|'build'|'space',
-plansFirst: boolean,
 planWindowDays: number,  // 1-14, look-ahead for plan signal
 
 // Weight sliders (0-200 each):
@@ -517,7 +526,12 @@ agendaScoreWeights: {
 ```
 
 #### 4.3.3 Card Display Options 👤
+
+`cardDetailLevel` selects Simple, Detailed, or Custom. Presets derive the annotation booleans below; Custom exposes individual switches and remembers its choices when switching presets. Sample items always keep their label. Times, activity dots, and hidden-item visibility remain separate controls.
+
 ```js
+cardDetailLevel: 'simple'|'detailed'|'custom',
+customCardDetails: object|null,   // Saved Custom choices
 showSnoozed: boolean,              // 👤 Fade out snoozed items
 showSampleOnCards: boolean,        // 👤 Show 🧪 marker
 showPinnedOnCards: boolean,        // 👤 Show 📌 marker
@@ -544,7 +558,7 @@ showStatusOnCards: boolean,        // 👤 Show status word ("run", "overdue", e
 minimalMode: boolean,  // 👤 Simplified UI for new users
 
 // In minimal mode:
-// - Home groups: Today / Overdue / Coming Up
+// - Home groups: Today / Tomorrow / Coming up / The rest
 // - Calendar view stripped
 // - Detail view simplified
 // - Settings hidden behind advanced toggle
@@ -729,14 +743,8 @@ forecast, one row per step (hourly, or 15-minute inside the near-term
 reminders: boolean,             // Enable notifications
 pushDetailed: boolean,          // 👤 Rich notification content
 reachable: boolean,             // 👨‍💻 Device can receive push
-showScheduledTasksInAgenda: boolean,   // Scheduled (eventTime) tasks in agenda
-showDueTasksInAgenda: boolean,         // Due date tasks in agenda
-showPlannedItemsInAgenda: boolean,     // Future planned logs in agenda
-showDueHabitsInAgenda: boolean,       // Habit due-rhythm items in agenda
-showWeekOnHome: boolean,             // Week plan strip on home
 agendaOptimizer: boolean,       // Use ILP planner (off = Fast graph)
 
-homeExtraMode: 'cards'|'cards12h'|'text12h',  // 👤 How blocked times appear on home
 reachAssist: boolean,           // 👤 Pull-down navigation enabled
 
 calendarCreditHabitId: string|null,  // 👨‍💻 Breakable habit for meeting minutes
@@ -854,7 +862,7 @@ When enabled: `🕐 9am-5pm`
 | P1 | 🟠 High | Second priority |
 | P2 | 🟡 Medium | Default for new |
 | P3 | 🟢 Low | Lower priority |
-| P4 | 🔵 Lower | Even lower |
+| P4 | 🟣 Lower | Even lower |
 | P5 | ⚪ Someday | Dropped first |
 
 ### 5.7 Topic Chips 💡 👤
@@ -888,7 +896,8 @@ When `showPlansOnCards: true`:
 ### 5.15 Reminder mark 🔔 👤
 When `showRemindersOnCards` is on (default) and the installed Android app has a phone notification or ringing alarm for that item:
 - Bell (`ti-bell`) for notifications, ringing bell (`ti-bell-ringing`) for alarms
-- Tap or swipe **quiet** to turn that item’s phone reminders off
+- The mark shows reminder status; tapping it follows the normal card tap and opens the item
+- Swipe left and choose **quiet** to turn that item’s phone reminders off
 - Hidden on the PWA, where OS reminders are not delivered
 
 ### 5.16 About-to-drop clock ⏰ 👤
@@ -940,7 +949,7 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showPinnedOnCards | **true** | 📌 pinned habits marker |
 | showTaskDateOnCards | **true** | Due/scheduled date for tasks |
 | showPlansOnCards | **true** | 📅 planned future log date |
-| showDayScheduleOnCards | **true** | Schedule link chips |
+| showDayScheduleOnCards | **false** | Schedule link chips |
 | showTimeWindowOnCards | **false** | 🕐 time window display |
 | showSnoozedUntilOnCards | **true** | Snooze countdown |
 | showDurationOnCards | **false** | ⏱️ session length |
@@ -953,39 +962,38 @@ These are the actual default values from `config.js DEFAULT_SORT_SETTINGS`:
 | showTrailOnCards | **false** | Activity dots (recent logs) — calm-card default |
 | showCueOnCards | **true** | Status text below name |
 | showOrderPillsOnCards | **false** | ↗️↘️ schedule link markers — calm-card default |
-| showEarlyOnCards | **false** | 🌅 ready early indicator — calm-card default |
+| showEarlyOnCards | **true** | 🌅 ready early indicator |
 
-> **Calm-card defaults:** the four insight decorations above default OFF so
-> switching out of minimal mode doesn't unleash every extra at once. Installs
-> saved before the flip keep the look they had (see `loadSortSettings`).
+> Simple keeps early indicators on and extra annotations off. Detailed adds
+> practical context without enabling every decoration; Custom saves individual choices.
 
 ---
 
 ## VI. HOME PAGE DAY HEADERS & PILLS 👤
 
 ### 6.1 Day Section Headers
-In regular mode, home groups habits into collapsible day-by-day sections. In minimal mode, items are grouped by category:
+Home uses the same sections in regular and minimal mode:
 
 ```
-Regular mode (showWeekOnHome: true):
-├── Today
-├── Tomorrow  
-├── Wed, Thu, Fri... (day headers)
-└── The Rest (untimed)
-
-Minimal mode (always):
 ├── Pinned (if any pinned)
 ├── Today
-├── Overdue
-├── Coming Up
-├── The Rest
+├── Tomorrow
+├── Coming Up (later assignments and overdue/unplaced items, once per item)
+└── The Rest
 ```
+
+Today and Tomorrow retain their timeline occurrences. Items already shown there
+are omitted from Coming up. Later recurring occurrences remain in the full
+seven-day plan, available by tapping a day in Calendar. Minimal mode reduces
+card detail and hides busy/travel cards without changing the plan.
 
 Each day section header can have dynamic **pills** for open time, weather, and
 missed items. On a tight header, the weather pill progressively hides its
 temperature and precipitation text before the day label or action pills are
 allowed to clip. Only exceptionally narrow layouts move the pills to a tidy
-second row.
+second row. Vertical drags on pills scroll the page and do not open their
+sheets, including short drags at the page’s scroll limit. Deliberate taps
+and small sideways drift still activate.
 
 ### 6.2 Missed Pills (🔴 "N missed")
 - Appears on "Today" after a planner-backed opportunity has passed without being completed. A row the user actually saw today also counts as passed if a later/cold optimization drops it, even when its general clock window remains open.
@@ -997,6 +1005,7 @@ second row.
 - Each item can be tapped to review → opens detail
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
+- Each missed row can be **hidden until tonight** (local midnight). Hidden rows drop out of the `"N missed"` count and the assistant missed list, but they are not snoozed: Home and the planner stay unchanged. Hide some and the pill becomes `"N missed"` for what is still unacked. Hide all of them and the amber count is replaced by a muted eye-off chip (`hidden until tonight`) so the sheet stays reachable without looking like a notification. Show a hidden row, or wait until midnight, and it behaves as a miss again.
 
 ### Before-missed phone reminders (installed app only)
 
@@ -1076,10 +1085,14 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
   Portrait detail content keeps its spacing and chart sizes across keyboard
   transitions; short-height content compaction applies only to wider layouts.
   After editing a detail field, the Search/Close bar stays hidden until the
-  keyboard finishes closing, then returns at the bottom. Save/Cancel remains
-  reachable while there are unsaved changes. The detail header keeps its full
-  size, cue and link buttons while typing on portrait phones, including in short
-  keyboard layouts. Wide landscape screens retain their compact header layout.
+  keyboard finishes closing, then returns at the bottom. Cancel/Save replace
+  the existing header at the same height while a field is focused or there
+  are unsaved changes, then leave with the sheet. The detail header keeps its
+  size while typing on portrait phones, including in short keyboard layouts.
+  Wide landscape screens retain their compact header layout.
+  Hardware-keyboard editing shows the same header actions on focus while
+  retaining page navigation and the Search/Close bar. Focusing Cancel/Save
+  keeps those actions available for keyboard activation.
   Opening detail from a scrolled Home shows the phone detail page fully opaque
   immediately, keeping the cards behind the sticky day header covered.
   They follow its geometry once per animation frame; visible editing fields
@@ -1106,85 +1119,108 @@ With **refresh agenda while closed** enabled, the existing unique WorkManager jo
 ## VIII. THE NEW SHEET
 
 ### 8.1 Sheet Structure
-```
-┌─────────────────────────────────────┐
-│ new           [defaults] [busy times]│
-├─────────────────────────────────────┤
-│ [Input] Name     [Emoji] 🎯          │
-│ [Emoji picker: quick picks + colors]│
-│                                     │
-│ Type: [habit] [task]                │
-│ A task is one-off; a habit repeats. │
-│                                     │
-│ (habit) How often: [1] × in [7] d   │
-│ (task)  Due: [date] [time]          │
-│ ─────────────────────────────────   │
-│ [more options ▼]                    │
-│ ┌───────────────────────────────┐  │
-│ │ Priority: P0 P1 P2 P3 P4 P5   │  │
-│ │ Auto mark done: [ — ] min     │  │
-│ │ Topics & places               │  │
-│ └───────────────────────────────┘  │
-│                                     │
-│ [add] [cancel]                      │
-└─────────────────────────────────────┘
-```
+The main flow is the same in regular and minimal mode:
 
-### 8.2 Field: Habit Name 👤
-- Text input, max 60 characters
-- Auto-focus on open
-- `enterkeyhint="done"` for mobile keyboards
-- Autocapitalization: sentences
+1. **New habit / new task** heading and a type selector with short explanations:
+   “something you repeat” / “something you do once”.
+2. **What would you like to do?** Name with a suggested, optional icon.
+3. Habit: **How often?** Quick choices and editable frequency. Task: optional
+   due date and optional start time, with clearly labelled inputs.
+4. **Time for each session** (habit) or **Time needed** (task), in minutes.
+5. Regular mode: collapsed **More options**, described as “planning, places &
+   completion”. Minimal mode: the existing quiet Settings shortcut.
+6. A short note that days, hours and other details can be adjusted after adding.
+   The persistent footer says **add habit** or **add task**, with **cancel**.
+
+Controls follow the app’s flat surface styling: tonal fields and selected
+choices, spacing between optional groups, and a footer without elevation.
+
+### 8.2 Field: Name 👤
+- Text input, max 60 characters; labelled “What would you like to do?”
+- Examples: “Read a book” for habits, “Book a dentist visit” for tasks.
+- Auto-focus on open; `enterkeyhint="done"` for mobile keyboards. Keyboard
+  Done/Enter finishes editing the name; the explicit Add action saves the item.
+- Autocapitalization: sentences.
 
 ### 8.3 Field: Emoji 👤
-- Optional, max 4 grapheme clusters
-- Default: 💡 (lightbulb) for habits
-- Emoji preview button next to name
-- Quick-pick chip row for common emojis
-- Background color swatches: teal, amber, red, purple, blue, green
-- Info tooltip: "Optional. An emoji like 🏃 or 📚 is suggested from the name; no match? Tap any quick-pick chip. Blank uses the default habit icon."
+- Optional, max 4 grapheme clusters; suggested from the name.
+- Preview button next to name, labelled “choose an icon (optional)”.
+- Opens one horizontally scrolling row of commonly used emojis and background
+  swatches (teal, amber, red, purple, blue, green).
+- Clearing the field uses the default icon.
 
 ### 8.4 Field: Type Selector 👤
-| Button | Type | Shows Rhythm | Shows Due Date |
-|--------|------|-------------|----------------|
-| habit | keepup | ✅ Yes (times × days) | ❌ No |
-| task | task | ❌ No | ✅ Yes (date + time) |
+| Button | Meaning | Main fields |
+|--------|---------|-------------|
+| habit | Something you repeat | Frequency and session duration |
+| task | Something you do once | Due date, start time and total duration |
 
-**Note:** reduce and zero types are NOT available in the add sheet. They are accessed by changing the "kind" in the detail sheet after creation. New users start with `keepup` as default.
+Switching types retains a separate in-flight draft for each kind. Reduce and
+zero types are available through Details and inherited defaults; reduce shows
+“How often at most?” and a limit summary, while zero explains its avoidance
+goal. These tracking types do not show session duration in the main flow.
 
-### 8.5 Field: Rhythm (Times × Days) 👤
-Visible when type = habit (keepup):
-```
-[1] × in [7] d
-```
-- Left input: Times per cycle (1-183)
-- Right input: Days per cycle (0.2-183)
-- Hint: "How often — times in N days (e.g. 2× in 7d, or 15× in 7d)."
-- Help text changes by type:
-  - keepup: "How often — times in N days."
-  - reduce: "Times in N days — e.g. 1× in 3d."
-  - zero: "Something to avoid. Log it each time it happens; the aim is longer gaps."
+### 8.5 Field: Frequency 👤
+- Quick choices: **daily**, **3 times a week**, **weekly**.
+- Editable sentence: `[3] times every [7] days`; units become singular for 1.
+- A live summary reads “Aim for 3 times a week” or “Aim for 3 times every 10
+  days”. Reduce reads “Keep it to … or less”.
+- Selecting a preset updates both inputs. Custom values clear the preset
+  selection. Numeric fields across the app clear immediately when tapped or focused,
+  ready for a new number without text selection. Leaving without typing
+  restores the previous value.
+- The stored target remains the interval `days / times`; no internal interval
+  calculation is shown to users. Existing rhythm limits and scheduling apply.
 
-### 8.6 Field: Task Due Date 👤
-Visible when type = task:
-- **Date input:** Calendar picker (day-level)
-- **Time input:** Time picker. Unbreakable tasks become fixed-time events; breakable tasks start at this time and may pause/resume. Five-minute stops; on iOS this is Clock-style wheels (hour, 00/05/10…, AM/PM) instead of scrolling every minute
-- Hint: "add a start time; breakable tasks may pause and resume"
-- Default time: Next clean hour
+### 8.6 Field: Task Date 👤
+- **Due date (optional)** with **today**, **tomorrow**, **no date** shortcuts.
+  Today's date is the initial task default; saved task defaults may override it.
+- **Start time (optional)** is separate and clearly labelled. Leaving it blank
+  lets Tings choose a start within the item's scheduling settings.
+- A chosen start time keeps the appointment clock, including for split tasks. Duration
+  is total time; allowed hours may set a hard end. Five-minute picker steps.
+- Choosing no date clears the start time and disables the time picker until a
+  date is chosen. The task stays in the list until dated or finished.
 
 ### 8.7 More Options Fields 👤
+Optional fields are grouped and collapsed on fresh entry:
 
-| Field | UI Element | Default | Description |
-|-------|-----------|---------|-------------|
-| Priority | P0-P5 segmented control | P2 | P0 claims time first, P5 dropped first |
-| Auto Mark Done | Number input | — (manual) | Minutes before auto-complete |
-| Topics | Chip row | Inherits from defaults | Tags for filtering |
+| Group | Controls |
+|-------|----------|
+| Planning | Priority (critical, high, normal, flexible, low, someday); split into shorter sessions; shortest session; inherited days/hours summary; preview schedule |
+| Completion | Mark done myself, automatically after the session, or automatically after a set time; contextual explanation and minute input |
+| Topics & places | Topic and place chips, plus brief guidance |
+| Weather | Nested disclosure for forecast display and weather guidance |
+
+Priority labels map to the existing P0–P5 values. **New item defaults** and
+**manage busy times** links sit at the bottom of More options, away from the
+core creation fields. Opening Settings preserves the current draft and
+expanded disclosures; untouched draft fields receive changed defaults.
 
 ### 8.8 Buttons 👤
 | Button | Action |
 |--------|--------|
-| add | Creates the habit and closes sheet |
-| cancel | Discards changes and closes sheet |
+| add habit / add task | Saves once, then opens the item's schedule details for further adjustment |
+| cancel | Discards the draft and closes the sheet |
+
+The form scrolls in its own area; Add and Cancel stay in a separate footer
+that remains reachable while scrolling, expanding options or using the keyboard.
+
+### 8.9 Room and overlap guidance 👤
+
+- Choosing a task's date and start time automatically shows a quiet inline
+  note if it overlaps a busy time, calendar appointment, or timed day plan.
+  The note follows duration changes, busy-time edits and overnight dates.
+  A breakable task checks its first minimum session; later sessions can move.
+- **More options → preview schedule** previews a habit or dated task against the
+  next seven days using the selected planner. It reports the time found and
+  warns if the task fits only partly or existing work may lose planned time.
+  A preview is an estimate, rather than a guarantee that every recurring
+  session fits. Fixed overlaps are checked even outside the preview horizon.
+- Checks never save the draft, block Add, or require another confirmation.
+  Editing or closing the sheet cancels a pending preview. A failed check still
+  lets you add. The ordinary Add flow stays folded and quiet until a fixed
+  overlap exists or you request a preview.
 
 ---
 
@@ -1219,9 +1255,10 @@ calendar+stats pane), `effort` (folded into `schedule`)
 
 ### 9.3 Identity Tab 👤
 
-Fields shown (always visible, even in minimal mode):
-- **Name** (text input, max 60 chars, auto-focus)
-- **Emoji** (emoji picker, max 4 graphemes, with quick-pick + background color)
+Identity fields (minimal mode keeps name, emoji and habit/task type; kind,
+priority, topics and color controls are available in regular mode):
+- **Name** (text input, max 60 chars; tapping the detail header name opens this field)
+- **Emoji** (emoji picker, max 4 graphemes, with a horizontally scrolling common-emoji row + background color)
 - **Type** (segment: `habit` / `task`)
   - When `habit`: Shows **Kind** sub-segment (build/limit/stop)
     - `build` = keepup (build positive habits)
@@ -1233,16 +1270,38 @@ Fields shown (always visible, even in minimal mode):
 
 ### 9.4 Schedule Tab Details 👤
 
-Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode keeps those section headers visible on its stacked scrolling fields and omits search. Footer clearance for the close pill sits only on the last section.
+Every full-mode detail tab uses expandable sections. Rhythm/deadline, duration/chunks, name/type, calendar history and item actions start expanded. Secondary sections start closed; configured availability, weather, time/place options, item order, links and phone reminders expand automatically. Minimal mode stacks rhythm/deadline, duration, allowed weekdays and hours, name/type, optional emoji and remove into one scroll, and omits search. Month days, preferred availability, places, weather, link setup and planning extras stay in regular mode. Saved advanced settings continue to apply. Footer clearance for the close pill sits only on the last section.
 
 The rounded bottom search finds fields, actions and sections across every tab, including saved option/link rows and native reminder edges. Matches show their tab/section path. Tapping a result opens the tab and disclosures, selects Allowed/Preferred when needed, scrolls to and highlights the control. Inactive settings explain their prerequisite without changing it. Search supports case-insensitive multiword queries, aliases, accents and single-letter typos in longer words; empty search browses all available destinations. Arrow keys, Enter and Escape work from the keyboard. Native-only controls stay absent in the PWA. Search preserves unsaved edits.
 
-Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close before edits, or Cancel and Save while there are unsaved changes. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. While a field is focused with a mobile keyboard, the page navigation and detail search hide while the item header keeps its full size on portrait phones. Cancel/Save remains available for unsaved edits. Search/Close returns once the keyboard has finished closing. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
+Labeled page navigation sits below the item title, outside the scrolling pane. A rounded bottom bar matches Home’s search position: Find in details and Close. Cancel and Save replace the existing header at the same height while a field is focused or there are unsaved changes; they do not stay on Home after the sheet closes. While a field is focused with a mobile keyboard, the page navigation and Search/Close bar hide, then return once the keyboard has finished closing. Save stays disabled until the draft differs from the saved item. Cancel discards the draft and closes details; Save commits and closes details. Search expands in place; its X dismisses search and restores the current detail page and scroll position. Outside search, the X closes the item. Results scroll above the search field. The field stays flat (no focus ring), and the bar sinks to the keyboard the same way Home search does. Minimal mode omits Search and page navigation, and uses the same header editing actions. Icon buttons keep equal width and height. Heading extra actions (add link, add app, launch buttons) stay on the same row as the heading on ordinary screens; only very narrow panes wrap. Narrow or zoomed panes stack fields and wrap labels. The add sheet keeps cancel beside add in its footer. Other scrollable sheets keep one existing close/cancel control reachable, pinning their header or moving the original control into a sticky row. Redundant Done/Close controls are hidden. Flexibility and item-order fields described below live in Planning. Detail sections use readable headings and labels at ordinary phone and desktop widths. Very short visible viewports can also hide page tabs to keep the header reachable. Typing in detail search keeps its search field visible. Expanding Emoji & color directly reveals the emoji input, quick picks and background swatches. Current Place, Home filters and Calendar filters keep a single X in their header.
 
 #### Rhythm Section
 - **Target times:** How many times per cycle (default 1, range 1-183)
 - **Cycle days:** Days per cycle (default 7, range 0.5-183)
 - For `habit` type only — visible as `[N] × in [N] d`
+
+#### Appointment and date flexibility 👤👨‍💻
+
+An entered task date **and clock** is an appointment. The first session stays at
+that clock in Fast, GLPK, fallback and classic Today, including a cold open after
+it starts. Breakable reserves only the first minimum session (or the smaller
+remaining finish-up); it allows the rest to pause and resume on that date.
+Duration is total participation time: four hours starting at 5 PM may finish
+later than 9 PM after interruptions. **Allowed times** supplies a hard start/end
+window when needed. If the remaining duration cannot fit, the first card says
+how much is still not scheduled. A conflicting busy time or another appointment
+stays visible with an overlap warning; the planner does not erase either fixed
+commitment or claim the conflict is feasible. Only actual completion logs credit
+participation; a past scheduled session is not a completion.
+
+Early window and delay allowance affect date-only tasks and recurring work.
+Zero delay makes the due day firm; it does not invent a fixed clock. An entered
+appointment clock remains fixed with any early/delay values. Legacy
+`flexibilityDays` migrates to the early window, with zero delay by default.
+Timed one-day plans obey the same rule: whole duration when unbreakable, fixed
+first session plus resumable remainder when breakable. A timed plan overrides
+the item's saved clock on that same date without producing a duplicate event.
 
 #### Task Timing Section
 - For `task` type only
@@ -1287,9 +1346,24 @@ time: | 9am | — | 9am | — | 9am | — |
 - End ≤ Start = overnight window (e.g., 1380→300 = 11pm-5am)
 
 #### Time Anchor Section
-- **Anchors:** `fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`, or another habit
+- **Default wording:** General labels (Dawn, Sunrise, Solar noon, Afternoon, Sunset,
+  Night, Night midpoint) appear in time pickers, previews, and samples. Settings → **relative
+  times** → **use Islamic prayer names** opts into prayer labels, calculation
+  settings. The optional Daily prayers sample section remains available at
+  the bottom of Samples. These are ordinary habits; switching
+  labels preserves saved rules and unsaved editor choices.
+- **Anchors:** `fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`, `midnight` (sunset–next-dawn midpoint), or another habit
 - **Offset:** ±720 minutes (±12 hours)
 - **Combine:** `later` / `earlier` of two expressions
+- **Editor:** Each boundary has Clock / Relative choices. Relative shows an event
+  picker and a minutes-before/after adjustment, followed by a readable rule and
+  its resolved clock time (today, tomorrow, or yesterday). Missing city setup
+  has a **set home city** shortcut that keeps the unsaved item draft intact.
+- **More options:** Next-day events and later/earlier comparisons stay folded
+  for simple rules. Saved complex rules open these controls automatically;
+  folding them never disables the rule. Item hours, preferred hours, specific
+  time/place options, and busy times share this editor. Legacy habit-completion
+  anchors still display when saved; new item relationships use Item Order.
 
 #### Item Order Section
 - Before/After relationships with other habits or tasks
@@ -1344,6 +1418,7 @@ shows), never windowed to the strip. The 14-day chips above the strip are the
 only window-scoped readout.
 
 #### 14-Day Strip
+- Calendar/gaps switch sits above the date arrows and today controls at every pane width.
 - Window: past 7 days · today · next 6 (same default as the overview calendar)
 - Arrows shift by 14 days; "today" snaps back to the around-today window
 - Dots per day (max 4): `hit/warn/miss` (activity), `plan` (planned log, due /
@@ -1381,7 +1456,7 @@ Each link row has:
   try the app's name as a scheme, search "«app» URL scheme", or paste a link
   shared from inside the app (a universal link). A wrong scheme safely falls
   back to the stored page. The custom editor carries a short hint to this end.
-- **Star:** Marks as primary link (double tap uses this)
+- **Star:** Marks the primary link (shown first in the link buttons)
 
 **Add app** opens a compact chooser for Gmail, Outlook, Facebook, Instagram,
 YouTube, Reddit, LinkedIn and X. These use their normal HTTPS entry points, so
@@ -1529,22 +1604,21 @@ Tracks the currently active habit session:
 ┌─────────────────────────────────────┐
 │ ←  needs a next step                │
 │ missed · today                     │
-│ Open an item to reschedule it,     │
-│   log it, or adjust its rhythm.    │
+│ Log it, hide it until tonight, or  │
+│   open it to reschedule.           │
 ├─────────────────────────────────────┤
-│ [Emoji tile] Habit Name     ● 2h  │
-│                                 📅 │
-│ [Emoji tile] Another Habit  ○ 3d  │
-│                                 📍 │
+│ [Emoji tile] Habit Name     hide  │
+│ [Emoji tile] Another Habit  hide  │
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N missed" on the Today header, or right-swipe a card → "missed" action
+- **Access:** Tap "N missed" on the Today header, or the muted eye-off chip after every remaining miss has been hidden until tonight
 - Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
 - Habits with several sessions a day show one missed row per unfinished session from today, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses from today. Past-day sessions are excluded after midnight. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
 - Tap the item row to open detail for rescheduling
+- Hide tucks that row until local midnight without snoozing the habit. Hidden rows move to **hidden until tonight** with a show control. The today-header count ignores them; an undo toast can restore the last hide.
 - Items show day labels (behind/today/tomorrow)
 
 ### 10.2 Free Time Sheet (Open Gaps) 👤
@@ -1623,6 +1697,7 @@ Tracks the currently active habit session:
 
 - **Access:** When a habit has `trackValue: true`, logging opens this sheet
 - Enter a numeric value (e.g. weight, reps, pages)
+- The value and note use full-width, readable fields, including with large text.
 - Optional note field (max 200 chars)
 - "Skip" logs without a value
 
@@ -1760,6 +1835,7 @@ Tracks the currently active habit session:
 - Travel modes: driving, walking, bicycling, transit
 - "Open in maps" opens external maps app
 - "Reset to estimate" reverts to calculated time
+- Installed Android: travel cards expose departure/arrival reminders and departure lead time, with **this date only** or **recurring / all dates**. They edit the destination habit/task/busy time’s existing choices. A date override replaces those edges; it does not add a second alert. **Use recurring reminders for this date** clears the travel override. Live-GPS legs expose reminders and Maps with duration editing disabled.
 
 ### 10.11 Busy Time Editor Sheet 👤
 
@@ -1780,6 +1856,7 @@ Tracks the currently active habit session:
 - Set start/end time (five-minute picker steps; iOS uses Clock-style wheels because Safari ignores `step`. Exact valid typed minutes are preserved until a wheel choice is confirmed)
 - Choose days of week
 - "Save this date" vs "Update recurring" (modifies one instance vs the series)
+- Installed Android: phone reminders are accessible directly in this editor. Choose **this date only** or **recurring / all dates** for independent start, end, travel departure/arrival and departure lead time. Reminders save immediately; the timing Save/Cancel buttons apply to the clock fields. **Use recurring reminders for this date** clears the reminder override. Choices stay on this phone and follow the block through time edits and renames.
 
 ### 10.12 Day Logs Sheet (Multi-Step) 👤
 
@@ -1859,14 +1936,20 @@ Same as Home Filter Sheet but for the calendar view:
 - Transient messages at the bottom of the screen (`aria-live="polite"`)
 - Regular toasts (`#toast`): informational feedback only. Default duration is `DEFAULT_TOAST_MS` (2800 ms) so short confirmations stay readable; permission and save-file notices can request up to 5 seconds.
 - Action toasts (`#action-toast`): offer immediate next steps with buttons
+- Both kinds have a close button. Dismissing a toast leaves the saved change in place; Undo reverses it. A new toast replaces the previous message so notices do not overlap.
+- Toast expiry pauses while a keyboard user focuses its buttons, then resumes when focus leaves. Hidden toasts are excluded from keyboard and screen-reader navigation.
 
 ### Action Toast Buttons
 The action toast (`#action-toast`) contains:
 - **#action-text** — message describing the completed action
-- **#action-open** (hidden by default) — "open" button to open the affected habit
+- **#action-link** (hidden by default) — after logging a habit/task with links, opens its first saved link; calls and app shortcuts use contextual labels. Opening the link leaves Undo available until the toast expires.
+- **#action-open** (hidden by default) — "view item" button when details are useful and no link action is offered
 - **#action-plan** (hidden by default) — "action" button for quick next-step
 - **#snooze-until-planned** (hidden by default) — "snooze until planned" button
 - **#action-undo** — always available undo button
+- **#action-close** — dismisses the notification
+
+Calendar logging and planning toasts omit the planning/logging shortcut already available beside the item. Completion still offers Undo and the saved link when present. Home completion keeps its quick planning correction; snooze, removal, and moved plans retain their specific Show, Restore, and Move back actions.
 
 ### Toast Triggers
 Toasts appear after:
@@ -1888,8 +1971,12 @@ Toasts appear after:
   history. Add one to make it yours; **try all five** tags the bulk additions
   so **remove samples** can clean up the ones you have not kept. Previously
   saved samples remain until the user removes them.
-- The optional prayer and sun-based sleep sections stay collapsed separately;
-  their dynamic timing still requires a home city. **Add all prayers** creates
+- The sun-based sleep section stays collapsed. **Daily prayers** is always
+  available as a separate collapsed section at the bottom of Samples. Its
+  dynamic timing requires a home city. Fajr ends 5 minutes before sunrise,
+  Dhuhr ends at Asr, and Asr ends 20 minutes before sunset. Isha ends at Adhan’s
+  `SunnahTimes.middleOfTheNight`: halfway between sunset and the next Fajr,
+  rather than a fixed 12am clock. **Add all prayers** creates
   regular habits with clean prayer names, just like adding them individually;
   **remove samples** does not remove these prayers.
 
@@ -1901,27 +1988,32 @@ Toasts appear after:
   comes first (declined prompts fall back to the
   manual steps). The guide ends with a large close-this-tab / open-Tings
   visual — the browser page is not the app — where **Got it** ends the guide
-  and **Stay in this tab** escapes into the guided start without leaving the
+  and **Stay in this tab** escapes into the quick start without leaving the
   browser. A user already running the installed Android or standalone PWA app is offered
-  the guided start directly. About → **install app** replays the guide on
+  the quick start directly. About → **install app** replays the guide on
   demand. When Tings is already installed (standalone) and the app can detect
   that, About hides the install button. Android never offers the browser install tour, including on its first launch.
-- A fresh, empty install offers the **guided start** after first paint. It follows
+- A fresh, empty install offers the **quick start** after first paint. It follows
   the real add, detail, home, and calendar surfaces instead of using a simulator.
-- The guided start branches between a repeating habit and a one-off task. It
-  teaches how often a habit happens, or an optional task date, then covers
-  how long it takes, card logging, Home, and the calendar. After the card intro
-  it makes the user **log (or complete) the Ting they just created** with the
-  real pulse button — with an “I’ll log later” escape. If they added a habit,
-  the tour later also walks through **adding a task** and that task’s page.
-  Near the end it opens **samples** and almost makes them add **go for a walk**
-  (with a Not now escape). Then it has them tap the **Tings name** and points
-  at **settings**, plus help, samples, and privacy on that same page. The
-  replay refresher never changes data.
-- On the calendar, the tour has them tap a **past day** (see what was done,
-  log a missed day) and a **coming day** (plan something). Day sheets use the
-  same words: past days offer **Log a missed day**, future days offer **Plan
-  something**.
+- **Quick start** teaches only the essentials: add one habit or task, choose a
+  rhythm or optional deadline, estimate duration, use its card, and find Home
+  and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
+  it no longer requires a second item, a sample, or past/future calendar edits.
+  Logging the first item has an **I’ll log later** escape. Deeper calendar and
+  scheduling practice lives in the advanced coach chapters.
+- It has users tap the **Tings name → Settings**, then reveals **Display →
+  Minimal mode**. The toggle is optional: turn it on for fewer controls when
+  feeling overwhelmed, or finish with the current mode. Back returns to About;
+  Help on that page provides replay, advanced chapters, and written docs.
+- Phone prompts use shorter copy and compact spacing. While adding, a bottom
+  coach rail reserves space in the form layout, keeps the Add footer above it,
+  and scrolls the highlighted field into the remaining viewport. This responds
+  to keyboard and viewport resizing and removes the reserved space on exit.
+  While typing, the prompt collapses to its title and navigation; Next blurs
+  the edited field. Browser visual-viewport shrink and Android WebView resize
+  follow the same keyboard edge as the form, including transient Android metrics.
+- Past calendar days offer **Log a missed day**, future days offer **Plan
+  something**; the advanced calendar chapter explains these actions.
 - **Every step gates the whole experience.** Locked (required-action) steps
   intercept taps outside the highlighted control with an amber warning; guided
   (read-and-continue) steps block outside taps silently while the bubble’s
@@ -1945,8 +2037,8 @@ Toasts appear after:
 - The name step uses the visual viewport while the keyboard is open. Enter moves
   to the habit/task choice rather than saving early, and the keyboard is closed
   before teaching controls farther down the add sheet.
-- About → **guided start** replays a non-destructive refresher for an existing
-  user.
+- About → **quick start** replays a refresher for an existing user without changing saved items.
+  Minimal mode changes only if they choose to toggle it.
 - The **install guide** (first-run in a browser, or About → **install app**)
   quotes each platform's real controls, exactly as the browser labels them.
   Mobile cards render as a compact label rail docked to the edge the browser's
@@ -1986,7 +2078,7 @@ Toasts appear after:
   user picks a chapter in any
   order; finishing one marks it with a check on the menu, and completion is
   remembered per chapter. The first unfinished chapter is gently marked
-  **start here**, but it is never required. Chapters are **hands-on, like the guided start**:
+  **start here**, but it is never required. Chapters are **hands-on, like the quick start**:
   most steps lock to a real control and advance only when it is used (toggle,
   chip, add-option, relative anchor, tab, pill, day, export). Advanced Coach
   mounts a predictable temporary demo list so those controls exist, then
@@ -2004,7 +2096,7 @@ Toasts appear after:
 
 ### About and privacy 👤
 - Tapping the Tings wordmark opens **About**: a short intro, then grouped
-  destinations — **help** (guided start, advanced coach, help & docs) and
+  destinations — **help** (quick start, advanced coach, help & docs) and
   **this device** (install, hidden when already installed; samples; settings) —
   plus **send feedback** (hidden until `FEEDBACK_FORM_URL` is set; opens a
   Google Form in a new browser tab) and **privacy**. Help & docs is the written
@@ -2033,9 +2125,12 @@ Toasts appear after:
 
 ## XII. SETTINGS OVERVIEW 👤👨‍💻
 
+Card annotations use **simple**, **detailed**, or **custom**. Simple shows dates, plans, reminders, frequency, early indicators, and a status line. Detailed adds which days, time of day, duration, topics, and place. Progress badges, scheduling flexibility, and order marks stay off in both presets; Custom exposes all individual choices except the always-visible sample label. Custom choices are remembered across preset changes. Scheduled times, activity dots, hidden habits, and easier reach stay separate. Simple is the default; display changes reuse the mounted week without replanning. Minimal mode still provides the quietest appearance.
+
 ### 12.1 Accessing Settings
 - Bottom nav: ⚙️ settings button
 - Or: About sheet → settings button
+- Home and calendar filter sheets have a subtle **app settings** shortcut beneath their actions
 - On wide screens: settings can open as a side pane
 
 ### 12.2 Settings Sections
@@ -2050,14 +2145,6 @@ Settings sections (actual order):
 │   ├── up to eight named weighted-rule profiles
 │   ├── six-hour weekly / conditional 15-minute near-term status
 │   └── manual refresh and Open-Meteo/CAMS attribution
-├── home page
-│   ├── bring planned items up
-│   ├── fixed-time tasks in agenda
-│   ├── tasks due today in agenda
-│   ├── planned for today in agenda
-│   ├── habits ready today in agenda
-│   ├── week by day (full mode only)
-│   └── busy blocks & travel display
 ├── reminders
 │   ├── dated task / fixed appointment heads-ups
 │   └── optional detailed notification text
@@ -2081,7 +2168,7 @@ Settings sections (actual order):
 │   │   └── default travel mode
 │   └── busy times
 ├── look & new habits (group)
-│   ├── what shows on each item (card display toggles)
+│   ├── what shows on each item (simple / detailed / custom, scheduled times, activity dots, hidden habits, easier reach)
 │   ├── new habit defaults
 │   │   ├── default type (build/limit/stop/task)
 │   │   ├── how often (rhythm)
@@ -2095,7 +2182,7 @@ Settings sections (actual order):
 │   │   ├── compact mode
 │   │   ├── font size (small/medium/large)
 │   │   └── theme (light/dark/system)
-│   ├── prayer times
+│   ├── relative times (optional prayer names)
 │   │   ├── islamic names toggle
 │   │   ├── calculation method
 │   │   └── asr school (shafi/hanafi)
@@ -2117,7 +2204,7 @@ sortable settings sections:
 ├── topics
 ├── locations
 ├── display
-├── prayer times
+├── relative times (optional prayer names)
 ├── calendar import
 ├── reminders
 ├── retention
@@ -2185,7 +2272,7 @@ Actions when habit is done:
 - App: Open a common preset or a custom named app shortcut (an App Store
   share link names itself)
 - Link: Open URL (Zoom, etc.)
-- Double tap on card launches primary link
+- Open saved links using the link buttons in the item’s detail
 
 ---
 
@@ -2448,7 +2535,14 @@ task uniqueness and sparse cadence before adding an occurrence.
 - Users can unlock full features anytime
 
 **How to Exit:**
-Settings > Display > Minimal Mode (toggle off)
+A quiet **More options in settings** note sits at the bottom of Add and
+the last Details section (item actions). It opens Settings on the Minimal
+Mode switch without changing the mode itself. Turning that off changes
+presentation across Tings; drafts stay in the sheet underneath. Switching
+back is the same Settings control.
+
+Minimal Add keeps name, optional emoji, habit/task type, rhythm or deadline,
+and duration visible. Defaults and busy-time shortcuts stay in regular mode.
 
 ---
 
@@ -2484,7 +2578,6 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 {
   // From SORT_PRESETS.todayFirst (the default preset)
   focus: 'balanced',
-  plansFirst: true,
   planWindowDays: 3,
   planWeight: 120,
   dueWeight: 140,
@@ -2506,12 +2599,14 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 
   // Explicit defaults
   preset: 'todayFirst',
+  cardDetailLevel: 'simple',
+  customCardDetails: null,
   showSnoozed: false,
   showSampleOnCards: true,
   showPinnedOnCards: true,
   showTaskDateOnCards: true,
   showPlansOnCards: true,
-  showDayScheduleOnCards: true,
+  showDayScheduleOnCards: false,
   showTimeWindowOnCards: false,
   showSnoozedUntilOnCards: true,
   showDurationOnCards: false,
@@ -2519,20 +2614,14 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
   showFlexibilityOnCards: false,
   showTopicsOnCards: false,
   showLocationOnCards: false,
-  showStatusOnCards: true,
+  showStatusOnCards: false,
   showAgendaTimesOnCards: 'time',
   showTrailOnCards: true,
   showCueOnCards: true,
-  showOrderPillsOnCards: true,
+  showOrderPillsOnCards: false,
   showEarlyOnCards: true,
 
   // Agenda settings
-  showScheduledTasksInAgenda: true,
-  showDueTasksInAgenda: true,
-  showPlannedItemsInAgenda: true,
-  showDueHabitsInAgenda: true,
-  showWeekOnHome: true,
-  homeExtraMode: 'cards12h',
   reachAssist: true,
   agendaOptimizer: true,
   agendaScoreWeights: {
@@ -2567,7 +2656,6 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
   compactMode: true,
   fontScale: 'medium',
   themeMode: 'system',
-  homeExtraMode: 'cards12h',
   reachAssist: true
 }
 ```
@@ -2698,51 +2786,59 @@ Full snapshot of `DEFAULT_SORT_SETTINGS` from `config.js`:
 
 ## XVIII. GESTURES & INTERACTIONS
 
+In the Android app, the system Back button and either edge Back gesture use
+`handleAppBack()` to activate the top screen’s existing close, cancel, Done,
+or Back control. Nested sheets close first, pickers close before their sheet,
+and detail editing cancels like its Cancel button. Returning from Settings
+restores an add-sheet draft when applicable. Only Back on Home backgrounds
+the app. In the browser/PWA, Back consumes a same-page history entry to
+dismiss the current sheet; closing all sheets removes that entry so Home
+keeps normal browser navigation.
+
 ### 18.1 Home Screen Card Gestures 👤
 | Gesture | Action | Description |
 |---------|--------|-------------|
-| Tap | Primary action | Log the habit (if ready) |
-| Double Tap | Link action | Open primary link (phone, app, URL) |
-| Long Press | Edit | Opens Detail sheet |
-| Swipe Left/Right | Actions row | Shows pin, snooze, delete |
+| Tap card | Detail | Opens the item immediately |
+| Tap pulse icon | Log | Log the habit or complete the task immediately |
+| Long Press | Reorder | Arms the agenda drag handle |
+| Swipe Left/Right | Actions row | Quick access to sessions, plans, history, links, visibility, and reminders |
 
 ### 18.2 Swipe Actions 👤
-When you swipe a card left or right, the following action buttons appear:
+Directions describe the **finger's movement**, not the panel's position.
+Swiping reveals buttons; it never performs an action automatically.
 
-**Left Swipe Actions:**
+| Mode | Swipe right | Swipe left |
+|------|-------------|------------|
+| Regular | Session/Stop · Plan · History · Open/Call · Keep (samples) | Snooze/Show · Pin/Unpin · Quiet · Remove |
+| Minimal | Plan · History | Snooze/Show · Remove |
 
-| Icon | Action | Key | Condition | Description |
-|------|--------|-----|-----------|-------------|
-| 📌 | Pin/Unpin | `pin` | Non-minimal mode | Stays at top of lists |
-| 🧪✅ | Keep | `keep` | When `sample: true` | Confirms sample habit |
-| 🕒 | Activity | `activity` | Non-minimal mode | View log history |
-| ▶️/⏹️ | Session | `timer` | Non-minimal mode | Start/stop timer |
+- Regular has up to five actions per side; minimal has up to two. Inapplicable actions disappear without empty slots.
+- **Session/Stop** (`timer`) starts or stops the existing session timer. Stop remains available in minimal mode, replacing Plan or Keep while that item has a running session.
+- **Plan** (`plan`) opens this item's plan form with a date, optional time, and optional saved place. The initial date is the card's agenda day when today or later, otherwise today. Only today and future dates can be chosen. Opening or cancelling saves nothing; adding a plan has the normal undo. Stop habits and completed tasks have no Plan action.
+- **History** (`activity`) opens the existing recent activity and future plans sheet.
+- **Open/Call** (`open-link`) appears only in regular mode with a saved link and launches the starred primary link. Phone links say Call; other links say Open.
+- **Keep** (`keep`) appears for samples, after Open/Call in regular mode. In minimal mode it replaces Plan unless a running session needs Stop.
+- **Snooze/Show** (`snooze` / `unsnooze`) opens the snooze options or immediately clears an active snooze in either mode.
+- **Pin/Unpin** (`pin`) is regular-mode only.
+- **Quiet** (`reminders-off`) is regular-mode, Android-only, and appears only when the item has active reminders. One tap turns off its reminders, including date overrides, without completing it.
+- **Remove** (`nuke`) is last, using the existing removal and undo flow.
+- Share, Edit, and Log are absent from the swipe panels. Tap the card to edit or its icon to log.
+- Actions start at the outer edge on each side. On narrow screens, scroll the exposed strip to reach the remaining buttons; buttons retain their 68 px width.
 
-**Right Swipe Actions:**
-
-| Icon | Action | Key | Condition | Description |
-|------|--------|-----|-----------|-------------|
-| 🌙 | Snooze | `snooze` | Non-minimal mode, not currently hidden | Hide until chosen time |
-| 🌙 | Show | `unsnooze` | Non-minimal mode, currently snoozed | Clear the snooze immediately |
-| 🗑️ | Remove | `nuke` | Always | Delete habit (with confirm) |
-
-**Minimal Mode Differences:**
-- Pin, snooze, activity buttons are **disabled**
-- Only `keep` (samples) and `remove` are available
-- Timer is also disabled in minimal mode
-
-**Tap vs Double Tap:**
-- Single tap: Log the habit (pulse button)
-- Double tap: If habit has a link, trigger primary link action
+**Single taps:**
+- Tap a card to open detail; tap its pulse button to log immediately.
+- Open calls, apps, or websites using the detail link buttons.
+- Tap a busy-time card to edit it; tap a saved-place travel card to edit its time or open directions.
+- Home cards have no double-tap action or detection delay.
 
 ### 18.3 Main Tap Actions (Pulse Button) 👤
 
-| Habit Type | Tap Does | Double Tap Does |
-|------------|----------|-----------------|
-| keepup | Add log entry | Open link if present |
-| reduce | Add log entry | Open link if present |
-| zero | Reset timer (avoid doing) | Open link if present |
-| task | Mark complete | Open link if present |
+| Habit Type | Pulse Tap Does |
+|------------|----------------|
+| keepup | Add log entry |
+| reduce | Add log entry |
+| zero | Reset timer (avoid doing) |
+| task | Mark complete |
 
 ### 18.4 Agenda Drag Handle 👨‍💻
 - Appears as ⋮⋮ (grip icon) on agenda cards
@@ -2755,7 +2851,14 @@ When you swipe a card left or right, the following action buttons appear:
 |----------|-------|-------------|
 | `SWIPE_THRESHOLD` | 60px | Minimum drag distance before reveal |
 | `SWIPE_ACTION_WIDTH` | 68px | Width of each action button |
-| `TAP_DELAY` | 310ms | Double-tap detection window |
+
+Card translation is capped at the row width minus 24px. The panel extends
+`SWIPE_CORNER_PAD` (20px) under the card corner, with a separate horizontal
+action scroller outside that covered area. Strip scrolling keeps the panel
+open and suppresses accidental clicks. Collapsed panels are inert so their
+buttons cannot receive keyboard focus.
+
+Habit, busy-time, and travel cards share `bindTap` in `js/tap.js` (WebKit `pointercancel` recovery after touch release, pan rejection, immediate native clicks). Do not add a per-card pointer binder; `openSheet` already ignores a trailing backdrop click on every sheet.
 
 ### 18.6 Reach Assist 👤
 - Pull down on the screen to scroll to top
@@ -2783,6 +2886,7 @@ When you swipe a card left or right, the following action buttons appear:
 | File | Lines | Purpose |
 |------|-------|---------|
 | **config.js** | 324 | Constants, sort presets, default settings |
+| **tap.js** | — | Shared home-list tap primitive (`bindTap`) |
 | **data-*.js** | 50–939 each | Data models, storage, normalization, schedules, logs, backups |
 | **scoring.js** | 908 | Attention score, urgency, tone/color mapping |
 | **main-{boot,input,runtime}.js** | 909–1364 each | Initialization, input wiring, timers and refresh loop |
@@ -2842,8 +2946,8 @@ When `minimalMode: true`:
 ```
 [ Grouped Sections ]
 - Today (only items due/planning today)
-- Overdue (items behind schedule)  
-- Coming Up (future due items)
+- Tomorrow (tomorrow’s agenda)
+- Coming Up (future and overdue items, once per item)
 - Hidden: Calendar, detailed scheduling
 ```
 
@@ -2855,15 +2959,16 @@ Same agenda logic, but simplified display:
 
 ### 20.3 Calendar Changes
 - No full month heatmap
-- No day-by-day planning
+- Calendar-based day-by-day planning stays in regular mode; the swipe Plan shortcut can choose a date in minimal mode
 - Week strip only
 
 ### 20.4 Detail Sheet Changes
 - Fewer tabs visible (the merged calendar+stats pane and effort are hidden)
 - Remaining panes stack into one scroll; section headers stay visible
-- Extra space for the floating close control is only on the last section
-- Simplified scheduling UI
-- Basic info only
+- The reserved action bar stays outside the scrolling fields
+- Allowed weekdays and time window live in **allowed days & hours**, folded by default; expanding it preserves the draft and stays expanded during the current visit
+- Month days, preferences, places, weather and link setup remain regular-mode options
+- A small regular-mode switch reveals all options without saving or discarding the draft
 - Action rows limited to remove: shared display, export to calendar, share
   item, snooze, and pin are regular-mode only (saved values are untouched)
 
@@ -2883,11 +2988,12 @@ Same agenda logic, but simplified display:
 | `soundEffects` | boolean | true | Settings → appearance → gentle sounds. Quiet local chimes after logging or planning with a recent user gesture; no background audio. |
 | `fontScale` | string | 'medium' | small/medium/large |
 | `compactMode` | boolean | true | Square card layout |
-| `showWeekOnHome` | boolean | true | Week plan strip on home |
-| `homeExtraMode` | string | 'cards12h' | How blocked times display on home |
 | `reachAssist` | boolean | true | Pull-down to scroll to top |
 
-#### Card Display Options (17 settings) 👤
+#### Card Display Presets and Internal Fields 👤👨‍💻
+
+`cardDetailLevel` defaults to `simple`. Detailed adds days, time windows, duration, topics, and place. The table describes Simple; individual switches appear only in Custom.
+
 | Field | Default | Description | Symbol |
 |-------|---------|-------------|--------|
 | showSnoozed | false | Show snoozed items (faded) | Dimmed card |
@@ -2895,7 +3001,7 @@ Same agenda logic, but simplified display:
 | showPinnedOnCards | true | 📌 pinned marker | 📌 |
 | showPlansOnCards | true | 📅 planned future log | 📅 |
 | showTaskDateOnCards | true | Due date for tasks | Date chip |
-| showDayScheduleOnCards | true | Schedule link chips | ↗️↘️ chips |
+| showDayScheduleOnCards | false | Schedule link chips | ↗️↘️ chips |
 | showTimeWindowOnCards | false | 🕐 time window | 🕐 |
 | showSnoozedUntilOnCards | true | Snooze countdown | "2h left" text |
 | showDurationOnCards | false | ⏱️ session length | ⏱️ |
@@ -2903,19 +3009,18 @@ Same agenda logic, but simplified display:
 | showFlexibilityOnCards | false | Early/delay windows (legacy key name) | separate left/right day pills |
 | showTopicsOnCards | false | 💡 topic chips | 💡 tags |
 | showLocationOnCards | false | 📍 location pin | 📍 |
-| showStatusOnCards | true | Status word | "run", "great", etc. |
+| showStatusOnCards | false | Status word | "run", "great", etc. |
 | showAgendaTimesOnCards | **'time'** | 'show time' / 'symbol only' / 'hide' |
 | showTrailOnCards | true | Activity dots history | ●●●●● dots |
 | minimalShowTrailOnCards | false | Minimal mode: opt-in activity dots | ●●●●● dots |
 | showCueOnCards | true | Status text below name | Colored text |
 
-*Note: 2 card settings are controlled by tab visibility, not boolean toggles: `showOrderPillsOnCards` (depends on schedule links) and `showEarlyOnCards` (depends on agenda state).*
+`showEarlyOnCards` is true in both presets. `showOrderPillsOnCards`, `showStatusOnCards`, and `showFlexibilityOnCards` stay false in both presets; enable them in Custom if desired. Marks only appear when relevant to the agenda.
 
 #### Sort Weights 👤
 | Field | Type | Default | Preset-specific | Purpose |
 |-------|------|---------|-----------------|---------|
 | `focus` | string | 'balanced' | Yes | Focus mode (balanced/build/space) |
-| `plansFirst` | boolean | true | Yes | Show planned items first |
 | `planWindowDays` | number | 3 | Yes | Lookahead days for plan signals |
 | `planWeight` | number | 120 | Yes | Weight for planned items |
 | `dueWeight` | number | 140 | Yes | Weight for due urgency |
@@ -2939,14 +3044,12 @@ Same agenda logic, but simplified display:
 | `stopMode` | string | 'watch' | Zero display mode |
 | `rhythmBias` | number | 0 | Rhythm score adjustment |
 
+Fixed-time tasks, due tasks, planned items, and ready habits always enter the agenda when eligible. Planned items always receive their usual ranking boost. These behaviors have no settings switches; obsolete backup values are ignored.
+
 #### Agenda Settings 👤
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
 | `agendaOptimizer` | boolean | true | Use the production ILP optimizer. Off uses the Fast graph (preview / quality-parity track). |
-| `showScheduledTasksInAgenda` | boolean | true | Show event-timed tasks in agenda |
-| `showDueTasksInAgenda` | boolean | true | Show due-date tasks in agenda |
-| `showPlannedItemsInAgenda` | boolean | true | Show planned future logs |
-| `showDueHabitsInAgenda` | boolean | true | Show due-rhythm habits |
 
 While the app stays open, home refreshes every 60 seconds. Most ticks only slide the next pending fill by a few minutes or keep the last week. A deeper GLPK re-solve runs only when that row is a couple of minutes away *and* the last packing is no longer feasible; it still starts from those prior clocks. After the agenda is on screen, background refinement keeps searching while the app is visible if the fixed-item plan is not yet a GLPK proof — later passes reuse days already proved optimal and only replace the visible week when quality strictly improves. Compatible same-day cache on cold open is reused instead of paying another full-week solve. Cold open keeps the existing 4-second solve cap.
 
@@ -3052,7 +3155,7 @@ The model **thinks**, then calls Tings tools, preferably the final tool on its f
 
 #### New habit & task defaults 👤👨‍💻
 
-Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The **new** sheet includes small **defaults** and **busy times** pills in its header, and explains below the type selector: “A task is one-off; a habit repeats.” Defaults opens the profile for the selected kind. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
+Settings → **new habit & task defaults** has independent **habits** and **tasks** profiles. The **new** sheet explains habit/task choices within the type selector. **More options** includes **new item defaults** and **manage busy times** links after the optional item fields. Defaults opens the profile for the selected kind. Returning from Settings preserves the name, emoji, weather choices and explicit draft edits; untouched fields take the updated defaults. Switching habit/task retains a separate in-flight draft for each kind.
 
 Choose which kind opens first independently of the profile being edited. Habits support a rhythm of N times in M days. Tasks support a due-date policy of **today** (initial choice), **tomorrow**, or **no date / someday**; the date is resolved when creating the task rather than saved as a fixed calendar date. Both profiles include priority, duration, early/late scheduling allowance, splitting and shortest session, allowed weekdays/time/place, topics, and completion.
 
@@ -3385,3 +3488,5 @@ system status area. Sheets and bottom controls use the same inset tokens.
 ### Tablet and desktop pane surfaces
 
 At 720 px and above, the permanent Home, Calendar and detail panes share the page background (`--bg2`) and lighter card surface (`--bg`). Subtle column dividers, consistent gutters and compact headings keep the panes part of the same app. Detail content scrolls within its pane; its labeled tabs stay below the title and search/Close or Cancel/Save stay in the bottom dock. Phone modal styling is restored when the viewport returns to one pane.
+
+Home cards show effective priority in the emoji button’s corner check badge, using a flat priority tint mixed into the theme’s text color, with no border: a pale badge and dark tick in dark mode, a dark badge and light tick in light mode. P3 uses green, P4 purple, and P5 neutral gray to keep lower priorities distinguishable. The title has no separate priority pill. The button’s accessible label includes the priority. Completed tasks retain their completion badge.

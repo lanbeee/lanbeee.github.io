@@ -69,16 +69,13 @@ function applyAppearanceSettings(){
   applyAddMinimalMode();
 }
 
-// Visual-only: collapse add-sheet chrome (emoji bg, more options) in minimal mode.
+// Keep optional add controls out of minimal mode; duration stays in the main flow.
 function applyAddMinimalMode(){
   const minimal = isMinimalMode();
-  const sheet = $('add-sheet');
-  if(sheet)sheet.classList.toggle('minimal-add', minimal);
+  $('add-sheet')?.classList.toggle('minimal-add',minimal);
   if(!minimal)return;
-  const body = $('add-more-options');
-  const toggle = $('add-more-toggle');
-  if(body)body.hidden = true;
-  if(toggle)toggle.setAttribute('aria-expanded','false');
+  $('add-more-options').hidden = true;
+  $('add-more-toggle').setAttribute('aria-expanded','false');
 }
 
 // ── Home city (general area for prayer, weather, etc.) ───────────────────
