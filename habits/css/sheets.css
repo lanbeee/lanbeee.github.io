@@ -72,8 +72,16 @@ body[data-pane-count="3"] #assistant-sheet{
   will-change:auto;
 }
 .add-sheet{
-  padding-bottom:calc(88px + var(--keyboard-lift) + var(--content-safe-bottom));
-  position:relative;
+  /* Keep the action bar outside the scrolling layer. One visible viewport
+     edge sizes the form and footer together, including during IME resize. */
+  display:flex;flex-direction:column;overflow:hidden;position:relative;
+  min-height:0;height:min(100dvh,var(--add-viewport-height,100dvh));
+  padding:0;
+}
+.add-content{
+  flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  padding:calc(22px + var(--content-safe-top)) 18px 10px;
 }
 .about-sheet,.privacy-sheet,.overview-sheet,.sample-habits-sheet{
   /* These pages all provide their own top close control or an end-of-page
@@ -155,27 +163,27 @@ body[data-pane-count="3"] .assistant-sheet{
 }
 body[data-pane-count="2"] .add-sheet,
 body[data-pane-count="3"] .add-sheet{
-  padding-bottom:calc(24px + var(--content-safe-bottom));
+  height:min(760px,calc(min(100dvh,var(--add-viewport-height,100dvh)) - 48px));
+  max-height:calc(100dvh - 48px);
+  padding:0;
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) .add-content{
+  padding:24px 24px 10px;
 }
 
 .add-sheet .add-actions{
-  position:fixed;
-  left:50%;
-  bottom:calc(14px + var(--keyboard-lift) + var(--content-safe-bottom));
-  width:min(calc(100% - 36px),444px);
-  transform:translateX(-50%);
-  margin:0;
+  flex:0 0 auto;position:relative;
+  margin:0 18px calc(14px + var(--add-footer-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
   padding:8px;
   background:var(--bg);
   border-radius:calc(var(--radius-sm) + 4px);
   box-shadow:var(--floating-shadow);
-  z-index:160;
+  z-index:1;
 }
 body[data-pane-count="2"] .add-sheet .add-actions,
 body[data-pane-count="3"] .add-sheet .add-actions{
-  position:static;
-  left:auto;bottom:auto;transform:none;
-  width:auto;margin-top:8px;padding:0;
+  margin:0 24px calc(24px + var(--add-footer-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
+  padding:0;
   background:transparent;border:0;border-radius:0;
   box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
 }

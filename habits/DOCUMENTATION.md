@@ -1124,7 +1124,7 @@ The main flow is the same in regular and minimal mode:
    “something you repeat” / “something you do once”.
 2. **What would you like to do?** Name with a suggested, optional icon.
 3. Habit: **How often?** Quick choices and editable frequency. Task: optional
-   due date and optional fixed start, with clearly labelled inputs.
+   due date and optional start time, with clearly labelled inputs.
 4. **Time for each session** (habit) or **Time needed** (task), in minutes.
 5. Regular mode: collapsed **More options**, described as “planning, places &
    completion”. Minimal mode: the existing quiet Settings shortcut.
@@ -1149,7 +1149,7 @@ The main flow is the same in regular and minimal mode:
 | Button | Meaning | Main fields |
 |--------|---------|-------------|
 | habit | Something you repeat | Frequency and session duration |
-| task | Something you do once | Due date, fixed start and total duration |
+| task | Something you do once | Due date, start time and total duration |
 
 Switching types retains a separate in-flight draft for each kind. Reduce and
 zero types are available through Details and inherited defaults; reduce shows
@@ -1169,9 +1169,9 @@ goal. These tracking types do not show session duration in the main flow.
 ### 8.6 Field: Task Date 👤
 - **Due date (optional)** with **today**, **tomorrow**, **no date** shortcuts.
   Today's date is the initial task default; saved task defaults may override it.
-- **Fixed start (optional)** is separate and clearly labelled. Leaving it blank
+- **Start time (optional)** is separate and clearly labelled. Leaving it blank
   lets Tings choose a start within the item's scheduling settings.
-- A fixed start keeps the appointment clock, including for split tasks. Duration
+- A chosen start time keeps the appointment clock, including for split tasks. Duration
   is total time; allowed hours may set a hard end. Five-minute picker steps.
 - Choosing no date clears the start time and disables the time picker until a
   date is chosen. The task stays in the list until dated or finished.
@@ -1197,9 +1197,12 @@ expanded disclosures; untouched draft fields receive changed defaults.
 | add habit / add task | Saves once, then opens the item's schedule details for further adjustment |
 | cancel | Discards the draft and closes the sheet |
 
+The form scrolls in its own area; Add and Cancel stay in a separate footer
+that remains reachable while scrolling, expanding options or using the keyboard.
+
 ### 8.9 Room and overlap guidance 👤
 
-- Choosing a task's date and fixed start automatically shows a quiet inline
+- Choosing a task's date and start time automatically shows a quiet inline
   note if it overlaps a busy time, calendar appointment, or timed day plan.
   The note follows duration changes, busy-time edits and overnight dates.
   A breakable task checks its first minimum session; later sessions can move.

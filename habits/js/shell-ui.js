@@ -420,8 +420,8 @@ function updateKeyboardLift(){
   const assistantOpen = $('assistant-sheet')?.classList.contains('open');
   const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
-  const needsLift = (!paneTierActive() || detailMounted)
-    && (addOpen || assistantOpen || detailOpen || searchOpen) && window.visualViewport;
+  const needsLift = (addOpen || ((!paneTierActive() || detailMounted)
+    && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
   // subtracting a stale innerHeight from a newly resized dock lifts it twice.
@@ -455,6 +455,12 @@ function updateKeyboardLift(){
   // would hold the old height for a frame as the keyboard closes.
   const bottom = nativeResized ? '100%' : `${visibleBottom}px`;
   if(style.getPropertyValue('--keyboard-viewport-bottom') !== bottom)style.setProperty('--keyboard-viewport-bottom',bottom);
+  // Add is a flex layout, so its height must use viewport units on native;
+  // a percentage would resolve inside the wide modal's padded container.
+  const addHeight = nativeResized ? '100dvh' : bottom;
+  if(style.getPropertyValue('--add-viewport-height') !== addHeight)style.setProperty('--add-viewport-height',addHeight);
+  if(nativeResized && layoutHeight < nativeKeyboardRestHeight)style.setProperty('--add-footer-safe-bottom','0px');
+  else style.removeProperty('--add-footer-safe-bottom');
   const value = `${keyboard}px`;
   if(style.getPropertyValue('--keyboard-lift') !== value)style.setProperty('--keyboard-lift',value);
   if(typeof syncDetailEditingChrome === 'function')syncDetailEditingChrome();
@@ -482,12 +488,12 @@ function keepFocusedInputVisible(){
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
   if(!active || active.matches('#habit-search,#detail-search-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  let host = active.closest('.detail-sheet .detail-page,.add-sheet,.assistant-sheet');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet');
   if(!host)return;
   // Minimal detail sections share the pager's scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
   if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-pager');
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page'))return;
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
   const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'

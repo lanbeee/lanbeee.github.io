@@ -177,7 +177,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     }
     await page.evaluate(()=>{
       closeDetail();openSheet('add-sheet');
-      const inner=getSheetInner('add-sheet');
+      const inner=document.querySelector('.add-content');
       const spacer=document.createElement('div');spacer.style.height='1000px';
       const field=document.createElement('input');field.id='keyboard-low-field';
       inner.append(spacer,field);field.focus({preventScroll:true});

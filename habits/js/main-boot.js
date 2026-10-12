@@ -411,10 +411,10 @@ function syncTaskDueUi(){
   timeInput.disabled = !hasDate;
   const hint = $('task-due-hint');
   hint.textContent = !hasDate
-    ? 'Stays in your list until you choose a date or finish it. Choose a date to set a fixed start.'
+    ? 'Stays in your list until you choose a date or finish it. Choose a date to set a start time.'
     : timeInput.value
       ? 'Starts at this time on your chosen date. Leave the time blank if Tings can choose it.'
-      : 'Tings can choose a start time. Set a fixed start for an appointment.';
+      : 'Tings can choose a start time. For an appointment, choose the time it starts.';
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   document.querySelectorAll('[data-add-due]').forEach(button=>{

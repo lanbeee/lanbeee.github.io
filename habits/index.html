@@ -124,6 +124,7 @@
   <!-- add sheet -->
   <div class="sheet-wrap" id="add-sheet">
     <div class="sheet add-sheet" role="dialog" aria-modal="true" aria-labelledby="add-title">
+      <div class="add-content">
       <div class="add-sheet-head">
         <p class="sheet-title" id="add-title">new habit</p>
       </div>
@@ -175,7 +176,7 @@
           <button type="button" data-add-due="tomorrow" aria-pressed="false">tomorrow</button>
           <button type="button" data-add-due="none" aria-pressed="false">no date</button>
         </div>
-        <label class="add-field-label" for="ting-due-time">Fixed start <span class="field-optional">(optional)</span></label>
+        <label class="add-field-label" for="ting-due-time">Start time <span class="field-optional">(optional)</span></label>
         <input type="time" id="ting-due-time" class="plan-time-input" step="300" aria-describedby="task-due-hint" />
         <p class="field-hint" id="task-due-hint" hidden></p>
       </section>
@@ -255,6 +256,7 @@
       </div>
       <button type="button" class="minimal-mode-note" id="add-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
       <p class="field-hint add-next-step">You can adjust days, hours and other details after adding.</p>
+      </div>
       <div class="btn-row add-actions">
         <button class="btn primary" id="do-save">add habit</button>
         <button class="btn" id="do-cancel">cancel</button>
