@@ -330,6 +330,8 @@ let pickerDragging = false;
 let pendingPickerResults = [];
 let pickerMapGen = 0;
 let pickerSearchGen = 0;
+let pickerSearchScope = 'near';
+let pickerOpenAnchor = null;
 
 function destroyLocationPickerMap(){
   pickerMapGen += 1;
@@ -478,7 +480,10 @@ function ensureLocationPickerMap(lat,lng){
       pickerSetCoords(e.latlng.lat,e.latlng.lng,{reverse:true});
     });
     // After a pan/zoom, snap the pin to the crosshair (map center).
-    pickerMap.on('moveend',()=>syncPickerPinToMapCenter({reverse:true}));
+    pickerMap.on('moveend',()=>{
+      syncPickerPinToMapCenter({reverse:true});
+      if(!pickerSuppressReverse)refreshPickerScopeHint();
+    });
   }else{
     pickerPanTo(startLat,startLng,pickerMap.getZoom() || 15);
     try{ if(pickerMarker)pickerMarker.setLatLng([startLat,startLng]); }catch{ /* ignore */ }
@@ -512,13 +517,17 @@ function openLocationPicker(opts = {}){
   if(results){ results.hidden = true; results.innerHTML = ''; }
   if(hint)hint.textContent = opts.address || '';
   pendingPickerResults = [];
+  setPickerSearchScope('near');
   pickerSuppressReverse = true;
   openSheet('location-picker-sheet');
-  const lat = Number.isFinite(opts.lat) ? opts.lat : (currentCoord ? currentCoord.lat : 40.7359);
-  const lng = Number.isFinite(opts.lng) ? opts.lng : (currentCoord ? currentCoord.lng : -74.0036);
+  const start = pickerOpeningCenter(opts);
+  const lat = start.lat;
+  const lng = start.lng;
   ensureLocationPickerMap(lat,lng);
   pickerSetCoords(lat,lng,{reverse:!Number.isFinite(opts.lat),addressFromSearch:opts.address || null});
+  pickerOpenAnchor = {lat, lng};
   pickerSuppressReverse = false;
+  refreshPickerScopeHint();
 }
 
 function closeLocationPicker(){
@@ -527,6 +536,113 @@ function closeLocationPicker(){
   destroyLocationPickerMap();
   pickerEditIndex = null;
   pickerOnCreated = null;
+  pickerOpenAnchor = null;
+}
+
+// Map camera only. The New York fallback is a blank map, never a search bias.
+// A saved-place midpoint stays on this phone and is not uploaded.
+function pickerOpeningCenter(opts){
+  if(Number.isFinite(opts.lat) && Number.isFinite(opts.lng))return {lat:opts.lat, lng:opts.lng};
+  if(currentCoord && Number.isFinite(currentCoord.lat) && Number.isFinite(currentCoord.lng)){
+    return {lat:currentCoord.lat, lng:currentCoord.lng};
+  }
+  const homeLat = sortSettings && Number(sortSettings.homeCityLat);
+  const homeLng = sortSettings && Number(sortSettings.homeCityLng);
+  if(Number.isFinite(homeLat) && Number.isFinite(homeLng))return {lat:homeLat, lng:homeLng};
+  const locs = (sortSettings && sortSettings.locations) || [];
+  const pts = locs.filter(loc => Number.isFinite(Number(loc.lat)) && Number.isFinite(Number(loc.lng)));
+  if(pts.length){
+    return {
+      lat:pts.reduce((sum, loc) => sum + Number(loc.lat), 0) / pts.length,
+      lng:pts.reduce((sum, loc) => sum + Number(loc.lng), 0) / pts.length
+    };
+  }
+  return {lat:40.7359, lng:-74.0036};
+}
+
+function pickerVisibleBounds(){
+  if(!pickerMap || typeof pickerMap.getBounds !== 'function')return null;
+  let bounds = null;
+  try{ bounds = pickerMap.getBounds(); }catch{ return null; }
+  if(!bounds)return null;
+  return {
+    minLat:bounds.getSouth(),
+    maxLat:bounds.getNorth(),
+    minLng:bounds.getWest(),
+    maxLng:bounds.getEast()
+  };
+}
+
+function pickerMapCenter(){
+  if(!pickerMap || typeof pickerMap.getCenter !== 'function')return null;
+  try{
+    const center = pickerMap.getCenter();
+    if(!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng))return null;
+    return {lat:center.lat, lng:center.lng};
+  }catch{
+    return null;
+  }
+}
+
+// A real pan, not the tiny shift from opening the map. The pin can move a
+// little when the sheet finishes laying out.
+function pickerMapMoved(){
+  const center = pickerMapCenter();
+  if(!center || !pickerOpenAnchor)return false;
+  if(typeof haversineMetres !== 'function')return false;
+  return haversineMetres(pickerOpenAnchor.lat, pickerOpenAnchor.lng, center.lat, center.lng) > 400;
+}
+
+function pickerMovedFocus(){
+  if(!pickerMapMoved())return null;
+  return pickerMapCenter();
+}
+
+function pickerScopeHint(scope){
+  if(scope === 'map')return 'Only places inside the map below.';
+  if(scope === 'any')return 'Anywhere in the world. Your location stays on this phone.';
+  if(pickerMapMoved())return 'Near the area you moved the map to.';
+  const city = String(sortSettings && sortSettings.homeCityName || '').split(',')[0].trim();
+  if(city)return `Near ${city}. A well-known place farther away can still show up.`;
+  if(currentCoord && Number.isFinite(currentCoord.lat))return 'Near your current area. Set a city in Locations to keep this steady.';
+  return 'No city saved yet. Set one in Locations, or use Anywhere.';
+}
+
+function refreshPickerScopeHint(){
+  const hint = $('picker-scope-hint');
+  if(hint)hint.textContent = pickerScopeHint(pickerSearchScope);
+}
+
+function setPickerSearchScope(scope){
+  const next = scope === 'map' || scope === 'any' ? scope : 'near';
+  pickerSearchScope = next;
+  document.querySelectorAll('[data-picker-scope]').forEach(btn => {
+    const on = btn.dataset.pickerScope === next;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  refreshPickerScopeHint();
+  const results = $('picker-results');
+  if(results && !results.hidden){
+    results.hidden = true;
+    results.innerHTML = '';
+  }
+  if(next === 'map'){
+    const map = $('picker-map');
+    if(map && typeof map.scrollIntoView === 'function')map.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }
+}
+
+function pickerResultDistance(hit, focus){
+  if(!focus || typeof formatGeocodeDistance !== 'function' || typeof haversineMetres !== 'function')return '';
+  if(!Number.isFinite(hit.lat) || !Number.isFinite(hit.lng))return '';
+  return formatGeocodeDistance(haversineMetres(focus.lat, focus.lng, hit.lat, hit.lng));
+}
+
+function pickerSearchEmptyCopy(scope, status){
+  if(status === 'unavailable')return '<b>Search is unavailable right now.</b> Check your connection, or place the pin on the map yourself.';
+  if(scope === 'map')return '<b>Nothing in this area.</b> Zoom the map out, or switch to Near home or Anywhere.';
+  return '<b>No matches.</b> Try the full address, a landmark, or coordinates like 31.52, 74.35.';
 }
 
 async function searchPickerLocations(){
@@ -536,29 +652,52 @@ async function searchPickerLocations(){
   if(!searchEl || !resultsWrap)return;
   const q = searchEl.value.trim();
   if(!q){ showToast('enter a place or address'); searchEl.focus(); return; }
+  refreshPickerScopeHint();
+  const scope = pickerSearchScope === 'map' || pickerSearchScope === 'any' ? pickerSearchScope : 'near';
+  const bounds = scope === 'map' ? pickerVisibleBounds() : null;
+  if(scope === 'map' && !bounds){
+    showToast('The map is still opening. Try again in a moment.');
+    return;
+  }
   const searchGen = ++pickerSearchGen;
   resultsWrap.hidden = false;
   resultsWrap.setAttribute('aria-busy','true');
   resultsWrap.innerHTML = '<p class="field-hint location-search-status"><i class="ti ti-loader-2" aria-hidden="true"></i> Searching…</p>';
   if(btn){ btn.disabled = true; btn.textContent = 'searching…'; }
+  let found = [];
   try{
-    const found = await geocodeSearch(q,{limit:6});
+    found = await geocodeSearch(q, {
+      limit:6,
+      scope:scope === 'any' ? 'anywhere' : scope,
+      bounds,
+      focus:scope === 'near' ? pickerMovedFocus() : null
+    });
     if(searchGen !== pickerSearchGen)return;
     pendingPickerResults = found;
   }catch{
     pendingPickerResults = [];
+    found = [];
   }
   if(searchGen !== pickerSearchGen)return;
   resultsWrap.removeAttribute('aria-busy');
   if(btn){ btn.disabled = false; btn.textContent = 'search'; }
   if(!pendingPickerResults.length){
-    resultsWrap.innerHTML = '<p class="field-hint location-search-status"><b>No matches.</b> Try a nearby landmark, a fuller address, coordinates, or move the map.</p>';
-    showToast('no address matches');
+    const status = found && found.status === 'unavailable' ? 'unavailable' : 'empty';
+    resultsWrap.innerHTML = `<p class="field-hint location-search-status">${pickerSearchEmptyCopy(scope, status)}</p>`;
+    showToast(status === 'unavailable' ? 'search unavailable' : 'no address matches');
     return;
   }
-  resultsWrap.innerHTML = `<p class="location-results-label">choose a result</p>` + pendingPickerResults.map((r,idx)=>`<button type="button" class="location-result" data-picker-result="${idx}">
-    <span class="location-result-mark"><i class="ti ti-map-pin" aria-hidden="true"></i></span><span><b>${escapeHtml(r.name)}</b><small>${escapeHtml(r.address)}</small></span><i class="ti ti-chevron-right location-result-arrow" aria-hidden="true"></i>
-  </button>`).join('');
+  const focus = found && found.focus;
+  const label = found && found.widened
+    ? 'Nothing nearby matched that street. These are from a wider search.'
+    : 'choose a result';
+  resultsWrap.innerHTML = `<p class="location-results-label">${escapeHtml(label)}</p>` + pendingPickerResults.map((r,idx)=>{
+    const distance = pickerResultDistance(r, focus);
+    const detail = distance ? `${distance} · ${r.address || ''}` : (r.address || '');
+    return `<button type="button" class="location-result" data-picker-result="${idx}">
+    <span class="location-result-mark"><i class="ti ti-map-pin" aria-hidden="true"></i></span><span><b>${escapeHtml(r.name)}</b><small>${escapeHtml(detail)}</small></span><i class="ti ti-chevron-right location-result-arrow" aria-hidden="true"></i>
+  </button>`;
+  }).join('');
   resultsWrap.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 

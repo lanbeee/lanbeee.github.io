@@ -26,7 +26,7 @@ function openDetail(i){
   }
   detailIdx = i;
   const days = daysSince(h.lastLog);
-  const c = colors(days,h.target,h.type);
+  const c = habitColors(h,days);
   const cardScoreTone = cardTone(h);
   const accent = visualClassColor(cardScoreTone);
   if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
@@ -41,6 +41,7 @@ function openDetail(i){
   $('detail-emoji').value = h.emoji || '';
   renderEmojiBgSwatches('detail-emoji-bg',h.emojiBgColor || '');
   $('detail-days').value = h.target || '';
+  $('detail-repeat-mode').value = normalizeRepeatMode(h.repeatMode,h.type);
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
   if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
@@ -70,7 +71,9 @@ function openDetail(i){
   $('detail-options-disclosure').open = Boolean(h.scheduleOptions?.length);
   $('detail-weather-disclosure').open = Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId);
   renderTimeWindowInputs(h);
-  $('detail-due-date').value = dateInputValue(h.dueDate);
+  // Older/imported timed tasks can carry the appointment clock without a
+  // separate due date. Show that clock's date before gating the time field.
+  $('detail-due-date').value = dateInputValue(h.dueDate ?? h.eventTime);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
   syncDetailDueUi();
   setScheduleView('allowed');
@@ -81,9 +84,12 @@ function openDetail(i){
     hid:h.hid,
     name:h.name || '',
     type:h.type || 'keepup',
+    repeatMode:normalizeRepeatMode(h.repeatMode,h.type),
     emoji:h.emoji || '',
     emojiBgColor:normalizeEmojiBgColor(h.emojiBgColor),
-    target:h.target || '',
+    // Tasks/stop items have no saved rhythm, but their hidden editor still
+    // carries a default. Compare that same value so reverting an edit is clean.
+    target:h.target || 7,
     pinned:Boolean(h.pinned),
     showOnSharedDisplay:h.showOnSharedDisplay !== false,
     allowSharedDisplayCompletion:h.allowSharedDisplayCompletion !== false,
@@ -105,6 +111,7 @@ function openDetail(i){
     preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
     allowedTimeStart:h.allowedTimeStart ?? null,
     allowedTimeEnd:h.allowedTimeEnd ?? null,
+    allowedTimeFixedStart:h.allowedTimeFixedStart === true,
     preferredTimeStart:h.preferredTimeStart ?? null,
     preferredTimeEnd:h.preferredTimeEnd ?? null,
     allowedTimeStartAnchor:cleanAnchor(h.allowedTimeStartAnchor),
@@ -135,7 +142,7 @@ function openDetail(i){
     earlyWindowDays:habitEarlyWindowDays(h),
     delayAllowanceDays:habitDelayAllowanceDays(h),
     priority:effectivePriority(h),
-    dueDate:h.dueDate ?? null,
+    dueDate:parseDateInput($('detail-due-date').value),
     eventTime:h.eventTime ?? null,
     planByDate:h.planByDate ?? null
   };
@@ -259,7 +266,7 @@ function renderEmojiBgSwatches(containerId,selected = ''){
             const h = load()[detailIdx];
             if(h){
               const days = daysSince(h.lastLog);
-              const c = colors(days,h.target,h.type);
+              const c = habitColors(h,days);
               mark.style.background = c.bg;
               mark.style.color = c.icon;
               mark.style.removeProperty('--emoji-bg');

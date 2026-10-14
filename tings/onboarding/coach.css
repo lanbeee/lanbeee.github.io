@@ -229,6 +229,10 @@
   .tings-coach-root[data-add-rail="true"] :is(.tings-coach-bubble,.tings-coach-spotlight){transition:none;}
   .tings-coach-root[data-mode="essentials"][data-typing="true"] .tings-coach-hint{display:none;}
   #add-sheet .add-sheet[data-coach-space]{padding-bottom:var(--coach-space);}
+  #settings-sheet .sheet[data-coach-editor-space],#location-picker-sheet .sheet[data-coach-editor-space]{min-height:0;height:var(--coach-editor-height);max-height:var(--coach-editor-height);}
+  /* The coach supplies the explanation and return action in this editor. */
+  #settings-sheet .sheet[data-coach-editor-space] > :is(.about-copy,.settings-actions){display:none;}
+  #location-picker-sheet:has([data-coach-editor-space]){align-items:flex-start;}
 }
 @media (prefers-reduced-motion:reduce){
   .tings-coach-shade,.tings-coach-spotlight,.tings-coach-bubble{transition:none;}

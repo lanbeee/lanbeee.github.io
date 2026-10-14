@@ -421,20 +421,20 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .utility-sheet-panel{padding:14px;border:0.5px solid var(--border);border-radius:18px;background:var(--bg2);}
 .travel-edit-context{margin-bottom:14px;padding-bottom:12px;border-bottom:0.5px solid var(--border);}
 .travel-edit-context .field-hint{margin:0 0 5px;text-transform:capitalize;}
-.travel-dest{padding:0;background:transparent;border:0;}
+.travel-dest{padding:12px 14px;background:var(--bg2);border:0;border-radius:var(--radius);box-shadow:none;}
 .utility-field-label{display:block;margin-bottom:8px;color:var(--text2);font-size:11px;font-weight:680;}
 .travel-edit-row{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:10px;align-items:center;}
-.travel-edit-row .icon-btn{width:44px;height:44px;border-radius:14px;background:var(--bg);border-color:var(--border);}
-.travel-minute-field{height:62px;display:flex;align-items:baseline;justify-content:center;gap:5px;border-radius:15px;background:var(--bg);border:0.5px solid var(--border);}
+.travel-edit-row .icon-btn{width:44px;height:44px;border-radius:50%;background:var(--bg);border:0;}
+.travel-minute-field{height:62px;display:flex;align-items:baseline;justify-content:center;gap:5px;border-radius:var(--radius);background:var(--bg);border:0;}
 .travel-minute-field input{width:auto;max-width:90px;height:60px;padding:0;border:0;background:transparent;font-size:28px;font-weight:740;letter-spacing:-0.03em;box-shadow:none;}
 .travel-edit-unit{font-size:11px;color:var(--text3);font-weight:680;}
 .block-edit-hours{display:grid;grid-template-columns:minmax(0,1fr) 20px minmax(0,1fr);align-items:end;gap:9px;}
 .block-edit-hours > i{align-self:center;color:var(--text3);font-size:16px;}
 .block-edit-hours label{min-width:0;display:flex;flex-direction:column;gap:7px;color:var(--text2);font-size:10px;font-weight:720;text-transform:uppercase;letter-spacing:0.045em;}
-.block-edit-hours input{width:100%;min-width:0;height:48px;margin:0;border-radius:13px;background:var(--bg);font-size:15px;font-weight:650;}
+.block-edit-hours input{width:100%;min-width:0;height:48px;margin:0;border:0;border-radius:var(--radius-sm);background:var(--field-bg);font-size:15px;font-weight:650;}
 .utility-panel-hint{margin:12px 0 0;padding-top:11px;border-top:0.5px solid var(--border);line-height:1.4;}
 .utility-sheet-actions{margin-top:12px;gap:8px;}
-.utility-sheet-actions .btn{min-height:44px;border-radius:13px;}
+.utility-sheet-actions .btn{min-height:44px;border-radius:999px;}
 .travel-edit-sheet .utility-sheet-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
 .travel-edit-sheet .utility-sheet-actions #travel-edit-save{grid-column:1 / -1;}
 .travel-edit-sheet .utility-sheet-actions #travel-edit-cancel{grid-column:1 / -1;}
@@ -464,6 +464,58 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .travel-minute-field input::-webkit-inner-spin-button,
 .travel-minute-field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
 .travel-minute-field .travel-edit-unit{grid-row:2;justify-self:center;line-height:1;}
+
+/* Card editors lead with timing; supporting details stay behind disclosures. */
+:is(.travel-edit-sheet,.block-edit-sheet) .utility-sheet-head{align-items:start;margin-bottom:20px;}
+:is(.travel-edit-sheet,.block-edit-sheet) .utility-sheet-copy .sheet-title{line-height:1.2;overflow-wrap:anywhere;}
+:is(.travel-edit-sheet,.block-edit-sheet) .utility-sheet-copy .about-copy{margin-top:5px;line-height:1.5;}
+:is(.travel-edit-sheet,.block-edit-sheet) .utility-sheet-close{align-self:start;border:0;background:var(--bg2);}
+.travel-edit-label{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;margin-bottom:12px;}
+.travel-edit-label .utility-field-label,.travel-edit-label .field-hint{margin:0;}
+.travel-edit-label .field-hint{font-size:11px;}
+.travel-edit-sheet .travel-minute-field input{background:transparent;border:0;border-radius:0;outline-offset:0;}
+.travel-edit-note{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;margin-top:12px;}
+.travel-edit-note .field-hint{margin:0;font-size:11px;}
+.travel-edit-note .mini-text-btn{padding:8px 14px;background:var(--bg);border-radius:999px;font-size:12px;min-height:44px;}
+.block-edit-sheet .block-edit-hours{margin:0;}
+.block-edit-sheet #block-edit-dynamic-toggle{margin-top:14px;min-height:44px;padding:8px 14px;background:var(--bg);border-radius:999px;}
+.detail-sheet .habit-option-row .habit-option-pref{min-height:44px;padding:0 12px;background:var(--field-bg);border:0;box-shadow:none;}
+.block-edit-dynamic-controls{margin-top:12px;}
+.block-edit-dynamic-controls .blocked-endpoint{border:0;padding-bottom:4px;}
+.block-edit-dynamic-controls .blocked-time-hours input[type="time"],
+.block-edit-dynamic-controls .blocked-endpoint .time-fixed,
+.block-edit-dynamic-controls select{
+  width:100%;height:48px;min-height:48px;padding:0 12px;border:0;border-radius:var(--radius-sm);
+  background:var(--field-bg);box-shadow:none;font-size:15px;font-weight:650;
+}
+.utility-sheet-disclosure{margin-top:12px;border:0;border-top:1px solid var(--border);background:transparent;box-shadow:none;}
+.utility-sheet-disclosure > summary{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:44px;padding:12px 2px;list-style:none;cursor:pointer;
+  color:var(--text2);font-size:13px;font-weight:600;
+}
+.utility-sheet-disclosure > summary::-webkit-details-marker{display:none;}
+.utility-sheet-disclosure > summary > i{font-size:16px;color:var(--text3);transition:transform var(--dur-fast) ease;}
+.utility-sheet-disclosure[open] > summary > i{transform:rotate(180deg);}
+.utility-sheet-disclosure > summary:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;border-radius:var(--radius-sm);}
+.utility-disclosure-body{padding:0 0 16px;overflow-wrap:anywhere;}
+#travel-edit-dest.travel-dest{margin:0;padding:12px 14px;}
+.utility-disclosure-body > .field-hint{margin:0 0 12px;}
+.utility-disclosure-body :is(select,.mini-select){max-width:100%;width:100%;min-height:44px;border:0;border-radius:var(--radius-sm);background:var(--field-bg);}
+.native-card-reminders .native-busy-reminders{margin:12px 0 0;padding:0;border:0;background:transparent;}
+.native-card-reminders .settings-sublabel{display:none;}
+.native-card-reminders .mini-text-btn{min-height:44px;padding:8px 14px;border-radius:999px;background:var(--bg2);white-space:normal;text-align:left;}
+.travel-edit-sheet .utility-sheet-actions,.block-edit-sheet .utility-sheet-actions{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:20px;
+}
+.travel-edit-sheet .utility-sheet-actions #travel-edit-save{grid-column:auto;}
+:is(.travel-edit-sheet,.block-edit-sheet) .utility-sheet-actions .btn{min-height:48px;padding:10px 16px;min-width:0;border-radius:999px;white-space:normal;}
+.travel-edit-sheet .utility-sheet-actions:has(#travel-edit-save[hidden]){grid-template-columns:1fr;}
+@media(max-width:360px){
+  .block-edit-sheet .block-edit-hours{grid-template-columns:minmax(0,1fr);gap:10px;}
+  .block-edit-sheet .block-edit-hours > i{display:none;}
+  .block-edit-sheet .block-edit-hours label{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;}
+}
 
 /* iOS Clock-style time picker — keyboard slot, not a Tings sheet. Safari
    ignores step on <input type="time">, so iPhone/iPad get hour / 5-minute /

@@ -78,6 +78,11 @@ function initialAddProfile(type,defaults = newItemDefaults(loadSortSettings(),ty
   const places = normalizeLocationIds(defaults.locationIds,locationOptions());
   return {
     defaults,
+    repeatMode:'routine',
+    weatherProfileValue:'',
+    weatherLocationId:'',
+    showWeather:false,
+    showWeatherAtLocation:false,
     target:defaults.target,
     dueDate:type === 'task' ? dateInputValue(defaultTaskDueDate(defaults)) : '',
     dueTime:'',
@@ -106,6 +111,11 @@ function refreshAddProfile(previous,type){
 
 function readAddProfile(){
   return {
+    repeatMode:$('ting-repeat-mode').value,
+    weatherProfileValue:$('ting-weather-profile').value,
+    weatherLocationId:$('ting-weather-location').value,
+    showWeather:$('ting-show-weather').getAttribute('aria-pressed') === 'true',
+    showWeatherAtLocation:$('ting-show-weather-location').getAttribute('aria-pressed') === 'true',
     defaults:addActiveDefaults,
     target:targetFromRhythmParts($('ting-times').value,$('ting-days').value),
     dueDate:$('ting-due-date').value,
@@ -124,6 +134,7 @@ function readAddProfile(){
 }
 
 function syncAddEffortUi(){
+  if(selectedType === 'task')syncTaskDueUi();
   $('ting-auto-mark-row').hidden = $('ting-completion-mode').value !== 'minutes';
   $('ting-chunk-row').hidden = $('ting-breakable').getAttribute('aria-pressed') !== 'true';
   const mode = $('ting-completion-mode').value;
@@ -133,6 +144,11 @@ function syncAddEffortUi(){
 }
 
 function applyAddProfile(profile){
+  $('ting-repeat-mode').value = profile.repeatMode || 'routine';
+  renderWeatherProfileSelect('ting-weather-profile',profile.weatherProfileValue || '');
+  renderWeatherLocationSelect('ting-weather-location',profile.weatherLocationId || '');
+  $('ting-show-weather').setAttribute('aria-pressed',String(Boolean(profile.showWeather)));
+  $('ting-show-weather-location').setAttribute('aria-pressed',String(Boolean(profile.showWeatherAtLocation)));
   addActiveDefaults = {...profile.defaults};
   syncRhythm('ting',profile.target);
   $('ting-due-date').value = profile.dueDate;
@@ -215,7 +231,7 @@ function openAddSettings(section){
   closeSheet('add-sheet');
   resetSettingsSheetState();
   syncSettingsControls();
-  const body = $(section === 'defaults' ? 'settings-defaults-body' : 'settings-blocked-body');
+  const body = $(section === 'defaults' ? 'settings-defaults-body' : section === 'weather' ? 'settings-weather-body' : 'settings-blocked-body');
   const head = document.querySelector(`[data-collapse-target="${body.id}"]`);
   body.hidden = false;
   head.setAttribute('aria-expanded','true');
@@ -228,11 +244,15 @@ function closeSettingsSheet(){
   closeSheet('settings-sheet');
   // City setup leaves the item draft mounted. Refresh its clock previews on
   // every return path, including backdrop dismissal, without re-rendering it.
-  if($('detail-sheet')?.classList.contains('open')){
+  // On desktop Details lives in a permanent pane, without .sheet-wrap.open.
+  if(detailIdx != null){
     document.querySelectorAll('#detail-sheet .time-endpoint.is-dynamic').forEach(endpoint=>{
       if(endpoint.closest('.habit-option-row'))refreshHabitScheduleOptionEndpoint(endpoint);
       else refreshTimeResolvedFor(endpoint);
     });
+    // Editing a place or weather profile can add/remove the last condition
+    // while the unsaved item fields themselves stay exactly the same.
+    setDetailDirty();
   }
   if(!addSettingsReturn)return;
   addSettingsReturn = false;

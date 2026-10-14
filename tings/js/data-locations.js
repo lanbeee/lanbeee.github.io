@@ -201,7 +201,7 @@ function hasSimpleAllowedTimeWindow(h){
     || (typeof cleanAnchor === 'function' && cleanAnchor(h.allowedTimeStartAnchor));
   const endSet = Number.isFinite(h.allowedTimeEnd)
     || (typeof cleanAnchor === 'function' && cleanAnchor(h.allowedTimeEndAnchor));
-  return Boolean(startSet && endSet);
+  return Boolean(startSet && (h.allowedTimeFixedStart === true || endSet));
 }
 
 const HABIT_SCHEDULE_OPTION_TIME_SUFFIXES = [
@@ -318,7 +318,8 @@ function normalizeHabitScheduleOptionsUncached(value,registry){
     if(!raw || typeof raw !== 'object')continue;
     const startFields = normalizeHabitScheduleOptionEndpoint(raw,'start');
     const endFields = normalizeHabitScheduleOptionEndpoint(raw,'end');
-    if(!startFields || !endFields)continue;
+    const fixedStart = raw.fixedStart === true;
+    if(!startFields || (!fixedStart && !endFields))continue;
     const cleanedLocationId = cleanLocationId(raw.locationId);
     const locationId = cleanedLocationId || null;
     if(locationId && valid && !valid.has(locationId))continue;
@@ -327,8 +328,8 @@ function normalizeHabitScheduleOptionsUncached(value,registry){
     const weatherProfileMode = normalizeWeatherProfileMode(raw.weatherProfileMode,raw.weatherProfileId);
     const weatherProfileId = weatherProfileMode === 'profile'
       ? cleanWeatherProfileRef(raw.weatherProfileId) || null : null;
-    const option = {weekdays,...startFields,...endFields,locationId,weatherProfileMode,weatherProfileId};
-    const key = `${weekdays.join(',')}|${habitScheduleOptionTimeKey(option,'start')}|${habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}|${weatherProfileMode}|${weatherProfileId || ''}`;
+    const option = {weekdays,...startFields,...(endFields || {end:null}),...(fixedStart ? {fixedStart:true} : {}),locationId,weatherProfileMode,weatherProfileId};
+    const key = `${weekdays.join(',')}|${habitScheduleOptionTimeKey(option,'start')}|${fixedStart ? 'fixed-start' : habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}|${weatherProfileMode}|${weatherProfileId || ''}`;
     if(seen.has(key))continue;
     seen.add(key);
     const identified = {
@@ -401,7 +402,7 @@ function isDateEligibleForGeneralSchedule(h,ts = Date.now()){
 // PURE: project a row's start/end expression into the ordinary allowed-time
 // field names so every existing planner primitive can resolve it unchanged.
 function habitScheduleOptionAllowedTimeFields(option){
-  const out = {};
+  const out = {allowedTimeFixedStart:option && option.fixedStart === true};
   for(const [source,target] of [['start','allowedTimeStart'],['end','allowedTimeEnd']]){
     out[target] = option && option[source] != null ? option[source] : null;
     out[target + 'Anchor'] = habitScheduleOptionEndpointIsDynamic(option,source)
@@ -432,6 +433,23 @@ function habitScheduleOptionAllowedTimeFields(option){
 
 function habitBoundToGeneralSchedule(h){
   return {...(h || {}),scheduleOptions:[]};
+}
+
+function agendaRowHasFixedStart(row){
+  const h = row && row.h;
+  if(!h)return false;
+  if(row.scheduleOptionId && row.scheduleOptionId !== 'general'){
+    return normalizeHabitScheduleOptions(h.scheduleOptions)
+      .some(option=>option.id === row.scheduleOptionId && option.fixedStart === true);
+  }
+  return h.allowedTimeFixedStart === true;
+}
+
+function fixedStartHasLoggedProgress(h,dayBase,optionId = h._scheduleOptionId || null){
+  if(!h.breakable)return false;
+  return (h.logs || []).some(log=>!isPlanLog(log) && logMinutes(log) > 0
+    && dayStart(logTime(log)) === dayBase
+    && (!log.scheduleOptionId || log.scheduleOptionId === (optionId || 'general')));
 }
 
 function habitBoundToScheduleOption(h,option){
@@ -848,6 +866,14 @@ function habitSimpleWindowIntervals(h,locWin,dayBase){
   const base = dayBase != null ? dayBase : dayStart(Date.now());
   const startAnchor = typeof cleanAnchor === 'function' ? cleanAnchor(h && h.allowedTimeStartAnchor) : null;
   const endAnchor = typeof cleanAnchor === 'function' ? cleanAnchor(h && h.allowedTimeEndAnchor) : null;
+  if(h.allowedTimeFixedStart === true){
+    const start = resolveHabitTimeField(h,'allowedTimeStart',base);
+    const end = resolveHabitTimeField(h,'allowedTimeEnd',base);
+    if(start == null || end == null)return [];
+    // A fixed start belongs to this date; it never adds yesterday's overnight tail.
+    return unwrapMinuteWindow(locWin).map(win=>({start:Math.max(start,win.start),end:Math.min(end,win.end)}))
+      .filter(win=>win.end > win.start);
+  }
   if(startAnchor || endAnchor){
     const rawStart = resolveHabitTimeField(h,'allowedTimeStart',base);
     const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',base);

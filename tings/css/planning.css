@@ -49,6 +49,10 @@
 .add-presets button{border:0;border-radius:999px;background:var(--field-bg);color:var(--text2);font:inherit;font-size:12px;min-height:44px;padding:7px 10px;cursor:pointer;}
 .add-presets button[aria-pressed="true"]{background:var(--teal-bg);color:var(--teal-text);font-weight:650;}
 .add-presets button:active{opacity:0.82;}
+/* Keep all four rhythm choices together on standard phones. Smaller sheets
+   can still wrap without clipping labels or reducing the tap target height. */
+#add-frequency .add-presets,.detail-frequency-presets{gap:4px;}
+#add-frequency .add-presets button,.detail-frequency-presets button{min-width:44px;padding-inline:6px;white-space:nowrap;}
 .add-sheet .range-row{flex-wrap:wrap;gap:8px;margin:0 0 8px;}
 .add-frequency .range-value{width:auto;min-width:90px;min-height:44px;gap:5px;padding:0 10px;}
 .add-sheet .field-hint{line-height:1.5;margin:6px 0 10px;}
@@ -119,6 +123,11 @@
   -webkit-appearance:none;appearance:none;
 }
 .detail-section .plan-field-row{margin:0 0 12px;background:var(--bg);}
+.detail-task-field{display:flex;flex-direction:column;gap:6px;flex:1 1 150px;min-width:0;}
+#detail-due-row .plan-field-main{flex-wrap:wrap;align-items:flex-start;}
+#detail-due-row .plan-date-label{font-weight:500;}
+#detail-due-row :is(.plan-date-input,.plan-time-input){width:100%;flex:none;}
+#detail-due-row .plan-time-input:disabled{opacity:0.5;}
 .month-card .plan-field-row{margin:12px 0 0;background:var(--bg);}
 .context-pill.time{color:var(--text2);}
 .context-pill.time i{color:var(--text3);}
@@ -205,3 +214,35 @@
 
 
 .native-card-reminders{margin-top:12px;}
+
+/* Conditions are primary fields when they control eligibility.
+   A tone step and the shared card radius replace an outlined box. */
+.add-conditions[hidden]{display:none;}
+.add-conditions{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin:16px 0;padding:14px;border:0;border-radius:var(--radius);background:var(--bg2);box-shadow:none;}
+.add-conditions .add-option-group{padding:0;}
+.add-conditions .add-option-group h3{margin-bottom:4px;}
+.add-conditions .add-weather-options{margin-top:12px;}
+.add-conditions .add-weather-options > summary{display:none;}
+.add-conditions .tag-row{margin-bottom:0;}
+.add-topic-disclosure{width:100%;color:var(--text3);font-size:12px;}
+.add-topic-disclosure > summary{display:flex;align-items:center;min-height:44px;padding:0;list-style:none;cursor:pointer;}
+.add-topic-disclosure > summary::-webkit-details-marker{display:none;}
+.add-topic-disclosure > summary::after{content:'+';margin-left:auto;color:var(--text2);font-size:18px;font-weight:400;}
+.add-topic-disclosure[open] > summary::after{content:'−';}
+.add-conditions #ting-show-weather-row,.add-conditions #ting-show-weather-location-row,
+.add-conditions #ting-show-weather-location-hint{display:none !important;}
+.add-conditions #add-condition-hint{margin:12px 0 0;color:var(--text2);}
+.add-conditions #add-condition-hint[hidden]{display:none;}
+.add-conditions :is(#ting-weather-profiles,#ting-weather-city){padding:6px 0;min-height:44px;background:transparent;border-radius:0;color:var(--text3);font-size:12px;text-decoration:underline;text-underline-offset:3px;}
+.add-actions .btn:disabled{opacity:.55;cursor:default;}
+
+#ting-weather-city[hidden]{display:none;}
+.add-conditions #add-topics-section,.add-conditions #ting-tag-chips{display:contents;}
+.add-conditions #add-places-label{order:0;}
+.add-conditions #add-topics-section > .field-hint{order:1;}
+.add-conditions .tag-row-places{order:2;}
+.add-conditions .add-weather-options{order:3;}
+.add-conditions #add-condition-hint{order:4;}
+.add-conditions .add-topic-disclosure{order:5;margin-top:8px;border:0;}
+.add-conditions label.field-label{display:block;margin:0 0 8px;color:var(--text);font-size:13px;font-weight:650;}
+.add-conditions :is(#ting-weather-profiles,#ting-weather-city){display:inline-block;margin-right:12px;}

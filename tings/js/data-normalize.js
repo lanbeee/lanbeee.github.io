@@ -337,14 +337,16 @@ function normalize(items){
       hid,
       name: raw.name || '',
       type,
+      repeatMode:normalizeRepeatMode(raw.repeatMode,type),
       target: (type === 'zero' || type === 'task')
         ? null
-        : clampRhythmValue(raw.target || 7),
+        : (normalizeRepeatMode(raw.repeatMode,type) === 'opportunity'
+          ? opportunityGapDays(raw) : clampRhythmValue(raw.target || 7)),
       dueDate,
       hardDue,
       autoMarkMinutes,
       eventTime,
-      planByDate: isRhythmHabit ? clampDayTimestamp(raw.planByDate) : null,
+      planByDate: isRhythmHabit && normalizeRepeatMode(raw.repeatMode,type) !== 'opportunity' ? clampDayTimestamp(raw.planByDate) : null,
       createdAt: raw.createdAt || null,
       logs,
       emoji: raw.emoji || '',
@@ -361,6 +363,7 @@ function normalize(items){
       preferredMonthDays:normalizeAllowedMonthDays(raw.preferredMonthDays),
       allowedTimeStart:normalizeTimeMinutes(raw.allowedTimeStart),
       allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
+      allowedTimeFixedStart:raw.allowedTimeFixedStart === true,
       preferredTimeStart:normalizeTimeMinutes(raw.preferredTimeStart),
       preferredTimeEnd:normalizeTimeMinutes(raw.preferredTimeEnd),
       // cleanAnchor accepts prayer keys AND 'habit'. Falls back to cleanPrayerAnchor
@@ -437,7 +440,7 @@ function normalize(items){
     // input rendered as "00:00" and got saved back as 0/0). hasTimeWindow
     // treated 0/0 as a valid 24h window, which silently shadowed rhythm
     // placement for affected habits. Collapse it back to "no window set".
-    if(h.allowedTimeStart === 0 && h.allowedTimeEnd === 0
+    if(!h.allowedTimeFixedStart && h.allowedTimeStart === 0 && h.allowedTimeEnd === 0
       && !h.allowedTimeStartAnchor && !h.allowedTimeEndAnchor){
       h.allowedTimeStart = null;
       h.allowedTimeEnd = null;
@@ -485,7 +488,7 @@ function isBreakableTimedTask(h){
 }
 // PURE: one-off soft "plan by" date on a rhythm habit (keepup/reduce).
 function habitPlanByDate(h){
-  if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return null;
+  if(!h || isOpportunityHabit(h) || (h.type !== 'keepup' && h.type !== 'reduce'))return null;
   return h.planByDate != null ? clampDayTimestamp(h.planByDate) : null;
 }
 // PURE: Sunday (or today if already Sunday) — handy "end of this week" preset.

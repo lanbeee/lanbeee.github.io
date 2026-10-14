@@ -549,6 +549,10 @@ $('blocked-time-list')?.addEventListener('click',e=>{
 $('loc-open-picker')?.addEventListener('click',()=>openLocationPicker());
 $('picker-search-btn')?.addEventListener('click',searchPickerLocations);
 $('picker-search')?.addEventListener('keydown',e=>{ if(e.key === 'Enter'){ e.preventDefault(); searchPickerLocations(); } });
+document.querySelector('.picker-search-scope')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-picker-scope]');
+  if(btn)setPickerSearchScope(btn.dataset.pickerScope);
+});
 $('picker-results')?.addEventListener('click',e=>{
   const btn = e.target.closest('[data-picker-result]');
   if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
@@ -1122,19 +1126,13 @@ function openBlockEditSheet(row){
   blockEditDynamicOpen = false;
   $('block-edit-title').textContent = row.label || 'busy time';
   const date = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
-  const startExpr = blockedEndpointExpression(block,'start');
-  const endExpr = blockedEndpointExpression(block,'end');
-  const resolvedStart = formatTimeShort(((originalStart % 1440) + 1440) % 1440);
-  const resolvedEnd = formatTimeShort(((originalEnd % 1440) + 1440) % 1440);
-  $('block-edit-copy').textContent = startExpr || endExpr
-    ? `${date} · dynamic: ${startExpr || resolvedStart} → ${endExpr || resolvedEnd} · today ${resolvedStart}–${resolvedEnd}`
-    : date;
+  $('block-edit-copy').textContent = date;
   $('block-edit-start').value = minutesToTimeInput(current.start);
   $('block-edit-end').value = minutesToTimeInput(current.end);
   const dynamicToggle = $('block-edit-dynamic-toggle');
   if(dynamicToggle){
     dynamicToggle.setAttribute('aria-expanded','false');
-    dynamicToggle.textContent = 'edit dynamic rule';
+    dynamicToggle.textContent = 'recurring rule';
   }
   // A fresh card editor starts from its saved rule, rather than the disclosure
   // choices left over from the previously inspected busy time.
@@ -1155,7 +1153,7 @@ $('block-edit-dynamic-toggle')?.addEventListener('click',()=>{
   const toggle = $('block-edit-dynamic-toggle');
   if(toggle){
     toggle.setAttribute('aria-expanded',String(blockEditDynamicOpen));
-    toggle.textContent = blockEditDynamicOpen ? 'hide dynamic rule' : 'edit dynamic rule';
+    toggle.textContent = blockEditDynamicOpen ? 'hide recurring rule' : 'recurring rule';
   }
   renderBlockEditDynamicControls();
 });

@@ -455,3 +455,21 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
     padding-bottom:80px;
   }
 }
+#detail-weather-profiles{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;text-align:left;}
+
+/* Conditional scheduling follows the add form's flat, rounded controls. */
+#detail-repeat-mode-row[hidden],#detail-conditions[hidden],#detail-weather-city[hidden]{display:none !important;}
+.detail-frequency-presets button{max-width:100%;white-space:normal;box-shadow:none;}
+.detail-frequency-presets button:focus-visible{outline:2px solid var(--text2);outline-offset:2px;}
+#detail-slider-row{flex-wrap:wrap;gap:8px;margin:0 0 8px;}
+#detail-slider-row .range-value{width:auto;min-width:90px;min-height:44px;gap:5px;padding:0 10px;background:var(--field-bg);border-radius:var(--radius-sm);box-shadow:none;}
+.detail-conditions{margin:12px 0 16px;padding:14px;border:0;border-radius:var(--radius);background:var(--bg);box-shadow:none;}
+.detail-conditions .detail-schedule-places{margin:0;padding:0;border:0;}
+.detail-conditions #detail-weather-disclosure{margin:12px 0 0;padding:0;border:0;}
+.detail-conditions #detail-weather-disclosure > summary{display:none;}
+.detail-conditions :is(#detail-show-weather-row,#detail-show-weather-location-row,#detail-show-weather-location-hint,#detail-weather-venue-hint){display:none !important;}
+.detail-conditions .settings-sublabel{margin:0 0 8px;}
+.detail-conditions :is(#detail-weather-profiles,#detail-weather-city){display:inline-block;min-height:44px;margin-right:12px;padding:6px 0;background:transparent;border-radius:0;font-size:12px;color:var(--text3);text-decoration:underline;text-underline-offset:3px;max-width:100%;white-space:normal;overflow-wrap:anywhere;}
+#detail-time-kind{width:100%;min-height:44px;margin:0 0 8px;border:0;border-radius:var(--radius-sm);background:var(--field-bg);}
+.detail-conditions #detail-condition-hint{margin:8px 0 0;color:var(--text2);}
+.detail-conditions #detail-condition-hint[hidden]{display:none;}

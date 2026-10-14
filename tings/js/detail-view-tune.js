@@ -49,6 +49,7 @@ function currentDetailTune(){
   return {
     name:$('detail-habit-message').value.trim(),
     type,
+    repeatMode:normalizeRepeatMode($('detail-repeat-mode').value,type),
     emoji:cleanMark($('detail-emoji').value),
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
@@ -73,6 +74,7 @@ function currentDetailTune(){
     preferredMonthDays:selectedMonthDaysFrom('detail-preferred-monthday-chips'),
     allowedTimeStart:timeInputToMinutes($('detail-time-start').value),
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
+    allowedTimeFixedStart:$('detail-time-kind')?.value === 'fixed',
     preferredTimeStart:timeInputToMinutes($('detail-preferred-time-start').value),
     preferredTimeEnd:timeInputToMinutes($('detail-preferred-time-end').value),
     allowedTimeStartAnchor:readAnchorFromEndpoint('detail-time-start'),
@@ -162,13 +164,14 @@ function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
-  $('detail-save').disabled = !dirty;
+  $('detail-save').disabled = !dirty || !syncDetailConditionHint();
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 
 // HYBRID: rewrites form fields from saved original
 function restoreDetailTune(){
   if(!detailTuneOriginal)return;
+  $('detail-repeat-mode').value = detailTuneOriginal.repeatMode || 'routine';
   $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;
   renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
@@ -528,10 +531,14 @@ function syncDetailDueUi(){
   const timeInput = $('detail-due-time');
   if(!dueInput)return;
   const hasDate = Boolean(dueInput.value);
+  if(timeInput){
+    if(!hasDate)timeInput.value = '';
+    timeInput.disabled = !hasDate;
+  }
   const hasTime = Boolean(timeInput?.value);
   const hint = $('detail-due-hint');
   if(hint){
-    if(!hasDate)hint.textContent = 'No due date. This stays in your list as a low-priority someday task until you date it or finish it.';
+    if(!hasDate)hint.textContent = 'Stays in your list until you choose a date or finish it. Choose a date to set a start time.';
     else if(hasTime){
       const breakable=$('detail-breakable')?.getAttribute('aria-pressed') === 'true';
       hint.textContent = breakable

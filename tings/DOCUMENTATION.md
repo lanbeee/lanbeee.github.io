@@ -295,6 +295,61 @@ if ratio ≥ 1.1: score += red (overdue)
 - Done day 5: ratio = 0.71 → teal (on track)
 - Done day 10: ratio = 1.43 → red (overdue)
 
+### 3.1.1 Optional habits: when conditions fit 👤👨‍💻
+
+Under **New habit → How often?**, or in **Details → Schedule**, choose
+**when conditions fit**. Set **at most once every N days**, then choose allowed
+places, weather guidance, or both. Weather profiles are editable directly from
+those controls. The add form shows conditions immediately after the repeat
+limit and before duration, with topics folded and other options below. Schedule
+uses the same frequency buttons, followed by the repeat limit and visible
+places/weather controls. Days and hours stay in a separate folded section.
+Switching back to a regular rhythm preserves the saved condition choices. Choose
+a place or weather profile before saving. Missing forecast-city setup is shown
+only when needed. These condition controls remain available in minimal mode. Conditional place
+chips use simple select/remove taps, without cycling through preference or
+avoidance. Selecting a named place turns off **any place**; choosing **any place**
+clears the named places and requires weather rules. Existing saved rankings stay
+in the draft when switching between regular and conditional modes. Weather
+choices distinguish **use each place’s weather rules**, **any weather** (ignore
+inherited rules), and a named set of rules. The selected rules show their bounds
+in the current display units; an empty set explains that it has no active rules.
+When both place and weather are selected, both must match.
+
+- Matching conditions make the item eligible at its chosen priority. It may
+  use free time or replace lower-priority flexible work; fixed appointments,
+  explicit plans, active work, and equal/higher-priority items stay protected.
+- A place-based item uses current presence or a visit already in the agenda,
+  including time before or after that visit. It cannot create an extra trip.
+  Allowed venue hours, item windows, travel time and schedule links still apply.
+- Weather uses the existing profile/option/place inheritance and the forecast
+  at the actual venue. Every active metric must be available and meet its bounds,
+  including soft bounds. Preferences rank matching times. If no fresh forecast
+  is available, the item waits. When both place and weather are selected, both
+  must match. With neither configured, it waits for configuration.
+- The repeat limit is a minimum gap between calendar dates, not a weekly quota.
+  An entry on Monday permits the next occurrence on the following Monday for
+  a seven-day limit. Logged and planned occurrences both count. Early/late
+  flexibility and separate same-day options cannot shorten that gap.
+- Split sessions use the existing duration, minimum chunk and session-gap
+  controls. A partial entry can continue that day; the next occurrence still
+  observes the repeat limit. Automatic placement offers the full remaining
+  session budget, rather than a partial session that cannot be finished.
+- An explicitly started session stays on the agenda if conditions change.
+  Explicit plans can reserve time outside the conditions, while still honoring
+  the repeat limit. Completion, undo, snooze, timers, backup, assistant edits,
+  calendar, shared display and ordinary phone reminders use the existing flows.
+- Unmatched opportunities never become overdue or missed and have no streak
+  obligation or drop-warning alarm. Saved items remain available in the list
+  and search. Existing habits retain their regular rhythm unless changed.
+
+Persisted `repeatMode` is `routine` (default/legacy) or `opportunity`; the latter
+applies to keepup habits only. Its integer `target` is the minimum day gap.
+Both planner engines call the same bounded activation pass after ordinary
+visits are known. Clock-only refresh rechecks today's opportunities without
+requiring a GLPK solve, and keeps cached future occurrences in the repeat-limit
+check. Android consumes this same source, including closed-app refresh.
+
 ### 3.2 REDUCE HABITS (Recurring - Limit) 👤
 #### Scoring Logic:
 ```
@@ -363,6 +418,7 @@ else:
   
   // ─── TYPE & SCHEDULE ─────────────────────────────────────
   type: 'keepup'|'reduce'|'zero'|'task',  // 👤 habit type
+  repeatMode: 'routine'|'opportunity', // 👤 Regular rhythm or conditional eligibility
   target: number|null,       // 👤 Rhythm: times in N days (0.2-183), null for zero/task
   createdAt: number|null,    // 👨‍💻 Creation timestamp (ms), for ordering
   
@@ -383,6 +439,7 @@ else:
   
   allowedTimeStart: number|null,  // 👤 Minutes from midnight (0-1440)
   allowedTimeEnd: number|null,    // 👤 Minutes from midnight (0-1440)
+  allowedTimeFixedStart: boolean, // 👤 Exact start; finish uses duration, default false
   preferredTimeStart: number|null, // 👤 Soft hint for scheduling
   preferredTimeEnd: number|null,   // 👤 Soft hint for scheduling
   
@@ -439,6 +496,7 @@ else:
   showWeather: boolean,       // 👤 Show interval forecast on this item's agenda card
   showWeatherAtLocation: boolean, // 👤 When showWeather is on, use this item's place (off = home city)
   scheduleOptions: {             // 👤 Specific extra time/place windows
+    fixedStart?: boolean,       // Exact start; end derives from the item duration
     weekdays: number[],          // Empty = every weekday
     start: number|null,          // Minutes from midnight, or null when dynamic
     end: number|null,            // Minutes from midnight, or null when dynamic
@@ -617,7 +675,8 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
 #### 4.3.8a Weather Guidance 👤👨‍💻
 - Uses Open-Meteo without an API key. Guidance resolves for every placement in
   this order: specific option → item → selected location. Both options and
-  items can explicitly choose **no weather**, which stops inheritance at that
+  items can explicitly choose **ignore weather rules** (or **any weather** in
+  conditional mode), which stops inheritance at that
   layer. A legacy item with a profile becomes an explicit item profile; an item
   without one inherits its selected place. Missing/dangling profiles fail open.
 - The forecast always comes from the selected scheduled place. Anywhere
@@ -1006,6 +1065,7 @@ and small sideways drift still activate.
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
 - Each missed row can be **hidden until tonight** (local midnight). Hidden rows drop out of the `"N missed"` count and the assistant missed list, but they are not snoozed: Home and the planner stay unchanged. Hide some and the pill becomes `"N missed"` for what is still unacked. Hide all of them and the amber count is replaced by a muted eye-off chip (`hidden until tonight`) so the sheet stays reachable without looking like a notification. Show a hidden row, or wait until midnight, and it behaves as a miss again.
+- The same sheet has a separate **not placed** section for items the mounted week agenda never put on any day. A habit or task already listed as missed stays in the missed section only. A short breakable chunk, or a placement on a later day, counts as placed. The today-header count stays the visible missed rows. When nothing is missed and something still could not be placed, the header shows a muted calendar-off chip (`not placed`) with no number.
 
 ### Before-missed phone reminders (installed app only)
 
@@ -1305,8 +1365,8 @@ the item's saved clock on that same date without producing a duplicate event.
 
 #### Task Timing Section
 - For `task` type only
-- **Due date:** Date picker (`detail-due-date`)
-- **Due time:** Time picker (`detail-due-time`); fixed for unbreakable tasks, the exact first-session start for breakable tasks
+- **Due date (optional):** Date picker (`detail-due-date`)
+- **Start time (optional):** Time picker (`detail-due-time`); fixed for unbreakable tasks, the exact first-session start for breakable tasks. Like Add, it stays disabled until a date is chosen; clearing the date clears the clock.
 - Tasks open on Schedule by default so deadline and placement controls are the
   first editable fields.
 
@@ -1344,6 +1404,17 @@ time: | 9am | — | 9am | — | 9am | — |
 ```
 - Time fields: Minutes from midnight (0-1440)
 - End ≤ Start = overnight window (e.g., 1380→300 = 11pm-5am)
+
+Choose **time window** for an earliest start and latest finish, or **fixed
+start** for a class or session that must begin at its entered time. Fixed start
+uses the item's duration to calculate the finish, so no end clock is needed.
+Changing duration updates that finish. The start can use Clock or Relative,
+and the setting applies on eligible days under the existing rhythm. The planner
+never moves the first session later to get around a conflict; an infeasible
+session stays unplaced. With Breakable enabled, the first chunk still starts
+exactly there and later chunks may use the remaining time before that finish.
+Switching back to a time window restores the previous end rule. Clear removes
+the time restriction. The choice is available in minimal mode too.
 
 #### Time Anchor Section
 - **Default wording:** General labels (Dawn, Sunrise, Solar noon, Afternoon, Sunset,
@@ -1609,11 +1680,14 @@ Tracks the currently active habit session:
 ├─────────────────────────────────────┤
 │ [Emoji tile] Habit Name     hide  │
 │ [Emoji tile] Another Habit  hide  │
+│ not placed                        │
+│ [Emoji tile] Couldn't fit         │
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N missed" on the Today header, or the muted eye-off chip after every remaining miss has been hidden until tonight
-- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
+- **Access:** Tap "N missed" on the Today header, the muted eye-off chip after every remaining miss has been hidden until tonight, or the muted calendar-off chip when nothing was missed and the planner still left items unplaced
+- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong in that missed section, and a still-doable item is not missed just because yesterday ended.
+- **Not placed** sits in its own section under the misses. It lists week candidates the mounted agenda never placed on any day, and omits every item already shown as missed. Logging or opening a row works the same way; these rows have no hide control. They do not change the `"N missed"` count or the assistant missed list.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
 - Habits with several sessions a day show one missed row per unfinished session from today, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses from today. Past-day sessions are excluded after midnight. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
@@ -1803,8 +1877,10 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Settings → Locations → "add place", or from detail → places
-- Search by address via Nominatim/Photon
-- Search combines Photon and Nominatim results, removes duplicate pins, and accepts `latitude, longitude`
+- Search by address via Nominatim/Photon. The picker offers Near home, This map, and Anywhere
+- Near home biases from the saved home city. A moved map sends a coarsened center (~1 km) instead; a coarse GPS point is used only when that city is empty. Street-shaped queries also send the city name, then widen once if nothing is found
+- This map sends the visible map bounds as a hard filter and does not widen. Anywhere sends only the typed text
+- Results from both providers are ranked on this device. A short distance is shown when a focus point exists. `latitude, longitude` still drops a pin directly
 - Saved places are shown in alphabetical/natural order across settings, habit forms, presence, and filters
 - A place created from a new/edit habit returns to that form already selected
 - Drag map to position pin (stays centered)
@@ -1819,14 +1895,18 @@ Tracks the currently active habit session:
 
 ```
 ┌─────────────────────────────────────┐
-│ 🚗  agenda connection               │
-│ travel time                         │
+│ 🚗  travel                       ✕ │
 │ Home → Gym                          │
+│ leave by 9am · arrive about 9:15am   │
 ├─────────────────────────────────────┤
-│ [−] [60] minutes [+]              │
-│ Estimated from distance + mode      │
+│ travel time       driving estimate  │
+│ [−]         [15 minutes]        [+] │
+│ For trips between these places.     │
+│                  reset to estimate │
+│ destination details              ▾ │
+│ phone reminders (Android)        ▾ │
 ├─────────────────────────────────────┤
-│ [save] [open in maps] [reset] [cancel] │
+│ [save time]       [open in maps]     │
 └─────────────────────────────────────┘
 ```
 
@@ -1835,20 +1915,24 @@ Tracks the currently active habit session:
 - Travel modes: driving, walking, bicycling, transit
 - "Open in maps" opens external maps app
 - "Reset to estimate" reverts to calculated time
+- Destination address and pin coordinates expand under **destination details**.
+  Both details and phone reminders start collapsed each time the sheet opens.
+  The header’s close button dismisses unsaved duration edits.
 - Installed Android: travel cards expose departure/arrival reminders and departure lead time, with **this date only** or **recurring / all dates**. They edit the destination habit/task/busy time’s existing choices. A date override replaces those edges; it does not add a second alert. **Use recurring reminders for this date** clears the travel override. Live-GPS legs expose reminders and Maps with duration editing disabled.
 
 ### 10.11 Busy Time Editor Sheet 👤
 
 ```
 ┌─────────────────────────────────────┐
-│ 🔒  busy time                       │
-│ Busy time                           │
+│ 🔒  busy time                    ✕ │
+│ Sleep                               │
+│ Wednesday, Oct 14                   │
 ├─────────────────────────────────────┤
 │ starts: [08:00]  →  ends: [09:00]  │
-│ Change for this date or series      │
+│ recurring rule                     │
+│ phone reminders (Android)        ▾ │
 ├─────────────────────────────────────┤
 │ [save this date] [update recurring] │
-│ [cancel]                           │
 └─────────────────────────────────────┘
 ```
 
@@ -1856,6 +1940,9 @@ Tracks the currently active habit session:
 - Set start/end time (five-minute picker steps; iOS uses Clock-style wheels because Safari ignores `step`. Exact valid typed minutes are preserved until a wheel choice is confirmed)
 - Choose days of week
 - "Save this date" vs "Update recurring" (modifies one instance vs the series)
+- The date and start/end clocks lead the sheet. **Recurring rule** expands the
+  saved sun/prayer rule controls; **phone reminders** expands Android choices.
+  Both start collapsed. The header’s close button dismisses unsaved clock/rule edits.
 - Installed Android: phone reminders are accessible directly in this editor. Choose **this date only** or **recurring / all dates** for independent start, end, travel departure/arrival and departure lead time. Reminders save immediately; the timing Save/Cancel buttons apply to the clock fields. **Use recurring reminders for this date** clears the reminder override. Choices stay on this phone and follow the block through time edits and renames.
 
 ### 10.12 Day Logs Sheet (Multi-Step) 👤
@@ -1999,6 +2086,10 @@ Toasts appear after:
   rhythm or optional deadline, estimate duration, use its card, and find Home
   and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
   it no longer requires a second item, a sample, or past/future calendar edits.
+  Choosing **when conditions fit** adds a guided condition step before Add:
+  choose a place already visited or weather rules. The tour waits for a valid
+  condition and supports adding a place or editing weather rules without
+  losing the new habit draft.
   Logging the first item has an **I’ll log later** escape. Deeper calendar and
   scheduling practice lives in the advanced coach chapters.
 - It has users tap the **Tings name → Settings**, then reveals **Display →
@@ -2012,6 +2103,9 @@ Toasts appear after:
   While typing, the prompt collapses to its title and navigation; Next blurs
   the edited field. Browser visual-viewport shrink and Android WebView resize
   follow the same keyboard edge as the form, including transient Android metrics.
+  The condition step's place and weather editors also reserve room for the
+  prompt. While typing, the focused field scrolls above the keyboard and coach;
+  returning to the habit or leaving the tour removes the reserved space.
 - Past calendar days offer **Log a missed day**, future days offer **Plan
   something**; the advanced calendar chapter explains these actions.
 - **Every step gates the whole experience.** Locked (required-action) steps
@@ -2359,6 +2453,11 @@ has been introduced. Existing clock replay remains the first reuse path.
 Split tasks have a lifetime minute pool, never a daily reservation. Day replay
 retains that day's allocated task minutes instead of replenishing the full task
 on each date; hypothetical day rebuilds do not modify the incumbent's item list.
+After GLPK splits a task into several sessions on a day, it uses the shared
+bounded route replay to consolidate visits when flexible items can move within
+their windows. A cheaper route must retain every item's minutes on that day,
+respect appointments, order links and active/weather-locked clocks, and not
+worsen weather. Fixed obligations may still require separate visits.
 
 `tryPlaceOnDay` enumerates every unforced allowed venue (and the anywhere
 option, when the habit allows it) and keeps the shared score pick. That is the
@@ -2522,11 +2621,11 @@ task uniqueness and sparse cadence before adding an occurrence.
 **What Changes:**
 | Feature | Regular | Minimal |
 |---------|---------|---------|
-| Home view | All sections | Today/Overdue/Coming Up |
+| Home view | Today, Tomorrow, Coming up, The rest | Same sections and plan, quieter cards |
 | Calendar | Full view | Simplified week strip |
-| Detail view | Full tabs | Condensed |
+| Detail view | History, Schedule, Planning, Identity, Actions tabs | Essential sections in one scroll |
 | Settings | All visible | Advanced hidden |
-| Card elements | All fields | Essential only |
+| Card elements | Configurable detail | Essential only |
 
 **Why Minimal:**
 - Reduces cognitive load
@@ -2542,7 +2641,10 @@ presentation across Tings; drafts stay in the sheet underneath. Switching
 back is the same Settings control.
 
 Minimal Add keeps name, optional emoji, habit/task type, rhythm or deadline,
-and duration visible. Defaults and busy-time shortcuts stay in regular mode.
+and duration visible. Choosing **when conditions fit** also reveals places and
+weather in both Add and Details, because these define when the optional habit
+can appear. This choice applies to build habits; limit and stop habits retain
+their tracking goals. Defaults and busy-time shortcuts stay in regular mode.
 
 ---
 
@@ -2967,8 +3069,8 @@ Same agenda logic, but simplified display:
 - Remaining panes stack into one scroll; section headers stay visible
 - The reserved action bar stays outside the scrolling fields
 - Allowed weekdays and time window live in **allowed days & hours**, folded by default; expanding it preserves the draft and stays expanded during the current visit
-- Month days, preferences, places, weather and link setup remain regular-mode options
-- A small regular-mode switch reveals all options without saving or discarding the draft
+- Month days, preferences and link setup remain regular-mode options. Places and weather stay visible for **when conditions fit** habits; ordinary habits keep these in regular mode.
+- A quiet **More options in settings** shortcut opens the Minimal Mode setting. Switching there reveals all options without saving or discarding the draft.
 - Action rows limited to remove: shared display, export to calendar, share
   item, snooze, and pin are regular-mode only (saved values are untouched)
 
@@ -3302,6 +3404,11 @@ Busy times reserve time for commitments such as sleep or work and use the existi
 - The general days, time window, and allowed places still apply at every
   allowed place. Each option row is an extra specific case.
 - Many items only need the specific rows. Leave the general time blank then.
+- Each row offers **time window** or **fixed start**. Fixed start uses that row's
+  exact Clock/Relative start and the item's duration for its finish. It can be
+  used for weekday classes at different times or venues. General windows and
+  other rows remain independent alternatives; separate-session rows keep their
+  existing occurrence behavior.
 - Each row couples its own weekdays, start/end window, and location, plus an
   optional preference (`little` / `high` / `avoid`) that overrides the place
   ranking for that instance. Its compact weather choice can inherit, select a
@@ -3396,7 +3503,7 @@ Busy times reserve time for commitments such as sleep or work and use the existi
 | Nominatim (geocoding) | `https://nominatim.openstreetmap.org` | No |
 | Photon (geocoding fallback) | `https://photon.komoot.io` | No |
 
-Driving estimates send origin and destination coordinates to OSRM, an open routing service, for that route: saved-place pins, or live GPS plus a saved place when estimating a drive from here. Walking, bike, and transit stay on-device (haversine). City reverse-geocode sends a coarsened coordinate, not the live pin.
+Driving estimates send origin and destination coordinates to OSRM, an open routing service, for that route: saved-place pins, or live GPS plus a saved place when estimating a drive from here. Walking, bike, and transit stay on-device (haversine). City reverse-geocode sends a coarsened coordinate, not the live pin. Place search sends the typed text. Near home also sends the saved home city, a coarsened map center when the user moved the map, or a coarsened GPS point when that city is empty. This map sends the area on screen. Anywhere sends only the text.
 
 ### 27.2 Push Notifications 👨‍💻
 | Service | URL | Description |

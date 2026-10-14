@@ -36,6 +36,18 @@ function occupancyChronForSlot(chron,slot,fill){
   return selfGapMs ? occupants.sort((a,b)=>occupiedStart(a) - occupiedStart(b)) : occupants;
 }
 
+// A fixed recurring start is exact, including for the first breakable chunk.
+// Later chunks of that same option may resume inside its duration-wide window.
+function fixedAllowedStartForFill(state,fill,contextLocId){
+  if(fill.h.allowedTimeFixedStart !== true)return null;
+  const optionId = fill._scheduleOptionId || fill.h._scheduleOptionId || null;
+  const started = (state.fills || []).some(entry=>entry.fill?.i === fill.i
+    && (entry.fit?.scheduleOptionId || null) === optionId);
+  if(fill.h.breakable && (started || fixedStartHasLoggedProgress(fill.h,state.dayBase,optionId)))return null;
+  const start = resolveHabitTimeField(fill.h,'allowedTimeStart',state.dayBase,contextLocId);
+  return start == null ? null : state.dayBase + start * 60000;
+}
+
 function tryPlaceOnDay(state,fill,opts = {}){
   if(typeof plannerPerfCountTryPlace === 'function')plannerPerfCountTryPlace();
   if(!state || !fill || !fill.h)return null;
@@ -183,6 +195,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
       // gap opens (scheduled / blocked / prior fills), else the day seed.
       const anchor = locationPresenceAt(state,gap.start,chron);
 
+      const exactStart = exactTimedStart ?? fixedAllowedStartForFill(state,fill,anchor);
+
       const locId = resolveLoc(anchor);
       if(locId || optionMode){
         const loc = locId ? registryLookup(locId) : null;
@@ -200,7 +214,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
       if(durMin + travelMin > remaining && usedMinutes > 0)continue;
 
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
-      if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
+      if(exactStart != null)placeStart=Math.max(placeStart,exactStart);
       else{
         const appointmentStart = breakableAppointmentStart(fill.h,dayBase);
         if(appointmentStart != null)placeStart=Math.max(placeStart,appointmentStart);
@@ -235,7 +249,8 @@ function tryPlaceOnDay(state,fill,opts = {}){
       // A clock entered on a breakable event fixes the first session's start.
       // It is not an allowed-window lower bound. Later sessions may resume in
       // any valid gap after the event time.
-      if(exactTimedStart != null && Math.abs(placeStart - exactTimedStart) > 1000)continue;
+      if(exactStart != null && (fill.h.allowedTimeFixedStart === true
+        ? placeStart !== exactStart : Math.abs(placeStart - exactStart) > 1000))continue;
       if(placeStart >= gap.end)continue;
       // Reserve outbound commute to the next different-location hard/fill row
       // so placeEnd cannot overlap the leave-by window homeDaySequence draws.
@@ -265,6 +280,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
         schedulePrefLevel:typeof locationPrefLevel === 'function' ? locationPrefLevel(fill.h,locId) : null
       };
       fits.push(baseFit);
+      if(fill.h.allowedTimeFixedStart === true && exactStart != null)continue;
       // Preferred time is a second soft candidate — score picks vs ASAP/scarce.
       // Doing-now always wants the earliest start, so skip preferred alternatives.
       if(opts.doingNowStart != null)continue;
@@ -382,6 +398,7 @@ function placedBreakableMinutes(state,habitIndex){
 function candidateOccurrenceDueDay(c,lastLogTs,completionOffset = 0){
   const h = c && c.h;
   if(!h)return null;
+  if(isOpportunityHabit(h))return null;
   if(h.type === 'task')return h.dueDate == null ? null : dayStart(h.dueDate);
   const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
   if(planBy != null && lastLogTs === undefined)return dayStart(planBy);
@@ -707,6 +724,7 @@ function requiredOccurrenceCanClaimDay(c,state,candidates,lastLogTs,completionOf
 // with one eligible day (Friday-only Juma) loses the whole occurrence if that
 // day is consumed by flexible work.
 function mustPlaceCriticalOccurrence(c){
+  if(isOpportunityHabit(c && c.h))return false;
   if(!c || !c.h || Number(c.priority) !== 0)return false;
   // Daily breakables already have a protected reservation and intentionally
   // run last; promoting Work ahead of fixed prayers starves their narrow gaps.
@@ -1185,6 +1203,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
     if(cursor < slot.end)gaps.push({start:cursor, end:slot.end});
     for(const gap of gaps){
       const anchor = locationPresenceAt(state,gap.start,chron);
+      const exactStart = exactTimedStart ?? fixedAllowedStartForFill(state,fill,anchor);
       const locId = resolveLoc(anchor);
       if(locId || optionMode){
         const loc = locId ? registry.find(l=>l.id === locId) : null;
@@ -1194,7 +1213,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
       const edge = travelEdgeBetweenIds(anchor,locId,registry,mode,{allowNetwork:opts.allowNetwork !== false});
       const travelMin = Math.ceil((edge.seconds || 0) / 60);
       let placeStart = gap.start + (edge.seconds || 0) * 1000;
-      if(exactTimedStart != null)placeStart=Math.max(placeStart,exactTimedStart);
+      if(exactStart != null)placeStart=Math.max(placeStart,exactStart);
       else{
         const appointmentStart = breakableAppointmentStart(fill.h,dayBase);
         if(appointmentStart != null)placeStart=Math.max(placeStart,appointmentStart);
@@ -1225,7 +1244,8 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         }
       }
       placeStart = Math.max(placeStart,gap.start);
-      if(exactTimedStart != null && Math.abs(placeStart - exactTimedStart) > 1000)continue;
+      if(exactStart != null && (fill.h.allowedTimeFixedStart === true
+        ? placeStart !== exactStart : Math.abs(placeStart - exactStart) > 1000))continue;
       if(placeStart >= gap.end || placeStart >= cap)continue;
       // Reserve outbound commute to the next different-location hard/fill row.
       const presenceLocId = locId || anchor;
@@ -1262,6 +1282,8 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
         preferredHit:false,
         prevLocId:anchor,
         placeKey:fill.placeKey != null ? fill.placeKey : fill.i,
+        scheduleOptionId:fill._scheduleOptionId || fill.h._scheduleOptionId || null,
+        scheduleOptionSameDayMode:fill._scheduleOptionSameDayMode || fill.h._scheduleOptionSameDayMode || 'alternative',
         schedulePrefLevel:typeof locationPrefLevel === 'function' ? locationPrefLevel(fill.h,locId) : null
       });
     }

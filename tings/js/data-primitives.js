@@ -9,6 +9,44 @@ function clampRhythmValue(value){
   if(!Number.isFinite(n))return 7;
   return Math.max(MIN_RHYTHM_DAYS,Math.min(MAX_RHYTHM_DAYS,n));
 }
+// Optional repetitions share the ordinary item schema and logs. Their target
+// is a minimum calendar-day gap, never a deadline or a completion quota.
+function isOpportunityHabit(h){
+  return Boolean(h && h.type === 'keepup' && h.repeatMode === 'opportunity');
+}
+function normalizeRepeatMode(mode,type){
+  return type === 'keepup' && mode === 'opportunity' ? 'opportunity' : 'routine';
+}
+function opportunityGapDays(h){
+  return Math.max(1,Math.ceil(clampRhythmValue(h && h.target)));
+}
+function opportunityPlanAllowed(h,dayBase){
+  if(opportunityDoingNow(h,dayStart(dayBase)))return true;
+  const earlierPlans = planLogEntries(h.logs || []).map(log=>dayStart(logTime(log)))
+    .filter(base=>base<dayStart(dayBase) && base>=dayStart(Date.now()));
+  return opportunityReadyOnDay(h,dayStart(dayBase),earlierPlans);
+}
+function opportunityDoingNow(h,dayBase){
+  if(!isOpportunityHabit(h) || typeof getDoingNow !== 'function')return false;
+  const doing = getDoingNow();
+  return Boolean(doing && doing.hid === h.hid && doing.dayBase === dayBase
+    && isDoingNowActive(doing));
+}
+function opportunityReadyOnDay(h,dayBase,plannedDays = []){
+  if(!isOpportunityHabit(h) || habitIsSnoozed(h) || !isDateEligibleForHabit(h,dayBase))return false;
+  if(completedOnDay(h,dayBase))return false;
+  const days = actualLogs(h.logs || []).map(ts=>dayStart(ts));
+  if(h.lastLog != null)days.push(dayStart(h.lastLog));
+  days.push(...plannedDays);
+  const gap = opportunityGapDays(h);
+  // A partial split session may continue today; it does not grant another
+  // occurrence tomorrow. Planned days count too, including explicit plans.
+  return !days.some(base=>{
+    const distance = Math.abs(Math.round((dayBase - base) / 86400000));
+    if(distance === 0 && h.breakable && loggedChunkMinutesOnDay(h,dayBase)>0)return false;
+    return distance < gap;
+  });
+}
 /** PURE: split a (possibly fractional) target into {times, days} for UI. */
 function rhythmParts(target){
   const t = clampRhythmValue(target);

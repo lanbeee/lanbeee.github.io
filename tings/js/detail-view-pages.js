@@ -20,7 +20,7 @@ function applyDetailMinimalMode(){
   // A previously selected Preferred view must never hide the basic controls.
   if(minimal && typeof setScheduleView === 'function')setScheduleView('allowed');
   const availabilityTitle = $('detail-availability-disclosure')?.querySelector('summary');
-  if(availabilityTitle)availabilityTitle.textContent = minimal ? 'allowed days & hours' : 'days, hours & places';
+  if(availabilityTitle)availabilityTitle.textContent = sheet?.classList.contains('opportunity-mode') ? 'days & hours' : minimal ? 'allowed days & hours' : 'days, hours & places';
   if(pager){
     MINIMAL_HIDDEN_DETAIL_PAGES.forEach(nav=>{
       const page = pager.querySelector(`.detail-page[data-detail-nav="${nav}"]`);
@@ -81,6 +81,7 @@ function applyDetailMinimalMode(){
       el.open = el.dataset.regularOpen === 'true';delete el.dataset.regularOpen;
     }
   });
+  if(sheet?.classList.contains('opportunity-mode'))syncDetailConditionsLayout(true);
   if(minimal && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
   if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
 }

@@ -546,7 +546,7 @@ function temporaryOrderConflict(dayBase,edges,data = null){
 }
 
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.repeatMode,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeFixedStart,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
 }
 
 function normalizeSuggestedOccurrences(rows){
@@ -841,12 +841,14 @@ function habitDailyOccurrenceTarget(h){
 }
 
 function habitHasMultipleDailyOccurrences(h){
+  if(isOpportunityHabit(h))return false;
   return Boolean(h && h.type !== 'task' && h.type !== 'zero' && !h.breakable
     && (habitDailyOccurrenceTarget(h) > 1
       || normalizeHabitScheduleOptions(h.scheduleOptions).some(option=>habitScheduleOptionSameDayMode(option) === 'separate')));
 }
 
 function habitOccurrenceTargetForDay(h,dayBase){
+  if(isOpportunityHabit(h))return 1;
   const options = habitScheduleOptionsForDay(h,dayBase);
   const separate = options.filter(option=>habitScheduleOptionSameDayMode(option) === 'separate').length;
   const ordinary = !options.length || hasGeneralAllowedSchedule(h)

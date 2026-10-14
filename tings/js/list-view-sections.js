@@ -204,10 +204,11 @@ function attachWeatherIndicator(header,day){
 
 function missedPlannerFingerprint(data,settings){
   const habits = (data || []).map(h=>[
-    h.hid,h.type,h.target,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
+    h.hid,h.type,h.target,h.repeatMode,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
     h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,
     habitEarlyWindowDays(h),habitDelayAllowanceDays(h),
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
+    h.allowedTimeFixedStart,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
     h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
     h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
@@ -374,6 +375,7 @@ function missedOpportunityPassedToday(h,dayBase,now){
 // dropped by replanning. This rejects the old broad "everything overdue"
 // sweep: an off-day or impossible item has no qualifying planner evidence.
 function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
+  if(isOpportunityHabit(h))return false;
   if(!h || !h.hid)return false;
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
   const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
@@ -534,21 +536,111 @@ function collectSlippedDropped(now = Date.now()){
     : [];
 }
 
+function mountedAgendaWeek(now = Date.now()){
+  const week = typeof _homeRenderedWeek !== 'undefined' ? _homeRenderedWeek : null;
+  if(!week || !Array.isArray(week.days) || !week.days.length)return null;
+  if(dayStart(week.days[0].dayBase) !== dayStart(now))return null;
+  return week;
+}
+
+function agendaPlacedHids(week, data){
+  const currentHids = new Set((data || []).map(h=>h && h.hid).filter(Boolean));
+  const placed = new Set();
+  for(const day of week && week.days || []){
+    for(const row of day.timeline || []){
+      if(!row || (row.kind !== 'fill' && row.kind !== 'scheduled'))continue;
+      // Prefer the habit object on the row when it is still this dataset.
+      // A later load() of unsaved records mints new ids, so fall back to the
+      // planned index, which stays aligned until the list is reordered.
+      const rowHid = row.h && row.h.hid;
+      const indexed = row.i != null && data[row.i] && data[row.i].hid;
+      const hid = rowHid && currentHids.has(rowHid) ? rowHid : indexed;
+      if(hid)placed.add(hid);
+    }
+  }
+  return placed;
+}
+
+function unplacedLinkReason(week, hid){
+  for(const day of week && week.days || []){
+    const hit = (day.linkOmissions || []).find(item=>item && item.subjectHid === hid && item.reason);
+    if(hit)return hit.reason;
+  }
+  return '';
+}
+
+// Items the mounted week agenda never placed, excluding anything already on
+// the missed list. A row on any day counts as placed, including a short
+// breakable chunk and a later-day assignment. The today-header count stays
+// the visible missed rows; this list is sheet-only.
+function collectUnplacedAgendaItems(data, settings, missedRows, now = Date.now()){
+  data = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
+  settings = settings || (typeof sortSettings !== 'undefined' ? sortSettings : null) || {};
+  const week = mountedAgendaWeek(now);
+  if(!week)return [];
+  const missedHids = new Set((missedRows || []).map(row=>row && row.hid).filter(Boolean));
+  const placed = agendaPlacedHids(week, data);
+  const todayBase = dayStart(now);
+  const items = [];
+  for(let i = 0;i < data.length;i += 1){
+    const h = data[i];
+    if(!h || !h.hid || missedHids.has(h.hid) || placed.has(h.hid))continue;
+    if(h.type === 'zero')continue;
+    if(h.snoozedUntil && now < h.snoozedUntil)continue;
+    if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))continue;
+    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
+    const pinnedDay = typeof plannerPinnedDayBase === 'function'
+      ? plannerPinnedDayBase(h, settings, todayBase) : null;
+    let eligible = false;
+    if(typeof weekFillEligibleOnDay === 'function'){
+      for(const day of week.days){
+        if(weekFillEligibleOnDay(h, settings, day.dayBase, day.weekday, pinnedDay)){
+          eligible = true;
+          break;
+        }
+      }
+    }
+    const reason = unplacedLinkReason(week, h.hid);
+    if(!eligible && !reason)continue;
+    items.push({
+      hid:h.hid, name:h.name, emoji:h.emoji, idx:i, first:now,
+      expectedDay:typeof dateKey === 'function' ? dateKey(now) : '',
+      priority:typeof effectivePriority === 'function' ? effectivePriority(h) : 1,
+      reason:reason || 'No room on the agenda',
+      unplaced:true
+    });
+  }
+  items.sort((a,b)=>(a.priority - b.priority) || String(a.name || '').localeCompare(String(b.name || '')));
+  return items;
+}
+
 function attachDroppedIndicator(header,list,todayHids){
   _slippedTodayHids = Array.isArray(todayHids) ? todayHids.slice() : [];
-  const dropped = collectSlippedDropped();
+  const data = load();
+  const dropped = typeof collectDroppedItems === 'function'
+    ? collectDroppedItems(data, sortSettings, _slippedTodayHids)
+    : [];
   const {visible, hidden} = partitionDroppedItems(dropped);
-  if(!visible.length && !hidden.length)return;
+  const unplaced = collectUnplacedAgendaItems(data, sortSettings, dropped);
+  if(!visible.length && !hidden.length && !unplaced.length)return;
   header.classList.add('has-dropped');
   const pill = document.createElement('button');
   pill.type = 'button';
   pill.className = 'dropped-pill';
   if(visible.length){
+    pill.dataset.kind = 'missed';
     pill.textContent = `${visible.length} missed`;
-  }else{
+  }else if(hidden.length){
+    pill.dataset.kind = 'hidden';
     pill.classList.add('is-quiet');
     pill.innerHTML = '<i class="ti ti-eye-off" aria-hidden="true"></i>';
     pill.setAttribute('aria-label','hidden until tonight');
+  }else{
+    pill.dataset.kind = 'unplaced';
+    pill.classList.add('is-quiet');
+    pill.innerHTML = '<i class="ti ti-calendar-off" aria-hidden="true"></i>';
+    pill.setAttribute('aria-label','not placed');
   }
   const dayLabel = header.dataset.label || 'today';
   bindDayHeaderPill(pill,()=>openSlippedSheet(dropped, dayLabel));
@@ -558,6 +650,7 @@ function attachDroppedIndicator(header,list,todayHids){
 function renderDroppedPanel(items,opts = {}){
   const showDayTag = Boolean(opts.showDayTag);
   const hidden = Boolean(opts.hidden);
+  const unplaced = Boolean(opts.unplaced);
   const panel = document.createElement('div');
   panel.className = 'dropped-panel';
   const data = load();
@@ -567,15 +660,18 @@ function renderDroppedPanel(items,opts = {}){
     // own button. Tapping anywhere on the row except the icon still reviews.
     const row = document.createElement('div');
     row.className = hidden ? 'dropped-item is-hidden' : 'dropped-item';
+    if(unplaced)row.classList.add('no-hide');
     row.setAttribute('role','button');
     row.setAttribute('tabindex','0');
     row.dataset.hid = item.hid || '';
+    if(unplaced)row.dataset.unplaced = '1';
     if(item.occurrenceKey)row.dataset.occurrenceKey = item.occurrenceKey;
     const tagHtml = showDayTag && item.dayLabel ? `<span class="dropped-tag">${escapeHtml(item.dayLabel)}</span>` : '';
     const hideLabel = hidden ? 'show on missed' : 'hide until tonight';
     const hideClass = hidden ? 'dropped-show' : 'dropped-hide';
     const hideIcon = hidden ? 'ti-eye' : 'ti-eye-off';
-    const cue = hidden ? 'Hidden until tonight' : 'Tap to review';
+    const cue = hidden ? 'Hidden until tonight'
+      : (unplaced ? (item.reason || 'No room on the agenda') : 'Tap to review');
     const timeCue = item.occurrenceKey && Number.isFinite(item.start)
       ? `${escapeHtml(compactHomeTime(item.start))} · `
       : '';
@@ -583,17 +679,18 @@ function renderDroppedPanel(items,opts = {}){
     // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
     // a missed habit can be cleared with one tap straight from this list.
     const c = (h && typeof colors === 'function')
-      ? colors(daysSince(h.lastLog),h.target,h.type)
+      ? habitColors(h)
       : { bg:'var(--bg)', icon:'var(--amber-icon)' };
     const hasEmojiBg = h && typeof normalizeEmojiBgColor === 'function' && normalizeEmojiBgColor(h.emojiBgColor);
     const logStyle = (h && typeof emojiBgInlineStyle === 'function' && (h.emoji || hasEmojiBg))
       ? emojiBgInlineStyle(h,c.bg,c.icon)
       : `background:${c.bg};color:${c.icon};`;
     const logInner = h ? iconHtml(h,c) : '<i class="ti ti-circle-dashed" aria-hidden="true"></i>';
+    const hideHtml = unplaced ? '' : `<button type="button" class="${hideClass}" aria-label="${hideLabel}"><i class="ti ${hideIcon}" aria-hidden="true"></i></button>`;
     row.innerHTML =
       `<button type="button" class="dropped-mark dropped-log${h && h.emoji ? ' emoji-pulse' : ''}" aria-label="${h && h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(item.name)}" style="${logStyle}">${logInner}</button>`
-      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>${timeCue}${cue}</small></span>`
-      + `${tagHtml}<button type="button" class="${hideClass}" aria-label="${hideLabel}"><i class="ti ${hideIcon}" aria-hidden="true"></i></button>`;
+      + `<span class="dropped-copy"><span class="dropped-name">${escapeHtml(item.name)}</span><small>${timeCue}${escapeHtml(cue)}</small></span>`
+      + `${tagHtml}${hideHtml}`;
 
     const review = ()=>{ closeSheet('slipped-sheet'); openDetail(item.idx); };
     row.addEventListener('click',e=>{
@@ -651,15 +748,28 @@ function slippedItemsWithTags(items){
 
 function fillSlippedSheet(){
   const content = document.getElementById('slipped-content');
-  if(!content)return {visible:[], hidden:[]};
+  if(!content)return {visible:[], hidden:[], unplaced:[]};
   const dayLabel = _slippedSheetDayLabel || 'today';
+  const data = load();
+  const dropped = typeof collectDroppedItems === 'function'
+    ? collectDroppedItems(data, sortSettings, _slippedTodayHids)
+    : [];
+  const {visible, hidden} = partitionDroppedItems(dropped);
+  const unplaced = collectUnplacedAgendaItems(data, sortSettings, dropped);
   const title = document.getElementById('slipped-title');
-  if(title)title.textContent = `missed · ${dayLabel}`;
+  const sub = document.querySelector('#slipped-sheet .sheet-sub');
+  const hasMissed = visible.length || hidden.length;
+  if(title)title.textContent = hasMissed ? `missed · ${dayLabel}` : `not placed · ${dayLabel}`;
+  if(sub){
+    sub.textContent = hasMissed
+      ? 'Log it, hide it until tonight, or open it to reschedule.'
+      : 'The agenda had no room for these. Log one, or open it to change it.';
+  }
   content.innerHTML = '';
-  const {visible, hidden} = partitionDroppedItems(collectSlippedDropped());
   if(visible.length){
     const head1 = document.createElement('div');
     head1.className = 'slipped-section-head';
+    head1.dataset.section = 'missed';
     head1.textContent = `missed · ${dayLabel}`;
     content.appendChild(head1);
     content.appendChild(renderDroppedPanel(slippedItemsWithTags(visible),{showDayTag:true}));
@@ -667,18 +777,27 @@ function fillSlippedSheet(){
   if(hidden.length){
     const head2 = document.createElement('div');
     head2.className = 'slipped-section-head';
+    head2.dataset.section = 'hidden';
     head2.textContent = 'hidden until tonight';
     content.appendChild(head2);
     content.appendChild(renderDroppedPanel(slippedItemsWithTags(hidden),{showDayTag:true,hidden:true}));
   }
-  return {visible, hidden};
+  if(unplaced.length){
+    const head3 = document.createElement('div');
+    head3.className = 'slipped-section-head';
+    head3.dataset.section = 'unplaced';
+    head3.textContent = 'not placed';
+    content.appendChild(head3);
+    content.appendChild(renderDroppedPanel(unplaced,{unplaced:true}));
+  }
+  return {visible, hidden, unplaced};
 }
 
 function refreshSlippedSheet(){
   const sheet = document.getElementById('slipped-sheet');
   if(!sheet || !sheet.classList.contains('open'))return;
-  const {visible, hidden} = fillSlippedSheet();
-  if(!visible.length && !hidden.length)closeSheet('slipped-sheet');
+  const {visible, hidden, unplaced} = fillSlippedSheet();
+  if(!visible.length && !hidden.length && !unplaced.length)closeSheet('slipped-sheet');
 }
 
 function toggleMissedHide(item, hide){
@@ -1659,7 +1778,7 @@ function render(opts){
     const h = data[realIdx];
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
     const days = daysSince(h.lastLog);
-    const c = colors(days,h.target,h.type);
+    const c = habitColors(h,days);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);
@@ -2270,6 +2389,7 @@ function render(opts){
   if(typeof scheduleHouseholdAgendaPublish === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     scheduleHouseholdAgendaPublish(_homeRenderedWeek);
   }
+  if(typeof refreshSlippedSheet === 'function')refreshSlippedSheet();
   _homeListFingerprint = homeListFingerprint();
   updateSortButton(true);
   restoreHomeReadingPosition(readingPosition,list);

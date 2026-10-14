@@ -26,6 +26,7 @@ function homeListFingerprint(now = Date.now()){
     h.minGapMinutes || '',
     typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0,
     h.allowedTimeStart, h.allowedTimeEnd,
+    h.allowedTimeFixedStart,
     h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
     h.allowedTimeEndAnchor || '', h.allowedTimeEndOffsetMin || 0,
     (h.allowedWeekdays || []).join(','),
@@ -781,9 +782,9 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-// v5 rejects cached agendas/forecasts without fixed breakable appointment starts.
-const HOME_AGENDA_CACHE_VERSION = 5;
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v5';
+// v6 refreshes agendas for conditional repetitions and their repeat limits.
+const HOME_AGENDA_CACHE_VERSION = 6;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v6';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 // A usable unplanned list is better than making a slow phone look frozen.
 // The worker keeps running and replaces this fallback with the planned week.
@@ -796,6 +797,7 @@ try{
   localStorage.removeItem('tings_home_agenda_cache_v2');
   localStorage.removeItem('tings_home_agenda_cache_v3');
   localStorage.removeItem('tings_home_agenda_cache_v4');
+  localStorage.removeItem('tings_home_agenda_cache_v5');
 }catch(_){}
 
 function showHomeAgendaLoading(){
@@ -1211,6 +1213,7 @@ function nextPendingAgendaIndex(rows,now){
 function shiftAgendaFillToNow(rows,idx,now){
   const row = rows[idx];
   if(!row || row.kind !== 'fill' || row.hard)return null;
+  if(agendaRowHasFixedStart(row))return null;
   const newStart = typeof ceilToMinutes === 'function' ? ceilToMinutes(now,1) : Math.ceil(now / 60000) * 60000;
   // A clock-only slide must not carry an item beyond its published last fit.
   if(Number.isFinite(row.dropAt) && newStart>=row.dropAt)return null;
@@ -1273,6 +1276,7 @@ function homeAgendaTickPlan(week,now = Date.now()){
   if(idx < 0)return {kind:'keep'};
   const row = day.timeline[idx];
   const until = Number(row.start) - now;
+  if(agendaRowHasFixedStart(row) && until <= 0 && Number(row.end) > now)return {kind:'keep'};
   const imminentMs = typeof HOME_AGENDA_IMMINENT_MS === 'number' ? HOME_AGENDA_IMMINENT_MS : 3 * 60 * 1000;
   if(typeof getDoingNow === 'function' && typeof isDoingNowActive === 'function'){
     const doing = getDoingNow();

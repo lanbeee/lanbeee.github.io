@@ -722,6 +722,9 @@ async function assistantFillLocationDraft(draft){
     return {ok:false, error:'I need an address or coordinates to pin that place.'};
   }
   const hits = await geocodeSearch(query, {limit:5});
+  if(hits.status === 'unavailable'){
+    return {ok:false, error:'Search is unavailable right now. Try a fuller address or coordinates.'};
+  }
   if(!hits.length)return {ok:false, error:'No places matched that address. Try a fuller address or coordinates.'};
   if(hits.length === 1){
     draft.lat = hits[0].lat;

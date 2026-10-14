@@ -2665,6 +2665,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   if(typeof pullStrictDueMovablesForward === 'function'){
     pullStrictDueMovablesForward(candidates,dayStates,settings);
   }
+  // The fixed-item ILP cannot see a task's later adaptive chunks. Repack only
+  // days with split tasks so flexible home fills cannot manufacture return
+  // trips. Shared replay keeps the same work/day budgets and hard constraints.
+  if(typeof compactFastTravelRoutes === 'function'){
+    compactFastTravelRoutes(dayStates,candidates,settings,{onlySplitTasks:true});
+  }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
   }
@@ -2768,6 +2774,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h,settings,todayBase) : (isWeekPinnedToday(h,settings) ? todayBase : null);
     const pinned = pinnedDay != null;
+    if(isOpportunityHabit(h) && !pinned)continue;
     const eligible = new Set();
     for(const day of days){
       if(typeof weekFillEligibleOnDay === 'function'
@@ -2879,6 +2886,8 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   } : null;
   placeAdditionalSameDayOccurrences(candidates,solveStates,settings,additionalOpts);
   annotateAgendaOccurrenceKeys(candidates,solveStates);
+  placeOpportunityItems(data,solveStates,settings,candidates,
+    reuseFarDays ? _plannerWeekDayMemo.days.slice(1) : []);
 
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){

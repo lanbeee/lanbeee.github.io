@@ -66,6 +66,36 @@ function selectedAnywhere(){
   return selectedAnywhereFrom('ting-tag-chips');
 }
 
+// Conditional place selection stays separate from ranking. Keep saved rankings
+// in the draft so switching back to a regular rhythm does not discard them.
+function syncOpportunityAnywhereChip(containerId){
+  const wrap = $(containerId);
+  const chip = wrap?.querySelector('[data-anywhere]');
+  if(!chip)return;
+  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  chip.classList.remove('is-pending');
+  chip.lastChild.textContent = optional ? 'any place' : 'anywhere';
+  chip.setAttribute('aria-pressed',String(chip.classList.contains('on')));
+  chip.title = optional ? 'No place restriction. Choose weather rules below.' : 'Not tied to one place';
+  if(optional){
+    const hint = containerId === 'ting-tag-chips'
+      ? $('add-topics-section').querySelector('.field-hint') : $('detail-places-hint');
+    const anywhere = selectedAnywhereFrom(containerId);
+    hint.textContent = anywhere
+      ? 'Any place needs weather rules below. Or tap a place to use a visit you already make.'
+      : 'Tap places to select or remove them. Tings uses visits you already make and won’t add a trip.';
+  }
+}
+
+function toggleAnywhereChip(containerId){
+  const wrap = $(containerId);
+  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  renderTagChips(containerId,selectedTopicsFrom(containerId),
+    optional ? [] : selectedLocationIdsFrom(containerId),null,
+    optional ? {} : selectedLocationPrefsFrom(containerId),
+    optional || !selectedAnywhereFrom(containerId));
+}
+
 /** PURE: read locationPrefs map from chip data-pref attributes. */
 function selectedLocationPrefsFrom(containerId){
   const wrap = $(containerId);
@@ -93,6 +123,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // doesn't snap the row back to the start.
   const prevPlaceScroll = wrap.querySelector('.tag-row-places')?.scrollLeft ?? 0;
   const prevTopicScroll = wrap.querySelector('.tag-row-topics')?.scrollLeft ?? 0;
+  const prevTopicOpen = wrap.querySelector('.add-topic-disclosure')?.open || false;
   const topics = topicOptions();
   const locations = locationOptions();
   const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
@@ -115,8 +146,8 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     if(aOn !== bOn)return aOn - bOn;
     return String(a).localeCompare(String(b),undefined,{sensitivity:'base',numeric:true});
   });
-  const anywhereHtml = locations.length > 0
-    ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="no specific place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
+  const anywhereHtml = locations.length > 0 || wrap.closest('.opportunity-mode')
+    ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="Not tied to one place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
     : '';
   const locHtml = orderedLocations.map(loc=>{
     const on = selectedLocSet.has(loc.id);
@@ -127,7 +158,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
       : level === 'little' ? 'little preference'
       : level === 'avoid' ? 'avoid if possible'
       : 'allowed';
-    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${mark}</button>`;
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-name="${escapeHtml(loc.name)}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i><span class="location-chip-name">${escapeHtml(loc.name)}${mark}</span></button>`;
   }).join('');
   const topicHtml = orderedTopics.map(topic=>{
     const on = selectedSet.has(topic.toLowerCase());
@@ -174,7 +205,16 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   addScrollGuard(locRow);
   addScrollGuard(topicRow);
   wrap.appendChild(locRow);
-  wrap.appendChild(topicRow);
+  if(containerId === 'ting-tag-chips' && selectedType === 'keepup'
+    && $('ting-repeat-mode')?.value === 'opportunity'){
+    const disclosure = document.createElement('details');
+    disclosure.className = 'add-topic-disclosure';
+    disclosure.open = prevTopicOpen;
+    const summary = document.createElement('summary');
+    summary.textContent = selectedSet.size ? `Topics · ${selectedSet.size} selected` : 'Topics (optional)';
+    disclosure.append(summary,topicRow);
+    wrap.appendChild(disclosure);
+  }else wrap.appendChild(topicRow);
   applyTagChipLocationMode(wrap,selectedLocs);
   const content = wrap.dataset.tagContent;
   if(content === 'places')topicRow.hidden = true;
@@ -186,6 +226,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // which would swallow the next click within 500ms. Disarm on the next tick
   // (the scroll event is queued before this timeout so it fires first).
   setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
+  if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip(containerId);
 }
 
 // RENDER: allowed view edits which places are valid for the general time
@@ -193,7 +234,8 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
 // own place and optional preference.
 function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(wrap && wrap.id)){
   if(!wrap)return;
-  const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
+  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  const preferenceOnly = !optional && wrap.dataset.locationChoiceMode === 'preference';
   const selected = new Set(normalizeLocationIds(selectedLocIds));
   const add = wrap.querySelector('[data-location-add]');
   const anywhere = wrap.querySelector('[data-anywhere]');
@@ -201,6 +243,12 @@ function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(
   if(anywhere)anywhere.hidden = preferenceOnly;
   wrap.querySelectorAll('.location-chip[data-location-id]').forEach(btn=>{
     btn.hidden = preferenceOnly && !selected.has(btn.dataset.locationId);
+    btn.setAttribute('aria-pressed',String(selected.has(btn.dataset.locationId)));
+    if(optional){
+      btn.querySelector('.location-chip-name').textContent = btn.dataset.locationName;
+      btn.title = selected.has(btn.dataset.locationId) ? 'Selected — tap to remove' : 'Tap to select';
+      btn.classList.remove('pref-little','pref-high','pref-avoid');
+    }
   });
   const placeRow = wrap.querySelector('.tag-row-places');
   if(placeRow)placeRow.hidden = preferenceOnly && selected.size === 0;
@@ -215,9 +263,17 @@ function toggleLocationChip(e){
   const level = btn.dataset.pref || '';
   const isOn = btn.classList.contains('on');
   const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
-  // Preferred view only ranks places that are already allowed. Everywhere
-  // else, including the allowed schedule view, one tap cycles
+  // For regular habits, Preferred only ranks places already allowed. Other
+  // regular views, including Allowed, cycle
   // off → allowed → little → high → avoid → off.
+  if(wrap.closest('.opportunity-mode')){
+    btn.classList.toggle('on');
+    const selected = selectedLocationIdsFrom(wrap.id);
+    renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,
+      selectedLocationPrefsFrom(wrap.id),selected.length === 0);
+    if(wrap.id === 'detail-place-chips')setDetailDirty();
+    return;
+  }
   if(preferenceOnly){
     btn.classList.add('on');
     btn.dataset.pref = level === '' ? 'little'
@@ -1011,6 +1067,20 @@ function limitCue(h,days,target){
 
 // PURE: compute card status cue text
 function cardCue(h){
+  if(isOpportunityHabit(h) && !hasPlannedToday(h)){
+    if(habitIsSnoozed(h))return 'Snoozed for now';
+    if(completedToday(h))return 'Done today';
+    if(opportunityDoingNow(h,dayStart(Date.now())))return 'Doing now';
+    const days = daysSince(h.lastLog);
+    const remaining = days == null ? 0 : opportunityGapDays(h)-days;
+    if(remaining===1)return 'Available in 1 day';
+    if(remaining>0)return `Available in ${remaining} days`;
+    const today = typeof _homeRenderedWeek === 'undefined' ? null
+      : _homeRenderedWeek?.days?.find(day=>day.dayBase === dayStart(Date.now()));
+    const placed = (today?.timeline || []).some(row=>['fill','scheduled'].includes(row.kind)
+      && (row.h?.hid || row.hid) === h.hid);
+    return placed ? 'Ready today' : 'Waiting for the place or weather';
+  }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   const plan = nextPlannedLog(h);
@@ -1100,7 +1170,7 @@ function cardMeta(h,options = {}){
       if(h.dueDate === null)return '<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>';
       return `<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`;
     }
-    if(h.type !== 'zero')return `<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`;
+    if(h.type !== 'zero')return `<span class="context-pill" title="${isOpportunityHabit(h) ? 'at most this often' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`;
     return '<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>';
   }
   const plan = nextPlannedLog(h);
@@ -1124,7 +1194,7 @@ function cardMeta(h,options = {}){
     if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
       parts.push(`<span class="context-pill due" title="${escapeHtml(`needs a day by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
     }else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
-      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`);
+      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="${isOpportunityHabit(h) ? 'at most this often' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`);
       else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
     }
   }
@@ -1594,6 +1664,7 @@ function dayPressure(data,key,settings,skipIdx = -1){
 }
 
 function canDoEarlyToday(h,targetTs){
+  if(isOpportunityHabit(h))return false;
   const today = dayStart(Date.now());
   if(!targetTs || targetTs <= today)return false;
   if(hasDaySchedule(h) && !isDateEligibleForHabit(h,today))return false;
@@ -1609,6 +1680,7 @@ function canDoEarlyToday(h,targetTs){
 
 function earlyReason(data,i,settings){
   const h = data[i];
+  if(isOpportunityHabit(h))return '';
   if(!h || h.type === 'zero' || (h.type === 'task' && h.lastLog !== null))return '';
   if(todayCategory(h,settings) !== 2)return '';
   const target = targetDayForEarly(h);

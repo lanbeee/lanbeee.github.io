@@ -10,7 +10,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
   // Missed-occurrence reconstruction asks what the planner would have put on
   // this day before any of its usable windows elapsed. Normal planning still
   // clips today to the current clock.
-  const clipAfter = isToday && !opts.fullDay ? ceilToMinutes(planningNow,5) : firstOpen;
+  const clipAfter = isToday && !opts.fullDay ? agendaPlacementClock(data,planningNow) : firstOpen;
   const slots = buildOpenAgendaSlots(dayKey,scheduled,settings,{clipAfter});
   const slotMinutes = slots.reduce((sum,slot)=>sum + Math.max(0,(slot.end - slot.start) / 60000),0);
   const totalCap = Math.min(totalMinutes,slotMinutes + scheduledBreakableMinutes(scheduled));
@@ -39,7 +39,173 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
     candidates.sort(compareScarcityThenPriority);
     agendaItems.push(...candidates.map(({h,i,priority,scarcity})=>({h,i,priority,scarcity})));
   }
-  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday,plannedAt:planningNow };
+  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, dayKey, weekday, dayBase, isToday,plannedAt:planningNow,startClock:clipAfter,...(!opts.weekMode ? {sourceData:data} : {}) };
+}
+
+// Shared by Fast, GLPK and the single-day view. Optional work is inserted only
+// after visits are known. Matching conditions activate the chosen priority;
+// manual commitments and equal/higher-priority work remain protected.
+function opportunityFitMatches(fill,fit,state,settings,originState = state){
+  const chron = state.fills.filter(entry=>!entry.fill._opportunityAutomatic)
+    .slice().sort((a,b)=>a.fit.placeStart-b.fit.placeStart);
+  if(fit.locId){
+    const atVisit = (source,entries)=>{
+      if(locationPresenceAt(source,fit.placeStart,entries) === fit.locId)return true;
+      // The next existing destination may be reached earlier on the same
+      // trip. The core fitter reserves the journey and its departure clock.
+      const next = hardLocationAnchorsAfter({...source,fills:entries},fit.placeStart)[0];
+      return next?.locationId === fit.locId && fit.placeEnd<=next.start;
+    };
+    if(!atVisit(state,chron))return false;
+    const originChron = originState.fills.filter(entry=>!entry.fill._opportunityAutomatic)
+      .slice().sort((a,b)=>a.fit.placeStart-b.fit.placeStart);
+    if(!atVisit(originState,originChron))return false;
+  }
+  const guidance = weatherGuidanceForFit(fill,fit,settings);
+  const usesWeather = guidance?.profile?.rules?.some(weatherRuleActive);
+  if(!fit.locId && !usesWeather)return false; // no configured trigger
+  if(usesWeather){
+    const context = weatherContextForGuidance(guidance,settings);
+    const samples = weatherSamplesForInterval(context,fit.placeStart,fit.placeEnd);
+    const fresh = (ts,age)=>ts == null || (Number(ts)>0 && Date.now()-Number(ts)<=age);
+    if(samples.some(sample=>sample.source === 'near'
+      ? !fresh(context?.nearFetchedAt,30*60000)
+      : !fresh(context?.weeklyFetchedAt,8*3600000)))return false;
+    if(guidance.profile.rules.some(rule=>weatherRuleActive(rule)
+      && ['us_aqi','european_aqi'].includes(rule.metric))
+      && !fresh(context?.airFetchedAt,8*3600000))return false;
+    const weather = weatherFitAssessment(fill,fit,state,settings);
+    // Unknown/stale forecasts cannot establish an optional opportunity. Every
+    // active metric must be known and meet its bounds, including soft bounds.
+    if(!weather?.results?.length || !weather.results.every(result=>result.known && result.pass))return false;
+  }
+  return true;
+}
+
+function placeOpportunityItems(data,dayStates,settings,candidates = [],otherDays = []){
+  const optional = data.map((h,i)=>({h,i,priority:effectivePriority(h),eligible:new Set(),urgency:0}))
+    .filter(c=>isOpportunityHabit(c.h))
+    .sort((a,b)=>a.priority-b.priority || a.i-b.i);
+  if(!optional.length)return;
+  const displacedTasks = new Map();
+  for(const c of optional){
+    const committedDays = [];
+    for(const state of dayStates){
+      if(state.rows.some(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i === c.i)){
+        committedDays.push(state.dayBase);
+      }
+    }
+    for(const day of otherDays){
+      if((day.timeline || []).some(row=>(row.kind === 'fill' || row.kind === 'scheduled') && row.i === c.i)){
+        committedDays.push(day.dayBase);
+      }
+    }
+    for(const log of planLogEntries(c.h.logs || [])){
+      const ts = logTime(log);
+      if(Number.isFinite(ts) && dayStart(ts)>=dayStart(Date.now()) && !completedOnDay(c.h,ts)){
+        committedDays.push(dayStart(ts));
+      }
+    }
+    for(const state of dayStates){
+      if(!opportunityReadyOnDay(c.h,state.dayBase,committedDays))continue;
+      if(hasPlannedForDay(c.h,state.dayBase))continue;
+      const trial = insertOpportunityOnDay(state,c,settings,candidates.concat(optional));
+      if(!trial)continue;
+      for(const item of candidates.filter(item=>item.h.type === 'task' && !item.pinned)){
+        const minutes = source=>source.fills.filter(entry=>entry.fill.i === item.i)
+          .reduce((sum,entry)=>sum+entry.fit.durMin,0);
+        const lost = minutes(state)-minutes(trial);
+        if(lost>0)displacedTasks.set(item.i,{item,after:state.dayBase,
+          minutes:lost+(displacedTasks.get(item.i)?.minutes || 0)});
+      }
+      applyPlacementState(state,trial);
+      syncDayAgendaItemsFromFills(state);
+      const candidate = candidates.find(item=>item.i === c.i);
+      if(candidate)candidate.eligible?.add(state.dayBase);
+      else{c.eligible.add(state.dayBase);candidates.push(c);}
+      committedDays.push(state.dayBase);
+    }
+  }
+  // Day-choosing tasks retain their existing delay permission. Recover time
+  // displaced by a newly active opportunity in later eligible gaps.
+  for(const {item,after,minutes} of displacedTasks.values()){
+    let remaining = minutes;
+    for(const state of dayStates){
+      if(!remaining || state.dayBase<=after || !item.eligible?.has(state.dayBase))continue;
+      if(item.h.breakable){
+        const before = placedBreakableMinutes(state,item.i);
+        placeBreakableSessions(state,item,{settings,allowNetwork:false,remainingMinutes:remaining});
+        remaining -= placedBreakableMinutes(state,item.i)-before;
+      }else{
+        const fit = tryPlaceOnDay(state,item,{settings,allowNetwork:false});
+        if(fit){commitPlacement(state,item,fit);remaining=0;}
+      }
+      syncDayAgendaItemsFromFills(state);
+    }
+  }
+}
+
+// Bounded priority activation. Try spare time first, then at most seven
+// lower-priority occupants. Refit those occupants after insertion; preserve
+// all other clocks, critical occurrences, active work and coupled links.
+function insertOpportunityOnDay(state,c,settings,candidates){
+  const originalRows = finalizePlacementRows(state);
+  const travel = rows=>rows.filter(row=>row.kind === 'travel').reduce((sum,row)=>sum+(row.seconds || 0),0);
+  const edges = plannerOrderConstraintsForDay(state.dayBase);
+  const linked = new Set(edges.flatMap(edge=>[edge.beforeHid,edge.afterHid]));
+  const doing = doingNowForDay(state);
+  const victims = [...new Set(state.fills.filter(entry=>{
+    const f = entry.fill, h = f.h;
+    return effectivePriority(h)>c.priority && !linked.has(h.hid)
+      && !fillIsPlannedOnDay(h,state.dayBase,settings)
+      && doing?.hid !== h.hid && !mustPlaceCriticalOccurrence(f)
+      && !weatherLockedPlacement(f,state,settings);
+  }).sort((a,b)=>effectivePriority(b.fill.h)-effectivePriority(a.fill.h)
+    || a.fill.i-b.fill.i).map(entry=>entry.fill.i))].slice(0,7);
+  const removed = new Set();
+  const opts = {settings,allowNetwork:false,opportunityOriginState:state};
+  for(let attempt=0;attempt<=victims.length;attempt++){
+    const trial = cloneFastGraphState(state);
+    if(attempt){
+      removed.add(victims[attempt-1]);
+      resetPlacementStateFills(trial);
+      for(const entry of state.fills.filter(entry=>!removed.has(entry.fill.i))){
+        commitPlacement(trial,{...entry.fill},{...entry.fit});
+      }
+    }
+    const fill = {...c,_opportunityAutomatic:true};
+    const before = trial.fills.length;
+    if(c.h.breakable){
+      placeBreakableSessions(trial,fill,opts);
+      const added = trial.fills.slice(before).reduce((sum,entry)=>sum+entry.fit.durMin,0);
+      if(added+0.01<breakableBudgetMinutes(c.h,state.dayBase))continue;
+    }else{
+      const fit = tryPlaceOnDay(trial,fill,opts);
+      if(!fit)continue;
+      commitPlacement(trial,fill,fit);
+    }
+    for(const i of removed){
+      const entries = state.fills.filter(entry=>entry.fill.i === i);
+      const f = {...entries[0].fill};
+      if(f.h.breakable){
+        const remainingMinutes = entries.reduce((sum,entry)=>sum+entry.fit.durMin,0);
+        placeBreakableSessions(trial,f,{settings,allowNetwork:false,remainingMinutes});
+      }else{
+        const fit = tryPlaceOnDay(trial,f,{settings,allowNetwork:false});
+        if(fit)commitPlacement(trial,f,fit);
+      }
+    }
+    enforcePersistentLinkInvariants([trial],candidates,settings);
+    if(!trial.fills.some(entry=>entry.fill.i === c.i))continue;
+    const rows = finalizePlacementRows(trial);
+    if(travel(rows)>travel(originalRows)+1)continue;
+    if(!originalRows.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
+      && !removed.has(row.i)).every(row=>rows.some(other=>other.kind === row.kind
+        && other.i === row.i && other.start === row.start && other.end === row.end
+        && other.locationId === row.locationId)))continue;
+    return trial;
+  }
+  return null;
 }
 
 // PURE: untimed plan logs (not the visual 📌 pin) strongly prefer that
@@ -56,6 +222,7 @@ function fillIsPlannedOnDay(h,dayBase,settings){
 // A never-logged first occurrence is not treated as a today-miss when the
 // user already scheduled it later.
 function occurrenceDueOrOverdueOnDay(h,dayBase){
+  if(isOpportunityHabit(h))return false;
   if(!h || h.type === 'zero')return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   const base = dayStart(dayBase);
@@ -115,6 +282,7 @@ function plannerPinnedAllowsDay(h,dayBase,pinnedDay){
 }
 
 function weekFillEligibleOnDay(h,settings,dayBase,weekday,pinnedDay){
+  if(isOpportunityHabit(h) && !opportunityPlanAllowed(h,dayBase))return false;
   if(pinnedDay != null && !plannerPinnedAllowsDay(h,dayBase,pinnedDay))return false;
   if(hasTimedPlanForDay(h,dayBase))return Boolean(h.breakable) && !completedOnDay(h,dayBase);
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
@@ -138,6 +306,7 @@ function candidateMatchesPinnedDay(c,state){
 // already due/overdue. Soft due/overdue work stays in the unified score.
 // Visual habit.pinned is display-only and must not reach this path.
 function isWeekPinnedToday(h,settings){
+  if(opportunityDoingNow(h,dayStart(Date.now())) && !completedOnDay(h,Date.now()))return true;
   if(!h || h.type === 'zero')return false;
   if(h.type === 'task' && isTaskDone(h))return false;
   if(h.type === 'task' && (typeof isFixedTimedTask === 'function'
@@ -243,7 +412,8 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))return false;
   // Timed day plans are hard scheduled rows for that day — not soft week fills.
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayBase))return false;
-  if(hasPlannedForDay(h,dayBase))return true;
+  if(hasPlannedForDay(h,dayBase))return !isOpportunityHabit(h) || opportunityPlanAllowed(h,dayBase);
+  if(isOpportunityHabit(h))return false;
   if(habitHasMultipleDailyOccurrences(h) && Number(h.target) <= 1)return true;
   if(habitHasMultipleDailyOccurrences(h) && habitOccurrenceLogsForDay(h,dayBase).length
     && !completedOnDay(h,dayBase))return true;
@@ -298,6 +468,7 @@ function isWeekCandidate(h,settings,dayBase,weekday){
 // isWeekCandidate only opens at the raw target — too late for "do early with
 // my linked habit". This mirrors canDoEarlyToday: raw target − flex.
 function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
+  if(isOpportunityHabit(h))return hasPlannedForDay(h,dayBase);
   if(!h || dayBase == null)return false;
   if(h.type === 'zero')return false;
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
@@ -437,6 +608,7 @@ function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
 // A keepup habit may place an extra rep on a day a scarce must-do partner is
 // eligible — the OR between rhythm and must-do links (more is fine for build).
 function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
+  if(isOpportunityHabit(h))return false;
   if(!h || h.type !== 'keepup' || dayBase == null)return false;
   return sameDayPartnerEligibleOnDay(h,dayBase,candidates);
 }
@@ -1004,6 +1176,7 @@ function placeAdditionalSameDayOccurrences(candidates,dayStates,settings,opts){
     const allOptions = normalizeHabitScheduleOptions(c.h.scheduleOptions);
     const dailyTarget = habitDailyOccurrenceTarget(c.h);
     if(dailyTarget <= 1 && !allOptions.some(o=>habitScheduleOptionSameDayMode(o) === 'separate'))continue;
+    if(isOpportunityHabit(c.h))continue;
     const parts = rhythmParts(c.h.target);
     const wanted = Math.max(1,Math.ceil(parts.times * horizonDays / parts.days));
     let planned = dayStates.reduce((sum,state)=>sum + state.fills.filter(entry=>
@@ -2070,7 +2243,8 @@ function rebuildDayFromFills(state,fillsToKeep,candidates,opts = {}){
     taskMinutes.set(fill.i,(taskMinutes.get(fill.i) || 0) + requested);
   }
   const replayedTasks = new Set();
-  for(const fill of fillsToKeep){
+  for(const sourceFill of fillsToKeep){
+    const fill = sourceFill && {...sourceFill};
     if(!fill || !fill.h)continue;
     if(fill.h.breakable){
       let remainingMinutes;
@@ -2347,15 +2521,39 @@ function mandatoryRouteCostLowerBound(state){
   return cost;
 }
 
-// MUTATE: after Fast has chosen which work belongs on a day, search replay
+// MUTATE: after a planner has chosen which work belongs on a day, search replay
 // orders by full route cost and keep a strictly cheaper chain. The first
 // insertion order and a single nearest-neighbor walk are only seeds. A replay
 // is adopted only when it preserves the exact per-candidate minutes, does not
 // worsen weather, and lowers the objective route cost.
-function compactFastTravelRoutes(dayStates,candidates,settings){
+function compactFastTravelRoutes(dayStates,candidates,settings,opts = {}){
   let improved = 0;
   for(const state of dayStates || []){
     if(!state || !Array.isArray(state.fills) || state.fills.length < 2)continue;
+    if(opts.onlySplitTasks){
+      const taskCounts = new Map();
+      for(const row of state.rows || []){
+        if(row.breakableStart && row.h?.type === 'task'){
+          taskCounts.set(row.i,(taskCounts.get(row.i) || 0) + 1);
+        }
+      }
+      for(const {fill} of state.fills){
+        if(fill.h.breakable && fill.h.type === 'task'){
+          taskCounts.set(fill.i,(taskCounts.get(fill.i) || 0) + 1);
+        }
+      }
+      if(![...taskCounts.values()].some(count=>count > 1))continue;
+    }
+    // Replaying one seed per item cannot preserve separate same-day occurrences.
+    const fixedCounts = new Map();
+    for(const {fill} of state.fills){
+      if(!fill.h.breakable)fixedCounts.set(fill.i,(fixedCounts.get(fill.i) || 0) + 1);
+    }
+    if([...fixedCounts.values()].some(count=>count > 1))continue;
+    const doing = doingNowForDay(state);
+    const locked = state.fills.filter(entry=>(doing && doing.hid === entry.fill.h.hid)
+      || (typeof weatherLockedPlacement === 'function'
+        && weatherLockedPlacement(entry.fill,state,settings || state.settings)));
     const beforeSignature = dayFillMinuteSignature(state);
     const beforeCost = dayRouteCostSeconds(state);
     if(beforeCost <= 0)continue;
@@ -2376,6 +2574,11 @@ function compactFastTravelRoutes(dayStates,candidates,settings){
       );
       if(!rebuilt)continue;
       if(dayFillMinuteSignature(rebuilt) !== beforeSignature)continue;
+      if(locked.some(entry=>!rebuilt.fills.some(other=>other.fill.i === entry.fill.i
+        && other.fit.placeStart === entry.fit.placeStart
+        && other.fit.placeEnd === entry.fit.placeEnd
+        && other.fit.locId === entry.fit.locId)))continue;
+      if(persistentLinkViolationsForState(rebuilt).size)continue;
       const cost = dayRouteCostSeconds(rebuilt);
       if(cost >= bestCost - 1e-6)continue;
       if(weatherSum(rebuilt) > beforeWeather + 1e-6)continue;

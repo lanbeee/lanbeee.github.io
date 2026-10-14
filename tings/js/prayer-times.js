@@ -66,12 +66,12 @@ function normalizePrayerMadhab(value){
 function habitUsesPrayerAnchors(h){
   if(!h)return false;
   const fields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
-  if(fields.some(f =>
+  if(fields.filter(f=>f !== 'allowedTimeEnd' || h.allowedTimeFixedStart !== true).some(f =>
     cleanPrayerAnchor(h[f + 'Anchor']) || cleanPrayerAnchor(h[f + 'Anchor2'])
   ))return true;
   const options = typeof normalizeHabitScheduleOptions === 'function'
     ? normalizeHabitScheduleOptions(h.scheduleOptions) : [];
-  return options.some(option=>['start','end'].some(prefix=>
+  return options.some(option=>(option.fixedStart ? ['start'] : ['start','end']).some(prefix=>
     cleanPrayerAnchor(option[prefix + 'Anchor'])
       || cleanPrayerAnchor(option[prefix + 'Anchor2'])
   ));
@@ -290,6 +290,10 @@ function resolveHabitExprMinutes(h, fieldName, suffix, dayBase, contextLocId){
 // task. Non-agenda callers omit it and get the lastKnown/registry fallback.
 function resolveHabitTimeField(h, fieldName, dayBase, contextLocId){
   if(!h)return null;
+  if(fieldName === 'allowedTimeEnd' && h.allowedTimeFixedStart === true){
+    const start = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
+    return start == null ? null : start + clampDuration(h.durationMinutes);
+  }
   const anchor = cleanAnchor(h[fieldName + 'Anchor']);
   if(!anchor){
     // Number(null) === 0, so treat null/'' as unset — otherwise an absent

@@ -79,6 +79,7 @@ function scheduledOpportunityRate(h){
 // 1 and 2. In these cases calendar-gap spacing must yield to the constrained
 // schedule, including adjacent eligible dates.
 function rhythmFillsEveryEligibleDay(h){
+  if(isOpportunityHabit(h))return false;
   if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return false;
   const target = Number(h.target);
   if(!Number.isFinite(target) || target <= 0)return false;
@@ -168,13 +169,20 @@ function formatTimeShort(minutes){
 }
 function timeWindowSummary(h){
   if(!hasTimeWindow(h))return '';
+  if(h.allowedTimeFixedStart === true && !hasHabitScheduleOptions(h)){
+    const start = cleanAnchor(h.allowedTimeStartAnchor)
+      ? habitEndpointLabel(h,'allowedTimeStart') : formatTimeShort(h.allowedTimeStart);
+    return `starts ${start}`;
+  }
   if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)){
     const count = normalizeHabitScheduleOptions(h.scheduleOptions).length;
     const optionLabel = `${count} time/place ${count === 1 ? 'option' : 'options'}`;
     if(typeof hasSimpleAllowedTimeWindow === 'function' && hasSimpleAllowedTimeWindow(h)){
       const startAnchor = cleanAnchor(h.allowedTimeStartAnchor);
       const endAnchor = cleanAnchor(h.allowedTimeEndAnchor);
-      const general = startAnchor || endAnchor
+      const general = h.allowedTimeFixedStart === true
+        ? timeWindowSummary(habitBoundToGeneralSchedule(h))
+        : startAnchor || endAnchor
         ? `${startAnchor
           ? (typeof habitEndpointLabel === 'function' ? habitEndpointLabel(h,'allowedTimeStart') : prayerAnchorLabel(startAnchor,h.allowedTimeStartOffsetMin))
           : formatTimeShort(h.allowedTimeStart)}–${endAnchor

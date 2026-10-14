@@ -120,12 +120,59 @@ function scheduledWhenLabel(ts){
 // The gear button toggles modes; the underlying time-endpoint element holds
 // both controls and shows the one that matches the habit's current state.
 function renderTimeWindowInputs(h = {}){
+  $('detail-time-kind').value = h.allowedTimeFixedStart === true ? 'fixed' : 'window';
   populateAnchorOptions();
   renderTimeEndpoint($('detail-time-start').closest('.time-endpoint'), 'allowedTimeStart', h);
   renderTimeEndpoint($('detail-time-end').closest('.time-endpoint'), 'allowedTimeEnd', h);
   renderTimeEndpoint($('detail-preferred-time-start').closest('.time-endpoint'), 'preferredTimeStart', h);
   renderTimeEndpoint($('detail-preferred-time-end').closest('.time-endpoint'), 'preferredTimeEnd', h);
   syncTimeClearBtn();
+  syncFixedStartUi();
+}
+
+// Keep the unused end editor in the draft so switching back restores its window.
+function syncFixedStartTimePair(pair,fixed){
+  if(!pair)return;
+  const endpoints = pair.querySelectorAll('.time-endpoint');
+  if(endpoints[0])endpoints[0].dataset.endpointLabel = fixed ? 'starts at' : 'from';
+  if(endpoints[1])endpoints[1].hidden = fixed;
+  const sep = pair.querySelector('.time-sep');
+  if(sep)sep.hidden = fixed;
+  pair.classList.toggle('is-fixed-start',fixed);
+}
+
+function syncFixedStartUi(){
+  const fixed = $('detail-time-kind')?.value === 'fixed';
+  const pair = $('detail-allowed-time-row');
+  syncFixedStartTimePair(pair,fixed);
+  const lead = pair?.parentElement.querySelector('.schedule-time-lead');
+  if(lead)lead.textContent = fixed
+    ? 'Duration sets the finish.'
+    : 'Choose the earliest start and latest finish. Use relative for times such as dawn, sunrise, or sunset.';
+  const empty = $('detail-time-empty-hint');
+  if(empty)empty.textContent = fixed ? 'Choose a start time.' : 'Leave blank for any time of day.';
+  document.querySelectorAll('#detail-habit-option-list .habit-option-row').forEach(row=>{
+    const rowFixed = row.querySelector('.habit-option-time-kind')?.value === 'fixed';
+    syncFixedStartTimePair(row.querySelector('.habit-option-time-window'),rowFixed);
+    const hint = row.querySelector('.habit-option-time-hint');
+    if(hint)hint.hidden = !rowFixed;
+  });
+}
+
+function validateFixedStartTimes(){
+  const endpoints = [];
+  if($('detail-time-kind')?.value === 'fixed')endpoints.push($('detail-time-start').closest('.time-endpoint'));
+  document.querySelectorAll('.habit-option-row').forEach(row=>{
+    if(row.querySelector('.habit-option-time-kind')?.value === 'fixed'){
+      endpoints.push(row.querySelector('.time-endpoint[data-field="start"]'));
+    }
+  });
+  const missing = endpoints.find(endpoint=>!endpointHasValue(endpoint));
+  if(!missing)return true;
+  showToast('choose a time for the fixed start');
+  missing.closest('details').open = true;
+  missing.querySelector('.time-fixed').focus();
+  return false;
 }
 
 function scheduleLinkHabitOptions(subjectHid,selectedHid){
@@ -312,8 +359,8 @@ function habitScheduleOptionRowHtml(option,index){
     ? weatherProfileSelectValue(normalized.weatherProfileMode,normalized.weatherProfileId)
     : (normalized.weatherProfileId || '');
   const weatherOptions=typeof weatherProfileOptionsHtml==='function'
-    ? weatherProfileOptionsHtml(weatherValue,'inherit item / place')
-    : '<option value="">inherit item / place</option>';
+    ? weatherProfileOptionsHtml(weatherValue,'same as the item or place')
+    : '<option value="">same as the item or place</option>';
   return `<div class="habit-option-row" data-habit-option-index="${index}" data-habit-option-id="${normalized.id || ''}">
     <div class="habit-option-head">
       <span class="habit-option-number">option ${index + 1}</span>
@@ -334,7 +381,12 @@ function habitScheduleOptionRowHtml(option,index){
       <select class="habit-option-weather settings-select" aria-label="option weather guidance">${weatherOptions}</select>
       <span class="field-hint habit-option-weather-hint"></span>
     </label>
+    <label class="habit-option-field">
+      <span class="habit-option-field-label">time</span>
+      <select class="habit-option-time-kind settings-select" aria-label="option time type"><option value="window">time window</option><option value="fixed"${normalized.fixedStart ? ' selected' : ''}>fixed start</option></select>
+    </label>
     ${habitScheduleOptionTimePairHtml()}
+    <p class="field-hint habit-option-time-hint" hidden>Duration sets the finish.</p>
     <div class="habit-option-days-block">
       <span class="habit-option-field-label">days</span>
       <div class="habit-option-days" role="group" aria-label="option weekdays">
@@ -358,23 +410,23 @@ function habitScheduleOptionWeatherHint(row){
   const own=typeof weatherProfileChoiceFromValue==='function'
     ? weatherProfileChoiceFromValue(row.querySelector('.habit-option-weather')?.value || '')
     : {weatherProfileMode:'inherit',weatherProfileId:null};
-  if(own.weatherProfileMode==='none')return 'No weather guidance for this option.';
+  if(own.weatherProfileMode==='none')return 'Any weather is fine for this row.';
   if(own.weatherProfileMode==='profile'){
     const name=typeof weatherProfileName==='function' ? weatherProfileName(own.weatherProfileId,settings) : '';
-    return `${name || 'Selected profile'} set for this option.`;
+    return `Uses ${name || 'this weather'} for this row.`;
   }
   const item=typeof weatherProfileChoiceFromValue==='function'
     ? weatherProfileChoiceFromValue($('detail-weather-profile')?.value || '')
     : {weatherProfileMode:'inherit',weatherProfileId:null};
-  if(item.weatherProfileMode==='none')return 'No weather · item setting.';
+  if(item.weatherProfileMode==='none')return 'Any weather is fine, same as the item.';
   if(item.weatherProfileMode==='profile'){
     const name=typeof weatherProfileName==='function' ? weatherProfileName(item.weatherProfileId,settings) : '';
-    return `${name || 'Item profile'} from item.`;
+    return `Uses ${name || 'the item’s weather'}, same as the item.`;
   }
   const locationId=cleanLocationId(row.querySelector('.habit-option-location')?.value) || null;
   const loc=normalizeLocationRegistry(settings.locations).find(place=>place.id===locationId);
   const name=loc && typeof weatherProfileName==='function' ? weatherProfileName(loc.weatherProfileId,settings) : '';
-  return name ? `${name} from ${loc.name}.` : 'No inherited weather guidance.';
+  return name ? `Uses ${name} from ${loc.name}.` : 'This place has no saved weather.';
 }
 
 function syncHabitScheduleOptionWeatherHints(){
@@ -452,28 +504,31 @@ function syncHabitScheduleOptionsUi(){
   const hint = $('detail-habit-options-hint');
   if(hint){
     hint.textContent = hasOptions
-      ? 'Overlapping options can be alternative times or separate sessions. Each window must fit the Ting’s duration.'
-      : 'Optional. Days, hours, and places above apply everywhere. Add an option only if one place needs its own time.';
+      ? 'Overlapping days: choose an alternative time or a separate session.'
+      : 'Optional. Add a row for a specific time or place.';
   }
   syncHabitScheduleOptionOverlapUi();
   syncDetailSchedulePlacesUi();
+  syncFixedStartUi();
 }
 
 function syncDetailSchedulePlacesUi(){
   const wrap = $('detail-place-chips');
   const label = $('detail-places-label');
-  const preferenceOnly = detailScheduleView === 'preferred';
+  const optional = $('detail-sheet').classList.contains('opportunity-mode');
+  const preferenceOnly = !optional && detailScheduleView === 'preferred';
   if(wrap){
     wrap.dataset.locationChoiceMode = preferenceOnly ? 'preference' : 'allowed';
-    applyTagChipLocationMode(wrap);
+    renderTagChips(wrap.id,[],selectedLocationIdsFrom(wrap.id),null,selectedLocationPrefsFrom(wrap.id),selectedAnywhereFrom(wrap.id));
   }
   if(label)label.textContent = preferenceOnly ? 'place preferences' : 'places';
   const hint = $('detail-places-hint');
   if(hint){
-    hint.textContent = preferenceOnly
+    hint.textContent = optional ? 'A place you already visit. Tings uses that visit and won’t add a trip.' : preferenceOnly
       ? 'Tap a place to rank it: soft, strong, or avoid.'
       : 'Tap a place to cycle it: allowed, preferred, avoid, then off. These places use the time window above.';
   }
+  syncOpportunityAnywhereChip('detail-place-chips');
 }
 
 function renderHabitScheduleOptions(h = {}){
@@ -526,6 +581,7 @@ function readHabitScheduleOptionRow(row){
     locationId:cleanLocationId(row.querySelector('.habit-option-location')?.value) || null,
     pref:cleanLocationPrefLevel(row.querySelector('.habit-option-pref')?.dataset.pref),
     sameDayMode:row.querySelector('.habit-option-same-day')?.value || 'alternative',
+    ...(row.querySelector('.habit-option-time-kind')?.value === 'fixed' ? {fixedStart:true} : {}),
     ...weatherChoice
   };
 }
@@ -553,7 +609,7 @@ function refreshHabitScheduleOptionEndpoint(endpoint){
 }
 
 function habitScheduleOptionFromAllowedWindow(h){
-  const out = {};
+  const out = h && h.allowedTimeFixedStart === true ? {fixedStart:true} : {};
   for(const [source,target] of [['allowedTimeStart','start'],['allowedTimeEnd','end']]){
     const anchor = cleanPrayerAnchor(h && h[source + 'Anchor']);
     if(!anchor){
@@ -833,7 +889,7 @@ function updateTimeResolved(endpoint, field, h){
 // time" hint is the inverse: it shows only while both endpoints are empty.
 function syncTimeClearBtn(){
   const allowedOn = endpointHasValue($('detail-time-start').closest('.time-endpoint'))
-    || endpointHasValue($('detail-time-end').closest('.time-endpoint'));
+    || ($('detail-time-kind')?.value !== 'fixed' && endpointHasValue($('detail-time-end').closest('.time-endpoint')));
   const prefOn = endpointHasValue($('detail-preferred-time-start').closest('.time-endpoint'))
     || endpointHasValue($('detail-preferred-time-end').closest('.time-endpoint'));
   const clear = $('detail-time-clear');

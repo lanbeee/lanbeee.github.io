@@ -1574,6 +1574,9 @@ let paneCloseTimer = null;
 document.addEventListener('click',e=>{
   const pane = getPane();
   if (!pane || !pane.dataset.activeSheet) return;
+  // Chip handlers can rebuild their row before this event reaches document.
+  // Its original path still identifies a tap inside the mounted pane.
+  if (e.composedPath().includes(pane)) return;
   if (e.target.closest('.pane-detail .sheet')) return;
   if (e.target.closest('.ting-card')) return;
   if (e.target.closest('.app-bar')) return;
