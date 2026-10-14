@@ -80,6 +80,10 @@ function tone(days,target,type){
   return ratio > 1.5 ? 'teal' : ratio > 0.9 ? 'amber' : 'red';
 }
 
+function habitColors(h,days = daysSince(h.lastLog)){
+  return colors(isOpportunityHabit(h) ? null : days,h.target,h.type);
+}
+
 function colors(days,target,type){
   const t = tone(days,target,type);
   const map = {
@@ -108,6 +112,7 @@ function scoreTone(score){
 }
 
 function intervalTone(h,days){
+  if(isOpportunityHabit(h))return '';
   if(days === null || days === undefined)return '';
   const target = effectiveTarget(h);
   if(h.type === 'keepup'){
@@ -204,6 +209,7 @@ function clamp01(value){
 }
 
 function progressScore(h){
+  if(isOpportunityHabit(h))return null;
   if(h.type === 'task'){
     if(h.breakable && h.lastLog !== null){
       const total = clampDuration(h.durationMinutes);
@@ -714,6 +720,7 @@ function mixedPriorityScore(parts,mix){
  */
 function attentionScore(h,index,settingsOverride = null,affinity = null){
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return -1000 - index;
+  if(isOpportunityHabit(h) && !hasPlannedToday(h))return 5 - index / 100;
   const settings = settingsOverride || sortSettings || DEFAULT_SORT_SETTINGS;
   const focus = settings.focus || 'balanced';
   const parts = priorityComponents(h,settings,affinity);
@@ -754,6 +761,7 @@ function attentionScore(h,index,settingsOverride = null,affinity = null){
  * @returns {0|1|2|3}
  */
 function todayCategory(h,settings){
+  if(isOpportunityHabit(h))return hasPlannedToday(h) ? 0 : 2;
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   const scheduleDistance = hasDaySchedule(h) ? nextEligibleDistance(h) : 0;

@@ -49,6 +49,7 @@ function currentDetailTune(){
   return {
     name:$('detail-habit-message').value.trim(),
     type,
+    repeatMode:normalizeRepeatMode($('detail-repeat-mode').value,type),
     emoji:cleanMark($('detail-emoji').value),
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
@@ -73,6 +74,7 @@ function currentDetailTune(){
     preferredMonthDays:selectedMonthDaysFrom('detail-preferred-monthday-chips'),
     allowedTimeStart:timeInputToMinutes($('detail-time-start').value),
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
+    allowedTimeFixedStart:$('detail-time-kind')?.value === 'fixed',
     preferredTimeStart:timeInputToMinutes($('detail-preferred-time-start').value),
     preferredTimeEnd:timeInputToMinutes($('detail-preferred-time-end').value),
     allowedTimeStartAnchor:readAnchorFromEndpoint('detail-time-start'),
@@ -162,12 +164,13 @@ function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
-  $('detail-save').disabled = !dirty;
+  $('detail-save').disabled = !dirty || !syncDetailConditionHint();
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 
 // HYBRID: rewrites form fields from saved original
 function restoreDetailTune(){
+  $('detail-repeat-mode').value = detailTuneOriginal.repeatMode || 'routine';
   if(!detailTuneOriginal)return;
   $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;

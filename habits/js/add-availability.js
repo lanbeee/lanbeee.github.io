@@ -63,6 +63,15 @@ function refreshAddAvailability(){
   // creation profile exists. There is no draft to check until defaults apply.
   if(!addActiveDefaults)return;
   const record = readAddRecord();
+  const optional = isOpportunityHabit(record);
+  const hasTrigger = record.locationIds.length>0 || weatherHabitHasActiveGuidance(record,sortSettings);
+  const needsCity = optional && hasTrigger && !record.locationIds.length && !record.weatherLocationId
+    && !weatherHomeCoords(sortSettings);
+  $('ting-weather-city').hidden = !needsCity;
+  $('add-condition-hint').textContent = !hasTrigger ? 'Choose a place or a weather profile to continue.'
+    : needsCity ? 'Set your city so Tings can check the weather.' : '';
+  $('add-condition-hint').hidden = !optional || (hasTrigger && !needsCity);
+  $('do-save').disabled = optional && !hasTrigger;
   const plannerKey = homePlannerDirtyKey([]);
   const signature = addRoomSignature(record,plannerKey);
   if(signature !== _addRoomSignature){
@@ -101,7 +110,9 @@ function addRoomPreviewCopy(before,after,data,record){
   const draftMinutes = minutes.get(data.length) || 0;
   const lost = [...addRoomMinutes(before)].filter(([i,total])=>(minutes.get(i) || 0) < total)
     .map(([i])=>data[i]?.name).filter(Boolean);
-  if(!draftMinutes)return {tone:'warning',text:'No room found in the next 7 days with these settings. You can still add it and adjust its schedule in details.'};
+  if(!draftMinutes)return isOpportunityHabit(record)
+    ? {tone:'',text:'No matching opportunity in the next 7 days. It will wait for a visit or suitable weather.'}
+    : {tone:'warning',text:'No room found in the next 7 days with these settings. You can still add it and adjust its schedule in details.'};
   const days = (after.days || []).filter(day=>(day.timeline || []).some(row=>row.i === data.length && ['fill','scheduled'].includes(row.kind))).length;
   const partial = record.type === 'task' && draftMinutes < record.durationMinutes;
   const preview = `Preview: ${formatFreeDuration(draftMinutes)}${partial ? ` of ${formatFreeDuration(record.durationMinutes)}` : ''} across ${days === 1 ? '1 day' : `${days} days`} in the next 7 days.`;

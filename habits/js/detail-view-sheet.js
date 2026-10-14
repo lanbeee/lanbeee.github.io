@@ -26,7 +26,7 @@ function openDetail(i){
   }
   detailIdx = i;
   const days = daysSince(h.lastLog);
-  const c = colors(days,h.target,h.type);
+  const c = habitColors(h,days);
   const cardScoreTone = cardTone(h);
   const accent = visualClassColor(cardScoreTone);
   if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
@@ -41,6 +41,7 @@ function openDetail(i){
   $('detail-emoji').value = h.emoji || '';
   renderEmojiBgSwatches('detail-emoji-bg',h.emojiBgColor || '');
   $('detail-days').value = h.target || '';
+  $('detail-repeat-mode').value = normalizeRepeatMode(h.repeatMode,h.type);
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
   if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
@@ -81,6 +82,7 @@ function openDetail(i){
     hid:h.hid,
     name:h.name || '',
     type:h.type || 'keepup',
+    repeatMode:normalizeRepeatMode(h.repeatMode,h.type),
     emoji:h.emoji || '',
     emojiBgColor:normalizeEmojiBgColor(h.emojiBgColor),
     target:h.target || '',
@@ -105,6 +107,7 @@ function openDetail(i){
     preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
     allowedTimeStart:h.allowedTimeStart ?? null,
     allowedTimeEnd:h.allowedTimeEnd ?? null,
+    allowedTimeFixedStart:h.allowedTimeFixedStart === true,
     preferredTimeStart:h.preferredTimeStart ?? null,
     preferredTimeEnd:h.preferredTimeEnd ?? null,
     allowedTimeStartAnchor:cleanAnchor(h.allowedTimeStartAnchor),
@@ -259,7 +262,7 @@ function renderEmojiBgSwatches(containerId,selected = ''){
             const h = load()[detailIdx];
             if(h){
               const days = daysSince(h.lastLog);
-              const c = colors(days,h.target,h.type);
+              const c = habitColors(h,days);
               mark.style.background = c.bg;
               mark.style.color = c.icon;
               mark.style.removeProperty('--emoji-bg');

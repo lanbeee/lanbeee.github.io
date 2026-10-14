@@ -38,6 +38,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
       ? plannerPinnedDayBase(h,settings,todayBase,opts.fullToday ? {keepDueTodayForMissed:true} : null)
       : (isWeekPinnedToday(h,settings) ? todayBase : null);
     const pinned = pinnedDay != null;
+    if(isOpportunityHabit(h) && !pinned)continue;
     const eligible = new Set();
     for(const day of days){
       if(weekFillEligibleOnDay(h,settings,day.dayBase,day.weekday,pinnedDay)){
@@ -147,6 +148,7 @@ function buildWeekAgenda(data,settings,numDays = 7,opts = {}){
       {maxProbes:graphSeedBudget-insertionProbes-selectionDiagnostics.probes})
     : {probes:0,accepted:0};
   annotateAgendaOccurrenceKeys(candidates,dayStates);
+  placeOpportunityItems(data,dayStates,settings,candidates);
 
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){

@@ -1,6 +1,7 @@
 // In-item navigation only. Search never changes a saved setting or enables a
 // prerequisite. Destinations are resolved from the live DOM on every search.
 const DETAIL_SEARCH_FIELDS = [
+  ['detail-frequency-presets','How often','optional conditions opportunity location weather maximum frequency repeat rhythm'],
   ['detail-times','Times per cycle','frequency repeat repetitions rhythm'],
   ['detail-days','Cycle days','frequency interval cadence rhythm'],
   ['detail-due-date','Due date','deadline appointment task date'],
@@ -8,6 +9,7 @@ const DETAIL_SEARCH_FIELDS = [
   ['detail-weekday-chips','Allowed weekdays','days monday tuesday wednesday thursday friday saturday sunday'],
   ['detail-monthday-toggle','Allowed month days','dates monthly calendar'],
   ['detail-allowed-time-row','Allowed time window','hours start end clock relative sunrise sunset prayer fajr zuhr dhuhr asr maghrib isha anchor offset later earlier combine overnight'],
+  ['detail-time-kind','Fixed start or time window','class appointment exact start allowed time hours'],
   ['detail-preferred-weekday-chips','Preferred weekdays','best days soft preference'],
   ['detail-preferred-monthday-toggle','Preferred month days','best dates monthly'],
   ['detail-preferred-time-row','Preferred time window','best hours start end clock sunrise sunset prayer anchor'],

@@ -41,6 +41,7 @@ free-time-fit-test.js	planner	once
 free-time-indicator-test.js	ui	once
 general-refinements-test.js	ui	once
 habit-schedule-options-test.js	planner	once
+fixed-start-test.js	planner	once
 home-agenda-tick-test.js	planner	once
 habits-agenda-e2e.js	planner	once
 habits-backup-e2e.js	data	once
@@ -149,9 +150,12 @@ add-availability-test.js	ui	page-both
 breakable-appointment-test.js	planner	once
 native-card-reminders-test.js	ui	once
 time-window-ux-test.js	ui	once
+fixed-start-ui-test.js	ui	once
 
 app-back-navigation-test.js	ui	once
 prayer-midnight-test.js	planner	once
 add-sheet-ux-test.js	ui	once
 add-sheet-scroll-test.js	ui	once
 numeric-input-ux-test.js	ui	once
+opportunity-items-test.js	planner	once
+opportunity-items-ui-test.js	ui	once

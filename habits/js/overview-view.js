@@ -377,7 +377,7 @@ function renderOverviewLists(data,countForHabit,scopeNote = ''){
     list.innerHTML = '';
     return;
   }
-  const rows = data.map((h,index)=>({h,index,count:countForHabit(h),c:colors(daysSince(h.lastLog),h.target,h.type)}))
+  const rows = data.map((h,index)=>({h,index,count:countForHabit(h),c:habitColors(h)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,5);
 
   if(!rows.length){
@@ -606,7 +606,7 @@ function renderOverviewStretchPane(data,cache,capacity){
   const rowHtml = (rows,emptyName,emptyMeta,limit = 4) => rows.length
     ? rows.slice(0,limit).map(({key,entry,label})=>{
       const h = data.find(item=>item.name === entry.name);
-      const c = h ? colors(daysSince(h.lastLog),h.target,h.type) : colors(null,null,entry.type);
+      const c = h ? habitColors(h) : colors(null,null,entry.type);
       return `<button type="button" class="overview-item overview-link-row" data-log-day="${escapeHtml(key)}">
         <span class="overview-name">${h ? iconHtml(h,c) : ''}${escapeHtml(entry.name)}</span>
         <span class="overview-meta">${escapeHtml(label)} · ${escapeHtml(fmtDay(key))}</span>
@@ -833,7 +833,7 @@ function collectDayLogRows(key){
       index:i,
       entries,
       scheduled,
-      c:colors(daysSince(h.lastLog),h.target,h.type)
+      c:habitColors(h)
     });
   });
   return rows;
@@ -914,7 +914,7 @@ function overviewDayAgendaHabitHtml(row,data){
   const h = row.h || (row.i != null ? data[row.i] : null);
   if(!h)return '';
   const idx = row.i != null ? row.i : data.findIndex(item=>item === h || (item && h.hid && item.hid === h.hid));
-  const c = colors(daysSince(h.lastLog),h.target,h.type);
+  const c = habitColors(h);
   const meta = overviewIsMinimal() ? '' : [overviewDayAgendaClock(row.start),overviewDayAgendaDuration(row)].filter(Boolean).join(' · ');
   const openAttr = Number.isInteger(idx) && idx >= 0 ? ` data-day-item="${idx}"` : '';
   const tag = openAttr ? 'button' : 'div';
@@ -966,7 +966,7 @@ function overviewDayRhythmPreview(key,data){
     if(!h)return;
     if(!matchesOverviewFilters(h))return;
     if(typeof isWeekCandidate !== 'function' || !isWeekCandidate(h,settings,dayBase,weekday))return;
-    items.push({h,index:i,c:colors(daysSince(h.lastLog),h.target,h.type)});
+    items.push({h,index:i,c:habitColors(h)});
   });
   return items;
 }
@@ -1226,7 +1226,7 @@ function renderDayLogsItemStep(key){
     return;
   }
   if(!row){
-    row = {h,index:idx,entries:[],scheduled:[],c:colors(daysSince(h.lastLog),h.target,h.type)};
+    row = {h,index:idx,entries:[],scheduled:[],c:habitColors(h)};
   }
   dayLogsItemIndex = idx;
   const c = row.c;

@@ -79,8 +79,8 @@ async function glpkAvailable(page){
   });
 }
 
-async function runPlannerPair(page, data, settings, now, numDays = 7){
-  return page.evaluate(async ({data, settings, now, numDays, fastOnly}) => {
+async function runPlannerPair(page, data, settings, now, numDays = 7, includeTimeline = false){
+  return page.evaluate(async ({data, settings, now, numDays, fastOnly, includeTimeline}) => {
     const RealDate = Date;
     function FrozenDate(...args){
       return args.length === 0 ? new RealDate(now) : new RealDate(...args);
@@ -100,6 +100,8 @@ async function runPlannerPair(page, data, settings, now, numDays = 7){
       }
       return byName;
     });
+    const details = week=>includeTimeline ? {travelSeconds:week.totalTravelSeconds,rows:week.days.map(day=>
+      (day.timeline || []).map(row=>({kind:row.kind,i:row.i,start:row.start,end:row.end,locationId:row.locationId}))) } : {};
 
     try{
       let glpk = null;
@@ -109,7 +111,7 @@ async function runPlannerPair(page, data, settings, now, numDays = 7){
           const week = await buildWeekAgendaAsync(
             data, Object.assign({}, settings, {agendaOptimizer:true}), numDays
           );
-          glpk = {optimized:Boolean(week.optimized), days:summarize(week)};
+          glpk = {optimized:Boolean(week.optimized), days:summarize(week),...details(week)};
         }catch(error){
           glpk = {error:String(error && error.message || error)};
         }
@@ -118,7 +120,7 @@ async function runPlannerPair(page, data, settings, now, numDays = 7){
         const week = buildWeekAgenda(
           data, Object.assign({}, settings, {agendaOptimizer:false}), numDays
         );
-        fast = {days:summarize(week)};
+        fast = {days:summarize(week),...details(week)};
       }catch(error){
         fast = {error:String(error && error.message || error)};
       }
@@ -126,7 +128,7 @@ async function runPlannerPair(page, data, settings, now, numDays = 7){
     }finally{
       globalThis.Date = RealDate;
     }
-  }, {data, settings, now, numDays, fastOnly:FAST_ONLY});
+  }, {data, settings, now, numDays, fastOnly:FAST_ONLY, includeTimeline});
 }
 
 function minutesOnDay(result, offset, name){
@@ -144,6 +146,7 @@ module.exports = {
   FAST_ONLY,
   atTime,
   baseHabit,
+  plannerSettings,
   openEveningSettings,
   windowedSettings,
   waitForAssistant,

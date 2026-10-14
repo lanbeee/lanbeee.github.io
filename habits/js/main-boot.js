@@ -145,8 +145,53 @@ function syncAddTypeUi(type){
   if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
 }
 
+var _addConditionHomes;
+function syncAddConditionsLayout(optional){
+  const places = $('add-topics-section');
+  const weather = document.querySelector('.add-weather-options');
+  if(!_addConditionHomes){
+    _addConditionHomes = [places,weather].map(node=>{
+      const marker = document.createComment('add condition field home');
+      node.parentNode.insertBefore(marker,node);
+      return {node,marker};
+    });
+  }
+  const panel = $('add-conditions');
+  panel.hidden = !optional;
+  for(const {node,marker} of _addConditionHomes){
+    const parent = optional ? panel : marker.parentNode;
+    if(node.parentNode !== parent){
+      if(optional)parent.insertBefore(node,$('add-condition-hint'));
+      else parent.insertBefore(node,marker.nextSibling);
+    }
+  }
+  $('add-places-label').textContent = optional ? 'Places' : 'Topics & places';
+  places.querySelector('.field-hint').textContent = optional
+    ? 'Places you’re at or already plan to visit.' : 'Group this item by topic and choose where it can happen.';
+  if(optional)weather.open = true;
+  $('ting-weather-profile').previousElementSibling.textContent = optional ? 'Weather' : 'weather guidance';
+  const chips = $('ting-tag-chips');
+  if(chips.dataset.conditionMode !== String(optional)){
+    chips.dataset.conditionMode = String(optional);
+    renderTagChips('ting-tag-chips',selectedAddTopics(),selectedLocationIds(),null,selectedLocationPrefs(),selectedAnywhere());
+  }
+  $('do-save').disabled = false;
+  if(typeof syncWeatherGuidanceHints === 'function')syncWeatherGuidanceHints();
+}
+
 // Describe the entered frequency in words; the stored interval stays internal.
 function syncAddRhythmUi(){
+  const optional = selectedType === 'keepup' && $('ting-repeat-mode').value === 'opportunity';
+  if(optional)$('ting-times').value = 1;
+  $('ting-times').closest('label').hidden = optional;
+  $('target-slider-row').querySelector('.rhythm-in').hidden = optional;
+  $('ting-opportunity-frequency').hidden = !optional;
+  $('add-sheet').classList.toggle('opportunity-mode',optional);
+  syncAddConditionsLayout(optional);
+  document.querySelector('.add-frequency .add-presets').hidden = !['keepup','reduce'].includes(selectedType);
+  const opportunityButton = document.querySelector('[data-add-repeat="opportunity"]');
+  opportunityButton.hidden = !['keepup','reduce'].includes(selectedType);
+  opportunityButton.setAttribute('aria-pressed',String(optional));
   const times = Math.max(1,Math.min(30,parseInt($('ting-times').value,10) || 1));
   const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt($('ting-days').value,10) || 7));
   $('ting-times').nextElementSibling.textContent = times === 1 ? 'time' : 'times';
@@ -154,15 +199,97 @@ function syncAddRhythmUi(){
   const count = times === 1 ? 'once' : `${times} times`;
   const period = days === 1 ? 'a day' : days === 7 ? 'a week' : `every ${days} days`;
   $('target-help').textContent = selectedType === 'zero' ? rhythmHelp('zero')
+    : optional ? 'No missed days when conditions don’t fit.'
     : selectedType === 'reduce' ? `Keep it to ${count} ${period} or less.`
     : `Aim for ${count} ${period}.`;
   document.querySelectorAll('[data-add-rhythm]').forEach(button=>{
     const [presetTimes,presetDays] = button.dataset.addRhythm.split(',').map(Number);
-    button.setAttribute('aria-pressed',String(times === presetTimes && days === presetDays));
+    button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
   });
 }
 
+document.querySelector('[data-add-repeat="opportunity"]').addEventListener('click',()=>{
+  selectedType = 'keepup';
+  $('ting-repeat-mode').value = 'opportunity';
+  syncAddTypeUi(selectedType);
+  refreshAddAvailability();
+});
+
+let detailConditionsHomes = null;
+function syncDetailConditionsLayout(optional){
+  const panel = $('detail-conditions');
+  const places = document.querySelector('.detail-schedule-places');
+  const weather = $('detail-weather-disclosure');
+  if(!detailConditionsHomes){
+    detailConditionsHomes = [places,weather].map(node=>{
+      const anchor = document.createComment('detail condition home');
+      node.before(anchor);
+      return {node,anchor,open:node.open};
+    });
+  }
+  panel.hidden = !optional;
+  for(const home of detailConditionsHomes){
+    if(optional){
+      if(home.node.parentElement !== panel){
+        home.open = home.node.open;
+        panel.insertBefore(home.node,$('detail-condition-hint'));
+      }
+      if(home.node === weather)weather.open = true;
+    }else if(home.node.parentElement === panel){
+      home.anchor.after(home.node);
+      if(home.node === weather)weather.open = home.open;
+    }
+  }
+  syncDetailSchedulePlacesUi();
+  if(typeof syncWeatherGuidanceHints === 'function')syncWeatherGuidanceHints();
+}
+
+function syncDetailRepeatModeUi(type){
+  const optional = type === 'keepup' && $('detail-repeat-mode').value === 'opportunity';
+  $('detail-repeat-mode-row').hidden = !['keepup','reduce'].includes(type);
+  document.querySelector('[data-detail-repeat]').hidden = type !== 'keepup';
+  if(optional)$('detail-times').value = 1;
+  $('detail-times').closest('label').hidden = optional;
+  $('detail-slider-row').querySelector('.rhythm-in').hidden = optional;
+  $('detail-opportunity-frequency').hidden = !optional;
+  $('detail-sheet').classList.toggle('opportunity-mode',optional);
+  $('detail-rhythm-disclosure').querySelector('summary').textContent = optional ? 'repeat limit' : 'rhythm & deadline';
+  $('detail-availability-disclosure').querySelector('summary').textContent = optional || isMinimalMode() ? 'days & hours' : 'days, hours & places';
+  $('detail-weather-disclosure').querySelector('summary').textContent = optional ? 'weather conditions' : 'weather & forecast';
+  const times = parseInt($('detail-times').value,10) || 1;
+  const days = parseInt($('detail-days').value,10) || 7;
+  $('detail-times').nextElementSibling.textContent = times === 1 ? 'time' : 'times';
+  $('detail-days').nextElementSibling.textContent = days === 1 ? 'day' : 'days';
+  document.querySelector('[data-detail-repeat]').setAttribute('aria-pressed',String(optional));
+  document.querySelectorAll('[data-detail-rhythm]').forEach(button=>{
+    const [presetTimes,presetDays] = button.dataset.detailRhythm.split(',').map(Number);
+    button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
+  });
+  if(optional)$('detail-target-help').textContent = 'No missed days when conditions don’t fit.';
+  syncDetailConditionsLayout(optional);
+}
+$('detail-repeat-mode').addEventListener('change',()=>{
+  const type = currentDetailTune().type;
+  $('detail-target-help').textContent = rhythmHelp(type);
+  syncDetailRepeatModeUi(type);
+  if(detailIdx != null && typeof renderNativeDetailReminders === 'function'){
+    renderNativeDetailReminders({...load()[detailIdx],...currentDetailTune()});
+  }
+  setDetailDirty();
+});
+document.querySelector('[data-detail-repeat]').addEventListener('click',()=>{
+  $('detail-repeat-mode').value = 'opportunity';
+  $('detail-repeat-mode').dispatchEvent(new Event('change'));
+});
+document.querySelectorAll('[data-detail-rhythm]').forEach(button=>button.addEventListener('click',()=>{
+  $('detail-repeat-mode').value = 'routine';
+  const [times,days] = button.dataset.detailRhythm.split(',').map(Number);
+  syncRhythm('detail',{times,days});
+  $('detail-repeat-mode').dispatchEvent(new Event('change'));
+}));
+
 document.querySelectorAll('[data-add-rhythm]').forEach(button=>button.addEventListener('click',()=>{
+  $('ting-repeat-mode').value = 'routine';
   const [times,days] = button.dataset.addRhythm.split(',').map(Number);
   syncRhythm('ting',{times,days});
   if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
@@ -318,6 +445,7 @@ function readAddRecord(){
     name:$('ting-message').value.trim().slice(0,60),
     type,
     target,
+    repeatMode:normalizeRepeatMode($('ting-repeat-mode').value,type),
     lastLog:null,
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
@@ -366,6 +494,12 @@ $('do-save').addEventListener('click',()=>{
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
   const record = readAddRecord();
+  if(isOpportunityHabit(record) && !record.locationIds.length
+    && !weatherHabitHasActiveGuidance(record,sortSettings)){
+    refreshAddAvailability();
+    $('ting-weather-profile').focus();
+    return;
+  }
   data.push(record);
   if(save(data)){
     cancelAdd();
@@ -495,6 +629,7 @@ function setDetailTypeUi(type){
     ? 'Stop items may be shown, but cannot be marked done'
     : 'Choose what this display may do with this item';
   if(typeof syncDetailDueUi === 'function')syncDetailDueUi();
+  syncDetailRepeatModeUi(type);
 }
 
 // RENDER: update detail priority segmented control
@@ -518,6 +653,7 @@ function syncRhythm(prefix,value){
   field.value = days;
   if(timesField)timesField.value = times;
   if(prefix === 'ting')syncAddRhythmUi();
+  if(prefix === 'detail')syncDetailRepeatModeUi(currentDetailTune().type);
   const label = $(`${prefix}-days-label`);
   if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(times,days));
   const crown = $(`${prefix}-days-slider`);
@@ -811,6 +947,9 @@ bindRhythm('detail');
 ['ting-times','ting-days'].forEach(id=>{
   ['input','blur'].forEach(event=>$(id).addEventListener(event,syncAddRhythmUi));
 });
+['detail-times','detail-days'].forEach(id=>{
+  ['input','blur'].forEach(event=>$(id).addEventListener(event,()=>syncDetailRepeatModeUi(currentDetailTune().type)));
+});
 
 // WIRE: attach numeric input focus/blur validators
 function bindCompactNumber(id,clamp,options={}){
@@ -950,6 +1089,7 @@ $('detail-habit-options')?.addEventListener('input',e=>{
 });
 $('detail-habit-options')?.addEventListener('change',e=>{
   const row = e.target.closest('.habit-option-row');
+  if(e.target.matches('.habit-option-time-kind'))syncFixedStartUi();
   if(row && e.target.closest('.habit-option-location')){
     row.querySelectorAll('.time-endpoint.is-dynamic').forEach(refreshHabitScheduleOptionEndpoint);
   }
@@ -1074,11 +1214,18 @@ $('detail-schedule-order')?.addEventListener('click',e=>{
   }
 });
 $('detail-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
+$('detail-time-kind')?.addEventListener('change',()=>{
+  syncFixedStartUi();
+  syncTimeClearBtn();
+  setDetailDirty();
+});
 $('detail-time-end').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
 $('detail-time-clear').addEventListener('click',()=>{
+  $('detail-time-kind').value = 'window';
   clearTimeEndpoint($('detail-time-start').closest('.time-endpoint'));
   clearTimeEndpoint($('detail-time-end').closest('.time-endpoint'));
   syncTimeClearBtn();
+  syncFixedStartUi();
   setDetailDirty();
 });
 $('detail-preferred-time-start').addEventListener('input',()=>{setDetailDirty();syncTimeClearBtn();});
@@ -1428,7 +1575,9 @@ $('detail-save').addEventListener('click',()=>{
   if(!h)return;
   if(typeof validateHabitScheduleOptionModes === 'function'
     && !validateHabitScheduleOptionModes())return;
+  if(!validateFixedStartTimes())return;
   const current = currentDetailTune();
+  if(!syncDetailConditionHint())return;
   if(!current.name){$('detail-habit-message').focus();return;}
   h.scheduleLinks = normalizeScheduleLinks(current.scheduleLinks,h.hid);
   if(typeof validateScheduleLinkGraph === 'function'){
@@ -1444,6 +1593,7 @@ $('detail-save').addEventListener('click',()=>{
   }
   h.name = current.name.slice(0,60);
   h.type = current.type;
+  h.repeatMode = normalizeRepeatMode(current.repeatMode,current.type);
   h.emoji = current.emoji;
   h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
@@ -1475,7 +1625,8 @@ $('detail-save').addEventListener('click',()=>{
   const endAnchored = Boolean(cleanAnchor(current.allowedTimeEndAnchor));
   h.allowedTimeStart = current.allowedTimeStart;
   h.allowedTimeEnd = current.allowedTimeEnd;
-  if(!startAnchored && !endAnchored && (h.allowedTimeStart === null || h.allowedTimeEnd === null)){
+  h.allowedTimeFixedStart = current.allowedTimeFixedStart === true;
+  if(!h.allowedTimeFixedStart && !startAnchored && !endAnchored && (h.allowedTimeStart === null || h.allowedTimeEnd === null)){
     h.allowedTimeStart = null;
     h.allowedTimeEnd = null;
   }
@@ -1516,7 +1667,8 @@ $('detail-save').addEventListener('click',()=>{
       ? normalizeAnchorDayOffset(current[f + 'DayOffset2']) : 0;
   }
   // Block: a 'habit' endpoint without a picked habit is incomplete.
-  const habitAnchorFields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd'];
+  const habitAnchorFields = ['allowedTimeStart','allowedTimeEnd','preferredTimeStart','preferredTimeEnd']
+    .filter(field=>field !== 'allowedTimeEnd' || !h.allowedTimeFixedStart);
   if(habitAnchorFields.some(f =>
     (h[f + 'Anchor'] === 'habit' && !h[f + 'AnchorHabitId'])
     || (h[f + 'Anchor2'] === 'habit' && !h[f + 'AnchorHabitId2'])
@@ -1639,3 +1791,13 @@ $('detail-delete-yes').addEventListener('click',()=>{
   doNuke(idx);
 });
 $('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeDetail();});
+
+$('ting-weather-profiles')?.addEventListener('click',()=>openAddSettings('weather'));
+$('detail-weather-profiles')?.addEventListener('click',()=>{
+  resetSettingsSheetState();
+  syncSettingsControls();
+  $('settings-weather-body').hidden = false;
+  $('settings-weather-head').setAttribute('aria-expanded','true');
+  openSheet('settings-sheet');
+  requestAnimationFrame(()=>$('settings-weather-head').scrollIntoView({block:'start'}));
+});

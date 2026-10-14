@@ -93,6 +93,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // doesn't snap the row back to the start.
   const prevPlaceScroll = wrap.querySelector('.tag-row-places')?.scrollLeft ?? 0;
   const prevTopicScroll = wrap.querySelector('.tag-row-topics')?.scrollLeft ?? 0;
+  const prevTopicOpen = wrap.querySelector('.add-topic-disclosure')?.open || false;
   const topics = topicOptions();
   const locations = locationOptions();
   const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
@@ -174,7 +175,16 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   addScrollGuard(locRow);
   addScrollGuard(topicRow);
   wrap.appendChild(locRow);
-  wrap.appendChild(topicRow);
+  if(containerId === 'ting-tag-chips' && selectedType === 'keepup'
+    && $('ting-repeat-mode')?.value === 'opportunity'){
+    const disclosure = document.createElement('details');
+    disclosure.className = 'add-topic-disclosure';
+    disclosure.open = prevTopicOpen;
+    const summary = document.createElement('summary');
+    summary.textContent = selectedSet.size ? `Topics · ${selectedSet.size} selected` : 'Topics (optional)';
+    disclosure.append(summary,topicRow);
+    wrap.appendChild(disclosure);
+  }else wrap.appendChild(topicRow);
   applyTagChipLocationMode(wrap,selectedLocs);
   const content = wrap.dataset.tagContent;
   if(content === 'places')topicRow.hidden = true;
@@ -1011,6 +1021,19 @@ function limitCue(h,days,target){
 
 // PURE: compute card status cue text
 function cardCue(h){
+  if(isOpportunityHabit(h) && !hasPlannedToday(h)){
+    if(habitIsSnoozed(h))return 'Snoozed for now';
+    if(completedToday(h))return 'Done today';
+    if(opportunityDoingNow(h,dayStart(Date.now())))return 'Doing now';
+    const days = daysSince(h.lastLog);
+    const remaining = days == null ? 0 : opportunityGapDays(h)-days;
+    if(remaining>0)return `Available in ${remaining}d`;
+    const today = typeof _homeRenderedWeek === 'undefined' ? null
+      : _homeRenderedWeek?.days?.find(day=>day.dayBase === dayStart(Date.now()));
+    const placed = (today?.timeline || []).some(row=>['fill','scheduled'].includes(row.kind)
+      && (row.h?.hid || row.hid) === h.hid);
+    return placed ? 'Ready today' : 'When conditions fit';
+  }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
   const plan = nextPlannedLog(h);
@@ -1100,7 +1123,7 @@ function cardMeta(h,options = {}){
       if(h.dueDate === null)return '<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>';
       return `<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`;
     }
-    if(h.type !== 'zero')return `<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`;
+    if(h.type !== 'zero')return `<span class="context-pill" title="${isOpportunityHabit(h) ? 'optional · maximum frequency' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`;
     return '<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>';
   }
   const plan = nextPlannedLog(h);
@@ -1124,7 +1147,7 @@ function cardMeta(h,options = {}){
     if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
       parts.push(`<span class="context-pill due" title="${escapeHtml(`needs a day by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
     }else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
-      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="how often"><i class="ti ti-repeat" aria-hidden="true"></i>${formatRhythmLabel(h.target || 7)}</span>`);
+      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="${isOpportunityHabit(h) ? 'optional · maximum frequency' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`);
       else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
     }
   }
@@ -1594,6 +1617,7 @@ function dayPressure(data,key,settings,skipIdx = -1){
 }
 
 function canDoEarlyToday(h,targetTs){
+  if(isOpportunityHabit(h))return false;
   const today = dayStart(Date.now());
   if(!targetTs || targetTs <= today)return false;
   if(hasDaySchedule(h) && !isDateEligibleForHabit(h,today))return false;
@@ -1609,6 +1633,7 @@ function canDoEarlyToday(h,targetTs){
 
 function earlyReason(data,i,settings){
   const h = data[i];
+  if(isOpportunityHabit(h))return '';
   if(!h || h.type === 'zero' || (h.type === 'task' && h.lastLog !== null))return '';
   if(todayCategory(h,settings) !== 2)return '';
   const target = targetDayForEarly(h);

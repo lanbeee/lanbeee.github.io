@@ -24,6 +24,7 @@
  * @property {string} hid                     — stable opaque id (crypto.randomUUID()), never user-displayed. Used by other habits' time anchors. Generated on first normalize; legacy records get one transparently.
  * @property {string} name                    — display name (max 60 chars)
  * @property {'keepup'|'reduce'|'zero'|'task'} type  — build / limit / stop / one-off
+ * @property {'routine'|'opportunity'} repeatMode — regular rhythm (legacy/default) or conditional keepup, eligible at its priority on existing visits and matching known weather; target is a minimum calendar-day gap in opportunity mode
  * @property {number|null} target             — rhythm in days (may be fractional, e.g. 3.5 = 2×/7d); null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon
@@ -42,6 +43,8 @@
  * @property {number|null} allowedTimeEnd     — minutes since midnight; null = unrestricted
  * @property {number|null} preferredTimeStart — minutes since midnight; null = unrestricted
  * @property {number|null} preferredTimeEnd   — minutes since midnight; null = unrestricted
+ *
+ * @property {boolean} allowedTimeFixedStart — exact allowed start; finish is start + durationMinutes; false keeps the flexible window
  *
  * — Prayer-time anchors (optional; mutually exclusive per-endpoint with the fixed minutes above) —
  * When `*Anchor` is set it overrides the matching fixed-minutes field for that endpoint, and the
@@ -133,7 +136,7 @@
  * @property {string|null} weatherLocationId — optional saved-place forecast for anywhere placements; location-bound fits use their actual place
  * @property {boolean} showWeather — show an interval forecast pill on this item's agenda card in regular mode
  * @property {boolean} showWeatherAtLocation — when showWeather is on, use this item's place instead of the home-city forecast
- * @property {{id:string,sameDayMode:'alternative'|'separate',weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high',weatherProfileMode:'inherit'|'profile'|'none',weatherProfileId:string|null}[]} scheduleOptions — specific weekday/time/place/weather windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
+ * @property {{id:string,sameDayMode:'alternative'|'separate',fixedStart?:boolean,weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high',weatherProfileMode:'inherit'|'profile'|'none',weatherProfileId:string|null}[]} scheduleOptions — specific weekday/time/place/weather windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
  *
  * — LinkFields (optional, on every type) —
  * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and appears first in the detail link buttons

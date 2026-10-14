@@ -295,6 +295,53 @@ if ratio ≥ 1.1: score += red (overdue)
 - Done day 5: ratio = 0.71 → teal (on track)
 - Done day 10: ratio = 1.43 → red (overdue)
 
+### 3.1.1 Optional habits: when conditions fit 👤👨‍💻
+
+Under **New habit → How often?**, or in **Details → Schedule**, choose
+**when conditions fit**. Set **at most once every N days**, then choose allowed
+places, weather guidance, or both. Weather profiles are editable directly from
+those controls. The add form shows conditions immediately after the repeat
+limit and before duration, with topics folded and other options below. Schedule
+uses the same frequency buttons, followed by the repeat limit and visible
+places/weather controls. Days and hours stay in a separate folded section.
+Switching back to a regular rhythm preserves the saved condition choices. Choose
+a place or weather profile before saving. Missing forecast-city setup is shown
+only when needed. These condition controls remain available in minimal mode.
+
+- Matching conditions make the item eligible at its chosen priority. It may
+  use free time or replace lower-priority flexible work; fixed appointments,
+  explicit plans, active work, and equal/higher-priority items stay protected.
+- A place-based item uses current presence or a visit already in the agenda,
+  including time before or after that visit. It cannot create an extra trip.
+  Allowed venue hours, item windows, travel time and schedule links still apply.
+- Weather uses the existing profile/option/place inheritance and the forecast
+  at the actual venue. Every active metric must be available and meet its bounds,
+  including soft bounds. Preferences rank matching times. If no fresh forecast
+  is available, the item waits. When both place and weather are selected, both
+  must match. With neither configured, it waits for configuration.
+- The repeat limit is a minimum gap between calendar dates, not a weekly quota.
+  An entry on Monday permits the next occurrence on the following Monday for
+  a seven-day limit. Logged and planned occurrences both count. Early/late
+  flexibility and separate same-day options cannot shorten that gap.
+- Split sessions use the existing duration, minimum chunk and session-gap
+  controls. A partial entry can continue that day; the next occurrence still
+  observes the repeat limit. Automatic placement offers the full remaining
+  session budget, rather than a partial session that cannot be finished.
+- An explicitly started session stays on the agenda if conditions change.
+  Explicit plans can reserve time outside the conditions, while still honoring
+  the repeat limit. Completion, undo, snooze, timers, backup, assistant edits,
+  calendar, shared display and ordinary phone reminders use the existing flows.
+- Unmatched opportunities never become overdue or missed and have no streak
+  obligation or drop-warning alarm. Saved items remain available in the list
+  and search. Existing habits retain their regular rhythm unless changed.
+
+Persisted `repeatMode` is `routine` (default/legacy) or `opportunity`; the latter
+applies to keepup habits only. Its integer `target` is the minimum day gap.
+Both planner engines call the same bounded activation pass after ordinary
+visits are known. Clock-only refresh rechecks today's opportunities without
+requiring a GLPK solve, and keeps cached future occurrences in the repeat-limit
+check. Android consumes this same source, including closed-app refresh.
+
 ### 3.2 REDUCE HABITS (Recurring - Limit) 👤
 #### Scoring Logic:
 ```
@@ -363,6 +410,7 @@ else:
   
   // ─── TYPE & SCHEDULE ─────────────────────────────────────
   type: 'keepup'|'reduce'|'zero'|'task',  // 👤 habit type
+  repeatMode: 'routine'|'opportunity', // 👤 Regular rhythm or conditional eligibility
   target: number|null,       // 👤 Rhythm: times in N days (0.2-183), null for zero/task
   createdAt: number|null,    // 👨‍💻 Creation timestamp (ms), for ordering
   
@@ -383,6 +431,7 @@ else:
   
   allowedTimeStart: number|null,  // 👤 Minutes from midnight (0-1440)
   allowedTimeEnd: number|null,    // 👤 Minutes from midnight (0-1440)
+  allowedTimeFixedStart: boolean, // 👤 Exact start; finish uses duration, default false
   preferredTimeStart: number|null, // 👤 Soft hint for scheduling
   preferredTimeEnd: number|null,   // 👤 Soft hint for scheduling
   
@@ -439,6 +488,7 @@ else:
   showWeather: boolean,       // 👤 Show interval forecast on this item's agenda card
   showWeatherAtLocation: boolean, // 👤 When showWeather is on, use this item's place (off = home city)
   scheduleOptions: {             // 👤 Specific extra time/place windows
+    fixedStart?: boolean,       // Exact start; end derives from the item duration
     weekdays: number[],          // Empty = every weekday
     start: number|null,          // Minutes from midnight, or null when dynamic
     end: number|null,            // Minutes from midnight, or null when dynamic
@@ -1345,6 +1395,17 @@ time: | 9am | — | 9am | — | 9am | — |
 - Time fields: Minutes from midnight (0-1440)
 - End ≤ Start = overnight window (e.g., 1380→300 = 11pm-5am)
 
+Choose **time window** for an earliest start and latest finish, or **fixed
+start** for a class or session that must begin at its entered time. Fixed start
+uses the item's duration to calculate the finish, so no end clock is needed.
+Changing duration updates that finish. The start can use Clock or Relative,
+and the setting applies on eligible days under the existing rhythm. The planner
+never moves the first session later to get around a conflict; an infeasible
+session stays unplaced. With Breakable enabled, the first chunk still starts
+exactly there and later chunks may use the remaining time before that finish.
+Switching back to a time window restores the previous end rule. Clear removes
+the time restriction. The choice is available in minimal mode too.
+
 #### Time Anchor Section
 - **Default wording:** General labels (Dawn, Sunrise, Solar noon, Afternoon, Sunset,
   Night, Night midpoint) appear in time pickers, previews, and samples. Settings → **relative
@@ -1819,14 +1880,18 @@ Tracks the currently active habit session:
 
 ```
 ┌─────────────────────────────────────┐
-│ 🚗  agenda connection               │
-│ travel time                         │
+│ 🚗  travel                       ✕ │
 │ Home → Gym                          │
+│ leave by 9am · arrive about 9:15am   │
 ├─────────────────────────────────────┤
-│ [−] [60] minutes [+]              │
-│ Estimated from distance + mode      │
+│ travel time       driving estimate  │
+│ [−]         [15 minutes]        [+] │
+│ For trips between these places.     │
+│                  reset to estimate │
+│ destination details              ▾ │
+│ phone reminders (Android)        ▾ │
 ├─────────────────────────────────────┤
-│ [save] [open in maps] [reset] [cancel] │
+│ [save time]       [open in maps]     │
 └─────────────────────────────────────┘
 ```
 
@@ -1835,20 +1900,24 @@ Tracks the currently active habit session:
 - Travel modes: driving, walking, bicycling, transit
 - "Open in maps" opens external maps app
 - "Reset to estimate" reverts to calculated time
+- Destination address and pin coordinates expand under **destination details**.
+  Both details and phone reminders start collapsed each time the sheet opens.
+  The header’s close button dismisses unsaved duration edits.
 - Installed Android: travel cards expose departure/arrival reminders and departure lead time, with **this date only** or **recurring / all dates**. They edit the destination habit/task/busy time’s existing choices. A date override replaces those edges; it does not add a second alert. **Use recurring reminders for this date** clears the travel override. Live-GPS legs expose reminders and Maps with duration editing disabled.
 
 ### 10.11 Busy Time Editor Sheet 👤
 
 ```
 ┌─────────────────────────────────────┐
-│ 🔒  busy time                       │
-│ Busy time                           │
+│ 🔒  busy time                    ✕ │
+│ Sleep                               │
+│ Wednesday, Oct 14                   │
 ├─────────────────────────────────────┤
 │ starts: [08:00]  →  ends: [09:00]  │
-│ Change for this date or series      │
+│ recurring rule                     │
+│ phone reminders (Android)        ▾ │
 ├─────────────────────────────────────┤
 │ [save this date] [update recurring] │
-│ [cancel]                           │
 └─────────────────────────────────────┘
 ```
 
@@ -1856,6 +1925,9 @@ Tracks the currently active habit session:
 - Set start/end time (five-minute picker steps; iOS uses Clock-style wheels because Safari ignores `step`. Exact valid typed minutes are preserved until a wheel choice is confirmed)
 - Choose days of week
 - "Save this date" vs "Update recurring" (modifies one instance vs the series)
+- The date and start/end clocks lead the sheet. **Recurring rule** expands the
+  saved sun/prayer rule controls; **phone reminders** expands Android choices.
+  Both start collapsed. The header’s close button dismisses unsaved clock/rule edits.
 - Installed Android: phone reminders are accessible directly in this editor. Choose **this date only** or **recurring / all dates** for independent start, end, travel departure/arrival and departure lead time. Reminders save immediately; the timing Save/Cancel buttons apply to the clock fields. **Use recurring reminders for this date** clears the reminder override. Choices stay on this phone and follow the block through time edits and renames.
 
 ### 10.12 Day Logs Sheet (Multi-Step) 👤
@@ -3302,6 +3374,11 @@ Busy times reserve time for commitments such as sleep or work and use the existi
 - The general days, time window, and allowed places still apply at every
   allowed place. Each option row is an extra specific case.
 - Many items only need the specific rows. Leave the general time blank then.
+- Each row offers **time window** or **fixed start**. Fixed start uses that row's
+  exact Clock/Relative start and the item's duration for its finish. It can be
+  used for weekday classes at different times or venues. General windows and
+  other rows remain independent alternatives; separate-session rows keep their
+  existing occurrence behavior.
 - Each row couples its own weekdays, start/end window, and location, plus an
   optional preference (`little` / `high` / `avoid`) that overrides the place
   ranking for that instance. Its compact weather choice can inherit, select a

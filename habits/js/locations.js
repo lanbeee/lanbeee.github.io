@@ -1026,7 +1026,7 @@ function openTravelEditSheet(fromId,toId,leaveByTs,destination=null,dayKey=null)
   if(copy)copy.textContent = `${fromCurrent ? 'here' : from.name} → ${to.name}`;
   const modeEl = $('travel-edit-mode');
   if(modeEl){
-    const label = edge.provider === 'manual' ? 'edited time' : `${mode} estimate`;
+    const label = edge.provider === 'manual' ? 'custom time' : `${mode} estimate`;
     modeEl.textContent = label;
   }
   const timing = $('travel-edit-timing');
@@ -1051,6 +1051,7 @@ function openTravelEditSheet(fromId,toId,leaveByTs,destination=null,dayKey=null)
   }
   const mapsBtn = $('travel-edit-maps');
   if(mapsBtn){
+    mapsBtn.classList.toggle('primary',fromCurrent);
     mapsBtn.textContent = `open in ${mapsAppLabel().toLowerCase()}`;
     mapsBtn.title = hasPinCoords(to)
       ? 'Directions to this exact saved pin'
@@ -1061,8 +1062,10 @@ function openTravelEditSheet(fromId,toId,leaveByTs,destination=null,dayKey=null)
   for(const id of ['travel-edit-minus','travel-edit-plus','travel-edit-minutes','travel-edit-save','travel-edit-reset']){
     const control=$(id);if(control)control.disabled=fromCurrent;
   }
-  const durationRow=document.querySelector('#travel-edit-sheet .travel-edit-row');
-  if(durationRow){durationRow.hidden=fromCurrent;durationRow.previousElementSibling.hidden=fromCurrent;}
+  const durationPanel=$('travel-edit-duration');
+  if(durationPanel)durationPanel.hidden=fromCurrent;
+  const details=$('travel-edit-details');
+  if(details)details.open=false;
   for(const id of ['travel-edit-save','travel-edit-reset']){const control=$(id);if(control)control.hidden=fromCurrent;}
   if(typeof renderNativeTravelEditorReminders==='function')renderNativeTravelEditorReminders(destination,dayKey || (Number.isFinite(leaveByTs) ? dateKey(leaveByTs) : null));
   openSheet('travel-edit-sheet');

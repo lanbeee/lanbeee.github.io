@@ -79,6 +79,9 @@ function weatherGuidanceHintText(selectId){
   const choice=weatherProfileChoiceFromValue($(selectId)?.value || '');
   if(choice.weatherProfileMode==='none')return 'No weather guidance applies to this item unless a specific option overrides it.';
   if(choice.weatherProfileMode==='profile'){
+    if($(selectId)?.closest('.opportunity-mode')){
+      return `Appears only when ${weatherProfileName(choice.weatherProfileId,settings) || 'this profile'} conditions match.`;
+    }
     return `Uses ${weatherProfileName(choice.weatherProfileId,settings) || 'this profile'} at the scheduled place.`;
   }
   const ids=selectedWeatherLocationIds(selectId);
@@ -88,15 +91,50 @@ function weatherGuidanceHintText(selectId){
     return name ? `${loc.name} · ${name}` : null;
   }).filter(Boolean);
   if(inherited.length)return `Place defaults: ${inherited.join('; ')}.`;
-  return 'No selected place has weather guidance; planning is unchanged.';
+  return $(selectId)?.closest('.opportunity-mode')
+    ? 'No weather restriction.' : 'No selected place has weather guidance; planning is unchanged.';
 }
 
 function syncWeatherGuidanceHints(){
+  const tingWrap = $('ting-weather-location-wrap');
+  if(tingWrap && $('add-sheet')?.classList.contains('opportunity-mode')){
+    tingWrap.hidden = !locationOptions().length || !selectedAnywhere() && selectedLocationIds().length>0
+      || weatherProfileChoiceFromValue($('ting-weather-profile')?.value || '').weatherProfileMode !== 'profile';
+  }
   for(const [selectId,hintId] of [['ting-weather-profile','ting-weather-guidance-hint'],['detail-weather-profile','detail-weather-guidance-hint']]){
     const hint=$(hintId);
     if(hint)hint.textContent=weatherGuidanceHintText(selectId);
   }
   if(typeof syncHabitScheduleOptionWeatherHints==='function')syncHabitScheduleOptionWeatherHints();
+  syncDetailConditionHint();
+  if($('add-sheet')?.classList.contains('open') && typeof refreshAddAvailability === 'function')queueMicrotask(refreshAddAvailability);
+}
+
+function syncDetailConditionHint(){
+  const optional = $('detail-sheet')?.classList.contains('opportunity-mode');
+  const hint = $('detail-condition-hint');
+  if(!hint)return;
+  const record = {
+    ...readWeatherProfileChoice('detail-weather-profile'),
+    locationIds:selectedLocationIdsFrom('detail-place-chips'),
+    anywhereAllowed:selectedAnywhereFrom('detail-place-chips'),
+    weatherLocationId:$('detail-weather-location')?.value || null,
+    scheduleOptions:readHabitScheduleOptionsFromDetail()
+  };
+  const settings = sortSettings || loadSortSettings();
+  const hasPlace = record.locationIds.length > 0 || record.scheduleOptions.some(option=>option.locationId);
+  const hasTrigger = hasPlace || weatherHabitHasActiveGuidance(record,settings);
+  const needsCity = optional && hasTrigger && !hasPlace && !record.weatherLocationId && !weatherHomeCoords(settings);
+  $('detail-weather-city').hidden = !needsCity;
+  hint.textContent = !hasTrigger ? 'Choose a place or a weather profile to continue.'
+    : needsCity ? 'Set your city so Tings can check the weather.' : '';
+  hint.hidden = !optional || (hasTrigger && !needsCity);
+  if(optional){
+    $('detail-weather-location-wrap').hidden = !locationOptions().length
+      || !record.anywhereAllowed && record.locationIds.length > 0
+      || record.weatherProfileMode !== 'profile';
+  }
+  return !optional || hasTrigger;
 }
 
 function renderWeatherLocationSelect(id,value = ''){

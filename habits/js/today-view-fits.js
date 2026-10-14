@@ -65,6 +65,7 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
     if(typeof timedPlanLogForDay !== 'function')return;
     const plan = timedPlanLogForDay(h,dayKey);
     if(!plan)return;
+    if(isOpportunityHabit(h) && !opportunityPlanAllowed(h,logTime(plan)))return;
     out.push({
       h,
       i,
@@ -77,12 +78,20 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
   return out.filter(ev=>scheduledEventDuration(ev)>0).sort((a,b)=>a.eventTime - b.eventTime);
 }
 
+// Five-minute rounding must not close a fixed start that is still ahead of now.
+function agendaPlacementClock(data,now){
+  const fixed = (data || []).some(h=>h.allowedTimeFixedStart === true
+    || (h.scheduleOptions || []).some(option=>option.fixedStart === true));
+  return fixed ? now : ceilToMinutes(now,5);
+}
+
 function buildTodayAgenda(data,settings){
   const todayKey = todayIso();
   const dayBase = dayStart(Date.now());
   const scheduled = collectScheduledAgendaEvents(data,todayKey,settings);
   const totalMinutes = effectiveAvailabilityMinutes(todayKey,settings);
-  const slots = buildOpenAgendaSlots(todayKey,scheduled,settings);
+  const startClock = agendaPlacementClock(data,Date.now());
+  const slots = buildOpenAgendaSlots(todayKey,scheduled,settings,{clipAfter:startClock});
   // The availability budget caps TASK minutes for the day, not open time.
   // It is also bounded by the day's actual open minutes so a heavily-blocked
   // day never promises more capacity than the calendar leaves room for.
@@ -116,11 +125,14 @@ function buildTodayAgenda(data,settings){
   // Capacity (including travel) is charged during location-aware placement in
   // buildTodayTimeline — duration-only pre-cuts would under-count travel.
   const agendaItems = candidates.map(({h,i,priority,scarcity})=>({h,i,priority,scarcity}));
-  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, linkOmissions };
+  return { scheduled, agendaItems, totalMinutes:totalCap, usedMinutes:0, remainingMinutes:totalCap, slots, linkOmissions, startClock,sourceData:data };
 }
 
 // PURE: eligible due and planned work always enters the Today agenda.
 function includeInTodayAgenda(h,settings){
+  if(opportunityDoingNow(h,dayStart(Date.now())))return !completedOnDay(h,Date.now());
+  if(isOpportunityHabit(h) && !hasPlannedToday(h))return false;
+  if(isOpportunityHabit(h) && !opportunityPlanAllowed(h,Date.now()))return false;
   // Logs win over plans: once the work is actually done for today it leaves
   // the agenda, even if a plan entry for today is still on the habit.
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
@@ -246,7 +258,10 @@ function fillClockWindowOnDay(startMin,endMin,dayBase){
 function fillSimpleDayWindows(h,dayBase,contextLocId){
   const rawStart = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
   const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
-  if(rawStart == null || rawEnd == null)return null;
+  if(rawStart == null || rawEnd == null)return h.allowedTimeFixedStart === true ? [] : null;
+  if(h.allowedTimeFixedStart === true){
+    return [{start:dayBase + rawStart * 60000,end:dayBase + rawEnd * 60000}];
+  }
   const folded = typeof foldBlockedMinutes === 'function'
     ? foldBlockedMinutes(rawStart,rawEnd)
     : {startMin:rawStart,endMin:rawEnd};
@@ -349,6 +364,18 @@ function fillPreferredWindow(h,dayBase,contextLocId){
 // 10pm–6am sleep), is NOT still doable today. This mirrors what
 // buildOpenAgendaSlots does for the agenda timeline, so the home list agrees.
 function windowStillDoableToday(h,now = Date.now(),settings = (sortSettings || loadSortSettings())){
+  if(hasHabitScheduleOptions(h) && (h.allowedTimeFixedStart === true
+    || normalizeHabitScheduleOptions(h.scheduleOptions).some(option=>option.fixedStart === true))){
+    const base = dayStart(now);
+    const variants = habitScheduleOptionsForDay(h,base).map(option=>habitBoundToScheduleOption(h,option));
+    if(isDateEligibleForGeneralSchedule(h,base))variants.push(habitBoundToGeneralSchedule(h));
+    return variants.some(variant=>windowStillDoableToday(variant,now,settings));
+  }
+  if(h.allowedTimeFixedStart === true){
+    const start = resolveHabitTimeField(h,'allowedTimeStart',dayStart(now));
+    if(start == null || (now > dayStart(now) + start * 60000
+      && !fixedStartHasLoggedProgress(h,dayStart(now))))return false;
+  }
   const costMin = (h && h.breakable && typeof minViableSessionMinutes === 'function')
     ? minViableSessionMinutes(h)
     : clampDuration(h.durationMinutes);
@@ -406,6 +433,7 @@ function windowStillDoableToday(h,now = Date.now(),settings = (sortSettings || l
 // phone adapter only subtracts the user's warning lead. No solve/network work.
 function agendaOccurrenceDropAt(h,row,day,settings,data){
   const base=day.dayBase;
+  if(agendaRowHasFixedStart({...row,h}))return Number(row.end);
   if(h.type==='task' && !h.breakable && h.eventTime!=null && dateKey(h.eventTime)===dateKey(base))
     return Number(h.eventTime)+clampDuration(h.durationMinutes)*60000;
   const plan=typeof timedPlanLogForDay==='function' && timedPlanLogForDay(h,dateKey(base));
@@ -475,6 +503,7 @@ function annotateAgendaDropTimes(days,data,settings,now=Date.now()){
     for(const row of day.timeline || []){
       if(!['fill','scheduled'].includes(row.kind) || (morning && row.start>=morningEnd.getTime()))continue;
       const h=data[row.i] || row.h;if(!h)continue;
+      if(isOpportunityHabit(h))continue;
       row.hid=h.hid;
       const key=`${h.hid || row.i}:${row.scheduleOptionId || 'main'}`;
       if(!cutoffs.has(key))cutoffs.set(key,agendaOccurrenceDropAt(h,row,day,settings,data));
@@ -1041,6 +1070,7 @@ function buildDayTimeline(agenda,opts = {}){
     }
   }
   enforcePersistentLinkInvariants([state],ordered,settings);
+  placeOpportunityItems(agenda.sourceData || (typeof load === 'function' ? load() : []),[state],settings,ordered);
   agenda.usedMinutes = state.usedMinutes;
   agenda.remainingMinutes = Math.max(0,(Number(agenda.totalMinutes) || 0) - state.usedMinutes);
   if(opts.diagnostics)agenda.placementDiagnostics = buildPlacementDiagnostics(ordered,state);
@@ -2165,7 +2195,7 @@ function createDayPlacementState(day,settings,opts = {}){
   const blocks = normalizeBlockedTimes(settings.blockedTimes);
   const startClock = opts.startClock != null
     ? opts.startClock
-    : (isTodayDay
+    : day.startClock != null ? day.startClock : (isTodayDay
       ? ceilToMinutes(now,5)
       : dayBase + dayFirstOpenMinute(blocks,weekday,dayBase) * 60000);
   const slots = Array.isArray(day.slots)
@@ -2694,6 +2724,10 @@ function orderConstraintPenalty(fill,fit,state){
 // otherwise collapse every cursor onto one later clock.
 function pickBestScoredFit(fits,fill,state,opts = {}){
   if(!fits || !fits.length)return null;
+  if(fill._opportunityAutomatic){
+    fits = fits.filter(fit=>opportunityFitMatches(fill,fit,state,opts.settings || state.settings,opts.opportunityOriginState));
+    if(!fits.length)return null;
+  }
   // Doing-now: always take the earliest feasible start so it stays first.
   if(opts.doingNowStart != null){
     return fits.reduce((best,f)=>!best || f.placeStart < best.placeStart ? f : best,null);

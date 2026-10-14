@@ -14,6 +14,7 @@ function agendaClockRefreshNeedsFarDays(day,now,data = []){
   return (day?.timeline || []).some(row=>{
     if(row.kind!=='fill')return false;
     const h=row.h || data[row.i];
+    if(isOpportunityHabit(h) && !hasPlannedForDay(h,day.dayBase))return false;
     const expired=row.end<=now || (Number.isFinite(row.dropAt) && row.dropAt<=now);
     return expired && (!h || !h.type || h.type==='task' || Number(h.target)>1);
   });
@@ -33,8 +34,9 @@ function replayAgendaClockWeek(data,settings,count,opts = {}){
   // A coalesced fixed first session can contain flexible minutes. Rebuild its
   // residual budget with the engine rather than replaying only later fills.
   if((prior.timeline || []).some(row=>row.breakableStart))return null;
-  const rows=(prior.timeline || []).filter(r=>r.kind==='fill');
-  if(!rows.length || rows.length>64)return null;
+  const rows=(prior.timeline || []).filter(r=>r.kind==='fill'
+    && !(isOpportunityHabit(data[r.i]) && !hasPlannedForDay(data[r.i],prior.dayBase)));
+  if((!rows.length && !data.some(isOpportunityHabit)) || rows.length>64)return null;
   const started=performance.now(),day=buildDayAgenda(data,settings,prior.dayBase,{weekMode:true,now});
   const state=createDayPlacementState(day,settings,{now,weekMode:true});
   const omitted=[];
@@ -64,6 +66,7 @@ function replayAgendaClockWeek(data,settings,count,opts = {}){
       Object.assign(placedRow,{riskAt:row.riskAt,
         riskReason:row.riskReason,riskCheckedAt:row.riskCheckedAt,riskValidated:row.riskValidated,dropAt:row.dropAt});
     }
+    placeOpportunityItems(data,[state],settings,[],opts.memoDays.slice(1,count));
     day.timeline=finalizePlacementRows(state);
     // A full-week refresh must reconsider days for unfinished movable work.
     // Do not hide that obligation behind a frozen far-day replay.
@@ -101,7 +104,8 @@ async function forecastAgendaRisks(week,data,settings,mode,opts = {}){
     checkedAt:now,targetAt,planKey:agendaForecastPlanKey(week,data)};
   if(!day || day.dayBase!==dayStart(now) || dayStart(targetAt)!==day.dayBase)return result;
   const enabled=new Set(opts.owners || []);
-  const subjects=(day.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind));
+  const subjects=(day.timeline || []).filter(r=>['fill','scheduled'].includes(r.kind)
+    && !isOpportunityHabit(data[r.i] || r.h));
   if(!subjects.some(r=>enabled.has(r.hid || r.h?.hid || data[r.i]?.hid)))return result;
   // One build covers every displayed occurrence. Changing a per-item delivery
   // choice can use this evidence immediately without another planner run.

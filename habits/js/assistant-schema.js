@@ -83,6 +83,7 @@ const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   kind:{type:'string', enum:['task','habit']},
   create:{type:['boolean','string','null'], description:'true = the request adds something new; false = it changes an item that already exists. Omit only when the request could genuinely be either.'},
   habitKind:{type:['string','null'], description:'keepup/build, reduce/limit, or zero/stop'},
+  repeatMode:{type:['string','null'],enum:['routine','opportunity',null],description:'opportunity = optional keepup eligible at its priority when place/weather fits, with no overdue or missed days. At most once per periodDays; uses existing visits without creating a trip. routine = normal required rhythm. Do not use reduce for optional activities.'},
   name:{type:['string','null'], description:'Short title only, e.g. Kettlebells. Never paste the rest of the sentence here. Omit/"it" to change currentDraft'},
   newName:{type:['string','null'], description:'Rename the current item'},
   emoji:{type:['string','null'], description:'emoji, or none'},

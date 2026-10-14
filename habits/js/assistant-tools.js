@@ -454,6 +454,7 @@ function assistantEmptyDraft(){
   return {
     kind:null,
     habitKind:null,
+    repeatMode:null,
     name:'',
     emoji:null,
     emojiBgColor:null,
@@ -1354,6 +1355,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
   const extras = assistantCollectWorkingItems(opts, next);
   if(raw.newName)next.name = raw.newName;
   if(raw.habitKind === 'keepup' || raw.habitKind === 'reduce' || raw.habitKind === 'zero')next.habitKind = raw.habitKind;
+  if(raw.repeatMode === 'routine' || raw.repeatMode === 'opportunity')next.repeatMode = raw.repeatMode;
   if(raw.emoji != null)next.emoji = raw.emoji;
   if(raw.emojiBgColor != null)next.emojiBgColor = raw.emojiBgColor;
   if(Array.isArray(raw.topics))next.topics = raw.topics;
@@ -2151,6 +2153,7 @@ function assistantFrequencyFacts(habit){
   const times = parts && parts.times || 1;
   const days = parts && parts.days || 7;
   const timesPerWeek = days ? Math.round((times / days) * 70) / 10 : 0;
+  if(isOpportunityHabit(habit))return {frequency:`optional · at most once / ${days}d`,timesPerWeek};
   let frequency = `${times}× / ${days}d`;
   if(days === 1 && times === 1)frequency = 'daily';
   else if(days === 7)frequency = `${times}× / week`;
@@ -2158,6 +2161,7 @@ function assistantFrequencyFacts(habit){
 }
 
 function assistantHabitOverdueFacts(habit, now = Date.now()){
+  if(isOpportunityHabit(habit))return {overdueDays:0,dueInDays:null,daysSinceLast:habit.lastLog == null ? null : Math.round((dayStart(now)-dayStart(habit.lastLog))/86400000)};
   if(!habit)return {overdueDays:0, dueInDays:null, daysSinceLast:null};
   const todayBase = assistantDayBase(now);
   const dayDiff = ts => ts == null ? null : Math.round((assistantDayBase(ts) - todayBase) / 86400000);
@@ -3499,6 +3503,7 @@ function assistantHabitToDraft(habit, index, settings, data){
   if(!habit)return draft;
   draft.kind = habit.type === 'task' ? 'task' : 'habit';
   draft.habitKind = habit.type === 'task' ? null : habit.type;
+  draft.repeatMode = normalizeRepeatMode(habit.repeatMode,habit.type);
   draft.name = String(habit.name || '').slice(0, ASSISTANT_NAME_MAX);
   draft.hid = habit.hid;
   draft.index = index;
@@ -4737,6 +4742,7 @@ function assistantDraftFingerprint(draft){
     n:draft.name,
     k:draft.kind,
     hk:draft.habitKind,
+    rm:draft.repeatMode,
     e:draft.emoji,
     c:draft.emojiBgColor,
     d:draft.durationMinutes,
@@ -4830,11 +4836,12 @@ function assistantDraftSummary(draft, settings){
     return parts.filter(Boolean).join(' · ');
   }
   const parts = [draft.name, draft.kind === 'habit' ? 'habit' : 'task'];
+  if(draft.repeatMode === 'opportunity')parts.push(`when conditions fit · at most once / ${draft.periodDays || 7}d`);
   const duration = draft.durationMinutes != null
     ? draft.durationMinutes
     : (settings && settings.defaultDurationMinutes);
   if(duration)parts.push(`${duration} min`);
-  if(draft.kind === 'habit' && draft.timesPerPeriod && draft.periodDays){
+  if(draft.kind === 'habit' && draft.repeatMode !== 'opportunity' && draft.timesPerPeriod && draft.periodDays){
     const dayLabel = assistantWeekdaySummary(draft.allowedWeekdays);
     const weekdayCadence = dayLabel && draft.periodDays === 7 && (
       draft.timesPerPeriod === (draft.allowedWeekdays && draft.allowedWeekdays.length)
@@ -4913,10 +4920,12 @@ function assistantDraftToHabit(draft, settings, now, data){
   const type = isHabit
     ? (draft.habitKind === 'reduce' || draft.habitKind === 'zero' || draft.habitKind === 'keepup'
       ? draft.habitKind
-      : (s.defaultType === 'reduce' || s.defaultType === 'zero' ? s.defaultType : 'keepup'))
+      : (draft.repeatMode === 'opportunity' ? 'keepup'
+        : s.defaultType === 'reduce' || s.defaultType === 'zero' ? s.defaultType : 'keepup'))
     : 'task';
-  const times = draft.timesPerPeriod || 1;
-  const days = draft.periodDays || Math.round(s.defaultTarget || 7);
+  const times = draft.repeatMode === 'opportunity' ? 1 : draft.timesPerPeriod || 1;
+  const days = draft.periodDays || (draft.repeatMode === 'opportunity'
+    ? rhythmParts(s.defaultTarget || 7).days : Math.round(s.defaultTarget || 7));
   const target = (type === 'zero' || type === 'task')
     ? null
     : (typeof targetFromRhythmParts === 'function' ? targetFromRhythmParts(times, days) : days / times);
@@ -4924,6 +4933,7 @@ function assistantDraftToHabit(draft, settings, now, data){
     name:String(draft.name || '').slice(0, ASSISTANT_NAME_MAX),
     type,
     target,
+    repeatMode:normalizeRepeatMode(draft.repeatMode,type),
     lastLog:null,
     logs:[],
     emoji:draft.emoji != null ? draft.emoji : '',

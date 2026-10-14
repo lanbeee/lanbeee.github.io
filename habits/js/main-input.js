@@ -1122,19 +1122,13 @@ function openBlockEditSheet(row){
   blockEditDynamicOpen = false;
   $('block-edit-title').textContent = row.label || 'busy time';
   const date = new Date(row.start).toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
-  const startExpr = blockedEndpointExpression(block,'start');
-  const endExpr = blockedEndpointExpression(block,'end');
-  const resolvedStart = formatTimeShort(((originalStart % 1440) + 1440) % 1440);
-  const resolvedEnd = formatTimeShort(((originalEnd % 1440) + 1440) % 1440);
-  $('block-edit-copy').textContent = startExpr || endExpr
-    ? `${date} · dynamic: ${startExpr || resolvedStart} → ${endExpr || resolvedEnd} · today ${resolvedStart}–${resolvedEnd}`
-    : date;
+  $('block-edit-copy').textContent = date;
   $('block-edit-start').value = minutesToTimeInput(current.start);
   $('block-edit-end').value = minutesToTimeInput(current.end);
   const dynamicToggle = $('block-edit-dynamic-toggle');
   if(dynamicToggle){
     dynamicToggle.setAttribute('aria-expanded','false');
-    dynamicToggle.textContent = 'edit dynamic rule';
+    dynamicToggle.textContent = 'recurring rule';
   }
   // A fresh card editor starts from its saved rule, rather than the disclosure
   // choices left over from the previously inspected busy time.
@@ -1155,7 +1149,7 @@ $('block-edit-dynamic-toggle')?.addEventListener('click',()=>{
   const toggle = $('block-edit-dynamic-toggle');
   if(toggle){
     toggle.setAttribute('aria-expanded',String(blockEditDynamicOpen));
-    toggle.textContent = blockEditDynamicOpen ? 'hide dynamic rule' : 'edit dynamic rule';
+    toggle.textContent = blockEditDynamicOpen ? 'hide recurring rule' : 'recurring rule';
   }
   renderBlockEditDynamicControls();
 });

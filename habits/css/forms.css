@@ -304,6 +304,7 @@ input[type=text].mini-time-input{
   border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);
 }
 .detail-time-endpoints > .time-sep{display:none;}
+.detail-time-endpoints > .time-endpoint[hidden]{display:none;}
 .detail-time-endpoints > .time-endpoint{
   position:relative;width:100%;min-width:0;display:grid;
   grid-template-columns:minmax(0,1fr);align-items:start;gap:8px;
@@ -389,3 +390,13 @@ input[type=text].mini-time-input{
 .prayer-times-row label{font-size:13px;color:var(--text2);}
 .prayer-times-row .mini-select{max-width:220px;}
 .prayer-madhab-seg .seg-opt{padding:6px 12px;}
+
+/* Optional repeats keep condition controls reachable in minimal mode. */
+.range-row > [hidden], .range-row > label[hidden], .planning-field[hidden]{display:none !important;}
+body.minimal-mode #detail-sheet.minimal-detail.opportunity-mode .detail-schedule-places,
+body.minimal-mode #detail-sheet.minimal-detail.opportunity-mode #detail-weather-disclosure{display:block !important;}
+#detail-sheet.opportunity-mode #detail-flexibility-disclosure{display:none !important;}
+#detail-repeat-mode-row{margin-bottom:12px;}
+#detail-repeat-mode{max-width:100%;min-height:44px;}
+
+.add-presets > button[hidden]{display:none !important;}

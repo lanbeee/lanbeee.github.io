@@ -1,0 +1,120 @@
+const assert=require('node:assert/strict');
+const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:390,height:844}});
+  const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+  await page.goto(BASE,{waitUntil:'networkidle'});
+  await page.evaluate(()=>{save([]);saveSortSettings({...loadSortSettings(),minimalMode:true,weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation_probability',max:30,min:null,hard:true,relative:'none'}]}]});sortSettings=loadSortSettings();document.body.classList.add('minimal-mode');applyAddMinimalMode();render();});
+  await page.locator('#open-add').click();
+  await page.locator('#ting-message').fill('Optional walk');
+  await page.locator('[data-add-repeat="opportunity"]').click();
+  assert(await page.locator('#ting-weather-profile').isVisible(),'weather control available in minimal mode');
+  assert(await page.locator('#ting-tag-chips .tag-row-places').isVisible(),'place controls available in minimal mode');
+  assert(!await page.locator('#ting-times').isVisible(),'maximum gap has no repetition count');
+  await page.locator('#ting-days').fill('7');
+  assert(await page.locator('#do-save').isDisabled(),'a condition is required before saving');
+  await page.locator('#ting-weather-profile').selectOption('dry');
+  await page.waitForFunction(()=>!document.getElementById('do-save').disabled);
+  assert(await page.locator('#add-conditions').isVisible(),'conditions are primary fields');
+  assert(await page.locator('#ting-weather-city').isVisible(),'missing forecast city has an actionable setup control');
+  assert(!await page.locator('#add-more-options').isVisible(),'optional settings stay folded');
+  const order=await page.evaluate(()=>({conditions:$('add-conditions').getBoundingClientRect().top,duration:$('add-minimal-effort').getBoundingClientRect().top}));
+  assert(order.conditions<order.duration,'repeat limit, conditions, then duration');
+  await page.locator('#type-seg [data-v="task"]').click();
+  assert(!await page.locator('#add-conditions').isVisible(),'task form contains no conditional setup');
+  assert.equal(await page.locator('#ting-weather-profile').inputValue(),'','task retains its own weather draft');
+  await page.locator('#type-seg [data-v="keepup"]').click();
+  assert(await page.locator('#add-conditions').isVisible(),'habit draft restores conditional layout');
+  assert.equal(await page.locator('#ting-weather-profile').inputValue(),'dry','habit weather choice survives type switching');
+  await page.locator('[data-add-rhythm="1,7"]').click();
+  assert(!await page.locator('#add-conditions').isVisible(),'regular rhythm puts optional fields back in more options');
+  await page.locator('[data-add-repeat="opportunity"]').click();
+  assert.equal(await page.locator('#ting-weather-profile').inputValue(),'dry');
+  assert((await page.evaluate(()=>readAddRecord())).repeatMode==='opportunity');
+  await page.evaluate(()=>document.querySelector('.add-content').scrollTop=0);
+  await page.screenshot({path:'test-results/opportunity-add-mobile.png',fullPage:false,animations:'disabled'});
+  await page.setViewportSize({width:320,height:568});
+  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
+  assert(!overflow,'small phone has no horizontal overflow');
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#do-save').click();
+  assert.equal(await page.evaluate(()=>load()[0].repeatMode),'opportunity');
+  assert.equal(await page.locator('#detail-repeat-mode').inputValue(),'opportunity');
+  await page.evaluate(()=>{$('detail-weather-disclosure').open=true;});
+  assert(await page.locator('#detail-weather-profile').isVisible(),'weather remains editable in minimal detail');
+  assert(!await page.locator('#detail-times').isVisible());
+  assert(!await page.locator('#detail-flexibility-disclosure').isVisible(),'no early/late deadlines for optional items');
+  assert(!/overdue|missed/i.test(await page.locator('#detail-sub').textContent()));
+  assert(await page.locator('[data-detail-repeat]').isVisible(),'conditional mode is a frequency button');
+  assert(await page.locator('#detail-place-chips').isVisible(),'places are primary condition controls');
+  const scheduleOrder=await page.evaluate(()=>({limit:$('detail-slider-row').getBoundingClientRect().top,conditions:$('detail-conditions').getBoundingClientRect().top,availability:$('detail-availability-disclosure').getBoundingClientRect().top}));
+  assert(scheduleOrder.limit<scheduleOrder.conditions && scheduleOrder.conditions<scheduleOrder.availability,'schedule follows repeat limit, conditions, then day/hour refinements');
+  await page.locator('[data-detail-rhythm="3,7"]').click();
+  assert(await page.evaluate(()=>currentDetailTune().repeatMode==='routine'));
+  assert(!await page.locator('#detail-conditions').isVisible(),'routine mode restores folded condition fields');
+  assert.equal(await page.locator('#detail-weather-profile').inputValue(),'dry','weather survives switching modes');
+  await page.locator('[data-detail-repeat]').click();
+  assert(await page.locator('#detail-weather-profile').isVisible(),'switching to conditional mode reveals weather');
+  assert.equal(await page.locator('#detail-times').inputValue(),'1','conditional mode resets frequency to one maximum occurrence');
+  await page.locator('#detail-weather-profile').selectOption('__none__');
+  assert(await page.locator('#detail-save').isDisabled(),'conditional edits require a trigger');
+  assert(await page.locator('#detail-condition-hint').isVisible(),'missing condition explains disabled save');
+  await page.evaluate(()=>restoreDetailTune());
+  assert.equal(await page.locator('#detail-repeat-mode').inputValue(),'opportunity','cancel restores repeat mode');
+  await page.locator('#detail-days').fill('14');await page.locator('#detail-days').blur();
+  await page.locator('#detail-save').click();
+  assert.equal(await page.evaluate(()=>load()[0].target),14,'edited maximum gap saved');
+  await page.evaluate(()=>openDetail(0));
+  assert(!/streak|needs care|overdue/.test(await page.locator('#detail-stats').textContent()),'optional history carries no cadence failures');
+  await page.screenshot({path:'test-results/opportunity-detail-mobile.png',fullPage:false,animations:'disabled'});
+  await waitForAssistant(page);
+  const assistant=await page.evaluate(()=>{
+    const h=load()[0],draft=assistantHabitToDraft(h,0,sortSettings,load());
+    const saved=assistantDraftToHabit({...draft,durationMinutes:45},sortSettings,Date.now(),load());
+    return {mode:saved.repeatMode,gap:saved.target,frequency:assistantFrequencyFacts(h).frequency,due:assistantHabitOverdueFacts(h),schema:ASSISTANT_DRAFT_ITEM_PROPERTIES.repeatMode};
+  });
+  assert.equal(assistant.mode,'opportunity','assistant edits retain optional mode');assert.equal(assistant.gap,14);assert.equal(assistant.due.overdueDays,0);assert.equal(assistant.due.dueInDays,null);assert(/at most/.test(assistant.frequency));assert(assistant.schema);
+  const active=await page.evaluate(()=>{
+    const h=load()[0],now=Date.now();
+    setDoingNow(h.hid,now,dayStart(now),{sessionMinutes:15});
+    try{
+      const settings={...loadSortSettings(),blockedTimes:[],_weatherContext:null};
+      const week=buildWeekAgenda([h],settings,1);
+      return week.days[0].timeline.some(row=>row.kind==='fill' && row.i===0);
+    }finally{clearDoingNow(h.hid);}
+  });
+  assert(active,'a session explicitly started now stays in the agenda when weather becomes unknown');
+  const native=await page.evaluate(()=>{
+    const h=load()[0],now=Date.now(),base=dayStart(now);
+    const settings={...loadSortSettings(),blockedTimes:[]};
+    const row={kind:'fill',i:0,h,start:now+60000,end:now+31*60000,locationId:null,hard:false};
+    const week={days:[{dayBase:base,dayKey:dateKey(base),timeline:[row]}]};
+    const prefs={version:3,enabled:true,items:{[`item:${h.hid}`]:{start:'notification',missed:'alarm'}}};
+    const events=nativeReminderEvents(week,[h],settings,prefs,now);
+    const controls=nativeItemReminderControls(`item:${h.hid}`,h.name,{hideMissed:true});
+    return {edges:events.map(event=>event.reminderEdge),dropControl:!!controls.querySelector('[data-reminder-edge="missed"]')};
+  });
+  assert(native.edges.includes('start'),'optional agenda rows retain ordinary phone reminders');
+  assert(!native.edges.includes('missed'),'optional rows carry no missed alarm');
+  assert.equal(native.dropControl,false,'optional items hide the inapplicable drop alarm control');
+  await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>openDetail(0));
+  await page.evaluate(()=>{sortSettings.minimalMode=false;document.body.classList.remove('minimal-mode');applyDetailMinimalMode();scrollDetailToNav('schedule');});
+  assert(await page.locator('[data-detail-repeat]').isVisible(),'mode reachable on desktop');
+  assert(await page.locator('#detail-weather-profile').isVisible(),'saved conditional weather is open in regular mode');
+  for(const width of [320,240]){
+    await page.setViewportSize({width,height:844});
+    await page.evaluate(()=>{document.documentElement.style.setProperty('--font-scale','2');scrollDetailToNav('schedule');});
+    const clipped=await page.evaluate(()=>{
+      const panel=$('detail-conditions'),rect=panel.getBoundingClientRect();
+      return [...panel.querySelectorAll('button,select')].filter(el=>el.getClientRects().length).some(el=>{const r=el.getBoundingClientRect();return r.left<rect.left-1 || r.right>rect.right+1;});
+    });
+    assert(!clipped,`rounded condition controls fit a ${width}px pane with enlarged text`);
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>{document.documentElement.style.removeProperty('--font-scale');scrollDetailToNav('schedule');});
+  await page.screenshot({path:'test-results/opportunity-schedule-mobile.png',animations:'disabled'});
+  assert.deepEqual(errors,[]);console.log('Opportunity create/edit, minimal, desktop and assistant checks passed');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

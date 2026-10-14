@@ -2768,6 +2768,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h,settings,todayBase) : (isWeekPinnedToday(h,settings) ? todayBase : null);
     const pinned = pinnedDay != null;
+    if(isOpportunityHabit(h) && !pinned)continue;
     const eligible = new Set();
     for(const day of days){
       if(typeof weekFillEligibleOnDay === 'function'
@@ -2879,6 +2880,8 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   } : null;
   placeAdditionalSameDayOccurrences(candidates,solveStates,settings,additionalOpts);
   annotateAgendaOccurrenceKeys(candidates,solveStates);
+  placeOpportunityItems(data,solveStates,settings,candidates,
+    reuseFarDays ? _plannerWeekDayMemo.days.slice(1) : []);
 
   let totalTravelSeconds = 0;
   for(let d = 0;d < days.length;d += 1){

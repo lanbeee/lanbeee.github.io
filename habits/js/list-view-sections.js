@@ -204,10 +204,11 @@ function attachWeatherIndicator(header,day){
 
 function missedPlannerFingerprint(data,settings){
   const habits = (data || []).map(h=>[
-    h.hid,h.type,h.target,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
+    h.hid,h.type,h.target,h.repeatMode,h.lastLog,h.createdAt,h.snoozedUntil,h.dueDate,h.eventTime,h.planByDate,
     h.durationMinutes,h.breakable,h.minChunkMinutes,h.priority,
     habitEarlyWindowDays(h),habitDelayAllowanceDays(h),
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
+    h.allowedTimeFixedStart,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
     h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
     h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
@@ -374,6 +375,7 @@ function missedOpportunityPassedToday(h,dayBase,now){
 // dropped by replanning. This rejects the old broad "everything overdue"
 // sweep: an off-day or impossible item has no qualifying planner evidence.
 function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
+  if(isOpportunityHabit(h))return false;
   if(!h || !h.hid)return false;
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
   const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
@@ -583,7 +585,7 @@ function renderDroppedPanel(items,opts = {}){
     // Icon = the same pulse affordance as a card (colored tile + "+" badge), so
     // a missed habit can be cleared with one tap straight from this list.
     const c = (h && typeof colors === 'function')
-      ? colors(daysSince(h.lastLog),h.target,h.type)
+      ? habitColors(h)
       : { bg:'var(--bg)', icon:'var(--amber-icon)' };
     const hasEmojiBg = h && typeof normalizeEmojiBgColor === 'function' && normalizeEmojiBgColor(h.emojiBgColor);
     const logStyle = (h && typeof emojiBgInlineStyle === 'function' && (h.emoji || hasEmojiBg))
@@ -1659,7 +1661,7 @@ function render(opts){
     const h = data[realIdx];
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
     const days = daysSince(h.lastLog);
-    const c = colors(days,h.target,h.type);
+    const c = habitColors(h,days);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
     const cue = cardCue(h);

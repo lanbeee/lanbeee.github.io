@@ -27,7 +27,7 @@ function renderStats(h){
   const timed = h.type === 'task' && h.eventTime !== null;
   const targetLine = h.type === 'zero' ? 'avoid'
     : h.type === 'task' ? (timed ? 'appointment' : (h.dueDate ? 'due task' : 'someday'))
-    : `${formatRhythmLabel(target)} rhythm`;
+    : isOpportunityHabit(h) ? `at most once / ${opportunityGapDays(h)}d` : `${formatRhythmLabel(target)} rhythm`;
   const rhythmIcon = h.type === 'zero' ? 'ti-ban'
     : h.type === 'task' ? (timed ? 'ti-calendar-time' : 'ti-checkbox')
     : 'ti-repeat';
@@ -51,6 +51,10 @@ function renderStats(h){
     </div>`;
   if(h.type === 'task'){
     $('detail-stats').innerHTML = scoreCard;
+    return;
+  }
+  if(isOpportunityHabit(h)){
+    $('detail-stats').innerHTML = `${scoreCard}<div class="detail-stat-chips"><span class="detail-stat-chip"><b>${completed}</b>total entries</span><span class="detail-stat-chip"><b>${avg === null ? '-' : `${avg}d`}</b>usual gap</span></div>`;
     return;
   }
   const chips = [
@@ -82,12 +86,13 @@ function recentWindowStats(h,windowDays = 30){
   const since = Date.now() - windowDays * 86400000;
   const logs = actualLogs(h.logs).filter(ts=>ts >= since);
   const target = h.target || 7;
-  const expected = h.type === 'keepup' ? Math.max(1,Math.ceil(windowDays / target)) : 0;
+  const expected = h.type === 'keepup' && !isOpportunityHabit(h) ? Math.max(1,Math.ceil(windowDays / target)) : 0;
   return {count:logs.length,expected,good:Math.min(logs.length,expected)};
 }
 
 // PURE: maps score to a label string
 function scoreTitle(h,score){
+  if(isOpportunityHabit(h))return 'optional';
   if(score === null){
     if(h.type === 'task')return taskWhen(h) === null ? 'someday' : 'upcoming';
     return 'no pattern yet';
@@ -115,6 +120,7 @@ function scoreTitle(h,score){
 
 // PURE: maps score to guidance copy
 function progressCopy(h,score){
+  if(isOpportunityHabit(h))return 'no required frequency';
   if(score === null)return 'start with one entry';
   if(h.type === 'keepup'){
     if(score >= 80)return 'your current gap is inside the rhythm';
@@ -133,6 +139,7 @@ function progressCopy(h,score){
 
 // PURE: builds the about blurb string
 function aboutText(h){
+  if(isOpportunityHabit(h))return `Optional, at most once every ${opportunityGapDays(h)} days. Becomes eligible at its priority on existing visits and matching weather. Explicit plans still reserve time.`;
   const days = daysSince(h.lastLog);
   if(h.type === 'task'){
     if(isTaskDone(h))return `Done. Logged ${entryWhen(h.lastLog)}.`;
@@ -194,6 +201,7 @@ function aboutText(h){
 
 // PURE: builds the short trend label
 function trendText(h){
+  if(isOpportunityHabit(h))return cardCue(h).toLowerCase();
   const days = daysSince(h.lastLog);
   const avg = avgInterval(h.logs);
   if(h.type === 'task'){
@@ -268,6 +276,7 @@ function renderGraph(h){
 
 // PURE: returns the graph rule hint
 function graphRule(h){
+  if(isOpportunityHabit(h))return 'time between entries';
   if(h.type === 'keepup')return 'shorter is better';
   if(h.type === 'reduce')return 'longer is better';
   if(h.type === 'task')return h.eventTime !== null ? (h.breakable ? 'fixed first start' : 'fixed time') : 'one-off';
@@ -276,6 +285,7 @@ function graphRule(h){
 
 // PURE: builds the graph caption string
 function graphCaption(h,intervals){
+  if(isOpportunityHabit(h))return `At most once every ${opportunityGapDays(h)} days. Longer gaps are fine.`;
   const last = intervals[intervals.length - 1];
   const tone = intervalTone(h,last);
   const label = tone === 'hit' ? 'good' : tone === 'warn' ? 'close' : 'needs care';
