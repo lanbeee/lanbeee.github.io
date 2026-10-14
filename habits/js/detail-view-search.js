@@ -5,7 +5,7 @@ const DETAIL_SEARCH_FIELDS = [
   ['detail-times','Times per cycle','frequency repeat repetitions rhythm'],
   ['detail-days','Cycle days','frequency interval cadence rhythm'],
   ['detail-due-date','Due date','deadline appointment task date'],
-  ['detail-due-time','Due time','deadline appointment fixed start task time'],
+  ['detail-due-time','Start time','due time deadline appointment fixed start task time'],
   ['detail-weekday-chips','Allowed weekdays','days monday tuesday wednesday thursday friday saturday sunday'],
   ['detail-monthday-toggle','Allowed month days','dates monthly calendar'],
   ['detail-allowed-time-row','Allowed time window','hours start end clock relative sunrise sunset prayer fajr zuhr dhuhr asr maghrib isha anchor offset later earlier combine overnight'],
@@ -79,9 +79,12 @@ function detailSearchEntries(){
   const inner = getSheetInner('detail-sheet');
   if(!inner || detailIsSingleView())return [];
   const entries = [];
+  const optional = $('detail-sheet').classList.contains('opportunity-mode');
   const add = (target,label,aliases='')=>{
     const page = target?.closest('.detail-page');
-    if(!page || page.hidden || target.disabled)return;
+    if(!page || page.hidden || (target.disabled && target.id !== 'detail-due-time'))return;
+    if(optional && (target.id === 'detail-times'
+      || target.closest('#detail-flexibility-disclosure') || label === 'Place preferences'))return;
     // Platform-only controls are deliberately absent, including native sharing.
     if(target.closest('.detail-shared-display-control') && window.TingsNative?.isNative)return;
     if(target.id === 'detail-share-item' && typeof shareConfigured === 'function' && !shareConfigured())return;
@@ -95,7 +98,15 @@ function detailSearchEntries(){
     const text = detailSearchNormalize(`${label} ${aliases} ${path}`);
     if(!entries.some(e=>e.target === target))entries.push({target,label,path,text});
   };
-  DETAIL_SEARCH_FIELDS.forEach(([id,label,aliases])=>add($(id),label,aliases));
+  DETAIL_SEARCH_FIELDS.forEach(([id,label,aliases])=>{
+    if(optional && id === 'detail-days'){
+      label = 'Repeat limit';aliases += ' minimum days between occurrences at most maximum frequency';
+    }
+    if(id === 'detail-allowed-time-row' && $('detail-time-kind').value === 'fixed'){
+      label = 'Fixed start time';aliases += ' exact start class appointment';
+    }
+    add($(id),label,aliases);
+  });
   inner.querySelectorAll('.detail-page details > summary').forEach(el=>add(el,el.textContent.trim()));
   // Include live option/link rows and every native reminder edge. Labels come
   // from the renderer, so added rows and changing item types cannot go stale.
@@ -219,8 +230,13 @@ function revealDetailSearchEntry(entry){
     target = $('detail-breakable-row');message = 'Turn on “breakable into chunks” to set a minimum chunk.';
   }else if(target.closest('#detail-due-row') && $('detail-due-row').hidden){
     target = $('detail-rhythm-disclosure').querySelector('summary');message = 'Due dates and fixed times are available for tasks. Change the type in Identity first.';
+  }else if(target.id === 'detail-due-time' && target.disabled){
+    target = $('detail-due-date');message = 'Choose a due date before setting a start time.';
   }else if(target.closest('#detail-slider-row') && $('detail-slider-row').hidden){
-    target = $('detail-rhythm-disclosure').querySelector('summary');message = 'A repeating rhythm is available for habits. Change the type in Identity first.';
+    target = $('detail-rhythm-disclosure').querySelector('summary');
+    message = currentDetailTune().type === 'zero'
+      ? 'Choose build or limit in Identity to set a repeating frequency.'
+      : 'Choose Habit in Identity to set a repeating frequency.';
   }else if(target.closest('#detail-mode-field') && $('detail-mode-field').hidden){
     target = $('detail-type-seg');message = 'Choose Habit to see build, limit and stop.';
   }else if(target.closest('#detail-weather-location-wrap') && $('detail-weather-location-wrap').hidden){

@@ -699,7 +699,11 @@ function logTing(i,opts = {}){
   }
   const logs = normalizeLogs(h.logs);
   if(!h.breakable && opts.occurrenceKey && logs.some(log=>!isPlanLog(log) && logOccurrenceKey(log) === opts.occurrenceKey)){
-    showToast('already done');
+    // A recovered/repeated tap must not dismiss the undo for that same log.
+    if(pendingAction?.type === 'entry' && !pendingAction.plan && pendingAction.hid === h.hid
+      && logOccurrenceKey(pendingAction.entry) === opts.occurrenceKey){
+      showActionToast(`Already logged ${toastItemName(h)}`,pendingAction);
+    }else showToast('already done');
     return false;
   }
   const consumedPlanTs = planToConsumeForEntry(logs,now);

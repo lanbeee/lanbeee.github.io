@@ -47,7 +47,7 @@ function weatherProfileOptionsHtml(value='',inheritLabel='use the place’s weat
   const selected=String(value || '');
   const missing=selected && selected!==WEATHER_PROFILE_NONE_VALUE && !profiles.some(profile=>profile.id===selected);
   return `<option value=""${selected===''?' selected':''}>${escapeHtml(inheritLabel)}</option>`
-    +`<option value="${WEATHER_PROFILE_NONE_VALUE}"${selected===WEATHER_PROFILE_NONE_VALUE?' selected':''}>no weather</option>`
+    +`<option value="${WEATHER_PROFILE_NONE_VALUE}"${selected===WEATHER_PROFILE_NONE_VALUE?' selected':''}>ignore weather rules</option>`
     +profiles.map(profile=>
       `<option value="${escapeHtml(profile.id)}"${profile.id===selected?' selected':''}>${escapeHtml(profile.name)}</option>`
     ).join('')
@@ -78,8 +78,8 @@ function weatherInheritLabel(selectId){
   const opportunity=Boolean(select?.closest('.opportunity-mode'));
   const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
   const ids=selectedWeatherLocationIds(selectId);
-  if(opportunity && !ids.length)return 'not set';
-  return profiles.length ? 'use the place’s weather' : 'use the place’s weather · none saved yet';
+  if(opportunity)return ids.length ? 'use each place’s weather rules' : 'choose weather rules…';
+  return profiles.length ? 'use the place’s weather rules' : 'use the place’s weather rules · none saved yet';
 }
 
 // A conditional item shows up only after a place or a weather choice.
@@ -90,29 +90,54 @@ function opportunitySetupHint(hasTrigger, needsCity){
   return '';
 }
 
+// Show actual bounds beside a selected set of rules, in the user's units.
+function weatherProfileRuleSummary(profile){
+  return (profile?.rules || []).filter(weatherRuleActive).map(rule=>{
+    const label = WEATHER_METRICS[rule.metric]?.label || rule.metric;
+    const percentile = rule.boundMode === 'percentile';
+    const unit = percentile ? 'th percentile' : weatherMetricUnitLabel(rule.metric);
+    const value = bound=>percentile ? `percentile ${bound}`
+      : `${weatherMetricDisplayValue(rule.metric,bound)}${unit ? ' ' + unit : ''}`;
+    const bounds = rule.min != null && rule.max != null ? `${value(rule.min)} to ${value(rule.max)}`
+      : rule.min != null ? `at least ${value(rule.min)}`
+      : rule.max != null ? `at most ${value(rule.max)}` : '';
+    const preference = rule.relative === 'low' ? 'prefer lower' : rule.relative === 'high' ? 'prefer higher' : '';
+    return `${label}: ${[bounds,preference].filter(Boolean).join(', ')}`;
+  }).join('; ');
+}
+
 function weatherGuidanceHintText(selectId){
   const settings=sortSettings || loadSortSettings();
   const choice=weatherProfileChoiceFromValue($(selectId)?.value || '');
   const opportunity=Boolean($(selectId)?.closest('.opportunity-mode'));
   if(choice.weatherProfileMode==='none'){
     return opportunity
-      ? 'Any weather is fine.'
+      ? selectedWeatherLocationIds(selectId).length
+        ? 'Weather doesn’t restrict this habit. Tings suggests it during visits to your selected places.'
+        : 'Weather doesn’t restrict this habit. Choose a place above so Tings knows when to suggest it.'
       : 'Weather won’t change the plan, unless a specific time and place says otherwise.';
   }
   if(choice.weatherProfileMode==='profile'){
     const name=weatherProfileName(choice.weatherProfileId,settings) || 'this weather';
-    if(opportunity)return `Shows up only when the weather matches ${name}.`;
+    if(opportunity){
+      const summary = weatherProfileRuleSummary(weatherProfileById(choice.weatherProfileId,settings));
+      if(!summary)return `${name} has no active rules. Edit weather rules below, or choose a place above.`;
+      const place = selectedWeatherLocationIds(selectId).length ? 'at a selected place' : 'where the forecast is checked';
+      return `Only when ${name} matches ${place}. ${summary}. Waits if the forecast is unavailable.`;
+    }
     return `Uses ${name} at the place where this is planned.`;
   }
   const ids=selectedWeatherLocationIds(selectId);
   const inherited=ids.map(id=>{
     const loc=normalizeLocationRegistry(settings.locations).find(item=>item.id===id);
-    const name=loc && weatherProfileName(loc.weatherProfileId,settings);
+    const name=loc && weatherProfileRuleSummary(weatherProfileById(loc.weatherProfileId,settings)) && weatherProfileName(loc.weatherProfileId,settings);
     return name ? `${loc.name} · ${name}` : null;
   }).filter(Boolean);
-  if(inherited.length)return `Uses the weather saved for ${inherited.join('; ')}.`;
+  if(inherited.length)return opportunity
+    ? `Uses saved rules: ${inherited.join('; ')}. Places without active rules allow any weather. Both place and weather must match.`
+    : `Uses the weather saved for ${inherited.join('; ')}.`;
   if(opportunity){
-    return ids.length ? 'Any weather is fine. This shows up when you’re at a place you chose.' : '';
+    return ids.length ? 'These places have no active weather rules, so any weather is fine. Choose saved rules to add a weather condition.' : 'Choose saved weather rules, or select a place above. Any place alone isn’t a condition.';
   }
   return ids.length
     ? 'The selected places have no saved weather, so weather won’t change the plan.'
@@ -133,6 +158,12 @@ function syncWeatherGuidanceHints(){
     }
     const blank=$(selectId)?.querySelector('option[value=""]');
     if(blank)blank.textContent=weatherInheritLabel(selectId);
+    const optional = Boolean($(selectId)?.closest('.opportunity-mode'));
+    const none = $(selectId)?.querySelector(`option[value="${WEATHER_PROFILE_NONE_VALUE}"]`);
+    if(none)none.textContent = optional ? 'any weather' : 'ignore weather rules';
+    const edit = $(selectId === 'ting-weather-profile' ? 'ting-weather-profiles' : 'detail-weather-profiles');
+    if(edit)edit.textContent = normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles).length
+      ? 'edit weather rules' : 'add weather rules';
   }
   if(typeof syncHabitScheduleOptionWeatherHints==='function')syncHabitScheduleOptionWeatherHints();
   syncDetailConditionHint();

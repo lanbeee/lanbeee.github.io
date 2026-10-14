@@ -1,4 +1,4 @@
-// End-to-end: sample locations + chips + filters + agenda travel + I-am-at.
+// End-to-end: explicit place fixtures + chips + filters + agenda travel + presence.
 //
 //   PLAYWRIGHT_BROWSERS_PATH=~/Library/Caches/ms-playwright \
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/locations-flow-test.js
@@ -37,7 +37,7 @@ async function openSettings(page){
     localStorage.setItem('tings_v2', JSON.stringify([]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', topics:[], locations:[], travel:{}, defaultTravelMode:'walking',
-      showLocationOnCards:false, showWeekOnHome:true,
+      showLocationOnCards:false, cardDetailLevel:'custom', showWeekOnHome:true, minimalMode:false,
       availabilityMinutes:[180,180,180,180,180,120,120]
     }));
     const RealDate = window.Date;
@@ -113,13 +113,19 @@ async function openSettings(page){
   await page.goto(baseUrl, { waitUntil:'load' });
   await page.waitForTimeout(400);
 
-  // ── A. Add samples seeds 5 places + location-linked habits ──
-  console.log('\n[A] add samples → locations registry');
-  // Stretch/sleep samples use sunrise windows, so a home city is required first.
+  // Starter samples deliberately need no places. Seed explicit location
+  // examples here so this integration test does not depend on that catalog.
+  console.log('\n[A] place examples → locations registry');
   await page.evaluate(() => {
     updateSortSetting({ homeCityName:'New York, United States', homeCityLat:40.7128, homeCityLng:-74.0060 }, { renderNow:true, sync:true });
+    const locations = buildSampleLocations();
+    const examples = locations.map((place,index)=>sortSampleHabit(`Visit ${place.name}`,'keepup',1,[],{
+      hid:`sample-location-fixture-${index}`,durationMinutes:15,anywhereAllowed:false,
+      topics:['places'],
+      locationIds:index === 2 ? ['sample-gym','sample-cafe'] : [place.id]
+    }));
+    commitSampleHabits(examples,{closeSheets:true});
   });
-  await page.evaluate(() => addSortSamples({closeSheets:true}));
   await page.waitForTimeout(500);
 
   const seeded = await page.evaluate(() => {
@@ -231,7 +237,7 @@ async function openSettings(page){
   await page.waitForTimeout(400);
   // Detail may open on schedule — close if open.
   if(await page.locator('#detail-sheet.open').count()){
-    await page.locator('#detail-cool, #detail-close').first().click().catch(()=>{});
+    await page.locator('#detail-cool').click();
   }
   const saved = await page.evaluate(() => {
     const h = load().find(x => x.name === 'loc chip test habit');

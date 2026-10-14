@@ -108,6 +108,37 @@ const {chromium} = require('playwright');
     }
     await page.locator('#ting-auto-mark').blur();
     await page.locator('#do-cancel').tap();
+    await page.setViewportSize({width:393,height:852});
+    for(const minimal of [false,true]){
+      await page.evaluate(minimal=>{
+        visualViewport.width=393;visualViewport.height=852;visualViewport.offsetTop=0;
+        setMinimalMode(minimal);applyAddDefaults();openSheet('add-sheet');
+      },minimal);
+      for(const id of ['ting-message','ting-times','ting-days','ting-duration']){
+        await page.locator('#'+id).focus();
+        for(const height of [400,320]){
+          const layout = await page.evaluate(async ({height,id})=>{
+            visualViewport.height=height;visualViewport.offsetTop=20;
+            visualViewport.dispatchEvent(new Event('resize'));
+            visualViewport.dispatchEvent(new Event('scroll'));
+            await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+            const field=$(id).getBoundingClientRect();
+            const footer=document.querySelector('.add-actions').getBoundingClientRect();
+            const hit=document.elementFromPoint(field.left+field.width/2,field.top+field.height/2);
+            const save=$('do-save').getBoundingClientRect();
+            return {fieldVisible:field.top>=20 && field.bottom<=footer.top,
+              fieldHit:hit===$(id),footerVisible:footer.bottom<=height+20,
+              saveHit:document.elementFromPoint(save.left+save.width/2,save.top+save.height/2)?.closest('button')?.id === 'do-save'};
+          },{height,id});
+          assert.ok(layout.fieldVisible && layout.fieldHit && layout.footerVisible && layout.saveHit,`${id} stays above the 393px phone keyboard, minimal=${minimal}, height=${height}: ${JSON.stringify(layout)}`);
+        }
+        await page.evaluate(()=>{visualViewport.height=852;visualViewport.offsetTop=0;visualViewport.dispatchEvent(new Event('resize'));});
+        await page.locator('#'+id).blur();
+      }
+      await page.locator('#do-cancel').tap();
+    }
+    await page.setViewportSize({width:390,height:844});
+    await page.evaluate(()=>{visualViewport.height=844;visualViewport.offsetTop=0;updateKeyboardLift();});
     await page.locator('#open-add').tap();
     assert.equal(await page.evaluate(()=>document.querySelector('.add-content').scrollTop),0,'new drafts start at the beginning');
     // Android shrinks the WebView itself. A lagging visual viewport must

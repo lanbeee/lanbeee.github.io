@@ -71,7 +71,9 @@ function openDetail(i){
   $('detail-options-disclosure').open = Boolean(h.scheduleOptions?.length);
   $('detail-weather-disclosure').open = Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId);
   renderTimeWindowInputs(h);
-  $('detail-due-date').value = dateInputValue(h.dueDate);
+  // Older/imported timed tasks can carry the appointment clock without a
+  // separate due date. Show that clock's date before gating the time field.
+  $('detail-due-date').value = dateInputValue(h.dueDate ?? h.eventTime);
   if($('detail-due-time'))$('detail-due-time').value = h.eventTime !== null ? timeInputValue(h.eventTime) : '';
   syncDetailDueUi();
   setScheduleView('allowed');
@@ -85,7 +87,9 @@ function openDetail(i){
     repeatMode:normalizeRepeatMode(h.repeatMode,h.type),
     emoji:h.emoji || '',
     emojiBgColor:normalizeEmojiBgColor(h.emojiBgColor),
-    target:h.target || '',
+    // Tasks/stop items have no saved rhythm, but their hidden editor still
+    // carries a default. Compare that same value so reverting an edit is clean.
+    target:h.target || 7,
     pinned:Boolean(h.pinned),
     showOnSharedDisplay:h.showOnSharedDisplay !== false,
     allowSharedDisplayCompletion:h.allowSharedDisplayCompletion !== false,
@@ -138,7 +142,7 @@ function openDetail(i){
     earlyWindowDays:habitEarlyWindowDays(h),
     delayAllowanceDays:habitDelayAllowanceDays(h),
     priority:effectivePriority(h),
-    dueDate:h.dueDate ?? null,
+    dueDate:parseDateInput($('detail-due-date').value),
     eventTime:h.eventTime ?? null,
     planByDate:h.planByDate ?? null
   };

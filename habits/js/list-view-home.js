@@ -66,33 +66,34 @@ function selectedAnywhere(){
   return selectedAnywhereFrom('ting-tag-chips');
 }
 
-// Anywhere stays allowed when no place is chosen, but on a conditional item
-// that default is not a finished condition. Keep it tappable and unselected
-// until a place or weather profile is actually set.
+// Conditional place selection stays separate from ranking. Keep saved rankings
+// in the draft so switching back to a regular rhythm does not discard them.
 function syncOpportunityAnywhereChip(containerId){
   const wrap = $(containerId);
   const chip = wrap?.querySelector('[data-anywhere]');
   if(!chip)return;
-  const opportunity = Boolean(wrap.closest('.opportunity-mode'));
-  const places = typeof selectedLocationIdsFrom === 'function' ? selectedLocationIdsFrom(containerId) : [];
-  const optionPlace = containerId === 'detail-place-chips'
-    && typeof readHabitScheduleOptionsFromDetail === 'function'
-    && readHabitScheduleOptionsFromDetail().some(option=>option.locationId);
-  let weather = false;
-  if(typeof weatherHabitHasActiveGuidance === 'function' && typeof weatherProfileChoiceFromValue === 'function'){
-    const detail = containerId === 'detail-place-chips';
-    weather = weatherHabitHasActiveGuidance({
-      ...weatherProfileChoiceFromValue($(detail ? 'detail-weather-profile' : 'ting-weather-profile')?.value || ''),
-      locationIds:places,
-      anywhereAllowed:chip.classList.contains('on'),
-      weatherLocationId:$(detail ? 'detail-weather-location' : 'ting-weather-location')?.value || null,
-      scheduleOptions:detail && typeof readHabitScheduleOptionsFromDetail === 'function'
-        ? readHabitScheduleOptionsFromDetail() : []
-    }, sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}));
+  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  chip.classList.remove('is-pending');
+  chip.lastChild.textContent = optional ? 'any place' : 'anywhere';
+  chip.setAttribute('aria-pressed',String(chip.classList.contains('on')));
+  chip.title = optional ? 'No place restriction. Choose weather rules below.' : 'Not tied to one place';
+  if(optional){
+    const hint = containerId === 'ting-tag-chips'
+      ? $('add-topics-section').querySelector('.field-hint') : $('detail-places-hint');
+    const anywhere = selectedAnywhereFrom(containerId);
+    hint.textContent = anywhere
+      ? 'Any place needs weather rules below. Or tap a place to use a visit you already make.'
+      : 'Tap places to select or remove them. Tings uses visits you already make and won’t add a trip.';
   }
-  const pending = opportunity && chip.classList.contains('on') && places.length === 0 && !optionPlace && !weather;
-  chip.classList.toggle('is-pending', pending);
-  chip.title = pending ? 'Choose a place you visit, or the weather this needs.' : 'Not tied to one place';
+}
+
+function toggleAnywhereChip(containerId){
+  const wrap = $(containerId);
+  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  renderTagChips(containerId,selectedTopicsFrom(containerId),
+    optional ? [] : selectedLocationIdsFrom(containerId),null,
+    optional ? {} : selectedLocationPrefsFrom(containerId),
+    optional || !selectedAnywhereFrom(containerId));
 }
 
 /** PURE: read locationPrefs map from chip data-pref attributes. */
@@ -145,7 +146,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     if(aOn !== bOn)return aOn - bOn;
     return String(a).localeCompare(String(b),undefined,{sensitivity:'base',numeric:true});
   });
-  const anywhereHtml = locations.length > 0
+  const anywhereHtml = locations.length > 0 || wrap.closest('.opportunity-mode')
     ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="Not tied to one place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
     : '';
   const locHtml = orderedLocations.map(loc=>{
@@ -157,7 +158,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
       : level === 'little' ? 'little preference'
       : level === 'avoid' ? 'avoid if possible'
       : 'allowed';
-    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i>${escapeHtml(loc.name)}${mark}</button>`;
+    return `<button type="button" class="topic-chip location-chip ${on ? 'on' : ''} ${level ? `pref-${level}` : ''}" data-location-name="${escapeHtml(loc.name)}" data-location-id="${escapeHtml(loc.id)}" data-pref="${escapeHtml(level)}" title="${title}"><i class="ti ti-map-pin" aria-hidden="true"></i><span class="location-chip-name">${escapeHtml(loc.name)}${mark}</span></button>`;
   }).join('');
   const topicHtml = orderedTopics.map(topic=>{
     const on = selectedSet.has(topic.toLowerCase());
@@ -233,7 +234,8 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
 // own place and optional preference.
 function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(wrap && wrap.id)){
   if(!wrap)return;
-  const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
+  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  const preferenceOnly = !optional && wrap.dataset.locationChoiceMode === 'preference';
   const selected = new Set(normalizeLocationIds(selectedLocIds));
   const add = wrap.querySelector('[data-location-add]');
   const anywhere = wrap.querySelector('[data-anywhere]');
@@ -241,6 +243,12 @@ function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(
   if(anywhere)anywhere.hidden = preferenceOnly;
   wrap.querySelectorAll('.location-chip[data-location-id]').forEach(btn=>{
     btn.hidden = preferenceOnly && !selected.has(btn.dataset.locationId);
+    btn.setAttribute('aria-pressed',String(selected.has(btn.dataset.locationId)));
+    if(optional){
+      btn.querySelector('.location-chip-name').textContent = btn.dataset.locationName;
+      btn.title = selected.has(btn.dataset.locationId) ? 'Selected — tap to remove' : 'Tap to select';
+      btn.classList.remove('pref-little','pref-high','pref-avoid');
+    }
   });
   const placeRow = wrap.querySelector('.tag-row-places');
   if(placeRow)placeRow.hidden = preferenceOnly && selected.size === 0;
@@ -255,9 +263,17 @@ function toggleLocationChip(e){
   const level = btn.dataset.pref || '';
   const isOn = btn.classList.contains('on');
   const preferenceOnly = wrap.dataset.locationChoiceMode === 'preference';
-  // Preferred view only ranks places that are already allowed. Everywhere
-  // else, including the allowed schedule view, one tap cycles
+  // For regular habits, Preferred only ranks places already allowed. Other
+  // regular views, including Allowed, cycle
   // off → allowed → little → high → avoid → off.
+  if(wrap.closest('.opportunity-mode')){
+    btn.classList.toggle('on');
+    const selected = selectedLocationIdsFrom(wrap.id);
+    renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,
+      selectedLocationPrefsFrom(wrap.id),selected.length === 0);
+    if(wrap.id === 'detail-place-chips')setDetailDirty();
+    return;
+  }
   if(preferenceOnly){
     btn.classList.add('on');
     btn.dataset.pref = level === '' ? 'little'

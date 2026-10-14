@@ -49,6 +49,10 @@
 .add-presets button{border:0;border-radius:999px;background:var(--field-bg);color:var(--text2);font:inherit;font-size:12px;min-height:44px;padding:7px 10px;cursor:pointer;}
 .add-presets button[aria-pressed="true"]{background:var(--teal-bg);color:var(--teal-text);font-weight:650;}
 .add-presets button:active{opacity:0.82;}
+/* Keep all four rhythm choices together on standard phones. Smaller sheets
+   can still wrap without clipping labels or reducing the tap target height. */
+#add-frequency .add-presets,.detail-frequency-presets{gap:4px;}
+#add-frequency .add-presets button,.detail-frequency-presets button{min-width:44px;padding-inline:6px;white-space:nowrap;}
 .add-sheet .range-row{flex-wrap:wrap;gap:8px;margin:0 0 8px;}
 .add-frequency .range-value{width:auto;min-width:90px;min-height:44px;gap:5px;padding:0 10px;}
 .add-sheet .field-hint{line-height:1.5;margin:6px 0 10px;}
@@ -119,6 +123,11 @@
   -webkit-appearance:none;appearance:none;
 }
 .detail-section .plan-field-row{margin:0 0 12px;background:var(--bg);}
+.detail-task-field{display:flex;flex-direction:column;gap:6px;flex:1 1 150px;min-width:0;}
+#detail-due-row .plan-field-main{flex-wrap:wrap;align-items:flex-start;}
+#detail-due-row .plan-date-label{font-weight:500;}
+#detail-due-row :is(.plan-date-input,.plan-time-input){width:100%;flex:none;}
+#detail-due-row .plan-time-input:disabled{opacity:0.5;}
 .month-card .plan-field-row{margin:12px 0 0;background:var(--bg);}
 .context-pill.time{color:var(--text2);}
 .context-pill.time i{color:var(--text3);}
@@ -225,7 +234,6 @@
 .add-conditions #add-condition-hint{margin:12px 0 0;color:var(--text2);}
 .add-conditions #add-condition-hint[hidden]{display:none;}
 .add-conditions :is(#ting-weather-profiles,#ting-weather-city){padding:6px 0;min-height:44px;background:transparent;border-radius:0;color:var(--text3);font-size:12px;text-decoration:underline;text-underline-offset:3px;}
-.opportunity-mode .anywhere-chip.on.is-pending{background:var(--bg3);color:var(--text2);}
 .add-actions .btn:disabled{opacity:.55;cursor:default;}
 
 #ting-weather-city[hidden]{display:none;}

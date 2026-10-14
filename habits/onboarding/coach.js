@@ -29,12 +29,13 @@
     'eDetailEffort','aDetailRead','aSchedule','aSchedulePreferences','aGeneralSchedule','aScheduleOrder','aTimesPlaces','aOptionRow','aTaskRules',
     'aProgressHistory','aHistoryPlans','aEffort','aEffortTools','aIdentity','aLifecycle','aWeatherAttach'
   ]);
-  const ADD_STAGES = new Set(['eName','eKind','eRhythm','eTask','eSave']);
+  const ADD_STAGES = new Set(['eName','eKind','eRhythm','eConditions','eTask','eSave']);
   const OVERVIEW_STAGES = new Set(['eOverview','aOverview','aOverviewDay','aOverviewTools']);
   // Sheets each stage group may keep open. Anything else that appears is closed
   // by reconcile(): the coach decides what page is on screen, wander included.
   const PICKER_SHEETS = ['location-picker-sheet','presence-picker-sheet','travel-edit-sheet','block-edit-sheet','location-permission-sheet','background-location-disclosure-sheet'];
   const SHEET_ALLOWANCES = new Map([
+    [new Set(['eConditions']),['add-sheet','settings-sheet',...PICKER_SHEETS]],
     [ADD_STAGES,['add-sheet',...PICKER_SHEETS]],
     // Gate stages wait for the user to open their destination sheet themselves.
     [new Set(['eAdd']),['add-sheet',...PICKER_SHEETS]],
@@ -160,6 +161,9 @@
     const on = document.querySelector('#type-seg .seg-opt.on');
     return on?.dataset.v === 'task' ? 'task' : 'habit';
   }
+  function addUsesConditions(){
+    return addKind() === 'habit' && $('ting-repeat-mode')?.value === 'opportunity';
+  }
   function newestUntracked(){
     const known = new Set([trackedHid].filter(Boolean));
     return habits().find(h=>h?.hid && !initialHids.has(h.hid) && !known.has(h.hid)) || null;
@@ -234,6 +238,7 @@
       'eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview',
       'eAbout','eAboutMenu','eMinimal'
     ] : ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eAbout','eAboutMenu','eMinimal'];
+    if(interactive && addUsesConditions())stages.splice(stages.indexOf('eSave'),0,'eConditions');
     return calendarStepApplies() ? stages : stages.filter(item=>item !== 'eCalendar');
   }
   function chapterStages(chapter){
@@ -322,8 +327,25 @@
     if(stage === 'eRhythm')return {
       progress:p,title:'How often?',
       copy:'Pick a preset or enter your own rhythm. You can change it later.',
-      target:['#add-frequency'],action:'Continue',next:'eSave',back:'eKind',locked:true
+      target:['#add-frequency'],action:'Continue',next:addUsesConditions() ? 'eConditions' : 'eSave',back:'eKind',locked:true
     };
+    if(stage === 'eConditions'){
+      if(sheetOpen('location-picker-sheet'))return {
+        progress:p,title:'Add a place',copy:'Name the place and choose its pin. Then add it to your habit.',
+        target:['#location-picker-sheet .sheet'],action:'Add place',command:'conditionsPlace',
+        disabled:Boolean($('picker-save')?.disabled),back:'eConditions',locked:true
+      };
+      if(sheetOpen('settings-sheet'))return {
+        progress:p,title:'Set up your conditions',copy:'Save weather rules or set your city here, then return to your habit.',
+        target:['#settings-sheet .sheet'],action:'Back to habit',command:'conditionsReturn',locked:true
+      };
+      return {
+        progress:p,title:'Choose when it fits',
+        copy:'Choose a place you already visit or weather rules. Any place needs weather rules. Add a place or rules here if needed.',
+        target:['#add-sheet .add-content'],action:'Continue',next:'eSave',back:'eRhythm',
+        disabled:Boolean($('do-save')?.disabled),locked:true
+      };
+    }
     if(stage === 'eTask')return {
       progress:p,title:'Add a date only if you need one',
       copy:'Leave this blank if it can wait, or choose a deadline. Add a start time later if needed.',
@@ -332,7 +354,7 @@
     };
     if(stage === 'eSave')return {
       progress:p,title:'Add it',copy:'That’s all it needs. Tap add — Tings saves it and opens its page.',
-      target:['#do-save'],hint:'Tap add',locked:true,back:addKind() === 'task' ? 'eTask' : 'eRhythm'
+      target:['#do-save'],hint:'Tap add',locked:true,back:addKind() === 'task' ? 'eTask' : addUsesConditions() ? 'eConditions' : 'eRhythm'
     };
     if(stage === 'eDetailEffort')return {
       progress:p,title:'How long does it take?',
@@ -621,7 +643,7 @@
     window.addEventListener('beforeinstallprompt',onInstallGesture);
     window.addEventListener('appinstalled',onAppInstalled);
     observer = new MutationObserver(()=>{reconcile();queuePosition();});
-    observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden','aria-pressed']});
+    observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden','aria-pressed','disabled']});
   }
 
   function unmount(){
@@ -1091,6 +1113,11 @@
   function goBack(){
     const back = model().back;
     if(!back)return;
+    if(stage === 'eConditions' && sheetOpen('location-picker-sheet')){
+      $('picker-cancel')?.click();
+      setStage('eConditions');
+      return;
+    }
     if(back === 'eAdd'){
       if(typeof cancelAdd === 'function')cancelAdd();
       else closeGuidedSheet('add-sheet');
@@ -1167,6 +1194,13 @@
       return;
     }
     if(m.command === 'kindDone'){setStage(addKind() === 'task' ? 'eTask' : 'eRhythm');return;}
+    if(m.command === 'conditionsPlace'){document.activeElement?.blur();$('picker-save')?.click();return;}
+    if(m.command === 'conditionsReturn'){
+      document.activeElement?.blur();
+      if(typeof closeSettingsSheet === 'function')closeSettingsSheet();
+      render();
+      return;
+    }
     if(m.command === 'installNow'){
       // Show the browser's native install sheet; a declined or failed prompt
       // falls back to the manual per-platform steps on the same stage.
@@ -1342,9 +1376,11 @@
     finish('skipped');
   }
 
+  let conditionsRenderKey = '';
   function reconcile(){
     if(!active)return;
-    if(ADD_STAGES.has(stage) && !sheetOpen('add-sheet')){
+    const conditionsEditor = stage === 'eConditions' && (sheetOpen('settings-sheet') || PICKER_SHEETS.some(sheetOpen));
+    if(ADD_STAGES.has(stage) && !sheetOpen('add-sheet') && !conditionsEditor){
       const created = newestUntracked();
       if(created && sheetOpen('detail-sheet')){
         trackedHid = created.hid;
@@ -1354,6 +1390,15 @@
       }else setStage('eAdd');
       return;
     }
+    if(stage === 'eConditions'){
+      if(!conditionsEditor && !addUsesConditions()){
+        setStage(addKind() === 'task' ? 'eTask' : 'eRhythm');
+        return;
+      }
+      const m = model();
+      const key = JSON.stringify([m.target,m.disabled,m.command]);
+      if(key !== conditionsRenderKey){conditionsRenderKey = key;render();}
+    }else conditionsRenderKey = '';
     if(stage === 'eSave' && newestUntracked() && sheetOpen('detail-sheet')){
       trackedHid = newestUntracked().hid;
       setStage('eDetailEffort');
@@ -1503,10 +1548,15 @@
     };
   }
 
-  function clearAddSpace(){
+  function clearAddSpace(keepEditor = null){
     const sheet = document.querySelector('#add-sheet .add-sheet');
     sheet?.removeAttribute('data-coach-space');
     sheet?.style.removeProperty('--coach-space');
+    document.querySelectorAll('[data-coach-editor-space]').forEach(editor=>{
+      if(editor === keepEditor)return;
+      editor.removeAttribute('data-coach-editor-space');
+      editor.style.removeProperty('--coach-editor-height');
+    });
   }
 
   function position(){
@@ -1527,7 +1577,8 @@
     const margin = 10;
     const gap = 14;
     bubble.style.maxHeight = `${Math.max(150,view.height - margin * 2)}px`;
-    const addRail = mode === 'essentials' && ADD_STAGES.has(stage) && view.width <= 520 && sheetOpen('add-sheet');
+    const editor = stage === 'eConditions' ? firstTarget(['#location-picker-sheet.open .sheet','#settings-sheet.open .sheet']) : null;
+    const addRail = mode === 'essentials' && ADD_STAGES.has(stage) && view.width <= 520 && (editor || sheetOpen('add-sheet'));
     root.dataset.addRail = String(addRail);
     if(restViewportWidth !== view.width){restViewportWidth = view.width;restViewportHeight = view.height;}
     restViewportHeight = Math.max(restViewportHeight,view.height);
@@ -1539,19 +1590,31 @@
       bubble.style.maxHeight = `${Math.max(100,view.height * .42)}px`;
       const br = bubble.getBoundingClientRect();
       const railTop = view.bottom - br.height - margin - coachSafe('bottom');
+      if(editor){
+        clearAddSpace(editor);
+        editor.setAttribute('data-coach-editor-space','');
+        editor.style.setProperty('--coach-editor-height',`${Math.max(100,railTop - view.top - gap)}px`);
+      }
       const sheet = document.querySelector('#add-sheet .add-sheet');
       const content = sheet?.querySelector('.add-content');
-      sheet?.setAttribute('data-coach-space','');
-      sheet?.style.setProperty('--coach-space',`${br.height + margin * 2 + coachSafe('bottom')}px`);
+      if(!editor){
+        document.querySelectorAll('[data-coach-editor-space]').forEach(el=>{
+          el.removeAttribute('data-coach-editor-space');el.style.removeProperty('--coach-editor-height');
+        });
+        sheet?.setAttribute('data-coach-space','');
+        sheet?.style.setProperty('--coach-space',`${br.height + margin * 2 + coachSafe('bottom')}px`);
+      }
       // Moving the footer above the rail shrinks the scroller. Keep the whole
       // highlighted field in that remaining area when the keyboard/size changes.
-      if(target && content?.contains(target)){
-        const bounds = content.getBoundingClientRect();
-        const field = target.getBoundingClientRect();
+      const scroller = editor?.querySelector('.settings-stack') || editor || content;
+      const fieldTarget = typing && stage === 'eConditions' ? document.activeElement : target;
+      if(fieldTarget && fieldTarget !== scroller && scroller?.contains(fieldTarget)){
+        const bounds = scroller.getBoundingClientRect();
+        const field = fieldTarget.getBoundingClientRect();
         const ceiling = Math.max(view.top,bounds.top) + 10;
         const floor = Math.min(railTop - gap,bounds.bottom) - 10;
-        if(field.bottom > floor)content.scrollTop += field.bottom - floor;
-        else if(field.top < ceiling)content.scrollTop -= ceiling - field.top;
+        if(field.bottom > floor)scroller.scrollTop += field.bottom - floor;
+        else if(field.top < ceiling)scroller.scrollTop -= ceiling - field.top;
       }
     }else clearAddSpace();
     const raw = target?.getBoundingClientRect();

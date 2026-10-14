@@ -306,7 +306,15 @@ uses the same frequency buttons, followed by the repeat limit and visible
 places/weather controls. Days and hours stay in a separate folded section.
 Switching back to a regular rhythm preserves the saved condition choices. Choose
 a place or weather profile before saving. Missing forecast-city setup is shown
-only when needed. These condition controls remain available in minimal mode.
+only when needed. These condition controls remain available in minimal mode. Conditional place
+chips use simple select/remove taps, without cycling through preference or
+avoidance. Selecting a named place turns off **any place**; choosing **any place**
+clears the named places and requires weather rules. Existing saved rankings stay
+in the draft when switching between regular and conditional modes. Weather
+choices distinguish **use each place’s weather rules**, **any weather** (ignore
+inherited rules), and a named set of rules. The selected rules show their bounds
+in the current display units; an empty set explains that it has no active rules.
+When both place and weather are selected, both must match.
 
 - Matching conditions make the item eligible at its chosen priority. It may
   use free time or replace lower-priority flexible work; fixed appointments,
@@ -667,7 +675,8 @@ homeCityCountry: string,          // Two-letter country code from the geocoder; 
 #### 4.3.8a Weather Guidance 👤👨‍💻
 - Uses Open-Meteo without an API key. Guidance resolves for every placement in
   this order: specific option → item → selected location. Both options and
-  items can explicitly choose **no weather**, which stops inheritance at that
+  items can explicitly choose **ignore weather rules** (or **any weather** in
+  conditional mode), which stops inheritance at that
   layer. A legacy item with a profile becomes an explicit item profile; an item
   without one inherits its selected place. Missing/dangling profiles fail open.
 - The forecast always comes from the selected scheduled place. Anywhere
@@ -1355,8 +1364,8 @@ the item's saved clock on that same date without producing a duplicate event.
 
 #### Task Timing Section
 - For `task` type only
-- **Due date:** Date picker (`detail-due-date`)
-- **Due time:** Time picker (`detail-due-time`); fixed for unbreakable tasks, the exact first-session start for breakable tasks
+- **Due date (optional):** Date picker (`detail-due-date`)
+- **Start time (optional):** Time picker (`detail-due-time`); fixed for unbreakable tasks, the exact first-session start for breakable tasks. Like Add, it stays disabled until a date is chosen; clearing the date clears the clock.
 - Tasks open on Schedule by default so deadline and placement controls are the
   first editable fields.
 
@@ -2071,6 +2080,10 @@ Toasts appear after:
   rhythm or optional deadline, estimate duration, use its card, and find Home
   and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
   it no longer requires a second item, a sample, or past/future calendar edits.
+  Choosing **when conditions fit** adds a guided condition step before Add:
+  choose a place already visited or weather rules. The tour waits for a valid
+  condition and supports adding a place or editing weather rules without
+  losing the new habit draft.
   Logging the first item has an **I’ll log later** escape. Deeper calendar and
   scheduling practice lives in the advanced coach chapters.
 - It has users tap the **Tings name → Settings**, then reveals **Display →
@@ -2084,6 +2097,9 @@ Toasts appear after:
   While typing, the prompt collapses to its title and navigation; Next blurs
   the edited field. Browser visual-viewport shrink and Android WebView resize
   follow the same keyboard edge as the form, including transient Android metrics.
+  The condition step's place and weather editors also reserve room for the
+  prompt. While typing, the focused field scrolls above the keyboard and coach;
+  returning to the habit or leaving the tour removes the reserved space.
 - Past calendar days offer **Log a missed day**, future days offer **Plan
   something**; the advanced calendar chapter explains these actions.
 - **Every step gates the whole experience.** Locked (required-action) steps
@@ -2594,11 +2610,11 @@ task uniqueness and sparse cadence before adding an occurrence.
 **What Changes:**
 | Feature | Regular | Minimal |
 |---------|---------|---------|
-| Home view | All sections | Today/Overdue/Coming Up |
+| Home view | Today, Tomorrow, Coming up, The rest | Same sections and plan, quieter cards |
 | Calendar | Full view | Simplified week strip |
-| Detail view | Full tabs | Condensed |
+| Detail view | History, Schedule, Planning, Identity, Actions tabs | Essential sections in one scroll |
 | Settings | All visible | Advanced hidden |
-| Card elements | All fields | Essential only |
+| Card elements | Configurable detail | Essential only |
 
 **Why Minimal:**
 - Reduces cognitive load
@@ -2614,7 +2630,10 @@ presentation across Tings; drafts stay in the sheet underneath. Switching
 back is the same Settings control.
 
 Minimal Add keeps name, optional emoji, habit/task type, rhythm or deadline,
-and duration visible. Defaults and busy-time shortcuts stay in regular mode.
+and duration visible. Choosing **when conditions fit** also reveals places and
+weather in both Add and Details, because these define when the optional habit
+can appear. This choice applies to build habits; limit and stop habits retain
+their tracking goals. Defaults and busy-time shortcuts stay in regular mode.
 
 ---
 
@@ -3039,8 +3058,8 @@ Same agenda logic, but simplified display:
 - Remaining panes stack into one scroll; section headers stay visible
 - The reserved action bar stays outside the scrolling fields
 - Allowed weekdays and time window live in **allowed days & hours**, folded by default; expanding it preserves the draft and stays expanded during the current visit
-- Month days, preferences, places, weather and link setup remain regular-mode options
-- A small regular-mode switch reveals all options without saving or discarding the draft
+- Month days, preferences and link setup remain regular-mode options. Places and weather stay visible for **when conditions fit** habits; ordinary habits keep these in regular mode.
+- A quiet **More options in settings** shortcut opens the Minimal Mode setting. Switching there reveals all options without saving or discarding the draft.
 - Action rows limited to remove: shared display, export to calendar, share
   item, snooze, and pin are regular-mode only (saved values are untouched)
 

@@ -234,7 +234,7 @@
         </section>
         <details class="add-option-group add-weather-options"><summary>Weather <span class="field-optional">(optional)</span></summary>
         <label class="field-label" for="ting-weather-profile">weather guidance</label>
-        <select id="ting-weather-profile" class="settings-select"><option value="">use the place’s weather</option><option value="__none__">no weather</option></select>
+        <select id="ting-weather-profile" class="settings-select" aria-describedby="ting-weather-guidance-hint"><option value="">use the place’s weather</option><option value="__none__">ignore weather rules</option></select>
         <p class="field-hint" id="ting-weather-guidance-hint">Uses the weather saved on the place, if it has one.</p>
         <div id="ting-weather-location-wrap" class="weather-habit-location" hidden>
           <label class="field-label" for="ting-weather-location">check the weather at</label>
@@ -395,9 +395,14 @@
           <p class="field-hint" id="detail-target-help">How often — times in N days.</p>
           <div class="plan-field-row" id="detail-due-row" hidden>
             <div class="plan-field-main">
-              <label class="plan-date-label" for="detail-due-date">due</label>
-              <input type="date" id="detail-due-date" class="plan-date-input" />
-              <input type="time" id="detail-due-time" class="plan-time-input" step="300" title="add a time to make this a fixed appointment" />
+              <div class="detail-task-field">
+                <label class="plan-date-label" for="detail-due-date">Due date <span class="field-optional">(optional)</span></label>
+                <input type="date" id="detail-due-date" class="plan-date-input" aria-describedby="detail-due-hint" />
+              </div>
+              <div class="detail-task-field">
+                <label class="plan-date-label" for="detail-due-time">Start time <span class="field-optional">(optional)</span></label>
+                <input type="time" id="detail-due-time" class="plan-time-input" step="300" aria-describedby="detail-due-hint" title="add a time to make this a fixed appointment" />
+              </div>
             </div>
           </div>
           <p class="field-hint" id="detail-due-hint" hidden></p>
@@ -468,7 +473,7 @@
           <details class="detail-disclosure detail-full-only weather-habit-field" id="detail-weather-disclosure">
             <summary>weather &amp; forecast</summary>
             <label class="settings-sublabel" for="detail-weather-profile">weather guidance</label>
-            <select id="detail-weather-profile" class="settings-select"><option value="">use the place’s weather</option><option value="__none__">no weather</option></select>
+            <select id="detail-weather-profile" class="settings-select" aria-describedby="detail-weather-guidance-hint"><option value="">use the place’s weather</option><option value="__none__">ignore weather rules</option></select>
             <p class="field-hint" id="detail-weather-guidance-hint">Uses the weather saved on the place, if it has one.</p>
             <div id="detail-weather-location-wrap" class="weather-habit-location" hidden>
               <label class="settings-sublabel" for="detail-weather-location">check the weather at</label>
@@ -1756,7 +1761,7 @@
       </div>
       <div class="utility-sheet-panel travel-edit-panel" id="travel-edit-duration">
         <div class="travel-edit-label">
-          <label class="field-label utility-field-label" for="travel-edit-minutes">travel time</label>
+          <label class="field-label utility-field-label" for="travel-edit-minutes">travel time <span data-ui-leave="travel"></span></label>
           <p class="field-hint" id="travel-edit-mode"></p>
         </div>
         <div class="travel-edit-row">

@@ -134,6 +134,7 @@ function readAddProfile(){
 }
 
 function syncAddEffortUi(){
+  if(selectedType === 'task')syncTaskDueUi();
   $('ting-auto-mark-row').hidden = $('ting-completion-mode').value !== 'minutes';
   $('ting-chunk-row').hidden = $('ting-breakable').getAttribute('aria-pressed') !== 'true';
   const mode = $('ting-completion-mode').value;
@@ -243,11 +244,15 @@ function closeSettingsSheet(){
   closeSheet('settings-sheet');
   // City setup leaves the item draft mounted. Refresh its clock previews on
   // every return path, including backdrop dismissal, without re-rendering it.
-  if($('detail-sheet')?.classList.contains('open')){
+  // On desktop Details lives in a permanent pane, without .sheet-wrap.open.
+  if(detailIdx != null){
     document.querySelectorAll('#detail-sheet .time-endpoint.is-dynamic').forEach(endpoint=>{
       if(endpoint.closest('.habit-option-row'))refreshHabitScheduleOptionEndpoint(endpoint);
       else refreshTimeResolvedFor(endpoint);
     });
+    // Editing a place or weather profile can add/remove the last condition
+    // while the unsaved item fields themselves stay exactly the same.
+    setDetailDirty();
   }
   if(!addSettingsReturn)return;
   addSettingsReturn = false;

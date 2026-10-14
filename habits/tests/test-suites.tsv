@@ -143,6 +143,7 @@ drop-alarm-cycle-test.js	planner	page-both
 
 detail-search-navigation-test.js	ui	once
 minimal-mode-ui-test.js	ui	once
+mode-flow-integration-test.js	ui	once
 keyboard-layout-test.js	ui	once
 home-filter-layout-test.js	ui	once
 new-item-defaults-test.js	ui	once
@@ -159,3 +160,5 @@ add-sheet-scroll-test.js	ui	once
 numeric-input-ux-test.js	ui	once
 opportunity-items-test.js	planner	once
 opportunity-items-ui-test.js	ui	once
+
+condition-controls-test.js	ui	once

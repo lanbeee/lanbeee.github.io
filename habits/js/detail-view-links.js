@@ -519,7 +519,7 @@ function syncDetailSchedulePlacesUi(){
   const preferenceOnly = !optional && detailScheduleView === 'preferred';
   if(wrap){
     wrap.dataset.locationChoiceMode = preferenceOnly ? 'preference' : 'allowed';
-    applyTagChipLocationMode(wrap);
+    renderTagChips(wrap.id,[],selectedLocationIdsFrom(wrap.id),null,selectedLocationPrefsFrom(wrap.id),selectedAnywhereFrom(wrap.id));
   }
   if(label)label.textContent = preferenceOnly ? 'place preferences' : 'places';
   const hint = $('detail-places-hint');
@@ -528,6 +528,7 @@ function syncDetailSchedulePlacesUi(){
       ? 'Tap a place to rank it: soft, strong, or avoid.'
       : 'Tap a place to cycle it: allowed, preferred, avoid, then off. These places use the time window above.';
   }
+  syncOpportunityAnywhereChip('detail-place-chips');
 }
 
 function renderHabitScheduleOptions(h = {}){

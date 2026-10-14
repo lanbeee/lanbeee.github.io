@@ -125,17 +125,15 @@ function ok(value,message){
     const save = document.querySelector('#detail-save').getBoundingClientRect();
     const cancel = document.querySelector('#detail-close').getBoundingClientRect();
     const visible = save.width > 0 && save.height > 0 && cancel.width > 0 && cancel.height > 0;
-    // The dock floats over the pager's lower edge, so "below the pager" no
-    // longer applies — it must simply sit in the viewport's bottom band.
+    // Editing replaces the title with Cancel/Save at the same header height.
+    const head = document.querySelector('.detail-head').getBoundingClientRect();
     const bottom = Math.max(save.bottom,cancel.bottom);
-    // Measure the dock while the editing row is still shown: at rest the
-    // pill is compact (icon-only, like Home), so reading its width after
-    // resetting would compare against the resting search pill instead.
-    const available = document.querySelector(".detail-bottom-bar").clientWidth;
+    const available = document.querySelector('#detail-tune-actions').clientWidth;
     setDetailDirty(false);
-    return {visible,width:save.width + cancel.width,available,low:bottom <= innerHeight - 8};
+    return {visible,width:save.width + cancel.width,available,
+      inside:Math.min(save.top,cancel.top)>=head.top && bottom<=head.bottom && bottom<=innerHeight};
   });
-  ok(dirtyDock.visible && dirtyDock.width <= dirtyDock.available && dirtyDock.low,'save and cancel fit the floating bottom dock when editing');
+  ok(dirtyDock.visible && dirtyDock.width <= dirtyDock.available && dirtyDock.inside,'save and cancel fit the stable header when editing');
   ok((await page.locator('#detail-auto-mark-label').textContent()) === 'auto-log agenda chunks','breakable auto-mark is named as chunk logging');
   ok((await page.locator('#detail-auto-mark-summary').textContent()).includes('Manual taps count first'),'auto-log summary explains manual reconciliation');
 

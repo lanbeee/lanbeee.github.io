@@ -113,9 +113,12 @@ async function checkAddLayout(page,selector,label){
   assert(layout.rail === 'true' && layout.clear && layout.hit && layout.inside && layout.footerClear && layout.bubbleInside,`${label}: field and Add footer stay visible and tappable above the coach rail (${JSON.stringify(layout)})`);
 }
 
-async function phoneQuickStart(browser,width,height,task){
+async function phoneQuickStart(browser,width,height,task,minimal = false){
   const page = await browser.newPage({viewport:{width,height},isMobile:true,hasTouch:true});
-  await page.addInitScript(()=>{window.Capacitor={isNativePlatform:()=>true};});
+  await page.addInitScript(minimal=>{
+    window.Capacitor={isNativePlatform:()=>true};
+    localStorage.setItem('tings_app_settings_v2',JSON.stringify({minimalMode:minimal}));
+  },minimal);
   await page.goto(coachUrl,{waitUntil:'load'});
   await primary(page,'eIntro','eAdd');
   await page.locator('#open-add').click();
@@ -131,6 +134,13 @@ async function phoneQuickStart(browser,width,height,task){
   await stage(page,task ? 'eTask' : 'eRhythm');
   await checkAddLayout(page,task ? '#ting-due-date' : '#add-frequency',`${width}×${height} ${task ? 'deadline' : 'rhythm'}`);
   if(task)await page.locator('#ting-due-date').fill('2026-10-20');
+  else{
+    await page.locator('[data-add-rhythm="3,7"]').click();
+    if(width === 393)assert(await page.locator('#add-frequency .add-presets').evaluate(row=>{
+      const boxes=[...row.children].map(button=>button.getBoundingClientRect());
+      return boxes.every(box=>Math.abs(box.top-boxes[0].top)<1 && box.height>=44);
+    }),`393px Quick start keeps every frequency choice on one line, minimal=${minimal}`);
+  }
   await page.screenshot({path:`test-results/quick-start-${width}-${task ? 'task' : 'habit'}.png`});
   await primary(page,task ? 'eTask' : 'eRhythm','eSave');
   await checkAddLayout(page,'#do-save',`${width}×${height} save`);
@@ -148,7 +158,9 @@ async function phoneQuickStart(browser,width,height,task){
   await page.locator('#open-settings').click();
   await stage(page,'eMinimal');
   await page.locator('[data-coach-primary]').click();
-  assert(await page.evaluate(()=>!isMinimalMode() && load().length === 1),`${width}×${height} ${task ? 'task' : 'habit'} path finishes with one item and keeps Minimal mode optional`);
+  assert(await page.evaluate(minimal=>isMinimalMode() === minimal && load().length === 1,minimal),`${width}×${height} ${task ? 'task' : 'habit'} path finishes with one item and preserves mode=${minimal}`);
+  const saved = await page.evaluate(()=>({item:load()[0],due:dateKey(load()[0].dueDate),done:localStorage.getItem('tings_coach_essentials_v2')}));
+  assert(saved.done === 'done' && saved.item.type === (task ? 'task' : 'keepup') && (task ? saved.due === '2026-10-20' : saved.item.target === 7/3),'Quick start saves the selected type and frequency or deadline, and remembers completion');
   await page.close();
 }
 
@@ -183,6 +195,105 @@ async function overlayKeyboardQuickStart(browser,width,height){
   await page.evaluate(()=>window.TingsCoach.stop());
   assert(await page.locator('#add-sheet .add-sheet[data-coach-space]').count() === 0,'ending Quick start while adding removes its reserved space');
   await page.close();
+}
+
+async function conditionalQuickStart(browser,minimal,choice){
+  const page = await browser.newPage({viewport:{width:393,height:852},isMobile:true,hasTouch:true,serviceWorkers:'block'});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(({minimal,choice})=>{
+    localStorage.setItem('tings_coach_install_v2','done');
+    localStorage.setItem('tings_app_settings_v2',JSON.stringify({minimalMode:minimal,
+      locations:choice === 'new-place' ? [] : [{id:'park',name:'Park',lat:40,lng:-74}],
+      weatherProfiles:choice === 'new-weather' ? [] : [{id:'dry',name:'Dry',rules:[{metric:'precipitation_probability',max:30}]}]
+    }));
+    if(choice === 'new-weather'){
+      const viewport=new EventTarget();
+      Object.assign(viewport,{height:852,width:393,offsetTop:0,offsetLeft:0,scale:1});
+      Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
+    }
+  },{minimal,choice});
+  await page.goto(coachUrl,{waitUntil:'load'});
+  await primary(page,'eIntro','eAdd');
+  await page.locator('#open-add').click();
+  await stage(page,'eName');
+  await page.locator('#ting-message').fill('Conditional walk');
+  await primary(page,'eName','eKind');
+  await page.locator('#type-seg [data-v="keepup"]').click();
+  await stage(page,'eRhythm');
+  await page.locator('[data-add-repeat="opportunity"]').click();
+  await primary(page,'eRhythm','eConditions');
+  assert(await page.locator('[data-coach-primary]').isDisabled(),'conditional Quick start waits for a place or weather rule');
+  if(choice === 'new-place'){
+    await page.locator('#ting-tag-chips [data-location-add]').click();
+    await page.waitForFunction(()=>document.querySelector('#tings-coach-title')?.textContent === 'Add a place');
+    await page.locator('#picker-name').fill('Park');
+    await checkConditionalKeyboard(page,'#picker-name',false);
+    await page.locator('.picker-coords-details > summary').click();
+    await page.locator('#picker-lat').fill('40');
+    await checkConditionalKeyboard(page,'#picker-lat',false);
+    await page.locator('#picker-lng').fill('-74');
+    await checkConditionalKeyboard(page,'#picker-lng',false);
+    await page.locator('#picker-apply-coords').click();
+    await page.locator('[data-coach-primary]').click();
+    await page.waitForSelector('#location-picker-sheet.open',{state:'hidden'});
+    assert(await page.locator('#ting-message').inputValue() === 'Conditional walk','adding a place inside Quick start preserves the habit draft');
+  }else if(choice === 'new-weather'){
+    await page.locator('#ting-weather-profiles').click();
+    await page.waitForFunction(()=>document.querySelector('#tings-coach-title')?.textContent === 'Set up your conditions');
+    await page.locator('#weather-profile-add').click();
+    await page.locator('[data-weather-profile-name]').fill('Dry');
+    await checkConditionalKeyboard(page,'[data-weather-profile-name]',true);
+    await page.locator('[data-weather-profile-name]').blur();
+    await page.locator('[data-weather-rule-metric]').selectOption('precipitation_probability');
+    await page.locator('[data-weather-rule-max]').fill('30');
+    await checkConditionalKeyboard(page,'[data-weather-rule-max]',true);
+    await page.locator('[data-weather-rule-max]').blur();
+    await page.locator('[data-coach-primary]').click();
+    await page.waitForSelector('#add-sheet.open');
+    const profileId = await page.evaluate(()=>loadSortSettings().weatherProfiles[0].id);
+    await page.locator('#ting-weather-profile').selectOption(profileId);
+    assert(await page.locator('#ting-message').inputValue() === 'Conditional walk','weather setup inside Quick start preserves the habit draft');
+  }else if(choice === 'place')await page.locator('#ting-tag-chips [data-location-id="park"]').click();
+  else await page.locator('#ting-weather-profile').selectOption('dry');
+  await page.locator('[data-coach-primary]').waitFor({state:'visible'});
+  await page.waitForFunction(()=>!document.querySelector('[data-coach-primary]').disabled);
+  await page.screenshot({path:`test-results/quick-start-conditions-${minimal ? 'minimal' : 'regular'}-${choice}.png`});
+  await primary(page,'eConditions','eSave');
+  await checkAddLayout(page,'#do-save',`393px conditional ${choice} save`);
+  await page.locator('[data-coach-back]').click();
+  await stage(page,'eConditions');
+  assert(await page.locator('[data-coach-primary]').isEnabled(),'Back from Add returns to editable conditions');
+  await primary(page,'eConditions','eSave');
+  await page.locator('#do-save').click();
+  await stage(page,'eDetailEffort');
+  assert(await page.evaluate(()=>load().length === 1 && load()[0].repeatMode === 'opportunity'),'conditional Quick start saves one valid conditional habit');
+  assert(errors.length === 0,'conditional Quick start has no page errors');
+  await page.evaluate(()=>window.TingsCoach.stop());
+  await page.close();
+}
+
+async function checkConditionalKeyboard(page,selector,overlay){
+  await page.locator(selector).focus();
+  for(const height of (overlay ? [400,320,280] : [360])){
+    if(overlay)await page.evaluate(height=>{visualViewport.height=height;visualViewport.offsetTop=20;visualViewport.dispatchEvent(new Event('resize'));},height);
+    else await page.setViewportSize({width:393,height});
+    await page.waitForTimeout(250);
+    const layout = await page.locator(selector).evaluate(field=>{
+      const rect=field.getBoundingClientRect();
+      const bubble=document.querySelector('.tings-coach-bubble').getBoundingClientRect();
+      const sheet=field.closest('.sheet').getBoundingClientRect();
+      const top=visualViewport?.offsetTop || 0;
+      const bottom=top+(visualViewport?.height || innerHeight);
+      const hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+      return {inside:rect.top>=Math.max(top,sheet.top)-1 && rect.bottom<=Math.min(bottom,sheet.bottom)+1,
+        clear:rect.bottom<=bubble.top,hit:hit===field || field.contains(hit),
+        compact:document.querySelector('#tings-coach').dataset.typing === 'true' && bubble.height<=130};
+    });
+    assert(layout.inside && layout.clear && layout.hit && layout.compact,`${selector}: ${overlay ? 'overlay' : 'resized'} keyboard at ${height}px keeps the active field visible and tappable (${JSON.stringify(layout)})`);
+  }
+  if(overlay)await page.evaluate(()=>{visualViewport.height=852;visualViewport.offsetTop=0;visualViewport.dispatchEvent(new Event('resize'));});
+  else await page.setViewportSize({width:393,height:852});
+  await page.locator(selector).blur();
 }
 
 async function nativeKeyboardQuickStart(browser){
@@ -229,6 +340,14 @@ async function nativeKeyboardQuickStart(browser){
   await phoneQuickStart(browser,320,568,false);
   await phoneQuickStart(browser,360,640,true);
   await phoneQuickStart(browser,390,844,false);
+  for(const minimal of [false,true]){
+    await phoneQuickStart(browser,393,852,false,minimal);
+    await phoneQuickStart(browser,393,852,true,minimal);
+    await conditionalQuickStart(browser,minimal,'place');
+    await conditionalQuickStart(browser,minimal,'weather');
+  }
+  await conditionalQuickStart(browser,true,'new-place');
+  await conditionalQuickStart(browser,true,'new-weather');
   const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const errors = [];
   page.on('pageerror',error=>errors.push(error.message));

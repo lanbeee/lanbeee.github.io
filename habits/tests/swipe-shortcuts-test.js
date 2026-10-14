@@ -8,7 +8,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
   try{
     const context = await browser.newContext({viewport:{width:390,height:844},
       isMobile:true,hasTouch:true,serviceWorkers:'block',timezoneId:'America/New_York'});
-    await context.clock.setFixedTime(new Date('2026-10-12T08:00:00-04:00'));
+    await context.clock.setSystemTime(new Date('2026-10-12T08:00:00-04:00'));
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror',error=>errors.push(error.message));
@@ -28,6 +28,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
         links:[{kind:'phone',value:'+12125550123'}]}),
       baseHabit({hid:'swipe-zero',name:'Avoid',type:'zero',target:1,pinned:true})
     ]);
+    await page.waitForSelector('#list .swipe-row[data-hid="swipe-main"] .swipe-actions-left .swipe-action');
     const client = await context.newCDPSession(page);
     const row = hid=>page.locator(`#list .swipe-row[data-hid="${hid}"]`).first();
     async function drag(x,y,dx){

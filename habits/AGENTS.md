@@ -96,6 +96,13 @@ dumps in `failed/`). Normal runner output is intentionally compact; pass
    tap cannot dismiss the sheet it just opened. The next missed tap is a
    `bindTap` bug, not a reason to copy a third pointer machine.
 
+8. **Phone text entry must account for the bottom keyboard.** Keep the focused
+   field and its next action visible and tappable in the remaining viewport,
+   including Quick Start and nested place/weather editors. Check both browser
+   visual-viewport shrink/offset and Android WebView resize; never subtract the
+   keyboard twice. Recalculate spacing when the keyboard closes and remove
+   reserved coach space when the tour ends.
+
 ---
 
 ## 3. Codebase map

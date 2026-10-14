@@ -25,7 +25,10 @@ function assert(cond,msg){
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
 
-  const now = Date.now();
+  // Today's pill correctly disappears once all remaining hours are blocked.
+  // Exercise its interactions at a stable daytime clock, including on CI.
+  const now = new Date(2026,9,13,9).getTime();
+  await page.clock.setFixedTime(now);
   const seedData = [
     {hid:'h1',name:'Run',emoji:'🏃',type:'habit',target:2,logs:[],createdAt:now-86400000*5},
     {hid:'h2',name:'Read',emoji:'📖',type:'habit',target:3,logs:[],createdAt:now-86400000*5}

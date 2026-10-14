@@ -70,10 +70,15 @@ const {chromium,BASE,baseHabit,openEveningSettings,glpkAvailable} = require('./h
         const departure=reminders.find(r=>r.reminderEdge==='travelStart');
         const fixedReminders=Boolean(firstReminder && !firstReminder.upNext && departure && !departure.upNext);
         const workerChecks={};
-        for(const mode of exact ? ['fast','glpk'] : ['fast']){
-          const week=await buildWeekAgendaOffMain([event],settings,2,mode,{nativeLimitSeconds:4});
+        // Workers have their own real clock. The main-thread FrozenDate above
+        // cannot put them on Oct 11; use their current calendar day instead.
+        const workerDate=new RealDate();workerDate.setHours(0,0,0,0);
+        const workerDay=workerDate.getTime(),workerStart=workerDay+17*3600000;
+        const workerEvent={...event,dueDate:workerDay,eventTime:workerStart};
+        for(const mode of exact ? ['fast','exact'] : ['fast']){
+          const week=await buildWeekAgendaOffMain([workerEvent],settings,2,mode,{glpkLimitSeconds:4});
           const row=week.days[0].timeline.find(row=>row.breakableStart);
-          workerChecks[mode]=Boolean(row && row.start===at(17) && row.hard);
+          workerChecks[mode]=Boolean(row && row.start===workerStart && row.hard && (mode!=='exact' || week.optimized));
         }
         now=at(18);
         await run('afterStart',[event,interruption]);
@@ -100,7 +105,8 @@ const {chromium,BASE,baseHabit,openEveningSettings,glpkAvailable} = require('./h
         const uiConflict=uiText?.includes('Overlaps Meeting');
         const fixedRow=_homeRenderedWeek.days[0].timeline.find(row=>row.breakableStart);
         const draggable=isAgendaFillDraggable(event,fixedRow);
-        $('ting-due-date').value=dateKey(day);$('ting-due-time').value='17:00';syncTaskDueUi();
+        $('ting-due-date').value=dateKey(day);$('ting-due-time').value='17:00';
+        $('ting-breakable').setAttribute('aria-pressed','true');syncTaskDueUi();
         const addHint=$('task-due-hint').textContent;
         sortSettings=priorSettings;
         return {runs,fixedReminders,workerChecks,draggable,uiConflict,addHint,partialDescription,at17:at(17),at16:at(16),at21:at(21),classicStart,dated};
@@ -134,7 +140,7 @@ const {chromium,BASE,baseHabit,openEveningSettings,glpkAvailable} = require('./h
     check(Object.values(result.workerChecks).every(Boolean),'off-main workers preserve the fixed start in both planner modes');
     check(!result.draggable,'fixed first sessions cannot be dragged to another clock');
     check(result.uiConflict,'event card visibly explains a fixed-start conflict');
-    check(result.addHint.includes('including when breakable') && result.addHint.includes('Allowed times'),'add sheet distinguishes fixed start, total duration and hard end');
+    check(result.addHint.includes('first session') && result.addHint.includes('total'),'add sheet distinguishes a fixed first start from total participation time');
     check(!result.partialDescription.startsWith('Done.'),'partial participation is not described as completed');
     check(errors.length===0,'no page errors');
     console.log(`\n${passed} passed, 0 failed`);

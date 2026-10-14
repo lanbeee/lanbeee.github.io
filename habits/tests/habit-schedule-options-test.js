@@ -32,6 +32,8 @@ function settings(locations,blockedTimes = []){
 (async()=>{
   const browser = await chromium.launch({headless:true});
   const page = await browser.newPage({viewport:{width:390,height:844}});
+  const now = atTime(8);
+  await page.clock.setFixedTime(now);
   const errors = [];
   page.on('pageerror',error=>errors.push(String(error)));
   await page.goto(BASE,{waitUntil:'networkidle'});
@@ -74,7 +76,6 @@ function settings(locations,blockedTimes = []){
     },{data,plannerSettings,now,numDays});
   }
 
-  const now = atTime(8);
   const campus = location('campus','Campus');
   const downtown = location('downtown','Downtown');
 

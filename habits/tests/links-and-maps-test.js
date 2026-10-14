@@ -179,19 +179,22 @@ function assert(cond, msg){
   assert(promoted.length === 2 && promoted[0].kind === 'link' && promoted[0].value.includes('meet.google.com'),
     'promote moves a link to the front so it becomes primary');
 
-  // The header button launches what is in the form, before any save.
+  // Save/Cancel occupy the header while editing. After saving, the ordinary
+  // launch button returns with the new primary link.
+  await page.locator('#detail-save').click();
+  await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'read')));
   await page.evaluate(() => { window.__opened = []; });
   await page.locator('#detail-link-actions [data-link-open="0"]').click();
   const headerOpen = await page.evaluate(() => window.__opened);
   assert(headerOpen.length === 1 && headerOpen[0] === 'https://meet.google.com/abc-defg-hij',
-    'the header button opens the link without needing a save first');
+    'the header button opens the newly saved primary link');
 
-  await page.locator('#detail-save').click();
   const savedLinks = await page.evaluate(() => load().find(h => h.name === 'read').links);
   assert(savedLinks.length === 2 && savedLinks[0].value === 'https://meet.google.com/abc-defg-hij'
     && savedLinks[1].value === '+15559876543', 'links persist in order, normalized');
 
   // ── common + custom app shortcuts ─────────────────────────────────────
+  await page.evaluate(()=>closeDetail());
   await page.waitForSelector('#detail-sheet:not(.open)');
   await page.evaluate(() => openDetail(load().findIndex(h => h.name === 'read')));
   await page.waitForSelector('#detail-sheet.open');

@@ -148,7 +148,7 @@ function uiTimePairHtml(kind){
 
 const UI_SETTING_TOGGLES = {
   display:[
-    {key:'minimalMode', title:'minimal mode', hint:'Keep the basics: name, rhythm or deadline, duration, allowed weekdays and hours. Turn off for all options. Saved settings still apply; the planner works the same way.'}
+    {key:'minimalMode', title:'minimal mode', hint:'Keep the basics: name, frequency or deadline, duration, allowed weekdays and hours. Optional habits also show their place and weather conditions. Turn off for all options. Saved settings still apply; the planner works the same way.'}
   ],
   reminders:[
     {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},

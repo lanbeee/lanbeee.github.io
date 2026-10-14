@@ -86,7 +86,7 @@ const {chromium} = require('playwright');
     // Short phones, large text, assistant button and wide panes must keep all
     // core controls inside the sheet. Optional panels stay independently usable.
     let layouts = 0;
-    for(const width of [320,390,1100]){
+    for(const width of [320,393,1100]){
       await page.setViewportSize({width,height:740});
       await page.waitForTimeout(300); // allow responsive pane transitions
       for(const minimal of [false,true]){
@@ -96,6 +96,18 @@ const {chromium} = require('playwright');
           applyAddDefaults();openSheet('add-sheet');
           document.body.classList.add('assistant-on');
         },minimal);
+        if(width === 393){
+          for(const selector of ['[data-add-rhythm="1,1"]','[data-add-rhythm="3,7"]','[data-add-rhythm="1,7"]','[data-add-repeat="opportunity"]']){
+            await page.locator(selector).click();
+            const fits = await page.locator('#add-frequency .add-presets').evaluate(row=>{
+              const boxes=[...row.children].map(button=>button.getBoundingClientRect());
+              const bounds=row.getBoundingClientRect();
+              return boxes.every(box=>Math.abs(box.top-boxes[0].top)<1 && box.left>=bounds.left && box.right<=bounds.right+1 && box.height>=44 && box.width>=44);
+            });
+            assert.ok(fits,`all rhythm choices fit one row at 393, minimal=${minimal}, selected=${selector}`);
+          }
+          await page.locator('[data-add-rhythm="1,7"]').click();
+        }
         for(const task of [false,true]){
           await page.evaluate(task=>switchAddType(task ? 'task' : 'keepup'),task);
           await page.waitForTimeout(250);
@@ -114,6 +126,21 @@ const {chromium} = require('playwright');
         }
       }
       await page.locator('#do-cancel').click();
+    }
+    await page.setViewportSize({width:393,height:852});
+    await page.waitForFunction(()=>document.body.dataset.paneCount === '1');
+    for(const minimal of [false,true]){
+      await page.evaluate(minimal=>{setMinimalMode(minimal);openDetail(0);scrollDetailToNav('schedule');},minimal);
+      for(const selector of ['[data-detail-rhythm="1,1"]','[data-detail-rhythm="3,7"]','[data-detail-rhythm="1,7"]','[data-detail-repeat="opportunity"]']){
+        await page.locator(selector).click();
+        assert.ok(await page.locator('#detail-frequency-presets').evaluate(row=>{
+          const boxes=[...row.children].map(button=>button.getBoundingClientRect());
+          const bounds=row.getBoundingClientRect();
+          return boxes.every(box=>Math.abs(box.top-boxes[0].top)<1 && box.left>=bounds.left && box.right<=bounds.right+1 && box.height>=44 && box.width>=44 && buttonFits(box));
+          function buttonFits(box){return box.right<=innerWidth;}
+        }),`Schedule rhythm choices fit one row at 393, minimal=${minimal}, selected=${selector}`);
+      }
+      await page.evaluate(()=>closeDetail());
     }
     assert.deepEqual(errors,[]);
     console.log(`PASS add flow, custom frequencies, date shortcuts, draft preservation, persisted settings and ${layouts} responsive layouts`);

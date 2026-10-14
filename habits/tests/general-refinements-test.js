@@ -281,7 +281,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       return {width:style.width,height:style.height,radius:style.borderRadius};
     });
   });
-  check('travel adjustment buttons remain compact rounded-square controls',travelButtons.length === 2 && travelButtons.every(x=>x.width === x.height && x.radius === '14px'),JSON.stringify(travelButtons));
+  check('travel adjustment buttons remain circular 44px touch controls',travelButtons.length === 2 && travelButtons.every(x=>x.width === '44px' && x.height === '44px' && x.radius === '50%'),JSON.stringify(travelButtons));
   const simplifiedHome = await page.evaluate(()=>{
     const today = dayStart(Date.now());
     const dayMs = 86400000;

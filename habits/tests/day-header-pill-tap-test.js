@@ -131,7 +131,9 @@ async function stickyState(page, headerSel){
   // Keep enough morning/evening space for both Home day headers. At a
   // later real clock the fixtures can fill today's remaining window.
   const now = Date.UTC(2026,9,11,12); // 08:00 in the pinned browser timezone.
-  await page.clock.setFixedTime(new Date(now));
+  // Keep the planner in the morning while real time passes for tap/pan and
+  // backdrop guards. A fixed Date.now() makes those guards never expire.
+  await page.clock.setSystemTime(new Date(now));
   const dayMs = 86400000;
   // Enough habits + week mode so day headers stack and sticky stickiness is reachable.
   const seedData = [];
@@ -444,6 +446,8 @@ async function stickyState(page, headerSel){
 
   // ── E. Already covered stay-open above; also verify dismiss still works ──
   console.log('\n[E] Dismiss still works after reliable open');
+  await page.evaluate(() => window.scrollTo({top:0,left:0,behavior:'instant'}));
+  await sleep(200);
   await page.locator('.free-pill').first().click();
   await waitSheetOpen(page, '#free-time-sheet', 're-open for dismiss check');
   await page.locator('#free-time-close').click({ force:true });

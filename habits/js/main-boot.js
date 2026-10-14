@@ -171,7 +171,7 @@ function syncAddConditionsLayout(optional){
   const weatherOptional = weather.querySelector('summary .field-optional');
   if(weatherOptional)weatherOptional.hidden = optional;
   if(optional)weather.open = true;
-  $('ting-weather-profile').previousElementSibling.textContent = optional ? 'Weather' : 'weather guidance';
+  $('ting-weather-profile').previousElementSibling.textContent = optional ? 'Weather rules' : 'weather guidance';
   const chips = $('ting-tag-chips');
   if(chips.dataset.conditionMode !== String(optional)){
     chips.dataset.conditionMode = String(optional);
@@ -192,7 +192,7 @@ function syncAddRhythmUi(){
   syncAddConditionsLayout(optional);
   document.querySelector('.add-frequency .add-presets').hidden = !['keepup','reduce'].includes(selectedType);
   const opportunityButton = document.querySelector('[data-add-repeat="opportunity"]');
-  opportunityButton.hidden = !['keepup','reduce'].includes(selectedType);
+  opportunityButton.hidden = selectedType !== 'keepup';
   opportunityButton.setAttribute('aria-pressed',String(optional));
   const times = Math.max(1,Math.min(30,parseInt($('ting-times').value,10) || 1));
   const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt($('ting-days').value,10) || 7));
@@ -242,6 +242,7 @@ function syncDetailConditionsLayout(optional){
       if(home.node === weather)weather.open = home.open;
     }
   }
+  $('detail-weather-profile').previousElementSibling.textContent = optional ? 'Weather rules' : 'weather guidance';
   syncDetailSchedulePlacesUi();
   if(typeof syncWeatherGuidanceHints === 'function')syncWeatherGuidanceHints();
 }
@@ -255,8 +256,10 @@ function syncDetailRepeatModeUi(type){
   $('detail-slider-row').querySelector('.rhythm-in').hidden = optional;
   $('detail-opportunity-frequency').hidden = !optional;
   $('detail-sheet').classList.toggle('opportunity-mode',optional);
-  $('detail-rhythm-disclosure').querySelector('summary').textContent = optional ? 'repeat limit' : 'rhythm & deadline';
-  $('detail-availability-disclosure').querySelector('summary').textContent = optional || isMinimalMode() ? 'days & hours' : 'days, hours & places';
+  // The desktop shell moves the inner sheet out of its modal wrapper.
+  getSheetInner('detail-sheet')?.classList.toggle('opportunity-mode',optional);
+  $('detail-rhythm-disclosure').querySelector('summary').textContent = optional ? 'repeat limit' : type === 'task' ? 'date & start time' : type === 'zero' ? 'goal' : 'rhythm & deadline';
+  $('detail-availability-disclosure').querySelector('summary').textContent = optional ? 'days & hours' : isMinimalMode() ? 'allowed days & hours' : 'days, hours & places';
   $('detail-weather-disclosure').querySelector('summary').textContent = optional ? 'weather' : 'weather & forecast';
   const times = parseInt($('detail-times').value,10) || 1;
   const days = parseInt($('detail-days').value,10) || 7;
@@ -549,7 +552,9 @@ function syncTaskDueUi(){
   hint.textContent = !hasDate
     ? 'Stays in your list until you choose a date or finish it. Choose a date to set a start time.'
     : timeInput.value
-      ? 'Starts at this time on your chosen date. Leave the time blank if Tings can choose it.'
+      ? $('ting-breakable').getAttribute('aria-pressed') === 'true'
+        ? 'The first session starts at this time. Split sessions can pause and resume; time needed is the total.'
+        : 'Starts at this time on your chosen date. Leave the time blank if Tings can choose it.'
       : 'Tings can choose a start time. For an appointment, choose the time it starts.';
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -604,8 +609,9 @@ function setDetailTypeUi(type){
     });
   }
   const isHabit = type === 'keepup' || type === 'reduce';
+  $('detail-slider-row').hidden = !isHabit;
   $('detail-slider-row').style.display = isHabit ? 'flex' : 'none';
-  $('detail-target-help').style.display = 'block';
+  $('detail-target-help').style.display = isTask ? 'none' : 'block';
   $('detail-target-help').textContent = rhythmHelp(type);
   $('detail-due-row').hidden = type !== 'task';
   $('detail-due-hint').hidden = type !== 'task';
@@ -1024,7 +1030,7 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-anywhere]')){
-    renderTagChips('ting-tag-chips',selectedTopicsFrom('ting-tag-chips'),selectedLocationIds(),null,selectedLocationPrefs(),!selectedAnywhereFrom('ting-tag-chips'));
+    toggleAnywhereChip('ting-tag-chips');
     if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     return;
   }
@@ -1046,7 +1052,8 @@ $('detail-place-chips')?.addEventListener('click',e=>{
           const wrap = 'detail-place-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
-          renderTagChips(wrap,[],selected,null,prefs);
+          renderTagChips(wrap,[],selected,null,prefs,
+            $('detail-sheet').classList.contains('opportunity-mode') ? false : selectedAnywhereFrom(wrap));
           if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
           setDetailDirty();
         }
@@ -1055,7 +1062,7 @@ $('detail-place-chips')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-anywhere]')){
-    renderTagChips('detail-place-chips',[],selectedLocationIdsFrom('detail-place-chips'),null,selectedLocationPrefsFrom('detail-place-chips'),!selectedAnywhereFrom('detail-place-chips'));
+    toggleAnywhereChip('detail-place-chips');
     if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
     setDetailDirty();
     return;

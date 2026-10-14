@@ -15,6 +15,9 @@ function assert(value,message){
 (async()=>{
   const browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:390,height:844}});
+  // Keep "happening now" rows inside one day, away from the midnight edge.
+  const clock = new Date();clock.setHours(12,0,0,0);
+  await page.clock.setSystemTime(clock);
   const errors=[];
   page.on('pageerror',error=>errors.push(String(error)));
   await page.goto(BASE,{waitUntil:'networkidle'});
