@@ -91,6 +91,7 @@ sleep-block-dynamic-test.js	data	once
 swipe-crown-arbitration-test.js	ui	once
 swipe-shortcuts-test.js	ui	once
 slipped-indicator-test.js	planner	once
+unplaced-on-missed-sheet-test.js	ui	once
 snap-and-sleep-test.js	data	once
 snooze-until-planned.js	ui	once
 snooze-options-test.js	ui	once

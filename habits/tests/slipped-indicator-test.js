@@ -369,7 +369,7 @@ function assert(cond,msg){
   if(pill){
     await pill.click();
     await page.waitForTimeout(300);
-    const allItems = await page.$$eval('#slipped-sheet .dropped-item', els => els.map(el => el.textContent.trim()));
+    const allItems = await page.$$eval('#slipped-sheet .dropped-item:not([data-unplaced])', els => els.map(el => el.textContent.trim()));
     assert(!allItems.some(i => i.includes('Yoga')), 'Yoga gone after completion');
     await page.click('#slipped-close');
     await page.waitForTimeout(300);
@@ -574,8 +574,11 @@ function assert(cond,msg){
     assert((await pill.textContent()).trim() === '1 missed','40 off-day items and one impossible item do not inflate the count');
     await pill.click();
     await page.waitForTimeout(250);
-    const names = await page.$$eval('#slipped-sheet .dropped-name',els=>els.map(el=>el.textContent.trim()));
+    const names = await page.$$eval('#slipped-sheet .dropped-item:not([data-unplaced]) .dropped-name',els=>els.map(el=>el.textContent.trim()));
+    const unplaced = await page.$$eval('#slipped-sheet .dropped-item[data-unplaced="1"] .dropped-name',els=>els.map(el=>el.textContent.trim()));
     assert(names.length === 1 && names[0] === 'Valid Morning',`only planner-backed miss is listed: ${names.join(', ')}`);
+    assert(unplaced.includes('Fully Blocked'), `impossible item is listed as not placed: ${unplaced.join(', ')}`);
+    assert(!unplaced.includes('Valid Morning'), 'the miss is not repeated in not placed');
     await page.click('#slipped-close');
   }
 

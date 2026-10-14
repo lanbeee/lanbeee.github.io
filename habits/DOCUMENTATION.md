@@ -1065,6 +1065,7 @@ and small sideways drift still activate.
 - Each item has a **log button** (colored tile + "+") for one-tap clearing
 - When you log from this sheet, the pill count updates immediately
 - Each missed row can be **hidden until tonight** (local midnight). Hidden rows drop out of the `"N missed"` count and the assistant missed list, but they are not snoozed: Home and the planner stay unchanged. Hide some and the pill becomes `"N missed"` for what is still unacked. Hide all of them and the amber count is replaced by a muted eye-off chip (`hidden until tonight`) so the sheet stays reachable without looking like a notification. Show a hidden row, or wait until midnight, and it behaves as a miss again.
+- The same sheet has a separate **not placed** section for items the mounted week agenda never put on any day. A habit or task already listed as missed stays in the missed section only. A short breakable chunk, or a placement on a later day, counts as placed. The today-header count stays the visible missed rows. When nothing is missed and something still could not be placed, the header shows a muted calendar-off chip (`not placed`) with no number.
 
 ### Before-missed phone reminders (installed app only)
 
@@ -1679,11 +1680,14 @@ Tracks the currently active habit session:
 ├─────────────────────────────────────┤
 │ [Emoji tile] Habit Name     hide  │
 │ [Emoji tile] Another Habit  hide  │
+│ not placed                        │
+│ [Emoji tile] Couldn't fit         │
 └─────────────────────────────────────┘
 ```
 
-- **Access:** Tap "N missed" on the Today header, or the muted eye-off chip after every remaining miss has been hidden until tonight
-- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong here, and a still-doable item is not missed just because yesterday ended.
+- **Access:** Tap "N missed" on the Today header, the muted eye-off chip after every remaining miss has been hidden until tonight, or the muted calendar-off chip when nothing was missed and the planner still left items unplaced
+- Lists true misses only: dated planner expectations whose usable opportunity ended without a completion, plus rows actually shown in today's agenda and subsequently dropped by replanning. Off-day and never-feasible overdue work do not belong in that missed section, and a still-doable item is not missed just because yesterday ended.
+- **Not placed** sits in its own section under the misses. It lists week candidates the mounted agenda never placed on any day, and omits every item already shown as missed. Logging or opening a row works the same way; these rows have no hide control. They do not change the `"N missed"` count or the assistant missed list.
 - A user can close the app for hours or skip app days: the planner saves dated expectations ahead and reconciles them with actual logs on the next open.
 - Habits with several sessions a day show one missed row per unfinished session from today, with its day and agenda time. A morning session can be missed while an afternoon session remains on the agenda; two missed sessions count as two. Completing a card or missed row resolves only that session. A later session's completion does not erase earlier misses from today. Past-day sessions are excluded after midnight. Once-a-day items retain one actionable catch-up row, labeled with the newest missed day.
 - Each item has a colored **pulse tile** (+ badge) for one-tap logging
