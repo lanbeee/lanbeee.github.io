@@ -234,15 +234,15 @@
         </section>
         <details class="add-option-group add-weather-options"><summary>Weather <span class="field-optional">(optional)</span></summary>
         <label class="field-label" for="ting-weather-profile">weather guidance</label>
-        <select id="ting-weather-profile" class="settings-select"><option value="">use place default</option><option value="__none__">no weather</option></select>
-        <p class="field-hint" id="ting-weather-guidance-hint">Uses a saved place’s weather guidance when available.</p>
+        <select id="ting-weather-profile" class="settings-select"><option value="">use the place’s weather</option><option value="__none__">no weather</option></select>
+        <p class="field-hint" id="ting-weather-guidance-hint">Uses the weather saved on the place, if it has one.</p>
         <div id="ting-weather-location-wrap" class="weather-habit-location" hidden>
-          <label class="field-label" for="ting-weather-location">anywhere forecast</label>
+          <label class="field-label" for="ting-weather-location">check the weather at</label>
           <select id="ting-weather-location" class="settings-select"><option value="">home city</option></select>
-          <p class="field-hint">Used only when the item can happen anywhere; a scheduled place uses its own forecast.</p>
+          <p class="field-hint">For when this isn’t tied to one place. A chosen place uses that place’s weather.</p>
         </div>
-        <button type="button" class="mini-text-btn" id="ting-weather-profiles">weather profiles</button>
-        <button type="button" class="mini-text-btn time-set-city" id="ting-weather-city" hidden>set forecast city</button>
+        <button type="button" class="mini-text-btn" id="ting-weather-profiles">edit saved weather</button>
+        <button type="button" class="mini-text-btn time-set-city" id="ting-weather-city" hidden>set your city</button>
         <label class="setting-toggle compact-toggle" id="ting-show-weather-row">
           <span>show weather</span>
           <button class="setting-switch" id="ting-show-weather" type="button" aria-pressed="false">
@@ -255,7 +255,7 @@
             <span class="switch-ui" aria-hidden="true"></span>
           </button>
         </label>
-        <p class="field-hint" id="ting-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
+        <p class="field-hint" id="ting-show-weather-location-hint" hidden>Off uses your city’s weather.</p>
 
         </details>
         <div class="add-shortcuts">
@@ -468,13 +468,13 @@
           <details class="detail-disclosure detail-full-only weather-habit-field" id="detail-weather-disclosure">
             <summary>weather &amp; forecast</summary>
             <label class="settings-sublabel" for="detail-weather-profile">weather guidance</label>
-            <select id="detail-weather-profile" class="settings-select"><option value="">use place default</option><option value="__none__">no weather</option></select>
-            <p class="field-hint" id="detail-weather-guidance-hint">Uses a saved place’s weather guidance when available.</p>
+            <select id="detail-weather-profile" class="settings-select"><option value="">use the place’s weather</option><option value="__none__">no weather</option></select>
+            <p class="field-hint" id="detail-weather-guidance-hint">Uses the weather saved on the place, if it has one.</p>
             <div id="detail-weather-location-wrap" class="weather-habit-location" hidden>
-              <label class="settings-sublabel" for="detail-weather-location">anywhere forecast</label>
+              <label class="settings-sublabel" for="detail-weather-location">check the weather at</label>
               <select id="detail-weather-location" class="settings-select"><option value="">home city</option></select>
             </div>
-            <button type="button" class="mini-text-btn" id="detail-weather-profiles">weather profiles</button>
+            <button type="button" class="mini-text-btn" id="detail-weather-profiles">edit saved weather</button>
             <label class="setting-toggle compact-toggle" id="detail-show-weather-row">
               <span>show weather</span>
               <button class="setting-switch" id="detail-show-weather" type="button" aria-pressed="false">
@@ -487,10 +487,10 @@
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
             </label>
-            <p class="field-hint" id="detail-show-weather-location-hint" hidden>Off uses your home-city forecast.</p>
+            <p class="field-hint" id="detail-show-weather-location-hint" hidden>Off uses your city’s weather.</p>
 
-            <button type="button" class="mini-text-btn time-set-city" id="detail-weather-city" hidden>set forecast city</button>
-            <p class="field-hint" id="detail-weather-venue-hint">Location-bound guidance uses the place where the planner schedules this item.</p>
+            <button type="button" class="mini-text-btn time-set-city" id="detail-weather-city" hidden>set your city</button>
+            <p class="field-hint" id="detail-weather-venue-hint">If you choose a place, Tings checks the weather there.</p>
           </details>
           <details class="detail-disclosure detail-full-only" id="detail-options-disclosure">
             <summary>specific times &amp; places</summary>
@@ -921,7 +921,7 @@
             <span data-ui-leave="weather"></span>
           </div>
           <div class="settings-collapse-body" id="settings-weather-body" hidden>
-            <p class="field-hint">Create up to eight profiles, then attach one to an outdoor habit. Rules combine into one 0–100 score. Set each rule's relative priority to low, medium, or high. Prefer lower/higher is ranked against the actual seven-day forecast for that place, so the baseline changes with the week and season. Limits can use fixed values or 0–100 forecast percentiles; hard rejects flexible times outside them. Each rule shows its metric's scale in your display unit (°F/°C, in/mm, mph/km/h — see the unit settings below); a rule with no preference and no bounds stays inactive until you set one.</p>
+            <p class="field-hint">Save up to eight kinds of weather, such as dry or mild, then choose one on a habit. Rules combine into one 0–100 score. Set each rule's relative priority to low, medium, or high. Prefer lower/higher is ranked against the actual seven-day forecast for that place, so the baseline changes with the week and season. Limits can use fixed values or 0–100 forecast percentiles; hard rejects flexible times outside them. Each rule shows its metric's scale in your display unit (°F/°C, in/mm, mph/km/h — see the unit settings below); a rule with no preference and no bounds stays inactive until you set one.</p>
             <div class="settings-grid weather-display-settings" data-ui-toggles="weather"></div>
             <span class="settings-sublabel" id="weather-temp-unit-label">temperature unit</span>
             <div class="seg weather-unit-seg" id="weather-temp-unit-seg" data-setting-seg="weatherTempUnit" role="group" aria-labelledby="weather-temp-unit-label">

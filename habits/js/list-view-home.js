@@ -66,6 +66,35 @@ function selectedAnywhere(){
   return selectedAnywhereFrom('ting-tag-chips');
 }
 
+// Anywhere stays allowed when no place is chosen, but on a conditional item
+// that default is not a finished condition. Keep it tappable and unselected
+// until a place or weather profile is actually set.
+function syncOpportunityAnywhereChip(containerId){
+  const wrap = $(containerId);
+  const chip = wrap?.querySelector('[data-anywhere]');
+  if(!chip)return;
+  const opportunity = Boolean(wrap.closest('.opportunity-mode'));
+  const places = typeof selectedLocationIdsFrom === 'function' ? selectedLocationIdsFrom(containerId) : [];
+  const optionPlace = containerId === 'detail-place-chips'
+    && typeof readHabitScheduleOptionsFromDetail === 'function'
+    && readHabitScheduleOptionsFromDetail().some(option=>option.locationId);
+  let weather = false;
+  if(typeof weatherHabitHasActiveGuidance === 'function' && typeof weatherProfileChoiceFromValue === 'function'){
+    const detail = containerId === 'detail-place-chips';
+    weather = weatherHabitHasActiveGuidance({
+      ...weatherProfileChoiceFromValue($(detail ? 'detail-weather-profile' : 'ting-weather-profile')?.value || ''),
+      locationIds:places,
+      anywhereAllowed:chip.classList.contains('on'),
+      weatherLocationId:$(detail ? 'detail-weather-location' : 'ting-weather-location')?.value || null,
+      scheduleOptions:detail && typeof readHabitScheduleOptionsFromDetail === 'function'
+        ? readHabitScheduleOptionsFromDetail() : []
+    }, sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}));
+  }
+  const pending = opportunity && chip.classList.contains('on') && places.length === 0 && !optionPlace && !weather;
+  chip.classList.toggle('is-pending', pending);
+  chip.title = pending ? 'Choose a place you visit, or the weather this needs.' : 'Not tied to one place';
+}
+
 /** PURE: read locationPrefs map from chip data-pref attributes. */
 function selectedLocationPrefsFrom(containerId){
   const wrap = $(containerId);
@@ -117,7 +146,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     return String(a).localeCompare(String(b),undefined,{sensitivity:'base',numeric:true});
   });
   const anywhereHtml = locations.length > 0
-    ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="no specific place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
+    ? `<button type="button" class="topic-chip location-chip anywhere-chip ${anywhereOn ? 'on' : ''}" data-anywhere="" title="Not tied to one place"><i class="ti ti-world" aria-hidden="true"></i>anywhere</button>`
     : '';
   const locHtml = orderedLocations.map(loc=>{
     const on = selectedLocSet.has(loc.id);
@@ -196,6 +225,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   // which would swallow the next click within 500ms. Disarm on the next tick
   // (the scroll event is queued before this timeout so it fires first).
   setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
+  if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip(containerId);
 }
 
 // RENDER: allowed view edits which places are valid for the general time
@@ -1027,12 +1057,13 @@ function cardCue(h){
     if(opportunityDoingNow(h,dayStart(Date.now())))return 'Doing now';
     const days = daysSince(h.lastLog);
     const remaining = days == null ? 0 : opportunityGapDays(h)-days;
-    if(remaining>0)return `Available in ${remaining}d`;
+    if(remaining===1)return 'Available in 1 day';
+    if(remaining>0)return `Available in ${remaining} days`;
     const today = typeof _homeRenderedWeek === 'undefined' ? null
       : _homeRenderedWeek?.days?.find(day=>day.dayBase === dayStart(Date.now()));
     const placed = (today?.timeline || []).some(row=>['fill','scheduled'].includes(row.kind)
       && (row.h?.hid || row.hid) === h.hid);
-    return placed ? 'Ready today' : 'When conditions fit';
+    return placed ? 'Ready today' : 'Waiting for the place or weather';
   }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);
@@ -1123,7 +1154,7 @@ function cardMeta(h,options = {}){
       if(h.dueDate === null)return '<span class="context-pill due icon-only" title="no due date"><i class="ti ti-flag" aria-hidden="true"></i></span>';
       return `<span class="context-pill due ${h.hardDue ? 'hard' : ''}" title="${escapeHtml(`due ${entryWhen(h.dueDate)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(h.dueDate,h.hardDue))}</span>`;
     }
-    if(h.type !== 'zero')return `<span class="context-pill" title="${isOpportunityHabit(h) ? 'optional · maximum frequency' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`;
+    if(h.type !== 'zero')return `<span class="context-pill" title="${isOpportunityHabit(h) ? 'at most this often' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`;
     return '<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>';
   }
   const plan = nextPlannedLog(h);
@@ -1147,7 +1178,7 @@ function cardMeta(h,options = {}){
     if(planBy != null && (h.type === 'keepup' || h.type === 'reduce')){
       parts.push(`<span class="context-pill due" title="${escapeHtml(`needs a day by ${entryWhen(planBy)}`)}"><i class="ti ti-flag" aria-hidden="true"></i>${escapeHtml(compactDueLabel(planBy,false))}</span>`);
     }else if(options.forceRepetition || sortSettings.showRepetitionOnCards){
-      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="${isOpportunityHabit(h) ? 'optional · maximum frequency' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`);
+      if(h.type !== 'zero')parts.push(`<span class="context-pill" title="${isOpportunityHabit(h) ? 'at most this often' : 'how often'}"><i class="ti ti-repeat" aria-hidden="true"></i>${isOpportunityHabit(h) ? '≤1/' + opportunityGapDays(h) + 'd' : formatRhythmLabel(h.target || 7)}</span>`);
       else parts.push('<span class="context-pill" title="avoid"><i class="ti ti-ban" aria-hidden="true"></i>stop</span>');
     }
   }

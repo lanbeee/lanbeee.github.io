@@ -359,8 +359,8 @@ function habitScheduleOptionRowHtml(option,index){
     ? weatherProfileSelectValue(normalized.weatherProfileMode,normalized.weatherProfileId)
     : (normalized.weatherProfileId || '');
   const weatherOptions=typeof weatherProfileOptionsHtml==='function'
-    ? weatherProfileOptionsHtml(weatherValue,'inherit item / place')
-    : '<option value="">inherit item / place</option>';
+    ? weatherProfileOptionsHtml(weatherValue,'same as the item or place')
+    : '<option value="">same as the item or place</option>';
   return `<div class="habit-option-row" data-habit-option-index="${index}" data-habit-option-id="${normalized.id || ''}">
     <div class="habit-option-head">
       <span class="habit-option-number">option ${index + 1}</span>
@@ -410,23 +410,23 @@ function habitScheduleOptionWeatherHint(row){
   const own=typeof weatherProfileChoiceFromValue==='function'
     ? weatherProfileChoiceFromValue(row.querySelector('.habit-option-weather')?.value || '')
     : {weatherProfileMode:'inherit',weatherProfileId:null};
-  if(own.weatherProfileMode==='none')return 'No weather guidance for this option.';
+  if(own.weatherProfileMode==='none')return 'Any weather is fine for this row.';
   if(own.weatherProfileMode==='profile'){
     const name=typeof weatherProfileName==='function' ? weatherProfileName(own.weatherProfileId,settings) : '';
-    return `${name || 'Selected profile'} set for this option.`;
+    return `Uses ${name || 'this weather'} for this row.`;
   }
   const item=typeof weatherProfileChoiceFromValue==='function'
     ? weatherProfileChoiceFromValue($('detail-weather-profile')?.value || '')
     : {weatherProfileMode:'inherit',weatherProfileId:null};
-  if(item.weatherProfileMode==='none')return 'No weather · item setting.';
+  if(item.weatherProfileMode==='none')return 'Any weather is fine, same as the item.';
   if(item.weatherProfileMode==='profile'){
     const name=typeof weatherProfileName==='function' ? weatherProfileName(item.weatherProfileId,settings) : '';
-    return `${name || 'Item profile'} from item.`;
+    return `Uses ${name || 'the item’s weather'}, same as the item.`;
   }
   const locationId=cleanLocationId(row.querySelector('.habit-option-location')?.value) || null;
   const loc=normalizeLocationRegistry(settings.locations).find(place=>place.id===locationId);
   const name=loc && typeof weatherProfileName==='function' ? weatherProfileName(loc.weatherProfileId,settings) : '';
-  return name ? `${name} from ${loc.name}.` : 'No inherited weather guidance.';
+  return name ? `Uses ${name} from ${loc.name}.` : 'This place has no saved weather.';
 }
 
 function syncHabitScheduleOptionWeatherHints(){
@@ -524,7 +524,7 @@ function syncDetailSchedulePlacesUi(){
   if(label)label.textContent = preferenceOnly ? 'place preferences' : 'places';
   const hint = $('detail-places-hint');
   if(hint){
-    hint.textContent = optional ? 'Places you’re at or already plan to visit.' : preferenceOnly
+    hint.textContent = optional ? 'A place you already visit. Tings uses that visit and won’t add a trip.' : preferenceOnly
       ? 'Tap a place to rank it: soft, strong, or avoid.'
       : 'Tap a place to cycle it: allowed, preferred, avoid, then off. These places use the time window above.';
   }

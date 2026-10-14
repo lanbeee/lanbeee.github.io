@@ -167,7 +167,9 @@ function syncAddConditionsLayout(optional){
   }
   $('add-places-label').textContent = optional ? 'Places' : 'Topics & places';
   places.querySelector('.field-hint').textContent = optional
-    ? 'Places you’re at or already plan to visit.' : 'Group this item by topic and choose where it can happen.';
+    ? 'A place you already visit. Tings uses that visit and won’t add a trip.' : 'Group this item by topic and choose where it can happen.';
+  const weatherOptional = weather.querySelector('summary .field-optional');
+  if(weatherOptional)weatherOptional.hidden = optional;
   if(optional)weather.open = true;
   $('ting-weather-profile').previousElementSibling.textContent = optional ? 'Weather' : 'weather guidance';
   const chips = $('ting-tag-chips');
@@ -199,7 +201,7 @@ function syncAddRhythmUi(){
   const count = times === 1 ? 'once' : `${times} times`;
   const period = days === 1 ? 'a day' : days === 7 ? 'a week' : `every ${days} days`;
   $('target-help').textContent = selectedType === 'zero' ? rhythmHelp('zero')
-    : optional ? 'No missed days when conditions don’t fit.'
+    : optional ? 'You don’t miss a day just because the place or weather wasn’t right.'
     : selectedType === 'reduce' ? `Keep it to ${count} ${period} or less.`
     : `Aim for ${count} ${period}.`;
   document.querySelectorAll('[data-add-rhythm]').forEach(button=>{
@@ -255,7 +257,7 @@ function syncDetailRepeatModeUi(type){
   $('detail-sheet').classList.toggle('opportunity-mode',optional);
   $('detail-rhythm-disclosure').querySelector('summary').textContent = optional ? 'repeat limit' : 'rhythm & deadline';
   $('detail-availability-disclosure').querySelector('summary').textContent = optional || isMinimalMode() ? 'days & hours' : 'days, hours & places';
-  $('detail-weather-disclosure').querySelector('summary').textContent = optional ? 'weather conditions' : 'weather & forecast';
+  $('detail-weather-disclosure').querySelector('summary').textContent = optional ? 'weather' : 'weather & forecast';
   const times = parseInt($('detail-times').value,10) || 1;
   const days = parseInt($('detail-days').value,10) || 7;
   $('detail-times').nextElementSibling.textContent = times === 1 ? 'time' : 'times';
@@ -265,7 +267,7 @@ function syncDetailRepeatModeUi(type){
     const [presetTimes,presetDays] = button.dataset.detailRhythm.split(',').map(Number);
     button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
   });
-  if(optional)$('detail-target-help').textContent = 'No missed days when conditions don’t fit.';
+  if(optional)$('detail-target-help').textContent = 'You don’t miss a day just because the place or weather wasn’t right.';
   syncDetailConditionsLayout(optional);
 }
 $('detail-repeat-mode').addEventListener('change',()=>{

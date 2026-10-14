@@ -42,7 +42,7 @@ function readWeatherProfileChoice(id){
   return weatherProfileChoiceFromValue($(id)?.value || '');
 }
 
-function weatherProfileOptionsHtml(value='',inheritLabel='use place default'){
+function weatherProfileOptionsHtml(value='',inheritLabel='use the place’s weather'){
   const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
   const selected=String(value || '');
   const missing=selected && selected!==WEATHER_PROFILE_NONE_VALUE && !profiles.some(profile=>profile.id===selected);
@@ -57,8 +57,7 @@ function weatherProfileOptionsHtml(value='',inheritLabel='use place default'){
 function renderWeatherProfileSelect(id,value = ''){
   const select=$(id);
   if(!select)return;
-  const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
-  select.innerHTML=weatherProfileOptionsHtml(value,profiles.length?'use place default':'use place default · no profiles yet');
+  select.innerHTML=weatherProfileOptionsHtml(value,weatherInheritLabel(id));
   select.value=value;
 }
 
@@ -74,15 +73,36 @@ function selectedWeatherLocationIds(selectId){
   return [];
 }
 
+function weatherInheritLabel(selectId){
+  const select=$(selectId);
+  const opportunity=Boolean(select?.closest('.opportunity-mode'));
+  const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
+  const ids=selectedWeatherLocationIds(selectId);
+  if(opportunity && !ids.length)return 'not set';
+  return profiles.length ? 'use the place’s weather' : 'use the place’s weather · none saved yet';
+}
+
+// A conditional item shows up only after a place or a weather choice.
+// Say that as an instruction. "Anywhere" is not a finished choice.
+function opportunitySetupHint(hasTrigger, needsCity){
+  if(!hasTrigger)return 'Choose a place you visit, or the weather this needs. It won’t show up until one of those is set.';
+  if(needsCity)return 'Add your city so Tings can tell when the weather matches.';
+  return '';
+}
+
 function weatherGuidanceHintText(selectId){
   const settings=sortSettings || loadSortSettings();
   const choice=weatherProfileChoiceFromValue($(selectId)?.value || '');
-  if(choice.weatherProfileMode==='none')return 'No weather guidance applies to this item unless a specific option overrides it.';
+  const opportunity=Boolean($(selectId)?.closest('.opportunity-mode'));
+  if(choice.weatherProfileMode==='none'){
+    return opportunity
+      ? 'Any weather is fine.'
+      : 'Weather won’t change the plan, unless a specific time and place says otherwise.';
+  }
   if(choice.weatherProfileMode==='profile'){
-    if($(selectId)?.closest('.opportunity-mode')){
-      return `Appears only when ${weatherProfileName(choice.weatherProfileId,settings) || 'this profile'} conditions match.`;
-    }
-    return `Uses ${weatherProfileName(choice.weatherProfileId,settings) || 'this profile'} at the scheduled place.`;
+    const name=weatherProfileName(choice.weatherProfileId,settings) || 'this weather';
+    if(opportunity)return `Shows up only when the weather matches ${name}.`;
+    return `Uses ${name} at the place where this is planned.`;
   }
   const ids=selectedWeatherLocationIds(selectId);
   const inherited=ids.map(id=>{
@@ -90,9 +110,13 @@ function weatherGuidanceHintText(selectId){
     const name=loc && weatherProfileName(loc.weatherProfileId,settings);
     return name ? `${loc.name} · ${name}` : null;
   }).filter(Boolean);
-  if(inherited.length)return `Place defaults: ${inherited.join('; ')}.`;
-  return $(selectId)?.closest('.opportunity-mode')
-    ? 'No weather restriction.' : 'No selected place has weather guidance; planning is unchanged.';
+  if(inherited.length)return `Uses the weather saved for ${inherited.join('; ')}.`;
+  if(opportunity){
+    return ids.length ? 'Any weather is fine. This shows up when you’re at a place you chose.' : '';
+  }
+  return ids.length
+    ? 'The selected places have no saved weather, so weather won’t change the plan.'
+    : 'Uses the weather saved on the place, if it has one.';
 }
 
 function syncWeatherGuidanceHints(){
@@ -103,7 +127,12 @@ function syncWeatherGuidanceHints(){
   }
   for(const [selectId,hintId] of [['ting-weather-profile','ting-weather-guidance-hint'],['detail-weather-profile','detail-weather-guidance-hint']]){
     const hint=$(hintId);
-    if(hint)hint.textContent=weatherGuidanceHintText(selectId);
+    if(hint){
+      hint.textContent=weatherGuidanceHintText(selectId);
+      hint.hidden=!hint.textContent;
+    }
+    const blank=$(selectId)?.querySelector('option[value=""]');
+    if(blank)blank.textContent=weatherInheritLabel(selectId);
   }
   if(typeof syncHabitScheduleOptionWeatherHints==='function')syncHabitScheduleOptionWeatherHints();
   syncDetailConditionHint();
@@ -126,8 +155,8 @@ function syncDetailConditionHint(){
   const hasTrigger = hasPlace || weatherHabitHasActiveGuidance(record,settings);
   const needsCity = optional && hasTrigger && !hasPlace && !record.weatherLocationId && !weatherHomeCoords(settings);
   $('detail-weather-city').hidden = !needsCity;
-  hint.textContent = !hasTrigger ? 'Choose a place or a weather profile to continue.'
-    : needsCity ? 'Set your city so Tings can check the weather.' : '';
+  hint.textContent = opportunitySetupHint(hasTrigger, needsCity);
+  if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip('detail-place-chips');
   hint.hidden = !optional || (hasTrigger && !needsCity);
   if(optional){
     $('detail-weather-location-wrap').hidden = !locationOptions().length
@@ -365,7 +394,7 @@ function renderWeatherControls(){
   const cache=weatherCacheRead();
   const status=$('weather-status');
   if(status){
-    if(!profiles.length)status.textContent='No weather profiles yet.';
+    if(!profiles.length)status.textContent='No saved weather yet.';
     else if(!Number.isFinite(settings.homeCityLat) || !Number.isFinite(settings.homeCityLng))status.textContent='Set your city under Locations to load a forecast.';
     else if(cache.lastError)status.textContent=`Forecast unavailable · using normal planning (${cache.lastError})`;
     else {

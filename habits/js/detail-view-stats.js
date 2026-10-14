@@ -27,7 +27,7 @@ function renderStats(h){
   const timed = h.type === 'task' && h.eventTime !== null;
   const targetLine = h.type === 'zero' ? 'avoid'
     : h.type === 'task' ? (timed ? 'appointment' : (h.dueDate ? 'due task' : 'someday'))
-    : isOpportunityHabit(h) ? `at most once / ${opportunityGapDays(h)}d` : `${formatRhythmLabel(target)} rhythm`;
+    : isOpportunityHabit(h) ? `at most once every ${opportunityGapDays(h)} days` : `${formatRhythmLabel(target)} rhythm`;
   const rhythmIcon = h.type === 'zero' ? 'ti-ban'
     : h.type === 'task' ? (timed ? 'ti-calendar-time' : 'ti-checkbox')
     : 'ti-repeat';
@@ -120,7 +120,7 @@ function scoreTitle(h,score){
 
 // PURE: maps score to guidance copy
 function progressCopy(h,score){
-  if(isOpportunityHabit(h))return 'no required frequency';
+  if(isOpportunityHabit(h))return 'only when the place or weather fits';
   if(score === null)return 'start with one entry';
   if(h.type === 'keepup'){
     if(score >= 80)return 'your current gap is inside the rhythm';
@@ -139,7 +139,7 @@ function progressCopy(h,score){
 
 // PURE: builds the about blurb string
 function aboutText(h){
-  if(isOpportunityHabit(h))return `Optional, at most once every ${opportunityGapDays(h)} days. Becomes eligible at its priority on existing visits and matching weather. Explicit plans still reserve time.`;
+  if(isOpportunityHabit(h))return `At most once every ${opportunityGapDays(h)} days. It shows up when you’re at a chosen place, or when the weather matches. You can still plan a time yourself.`;
   const days = daysSince(h.lastLog);
   if(h.type === 'task'){
     if(isTaskDone(h))return `Done. Logged ${entryWhen(h.lastLog)}.`;

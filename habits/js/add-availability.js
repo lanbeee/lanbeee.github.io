@@ -68,8 +68,10 @@ function refreshAddAvailability(){
   const needsCity = optional && hasTrigger && !record.locationIds.length && !record.weatherLocationId
     && !weatherHomeCoords(sortSettings);
   $('ting-weather-city').hidden = !needsCity;
-  $('add-condition-hint').textContent = !hasTrigger ? 'Choose a place or a weather profile to continue.'
-    : needsCity ? 'Set your city so Tings can check the weather.' : '';
+  $('add-condition-hint').textContent = typeof opportunitySetupHint === 'function'
+    ? opportunitySetupHint(hasTrigger, needsCity)
+    : '';
+  if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip('ting-tag-chips');
   $('add-condition-hint').hidden = !optional || (hasTrigger && !needsCity);
   $('do-save').disabled = optional && !hasTrigger;
   const plannerKey = homePlannerDirtyKey([]);
@@ -111,7 +113,7 @@ function addRoomPreviewCopy(before,after,data,record){
   const lost = [...addRoomMinutes(before)].filter(([i,total])=>(minutes.get(i) || 0) < total)
     .map(([i])=>data[i]?.name).filter(Boolean);
   if(!draftMinutes)return isOpportunityHabit(record)
-    ? {tone:'',text:'No matching opportunity in the next 7 days. It will wait for a visit or suitable weather.'}
+    ? {tone:'',text:'Nothing fits in the next 7 days. It waits until you’re at the place, or the weather matches.'}
     : {tone:'warning',text:'No room found in the next 7 days with these settings. You can still add it and adjust its schedule in details.'};
   const days = (after.days || []).filter(day=>(day.timeline || []).some(row=>row.i === data.length && ['fill','scheduled'].includes(row.kind))).length;
   const partial = record.type === 'task' && draftMinutes < record.durationMinutes;

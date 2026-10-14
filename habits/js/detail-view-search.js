@@ -224,7 +224,7 @@ function revealDetailSearchEntry(entry){
   }else if(target.closest('#detail-mode-field') && $('detail-mode-field').hidden){
     target = $('detail-type-seg');message = 'Choose Habit to see build, limit and stop.';
   }else if(target.closest('#detail-weather-location-wrap') && $('detail-weather-location-wrap').hidden){
-    target = $('detail-weather-profile');message = 'An anywhere forecast applies when this item can run anywhere with weather guidance.';
+    target = $('detail-weather-profile');message = 'Choose the weather first. Then pick where to check it, if this isn’t tied to one place.';
   }else if(target.closest('#detail-show-weather-location-row') && $('detail-show-weather-location-row').hidden){
     target = $('detail-show-weather');message = 'Turn on “show weather” to choose its forecast place.';
   }
