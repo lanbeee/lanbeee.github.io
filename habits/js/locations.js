@@ -379,41 +379,223 @@ function clearCurrentCoordEdgeCache(){
 // settings manager. Default Nominatim (no key); Google fallback slot reserved.
 // ─────────────────────────────────────────────────────────────────────────
 
-// ASYNC: turn a typed address into a ranked list of {name,address,lat,lng}
-// candidates. Returns [] on any failure so the caller can show "no matches".
-// The caller confirms the right candidate before creating the location —
-// geocoding ambiguity is common and a silent wrong pin corrupts every edge.
-// ASYNC: turn a typed address into a ranked list of {name,address,lat,lng}
-// candidates. Tries Photon first (browser-friendly), then Nominatim. Returns
-// [] on any failure so the caller can show "no matches".
-async function geocodeSearch(query,{ limit = 5 } = {}){
+// ASYNC: turn a typed address into a ranked list of {name,address,lat,lng}.
+// The list also carries .status ('ok' | 'empty' | 'unavailable'), .focus, and
+// .widened. Ranking happens here so a page of weak Photon hits cannot hide a
+// better Nominatim address. The caller confirms the right candidate before
+// creating the location — a silent wrong pin corrupts every edge.
+//
+// scope 'near' (default) biases from the saved home city. scope 'map' hard-filters
+// to opts.bounds. scope 'anywhere' sends only the text. layers limits Photon
+// (city search passes city/locality).
+async function geocodeSearch(query, opts = {}){
+  const limit = Math.max(1, Number(opts.limit) || 5);
   const q = String(query || '').trim();
-  if(!q)return [];
+  if(!q)return packGeocode([], 'empty', null, limit);
   // Coordinates are a useful escape hatch when an address is new, rural, or
-  // simply missing from both providers.
+  // simply missing from both providers. The user typed them, so they stay exact.
   const coordinateMatch = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
   if(coordinateMatch){
     const direct = normalizeGeocodeHit('Pinned location','Entered coordinates',coordinateMatch[1],coordinateMatch[2]);
-    return direct ? [direct] : [];
+    return packGeocode(direct ? [direct] : [], direct ? 'ok' : 'empty', null, limit);
   }
-  // Photon and Nominatim have complementary coverage. Previously any Photon
-  // hit suppressed Nominatim entirely, even when it was a much poorer match.
-  const [photon,nominatim] = await Promise.all([
-    geocodeSearchPhoton(q,limit),
-    geocodeSearchNominatim(q,limit)
-  ]);
-  const combined = [];
-  for(const hit of [...photon,...nominatim]){
-    const addressKey = String(hit.address || '').toLocaleLowerCase().replace(/\s+/g,' ').trim();
-    const duplicate = combined.some(existing=>{
-      const existingKey = String(existing.address || '').toLocaleLowerCase().replace(/\s+/g,' ').trim();
+  const scope = opts.scope === 'map' || opts.scope === 'anywhere' ? opts.scope : 'near';
+  const ask = Math.min(10, Math.max(limit, 8));
+  const first = await geocodeCollect(q, {
+    scope, bounds:opts.bounds || null, layers:opts.layers || null, focus:opts.focus || null, ask, widen:false
+  });
+  if(first.ranked.length)return packGeocode(first.ranked, 'ok', first.rankFocus, limit);
+  // A street with no nearby hit gets one worldwide retry. Place names stay on
+  // the biased pass. This map and Anywhere do not widen: an empty area stays empty.
+  const streetNear = scope === 'near' && geocodeQueryLooksLikeStreet(q) && !geocodeQueryHasLocality(q);
+  if(streetNear && first.responded){
+    const wider = await geocodeCollect(q, {scope:'anywhere', bounds:null, layers:null, ask, widen:true});
+    if(wider.ranked.length){
+      const packed = packGeocode(wider.ranked, 'ok', first.rankFocus, limit);
+      packed.widened = true;
+      return packed;
+    }
+    return packGeocode([], 'empty', first.rankFocus, limit);
+  }
+  return packGeocode([], first.responded ? 'empty' : 'unavailable', first.rankFocus, limit);
+}
+
+function packGeocode(hits, status, focus, limit){
+  const list = hits.slice(0, limit);
+  list.status = status;
+  list.focus = focus || null;
+  list.widened = false;
+  return list;
+}
+
+// Saved home city is the default focus. A moved map, or GPS when the city is
+// still empty, is snapped to the ~1 km grid before it leaves. Saved places
+// never leave with a search. The New York opening pin is not a focus.
+function geocodeNearBias(override){
+  const movedLat = override && Number(override.lat);
+  const movedLng = override && Number(override.lng);
+  if(Number.isFinite(movedLat) && Number.isFinite(movedLng)){
+    return coarsenLatLngForCity(movedLat, movedLng);
+  }
+  const settings = typeof sortSettings !== 'undefined' ? sortSettings : null;
+  const lat = settings && Number(settings.homeCityLat);
+  const lng = settings && Number(settings.homeCityLng);
+  if(Number.isFinite(lat) && Number.isFinite(lng))return {lat, lng};
+  if(typeof currentCoord !== 'undefined' && currentCoord && Number.isFinite(currentCoord.lat) && Number.isFinite(currentCoord.lng)){
+    return coarsenLatLngForCity(currentCoord.lat, currentCoord.lng);
+  }
+  return null;
+}
+
+function homeCitySearchParts(){
+  const settings = typeof sortSettings !== 'undefined' ? sortSettings : null;
+  const label = String(settings && settings.homeCityName || '').trim();
+  const bits = label.split(',').map(part => part.trim()).filter(Boolean);
+  return {label, city:bits[0] || '', country:bits.slice(1).join(', ')};
+}
+
+function geocodeLang(){
+  let lang = 'en';
+  try{ lang = String(navigator.language || 'en').slice(0,2).toLowerCase(); }catch{ /* keep en */ }
+  return /^[a-z]{2}$/.test(lang) ? lang : 'en';
+}
+
+function geocodeQueryLooksLikeStreet(query){
+  const q = String(query || '').trim();
+  if(/^\d+\s+\S+/.test(q))return true;
+  return /\b(street|avenue|road|boulevard|lane|drive|court|place|terrace|parkway|highway|crescent|st|ave|rd|blvd|ln|dr|ct|pl|ter|pkwy|hwy|cres)\.?$/i.test(q);
+}
+
+function geocodeQueryHasLocality(query){
+  return /,/.test(String(query || ''));
+}
+
+function viewboxAround(lat, lng, km){
+  const dLat = km / 111;
+  const cos = Math.cos(Number(lat) * Math.PI / 180);
+  const dLng = km / (111 * (Math.abs(cos) < 0.2 ? 0.2 : Math.abs(cos)));
+  return {
+    minLat:Math.max(-90, lat - dLat),
+    maxLat:Math.min(90, lat + dLat),
+    minLng:Math.max(-180, lng - dLng),
+    maxLng:Math.min(180, lng + dLng)
+  };
+}
+
+function boundsCenter(bounds){
+  if(!bounds)return null;
+  return {lat:(Number(bounds.minLat) + Number(bounds.maxLat)) / 2, lng:(Number(bounds.minLng) + Number(bounds.maxLng)) / 2};
+}
+
+function hitInsideBounds(hit, bounds){
+  return hit.lat >= bounds.minLat && hit.lat <= bounds.maxLat
+    && hit.lng >= bounds.minLng && hit.lng <= bounds.maxLng;
+}
+
+function geocodeFold(value){
+  return String(value || '').toLocaleLowerCase().replace(/\s+/g,' ').trim();
+}
+
+function geocodeHitScore(query, hit, focus){
+  const q = geocodeFold(query);
+  const name = geocodeFold(hit.name);
+  const address = geocodeFold(hit.address);
+  const hay = `${name} ${address}`.trim();
+  let score = 0;
+  if(q && (name === q || address === q))score += 100;
+  else if(q && (name.startsWith(q) || address.startsWith(q) || hay.startsWith(q)))score += 80;
+  else if(q && hay.includes(q))score += 60;
+  else if(q){
+    const tokens = q.split(' ').filter(token => token.length > 1 || /^\d+$/.test(token));
+    if(tokens.length){
+      const matched = tokens.filter(token => hay.includes(token)).length;
+      score += (matched / tokens.length) * 50;
+    }
+  }
+  if(/^\d/.test(q) && /house|building|residential|street|road|address/.test(String(hit.layer || '')))score += 12;
+  if(focus && Number.isFinite(focus.lat) && Number.isFinite(focus.lng)){
+    const metres = haversineMetres(focus.lat, focus.lng, hit.lat, hit.lng);
+    if(metres <= 30000)score -= metres / 4000;
+    else score -= 8 + Math.min(36, (metres - 30000) / 80000);
+  }
+  return score;
+}
+
+function rankGeocodeHits(query, hits, focus){
+  const scored = hits.map((hit, index) => ({hit, index, score:geocodeHitScore(query, hit, focus)}));
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  const kept = [];
+  for(const row of scored){
+    const hit = row.hit;
+    const addressKey = geocodeFold(hit.address);
+    const duplicate = kept.some(existing => {
+      const existingKey = geocodeFold(existing.address);
       return (addressKey && addressKey === existingKey)
-        || haversineMetres(existing.lat,existing.lng,hit.lat,hit.lng) < 25;
+        || haversineMetres(existing.lat, existing.lng, hit.lat, hit.lng) < 80;
     });
-    if(!duplicate)combined.push(hit);
-    if(combined.length >= limit)break;
+    if(!duplicate)kept.push(hit);
   }
-  return combined;
+  return kept;
+}
+
+function formatGeocodeDistance(metres){
+  if(!Number.isFinite(metres) || metres < 0)return '';
+  if(metres < 120)return 'here';
+  if(metres < 950)return `${Math.max(50, Math.round(metres / 50) * 50)} m`;
+  const km = metres / 1000;
+  if(km < 10){
+    const rounded = Math.round(km * 10) / 10;
+    return `${Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)} km`;
+  }
+  return `${Math.round(km).toLocaleString()} km`;
+}
+
+async function geocodeCollect(query, opts){
+  const scope = opts.scope;
+  const hardBounds = scope === 'map' ? normalizeGeocodeBounds(opts.bounds) : null;
+  if(scope === 'map' && !hardBounds){
+    return {ranked:[], responded:true, rankFocus:null};
+  }
+  const bias = scope === 'near' ? geocodeNearBias(opts.focus) : null;
+  const parts = homeCitySearchParts();
+  const appendCity = scope === 'near' && !opts.widen && geocodeQueryLooksLikeStreet(query) && !geocodeQueryHasLocality(query) && !!parts.city;
+  const streetLayers = scope !== 'anywhere' && !opts.widen && !opts.layers && geocodeQueryLooksLikeStreet(query);
+  const context = {
+    bias:hardBounds ? null : bias,
+    bounds:hardBounds || (bias ? viewboxAround(bias.lat, bias.lng, 40) : null),
+    hardBounds:!!hardBounds,
+    layers:opts.layers || (streetLayers ? ['house','street'] : null),
+    lang:geocodeLang(),
+    structured:!!appendCity,
+    street:query,
+    city:appendCity ? parts.city : '',
+    country:appendCity ? parts.country : ''
+  };
+  const photonQuery = appendCity ? `${query}, ${parts.label}` : query;
+  const [photon, nominatim] = await Promise.all([
+    geocodeSearchPhoton(photonQuery, opts.ask, context),
+    geocodeSearchNominatim(query, opts.ask, context)
+  ]);
+  let hits = photon.hits.concat(nominatim.hits);
+  if(hardBounds)hits = hits.filter(hit => hitInsideBounds(hit, hardBounds));
+  const rankFocus = hardBounds ? boundsCenter(hardBounds) : bias;
+  return {
+    ranked:rankGeocodeHits(query, hits, rankFocus),
+    responded:!!(photon.ok || nominatim.ok),
+    rankFocus
+  };
+}
+
+function normalizeGeocodeBounds(bounds){
+  if(!bounds)return null;
+  const minLat = Number(bounds.minLat);
+  const maxLat = Number(bounds.maxLat);
+  const minLng = Number(bounds.minLng);
+  const maxLng = Number(bounds.maxLng);
+  if(![minLat, maxLat, minLng, maxLng].every(Number.isFinite))return null;
+  if(minLat >= maxLat || minLng >= maxLng)return null;
+  if(minLat < -90 || maxLat > 90 || minLng < -180 || maxLng > 180)return null;
+  return {minLat, maxLat, minLng, maxLng};
 }
 
 async function fetchJsonWithTimeout(url,timeoutMs = GEOCODE_FETCH_TIMEOUT_MS){
@@ -425,51 +607,126 @@ async function fetchJsonWithTimeout(url,timeoutMs = GEOCODE_FETCH_TIMEOUT_MS){
   return res.json();
 }
 
-function normalizeGeocodeHit(name,address,lat,lng){
+function normalizeGeocodeHit(name,address,lat,lng,extra){
   const la = Number(lat);
   const ln = Number(lng);
   if(!Number.isFinite(la) || la < -90 || la > 90 || !Number.isFinite(ln) || ln < -180 || ln > 180)return null;
-  return {
+  const hit = {
     name:String(name || '').trim().slice(0,48) || 'Place',
     address:String(address || '').trim().slice(0,120),
     lat:la, lng:ln
   };
+  const code = String(extra && extra.countryCode || '').trim().toUpperCase();
+  if(/^[A-Z]{2}$/.test(code))hit.countryCode = code;
+  const layer = String(extra && extra.layer || '').trim().toLowerCase();
+  if(layer)hit.layer = layer;
+  return hit;
 }
 
-async function geocodeSearchPhoton(query,limit){
+function geocodeParamCoord(value){
+  return String(Math.round(Number(value) * 1e5) / 1e5);
+}
+
+function photonSearchUrl(query, limit, context){
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('limit', String(limit));
+  params.set('lang', (context && context.lang) || 'en');
+  if(context && context.hardBounds && context.bounds){
+    const box = context.bounds;
+    params.set('bbox', [box.minLng, box.minLat, box.maxLng, box.maxLat].map(geocodeParamCoord).join(','));
+  }else if(context && context.bias){
+    params.set('lat', geocodeParamCoord(context.bias.lat));
+    params.set('lon', geocodeParamCoord(context.bias.lng));
+    params.set('zoom', '11');
+    params.set('location_bias_scale', '0.25');
+  }
+  for(const layer of (context && context.layers) || []){
+    if(layer)params.append('layer', layer);
+  }
+  return `${PHOTON_BASE}/api/?${params}`;
+}
+
+function nominatimSearchUrl(query, limit, context){
+  const params = new URLSearchParams();
+  params.set('format', 'json');
+  params.set('limit', String(limit));
+  params.set('addressdetails', '1');
+  params.set('dedupe', '1');
+  params.set('accept-language', (context && context.lang) || 'en');
+  if(context && context.structured){
+    params.set('street', context.street || query);
+    if(context.city)params.set('city', context.city);
+    if(context.country)params.set('country', context.country);
+  }else{
+    params.set('q', query);
+  }
+  if(context && context.bounds){
+    const box = context.bounds;
+    params.set('viewbox', [box.minLng, box.maxLat, box.maxLng, box.minLat].map(geocodeParamCoord).join(','));
+    params.set('bounded', context.hardBounds ? '1' : '0');
+  }
+  return `${NOMINATIM_BASE}/search?${params}`;
+}
+
+function uniqueGeocodeParts(parts){
+  const out = [];
+  for(const part of parts){
+    const text = String(part || '').trim();
+    if(!text)continue;
+    if(out.some(existing => existing.toLocaleLowerCase() === text.toLocaleLowerCase()))continue;
+    out.push(text);
+  }
+  return out;
+}
+
+async function geocodeSearchPhoton(query, limit, context){
   try{
-    const url = `${PHOTON_BASE}/api/?q=${encodeURIComponent(query)}&limit=${limit}&lang=en`;
+    const url = photonSearchUrl(query, limit, context || {});
     const json = await fetchJsonWithTimeout(url);
     const features = json && Array.isArray(json.features) ? json.features : [];
-    return features.map(f=>{
-      const props = f && f.properties || {};
-      const coords = f && f.geometry && f.geometry.coordinates;
-      const lng = coords && coords[0];
-      const lat = coords && coords[1];
-      const parts = [props.name, props.street, props.housenumber, props.city || props.town || props.village, props.state, props.country]
-        .filter((part,index,all)=>part && all.findIndex(x=>String(x).toLocaleLowerCase() === String(part).toLocaleLowerCase()) === index);
-      const address = parts.join(', ') || props.name || '';
-      const name = props.name || props.street || (address.split(',')[0] || 'Place');
-      return normalizeGeocodeHit(name,address,lat,lng);
-    }).filter(Boolean);
+    return {
+      ok:true,
+      hits:features.map(f=>{
+        const props = f && f.properties || {};
+        const coords = f && f.geometry && f.geometry.coordinates;
+        const lng = coords && coords[0];
+        const lat = coords && coords[1];
+        const streetLine = [props.housenumber, props.street].filter(Boolean).join(' ');
+        const locality = props.city || props.town || props.village || props.locality || '';
+        const address = uniqueGeocodeParts([streetLine, locality, props.state, props.postcode, props.country]).join(', ');
+        const name = props.name || streetLine || (address.split(',')[0] || 'Place');
+        return normalizeGeocodeHit(name, address || name, lat, lng, {
+          countryCode:props.countrycode,
+          layer:props.type || props.osm_value || ''
+        });
+      }).filter(Boolean)
+    };
   }catch{
-    return [];
+    return {ok:false, hits:[]};
   }
 }
 
-async function geocodeSearchNominatim(query,limit){
+async function geocodeSearchNominatim(query, limit, context){
   try{
-    const url = `${NOMINATIM_BASE}/search?format=json&limit=${limit}&addressdetails=1&q=${encodeURIComponent(query)}`;
+    const url = nominatimSearchUrl(query, limit, context || {});
     const json = await fetchJsonWithTimeout(url);
-    if(!Array.isArray(json))return [];
-    return json.map(r=>{
-      const display = String(r.display_name || '');
-      const comma = display.indexOf(',');
-      const name = (comma >= 0 ? display.slice(0,comma) : display).trim();
-      return normalizeGeocodeHit(name,display,r.lat,r.lon);
-    }).filter(Boolean);
+    if(!Array.isArray(json))return {ok:true, hits:[]};
+    return {
+      ok:true,
+      hits:json.map(r=>{
+        const display = String(r.display_name || '');
+        const comma = display.indexOf(',');
+        const name = (comma >= 0 ? display.slice(0, comma) : display).trim();
+        const addr = r.address || {};
+        return normalizeGeocodeHit(name, display, r.lat, r.lon, {
+          countryCode:addr.country_code,
+          layer:r.type || r.addresstype || ''
+        });
+      }).filter(Boolean)
+    };
   }catch{
-    return [];
+    return {ok:false, hits:[]};
   }
 }
 

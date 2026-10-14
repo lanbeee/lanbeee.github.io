@@ -1873,8 +1873,10 @@ Tracks the currently active habit session:
 ```
 
 - **Access:** Settings → Locations → "add place", or from detail → places
-- Search by address via Nominatim/Photon
-- Search combines Photon and Nominatim results, removes duplicate pins, and accepts `latitude, longitude`
+- Search by address via Nominatim/Photon. The picker offers Near home, This map, and Anywhere
+- Near home biases from the saved home city. A moved map sends a coarsened center (~1 km) instead; a coarse GPS point is used only when that city is empty. Street-shaped queries also send the city name, then widen once if nothing is found
+- This map sends the visible map bounds as a hard filter and does not widen. Anywhere sends only the typed text
+- Results from both providers are ranked on this device. A short distance is shown when a focus point exists. `latitude, longitude` still drops a pin directly
 - Saved places are shown in alphabetical/natural order across settings, habit forms, presence, and filters
 - A place created from a new/edit habit returns to that form already selected
 - Drag map to position pin (stays centered)
@@ -3492,7 +3494,7 @@ Busy times reserve time for commitments such as sleep or work and use the existi
 | Nominatim (geocoding) | `https://nominatim.openstreetmap.org` | No |
 | Photon (geocoding fallback) | `https://photon.komoot.io` | No |
 
-Driving estimates send origin and destination coordinates to OSRM, an open routing service, for that route: saved-place pins, or live GPS plus a saved place when estimating a drive from here. Walking, bike, and transit stay on-device (haversine). City reverse-geocode sends a coarsened coordinate, not the live pin.
+Driving estimates send origin and destination coordinates to OSRM, an open routing service, for that route: saved-place pins, or live GPS plus a saved place when estimating a drive from here. Walking, bike, and transit stay on-device (haversine). City reverse-geocode sends a coarsened coordinate, not the live pin. Place search sends the typed text. Near home also sends the saved home city, a coarsened map center when the user moved the map, or a coarsened GPS point when that city is empty. This map sends the area on screen. Anywhere sends only the text.
 
 ### 27.2 Push Notifications 👨‍💻
 | Service | URL | Description |

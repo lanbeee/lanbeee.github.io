@@ -135,9 +135,12 @@
   display:inline-flex;align-items:center;gap:4px;max-width:min(220px,55vw);
 }
 .location-coords-btn .location-coords{overflow:hidden;text-overflow:ellipsis;}
-.picker-search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:0 0 10px;}
+.picker-search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:0 0 8px;}
 .picker-search-row input{min-width:0;margin:0;}
 .picker-search-row .btn{min-width:88px;min-height:40px;padding:8px 12px;}
+.picker-search-scope.seg{margin:0 0 6px;}
+.picker-search-scope .seg-opt{font-size:12.5px;padding:8px 2px;min-height:40px;}
+.picker-scope-hint{margin:0 0 10px;}
 .picker-map-wrap{position:relative;margin:0 0 8px;}
 .picker-map{
   height:min(36dvh,240px);min-height:170px;width:100%;border-radius:12px;overflow:hidden;

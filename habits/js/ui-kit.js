@@ -221,7 +221,7 @@ const UI_PRIVACY_BLOCKS = [
     'Their progress stays separate from yours. Revoke from the item when you are done.'
   ]},
   {id:'privacy-maps-body', label:'Maps and places', summary:'Lookups use open mapping services, and only for that lookup.', body:[
-    '<b>Address or city search</b> sends the text you type to Photon (Komoot) and Nominatim (OpenStreetMap).',
+    '<b>Address or city search</b> sends the text you type to Photon (Komoot) and Nominatim (OpenStreetMap). The usual search also sends your saved home city so nearby places rank first. If you move the map, that search sends a coarse point (about 1 km) for the area you moved to instead. Choosing This map sends the area on screen for that search. Choosing Anywhere sends only the text. If no home city is saved yet, a coarse location (about 1 km) may be sent instead. Saved places and your habit list stay on this phone.',
     '<b>First city fill from GPS</b> sends a coarse location (about 1 km), not the live pin, to Photon or Nominatim. Presence matching stays on this phone.',
     '<b>Travel estimates</b> send coordinates to OSRM, an open routing service, for that route: two saved-place pins, or the live GPS origin plus a saved-place pin when estimating a drive from here. You can type minutes yourself instead.',
     '<b>Map picture</b> loads OpenStreetMap street tiles or Esri World Imagery satellite tiles for the area on screen.',
@@ -261,7 +261,7 @@ const UI_LEAVE_HINTS = {
   },
   geocode:{
     aria:'this sends a search off this device',
-    body:'Address search uses open mapping services (Photon and OpenStreetMap Nominatim). They receive the text you type for this lookup only — not your habit list. Full story: About → privacy.'
+    body:'Address search uses Photon and OpenStreetMap Nominatim. The usual search sends the text you type and your saved home city. Moving the map sends a coarse point for that area instead. This map sends the area on screen. Anywhere sends only the text. Your habit list stays here. Full story: About → privacy.'
   },
   travel:{
     aria:'this sends place coordinates off this device',

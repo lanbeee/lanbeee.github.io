@@ -104,6 +104,9 @@ async function launchBrowser(){
       nominatim: /Nominatim/i.test(text),
       osrm: /OSRM, an open routing service/i.test(text),
       coarseGps: /coarse location/i.test(text),
+      homeCitySearch: /saved home city/i.test(text),
+      thisMap: /This map/i.test(text) && /Anywhere/i.test(text),
+      movedMap: /move the map/i.test(text) && /coarse point/i.test(text),
       gpsRoutes: /live GPS origin/i.test(text) && /OSRM/i.test(text),
       storedFix: /save the latest location fix on this phone/i.test(text) && /ten minutes/i.test(text),
       notNeverStored: !/Coordinates are not stored/i.test(text),
@@ -124,6 +127,8 @@ async function launchBrowser(){
   assert(privacy.display && privacy.encrypt, 'Privacy explains encrypted Cloudflare shared display');
   assert(privacy.photon && privacy.nominatim && privacy.osrm, 'Privacy lists Photon, Nominatim, and OSRM as an open routing service');
   assert(privacy.coarseGps, 'Privacy says the GPS city fill is a coarse lookup');
+  assert(privacy.homeCitySearch && privacy.thisMap, 'Privacy names the home-city focus and the This map / Anywhere choices');
+  assert(privacy.movedMap, 'Privacy says a moved map sends a coarse point');
   assert(privacy.gpsRoutes, 'Privacy discloses live GPS origin sent for driving routes');
   assert(privacy.storedFix, 'Privacy says the Android last fix is saved on this phone for ten minutes');
   assert(privacy.notNeverStored, 'Privacy no longer claims coordinates are never stored');
@@ -171,6 +176,8 @@ async function launchBrowser(){
   assert(/encrypted|off this device/i.test(marks.agendaAria), 'Agenda leave mark is labeled as leaving the device');
   assert(/Cloudflare/i.test(marks.shareTip), 'Share tooltip names the Cloudflare relay');
   assert(/Photon|Nominatim/i.test(marks.geocodeTip), 'Geocode tooltip names the map services');
+  assert(/home city/i.test(marks.geocodeTip) && /This map/i.test(marks.geocodeTip), 'Geocode tooltip names the home-city focus and This map');
+  assert(/moving the map/i.test(marks.geocodeTip) && /coarse point/i.test(marks.geocodeTip), 'Geocode tooltip says a moved map sends a coarse point');
 
   await page.locator('#open-about').click();
   await page.waitForSelector('#about-sheet.open');

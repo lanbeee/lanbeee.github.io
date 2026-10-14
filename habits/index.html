@@ -1684,7 +1684,7 @@
       <div class="page-head">
         <div>
           <p class="sheet-title" id="location-picker-title">add place</p>
-          <p class="about-copy">Find an address, then fine-tune the center pin if needed. <span data-ui-leave="map"></span></p>
+          <p class="about-copy">Search for a place, pick a result, then nudge the center pin if the door is a little off. <span data-ui-leave="map"></span></p>
         </div>
       </div>
       <label class="field-label" for="picker-search">find a place or address <span data-ui-leave="geocode"></span></label>
@@ -1692,6 +1692,12 @@
         <input type="search" id="picker-search" maxlength="120" placeholder="e.g. Central Library" autocomplete="street-address" enterkeyhint="search" />
         <button class="btn primary" type="button" id="picker-search-btn">search</button>
       </div>
+      <div class="seg picker-search-scope" role="group" aria-label="where to search">
+        <button type="button" class="seg-opt on" id="picker-scope-near" data-picker-scope="near" aria-pressed="true">Near home</button>
+        <button type="button" class="seg-opt" id="picker-scope-map" data-picker-scope="map" aria-pressed="false">This map</button>
+        <button type="button" class="seg-opt" id="picker-scope-any" data-picker-scope="any" aria-pressed="false">Anywhere</button>
+      </div>
+      <p class="field-hint picker-scope-hint" id="picker-scope-hint">Near your city. A well-known place farther away can still show up.</p>
       <div class="location-results" id="picker-results" role="region" aria-label="location search results" aria-live="polite" hidden></div>
       <label class="field-label" for="picker-name">place name</label>
       <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />

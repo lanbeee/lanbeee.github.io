@@ -130,20 +130,19 @@ async function setHomeCity(){
   const status = $('home-city-status');
   if(status)status.textContent = 'Looking up…';
   try{
-    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`);
-    const json = await res.json();
-    const feat = json.features && json.features[0];
+    const hits = typeof geocodeSearch === 'function'
+      ? await geocodeSearch(query, {limit:5, scope:'anywhere', layers:['city','locality']})
+      : [];
+    const feat = hits && hits[0];
     if(!feat){
-      if(status)status.textContent = 'City not found. Try a different spelling.';
+      if(status)status.textContent = hits && hits.status === 'unavailable'
+        ? 'Lookup failed. Check your connection.'
+        : 'City not found. Try a different spelling.';
       return;
     }
-    const [lng,lat] = feat.geometry.coordinates;
-    const name = feat.properties.name || query;
-    // ISO country code comes free with the geocode result and drives the
-    // 'auto' display units for temperature, precipitation, and wind
-    // (see weatherTempUnit/weatherPrecipUnit/weatherWindUnit in config.js).
-    const countryCode = String(feat.properties.countrycode || '').trim().toUpperCase().slice(0,2);
-    updateSortSetting({homeCityName:name, homeCityLat:lat, homeCityLng:lng, homeCityCountry:countryCode});
+    const name = feat.name || query;
+    const countryCode = String(feat.countryCode || '').trim().toUpperCase().slice(0,2);
+    updateSortSetting({homeCityName:name, homeCityLat:feat.lat, homeCityLng:feat.lng, homeCityCountry:countryCode});
     if(typeof clearPrayerTimesCache === 'function')clearPrayerTimesCache();
     if(typeof refreshWeatherForecast === 'function')void refreshWeatherForecast({force:true});
     input.value = '';

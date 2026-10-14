@@ -549,6 +549,10 @@ $('blocked-time-list')?.addEventListener('click',e=>{
 $('loc-open-picker')?.addEventListener('click',()=>openLocationPicker());
 $('picker-search-btn')?.addEventListener('click',searchPickerLocations);
 $('picker-search')?.addEventListener('keydown',e=>{ if(e.key === 'Enter'){ e.preventDefault(); searchPickerLocations(); } });
+document.querySelector('.picker-search-scope')?.addEventListener('click',e=>{
+  const btn = e.target.closest('[data-picker-scope]');
+  if(btn)setPickerSearchScope(btn.dataset.pickerScope);
+});
 $('picker-results')?.addEventListener('click',e=>{
   const btn = e.target.closest('[data-picker-result]');
   if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
