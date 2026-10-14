@@ -2453,6 +2453,11 @@ has been introduced. Existing clock replay remains the first reuse path.
 Split tasks have a lifetime minute pool, never a daily reservation. Day replay
 retains that day's allocated task minutes instead of replenishing the full task
 on each date; hypothetical day rebuilds do not modify the incumbent's item list.
+After GLPK splits a task into several sessions on a day, it uses the shared
+bounded route replay to consolidate visits when flexible items can move within
+their windows. A cheaper route must retain every item's minutes on that day,
+respect appointments, order links and active/weather-locked clocks, and not
+worsen weather. Fixed obligations may still require separate visits.
 
 `tryPlaceOnDay` enumerates every unforced allowed venue (and the anywhere
 option, when the habit allows it) and keeps the shared score pick. That is the

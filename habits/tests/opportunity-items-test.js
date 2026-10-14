@@ -71,6 +71,48 @@ const {chromium,BASE,baseHabit,plannerSettings,runPlannerPair,minutesOnDay,place
       assert.deepEqual(withTravel[engine].rows[0].find(row=>row.kind==='scheduled'),beforeTravel[engine].rows[0].find(row=>row.kind==='scheduled'),'appointment clock and place remain fixed');
     }
     checks++;
+    // Conditional habits may extend an existing visit, but cannot bootstrap
+    // another destination or send the user back after returning home.
+    const travelSettings={...atHome,_weatherContext:{...context,places:{home:context,park:context}},defaultTravelMode:'driving',travel:{
+      'home|park':{a:'home',b:'park',seconds:900,metres:6000,provider:'manual',fetchedAt:now}
+    }};
+    async function noExtraTrip(name,base,extras,cfg,expected){
+      // Saved route overrides are read from the mounted settings.
+      await page.evaluate(cfg=>{sortSettings=cfg;},cfg);
+      const before=await runPlannerPair(page,base,cfg,now,1,true);
+      const after=await runPlannerPair(page,[...base,...extras],cfg,now,1,true);
+      for(const engine of ['fast','glpk']){
+        if(engine==='glpk' && !exact)continue;
+        const a=after[engine],b=before[engine];
+        assert(a && !a.error,`${name}: ${engine} returns a plan`);
+        if(engine==='glpk')assert(a.optimized,`${name}: exact incumbent`);
+        assert(a.travelSeconds<=b.travelSeconds+1,`${name}: ${engine} adds no travel time`);
+        const legs=plan=>plan.rows[0].filter(row=>row.kind==='travel').length;
+        assert(legs(a)<=legs(b),`${name}: ${engine} adds no journey`);
+        extras.forEach((h,i)=>assert.equal(minutesOnDay(a,0,h.name),expected[i],`${name}: ${engine} eligibility`));
+        const occupied=a.rows[0].filter(row=>['fill','scheduled','travel'].includes(row.kind));
+        for(let i=1;i<occupied.length;i++)assert(occupied[i].start>=occupied[i-1].end,`${name}: no overlap`);
+      }
+      checks++;console.log('ok: '+name);
+    }
+    const homeReturn=baseHabit({hid:'return',name:'Home appointment',type:'task',target:null,
+      dueDate:day,eventTime:day+12*3600000,priority:0,locationIds:['home'],anywhereAllowed:false});
+    const secondPlace={...placeItem,hid:'second',name:'Second optional'};
+    await noExtraTrip('several place opportunities cannot create their own visit',[],[placeItem,secondPlace],travelSettings,[0,0]);
+    await noExtraTrip('several opportunities share one existing visit',[visit],[placeItem,secondPlace],travelSettings,[30,30]);
+    await noExtraTrip('a past visit cannot authorize another trip',[visit,homeReturn],
+      [{...placeItem,allowedTimeStart:13*60,allowedTimeEnd:17*60}],travelSettings,[0]);
+    await noExtraTrip('matching weather alone does not create a remote visit',[],
+      [optional({locationIds:['park'],anywhereAllowed:false})],travelSettings,[0]);
+    await noExtraTrip('matching place and weather share the existing trip',[visit],
+      [optional({locationIds:['park'],anywhereAllowed:false})],travelSettings,[30]);
+    await noExtraTrip('weather-only work uses the existing itinerary',[visit,homeReturn],
+      [optional()],travelSettings,[30]);
+    const splitVisit=baseHabit({hid:'split-visit',name:'Remote split task',type:'task',target:null,
+      dueDate:day,priority:1,durationMinutes:240,breakable:true,minChunkMinutes:30,
+      locationIds:['park'],anywhereAllowed:false});
+    await noExtraTrip('conditional work does not fragment a remote split visit',[splitVisit],
+      [placeItem,{...secondPlace,breakable:true,durationMinutes:60,minChunkMinutes:30}],travelSettings,[30,60]);
     const worker=await page.evaluate(async ({data,settings,now})=>{
       const week=await buildWeekAgendaOffMain(data,settings,7,'fast',{now});
       return week.days.flatMap(day=>day.timeline || []).filter(row=>row.i===0 && row.kind==='fill').length;

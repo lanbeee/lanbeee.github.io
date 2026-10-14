@@ -2243,7 +2243,8 @@ function rebuildDayFromFills(state,fillsToKeep,candidates,opts = {}){
     taskMinutes.set(fill.i,(taskMinutes.get(fill.i) || 0) + requested);
   }
   const replayedTasks = new Set();
-  for(const fill of fillsToKeep){
+  for(const sourceFill of fillsToKeep){
+    const fill = sourceFill && {...sourceFill};
     if(!fill || !fill.h)continue;
     if(fill.h.breakable){
       let remainingMinutes;
@@ -2520,15 +2521,39 @@ function mandatoryRouteCostLowerBound(state){
   return cost;
 }
 
-// MUTATE: after Fast has chosen which work belongs on a day, search replay
+// MUTATE: after a planner has chosen which work belongs on a day, search replay
 // orders by full route cost and keep a strictly cheaper chain. The first
 // insertion order and a single nearest-neighbor walk are only seeds. A replay
 // is adopted only when it preserves the exact per-candidate minutes, does not
 // worsen weather, and lowers the objective route cost.
-function compactFastTravelRoutes(dayStates,candidates,settings){
+function compactFastTravelRoutes(dayStates,candidates,settings,opts = {}){
   let improved = 0;
   for(const state of dayStates || []){
     if(!state || !Array.isArray(state.fills) || state.fills.length < 2)continue;
+    if(opts.onlySplitTasks){
+      const taskCounts = new Map();
+      for(const row of state.rows || []){
+        if(row.breakableStart && row.h?.type === 'task'){
+          taskCounts.set(row.i,(taskCounts.get(row.i) || 0) + 1);
+        }
+      }
+      for(const {fill} of state.fills){
+        if(fill.h.breakable && fill.h.type === 'task'){
+          taskCounts.set(fill.i,(taskCounts.get(fill.i) || 0) + 1);
+        }
+      }
+      if(![...taskCounts.values()].some(count=>count > 1))continue;
+    }
+    // Replaying one seed per item cannot preserve separate same-day occurrences.
+    const fixedCounts = new Map();
+    for(const {fill} of state.fills){
+      if(!fill.h.breakable)fixedCounts.set(fill.i,(fixedCounts.get(fill.i) || 0) + 1);
+    }
+    if([...fixedCounts.values()].some(count=>count > 1))continue;
+    const doing = doingNowForDay(state);
+    const locked = state.fills.filter(entry=>(doing && doing.hid === entry.fill.h.hid)
+      || (typeof weatherLockedPlacement === 'function'
+        && weatherLockedPlacement(entry.fill,state,settings || state.settings)));
     const beforeSignature = dayFillMinuteSignature(state);
     const beforeCost = dayRouteCostSeconds(state);
     if(beforeCost <= 0)continue;
@@ -2549,6 +2574,11 @@ function compactFastTravelRoutes(dayStates,candidates,settings){
       );
       if(!rebuilt)continue;
       if(dayFillMinuteSignature(rebuilt) !== beforeSignature)continue;
+      if(locked.some(entry=>!rebuilt.fills.some(other=>other.fill.i === entry.fill.i
+        && other.fit.placeStart === entry.fit.placeStart
+        && other.fit.placeEnd === entry.fit.placeEnd
+        && other.fit.locId === entry.fit.locId)))continue;
+      if(persistentLinkViolationsForState(rebuilt).size)continue;
       const cost = dayRouteCostSeconds(rebuilt);
       if(cost >= bestCost - 1e-6)continue;
       if(weatherSum(rebuilt) > beforeWeather + 1e-6)continue;

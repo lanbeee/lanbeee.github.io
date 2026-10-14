@@ -19,6 +19,7 @@ blocked-group-test.js	data	once
 breakable-continuous-e2e.js	planner	once
 breakable-crown-e2e.js	planner	once
 breakable-partial-log-e2e.js	planner	once
+breakable-task-travel-test.js	planner	once
 calendar-overview-test.js	integrations	once
 calendar-pdf-import-test.js	integrations	once
 calendar-scroll-test.js	integrations	once

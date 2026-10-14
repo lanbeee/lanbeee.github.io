@@ -2665,6 +2665,12 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   if(typeof pullStrictDueMovablesForward === 'function'){
     pullStrictDueMovablesForward(candidates,dayStates,settings);
   }
+  // The fixed-item ILP cannot see a task's later adaptive chunks. Repack only
+  // days with split tasks so flexible home fills cannot manufacture return
+  // trips. Shared replay keeps the same work/day budgets and hard constraints.
+  if(typeof compactFastTravelRoutes === 'function'){
+    compactFastTravelRoutes(dayStates,candidates,settings,{onlySplitTasks:true});
+  }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
   }
