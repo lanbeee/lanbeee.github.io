@@ -306,7 +306,9 @@ uses the same frequency buttons, followed by the repeat limit and visible
 places/weather controls. Days and hours stay in a separate folded section.
 Switching back to a regular rhythm preserves the saved condition choices. Choose
 a place or weather profile before saving. Missing forecast-city setup is shown
-only when needed. These condition controls remain available in minimal mode. Conditional place
+only when needed. **When conditions fit** is a regular-mode choice. Minimal mode
+keeps daily, weekly, and custom rhythms. A habit already using it still shows
+its place and weather when opened. Conditional place
 chips use simple select/remove taps, without cycling through preference or
 avoidance. Selecting a named place turns off **any place**; choosing **any place**
 clears the named places and requires weather rules. Existing saved rankings stay
@@ -2086,7 +2088,7 @@ Toasts appear after:
   rhythm or optional deadline, estimate duration, use its card, and find Home
   and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
   it no longer requires a second item, a sample, or past/future calendar edits.
-  Choosing **when conditions fit** adds a guided condition step before Add:
+  In regular mode, choosing **when conditions fit** adds a guided condition step before Add:
   choose a place already visited or weather rules. The tour waits for a valid
   condition and supports adding a place or editing weather rules without
   losing the new habit draft.
@@ -2659,10 +2661,12 @@ presentation across Tings; drafts stay in the sheet underneath. Switching
 back is the same Settings control.
 
 Minimal Add keeps name, optional emoji, habit/task type, rhythm or deadline,
-and duration visible. Choosing **when conditions fit** also reveals places and
-weather in both Add and Details, because these define when the optional habit
-can appear. This choice applies to build habits; limit and stop habits retain
-their tracking goals. Defaults and busy-time shortcuts stay in regular mode.
+and duration visible. How often is daily, a few times a week, weekly, or a
+custom rhythm. **When conditions fit** stays in regular mode, so a new habit
+is never asked for a place or weather rules. A habit already using it still
+shows its place and weather in Details. This choice applies to build habits;
+limit and stop habits retain their tracking goals. Defaults and busy-time
+shortcuts stay in regular mode.
 
 ---
 
@@ -3087,7 +3091,7 @@ Same agenda logic, but simplified display:
 - Remaining panes stack into one scroll; section headers stay visible
 - The reserved action bar stays outside the scrolling fields
 - Allowed weekdays and time window live in **allowed days & hours**, folded by default; expanding it preserves the draft and stays expanded during the current visit
-- Month days, preferences and link setup remain regular-mode options. Places and weather stay visible for **when conditions fit** habits; ordinary habits keep these in regular mode.
+- Month days, preferences, link setup, and **when conditions fit** remain regular-mode options. A habit already set that way still shows its places and weather; ordinary habits keep these in regular mode.
 - A quiet **More options in settings** shortcut opens the Minimal Mode setting. Switching there reveals all options without saving or discarding the draft.
 - Action rows limited to remove: shared display, export to calendar, share
   item, snooze, and pin are regular-mode only (saved values are untouched)

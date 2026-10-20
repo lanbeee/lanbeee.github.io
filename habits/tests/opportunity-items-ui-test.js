@@ -9,8 +9,13 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   await page.evaluate(()=>{save([]);saveSortSettings({...loadSortSettings(),minimalMode:true,weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation_probability',max:30,min:null,hard:true,relative:'none'}]}]});sortSettings=loadSortSettings();document.body.classList.add('minimal-mode');applyAddMinimalMode();render();});
   await page.locator('#open-add').click();
   await page.locator('#ting-message').fill('Optional walk');
+  assert.equal(await page.locator('[data-add-repeat="opportunity"]').isVisible(),false,'minimal add hides when conditions fit');
+  await page.locator('#do-cancel').click();
+  await page.evaluate(()=>setMinimalMode(false));
+  await page.locator('#open-add').click();
+  await page.locator('#ting-message').fill('Optional walk');
   await page.locator('[data-add-repeat="opportunity"]').click();
-  assert(await page.locator('#ting-weather-profile').isVisible(),'weather control available in minimal mode');
+  assert(await page.locator('#ting-weather-profile').isVisible(),'weather control available in regular mode');
   assert(await page.locator('#ting-tag-chips .tag-row-places').isVisible(),'place controls available in minimal mode');
   assert(!await page.locator('#ting-times').isVisible(),'maximum gap has no repetition count');
   await page.locator('#ting-days').fill('7');
@@ -43,7 +48,7 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   assert.equal(await page.evaluate(()=>load()[0].repeatMode),'opportunity');
   assert.equal(await page.locator('#detail-repeat-mode').inputValue(),'opportunity');
   await page.evaluate(()=>{$('detail-weather-disclosure').open=true;});
-  assert(await page.locator('#detail-weather-profile').isVisible(),'weather remains editable in minimal detail');
+  assert(await page.locator('#detail-weather-profile').isVisible(),'weather remains editable in detail');
   assert(!await page.locator('#detail-times').isVisible());
   assert(!await page.locator('#detail-flexibility-disclosure').isVisible(),'no early/late deadlines for optional items');
   assert(!/overdue|missed/i.test(await page.locator('#detail-sub').textContent()));
@@ -100,7 +105,11 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   assert(!native.edges.includes('missed'),'optional rows carry no missed alarm');
   assert.equal(native.dropControl,false,'optional items hide the inapplicable drop alarm control');
   await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>openDetail(0));
-  await page.evaluate(()=>{sortSettings.minimalMode=false;document.body.classList.remove('minimal-mode');applyDetailMinimalMode();scrollDetailToNav('schedule');});
+  await page.evaluate(()=>setMinimalMode(true));
+  assert.equal(await page.locator('[data-detail-repeat]').isVisible(),false,'minimal detail hides when conditions fit');
+  assert(await page.locator('#detail-weather-profile').isVisible(),'a saved conditional habit still shows weather in minimal detail');
+  assert(await page.locator('#detail-place-chips').isVisible(),'a saved conditional habit still shows places in minimal detail');
+  await page.evaluate(()=>{setMinimalMode(false);scrollDetailToNav('schedule');});
   assert(await page.locator('[data-detail-repeat]').isVisible(),'mode reachable on desktop');
   assert(await page.locator('#detail-weather-profile').isVisible(),'saved conditional weather is open in regular mode');
   for(const width of [320,240]){

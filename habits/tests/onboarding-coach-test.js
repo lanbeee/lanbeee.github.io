@@ -136,8 +136,9 @@ async function phoneQuickStart(browser,width,height,task,minimal = false){
   if(task)await page.locator('#ting-due-date').fill('2026-10-20');
   else{
     await page.locator('[data-add-rhythm="3,7"]').click();
+    if(minimal)assert(!(await page.locator('[data-add-repeat="opportunity"]').isVisible()),'minimal Quick start hides when conditions fit');
     if(width === 393)assert(await page.locator('#add-frequency .add-presets').evaluate(row=>{
-      const boxes=[...row.children].map(button=>button.getBoundingClientRect());
+      const boxes=[...row.children].filter(button=>!button.hidden).map(button=>button.getBoundingClientRect());
       return boxes.every(box=>Math.abs(box.top-boxes[0].top)<1 && box.height>=44);
     }),`393px Quick start keeps every frequency choice on one line, minimal=${minimal}`);
   }
@@ -343,11 +344,11 @@ async function nativeKeyboardQuickStart(browser){
   for(const minimal of [false,true]){
     await phoneQuickStart(browser,393,852,false,minimal);
     await phoneQuickStart(browser,393,852,true,minimal);
-    await conditionalQuickStart(browser,minimal,'place');
-    await conditionalQuickStart(browser,minimal,'weather');
   }
-  await conditionalQuickStart(browser,true,'new-place');
-  await conditionalQuickStart(browser,true,'new-weather');
+  await conditionalQuickStart(browser,false,'place');
+  await conditionalQuickStart(browser,false,'weather');
+  await conditionalQuickStart(browser,false,'new-place');
+  await conditionalQuickStart(browser,false,'new-weather');
   const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const errors = [];
   page.on('pageerror',error=>errors.push(error.message));

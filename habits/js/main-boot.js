@@ -192,7 +192,7 @@ function syncAddRhythmUi(){
   syncAddConditionsLayout(optional);
   document.querySelector('.add-frequency .add-presets').hidden = !['keepup','reduce'].includes(selectedType);
   const opportunityButton = document.querySelector('[data-add-repeat="opportunity"]');
-  opportunityButton.hidden = selectedType !== 'keepup';
+  opportunityButton.hidden = opportunityChoiceHidden(selectedType === 'keepup');
   opportunityButton.setAttribute('aria-pressed',String(optional));
   const times = Math.max(1,Math.min(30,parseInt($('ting-times').value,10) || 1));
   const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt($('ting-days').value,10) || 7));
@@ -208,6 +208,22 @@ function syncAddRhythmUi(){
     const [presetTimes,presetDays] = button.dataset.addRhythm.split(',').map(Number);
     button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
   });
+}
+
+// Minimal mode keeps daily, weekly, and custom rhythms. "When conditions fit"
+// stays in regular mode. A habit already using it still shows its conditions.
+function opportunityChoiceHidden(keepup){
+  return !keepup || (typeof isMinimalMode === 'function' && isMinimalMode());
+}
+function refreshOpportunityChoiceVisibility(){
+  const addButton = document.querySelector('[data-add-repeat="opportunity"]');
+  if(addButton)addButton.hidden = opportunityChoiceHidden(typeof selectedType === 'undefined' || selectedType === 'keepup');
+  const detailButton = document.querySelector('[data-detail-repeat]');
+  if(!detailButton)return;
+  const typeBtn = document.querySelector('#detail-type-seg .seg-opt.on');
+  const modeBtn = document.querySelector('#detail-mode-seg .seg-opt.on');
+  const keepup = (!typeBtn || typeBtn.dataset.detailType !== 'task') && (!modeBtn || modeBtn.dataset.mode === 'build');
+  detailButton.hidden = opportunityChoiceHidden(keepup);
 }
 
 document.querySelector('[data-add-repeat="opportunity"]').addEventListener('click',()=>{
@@ -250,7 +266,7 @@ function syncDetailConditionsLayout(optional){
 function syncDetailRepeatModeUi(type){
   const optional = type === 'keepup' && $('detail-repeat-mode').value === 'opportunity';
   $('detail-repeat-mode-row').hidden = !['keepup','reduce'].includes(type);
-  document.querySelector('[data-detail-repeat]').hidden = type !== 'keepup';
+  document.querySelector('[data-detail-repeat]').hidden = opportunityChoiceHidden(type === 'keepup');
   if(optional)$('detail-times').value = 1;
   $('detail-times').closest('label').hidden = optional;
   $('detail-slider-row').querySelector('.rhythm-in').hidden = optional;

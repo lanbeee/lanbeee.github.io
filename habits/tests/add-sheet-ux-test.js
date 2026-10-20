@@ -97,10 +97,12 @@ const {chromium} = require('playwright');
           document.body.classList.add('assistant-on');
         },minimal);
         if(width === 393){
-          for(const selector of ['[data-add-rhythm="1,1"]','[data-add-rhythm="3,7"]','[data-add-rhythm="1,7"]','[data-add-repeat="opportunity"]']){
+          const selectors = ['[data-add-rhythm="1,1"]','[data-add-rhythm="3,7"]','[data-add-rhythm="1,7"]',...(minimal ? [] : ['[data-add-repeat="opportunity"]'])];
+          if(minimal)assert.equal(await page.locator('[data-add-repeat="opportunity"]').isVisible(),false,'minimal add hides when conditions fit');
+          for(const selector of selectors){
             await page.locator(selector).click();
             const fits = await page.locator('#add-frequency .add-presets').evaluate(row=>{
-              const boxes=[...row.children].map(button=>button.getBoundingClientRect());
+              const boxes=[...row.children].filter(button=>!button.hidden).map(button=>button.getBoundingClientRect());
               const bounds=row.getBoundingClientRect();
               return boxes.every(box=>Math.abs(box.top-boxes[0].top)<1 && box.left>=bounds.left && box.right<=bounds.right+1 && box.height>=44 && box.width>=44);
             });
@@ -131,10 +133,12 @@ const {chromium} = require('playwright');
     await page.waitForFunction(()=>document.body.dataset.paneCount === '1');
     for(const minimal of [false,true]){
       await page.evaluate(minimal=>{setMinimalMode(minimal);openDetail(0);scrollDetailToNav('schedule');},minimal);
-      for(const selector of ['[data-detail-rhythm="1,1"]','[data-detail-rhythm="3,7"]','[data-detail-rhythm="1,7"]','[data-detail-repeat="opportunity"]']){
+      const selectors = ['[data-detail-rhythm="1,1"]','[data-detail-rhythm="3,7"]','[data-detail-rhythm="1,7"]',...(minimal ? [] : ['[data-detail-repeat="opportunity"]'])];
+      if(minimal)assert.equal(await page.locator('[data-detail-repeat]').isVisible(),false,'minimal detail hides when conditions fit');
+      for(const selector of selectors){
         await page.locator(selector).click();
         assert.ok(await page.locator('#detail-frequency-presets').evaluate(row=>{
-          const boxes=[...row.children].map(button=>button.getBoundingClientRect());
+          const boxes=[...row.children].filter(button=>!button.hidden).map(button=>button.getBoundingClientRect());
           const bounds=row.getBoundingClientRect();
           return boxes.every(box=>Math.abs(box.top-boxes[0].top)<1 && box.left>=bounds.left && box.right<=bounds.right+1 && box.height>=44 && box.width>=44 && buttonFits(box));
           function buttonFits(box){return box.right<=innerWidth;}

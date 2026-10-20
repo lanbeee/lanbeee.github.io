@@ -26,6 +26,10 @@ const {chromium,BASE,baseHabit} = require('./helpers/planner-test-helpers');
         await page.evaluate(minimal=>setMinimalMode(minimal),minimal);
         await page.locator(width >= 1280 ? '#bar-open-add' : '#open-add').click();
         await page.locator('#type-seg [data-v="keepup"]').click();
+        if(minimal){
+          assert.equal(await page.locator('[data-add-repeat="opportunity"]').isVisible(),false,'minimal add hides when conditions fit');
+          await page.locator('#do-cancel').click();
+        }else{
         await page.locator('[data-add-repeat="opportunity"]').click();
         await page.locator('#ting-message').fill('A walk');
         const park=page.locator('#ting-tag-chips [data-location-id="park"]');
@@ -55,16 +59,21 @@ const {chromium,BASE,baseHabit} = require('./helpers/planner-test-helpers');
         await page.waitForFunction(()=>$('do-save').disabled);
         assert.match(await page.locator('#ting-weather-guidance-hint').innerText(),/no active rules/);
         await page.locator('#do-cancel').click();
+        }
 
         const item=baseHabit({hid:'conditional',name:'Optional walk',repeatMode:'opportunity',locationIds:['park'],anywhereAllowed:false,locationPrefs:{park:'high'}});
         await page.evaluate(item=>{save([item]);openDetail(0);scrollDetailToNav('schedule');},item);
         const detailPark=page.locator('#detail-place-chips [data-location-id="park"]');
         assert.equal(await detailPark.innerText(),'Park','conditional places do not show ranking symbols');
         assert.deepEqual(await page.evaluate(()=>currentDetailTune().locationPrefs),{park:'high'},'opening preserves saved rankings');
-        await page.locator('[data-detail-rhythm="1,7"]').click();
-        assert.match(await detailPark.textContent(),/★/,'regular mode still exposes saved ranking');
-        await page.locator('[data-detail-repeat]').click();
-        assert.equal(await detailPark.innerText(),'Park');
+        if(minimal){
+          assert.equal(await page.locator('[data-detail-repeat]').isVisible(),false,'minimal detail hides when conditions fit');
+        }else{
+          await page.locator('[data-detail-rhythm="1,7"]').click();
+          assert.match(await detailPark.textContent(),/★/,'regular mode still exposes saved ranking');
+          await page.locator('[data-detail-repeat]').click();
+          assert.equal(await detailPark.innerText(),'Park');
+        }
         await detailPark.click();
         assert.equal(await detailPark.getAttribute('aria-pressed'),'false');
         assert(await page.locator('#detail-save').isDisabled());
@@ -101,6 +110,8 @@ const {chromium,BASE,baseHabit} = require('./helpers/planner-test-helpers');
     await page.evaluate(()=>{closeDetail();updateSortSetting({locations:[]});setMinimalMode(true);});
     await page.locator('#open-add').click();
     await page.locator('#type-seg [data-v="keepup"]').click();
+    assert.equal(await page.locator('[data-add-repeat="opportunity"]').isVisible(),false,'minimal add hides when conditions fit before places exist');
+    await page.evaluate(()=>setMinimalMode(false));
     await page.locator('[data-add-repeat="opportunity"]').click();
     assert(await page.locator('#ting-tag-chips [data-anywhere]').isVisible(),'any place is explained even before places are saved');
     await page.locator('#ting-weather-profile').selectOption('dry');
