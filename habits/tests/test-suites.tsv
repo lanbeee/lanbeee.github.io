@@ -142,6 +142,7 @@ fast-planner-specialization-test.js	planner	once
 fast-linked-recovery-test.js	planner	once
 fast-evening-packing-test.js	planner	once
 fast-split-replay-test.js	planner	once
+fast-short-fragment-test.js	planner	once
 
 drop-alarm-cycle-test.js	planner	page-both
 

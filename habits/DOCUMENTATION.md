@@ -2500,7 +2500,20 @@ shared route objective, not a fixed penalty, so the frozen-selection pass can
 still prefer a large clock or weather saving. After Fast packs a day it
 searches replay orders by that same route cost — every order for up to seven
 fills, otherwise a beam — and replaces the greedy chain only when the same
-work gets strictly cheaper.
+work gets strictly cheaper. A must-place occurrence parked in a later allowed
+segment can use an earlier segment when that segment is free, or when one or
+two shorter flexible rows are all that occupy the start it takes. A later
+minute inside the same segment stays put, so a due item that already fits
+does not pull earlier over the routines in front of it. Daily, critical,
+higher-priority, pinned, active, weather-locked, and present direct-link rows
+stay put. The shared capped ASAP and preference score of all moved rows cannot
+get worse: bringing the due row forward must cover the delays imposed on its
+blockers. Weather, route cost, breakable minutes, and every other clock cannot
+get worse, and a new link violation is rejected. The check examines contiguous
+starts in the earlier allowed intervals and reopens only the one or two flexible
+rows that actually cover a possible slot. Unrelated short appointments cannot
+hide a useful blocker. It keeps the first legal group within 32 placement
+attempts per day, without another graph search.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked

@@ -1790,6 +1790,10 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
   totalAssigned += rescueDailyGapFits(candidates,dayStates,settings);
   enforcePersistentLinkInvariants(dayStates,candidates,settings);
   pullStrictDueMovablesForward(candidates,dayStates,settings,graphBudget);
+  // Greedy packing can leave a due occurrence later in its allowed time when
+  // one or two shorter flexible rows occupy the earlier start. Repair that
+  // without opening another search.
+  reclaimDueWindowFromShortFragment(candidates,dayStates,settings);
   return totalAssigned;
 }
 
@@ -2040,6 +2044,291 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
     }
   }
   return gained;
+}
+
+// A direct neighbor that is on this day, or already logged/active, owns the
+// adjacency. A link whose partner is absent does not freeze the clock.
+function shortFragmentHasPresentDirectNeighbor(hid,state){
+  if(!hid || !state || typeof plannerOrderConstraintsForDay !== 'function')return false;
+  const placed = new Set((state.fills || []).map(entry=>entry && entry.fill && entry.fill.h && entry.fill.h.hid).filter(Boolean));
+  return plannerOrderConstraintsForDay(state.dayBase).some(edge=>{
+    if(!edge || edge.adjacency !== 'direct')return false;
+    const partner = edge.beforeHid === hid ? edge.afterHid : edge.afterHid === hid ? edge.beforeHid : null;
+    if(!partner)return false;
+    if(placed.has(partner))return true;
+    return typeof scheduleAnchorCommitForDay === 'function'
+      && Boolean(scheduleAnchorCommitForDay(partner,state.dayBase));
+  });
+}
+
+function keptPlacementClockSignature(state,skip){
+  return (state && state.fills || []).filter(entry=>entry && entry.fill && entry.fit && !skip.has(entry.fill.i))
+    .map(entry=>`${entry.fill.i}:${entry.fill.chunkIndex == null ? '' : entry.fill.chunkIndex}:${entry.fit.placeStart}:${entry.fit.placeEnd}:${entry.fit.locId || ''}`)
+    .sort().join('|');
+}
+
+function placementStateKeepingClocks(state,dropIds){
+  const clean = clonePlacementState(state);
+  clean.day = {...state.day,agendaItems:[]};
+  resetPlacementStateFills(clean);
+  const kept = (state.fills || []).filter(entry=>entry && entry.fill && entry.fit && !dropIds.has(entry.fill.i))
+    .slice().sort((a,b)=>a.fit.placeStart - b.fit.placeStart || (a.fill.i - b.fill.i));
+  for(const entry of kept)commitPlacement(clean,{...entry.fill},{...entry.fit});
+  return clean;
+}
+
+function dueOccurrenceEarlierIntervals(habit,placeStart,state){
+  const windows = typeof fillDayWindows === 'function'
+    ? fillDayWindows(habit,state.dayBase,state.seedLocId) : null;
+  if(!windows)return [];
+  return windows.filter(window=>window && window.end > window.start && window.end <= placeStart + 1)
+    .map(window=>({start:window.start,end:window.end}));
+}
+
+function placementRangesOverlap(aStart,aEnd,bStart,bEnd){
+  return aEnd > bStart && aStart < bEnd;
+}
+
+function placementStartInIntervals(fit,intervals){
+  if(!fit)return false;
+  return intervals.some(window=>fit.placeStart >= window.start - 1000
+    && fit.placeStart < window.end + 1000);
+}
+
+// Upper bound on minutes available inside intervals once ignored fills are
+// lifted. Contiguity and blocked time are left to tryPlaceOnDay.
+function uncoveredPlacementMinutes(state,intervals,ignore){
+  const merged = typeof mergeIntervals === 'function'
+    ? mergeIntervals(intervals.map(window=>({start:window.start,end:window.end})))
+    : intervals;
+  let total = 0;
+  for(const window of merged){
+    let pieces = [[window.start,window.end]];
+    for(const entry of state.fills || []){
+      if(!entry || !entry.fit || ignore.has(entry.fill.i))continue;
+      const next = [];
+      for(const [start,end] of pieces){
+        if(entry.fit.placeEnd <= start || entry.fit.placeStart >= end){
+          next.push([start,end]);
+          continue;
+        }
+        if(entry.fit.placeStart > start)next.push([start,entry.fit.placeStart]);
+        if(entry.fit.placeEnd < end)next.push([entry.fit.placeEnd,end]);
+      }
+      pieces = next;
+    }
+    for(const [start,end] of pieces)total += Math.max(0,end - start);
+  }
+  return total / 60000;
+}
+
+function breakableMinuteSignature(state){
+  const totals = new Map();
+  for(const entry of (state && state.fills) || []){
+    if(!entry || !entry.fill || !entry.fill.h || !entry.fill.h.breakable)continue;
+    totals.set(entry.fill.i,placedBreakableMinutes(state,entry.fill.i));
+  }
+  return [...totals.entries()].sort((a,b)=>a[0] - b[0]).map(([i,minutes])=>`${i}:${minutes}`).join('|');
+}
+
+function dayWeatherPenaltySum(state,settings){
+  if(typeof weatherPenaltyForFit !== 'function')return 0;
+  return ((state && state.fills) || []).reduce((sum,entry)=>sum + weatherPenaltyForFit(
+    entry.fill,entry.fit,state,settings || state.settings),0);
+}
+
+// Use the same capped per-row ASAP and preference terms as the placement
+// scorer. A swap is only useful if the earlier due row pays for the delays it
+// imposes on every reopened row, including rows already past the ASAP cap.
+function shortFragmentClockCost(fill,fit,state,weights,candidate){
+  return scoreAgendaPlacement({
+    asapDelayMin:(fit.placeStart - state.startClock) / 60000,
+    urgency:candidate && Number.isFinite(candidate.urgency)
+      ? candidate.urgency : weekUrgency(fill.h),
+    preferencePenalty:typeof weekPreferencePenalty === 'function'
+      ? weekPreferencePenalty(fill.h,fit,state,state.registry) : 0
+  },weights);
+}
+
+function activeDoingNowHid(){
+  const doing = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  if(!doing || !doing.hid)return null;
+  if(typeof isDoingNowActive === 'function' && !isDoingNowActive(doing))return null;
+  return doing.hid;
+}
+
+// MUTATE: a must-place occurrence parked in a later allowed segment can use an
+// earlier segment when that segment is free, or when one or two shorter
+// flexible rows are all that occupy the start it takes. A later minute inside
+// the same segment is left alone — pulling every due item to the earliest
+// clock reshuffles routines that already fit. The changed rows' shared clock
+// score must improve. Weather, route, breakable minutes, other
+// clocks, and present direct links cannot get worse. At most 32 placement
+// groups per day, and the first legal group wins — not a graph search.
+function reclaimDueWindowFromShortFragment(candidates,dayStates,settings){
+  if(!Array.isArray(candidates) || !Array.isArray(dayStates))return 0;
+  let moved = 0;
+  const byIndex = new Map(candidates.filter(c=>c && c.i != null).map(c=>[c.i,c]));
+  const weights = typeof resolveAgendaScoreWeights === 'function'
+    ? resolveAgendaScoreWeights(settings) : null;
+  const scoreOpts = {settings,allowNetwork:false,weights};
+  const doingHid = activeDoingNowHid();
+  const reservationWindowsFor = state=>{
+    if(typeof dailyBreakableReservations !== 'function'
+      || typeof breakableReservationWindows !== 'function')return [];
+    return dailyBreakableReservations(state,candidates)
+      .flatMap(reservation=>breakableReservationWindows(reservation));
+  };
+  const flexibleFragment = (entry,owner,needed)=>{
+    if(!entry || !entry.fill || !entry.fit || entry.fill.i === owner.c.i)return false;
+    const victim = byIndex.get(entry.fill.i);
+    if(!victim || !victim.h || victim.h.breakable || victim.pinned)return false;
+    if(typeof isIndependentDailyOccurrence === 'function' && isIndependentDailyOccurrence(victim))return false;
+    if(typeof mustPlaceCriticalOccurrence === 'function' && mustPlaceCriticalOccurrence(victim))return false;
+    if(Number(victim.priority) < Number(owner.c.priority))return false;
+    if(!(fillDurationMinutes(entry.fill) > 0) || fillDurationMinutes(entry.fill) >= needed)return false;
+    if(doingHid && victim.h.hid === doingHid)return false;
+    if(typeof weatherLockedPlacement === 'function'
+      && weatherLockedPlacement(victim,owner.state,settings))return false;
+    if(shortFragmentHasPresentDirectNeighbor(victim.h.hid,owner.state))return false;
+    return true;
+  };
+  const acceptGroup = (state,owner,victimEntries,earlier)=>{
+    const drop = new Set([owner.c.i,...victimEntries.map(entry=>entry.fill.i)]);
+    const region = owner.earlier.concat([{
+      start:owner.entry.fit.placeStart,end:owner.entry.fit.placeEnd
+    }]);
+    if(uncoveredPlacementMinutes(state,region,drop) + 1e-6 < owner.needed)return false;
+    const beforeKept = keptPlacementClockSignature(state,drop);
+    const beforeBreakables = breakableMinuteSignature(state);
+    const beforeRoute = dayRouteCostSeconds(state);
+    const beforeLinks = persistentLinkViolationsForState(state);
+    const beforeWeather = dayWeatherPenaltySum(state,settings);
+    const trial = placementStateKeepingClocks(state,drop);
+    const placeOpts = {
+      ...scoreOpts,
+      reservationWindows:reservationWindowsFor(state),
+      reservationCandidates:candidates
+    };
+    const ownerFill = {h:owner.c.h,i:owner.c.i,priority:owner.c.priority,scarcity:owner.c.scarcity};
+    const ownerFit = tryPlaceOnDay(trial,ownerFill,placeOpts);
+    if(!ownerFit || ownerFit.placeStart >= owner.entry.fit.placeStart)return false;
+    if(!placementStartInIntervals(ownerFit,earlier))return false;
+    if(victimEntries.some(entry=>!placementRangesOverlap(
+      entry.fit.placeStart,entry.fit.placeEnd,ownerFit.placeStart,ownerFit.placeEnd)))return false;
+    commitPlacement(trial,ownerFill,ownerFit);
+    const placedVictims = [];
+    for(const entry of victimEntries){
+      const victim = byIndex.get(entry.fill.i);
+      const victimFill = {h:victim.h,i:victim.i,priority:victim.priority,scarcity:victim.scarcity};
+      const victimFit = tryPlaceOnDay(trial,victimFill,placeOpts);
+      if(!victimFit)return false;
+      commitPlacement(trial,victimFill,victimFit);
+      placedVictims.push({fill:victimFill,fit:victimFit,before:entry});
+    }
+    const multiLocation = new Set([state.seedLocId || '',...trial.fills.map(entry=>entry.fit && entry.fit.locId || '')]);
+    if(multiLocation.size > 1 && typeof reconcileCommittedTravel === 'function'){
+      reconcileCommittedTravel(trial);
+    }
+    syncDayAgendaItemsFromFills(trial);
+    const ownerNow = (trial.fills || []).find(entry=>entry && entry.fill && entry.fill.i === owner.c.i);
+    if(!ownerNow || ownerNow.fit.placeStart >= owner.entry.fit.placeStart)return false;
+    if(!placementStartInIntervals(ownerNow.fit,earlier))return false;
+    if(victimEntries.some(entry=>!placementRangesOverlap(
+      entry.fit.placeStart,entry.fit.placeEnd,ownerNow.fit.placeStart,ownerNow.fit.placeEnd)))return false;
+    if(placedVictims.some(item=>!(trial.fills || []).some(entry=>entry && entry.fill && entry.fill.i === item.fill.i)))return false;
+    if(keptPlacementClockSignature(trial,drop) !== beforeKept)return false;
+    if(breakableMinuteSignature(trial) !== beforeBreakables)return false;
+    if(dayRouteCostSeconds(trial) > beforeRoute + 1e-6)return false;
+    const afterLinks = persistentLinkViolationsForState(trial);
+    for(const key of afterLinks.keys()) if(!beforeLinks.has(key))return false;
+    if(dayWeatherPenaltySum(trial,settings) > beforeWeather + 1e-6)return false;
+    let scoreDelta = shortFragmentClockCost(ownerFill,ownerNow.fit,trial,weights,owner.c)
+      - shortFragmentClockCost(ownerFill,owner.entry.fit,state,weights,owner.c);
+    for(const item of placedVictims){
+      const now = (trial.fills || []).find(entry=>entry && entry.fill && entry.fill.i === item.fill.i);
+      const victim = byIndex.get(item.fill.i);
+      scoreDelta += shortFragmentClockCost(item.fill,now.fit,trial,weights,victim)
+        - shortFragmentClockCost(item.fill,item.before.fit,state,weights,victim);
+    }
+    if(scoreDelta > 1e-6)return false;
+    applyPlacementState(state,trial);
+    return true;
+  };
+  for(const state of dayStates){
+    if(!state)continue;
+    let probes = 0;
+    for(let guard = 0;guard < 4;guard += 1){
+      const owners = [];
+      for(const c of candidates){
+        if(!c || !c.h || c.h.breakable || c.pinned)continue;
+        if(doingHid && c.h.hid === doingHid)continue;
+        if(typeof weatherLockedPlacement === 'function'
+          && weatherLockedPlacement(c,state,settings || state.settings))continue;
+        if(typeof mustPlaceOccurrenceByDay !== 'function' || !mustPlaceOccurrenceByDay(c,state.dayBase))continue;
+        const entry = (state.fills || []).find(item=>item && item.fill && item.fit && item.fill.i === c.i);
+        if(!entry)continue;
+        const earlier = dueOccurrenceEarlierIntervals(c.h,entry.fit.placeStart,state);
+        if(!earlier.length)continue;
+        owners.push({
+          c,entry,earlier,state,
+          needed:clampDuration(c.h.durationMinutes)
+        });
+      }
+      owners.sort((a,b)=>b.entry.fit.placeStart - a.entry.fit.placeStart || (a.c.i - b.c.i));
+      let applied = false;
+      for(const owner of owners){
+        if(probes >= 32)break;
+        // Consider only rows covering a contiguous slot the owner could take.
+        // Globally shortest rows can be in unrelated, immovable pockets and
+        // hide the one useful blocker. Boundary starts suffice for at most two
+        // victims: the set of overlaps only changes at a fill's start/end.
+        const groupsByKey = new Map();
+        const neededMs = owner.needed * 60000;
+        for(const window of owner.earlier){
+          if(window.end - window.start < neededMs)continue;
+          const starts = [window.start,window.end - neededMs];
+          for(const entry of state.fills || []){
+            if(!entry || !entry.fit || entry.fill.i === owner.c.i)continue;
+            starts.push(entry.fit.placeStart,entry.fit.placeEnd,
+              entry.fit.placeStart - neededMs,entry.fit.placeEnd - neededMs);
+          }
+          starts.sort((a,b)=>a-b);
+          for(const start of starts){
+            if(start < window.start || start + neededMs > window.end)continue;
+            const slot = {start,end:start + neededMs};
+            const blockers = (state.fills || []).filter(entry=>entry && entry.fit
+              && entry.fill.i !== owner.c.i && placementRangesOverlap(
+                entry.fit.placeStart,entry.fit.placeEnd,slot.start,slot.end));
+            if(blockers.length > 2 || blockers.some(entry=>!flexibleFragment(entry,owner,owner.needed)))continue;
+            const key = blockers.map(entry=>entry.fill.i).sort((a,b)=>a-b).join(',');
+            if(!groupsByKey.has(key))groupsByKey.set(key,{entries:blockers,start});
+          }
+        }
+        const groups = [...groupsByKey.values()]
+          .sort((a,b)=>a.entries.length-b.entries.length || a.start-b.start
+            || a.entries.reduce((sum,entry)=>sum+fillDurationMinutes(entry.fill),0)
+              - b.entries.reduce((sum,entry)=>sum+fillDurationMinutes(entry.fill),0))
+          .map(group=>group.entries);
+        for(const group of groups){
+          const drop = new Set([owner.c.i,...group.map(entry=>entry.fill.i)]);
+          const region = owner.earlier.concat([{
+            start:owner.entry.fit.placeStart,end:owner.entry.fit.placeEnd
+          }]);
+          if(uncoveredPlacementMinutes(state,region,drop) + 1e-6 < owner.needed)continue;
+          if(probes >= 32)break;
+          probes += 1;
+          if(!acceptGroup(state,owner,group,owner.earlier))continue;
+          moved += 1;
+          applied = true;
+          break;
+        }
+        if(applied)break;
+      }
+      if(!applied)break;
+    }
+  }
+  return moved;
 }
 
 // MUTATE: repair a one-shot/sparse occurrence assigned after its explicit last
