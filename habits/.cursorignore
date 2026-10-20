@@ -1,0 +1,12 @@
+# Personal data and scratch. The agent must not read these.
+lib/*tings-backup*
+lib/*.backup.json
+lib/*.pdf
+lib/*.jpeg
+lib/*.jpg
+lib/*.png
+lib/.DS_Store
+HANDOFF-*.md
+_scratch_*.js
+test-results/
+.qoder/

@@ -1,0 +1,12 @@
+# Out of codebase search. Still readable by path when a task names them.
+tests/
+test-results/
+lib/
+.zcode/
+.qoder/
+FAST_PLANNER_PROGRESS.md
+FAST_PLANNER_READINESS.md
+HANDOFF-*.md
+
+# Side feature. Open only when the task is the Tings assistant.
+js/assistant-*.js
