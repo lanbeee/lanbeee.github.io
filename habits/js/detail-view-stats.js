@@ -139,7 +139,7 @@ function progressCopy(h,score){
 
 // PURE: builds the about blurb string
 function aboutText(h){
-  if(isOpportunityHabit(h))return `At most once every ${opportunityGapDays(h)} days. It shows up when you’re at a chosen place, or when the weather matches. You can still plan a time yourself.`;
+  if(isOpportunityHabit(h))return `At most once every ${opportunityGapDays(h)} days. It shows up when its selected trigger matches: ${opportunityTrigger(h) === 'location' ? 'within ' + opportunityRadius(h) + ' m of a chosen place' : 'matching weather' }. You can still plan a time yourself.`;
   const days = daysSince(h.lastLog);
   if(h.type === 'task'){
     if(isTaskDone(h))return `Done. Logged ${entryWhen(h.lastLog)}.`;

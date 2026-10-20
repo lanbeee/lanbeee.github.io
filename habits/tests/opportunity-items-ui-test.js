@@ -124,6 +124,28 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>{document.documentElement.style.removeProperty('--font-scale');scrollDetailToNav('schedule');});
   await page.screenshot({path:'test-results/opportunity-schedule-mobile.png',animations:'disabled'});
+  await page.evaluate(()=>{
+    sortSettings.locations=[{id:'park',name:'Park',lat:40,lng:-74,radiusM:200}];
+    saveSortSettings(sortSettings);
+    renderTagChips('detail-place-chips',[],['park'],null,{},false);
+  });
+  await page.locator('#detail-condition-trigger').selectOption('location');
+  assert(await page.locator('#detail-condition-radius-row').isVisible(),'location trigger exposes proximity');
+  await page.locator('#detail-condition-radius').fill('750');
+  await page.locator('#detail-weather-profile').selectOption('__none__');
+  assert(!await page.locator('#detail-save').isDisabled(),'location trigger works without weather rules');
+  await page.locator('#detail-save').click();
+  assert.deepEqual(await page.evaluate(()=>({trigger:load()[0].conditionTrigger,radius:load()[0].conditionRadiusM})),{trigger:'location',radius:750});
+  await page.evaluate(()=>{openDetail(0);scrollDetailToNav('schedule');});
+  assert.equal(await page.locator('#detail-condition-radius').inputValue(),'750','radius survives reopening');
+  await page.locator('#detail-condition-trigger').selectOption('weather');
+  assert(!await page.locator('#detail-condition-radius-row').isVisible(),'weather trigger hides radius');
+  assert(await page.locator('#detail-save').isDisabled(),'a selected place cannot substitute for weather rules');
+  await page.evaluate(()=>restoreDetailTune());
+  assert.equal(await page.locator('#detail-condition-trigger').inputValue(),'location','cancel restores trigger');
+  assert.equal(await page.locator('#detail-condition-radius').inputValue(),'750','cancel restores radius');
+  await page.evaluate(()=>scrollDetailToNav('schedule'));
+  await page.screenshot({path:'test-results/opportunity-radius-mobile.png',animations:'disabled'});
   assert.deepEqual(errors,[]);console.log('Opportunity create/edit, minimal, desktop and assistant checks passed');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

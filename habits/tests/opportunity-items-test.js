@@ -40,6 +40,19 @@ const {chromium,BASE,baseHabit,plannerSettings,runPlannerPair,minutesOnDay,place
     const placeItem=optional({weatherProfileMode:'none',weatherProfileId:null,locationIds:['park'],anywhereAllowed:false});
     await check('place-only does not arrange a trip',[placeItem],atHome,w=>assert.equal(placedAnywhere(w,'Optional'),0));
     await check('current place activates the item',[placeItem],atPark,w=>assert.equal(minutesOnDay(w,0,'Optional'),30));
+    await check('location trigger does not require soft weather guidance to match',
+      [{...placeItem,conditionTrigger:'location',weatherProfileMode:'profile',weatherProfileId:'dry'}],
+      {...atPark,_weatherContext:{...context,samples:context.samples.map(x=>({...x,precipitation_probability:90}))}},
+      w=>assert.equal(minutesOnDay(w,0,'Optional'),30));
+    await check('location trigger does not require a known forecast',
+      [{...placeItem,conditionTrigger:'location',weatherProfileMode:'profile',weatherProfileId:'dry'}],
+      {...atPark,_weatherContext:null},w=>assert.equal(minutesOnDay(w,0,'Optional'),30));
+    await check('inside custom radius activates a nearby destination',
+      [{...placeItem,conditionTrigger:'location',conditionRadiusM:1200}],atHome,
+      w=>assert.equal(minutesOnDay(w,0,'Optional'),30));
+    await check('outside custom radius waits',
+      [{...placeItem,conditionTrigger:'location',conditionRadiusM:1000}],atHome,
+      w=>assert.equal(placedAnywhere(w,'Optional'),0));
     const visit=baseHabit({hid:'visit',name:'Visit',type:'task',target:null,dueDate:day,eventTime:day+10*3600000,locationIds:['park'],anywhereAllowed:false});
     await check('existing future visit activates the item',[visit,placeItem],atHome,w=>assert.equal(minutesOnDay(w,0,'Optional'),30));
     await check('upcoming visit can include the item before its appointment',[visit,{...placeItem,allowedTimeStart:570,allowedTimeEnd:600}],atHome,w=>assert.equal(minutesOnDay(w,0,'Optional'),30));
@@ -102,8 +115,8 @@ const {chromium,BASE,baseHabit,plannerSettings,runPlannerPair,minutesOnDay,place
     await noExtraTrip('several opportunities share one existing visit',[visit],[placeItem,secondPlace],travelSettings,[30,30]);
     await noExtraTrip('a past visit cannot authorize another trip',[visit,homeReturn],
       [{...placeItem,allowedTimeStart:13*60,allowedTimeEnd:17*60}],travelSettings,[0]);
-    await noExtraTrip('matching weather alone does not create a remote visit',[],
-      [optional({locationIds:['park'],anywhereAllowed:false})],travelSettings,[0]);
+    await check('weather trigger can plan travel to its ordinary selected place',
+      [optional({conditionTrigger:'weather',locationIds:['park'],anywhereAllowed:false})],travelSettings,w=>assert.equal(minutesOnDay(w,0,'Optional'),30));
     await noExtraTrip('matching place and weather share the existing trip',[visit],
       [optional({locationIds:['park'],anywhereAllowed:false})],travelSettings,[30]);
     await noExtraTrip('weather-only work uses the existing itinerary',[visit,homeReturn],
@@ -113,6 +126,29 @@ const {chromium,BASE,baseHabit,plannerSettings,runPlannerPair,minutesOnDay,place
       locationIds:['park'],anywhereAllowed:false});
     await noExtraTrip('conditional work does not fragment a remote split visit',[splitVisit],
       [placeItem,{...secondPlace,breakable:true,durationMinutes:60,minChunkMinutes:30}],travelSettings,[30,60]);
+    const proximity = await page.evaluate(()=>{
+      const settings={locations:[{id:'center',lat:40,lng:-74}],blockedTimes:[]};
+      const state={fills:[],rows:[],dayBase:dayStart(Date.now()),isTodayDay:true,
+        startClock:Date.now(),liveLocId:'center',seedLocId:'center',settings};
+      const fill={h:{conditionTrigger:'location',conditionRadiusM:100,locationIds:['center']}};
+      const fit={locId:'center',placeStart:Date.now()+60000,placeEnd:Date.now()+120000};
+      const previous=currentCoordLocation();
+      try{
+        setPlannerCurrentCoord({lat:40.002,lng:-74});
+        const outside=opportunityFitMatches(fill,fit,state,settings);
+        setPlannerCurrentCoord({lat:40.0005,lng:-74});
+        const inside=opportunityFitMatches(fill,fit,state,settings);
+        const unconfigured=opportunityFitMatches({h:{conditionTrigger:'location'}},fit,state,settings);
+        return {outside,inside,unconfigured};
+      }finally{setPlannerCurrentCoord(previous);}
+    });
+    assert.deepEqual(proximity,{outside:false,inside:true,unconfigured:false},'actual GPS distance overrides the broad saved-place geofence');checks++;
+    const signatures=await page.evaluate(()=>{
+      const h={type:'keepup',repeatMode:'opportunity',conditionTrigger:'location',conditionRadiusM:10,locationIds:['park']};
+      const settings={locations:[{id:'park',lat:40,lng:-74}]};
+      return [40.00001,40.0002].map(lat=>opportunityProximitySignature([h],settings,{lat,lng:-74}));
+    });
+    assert.notEqual(signatures[0],signatures[1],'crossing a small radius invalidates the planner inside one GPS bucket');checks++;
     const worker=await page.evaluate(async ({data,settings,now})=>{
       const week=await buildWeekAgendaOffMain(data,settings,7,'fast',{now});
       return week.days.flatMap(day=>day.timeline || []).filter(row=>row.i===0 && row.kind==='fill').length;

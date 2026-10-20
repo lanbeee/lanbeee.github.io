@@ -64,7 +64,7 @@ function refreshAddAvailability(){
   if(!addActiveDefaults)return;
   const record = readAddRecord();
   const optional = isOpportunityHabit(record);
-  const hasTrigger = record.locationIds.length>0 || weatherHabitHasActiveGuidance(record,sortSettings);
+  const hasTrigger = record.conditionTrigger === 'location' ? record.locationIds.length>0 : weatherHabitHasActiveGuidance(record,sortSettings);
   const needsCity = optional && hasTrigger && !record.locationIds.length && !record.weatherLocationId
     && !weatherHomeCoords(sortSettings);
   $('ting-weather-city').hidden = !needsCity;
@@ -182,7 +182,7 @@ async function checkAddRoom(){
     const place = liveLocationId();
     if(place)settings._plannerLiveLocationId = place;
     const coord = currentCoordLocation();
-    if(coord && isCurrentCoordAwayFromSaved(settings.locations))settings._plannerCurrentCoord = {lat:coord.lat,lng:coord.lng};
+    if(coord)settings._plannerCurrentCoord = {lat:coord.lat,lng:coord.lng};
     const mode = settings.agendaOptimizer && !agendaPlannerForcedFast() ? 'exact' : 'fast';
     const before = await addRoomWorkerWeek(run,data,settings,mode,1);
     if(_addRoomRun !== run)return;

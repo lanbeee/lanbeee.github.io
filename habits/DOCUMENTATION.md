@@ -298,37 +298,33 @@ if ratio ≥ 1.1: score += red (overdue)
 ### 3.1.1 Optional habits: when conditions fit 👤👨‍💻
 
 Under **New habit → How often?**, or in **Details → Schedule**, choose
-**when conditions fit**. Set **at most once every N days**, then choose allowed
-places, weather guidance, or both. Weather profiles are editable directly from
-those controls. The add form shows conditions immediately after the repeat
-limit and before duration, with topics folded and other options below. Schedule
-uses the same frequency buttons, followed by the repeat limit and visible
-places/weather controls. Days and hours stay in a separate folded section.
-Switching back to a regular rhythm preserves the saved condition choices. Choose
-a place or weather profile before saving. Missing forecast-city setup is shown
-only when needed. **When conditions fit** is a regular-mode choice. Minimal mode
-keeps daily, weekly, and custom rhythms. A habit already using it still shows
-its place and weather when opened. Conditional place
-chips use simple select/remove taps, without cycling through preference or
-avoidance. Selecting a named place turns off **any place**; choosing **any place**
-clears the named places and requires weather rules. Existing saved rankings stay
-in the draft when switching between regular and conditional modes. Weather
-choices distinguish **use each place’s weather rules**, **any weather** (ignore
-inherited rules), and a named set of rules. The selected rules show their bounds
-in the current display units; an empty set explains that it has no active rules.
-When both place and weather are selected, both must match.
+**when conditions fit**. Set **at most once every N days**, then choose
+a **weather matches** or **near a location** trigger. For a location trigger,
+select places and set a radius in metres from their centers (default 200 m).
+Current presence or an existing planned visit within that radius activates the
+habit. Manual location pins use the selected place’s center. A known GPS fix
+uses its actual distance. Normal travel time and venue hours still apply.
+Weather remains ordinary guidance: soft rules rank times, while hard rules
+still restrict scheduling.
+
+For a weather trigger, select active weather rules. Places work like ordinary
+habit/task locations, including preferences; the planner may arrange travel to
+one of them. A visit is not an additional trigger requirement. Every active
+weather metric must be available and meet its bounds, including soft bounds.
+Missing or stale forecasts cannot activate a weather trigger.
+
+The add form and Details → Schedule show the trigger and its controls after
+the repeat limit. Days and hours remain in their own folded section. Switching
+triggers or returning to a regular rhythm preserves places and weather choices.
+Saving requires places for a location trigger or active rules for a weather
+trigger. Minimal mode hides the choice for new habits, while existing conditional
+habits remain editable. Older records with an explicit weather profile use a
+weather trigger; place-only records use a location trigger.
 
 - Matching conditions make the item eligible at its chosen priority. It may
   use free time or replace lower-priority flexible work; fixed appointments,
   explicit plans, active work, and equal/higher-priority items stay protected.
-- A place-based item uses current presence or a visit already in the agenda,
-  including time before or after that visit. It cannot create an extra trip.
-  Allowed venue hours, item windows, travel time and schedule links still apply.
-- Weather uses the existing profile/option/place inheritance and the forecast
-  at the actual venue. Every active metric must be available and meet its bounds,
-  including soft bounds. Preferences rank matching times. If no fresh forecast
-  is available, the item waits. When both place and weather are selected, both
-  must match. With neither configured, it waits for configuration.
+- Allowed venue hours, item windows, travel time and schedule links still apply.
 - The repeat limit is a minimum gap between calendar dates, not a weekly quota.
   An entry on Monday permits the next occurrence on the following Monday for
   a seven-day limit. Logged and planned occurrences both count. Early/late
@@ -2089,7 +2085,7 @@ Toasts appear after:
   and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
   it no longer requires a second item, a sample, or past/future calendar edits.
   In regular mode, choosing **when conditions fit** adds a guided condition step before Add:
-  choose a place already visited or weather rules. The tour waits for a valid
+  choose a weather or location trigger and configure its rules or radius. The tour waits for a valid
   condition and supports adding a place or editing weather rules without
   losing the new habit draft.
   Logging the first item has an **I’ll log later** escape. Deeper calendar and

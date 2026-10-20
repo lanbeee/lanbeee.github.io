@@ -43,18 +43,37 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
 }
 
 // Shared by Fast, GLPK and the single-day view. Optional work is inserted only
-// after visits are known. Matching conditions activate the chosen priority;
+// after the ordinary agenda is known. The selected trigger activates priority;
 // manual commitments and equal/higher-priority work remain protected.
 function opportunityFitMatches(fill,fit,state,settings,originState = state){
   const chron = state.fills.filter(entry=>!entry.fill._opportunityAutomatic)
     .slice().sort((a,b)=>a.fit.placeStart-b.fit.placeStart);
-  if(fit.locId){
+  const locationTrigger = opportunityTrigger(fill.h) === 'location';
+  if(locationTrigger){
+    const triggerPlaces = new Set([...(fill.h.locationIds || []),
+      ...(fill.h.scheduleOptions || []).map(option=>option.locationId).filter(Boolean)]);
+    if(!fit.locId || !triggerPlaces.has(fit.locId))return false;
+    const target = (settings.locations || []).find(loc=>loc.id === fit.locId);
+    const near = id=>{
+      const place = (settings.locations || []).find(loc=>loc.id === id);
+      if(!target || !place)return false;
+      return haversineMetres(place.lat,place.lng,target.lat,target.lng) <= opportunityRadius(fill.h);
+    };
     const atVisit = (source,entries)=>{
-      if(locationPresenceAt(source,fit.placeStart,entries) === fit.locId)return true;
+      const presence = locationPresenceAt(source,fit.placeStart,entries);
+      // Use the actual fix for today's initial presence, before later visits.
+      const coord = source.isTodayDay && !settings.pinnedLocationId && typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
+      const hasVisit = entries.some(entry=>entry.fit.locId && entry.fit.placeStart < fit.placeStart)
+        || (source.rows || []).some(row=>row.kind === 'scheduled' && row.locationId
+          && row.start > source.startClock && row.start < fit.placeStart)
+        || locationTiedBlockedIntervals(source).some(block=>block.start > source.startClock && block.start < fit.placeStart);
+      if(coord && target && !hasVisit && presence === source.liveLocId){
+        if(haversineMetres(coord.lat,coord.lng,target.lat,target.lng) <= opportunityRadius(fill.h))return true;
+      }else if(near(presence))return true;
       // The next existing destination may be reached earlier on the same
       // trip. The core fitter reserves the journey and its departure clock.
       const next = hardLocationAnchorsAfter({...source,fills:entries},fit.placeStart)[0];
-      return next?.locationId === fit.locId && fit.placeEnd<=next.start;
+      return Boolean(next && near(next.locationId) && fit.placeEnd<=next.start);
     };
     if(!atVisit(state,chron))return false;
     const originChron = originState.fills.filter(entry=>!entry.fill._opportunityAutomatic)
@@ -63,8 +82,8 @@ function opportunityFitMatches(fill,fit,state,settings,originState = state){
   }
   const guidance = weatherGuidanceForFit(fill,fit,settings);
   const usesWeather = guidance?.profile?.rules?.some(weatherRuleActive);
-  if(!fit.locId && !usesWeather)return false; // no configured trigger
-  if(usesWeather){
+  if(!locationTrigger && !usesWeather)return false;
+  if(!locationTrigger){
     const context = weatherContextForGuidance(guidance,settings);
     const samples = weatherSamplesForInterval(context,fit.placeStart,fit.placeEnd);
     const fresh = (ts,age)=>ts == null || (Number(ts)>0 && Date.now()-Number(ts)<=age);
@@ -150,7 +169,6 @@ function placeOpportunityItems(data,dayStates,settings,candidates = [],otherDays
 // all other clocks, critical occurrences, active work and coupled links.
 function insertOpportunityOnDay(state,c,settings,candidates){
   const originalRows = finalizePlacementRows(state);
-  const travel = rows=>rows.filter(row=>row.kind === 'travel').reduce((sum,row)=>sum+(row.seconds || 0),0);
   const edges = plannerOrderConstraintsForDay(state.dayBase);
   const linked = new Set(edges.flatMap(edge=>[edge.beforeHid,edge.afterHid]));
   const doing = doingNowForDay(state);
@@ -198,7 +216,6 @@ function insertOpportunityOnDay(state,c,settings,candidates){
     enforcePersistentLinkInvariants([trial],candidates,settings);
     if(!trial.fills.some(entry=>entry.fill.i === c.i))continue;
     const rows = finalizePlacementRows(trial);
-    if(travel(rows)>travel(originalRows)+1)continue;
     if(!originalRows.filter(row=>(row.kind === 'fill' || row.kind === 'scheduled')
       && !removed.has(row.i)).every(row=>rows.some(other=>other.kind === row.kind
         && other.i === row.i && other.start === row.start && other.end === row.end

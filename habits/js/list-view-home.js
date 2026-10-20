@@ -72,24 +72,24 @@ function syncOpportunityAnywhereChip(containerId){
   const wrap = $(containerId);
   const chip = wrap?.querySelector('[data-anywhere]');
   if(!chip)return;
-  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  const optional = isLocationConditionControl(wrap);
   chip.classList.remove('is-pending');
   chip.lastChild.textContent = optional ? 'any place' : 'anywhere';
   chip.setAttribute('aria-pressed',String(chip.classList.contains('on')));
-  chip.title = optional ? 'No place restriction. Choose weather rules below.' : 'Not tied to one place';
+  chip.title = optional ? 'Choose a named place for a location trigger.' : 'Not tied to one place';
   if(optional){
     const hint = containerId === 'ting-tag-chips'
       ? $('add-topics-section').querySelector('.field-hint') : $('detail-places-hint');
     const anywhere = selectedAnywhereFrom(containerId);
     hint.textContent = anywhere
-      ? 'Any place needs weather rules below. Or tap a place to use a visit you already make.'
-      : 'Tap places to select or remove them. Tings uses visits you already make and won’t add a trip.';
+      ? 'Select a named place for the proximity trigger.'
+      : 'Triggers within the chosen radius of these places. Tap to select or remove.';
   }
 }
 
 function toggleAnywhereChip(containerId){
   const wrap = $(containerId);
-  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  const optional = isLocationConditionControl(wrap);
   renderTagChips(containerId,selectedTopicsFrom(containerId),
     optional ? [] : selectedLocationIdsFrom(containerId),null,
     optional ? {} : selectedLocationPrefsFrom(containerId),
@@ -234,7 +234,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
 // own place and optional preference.
 function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(wrap && wrap.id)){
   if(!wrap)return;
-  const optional = Boolean(wrap.closest('.opportunity-mode'));
+  const optional = isLocationConditionControl(wrap);
   const preferenceOnly = !optional && wrap.dataset.locationChoiceMode === 'preference';
   const selected = new Set(normalizeLocationIds(selectedLocIds));
   const add = wrap.querySelector('[data-location-add]');
@@ -266,7 +266,7 @@ function toggleLocationChip(e){
   // For regular habits, Preferred only ranks places already allowed. Other
   // regular views, including Allowed, cycle
   // off → allowed → little → high → avoid → off.
-  if(wrap.closest('.opportunity-mode')){
+  if(isLocationConditionControl(wrap)){
     btn.classList.toggle('on');
     const selected = selectedLocationIdsFrom(wrap.id);
     renderTagChips(wrap.id,selectedTopicsFrom(wrap.id),selected,null,

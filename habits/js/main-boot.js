@@ -167,7 +167,7 @@ function syncAddConditionsLayout(optional){
   }
   $('add-places-label').textContent = optional ? 'Places' : 'Topics & places';
   places.querySelector('.field-hint').textContent = optional
-    ? 'A place you already visit. Tings uses that visit and won’t add a trip.' : 'Group this item by topic and choose where it can happen.';
+    ? 'Choose where this can happen. For a location trigger, set the proximity radius above.' : 'Group this item by topic and choose where it can happen.';
   const weatherOptional = weather.querySelector('summary .field-optional');
   if(weatherOptional)weatherOptional.hidden = optional;
   if(optional)weather.open = true;
@@ -467,6 +467,8 @@ function readAddRecord(){
     type,
     target,
     repeatMode:normalizeRepeatMode($('ting-repeat-mode').value,type),
+    conditionTrigger:$('ting-condition-trigger').value,
+    conditionRadiusM:opportunityRadius({conditionRadiusM:$('ting-condition-radius').value}),
     lastLog:null,
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
@@ -1069,7 +1071,7 @@ $('detail-place-chips')?.addEventListener('click',e=>{
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
           renderTagChips(wrap,[],selected,null,prefs,
-            $('detail-sheet').classList.contains('opportunity-mode') ? false : selectedAnywhereFrom(wrap));
+            isLocationConditionControl($(wrap)) ? false : selectedAnywhereFrom(wrap));
           if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
           setDetailDirty();
         }
@@ -1619,6 +1621,8 @@ $('detail-save').addEventListener('click',()=>{
   h.name = current.name.slice(0,60);
   h.type = current.type;
   h.repeatMode = normalizeRepeatMode(current.repeatMode,current.type);
+  h.conditionTrigger = opportunityTrigger(current);
+  h.conditionRadiusM = opportunityRadius(current);
   h.emoji = current.emoji;
   h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;

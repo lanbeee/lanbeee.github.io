@@ -112,6 +112,8 @@ function refreshAddProfile(previous,type){
 function readAddProfile(){
   return {
     repeatMode:$('ting-repeat-mode').value,
+    conditionTrigger:$('ting-condition-trigger').value,
+    conditionRadiusM:opportunityRadius({conditionRadiusM:$('ting-condition-radius').value}),
     weatherProfileValue:$('ting-weather-profile').value,
     weatherLocationId:$('ting-weather-location').value,
     showWeather:$('ting-show-weather').getAttribute('aria-pressed') === 'true',
@@ -145,6 +147,8 @@ function syncAddEffortUi(){
 
 function applyAddProfile(profile){
   $('ting-repeat-mode').value = profile.repeatMode || 'routine';
+  $('ting-condition-trigger').value = profile.conditionTrigger || 'weather';
+  $('ting-condition-radius').value = opportunityRadius(profile);
   renderWeatherProfileSelect('ting-weather-profile',profile.weatherProfileValue || '');
   renderWeatherLocationSelect('ting-weather-location',profile.weatherLocationId || '');
   $('ting-show-weather').setAttribute('aria-pressed',String(Boolean(profile.showWeather)));

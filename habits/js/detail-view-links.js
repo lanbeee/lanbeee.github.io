@@ -515,7 +515,7 @@ function syncHabitScheduleOptionsUi(){
 function syncDetailSchedulePlacesUi(){
   const wrap = $('detail-place-chips');
   const label = $('detail-places-label');
-  const optional = $('detail-sheet').classList.contains('opportunity-mode');
+  const optional = isLocationConditionControl($('detail-place-chips'));
   const preferenceOnly = !optional && detailScheduleView === 'preferred';
   if(wrap){
     wrap.dataset.locationChoiceMode = preferenceOnly ? 'preference' : 'allowed';
