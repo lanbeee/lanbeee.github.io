@@ -2453,6 +2453,11 @@ has been introduced. Existing clock replay remains the first reuse path.
 Split tasks have a lifetime minute pool, never a daily reservation. Day replay
 retains that day's allocated task minutes instead of replenishing the full task
 on each date; hypothetical day rebuilds do not modify the incumbent's item list.
+Replay groups split sessions by item before calling the adaptive splitter:
+each daily rhythm is rebuilt once against its daily budget, just as each task
+is rebuilt once against its allocated lifetime minutes. Otherwise the second
+input chunk can falsely reject a day whose full daily target was already
+replayed, preventing an overdue item from moving into a free gap today.
 After GLPK splits a task into several sessions on a day, it uses the shared
 bounded route replay to consolidate visits when flexible items can move within
 their windows. A cheaper route must retain every item's minutes on that day,

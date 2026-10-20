@@ -2242,15 +2242,18 @@ function rebuildDayFromFills(state,fillsToKeep,candidates,opts = {}){
     const requested = fill.chunkMinutes != null ? fillDurationMinutes(fill) : original;
     taskMinutes.set(fill.i,(taskMinutes.get(fill.i) || 0) + requested);
   }
-  const replayedTasks = new Set();
+  const replayedBreakables = new Set();
   for(const sourceFill of fillsToKeep){
     const fill = sourceFill && {...sourceFill};
     if(!fill || !fill.h)continue;
     if(fill.h.breakable){
+      // The splitter replays the item's entire daily/lifetime allocation,
+      // not this one input chunk. A second chunk of the same rhythm would
+      // find its budget already filled and falsely fail the whole rebuild.
+      if(replayedBreakables.has(fill.i))continue;
+      replayedBreakables.add(fill.i);
       let remainingMinutes;
       if(fill.h.type === 'task'){
-        if(replayedTasks.has(fill.i))continue;
-        replayedTasks.add(fill.i);
         remainingMinutes = Math.min(taskMinutes.get(fill.i) || 0,
           placedBreakableMinutes(state,fill.i));
         if(remainingMinutes <= 0)continue;
