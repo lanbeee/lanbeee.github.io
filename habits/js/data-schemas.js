@@ -26,7 +26,7 @@
  * @property {'keepup'|'reduce'|'zero'|'task'} type  — build / limit / stop / one-off
  * @property {'weather'|'location'} conditionTrigger — which condition activates an optional habit
  * @property {number} conditionRadiusM — proximity to a selected place center, in metres
- * @property {'routine'|'opportunity'} repeatMode — regular rhythm (legacy/default) or conditional keepup, eligible at its priority when its selected proximity or weather trigger matches; target is a minimum calendar-day gap in opportunity mode
+ * @property {'routine'|'opportunity'} repeatMode — regular rhythm, or conditional keepup whose target is the minimum day gap
  * @property {number|null} target             — rhythm in days (may be fractional, e.g. 3.5 = 2×/7d); null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon

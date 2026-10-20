@@ -74,16 +74,14 @@ function syncOpportunityAnywhereChip(containerId){
   if(!chip)return;
   const optional = isLocationConditionControl(wrap);
   chip.classList.remove('is-pending');
-  chip.lastChild.textContent = optional ? 'any place' : 'anywhere';
+  chip.hidden = optional;
+  chip.lastChild.textContent = 'anywhere';
   chip.setAttribute('aria-pressed',String(chip.classList.contains('on')));
-  chip.title = optional ? 'Choose a named place for a location trigger.' : 'Not tied to one place';
-  if(optional){
+  chip.title = 'Not tied to one place';
+  if(wrap.closest('.opportunity-mode')){
     const hint = containerId === 'ting-tag-chips'
       ? $('add-topics-section').querySelector('.field-hint') : $('detail-places-hint');
-    const anywhere = selectedAnywhereFrom(containerId);
-    hint.textContent = anywhere
-      ? 'Select a named place for the proximity trigger.'
-      : 'Triggers within the chosen radius of these places. Tap to select or remove.';
+    hint.hidden = true;
   }
 }
 
@@ -1079,7 +1077,8 @@ function cardCue(h){
       : _homeRenderedWeek?.days?.find(day=>day.dayBase === dayStart(Date.now()));
     const placed = (today?.timeline || []).some(row=>['fill','scheduled'].includes(row.kind)
       && (row.h?.hid || row.hid) === h.hid);
-    return placed ? 'Ready today' : 'Waiting for the place or weather';
+    return placed ? 'Ready today' : opportunityTrigger(h) === 'location'
+      ? 'Waiting to be near a place' : 'Waiting for matching weather';
   }
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);

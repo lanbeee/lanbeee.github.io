@@ -4,8 +4,6 @@ Read this only when the task is the Tings assistant. For planner, home, settings
 
 The assistant is optional local Qwen3.8 chat. `js/assistant-loader.js` loads it after the first home render. It must not participate in critical boot.
 
-User-facing sheet behavior is the "Local assistant" section of `DOCUMENTATION.md`. Grep that heading. Do not read the rest of `DOCUMENTATION.md` for an assistant code change.
-
 ## Which file
 
 | File | Owns |

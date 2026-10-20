@@ -10,3 +10,6 @@ HANDOFF-*.md
 
 # Side feature. Open only when the task is the Tings assistant.
 js/assistant-*.js
+
+# Product manual. Open only when the user asks to edit it.
+DOCUMENTATION.md

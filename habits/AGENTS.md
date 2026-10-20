@@ -8,7 +8,7 @@ This file is the always-on map. It stays short so a normal edit does not load th
 ## What to open
 
 - **Scheduling / planner behavior:** `docs/planner.md`, then the one function you are changing. A behavior change usually means the shared primitive, or the same change in both engines.
-- **Product fields, symbols, gestures:** grep `DOCUMENTATION.md` for the heading you need (IV fields, V symbols, §6.4 day audit, §14.3 fast ranking). Leave the rest of that file closed.
+- **Product manual:** leave `DOCUMENTATION.md` closed. It is about 3,600 lines and excluded from search. Behavior is in the code. Open it only when the user asks to change the manual, then edit that one heading.
 - **Tests:** `TESTING.md` for the runner. Search `js/` first. `tests/` is excluded from the code index; open a test by path when you are writing or fixing one.
 - **Local assistant (side feature):** leave it closed. Open `docs/assistant.md` and `js/assistant-*.js` only when the task is the Tings assistant. `js/assistant-tools.js` is about 5,300 lines. Planner, home, settings, and habit edits do not need it, and greps should skip `js/assistant-*.js` unless the task is the assistant.
 

@@ -297,56 +297,16 @@ if ratio ≥ 1.1: score += red (overdue)
 
 ### 3.1.1 Optional habits: when conditions fit 👤👨‍💻
 
-Under **New habit → How often?**, or in **Details → Schedule**, choose
-**when conditions fit**. Set **at most once every N days**, then choose
-a **weather matches** or **near a location** trigger. For a location trigger,
-select places and set a radius in metres from their centers (default 200 m).
-Current presence or an existing planned visit within that radius activates the
-habit. Manual location pins use the selected place’s center. A known GPS fix
-uses its actual distance. Normal travel time and venue hours still apply.
-Weather remains ordinary guidance: soft rules rank times, while hard rules
-still restrict scheduling.
+**When conditions fit** is a keepup choice under New habit → How often, and in Details → Schedule. Set at most once every N days, then pick one:
 
-For a weather trigger, select active weather rules. Places work like ordinary
-habit/task locations, including preferences; the planner may arrange travel to
-one of them. A visit is not an additional trigger requirement. Every active
-weather metric must be available and meet its bounds, including soft bounds.
-Missing or stale forecasts cannot activate a weather trigger.
+- **The weather matches.** Every active rule must be available and inside its bounds. A missing forecast does not count. Places stay ordinary locations.
+- **I’m near a place.** Pick places and how close to their center (default 200 m). Being there now counts, as does a visit already on the agenda. A pin uses the place center; GPS uses the real distance. Weather stays ordinary guidance.
 
-The add form and Details → Schedule show the trigger and its controls after
-the repeat limit. Days and hours remain in their own folded section. Switching
-triggers or returning to a regular rhythm preserves places and weather choices.
-Saving requires places for a location trigger or active rules for a weather
-trigger. Minimal mode hides the choice for new habits, while existing conditional
-habits remain editable. Older records with an explicit weather profile use a
-weather trigger; place-only records use a location trigger.
+Save needs places or active rules, matching that choice. Minimal mode hides it for new habits. Older weather-profile records use weather; place-only records use near a place.
 
-- Matching conditions make the item eligible at its chosen priority. It may
-  use free time or replace lower-priority flexible work; fixed appointments,
-  explicit plans, active work, and equal/higher-priority items stay protected.
-- Allowed venue hours, item windows, travel time and schedule links still apply.
-- The repeat limit is a minimum gap between calendar dates, not a weekly quota.
-  An entry on Monday permits the next occurrence on the following Monday for
-  a seven-day limit. Logged and planned occurrences both count. Early/late
-  flexibility and separate same-day options cannot shorten that gap.
-- Split sessions use the existing duration, minimum chunk and session-gap
-  controls. A partial entry can continue that day; the next occurrence still
-  observes the repeat limit. Automatic placement offers the full remaining
-  session budget, rather than a partial session that cannot be finished.
-- An explicitly started session stays on the agenda if conditions change.
-  Explicit plans can reserve time outside the conditions, while still honoring
-  the repeat limit. Completion, undo, snooze, timers, backup, assistant edits,
-  calendar, shared display and ordinary phone reminders use the existing flows.
-- Unmatched opportunities never become overdue or missed and have no streak
-  obligation or drop-warning alarm. Saved items remain available in the list
-  and search. Existing habits retain their regular rhythm unless changed.
+A match can fill free time or replace lower-priority flexible work. Fixed appointments, explicit plans, active work, and equal or higher priority stay put. Hours, windows, travel, and schedule links still apply. The gap is calendar days, and logged or planned days both count. A started session stays if conditions change. An explicit plan may sit outside the conditions and still keep the gap. Unmatched items are not missed or overdue.
 
-Persisted `repeatMode` is `routine` (default/legacy) or `opportunity`; the latter
-applies to keepup habits only. Its integer `target` is the minimum day gap.
-Both planner engines call the same bounded activation pass after ordinary
-visits are known. Clock-only refresh rechecks today's opportunities without
-requiring a GLPK solve, and keeps cached future occurrences in the repeat-limit
-check. Android consumes this same source, including closed-app refresh.
+`repeatMode` is `routine` or `opportunity`. `target` is the day gap. Both engines share one activation pass after visits are known.
 
 ### 3.2 REDUCE HABITS (Recurring - Limit) 👤
 #### Scoring Logic:
@@ -2084,10 +2044,9 @@ Toasts appear after:
   rhythm or optional deadline, estimate duration, use its card, and find Home
   and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
   it no longer requires a second item, a sample, or past/future calendar edits.
-  In regular mode, choosing **when conditions fit** adds a guided condition step before Add:
-  choose a weather or location trigger and configure its rules or radius. The tour waits for a valid
-  condition and supports adding a place or editing weather rules without
-  losing the new habit draft.
+  In regular mode, choosing **when conditions fit** adds one step before Add:
+  pick weather rules, or a place and how close. The tour waits for a valid
+  choice and can add a place or edit weather rules without losing the draft.
   Logging the first item has an **I’ll log later** escape. Deeper calendar and
   scheduling practice lives in the advanced coach chapters.
 - It has users tap the **Tings name → Settings**, then reveals **Display →

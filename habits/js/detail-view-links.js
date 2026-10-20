@@ -524,9 +524,10 @@ function syncDetailSchedulePlacesUi(){
   if(label)label.textContent = preferenceOnly ? 'place preferences' : 'places';
   const hint = $('detail-places-hint');
   if(hint){
-    hint.textContent = optional ? 'A place you already visit. Tings uses that visit and won’t add a trip.' : preferenceOnly
+    hint.textContent = optional ? 'Choose a place.' : preferenceOnly
       ? 'Tap a place to rank it: soft, strong, or avoid.'
       : 'Tap a place to cycle it: allowed, preferred, avoid, then off. These places use the time window above.';
+    hint.hidden = false;
   }
   syncOpportunityAnywhereChip('detail-place-chips');
 }

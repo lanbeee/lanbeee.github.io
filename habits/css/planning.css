@@ -238,11 +238,16 @@
 
 #ting-weather-city[hidden]{display:none;}
 .add-conditions #add-topics-section,.add-conditions #ting-tag-chips{display:contents;}
-.add-conditions #add-places-label{order:0;}
-.add-conditions #add-topics-section > .field-hint{order:1;}
-.add-conditions .tag-row-places{order:2;}
-.add-conditions .add-weather-options{order:3;}
-.add-conditions #add-condition-hint{order:4;}
-.add-conditions .add-topic-disclosure{order:5;margin-top:8px;border:0;}
+.add-conditions > label[for="ting-condition-trigger"]{order:0;}
+.add-conditions #ting-condition-trigger{order:1;}
+.add-conditions #ting-condition-radius-row{order:2;}
+.add-conditions #add-places-label{order:4;}
+.add-conditions #add-topics-section > .field-hint{order:5;}
+.add-conditions .tag-row-places{order:6;}
+.add-conditions .add-weather-options{order:7;}
+.add-conditions #add-condition-hint{order:3;}
+.add-conditions[data-trigger="weather"] .add-weather-options{order:4;}
+.add-conditions[data-trigger="weather"] :is(#add-places-label,#add-topics-section > .field-hint,.tag-row-places){order:8;}
+.add-conditions .add-topic-disclosure{order:9;margin-top:8px;border:0;}
 .add-conditions label.field-label{display:block;margin:0 0 8px;color:var(--text);font-size:13px;font-weight:650;}
 .add-conditions :is(#ting-weather-profiles,#ting-weather-city){display:inline-block;margin-right:12px;}

@@ -167,7 +167,8 @@ function syncAddConditionsLayout(optional){
   }
   $('add-places-label').textContent = optional ? 'Places' : 'Topics & places';
   places.querySelector('.field-hint').textContent = optional
-    ? 'Choose where this can happen. For a location trigger, set the proximity radius above.' : 'Group this item by topic and choose where it can happen.';
+    ? 'Where can this happen?' : 'Group this item by topic and choose where it can happen.';
+  places.querySelector('.field-hint').hidden = false;
   const weatherOptional = weather.querySelector('summary .field-optional');
   if(weatherOptional)weatherOptional.hidden = optional;
   if(optional)weather.open = true;
@@ -201,7 +202,7 @@ function syncAddRhythmUi(){
   const count = times === 1 ? 'once' : `${times} times`;
   const period = days === 1 ? 'a day' : days === 7 ? 'a week' : `every ${days} days`;
   $('target-help').textContent = selectedType === 'zero' ? rhythmHelp('zero')
-    : optional ? 'You don’t miss a day just because the place or weather wasn’t right.'
+    : optional ? 'No missed days when conditions don’t match.'
     : selectedType === 'reduce' ? `Keep it to ${count} ${period} or less.`
     : `Aim for ${count} ${period}.`;
   document.querySelectorAll('[data-add-rhythm]').forEach(button=>{
@@ -286,7 +287,7 @@ function syncDetailRepeatModeUi(type){
     const [presetTimes,presetDays] = button.dataset.detailRhythm.split(',').map(Number);
     button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
   });
-  if(optional)$('detail-target-help').textContent = 'You don’t miss a day just because the place or weather wasn’t right.';
+  if(optional)$('detail-target-help').textContent = 'No missed days when conditions don’t match.';
   syncDetailConditionsLayout(optional);
 }
 $('detail-repeat-mode').addEventListener('change',()=>{

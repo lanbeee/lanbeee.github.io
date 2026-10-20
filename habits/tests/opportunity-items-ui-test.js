@@ -24,6 +24,8 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   await page.waitForFunction(()=>!document.getElementById('do-save').disabled);
   assert(await page.locator('#add-conditions').isVisible(),'conditions are primary fields');
   assert(await page.locator('#ting-weather-city').isVisible(),'missing forecast city has an actionable setup control');
+  const weatherOrder=await page.evaluate(()=>({rules:document.querySelector('.add-conditions .add-weather-options').getBoundingClientRect().top,places:$('add-places-label').getBoundingClientRect().top}));
+  assert(weatherOrder.rules<weatherOrder.places,'weather trigger puts its rules before ordinary places');
   assert(!await page.locator('#add-more-options').isVisible(),'optional settings stay folded');
   const order=await page.evaluate(()=>({conditions:$('add-conditions').getBoundingClientRect().top,duration:$('add-minimal-effort').getBoundingClientRect().top}));
   assert(order.conditions<order.duration,'repeat limit, conditions, then duration');
@@ -131,11 +133,15 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   });
   await page.locator('#detail-condition-trigger').selectOption('location');
   assert(await page.locator('#detail-condition-radius-row').isVisible(),'location trigger exposes proximity');
+  assert(!await page.locator('#detail-place-chips [data-anywhere]').isVisible(),'location trigger requires a named place');
+  const locationOrder=await page.evaluate(()=>({places:document.querySelector('#detail-conditions .detail-schedule-places').getBoundingClientRect().top,weather:$('detail-weather-disclosure').getBoundingClientRect().top}));
+  assert(locationOrder.places<locationOrder.weather,'location trigger puts places before ordinary weather guidance');
   await page.locator('#detail-condition-radius').fill('750');
   await page.locator('#detail-weather-profile').selectOption('__none__');
   assert(!await page.locator('#detail-save').isDisabled(),'location trigger works without weather rules');
   await page.locator('#detail-save').click();
   assert.deepEqual(await page.evaluate(()=>({trigger:load()[0].conditionTrigger,radius:load()[0].conditionRadiusM})),{trigger:'location',radius:750});
+  assert.equal(await page.evaluate(()=>cardCue(load()[0])),'Waiting to be near a place');
   await page.evaluate(()=>{openDetail(0);scrollDetailToNav('schedule');});
   assert.equal(await page.locator('#detail-condition-radius').inputValue(),'750','radius survives reopening');
   await page.locator('#detail-condition-trigger').selectOption('weather');

@@ -5,6 +5,7 @@ function isLocationConditionControl(node){
 function syncConditionTriggerControls(){
   for(const prefix of ['ting','detail']){
     const location = $(prefix+'-condition-trigger').value === 'location';
+    $(prefix === 'ting' ? 'add-conditions' : 'detail-conditions').dataset.trigger = location ? 'location' : 'weather';
     $(prefix+'-condition-radius-row').hidden = !location;
     const select = $(prefix+'-weather-profile');
     const optional = Boolean(select.closest('.opportunity-mode'));
@@ -93,14 +94,14 @@ function weatherInheritLabel(selectId){
   const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
   const ids=selectedWeatherLocationIds(selectId);
   if(opportunity)return ids.length ? 'use each place’s weather rules' : 'choose weather rules…';
+  if(isLocationConditionControl(select))return 'use the place’s weather rules';
   return profiles.length ? 'use the place’s weather rules' : 'use the place’s weather rules · none saved yet';
 }
 
-// A conditional item shows up only after a place or a weather choice.
-// Say that as an instruction. "Anywhere" is not a finished choice.
-function opportunitySetupHint(hasTrigger, needsCity){
-  if(!hasTrigger)return 'Choose places for a location trigger, or active weather rules for a weather trigger.';
-  if(needsCity)return 'Add your city so Tings can tell when the weather matches.';
+// A conditional item needs the selected trigger, not either condition.
+function opportunitySetupHint(hasTrigger, needsCity, trigger){
+  if(!hasTrigger)return trigger === 'location' ? 'Choose a place.' : 'Choose weather rules.';
+  if(needsCity)return 'Set a city to check the forecast.';
   return '';
 }
 
@@ -125,17 +126,16 @@ function weatherGuidanceHintText(selectId){
   const choice=weatherProfileChoiceFromValue($(selectId)?.value || '');
   const opportunity=Boolean($(selectId)?.closest('.opportunity-mode')) && !isLocationConditionControl($(selectId));
   if(choice.weatherProfileMode==='none'){
-    return opportunity
-      ? 'Choose active weather rules for this trigger, or switch the trigger to location.'
+    return opportunity || isLocationConditionControl($(selectId))
+      ? ''
       : 'Weather won’t change the plan, unless a specific time and place says otherwise.';
   }
   if(choice.weatherProfileMode==='profile'){
     const name=weatherProfileName(choice.weatherProfileId,settings) || 'this weather';
     if(opportunity){
       const summary = weatherProfileRuleSummary(weatherProfileById(choice.weatherProfileId,settings));
-      if(!summary)return `${name} has no active rules. Edit weather rules below, or switch the trigger to location.`;
-      const place = selectedWeatherLocationIds(selectId).length ? 'at a selected place' : 'where the forecast is checked';
-      return `Only when ${name} matches ${place}. ${summary}. Waits if the forecast is unavailable.`;
+      if(!summary)return 'Add a weather limit to activate this rule.';
+      return summary+'.';
     }
     return `Uses ${name} at the place where this is planned.`;
   }
@@ -146,11 +146,12 @@ function weatherGuidanceHintText(selectId){
     return name ? `${loc.name} · ${name}` : null;
   }).filter(Boolean);
   if(inherited.length)return opportunity
-    ? `Uses saved rules: ${inherited.join('; ')}. Places without active rules cannot activate a weather trigger. Only weather activates this habit; places specify where it can happen.`
+    ? `Uses ${inherited.join('; ')}.`
     : `Uses the weather saved for ${inherited.join('; ')}.`;
   if(opportunity){
-    return 'Choose active weather rules, or inherit rules from a selected place. The location alone does not trigger this habit.';
+    return '';
   }
+  if(isLocationConditionControl($(selectId)))return '';
   return ids.length
     ? 'The selected places have no saved weather, so weather won’t change the plan.'
     : 'Uses the weather saved on the place, if it has one.';
@@ -200,7 +201,7 @@ function syncDetailConditionHint(){
   const hasTrigger = record.conditionTrigger === 'location' ? hasPlace : weatherHabitHasActiveGuidance(record,settings);
   const needsCity = optional && hasTrigger && !hasPlace && !record.weatherLocationId && !weatherHomeCoords(settings);
   $('detail-weather-city').hidden = !needsCity;
-  hint.textContent = opportunitySetupHint(hasTrigger, needsCity);
+  hint.textContent = opportunitySetupHint(hasTrigger, needsCity,record.conditionTrigger);
   if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip('detail-place-chips');
   hint.hidden = !optional || (hasTrigger && !needsCity);
   if(optional){
@@ -621,8 +622,6 @@ for(const prefix of ['ting','detail']){
     if(prefix === 'detail'){
       syncDetailSchedulePlacesUi();
       setDetailDirty();
-    }else if(!isLocationConditionControl($(id))){
-      $('add-topics-section').querySelector('.field-hint').textContent = 'Choose where this can happen, just like a regular habit.';
     }
   });
 }

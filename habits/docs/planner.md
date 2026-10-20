@@ -31,7 +31,7 @@ GLPK is the production planner: slower than Fast, and better at respecting const
 - **Daily breakable** (`dailyBreakableReservations`): a daily recurring breakable (for example "Work 6h") with a per-day deficit to protect inside its allowed window. Its reservation is the window minutes it still needs.
 - **Reservation windows** (`breakableReservationWindows`): the clock windows a breakable may occupy. Movables are capped in these via `movable_breakable_reserve` (aggregate spare, ILP) and `fastPathDefersMovable`.
 - **Fit**: a feasible `{placeStart, placeEnd, locId, score}` for one item on one day. `tryPlaceOnDay` returns the single best scored fit (weather guidance outranks ASAP/preference/scarce overlap; travel/day/order stay in the core rank). `listPlaceFitsOnDay` enumerates many for GLPK.
-- **Scarcity** (`scoring.js`): a packed integer encoding how tight an item's windows are (feasible slots × slack). Drives priority and urgency. Symbol format: `DOCUMENTATION.md` §V.
+- **Scarcity** (`scoring.js`): a packed integer encoding how tight an item's windows are (feasible slots × slack). Drives priority and urgency.
 - **Order constraints** (`agenda-order.js`, `plannerOrderConstraintsForDay` in `today-view-fits.js`): schedule links / drag reorder become `beforeHid` / `afterHid` / `adjacency:'direct'` edges for a given `dayBase`.
 
 ## Decision flow (GLPK, per day, today-first)
@@ -47,7 +47,7 @@ The fast engine places movables first (ASAP plus reservation steering) and break
 
 Blocked fixed insertions use `fastGraphPlacement`: bounded beam search over partial day schedules, reopening up to seven existing non-linked, non-breakable placements. Keep-all search is transactional. Fast packs scarce one-day P0 first, then planned and last-day tasks, then seed-neighborhood errands that still fit before a later far location pin, then work at the place you are already standing, then slack daily P0. That order keeps an earliest-clock prayer from fragmenting the only long slot a due visit needs, and keeps a short at-seed window from consuming the only pre-pin gap those nearby errands needed. An at-home prayer or lunch must not jump ahead of that neighborhood batch, because that sends you out to the far pin, back for the errand, and out again. Away items yield to the current place only when the whole at-location block still leaves them a slot, so standing at a store does the errand there before a home lunch. A last-day task that would miss stays ahead of that block. The yield flag is on the away item, so two errands at the current place cannot disagree about whether the task can wait.
 
-That claim order is only the packing seed. After the day is filled, Fast replays alternate orders ranked by full route cost (every order when the day has at most seven fills; a beam with one-step lookahead otherwise) and keeps a chain only when the same work is strictly cheaper. GLPK's return term is the extra round trip in those same units, with no constant floor, so a short loop can still lose to a large clock or weather cost. `tryPlaceOnDay` enumerates unforced venues so Fast sees the same location set as GLPK. Planned items outrank at-location sequencing. `improveFastGraphWeek` searches when a planned or pinned item, or a day-choosing leftover, is still unplaced: cheap insert/eject first, then at most eight whole-week rebuilds. Packed weeks skip that search. Ranking, budgets, and limitations: `DOCUMENTATION.md` §14.3. A failed plan day still leaves the last on-time day eligible in both engines. GLPK's ILP rows and weights are otherwise unchanged.
+That claim order is only the packing seed. After the day is filled, Fast replays alternate orders ranked by full route cost (every order when the day has at most seven fills; a beam with one-step lookahead otherwise) and keeps a chain only when the same work is strictly cheaper. GLPK's return term is the extra round trip in those same units, with no constant floor, so a short loop can still lose to a large clock or weather cost. `tryPlaceOnDay` enumerates unforced venues so Fast sees the same location set as GLPK. Planned items outrank at-location sequencing. `improveFastGraphWeek` searches when a planned or pinned item, or a day-choosing leftover, is still unplaced: cheap insert/eject first, then at most eight whole-week rebuilds. Packed weeks skip that search. A failed plan day still leaves the last on-time day eligible in both engines. GLPK's ILP rows and weights are otherwise unchanged.
 
 Encode guarantees by scheduling semantics, never by habit name, prayer type, or weekday. A weekly prayer exposed bugs in this packing order; the rule has to work unchanged for any equivalent occurrence.
 
@@ -82,7 +82,7 @@ Cold-open budget stays at 4 seconds (`nativeLimitSeconds`). Do not raise it on f
 
 ## Debugging a real day
 
-The in-app Day Agenda Audit (triple-tap a day header, `DOCUMENTATION.md` §6.4) prints the decision trace: engine, per-item `selected` / `UNPLACED`, scarcity, and the remaining-gap audit.
+The in-app Day Agenda Audit (triple-tap a day header) prints the decision trace: engine, per-item `selected` / `UNPLACED`, scarcity, and the remaining-gap audit.
 
 To reproduce a day from an exported backup (sensitive — keep it in `lib/`):
 

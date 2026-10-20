@@ -224,6 +224,7 @@ async function conditionalQuickStart(browser,minimal,choice){
   await page.locator('[data-add-repeat="opportunity"]').click();
   await primary(page,'eRhythm','eConditions');
   assert(await page.locator('[data-coach-primary]').isDisabled(),'conditional Quick start waits for a place or weather rule');
+  if(choice === 'place' || choice === 'new-place')await page.locator('#ting-condition-trigger').selectOption('location');
   if(choice === 'new-place'){
     await page.locator('#ting-tag-chips [data-location-add]').click();
     await page.waitForFunction(()=>document.querySelector('#tings-coach-title')?.textContent === 'Add a place');
