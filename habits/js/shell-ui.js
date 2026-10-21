@@ -566,54 +566,83 @@ function ensureSheetExit(id){
 }
 
 // System Back reuses the visible screen's dismissal control, including its
-// cleanup/return behavior. Android invokes this through MainActivity; the
-// browser/PWA invokes it when the current view’s history entry is popped.
+// cleanup/return behavior. Android invokes this through MainActivity. The
+// browser back button and trackpad swipe pop the history entry below. Touch
+// bezels use the edge-swipe handler when the browser yields the gesture; a
+// browser-owned Back aborts that drag before dismissing through history.
 let sheetOpenSequence = 0;
-function handleAppBack(){
+const EDGE_BACK_ZONE = 28;
+const EDGE_BACK_SLOP = 8;
+const EDGE_BACK_IGNORE = 'button, a, input, textarea, select, [role="slider"], [contenteditable="true"], .leaflet-container, .free-day-track';
+
+function edgeBackSurface(id){
+  const pane = getPane();
+  if(pane?.dataset.activeSheet === id)return pane;
+  const wrap = $(id);
+  return wrap?.classList.contains('open') ? wrap : null;
+}
+
+// What one Back press dismisses. `surface` is the sheet that should track the
+// finger; inner overlays (picker, menu, in-sheet search, a day-log step) leave
+// it null so the page underneath stays put.
+function appBackPlan(){
   const visible = button=>button && !button.disabled && button.getClientRects().length > 0;
-  const click = button=>{if(!visible(button))return false; button.click(); return true;};
-  // Small overlays sit above the sheets and must consume one Back on their own.
+  const click = button=>()=>{if(!visible(button))return false; button.click(); return true;};
+  const plan = (signature, run, surface)=>({signature, run, surface:surface || null});
   if($('time-step-picker')?.classList.contains('open')){
-    return click($('time-step-picker-done'));
+    return plan('time-picker', click($('time-step-picker-done')));
   }
   for(const id of ['agenda-pair-scanner','agenda-pair-approval']){
-    if(visible($(id)))return click($(id+'-cancel'));
+    if(visible($(id)))return plan('pair:'+id, click($(id+'-cancel')));
   }
   if(window.TingsCoach?.state().active){
-    if(click(document.querySelector('[data-coach-back]')))return true;
+    const back = document.querySelector('[data-coach-back]');
+    if(visible(back))return plan('coach', click(back));
     // Reuse the tour's two-tap end control on its first screen too.
-    return click(document.querySelector('[data-coach-skip]'));
+    return plan('coach', click(document.querySelector('[data-coach-skip]')));
   }
   const sheets = [...document.querySelectorAll('.sheet-wrap.open')];
   sheets.sort((a,b)=>Number(getComputedStyle(b).zIndex || 0) - Number(getComputedStyle(a).zIndex || 0)
     || Number(b.dataset.backSequence || 0) - Number(a.dataset.backSequence || 0));
   const id = sheets[0]?.id || getPane()?.dataset.activeSheet;
   if(id){
-    const inner = getSheetInner(id);
     if(id === 'detail-sheet'){
-      if(click($('detail-custom-app-cancel')))return true;
+      if(visible($('detail-custom-app-cancel')))return plan('detail-app', click($('detail-custom-app-cancel')));
       if(visible($('detail-mark-menu')) && typeof setDetailMarkMenuOpen === 'function'){
-        setDetailMarkMenuOpen(false);return true;
+        return plan('detail-menu', ()=>{setDetailMarkMenuOpen(false); return true;});
       }
-      if(!$('detail-search-panel').hidden)return click($('detail-cool'));
-      return click($((inner?.classList.contains('detail-editing') || inner?.classList.contains('tune-dirty')) ? 'detail-close' : 'detail-cool'));
+      if($('detail-search-panel') && !$('detail-search-panel').hidden)return plan('detail-search', click($('detail-cool')));
+      return plan('detail', ()=>{
+        const sheet = getSheetInner('detail-sheet');
+        const closing = (sheet?.classList.contains('detail-editing') || sheet?.classList.contains('tune-dirty')) ? 'detail-close' : 'detail-cool';
+        return click($(closing))();
+      }, edgeBackSurface(id));
     }
-    if(id === 'day-logs-sheet' && click($('day-logs-back')))return true;
+    if(id === 'day-logs-sheet' && visible($('day-logs-back')))return plan('day-logs-step', click($('day-logs-back')));
     if(id === 'settings-sheet'){
-      if(click($('backup-import-no')) || click($('calendar-pdf-cancel')))return true;
+      if(visible($('backup-import-no')))return plan('settings-import', click($('backup-import-no')));
+      if(visible($('calendar-pdf-cancel')))return plan('settings-pdf', click($('calendar-pdf-cancel')));
     }
-    ensureSheetExit(id);
-    const exit = inner?.querySelector('[data-sheet-dismissal]');
-    if(click(exit))return true;
-    // All standard sheets have a close/cancel control. Keep dynamically
-    // contributed sheets dismissible too, without choosing a save action.
-    closeSheet(id);
-    return true;
+    return plan('sheet:'+id, ()=>{
+      ensureSheetExit(id);
+      const exit = getSheetInner(id)?.querySelector('[data-sheet-dismissal]');
+      if(visible(exit)){exit.click(); return true;}
+      // All standard sheets have a close/cancel control. Keep dynamically
+      // contributed sheets dismissible too, without choosing a save action.
+      closeSheet(id);
+      return true;
+    }, edgeBackSurface(id));
   }
   if(typeof isSearchOpen === 'function' && isSearchOpen()){
-    closeSearch();return true;
+    return plan('search', ()=>{closeSearch(); return true;});
   }
-  return false; // Home: the native host may put the app in the background.
+  return null;
+}
+
+function handleAppBack(){
+  const plan = appBackPlan();
+  if(!plan)return false;
+  return plan.run();
 }
 
 // Browser edge gestures need a same-page history entry while a view is open.
@@ -622,6 +651,14 @@ function handleAppBack(){
 // Android uses its native dispatcher instead, so it needs no synthetic history.
 let appBackHistoryArmed = false;
 let appBackHistoryCleaning = false;
+// Set while a touch-edge dismiss is committing, so a browser popstate from the
+// same gesture cannot dismiss a second layer.
+let edgeBackSupersedesHistory = false;
+let edgeBack = null;
+let edgeBackSettling = false;
+let edgeBackGeneration = 0;
+let edgeBackSurfaceEl = null;
+
 function syncBrowserBack(){
   if(window.Capacitor?.isNativePlatform?.())return;
   if(appBackHistoryCleaning)return;
@@ -635,6 +672,258 @@ function syncBrowserBack(){
     history.back();
   }
 }
+
+function edgeBackClearSurface(surface){
+  if(!surface)return;
+  surface.classList.remove('edge-back-dragging','edge-back-settle','edge-back-hold');
+  surface.style.transform = '';
+  surface.style.opacity = '';
+  delete surface.dataset.edgeBackDir;
+  if(edgeBackSurfaceEl === surface)edgeBackSurfaceEl = null;
+}
+
+function edgeBackHint(){
+  let hint = $('edge-back-hint');
+  if(hint)return hint;
+  hint = document.createElement('div');
+  hint.id = 'edge-back-hint';
+  hint.setAttribute('aria-hidden','true');
+  hint.innerHTML = '<i class="ti ti-chevron-left" aria-hidden="true"></i>';
+  document.body.appendChild(hint);
+  return hint;
+}
+
+function edgeBackHideHint(){
+  const hint = $('edge-back-hint');
+  if(!hint)return;
+  hint.classList.remove('show');
+  hint.style.opacity = '';
+  hint.style.transform = '';
+}
+
+function edgeBackAbort(){
+  const surface = edgeBackSurfaceEl || edgeBack?.surface || null;
+  edgeBack = null;
+  edgeBackGeneration++;
+  edgeBackSettling = false;
+  edgeBackHideHint();
+  if(!surface)return;
+  surface.classList.add('edge-back-hold');
+  requestAnimationFrame(()=>edgeBackClearSurface(surface));
+}
+
+function edgeBackAnimate(surface, transform, done){
+  const generation = edgeBackGeneration;
+  if(!surface){done(); return;}
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  surface.classList.remove('edge-back-dragging');
+  if(reduced){
+    surface.style.transform = transform;
+    if(generation === edgeBackGeneration)done();
+    return;
+  }
+  surface.classList.add('edge-back-settle');
+  surface.getBoundingClientRect();
+  surface.style.transform = transform;
+  let finished = false;
+  const finish = event=>{
+    if(finished)return;
+    if(generation !== edgeBackGeneration){
+      finished = true;
+      surface.removeEventListener('transitionend', finish);
+      return;
+    }
+    if(event && event.type === 'transitionend' && (event.target !== surface || event.propertyName !== 'transform'))return;
+    finished = true;
+    surface.removeEventListener('transitionend', finish);
+    done();
+  };
+  surface.addEventListener('transitionend', finish);
+  setTimeout(finish, 420);
+}
+
+function edgeBackRender(gesture){
+  const inward = gesture.dx;
+  if(gesture.surface){
+    gesture.surface.style.transform = `translate3d(${gesture.dir * inward}px,0,0)`;
+    return;
+  }
+  const hint = edgeBackHint();
+  const travel = Math.min(inward, 72);
+  const x = gesture.dir > 0 ? 8 + travel : window.innerWidth - 42 - travel;
+  const y = Math.max(64, Math.min(window.innerHeight - 64, gesture.y)) - 17;
+  const progress = Math.min(1, inward / 72);
+  hint.style.opacity = String(Math.min(1, progress * 1.15));
+  hint.style.transform = `translate3d(${x}px,${y}px,0) scale(${0.86 + progress * 0.14})`;
+  hint.classList.add('show');
+}
+
+function edgeBackClaim(gesture){
+  const plan = appBackPlan();
+  if(!plan || plan.signature !== gesture.signature){
+    gesture.cancelled = true;
+    return;
+  }
+  gesture.claimed = true;
+  gesture.surface = plan.surface;
+  if(!plan.surface)return;
+  plan.surface.classList.add('edge-back-dragging');
+  plan.surface.dataset.edgeBackDir = gesture.dir > 0 ? 'right' : 'left';
+  edgeBackSurfaceEl = plan.surface;
+}
+
+function edgeBackFinish(gesture, commit){
+  const surface = gesture.surface;
+  const generation = edgeBackGeneration;
+  edgeBack = null;
+  const settleDone = ()=>{
+    edgeBackSettling = false;
+    if(generation !== edgeBackGeneration)return;
+    if(!commit){
+      edgeBackClearSurface(surface);
+      edgeBackHideHint();
+      return;
+    }
+    const plan = appBackPlan();
+    if(!plan || plan.signature !== gesture.signature){
+      edgeBackHideHint();
+      if(surface){
+        edgeBackSettling = true;
+        edgeBackAnimate(surface, 'translate3d(0,0,0)', ()=>{
+          edgeBackSettling = false;
+          edgeBackClearSurface(surface);
+        });
+      }
+      return;
+    }
+    if(surface)surface.classList.add('edge-back-hold');
+    edgeBackSupersedesHistory = true;
+    try{
+      plan.run();
+    }finally{
+      setTimeout(()=>{edgeBackSupersedesHistory = false;}, 0);
+      edgeBackHideHint();
+    }
+    if(!surface)return;
+    // Keep the sheet offscreen and invisible for one paint, then drop the
+    // inline transform so the next open is not stranded off to the side.
+    surface.style.opacity = '0';
+    requestAnimationFrame(()=>edgeBackClearSurface(surface));
+  };
+  if(!commit || !surface){
+    if(surface && gesture.claimed){
+      edgeBackSettling = true;
+      edgeBackAnimate(surface, 'translate3d(0,0,0)', settleDone);
+      return;
+    }
+    settleDone();
+    return;
+  }
+  edgeBackSettling = true;
+  const width = Math.max(surface.getBoundingClientRect().width, window.innerWidth);
+  edgeBackAnimate(surface, `translate3d(${gesture.dir * (width + 32)}px,0,0)`, settleDone);
+}
+
+function edgeBackCommitDistance(gesture){
+  const width = gesture.surface?.getBoundingClientRect().width || window.innerWidth;
+  return Math.min(120, Math.max(64, width * 0.3));
+}
+
+function edgeBackRelease(commit){
+  const gesture = edgeBack;
+  if(!gesture)return;
+  const flung = gesture.claimed && !gesture.cancelled && gesture.dx >= 36 && gesture.velocity > 0.65;
+  const dragged = gesture.claimed && !gesture.cancelled && gesture.dx >= edgeBackCommitDistance(gesture);
+  edgeBackFinish(gesture, commit && (flung || dragged));
+}
+
+function edgeBackZone(x){
+  if(x <= EDGE_BACK_ZONE)return 1;
+  if(x >= window.innerWidth - EDGE_BACK_ZONE)return -1;
+  return 0;
+}
+
+function edgeBackFromTouch(e, id){
+  const all = [...e.touches, ...e.changedTouches];
+  return all.find(touch=>touch.identifier === id) || null;
+}
+
+document.addEventListener('touchstart', e=>{
+  if(window.Capacitor?.isNativePlatform?.())return;
+  if(edgeBack && e.touches.length > 1){
+    edgeBack.cancelled = true;
+    edgeBackRelease(false);
+    return;
+  }
+  if(edgeBack || edgeBackSettling || e.touches.length !== 1)return;
+  const t = e.touches[0];
+  const dir = edgeBackZone(t.clientX);
+  if(!dir)return;
+  if(e.target?.closest?.(EDGE_BACK_IGNORE))return;
+  const plan = appBackPlan();
+  if(!plan)return;
+  // Observe first: preventing touchstart also consumes taps and vertical
+  // scrolling. Claim only a horizontal drag while touchmove is cancelable.
+  edgeBack = {
+    id:t.identifier,
+    dir,
+    x:t.clientX,
+    y:t.clientY,
+    lastX:t.clientX,
+    lastT:performance.now(),
+    velocity:0,
+    dx:0,
+    claimed:false,
+    cancelled:false,
+    signature:plan.signature,
+    surface:null
+  };
+}, {capture:true, passive:false});
+
+document.addEventListener('touchmove', e=>{
+  if(!edgeBack)return;
+  const t = edgeBackFromTouch(e, edgeBack.id);
+  if(!t)return;
+  const now = performance.now();
+  const dt = now - edgeBack.lastT;
+  if(dt >= 8 && dt < 100){
+    edgeBack.velocity = ((t.clientX - edgeBack.lastX) / dt) * edgeBack.dir;
+  }
+  edgeBack.lastX = t.clientX;
+  edgeBack.lastT = now;
+  const inward = Math.max(0, (t.clientX - edgeBack.x) * edgeBack.dir);
+  const dy = Math.abs(t.clientY - edgeBack.y);
+  if(!edgeBack.claimed){
+    if(edgeBack.cancelled)return;
+    if(dy >= EDGE_BACK_SLOP && dy > inward){
+      edgeBack = null;
+      return;
+    }
+    if(inward < EDGE_BACK_SLOP || inward <= dy)return;
+    if(!e.cancelable){
+      edgeBack = null;
+      return;
+    }
+    edgeBackClaim(edgeBack);
+  }
+  if(edgeBack.cancelled)return;
+  if(e.cancelable)e.preventDefault();
+  edgeBack.dx = inward;
+  edgeBackRender(edgeBack);
+}, {capture:true, passive:false});
+
+document.addEventListener('touchend', e=>{
+  if(!edgeBack)return;
+  if(!edgeBackFromTouch(e, edgeBack.id))return;
+  edgeBackRelease(true);
+}, {capture:true, passive:false});
+
+document.addEventListener('touchcancel', ()=>{
+  if(!edgeBack)return;
+  edgeBack.cancelled = true;
+  edgeBackRelease(false);
+}, {capture:true, passive:false});
+
 window.addEventListener('popstate',event=>{
   if(window.Capacitor?.isNativePlatform?.())return;
   if(appBackHistoryCleaning){
@@ -642,10 +931,16 @@ window.addEventListener('popstate',event=>{
     syncBrowserBack();
   }else if(appBackHistoryArmed){
     appBackHistoryArmed = false;
-    // Closing a sheet can synchronize history itself. Rearming afterward is
-    // idempotent and also covers Back that only closes an inner subpage.
-    handleAppBack();
-    syncBrowserBack();
+    if(edgeBack || edgeBackSettling)edgeBackAbort();
+    if(edgeBackSupersedesHistory){
+      edgeBackSupersedesHistory = false;
+      syncBrowserBack();
+    }else{
+      // Closing a sheet can synchronize history itself. Rearming afterward is
+      // idempotent and also covers Back that only closes an inner subpage.
+      handleAppBack();
+      syncBrowserBack();
+    }
   }else if(event.state?.tingsSheetBack){
     appBackHistoryArmed = true;
     syncBrowserBack();

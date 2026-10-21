@@ -41,6 +41,7 @@ emoji-suggest-test.js	ui	once
 free-time-fit-test.js	planner	once
 free-time-indicator-test.js	ui	once
 general-refinements-test.js	ui	once
+home-agenda-identity-test.js	planner	once
 habit-schedule-options-test.js	planner	once
 fixed-start-test.js	planner	once
 home-agenda-tick-test.js	planner	once

@@ -647,7 +647,10 @@ function assert(cond,msg){
   approvalRequest = null;
   await page.fill('#agenda-pair-approval-code',displayCode);
   await page.click('#agenda-pair-approval-confirm');
-  await page.waitForFunction(()=>document.getElementById('agenda-pair-approval-status')?.textContent.includes('Display authorized'));
+  // Authorization appears before encryption/upload finishes. Wait for the
+  // completed approval action before asserting on its published snapshot.
+  await page.waitForFunction(()=>document.getElementById('agenda-pair-approval-status')?.textContent.includes('Display authorized')
+    && document.getElementById('agenda-pair-approval-confirm')?.hidden);
   assert(approvalRequest && !JSON.stringify(approvalRequest).includes(ownerFeed.contentKey),'owner rotates the content key and sends it only inside the ECDH ciphertext');
   assert(publishedSnapshot && publishedSnapshot.recordKind === 'agenda_snapshot','owner publishes a fresh snapshot under the rotated key');
 

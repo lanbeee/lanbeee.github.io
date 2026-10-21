@@ -267,3 +267,42 @@ body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#overview-s
 
 /* Scoped day details already have a pinned close control in their header. */
 #day-logs-footer:has(> #day-logs-done:only-child){display:none;}
+
+/* Bezel back on touch browsers. The open sheet tracks the finger; inner
+   overlays that Back does not close use the hint instead. */
+.sheet-wrap.edge-back-dragging,
+.pane-detail.edge-back-dragging{
+  transition:none !important;
+  user-select:none;
+  -webkit-user-select:none;
+}
+.sheet-wrap.edge-back-settle,
+.pane-detail.edge-back-settle{
+  transition:transform var(--dur-slow) var(--ease-snappy) !important;
+}
+.sheet-wrap.edge-back-hold,
+.pane-detail.edge-back-hold{
+  transition:none !important;
+}
+:is(.sheet-wrap,.pane-detail).edge-back-dragging[data-edge-back-dir="right"],
+:is(.sheet-wrap,.pane-detail).edge-back-settle[data-edge-back-dir="right"]{
+  box-shadow:-18px 0 40px rgba(0,0,0,.16);
+}
+:is(.sheet-wrap,.pane-detail).edge-back-dragging[data-edge-back-dir="left"],
+:is(.sheet-wrap,.pane-detail).edge-back-settle[data-edge-back-dir="left"]{
+  box-shadow:18px 0 40px rgba(0,0,0,.16);
+}
+#edge-back-hint{
+  position:fixed;z-index:10050;left:0;top:0;
+  width:34px;height:34px;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--bg);color:var(--text);
+  border:0.5px solid var(--border);
+  box-shadow:0 8px 24px rgba(0,0,0,.16);
+  pointer-events:none;opacity:0;
+}
+#edge-back-hint i{font-size:20px;line-height:1;}
+@media (prefers-reduced-motion:reduce){
+  .sheet-wrap.edge-back-settle,
+  .pane-detail.edge-back-settle{transition:none !important;}
+}

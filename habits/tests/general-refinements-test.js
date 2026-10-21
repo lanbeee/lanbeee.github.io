@@ -70,6 +70,71 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.waitForSelector('#list .ting-card');
   await page.waitForSelector('.blocked-card:not(.blocked-card-merge) span',{timeout:10000});
 
+  const cardFace = await page.evaluate(()=>{
+    const row = document.querySelector('#list .swipe-row[data-hid]');
+    if(!row)return {ok:false,reason:'no card'};
+    const hid = row.dataset.hid;
+    const data = load();
+    const idx = data.findIndex(h=>h && h.hid === hid);
+    const h = data[idx];
+    if(!h)return {ok:false,reason:'missing habit'};
+    const original = {
+      name:h.name,
+      emoji:h.emoji || '',
+      emojiBgColor:h.emojiBgColor || '',
+      priority:h.priority,
+      logs:h.logs,
+      lastLog:h.lastLog
+    };
+    const beforePriority = row.querySelector('.ting-card')?.style.getPropertyValue('--card-priority') || '';
+    h.name = 'Renamed right away';
+    h.emoji = '🎯';
+    h.emojiBgColor = 'teal';
+    h.priority = h.priority === 0 ? 3 : 0;
+    save(data);
+    render();
+    const card = document.querySelector(`#list .swipe-row[data-hid="${hid}"]`);
+    const pulse = card?.querySelector('.pulse-btn');
+    const afterPriority = card?.querySelector('.ting-card')?.style.getPropertyValue('--card-priority') || '';
+    const renamed = {
+      name:card?.querySelector('.ting-name')?.textContent || '',
+      emoji:card?.querySelector('.emoji-mark')?.textContent || '',
+      color:pulse?.getAttribute('style') || '',
+      priorityMoved:Boolean(afterPriority) && afterPriority !== beforePriority
+    };
+    const logged = typeof logTing === 'function' && logTing(idx,{feedback:false});
+    if(typeof refreshOpenViews === 'function')refreshOpenViews();
+    else render();
+    const afterLog = document.querySelector(`#list .swipe-row[data-hid="${hid}"]`);
+    const again = load();
+    const item = again.find(entry=>entry && entry.hid === hid);
+    if(item){
+      item.name = original.name;
+      item.emoji = original.emoji;
+      item.emojiBgColor = original.emojiBgColor;
+      item.priority = original.priority;
+      item.logs = original.logs;
+      item.lastLog = original.lastLog;
+      save(again);
+    }
+    const week = _homeRenderedWeek;
+    if(week)render({__fromOptimizer:true,__optimizedWeek:week});
+    _optimizerHomeRequestToken += 1;
+    _optimizerHomeRequestKey = '';
+    const restored = document.querySelector(`#list .swipe-row[data-hid="${hid}"] .ting-name`)?.textContent || '';
+    return {renamed,logged,gone:!afterLog,restored,originalName:original.name};
+  });
+  check('home cards show a saved name, emoji, color, and priority without waiting for a replan',
+    cardFace.renamed
+      && cardFace.renamed.name === 'Renamed right away'
+      && cardFace.renamed.emoji === '🎯'
+      && cardFace.renamed.color.includes('--teal-bg')
+      && cardFace.renamed.priorityMoved,
+    JSON.stringify(cardFace));
+  check('marking a home card done removes it before the planner finishes',
+    cardFace.logged === true && cardFace.gone === true && cardFace.restored === cardFace.originalName,
+    JSON.stringify(cardFace));
+
   const clockInputs = await page.evaluate(()=>({
     steps:[...document.querySelectorAll('input[type="time"]')].map(input=>input.step),
     exact:timeInputToMinutes('09:03'),

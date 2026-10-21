@@ -5,7 +5,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
 (async()=>{
   const browser = await chromium.launch();
   try{
-    const context = await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'});
+    const context = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,serviceWorkers:'block'});
     const page = await context.newPage();
     const errors=[];
     page.on('pageerror',e=>errors.push(e.message));
@@ -103,6 +103,157 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       if(!handleAppBack() || $('settings-sheet').classList.contains('open'))throw new Error('Native Back must still close settings');
       window.Capacitor=nativeBefore;
     });
+    const swipeEdge = async({edge='left', target='body', distance='commit', y=300, release=true}={})=>{
+      return page.evaluate(({edge, target, distance, y, release})=>{
+        const el = document.querySelector(target);
+        if(!el)throw new Error('missing '+target);
+        const width = window.innerWidth;
+        const from = edge === 'left' ? 8 : width - 8;
+        const travel = distance === 'commit' ? Math.max(170, width * 0.55) : distance === 'vertical' ? 6 : 22;
+        const toX = edge === 'left' ? from + travel : from - travel;
+        const toY = distance === 'vertical' ? y + 160 : y;
+        const fire = (type, x, yy)=>{
+          const touch = new Touch({
+            identifier:4, target:el, clientX:x, clientY:yy, pageX:x, pageY:yy, screenX:x, screenY:yy, radiusX:1, radiusY:1, force:0.5
+          });
+          el.dispatchEvent(new TouchEvent(type, {
+            bubbles:true, cancelable:true, composed:true,
+            touches:type === 'touchend' ? [] : [touch],
+            changedTouches:[touch]
+          }));
+        };
+        if(release === 'end')fire('touchend', toX, toY);
+        else{
+          fire('touchstart', from, y);
+          fire('touchmove', toX, toY);
+          if(release)fire('touchend', toX, toY);
+        }
+        const wrap = el.closest('.sheet-wrap');
+        const hint = document.getElementById('edge-back-hint');
+        return {
+          dragging:!!wrap?.classList.contains('edge-back-dragging'),
+          transform:wrap?.style.transform || '',
+          hint:!!hint?.classList.contains('show')
+        };
+      }, {edge, target, distance, y, release});
+    };
+    const edgeSettled = ()=>page.waitForFunction(()=>!document.querySelector('.edge-back-dragging,.edge-back-settle,.edge-back-hold'));
+
+    await page.evaluate(()=>openSheet('settings-sheet'));
+    let mid = await swipeEdge({target:'#settings-sheet .settings-stack', distance:'short', release:false});
+    assert.equal(mid.dragging, true, 'short bezel drag tracks the sheet');
+    assert.match(mid.transform, /^translate3d\([1-9]/, mid.transform);
+    await swipeEdge({release:'end'});
+    await edgeSettled();
+    assert.ok(await page.locator('#settings-sheet.open').count(), 'a short edge drag does not dismiss');
+    assert.equal(await page.evaluate(()=>$('settings-sheet').style.transform), '');
+
+    await swipeEdge({target:'#settings-sheet .settings-stack', distance:'vertical'});
+    assert.ok(await page.locator('#settings-sheet.open').count(), 'a vertical bezel drag does not dismiss');
+
+    await swipeEdge({target:'#settings-close', edge:'right'});
+    assert.ok(await page.locator('#settings-sheet.open').count(), 'a control in the bezel keeps its tap');
+
+    mid = await swipeEdge({target:'#settings-sheet .settings-stack', release:false});
+    assert.match(mid.transform, /^translate3d\([1-9]/, 'left edge drags the page right');
+    await swipeEdge({release:'end'});
+    await page.waitForFunction(()=>!$('settings-sheet').classList.contains('open'));
+    await edgeSettled();
+    assert.equal(await page.evaluate(()=>Boolean(history.state?.tingsSheetBack)), false, 'edge dismiss consumes the history entry');
+    assert.equal(new URL(page.url()).pathname, '/', 'edge dismiss stays inside the app');
+
+    await page.evaluate(h=>{save([h]);openDetail(0);openSheet('settings-sheet');}, baseHabit({hid:'edge-fixture', name:'Walk'}));
+    mid = await swipeEdge({edge:'right', target:'#settings-sheet .settings-stack', release:false});
+    assert.match(mid.transform, /^translate3d\(-/, 'right edge drags the page left');
+    assert.ok(await page.locator('#detail-sheet.open').count(), 'the page underneath stays put during the drag');
+    await swipeEdge({release:'end'});
+    await page.waitForFunction(()=>!$('settings-sheet').classList.contains('open'));
+    assert.ok(await page.locator('#detail-sheet.open').count(), 'either edge dismisses only the top page');
+    await swipeEdge({target:'#detail-sheet .detail-page'});
+    await page.waitForFunction(()=>!$('detail-sheet').classList.contains('open'));
+    await edgeSettled();
+
+    await page.evaluate(()=>openDetail(0));
+    await page.locator('#detail-name').click();
+    await page.locator('#detail-habit-message').fill('Unsaved name');
+    await swipeEdge({target:'#detail-sheet .detail-page'});
+    await page.waitForFunction(()=>!$('detail-sheet').classList.contains('open'));
+    assert.equal(await page.evaluate(()=>load()[0].name), 'Walk', 'edge back cancels unsaved edits');
+
+    await page.evaluate(()=>{openDetail(0);setDetailSearchOpen(true);});
+    mid = await swipeEdge({target:'#detail-sheet .detail-search-panel', release:false});
+    assert.equal(mid.hint, true, 'in-page back shows the edge hint');
+    assert.equal(mid.dragging, false, 'in-page back does not drag the whole sheet');
+    await swipeEdge({release:'end'});
+    await page.waitForFunction(()=>$('detail-search-panel').hidden);
+    assert.ok(await page.locator('#detail-sheet.open').count(), 'edge back closes detail search before the page');
+    await page.evaluate(()=>{window.__tingsForceTimePicker=true;openTimePicker(document.querySelector('#detail-allowed-time-row input[type=time]'));});
+    await swipeEdge({edge:'right', target:'#detail-sheet .detail-page'});
+    await page.waitForFunction(()=>!$('time-step-picker').classList.contains('open'));
+    assert.ok(await page.locator('#detail-sheet.open').count(), 'edge back closes the time picker before the page');
+    await swipeEdge({target:'#detail-sheet .detail-page'});
+    await page.waitForFunction(()=>!$('detail-sheet').classList.contains('open'));
+    await edgeSettled();
+
+    await page.evaluate(()=>document.querySelector('.bottom-nav').classList.add('search-open'));
+    await swipeEdge({target:'#list'});
+    await page.waitForFunction(()=>!isSearchOpen());
+
+    await page.evaluate(()=>{
+      const nativeBefore=window.Capacitor;
+      window.Capacitor={isNativePlatform:()=>true};
+      openSheet('settings-sheet');
+      window.__tingsNativeBefore=nativeBefore;
+    });
+    await swipeEdge({target:'#settings-sheet .settings-stack'});
+    assert.ok(await page.locator('#settings-sheet.open').count(), 'the installed Android shell keeps the system back gesture');
+    await page.evaluate(()=>{
+      handleAppBack();
+      window.Capacitor=window.__tingsNativeBefore;
+    });
+    await page.waitForFunction(()=>!$('settings-sheet').classList.contains('open'));
+
+    await page.evaluate(()=>{openSheet('overview-sheet');openSheet('weather-context-sheet');});
+    await swipeEdge({target:'#weather-context-sheet .sheet'});
+    await page.waitForFunction(()=>!$('weather-context-sheet').classList.contains('open'));
+    assert.ok(await page.locator('#overview-sheet.open').count(), 'edge back leaves the page underneath');
+    await page.goBack();
+    await page.waitForFunction(()=>!$('overview-sheet').classList.contains('open'));
+    assert.equal(new URL(page.url()).pathname, '/', 'browser Back still dismisses after an edge swipe');
+
+    // Native touch input exercises the browser's scroll/click defaults, which
+    // dispatching synthetic TouchEvents above cannot verify.
+    await page.evaluate(()=>openSheet('privacy-sheet'));
+    await page.locator('#privacy-sheet .about-collapse-head').first().click();
+    const cdp = await context.newCDPSession(page);
+    const touchDrag = async(from,to)=>{
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[from]});
+      for(let step = 1;step <= 20;step += 1){
+        const point = {x:from.x + (to.x - from.x) * step / 20,y:from.y + (to.y - from.y) * step / 20};
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point]});
+        await page.waitForTimeout(16);
+      }
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    };
+    for(const x of [24,366]){
+      await page.evaluate(()=>document.querySelector('#privacy-sheet .privacy-sheet').scrollTop = 0);
+      await touchDrag({x,y:420},{x,y:160});
+      await page.waitForFunction(()=>document.querySelector('#privacy-sheet .privacy-sheet').scrollTop > 100);
+      assert.ok(await page.locator('#privacy-sheet.open').count(), 'vertical edge scrolling leaves the sheet open');
+      await page.waitForTimeout(300);
+    }
+    await page.evaluate(()=>{
+      document.querySelector('#privacy-sheet .privacy-sheet').scrollTop = 0;
+      window.__edgeTapCount = 0;
+      $('privacy-sheet').addEventListener('click',()=>{window.__edgeTapCount += 1;},{once:true});
+    });
+    await page.touchscreen.tap(24,420);
+    assert.equal(await page.evaluate(()=>window.__edgeTapCount),1,'an edge tap retains its native click');
+    await touchDrag({x:24,y:420},{x:220,y:420});
+    await page.waitForFunction(()=>!$('privacy-sheet').classList.contains('open'));
+    await edgeSettled();
+    assert.equal(new URL(page.url()).pathname, '/', 'a native horizontal touch still performs edge Back');
+
     assert.deepEqual(errors,[]);
     console.log('PASS: system Back preserves cancellation, nested return paths, pickers and wide panes.');
   }finally{await browser.close();}

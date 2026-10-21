@@ -558,8 +558,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
       warmTimeout:workerSrc.includes('withTimeout(ensureGlpk()'),
       warmExactOnly:optSrc.includes('agendaOptimizer === false')
         && listSrc.includes('exact && typeof warmAgendaPlannerWorker'),
-      responsiveForeground:listSrc.includes('existing agenda mounted')
-        && listSrc.includes('cancelAgendaPlannerWorkerRequests')
+      // Mounted-card preservation is exercised above; comment wording is not
+      // a source contract.
+      responsiveForeground:listSrc.includes('cancelAgendaPlannerWorkerRequests')
         && optSrc.includes('function cancelAgendaPlannerWorkerRequests'),
       settingsSigInputs:listSrc.includes('availabilityMinutes')
         && listSrc.includes('blockedTimes')

@@ -1707,6 +1707,7 @@ function render(opts){
       };
     }
     _homeListFingerprint = homeListFingerprint();
+    if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
     updateSortButton(true);
     restoreHomeReadingPosition(readingPosition,list);
     return;
@@ -2391,6 +2392,7 @@ function render(opts){
   }
   if(typeof refreshSlippedSheet === 'function')refreshSlippedSheet();
   _homeListFingerprint = homeListFingerprint();
+  if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
   updateSortButton(true);
   restoreHomeReadingPosition(readingPosition,list);
   return true;
