@@ -27,7 +27,7 @@ function homeListFingerprint(now = Date.now()){
     : '';
   const currentEdgeSig = typeof currentCoordEdgeSignature === 'function' ? currentCoordEdgeSignature() : '';
   const habitSig = data.map(h=>[
-    h.name, h.type, h.lastLog, h.dueDate, h.eventTime,
+    h.name, h.emoji || '', h.emojiBgColor || '', h.type, h.lastLog, h.dueDate, h.eventTime,
     h.pinned ? 1 : 0, h.snoozedUntil || '',
     (h.locationIds || []).join(','),
     h.durationMinutes, h.priority, habitEarlyWindowDays(h), habitDelayAllowanceDays(h),
@@ -70,6 +70,7 @@ function homeListFingerprint(now = Date.now()){
 }
 
 let _homeListFingerprint = '';
+let _homeCardFaceSignature = '';
 let _homeRenderedWeek = null;
 let _fastHomeRefreshToken = 0;
 let _optimizerHomeRequestKey = '';
@@ -884,6 +885,10 @@ function saveHomeAgendaCache(data,week){
 function renderHomePresentationOnly(){
   if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
   if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+    if(homeCardFaceChanged()){
+      render();
+      return;
+    }
     render({__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
     return;
   }
@@ -968,6 +973,87 @@ function homeAgendaShouldReuseIncumbent(day0Only,opts,dirtyKey,priorPlacements){
   return Boolean(opts && (opts.__tickReplan || opts.__fromIdleRefresh));
 }
 
+// Card text, emoji, color, priority, and logs can change without moving a
+// clock. The plan signature ignores those, so a same-plan solve would leave
+// the previous card on screen until the next full paint (often a reopen).
+function homeLogFaceToken(log){
+  if(log == null)return '';
+  if(typeof log !== 'object')return String(log);
+  return [
+    log.ts || 0,
+    log.plan ? 'p' : '',
+    log.minutes != null ? `m${log.minutes}` : '',
+    log.value != null ? `v${log.value}` : ''
+  ].join('');
+}
+
+function homeCardFaceSignature(data = (typeof load === 'function' ? load() : [])){
+  if(!Array.isArray(data))return '';
+  const habits = data.map(h=>{
+    if(!h)return '';
+    const logs = Array.isArray(h.logs) ? h.logs : [];
+    let logSig = '';
+    for(let i = 0;i < logs.length;i += 1)logSig += `${homeLogFaceToken(logs[i])},`;
+    return [
+      h.hid || '',
+      h.name || '',
+      h.emoji || '',
+      h.emojiBgColor || '',
+      h.type || '',
+      h.priority ?? '',
+      h.pinned ? 1 : 0,
+      h.snoozedUntil || 0,
+      h.lastLog || 0,
+      h.dueDate || 0,
+      h.eventTime || 0,
+      h.planByDate || 0,
+      h.hardDue ? 1 : 0,
+      h.target || '',
+      h.durationMinutes || 0,
+      h.breakable ? 1 : 0,
+      h.minChunkMinutes || 0,
+      (h.topics || []).join(','),
+      (h.locationIds || []).join(','),
+      (h.allowedWeekdays || []).join(','),
+      h.allowedTimeStart ?? '',
+      h.allowedTimeEnd ?? '',
+      logSig
+    ].join('~');
+  }).join('\n');
+  // Session controls change even when the planner keeps every row's clock.
+  const timer = typeof habitTimer !== 'undefined' ? habitTimer : null;
+  const session = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  return [
+    timer ? [timer.idx,timer.startedAt,timer.targetMs,timer.completionMode].join(':') : '',
+    JSON.stringify(session),habits
+  ].join('\n');
+}
+
+function rememberHomeCardFace(data){
+  _homeCardFaceSignature = homeCardFaceSignature(data);
+}
+
+function homeCardFaceChanged(data){
+  return homeCardFaceSignature(data) !== _homeCardFaceSignature;
+}
+
+// Repaint the mounted week from current habit records. Search keeps its own
+// result list; a clock-only background solve must not rebuild identical cards.
+function repaintMountedHomeForCardFace(week,opts){
+  if(!week || !Array.isArray(week.days) || !homeCardFaceChanged())return false;
+  if(typeof searchQuery === 'string' && searchQuery.trim())return false;
+  const data = typeof load === 'function' ? load() : [];
+  if(typeof rehydrateAgendaWeekHabits === 'function'
+    && !rehydrateAgendaWeekHabits(week,data,{preserveHabitIds:true}))return false;
+  render({
+    ...(opts || {}),
+    deferAgenda:false,
+    __fromOptimizer:true,
+    __optimizedWeek:week
+  });
+  return true;
+}
+
 function queueOptimizedHomeRender(data,opts){
   plannerPerfMark('planner-queue-start');
   const key = optimizerHomeStateKey(data);
@@ -975,7 +1061,8 @@ function queueOptimizedHomeRender(data,opts){
   const exactMode = Boolean(sortSettings && sortSettings.agendaOptimizer);
   if(_optimizerHomeReadyKey === key && _optimizerHomeReadyWeek){
     if(opts && opts.__backgroundRefresh
-      && homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(_optimizerHomeReadyWeek,data)){
+      && homeAgendaPlanSignature(_homeRenderedWeek,data) === homeAgendaPlanSignature(_optimizerHomeReadyWeek,data)
+      && !homeCardFaceChanged(data)){
       _homeRenderedWeek = _optimizerHomeReadyWeek;
       if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(data,_homeRenderedWeek);
       _homeListFingerprint = homeListFingerprint();
@@ -1000,6 +1087,7 @@ function queueOptimizedHomeRender(data,opts){
     // start or publish another scheduling result.
     if(!(opts && opts.__backgroundRefresh)
       && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
+      if(homeCardFaceChanged(data))return repaintMountedHomeForCardFace(_homeRenderedWeek,opts);
       render({...opts,__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
       _homeListFingerprint = homeListFingerprint();
       return true;
@@ -1032,9 +1120,10 @@ function queueOptimizedHomeRender(data,opts){
       // refresh today when the clock has moved, while far days reuse this week.
       adoptHomeAgendaReadyState(cached,data,false);
     }else if(_homeRenderedWeek && $('list')?.querySelector('.ting-card')){
-      // A done/log/add render keeps the existing agenda mounted. The action has
-      // already been persisted; replace the agenda only when its new solve is
-      // ready instead of flashing an unplanned intermediate list.
+      // A done/log/add render keeps this agenda mounted until the new solve
+      // lands, so placement does not flash through an unplanned list. Name,
+      // emoji, color, priority, and completion still redraw from that week now.
+      repaintMountedHomeForCardFace(_homeRenderedWeek,opts);
     }else if(!$('list')?.querySelector('.home-loading')){
       // No compatible agenda exists to keep mounted. Stay in the intentional
       // boot animation until planning resolves instead of flashing an unordered
@@ -1154,6 +1243,9 @@ function queueOptimizedHomeRender(data,opts){
     if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
       _homeRenderedWeek = week;
       if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
+      // Same clocks can still be a new name, emoji, color, or log. Paint those
+      // before claiming the ready key; a pure clock match stays on the DOM.
+      repaintMountedHomeForCardFace(week,opts);
       const stableData = load();
       _optimizerHomeReadyKey = optimizerHomeStateKey(stableData);
       _optimizerHomeReadyDirtyKey = homePlannerDirtyKey(stableData);
@@ -1418,6 +1510,7 @@ function renderHomeIfChanged(force,opts = {}){
         if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
           _homeRenderedWeek = week;
           if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
+          repaintMountedHomeForCardFace(week,{__fromBackgroundRefresh:true});
           _homeListFingerprint = homeListFingerprint();
           return;
         }

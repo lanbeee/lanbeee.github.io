@@ -208,15 +208,23 @@ function leanAgendaWeek(week){
   };
 }
 
-// Re-attach habit refs from data indices after a lean worker/cache week arrives.
-function rehydrateAgendaWeekHabits(week,data){
+// Worker/cache rows use indices from their matching revision. Retained home
+// rows opt into ID remapping when deletion or undo shifts those indices.
+function rehydrateAgendaWeekHabits(week,data,opts = {}){
   if(!week || !Array.isArray(week.days) || !Array.isArray(data))return week;
+  const preserveIds = Boolean(opts.preserveHabitIds);
+  const indexByHid = preserveIds ? new Map(data.map((h,i)=>[h && h.hid,i])) : null;
+  const rebind = rows=>rows.filter(row=>{
+    if(!row || row.i == null)return true;
+    const i = preserveIds ? indexByHid.get(row.h?.hid) : row.i;
+    if(preserveIds && (i == null || !data[i]))return false;
+    row.i = i;
+    row.h = data[i] || null;
+    return true;
+  });
   for(const day of week.days){
-    for(const row of day.timeline || []){
-      if(row && row.i != null)row.h = data[row.i] || null;
-    }
-    for(const item of day.agendaItems || []){
-      if(item && item.i != null)item.h = data[item.i] || null;
+    for(const field of preserveIds ? ['timeline','agendaItems','homeDisplayedTimeline'] : ['timeline','agendaItems']){
+      if(Array.isArray(day[field]))day[field] = rebind(day[field]);
     }
   }
   if(week.__lean)delete week.__lean;

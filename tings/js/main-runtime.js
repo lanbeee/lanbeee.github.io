@@ -50,7 +50,11 @@ function openValueLogSheet(idx,after,sessionMinutes,context = null){
   if(input)input.value = '';
   const noteEl = $('value-log-note');
   if(noteEl)noteEl.value = '';
-  openSheet('value-log-sheet');
+  const hid = h?.hid;
+  openSheet('value-log-sheet',{reopen:()=>{
+    const index = load().findIndex(item=>item.hid === hid);
+    if(index >= 0)openValueLogSheet(index,after,sessionMinutes,context);
+  }});
   const focusTarget = (valueLogMinutes != null && (!h || !h.trackValue)) ? noteEl : input;
   requestAnimationFrame(()=>focusTarget?.focus());
 }

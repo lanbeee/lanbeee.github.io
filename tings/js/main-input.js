@@ -1144,7 +1144,7 @@ function openBlockEditSheet(row){
   // there and scroll the list underneath.
   const focusedCard = document.activeElement?.closest?.('.blocked-card');
   if(focusedCard && typeof document.activeElement.blur === 'function')document.activeElement.blur();
-  openSheet('block-edit-sheet');
+  openSheet('block-edit-sheet',{reopen:()=>openBlockEditSheet(row)});
 }
 
 $('block-edit-dynamic-toggle')?.addEventListener('click',()=>{

@@ -5,7 +5,17 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 function load(){
-  return normalize(Storage.read(KEY) || []);
+  const stored = Storage.read(KEY) || [];
+  const data = normalize(stored);
+  // Legacy records need a saved ID before a retained agenda can follow them
+  // across edits. Persist only that migration; leave other raw fields intact.
+  if(stored.some(h=>!cleanHabitId(h.hid))){
+    try{
+      Storage.write(KEY,stored.map((h,i)=>cleanHabitId(h.hid) ? h : {...h,hid:data[i].hid}));
+      bumpPlannerDataRevision();
+    }catch(_){}
+  }
+  return data;
 }
 
 // Test/debug override: `?planner=fast` exercises the whole app without loading
