@@ -3,18 +3,22 @@
 Static habit/day planner. Vanilla JS (no framework, no build step), served as-is.
 Open `index.html` via any static server. All state lives in `localStorage`.
 
-> **Read this first**, then `DOCUMENTATION.md` for the product/field reference
-> (habit types, every habit/settings field, UI symbols). This file is the
-> *engineering* map: how the code is laid out, how the planner works, how to run
-> and extend it, and the gotchas that will cost you hours if you don't know them.
+This file is the always-on map. It stays short so a normal edit does not load the planner essay or the assistant.
 
----
+## What to open
+
+- **Scheduling / planner behavior:** `docs/planner.md`, then the one function you are changing. A behavior change usually means the shared primitive, or the same change in both engines.
+- **Product manual:** leave `DOCUMENTATION.md` closed. It is about 3,600 lines and excluded from search. Behavior is in the code. Open it only when the user asks to change the manual, then edit that one heading.
+- **Tests:** `TESTING.md` for the runner. Search `js/` first. `tests/` is excluded from the code index; open a test by path when you are writing or fixing one.
+- **Local assistant (side feature):** leave it closed. Open `docs/assistant.md` and `js/assistant-*.js` only when the task is the Tings assistant. `js/assistant-tools.js` is about 5,300 lines. Planner, home, settings, and habit edits do not need it, and greps should skip `js/assistant-*.js` unless the task is the assistant.
+
+Grep a function name and read that range. The largest files besides the assistant are `js/today-view-week.js`, `js/weather.js`, `js/agenda-optimizer-ilp.js`, `js/today-view-fits.js`, `js/list-view-home.js`, `js/list-view-sections.js`, and `index.html`.
 
 ## Mobile wrapper
 
 `../../Tings` owns the Capacitor Android shell. Its build reads this PWA directory as canonical shared source. Root runtime paths in the wrapper are symlinks, not independent copies. `js/native-reminders.js` compiles mounted agenda rows only when `window.TingsNative.isNative`; native-only controls must stay absent in the PWA. OS delivery is implemented in the wrapper's `native/platform.js`. Do not duplicate planner engines for mobile.
 
-## 1. Quick start
+## Quick start
 
 ```bash
 npx serve -l 4181 -s .          # serve locally (tests expect port 4181)
@@ -26,354 +30,53 @@ npx serve -l 4181 -s .          # serve locally (tests expect port 4181)
 ./run-tests.sh --changed        # infer suites from current git changes
 ```
 
-Tests are **Playwright** (`{ chromium }`) driving the live page via
-`page.evaluate(...)`. Each `tests/*.js` is standalone — run one with:
+One test: `HABITS_URL=http://127.0.0.1:4181/ node tests/<name>.js`
 
-```bash
-HABITS_URL=http://127.0.0.1:4181/ node tests/<name>.js
-```
+Results land in `test-results/`. Pass `--verbose` to stream every assertion. Suites are listed in `tests/test-suites.tsv`. Exploratory `zz-*` scripts belong to the opt-in `diagnostics` suite.
 
-Results land in `test-results/` (`last-run.log`, `.last-run.json`, per-failure
-dumps in `failed/`). Normal runner output is intentionally compact; pass
-`--verbose` to stream every assertion. Tests are classified in
-`tests/test-suites.tsv`; exploratory `zz-*` scripts belong to the opt-in
-`diagnostics` suite. See `TESTING.md` for the complete runner reference.
+## Gotchas
 
----
+1. **Two planner engines stay in sync.** A scheduling change usually lands in both `js/today-view-*.js` (fast) and `js/agenda-optimizer*.js` (GLPK), then passes the suite in both `PLANNER_MODE`s. Details: `docs/planner.md`.
+2. **Bump `sw.js` → `const CACHE = 'tings-vNN'` on every JS change.** The service worker caches app JS stale-while-revalidate and only re-fetches when the cache key changes. One bump per JS change. A missed bump makes a correct fix look like it did nothing.
+3. **Personal data stays uncommitted.** `lib/*tings-backup*`, `lib/*.backup.json`, and `lib/*.pdf` hold addresses and logs. `test-results/` and `_scratch_*.js` are scratch. Keep repro scripts in `test-results/` or `/tmp`, never in `tests/`.
+4. **Order-linked items stay next to their partner.** When touching `tryPlaceOnDay` or GLPK fit injection, guard with `plannerOrderConstraintsForDay(dayBase)`. A `direct` / `adjacency` link must not be relocated by placement steering. Skipping this regresses `schedule-links-test.js`.
+5. **Identical input produces the same plan.** A flip means logs or state changed, GLPK had no usable incumbent and fell back to `packDayWithHeuristic`, or home is still showing the fast preview. A time-limited `GLP_FEAS` incumbent is valid when hard rows cover non-negotiable policy.
+6. **Cold-open GLPK stays at 4 seconds.** Do not raise `nativeLimitSeconds` on first paint, idle cache refresh, or user edits. Extra budget is only the while-open imminent tick (`tickReplan` when the next row is inside `HOME_AGENDA_IMMINENT_MS`) or background refinement after a usable agenda is on screen. Full rules: `docs/planner.md`.
+7. **Home-list card taps go through `js/tap.js` `bindTap`.** Do not add another pointerdown/up/cancel binder on habit, busy-time, or travel cards. `openSheet` arms a backdrop guard so a recovered tap cannot dismiss the sheet it just opened.
+8. **Phone text entry must clear the keyboard.** Keep the focused field and its next action visible in the remaining viewport, including Quick Start and nested place/weather editors. Account for visual-viewport shrink/offset and Android WebView resize once each. Recalculate when the keyboard closes, and drop reserved coach space when the tour ends.
 
-## 2. ⚠️ Gotchas (read before changing anything)
+## Where code lives
 
-1. **There are TWO planner engines that must stay in sync.** Any scheduling-logic
-   change usually needs to land in *both* `js/today-view-*.js` (fast) **and**
-   `js/agenda-optimizer*.js` (GLPK) — then pass the suite in both `PLANNER_MODE`s.
-   This is the #1 source of "works for me, broken for the user" bugs. See §5.
+Scripts are globals, loaded in `index.html` order. That order, the worker `importScripts` list, and the CSS fragment order are load-bearing. Update the service-worker precache when a slice moves.
 
-2. **Bump `sw.js` → `const CACHE = 'tings-vNN'` on EVERY JS change.** The
-   service worker caches app JS **stale-while-revalidate** and only re-fetches
-   when the cache key changes. If you edit JS without bumping it, deployed users
-   keep running the *old* JS forever (the cache never invalidates). The repo
-   convention is one bump per JS change (v64→v65→…). **Forgetting this makes a
-   correct fix look like it did nothing.**
+| Area | Files |
+|---|---|
+| Persistence, normalization, schedules, logs | `js/data-*.js` (`load` in `data-storage.js`, `save` in `data-normalize.js`, key `tings_v2`) |
+| Fast planner | `js/today-view-fits.js`, `today-view-reservations.js`, `today-view-week.js`, `today-view-today.js` |
+| GLPK planner | `js/agenda-optimizer.js`, `agenda-optimizer-ilp.js`, `agenda-planner-worker.js` |
+| Shared planner helpers | `js/agenda-fast-graph.js`, `agenda-order.js`, `scoring.js` |
+| Home UI | `js/list-view-home.js`, `list-view-sections.js`, `list-view-planner.js`, `list-view-actions.js` |
+| Boot, sheets, timers | `js/main-boot.js`, `main-input.js`, `main-runtime.js` |
+| Settings, detail, places | `js/settings-*.js`, `js/detail-view-*.js`, `js/locations.js` |
+| Card taps | `js/tap.js` |
+| Service worker | `sw.js` — bump `CACHE` on JS edits |
+| Local assistant | side feature; see "What to open" |
 
-3. **Personal data is gitignored, never commit it.** `lib/*tings-backup*`,
-   `lib/*.backup.json`, `lib/*.pdf` are ignored (backups contain addresses,
-   logs). `test-results/` and `_scratch_*.js` are ignored too. Keep scratch repro
-   scripts in `test-results/` or `/tmp` — never in `tests/` (the runner would
-   pick them up and they may reference real data).
-
-4. **Order/schedule-link items must not be relocated by placement steering.**
-   When touching `tryPlaceOnDay` or GLPK fit injection, guard with
-   `plannerOrderConstraintsForDay(dayBase)` — items in a `direct`/`adjacency`
-   link must stay next to their partner. Skipping this regresses
-   `schedule-links-test.js`.
-
-5. **The planner is deterministic given identical input.** If you see the *same*
-   day plan flip between renders, suspect (a) logs/state changed, (b) the GLPK
-   solve produced **no usable incumbent** and fell back to the fast heuristic
-   (`packDayWithHeuristic`, gated by `daySolveTimeoutMs` / `budgetLeft`), or
-   (c) the home view showed a **fast preview** that GLPK hadn't replaced yet.
-   A time-limited GLPK `GLP_FEAS` result is a valid incumbent, not a failed
-   solve; keep it when all non-negotiable policy is represented by hard rows.
-
-6. **Cold-open GLPK stays at 4 seconds.** That wait is already the product
-   limit. Do not raise `nativeLimitSeconds` on first paint, idle cache refresh,
-   or user edits. Extra budget is only the while-open 60s tick when the next
-   pending row is within `HOME_AGENDA_IMMINENT_MS`, via `tickReplan`, **or**
-   background refinement after a usable agenda is already on screen. Most
-   ticks must `clock-shift` or `keep` the last week instead of resolving.
-   When a re-solve does run, replay the last fills and skip GLPK if they still
-   fit; otherwise inject those clocks as ILP options. `day0Only` must seed the
-   worker with `memoDays` from the mounted week so far days are not re-solved
-   just because the worker was cold. If the mounted week is not a GLPK proof
-   (`plannerSolveStatus !== 'optimal'`), keep searching off-main while the
-   page is visible: replay days already proved optimal, spend remaining
-   budget on the rest, and publish only if the lexicographic quality tuple
-   strictly improves. Cancel on hide, edit, or an imminent tick replan.
-
-7. **Home-list card taps go through `js/tap.js`.** Do not add another
-   pointerdown/up/cancel binder on habit, busy-time, or travel cards — call
-   `bindTap`. `openSheet` arms a backdrop guard on every sheet so a recovered
-   tap cannot dismiss the sheet it just opened. The next missed tap is a
-   `bindTap` bug, not a reason to copy a third pointer machine.
-
-8. **Phone text entry must account for the bottom keyboard.** Keep the focused
-   field and its next action visible and tappable in the remaining viewport,
-   including Quick Start and nested place/weather editors. Check both browser
-   visual-viewport shrink/offset and Android WebView resize; never subtract the
-   keyboard twice. Recalculate spacing when the keyboard closes and remove
-   reserved coach space when the tour ends.
-
----
-
-## 3. Codebase map
-
-Scripts load in this order (no modules — everything is global). The big files
-own a clear area; jump to these first.
-
-| File | LOC | Owns |
-|---|---|--:|---|
-| `js/data-*.js` | 50–939 each | Persistence (`tings_v2` key), normalization, eligibility, schedules, logs, backups, and planner state |
-| `js/today-view-{fits,reservations,week,today}.js` | 118–2329 each | **FAST planner engine**: fitting, reservations, week packing, and today rendering |
-| `js/agenda-fast-graph.js` | ~280 | Bounded day and whole-week graph search; shared feasibility checks |
-| `js/agenda-optimizer.js` + `agenda-optimizer-ilp.js` | 313 + 1624 | **GLPK ILP planner engine**: loader/worker entry, fits, constraints, and optimized week orchestration |
-| `js/tap.js` | — | Shared home-list tap primitive (`bindTap`): pan vs tap, WebKit pointercancel recovery after touch release, immediate activation |
-| `js/list-view-{home,sections,planner,actions}.js` | 908–2513 each | Home/dashboard, day sections, background planning/cache, and card actions |
-| `js/main-{boot,input,runtime}.js` | 909–1364 each | Initialization/bindings, input sheets, timers/visibility/refresh loop |
-| `js/settings-*.js` | 122–746 each | Settings UI, backup import/export, blocked times, locations, samples, and appearance |
-| `js/detail-view-*.js` | 236–554 each | Detail sheet, links, tuning, stats, and pages |
-| `js/overview-view.js` | 1213 | Overview screen |
-| `js/locations.js` | 1059 | Locations, travel edges, routing |
-| `js/scoring.js` | 908 | **Scarcity scoring** (`scarcity` numbers encode feasible-slots × slack) |
-| `js/agenda-order.js` | 774 | Schedule links / order constraints (`plannerOrderConstraintsForDay`) |
-| `js/agenda-planner-worker.js` | 209 | Web Worker wrapping GLPK so solves don't block the UI |
-| `js/prayer-times.js` | 549 | Adhan-based prayer windows |
-| `js/assistant-*.js` | — | Optional local Qwen3.8 chat, loaded after first home render by `js/assistant-loader.js`. Natural-language routing is **always model-first**: parser output does not choose intent, split clauses, populate the model envelope, merge tool arguments, or recover from a failed model call. Deterministic helpers validate tool schemas, normalize dates/clocks, read authoritative app data, and perform confirmed writes. Fields that name another item (`before`/`after`, habit-window anchors) resolve against saved items plus in-flight drafts from this turn — the model supplies those titles; parsers do not invent the link. The first model pass exposes final validated tools, so `classify_intent` is optional rather than a mandatory round trip. Context entry points (add-sheet sparkles button, detail "change with AI" row) pass `startIntent`/`draft` via `assistantOpenWithInstruction` so the turn starts at extract; trace provenance is `entry-add`/`entry-detail`. `draft_item` creates/changes item settings; `draft_setting` handles weather profiles, places, busy times, and topics; `draft_batch` handles new lists/pastes. `apply_items` changes, snoozes, shows, or deletes a queried set (topic, name, conditions, or the previous list), including different patches for different subsets. Read-only tools cover weather/schedule (`answer_weather`, `answer_schedule`), task/habit lists and progress (`answer_items`), saved setting lists (`answer_settings`), and per-item summary/history/stats/planner explanations (`lookup_item`). `answer_weather` query `hours` ranks a window (several conditions, or lowest/highest of one metric); query `compare` scores two times, including an offset from sunset; query `item` with a start checks a habit in that window even when it is not already planned. `answer_schedule` query `missed` is the same list as the today-header missed pill; day/list payloads include priority and frequency. Compound questions, follow-ups, and several asks in one message share one LLM loop: after a read, `draft_item`, `draft_setting`, `apply_items`, or complete/plan/delete, Tings returns the tool payload and gives the model another turn. A lone `draft_batch` already holds every new item, so that call publishes the preview; sibling tools in the same response still run. The model decides whether a part remains; the harness does not infer that from phrasing. That follow-up is capped at two, and the whole turn at four model calls (six for a multi-item turn). Past the cap, staged work is kept and the model is not asked again. Sibling `tool_calls` all run, including after a no-op, and multiple writes retain separate confirmation actions. Focusing a saved item for complete, plan, delete, or lookup is pronoun context, not a staged edit, so a model stop still returns those confirmations or the tool answer. A `draft_setting` emitted beside a `prepare_action` read stays staged and does not end the turn, because that setting has not seen the result. The model then calls whichever action the user asked for; it does not invent a task or habit. Repeating the same `draft_setting` finishes a request whose action is the setting itself. One confirmation saves every staged draft. The next user turn sees `recent.items` / `recent.referent` in the envelope so "that one" can `lookup_item` and "those" repeats the same read with sort and position instead of querying every saved habit. Explicit names never fall back to a focused or recent item; only omitted names and pronouns may use context. `find_item` ranks saved titles by deterministic fuzzy match; a unique hit is used, and several close hits ask the user instead of guessing. `ask_user` (and classify `unclear`) ask one short question when the request is confusing — at most twice in a row, then Tings stops instead of guessing. A whole-week reschedule, or deleting every saved item with no topic, name, or filter, is `classify_intent` `unsupported`, not a clarifying question. Changing, snoozing, or deleting a matching set is `apply_items`. `complete_item` can log minutes/value/note or undo today's latest completion; `plan_item` adds, replaces, or removes one-day plans; and `delete_item` removes an item. Every action creates a confirmation preview and uses the normal recoverable undo toast. Direct-object setting patches ("add the location home") stay edit-like even with a create verb, while descriptive weather clauses inside a create ("add a Stretch … using Dry weather") never reclassify it as an edit — keep `assistantLooksLikeEdit`'s three-way order (object patch → create guard → heuristics) intact |
-| `sw.js` | — | Service worker (precache + stale-while-revalidate) — bump `CACHE` on JS edits |
-
-Large modules are sequential, byte-exact source slices. Their `<script>` and
-`importScripts` lists are load-bearing, as are the CSS fragment links; preserve
-their order and update the service-worker precache list whenever a slice moves.
-
----
-
-## 4. Key entry points (what tests call)
+## Entry points
 
 ```
-load() / save(data)                    data.js      — localStorage I/O (key 'tings_v2')
-loadSortSettings()                     data.js      — settings object
-buildTodayAgenda(data, settings)       today-view-* — today's plan (fast)
-buildTodayTimeline(agenda, now)        today-view-* — render rows
-buildWeekAgenda(data, settings, 7)     today-view-* — FAST week plan
-buildWeekAgendaAsync(data, settings, 7) agenda-opt* — GLPK week plan (await-able)
-ensureGlpk()                           agenda-opt*  — loads glpk.mjs WASM
-windowStillDoableToday(habit, now)     today-view-* — can it still fit today?
+load() / save(data)                 data-storage.js / data-normalize.js
+loadSortSettings()                  data-storage.js
+buildTodayAgenda / buildTodayTimeline / windowStillDoableToday
+                                    today-view-fits.js
+buildWeekAgenda                     today-view-today.js
+tryPlaceOnDay / fastPathDefersMovable
+                                    today-view-reservations.js
+buildWeekAgendaAsync / solveDayPackingIlp
+                                    agenda-optimizer-ilp.js
+ensureGlpk()                        agenda-optimizer.js
 ```
 
----
+## Tests
 
-## 5. Planner architecture (the part you'll modify most)
-
-### 5.1 Two engines, shared helpers
-
-| Engine | File | Entry | When used | Placement order |
-|---|---|---|---|---|
-| **GLPK ILP optimizer** (default) | `agenda-optimizer*.js` | `buildWeekAgendaAsync` | `?planner=` not `fast`; tests `PLANNER_MODE=default` | fixed items first (ILP), daily breakables after, rescue pass, breakable gap-fill |
-| **Fast bounded graph planner** | `today-view-*.js` | `buildWeekAgenda` | `?planner=fast`, optimizer off, GLPK fallback/preview | **movables first**, daily breakables last |
-
-GLPK is the production planner: slower than Fast, but better at respecting
-constraints and preferences. Fast is the quality-parity track (preview,
-optimizer-off, fallback). It becomes the main engine only when it can replicate
-those results — do not switch the app default before then.
-
-Both call the same primitives: `tryPlaceOnDay`, `auditFillFitInGap`,
-`freeSegmentsInWindow`, `commitPlacement`, `dailyBreakableReservations`,
-`movableCapacityForDay`, `breakableReservationWindows`,
-`plannerOrderConstraintsForDay`. **A behaviour change usually means editing the
-shared primitive OR landing it in both engines.**
-
-### 5.2 Vocabulary (precise — misuse here causes bugs)
-
-- **Movable** (`isMovableWeekCandidate`, `today-view-reservations.js`): a one-shot `task`
-  **or** a sparse rhythm (`target > 1`) that has not reached its last permitted
-  day. NOT a daily rhythm (`target ≤ 1`), not breakable, not pinned, and not an
-  occurrence whose `delayAllowanceDays` has expired. Movables *choose a day*;
-  `earlyWindowDays` never grants permission to defer.
-- **Daily breakable** (`dailyBreakableReservations`): a daily recurring
-  breakable (e.g. "Work 6h") with a per-day **deficit** to protect inside its
-  allowed window. Its "reservation" is the window minutes it still needs.
-- **Reservation windows** (`breakableReservationWindows`): the clock windows a
-  breakable may occupy; movables are capped in these via
-  `movable_breakable_reserve` (aggregate spare, ILP) and `fastPathDefersMovable`.
-- **Fit**: a feasible `{placeStart, placeEnd, locId, score}` for one item on one
-  day. `tryPlaceOnDay` returns the single best scored fit (weather guidance
-  outranks ASAP/preference/scarce overlap; travel/day/order stay in the core rank);
-  `listPlaceFitsOnDay` enumerates many for GLPK.
-- **Scarcity** (`scoring.js`): a packed integer encoding how tight an item's
-  windows are (feasible slots × slack). Drives priority/urgency.
-- **Order constraints** (`agenda-order.js`): schedule links / drag reorder →
-  `beforeHid`/`afterHid`/`adjacency:'direct'` edges for a given `dayBase`.
-
-### 5.3 Decision flow (GLPK, per day, today-first)
-
-1. Build `fixedCands` (non-breakable candidates eligible that day).
-2. Compute `deferrable` set: movables still inside their explicit delay window
-   with another eligible day that has capacity. Last-day occurrences become
-   hard selection rows when a fit can coexist with daily-breakable protection;
-   only strictly higher priority may displace the protected deficit.
-3. Enumerate fits per candidate (`optimizerFitsForFill` → `listPlaceFitsOnDay`,
-   anchors = candidate window edges + boundary probes; stepped grid only when
-   order links / doing-now exist).
-4. Solve ILP (`solveDayPackingIlp`): maximise Σ option weights s.t. one option
-   per candidate, no time clash, order rows, and the `movable_breakable_reserve`
-   (movables' in-window overlap ≤ spare, unless packed + higher-priority).
-5. Commit; then place daily breakables (`placeBreakableSessions`), then
-   `rescueLeftoverWeekFits`, then breakable gap-fill.
-6. Publishes either `GLP_OPT` or a time-limited `GLP_FEAS` incumbent. Falls back
-   to `packDayWithHeuristic` only when there is no usable incumbent (load/error/
-   infeasible/timeout-before-feasible), not merely because optimality was not
-   proved before the time limit.
-
-The fast engine uses movables first (ASAP + reservation steering), breakables
-last, with `fastPathDefersMovable` as the gate. Weather-guided movables also
-use `weatherShouldDeferCandidate` so a much drier later day wins the same way
-GLPK drops today's option weight. Untimed plan logs strongly prefer that
-calendar day; the visual pin does not. The last on-time day stays eligible, so
-a failed Saturday plan cannot drop a Sunday due date. Skip completed days
-when reading leftover plans, and do not let a future catch-up plan erase a
-due/overdue today miss during `fullToday` reconstruction. Blocked fixed
-insertions use `fastGraphPlacement`: bounded beam search over partial day
-schedules, reopening up to seven existing non-linked/non-breakable placements.
-Keep-all search is transactional. Fast packs scarce one-day P0 (Juma) first, then
-planned/last-day tasks, then seed-neighborhood errands that still fit before a
-later far location pin, then work at the place you are already standing, then
-slack daily P0 so earliest-clock Zuhr cannot fragment the only 4h slot a due
-visit needs — and so a short at-seed window cannot consume the only pre-pin gap
-those nearby errands needed. An at-home prayer or lunch must not jump ahead of
-that neighborhood batch: doing so sends you out to the far pin, back for the
-errand, and out again. Away items yield to the current place only when the whole at-location
-block still leaves them a slot, so standing at Walmart does grocery before a
-home lunch instead of leaving and coming back. A last-day task that would miss
-stays ahead of that block. The yield flag is on the away item, so two errands
-at the current place cannot disagree about whether the task can wait. That claim order is only the packing seed. After
-the day is filled, Fast replays alternate orders ranked by full route cost
-(every order when the day has at most seven fills; a beam with one-step
-lookahead otherwise) and keeps a chain only when the same work is strictly
-cheaper. GLPK's return term is the extra round trip in those same units, with
-no constant floor, so a short loop can still lose to a large clock or weather
-cost. `tryPlaceOnDay` enumerates unforced
-venues so Fast sees the same location set as GLPK. Planned items outrank
-at-location sequencing. `improveFastGraphWeek` searches when a planned/pinned
-item or a day-choosing leftover is still unplaced: cheap insert/eject first,
-then at most eight whole-week rebuilds. Packed weeks skip that search. See
-DOCUMENTATION.md §14.3 for the ranking, budgets and limitations. A failed plan
-day still leaves the last on-time day eligible in both engines; GLPK's ILP
-rows and weights are otherwise unchanged.
-
-### 5.4 The reserve model (why movables don't starve breakables)
-
-Movables may use a breakable's window only up to the **aggregate spare** (window
-time minus the breakable's deficit). If a movable fits in a clock gap **touching
-no reservation window**, it places there today instead of deferring — see
-`placementFitsOutsideReservations` / `placementFitOutsideReservations` /
-`movableFitsOutsideReservations` (`today-view-reservations.js`) and the matching ILP
-injection in `solveDayPackingIlp` (~845). Multiple movables **chain** at
-duration-spaced starts; overflow defers gracefully (verified for up to 8).
-
-> Caveat: the reserve protects *aggregate* minutes, **not contiguity**. Many
-> movables can splinter a breakable's window into sub-min-chunk slivers so the
-> breakable can't place even though aggregate spare exists. This is a known sharp
-> edge (the "Work deferred" symptom) — protect contiguity if you touch this.
-
-### 5.5 Production policy lessons (do not replace these with item-name fixes)
-
-- **Encode guarantees by scheduling semantics, never by habit name/id.**
-  `mustPlaceCriticalOccurrence` is the policy for a feasible non-breakable,
-  non-task recurring P0 occurrence that is daily or has no alternate eligible
-  day. A weekly prayer exposed the bug, but the rule must also work unchanged
-  for medication, care, or any other equivalent occurrence. Never check for
-  `Juma`, a prayer type, or Friday in the packing engines.
-- **"P0" is not one universal hard constraint.** Recurring occurrences, tasks,
-  and breakables have different semantics. Breakables are protected by deficit
-  reservations and placed/split after fixed candidates. Tasks use pinning,
-  deadlines, priority, and movable-day capacity. Putting either class into the
-  recurring-occurrence hard tier can make the model infeasible or let broad Work
-  and flexible tasks displace narrow windows and explicit linked pairs.
-- **Hard rows make time-limited incumbents safe.** Objective bonuses alone do
-  not guarantee that a feasible-but-not-optimal solve contains a critical
-  occurrence. If the UI is allowed to publish `GLP_FEAS`, non-negotiable policy
-  must be an ILP constraint (`sum(candidate options) = 1` when at least one fit
-  exists), with matching Fast-path ordering for real fallback/preview behavior.
-- **`GLP_OPT` covers the fixed-item ILP, not the entire final agenda.** Daily
-  breakables are inserted afterward, so an optimal fixed pack can still leave
-  Work short when aggregate reserved minutes are split below `minChunkMinutes`.
-  Treat complete-agenda quality (P0 breakable minutes, total week minutes,
-  overdue work, travel) separately from the solver's fixed-pack status.
-- **Contiguity repair sometimes requires a neutral intermediate move.** Moving
-  one 30-minute blocker may not create a valid 45-minute chunk, while moving two
-  adjacent blockers together creates 60 minutes. The deep background pass uses
-  a bounded 2/3-item neighborhood; do not regress it to one-victim greedy repair
-  or an unbounded power-set search.
-- **Background refinement is revision-guarded and improvement-only.** Publish
-  the quick incumbent first, then keep searching off-main while the app stays
-  visible if the fixed-item ILP is not yet a GLPK proof. Replay days already
-  proved `optimal` so extra time lands on remaining feasible days. Cancel on a
-  data/location revision, hidden page, or a foreground/imminent re-solve. A
-  replacement must preserve active rows and every placed critical/pinned
-  occurrence, must not reduce total week work, and must strictly improve the
-  lexicographic agenda-quality tuple. Stop after a proof, after the deeper
-  neighborhood pass when only breakable fill remains, or after a bounded
-  number of while-open passes.
-- **Order links are coupled placement policy.** A critical successor must claim
-  its narrow window before a flexible predecessor is backfilled under the order
-  ceiling; otherwise placing the predecessor independently can invalidate the
-  successor. Preserve `direct` adjacency and let missing/undoable partners obey
-  the existing link eligibility rules—do not make every linked item globally
-  mandatory.
-- **A large open gap is evidence, not a complete feasibility proof.** The
-  remaining-gap audit examines the already-built agenda. `MISSED GAPS 0` can
-  still hide a make-space failure where movable rows could shift to create one
-  contiguous slot for a long item. Reproduce both the static gap and the
-  rearranged alternative before changing deferral/reservation policy.
-- **Audit planner provenance separately from the settings toggle.** "GLPK on"
-  means the exact path was requested; it does not prove that the displayed rows
-  came from an optimal solve. When debugging, record whether the result was
-  fast preview, `GLP_OPT`, time-limited `GLP_FEAS`, or true heuristic fallback.
-- **Performance tests need cold and warm cases.** Cached home output can hide
-  worker/solve latency. Measure a cold exact rebuild with the heavy backup, a
-  subsequent cached render, and Fast separately. Preserve a valid incumbent at
-  the time budget rather than throwing away several seconds of GLPK work.
-
----
-
-## 6. Writing/running tests
-
-- Mirror an existing file, e.g. `tests/movable-non-overlap-deferral-test.js`.
-- Pattern: freeze the clock inside `page.evaluate` (replace `globalThis.Date`),
-  call `buildWeekAgendaAsync` (GLPK) **and** `buildWeekAgenda` (fast) on the same
-  data, assert on the resulting day summaries. Use a `glpkOk` guard to soft-skip
-  GLPK when WASM can't load.
-- Fixture helpers worth copying: `base(props)` (full habit object with sane
-  defaults), `openEveningSettings()` / `windowedSettings()` (blocked-time sets).
-- Run `./run-tests.sh planner` after planner changes. The smart matrix opens
-  the production GLPK page. `page-both` files add a Fast pass; use `--mode fast`
-  when iterating on Fast quality. Dual-engine helpers may still call both
-  `buildWeekAgenda` and `buildWeekAgendaAsync` in one session.
-- Put shared fixtures and pair-running helpers in
-  `tests/helpers/planner-test-helpers.js` rather than copying them into a new
-  file. Classify each new top-level test in `tests/test-suites.tsv`; the runner
-  rejects unclassified tests.
-
----
-
-## 7. Debugging a real-world planner bug
-
-The in-app **Day Agenda Audit** (triple-tap a day header, see DOCUMENTATION.md
-§6.4) prints the full decision trace (engine, per-item `selected`/`UNPLACED`,
-scarcity, remaining-gap audit). It's the primary diagnostic.
-
-To reproduce a user's exact day from an exported backup (sensitive — keep in
-`lib/`, which is gitignored):
-
-1. Export via **Settings → Export backup** → `lib/tings-backup-YYYY-MM-DD.json`.
-2. In a scratch script under `test-results/` (gitignored), `fs.readFileSync` it,
-   **strip logs ≥ your frozen `now`** (exports capture the whole day, so without
-   stripping the reconstructed state won't match an earlier audit time), freeze
-   `Date`, and run both `buildWeekAgendaAsync` / `buildWeekAgenda`.
-3. Print only placement minutes + counts — never dump raw habit data.
-
-Remember gotcha #2: if the live app shows a bug your local fixed code can't
-reproduce, the user is almost certainly running **stale service-worker-cached
-JS** — bump `sw.js` `CACHE` and have them reload.
-
----
-
-## 8. Pointers for deep dives
-
-- Habit/settings **field reference**: `DOCUMENTATION.md` §IV.
-- Scarcity score format & symbols: `DOCUMENTATION.md` §V, `js/scoring.js`.
-- GLPK constraint shapes (clash, order, reserve, travel pairs):
-  `js/agenda-optimizer-ilp.js` `solveDayPackingIlp`.
-- Fast-path deferral rules: `js/today-view-reservations.js` `fastPathDefersMovable`,
-  `js/today-view-fits.js` `tryPlaceOnDay`.
-- Recent worked example (movable non-overlap deferral fix, incl. regressions
-  hit): `HANDOFF-movable-deferral-fix.md` (gitignored; ask if absent).
+Mirror an existing file. Planner changes: freeze `Date` inside `page.evaluate`, call `buildWeekAgendaAsync` and `buildWeekAgenda` on the same data, and classify the new file in `tests/test-suites.tsv`. Shared fixtures live in `tests/helpers/planner-test-helpers.js`. The pattern and the debug audit are in `docs/planner.md`. Run `./run-tests.sh planner` after planner changes.

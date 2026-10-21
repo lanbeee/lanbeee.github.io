@@ -24,7 +24,9 @@
  * @property {string} hid                     — stable opaque id (crypto.randomUUID()), never user-displayed. Used by other habits' time anchors. Generated on first normalize; legacy records get one transparently.
  * @property {string} name                    — display name (max 60 chars)
  * @property {'keepup'|'reduce'|'zero'|'task'} type  — build / limit / stop / one-off
- * @property {'routine'|'opportunity'} repeatMode — regular rhythm (legacy/default) or conditional keepup, eligible at its priority on existing visits and matching known weather; target is a minimum calendar-day gap in opportunity mode
+ * @property {'weather'|'location'} conditionTrigger — which condition activates an optional habit
+ * @property {number} conditionRadiusM — proximity to a selected place center, in metres
+ * @property {'routine'|'opportunity'} repeatMode — regular rhythm, or conditional keepup whose target is the minimum day gap
  * @property {number|null} target             — rhythm in days (may be fractional, e.g. 3.5 = 2×/7d); null when type in zero/task
  * @property {LogEntry[]} logs                — sorted actual + planned entries (max 500)
  * @property {string} emoji                   — grapheme cluster(s), '' means default icon

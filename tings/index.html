@@ -172,6 +172,12 @@
         <p class="field-hint" id="target-help" aria-live="polite"></p>
       </section>
       <section id="add-conditions" class="add-conditions" aria-label="Conditions" hidden>
+        <label class="settings-sublabel" for="ting-condition-trigger">Plan this when</label>
+        <select class="mini-select" id="ting-condition-trigger"><option value="weather">the weather matches</option><option value="location">I’m near a place</option></select>
+        <div id="ting-condition-radius-row" hidden>
+          <label for="ting-condition-radius">How close</label>
+          <label class="range-value"><input type="number" id="ting-condition-radius" min="1" max="100000" step="1" value="200" inputmode="numeric" /><span>m</span></label>
+        </div>
         <p id="add-condition-hint" class="field-hint" role="status" aria-live="polite"></p>
       </section>
       <section class="add-task-date" id="task-due-row" aria-label="Task date" hidden>
@@ -411,6 +417,12 @@
 
           </details>
           <section id="detail-conditions" class="detail-conditions" aria-label="Conditions" hidden>
+        <label class="settings-sublabel" for="detail-condition-trigger">Plan this when</label>
+        <select class="mini-select" id="detail-condition-trigger"><option value="weather">the weather matches</option><option value="location">I’m near a place</option></select>
+        <div id="detail-condition-radius-row" hidden>
+          <label for="detail-condition-radius">How close</label>
+          <label class="range-value"><input type="number" id="detail-condition-radius" min="1" max="100000" step="1" value="200" inputmode="numeric" /><span>m</span></label>
+        </div>
             <p class="field-hint" id="detail-condition-hint" hidden></p>
           </section>
           <details class="detail-disclosure" id="detail-availability-disclosure"><summary>days, hours &amp; places</summary>

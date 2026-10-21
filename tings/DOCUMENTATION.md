@@ -297,58 +297,16 @@ if ratio ≥ 1.1: score += red (overdue)
 
 ### 3.1.1 Optional habits: when conditions fit 👤👨‍💻
 
-Under **New habit → How often?**, or in **Details → Schedule**, choose
-**when conditions fit**. Set **at most once every N days**, then choose allowed
-places, weather guidance, or both. Weather profiles are editable directly from
-those controls. The add form shows conditions immediately after the repeat
-limit and before duration, with topics folded and other options below. Schedule
-uses the same frequency buttons, followed by the repeat limit and visible
-places/weather controls. Days and hours stay in a separate folded section.
-Switching back to a regular rhythm preserves the saved condition choices. Choose
-a place or weather profile before saving. Missing forecast-city setup is shown
-only when needed. These condition controls remain available in minimal mode. Conditional place
-chips use simple select/remove taps, without cycling through preference or
-avoidance. Selecting a named place turns off **any place**; choosing **any place**
-clears the named places and requires weather rules. Existing saved rankings stay
-in the draft when switching between regular and conditional modes. Weather
-choices distinguish **use each place’s weather rules**, **any weather** (ignore
-inherited rules), and a named set of rules. The selected rules show their bounds
-in the current display units; an empty set explains that it has no active rules.
-When both place and weather are selected, both must match.
+**When conditions fit** is a keepup choice under New habit → How often, and in Details → Schedule. Set at most once every N days, then pick one:
 
-- Matching conditions make the item eligible at its chosen priority. It may
-  use free time or replace lower-priority flexible work; fixed appointments,
-  explicit plans, active work, and equal/higher-priority items stay protected.
-- A place-based item uses current presence or a visit already in the agenda,
-  including time before or after that visit. It cannot create an extra trip.
-  Allowed venue hours, item windows, travel time and schedule links still apply.
-- Weather uses the existing profile/option/place inheritance and the forecast
-  at the actual venue. Every active metric must be available and meet its bounds,
-  including soft bounds. Preferences rank matching times. If no fresh forecast
-  is available, the item waits. When both place and weather are selected, both
-  must match. With neither configured, it waits for configuration.
-- The repeat limit is a minimum gap between calendar dates, not a weekly quota.
-  An entry on Monday permits the next occurrence on the following Monday for
-  a seven-day limit. Logged and planned occurrences both count. Early/late
-  flexibility and separate same-day options cannot shorten that gap.
-- Split sessions use the existing duration, minimum chunk and session-gap
-  controls. A partial entry can continue that day; the next occurrence still
-  observes the repeat limit. Automatic placement offers the full remaining
-  session budget, rather than a partial session that cannot be finished.
-- An explicitly started session stays on the agenda if conditions change.
-  Explicit plans can reserve time outside the conditions, while still honoring
-  the repeat limit. Completion, undo, snooze, timers, backup, assistant edits,
-  calendar, shared display and ordinary phone reminders use the existing flows.
-- Unmatched opportunities never become overdue or missed and have no streak
-  obligation or drop-warning alarm. Saved items remain available in the list
-  and search. Existing habits retain their regular rhythm unless changed.
+- **The weather matches.** Every active rule must be available and inside its bounds. A missing forecast does not count. Places stay ordinary locations.
+- **I’m near a place.** Pick places and how close to their center (default 200 m). Being there now counts, as does a visit already on the agenda. A pin uses the place center; GPS uses the real distance. Weather stays ordinary guidance.
 
-Persisted `repeatMode` is `routine` (default/legacy) or `opportunity`; the latter
-applies to keepup habits only. Its integer `target` is the minimum day gap.
-Both planner engines call the same bounded activation pass after ordinary
-visits are known. Clock-only refresh rechecks today's opportunities without
-requiring a GLPK solve, and keeps cached future occurrences in the repeat-limit
-check. Android consumes this same source, including closed-app refresh.
+Save needs places or active rules, matching that choice. Minimal mode hides it for new habits. Older weather-profile records use weather; place-only records use near a place.
+
+A match can fill free time or replace lower-priority flexible work. Fixed appointments, explicit plans, active work, and equal or higher priority stay put. Hours, windows, travel, and schedule links still apply. The gap is calendar days, and logged or planned days both count. A started session stays if conditions change. An explicit plan may sit outside the conditions and still keep the gap. Unmatched items are not missed or overdue.
+
+`repeatMode` is `routine` or `opportunity`. `target` is the day gap. Both engines share one activation pass after visits are known.
 
 ### 3.2 REDUCE HABITS (Recurring - Limit) 👤
 #### Scoring Logic:
@@ -2086,10 +2044,9 @@ Toasts appear after:
   rhythm or optional deadline, estimate duration, use its card, and find Home
   and the calendar. It has 15 steps on phones (14 on wide tiers), down from 28;
   it no longer requires a second item, a sample, or past/future calendar edits.
-  Choosing **when conditions fit** adds a guided condition step before Add:
-  choose a place already visited or weather rules. The tour waits for a valid
-  condition and supports adding a place or editing weather rules without
-  losing the new habit draft.
+  In regular mode, choosing **when conditions fit** adds one step before Add:
+  pick weather rules, or a place and how close. The tour waits for a valid
+  choice and can add a place or edit weather rules without losing the draft.
   Logging the first item has an **I’ll log later** escape. Deeper calendar and
   scheduling practice lives in the advanced coach chapters.
 - It has users tap the **Tings name → Settings**, then reveals **Display →
@@ -2453,6 +2410,11 @@ has been introduced. Existing clock replay remains the first reuse path.
 Split tasks have a lifetime minute pool, never a daily reservation. Day replay
 retains that day's allocated task minutes instead of replenishing the full task
 on each date; hypothetical day rebuilds do not modify the incumbent's item list.
+Replay groups split sessions by item before calling the adaptive splitter:
+each daily rhythm is rebuilt once against its daily budget, just as each task
+is rebuilt once against its allocated lifetime minutes. Otherwise the second
+input chunk can falsely reject a day whose full daily target was already
+replayed, preventing an overdue item from moving into a free gap today.
 After GLPK splits a task into several sessions on a day, it uses the shared
 bounded route replay to consolidate visits when flexible items can move within
 their windows. A cheaper route must retain every item's minutes on that day,
@@ -2495,7 +2457,20 @@ shared route objective, not a fixed penalty, so the frozen-selection pass can
 still prefer a large clock or weather saving. After Fast packs a day it
 searches replay orders by that same route cost — every order for up to seven
 fills, otherwise a beam — and replaces the greedy chain only when the same
-work gets strictly cheaper.
+work gets strictly cheaper. A must-place occurrence parked in a later allowed
+segment can use an earlier segment when that segment is free, or when one or
+two shorter flexible rows are all that occupy the start it takes. A later
+minute inside the same segment stays put, so a due item that already fits
+does not pull earlier over the routines in front of it. Daily, critical,
+higher-priority, pinned, active, weather-locked, and present direct-link rows
+stay put. The shared capped ASAP and preference score of all moved rows cannot
+get worse: bringing the due row forward must cover the delays imposed on its
+blockers. Weather, route cost, breakable minutes, and every other clock cannot
+get worse, and a new link violation is rejected. The check examines contiguous
+starts in the earlier allowed intervals and reopens only the one or two flexible
+rows that actually cover a possible slot. Unrelated short appointments cannot
+hide a useful blocker. It keeps the first legal group within 32 placement
+attempts per day, without another graph search.
 
 The day graph contains partial schedules. Each edge inserts one occurrence
 through the shared hours, location, travel and ordering checks. A blocked
@@ -2641,10 +2616,12 @@ presentation across Tings; drafts stay in the sheet underneath. Switching
 back is the same Settings control.
 
 Minimal Add keeps name, optional emoji, habit/task type, rhythm or deadline,
-and duration visible. Choosing **when conditions fit** also reveals places and
-weather in both Add and Details, because these define when the optional habit
-can appear. This choice applies to build habits; limit and stop habits retain
-their tracking goals. Defaults and busy-time shortcuts stay in regular mode.
+and duration visible. How often is daily, a few times a week, weekly, or a
+custom rhythm. **When conditions fit** stays in regular mode, so a new habit
+is never asked for a place or weather rules. A habit already using it still
+shows its place and weather in Details. This choice applies to build habits;
+limit and stop habits retain their tracking goals. Defaults and busy-time
+shortcuts stay in regular mode.
 
 ---
 
@@ -3069,7 +3046,7 @@ Same agenda logic, but simplified display:
 - Remaining panes stack into one scroll; section headers stay visible
 - The reserved action bar stays outside the scrolling fields
 - Allowed weekdays and time window live in **allowed days & hours**, folded by default; expanding it preserves the draft and stays expanded during the current visit
-- Month days, preferences and link setup remain regular-mode options. Places and weather stay visible for **when conditions fit** habits; ordinary habits keep these in regular mode.
+- Month days, preferences, link setup, and **when conditions fit** remain regular-mode options. A habit already set that way still shows its places and weather; ordinary habits keep these in regular mode.
 - A quiet **More options in settings** shortcut opens the Minimal Mode setting. Switching there reveals all options without saving or discarding the draft.
 - Action rows limited to remove: shared display, export to calendar, share
   item, snooze, and pin are regular-mode only (saved values are untouched)

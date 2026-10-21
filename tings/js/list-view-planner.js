@@ -1,3 +1,13 @@
+// Keep small trigger radii responsive without replanning on every GPS jitter.
+function opportunityProximitySignature(data,settings,coord){
+  if(!coord || settings.pinnedLocationId)return '';
+  return data.filter(h=>isOpportunityHabit(h) && opportunityTrigger(h) === 'location').map(h=>{
+    const ids = new Set([...(h.locationIds || []),...(h.scheduleOptions || []).map(option=>option.locationId)]);
+    return (settings.locations || []).filter(loc=>ids.has(loc.id)).map(loc=>
+      haversineMetres(coord.lat,coord.lng,loc.lat,loc.lng) <= opportunityRadius(h) ? '1' : '0').join('');
+  }).join(',');
+}
+
 function homeListFingerprint(now = Date.now()){
   const data = typeof load === 'function' ? load() : [];
   const s = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
@@ -45,6 +55,7 @@ function homeListFingerprint(now = Date.now()){
     typeof homeLocationFilter === 'string' ? homeLocationFilter : '',
     travelSig,
     coordSig,
+    opportunityProximitySignature(data,s,coord),
     currentEdgeSig,
     habitSig,
     (typeof habitTimer !== 'undefined' && habitTimer) ? `timer:${habitTimer.idx}:${habitTimer.startedAt}` : '',
@@ -687,7 +698,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 23;
+const HOME_PLANNER_ALGORITHM_VERSION = 24;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -757,6 +768,7 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     s.lastKnownLocationId || '',
     travelSig,
     coordSig,
+    opportunityProximitySignature(data,s,coord),
     currentEdgeSig,
     settingsSig,
     typeof getDoingNow==='function' ? JSON.stringify(getDoingNow()) : '',
@@ -1052,14 +1064,12 @@ function queueOptimizedHomeRender(data,opts){
   syncHomePlannerStatusIndicators();
   const settings = {...(sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {}))};
   // The planner runs in a Worker, where the page's ephemeral GPS coordinate is
-  // intentionally unavailable. Carry only its matched saved-place id across
-  // the boundary so a plan requested after "I'm at Walmart" starts there
-  // immediately, even before lastKnownLocationId has been persisted.
+  // unavailable. Carry its saved-place id and coordinate for this solve so
+  // presence and per-habit proximity radii agree with the main page.
   const livePlannerLocationId = typeof liveLocationId === 'function' ? liveLocationId() : null;
   if(livePlannerLocationId)settings._plannerLiveLocationId = livePlannerLocationId;
   const livePlannerCoord = typeof currentCoordLocation === 'function' ? currentCoordLocation() : null;
-  if(livePlannerCoord && typeof isCurrentCoordAwayFromSaved === 'function'
-    && isCurrentCoordAwayFromSaved(settings.locations)){
+  if(livePlannerCoord){
     settings._plannerCurrentCoord = {lat:livePlannerCoord.lat,lng:livePlannerCoord.lng};
   }
   const day0Only = Boolean(

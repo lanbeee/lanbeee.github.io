@@ -82,6 +82,7 @@ function applyDetailMinimalMode(){
     }
   });
   if(sheet?.classList.contains('opportunity-mode'))syncDetailConditionsLayout(true);
+  if(typeof refreshOpportunityChoiceVisibility === 'function')refreshOpportunityChoiceVisibility();
   if(minimal && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
   if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
 }

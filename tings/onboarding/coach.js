@@ -341,7 +341,7 @@
       };
       return {
         progress:p,title:'Choose when it fits',
-        copy:'Choose a place you already visit or weather rules. Any place needs weather rules. Add a place or rules here if needed.',
+        copy:'Choose weather rules, or switch to a place and distance.',
         target:['#add-sheet .add-content'],action:'Continue',next:'eSave',back:'eRhythm',
         disabled:Boolean($('do-save')?.disabled),locked:true
       };

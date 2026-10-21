@@ -120,7 +120,8 @@ function scoreTitle(h,score){
 
 // PURE: maps score to guidance copy
 function progressCopy(h,score){
-  if(isOpportunityHabit(h))return 'only when the place or weather fits';
+  if(isOpportunityHabit(h))return opportunityTrigger(h) === 'location'
+    ? 'only when near a selected place' : 'only when the weather matches';
   if(score === null)return 'start with one entry';
   if(h.type === 'keepup'){
     if(score >= 80)return 'your current gap is inside the rhythm';
@@ -139,7 +140,12 @@ function progressCopy(h,score){
 
 // PURE: builds the about blurb string
 function aboutText(h){
-  if(isOpportunityHabit(h))return `At most once every ${opportunityGapDays(h)} days. It shows up when you’re at a chosen place, or when the weather matches. You can still plan a time yourself.`;
+  if(isOpportunityHabit(h)){
+    const gap = `At most once every ${opportunityGapDays(h)} days`;
+    return opportunityTrigger(h) === 'location'
+      ? `${gap}, within ${opportunityRadius(h)} m of a chosen place.`
+      : `${gap}, when the weather matches.`;
+  }
   const days = daysSince(h.lastLog);
   if(h.type === 'task'){
     if(isTaskDone(h))return `Done. Logged ${entryWhen(h.lastLog)}.`;

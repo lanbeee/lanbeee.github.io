@@ -1,3 +1,18 @@
+function isLocationConditionControl(node){
+  const sheet = node?.closest('.opportunity-mode');
+  return Boolean(sheet && $(sheet.id === 'add-sheet' ? 'ting-condition-trigger' : 'detail-condition-trigger')?.value === 'location');
+}
+function syncConditionTriggerControls(){
+  for(const prefix of ['ting','detail']){
+    const location = $(prefix+'-condition-trigger').value === 'location';
+    $(prefix === 'ting' ? 'add-conditions' : 'detail-conditions').dataset.trigger = location ? 'location' : 'weather';
+    $(prefix+'-condition-radius-row').hidden = !location;
+    const select = $(prefix+'-weather-profile');
+    const optional = Boolean(select.closest('.opportunity-mode'));
+    select.previousElementSibling.textContent = optional && !location ? 'Weather rules' : 'weather guidance';
+  }
+}
+
 // Weather profile controls and per-habit profile selectors.
 
 const WEATHER_PROFILE_NONE_VALUE='__none__';
@@ -75,18 +90,18 @@ function selectedWeatherLocationIds(selectId){
 
 function weatherInheritLabel(selectId){
   const select=$(selectId);
-  const opportunity=Boolean(select?.closest('.opportunity-mode'));
+  const opportunity=Boolean(select?.closest('.opportunity-mode')) && !isLocationConditionControl(select);
   const profiles=normalizeWeatherProfiles((sortSettings || loadSortSettings()).weatherProfiles);
   const ids=selectedWeatherLocationIds(selectId);
   if(opportunity)return ids.length ? 'use each place’s weather rules' : 'choose weather rules…';
+  if(isLocationConditionControl(select))return 'use the place’s weather rules';
   return profiles.length ? 'use the place’s weather rules' : 'use the place’s weather rules · none saved yet';
 }
 
-// A conditional item shows up only after a place or a weather choice.
-// Say that as an instruction. "Anywhere" is not a finished choice.
-function opportunitySetupHint(hasTrigger, needsCity){
-  if(!hasTrigger)return 'Choose a place you visit, or the weather this needs. It won’t show up until one of those is set.';
-  if(needsCity)return 'Add your city so Tings can tell when the weather matches.';
+// A conditional item needs the selected trigger, not either condition.
+function opportunitySetupHint(hasTrigger, needsCity, trigger){
+  if(!hasTrigger)return trigger === 'location' ? 'Choose a place.' : 'Choose weather rules.';
+  if(needsCity)return 'Set a city to check the forecast.';
   return '';
 }
 
@@ -109,21 +124,18 @@ function weatherProfileRuleSummary(profile){
 function weatherGuidanceHintText(selectId){
   const settings=sortSettings || loadSortSettings();
   const choice=weatherProfileChoiceFromValue($(selectId)?.value || '');
-  const opportunity=Boolean($(selectId)?.closest('.opportunity-mode'));
+  const opportunity=Boolean($(selectId)?.closest('.opportunity-mode')) && !isLocationConditionControl($(selectId));
   if(choice.weatherProfileMode==='none'){
-    return opportunity
-      ? selectedWeatherLocationIds(selectId).length
-        ? 'Weather doesn’t restrict this habit. Tings suggests it during visits to your selected places.'
-        : 'Weather doesn’t restrict this habit. Choose a place above so Tings knows when to suggest it.'
+    return opportunity || isLocationConditionControl($(selectId))
+      ? ''
       : 'Weather won’t change the plan, unless a specific time and place says otherwise.';
   }
   if(choice.weatherProfileMode==='profile'){
     const name=weatherProfileName(choice.weatherProfileId,settings) || 'this weather';
     if(opportunity){
       const summary = weatherProfileRuleSummary(weatherProfileById(choice.weatherProfileId,settings));
-      if(!summary)return `${name} has no active rules. Edit weather rules below, or choose a place above.`;
-      const place = selectedWeatherLocationIds(selectId).length ? 'at a selected place' : 'where the forecast is checked';
-      return `Only when ${name} matches ${place}. ${summary}. Waits if the forecast is unavailable.`;
+      if(!summary)return 'Add a weather limit to activate this rule.';
+      return summary+'.';
     }
     return `Uses ${name} at the place where this is planned.`;
   }
@@ -134,17 +146,19 @@ function weatherGuidanceHintText(selectId){
     return name ? `${loc.name} · ${name}` : null;
   }).filter(Boolean);
   if(inherited.length)return opportunity
-    ? `Uses saved rules: ${inherited.join('; ')}. Places without active rules allow any weather. Both place and weather must match.`
+    ? `Uses ${inherited.join('; ')}.`
     : `Uses the weather saved for ${inherited.join('; ')}.`;
   if(opportunity){
-    return ids.length ? 'These places have no active weather rules, so any weather is fine. Choose saved rules to add a weather condition.' : 'Choose saved weather rules, or select a place above. Any place alone isn’t a condition.';
+    return '';
   }
+  if(isLocationConditionControl($(selectId)))return '';
   return ids.length
     ? 'The selected places have no saved weather, so weather won’t change the plan.'
     : 'Uses the weather saved on the place, if it has one.';
 }
 
 function syncWeatherGuidanceHints(){
+  syncConditionTriggerControls();
   const tingWrap = $('ting-weather-location-wrap');
   if(tingWrap && $('add-sheet')?.classList.contains('opportunity-mode')){
     tingWrap.hidden = !locationOptions().length || !selectedAnywhere() && selectedLocationIds().length>0
@@ -176,6 +190,7 @@ function syncDetailConditionHint(){
   if(!hint)return;
   const record = {
     ...readWeatherProfileChoice('detail-weather-profile'),
+    conditionTrigger:$('detail-condition-trigger').value,
     locationIds:selectedLocationIdsFrom('detail-place-chips'),
     anywhereAllowed:selectedAnywhereFrom('detail-place-chips'),
     weatherLocationId:$('detail-weather-location')?.value || null,
@@ -183,10 +198,10 @@ function syncDetailConditionHint(){
   };
   const settings = sortSettings || loadSortSettings();
   const hasPlace = record.locationIds.length > 0 || record.scheduleOptions.some(option=>option.locationId);
-  const hasTrigger = hasPlace || weatherHabitHasActiveGuidance(record,settings);
+  const hasTrigger = record.conditionTrigger === 'location' ? hasPlace : weatherHabitHasActiveGuidance(record,settings);
   const needsCity = optional && hasTrigger && !hasPlace && !record.weatherLocationId && !weatherHomeCoords(settings);
   $('detail-weather-city').hidden = !needsCity;
-  hint.textContent = opportunitySetupHint(hasTrigger, needsCity);
+  hint.textContent = opportunitySetupHint(hasTrigger, needsCity,record.conditionTrigger);
   if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip('detail-place-chips');
   hint.hidden = !optional || (hasTrigger && !needsCity);
   if(optional){
@@ -598,3 +613,15 @@ bindWeatherDisplaySwitch('ting-show-weather');
 bindWeatherDisplaySwitch('ting-show-weather-location');
 bindWeatherDisplaySwitch('detail-show-weather');
 bindWeatherDisplaySwitch('detail-show-weather-location');
+
+for(const prefix of ['ting','detail']){
+  for(const field of ['trigger','radius'])$(prefix+'-condition-'+field).addEventListener('input',()=>{
+    syncWeatherGuidanceHints();
+    const id = prefix === 'ting' ? 'ting-tag-chips' : 'detail-place-chips';
+    renderTagChips(id,selectedTopicsFrom(id),selectedLocationIdsFrom(id),null,selectedLocationPrefsFrom(id),selectedAnywhereFrom(id));
+    if(prefix === 'detail'){
+      syncDetailSchedulePlacesUi();
+      setDetailDirty();
+    }
+  });
+}

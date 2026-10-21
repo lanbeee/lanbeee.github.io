@@ -50,6 +50,8 @@ function currentDetailTune(){
     name:$('detail-habit-message').value.trim(),
     type,
     repeatMode:normalizeRepeatMode($('detail-repeat-mode').value,type),
+    conditionTrigger:$('detail-condition-trigger').value,
+    conditionRadiusM:opportunityRadius({conditionRadiusM:$('detail-condition-radius').value}),
     emoji:cleanMark($('detail-emoji').value),
     emojiBgColor:selectedEmojiBgColor('detail-emoji-bg'),
     target:currentRhythmTarget('detail'),
@@ -172,6 +174,8 @@ function setDetailDirty(force){
 function restoreDetailTune(){
   if(!detailTuneOriginal)return;
   $('detail-repeat-mode').value = detailTuneOriginal.repeatMode || 'routine';
+  $('detail-condition-trigger').value = detailTuneOriginal.conditionTrigger;
+  $('detail-condition-radius').value = detailTuneOriginal.conditionRadiusM;
   $('detail-habit-message').value = detailTuneOriginal.name;
   $('detail-emoji').value = detailTuneOriginal.emoji;
   renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');

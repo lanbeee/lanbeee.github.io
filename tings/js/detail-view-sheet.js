@@ -42,6 +42,8 @@ function openDetail(i){
   renderEmojiBgSwatches('detail-emoji-bg',h.emojiBgColor || '');
   $('detail-days').value = h.target || '';
   $('detail-repeat-mode').value = normalizeRepeatMode(h.repeatMode,h.type);
+  $('detail-condition-trigger').value = opportunityTrigger(h);
+  $('detail-condition-radius').value = opportunityRadius(h);
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
   if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
@@ -85,6 +87,8 @@ function openDetail(i){
     name:h.name || '',
     type:h.type || 'keepup',
     repeatMode:normalizeRepeatMode(h.repeatMode,h.type),
+    conditionTrigger:opportunityTrigger(h),
+    conditionRadiusM:opportunityRadius(h),
     emoji:h.emoji || '',
     emojiBgColor:normalizeEmojiBgColor(h.emojiBgColor),
     // Tasks/stop items have no saved rhythm, but their hidden editor still

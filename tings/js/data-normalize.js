@@ -338,6 +338,8 @@ function normalize(items){
       name: raw.name || '',
       type,
       repeatMode:normalizeRepeatMode(raw.repeatMode,type),
+      conditionTrigger:opportunityTrigger(raw),
+      conditionRadiusM:opportunityRadius(raw),
       target: (type === 'zero' || type === 'task')
         ? null
         : (normalizeRepeatMode(raw.repeatMode,type) === 'opportunity'

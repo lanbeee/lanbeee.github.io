@@ -64,12 +64,12 @@ function refreshAddAvailability(){
   if(!addActiveDefaults)return;
   const record = readAddRecord();
   const optional = isOpportunityHabit(record);
-  const hasTrigger = record.locationIds.length>0 || weatherHabitHasActiveGuidance(record,sortSettings);
+  const hasTrigger = record.conditionTrigger === 'location' ? record.locationIds.length>0 : weatherHabitHasActiveGuidance(record,sortSettings);
   const needsCity = optional && hasTrigger && !record.locationIds.length && !record.weatherLocationId
     && !weatherHomeCoords(sortSettings);
   $('ting-weather-city').hidden = !needsCity;
   $('add-condition-hint').textContent = typeof opportunitySetupHint === 'function'
-    ? opportunitySetupHint(hasTrigger, needsCity)
+    ? opportunitySetupHint(hasTrigger, needsCity,record.conditionTrigger)
     : '';
   if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip('ting-tag-chips');
   $('add-condition-hint').hidden = !optional || (hasTrigger && !needsCity);
@@ -113,7 +113,9 @@ function addRoomPreviewCopy(before,after,data,record){
   const lost = [...addRoomMinutes(before)].filter(([i,total])=>(minutes.get(i) || 0) < total)
     .map(([i])=>data[i]?.name).filter(Boolean);
   if(!draftMinutes)return isOpportunityHabit(record)
-    ? {tone:'',text:'Nothing fits in the next 7 days. It waits until you’re at the place, or the weather matches.'}
+    ? {tone:'',text:opportunityTrigger(record) === 'location'
+      ? 'No room in the next 7 days. It waits until you’re near a place.'
+      : 'No room in the next 7 days. It waits for matching weather.'}
     : {tone:'warning',text:'No room found in the next 7 days with these settings. You can still add it and adjust its schedule in details.'};
   const days = (after.days || []).filter(day=>(day.timeline || []).some(row=>row.i === data.length && ['fill','scheduled'].includes(row.kind))).length;
   const partial = record.type === 'task' && draftMinutes < record.durationMinutes;
@@ -182,7 +184,7 @@ async function checkAddRoom(){
     const place = liveLocationId();
     if(place)settings._plannerLiveLocationId = place;
     const coord = currentCoordLocation();
-    if(coord && isCurrentCoordAwayFromSaved(settings.locations))settings._plannerCurrentCoord = {lat:coord.lat,lng:coord.lng};
+    if(coord)settings._plannerCurrentCoord = {lat:coord.lat,lng:coord.lng};
     const mode = settings.agendaOptimizer && !agendaPlannerForcedFast() ? 'exact' : 'fast';
     const before = await addRoomWorkerWeek(run,data,settings,mode,1);
     if(_addRoomRun !== run)return;

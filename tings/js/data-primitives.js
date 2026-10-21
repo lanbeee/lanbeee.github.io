@@ -605,3 +605,14 @@ function restoreBlockedInstance(dayKey,label,startMin,endMin){
   saveSortSettings({...settings,cancelledBlocks:map});
   return true;
 }
+
+// Old conditional habits with explicit weather rules become weather-triggered;
+// place-only habits retain their location trigger.
+function opportunityTrigger(h){
+  return ['weather','location'].includes(h?.conditionTrigger) ? h.conditionTrigger
+    : (h?.weatherProfileId || !(h?.locationIds?.length) ? 'weather' : 'location');
+}
+function opportunityRadius(h){
+  const value = Number(h?.conditionRadiusM);
+  return Number.isFinite(value) && value > 0 ? Math.max(1,Math.min(100000,value)) : 200;
+}

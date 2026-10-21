@@ -73,6 +73,7 @@ function applyAppearanceSettings(){
 function applyAddMinimalMode(){
   const minimal = isMinimalMode();
   $('add-sheet')?.classList.toggle('minimal-add',minimal);
+  if(typeof refreshOpportunityChoiceVisibility === 'function')refreshOpportunityChoiceVisibility();
   if(!minimal)return;
   $('add-more-options').hidden = true;
   $('add-more-toggle').setAttribute('aria-expanded','false');

@@ -463,8 +463,15 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 .detail-frequency-presets button:focus-visible{outline:2px solid var(--text2);outline-offset:2px;}
 #detail-slider-row{flex-wrap:wrap;gap:8px;margin:0 0 8px;}
 #detail-slider-row .range-value{width:auto;min-width:90px;min-height:44px;gap:5px;padding:0 10px;background:var(--field-bg);border-radius:var(--radius-sm);box-shadow:none;}
-.detail-conditions{margin:12px 0 16px;padding:14px;border:0;border-radius:var(--radius);background:var(--bg);box-shadow:none;}
-.detail-conditions .detail-schedule-places{margin:0;padding:0;border:0;}
+.detail-conditions{display:flex;flex-direction:column;margin:12px 0 16px;padding:14px;border:0;border-radius:var(--radius);background:var(--bg);box-shadow:none;}
+.detail-conditions > label[for="detail-condition-trigger"]{order:0;}
+.detail-conditions #detail-condition-trigger{order:1;}
+.detail-conditions #detail-condition-radius-row{order:2;}
+.detail-conditions #detail-condition-hint{order:3;}
+.detail-conditions .detail-schedule-places{order:4;margin:12px 0 0;padding:0;border:0;}
+.detail-conditions #detail-weather-disclosure{order:5;}
+.detail-conditions[data-trigger="weather"] #detail-weather-disclosure{order:4;}
+.detail-conditions[data-trigger="weather"] .detail-schedule-places{order:5;}
 .detail-conditions #detail-weather-disclosure{margin:12px 0 0;padding:0;border:0;}
 .detail-conditions #detail-weather-disclosure > summary{display:none;}
 .detail-conditions :is(#detail-show-weather-row,#detail-show-weather-location-row,#detail-show-weather-location-hint,#detail-weather-venue-hint){display:none !important;}

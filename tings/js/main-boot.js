@@ -167,7 +167,8 @@ function syncAddConditionsLayout(optional){
   }
   $('add-places-label').textContent = optional ? 'Places' : 'Topics & places';
   places.querySelector('.field-hint').textContent = optional
-    ? 'A place you already visit. Tings uses that visit and won’t add a trip.' : 'Group this item by topic and choose where it can happen.';
+    ? 'Where can this happen?' : 'Group this item by topic and choose where it can happen.';
+  places.querySelector('.field-hint').hidden = false;
   const weatherOptional = weather.querySelector('summary .field-optional');
   if(weatherOptional)weatherOptional.hidden = optional;
   if(optional)weather.open = true;
@@ -192,7 +193,7 @@ function syncAddRhythmUi(){
   syncAddConditionsLayout(optional);
   document.querySelector('.add-frequency .add-presets').hidden = !['keepup','reduce'].includes(selectedType);
   const opportunityButton = document.querySelector('[data-add-repeat="opportunity"]');
-  opportunityButton.hidden = selectedType !== 'keepup';
+  opportunityButton.hidden = opportunityChoiceHidden(selectedType === 'keepup');
   opportunityButton.setAttribute('aria-pressed',String(optional));
   const times = Math.max(1,Math.min(30,parseInt($('ting-times').value,10) || 1));
   const days = Math.max(1,Math.min(MAX_RHYTHM_DAYS,parseInt($('ting-days').value,10) || 7));
@@ -201,13 +202,29 @@ function syncAddRhythmUi(){
   const count = times === 1 ? 'once' : `${times} times`;
   const period = days === 1 ? 'a day' : days === 7 ? 'a week' : `every ${days} days`;
   $('target-help').textContent = selectedType === 'zero' ? rhythmHelp('zero')
-    : optional ? 'You don’t miss a day just because the place or weather wasn’t right.'
+    : optional ? 'No missed days when conditions don’t match.'
     : selectedType === 'reduce' ? `Keep it to ${count} ${period} or less.`
     : `Aim for ${count} ${period}.`;
   document.querySelectorAll('[data-add-rhythm]').forEach(button=>{
     const [presetTimes,presetDays] = button.dataset.addRhythm.split(',').map(Number);
     button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
   });
+}
+
+// Minimal mode keeps daily, weekly, and custom rhythms. "When conditions fit"
+// stays in regular mode. A habit already using it still shows its conditions.
+function opportunityChoiceHidden(keepup){
+  return !keepup || (typeof isMinimalMode === 'function' && isMinimalMode());
+}
+function refreshOpportunityChoiceVisibility(){
+  const addButton = document.querySelector('[data-add-repeat="opportunity"]');
+  if(addButton)addButton.hidden = opportunityChoiceHidden(typeof selectedType === 'undefined' || selectedType === 'keepup');
+  const detailButton = document.querySelector('[data-detail-repeat]');
+  if(!detailButton)return;
+  const typeBtn = document.querySelector('#detail-type-seg .seg-opt.on');
+  const modeBtn = document.querySelector('#detail-mode-seg .seg-opt.on');
+  const keepup = (!typeBtn || typeBtn.dataset.detailType !== 'task') && (!modeBtn || modeBtn.dataset.mode === 'build');
+  detailButton.hidden = opportunityChoiceHidden(keepup);
 }
 
 document.querySelector('[data-add-repeat="opportunity"]').addEventListener('click',()=>{
@@ -250,7 +267,7 @@ function syncDetailConditionsLayout(optional){
 function syncDetailRepeatModeUi(type){
   const optional = type === 'keepup' && $('detail-repeat-mode').value === 'opportunity';
   $('detail-repeat-mode-row').hidden = !['keepup','reduce'].includes(type);
-  document.querySelector('[data-detail-repeat]').hidden = type !== 'keepup';
+  document.querySelector('[data-detail-repeat]').hidden = opportunityChoiceHidden(type === 'keepup');
   if(optional)$('detail-times').value = 1;
   $('detail-times').closest('label').hidden = optional;
   $('detail-slider-row').querySelector('.rhythm-in').hidden = optional;
@@ -270,7 +287,7 @@ function syncDetailRepeatModeUi(type){
     const [presetTimes,presetDays] = button.dataset.detailRhythm.split(',').map(Number);
     button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
   });
-  if(optional)$('detail-target-help').textContent = 'You don’t miss a day just because the place or weather wasn’t right.';
+  if(optional)$('detail-target-help').textContent = 'No missed days when conditions don’t match.';
   syncDetailConditionsLayout(optional);
 }
 $('detail-repeat-mode').addEventListener('change',()=>{
@@ -451,6 +468,8 @@ function readAddRecord(){
     type,
     target,
     repeatMode:normalizeRepeatMode($('ting-repeat-mode').value,type),
+    conditionTrigger:$('ting-condition-trigger').value,
+    conditionRadiusM:opportunityRadius({conditionRadiusM:$('ting-condition-radius').value}),
     lastLog:null,
     logs:[],
     emoji:cleanMark($('ting-emoji').value),
@@ -1053,7 +1072,7 @@ $('detail-place-chips')?.addEventListener('click',e=>{
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
           const prefs = selectedLocationPrefsFrom(wrap);
           renderTagChips(wrap,[],selected,null,prefs,
-            $('detail-sheet').classList.contains('opportunity-mode') ? false : selectedAnywhereFrom(wrap));
+            isLocationConditionControl($(wrap)) ? false : selectedAnywhereFrom(wrap));
           if(typeof syncWeatherGuidanceHints==='function')syncWeatherGuidanceHints();
           setDetailDirty();
         }
@@ -1603,6 +1622,8 @@ $('detail-save').addEventListener('click',()=>{
   h.name = current.name.slice(0,60);
   h.type = current.type;
   h.repeatMode = normalizeRepeatMode(current.repeatMode,current.type);
+  h.conditionTrigger = opportunityTrigger(current);
+  h.conditionRadiusM = opportunityRadius(current);
   h.emoji = current.emoji;
   h.emojiBgColor = normalizeEmojiBgColor(current.emojiBgColor);
   h.pinned = current.pinned;
