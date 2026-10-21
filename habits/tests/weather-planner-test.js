@@ -13,6 +13,10 @@ function assert(value,message){
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const errors=[];
   page.on('pageerror',error=>errors.push(String(error)));
+  await page.addInitScript(()=>{
+    localStorage.setItem('tings_coach_install_v2','done');
+    localStorage.setItem('tings_coach_essentials_v2','done');
+  });
   await page.goto(BASE,{waitUntil:'networkidle'});
 
   await page.evaluate(()=>{

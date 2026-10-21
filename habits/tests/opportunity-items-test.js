@@ -32,6 +32,40 @@ const {chromium,BASE,baseHabit,plannerSettings,runPlannerPair,minutesOnDay,place
     await check('repeats on the minimum gap across the week',[optional({target:3})],settings,w=>{assert.deepEqual(w.days.map(x=>x.Optional || 0),[30,0,0,30,0,0,30]);});
     await check('soft weather limits become eligibility conditions even for P0',[optional({priority:0})],{...settings,_weatherContext:{...context,samples:context.samples.map(x=>({...x,precipitation_probability:x.ts<day+D ? 90 : 10}))}},w=>{assert.equal(minutesOnDay(w,0,'Optional'),0);assert.equal(minutesOnDay(w,1,'Optional'),30);});
     await check('unknown forecast waits',[optional()],{...settings,_weatherContext:null},w=>assert.equal(placedAnywhere(w,'Optional'),0));
+    const activeSessions=await page.evaluate(async({settings,exact})=>{
+      const RealDate=Date;
+      const previous=loadOrderConstraintStore();
+      const results=[];
+      try{
+        for(const repeatMode of ['routine','opportunity']){
+          for(const [hour,minute,durationMinutes,sessionMinutes] of [[23,40,60,15],[9,0,15,45]]){
+            const now=new RealDate(2026,2,2,hour,minute).getTime();
+            function FrozenDate(...args){return args.length ? new RealDate(...args) : new RealDate(now);}
+            FrozenDate.now=()=>now;FrozenDate.parse=RealDate.parse;FrozenDate.UTC=RealDate.UTC;
+            FrozenDate.prototype=RealDate.prototype;Object.setPrototypeOf(FrozenDate,RealDate);
+            globalThis.Date=FrozenDate;
+            const h={hid:'active-target',name:'Active target',type:'keepup',repeatMode,
+              target:repeatMode==='routine' ? 1 : 14,logs:[],lastLog:null,durationMinutes,
+              priority:2,locationIds:[],anywhereAllowed:true,
+              weatherProfileMode:'profile',weatherProfileId:'dry'};
+            const cfg={...settings,blockedTimes:[],availabilityMinutes:Array(7).fill(1440),_weatherContext:null};
+            setDoingNow(h.hid,now,dayStart(now),{sessionMinutes});
+            for(const engine of exact ? ['fast','glpk'] : ['fast']){
+              const week=engine==='fast' ? buildWeekAgenda([h],cfg,1)
+                : await buildWeekAgendaAsync([h],{...cfg,agendaOptimizer:true},1);
+              const rows=week.days[0].timeline.filter(row=>row.kind==='fill' && row.i===0);
+              results.push({engine,repeatMode,sessionMinutes,minutes:rows.reduce((sum,row)=>sum+(row.end-row.start)/60000,0)});
+            }
+            clearDoingNow();
+          }
+        }
+        return results;
+      }finally{globalThis.Date=RealDate;saveOrderConstraintStore(previous);}
+    },{settings,exact});
+    for(const result of activeSessions){
+      assert.equal(result.minutes,result.sessionMinutes,`${result.engine}: ${result.repeatMode} uses the active session target, including near midnight with unknown weather`);
+    }
+    checks++;console.log('ok: explicit session targets stay consistent across engines and day boundaries');
     await check('stale forecast waits',[optional()],{...settings,_weatherContext:{...context,weeklyFetchedAt:now-9*3600000}},w=>assert.equal(placedAnywhere(w,'Optional'),0));
     await check('no configured trigger waits',[optional({weatherProfileMode:'none',weatherProfileId:null})],settings,w=>assert.equal(placedAnywhere(w,'Optional'),0));
     const locations=[{id:'home',name:'Home',lat:40,lng:-74},{id:'park',name:'Park',lat:40.01,lng:-74}];

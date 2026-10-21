@@ -82,12 +82,22 @@ function seedScript(){
 
   await page.addInitScript(seedScript());
   await page.goto(baseUrl, { waitUntil:'load' });
-  await page.waitForTimeout(500);
+  await page.waitForFunction(()=>_homeRenderedWeek?.days?.length>0);
 
   console.log('\n[A] startHabitTimer + home session bar');
   const started = await page.evaluate(async () => {
     const idx = load().findIndex(h => h.name === 'Walk timer');
-    const ok = startHabitTimer(idx);
+    // Hold the solved clocks constant: session controls must update before
+    // a pending replan completes, even when that plan will be identical.
+    const planner = buildWeekAgendaOffMain;
+    const mounted = _homeRenderedWeek;
+    _optimizerHomeReadyKey = '';
+    buildWeekAgendaOffMain = async()=>mounted;
+    let ok, immediateBar;
+    try{
+      ok = startHabitTimer(idx);
+      immediateBar = !!document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress]`);
+    }finally{buildWeekAgendaOffMain = planner;}
     const deadline = performance.now() + 5000;
     while(!document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress]`)
       && performance.now() < deadline)await new Promise(resolve=>setTimeout(resolve,16));
@@ -102,6 +112,7 @@ function seedScript(){
       : false;
     return {
       ok,
+      immediateBar,
       running: Boolean(habitTimer && habitTimer.idx === idx),
       habitHid:load()[idx]?.hid || null,
       doingHid: getDoingNow()?.hid || null,
@@ -116,6 +127,7 @@ function seedScript(){
   console.log(started);
   assert(started.ok && started.running, 'startHabitTimer starts global timer');
   assert(started.doingHid === started.habitHid, 'timer and doing-now share the same active habit');
+  assert(started.immediateBar, 'session controls repaint immediately while an unchanged plan is pending');
   assert(started.bar, 'home card shows session progress bar while timer runs');
   assert(started.hasSessionClass && !started.hasBreakableClass, 'session cards use has-session-progress, not breakable grid');
   assert(!started.overlap, 'session bar does not overlap cue text');

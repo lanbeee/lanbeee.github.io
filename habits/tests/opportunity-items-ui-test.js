@@ -5,6 +5,10 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
  try{
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+  await page.addInitScript(()=>{
+    localStorage.setItem('tings_coach_install_v2','done');
+    localStorage.setItem('tings_coach_essentials_v2','done');
+  });
   await page.goto(BASE,{waitUntil:'networkidle'});
   await page.evaluate(()=>{save([]);saveSortSettings({...loadSortSettings(),minimalMode:true,weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation_probability',max:30,min:null,hard:true,relative:'none'}]}]});sortSettings=loadSortSettings();document.body.classList.add('minimal-mode');applyAddMinimalMode();render();});
   await page.locator('#open-add').click();
@@ -84,13 +88,18 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   });
   assert.equal(assistant.mode,'opportunity','assistant edits retain optional mode');assert.equal(assistant.gap,14);assert.equal(assistant.due.overdueDays,0);assert.equal(assistant.due.dueInDays,null);assert(/at most/.test(assistant.frequency));assert(assistant.schema);
   const active=await page.evaluate(()=>{
-    const h=load()[0],now=Date.now();
+    const h=load()[0],RealDate=Date;
+    const now=new RealDate().setHours(12,0,0,0);
+    function FrozenDate(...args){return args.length ? new RealDate(...args) : new RealDate(now);}
+    FrozenDate.now=()=>now;FrozenDate.parse=RealDate.parse;FrozenDate.UTC=RealDate.UTC;
+    FrozenDate.prototype=RealDate.prototype;Object.setPrototypeOf(FrozenDate,RealDate);
+    globalThis.Date=FrozenDate;
     setDoingNow(h.hid,now,dayStart(now),{sessionMinutes:15});
     try{
       const settings={...loadSortSettings(),blockedTimes:[],_weatherContext:null};
       const week=buildWeekAgenda([h],settings,1);
       return week.days[0].timeline.some(row=>row.kind==='fill' && row.i===0);
-    }finally{clearDoingNow(h.hid);}
+    }finally{clearDoingNow(h.hid);globalThis.Date=RealDate;}
   });
   assert(active,'a session explicitly started now stays in the agenda when weather becomes unknown');
   const native=await page.evaluate(()=>{

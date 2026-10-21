@@ -989,7 +989,7 @@ function homeLogFaceToken(log){
 
 function homeCardFaceSignature(data = (typeof load === 'function' ? load() : [])){
   if(!Array.isArray(data))return '';
-  return data.map(h=>{
+  const habits = data.map(h=>{
     if(!h)return '';
     const logs = Array.isArray(h.logs) ? h.logs : [];
     let logSig = '';
@@ -1020,6 +1020,13 @@ function homeCardFaceSignature(data = (typeof load === 'function' ? load() : [])
       logSig
     ].join('~');
   }).join('\n');
+  // Session controls change even when the planner keeps every row's clock.
+  const timer = typeof habitTimer !== 'undefined' ? habitTimer : null;
+  const session = typeof getDoingNow === 'function' ? getDoingNow() : null;
+  return [
+    timer ? [timer.idx,timer.startedAt,timer.targetMs,timer.completionMode].join(':') : '',
+    JSON.stringify(session),habits
+  ].join('\n');
 }
 
 function rememberHomeCardFace(data){

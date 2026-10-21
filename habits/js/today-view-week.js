@@ -1519,6 +1519,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
         };
         if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
           dayOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
+          // The active session owns its snapshotted target, as in GLPK.
+          fill.chunkMinutes = Math.max(1,Number(doing.sessionMinutes)
+            || doingNowSessionMinutesFor(c.h));
         }
         if(!isScarceScore(c.scarcity)){
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
@@ -1624,6 +1627,9 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
         };
         if(doing && c.h && c.h.hid === doing.hid && doing.dayBase === state.dayBase){
           dayOpts.doingNowStart = Math.min(Number(doing.startedAt) || Date.now(), Date.now());
+          // The active session owns its snapshotted target, as in GLPK.
+          fill.chunkMinutes = Math.max(1,Number(doing.sessionMinutes)
+            || doingNowSessionMinutesFor(c.h));
         }
         if(!isScarceScore(c.scarcity)){
           const spare = scarceWindowsToSpare(candidates,state.dayBase,state.seedLocId,state.dayBase);
