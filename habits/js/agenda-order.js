@@ -176,7 +176,10 @@ function openDoingNowSheet(draft){
       seg.querySelectorAll('.seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
     });
   }
-  if(typeof openSheet === 'function')openSheet('doing-now-sheet');
+  if(typeof openSheet === 'function')openSheet('doing-now-sheet',{reopen:()=>{
+    const h = load().find(item=>item.hid === draft.h?.hid);
+    if(h)openDoingNowSheet({...draft,h});
+  }});
 }
 
 function confirmDoingNow(){
@@ -279,7 +282,9 @@ function openOrderLinkSheet(draft){
     });
   });
 
-  if(typeof openSheet === 'function')openSheet('order-link-sheet');
+  if(typeof openSheet === 'function')openSheet('order-link-sheet',{reopen:()=>{
+    openOrderLinksForHabit(draft.h.hid,draft.dayBase);
+  }});
 }
 
 function readOrderLinkChoices(){

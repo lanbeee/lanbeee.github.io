@@ -1325,7 +1325,7 @@ function openTravelEditSheet(fromId,toId,leaveByTs,destination=null,dayKey=null)
   if(details)details.open=false;
   for(const id of ['travel-edit-save','travel-edit-reset']){const control=$(id);if(control)control.hidden=fromCurrent;}
   if(typeof renderNativeTravelEditorReminders==='function')renderNativeTravelEditorReminders(destination,dayKey || (Number.isFinite(leaveByTs) ? dateKey(leaveByTs) : null));
-  openSheet('travel-edit-sheet');
+  openSheet('travel-edit-sheet',{reopen:()=>openTravelEditSheet(fromId,toId,leaveByTs,destination,dayKey)});
 }
 
 const APPLE_DIRFLG = {driving:'d',walking:'w',bicycling:'c',transit:'r'};

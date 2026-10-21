@@ -519,7 +519,7 @@ function openLocationPicker(opts = {}){
   pendingPickerResults = [];
   setPickerSearchScope('near');
   pickerSuppressReverse = true;
-  openSheet('location-picker-sheet');
+  openSheet('location-picker-sheet',{reopen:()=>openLocationPicker(opts)});
   const start = pickerOpeningCenter(opts);
   const lat = start.lat;
   const lng = start.lng;

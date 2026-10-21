@@ -268,6 +268,11 @@ body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#overview-s
 /* Scoped day details already have a pinned close control in their header. */
 #day-logs-footer:has(> #day-logs-done:only-child){display:none;}
 
+/* History traversal already has a browser-owned transition on iOS. Show the
+   restored page immediately under that snapshot, without a second fade. */
+.browser-history-navigation .sheet-wrap,
+.browser-history-navigation .sheet-wrap .sheet{transition:none !important;}
+
 /* Bezel back on touch browsers. The open sheet tracks the finger; inner
    overlays that Back does not close use the hint instead. */
 .sheet-wrap.edge-back-dragging,
