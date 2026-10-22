@@ -209,6 +209,7 @@ function clamp01(value){
 }
 
 function progressScore(h){
+  if(isLocalAppointment(h))return null;
   if(isOpportunityHabit(h))return null;
   if(h.type === 'task'){
     if(h.breakable && h.lastLog !== null){
@@ -761,6 +762,7 @@ function attentionScore(h,index,settingsOverride = null,affinity = null){
  * @returns {0|1|2|3}
  */
 function todayCategory(h,settings){
+  if(isLocalAppointment(h)){const occurrence=appointmentOccurrence(h,todayIso());return occurrence && occurrence.end>Date.now() ? 0 : 2;}
   if(isOpportunityHabit(h))return hasPlannedToday(h) ? 0 : 2;
   const days = daysSince(h.lastLog);
   const target = effectiveTarget(h);

@@ -37,6 +37,7 @@ function homeListFingerprint(now = Date.now()){
     typeof breakableProgressMinutes === 'function' ? breakableProgressMinutes(h) : 0,
     h.allowedTimeStart, h.allowedTimeEnd,
     h.allowedTimeFixedStart,
+    JSON.stringify(h.appointment || null),
     h.allowedTimeStartAnchor || '', h.allowedTimeStartOffsetMin || 0,
     h.allowedTimeEndAnchor || '', h.allowedTimeEndOffsetMin || 0,
     (h.allowedWeekdays || []).join(','),
@@ -699,7 +700,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 24;
+const HOME_PLANNER_ALGORITHM_VERSION = 26;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -772,6 +773,7 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     opportunityProximitySignature(data,s,coord),
     currentEdgeSig,
     settingsSig,
+    JSON.stringify(data.filter(h=>h.appointment).map(h=>[h.hid,h.appointment])),
     typeof getDoingNow==='function' ? JSON.stringify(getDoingNow()) : '',
     Array.isArray(data) ? data.length : 0
   ].join('\n');
@@ -1017,6 +1019,7 @@ function homeCardFaceSignature(data = (typeof load === 'function' ? load() : [])
       (h.allowedWeekdays || []).join(','),
       h.allowedTimeStart ?? '',
       h.allowedTimeEnd ?? '',
+      JSON.stringify(h.appointment || null),
       logSig
     ].join('~');
   }).join('\n');

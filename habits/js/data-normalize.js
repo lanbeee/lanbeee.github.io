@@ -348,6 +348,7 @@ function normalize(items){
       hardDue,
       autoMarkMinutes,
       eventTime,
+      appointment:normalizeAppointment(raw.appointment),
       planByDate: isRhythmHabit && normalizeRepeatMode(raw.repeatMode,type) !== 'opportunity' ? clampDayTimestamp(raw.planByDate) : null,
       createdAt: raw.createdAt || null,
       logs,
@@ -421,15 +422,25 @@ function normalize(items){
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
       source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal' || raw.source === 'device') ? raw.source : null,
       ...(raw.source === 'device' ? {
+        calendarSeriesId:typeof raw.calendarSeriesId === 'string' && /^device:\d+:\d+$/.test(raw.calendarSeriesId) ? raw.calendarSeriesId : null,
         calendarId:typeof raw.calendarId === 'string' ? raw.calendarId.slice(0,20) : null,
         calendarStart:Number.isFinite(raw.calendarStart) ? raw.calendarStart : null,
         calendarEnd:Number.isFinite(raw.calendarEnd) ? raw.calendarEnd : null
       } : {}),
       importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
     };
-    // Only zero-offset, uncombined start anchors have an exact planner-order
-    // equivalent. Move those out of Dynamic timing; preserve all other habit
-    // expressions as explicit legacy completion-trigger timing.
+    // Appointment recurrence is a calendar rule, not a flexible habit cadence.
+    if(h.appointment){
+      h.type=h.appointment.repeat==='once' ? 'task' : 'keepup';
+      h.target=h.type==='keepup' ? 1 : null;
+      h.repeatMode='routine';h.breakable=false;h.autoMarkMinutes=null;
+      h.earlyWindowDays=0;h.delayAllowanceDays=0;h.planByDate=null;
+      h.allowedWeekdays=h.appointment.weekdays;h.allowedMonthDays=[];h.scheduleOptions=[];
+      h.allowedTimeFixedStart=true;h.allowedTimeStart=h.appointment.startMinute;h.allowedTimeEnd=null;
+      if(h.type==='task'){h.eventTime=appointmentOccurrence(h,h.appointment.startDate)?.start ?? null;h.dueDate=dayStart(new Date(`${h.appointment.startDate}T12:00:00`).getTime());}
+      else {h.eventTime=null;h.dueDate=null;}
+    }
+    // Move exact legacy start anchors to planner-order links.
     for(const field of scheduleLinkMigration.migratedFields){
       h[field + 'Anchor'] = null;
       h[field + 'OffsetMin'] = 0;
@@ -553,4 +564,58 @@ function save(data){
       return false;
     }
   }
+}
+
+// Local appointments keep a weekly calendar rule, independent of habit cadence.
+// Dates and clocks are local wall time: recurrence keeps its clock across DST.
+function appointmentDateKey(value){
+  if(typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value))return '';
+  const d=new Date(`${value}T12:00:00`);
+  return Number.isFinite(d.getTime()) && dateKey(d.getTime())===value ? value : '';
+}
+function normalizeAppointment(raw){
+  if(!raw || !['once','weekly'].includes(raw.repeat))return null;
+  const startDate=appointmentDateKey(raw.startDate),until=appointmentDateKey(raw.until);
+  const minute=Number(raw.startMinute);
+  // Keep all seven explicit: ordinary habit windows collapse that to an empty
+  // unrestricted set, but an appointment needs at least one selected day.
+  const weekdays=[...new Set((Array.isArray(raw.weekdays)?raw.weekdays:[]).map(Number).filter(d=>Number.isInteger(d) && d>=0 && d<=6))].sort((a,b)=>a-b);
+  if(!startDate || (raw.until && !until) || raw.startMinute==='' || raw.startMinute==null || !Number.isInteger(minute) || minute<0 || minute>1439
+    || (raw.repeat==='weekly' && !weekdays.length) || (until && until<startDate))return null;
+  const exceptions={};
+  for(const [key,patch] of Object.entries(raw.exceptions || {}).slice(0,1000)){
+    if(!appointmentDateKey(key) || !patch || typeof patch!=='object')continue;
+    const entry={};
+    if(patch.cancelled===true)entry.cancelled=true;
+    if(Number.isInteger(patch.startMinute) && patch.startMinute>=0 && patch.startMinute<1440)entry.startMinute=patch.startMinute;
+    if(Number.isFinite(patch.durationMinutes))entry.durationMinutes=clampDuration(patch.durationMinutes);
+    if(typeof patch.emoji==='string')entry.emoji=cleanMark(patch.emoji);
+    if(typeof patch.emojiBgColor==='string')entry.emojiBgColor=normalizeEmojiBgColor(patch.emojiBgColor);
+    if(Object.keys(entry).length)exceptions[key]=entry;
+  }
+  return {repeat:raw.repeat,startDate,until:until || '',weekdays,startMinute:minute,exceptions};
+}
+function isLocalAppointment(h){return Boolean(h && h.appointment);}
+function isFixedAppointment(h){return isLocalAppointment(h) || isFixedTimedTask(h);}
+function appointmentOccursOn(h,key){
+  const a=h?.appointment;
+  if(!a || key<a.startDate || (a.until && key>a.until))return false;
+  return a.repeat==='once' ? key===a.startDate : a.weekdays.includes(new Date(`${key}T12:00:00`).getDay());
+}
+function appointmentOccurrence(h,key){
+  if(!appointmentOccursOn(h,key))return null;
+  const patch=h.appointment.exceptions[key] || {};
+  if(patch.cancelled)return null;
+  const minute=patch.startMinute ?? h.appointment.startMinute;
+  const clock=new Date(`${key}T00:00:00`);clock.setHours(Math.floor(minute/60),minute%60,0,0);
+  const start=clock.getTime(),durationMinutes=patch.durationMinutes ?? h.durationMinutes;
+  return {start,end:start+durationMinutes*60000,durationMinutes,dayKey:key,
+    occurrenceKey:`appointment:${h.hid}:${key}`,
+    emoji:patch.emoji ?? h.emoji,emojiBgColor:patch.emojiBgColor ?? h.emojiBgColor};
+}
+function appointmentSummary(h){
+  const a=h.appointment;
+  if(!a)return 'Fixed time';
+  const days=a.repeat==='once' ? a.startDate : a.weekdays.map(d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ');
+  return `${days} · ${minutesToTimeInput(a.startMinute)} · ${h.durationMinutes} min · Fixed time`;
 }

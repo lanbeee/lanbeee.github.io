@@ -23,6 +23,11 @@ function assert(cond,msg){
     const text = msg.text();
     if(/Content Security Policy/i.test(text))cspViolations.push(text);
   });
+  await page.addInitScript(()=>{
+    // This fixture tests an existing user's controls, outside first-run onboarding.
+    localStorage.setItem('tings_coach_essentials_v2','done');
+    localStorage.setItem('tings_coach_install_v2','done');
+  });
   await page.goto(baseUrl,{ waitUntil:'load' });
 
   const result = await page.evaluate(async () => {

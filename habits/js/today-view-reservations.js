@@ -2091,6 +2091,7 @@ function homeDaySequence(day,settings,{visibleSet} = {}){
   const blocks = blockedTimelineRows(day.dayKey,settings,day.dayBase,{clipAfter});
   const items = (day.timeline || []).filter(r=>{
     if(r.kind !== 'fill' && r.kind !== 'scheduled')return false;
+    if(day.isToday && isLocalAppointment(r.h) && r.end<=Date.now())return false;
     if(visibleSet && !visibleSet.has(r.i))return false;
     return true;
   });

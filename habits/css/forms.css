@@ -405,3 +405,19 @@ body.minimal-mode #pane-detail .minimal-detail.opportunity-mode #detail-weather-
 #detail-repeat-mode{max-width:100%;min-height:44px;}
 
 .add-presets > button[hidden]{display:none !important;}
+
+/* The appointment shortcut exposes calendar fields, without habit planning knobs. */
+.appointment-editor { display:grid; gap:12px; margin:12px 0; }
+.appointment-editor[hidden] { display:none; }
+.appointment-editor .planning-field { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+.appointment-editor input,.appointment-editor select { max-width:100%; }
+.appointment-editor [aria-pressed="true"],#add-appointment-shortcut[aria-pressed="true"] { color:var(--accent); font-weight:700; outline:1px solid currentColor; }
+.appointment-add #add-more-toggle,.appointment-add #add-more-options,.appointment-add #ting-ask-ai { display:none; }
+.local-appointment [data-detail-nav="schedule"] > :not(#detail-appointment-editor),
+.local-appointment [data-detail-nav="effort"],
+.local-appointment #detail-type-seg,.local-appointment #detail-mode-seg,
+.local-appointment #detail-stats-disclosure,.local-appointment #detail-snooze { display:none!important; }
+.local-appointment #detail-mode-field { display:none!important; }
+
+.appointment-editor input[type="time"] { min-width:150px; }
+.local-appointment .priority-field { display:none!important; }

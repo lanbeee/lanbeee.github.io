@@ -22,7 +22,7 @@ function buildDayAgenda(data,settings,dayBase,opts = {}){
     for(const i of visibleIndices(data,settings)){
       const h = data[i];
       if(h.type === 'task' && isTaskDone(h))continue;
-      if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+      if(typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
         : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
       if(!h.breakable && hasTimedPlanForDay(h,dayBase))continue;
       const dueToday = includeInTodayAgenda(h,settings);
@@ -239,13 +239,14 @@ function fillIsPlannedOnDay(h,dayBase,settings){
 // A never-logged first occurrence is not treated as a today-miss when the
 // user already scheduled it later.
 function occurrenceDueOrOverdueOnDay(h,dayBase){
+  if(isLocalAppointment(h))return false;
   if(isOpportunityHabit(h))return false;
   if(!h || h.type === 'zero')return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   const base = dayStart(dayBase);
   if(h.type === 'task'){
     if(typeof isTaskDone === 'function' && isTaskDone(h))return false;
-    if((typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if((typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     return dayStart(h.dueDate) <= base;
   }
@@ -299,6 +300,7 @@ function plannerPinnedAllowsDay(h,dayBase,pinnedDay){
 }
 
 function weekFillEligibleOnDay(h,settings,dayBase,weekday,pinnedDay){
+  if(isLocalAppointment(h))return false;
   if(isOpportunityHabit(h) && !opportunityPlanAllowed(h,dayBase))return false;
   if(pinnedDay != null && !plannerPinnedAllowsDay(h,dayBase,pinnedDay))return false;
   if(hasTimedPlanForDay(h,dayBase))return Boolean(h.breakable) && !completedOnDay(h,dayBase);
@@ -323,11 +325,12 @@ function candidateMatchesPinnedDay(c,state){
 // already due/overdue. Soft due/overdue work stays in the unified score.
 // Visual habit.pinned is display-only and must not reach this path.
 function isWeekPinnedToday(h,settings){
+  if(isLocalAppointment(h))return false;
   if(opportunityDoingNow(h,dayStart(Date.now())) && !completedOnDay(h,Date.now()))return true;
   if(!h || h.type === 'zero')return false;
   if(h.type === 'task' && isTaskDone(h))return false;
-  if(h.type === 'task' && (typeof isFixedTimedTask === 'function'
-    ? isFixedTimedTask(h) : (h.eventTime !== null && !h.breakable)))return false;
+  if(h.type === 'task' && (typeof isFixedAppointment === 'function'
+    ? isFixedAppointment(h) : (h.eventTime !== null && !h.breakable)))return false;
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayStart(Date.now())))return false;
   if(typeof hasTimedPlanForDay === 'function' && hasTimedPlanForDay(h,dayStart(Date.now())))return false;
   // Only an explicit plan log is a manual pin. hasPlannedToday also includes
@@ -397,13 +400,14 @@ function flexAwareDayPenalty(h,offset,urgency,pinned,pinnedDay,dayBase){
 // week window? Soft overdue/due items may land on any feasible day; upcoming
 // items may pull forward within flexibility / readiness.
 function isWeekCandidate(h,settings,dayBase,weekday){
+  if(isLocalAppointment(h))return false;
   if(h.type === 'zero')return false;
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return false;
   // Already logged on this day — a leftover plan entry must not re-offer it.
   if(typeof completedOnDay === 'function' && completedOnDay(h,dayBase))return false;
   if(h.type === 'task'){
     if(isTaskDone(h))return false;
-    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if(typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.eventTime !== null && !h.breakable))return false;
     if(typeof isBreakableTimedTask === 'function' ? isBreakableTimedTask(h)
       : (h.breakable && h.eventTime !== null)){
@@ -485,6 +489,7 @@ function isWeekCandidate(h,settings,dayBase,weekday){
 // isWeekCandidate only opens at the raw target — too late for "do early with
 // my linked habit". This mirrors canDoEarlyToday: raw target − flex.
 function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
+  if(isLocalAppointment(h))return false;
   if(isOpportunityHabit(h))return hasPlannedForDay(h,dayBase);
   if(!h || dayBase == null)return false;
   if(h.type === 'zero')return false;
@@ -813,7 +818,7 @@ function clusterNativeDueOnDay(p,dayBase,weekday,cfg){
   if(typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,dayBase))return true;
   if(h.type === 'task'){
     if(typeof isTaskDone === 'function' && isTaskDone(h))return false;
-    if((typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if((typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.eventTime !== null && !h.breakable)) || h.dueDate === null)return false;
     const dueBase = dayStart(h.dueDate);
     const todayBase = dayStart(Date.now());

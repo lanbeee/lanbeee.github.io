@@ -91,6 +91,7 @@ onTravelRefresh = reason=>{
 $('type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-v]');
   if(!opt)return;
+  addAppointmentMode=false;syncAppointmentShortcut();
   const habitType = loadSortSettings().defaultType;
   switchAddType(opt.dataset.v === 'task' ? 'task'
     : selectedType !== 'task' ? selectedType : habitType === 'task' ? 'keepup' : habitType);
@@ -143,6 +144,7 @@ function syncAddTypeUi(type){
   $('add-minimal-effort').hidden = type === 'zero' || type === 'reduce';
   if(isTask)syncTaskDueUi();
   if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
+  syncAppointmentShortcut();
 }
 
 var _addConditionHomes;
@@ -508,7 +510,7 @@ function readAddRecord(){
   }
   record.delayAllowanceDays = defaults.delayAllowanceDays;
   record.autoMarkMinutes = defaultAutoMarkMinutes(profile);
-  return record;
+  return applyAppointmentToAddRecord(record);
 }
 
 $('do-save').addEventListener('click',()=>{
@@ -517,6 +519,7 @@ $('do-save').addEventListener('click',()=>{
   if(!name){$('ting-message').focus();return;}
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
+  if(addAppointmentMode && !validateAppointmentFields('add-appt'))return;
   const record = readAddRecord();
   if(isOpportunityHabit(record) && !record.locationIds.length
     && !weatherHabitHasActiveGuidance(record,sortSettings)){
@@ -1602,6 +1605,7 @@ $('detail-save').addEventListener('click',()=>{
   const h = data[detailIdx];
   if(!h)return;
   if(isDeviceCalendarTask(h)){showToast('Edit this meeting in your calendar.');return;}
+  if(isLocalAppointment(h)){saveLocalAppointmentDetail(data,h);return;}
   if(typeof validateHabitScheduleOptionModes === 'function'
     && !validateHabitScheduleOptionModes())return;
   if(!validateFixedStartTimes())return;

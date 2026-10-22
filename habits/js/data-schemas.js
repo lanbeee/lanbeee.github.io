@@ -113,6 +113,7 @@
  * @property {number} minChunkMinutes         — hard minimum session length when splitting a breakable item; 15-720. Not a preferred/suggested chunk size.
  * @property {number} minGapMinutes           — minimum minutes between this item's own sessions on the same day; 0-720. 0 = no extra spacing. Applies across busy-time availability splits.
  * @property {number|null} timerAutoStopMinutes — optional manual-session target (legacy field name; null = use durationMinutes)
+ * @property {Object|null} appointment — explicit local calendar rule: once/weekly, startDate, optional until, weekdays, startMinute, and per-date exceptions. Reserves time independently of cadence; no automatic attendance.
  * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
@@ -122,6 +123,7 @@
  * @property {string|null} externalId         — stable id from an external calendar/PDF import; null for Tings-native items. Used to de-dupe on re-import.
  * @property {'pdf'|'msgraph'|'gcal'|'device'|null} source — which importer produced this row; null for Tings-native items.
  * @property {string|null} [calendarId] — selected Android calendar id for device imports.
+ * @property {string|null} [calendarSeriesId] — provider series identity; shared by recurring instances and exceptions.
  * @property {number|null} [calendarStart] — source occurrence start (also for all-day dates).
  * @property {number|null} [calendarEnd] — source occurrence end, exclusive.
  * @property {number|null} importedAt         — ms timestamp of last import overwrite; null when not imported.

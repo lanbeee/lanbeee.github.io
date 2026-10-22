@@ -16,6 +16,12 @@ Read this when changing scheduling, placement, reservations, time budgets, or pl
 
 Both engines call `tryPlaceOnDay`, `auditFillFitInGap`, `freeSegmentsInWindow`, `commitPlacement`, `dailyBreakableReservations`, `movableCapacityForDay`, `breakableReservationWindows`, and `plannerOrderConstraintsForDay`. A behaviour change usually means editing the shared primitive or landing it in both engines.
 
+## Fixed appointments
+
+Local meetings/classes store an `appointment` rule (once or weekly, local start date/time, optional end date, and per-date exceptions). `appointmentOccurrence` expands that rule; `collectScheduledAgendaEvents` reserves the literal interval in both engines, including an overnight carry from the previous date. These items bypass flexible candidates and habit cadence. Completion logs do not release their reservation, and elapsed appointments leave today's agenda without recording attendance or becoming missed work.
+
+Keep `scheduledDay` and reminder identity on the occurrence's original date, including after midnight. Appearance, cancellation, time and duration exceptions use that date; native reminder date overrides are stored separately. Calendar-imported meetings remain provider-owned timed tasks with calendar series preferences. Both appear as “Fixed time”; edit provider-owned schedule/title/link fields in the source calendar.
+
 ## Two engines
 
 | Engine | File | Entry | When used | Placement order |

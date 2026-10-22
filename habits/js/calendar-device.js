@@ -9,13 +9,74 @@ function deviceCalendarPreferences(){
   }catch{return {enabled:false,calendarIds:[],updatedAt:0};}
 }
 function isDeviceCalendarTask(h){return h?.source === 'device';}
+// Preferences are separate from provider-owned event fields and outlive the
+// rolling import window. A series key is supplied by Android, never by title.
+const DEVICE_CALENDAR_STYLES_KEY='tings_device_calendar_styles_v1';
+function deviceCalendarStyles(){
+  try{const value=JSON.parse(localStorage.getItem(DEVICE_CALENDAR_STYLES_KEY)||'{}');return value && typeof value==='object' && !Array.isArray(value) ? value : {};}catch{return {};}
+}
+function deviceCalendarSeriesKey(h){return h?.calendarSeriesId ? `series:${h.calendarSeriesId}` : '';}
+function deviceCalendarStyle(h,styles=deviceCalendarStyles()){
+  return {...styles[deviceCalendarSeriesKey(h)],...styles[h.externalId]};
+}
+function applyDeviceCalendarStyle(h,styles){
+  const style=deviceCalendarStyle(h,styles);
+  h.emoji=typeof style.emoji==='string' ? cleanMark(style.emoji) : '';
+  h.emojiBgColor=normalizeEmojiBgColor(style.emojiBgColor);
+}
+function saveDeviceCalendarStyle(h,scope,patch){
+  const styles=deviceCalendarStyles(),key=scope==='series' ? deviceCalendarSeriesKey(h) : h.externalId;
+  if(!key)return;
+  if(patch===null)delete styles[key];else styles[key]={...styles[key],...patch};
+  localStorage.setItem(DEVICE_CALENDAR_STYLES_KEY,JSON.stringify(styles));
+  const data=load();for(const item of data)if(isDeviceCalendarTask(item))applyDeviceCalendarStyle(item,styles);
+  save(data);
+  const appearanceOpen=document.getElementById('detail-calendar-personalization')?.open;
+  if(typeof refreshOpenViews==='function')refreshOpenViews();
+  const panel=document.getElementById('detail-calendar-personalization');
+  if(panel && appearanceOpen){panel.open=true;const select=panel.querySelector('select');select.value=scope;select.dispatchEvent(new Event('change'));}
+  showToast('Meeting appearance saved.');
+  if(typeof queueNativeBackgroundSnapshot==='function')queueNativeBackgroundSnapshot();
+}
+function renderDeviceCalendarPersonalization(h){
+  document.getElementById('detail-calendar-personalization')?.remove();
+  if(!isDeviceCalendarTask(h))return;
+  const box=document.createElement('details');box.id='detail-calendar-personalization';box.className='detail-disclosure';
+  const title=document.createElement('summary');title.textContent='meeting appearance';box.append(title);
+  const body=document.createElement('div');body.className='planning-grid';box.append(body);
+  const scope=document.createElement('select');scope.className='mini-select';scope.setAttribute('aria-label','change meeting appearance for');
+  for(const [value,text] of (h.calendarSeriesId ? [['series','all occurrences'],['occurrence','this meeting only']] : [['occurrence','this meeting only']])){
+    const option=document.createElement('option');option.value=value;option.textContent=text;scope.append(option);
+  }
+  const scopeLabel=document.createElement('label');scopeLabel.className='planning-field';scopeLabel.textContent='change appearance for';scopeLabel.append(scope);body.append(scopeLabel);
+  const emoji=document.createElement('input');emoji.type='text';emoji.maxLength=24;emoji.setAttribute('aria-label','meeting emoji');
+  const label=document.createElement('label');label.className='planning-field';label.textContent='emoji';label.append(emoji);body.append(label);
+  const color=document.createElement('select');color.className='mini-select';color.setAttribute('aria-label','meeting emoji background');
+  for(const value of ['',...EMOJI_BG_COLOR_TOKENS]){const option=document.createElement('option');option.value=value;option.textContent=value||'none';color.append(option);}
+  const colorLabel=document.createElement('label');colorLabel.className='planning-field';colorLabel.textContent='emoji background';colorLabel.append(color);body.append(colorLabel);
+  const status=document.createElement('p');status.className='field-hint';status.setAttribute('role','status');box.append(status);
+  const paint=()=>{
+    const styles=deviceCalendarStyles(),style=scope.value==='series' ? styles[deviceCalendarSeriesKey(h)]||{} : deviceCalendarStyle(h,styles);
+    emoji.value=style.emoji||'';color.value=normalizeEmojiBgColor(style.emojiBgColor);
+    status.textContent=h.calendarSeriesId ? (styles[h.externalId] ? 'This meeting has its own appearance. ' : '')+'Series choices apply to future imports too. This meeting’s overrides take priority.' : 'Appearance is saved in Tings; your calendar is unchanged.';
+  };
+  scope.addEventListener('change',paint);
+  const saveButton=document.createElement('button');saveButton.type='button';saveButton.className='btn';saveButton.textContent='save appearance';
+  saveButton.addEventListener('click',()=>{saveDeviceCalendarStyle(h,scope.value,{emoji:cleanMark(emoji.value),emojiBgColor:color.value});status.textContent='Appearance saved.';});box.append(saveButton);
+  if(h.calendarSeriesId){
+    const reset=document.createElement('button');reset.type='button';reset.className='btn';reset.textContent='use series appearance for this meeting';
+    reset.addEventListener('click',()=>{saveDeviceCalendarStyle(h,'occurrence',null);scope.value='occurrence';paint();});box.append(reset);
+  }
+  paint();document.querySelector('[data-detail-nav="actions"]').prepend(box);
+}
 function syncDeviceCalendarDetail(h){
-  const synced=isDeviceCalendarTask(h),sheet=document.getElementById('detail-sheet');
+  const synced=isDeviceCalendarTask(h),sheet=getSheetInner('detail-sheet');
   for(const section of sheet.querySelectorAll('[data-detail-nav="schedule"],[data-detail-nav="effort"],[data-detail-nav="identity"]'))section.inert=synced;
   for(const id of ['detail-name','detail-delete','detail-mark-edit-emoji'])document.getElementById(id).disabled=synced;
   let hint=document.getElementById('detail-device-calendar-hint');
   if(!hint){hint=document.createElement('p');hint.id='detail-device-calendar-hint';hint.className='field-hint';sheet.querySelector('.detail-page-nav').before(hint);}
-  hint.textContent='Synced from your phone calendar. Edit the meeting there; use calendar import settings to stop syncing.';
+  hint.textContent='Fixed time · Title, time and links stay synced from your calendar. Choose appearance and notifications & alarms under actions.';
+  renderDeviceCalendarPersonalization(h);
   hint.hidden=!synced;
   if(synced)document.getElementById('detail-save').disabled=true;
 }
@@ -41,7 +102,10 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
     imported.add(ev.id);
     const mapped=mapEventToTask(ev,'device');
     Object.assign(mapped,{calendarId:ev.calendarId,calendarStart:ev.start,calendarEnd:ev.end,
+      calendarSeriesId:typeof ev.seriesId==='string' && ev.seriesId.startsWith(`device:${ev.calendarId}:`) ? ev.seriesId : null,
+      links:typeof ev.joinUrl==='string' && /^https:\/\//i.test(ev.joinUrl) ? normalizeLinks([{kind:'link',value:ev.joinUrl}]) : [],
       showOnSharedDisplay:false,allowSharedDisplayCompletion:false});
+    applyDeviceCalendarStyle(mapped,options.styles);
     const existing=byExternal.get(ev.id);
     if(!existing){
       // The foreground and private background mirror must produce the same id.
@@ -49,7 +113,7 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
       next.push(normalize([mapped])[0]);added++;
     }else{
       const moved=existing.calendarStart !== ev.start || existing.calendarEnd !== ev.end;
-      const changed=moved || existing.name !== mapped.name || existing.eventTime !== mapped.eventTime;
+      const changed=moved || existing.name !== mapped.name || existing.eventTime !== mapped.eventTime || JSON.stringify(existing.links)!==JSON.stringify(mapped.links) || existing.calendarSeriesId!==mapped.calendarSeriesId;
       const logs=moved && ev.end > now ? [] : existing.logs;
       Object.assign(existing,mapped,{hid:existing.hid,logs,importedAt:changed ? now : existing.importedAt});
       existing.lastLog=latestActualLog(logs);
@@ -85,7 +149,7 @@ function deviceCalendarStatus(message){const el=document.getElementById('calenda
 function renderDeviceCalendarControls(){
   const host=document.getElementById('calendar-device-controls');
   if(!host || !window.TingsNative?.isNative || !window.TingsNative.calendars)return;
-  if(!host.children.length)host.innerHTML=`${uiSettingsHelpHtml({id:'calendar-device-help',title:'phone calendar sync',body:'<p>Tings reads titles and times locally. Appointments update from your calendar and clear after they end. Outlook needs “Sync calendars” enabled in its account settings.</p><p>Refreshes on open and on calendar changes while open. For updates while closed, enable “refresh agenda while closed” under phone reminders and choose at least one habit reminder. Android may delay background updates. Imported meetings start with Tings reminders off.</p>'})}
+  if(!host.children.length)host.innerHTML=`${uiSettingsHelpHtml({id:'calendar-device-help',title:'phone calendar sync',body:'<p>Tings reads titles, times and available meeting links locally. Descriptions are scanned on the phone for supported meeting links and are not stored. Appointments update from your calendar and clear after they end. Outlook needs “Sync calendars” enabled in its account settings.</p><p>Refreshes on open and on calendar changes while open. For updates while closed, enable “refresh agenda while closed” under phone reminders and choose at least one item or series reminder. Android may delay background updates. Imported meetings start with Tings reminders off.</p>'})}
               <div class="btn-row">
                 <button class="btn primary" id="calendar-device-choose" type="button">choose phone calendars</button>
                 <button class="btn" id="calendar-device-refresh" type="button" hidden>refresh now</button>

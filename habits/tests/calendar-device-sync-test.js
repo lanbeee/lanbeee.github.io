@@ -5,6 +5,11 @@ const assert=require('node:assert/strict');
   try{
     const page=await browser.newPage({viewport:{width:412,height:915},timezoneId:'America/New_York'});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>{
+    // This fixture tests an existing user's controls, outside first-run onboarding.
+    localStorage.setItem('tings_coach_essentials_v2','done');
+    localStorage.setItem('tings_coach_install_v2','done');
+  });
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'load'});
     assert.equal(await page.locator('#calendar-device-controls').isVisible(),false,'PWA hides device controls');
     assert.equal(await page.locator('#calendar-device-choose').count(),0,'native buttons are absent from PWA');
@@ -63,6 +68,46 @@ const assert=require('node:assert/strict');
     assert.equal(result.earnedCredit,90,'history survives after completed task rows age out');
     assert.equal(result.reopened,false,'future moved meeting clears stale completion');assert.equal(result.readonly,true);
     for(const planner of [result.fast,result.exact]){assert.equal(planner.fixed.length,1);assert.equal(planner.clash,false);}
+    const integration=await page.evaluate(()=>{
+      localStorage.clear();
+      const now=Date.now(),from=dayStart(now),start=now+3600000,to=from+14*86400000;
+      const a={id:'device:7:80:1',seriesId:'device:7:80',calendarId:'7',subject:'Weekly meeting',start,end:start+3600000};
+      const b={...a,id:'device:7:80:2',start:start+86400000,end:start+90000000};
+      const snap=events=>({complete:true,calendarIds:['7'],from,to,events});
+      const style={'series:device:7:80':{emoji:'📞',emojiBgColor:'blue'},[a.id]:{emoji:'🎯'}};
+      localStorage.setItem(DEVICE_CALENDAR_STYLES_KEY,JSON.stringify(style));
+      const original=reconcileDeviceCalendarSnapshot([],snap([a,b]),{now}).data;
+      save(original);
+      const moved=reconcileDeviceCalendarSnapshot(original,snap([{...a,start:start+1800000,end:start+5400000,joinUrl:'https://meet.google.com/abc-defg-hij'},b]),{now}).data;
+      const prefs={version:4,enabled:true,items:{'calendar-series:device:7:80':{start:'alarm',end:'notification',startLeadMinutes:15},[`item:${a.id}`]:{start:'off'}}};
+      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+      const resolved=nativeReminderDeliveryPreferences(moved,prefs,now);
+      const c={...b,id:'device:7:80:3',start:start+2*86400000,end:start+2*86400000+3600000};
+      const future=reconcileDeviceCalendarSnapshot(moved,snap([a,b,c]),{now}).data;
+      const next=nativeReminderDeliveryPreferences(future,prefs,now);
+      const rows=future.map((h,i)=>({kind:'scheduled',i,h,start:h.calendarStart,end:h.calendarEnd}));
+      const week={days:future.map((h,i)=>({dayBase:dayStart(h.calendarStart),dayKey:dateKey(h.calendarStart),timeline:[rows[i]]}))};
+      const events=nativeReminderEvents(week,future,loadSortSettings(),prefs,now);
+      const cancelled=reconcileDeviceCalendarSnapshot(future,snap([b,c]),{now}).data;
+      const without=nativeReminderEvents({days:week.days.filter(day=>day.timeline[0].h.externalId!==a.id)},cancelled,loadSortSettings(),prefs,now);
+      saveDeviceCalendarStyle(original[0],'occurrence',null);
+      const reset=load().find(h=>h.externalId===a.id);
+      const mirror=nativeBackgroundSnapshot();
+      return {styles:moved.map(h=>[h.emoji,h.emojiBgColor]),links:moved[0].links,series:moved[0].calendarSeriesId,
+        resolved:resolved.items[`item:${a.id}`],future:next.items[`item:${c.id}`],futureEmoji:future[2].emoji,
+        starts:events.filter(e=>e.reminderEdge==='start').map(e=>({owner:e.owner,lead:e.agendaAt-e.at,mode:e.delivery})),
+        cancelled:without.some(e=>e.owner===`item:${a.id}`),reset:reset.emoji,
+        stored:JSON.parse(localStorage.getItem(NATIVE_REMINDERS_KEY)),mirrorStyle:!!mirror.storage[DEVICE_CALENDAR_STYLES_KEY],
+        mirrorSeries:mirror.prefs.items['calendar-series:device:7:80']};
+    });
+    assert.deepEqual(integration.styles,[['🎯','blue'],['📞','blue']]);
+    assert.equal(integration.series,'device:7:80');assert.equal(integration.links[0].value,'https://meet.google.com/abc-defg-hij');
+    assert.equal(integration.resolved.start,'off');assert.equal(integration.resolved.end,'notification');
+    assert.equal(integration.future.start,'alarm');assert.equal(integration.futureEmoji,'📞');
+    assert.equal(integration.starts.length,2);for(const event of integration.starts){assert.equal(event.lead,15*60000);assert.equal(event.mode,'alarm');}
+    assert.equal(integration.cancelled,false);assert.equal(integration.reset,'📞');
+    assert.equal(integration.stored.items['item:device:7:80:3'],undefined,'inheritance never becomes a saved override');
+    assert.equal(integration.mirrorStyle,true);assert.equal(integration.mirrorSeries.start,'alarm');
     // Real controls with a synthetic native bridge; never read a phone calendar.
     await page.evaluate(()=>{
       localStorage.clear();window.calendarCalls={permissions:0,reads:0};
@@ -84,6 +129,29 @@ const assert=require('node:assert/strict');
     await page.locator('#calendar-device-save').click();
     await page.waitForFunction(()=>!deviceCalendarRefresh && load().some(isDeviceCalendarTask));
     assert.equal(await page.evaluate(()=>calendarCalls.permissions),1);
+    await page.evaluate(async()=>{
+      calendarSnapshot.events[0].seriesId='device:7:80';
+      await refreshDeviceCalendars();
+      // UI exercises permission choices without scheduling real OS reminders.
+      reconcileNativeReminders=async()=>{};
+      TingsNative.notifications={permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})};
+      closeSheet('settings-sheet');openDetail(load().findIndex(isDeviceCalendarTask));scrollDetailToNav('actions');
+    });
+    await page.locator('#detail-calendar-personalization summary').click();
+    await page.getByLabel('meeting emoji',{exact:true}).fill('🧑‍💻');
+    await page.locator('#detail-calendar-personalization').getByRole('button',{name:'save appearance',exact:true}).click();
+    assert.equal(await page.evaluate(()=>deviceCalendarStyles()['series:device:7:80'].emoji),'🧑‍💻');
+    await page.locator('#detail-native-reminders summary').click();
+    await page.locator('#detail-native-reminders [data-reminder-edge="start"]').selectOption('alarm');
+    await page.getByLabel('meeting start reminder timing',{exact:true}).selectOption('10');
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['calendar-series:device:7:80'].start),'alarm');
+    await page.getByLabel('change meeting reminders for',{exact:true}).selectOption('occurrence');
+    await page.locator('#detail-native-reminders [data-reminder-edge="start"]').selectOption('off');
+    assert.equal(await page.evaluate(()=>nativeReminderChoices(nativeReminderPreferences(),`item:${load().find(isDeviceCalendarTask).hid}`).start),'off');
+    await page.locator('#detail-native-reminders').getByRole('button',{name:'use series reminders for this meeting',exact:true}).click();
+    assert.equal(await page.evaluate(()=>nativeReminderChoices(nativeReminderPreferences(),`item:${load().find(isDeviceCalendarTask).hid}`).start),'alarm');
+    await page.screenshot({path:'test-results/calendar-personalization.png'});
+    await page.evaluate(()=>{closeDetail();openSheet('settings-sheet');});
     await page.evaluate(async()=>{window.calendarFailure=true;await refreshDeviceCalendars();});
     assert.equal(await page.evaluate(()=>load().filter(isDeviceCalendarTask).length),1,'failed read keeps meetings');
     await page.evaluate(async()=>{window.calendarFailure=false;calendarSnapshot.events=[];await refreshDeviceCalendars();});

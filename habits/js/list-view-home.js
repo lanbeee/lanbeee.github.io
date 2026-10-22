@@ -1065,6 +1065,7 @@ function limitCue(h,days,target){
 
 // PURE: compute card status cue text
 function cardCue(h){
+  if(isLocalAppointment(h))return 'Fixed time';
   if(isOpportunityHabit(h) && !hasPlannedToday(h)){
     if(habitIsSnoozed(h))return 'Snoozed for now';
     if(completedToday(h))return 'Done today';
@@ -1154,6 +1155,7 @@ function compactHomeDuration(minutes){
 
 // PURE: compute card tone class
 function cardTone(h){
+  if(isLocalAppointment(h))return 'plan';
   if(h.snoozedUntil && Date.now() < h.snoozedUntil)return 'quiet';
   if(hasPlannedToday(h) && h.type !== 'zero')return 'plan';
   return scoreTone(progressScore(h));
@@ -1161,6 +1163,7 @@ function cardTone(h){
 
 // PURE: build card meta pills markup
 function cardMeta(h,options = {}){
+  if(isLocalAppointment(h))return `${options.extraPills || ''}<span class="context-pill scheduled"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(options.appointmentOccurrence ? 'Fixed time' : appointmentSummary(h))}</span>`;
   if(options.minimalOnly){
     if(h.type === 'task'){
       if(h.eventTime !== null && !options.suppressScheduled){
@@ -1562,7 +1565,7 @@ function agendaLeadStatus(row,h = null,now = Date.now()){
 
 // PURE: compact right-side agenda marker for a home card
 function appointmentStatusPill(row){
-  if(!row?.breakableStart)return '';
+  if(!row?.breakableStart && !row?.appointmentConflict)return '';
   const text = [row.appointmentConflict,
     row.appointmentUnplacedMinutes > 0 ? `${compactHomeDuration(row.appointmentUnplacedMinutes)} still not scheduled` : '']
     .filter(Boolean).join(' · ');
@@ -1678,6 +1681,7 @@ function canDoEarlyToday(h,targetTs){
 }
 
 function earlyReason(data,i,settings){
+  if(isLocalAppointment(data[i]))return null;
   const h = data[i];
   if(isOpportunityHabit(h))return '';
   if(!h || h.type === 'zero' || (h.type === 'task' && h.lastLog !== null))return '';

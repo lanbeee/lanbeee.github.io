@@ -2755,7 +2755,8 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   const count = Math.max(1,Math.min(14,Math.round(numDays) || 7));
   const days = [];
   for(let offset = 0;offset < count;offset += 1){
-    const dayBase = todayBase + offset * 86400000;
+    const dayDate = new Date(todayBase);dayDate.setDate(dayDate.getDate()+offset);
+    const dayBase = dayDate.getTime();
     days.push(buildDayAgenda(data,settings,dayBase,{weekMode:true}));
   }
   const dayStates = days.map(day=>createDayPlacementState(day,settings,{
@@ -2769,7 +2770,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   for(let i = 0;i < data.length;i += 1){
     if(seen.has(i))continue;
     const h = data[i];
-    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if(typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h,settings,todayBase) : (isWeekPinnedToday(h,settings) ? todayBase : null);

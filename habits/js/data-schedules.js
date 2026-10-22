@@ -116,6 +116,7 @@ function isPreferredDay(h,ts = Date.now()){
   return true;
 }
 function isDateEligibleForHabit(h,ts = Date.now()){
+  if(isLocalAppointment(h))return Boolean(appointmentOccurrence(h,dateKey(ts)));
   const optionHit = typeof hasHabitScheduleOptions === 'function'
     && hasHabitScheduleOptions(h)
     && typeof habitScheduleOptionsForDay === 'function'

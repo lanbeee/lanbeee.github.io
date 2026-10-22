@@ -72,6 +72,11 @@ async function runSearch(page){
     };
   });
 
+  await page.addInitScript(()=>{
+    // Exercise the existing-user picker outside first-run onboarding.
+    localStorage.setItem('tings_coach_essentials_v2','done');
+    localStorage.setItem('tings_coach_install_v2','done');
+  });
   await page.goto(baseUrl, { waitUntil:'load' });
   await page.waitForTimeout(300);
 

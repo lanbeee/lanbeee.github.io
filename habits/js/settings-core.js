@@ -190,6 +190,7 @@ function switchAddType(type){
 
 // Reset only for a fresh add/cancel. Branch changes retain each in-flight draft.
 function applyAddDefaults(){
+  resetAppointmentShortcut();
   document.querySelector('.add-content').scrollTop = 0;
   const settings = loadSortSettings();
   addProfileDrafts = {};

@@ -123,6 +123,8 @@ async function pickTheme(page, value){
   await page.addInitScript(settings => {
     if(sessionStorage.getItem('skip-theme-seed') === '1')return;
     localStorage.clear();
+    localStorage.setItem('tings_coach_essentials_v2','done');
+    localStorage.setItem('tings_coach_install_v2','done');
     localStorage.setItem('tings_v2', JSON.stringify([]));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
   }, seedSettings('system'));

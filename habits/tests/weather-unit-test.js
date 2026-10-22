@@ -14,7 +14,8 @@ function assert(value,message){
 
 (async()=>{
   const browser=await chromium.launch({headless:true});
-  const page=await browser.newPage({viewport:{width:390,height:844}});
+  const page=await browser.newPage({viewport:{width:390,height:844},timezoneId:'Europe/Berlin'});
+  // Match the seeded Berlin coordinates so 09:00–11:00 is daylight.
   // Keep "happening now" rows inside one day, away from the midnight edge.
   const clock = new Date();clock.setHours(12,0,0,0);
   await page.clock.setSystemTime(clock);

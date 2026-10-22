@@ -16,6 +16,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   const browser = await chromium.launch({headless:true});
   const page = await browser.newPage({viewport:{width:390, height:844}, isMobile:true, hasTouch:true});
   await page.addInitScript(()=>{
+    localStorage.setItem('tings_coach_essentials_v2','done');
+    localStorage.setItem('tings_coach_install_v2','done');
     window.__tingsForceTimePicker = true;
     window.__tingsTimePicker12h = true;
   });
@@ -126,6 +128,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
   const plain = await chromium.launch({headless:true});
   const plainPage = await plain.newPage({viewport:{width:390, height:844}});
+  await plainPage.addInitScript(()=>{localStorage.setItem('tings_coach_essentials_v2','done');localStorage.setItem('tings_coach_install_v2','done');});
   await plainPage.goto(BASE, {waitUntil:'load'});
   await plainPage.locator('#open-add').click();
   await plainPage.waitForSelector('#add-sheet.open');

@@ -375,6 +375,7 @@ function missedOpportunityPassedToday(h,dayBase,now){
 // dropped by replanning. This rejects the old broad "everything overdue"
 // sweep: an off-day or impossible item has no qualifying planner evidence.
 function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
+  if(isLocalAppointment(h))return false;
   if(isOpportunityHabit(h))return false;
   if(!h || !h.hid)return false;
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
@@ -588,7 +589,7 @@ function collectUnplacedAgendaItems(data, settings, missedRows, now = Date.now()
     if(h.type === 'zero')continue;
     if(h.snoozedUntil && now < h.snoozedUntil)continue;
     if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))continue;
-    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if(typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h, settings, todayBase) : null;
@@ -1776,7 +1777,9 @@ function render(opts){
   };
 
   const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null,scheduleLinkReason = '')=>{
-    const h = data[realIdx];
+    let h = data[realIdx];
+    const appointment=isLocalAppointment(h) && agendaRow ? appointmentOccurrence(h,agendaRow.scheduledDay || dateKey(agendaRow.start)) : null;
+    if(appointment)h={...h,emoji:appointment.emoji,emojiBgColor:appointment.emojiBgColor};
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
     const days = daysSince(h.lastLog);
     const c = habitColors(h,days);
@@ -1801,8 +1804,8 @@ function render(opts){
     const reminderPill = (!minimal && typeof nativeReminderCardPill === 'function') ? nativeReminderCardPill(h) : '';
     const appointmentPill = appointmentStatusPill(agendaRow);
     const context = minimal
-      ? cardMeta(h,{forceRepetition:true,minimalOnly:true}) + appointmentPill
-      : cardMeta(h,{extraPills:[appointmentPill,reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
+      ? cardMeta(h,{forceRepetition:true,minimalOnly:true,appointmentOccurrence:appointment}) + appointmentPill
+      : cardMeta(h,{appointmentOccurrence:appointment,extraPills:[appointmentPill,reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     // Minimal hides dots unless opted in for minimal specifically
     // (minimalShowTrailOnCards, default off); full keeps its own toggle.
     const showTrail = minimal
