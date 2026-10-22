@@ -1,8 +1,8 @@
 // Shared agenda-to-reminder projection; OS delivery is supplied by the native shell.
 // Preferences are device-local and intentionally separate from clone settings.
 const NATIVE_REMINDERS_KEY = 'tings_native_reminders_v1';
-const NATIVE_REMINDER_DEFAULTS = {version:3,enabled:false,items:{}};
-const NATIVE_REMINDER_EDGES = [['start','start'],['end','end'],['travelStart','travel: departure'],['travelEnd','travel: arrival'],['missed','drop warning (15 min)']];
+const NATIVE_REMINDER_DEFAULTS = {version:4,enabled:false,items:{}};
+const NATIVE_REMINDER_EDGES = [['start','start'],['end','end'],['travelStart','travel: departure'],['travelEnd','travel: arrival'],['missed','drop warning']];
 function nativeBusyReminderKey(block,index){
   return block ? `busy:${block.reminderId || JSON.stringify([index,block.label,block.start,block.end,block.days])}` : '';
 }
@@ -10,13 +10,15 @@ function nativeReminderPreferences(){
   try{
     const saved = JSON.parse(localStorage.getItem(NATIVE_REMINDERS_KEY) || 'null');
     if(!saved)return {...NATIVE_REMINDER_DEFAULTS,items:{}};
-    if(saved.version === 3)return {...NATIVE_REMINDER_DEFAULTS,...saved};
-    if(saved.version === 2){
+    if(saved.version === 4)return {...NATIVE_REMINDER_DEFAULTS,...saved};
+    if(saved.version === 2 || saved.version === 3){
+      // Version 3 always used fifteen minutes, ignoring older stored leads.
+      // Preserve that effective timing and the existing delivery choice.
       const items=Object.fromEntries(Object.entries(saved.items || {}).map(([owner,choice])=>
-        [owner,{...choice,...(choice.missed==='notification' ? {missed:'alarm'} : {})}]));
-      const next={...NATIVE_REMINDER_DEFAULTS,...saved,version:3,items};
-      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(next));
-      localStorage.setItem('tings_drop_alarm_migration','1');return next;
+        [owner,{...choice,missedLeadMinutes:15,dates:Object.fromEntries(Object.entries(choice.dates || {})
+          .map(([day,patch])=>[day,{...patch,...('missedLeadMinutes' in patch ? {missedLeadMinutes:15} : {})}]))}]));
+      const next={...NATIVE_REMINDER_DEFAULTS,...saved,version:4,items};
+      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(next));return next;
     }
     // Materialize the old blanket choices once. New items never inherit them.
     const legacy = {taskStart:true,habitStart:true,travelStart:true,...saved};
@@ -27,8 +29,7 @@ function nativeReminderPreferences(){
     }));
     for(const h of load())items[`item:${h.hid}`] = modes(h.type === 'task' ? 'task' : 'habit');
     normalizeBlockedTimes(sortSettings.blockedTimes).forEach((block,i)=>items[nativeBusyReminderKey(block,i)] = modes('busy'));
-    for(const choice of Object.values(items))if(choice.missed==='notification')choice.missed='alarm';
-    const next = {version:3,enabled:Boolean(saved.enabled),items};
+    const next = {version:4,enabled:Boolean(saved.enabled),items};
     localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(next));return next;
   }catch(_){return {...NATIVE_REMINDER_DEFAULTS,items:{}};}
 }
@@ -116,7 +117,7 @@ function nativeCardReminderControls(owner,name,dayKey,{travelOnly=false}={}){
       try{
         const prefs=nativeReminderPreferences(),choice={...prefs.items[owner]},dates={...choice.dates};
         const patch={...dates[dayKey]};
-        for(const edge of travelOnly ? ['travelStart','travelEnd','travelLeadMinutes'] : ['start','end','travelStart','travelEnd','travelLeadMinutes'])delete patch[edge];
+        for(const edge of travelOnly ? ['travelStart','travelEnd','travelLeadMinutes'] : ['start','end','travelStart','travelEnd','travelLeadMinutes','missed','missedLeadMinutes'])delete patch[edge];
         if(Object.keys(patch).length)dates[dayKey]=patch;else delete dates[dayKey];
         prefs.items[owner]={...choice,dates};localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
         nativeReminderLastSignature='';await reconcileNativeReminders();paint();showToast('recurring reminders restored for this date');
@@ -158,7 +159,7 @@ function nativeItemReminderControls(owner,name,opts = {}){
     const label = document.createElement('label');label.className = 'planning-field';label.append(document.createTextNode(title));
     const select = document.createElement('select');select.className = 'mini-select';select.setAttribute('aria-label',`${name}: ${title} reminder`);
     select.dataset.reminderOwner = owner;select.dataset.reminderEdge = edge;
-    for(const [value,text] of (edge==='missed' ? [['off','off'],['alarm','ringing alarm']] : [['off','off'],['notification','notification'],['alarm','ringing alarm']])){
+    for(const [value,text] of [['off','off'],['notification','notification'],['alarm','ringing alarm']]){
       const option = document.createElement('option');option.value = value;option.textContent = text;select.append(option);
     }
     select.value = choices()[edge] || 'off';
@@ -171,10 +172,10 @@ function nativeItemReminderControls(owner,name,opts = {}){
           let permission = await api.permissions();
           if(permission.display !== 'granted')permission = await api.requestPermissions();
           if(permission.display !== 'granted')throw new Error('Notifications were not allowed. The reminder was not changed.');
-          if(mode === 'alarm'){
+          if(mode === 'alarm' || edge === 'missed'){
             let exact = await api.exactAlarmPermission();
             if(exact.exact_alarm !== 'granted')exact = await api.requestExactAlarmPermission();
-            if(exact.exact_alarm !== 'granted')throw new Error('Alarm access was not allowed. The reminder was not changed.');
+            if(exact.exact_alarm !== 'granted')throw new Error('Exact timing access was not allowed. The reminder was not changed.');
           }
         }
         // Permission screens can suspend the app. Merge into the latest saved
@@ -204,7 +205,23 @@ function nativeItemReminderControls(owner,name,opts = {}){
       showToast('departure reminder timing saved');
     }finally{lead.disabled=false;}
   });leadLabel.append(lead);grid.append(leadLabel);
-  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = opts.compact || optionalItem ? 'Reminders save immediately on this phone. Off turns off that reminder.' : 'Sets estimated drop alarms early for the saved week, then adjusts every 15 minutes. Estimates can be wrong. Sudden drops alert too. Saved on this phone.';
+  if(owner.startsWith('item:') && !optionalItem && !opts.travelOnly){
+    const label=document.createElement('label');label.className='planning-field';label.append(document.createTextNode('drop warning timing'));
+    const select=document.createElement('select');select.className='mini-select';select.dataset.reminderMissedLead=owner;
+    select.setAttribute('aria-label',`${name}: drop warning lead time`);
+    for(const minutes of [5,15]){
+      const option=document.createElement('option');option.value=String(minutes);option.textContent=`${minutes} min before drop`;select.append(option);
+    }
+    select.value=String(nativeReminderMissedLeadMinutes(choices()));
+    select.addEventListener('change',async()=>{
+      select.disabled=true;
+      try{
+        nativeSaveReminderPatch(nativeReminderPreferences(),owner,{missedLeadMinutes:Number(select.value)},opts.dayKey);
+        nativeReminderLastSignature='';await reconcileNativeReminders();showToast('drop warning timing saved');
+      }finally{select.disabled=false;}
+    });label.append(select);grid.append(label);
+  }
+  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = opts.compact || optionalItem ? 'Reminders save immediately on this phone. Off turns off that reminder.' : 'Warns before the estimated last chance to fit this item, which can differ from its suggested start. Choose 5 or 15 minutes and notification or ringing alarm. Both use exact timing access. Sudden drops alert promptly. Saved on this phone.';
   box.append(grid,hint);return box;
 }
 function renderNativeDetailReminders(h){
@@ -263,7 +280,7 @@ function nativeReminderLeadMinutes(choices){
   const minutes=Number(choices?.travelLeadMinutes);
   return [0,5,10,15,30,60].includes(minutes) ? minutes : 0;
 }
-function nativeReminderMissedLeadMinutes(){return AGENDA_DROP_WARNING_MINUTES;}
+function nativeReminderMissedLeadMinutes(choices){return Number(choices?.missedLeadMinutes)===5 ? 5 : 15;}
 // A simple window check, never placement or a planner build on the UI thread.
 function nativeReminderAllowedWarningAt(h,row,day,settings,now){
   const option=normalizeHabitScheduleOptions(h.scheduleOptions).find(o=>o.id===row.scheduleOptionId);
@@ -363,7 +380,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
     for(const r of active){
       if(!['fill','scheduled'].includes(r.kind))continue;
       const item=dataById.get(r.h?.hid || data[r.i]?.hid);if(!item || isOpportunityHabit(item))continue;
-      if(!['notification','alarm'].includes(prefs.items?.[`item:${item.hid}`]?.missed)
+      if(!['notification','alarm'].includes(nativeReminderChoices(prefs,`item:${item.hid}`,day.dayKey || dateKey(day.dayBase)).missed)
         || (Number.isFinite(r.dropAt) && r.dropAt>warningNow))continue;
       const key=`${item.hid}:${item.breakable ? 'remaining' : r.scheduleOptionId || 'main'}`;
       const cutoff=nativeReminderProvisionalDropAt(item,r,{...day,timeline:active},settings,data,dataById);
@@ -408,19 +425,26 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
         // probes or solves: pre-arm from their saved rows, then refine when
         // each day becomes current. No placement runs in projection.
         const fallback=provisionalDrops.get(`${h.hid}:${h.breakable ? 'remaining' : row.scheduleOptionId || 'main'}`);
-        const agendaAt=risk?.at ?? (Number.isFinite(estimate) && estimate>warningNow ? estimate : fallback);
+        const estimatedAt=Number.isFinite(estimate) && estimate>warningNow ? estimate : fallback;
+        // The forecast sample is an upper bound on loss, not its exact instant.
+        // Never replace an earlier usable cutoff with that later sample clock.
+        const agendaAt=risk ? Math.min(risk.at,Number.isFinite(estimatedAt) ? estimatedAt : Infinity) : estimatedAt;
+        const leadMinutes=nativeReminderMissedLeadMinutes(choices);
         const earliest=nativeReminderAllowedWarningAt(h,row,day,settings,now);
-        const at=Math.max(risk ? (forecast.warningAt ?? forecast.checkedAt+2000)
-          : Math.max(agendaAt-AGENDA_DROP_WARNING_MINUTES*60000,warningNow+2000),earliest,Number(h.snoozedUntil) || 0);
+        // A lookahead confirms loss at its sample clock; it must still honor
+        // the selected lead. Keep a due confirmed trigger stable across polls.
+        const at=Math.max(agendaAt-leadMinutes*60000,
+          risk ? (forecast.warningAt ?? forecast.checkedAt+2000) : warningNow+2000,
+          earliest,Number(h.snoozedUntil) || 0);
         if(Number.isFinite(agendaAt) && agendaAt>at && at<=now+7*86400000){
           const occurrence=h.breakable ? `${h.hid}:${day.dayKey || dateKey(day.dayBase)}:remaining` : identity;
           const key=`${owner}:${kind}:${occurrence}:Missed`;
           const clock=new Date(agendaAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
           const event={key,at,agendaAt,title,owner,dayKey:day.dayKey || dateKey(day.dayBase),
-            reminderEdge:'missed',delivery:'alarm',upNext:false,estimated:!risk,expiresAt:agendaAt+15*60000,
+            reminderEdge:'missed',delivery:choices.missed,leadMinutes,upNext:false,estimated:!risk,expiresAt:agendaAt+15*60000,
             notificationGroup:`${owner}:${day.dayKey || dateKey(day.dayBase)}:missed`,
             ...(!h.breakable && completion ? {completion} : {}),
-            body:risk ? 'Drops within 15 min' : `May drop around ${clock}`};
+            body:risk ? `May drop by ${clock}` : `May drop around ${clock}`};
           // Split work has one remaining-opportunity alarm, using the latest
           // available provisional start if no shared estimate exists.
           events.set(key,event);
@@ -455,7 +479,8 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
     for(const row of priorDay.timeline || []){
       if(!['fill','scheduled'].includes(row.kind))continue;
       const hid=row.hid || row.h?.hid || data[row.i]?.hid,h=dataById.get(hid),owner=`item:${hid}`;
-      if(!h || isOpportunityHabit(h) || h.type==='zero' || present.has(hid) || !['notification','alarm'].includes(prefs.items?.[owner]?.missed)
+      const choices=nativeReminderChoices(prefs,owner,dateKey(today));
+      if(!h || isOpportunityHabit(h) || h.type==='zero' || present.has(hid) || !['notification','alarm'].includes(choices.missed)
         || completedOnDay(h,today) || Number(h.snoozedUntil)>now
         || (hasDaySchedule(h) && !isDateEligibleForHabit(h,today))
         || !windowStillDoableToday(h,now,settings))continue;
@@ -465,7 +490,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       const missedAt=now+15*60000;
       const key=`${owner}:Slipped:${dateKey(today)}`;
       events.set(key,{key,at:now+2000,agendaAt:missedAt,title:h.name || 'Ting',body:'Slipped · still time',owner,
-        dayKey:dateKey(today),reminderEdge:'missed',delivery:'alarm',upNext:false,slipped:true,expiresAt:missedAt,
+        dayKey:dateKey(today),reminderEdge:'missed',delivery:choices.missed,upNext:false,slipped:true,expiresAt:missedAt,
         notificationGroup:`${owner}:${dateKey(today)}:missedDrop`,
         ...(!h.breakable ? {completion:{hid,dayKey:dateKey(today),minutes:0}} : {})});
     }
@@ -474,7 +499,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
   // Current edges due before that clock retain their existing schedule.
   if(validForecast){
     const futurePrefs={...prefs,items:Object.fromEntries(Object.entries(prefs.items || {})
-      .map(([owner,choice])=>[owner,{...choice,missed:'off'}]))};
+      .map(([owner,choice])=>[owner,{...choice,missed:'off',dates:Object.fromEntries(Object.entries(choice.dates || {}).map(([day,patch])=>[day,{...patch,missed:'off'}]))}]))};
     const futureEvents=nativeReminderEvents({...forecast.futureWeek,dropForecast:null},data,settings,futurePrefs,now,null,warningNow);
     for(const [key,event] of events)if(event.reminderEdge!=='missed' && event.at>=forecast.targetAt)events.delete(key);
     for(const event of futureEvents){
@@ -504,7 +529,7 @@ function nativeReminderSettingsOpen(){
 function scheduleNativeAgendaForecast(week,data,settings,prefs,revision){
   if(!prefs.enabled || typeof forecastAgendaOffMain!=='function')return;
   if(document.visibilityState==='hidden' || _optimizerHomeRequestKey || _optimizerHomeRefinementKey)return;
-  const owners=data.filter(h=>!isOpportunityHabit(h) && ['notification','alarm'].includes(prefs.items?.[`item:${h.hid}`]?.missed)).map(h=>h.hid);
+  const owners=data.filter(h=>!isOpportunityHabit(h) && Object.values({series:prefs.items?.[`item:${h.hid}`],...prefs.items?.[`item:${h.hid}`]?.dates}).some(choice=>['notification','alarm'].includes(choice?.missed))).map(h=>h.hid);
   if(!owners.length || reusableAgendaDropForecast(week,data,revision))return;
   clearTimeout(nativeForecastTimer);
   nativeForecastTimer=setTimeout(async()=>{
@@ -572,7 +597,7 @@ async function refreshNativeBackgroundStatus(force=false){
   const toggle=document.getElementById('native-background-toggle');
   toggle?.setAttribute('aria-pressed',String(state.enabled));
   if(node)node.textContent=state.enabled
-    ? `Closed refresh: about 15 minutes with drop reminders enabled; 30 minutes otherwise. Android may delay it.${state.background ? ' Background location is allowed.' : ' Uses the last saved place. Allow background location to detect movement.'}${state.plannedAt ? ` Last background update: ${new Date(state.plannedAt).toLocaleString()}.` : ''}${state.dropEstimated ? ` ${state.dropEstimated} estimated drop alarms.` : ''}${state.dropConfirmed ? ` ${state.dropConfirmed} confirmed drop alarms.` : ''}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' Drop alarms are saved but need exact timing access to ring.' : ''}${state.error ? ` ${state.error}` : ''}`
+    ? `Closed refresh: about 15 minutes with drop reminders enabled; 30 minutes otherwise. Android may delay it.${state.background ? ' Background location is allowed.' : ' Uses the last saved place. Allow background location to detect movement.'}${state.plannedAt ? ` Last background update: ${new Date(state.plannedAt).toLocaleString()}.` : ''}${state.dropEstimated ? ` ${state.dropEstimated} estimated drop warnings.` : ''}${state.dropConfirmed ? ` ${state.dropConfirmed} confirmed drop warnings.` : ''}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' Exact timing access is off: ringing drops cannot fire and drop notifications may arrive late.' : ''}${state.error ? ` ${state.error}` : ''}`
     : 'Background refresh is off. The phone follows its last saved agenda.';
   const fix=state.location;
   if(!sortSettings.pinnedLocationId && fix && Number.isFinite(fix.lat) && Number.isFinite(fix.lng) && Date.now()-fix.at<=10*60000 && fix.at>nativeBackgroundLastApplied){
@@ -868,7 +893,7 @@ function initNativeReminders(){
   queueNativeReminders();
   if(localStorage.getItem('tings_drop_alarm_migration')){
     localStorage.removeItem('tings_drop_alarm_migration');
-    showToast('Drop warnings now use ringing alarms, estimated early and adjusted every 15 minutes.');
+    showToast('Drop warnings now offer notification or ringing alarm, with 5 or 15 minutes of notice.');
   }
   void refreshNativeBackgroundStatus(true).catch(()=>{});
 }

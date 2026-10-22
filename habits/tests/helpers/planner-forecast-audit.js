@@ -5,7 +5,7 @@ async function runPlannerForecastAudit(closed=false){
   let clock=initial;
   class FrozenDate extends RealDate{constructor(...args){super(...(args.length ? args : [clock]));}static now(){return clock;}}
   const report={cases:[],probes:0,forecastMs:0,lateWarnings:0,drops:0,replays:0,checked:0,
-    leadChecks:0,lateLeadChecks:0,confirmedChecks:0,cachedMismatch:0,estimated:0,withheldWarnings:0};
+    leadChecks:0,lateLeadChecks:0,confirmedChecks:0,cachedMismatch:0,estimated:0,withheldWarnings:0,earlierCutoffs:0};
   globalThis.Date=FrozenDate;
   try{
     await ensureGlpk();
@@ -47,7 +47,15 @@ async function runPlannerForecastAudit(closed=false){
           if(event.delivery!=='alarm' || event.at>=event.agendaAt)throw new Error('Invalid drop alarm');
           if(event.estimated){report.estimated++;continue;}
           report.leadChecks++;
-          if(event.at!==sample+2000 || event.agendaAt!==forecast.targetAt){report.lateLeadChecks++;report.lateWarnings++;}
+          // A sampled absence is an upper bound, not the exact loss instant.
+          // Warnings must remain immediate at the default lead, and cannot
+          // postpone a known earlier cutoff to the next forecast boundary.
+          const rows=week.days[0].timeline.filter(row=>`item:${row.hid || row.h?.hid || data[row.i]?.hid}`===event.owner
+            && (row.scheduleOptionId || '')===(event.completion?.scheduleOptionId || ''));
+          const earlier=rows.map(row=>row.dropAt).filter(at=>Number.isFinite(at) && at>sample && at<forecast.targetAt);
+          if(earlier.length)report.earlierCutoffs++;
+          if(event.at!==sample+2000 || event.agendaAt>forecast.targetAt
+            || earlier.some(at=>event.agendaAt>at)){report.lateLeadChecks++;report.lateWarnings++;}
           if(!report.deliverySample)report.deliverySample=event;
         }
         const futureKeys=new Set(forecast.futureWeek.days[0].timeline.filter(r=>['fill','scheduled'].includes(r.kind)).map(r=>agendaForecastIdentity(r,data)));

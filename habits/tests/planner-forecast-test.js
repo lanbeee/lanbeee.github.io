@@ -13,12 +13,13 @@ const {chromium}=require('./helpers/planner-test-helpers');
     fs.writeFileSync('test-results/planner-forecast-audit.json',JSON.stringify(report,null,2));
     console.log(JSON.stringify({cases:report.cases.length,drops:report.drops,lateWarnings:report.lateWarnings,
       replays:report.replays,probes:report.probes,forecastMs:report.forecastMs,
-      confirmedChecks:report.confirmedChecks,cachedMismatch:report.cachedMismatch}));
+      confirmedChecks:report.confirmedChecks,cachedMismatch:report.cachedMismatch,earlierCutoffs:report.earlierCutoffs}));
     assert.equal(report.cases.length,26);
     assert(report.replays>0,'both engines use complete feasible clock replay');
     assert(report.cases.every(c=>c.forecast.probes===1),'shared batch has a fixed probe cap');
-    assert.equal(report.lateWarnings,0,'fifteen-minute warnings match exactly the cached future agenda losses');
-    assert.equal(report.lateLeadChecks,0,'every allowed warning uses the same fifteen-minute duration');
+    assert.equal(report.lateWarnings,0,'fifteen-minute warnings never postpone an earlier cutoff to the future sample');
+    assert.equal(report.lateLeadChecks,0,'every imminent warning respects its earlier deadline');
+    assert(report.earlierCutoffs>0,'audit exercises loss before the forecast sample');
     assert.equal(report.cachedMismatch,0,'confirmed losses are absent from the reusable normal week');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

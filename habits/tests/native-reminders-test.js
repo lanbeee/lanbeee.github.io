@@ -21,7 +21,9 @@ const assert = require('node:assert/strict');
           {mode:'notification',display:'denied',grant:false},
           {mode:'alarm',display:'granted',exact:'denied',alarmGrant:false},
           {mode:'off',display:'denied'},
-          {mode:'notification',display:'denied',grant:true,enabled:true}
+          {mode:'notification',display:'denied',grant:true,enabled:true},
+          {mode:'notification',edge:'missed',display:'granted',exact:'denied',alarmGrant:true},
+          {mode:'notification',edge:'missed',display:'granted',exact:'denied',alarmGrant:false}
         ]){
           const calls=[];
           const initial={version:3,enabled:Boolean(scenario.enabled),items:{'item:permission':{start:scenario.mode==='off'?'alarm':'off',end:'notification'}}};
@@ -38,7 +40,7 @@ const assert = require('node:assert/strict');
             requestExactAlarmPermission:async()=>{calls.push('exact-request');return {exact_alarm:scenario.alarmGrant?'granted':'denied'};}
           }};
           const controls=nativeItemReminderControls('item:permission','Permission test');document.body.append(controls);
-          const select=controls.querySelector('[data-reminder-edge="start"]');
+          const select=controls.querySelector(`[data-reminder-edge="${scenario.edge || 'start'}"]`);
           select.value=scenario.mode;select.dispatchEvent(new Event('change'));
           while(select.disabled)await new Promise(resolve=>setTimeout(resolve,10));
           results.push({calls,prefs:nativeReminderPreferences(),value:select.value});controls.remove();
@@ -67,6 +69,9 @@ const assert = require('node:assert/strict');
     assert.equal(permissionFlows[6].prefs.enabled,false,'turning off leaves the global pause intact');
     assert.equal(permissionFlows[6].prefs.items['item:permission'].start,'off');
     assert.deepEqual(permissionFlows[7].calls,['check','notifications'],'revoked permission can be requested from the item');
+    assert.deepEqual(permissionFlows[8].calls,['check','exact-check','exact-request'],'drop notifications request the same exact timing access as ringing drops');
+    assert.equal(permissionFlows[8].prefs.items['item:permission'].missed,'notification');
+    assert.equal(permissionFlows[9].prefs.items['item:permission'].missed || 'off','off','denied exact access does not silently save a weaker drop notification');
     const result = await page.evaluate(()=>{
       const now = Date.now(), base = dayStart(now)+86400000, start = base+10*3600000;
       const data = normalize([{hid:'notification-task',name:'Task',type:'task',eventTime:start,durationMinutes:30,logs:[]},{hid:'notification-habit',name:'Habit',type:'keepup',target:1,durationMinutes:30,logs:[]}]);
@@ -170,7 +175,7 @@ const assert = require('node:assert/strict');
     assert(warnings.withoutForecast.length>0 && warnings.withoutForecast.every(e=>e.estimated),'early estimates are armed without forecasting');
     assert.equal(flex.at,warnings.now+2000,'one shared fifteen-minute lookahead warns now');
     assert.equal(flex.agendaAt,warnings.now+900000,'the cached future clock is the drop clock');
-    assert.equal(flex.body,'Drops within 15 min');
+    assert.match(flex.body,/^May drop by /);
     assert.deepEqual(warnings.background,warnings.events,'background preserves just-due edges while using the completed forecast clock');
     assert.equal(flex.upNext,false);
     assert.equal(warnings.placementCalls,0,'warning projection never runs placement on UI thread');
@@ -184,6 +189,46 @@ const assert = require('node:assert/strict');
     assert(!warnings.done.some(e=>e.owner==='item:flex'));
     assert(!warnings.venueWarnings.some(e=>e.owner==='item:flex' && !e.estimated),'venue hours guard immediate confirmed alarms');
     assert(warnings.stale.length>0 && warnings.stale.every(e=>e.estimated),'changed agenda falls back to labelled estimates');
+    const dropOptions=await page.evaluate(()=>{
+      const base=dayStart(Date.now()),now=base+10*3600000;
+      const data=normalize([{hid:'lead',name:'Lead test',type:'keepup',target:1,durationMinutes:10,logs:[]}]);
+      const settings={...loadSortSettings(),locations:[],blockedTimes:[],blockedTimeOverrides:{},blockedTimeExceptions:{}};
+      const day={dayBase:base,dayKey:dateKey(base),timeline:[{kind:'fill',h:data[0],i:0,
+        start:now+30*60000,end:now+40*60000,dropAt:now+60*60000}]};
+      const week={days:[day]},cases=[];
+      for(const delivery of ['notification','alarm'])for(const minutes of [5,15]){
+        const prefs={enabled:true,items:{'item:lead':{missed:delivery,missedLeadMinutes:minutes}}};
+        const estimate=nativeReminderEvents(week,data,settings,prefs,now)[0];
+        const forecast={checkedAt:now,targetAt:now+15*60000,revision:'lead',planKey:agendaForecastPlanKey(week,data),
+          futureWeek:{days:[{...day,timeline:[]}]},risks:{'lead:main':{at:now+15*60000,validated:true}}};
+        const confirmed={...week,dropForecast:forecast,forecastRevision:'lead'};
+        const warning=nativeReminderEvents(confirmed,data,settings,prefs,now)[0];
+        const slipped=nativeReminderEvents({days:[{...day,timeline:[]}]},data,settings,prefs,now,week)[0];
+        cases.push({delivery,minutes,estimate,warning,slipped});
+      }
+      const prefs={enabled:true,items:{'item:lead':{missed:'off',dates:{[day.dayKey]:{missed:'notification',missedLeadMinutes:5}}}}};
+      const dateEvent=nativeReminderEvents(week,data,settings,prefs,now)[0];
+      const original=localStorage.getItem(NATIVE_REMINDERS_KEY);
+      localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({version:3,enabled:true,items:{'item:lead':{missed:'alarm',missedLeadMinutes:5}}}));
+      const migrated=nativeReminderPreferences();
+      nativeSaveReminderPatch(nativeReminderPreferences(),'item:lead',{missed:'notification',missedLeadMinutes:5});
+      const reloaded=nativeReminderPreferences();
+      if(original===null)localStorage.removeItem(NATIVE_REMINDERS_KEY);else localStorage.setItem(NATIVE_REMINDERS_KEY,original);
+      return {now,cases,dateEvent,migrated,reloaded};
+    });
+    for(const c of dropOptions.cases){
+      assert.equal(c.estimate.delivery,c.delivery);assert.equal(c.warning.delivery,c.delivery);assert.equal(c.slipped.delivery,c.delivery);
+      assert.equal(c.estimate.agendaAt-c.estimate.at,c.minutes*60000,'estimated warning uses the selected lead');
+      assert.equal(c.warning.at,dropOptions.now+(c.minutes===5 ? 10*60000 : 2000),'confirmation cannot bypass the five-minute choice');
+      assert.equal(c.slipped.at,dropOptions.now+2000,'sudden loss still alerts immediately');
+      assert.equal(c.estimate.key,dropOptions.cases[0].estimate.key,'changing delivery or lead preserves identity');
+    }
+    assert.equal(dropOptions.dateEvent.delivery,'notification');
+    assert.equal(dropOptions.dateEvent.agendaAt-dropOptions.dateEvent.at,5*60000);
+    assert.equal(dropOptions.migrated.items['item:lead'].missed,'alarm','existing alarm choice survives upgrade');
+    assert.equal(dropOptions.migrated.items['item:lead'].missedLeadMinutes,15,'upgrade preserves effective v3 timing');
+    assert.equal(dropOptions.reloaded.items['item:lead'].missed,'notification','new delivery choice survives reload');
+    assert.equal(dropOptions.reloaded.items['item:lead'].missedLeadMinutes,5,'new timing choice survives reload');
     const early=await page.evaluate(()=>{
       const base=dayStart(Date.now()),now=base+8*3600000;
       const data=normalize([{hid:'sunset',name:'Sunset habit',type:'keepup',target:1,durationMinutes:10,
@@ -238,7 +283,11 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#detail-native-reminders select[data-reminder-edge]').count(),5,'five per-item edges');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].missed || 'off'),'off','migration leaves before-missed warnings off');
     await page.locator('#detail-native-reminders select[data-reminder-edge="missed"]').selectOption('alarm',{force:true});
-    assert.equal(await page.locator('#detail-native-reminders select[data-reminder-missed-lead]').count(),0,'one fifteen-minute warning has no timing selector');
+    assert.equal(await page.locator('#detail-native-reminders select[data-reminder-missed-lead]').count(),1,'drop timing is available per item');
+    await page.locator('#detail-native-reminders select[data-reminder-missed-lead]').selectOption('5',{force:true});
+    await page.locator('#detail-native-reminders select[data-reminder-edge="missed"]').selectOption('notification',{force:true});
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].missed),'notification');
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].missedLeadMinutes),5);
     assert.equal(await page.evaluate(()=>nativeReminderMissedLeadMinutes({missedLeadMinutes:60})),15,'legacy leads use the new common duration');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-two'].missed || 'off'),'off','warning choice stays per item');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:ui-one'].travelStart),'alarm','legacy travel choice migrated');
