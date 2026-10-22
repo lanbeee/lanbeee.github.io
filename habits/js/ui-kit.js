@@ -1,9 +1,22 @@
 // Shared UI primitives. Sheets and settings mount from these so markup is not
 // copy-pasted in index.html. Keep generated ids/classes byte-stable for tests.
 
-function uiToggleHtml({key, title, hint, extraClass = '', pressed = false}){
+function uiSettingsHelpButtonHtml(id,title){
+  return `<button type="button" class="info-btn settings-info-btn" data-settings-help-target="${id}" aria-label="about ${escapeHtml(title)}" aria-expanded="false" aria-controls="${id}"><i class="ti ti-info-circle" aria-hidden="true"></i></button>`;
+}
+
+// Help expands in the sheet's flow so it stays readable on small screens.
+function uiSettingsHelpHtml({id,title,body,labelClass = 'settings-sublabel',titleId,labelFor}){
+  const tag = labelFor ? 'label' : 'span';
+  return `<div class="settings-help"><div class="settings-help-head"><${tag} class="${labelClass}"${titleId ? ` id="${titleId}"` : ''}${labelFor ? ` for="${labelFor}"` : ''}>${escapeHtml(title)}</${tag}>${uiSettingsHelpButtonHtml(id,title)}</div><div class="settings-help-body" id="${id}" hidden>${body}</div></div>`;
+}
+
+function uiToggleHtml({key, title, hint, help, extraClass = '', pressed = false}){
   const cls = extraClass ? ` ${extraClass}` : '';
-  return `<button class="setting-toggle setting-switch${cls}" type="button" data-setting-toggle="${key}" aria-pressed="${pressed ? 'true' : 'false'}"><span><b>${title}</b><small>${hint}</small></span><span class="switch-ui" aria-hidden="true"></span></button>`;
+  const toggle = `<button class="setting-toggle setting-switch${cls}" type="button" data-setting-toggle="${key}" aria-pressed="${pressed ? 'true' : 'false'}"><span><b>${title}</b><small>${hint}</small></span><span class="switch-ui" aria-hidden="true"></span></button>`;
+  if(!help)return toggle;
+  const id = `setting-${key}-help`;
+  return `<div class="settings-toggle-row${cls}">${toggle}${uiSettingsHelpButtonHtml(id,title)}<div class="settings-help-body" id="${id}" hidden>${escapeHtml(help)}</div></div>`;
 }
 
 function uiPrioritySegHtml(markDefault){
@@ -148,16 +161,16 @@ function uiTimePairHtml(kind){
 
 const UI_SETTING_TOGGLES = {
   display:[
-    {key:'minimalMode', title:'minimal mode', hint:'Keep the basics: name, frequency or deadline, duration, allowed weekdays and hours. Turn off for all options. Saved settings still apply; the planner works the same way.'}
+    {key:'minimalMode', title:'minimal mode', hint:'Show just the essentials.', help:'Keep the name, frequency or deadline, duration, allowed days and hours. Turn off for all options. Saved settings still apply; the planner works the same way.'}
   ],
   reminders:[
-    {key:'reminders', title:'remind me about commitments', hint:'Show a heads-up for dated tasks and fixed appointments. Rhythm habits stay quiet.'},
-    {key:'pushDetailed', title:'include details in notifications', hint:'Include item names, topics, and places instead of generic notification text.'}
+    {key:'reminders', title:'remind me about commitments', hint:'Dated tasks and fixed appointments.'},
+    {key:'pushDetailed', title:'include details in notifications', hint:'Item names, topics, and places in system alerts.'}
   ],
   weather:[
-    {key:'showWeatherTemperatureRanges', title:'day temperature ranges', hint:'Add the daily feels-like low–high beside weather icons on Home and the Calendar week strip. Off by default.', extraClass:'settings-full-only'},
-    {key:'showWeatherOnBusyTimes', title:'weather on busy times', hint:'Show the condition and feels-like temperature during blocks such as sleep.', extraClass:'settings-full-only'},
-    {key:'showWeatherOnTravel', title:'weather on travel', hint:'Show the condition and feels-like temperature during travel. On by default.', extraClass:'settings-full-only'}
+    {key:'showWeatherTemperatureRanges', title:'day temperature ranges', hint:'Feels-like low and high on Home and Calendar.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnBusyTimes', title:'weather on busy times', hint:'Conditions and feels-like temperature.', extraClass:'settings-full-only'},
+    {key:'showWeatherOnTravel', title:'weather on travel', hint:'Conditions and feels-like temperature.', extraClass:'settings-full-only'}
   ],
   cardDetails:[
     {key:'showPinnedOnCards', title:'show pinned', hint:'Show a pin mark on pinned items.', extraClass:'settings-full-only'},
@@ -171,7 +184,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showFlexibilityOnCards', title:'show scheduling windows', hint:'Show how many days early or late it may be planned.', extraClass:'settings-full-only'},
     {key:'showTopicsOnCards', title:'show topics', hint:'Show topic labels on the home list.', extraClass:'settings-full-only'},
     {key:'showLocationOnCards', title:'show place', hint:'Show the place on each item.', extraClass:'settings-full-only'},
-    {key:'showRemindersOnCards', title:'show reminder mark', hint:'Show a bell when this item sends a phone notification or alarm. Tap it to turn those reminders off.', extraClass:'settings-full-only'},
+    {key:'showRemindersOnCards', title:'show reminder mark', hint:'A bell for phone reminders; tap it to turn them off.', extraClass:'settings-full-only'},
     {key:'showStatusOnCards', title:'show progress', hint:'Show done / almost / behind (or new).', extraClass:'settings-full-only'},
     {key:'showEarlyOnCards', title:'show early', hint:'Show early when it helps a packed day.', extraClass:'settings-full-only'},
     {key:'showCueOnCards', title:'show status line', hint:'Show the one-line status like due today or on track.', pressed:true},
@@ -181,22 +194,22 @@ const UI_SETTING_TOGGLES = {
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'}
   ],
   cardsAfterTime:[
-    {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history: filled marks are logged days, hollow marks are plans. The rightmost dot is today; the left bar summarizes the previous week.', extraClass:'settings-full-only'},
-    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Recent history: filled marks are logged days, hollow marks are plans. The rightmost dot is today; the left bar summarizes the previous week.', extraClass:'settings-minimal-only'},
+    {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-full-only'},
+    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-minimal-only'},
     {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}
   ],
   defaults:[
     {key:'defaultBreakable', title:'allow splitting', hint:'New habits can be split across sessions.'}
   ],
   appearance:[
-    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log a Ting or make a plan. No background sounds.'},
+    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log or plan.'},
     {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.'}
   ],
   prayer:[
-    {key:'prayerIslamicNames', title:'use Islamic prayer names', hint:'Optional: replace the general time labels with Fajr, Dhuhr, Asr, Maghrib, and Isha. Also show prayer calculation settings.'}
+    {key:'prayerIslamicNames', title:'use Islamic prayer names', hint:'Show prayer names and calculation settings.'}
   ],
   advanced:[
-    {key:'agendaOptimizer', title:'smarter packing', hint:'Takes longer, but packs tight days better and protects items with fewer open slots. Off = fast graph packing, usually under a second.'}
+    {key:'agendaOptimizer', title:'smarter packing', hint:'Fit more into busy days.', help:'Takes longer, but packs tight days better and protects items with fewer open slots. Turn off to use the faster planner.'}
   ]
 };
 
@@ -282,6 +295,9 @@ const UI_LEAVE_HINTS = {
 };
 
 function mountUiKit(){
+  document.querySelectorAll('[data-settings-help-title]').forEach(host=>{
+    host.outerHTML = uiSettingsHelpHtml({id:host.dataset.settingsHelpId,title:host.dataset.settingsHelpTitle,body:host.innerHTML,labelClass:host.dataset.settingsHelpLabel || 'settings-sublabel',titleId:host.dataset.settingsHelpLabelId,labelFor:host.dataset.settingsHelpFor});
+  });
   document.querySelectorAll('[data-ui-toggles]').forEach(host=>{
     const rows = UI_SETTING_TOGGLES[host.dataset.uiToggles] || [];
     host.innerHTML = rows.map(uiToggleHtml).join('');

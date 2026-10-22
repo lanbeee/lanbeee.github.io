@@ -22,10 +22,10 @@ function syncCardDetailControls(){
   if(custom)custom.hidden = mode !== 'custom';
   const hint = $('card-detail-hint');
   if(hint)hint.textContent = mode === 'simple'
-    ? 'Dates, plans, reminders, how often, early indicators, and a status line.'
+    ? 'Key dates, reminders, and status.'
     : mode === 'detailed'
-      ? 'Also show which days, time of day, duration, topics, and place.'
-      : 'Choose the details you want on each item. Your choices are saved.';
+      ? 'Also show the schedule, duration, topics, and place.'
+      : 'Choose the details to show below.';
 }
 
 let defaultProfileKind = 'habit';
@@ -274,6 +274,12 @@ function closeSettingsSheet(){
 // an open section (blocked time, topics, defaults, …) would collapse that
 // section out from under the user mid-edit.
 function resetSettingsSheetState(){
+  document.querySelectorAll('#settings-sheet [data-settings-help-target]').forEach(button=>{
+    const body = $(button.dataset.settingsHelpTarget);
+    if(body)body.hidden = true;
+    button.setAttribute('aria-expanded','false');
+  });
+  document.querySelectorAll('#settings-sheet .settings-disclosure').forEach(details=>{details.open = false;});
   pendingImportPayload = null;
   pendingCalendarEvents = null;
   const backupConfirm = $('backup-import-confirm');

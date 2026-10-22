@@ -230,8 +230,8 @@ function renderCalendarImportControls(){
   const hint = $('calendar-credit-hint');
   if(hint){
     hint.textContent = habits.length
-      ? 'Pick a build or limit habit (like Work). Meeting minutes count toward its daily time; overlapping meetings merge. Habits that can’t split yet are updated so they can.'
-      : 'No build or limit habit with daily hours yet. Add Work (or similar) first to count meetings toward it.';
+      ? 'Meeting minutes count toward this habit’s daily time.'
+      : 'Add a build or limit habit with daily hours to use this.';
   }
   const allDaySelect = $('calendar-allday-mode');
   if(allDaySelect){

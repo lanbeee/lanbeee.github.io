@@ -85,7 +85,7 @@ function deviceCalendarStatus(message){const el=document.getElementById('calenda
 function renderDeviceCalendarControls(){
   const host=document.getElementById('calendar-device-controls');
   if(!host || !window.TingsNative?.isNative || !window.TingsNative.calendars)return;
-  if(!host.children.length)host.innerHTML=`<p class="field-hint">Import calendars already synced to this phone. Tings reads titles and times locally; appointments update from your calendar and clear after they end. Outlook needs “Sync calendars” enabled in its account settings.</p>
+  if(!host.children.length)host.innerHTML=`${uiSettingsHelpHtml({id:'calendar-device-help',title:'phone calendar sync',body:'<p>Tings reads titles and times locally. Appointments update from your calendar and clear after they end. Outlook needs “Sync calendars” enabled in its account settings.</p><p>Refreshes on open and on calendar changes while open. For updates while closed, enable “refresh agenda while closed” under phone reminders and choose at least one habit reminder. Android may delay background updates. Imported meetings start with Tings reminders off.</p>'})}
               <div class="btn-row">
                 <button class="btn primary" id="calendar-device-choose" type="button">choose phone calendars</button>
                 <button class="btn" id="calendar-device-refresh" type="button" hidden>refresh now</button>
@@ -98,8 +98,7 @@ function renderDeviceCalendarControls(){
                   <button class="btn" id="calendar-device-cancel" type="button">cancel</button>
                 </div>
               </div>
-              <p class="field-hint" id="calendar-device-status" role="status" aria-live="polite"></p>
-              <p class="field-hint">Refreshes on open and on calendar changes while open. For updates while closed, enable “refresh agenda while closed” under phone reminders and choose at least one habit reminder. Android may delay background updates. Imported meetings start with Tings reminders off.</p>`;
+              <p class="field-hint" id="calendar-device-status" role="status" aria-live="polite"></p>`;
   host.hidden=false;
   const prefs=deviceCalendarPreferences();
   document.getElementById('calendar-device-refresh').hidden=!prefs.enabled;

@@ -603,9 +603,13 @@ async function refreshNativeBackgroundStatus(force=false){
   nativeAgendaChannelEnabled=state.notificationChannelEnabled!==false;
   const toggle=document.getElementById('native-background-toggle');
   toggle?.setAttribute('aria-pressed',String(state.enabled));
-  if(node)node.textContent=state.enabled
+  const detail=document.getElementById('native-background-detail');
+  if(detail)detail.textContent=state.enabled
     ? `Closed refresh: about 15 minutes with drop reminders enabled; 30 minutes otherwise. Android may delay it.${state.background ? ' Background location is allowed.' : ' Uses the last saved place. Allow background location to detect movement.'}${state.plannedAt ? ` Last background update: ${new Date(state.plannedAt).toLocaleString()}.` : ''}${state.dropEstimated ? ` ${state.dropEstimated} estimated drop warnings.` : ''}${state.dropConfirmed ? ` ${state.dropConfirmed} confirmed drop warnings.` : ''}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' Exact timing access is off: ringing drops cannot fire and drop notifications may arrive late.' : ''}${state.error ? ` ${state.error}` : ''}`
     : 'Background refresh is off. The phone follows its last saved agenda.';
+  if(node)node.textContent=state.error ? `Refresh needs attention: ${state.error}` : state.enabled
+    ? `Updates about every 15–30 min · ${state.background ? 'background location allowed' : 'uses saved place'}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' · allow exact timing for drop alerts' : ''}`
+    : 'Off · reminders use the last saved agenda.';
   const fix=state.location;
   if(!sortSettings.pinnedLocationId && fix && Number.isFinite(fix.lat) && Number.isFinite(fix.lng) && Date.now()-fix.at<=10*60000 && fix.at>nativeBackgroundLastApplied){
     nativeBackgroundLastApplied=fix.at;
@@ -741,7 +745,9 @@ async function renderNativeReminderStatus(){
   const updated = Number(localStorage.getItem('tings_native_reminders_updated'));
   const count = pending.notifications.filter(n=>n.extra?.tingsAgenda === true).length;
   const alarms = window.TingsNative.alarms ? await window.TingsNative.alarms.status() : null;
-  node.textContent = `${permission.display === 'granted' ? `${count} notifications${alarms ? ` and ${alarms.pending} alarms` : ''} scheduled` : 'Notification permission needed'} · ${exact.exact_alarm === 'granted' ? 'exact timing allowed' : 'timing may be delayed'}${updated ? ` · updated ${new Date(updated).toLocaleString()}` : ''}${alarms && !alarms.fullScreen ? ' · Allow full-screen alarms for the lock-screen controls' : ''}${window.TingsNative.background && nativeAgendaChannelEnabled===false ? ' · Agenda notifications are off in Android settings' : ''}. Reminders follow the latest saved agenda.`;
+  const detail=document.getElementById('native-reminder-detail');
+  if(detail)detail.textContent = `${exact.exact_alarm === 'granted' ? 'Exact timing allowed' : 'Timing may be delayed'}${updated ? ` · updated ${new Date(updated).toLocaleString()}` : ''}. Reminders follow the latest saved agenda.`;
+  node.textContent = `${permission.display === 'granted' ? `${count} notifications${alarms ? ` · ${alarms.pending} alarms` : ''} scheduled` : 'Notification permission needed'}${exact.exact_alarm !== 'granted' ? ' · allow exact timing' : ''}${alarms && !alarms.fullScreen ? ' · allow full-screen alarms for lock-screen controls' : ''}${window.TingsNative.background && nativeAgendaChannelEnabled===false ? ' · agenda notifications are off in Android settings' : ''}`;
 }
 function openBackgroundLocationDisclosure(){
   const copy = document.getElementById('background-location-disclosure-copy');
@@ -792,12 +798,11 @@ function initNativeReminders(){
   if(!host)return;
   const panel = document.createElement('div');
   panel.id = 'native-reminder-controls';
-  const heading = document.createElement('p');heading.className = 'settings-sublabel';
-  heading.textContent = 'Phone notifications and alarms';
-  panel.append(heading);
+  panel.insertAdjacentHTML('beforeend',uiSettingsHelpHtml({id:'native-reminders-help',title:'phone notifications & alarms',body:'<p>Choose reminders in each habit or task’s Actions tab, or under each busy time. New items start with reminders off. These choices stay on this phone.</p><p id="native-reminder-detail"></p>'}));
+  const help = panel.querySelector('#native-reminders-help');
   const prefs = nativeReminderPreferences();
   const toggle = document.createElement('div');
-  const title = document.createElement('span');title.textContent = 'enable phone reminders';
+  const title = document.createElement('span');title.innerHTML = '<b>enable phone reminders</b><small>Use the reminders chosen on each item.</small>';
   const input = document.createElement('button');input.type = 'button';input.className = 'setting-toggle setting-switch compact-toggle';input.setAttribute('aria-pressed',String(prefs.enabled));input.setAttribute('aria-label','enable phone reminders');
   input.append(title);
   input.insertAdjacentHTML('beforeend','<span class="switch-ui" aria-hidden="true"></span>');
@@ -817,13 +822,13 @@ function initNativeReminders(){
       showToast(enabled ? 'phone reminders on' : 'phone reminders off');
     }catch(error){showToast(error.message,5000);}finally{input.disabled = false;}
   });toggle.append(input);panel.append(toggle);
-  const explanation = document.createElement('p');explanation.className = 'field-hint';explanation.textContent = 'Choose reminders in each habit or task’s Actions tab, or under each busy time. New items start with reminders off. These choices stay on this phone.';panel.append(explanation);
+  const explanation = document.createElement('p');explanation.className = 'field-hint';explanation.textContent = 'Choose reminders in an item’s Actions tab or a busy time.';panel.append(explanation);
   const exact = document.createElement('button');exact.type = 'button';exact.className = 'mini-text-btn';exact.textContent = 'Allow exact timing';
   exact.addEventListener('click',async ()=>{
     try{await window.TingsNative.notifications.requestExactAlarmPermission();}
     catch(error){showToast(error.message);}
   });
-  const test = document.createElement('button');test.type = 'button';test.className = 'mini-text-btn';test.textContent = 'Test notification in 10 seconds';
+  const test = document.createElement('button');test.type = 'button';test.className = 'mini-text-btn';test.textContent = 'Test notification · 10s';
   test.addEventListener('click',async ()=>{
     try{
       await window.TingsNative.notifications.requestPermissions();
@@ -832,30 +837,32 @@ function initNativeReminders(){
       showToast('Test scheduled in 10 seconds');
     }catch(error){showToast(error.message);}
   });
-  const policy = document.createElement('p');policy.className='field-hint';policy.textContent='When a flexible start or departure stays within 5 minutes, its notification keeps the earlier reminder time and shows the latest agenda time. Each occurrence alerts once; repeat notifications for the same item and reminder type are quiet for 30 minutes. Remind in 5 min is your explicit exception.';panel.append(policy);
+  const policy = document.createElement('p');policy.textContent='When a flexible start or departure stays within 5 minutes, its notification keeps the earlier reminder time and shows the latest agenda time. Each occurrence alerts once; repeat notifications for the same item and reminder type are quiet for 30 minutes. Remind in 5 min is your explicit exception.';help.append(policy);
   const status = document.createElement('p');status.id = 'native-reminder-status';status.className = 'field-hint';
-  const actions = document.createElement('div');actions.className = 'btn-row';actions.style.flexWrap = 'wrap';actions.append(exact,test);
+  const actions = document.createElement('div');actions.className = 'settings-actions';actions.append(exact,test);
   if(window.TingsNative.notifications.openSettings){
     const settings=document.createElement('button');settings.type='button';settings.className='mini-text-btn';settings.textContent='Android notification settings';
     settings.addEventListener('click',()=>window.TingsNative.notifications.openSettings().catch(error=>showToast(error.message)));actions.append(settings);
   }
-  panel.append(actions);
+  const tools = document.createElement('details');tools.className = 'settings-disclosure';
+  tools.innerHTML = '<summary>permissions & tests</summary>';
+  tools.append(actions);
   if(window.TingsNative.alarms){
     const hint = document.createElement('p');hint.className = 'field-hint';
     hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Mark done works without unlocking or opening Tings: it saves the completion and silences today’s reminders. History updates when you next open Tings; split habits log only this session. Travel and busy-time reminders have no completion action.';
     const fullScreen = document.createElement('button');fullScreen.type = 'button';fullScreen.className = 'mini-text-btn';fullScreen.textContent = 'Allow full-screen alarms';
     fullScreen.addEventListener('click',async ()=>{try{await window.TingsNative.alarms.requestFullScreen();}catch(error){showToast(error.message);}});
-    const alarmTest = document.createElement('button');alarmTest.type = 'button';alarmTest.className = 'mini-text-btn';alarmTest.textContent = 'Test ringing alarm in 10 seconds';
+    const alarmTest = document.createElement('button');alarmTest.type = 'button';alarmTest.className = 'mini-text-btn';alarmTest.textContent = 'Test ringing alarm · 10s';
     alarmTest.addEventListener('click',async ()=>{
       try{await window.TingsNative.notifications.requestPermissions();await window.TingsNative.alarms.test();showToast('Alarm will ring in 10 seconds. Snooze or stop to end it.');}
       catch(error){showToast(error.message);}
-    });panel.append(hint);actions.append(fullScreen,alarmTest);
+    });help.append(hint);actions.append(fullScreen,alarmTest);
   }
-  panel.append(status);
+  panel.append(status,tools);
   if(window.TingsNative.background){
     const background=document.createElement('button');background.id='native-background-toggle';background.type='button';
     background.className='setting-toggle setting-switch compact-toggle';background.setAttribute('aria-pressed','false');
-    background.innerHTML='<span>refresh agenda while closed</span><span class="switch-ui" aria-hidden="true"></span>';
+    background.innerHTML='<span><b>refresh agenda while closed</b><small>Update your saved agenda.</small></span><span class="switch-ui" aria-hidden="true"></span>';
     background.addEventListener('click',async()=>{
       background.disabled=true;
       try{
@@ -870,7 +877,11 @@ function initNativeReminders(){
     const location=document.createElement('button');location.id='native-background-location';location.type='button';location.className='mini-text-btn';location.textContent='Allow background location';
     location.addEventListener('click',()=>{void requestBackgroundLocationFromUser();});
     const backgroundStatus=document.createElement('p');backgroundStatus.id='native-background-status';backgroundStatus.className='field-hint';
-    panel.append(background,hint,location,backgroundStatus);
+    const backgroundRow=document.createElement('div');backgroundRow.className='settings-toggle-row native-background-row';
+    backgroundRow.append(background);
+    backgroundRow.insertAdjacentHTML('beforeend',uiSettingsHelpButtonHtml('native-background-help','closed-app refresh')+'<div class="settings-help-body" id="native-background-help" hidden><p id="native-background-detail"></p></div>');
+    backgroundRow.querySelector('.settings-help-body').prepend(hint);
+    panel.append(backgroundRow,location,backgroundStatus);
     let inputRevision=homePlannerDirtyKey(load());
     window.addEventListener('tings-native-input',()=>queueMicrotask(()=>{
       const revision=homePlannerDirtyKey(load());

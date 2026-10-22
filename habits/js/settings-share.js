@@ -58,11 +58,11 @@ function syncHouseholdAgendaSettings(){
   const syncHint = $('settings-agenda-sync-hint');
   if(syncHint){
     if(style === 'selected'){
-      syncHint.textContent = 'Next QR: only items set to view or mark done are copied. This device keeps its own planner settings and agenda.';
+      syncHint.textContent = 'Sync only items allowed from their detail pages.';
     }else if(style === 'glance'){
-      syncHint.textContent = 'Next QR: a glanceable agenda you can read across the room and mark done. The display does not run the full app, so it stays fast on older screens.';
+      syncHint.textContent = 'A simple agenda with mark done, suited to older screens.';
     }else{
-      syncHint.textContent = 'Next QR: copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.';
+      syncHint.textContent = 'Sync all items, history, and planner settings between devices.';
     }
   }
   const scopeLabel = $('settings-agenda-scope-label');
