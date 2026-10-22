@@ -166,7 +166,7 @@ function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
   const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
-  $('detail-save').disabled = !dirty || !syncDetailConditionHint();
+  $('detail-save').disabled = isDeviceCalendarTask(load()[detailIdx]) || !dirty || !syncDetailConditionHint();
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 

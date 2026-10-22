@@ -548,8 +548,13 @@ function scheduleNativeAgendaForecast(week,data,settings,prefs,revision){
 }
 function nativeBackgroundSnapshot(){
   const storage = {};
-  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,WEATHER_CACHE_KEY]){
+  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,WEATHER_CACHE_KEY,'tings_device_calendars_v1']){
     const value = localStorage.getItem(key);if(value != null)storage[key] = value;
+  }
+  // Last-refresh display text is not a planner input.
+  if(typeof deviceCalendarPreferences==='function'){
+    const {enabled,calendarIds}=deviceCalendarPreferences();
+    storage.tings_device_calendars_v1=JSON.stringify({enabled,calendarIds});
   }
   const data=load(),mounted=typeof _homeRenderedWeek !== 'undefined' ? _homeRenderedWeek : null;
   // Memoized future days are safe only when this agenda matches saved inputs.
@@ -571,6 +576,8 @@ function nativeBackgroundSnapshotKey(){
     typeof homePlannerDirtyKey==='function'?homePlannerDirtyKey(data):'',
     prefs.enabled,
     JSON.stringify(prefs.items||{}),
+    typeof deviceCalendarPreferences==='function'
+      ? JSON.stringify([deviceCalendarPreferences().enabled,deviceCalendarPreferences().calendarIds]) : '',
     typeof _optimizerHomeReadyDirtyKey!=='undefined'?_optimizerHomeReadyDirtyKey:'',
     sortSettings?._weatherContext?.revision||'',
     mounted && typeof homeAgendaPlanSignature==='function'?homeAgendaPlanSignature(mounted,data):''

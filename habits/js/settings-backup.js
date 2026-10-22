@@ -360,6 +360,8 @@ function onCalendarCreditHabitChange(){
   const settings = loadSortSettings();
   saveSortSettings({...settings, calendarCreditHabitId:select.value || null});
   sortSettings = loadSortSettings();
+  const data=load();rebuildCalendarCredits(data,sortSettings.calendarCreditHabitId);save(data);
+  if(typeof refreshOpenViews==='function')refreshOpenViews();
 }
 
 function onCalendarAllDayModeChange(){
@@ -369,5 +371,5 @@ function onCalendarAllDayModeChange(){
   saveSortSettings({...settings, calendarAllDayMode:normalizeCalendarAllDayMode(select.value)});
   sortSettings = loadSortSettings();
   if(pendingCalendarEvents)showCalendarPdfPreview(pendingCalendarEvents);
+  if(typeof refreshDeviceCalendars==='function')void refreshDeviceCalendars();
 }
-

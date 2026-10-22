@@ -177,6 +177,7 @@ function openDetail(i){
     renderDetailSearch();
   }
   applyDetailMinimalMode();
+  syncDeviceCalendarDetail(h);
   openSheet('detail-sheet');
   if(changedHabit){
     const inner = getSheetInner('detail-sheet');

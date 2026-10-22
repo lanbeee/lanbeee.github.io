@@ -1035,7 +1035,8 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
-            <p class="field-hint">Until Google or Microsoft connect: import a calendar PDF. Meetings show as timed items already marked done on today’s list.</p>
+            <div id="calendar-device-controls" hidden></div>
+            <p class="field-hint">Or import a calendar PDF. Meetings reserve their time and clear after they end.</p>
             <div class="btn-row calendar-pdf-pick-row">
               <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose PDF</label>
               <button class="btn" id="calendar-pdf-clear" type="button">clear imported</button>
@@ -1936,6 +1937,7 @@
 <script src="./js/ui-kit.js" defer></script>
 <script src="./js/tap.js" defer></script>
 <script src="./js/calendar-import.js" defer></script>
+<script src="./js/calendar-device.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
 <script src="./js/weather.js" defer></script>

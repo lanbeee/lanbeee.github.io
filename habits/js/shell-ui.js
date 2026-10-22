@@ -387,6 +387,7 @@ function doNuke(i, opts){
   const data = load();
   const removed = data[i];
   if(!removed)return null;
+  if(isDeviceCalendarTask(removed)){showToast('Remove this meeting in your calendar, or stop calendar sync in Settings.');return null;}
   // Cancel any scheduled push before removing.
   if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && removed.type === 'task'){
     cancelPush(reminderSignature(removed));

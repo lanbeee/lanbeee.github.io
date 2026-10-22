@@ -1601,6 +1601,7 @@ $('detail-save').addEventListener('click',()=>{
   const data = load();
   const h = data[detailIdx];
   if(!h)return;
+  if(isDeviceCalendarTask(h)){showToast('Edit this meeting in your calendar.');return;}
   if(typeof validateHabitScheduleOptionModes === 'function'
     && !validateHabitScheduleOptionModes())return;
   if(!validateFixedStartTimes())return;

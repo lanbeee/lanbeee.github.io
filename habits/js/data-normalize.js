@@ -419,7 +419,12 @@ function normalize(items){
       scheduleOptions,
       links:normalizeLinks(Array.isArray(raw.links) && raw.links.length ? raw.links : legacyCallLinks(raw)),
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
-      source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal') ? raw.source : null,
+      source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal' || raw.source === 'device') ? raw.source : null,
+      ...(raw.source === 'device' ? {
+        calendarId:typeof raw.calendarId === 'string' ? raw.calendarId.slice(0,20) : null,
+        calendarStart:Number.isFinite(raw.calendarStart) ? raw.calendarStart : null,
+        calendarEnd:Number.isFinite(raw.calendarEnd) ? raw.calendarEnd : null
+      } : {}),
       importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
     };
     // Only zero-offset, uncombined start anchors have an exact planner-order

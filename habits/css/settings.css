@@ -214,6 +214,11 @@ button.setting-toggle{
   margin-top:10px;padding:10px;border-radius:var(--radius-sm);
   background:var(--bg);border:0.5px solid var(--border);
 }
+.calendar-device-option{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 0;cursor:pointer;}
+.calendar-device-option input{flex-shrink:0;width:20px;height:20px;margin:0;accent-color:var(--text);}
+.calendar-device-option span{display:flex;flex-direction:column;gap:3px;min-width:0;overflow-wrap:anywhere;}
+.calendar-device-option strong{font-size:14px;font-weight:600;}
+.calendar-device-option small{font-size:12px;color:var(--text2);}
 .calendar-pdf-list{
   list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;
 }

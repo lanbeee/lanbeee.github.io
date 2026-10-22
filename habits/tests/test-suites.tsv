@@ -22,6 +22,7 @@ breakable-partial-log-e2e.js	planner	once
 breakable-task-travel-test.js	planner	once
 calendar-overview-test.js	integrations	once
 calendar-pdf-import-test.js	integrations	once
+calendar-device-sync-test.js	integrations	once
 calendar-scroll-test.js	integrations	once
 cancel-blocked-capacity-test.js	planner	once
 cluster-flex-pull-test.js	planner	default-only

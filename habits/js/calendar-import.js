@@ -330,6 +330,26 @@ function stripCalendarCreditLogs(habits, onlyHid){
   return stripped;
 }
 
+function calendarImportedEvents(data){
+  return data.filter(h=>h?.externalId && ['pdf','msgraph','gcal','device'].includes(h.source) && h.type === 'task' && Number.isFinite(h.eventTime))
+    .map(h=>({start:h.eventTime,end:h.calendarEnd || h.eventTime + clampDuration(h.durationMinutes)*60000}));
+}
+function rebuildCalendarCredits(data,creditHabitId,options={}){
+  // Device sync owns the current window. Retention may already have removed
+  // older task rows; that must not erase Work credit earned on previous days.
+  const habit=data.find(h=>h.hid===creditHabitId);
+  const historical=options.preserveBefore && habit ? normalizeLogs(habit.logs)
+    .filter(log=>isCalendarCreditLog(log) && logTime(log)<options.preserveBefore) : [];
+  stripCalendarCreditLogs(data);
+  const result=creditHabitId ? applyCalendarCreditLogs(data,calendarImportedEvents(data),creditHabitId) : {credited:0,habitName:null};
+  if(historical.length){
+    const days=new Set(historical.map(log=>dateKey(logTime(log))));
+    habit.logs=normalizeLogs([...habit.logs.filter(log=>!isCalendarCreditLog(log) || !days.has(dateKey(logTime(log)))),...historical]);
+    habit.lastLog=latestActualLog(habit.logs);
+  }
+  return result;
+}
+
 // PURE: apply the all-day import policy before mapping to habits.
 function filterCalendarEventsForImport(events, allDayMode){
   const mode = typeof normalizeCalendarAllDayMode === 'function'
@@ -396,24 +416,8 @@ function applyCalendarImport(incoming, options = {}){
     }
   }
 
-  // Credit from all surviving imported timed tasks for this source (re-import
-  // stays consistent even when the new PDF dropped a meeting).
-  const creditSourceEvents = data
-    .filter(h=>h && h.source === source && h.type === 'task' && h.eventTime != null)
-    .map(h=>({
-      id:h.externalId,
-      subject:h.name,
-      start:h.eventTime,
-      end:h.eventTime + clampDuration(h.durationMinutes) * 60000,
-      isAllDay:false,
-      source
-    }));
-
-  if(creditHabitId)stripCalendarCreditLogs(data, creditHabitId);
-  else stripCalendarCreditLogs(data);
-  const credit = creditHabitId
-    ? applyCalendarCreditLogs(data, creditSourceEvents, creditHabitId)
-    : {credited:0, habitName:null};
+  // Merge meeting credit across providers; overlapping copies count once.
+  const credit = rebuildCalendarCredits(data,creditHabitId);
 
   if(typeof save === 'function')save(data);
   return {
@@ -434,7 +438,7 @@ function clearCalendarImport(source = 'pdf'){
   const data = typeof load === 'function' ? load() : [];
   const before = data.length;
   const next = data.filter(h=>!(h && h.source === source));
-  stripCalendarCreditLogs(next);
+  rebuildCalendarCredits(next,loadSortSettings().calendarCreditHabitId);
   if(typeof save === 'function')save(next);
   return {removed: before - next.length};
 }
