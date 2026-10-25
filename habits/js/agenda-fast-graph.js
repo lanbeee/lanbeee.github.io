@@ -451,19 +451,29 @@ function repairFastLinkedGroups(states,candidates,settings,budget){
 function insertUnplacedFastGraphChoices(unplaced,candidates,states,settings,frozen,budget){
   let accepted = 0;
   const byIndex = new Map(candidates.map(c=>[c.i,c]));
+  const canClaim = (c,state,trialStates)=>!weatherShouldDeferCandidate(c,state,settings,trialStates)
+    && clusterFlexPartnerPlacedForDay(c,state)
+    && (requiredOccurrenceCanClaimDay(c,state,candidates)
+      || !fastPathDefersMovable(c,state,candidates,trialStates));
   const placed = (idx)=>states.some(state=>state.rows.some(row=>row.breakableStart && row.i===idx)
     || (state.fills || []).some(entry=>entry && entry.fill && entry.fill.i === idx));
   for(const c of unplaced){
+    if(budget.remaining <= 0)break;
     if(!c || placed(c.i))continue;
     const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};
     for(const state of states){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
-      if(typeof weatherShouldDeferCandidate === 'function'
-        && weatherShouldDeferCandidate(c,state,settings,states))continue;
-      if(typeof clusterFlexPartnerPlacedForDay === 'function'
-        && !clusterFlexPartnerPlacedForDay(c,state))continue;
-      const proposal = fastGraphPlacement(state,fill,{settings,allowNetwork:true},
-        candidates,states,budget);
+      if(budget.remaining <= 0)break;
+      budget.remaining--;
+      if(!canClaim(c,state,states))continue;
+      // Leave room for cross-day ejection if the keep-all day search fails.
+      const localBudget={remaining:Math.min(96,budget.remaining),searches:0,accepted:0};
+      const before=localBudget.remaining;
+      const proposal = fastGraphPlacement(state,fill,{settings,allowNetwork:false},
+        candidates,states,localBudget);
+      budget.remaining-=before-localBudget.remaining;
+      budget.searches+=localBudget.searches;
+      budget.accepted+=localBudget.accepted;
       if(!proposal)continue;
       if(proposal.replacement)applyPlacementState(state,proposal.replacement);
       else commitPlacement(state,fill,proposal.fit);
@@ -473,45 +483,92 @@ function insertUnplacedFastGraphChoices(unplaced,candidates,states,settings,froz
       accepted += 1;
       break;
     }
-    if(placed(c.i) || typeof rebuildDayFromFills !== 'function')continue;
+    if(placed(c.i))continue;
     let parked = false;
     for(const state of states){
-      if(parked)break;
+      if(parked || budget.remaining <= 0)break;
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
+      const windows = fillDayWindows(c.h,state.dayBase,state.seedLocId) || [];
+      const overlap = entry=>windows.reduce((sum,w)=>sum
+        + Math.max(0,Math.min(w.end,entry.fit.placeEnd)-Math.max(w.start,entry.fit.placeStart)),0);
+      const counts = new Map();
+      for(const entry of state.fills)counts.set(entry.fill.i,(counts.get(entry.fill.i) || 0)+1);
       const victims = (state.fills || []).filter(entry=>{
         const vc = byIndex.get(entry && entry.fill && entry.fill.i);
-        return vc && !frozen(vc) && typeof isMovableWeekCandidate === 'function'
-          && isMovableWeekCandidate(vc,state.dayBase);
-      }).slice(0,4);
-      for(const victim of victims){
-        const vc = byIndex.get(victim.fill.i);
-        if(!vc)continue;
-        const keep = (state.fills || []).filter(entry=>entry !== victim).map(entry=>({
-          h:entry.fill.h,i:entry.fill.i,priority:entry.fill.priority,scarcity:entry.fill.scarcity
-        }));
-        const rebuilt = rebuildDayFromFills(state,keep,candidates,{settings,allowNetwork:true});
+        return vc && !frozen(vc) && isMovableWeekCandidate(vc,state.dayBase)
+          // Repeated same-day options belong to the occurrence-aware packer.
+          && counts.get(vc.i)===1;
+      }).map(entry=>({entry,overlap:overlap(entry)}))
+        .sort((a,b)=>b.overlap-a.overlap || a.entry.fill.i-b.entry.fill.i)
+        .slice(0,4).map(item=>item.entry);
+      // Bounded augmenting neighborhoods: four singles, then six pairs.
+      // Pairs are needed when neither neutral single move opens a long slot.
+      const groups = victims.map(v=>[v]);
+      for(let i=0;i<victims.length;i++)for(let j=i+1;j<victims.length;j++){
+        groups.push([victims[i],victims[j]]);
+      }
+      for(const group of groups){
+        if(budget.remaining <= 0)break;
+        budget.remaining--;
+        // Preserve every neighbor's clock, chunk and venue, including active,
+        // linked and daily-breakable work. Never mutate the incumbent on failure.
+        const rebuilt = fastLinkedGroupBase(state,new Set(group.map(v=>v.fill.h.hid)));
         if(!rebuilt)continue;
-        const uFit = tryPlaceOnDay(rebuilt,fill,{settings,allowNetwork:true});
+        const trialStates=states.map(day=>day===state ? rebuilt : day);
+        if(!canClaim(c,rebuilt,trialStates))continue;
+        const uFit = tryPlaceOnDay(rebuilt,fill,{settings,allowNetwork:false});
         if(!uFit)continue;
         commitPlacement(rebuilt,fill,uFit);
-        const vFill = {h:vc.h,i:vc.i,priority:vc.priority,scarcity:vc.scarcity};
-        for(const other of states){
-          if(other === state)continue;
-          if(vc.eligible && !vc.eligible.has(other.dayBase))continue;
-          if(other.placed && other.placed.has(vc.i))continue;
-          const vFit = tryPlaceOnDay(other,vFill,{settings,allowNetwork:true});
-          if(!vFit)continue;
-          applyPlacementState(state,rebuilt);
-          if(typeof syncDayAgendaItemsFromFills === 'function')syncDayAgendaItemsFromFills(state);
-          commitPlacement(other,vFill,vFit);
-          other.day.agendaItems.push({
-            h:vc.h,i:vc.i,priority:vc.priority,scarcity:vc.scarcity,locationId:vFit.locId
-          });
-          accepted += 1;
-          parked = true;
-          break;
+        // Depth at most two; destination alternatives share the same probe cap.
+        const moved=new Set(group.map(v=>v.fill.i));
+        const retainsNeighbors=week=>states.every((day,d)=>day.fills.every(entry=>
+          (day===state && moved.has(entry.fill.i)) || week[d].fills.some(next=>
+            next.fill.i===entry.fill.i && next.fill.chunkIndex===entry.fill.chunkIndex
+            && next.fit.placeStart===entry.fit.placeStart && next.fit.placeEnd===entry.fit.placeEnd
+            && next.fit.locId===entry.fit.locId)));
+        const park = (index,week)=>{
+          if(index===group.length)return retainsNeighbors(week) ? week : null;
+          const vc=byIndex.get(group[index].fill.i);
+          const vFill={...group[index].fill};
+          for(let d=0;d<week.length;d++){
+            const other=week[d];
+            if(other.dayBase===state.dayBase || !vc.eligible.has(other.dayBase)
+              || other.placed.has(vc.i))continue;
+            if(budget.remaining <= 0)return null;
+            budget.remaining--;
+            if(!canClaim(vc,other,week))continue;
+            // Initial eligibility already includes early-window permission.
+            // Subsequent occurrences must retain their raw cadence spacing.
+            if(vc.h.type!=='task'){
+              let last=null,offset=0,valid=true;
+              for(const day of week){
+                if(day!==other && !day.fills.some(e=>e.fill.i===vc.i))continue;
+                if(offset>0 && !rhythmEligibleOnDay(vc.h,last,day.dayBase,day.weekday,offset)){
+                  valid=false;break;
+                }
+                last=day.dayBase;offset++;
+              }
+              if(!valid)continue;
+            }
+            const destination=cloneFastGraphState(other);
+            const fit=tryPlaceOnDay(destination,vFill,{settings,allowNetwork:false});
+            if(!fit)continue;
+            commitPlacement(destination,vFill,fit);
+            const next=week.slice();next[d]=destination;
+            const result=park(index+1,next);
+            if(result)return result;
+          }
+          return null;
+        };
+        const result=park(0,trialStates);
+        if(!result || !fastGraphReplayRetainsWork(states,result,candidates))continue;
+        for(let d=0;d<states.length;d++)if(result[d]!==states[d]){
+          syncDayAgendaItemsFromFills(result[d]);
+          applyPlacementState(states[d],result[d]);
         }
-        if(parked)break;
+        accepted++;
+        parked=true;
+        break;
       }
     }
   }
@@ -549,7 +606,10 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
     }
   }
   const unplacedPinned = candidates.filter(c=>c && c.pinned && !placedIds.has(c.i));
-  const unplacedChoices = choices.filter(c=>!placedIds.has(c.i));
+  // A single eligible day is precisely the occurrence that cannot wait.
+  // It cannot choose a different day itself, but repair can move its blocker.
+  const unplacedChoices = candidates.filter(c=>isDayChoosingWeekCandidate(c)
+    && !frozen(c) && !placedIds.has(c.i));
   if(!unplacedChoices.length && !unplacedPinned.length)return diagnostics;
   // Residual whole-week rebuilds only run when a cheap insert/eject left a
   // day-choice unplaced. Eight evaluations keep a large week under a second.
@@ -652,7 +712,8 @@ function improveFastGraphWeek(candidates,states,seeds,settings,options = {}){
         // Keep intermediate vertices even if they lose work. Only a complete,
         // improvement-only replacement may be published to the caller.
         next.push(node);
-        if(preserves(summary) && compare(summary,best.summary)<0){
+        if(preserves(summary) && compare(summary,best.summary)<0
+          && fastGraphReplayRetainsWork(states,trial,candidates)){
           best = node; diagnostics.accepted++;
         }
       }
