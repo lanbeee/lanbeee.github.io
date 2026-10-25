@@ -171,3 +171,5 @@ opportunity-items-ui-test.js	ui	once
 
 condition-controls-test.js	ui	once
 local-appointments-test.js	planner	once
+
+optimizer-clique-test.js	planner	once

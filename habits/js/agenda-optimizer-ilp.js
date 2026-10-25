@@ -1044,6 +1044,35 @@ function fitsExclusiveClash(a,b,state){
   return early.placeEnd > late.placeStart - travelMs;
 }
 
+// Maximal interval cliques replace quadratic work-overlap pair rows. Ends
+// precede starts at the same clock: touching half-open intervals are legal.
+// Emit only after a start, before the next end; intervening removals are
+// subsets of that clique. Candidate rows already exclude alternative options.
+function appendOptimizerOverlapCliques(GLPK,subjectTo,opts){
+  const events = [];
+  for(const o of opts){
+    const start = Number(o.fit.placeStart),end = Number(o.fit.placeEnd);
+    if(!Number.isFinite(start) || !Number.isFinite(end) || end <= start)continue;
+    events.push({time:start,start:true,o},{time:end,start:false,o});
+  }
+  events.sort((a,b)=>a.time - b.time || Number(a.start) - Number(b.start));
+  const active = new Set();
+  let grew = false,row = 0;
+  for(const event of events){
+    if(event.start){active.add(event.o);grew = true;continue;}
+    if(grew && active.size > 1){
+      const first = active.values().next().value;
+      if([...active].some(o=>o.c.i !== first.c.i))subjectTo.push({
+        name:`work_clique_${row++}`,
+        vars:[...active].map(o=>({name:o.varName,coef:1})),
+        bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
+      });
+    }
+    grew = false;
+    active.delete(event.o);
+  }
+}
+
 // Solve set-packing ILP for one day. Returns array of {fill, fit} or null on failure.
 function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,solveOptions = {}){
   const options = [];
@@ -1477,7 +1506,8 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
       });
     }
   }
-  // Pairwise exclusive intervals (work + inbound travel into the later option).
+  appendOptimizerOverlapCliques(GLPK,subjectTo,opts);
+  // Pairwise travel conflicts supplement the stronger work-interval cliques.
   // Bucket by coarse time bands first so far-apart options never emit rows.
   // Pad each option one band earlier so pairs that only clash on commute still
   // share a bucket when their work intervals sit near a band boundary.
@@ -1503,6 +1533,10 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
         const a = idxs[ai];
         const b = idxs[bi];
         if(opts[a].c.i === opts[b].c.i)continue;
+        // Positive work intervals are already covered by maximal cliques.
+        if(opts[a].fit.placeEnd > opts[a].fit.placeStart
+          && opts[b].fit.placeEnd > opts[b].fit.placeStart
+          && fitsOverlap(opts[a].fit,opts[b].fit))continue;
         const pairKey = a < b ? `${a}:${b}` : `${b}:${a}`;
         if(seenPairs.has(pairKey))continue;
         seenPairs.add(pairKey);
@@ -2007,7 +2041,7 @@ async function packDayWithOptimizer(state,dayCandidates,allCandidates,deferrable
         }
         // "Optimal" now means both candidate selection and the frozen-set
         // clock/route arrangement were proved; otherwise retain FEAS provenance.
-        status = status === 5 && polishedStatus === 5 ? 5 : 2;
+        status = selectionStatus === 'optimal' && polishedStatus === 5 ? 5 : 2;
       }
     }catch{
       routePolishStatus = 'error';
@@ -2683,6 +2717,19 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   // Route/hours/link repair can expose a usable gap after the first rescue.
   if(typeof rescueDailyGapFits === 'function'){
     total += rescueDailyGapFits(candidates,dayStates,settings);
+  }
+  if(typeof enforcePersistentLinkInvariants === 'function'){
+    enforcePersistentLinkInvariants(dayStates,candidates,settings);
+  }
+  // Repairs can expose gaps after the cross-day task pool was consumed.
+  // Retry only unfinished split tasks; the shared allocator subtracts every
+  // committed chunk and preserves chronological minimum-session semantics.
+  for(const c of breakableCandidates){
+    if(c.h.type !== 'task' || breakableMinutesLeft(c.h,c.i,dayStates) <= 0)continue;
+    total += placeBreakableAcrossWeek(c,dayStates,settings,null,{
+      todayBase,registry,mode,weights,candidates,pinned:c.pinned === true,
+      preplannedMinutes:futureBreakableMinutesFor(c)
+    });
   }
   if(typeof enforcePersistentLinkInvariants === 'function'){
     enforcePersistentLinkInvariants(dayStates,candidates,settings);
