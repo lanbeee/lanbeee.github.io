@@ -22,10 +22,10 @@ function syncCardDetailControls(){
   if(custom)custom.hidden = mode !== 'custom';
   const hint = $('card-detail-hint');
   if(hint)hint.textContent = mode === 'simple'
-    ? 'Dates, plans, reminders, how often, early indicators, and a status line.'
+    ? 'Key dates, reminders, and status.'
     : mode === 'detailed'
-      ? 'Also show which days, time of day, duration, topics, and place.'
-      : 'Choose the details you want on each item. Your choices are saved.';
+      ? 'Also show the schedule, duration, topics, and place.'
+      : 'Choose the details to show below.';
 }
 
 let defaultProfileKind = 'habit';
@@ -180,16 +180,20 @@ function applyAddProfile(profile){
 }
 
 function switchAddType(type){
-  const previousKind = selectedType === 'task' ? 'task' : 'habit';
-  const nextKind = type === 'task' ? 'task' : 'habit';
+  const previousKind = addAppointmentMode ? 'event' : selectedType === 'task' ? 'task' : 'habit';
+  const nextKind = type === 'event' ? 'event' : type === 'task' ? 'task' : 'habit';
+  if(previousKind===nextKind && nextKind==='event')return;
   addProfileDrafts[previousKind] = readAddProfile();
-  selectedType = type;
-  document.querySelectorAll('#type-seg .seg-opt').forEach(btn=>btn.classList.toggle('on',type === 'task' ? btn.dataset.v === 'task' : btn.dataset.v === 'keepup'));
-  applyAddProfile(addProfileDrafts[nextKind] ? refreshAddProfile(addProfileDrafts[nextKind],type) : initialAddProfile(type));
+  addAppointmentMode=nextKind==='event';
+  selectedType = addAppointmentMode ? 'keepup' : type;
+  const profile=addProfileDrafts[nextKind] ? refreshAddProfile(addProfileDrafts[nextKind],selectedType) : initialAddProfile(selectedType);
+  if(addAppointmentMode && !addProfileDrafts.event)profile.durationMinutes=60;
+  applyAddProfile(profile);
 }
 
 // Reset only for a fresh add/cancel. Branch changes retain each in-flight draft.
 function applyAddDefaults(){
+  resetAppointmentShortcut();
   document.querySelector('.add-content').scrollTop = 0;
   const settings = loadSortSettings();
   addProfileDrafts = {};
@@ -274,6 +278,12 @@ function closeSettingsSheet(){
 // an open section (blocked time, topics, defaults, …) would collapse that
 // section out from under the user mid-edit.
 function resetSettingsSheetState(){
+  document.querySelectorAll('#settings-sheet [data-settings-help-target]').forEach(button=>{
+    const body = $(button.dataset.settingsHelpTarget);
+    if(body)body.hidden = true;
+    button.setAttribute('aria-expanded','false');
+  });
+  document.querySelectorAll('#settings-sheet .settings-disclosure').forEach(details=>{details.open = false;});
   pendingImportPayload = null;
   pendingCalendarEvents = null;
   const backupConfirm = $('backup-import-confirm');

@@ -598,7 +598,7 @@ function setupCardTap(row,realIdx){
     if(row.classList.contains('is-agenda-dragging') || row.classList.contains('agenda-longpress-armed'))return;
     if(swipeOpenCard){closeAllSwipes();return;}
     openDetail(realIdx);
-  },{ignoreSelector:'.pulse-btn'});
+  },{ignoreSelector:'button.pulse-btn'});
 }
 
 // PURE: short item name for compact toast messages
@@ -1206,6 +1206,7 @@ function commitBreakableFromCard(i,card){
 
 // HYBRID: log entry and flash card
 function quickLog(i,card){
+  if(isEventItem(load()[i]))return;
   const go = ()=>{
     if(card){
       card.classList.add('logged');

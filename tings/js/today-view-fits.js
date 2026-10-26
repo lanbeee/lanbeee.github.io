@@ -39,6 +39,7 @@ function breakableAppointmentStart(h,dayBase){
 
 /** PURE: only the first minimum session is reserved for a breakable appointment. */
 function scheduledEventDuration(ev){
+  if(ev.durationMinutes != null)return ev.durationMinutes;
   if(ev.breakableStart)return Math.min(remainingDurationMinutes(ev.h,dayStart(ev.eventTime)),clampMinChunk(ev.h.minChunkMinutes));
   return clampDuration(ev.h.durationMinutes);
 }
@@ -56,6 +57,16 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
   const out = [];
   (data || []).forEach((h,i)=>{
     if(!h)return;
+    if(isLocalAppointment(h)){
+      // Carry yesterday's occurrence through midnight with its original identity.
+      const midnight=new Date(`${dayKey}T00:00:00`),previous=new Date(midnight);
+      previous.setDate(previous.getDate()-1);
+      for(const key of [dateKey(previous.getTime()),dayKey]){
+        const occurrence=appointmentOccurrence(h,key);
+        if(occurrence && occurrence.end>midnight.getTime())out.push({h,i,eventTime:occurrence.start,...occurrence});
+      }
+      return;
+    }
     if(isTimedTask(h)
       && (typeof isTaskDone !== 'function' || !isTaskDone(h))
       && dateKey(h.eventTime) === dayKey){
@@ -104,7 +115,7 @@ function buildTodayAgenda(data,settings){
   for(const i of visibleIndices(data,settings)){
     const h = data[i];
     if(h.type === 'task' && isTaskDone(h))continue;
-    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if(typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     if(!h.breakable && hasTimedPlanForDay(h,dayBase))continue;
     const dueToday = includeInTodayAgenda(h,settings);
@@ -130,6 +141,7 @@ function buildTodayAgenda(data,settings){
 
 // PURE: eligible due and planned work always enters the Today agenda.
 function includeInTodayAgenda(h,settings){
+  if(isLocalAppointment(h))return false;
   if(opportunityDoingNow(h,dayStart(Date.now())))return !completedOnDay(h,Date.now());
   if(isOpportunityHabit(h) && !hasPlannedToday(h))return false;
   if(isOpportunityHabit(h) && !opportunityPlanAllowed(h,Date.now()))return false;
@@ -1348,7 +1360,7 @@ function diagnosticsFromRenderedDay(data,settings,day){
   const candidates = [];
   for(let i = 0;i < data.length;i += 1){
     const h = data[i];
-    if(!h || (typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if(!h || (typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable)))continue;
     if(!h.breakable && hasTimedPlanForDay(h,day.dayBase))continue;
     const pinned = isWeekPinnedToday(h,settings);
@@ -2217,9 +2229,10 @@ function createDayPlacementState(day,settings,opts = {}){
       ? effectiveWeatherGuidance(ev.h,locationId,settings) : null;
     rows.push({
       kind:'scheduled',h:ev.h,i:ev.i,start,end,hard:true,locationId,
+      occurrenceKey:ev.occurrenceKey || null,
       breakableStart:Boolean(ev.breakableStart),
       chunkMinutes:ev.breakableStart ? scheduledEventDuration(ev) : null,
-      chunkIndex:ev.breakableStart ? 0 : null,scheduledDay:dateKey(dayBase),
+      chunkIndex:ev.breakableStart ? 0 : null,scheduledDay:isLocalAppointment(ev.h) ? dateKey(start) : dateKey(dayBase),
       weatherProfileId:guidance?.profileId || null,
       weatherProfileSource:guidance?.source || null,
       weatherForecastLocationId:guidance?.forecastLocationId || null,
@@ -2229,7 +2242,6 @@ function createDayPlacementState(day,settings,opts = {}){
   const busy = rows.some(row=>row.breakableStart)
     ? agendaBlockedIntervals(dateKey(dayBase),settings,dayBase,dayBase+86400000) : [];
   for(const row of rows){
-    if(!row.breakableStart)continue;
     const overlaps = other=>other.start < row.end && other.end > row.start;
     const conflict = rows.find(other=>other !== row && overlaps(other));
     const block = busy.find(overlaps);
@@ -2238,7 +2250,7 @@ function createDayPlacementState(day,settings,opts = {}){
     const startMin = (row.start-dayBase)/60000,endMin = (row.end-dayBase)/60000;
     row.appointmentConflict = conflict ? `Overlaps ${conflict.h.name}`
       : block ? `Overlaps ${block.label}`
-      : !windows.some(win=>startMin>=win.start && endMin<=win.end)
+      : row.breakableStart && !windows.some(win=>startMin>=win.start && endMin<=win.end)
         ? 'Fixed start is outside allowed hours' : null;
   }
   // `_plannerLiveLocationId` is an ephemeral matched place supplied when the

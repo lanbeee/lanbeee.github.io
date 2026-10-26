@@ -164,9 +164,11 @@ function detailTuneChanged(current, original){
 
 function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
-  const dirty = force ?? (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal));
+  const h=load()[detailIdx],local=isLocalAppointment(h);
+  if(isDeviceCalendarTask(h)){force=deviceCalendarDetailDirty(h);}
+  const dirty = force ?? (local ? true : (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal)));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
-  $('detail-save').disabled = !dirty || !syncDetailConditionHint();
+  $('detail-save').disabled = !dirty || (!isDeviceCalendarTask(h) && !syncDetailConditionHint());
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 

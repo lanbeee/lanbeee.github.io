@@ -91,6 +91,7 @@ onTravelRefresh = reason=>{
 $('type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-v]');
   if(!opt)return;
+  if(opt.dataset.v==='event'){switchAddType('event');return;}
   const habitType = loadSortSettings().defaultType;
   switchAddType(opt.dataset.v === 'task' ? 'task'
     : selectedType !== 'task' ? selectedType : habitType === 'task' ? 'keepup' : habitType);
@@ -129,8 +130,10 @@ function syncAddTypeUi(type){
   $('add-title').textContent = isTask ? 'new task' : 'new habit';
   $('do-save').textContent = isTask ? 'add task' : 'add habit';
   $('ting-message').placeholder = isTask ? 'e.g. Book a dentist visit' : 'e.g. Read a book';
+  document.querySelector('label[for="ting-message"]').textContent='What would you like to do?';
   document.querySelectorAll('#type-seg [data-v]').forEach(button=>{
-    button.setAttribute('aria-pressed',String((button.dataset.v === 'task') === isTask));
+    const on=button.dataset.v === (isTask ? 'task' : 'keepup');
+    button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));
   });
   $('add-frequency').hidden = isTask;
   $('add-frequency-label').textContent = type === 'reduce' ? 'How often at most?' : type === 'zero' ? 'What is the goal?' : 'How often?';
@@ -143,6 +146,7 @@ function syncAddTypeUi(type){
   $('add-minimal-effort').hidden = type === 'zero' || type === 'reduce';
   if(isTask)syncTaskDueUi();
   if(typeof updateEmojiPreview === 'function')updateEmojiPreview();
+  syncAppointmentShortcut();
 }
 
 var _addConditionHomes;
@@ -508,7 +512,7 @@ function readAddRecord(){
   }
   record.delayAllowanceDays = defaults.delayAllowanceDays;
   record.autoMarkMinutes = defaultAutoMarkMinutes(profile);
-  return record;
+  return applyAppointmentToAddRecord(record);
 }
 
 $('do-save').addEventListener('click',()=>{
@@ -517,6 +521,7 @@ $('do-save').addEventListener('click',()=>{
   if(!name){$('ting-message').focus();return;}
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
+  if(addAppointmentMode && !validateAppointmentFields('add-appt'))return;
   const record = readAddRecord();
   if(isOpportunityHabit(record) && !record.locationIds.length
     && !weatherHabitHasActiveGuidance(record,sortSettings)){
@@ -1601,6 +1606,8 @@ $('detail-save').addEventListener('click',()=>{
   const data = load();
   const h = data[detailIdx];
   if(!h)return;
+  if(isDeviceCalendarTask(h)){saveDeviceCalendarDetail(h);return;}
+  if(isLocalAppointment(h)){saveLocalAppointmentDetail(data,h);return;}
   if(typeof validateHabitScheduleOptionModes === 'function'
     && !validateHabitScheduleOptionModes())return;
   if(!validateFixedStartTimes())return;

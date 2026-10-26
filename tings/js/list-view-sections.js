@@ -38,7 +38,9 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   }else if(!minimal && label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
-  if(!minimal && label === 'today' && todayHids){
+  // The missed pill also renders in minimal mode; minimal only trims the
+  // capacity/free chrome and per-card pills.
+  if(label === 'today' && todayHids){
     attachDroppedIndicator(header,list,todayHids);
   }
   if(!minimal && ((dayContext && dayContext.isToday) || label === 'today')){
@@ -375,6 +377,7 @@ function missedOpportunityPassedToday(h,dayBase,now){
 // dropped by replanning. This rejects the old broad "everything overdue"
 // sweep: an off-day or impossible item has no qualifying planner evidence.
 function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
+  if(isLocalAppointment(h))return false;
   if(isOpportunityHabit(h))return false;
   if(!h || !h.hid)return false;
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
@@ -588,7 +591,7 @@ function collectUnplacedAgendaItems(data, settings, missedRows, now = Date.now()
     if(h.type === 'zero')continue;
     if(h.snoozedUntil && now < h.snoozedUntil)continue;
     if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))continue;
-    if(typeof isFixedTimedTask === 'function' ? isFixedTimedTask(h)
+    if(typeof isFixedAppointment === 'function' ? isFixedAppointment(h)
       : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h, settings, todayBase) : null;
@@ -1776,13 +1779,19 @@ function render(opts){
   };
 
   const appendHabitCard = (realIdx,agendaRow,earlyReasonText,dayBase = null,scheduleLinkReason = '')=>{
-    const h = data[realIdx];
+    let h = data[realIdx];
+    const appointment=isLocalAppointment(h) && agendaRow ? appointmentOccurrence(h,agendaRow.scheduledDay || dateKey(agendaRow.start)) : null;
+    if(appointment)h={...h,emoji:appointment.emoji,emojiBgColor:appointment.emojiBgColor};
+    const event=isEventItem(h);
+    const synced=isDeviceCalendarTask(h);
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
     const days = daysSince(h.lastLog);
     const c = habitColors(h,days);
     const cardScore = progressScore(h);
     const cardScoreTone = cardTone(h);
-    const cue = cardCue(h);
+    const cue = event && agendaRow ? (agendaRow.start<=Date.now() && agendaRow.end>Date.now()
+      ? `until ${new Date(agendaRow.end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
+      : scheduledWhenLabel(agendaRow.start)) : cardCue(h);
     const agendaPill = minimal ? '' : agendaCardPill(agendaRow,h);
     const weatherPill = weatherCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
@@ -1795,25 +1804,25 @@ function render(opts){
       ? `<span class="context-pill schedule-link-blocked-pill" title="${escapeHtml(scheduleLinkReason)}"><i class="ti ti-link-off" aria-hidden="true"></i>linked</span>`
       : '';
     const accent = visualClassColor(cardScoreTone);
-    const statusPill = (!minimal && sortSettings.showStatusOnCards) ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
+    const statusPill = (!event && !minimal && sortSettings.showStatusOnCards) ? cardStatusPill(cardScore,cardScoreTone,cue,accent) : '';
     const gatedEarlyPill = (!minimal && sortSettings.showEarlyOnCards) ? earlyPill : '';
     const agendaTimeHidden = agendaPill === '';
     const reminderPill = (!minimal && typeof nativeReminderCardPill === 'function') ? nativeReminderCardPill(h) : '';
     const appointmentPill = appointmentStatusPill(agendaRow);
     const context = minimal
-      ? cardMeta(h,{forceRepetition:true,minimalOnly:true}) + appointmentPill
-      : cardMeta(h,{extraPills:[appointmentPill,reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
+      ? cardMeta(h,{forceRepetition:true,minimalOnly:true,appointmentOccurrence:appointment,suppressScheduled:!!agendaPill}) + appointmentPill
+      : cardMeta(h,{appointmentOccurrence:appointment,extraPills:[appointmentPill,reminderPill,statusPill,gatedEarlyPill,weatherPill,orderPill,nowPill,scheduleLinkPill].filter(Boolean).join(''),suppressScheduled: agendaRow?.kind === 'scheduled' && !agendaTimeHidden});
     // Minimal hides dots unless opted in for minimal specifically
     // (minimalShowTrailOnCards, default off); full keeps its own toggle.
     const showTrail = minimal
       ? sortSettings.minimalShowTrailOnCards === true
       : sortSettings.showTrailOnCards !== false;
-    const trail = showTrail ? cardTrail(h) : '';
+    const trail = !event && showTrail ? cardTrail(h) : '';
     const showBreakableSlider = !minimal && isBreakableSliderRow(realIdx,agendaRow);
     const timerRunning = typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === realIdx;
     // Timer bar always shows while running — even on breakable crown cards —
     // so the user can see the session without opening detail.
-    const sessionHtml = (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
+    const sessionHtml = !event && (timerRunning || !showBreakableSlider) ? (minimal ? '' : cardSessionProgress(h,realIdx)) : '';
     // Minimal's visual row is trail-only when opted in — sliders/sessions stay
     // full-mode features (guarded below by !minimal).
     const visualHtml = minimal
@@ -1831,14 +1840,14 @@ function render(opts){
         : `<button class="swipe-action sa-timer" data-action="timer" aria-label="start session"><i class="ti ti-player-play" aria-hidden="true"></i>session</button>`)
       : '';
     const snoozed = typeof habitIsSnoozed === 'function' ? habitIsSnoozed(h) : Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
-    const snoozeAction = (snoozed
+    const snoozeAction = event ? '' : (snoozed
       ? `<button class="swipe-action sa-snooze" data-action="unsnooze" aria-label="show"><i class="ti ti-moon-off" aria-hidden="true"></i>show</button>`
       : `<button class="swipe-action sa-snooze" data-action="snooze" aria-label="snooze"><i class="ti ti-moon" aria-hidden="true"></i>snooze</button>`);
-    const pinAction = minimal ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
+    const pinAction = minimal || synced ? '' : `<button class="swipe-action sa-pin" data-action="pin" aria-label="${h.pinned ? 'unpin' : 'pin'}"><i class="ti ${h.pinned ? 'ti-pinned-off' : 'ti-pin'}" aria-hidden="true"></i>${h.pinned ? 'unpin' : 'pin'}</button>`;
     const keepAction = h.sample
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
-    const activityAction = `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
+    const activityAction = event ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
     const planAction = dayLogsHabitPlannable(h)
       ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
       : '';
@@ -1846,7 +1855,7 @@ function render(opts){
     const linkAction = !minimal && primaryLink
       ? `<button class="swipe-action sa-open" data-action="open-link" aria-label="${primaryLink.kind === 'phone' ? 'call' : 'open'} ${escapeHtml(linkLabel(primaryLink))}"><i class="ti ${linkIconClass(primaryLink)}" aria-hidden="true"></i>${primaryLink.kind === 'phone' ? 'call' : 'open'}</button>`
       : '';
-    const rightSwipeActions = minimal
+    const rightSwipeActions = event ? linkAction : minimal
       ? `${timerRunning ? timerAction : (h.sample ? keepAction : planAction)}${activityAction}`
       : `${timerAction}${planAction}${activityAction}${linkAction}${keepAction}`;
     const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
@@ -1885,21 +1894,21 @@ function render(opts){
     const hasSession = Boolean(sessionHtml) && !isBreakable;
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
-        <div class="swipe-action-strip" role="group" aria-label="session, planning and history">
+        <div class="swipe-action-strip" role="group" aria-label="${event?'event links':'session, planning and history'}">
           ${rightSwipeActions}
         </div>
       </div>
       <div class="swipe-actions swipe-actions-right">
         <div class="swipe-action-strip" role="group" aria-label="visibility and reminders">
           ${snoozeAction}${pinAction}${reminderAction}
-          <button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>
+          ${synced ? '' : '<button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>'}
         </div>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
-        <button class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}" style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
+        <${event?'span':'button'} class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" ${event?'aria-hidden="true"':`data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}"`} style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
           ${iconHtml(h,c)}
-        </button>
+        </${event?'span':'button'}>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">
           <div class="ting-main">
             <span class="ting-title">
@@ -1907,13 +1916,13 @@ function render(opts){
             </span>
             ${agendaPill}
           </div>
-          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
+          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false && !(event && agendaPill) ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           ${!visualHtml ? '' : `<div class="ting-visual">
             ${visualHtml}
           </div>`}
         </div>
-        ${minimal || isBreakable ? '' : `<div class="card-actions" aria-label="habit actions">
+        ${minimal || isBreakable || event ? '' : `<div class="card-actions" aria-label="habit actions">
           <button class="card-action-btn" data-action="activity" aria-label="activity" title="activity"><i class="ti ti-history" aria-hidden="true"></i></button>
           ${reminderOn ? `<button class="card-action-btn" data-action="reminders-off" aria-label="turn off phone reminders" title="turn off phone reminders"><i class="ti ti-bell-off" aria-hidden="true"></i></button>` : ''}
           <button class="card-action-btn" data-action="${snoozed ? 'unsnooze' : 'snooze'}" aria-label="${snoozed ? 'show' : 'snooze'}" title="${snoozed ? 'show' : 'snooze'}"><i class="ti ${snoozed ? 'ti-moon-off' : 'ti-moon'}" aria-hidden="true"></i></button>
@@ -2278,7 +2287,10 @@ function render(opts){
     });
     if(!searching && todayFirstActive && !todaySectionRendered){
       const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-      if(!minimal){
+      // Minimal mode uses this fallback too — the missed pill renders there —
+      // but skips the capacity tap wiring and the free-time pill, matching the
+      // trimmed day headers above.
+      {
         const _snap = loadTodaySuggested();
         if(!_droppedDayBaseline && _snap.prevProjection){
           _droppedDayBaseline = _snap.prevProjection;
@@ -2304,9 +2316,9 @@ function render(opts){
           labelEl.textContent='today';
           header.appendChild(labelEl);
           const dayContext={dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows};
-          setupDayCapacityHeader(header,dayStart(Date.now()),false);
+          if(!minimal)setupDayCapacityHeader(header,dayStart(Date.now()),false);
           attachWeatherIndicator(header,dayContext);
-          attachFreeTimeIndicator(header,dayContext);
+          if(!minimal)attachFreeTimeIndicator(header,dayContext);
           attachDroppedIndicator(header,list,todayHids);
           if(header.classList.contains('has-dropped') || header.classList.contains('has-pill')){
             list.prepend(header);

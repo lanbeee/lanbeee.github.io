@@ -1055,7 +1055,7 @@ function dayLogsScoped(){
 
 // PURE: can this habit take a new plan?
 function dayLogsHabitPlannable(h){
-  if(!h)return false;
+  if(!h || isEventItem(h))return false;
   if(h.type === 'zero')return false;
   if(h.type === 'task' && h.lastLog !== null)return false;
   return true;
@@ -1063,7 +1063,7 @@ function dayLogsHabitPlannable(h){
 
 // PURE: can this habit take an entry on a past day? Completed tasks are done.
 function dayLogsHabitLoggable(h){
-  if(!h)return false;
+  if(!h || isEventItem(h))return false;
   if(h.type === 'task' && h.lastLog !== null)return false;
   return true;
 }

@@ -595,12 +595,12 @@ function renderPreviewTile(previewId,emojiId,bgId,type){
 // add sheet's, next to the name, and the detail identity tab's).
 function updateEmojiPreview(){
   syncGenericEmojiRows();
-  const addType = typeof selectedType !== 'undefined' ? selectedType : 'keepup';
+  const addType = typeof addAppointmentMode!=='undefined' && addAppointmentMode ? 'event' : typeof selectedType !== 'undefined' ? selectedType : 'keepup';
   renderPreviewTile('ting-emoji-preview','ting-emoji','ting-emoji-bg',addType);
   let detailType = 'keepup';
   if(typeof detailIdx === 'number' && typeof load === 'function'){
     const h = (load() || [])[detailIdx];
-    if(h)detailType = h.type;
+    if(h)detailType = isEventItem(h)?'event':h.type;
   }
   renderPreviewTile('detail-emoji-preview','detail-emoji','detail-emoji-bg',detailType);
 }
@@ -837,6 +837,7 @@ function setupDetailMarkMenu(){
     e.stopPropagation();
     if(detailIdx === null)return;
     const h = typeof load === 'function' ? load()[detailIdx] : null;
+    if(isEventItem(h)){openDetailEmojiEditor();return;}
     if(logBtn)logBtn.textContent = h && h.type === 'task' ? 'complete' : 'log an entry';
     setDetailMarkMenuOpen(menu.hidden);
   });
@@ -884,13 +885,13 @@ function setupDetailMarkMenu(){
       const mark = document.getElementById('detail-mark');
       const h = typeof load === 'function' ? load()[i] : null;
       if(mark && h){
-        mark.setAttribute('aria-label', h.type === 'task'
+        mark.setAttribute('aria-label', isEventItem(h) ? `edit icon for ${h.name}` : h.type === 'task'
           ? `complete or edit emoji for ${h.name}`
           : `log or edit emoji for ${h.name}`);
       }
       const nameBtn = document.getElementById('detail-name');
       if(nameBtn && h){
-        nameBtn.setAttribute('aria-label', h.name ? `edit name ${h.name}` : 'edit name');
+        nameBtn.setAttribute('aria-label', isDeviceCalendarTask(h) ? h.name : h.name ? `edit name ${h.name}` : 'edit name');
       }
       return r;
     };

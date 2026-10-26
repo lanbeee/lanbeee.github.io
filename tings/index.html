@@ -130,9 +130,10 @@
       </div>
       <div class="seg add-kind-seg" id="type-seg" role="group" aria-label="What would you like to add?" aria-describedby="add-type-help">
         <button type="button" class="seg-opt on" data-v="keepup" aria-pressed="true"><span>habit</span><small>something you repeat</small></button>
-        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task</span><small>something you do once</small></button>
+        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task</span><small>a to-do to finish</small></button>
+        <button type="button" class="seg-opt" id="add-appointment-shortcut" data-v="event" aria-pressed="false"><span>event</span><small>at a set time</small></button>
       </div>
-      <p class="field-hint" id="add-type-help" hidden>A habit repeats. A task is a one-off to-do.</p>
+      <p class="field-hint" id="add-type-help" hidden>Keep up a habit, finish a task, or reserve time for an event.</p>
       <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
@@ -154,6 +155,7 @@
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
       </div>
+      <section id="add-appointment-fields" class="appointment-editor" hidden></section>
       <section class="add-frequency" id="add-frequency" aria-labelledby="add-frequency-label">
         <input type="hidden" id="ting-repeat-mode" value="routine" />
         <p class="add-field-label" id="add-frequency-label">How often?</p>
@@ -407,7 +409,7 @@
               </div>
               <div class="detail-task-field">
                 <label class="plan-date-label" for="detail-due-time">Start time <span class="field-optional">(optional)</span></label>
-                <input type="time" id="detail-due-time" class="plan-time-input" step="300" aria-describedby="detail-due-hint" title="add a time to make this a fixed appointment" />
+                <input type="time" id="detail-due-time" class="plan-time-input" step="300" aria-describedby="detail-due-hint" title="keeps this task at that time" />
               </div>
             </div>
           </div>
@@ -743,7 +745,7 @@
               <span><b>remove</b><small>Undo appears after</small></span>
             </button>
             <div class="reset-confirm" id="detail-delete-confirm" hidden>
-              <p>Remove this habit?</p>
+              <p id="detail-delete-question">Remove this habit?</p>
               <div class="btn-row">
                 <button class="btn primary" id="detail-delete-yes" type="button">remove</button>
                 <button class="btn" id="detail-delete-no" type="button">keep</button>
@@ -923,7 +925,6 @@
   <div class="sheet-wrap" id="settings-sheet">
     <div class="sheet settings-sheet">
       <p class="sheet-title">settings</p>
-      <p class="about-copy">Adjust what shows on home, your places, and how new habits and tasks start.</p>
       <div class="settings-stack">
         <section class="settings-block">
           <span class="settings-label">display</span>
@@ -938,37 +939,44 @@
             <span data-ui-leave="weather"></span>
           </div>
           <div class="settings-collapse-body" id="settings-weather-body" hidden>
-            <p class="field-hint">Save up to eight kinds of weather, such as dry or mild, then choose one on a habit. Rules combine into one 0–100 score. Set each rule's relative priority to low, medium, or high. Prefer lower/higher is ranked against the actual seven-day forecast for that place, so the baseline changes with the week and season. Limits can use fixed values or 0–100 forecast percentiles; hard rejects flexible times outside them. Each rule shows its metric's scale in your display unit (°F/°C, in/mm, mph/km/h — see the unit settings below); a rule with no preference and no bounds stays inactive until you set one.</p>
-            <div class="settings-grid weather-display-settings" data-ui-toggles="weather"></div>
-            <span class="settings-sublabel" id="weather-temp-unit-label">temperature unit</span>
-            <div class="seg weather-unit-seg" id="weather-temp-unit-seg" data-setting-seg="weatherTempUnit" role="group" aria-labelledby="weather-temp-unit-label">
-              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
-              <button type="button" class="seg-opt" data-seg-value="c">°C</button>
-              <button type="button" class="seg-opt" data-seg-value="f">°F</button>
-            </div>
-            <p class="field-hint" id="weather-temp-unit-hint" aria-live="polite"></p>
-            <span class="settings-sublabel" id="weather-precip-unit-label">precipitation unit</span>
-            <div class="seg weather-unit-seg" id="weather-precip-unit-seg" data-setting-seg="weatherPrecipUnit" role="group" aria-labelledby="weather-precip-unit-label">
-              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
-              <button type="button" class="seg-opt" data-seg-value="mm">mm</button>
-              <button type="button" class="seg-opt" data-seg-value="in">in</button>
-            </div>
-            <p class="field-hint" id="weather-precip-unit-hint" aria-live="polite"></p>
-            <span class="settings-sublabel" id="weather-wind-unit-label">wind unit</span>
-            <div class="seg weather-unit-seg" id="weather-wind-unit-seg" data-setting-seg="weatherWindUnit" role="group" aria-labelledby="weather-wind-unit-label">
-              <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
-              <button type="button" class="seg-opt" data-seg-value="kmh">km/h</button>
-              <button type="button" class="seg-opt" data-seg-value="mph">mph</button>
-            </div>
-            <p class="field-hint" id="weather-wind-unit-hint" aria-live="polite"></p>
+            <p class="field-hint">Save weather profiles, then choose one on a habit or place.</p>
+            <div data-settings-help-title="weather profiles" data-settings-help-id="settings-weather-help"><p class="field-hint">Save up to eight kinds of weather, such as dry or mild, then choose one on a habit. Rules combine into one 0–100 score. Set each rule's relative priority to low, medium, or high. Prefer lower/higher is ranked against the actual seven-day forecast for that place, so the baseline changes with the week and season. Limits can use fixed values or 0–100 forecast percentiles; hard rejects flexible times outside them. Each rule shows its metric's scale in your display unit (°F/°C, in/mm, mph/km/h — see the unit settings below); a rule with no preference and no bounds stays inactive until you set one.</p></div>
             <div id="weather-profile-list" class="weather-profile-list"></div>
             <div class="btn-row weather-actions">
               <button class="btn" id="weather-profile-add" type="button">add profile</button>
               <button class="btn" id="weather-refresh" type="button">refresh forecast</button>
             </div>
             <p class="field-hint" id="weather-status" aria-live="polite"></p>
-            <div id="weather-forecast-data" class="weather-forecast-data"></div>
-            <p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away saved-place pin needed on the plan, are sent only to retrieve forecasts. Places near home reuse the home-city forecast. Live GPS is not sent. No API key or account is used.</p>
+            <details class="settings-disclosure" id="weather-display-options">
+              <summary>display &amp; units</summary>
+              <div class="settings-disclosure-body">
+                <div class="settings-grid weather-display-settings" data-ui-toggles="weather"></div>
+                <div data-settings-help-title="temperature unit" data-settings-help-id="settings-weather-temp-help" data-settings-help-label-id="weather-temp-unit-label"><p class="field-hint" id="weather-temp-unit-hint" aria-live="polite"></p></div>
+                <div class="seg weather-unit-seg" id="weather-temp-unit-seg" data-setting-seg="weatherTempUnit" role="group" aria-labelledby="weather-temp-unit-label">
+                  <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+                  <button type="button" class="seg-opt" data-seg-value="c">°C</button>
+                  <button type="button" class="seg-opt" data-seg-value="f">°F</button>
+                </div>
+                <div data-settings-help-title="precipitation unit" data-settings-help-id="settings-weather-precip-help" data-settings-help-label-id="weather-precip-unit-label"><p class="field-hint" id="weather-precip-unit-hint" aria-live="polite"></p></div>
+                <div class="seg weather-unit-seg" id="weather-precip-unit-seg" data-setting-seg="weatherPrecipUnit" role="group" aria-labelledby="weather-precip-unit-label">
+                  <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+                  <button type="button" class="seg-opt" data-seg-value="mm">mm</button>
+                  <button type="button" class="seg-opt" data-seg-value="in">in</button>
+                </div>
+                <div data-settings-help-title="wind unit" data-settings-help-id="settings-weather-wind-help" data-settings-help-label-id="weather-wind-unit-label"><p class="field-hint" id="weather-wind-unit-hint" aria-live="polite"></p></div>
+                <div class="seg weather-unit-seg" id="weather-wind-unit-seg" data-setting-seg="weatherWindUnit" role="group" aria-labelledby="weather-wind-unit-label">
+                  <button type="button" class="seg-opt" data-seg-value="auto">auto</button>
+                  <button type="button" class="seg-opt" data-seg-value="kmh">km/h</button>
+                  <button type="button" class="seg-opt" data-seg-value="mph">mph</button>
+                </div>
+              </div>
+            </details>
+            <details class="settings-disclosure" id="weather-forecast-details">
+              <summary>forecast data</summary>
+              <div id="weather-forecast-data" class="weather-forecast-data"></div>
+            </details>
+            <p class="field-hint weather-source-credit">Forecast © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · <a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a></p>
+            <div data-settings-help-title="forecast sources &amp; privacy" data-settings-help-id="settings-weather-privacy-help"><p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away saved-place pin needed on the plan, are sent only to retrieve forecasts. Places near home reuse the home-city forecast. Live GPS is not sent. No API key or account is used.</p></div>
           </div>
         </section>
         <section class="settings-block settings-collapsible">
@@ -977,15 +985,14 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-reminders-body" hidden>
-            <p class="field-hint">Heads-ups for dated tasks and fixed appointments only. Tings does not nag you about rhythm habits.</p>
+            <p class="field-hint">Heads-ups for dated tasks and events.</p>
             <div class="settings-grid" data-ui-toggles="reminders"></div>
-            <p class="field-hint">The in-app banner works without notification permission. System alerts are best effort and may use the encrypted push relay when available. Detailed text is optional; leave it off to keep system alerts generic.</p>
+            <div data-settings-help-title="notification delivery &amp; privacy" data-settings-help-id="settings-notifications-help"><p class="field-hint">The in-app banner works without notification permission. System alerts are best effort and may use the encrypted push relay when available. Detailed text is optional; leave it off to keep system alerts generic.</p></div>
           </div>
         </section>
         <section class="settings-block">
-          <span class="settings-label"><span style="position:relative;display:inline-block">backup <button type="button" class="info-btn" data-tip="settings-backup-help" aria-label="about backup"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="settings-backup-help" role="tooltip" hidden>Everything is saved only on this device. Export a backup file now and then, and especially before clearing browser data or moving to a new phone.</div></span></span>
-          <p class="field-hint">Your habits live only on this device — there is no account and nothing syncs. Export a backup file you can keep safe or move to a new device. On the Android app, the file is saved to Downloads and a share sheet lets you pick Files or another app. <button type="button" class="mini-text-btn" id="open-privacy-from-settings">privacy</button></p>
+          <div data-settings-help-title="backup" data-settings-help-id="settings-backup-help" data-settings-help-label="settings-label"><p>Everything is saved on this device. Export a backup before clearing browser data or moving to a new phone. In the Android app, exports save to Downloads and open a share sheet.</p></div>
+          <p class="field-hint">Keep a backup to restore or move your data. <button type="button" class="mini-text-btn" id="open-privacy-from-settings">privacy</button></p>
           <div class="btn-row">
             <button class="btn primary" id="backup-export" type="button">export backup</button>
             <button class="btn" id="backup-import" type="button">import backup</button>
@@ -1006,14 +1013,13 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-cleanup-body" hidden>
-            <p class="field-hint">About once a month when you open the app, old completed tasks and extra habit history are removed automatically. You will see a notice when that runs.</p>
-            <span class="settings-sublabel">completed tasks</span>
+            <div data-settings-help-title="automatic cleanup" data-settings-help-id="settings-cleanup-help"><p class="field-hint">About once a month when you open the app, old completed tasks and extra habit history are removed automatically. You will see a notice when that runs.</p></div>
+            <span class="settings-sublabel">delete completed tasks after</span>
             <div class="seg compact-seg" id="completed-task-retention-seg" role="group" aria-label="completed task retention">
               <button type="button" class="seg-opt" data-seg-value="2">2 days</button>
               <button type="button" class="seg-opt" data-seg-value="3">3 days</button>
               <button type="button" class="seg-opt" data-seg-value="7">7 days</button>
             </div>
-            <p class="field-hint">Delete completed tasks older than this.</p>
             <span class="settings-sublabel">habit history</span>
             <div class="seg compact-seg" id="habit-log-keep-seg" role="group" aria-label="habit log keep count">
               <button type="button" class="seg-opt" data-seg-value="12">12</button>
@@ -1021,7 +1027,7 @@
               <button type="button" class="seg-opt" data-seg-value="60">60</button>
               <button type="button" class="seg-opt" data-seg-value="0">off</button>
             </div>
-            <p class="field-hint">Keep the newest N entries per habit. Older ones are trimmed. Tasks are not trimmed here.</p>
+            <p class="field-hint">Entries kept per habit; off keeps all history.</p>
             <div class="btn-row">
               <button class="btn" id="retention-clean-now" type="button">clean now</button>
             </div>
@@ -1031,28 +1037,29 @@
         <div class="settings-group-head">schedule &amp; places</div>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
-            <span class="settings-label">calendar import</span>
+            <span class="settings-label">calendars</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
-            <p class="field-hint">Until Google or Microsoft connect: import a calendar PDF. Meetings show as timed items already marked done on today’s list.</p>
+            <div id="calendar-device-controls" hidden></div>
+            <p class="field-hint">Add meetings from a calendar PDF.</p>
             <div class="btn-row calendar-pdf-pick-row">
               <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose PDF</label>
-              <button class="btn" id="calendar-pdf-clear" type="button">clear imported</button>
+              <button class="btn" id="calendar-pdf-clear" type="button">remove PDF meetings</button>
             </div>
             <!-- Not [hidden]: iOS Safari ignores programmatic .click() on display:none / hidden file inputs. -->
             <input type="file" id="calendar-pdf-input" class="file-input-native" accept="application/pdf,.pdf" />
-            <label class="field-label" for="calendar-credit-habit">count meeting time toward</label>
+            <div data-settings-help-title="count meeting time toward" data-settings-help-for="calendar-credit-habit" data-settings-help-id="settings-calendar-credit-help"><p>Choose a build or limit habit with daily hours, such as Work. Overlapping meetings count once. The habit is allowed to split across sessions so it can fit around meetings.</p></div>
             <select id="calendar-credit-habit" class="settings-select">
               <option value="">none</option>
             </select>
-            <p class="field-hint" id="calendar-credit-hint">Pick a build or limit habit (like Work). Meeting minutes count toward its daily time; the habit can be split across sessions if needed.</p>
-            <label class="field-label" for="calendar-allday-mode">all-day events</label>
+            <p class="field-hint" id="calendar-credit-hint">Phone and PDF meetings count. Events you add in Tings do not.</p>
+            <label class="settings-sublabel" for="calendar-allday-mode">all-day events</label>
             <select id="calendar-allday-mode" class="settings-select">
-              <option value="skip">skip them</option>
-              <option value="tasks">add as tasks with a date</option>
+              <option value="skip">skip</option>
+              <option value="tasks">show as a task on that day</option>
             </select>
-            <p class="field-hint">Holidays and other all-day rows. Skipping keeps today’s list focused on timed meetings; dated tasks never count toward Work hours.</p>
+            <p class="field-hint">All-day tasks don’t count toward meeting time.</p>
             <div id="calendar-pdf-preview" class="calendar-pdf-preview" hidden></div>
             <div class="btn-row" id="calendar-pdf-actions" hidden>
               <button class="btn primary" id="calendar-pdf-import" type="button">import meetings</button>
@@ -1084,7 +1091,7 @@
             <span data-ui-leave="geocode"></span>
           </div>
           <div class="settings-collapse-body" id="settings-locations-body" hidden>
-            <p class="field-hint">Save the places where habits happen. New places appear immediately in habit forms.</p>
+            <p class="field-hint">Save places to use on your habits and tasks.</p>
             <div class="location-add-actions">
               <button class="btn primary" id="loc-open-picker" type="button"><i class="ti ti-map-pin-plus" aria-hidden="true"></i> add place</button>
               <span class="field-hint" id="location-list-summary" aria-live="polite"></span>
@@ -1099,9 +1106,9 @@
               </div>
               <button class="btn" type="button" id="location-access-enable">enable location</button>
             </div>
-            <p class="field-hint">GPS is used on this phone for presence. Driving route estimates send GPS coordinates to OSRM, an open routing service, including from here. If city below is still empty, the first fix sends a coarse location once to Photon or Nominatim to name the city — it does not follow you to other cities.</p>
+            <div data-settings-help-title="location &amp; privacy" data-settings-help-id="settings-location-privacy-help"><p class="field-hint">GPS is used on this phone for presence. Driving route estimates send GPS coordinates to OSRM, an open routing service, including from here. If city below is still empty, the first fix sends a coarse location once to Photon or Nominatim to name the city — it does not follow you to other cities.</p></div>
             <span class="settings-sublabel">city <span data-ui-leave="geocode"></span></span>
-            <p class="field-hint">General area for sunrise, sunset, and similar. Filled once from the first GPS fix or the first place you add. Clear it here if you want to set a different city.</p>
+            <p class="field-hint">Used for weather and relative times; filled from your first location.</p>
             <div class="home-city-row">
               <input type="text" id="home-city-input" class="settings-text-input" placeholder="city name (e.g. Lahore)" autocomplete="off" />
               <button class="btn primary" id="home-city-set" type="button">set</button>
@@ -1126,7 +1133,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-blocked-body" hidden>
-            <p class="field-hint">Regular time you don’t want today’s list to use — sleep, meals, work, commute, or school. On the Android app, each busy time can send a notification or ringing alarm.</p>
+            <p class="field-hint">Reserve regular time for sleep, meals, work, or travel.</p>
             <div class="blocked-time-list" id="blocked-time-list"></div>
             <button class="btn" id="blocked-time-add" type="button">add busy time</button>
           </div>
@@ -1155,7 +1162,7 @@
               <button type="button" class="seg-opt" data-seg-value="icon">symbol only</button>
               <button type="button" class="seg-opt" data-seg-value="hide">hide</button>
             </div>
-            <p class="field-hint settings-full-only">The scheduled time on the right of each item — with the clock, just the symbol, or nothing at all.</p>
+            <p class="field-hint settings-full-only">Choose how the agenda time appears on each item.</p>
             <div class="settings-grid" data-ui-toggles="cardsAfterTime"></div>
           </div>
         </section>
@@ -1165,7 +1172,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-defaults-body" hidden>
-            <p class="field-hint">Your starting choices for new items. Saved items stay as they are. Each new item can have its own changes.</p>
+            <p class="field-hint">Starting choices for new items; existing items stay the same.</p>
             <span class="settings-sublabel">start the add page with</span>
             <div class="seg compact-seg" id="default-type-seg">
               <button class="seg-opt" data-default-type="keepup">build</button>
@@ -1176,7 +1183,7 @@
             <span class="settings-sublabel">defaults for</span>
             <div class="seg compact-seg" id="default-profile-seg" role="group" aria-label="defaults for"><button type="button" class="seg-opt" data-default-profile="habit">habits</button><button type="button" class="seg-opt" data-default-profile="task">tasks</button></div>
             <div id="default-rhythm-row"><span class="settings-sublabel">how often</span><div class="range-row"><label class="range-value"><input type="number" id="setting-default-times" min="1" max="183" aria-label="default times per period" /><span>×</span></label><span class="rhythm-in">in</span><label class="range-value"><input type="number" id="setting-default-days" min="1" max="183" aria-label="default period days" /><span>d</span></label></div></div>
-            <div id="default-due-row" hidden><label class="settings-sublabel" for="setting-default-due">due date</label><select class="settings-select" id="setting-default-due"><option value="today">today</option><option value="tomorrow">tomorrow</option><option value="none">no date · someday</option></select><p class="field-hint">Uses the day you create the task. Add an appointment time on the add page.</p></div>
+            <div id="default-due-row" hidden><label class="settings-sublabel" for="setting-default-due">due date</label><select class="settings-select" id="setting-default-due"><option value="today">today</option><option value="tomorrow">tomorrow</option><option value="none">no date · someday</option></select><p class="field-hint">Uses the day you create the task. Set a start time on the add page.</p></div>
             <span class="settings-sublabel">importance</span>
             <div class="seg compact-seg" id="default-priority-seg" role="group" aria-label="importance">
               <button type="button" class="seg-opt" data-default-priority="0" title="critical">P0</button>
@@ -1201,10 +1208,9 @@
               <input type="number" inputmode="numeric" id="setting-default-delay-allowance" min="0" max="60" />
               <output id="setting-default-delay-allowance-label"></output>
             </label>
-            <label class="settings-sublabel" for="setting-default-completion">completion</label>
+            <div data-settings-help-title="completion" data-settings-help-for="setting-default-completion" data-settings-help-id="settings-completion-help"><p class="field-hint">Automatic completion follows a planned or scheduled start. Split sessions are credited when each chunk ends. Manual timers keep running until you stop them.</p></div>
             <select class="settings-select" id="setting-default-completion"><option value="manual">mark done myself</option><option value="duration">auto mark after duration</option><option value="minutes">auto mark after set minutes</option></select>
             <div class="planning-field" id="default-auto-mark-row" hidden><label for="setting-default-auto-mark">auto mark after</label><label class="range-value"><input type="number" id="setting-default-auto-mark" min="0" max="10080" inputmode="numeric" /><span>min</span></label></div>
-            <p class="field-hint">Automatic completion follows a planned or scheduled start. Split sessions are credited when each chunk ends. Manual timers keep running until you stop them.</p>
             <button class="setting-toggle setting-switch" type="button" id="setting-default-breakable" aria-pressed="false"><span><b>allow splitting</b><small>Spread the duration across smaller sessions.</small></span><span class="switch-ui" aria-hidden="true"></span></button>
             <label class="settings-range simple-range" id="default-chunk-row" hidden>
               <span>shortest session</span>
@@ -1249,7 +1255,7 @@
             <button class="setting-toggle setting-switch" type="button" id="settings-replica-chrome" aria-pressed="true">
               <span>
                 <b>display bar</b>
-                <small>Clock, sync, and lock above the app on this paired screen. Turn off to use the normal Tings window.</small>
+                <small>Clock, sync, and lock on this paired screen.</small>
               </span>
               <span class="switch-ui" aria-hidden="true"></span>
             </button>
@@ -1265,7 +1271,8 @@
             <span data-ui-leave="agenda"></span>
           </div>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Pair at most two screens: one full-app display (personal clone or shared items) and one glance display. Personal clone copies every task and habit so either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages. Glance display shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower frame. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it. Approving a second screen does not sign the other out.</p>
+            <p class="field-hint">Connect a full-app display and a glance display.</p>
+            <div data-settings-help-title="pairing &amp; sync" data-settings-help-id="settings-sharing-help"><p class="field-hint">Pair at most two screens: one full-app display (personal clone or shared items) and one glance display. Personal clone copies every task and habit so either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages. Glance display shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower frame. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it. Approving a second screen does not sign the other out.</p></div>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
             </div>
@@ -1279,13 +1286,13 @@
                 <option value="selected">shared items only</option>
                 <option value="glance">glance display</option>
               </select>
-              <p class="field-hint" id="settings-agenda-sync-hint">Copies every task and habit, logs, and planner settings. Add, edit, complete, or remove items on either device; changes sync automatically.</p>
+              <p class="field-hint" id="settings-agenda-sync-hint">Sync all items, history, and planner settings between devices.</p>
               <span class="settings-sublabel">display reauthorization</span>
               <select id="settings-agenda-reauth" class="mini-select">
                 <option value="30">every 30 days</option>
                 <option value="7">every 7 days</option>
               </select>
-              <p class="field-hint">No silent refresh or fallback link: the display must show a new QR and be scanned again when access expires.</p>
+              <p class="field-hint">Scan a new QR when display access expires.</p>
               <span class="settings-sublabel" id="settings-agenda-scope-label">glance-view compatibility</span>
               <div class="btn-row">
                 <select id="settings-agenda-scope-mode" class="mini-select">
@@ -1299,7 +1306,8 @@
               <div id="settings-agenda-devices"></div>
               <p class="field-hint" id="settings-agenda-devices-empty">No display is signed in yet. Scan a QR to add one.</p>
               <span class="settings-sublabel">pair a display</span>
-              <p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR adds a second screen and does not sign the other out. Requests work once and expire after 30 seconds.</p>
+              <p class="field-hint">Open <a href="https://lanbeee.github.io/habits/agenda-display.html" target="_blank" rel="noopener">Tings display</a> on the other screen, then scan its QR here.</p>
+              <div data-settings-help-title="pairing instructions" data-settings-help-id="settings-pairing-help"><p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR adds a second screen and does not sign the other out. Requests work once and expire after 30 seconds.</p></div>
               <div class="btn-row" style="flex-wrap:wrap">
                 <button type="button" class="btn primary" id="settings-agenda-scan-qr"><i class="ti ti-scan" aria-hidden="true"></i> scan display QR</button>
                 <button type="button" class="btn" id="settings-agenda-publish">sync now</button>
@@ -1314,7 +1322,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-prayer-body" hidden>
-            <p class="field-hint">Dawn, sunrise, noon, afternoon, sunset, and night follow your city and the date. Set your city under Locations.</p>
+            <p class="field-hint">Daily times follow your city, set under Locations.</p>
             <div class="settings-grid" data-ui-toggles="prayer"></div>
             <div id="settings-prayer-calculation" hidden>
               <span class="settings-sublabel">calculation method</span>
@@ -1936,6 +1944,7 @@
 <script src="./js/ui-kit.js" defer></script>
 <script src="./js/tap.js" defer></script>
 <script src="./js/calendar-import.js" defer></script>
+<script src="./js/calendar-device.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
 <script src="./js/weather.js" defer></script>
@@ -1978,6 +1987,7 @@
 <script src="./js/settings-appearance.js" defer></script>
 <script src="./js/settings-share.js" defer></script>
 <script src="./js/agenda-order.js" defer></script>
+<script src="./js/appointment-editor.js" defer></script>
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/add-availability.js" defer></script>
 <script src="./js/main-input.js" defer></script>

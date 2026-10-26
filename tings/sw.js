@@ -1,4 +1,4 @@
-const CACHE = 'tings-v649';
+const CACHE = 'tings-v659';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -93,6 +93,7 @@ const PRECACHE = [
   './js/ui-kit.js',
   './js/tap.js',
   './js/calendar-import.js',
+  './js/calendar-device.js',
   './js/locations.js',
   './js/prayer-times.js',
   './js/weather.js',
@@ -146,6 +147,7 @@ const PRECACHE = [
   './js/agenda-display.js',
   './js/display-mode.js',
   './js/agenda-display-boot.js',
+  './js/appointment-editor.js',
   './js/main-boot.js',
   './js/add-availability.js',
   './js/main-input.js',

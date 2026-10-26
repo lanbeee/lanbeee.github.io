@@ -920,6 +920,7 @@ function agendaCompletedOccurrenceKeys(h,rows,dayBase){
 // remove their matching session only; ordinary logs consume the earliest
 // unmatched row for that day and continue to count normally toward rhythm.
 function agendaRowsAfterCompletions(h,rows,dayBase){
+  if(isLocalAppointment(h))return Array.isArray(rows) ? rows : [];
   const list = Array.isArray(rows) ? rows : [];
   if(!h || h.type === 'task' || h.breakable || !habitHasMultipleDailyOccurrences(h)){
     return completedOnDay(h,dayBase) ? [] : list;
