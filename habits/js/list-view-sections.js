@@ -38,7 +38,9 @@ function appendSectionHeader(list,label,dayContext = null,todayHids = null){
   }else if(!minimal && label === 'today'){
     setupDayCapacityHeader(header,dayStart(Date.now()),false);
   }
-  if(!minimal && label === 'today' && todayHids){
+  // The missed pill also renders in minimal mode; minimal only trims the
+  // capacity/free chrome and per-card pills.
+  if(label === 'today' && todayHids){
     attachDroppedIndicator(header,list,todayHids);
   }
   if(!minimal && ((dayContext && dayContext.isToday) || label === 'today')){
@@ -2285,7 +2287,10 @@ function render(opts){
     });
     if(!searching && todayFirstActive && !todaySectionRendered){
       const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-      if(!minimal){
+      // Minimal mode uses this fallback too — the missed pill renders there —
+      // but skips the capacity tap wiring and the free-time pill, matching the
+      // trimmed day headers above.
+      {
         const _snap = loadTodaySuggested();
         if(!_droppedDayBaseline && _snap.prevProjection){
           _droppedDayBaseline = _snap.prevProjection;
@@ -2311,9 +2316,9 @@ function render(opts){
           labelEl.textContent='today';
           header.appendChild(labelEl);
           const dayContext={dayBase:dayStart(Date.now()),isToday:true,dayKey:todayIso(),timeline:agendaRows};
-          setupDayCapacityHeader(header,dayStart(Date.now()),false);
+          if(!minimal)setupDayCapacityHeader(header,dayStart(Date.now()),false);
           attachWeatherIndicator(header,dayContext);
-          attachFreeTimeIndicator(header,dayContext);
+          if(!minimal)attachFreeTimeIndicator(header,dayContext);
           attachDroppedIndicator(header,list,todayHids);
           if(header.classList.contains('has-dropped') || header.classList.contains('has-pill')){
             list.prepend(header);
