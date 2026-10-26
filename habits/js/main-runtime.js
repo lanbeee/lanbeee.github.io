@@ -796,12 +796,12 @@ function applySnoozeSheetChoice(kind,value){
   else if(kind === 'repetitions')doSnoozeRepetitions(snoozeIdx,value);
   else if(kind === 'show')doUnsnooze(snoozeIdx);
   else return false;
-  closeSnoozeSheet(kind !== 'show');
+  closeSnoozeSheet();
   return true;
 }
 $('snooze-sheet').addEventListener('click',e=>{
   if(e.target === e.currentTarget){
-    closeSnoozeSheet(false);
+    closeSnoozeSheet();
     return;
   }
   const days = e.target.closest('[data-snooze-days]');
@@ -823,7 +823,7 @@ $('snooze-hours')?.addEventListener('keydown',e=>{
   e.preventDefault();
   applySnoozeSheetChoice('hours',$('snooze-hours').value);
 });
-$('snooze-cancel').addEventListener('click',()=>closeSnoozeSheet(false));
+$('snooze-cancel').addEventListener('click',closeSnoozeSheet);
 
 $('activity-close').addEventListener('click',()=>{activityIdx = null;closeSheet('activity-sheet');});
 $('activity-calendar').addEventListener('click',()=>{

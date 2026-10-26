@@ -248,7 +248,7 @@ function openAddSettings(section){
   const head = document.querySelector(`[data-collapse-target="${body.id}"]`);
   body.hidden = false;
   head.setAttribute('aria-expanded','true');
-  $('settings-close').textContent = 'back to new ' + (kind === 'task' ? 'task' : 'habit');
+  $('settings-close').setAttribute('aria-label','back to new ' + (kind === 'task' ? 'task' : 'habit'));
   openSheet('settings-sheet');
   requestAnimationFrame(()=>head.scrollIntoView({block:'start'}));
 }
@@ -269,7 +269,7 @@ function closeSettingsSheet(){
   }
   if(!addSettingsReturn)return;
   addSettingsReturn = false;
-  $('settings-close').textContent = 'done';
+  $('settings-close').setAttribute('aria-label','close settings');
   const kind = selectedType === 'task' ? 'task' : 'habit';
   applyAddProfile(refreshAddProfile(addProfileDrafts[kind],selectedType));
   delete addProfileDrafts[kind];

@@ -236,14 +236,14 @@ body .detail-sheet{
   padding-bottom:calc(max(8px,calc(var(--nav-bottom) - var(--keyboard-lift,0px))) + var(--content-safe-bottom));
   padding-inline:max(12px,var(--content-safe-left)) max(12px,var(--content-safe-right));
 }
-body .detail-sheet > .detail-bottom-bar{
+body :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
   position:relative;z-index:160;
   flex:0 0 auto;align-self:center;min-width:0;max-width:100%;
   margin:10px 0 0;padding:8px;border-radius:28px;
   background:var(--glass-bg);box-shadow:var(--floating-shadow);
   -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
 }
-body .detail-sheet > .detail-bottom-bar .detail-actions{
+body :is(.detail-sheet,.settings-sheet) > .sheet-search-dock > :is(.detail-actions,.settings-actions){
   position:static;inset:auto;transform:none;min-width:0;width:100%;margin:0;padding:0;
   display:flex;align-items:center;gap:8px;
 }
@@ -265,24 +265,24 @@ body[data-pane-count="1"] .detail-sheet{
    block. Reveal detail in the same frame, fully opaque, so cards beneath
    that header cannot flash through a fading overlay. */
 body[data-pane-count="1"] #detail-sheet{background:var(--bg);transition:none;}
-body[data-pane-count="1"] .detail-sheet > .detail-bottom-bar{
+body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
   position:absolute;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
   transform:translate(-50%,-100%);margin:0;width:max-content;max-width:calc(100vw - 24px);
   /* Follow the OS keyboard animation directly, like Home's dock. */
   transition:none;
 }
 /* Search uses the same keyboard/safe edge as Home, with no extra clearance. */
-body[data-pane-count="1"] .detail-sheet.detail-search-open{--nav-bottom:0px;}
-body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{
+body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet).detail-search-open{--nav-bottom:0px;}
+body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet).detail-search-open > .sheet-search-dock{
   top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--keyboard-dock-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
 }
 /* At rest the bar is icon-only (loupe + close) exactly like Home's action
    bar; the wide field exists only while search is open. */
-body[data-pane-count="1"] .detail-sheet:not(.detail-search-open) .detail-search-control{background:transparent;}
-body[data-pane-count="1"] #detail-search-toggle{flex:0 0 44px;width:44px;min-width:44px;padding:0;}
-body[data-pane-count="1"] #detail-search-toggle span{display:none;}
+body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet):not(.detail-search-open) .detail-search-control{background:transparent;}
+body[data-pane-count="1"] .sheet-search-toggle{flex:0 0 44px;width:44px;min-width:44px;padding:0;}
+body[data-pane-count="1"] .sheet-search-toggle span{display:none;}
 /* Search open mirrors Home's expanded action bar: field across the width. */
-body[data-pane-count="1"] .detail-sheet.detail-search-open > .detail-bottom-bar{width:calc(100vw - 24px);max-width:456px;}
+body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet).detail-search-open > .sheet-search-dock{width:calc(100vw - 24px);max-width:456px;}
 body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
@@ -294,45 +294,45 @@ body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-p
 body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page:last-child{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
-body[data-pane-count="1"] .detail-sheet > .detail-search-panel .detail-search-results{
+body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .detail-search-panel .detail-search-results{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
-body .detail-bottom-bar .detail-head-btn{
+body .sheet-search-dock .detail-head-btn{
   flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;
   aspect-ratio:1;border-radius:50%;padding:0;border:0;background:var(--bg3);
 }
-.detail-bottom-bar svg{flex-shrink:0;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+.sheet-search-dock svg{flex-shrink:0;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
 body .detail-head .tune-actions .btn{
   flex:1 1 0;min-width:0;min-height:44px;padding:10px 20px;border-radius:22px;
   font-size:calc(14px * var(--font-scale));line-height:1.2;overflow-wrap:anywhere;
 }
 #detail-save:disabled{background:var(--bg3);color:var(--text3);opacity:.6;cursor:default;transform:none;}
 .detail-search-control{display:flex;align-items:center;min-width:0;border-radius:24px;background:var(--field-bg);overflow:hidden;}
-#detail-search-toggle{
+.sheet-search-toggle{
   display:flex;align-items:center;justify-content:center;gap:8px;min-width:44px;min-height:44px;
   padding:0 14px;border:0;border-radius:24px;background:transparent;color:var(--text2);
   font:inherit;font-size:14px;cursor:pointer;touch-action:manipulation;
 }
-#detail-search-toggle span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sheet-search-toggle span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .detail-search-field{display:flex;align-items:center;flex:1 1 auto;min-width:0;padding-right:6px;}
 body .detail-search-field input{
   flex:1 1 auto;min-width:0;width:100%;height:44px;margin:0;padding:0 4px;
   border:0;border-radius:20px;background:transparent;color:var(--text);
   font:inherit;font-size:16px;-webkit-appearance:none;appearance:none;
 }
-#detail-search-clear{
+.sheet-search-clear{
   flex:0 0 32px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;
   padding:0;border:0;border-radius:50%;background:transparent;color:var(--text2);cursor:pointer;touch-action:manipulation;
 }
-#detail-search-clear svg{width:18px;height:18px;}
-.detail-search-open > .detail-bottom-bar{width:100%;}
+.sheet-search-clear svg{width:18px;height:18px;}
+.detail-search-open > .sheet-search-dock{width:100%;}
 .detail-search-open .detail-search-control{flex:1 1 auto;}
-.detail-search-open #detail-search-toggle{flex:0 0 44px;width:44px;padding:0;}
-.detail-search-open #detail-search-toggle span{display:none;}
-#detail-search-toggle:focus-visible,#detail-search-clear:focus-visible,.detail-bottom-bar .detail-head-btn:focus-visible,.detail-page-tab:focus-visible{
+.detail-search-open .sheet-search-toggle{flex:0 0 44px;width:44px;padding:0;}
+.detail-search-open .sheet-search-toggle span{display:none;}
+.sheet-search-toggle:focus-visible,.sheet-search-clear:focus-visible,.sheet-search-dock .detail-head-btn:focus-visible,.detail-page-tab:focus-visible{
   outline:2px solid var(--text2);outline-offset:-3px;
 }
-#detail-search-toggle:active,#detail-search-clear:active{background:var(--bg3);}
+.sheet-search-toggle:active,.sheet-search-clear:active{background:var(--bg3);}
 .pane-detail:has(.detail-sheet){overflow:hidden;}
 body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail[data-active-sheet="detail-sheet"] > .detail-sheet{position:relative;height:calc(100% - var(--keyboard-lift,0px));max-height:100%;}
 body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap .detail-sheet{height:calc(100dvh - 48px - var(--keyboard-lift,0px));}
@@ -382,8 +382,8 @@ body .detail-sheet:is(.tune-dirty,.detail-editing) > .detail-head > .tune-action
 }
 .detail-search-result :is(b,small){overflow-wrap:anywhere;max-width:100%;}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
-#detail-search-input::-webkit-search-cancel-button{display:none;}
-body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none;}
+.detail-search-field input::-webkit-search-cancel-button{display:none;}
+body .detail-search-field input:is(:focus,:focus-visible){outline:none;box-shadow:none;}
 .detail-search-control:focus-within{box-shadow:none;}
 /* Fit each field to its pane, including the narrower permanently mounted
    desktop pane. Container queries also follow the effective width at zoom. */
@@ -422,7 +422,7 @@ body #detail-search-input:is(:focus,:focus-visible){outline:none;box-shadow:none
 @media (max-width:280px){
   .detail-page-tab{min-height:44px;}
   .detail-page-tab span{display:none;}
-  #detail-search-toggle{padding-inline:10px;}
+  .sheet-search-toggle{padding-inline:10px;}
 }
 @media (max-height:480px){
   body .detail-sheet{padding-bottom:calc(8px + var(--content-safe-bottom));}

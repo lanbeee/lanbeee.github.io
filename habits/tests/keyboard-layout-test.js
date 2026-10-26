@@ -130,6 +130,40 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     const homeExitTransitions=await page.evaluate(()=>['.topbar','#home-tag-filter'].map(selector=>getComputedStyle(document.querySelector(selector)).transitionProperty.split(',').map(s=>s.trim())));
     for(const properties of homeExitTransitions)assert.ok(properties.every(property=>['transform','opacity'].includes(property)),'Home header restores its space without a second resize animation');
 
+    async function checkSearchDetailEntry(native = false){
+      const index=native ? 4 : 3;
+      await page.evaluate(()=>{closeDetail();setSearchOpen(true);});
+      await page.locator('#habit-search').fill(`Keyboard fixture ${index}`);
+      await page.waitForFunction(()=>document.querySelectorAll('#list .ting-card').length===1);
+      await page.evaluate(()=>{visualViewport.height=544;updateKeyboardLift();});
+      if(native)await page.setViewportSize({width:390,height:544});
+      await page.locator('#list .ting-card').tap();
+      for(const height of [544,660,740,844]){
+        if(native)await page.setViewportSize({width:390,height});
+        const frames=await page.evaluate(async height=>{
+          visualViewport.height=height;updateKeyboardLift();
+          const frames=[];
+          for(let i=0;i<3;i++){
+            const inner=getSheetInner('detail-sheet');
+            frames.push({open:$('detail-sheet').classList.contains('open'),
+              nav:getComputedStyle(inner.querySelector('.detail-page-nav')).display,
+              footer:getComputedStyle(inner.querySelector('.detail-bottom-bar')).display,
+              name:$('detail-name').textContent});
+            await new Promise(requestAnimationFrame);
+          }
+          return frames;
+        },height);
+        for(const frame of frames){
+          assert.ok(frame.open,'tapping a search result opens detail');
+          assert.equal(frame.name,`Keyboard fixture ${index}`,'detail shows the selected search result');
+          assert.notEqual(frame.nav,'none',`${native?'Android':'PWA'} detail navigation stays visible while Home search keyboard closes at ${height}`);
+          assert.notEqual(frame.footer,'none','detail search/close stays available during entry');
+        }
+      }
+      await page.evaluate(()=>closeDetail());
+    }
+    await checkSearchDetailEntry();
+
     // No delayed retry steals focus after the user chooses another control.
     await page.evaluate(()=>{setSearchOpen(true);document.getElementById('open-search').focus({preventScroll:true});});
     await page.waitForTimeout(350);
@@ -235,6 +269,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     }
     await page.evaluate(()=>{delete window.innerHeight;visualViewport.offsetTop=0;closeDetail();document.documentElement.style.setProperty('--safe-area-inset-bottom','34px');window.TingsNative={isNative:true,platform:'android'};updateKeyboardLift();});
     await page.waitForTimeout(300);
+    await checkSearchDetailEntry(true);
     // Android adjustResize shrinks innerHeight too: do not lift the dock a
     // second time, close the detail sheet, or lose the focused field.
     for(const surface of ['home','detail']){
@@ -350,6 +385,14 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.setViewportSize({width:390,height:544});
     await page.evaluate(()=>{document.activeElement.blur();updateKeyboardLift();});
     assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-head .tune-actions')).display),'flex','Save/Cancel stays in the header during field blur');
+    await page.locator('#detail-close').click();
+    assert.ok(await page.locator('#detail-sheet.open').count(),'native Cancel stays in detail while the keyboard closes');
+    assert.equal(await page.evaluate(()=>getSheetInner('detail-sheet').classList.contains('tune-dirty')),false,'Cancel clears the native draft');
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.detail-bottom-bar')).display),'none','native Cancel keeps the footer hidden through keyboard exit');
+    await page.setViewportSize({width:390,height:844});
+    await page.evaluate(()=>{visualViewport.height=844;updateKeyboardLift();});
+    assert.ok(await page.locator('.detail-page-nav').isVisible(),'native Cancel restores browsing navigation after keyboard exit');
+    assert.ok(await page.locator('#detail-cool').isVisible(),'native Cancel restores Close after keyboard exit');
     assert.deepEqual(errors,[]);
     console.log('PASS keyboard docks, staggered native viewport frames, covered detail backdrop, stable focus, retained Home, and conditional input scrolling');
   }finally{await browser.close();}

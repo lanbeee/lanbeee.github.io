@@ -135,7 +135,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.ok(await page.locator('#detail-emoji-bg').isVisible());
     assert.ok(await page.locator('#detail-generic-emoji button').count()>0);
     await page.evaluate(()=>{document.documentElement.style.setProperty('--keyboard-lift','300px');syncDetailEditingChrome();});
-    assert.equal(await page.locator('.detail-page-nav').isVisible(),false,'keyboard hides page navigation');
+    assert.ok(await page.locator('.detail-page-nav').isVisible(),'keyboard from another field does not hide browsing navigation');
     const stableHead=await page.locator('.detail-head').boundingBox();
     await page.locator('#detail-habit-message').focus();
     assert.ok(await page.locator('#detail-close').isVisible(),'Cancel is available in the header before typing');
@@ -185,6 +185,9 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     await choose('name','Name');await page.locator('#detail-habit-message').fill('Leftover name');
     await page.locator('#detail-habit-message').blur();
     await page.evaluate(()=>syncDetailEditingChrome());
+    await page.locator('#detail-cool').click();
+    assert.ok(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),'Close cancels a pending edit before leaving detail');
+    assert.equal(await page.locator('#detail-habit-message').inputValue(),'Search fixture');
     await page.locator('#detail-cool').click();
     assert.equal(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),false);
     assert.equal(await page.evaluate(()=>getComputedStyle(document.getElementById('detail-tune-actions')).display),'none','Cancel/Save do not remain on Home');
@@ -370,6 +373,9 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     await page.evaluate(()=>{openDetail(0);scrollDetailToNav('identity');});
     await page.locator('#detail-habit-message').fill('Saved fixture');await page.locator('#detail-habit-message').blur();
     await page.locator('#detail-save').click();assert.equal(await page.evaluate(()=>load()[0].name),'Saved fixture');
+    assert.ok(await page.locator('#detail-sheet.open').count(),'Save keeps detail open');
+    await page.evaluate(()=>closeDetail());
+    await page.waitForFunction(()=>!appBackHistoryCleaning);
     // Exactly one existing exit stays reachable at both scroll extremes.
     const sheetIds=['about-sheet','privacy-sheet','overview-sheet','free-time-sheet','weather-context-sheet','weather-metric-sheet','weather-agenda-sheet','slipped-sheet','day-capacity-sheet','day-logs-sheet','settings-sheet','sample-habits-sheet','activity-sheet','snooze-sheet','value-log-sheet','home-filter-sheet','calendar-filter-sheet','presence-picker-sheet'];
     for(const viewport of [{width:390,height:568},{width:1440,height:900}]){

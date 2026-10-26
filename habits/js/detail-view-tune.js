@@ -172,49 +172,61 @@ function setDetailDirty(force){
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
 }
 
-// HYBRID: rewrites form fields from saved original
-function restoreDetailTune(){
-  if(!detailTuneOriginal)return;
-  $('detail-repeat-mode').value = detailTuneOriginal.repeatMode || 'routine';
-  $('detail-condition-trigger').value = detailTuneOriginal.conditionTrigger;
-  $('detail-condition-radius').value = detailTuneOriginal.conditionRadiusM;
-  $('detail-habit-message').value = detailTuneOriginal.name;
-  $('detail-emoji').value = detailTuneOriginal.emoji;
-  renderEmojiBgSwatches('detail-emoji-bg',detailTuneOriginal.emojiBgColor || '');
-  $('detail-pinned').setAttribute('aria-pressed',detailTuneOriginal.pinned ? 'true' : 'false');
-  setDetailSharedDisplayMode(sharedDisplayModeForHabit(detailTuneOriginal));
-  renderDetailLinkRows(normalizeLinks(detailTuneOriginal.links));
-  $('detail-duration').value = detailTuneOriginal.durationMinutes;
-  $('detail-early-window').value = detailTuneOriginal.earlyWindowDays;
-  $('detail-delay-allowance').value = detailTuneOriginal.delayAllowanceDays;
-  $('detail-due-date').value = dateInputValue(detailTuneOriginal.dueDate);
-  if($('detail-due-time'))$('detail-due-time').value = detailTuneOriginal.eventTime !== null ? timeInputValue(detailTuneOriginal.eventTime) : '';
-  syncDetailDueUi();
-  renderTagChips('detail-place-chips',[],detailTuneOriginal.locationIds || [],detailTuneOriginal.preferredLocationId || null,detailTuneOriginal.locationPrefs || null,detailTuneOriginal.anywhereAllowed);
-  renderTagChips('detail-topic-chips',detailTuneOriginal.topics,[]);
-  if(typeof renderWeatherProfileSelect === 'function')renderWeatherProfileSelect('detail-weather-profile',
-    typeof weatherProfileSelectValue==='function'
-      ? weatherProfileSelectValue(detailTuneOriginal.weatherProfileMode,detailTuneOriginal.weatherProfileId)
-      : (detailTuneOriginal.weatherProfileId || ''));
-  if(typeof renderWeatherLocationSelect === 'function')renderWeatherLocationSelect('detail-weather-location',detailTuneOriginal.weatherLocationId || '');
-  if($('detail-show-weather'))$('detail-show-weather').setAttribute('aria-pressed',detailTuneOriginal.showWeather ? 'true' : 'false');
-  if($('detail-show-weather-location'))$('detail-show-weather-location').setAttribute('aria-pressed',detailTuneOriginal.showWeatherAtLocation ? 'true' : 'false');
-  if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
-  if($('detail-breakable'))$('detail-breakable').setAttribute('aria-pressed',detailTuneOriginal.breakable ? 'true' : 'false');
-  if($('detail-min-chunk'))$('detail-min-chunk').value = detailTuneOriginal.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES;
-  if($('detail-min-gap'))$('detail-min-gap').value = String(clampMinGapMinutes(detailTuneOriginal.minGapMinutes));
-  if($('detail-track-value'))$('detail-track-value').setAttribute('aria-pressed',detailTuneOriginal.trackValue ? 'true' : 'false');
-  if($('detail-timer-auto-stop'))$('detail-timer-auto-stop').value = detailTuneOriginal.timerAutoStopMinutes != null ? detailTuneOriginal.timerAutoStopMinutes : '';
-  if($('detail-auto-mark'))$('detail-auto-mark').value = detailTuneOriginal.autoMarkMinutes != null ? detailTuneOriginal.autoMarkMinutes : '';
-  syncBreakableUi();
-  renderScheduleChips('detail',detailTuneOriginal);
-  renderScheduleLinkEditors(detailTuneOriginal);
-  renderHabitScheduleOptions(detailTuneOriginal);
-  renderTimeWindowInputs(detailTuneOriginal);
-  setDetailTypeUi(detailTuneOriginal.type);
-  setDetailPriorityUi(detailTuneOriginal.priority);
-  if(detailTuneOriginal.target !== '')syncRhythm('detail',detailTuneOriginal.target);
+// Editing is a layer inside detail; dismissing it leaves the card mounted.
+function detailEditActive(){
+  const inner = getSheetInner('detail-sheet');
+  return Boolean(inner && (inner.classList.contains('tune-dirty')
+    || (inner.classList.contains('detail-editing') && inner.contains(document.activeElement))
+    || (typeof detailEditorFocusPending === 'function' && detailEditorFocusPending())));
+}
+
+// Reload saved values after Save/Cancel without losing the user's section,
+// scroll, disclosures, or the selected date in a recurring event editor.
+function refreshDetailView(){
+  if(detailIdx === null)return;
+  const index = detailIdx;
+  const inner = getSheetInner('detail-sheet');
+  const compact = inner.classList.contains('detail-field-editing');
+  const scheduleView = detailScheduleView;
+  const scrolls = [inner,...inner.querySelectorAll('.detail-pager,.detail-page')]
+    .map(el=>({el,top:el.scrollTop,left:el.scrollLeft}));
+  const disclosures = [...inner.querySelectorAll('details[id]')].map(el=>({id:el.id,open:el.open}));
+  const scopes = ['#detail-appt-scope','#detail-appt-occurrence','#detail-calendar-personalization select']
+    .map(selector=>({selector,value:inner.querySelector(selector)?.value}));
+  openDetail(index);
+  setScheduleView(scheduleView);
+  for(const {selector,value} of scopes){
+    const field = inner.querySelector(selector);
+    if(field && value !== undefined)field.value = value;
+  }
+  for(const {selector,value} of scopes){
+    const field = inner.querySelector(selector);
+    if(field?.tagName === 'SELECT' && value !== undefined)field.dispatchEvent(new Event('change'));
+  }
+  for(const {id,open} of disclosures){if($(id))$(id).open = open;}
   setDetailDirty(false);
+  // Keep a field's closing keyboard from briefly exposing the footer above
+  // the IME. openDetail has already blurred the field and cleared its draft.
+  if(compact)inner.classList.add('detail-field-editing');
+  syncDetailEditingChrome();
+  const restoreScroll = ()=>{
+    if(detailIdx !== index)return;
+    for(const {el,top,left} of scrolls)el.scrollTo({top,left,behavior:'instant'});
+    updateDetailPagerDots();
+  };
+  restoreScroll();
+  requestAnimationFrame(restoreScroll);
+}
+
+function restoreDetailTune(){
+  if(detailTuneOriginal)refreshDetailView();
+}
+
+function dismissDetail(){
+  if(!$('detail-search-panel').hidden)setDetailSearchOpen(false);
+  else if(!$('detail-delete-confirm').hidden)$('detail-delete-confirm').hidden = true;
+  else if(detailEditActive())restoreDetailTune();
+  else closeDetail();
 }
 
 // Placeholder copy per link kind, so the input tells you what it wants.

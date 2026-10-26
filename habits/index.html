@@ -756,14 +756,14 @@
         </details>
           </section>
       </div>
-      <div class="detail-bottom-bar" aria-label="detail actions">
+      <div class="detail-bottom-bar sheet-search-dock" aria-label="detail actions">
         <div class="detail-actions" id="detail-cool-row">
           <div class="detail-search-control detail-full-only">
-            <button type="button" id="detail-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
+            <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
             <div class="detail-search-field" hidden>
               <label class="sr-only" for="detail-search-input">Search within this item’s details</label>
               <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
-              <button type="button" id="detail-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+              <button type="button" id="detail-search-clear" class="sheet-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -1441,16 +1441,19 @@
         <p id="settings-search-status" class="field-hint" role="status" aria-live="polite"></p>
         <div id="settings-search-results" class="detail-search-results" aria-label="matching settings"></div>
       </div>
-      <div class="btn-row settings-actions">
-        <div class="detail-search-control settings-full-only">
-          <button type="button" id="settings-search-toggle" aria-label="search settings" aria-expanded="false" aria-controls="settings-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in settings</span></button>
-          <div class="detail-search-field" hidden>
-            <label class="sr-only" for="settings-search-input">Search settings</label>
-            <input type="search" id="settings-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
-            <button type="button" id="settings-search-clear" aria-label="clear settings search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      <div class="sheet-search-dock" aria-label="settings actions">
+        <div class="btn-row settings-actions">
+          <div class="detail-search-control settings-full-only">
+            <button type="button" id="settings-search-toggle" class="sheet-search-toggle" aria-label="search settings" aria-expanded="false" aria-controls="settings-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in settings</span></button>
+            <div class="detail-search-field" hidden>
+              <label class="sr-only" for="settings-search-input">Search settings</label>
+              <input type="search" id="settings-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
+              <button type="button" id="settings-search-clear" class="sheet-search-clear" aria-label="clear settings search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+            </div>
           </div>
+          <button type="button" class="detail-head-btn" id="settings-search-dismiss" aria-label="close settings search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          <button type="button" class="detail-head-btn" id="settings-close" aria-label="close settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
-        <button class="btn primary" id="settings-close">done</button>
       </div>
     </div>
   </div>

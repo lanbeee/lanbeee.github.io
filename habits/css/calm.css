@@ -117,7 +117,7 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom
 #toast,#action-toast{border-radius:22px;}
 .app-bar-search input:focus,.app-bar-search input:focus-visible,
 .nav-search input:focus,.nav-search input:focus-visible,
-#detail-search-input:focus,#detail-search-input:focus-visible{
+.detail-search-field input:focus,.detail-search-field input:focus-visible{
   outline:none;outline-offset:0;box-shadow:none;
 }
 @media (hover:hover) and (pointer:fine){
@@ -128,7 +128,7 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom
     outline:2px solid var(--teal-icon);outline-offset:3px;
   }
   .app-bar-search input:focus-visible,.nav-search input:focus-visible,
-  #detail-search-input:focus-visible{
+  .detail-search-field input:focus-visible{
     outline:none;outline-offset:0;
   }
   .ting-card:hover{background:color-mix(in srgb,var(--teal-bg) 18%,var(--bg));}

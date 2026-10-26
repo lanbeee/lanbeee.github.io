@@ -296,7 +296,9 @@ function syncDetailEditingChrome(){
   const actionFocused = inner.classList.contains('detail-editing')
     && inner.contains(active) && active.closest('.tune-actions');
   inner.classList.toggle('detail-editing',Boolean(editing || actionFocused || closing));
-  inner.classList.toggle('detail-keyboard-open',Boolean(keyboardVisible && !inner.classList.contains('detail-search-open')));
+  // Home search's keyboard can still be closing when detail first opens.
+  // Only compact navigation for a detail field's own editing session.
+  inner.classList.toggle('detail-keyboard-open',Boolean(keyboardVisible && (editing || closing) && !inner.classList.contains('detail-search-open')));
   inner.classList.toggle('detail-field-editing',Boolean((editing && virtualKeyboard) || closing));
 }
 document.addEventListener('pointerdown',event=>{

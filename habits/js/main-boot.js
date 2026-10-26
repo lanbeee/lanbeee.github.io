@@ -1772,9 +1772,9 @@ $('detail-save').addEventListener('click',()=>{
   h.hardDue = h.type === 'task' && h.dueDate !== null && h.delayAllowanceDays === 0;
   if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
-  save(data);
+  if(!save(data))return;
   showToast('saved');
-  closeDetail();
+  refreshDetailView();
   render();
   if((h.weatherProfileMode !== 'none' || h.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 });
@@ -1787,11 +1787,8 @@ if($('detail-add'))$('detail-add').addEventListener('click',()=>{
     render();
   });
 });
-$('detail-cool').addEventListener('click',()=>{
-  if(!$('detail-search-panel').hidden)setDetailSearchOpen(false);
-  else closeDetail();
-});
-$('detail-close').addEventListener('click',()=>{restoreDetailTune();closeDetail();});
+$('detail-cool').addEventListener('click',dismissDetail);
+$('detail-close').addEventListener('click',restoreDetailTune);
 $('detail-snooze').addEventListener('click',()=>{
   if(detailIdx === null)return;
   snoozeFromDetail = true;
@@ -1829,7 +1826,7 @@ $('detail-delete-yes').addEventListener('click',()=>{
   closeDetail();
   doNuke(idx);
 });
-$('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeDetail();});
+$('detail-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)dismissDetail();});
 
 $('ting-weather-profiles')?.addEventListener('click',()=>openAddSettings('weather'));
 $('detail-weather-profiles')?.addEventListener('click',()=>{

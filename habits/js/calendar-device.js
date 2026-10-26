@@ -58,7 +58,7 @@ function renderDeviceCalendarPersonalization(h){
     setDetailDirty(false);
   };
   scope.addEventListener('change',paint);
-  reset.addEventListener('click',()=>saveDeviceCalendarStyle(h,'occurrence',null));
+  reset.addEventListener('click',()=>{saveDeviceCalendarStyle(h,'occurrence',null);refreshDetailView();});
   $('detail-appearance-disclosure').before(box);paint();
   $('detail-appearance-disclosure').open=true;
 }
@@ -72,7 +72,7 @@ function saveDeviceCalendarDetail(h){
   const scope=$('detail-calendar-personalization')?.querySelector('select')?.value;
   if(!scope)return;
   saveDeviceCalendarStyle(h,scope,{emoji:cleanMark($('detail-emoji').value),emojiBgColor:selectedEmojiBgColor('detail-emoji-bg')});
-  closeDetail();render();
+  refreshDetailView();render();
 }
 function syncDeviceCalendarDetail(h){
   const synced=isDeviceCalendarTask(h),sheet=getSheetInner('detail-sheet');

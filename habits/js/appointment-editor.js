@@ -157,7 +157,7 @@ function saveLocalAppointmentDetail(data,h){
     h.locationIds=$('detail-appt-place').value ? [$('detail-appt-place').value] : [];h.topics=selectedTopicsFrom('detail-topic-chips');
     const current=currentDetailTune();h.pinned=current.pinned;h.showOnSharedDisplay=current.showOnSharedDisplay;h.allowSharedDisplayCompletion=false;
   }
-  if(save(data)){closeDetail();render();showToast('event saved');}
+  if(save(data)){refreshDetailView();render();showToast('event saved');}
 }
 
 function renderEventDetailUi(h){

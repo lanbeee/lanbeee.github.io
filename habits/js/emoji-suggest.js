@@ -782,7 +782,14 @@ function setDetailMarkMenuOpen(open){
   mark.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
+let detailEditorFocusTimer = null;
+function detailEditorFocusPending(){return detailEditorFocusTimer !== null;}
+function cancelDetailEditorFocus(){
+  clearTimeout(detailEditorFocusTimer);
+  detailEditorFocusTimer = null;
+}
 function openDetailEmojiEditor(opts){
+  cancelDetailEditorFocus();
   setDetailMarkMenuOpen(false);
   if(opts?.scroll !== false && typeof scrollDetailToNav === 'function'){
     scrollDetailToNav('identity', 'smooth');
@@ -794,11 +801,11 @@ function openDetailEmojiEditor(opts){
     const el = document.getElementById('detail-emoji');
     if(el)el.focus({preventScroll:true});
   };
-  if(opts?.scroll === false)requestAnimationFrame(reveal);
-  else setTimeout(reveal, 280);
+  detailEditorFocusTimer = setTimeout(()=>{detailEditorFocusTimer = null;reveal();},opts?.scroll === false ? 0 : 280);
 }
 
 function openDetailNameEditor(opts){
+  cancelDetailEditorFocus();
   setDetailMarkMenuOpen(false);
   if(opts?.scroll !== false && typeof scrollDetailToNav === 'function'){
     scrollDetailToNav('identity', 'smooth');
@@ -809,7 +816,7 @@ function openDetailNameEditor(opts){
   if(el){
     const focus = ()=>el.focus({preventScroll:true});
     if(opts?.scroll === false)focus();
-    else setTimeout(focus, 280);
+    else detailEditorFocusTimer = setTimeout(()=>{detailEditorFocusTimer = null;focus();},280);
   }
 }
 
@@ -875,6 +882,7 @@ function setupDetailMarkMenu(){
   const orig = window.openDetail;
   if(typeof orig === 'function'){
     window.openDetail = function(i){
+      cancelDetailEditorFocus();
       setDetailMarkMenuOpen(false);
       _detailEmojiUserEdited = false;
       clearTimeout(_detailSuggestTimer);
@@ -899,6 +907,7 @@ function setupDetailMarkMenu(){
   const origClose = window.closeDetail;
   if(typeof origClose === 'function'){
     window.closeDetail = function(){
+      cancelDetailEditorFocus();
       setDetailMarkMenuOpen(false);
       return origClose();
     };

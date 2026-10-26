@@ -162,7 +162,7 @@
 .month-card .section-top{margin-bottom:8px;}
 .month-nav{display:flex;align-items:center;gap:8px;}
 .mini-nav{
-  width:28px;height:28px;border-radius:50%;border:0.5px solid var(--border);
+  width:28px;height:28px;flex-shrink:0;aspect-ratio:1;padding:0;border-radius:50%;border:0.5px solid var(--border);
   background:var(--bg);color:var(--text2);display:flex;align-items:center;justify-content:center;
   cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
   transition:background var(--dur-fast) ease,transform var(--dur-fast) var(--ease-tight),border-color var(--dur-fast) ease;

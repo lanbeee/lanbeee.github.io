@@ -137,6 +137,7 @@ function renderSettingsSearch(){
   $('settings-search-clear').hidden = !input.value;
 }
 
+let settingsSearchReturnScroll = 0;
 function setSettingsSearchOpen(open,focus = true){
   const sheet = document.querySelector('#settings-sheet .settings-sheet');
   const panel = $('settings-search-panel');
@@ -145,13 +146,19 @@ function setSettingsSearchOpen(open,focus = true){
   if(!sheet || !panel || !toggle || !field)return;
   const minimal = document.body.classList.contains('minimal-mode');
   open = Boolean(open && !minimal);
+  const wasOpen = sheet.classList.contains('detail-search-open');
+  const stack = sheet.querySelector('.settings-stack');
+  if(open && !wasOpen)settingsSearchReturnScroll = stack.scrollTop;
   sheet.classList.toggle('detail-search-open',open);
   panel.hidden = !open;
   toggle.setAttribute('aria-expanded',String(open));
   toggle.setAttribute('aria-label',open ? 'focus settings search' : 'search settings');
   field.hidden = !open;
+  $('settings-search-dismiss').hidden = !open;
+  $('settings-close').hidden = open;
   if(!open){
     $('settings-search-input')?.blur();
+    if(wasOpen)stack.scrollTop = settingsSearchReturnScroll;
   }else{
     renderSettingsSearch();
     if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
@@ -187,8 +194,9 @@ function revealSettingsSearchEntry(entry){
 }
 
 $('settings-search-toggle')?.addEventListener('click',()=>{
-  setSettingsSearchOpen($('settings-search-panel')?.hidden !== false);
+  setSettingsSearchOpen(true);
 });
+$('settings-search-dismiss')?.addEventListener('click',()=>setSettingsSearchOpen(false));
 $('settings-search-input')?.addEventListener('input',renderSettingsSearch);
 $('settings-search-clear')?.addEventListener('click',()=>{
   $('settings-search-input').value = '';
@@ -196,7 +204,22 @@ $('settings-search-clear')?.addEventListener('click',()=>{
   $('settings-search-input').focus({preventScroll:true});
 });
 $('settings-search-input')?.addEventListener('keydown',event=>{
-  if(event.key !== 'Escape')return;
-  event.preventDefault();
-  setSettingsSearchOpen(false);
+  if(event.key === 'ArrowDown'){
+    event.preventDefault();$('settings-search-results').querySelector('button')?.focus();
+  }else if(event.key === 'Enter'){
+    event.preventDefault();$('settings-search-results').querySelector('button')?.click();
+  }
 });
+$('settings-search-results')?.addEventListener('keydown',event=>{
+  if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+  const buttons = [...$('settings-search-results').querySelectorAll('button')];
+  const index = buttons.indexOf(document.activeElement);
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : Math.max(0,Math.min(buttons.length - 1,index + (event.key === 'ArrowDown' ? 1 : -1)));
+  event.preventDefault();buttons[next]?.focus();
+});
+document.addEventListener('keydown',event=>{
+  if(event.key !== 'Escape' || $('settings-search-panel').hidden || !$('settings-sheet').classList.contains('open'))return;
+  const tier = parseInt(getComputedStyle($('settings-sheet')).zIndex,10) || 0;
+  if([...document.querySelectorAll('.sheet-wrap.open')].some(el=>el.id !== 'settings-sheet' && (parseInt(getComputedStyle(el).zIndex,10)||0)>tier))return;
+  event.preventDefault();event.stopImmediatePropagation();setSettingsSearchOpen(false);
+},true);

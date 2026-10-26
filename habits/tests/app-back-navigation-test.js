@@ -28,6 +28,9 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.evaluate(()=>openDetail(0));
     await page.locator('#detail-name').click();
     await page.locator('#detail-habit-message').fill('Unsaved name');
+    await back();
+    assert.ok(await page.locator('#detail-sheet.open').count(),'Back cancels editing inside detail');
+    assert.equal(await page.locator('#detail-habit-message').inputValue(),'Walk');
     await back();await closed('detail-sheet');
     assert.equal(await page.evaluate(()=>load()[0].name),'Walk');
     await page.evaluate(()=>openDetail(0));
@@ -40,6 +43,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await back();
     assert.equal(await page.locator('#time-step-picker').evaluate(el=>el.classList.contains('open')),false);
     assert.ok(await page.locator('#detail-sheet.open').count(),'time picker dismissal leaves details open');
+    await back();
+    assert.ok(await page.locator('#detail-sheet.open').count(),'Back cancels the time picker edit before leaving detail');
     await back();
 
     // Settings opened from Add must return to the intact draft.
@@ -187,6 +192,9 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.locator('#detail-name').click();
     await page.locator('#detail-habit-message').fill('Unsaved name');
     await swipeEdge({target:'#detail-sheet .detail-page'});
+    await page.waitForFunction(()=>!getSheetInner('detail-sheet').classList.contains('tune-dirty'));
+    assert.ok(await page.locator('#detail-sheet.open').count(),'edge back cancels editing inside detail');
+    await swipeEdge({target:'#detail-sheet .detail-page'});
     await page.waitForFunction(()=>!$('detail-sheet').classList.contains('open'));
     assert.equal(await page.evaluate(()=>load()[0].name), 'Walk', 'edge back cancels unsaved edits');
 
@@ -201,6 +209,9 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await swipeEdge({target:'#detail-sheet .detail-page'});
     await page.waitForFunction(()=>!$('time-step-picker').classList.contains('open'));
     assert.ok(await page.locator('#detail-sheet.open').count(), 'edge back closes the time picker before the page');
+    await swipeEdge({target:'#detail-sheet .detail-page'});
+    await page.waitForFunction(()=>!getSheetInner('detail-sheet').classList.contains('tune-dirty'));
+    assert.ok(await page.locator('#detail-sheet.open').count(),'edge back cancels the time picker edit before leaving detail');
     await swipeEdge({target:'#detail-sheet .detail-page'});
     await page.waitForFunction(()=>!$('detail-sheet').classList.contains('open'));
     await edgeSettled();

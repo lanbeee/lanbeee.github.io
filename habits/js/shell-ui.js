@@ -161,8 +161,14 @@ function snoozeUndoLabel(until,label){
   return `Hidden ${days}d`;
 }
 
-function closeSnoozeSheet(closeDetailAfter){
-  if(closeDetailAfter && snoozeFromDetail)closeDetail();
+function closeSnoozeSheet(){
+  if(snoozeFromDetail && detailIdx !== null){
+    const h = load()[detailIdx];
+    if(h){
+      syncDetailSnoozeAction(h);
+      $('detail-head-card').classList.toggle('snoozed',Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil));
+    }
+  }
   snoozeIdx = null;
   snoozeFromDetail = false;
   closeSheet('snooze-sheet');
@@ -433,8 +439,9 @@ function updateKeyboardLift(){
   const addOpen = $('add-sheet').classList.contains('open');
   const assistantOpen = $('assistant-sheet')?.classList.contains('open');
   const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
+  const settingsOpen = $('settings-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
-  const needsLift = (addOpen || ((!paneTierActive() || detailMounted)
+  const needsLift = (addOpen || settingsOpen || ((!paneTierActive() || detailMounted)
     && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
@@ -502,19 +509,19 @@ function keepFocusedInputVisible(){
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
   if(!active || active.matches('#habit-search,#detail-search-input,#settings-search-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack');
   if(!host)return;
   // Minimal detail sections share the pager's scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
   if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-pager');
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content'))return;
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
   const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
     && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01
     ? {offsetTop:0,height:document.documentElement.clientHeight} : window.visualViewport;
   const top = Math.max(bounds.top,viewport?.offsetTop || 0) + 8;
-  const footer = active.closest('.detail-sheet,.add-sheet')?.querySelector('.detail-bottom-bar,.add-actions');
+  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet')?.querySelector('.sheet-search-dock,.add-actions');
   const footerTop = footer?.getClientRects().length ? footer.getBoundingClientRect().top : Infinity;
   const bottom = Math.min(bounds.bottom,footerTop,(viewport?.offsetTop || 0) + (viewport?.height || innerHeight)) - 8;
   if(rect.top >= top && rect.bottom <= bottom)return;
@@ -622,11 +629,9 @@ function appBackPlan(){
         return plan('detail-menu', ()=>{setDetailMarkMenuOpen(false); return true;});
       }
       if($('detail-search-panel') && !$('detail-search-panel').hidden)return plan('detail-search', click($('detail-cool')));
-      return plan('detail:' + $(id)?.dataset.backSequence, ()=>{
-        const sheet = getSheetInner('detail-sheet');
-        const closing = (sheet?.classList.contains('detail-editing') || sheet?.classList.contains('tune-dirty')) ? 'detail-close' : 'detail-cool';
-        return click($(closing))();
-      }, edgeBackSurface(id));
+      if(!$('detail-delete-confirm').hidden)return plan('detail-delete', click($('detail-delete-no')));
+      if(detailEditActive())return plan('detail-edit', ()=>{restoreDetailTune();return true;});
+      return plan('detail:' + $(id)?.dataset.backSequence, ()=>{dismissDetail();return true;}, edgeBackSurface(id));
     }
     if(id === 'day-logs-sheet' && visible($('day-logs-back')))return plan('day-logs-step', click($('day-logs-back')));
     if(id === 'settings-sheet'){
@@ -714,7 +719,7 @@ function registerBrowserPage(id,reopen){
       if(fromAdd)openAddSettings(section);
       else{
         addSettingsReturn = false;
-        $('settings-close').textContent = 'done';
+        $('settings-close').setAttribute('aria-label','close settings');
         syncSettingsControls();
         openSheet(id);
       }
@@ -1428,14 +1433,9 @@ function refreshOpenViews(){
   render();
   const detailOpen = $('detail-sheet').classList.contains('open') || (paneTierActive() && getPane()?.dataset.activeSheet === 'detail-sheet');
   if(detailIdx !== null && (detailOpen || paneTierActive())){
-    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-    const scrollLeft = pager?.scrollLeft ?? 0;
-    openDetail(detailIdx);
-    if(pager){
-      requestAnimationFrame(()=>{
-        pager.scrollLeft = scrollLeft;
-      });
-    }
+    // Nested settings and immediate actions must not overwrite a detail draft.
+    if(!detailEditActive())refreshDetailView();
+    else syncDetailSnoozeAction(load()[detailIdx]);
   }
   if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
@@ -2064,7 +2064,13 @@ document.addEventListener('click',e=>{
 // details sit above the overview; dismissing one should reveal the calendar,
 // not close the entire stack in a single keypress.
 document.addEventListener('keydown',e=>{
-  if (e.key !== 'Escape') return;
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  const plan = appBackPlan();
+  if(plan?.signature.startsWith('detail')){
+    e.preventDefault();
+    plan.run();
+    return;
+  }
   const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
