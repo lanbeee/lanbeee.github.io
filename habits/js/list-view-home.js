@@ -1576,9 +1576,9 @@ function appointmentStatusPill(row){
   return text ? `<span class="context-pill" title="${escapeHtml(text)}"><i class="ti ti-alert-triangle" aria-hidden="true"></i>${escapeHtml(text)}</span>` : '';
 }
 
-function agendaCardPill(row,h = null,now = Date.now()){
+function agendaCardPill(row,h = null,now = Date.now(),modeOverride = null){
   if(!row)return '';
-  const mode = normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards);
+  const mode = modeOverride || normalizeAgendaTimeMode(sortSettings && sortSettings.showAgendaTimesOnCards);
   if(mode === 'hide')return '';
   const status = agendaLeadStatus(row,h,now);
   const label = agendaCardTimeLabel(row,now);

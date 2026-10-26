@@ -133,8 +133,11 @@ function toggleAppSettingButton(btn){
   // A full render() would still be cheap once the planner key ignores minimalMode,
   // but presentation-only avoids even entering the async planner coordinator.
   const cardDetail = CARD_DETAIL_KEYS.includes(key);
+  const cardFace = cardDetail || key === 'showTrailOnCards'
+    || key === 'minimalShowTrailOnCards' || key === 'minimalShowAgendaTimeOnCards'
+    || key === 'minimalShowCueOnCards';
   if(cardDetail)patch.cardDetailLevel = 'custom';
-  if(cardDetail){
+  if(cardFace){
     updateSortSetting(patch,{renderNow:false});
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     else render();

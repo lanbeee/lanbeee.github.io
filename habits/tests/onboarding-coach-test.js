@@ -155,8 +155,6 @@ async function phoneQuickStart(browser,width,height,task,minimal = false){
   await page.locator('#open-overview').click();
   await primary(page,'eOverview','eAbout');
   await page.locator('#open-about').click();
-  await stage(page,'eAboutMenu');
-  await page.locator('#open-settings').click();
   await stage(page,'eMinimal');
   await page.locator('[data-coach-primary]').click();
   assert(await page.evaluate(minimal=>isMinimalMode() === minimal && load().length === 1,minimal),`${width}×${height} ${task ? 'task' : 'habit'} path finishes with one item and preserves mode=${minimal}`);
@@ -377,7 +375,7 @@ async function nativeKeyboardQuickStart(browser){
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
   const essentialsBar = await progressBar(page);
-  assert(essentialsBar.now === 1 && essentialsBar.max === 15,'staying in the tab chains into the full essentials tour');
+  assert(essentialsBar.now === 1 && essentialsBar.max === 14,'staying in the tab chains into the full essentials tour');
 
   await primary(page,'eIntro','eAdd');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','required action steps lock interaction to the highlighted target');
@@ -447,10 +445,6 @@ async function nativeKeyboardQuickStart(browser){
   await stage(page,'eOverview');
   await primary(page,'eOverview','eAbout');
   await tapInPage(page,'#open-about');
-  await stage(page,'eAboutMenu');
-  assert(await page.locator('#about-sheet.open').count() === 1,'About opens so Quick start can show settings');
-  assert((await page.locator('#start-essentials-coach').textContent()).trim() === 'quick start','Help uses the Quick start name');
-  await page.locator('#open-settings').click();
   await stage(page,'eMinimal');
   assert(await page.locator('#settings-sheet.open').count() === 1,'Quick start opens the real Settings page');
   assert(/overwhelmed.*Minimal mode.*Tings → Settings → Display/.test(await page.locator('#tings-coach-copy').textContent()),'Quick start explains Minimal mode and how to find it again');
@@ -459,8 +453,8 @@ async function nativeKeyboardQuickStart(browser){
   await minimalToggle.click();
   assert(await page.evaluate(()=>isMinimalMode()),'Minimal mode is optional and can be enabled during Quick start');
   await page.locator('[data-coach-back]').click();
-  await stage(page,'eAboutMenu');
-  await page.locator('#open-settings').click();
+  await stage(page,'eAbout');
+  await page.locator('#open-about').click();
   await stage(page,'eMinimal');
   await page.locator('[data-coach-primary]').click();
   assert(await page.locator('#tings-coach').count() === 0,'finishing Quick start removes the coach');
@@ -653,7 +647,10 @@ async function nativeKeyboardQuickStart(browser){
   assert(await page.locator('#settings-sheet.open').count() === 0,'advanced coach closes its final settings sheet');
 
   await page.locator('#open-about').click();
-  assert(await page.locator('#start-essentials-coach').count() === 1 && await page.locator('#start-advanced-coach').count() === 1,'About exposes both coaches for replay');
+  await page.locator('#settings-open-about').click();
+  await page.waitForSelector('#about-sheet.open');
+  assert(await page.locator('#start-essentials-coach').isVisible() && await page.locator('#start-advanced-coach').isVisible(),'About exposes both coaches for replay');
+  assert((await page.locator('#start-essentials-coach').textContent()).trim() === 'quick start','Help uses the Quick start name');
   await page.evaluate(()=>window.startTingsCoach('essentials',{force:true}));
   await stage(page,'eIntro');
   await page.locator('[data-coach-skip]').click();
@@ -664,6 +661,8 @@ async function nativeKeyboardQuickStart(browser){
 
   // Install guide from About: iconified steps, then the quick-start handover.
   await page.locator('#open-about').click();
+  await page.locator('#settings-open-about').click();
+  await page.waitForSelector('#about-sheet.open');
   assert(await page.locator('#open-install-guide').isVisible(),'browser About still offers install app');
   await page.locator('#open-install-guide').click();
   await stage(page,'iSteps');
@@ -701,7 +700,7 @@ async function nativeKeyboardQuickStart(browser){
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
   const replayBar = await progressBar(page);
-  assert(replayBar.now === 1 && replayBar.max === 9,'staying in the tab chains into the quick start replay');
+  assert(replayBar.now === 1 && replayBar.max === 8,'staying in the tab chains into the quick start replay');
   await page.evaluate(()=>window.TingsCoach.stop());
 
   // Live gesture upgrade: Chrome often fires beforeinstallprompt a beat
@@ -742,6 +741,8 @@ async function nativeKeyboardQuickStart(browser){
   await page.evaluate(()=>window.TingsCoach.stop());
   await page.evaluate(data=>{localStorage.setItem('tings_v2',data);},savedStore);
   await page.locator('#open-about').click();
+  await page.locator('#settings-open-about').click();
+  await page.waitForSelector('#about-sheet.open');
   assert(await page.locator('#open-install-guide').isHidden(),'already-installed users do not see install app on About');
   await page.evaluate(()=>closeSheet('about-sheet'));
 
@@ -893,7 +894,7 @@ async function nativeKeyboardQuickStart(browser){
   await desk.evaluate(()=>window.startTingsCoach('essentials',{force:true}));
   await stage(desk,'eIntro');
   const deskReplayBar = await progressBar(desk);
-  assert(deskReplayBar.max === 8,'desktop quick start replay drops the calendar-open step from its count');
+  assert(deskReplayBar.max === 7,'desktop quick start replay drops the calendar-open step from its count');
   await primary(desk,'eIntro','eAddInfo');
   await primary(desk,'eAddInfo','eHomeCard');
   await primary(desk,'eHomeCard','eHomeGroups');

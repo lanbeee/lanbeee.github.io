@@ -89,8 +89,6 @@ function assert(cond, msg){
     ]));
   });
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
   const [download] = await Promise.all([
     page.waitForEvent('download'),

@@ -94,8 +94,6 @@ async function runSearch(page){
 
   console.log('\n[A] picker opens on the home city when GPS is off');
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
   await page.locator('#settings-locations-head').click();
   await page.waitForSelector('#settings-locations-body:not([hidden])');

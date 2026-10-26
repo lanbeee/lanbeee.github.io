@@ -383,6 +383,8 @@ function saveSortSettings(settings){
   next.showAgendaTimesOnCards = normalizeAgendaTimeMode(next.showAgendaTimesOnCards);
   next.showTrailOnCards = next.showTrailOnCards !== false;
   next.minimalShowTrailOnCards = Boolean(next.minimalShowTrailOnCards);
+  next.minimalShowAgendaTimeOnCards = Boolean(next.minimalShowAgendaTimeOnCards);
+  next.minimalShowCueOnCards = next.minimalShowCueOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);
   next.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(next.colorPalette) ? next.colorPalette : 'default';
   next.soundEffects = next.soundEffects !== false;

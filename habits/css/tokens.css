@@ -178,8 +178,10 @@ body.minimal-mode .minimal-mode-note{
 body.minimal-mode .minimal-mode-note span{text-decoration:underline;text-underline-offset:2px;}
 body.minimal-mode .minimal-mode-note:focus-visible{outline:2px solid var(--text2);outline-offset:2px;border-radius:4px;}
 body.minimal-mode #detail-schedule-view-hint { display:none; }
-/* Settings minimal mode already decides — showing them would be a dead switch. */
+/* Settings minimal mode already decides — showing them would be a dead switch.
+   A section opened on purpose (set city, for example) stays visible. */
 body.minimal-mode .settings-full-only { display:none !important; }
+body.minimal-mode .settings-full-only.settings-revealed { display:block !important; }
 /* Mirror image: rows that only exist for minimal mode (opt-in card extras). */
 body:not(.minimal-mode) .settings-minimal-only { display:none !important; }
 body.minimal-mode #overview-list:empty { display:none; }

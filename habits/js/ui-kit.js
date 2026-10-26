@@ -165,7 +165,7 @@ const UI_SETTING_TOGGLES = {
   ],
   reminders:[
     {key:'reminders', title:'remind me about commitments', hint:'Dated tasks and fixed appointments.'},
-    {key:'pushDetailed', title:'include details in notifications', hint:'Item names, topics, and places in system alerts.'}
+    {key:'pushDetailed', title:'include details in notifications', hint:'Item names, topics, and places in system alerts.', extraClass:'settings-full-only'}
   ],
   weather:[
     {key:'showWeatherTemperatureRanges', title:'day temperature ranges', hint:'Feels-like low and high on Home and Calendar.', extraClass:'settings-full-only'},
@@ -195,15 +195,19 @@ const UI_SETTING_TOGGLES = {
   ],
   cardsAfterTime:[
     {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-full-only'},
-    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-minimal-only'},
     {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}
+  ],
+  appearanceCards:[
+    {key:'minimalShowAgendaTimeOnCards', title:'show the time', hint:'The scheduled time on each item.'},
+    {key:'minimalShowCueOnCards', title:'show status line', hint:'Due today, on track, and the like.', pressed:true},
+    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.'}
   ],
   defaults:[
     {key:'defaultBreakable', title:'allow splitting', hint:'New habits can be split across sessions.'}
   ],
   appearance:[
-    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log or plan.'},
-    {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.'}
+    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log or plan.', extraClass:'settings-full-only'},
+    {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.', extraClass:'settings-full-only'}
   ],
   prayer:[
     {key:'prayerIslamicNames', title:'use Islamic prayer names', hint:'Show prayer names and calculation settings.'}

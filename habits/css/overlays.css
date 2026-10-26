@@ -388,8 +388,11 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 .about-sheet .about-hub .about-hub-foot{
   padding:8px;background:var(--bg);border:0.5px solid var(--border);border-radius:18px;
 }
-.about-sheet .about-hub-group .about-actions:has(#open-install-guide[hidden]){
+.about-sheet .about-hub-group:has(#open-sample-habits) .about-actions{
   grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.about-sheet .about-hub-group .about-actions:has(#open-install-guide[hidden]){
+  grid-template-columns:minmax(0,1fr);
 }
 .about-sheet .about-actions .btn{min-width:0;min-height:44px;padding:7px 5px;display:flex;align-items:center;justify-content:center;gap:4px;font-size:10.5px;white-space:nowrap;}
 .about-sheet .about-actions .btn i{font-size:14px;}

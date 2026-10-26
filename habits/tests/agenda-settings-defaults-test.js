@@ -96,7 +96,7 @@ const assert = require('node:assert/strict');
     assert(checks.calls === 0 && checks.stable,JSON.stringify(checks));
     assert(checks.restrained && checks.customShown && checks.customEdited && checks.detailedExtras
       && checks.customRestored && checks.sampleAlwaysShown,JSON.stringify(checks));
-    assert.equal(checks.cardToggles,20); // activity dots have separate full/minimal controls
+    assert.equal(checks.cardToggles,19); // minimal card controls live under appearance
     await page.reload({waitUntil:'networkidle'});
     assert(await page.evaluate(()=>sortSettings.cardDetailLevel === 'custom'
       && sortSettings.showDayScheduleOnCards && !sortSettings.showEarlyOnCards

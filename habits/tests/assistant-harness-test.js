@@ -637,8 +637,6 @@ async function launchBrowser(){
   assert(gateway.noListReply === 'ok', 'a pinned provider and model still chat when model listing is missing');
 
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
   await page.locator('#settings-assistant-head').click();
   const expanded = await page.locator('#settings-assistant-head').getAttribute('aria-expanded');

@@ -217,10 +217,15 @@ function applyAddDefaults(){
   if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
 }
 
-function openMinimalModeSettings(){
+function openSettingsSheet(){
+  if(typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
   resetSettingsSheetState();
   syncSettingsControls();
   openSheet('settings-sheet');
+}
+
+function openMinimalModeSettings(){
+  openSettingsSheet();
   const toggle = document.querySelector('[data-setting-toggle="minimalMode"]');
   requestAnimationFrame(()=>{
     toggle?.scrollIntoView({block:'center',inline:'nearest'});
@@ -278,6 +283,8 @@ function closeSettingsSheet(){
 // an open section (blocked time, topics, defaults, …) would collapse that
 // section out from under the user mid-edit.
 function resetSettingsSheetState(){
+  if(typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
+  document.querySelectorAll('#settings-sheet .settings-revealed').forEach(el=>el.classList.remove('settings-revealed'));
   document.querySelectorAll('#settings-sheet [data-settings-help-target]').forEach(button=>{
     const body = $(button.dataset.settingsHelpTarget);
     if(body)body.hidden = true;

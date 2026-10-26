@@ -219,6 +219,8 @@
  * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
  * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
  * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)
+ * @property {boolean} minimalShowAgendaTimeOnCards            — minimal mode: opt-in scheduled time on home cards (default off)
+ * @property {boolean} minimalShowCueOnCards                   — minimal mode: one-line status on home cards (default on)
  * @property {boolean} showCueOnCards                          — show one-line status on home cards
  * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
  * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview (default off, opt-in)

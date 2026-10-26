@@ -55,7 +55,7 @@
 <div class="app">
 
   <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
-        <button class="app-bar-logo" id="bar-open-about" aria-label="about Tings">
+        <button class="app-bar-logo" id="bar-open-about" aria-label="settings">
       <img data-header-brand src="./icons/tings-app-icon.svg" alt="" aria-hidden="true" />
       <span class="app-bar-title">Tings</span>
     </button>
@@ -83,7 +83,7 @@
 
     <div class="pane-list">
       <div class="topbar">
-        <button class="wordmark" id="open-about" aria-label="about Tings">
+        <button class="wordmark" id="open-about" aria-label="settings">
       <img data-header-brand src="./icons/tings-app-icon.svg" alt="" aria-hidden="true" />
       <span class="wordmark-copy">
         <span>Tings</span>
@@ -99,7 +99,7 @@
       <div id="reminder-banner" class="reminder-banner" hidden></div>
       <div id="list"><div class="home-loading" role="status" aria-label="loading agenda"><span></span><span></span><span></span></div></div>
       <div id="home-week-plan" class="home-week-plan" hidden></div>
-      <p id="empty" style="display:none">habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span></p>
+      <p id="empty" style="display:none">habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for settings, + to add, or tap here to try samples.</span></p>
     </div>
 
   <div class="pane-overview" id="pane-overview"></div>
@@ -840,7 +840,6 @@
           <div class="btn-row about-actions">
             <button class="btn" id="open-install-guide" type="button"><i class="ti ti-download" aria-hidden="true"></i> install app</button>
             <button class="btn" id="open-sample-habits"><i class="ti ti-sparkles" aria-hidden="true"></i> samples</button>
-            <button class="btn" id="open-settings"><i class="ti ti-settings" aria-hidden="true"></i> settings</button>
           </div>
         </section>
         <div class="btn-row about-actions about-hub-foot">
@@ -924,13 +923,16 @@
   <!-- settings sheet -->
   <div class="sheet-wrap" id="settings-sheet">
     <div class="sheet settings-sheet">
-      <p class="sheet-title">settings</p>
+      <div class="settings-page-head">
+        <p class="sheet-title">settings</p>
+        <button type="button" class="icon-btn" id="settings-open-about" aria-label="help, samples, and privacy"><i class="ti ti-help" aria-hidden="true"></i></button>
+      </div>
       <div class="settings-stack">
         <section class="settings-block">
           <span class="settings-label">display</span>
           <div class="settings-grid" data-ui-toggles="display"></div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-weather-head" data-collapse-target="settings-weather-body" aria-expanded="false" aria-controls="settings-weather-body">
               <span class="settings-label">weather guidance</span>
@@ -1007,7 +1009,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-cleanup-head" data-collapse-target="settings-cleanup-body" aria-expanded="false" aria-controls="settings-cleanup-body">
             <span class="settings-label">cleanup</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1034,8 +1036,8 @@
             <p class="field-hint sample-count" id="retention-cleanup-status"></p>
           </div>
         </section>
-        <div class="settings-group-head">schedule &amp; places</div>
-        <section class="settings-block settings-collapsible">
+        <div class="settings-group-head settings-full-only">schedule &amp; places</div>
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
             <span class="settings-label">calendars</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1068,7 +1070,7 @@
             <p class="field-hint sample-count" id="calendar-pdf-status"></p>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-topics-head" data-collapse-target="settings-topics-body" aria-expanded="false" aria-controls="settings-topics-body">
             <span class="settings-label">topics</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1082,7 +1084,7 @@
             <div class="topic-list" id="topic-list"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-locations-head" data-collapse-target="settings-locations-body" aria-expanded="false" aria-controls="settings-locations-body">
               <span class="settings-label">locations</span>
@@ -1127,7 +1129,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-blocked-head" data-collapse-target="settings-blocked-body" aria-expanded="false" aria-controls="settings-blocked-body">
             <span class="settings-label">busy times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1139,7 +1141,7 @@
           </div>
         </section>
         <div class="settings-group-head">look &amp; new items</div>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-cards-head" data-collapse-target="settings-cards-body" aria-expanded="false" aria-controls="settings-cards-body">
             <span class="settings-label">what shows on each item</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1166,7 +1168,7 @@
             <div class="settings-grid" data-ui-toggles="cardsAfterTime"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-defaults-head" data-collapse-target="settings-defaults-body" aria-expanded="false" aria-controls="settings-defaults-body">
             <span class="settings-label">new habit &amp; task defaults</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1252,7 +1254,11 @@
               <button type="button" class="seg-opt" data-seg-value="dark">dark</button>
               <button type="button" class="seg-opt" data-seg-value="system">system</button>
             </div>
-            <button class="setting-toggle setting-switch" type="button" id="settings-replica-chrome" aria-pressed="true">
+            <div class="settings-minimal-only" id="settings-card-appearance">
+              <span class="settings-sublabel">on each card</span>
+              <div class="settings-grid" data-ui-toggles="appearanceCards"></div>
+            </div>
+            <button class="setting-toggle setting-switch settings-full-only" type="button" id="settings-replica-chrome" aria-pressed="true">
               <span>
                 <b>display bar</b>
                 <small>Clock, sync, and lock on this paired screen.</small>
@@ -1261,7 +1267,7 @@
             </button>
           </div>
         </section>
-        <div class="settings-group-head">more</div>
+        <div class="settings-group-head settings-full-only">more</div>
         <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-agenda-head" data-collapse-target="settings-agenda-body" aria-expanded="false" aria-controls="settings-agenda-body">
@@ -1316,7 +1322,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
             <span class="settings-label">relative times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1336,7 +1342,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-advanced-head" data-collapse-target="settings-advanced-body" aria-expanded="false" aria-controls="settings-advanced-body">
             <span class="settings-label">advanced</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1345,7 +1351,7 @@
             <div class="settings-grid" data-ui-toggles="advanced"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-assistant-head" data-collapse-target="settings-assistant-body" aria-expanded="false" aria-controls="settings-assistant-body">
             <span class="settings-label">local assistant</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1431,7 +1437,19 @@
           </div>
         </section>
       </div>
+      <div id="settings-search-panel" class="detail-search-panel" hidden>
+        <p id="settings-search-status" class="field-hint" role="status" aria-live="polite"></p>
+        <div id="settings-search-results" class="detail-search-results" aria-label="matching settings"></div>
+      </div>
       <div class="btn-row settings-actions">
+        <div class="detail-search-control settings-full-only">
+          <button type="button" id="settings-search-toggle" aria-label="search settings" aria-expanded="false" aria-controls="settings-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in settings</span></button>
+          <div class="detail-search-field" hidden>
+            <label class="sr-only" for="settings-search-input">Search settings</label>
+            <input type="search" id="settings-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
+            <button type="button" id="settings-search-clear" aria-label="clear settings search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          </div>
+        </div>
         <button class="btn primary" id="settings-close">done</button>
       </div>
     </div>
@@ -1977,6 +1995,7 @@
 <script src="./js/time-picker.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings-core.js" defer></script>
+<script src="./js/settings-search.js" defer></script>
 <script src="./js/settings-weather.js" defer></script>
 <script src="./js/settings-backup.js" defer></script>
 <script src="./js/settings-blocked.js" defer></script>

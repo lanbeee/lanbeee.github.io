@@ -88,6 +88,7 @@ progressive-render-test.js	planner	default-only
 recent-nav.js	ui	once
 retention-cleanup-test.js	data	once
 sample-habits-sheet-test.js	ui	once
+settings-search-test.js	ui	once
 schedule-links-test.js	planner	once
 sign-toggle-test.js	ui	once
 sleep-block-dynamic-test.js	data	once

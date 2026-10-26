@@ -46,6 +46,8 @@ async function launchBrowser(){
 
   console.log('\n[A] About hub + destinations');
   await page.locator('#open-about').click();
+  await page.waitForSelector('#settings-sheet.open');
+  await page.locator('#settings-open-about').click();
   await page.waitForSelector('#about-sheet.open');
   const aboutBtns = await page.evaluate(() => {
     const labels = [...document.querySelectorAll('#about-sheet .about-hub-label')].map(el => (el.textContent || '').trim());
@@ -54,7 +56,7 @@ async function launchBrowser(){
     const deviceBtns = [...document.querySelectorAll('#about-sheet .about-hub-group:last-of-type .btn')].map(el => (el.textContent || '').replace(/\s+/g,' ').trim());
     return {
       sample: !!document.getElementById('open-sample-habits'),
-      settings: !!document.getElementById('open-settings'),
+      settings: !!document.getElementById('settings-open-about'),
       privacy: !!document.getElementById('open-privacy'),
       feedback: !!document.getElementById('open-feedback'),
       docs: !!document.getElementById('open-docs'),
@@ -70,12 +72,12 @@ async function launchBrowser(){
     };
   });
   console.log(aboutBtns);
-  assert(aboutBtns.sample && aboutBtns.settings && aboutBtns.privacy && aboutBtns.feedback && aboutBtns.done, 'About shows samples, settings, privacy, feedback, done');
+  assert(aboutBtns.sample && aboutBtns.settings && aboutBtns.privacy && aboutBtns.feedback && aboutBtns.done, 'About shows samples, privacy, and feedback, and settings keeps the help shortcut');
   assert(aboutBtns.guided && aboutBtns.advanced && aboutBtns.docs && aboutBtns.install, 'About shows tours, docs, and install');
   assert(aboutBtns.blocks === 0, 'About has no explainer cards; help/docs and privacy cover that');
   assert(aboutBtns.labels.join('|') === 'help|this device', 'About groups destinations as help and this device');
   assert(aboutBtns.helpBtns.join('|') === 'quick start|advanced coach|help & docs', 'Help group is tours plus written docs');
-  assert(aboutBtns.deviceBtns.join('|') === 'install app|samples|settings', 'This-device group is install, samples, settings');
+  assert(aboutBtns.deviceBtns.join('|') === 'install app|samples', 'This-device group is install and samples');
   assert(/private by default/i.test(aboutBtns.copy) && aboutBtns.copy.length < 120, 'Hero stays a short product line');
 
   console.log('\n[B] Sample habits sheet layout');
@@ -242,6 +244,7 @@ async function launchBrowser(){
 
   console.log('\n[E] Sleep busy time requires home city, then replaces default sleep block');
   await page.locator('#open-about').click();
+  await page.locator('#settings-open-about').click();
   await page.locator('#open-sample-habits').click();
   await page.waitForSelector('#sample-habits-sheet.open');
   // Default sleep block is fixed 11pm–5am; sample row is not marked added.
@@ -284,6 +287,7 @@ async function launchBrowser(){
   });
   await page.locator('#settings-close').click();
   await page.locator('#open-about').click();
+  await page.locator('#settings-open-about').click();
   await page.locator('#open-sample-habits').click();
   await page.waitForSelector('#sample-habits-sheet.open');
   await page.locator('#sample-blocks-head').click();
@@ -330,7 +334,12 @@ async function launchBrowser(){
   console.log('\n[F] Prayer add with city set, then add all prayers');
   await page.locator('#sample-habits-close').click();
   await page.waitForTimeout(200);
+  if(await page.locator('#settings-sheet.open').count()){
+    await page.locator('#settings-close').click();
+    await page.waitForFunction(() => !document.getElementById('settings-sheet')?.classList.contains('open'));
+  }
   await page.locator('#open-about').click();
+  await page.locator('#settings-open-about').click();
   await page.locator('#open-sample-habits').click();
   await page.waitForSelector('#sample-habits-sheet.open');
   await page.locator('#sample-prayers-head').click();

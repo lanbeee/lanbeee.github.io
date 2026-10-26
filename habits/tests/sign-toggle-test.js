@@ -201,8 +201,6 @@ function assert(cond, msg){
 
   // Open settings
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
 
   // Open blocked section

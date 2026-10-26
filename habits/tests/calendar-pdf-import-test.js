@@ -190,8 +190,6 @@ Calendar: holidays@example.com
   // ── 4. UI import with synthetic events (no real PDF files) ──
   await page.evaluate(()=>clearCalendarImport('pdf'));
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
   await page.locator('#settings-calendar-head').click();
   await page.waitForSelector('#settings-calendar-body:not([hidden])');

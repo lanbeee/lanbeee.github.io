@@ -61,8 +61,10 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     const namingDraft = await page.evaluate(()=>currentDetailTune());
     await page.evaluate(()=>{
       openHomeCitySettings();
+      const prayer = $('settings-prayer-head');
+      prayer.closest('.settings-full-only')?.classList.add('settings-revealed');
       $('settings-prayer-body').hidden=false;
-      $('settings-prayer-head').setAttribute('aria-expanded','true');
+      prayer.setAttribute('aria-expanded','true');
       refreshSampleHabitsSheet();
     });
     assert.equal(await page.locator('#settings-prayer-head').innerText(),'relative times');

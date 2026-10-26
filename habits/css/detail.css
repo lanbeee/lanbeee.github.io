@@ -352,7 +352,7 @@ body .minimal-detail .detail-full-only{display:none !important;}
 body .detail-sheet.detail-field-editing > .detail-page-nav,
 body .detail-sheet.detail-keyboard-open > .detail-page-nav,
 body .detail-sheet.detail-field-editing > .detail-bottom-bar{display:none;}
-.detail-search-hit{outline:2px solid var(--purple);outline-offset:2px;border-radius:6px;}
+.detail-search-hit{outline:2px solid var(--purple-icon);outline-offset:2px;border-radius:6px;}
 /* The home card's emoji geometry must not override detail's header columns. */
 body .detail-sheet > .detail-head{
   display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:8px;

@@ -65,10 +65,10 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       await page.locator('#open-about').tap();
       assert.deepEqual(await page.evaluate(()=>window.__snapshotOpenPages),[[]],
         'record the outgoing Home screen before revealing the destination');
-      await page.locator('#about-head-close').tap();
+      await page.locator('#settings-close').tap();
       await settled();
       await forward();
-      assert.deepEqual(await stack(),['about-sheet']);
+      assert.deepEqual(await stack(),['settings-sheet']);
       await home();
 
       // History restoration retains scroll position after a real close/open,

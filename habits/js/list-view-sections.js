@@ -1702,7 +1702,7 @@ function render(opts){
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
     }else{
-      empty.innerHTML = 'habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span>';
+      empty.innerHTML = 'habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for settings, + to add, or tap here to try samples.</span>';
       empty.classList.add('is-action');
       empty.onclick = ()=>{
         if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
@@ -1792,7 +1792,11 @@ function render(opts){
     const cue = event && agendaRow ? (agendaRow.start<=Date.now() && agendaRow.end>Date.now()
       ? `until ${new Date(agendaRow.end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
       : scheduledWhenLabel(agendaRow.start)) : cardCue(h);
-    const agendaPill = minimal ? '' : agendaCardPill(agendaRow,h);
+    const agendaPill = minimal
+      ? (sortSettings.minimalShowAgendaTimeOnCards ? agendaCardPill(agendaRow,h,Date.now(),'time') : '')
+      : agendaCardPill(agendaRow,h);
+    const showCue = (minimal ? sortSettings.minimalShowCueOnCards !== false : sortSettings.showCueOnCards !== false)
+      && !(event && agendaPill);
     const weatherPill = weatherCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
     const showOrderPills = sortSettings.showOrderPillsOnCards !== false;
@@ -1916,7 +1920,7 @@ function render(opts){
             </span>
             ${agendaPill}
           </div>
-          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false && !(event && agendaPill) ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
+          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${showCue ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           ${!visualHtml ? '' : `<div class="ting-visual">
             ${visualHtml}

@@ -69,8 +69,6 @@ function assert(cond, msg){
 
   // ── 6. Settings collapsible sections open/close with synced aria-expanded ──
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
   // the reorganized sections are collapsed by default
   const cardsHead = '#settings-cards-head';

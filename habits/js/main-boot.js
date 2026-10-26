@@ -363,7 +363,9 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   renderOverview();
   openSheet('overview-sheet');
 });
-$('bar-open-about')?.addEventListener('click',()=>openSheet('about-sheet'));
+$('bar-open-about')?.addEventListener('click',()=>{
+  if(typeof openSettingsSheet === 'function')openSettingsSheet();
+});
 let _searchRenderTimer = null;
 let _searchRenderedQuery = null;
 // Trailing window for keystroke coalescing. A search render is a filter+rank

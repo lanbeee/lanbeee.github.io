@@ -48,8 +48,7 @@
     // that — both the spotlight stage and the sheet-open stage that follows.
     [new Set(['aMissed','aMissedList']),['slipped-sheet']],
     [new Set(['aOpenTime','aOpenStrip']),['free-time-sheet']],
-    [new Set(['eAbout']),['about-sheet']],
-    [new Set(['eAboutMenu']),['about-sheet','settings-sheet','privacy-sheet','sample-habits-sheet']]
+    [new Set(['eAbout']),['settings-sheet']],
   ]);
   function allowedSheets(){
     for(const [stages,allowed] of SHEET_ALLOWANCES){if(stages.has(stage))return allowed;}
@@ -236,8 +235,8 @@
     const stages = interactive ? [
       'eIntro','eAdd','eName','eKind',addKind() === 'task' ? 'eTask' : 'eRhythm','eSave',
       'eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview',
-      'eAbout','eAboutMenu','eMinimal'
-    ] : ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eAbout','eAboutMenu','eMinimal'];
+      'eAbout','eMinimal'
+    ] : ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eAbout','eMinimal'];
     if(interactive && addUsesConditions())stages.splice(stages.indexOf('eSave'),0,'eConditions');
     return calendarStepApplies() ? stages : stages.filter(item=>item !== 'eCalendar');
   }
@@ -405,23 +404,18 @@
     };
     if(stage === 'eAbout')return {
       progress:p,title:'Find settings here',
-      copy:'Tap the Tings name at the top. Settings, help, samples, and privacy all live there.',
-      target:['#open-about','#bar-open-about'],hint:'Tap Tings',locked:true,later:'Skip',next:'eAboutMenu',
+      copy:'Tap the Tings name. Settings opens right away.',
+      target:['#open-about','#bar-open-about'],hint:'Tap Tings',locked:true,later:'Skip',next:'eMinimal',
       back:'eOverview'
-    };
-    if(stage === 'eAboutMenu')return {
-      progress:p,title:'Open Settings',
-      copy:'Tap Settings here. This page also has Help, samples, and privacy — come back through the Tings name anytime.',
-      target:['#open-settings'],hint:'Tap settings',locked:true,back:'eAbout'
     };
     if(stage === 'eMinimal')return {
       progress:p,title:'Keep it simple if you like',
-      copy:'Feeling overwhelmed? Turn on Minimal mode here to show just the basics. You can switch it off anytime: Tings → Settings → Display.',
-      target:['[data-setting-toggle="minimalMode"]'],action:interactive ? 'Start using Tings' : 'Done',command:'finish',back:'eAboutMenu'
+      copy:'Feeling overwhelmed? Turn on Minimal mode here to show just the basics. You can switch it off anytime: Tings → Settings → Display. The button at the top right has help, samples, and privacy.',
+      target:['[data-setting-toggle="minimalMode"]'],action:interactive ? 'Start using Tings' : 'Done',command:'finish',back:'eAbout'
     };
     return {
       progress:p,title:'You’re ready',
-      copy:'Tap the Tings name anytime for settings, help, samples, and privacy.',
+      copy:'Tap the Tings name anytime for settings. The button at the top right has help, samples, and privacy.',
       target:['#open-about','#bar-open-about'],action:'Done',command:'finish',
       back:'eOverview'
     };
@@ -787,14 +781,6 @@
       if(next !== 'aMissed')closeGuidedSheet('slipped-sheet');
       if(next !== 'aOpenTime')closeGuidedSheet('free-time-sheet');
       closeGuidedSheet('sample-habits-sheet');
-    }
-    if(next === 'eAboutMenu'){
-      closeGuidedSheet('settings-sheet');
-      if(!sheetOpen('about-sheet'))openGuidedAbout();
-      setTimeout(()=>{
-        firstTarget(['#open-settings','.about-actions'])?.scrollIntoView({block:'center',behavior:'auto'});
-        queuePosition();
-      },80);
     }
     if(next === 'eCalendar' || next === 'aCalendar'){
       overviewActivated = false;
@@ -1280,9 +1266,8 @@
       overviewActivated = true;
       setTimeout(()=>setStage(stage === 'eCalendar' ? 'eOverview' : 'aOverview'),80);
     }
-    if(stage === 'eAboutMenu' && event.target.closest('#open-settings'))setTimeout(()=>setStage('eMinimal'),80);
     if(stage === 'eAbout' && event.target.closest('#open-about,#bar-open-about')){
-      setTimeout(()=>setStage('eAboutMenu'),50);
+      setTimeout(()=>setStage('eMinimal'),50);
     }
     if(stage === 'aFullMode' && event.target.closest('[data-setting-toggle="minimalMode"]'))setTimeout(reconcile,120);
     // Advanced locked steps advance the tour when the real control is used.
@@ -1445,15 +1430,15 @@
       return;
     }
     if(SETTINGS_STAGES.has(stage) && stage !== 'aFullMode' && !sheetOpen('settings-sheet')){
-      setStage(stage === 'eMinimal' ? 'eAboutMenu' : 'aIntro');
+      setStage(stage === 'eMinimal' ? 'eAbout' : 'aIntro');
       return;
     }
     if(stage === 'eOverview' && !overviewShown())setStage('eCalendar');
     if((stage === 'aOverview' || stage === 'aOverviewDay' || stage === 'aOverviewTools') && !overviewShown()){
       setStage('aCalendar');
     }
-    if(stage === 'eAboutMenu' && !sheetOpen('about-sheet') && !sheetOpen('settings-sheet')){
-      setStage('eAbout');
+    if(stage === 'eAbout' && sheetOpen('settings-sheet')){
+      setStage('eMinimal');
       return;
     }
     closeUnexpectedSheets();
@@ -1703,6 +1688,7 @@
     active = true;
     closeGuidedSheet('about-sheet');
     closeGuidedSheet('privacy-sheet');
+    closeGuidedSheet('settings-sheet');
     mount();
     render();
     return true;

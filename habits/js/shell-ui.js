@@ -500,7 +500,7 @@ function keepFocusedInputVisible(){
   const active = document.activeElement;
   // These fields live in a dock which already follows the keyboard. Scrolling
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
-  if(!active || active.matches('#habit-search,#detail-search-input'))return;
+  if(!active || active.matches('#habit-search,#detail-search-input,#settings-search-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
   let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet');
   if(!host)return;
@@ -630,6 +630,7 @@ function appBackPlan(){
     }
     if(id === 'day-logs-sheet' && visible($('day-logs-back')))return plan('day-logs-step', click($('day-logs-back')));
     if(id === 'settings-sheet'){
+      if($('settings-search-panel') && !$('settings-search-panel').hidden)return plan('settings-search', ()=>{setSettingsSearchOpen(false); return true;});
       if(visible($('backup-import-no')))return plan('settings-import', click($('backup-import-no')));
       if(visible($('calendar-pdf-cancel')))return plan('settings-pdf', click($('calendar-pdf-cancel')));
     }

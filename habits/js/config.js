@@ -255,11 +255,12 @@ const DEFAULT_SORT_SETTINGS = {
   showAgendaTimesOnCards:'time',
   // Two-week dot history under each item.
   showTrailOnCards:true,
-  // Minimal mode keeps the card quiet: dots stay off until switched on for
-  // minimal specifically (Settings → show activity dots while minimal is on).
+  // Minimal mode keeps the card quiet: dots and the scheduled time stay off
+  // until switched on under Appearance → on each card. The status line stays on.
   minimalShowTrailOnCards:false,
-  // One-line status ("due today", "on track", ...) — also part of minimal
-  // mode's core card, so it stays on.
+  minimalShowAgendaTimeOnCards:false,
+  minimalShowCueOnCards:true,
+  // One-line status ("due today", "on track", ...) on the full card.
   showCueOnCards:true,
   // Before/after, doing-now, and linked marks between items.
   showOrderPillsOnCards:false,

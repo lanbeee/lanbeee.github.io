@@ -14,8 +14,6 @@ function assert(cond, msg){
 
 async function openSettings(page){
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
 }
 

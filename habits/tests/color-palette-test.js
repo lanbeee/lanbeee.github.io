@@ -13,7 +13,7 @@ const {chromium} = require('playwright');
     await page.waitForFunction(()=>document.documentElement.dataset.palette);
     assert.equal(await page.getAttribute('html','data-palette'),'default');
     await page.locator('#open-about').click();
-    await page.locator('#open-settings').click();
+    await page.waitForSelector('#settings-sheet.open');
     await page.locator('#settings-appearance-head').click();
     const colors=new Set();
     for(const palette of ['default','neutral','sage','sky','lavender','sand']){

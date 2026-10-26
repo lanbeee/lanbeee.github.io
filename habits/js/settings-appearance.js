@@ -50,6 +50,7 @@ function applyAppearanceSettings(){
   const s = sortSettings || {};
   document.body.classList.toggle('compact-mode', !!s.compactMode);
   document.body.classList.toggle('minimal-mode', !!s.minimalMode);
+  if(s.minimalMode && typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
   document.documentElement.dataset.fontScale = s.fontScale || 'medium';
   const mode = s.themeMode || 'system';
   const root = document.documentElement;

@@ -44,6 +44,8 @@ async function launchBrowser(){
 
   console.log('\n[A] About opens privacy');
   await page.locator('#open-about').click();
+  await page.waitForSelector('#settings-sheet.open');
+  await page.locator('#settings-open-about').click();
   await page.waitForSelector('#about-sheet.open');
   assert(await page.locator('#open-privacy').count() === 1, 'About has a privacy button');
   const feedback = await page.evaluate(() => {
@@ -179,9 +181,11 @@ async function launchBrowser(){
   assert(/home city/i.test(marks.geocodeTip) && /This map/i.test(marks.geocodeTip), 'Geocode tooltip names the home-city focus and This map');
   assert(/moving the map/i.test(marks.geocodeTip) && /coarse point/i.test(marks.geocodeTip), 'Geocode tooltip says a moved map sends a coarse point');
 
+  if(await page.locator('#settings-sheet.open').count()){
+    await page.locator('#settings-close').click();
+    await page.waitForFunction(() => !document.getElementById('settings-sheet')?.classList.contains('open'));
+  }
   await page.locator('#open-about').click();
-  await page.waitForSelector('#about-sheet.open');
-  await page.locator('#open-settings').click();
   await page.waitForSelector('#settings-sheet.open');
   const weatherCopy = await page.evaluate(() => {
     const text = (document.querySelector('.weather-attribution')?.textContent || '').replace(/\s+/g, ' ');

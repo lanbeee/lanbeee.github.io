@@ -80,6 +80,9 @@ const resetAboutSheetState = bindCollapseAccordion('#about-sheet', true);
 const resetPrivacySheetState = bindCollapseAccordion('#privacy-sheet', true);
 
 $('open-about').addEventListener('click',()=>{
+  if(typeof openSettingsSheet === 'function')openSettingsSheet();
+});
+$('settings-open-about')?.addEventListener('click',()=>{
   resetAboutSheetState();
   openSheet('about-sheet');
 });
@@ -231,10 +234,12 @@ function startTingsCoach(kind = 'essentials',options = {}){
 window.startTingsCoach = startTingsCoach;
 $('start-essentials-coach')?.addEventListener('click',()=>{
   closeSheet('about-sheet');
+  closeSheet('settings-sheet');
   void startTingsCoach('essentials',{force:true});
 });
 $('start-advanced-coach')?.addEventListener('click',()=>{
   closeSheet('about-sheet');
+  closeSheet('settings-sheet');
   void startTingsCoach('advanced',{force:true});
 });
 $('open-install-guide')?.addEventListener('click',()=>{
@@ -244,6 +249,7 @@ $('open-install-guide')?.addEventListener('click',()=>{
     return;
   }
   closeSheet('about-sheet');
+  closeSheet('settings-sheet');
   void startTingsCoach('install',{force:true});
 });
 $('open-sample-habits')?.addEventListener('click',()=>{
@@ -293,13 +299,6 @@ $('sample-blocks-preview')?.addEventListener('click',e=>{
   if(typeof addBlockSample === 'function')addBlockSample();
 });
 addScrollGuard(document.querySelector('.sample-habits-sheet'),'y');
-$('open-settings').addEventListener('click',()=>{
-  closeSheet('about-sheet');
-  closeSheet('sample-habits-sheet');
-  resetSettingsSheetState();
-  syncSettingsControls();
-  openSheet('settings-sheet');
-});
 $('settings-close').addEventListener('click',closeSettingsSheet);
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSettingsSheet();});
 document.addEventListener('click',e=>{
@@ -1000,7 +999,7 @@ $('home-filter-sheet')?.addEventListener('click',e=>{
 document.querySelectorAll('[data-filter-settings]').forEach(button=>{
   button.addEventListener('click',()=>{
     closeSheet(button.closest('.sheet-wrap').id);
-    $('open-settings').click();
+    if(typeof openSettingsSheet === 'function')openSettingsSheet();
   });
 });
 $('presence-picker-chips')?.addEventListener('click',async e=>{
