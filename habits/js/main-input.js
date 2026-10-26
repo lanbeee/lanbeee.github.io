@@ -302,7 +302,7 @@ $('open-settings').addEventListener('click',()=>{
 });
 $('settings-close').addEventListener('click',closeSettingsSheet);
 $('settings-sheet').addEventListener('click',e=>{if(e.target === e.currentTarget)closeSettingsSheet();});
-$('settings-sheet').addEventListener('click',e=>{
+document.addEventListener('click',e=>{
   const button = e.target.closest('[data-settings-help-target]');
   if(!button)return;
   const body = $(button.dataset.settingsHelpTarget);
@@ -310,16 +310,18 @@ $('settings-sheet').addEventListener('click',e=>{
   body.hidden = !body.hidden;
   button.setAttribute('aria-expanded',String(!body.hidden));
 });
-$('settings-sheet').addEventListener('keydown',e=>{
+document.addEventListener('keydown',e=>{
   if(e.key !== 'Escape')return;
   const help = e.target.closest('.settings-help, .settings-toggle-row');
   const button = help?.querySelector('[data-settings-help-target][aria-expanded="true"]');
   if(!button)return;
-  $(button.dataset.settingsHelpTarget).hidden = true;
+  const body=$(button.dataset.settingsHelpTarget);
+  if(!body)return;
+  body.hidden = true;
   button.setAttribute('aria-expanded','false');
   button.focus();
-  e.stopPropagation();
-});
+  e.preventDefault();e.stopImmediatePropagation();
+},true);
 $('settings-close').addEventListener('pointerdown',()=>suppressBottomNav(),{passive:true});
 $('default-type-seg').addEventListener('click',e=>{
   const opt = e.target.closest('[data-default-type]');

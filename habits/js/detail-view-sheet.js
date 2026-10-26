@@ -177,8 +177,9 @@ function openDetail(i){
     renderDetailSearch();
   }
   applyDetailMinimalMode();
-  syncDeviceCalendarDetail(h);
   renderLocalAppointmentDetail(h);
+  syncDeviceCalendarDetail(h);
+  renderEventDetailUi(h);
   openSheet('detail-sheet');
   if(changedHabit){
     const inner = getSheetInner('detail-sheet');
@@ -195,6 +196,7 @@ function openDetail(i){
       requestAnimationFrame(()=>{
         if(hasOrder)scrollDetailToNav('actions','auto');
         else if(minimal)pager.scrollTo({top:0,behavior:'auto'});
+        else if(isDeviceCalendarTask(h))scrollDetailToNav('identity','auto');
         else if(h.type === 'task' || isLocalAppointment(h))scrollDetailToNav('schedule','auto');
         else{
           pager.scrollTo({left:0,behavior:'auto'});

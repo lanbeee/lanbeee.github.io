@@ -130,10 +130,10 @@
       </div>
       <div class="seg add-kind-seg" id="type-seg" role="group" aria-label="What would you like to add?" aria-describedby="add-type-help">
         <button type="button" class="seg-opt on" data-v="keepup" aria-pressed="true"><span>habit</span><small>something you repeat</small></button>
-        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task</span><small>something you do once</small></button>
+        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task</span><small>a to-do to finish</small></button>
+        <button type="button" class="seg-opt" id="add-appointment-shortcut" data-v="event" aria-pressed="false"><span>event</span><small>at a set time</small></button>
       </div>
-      <p class="field-hint" id="add-type-help" hidden>A habit repeats. A task is a one-off to-do.</p>
-      <button type="button" class="mini-text-btn" id="add-appointment-shortcut" aria-pressed="false">meeting or class · fixed time</button>
+      <p class="field-hint" id="add-type-help" hidden>Keep up a habit, finish a task, or reserve time for an event.</p>
       <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
         <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
@@ -409,7 +409,7 @@
               </div>
               <div class="detail-task-field">
                 <label class="plan-date-label" for="detail-due-time">Start time <span class="field-optional">(optional)</span></label>
-                <input type="time" id="detail-due-time" class="plan-time-input" step="300" aria-describedby="detail-due-hint" title="add a time to make this a fixed appointment" />
+                <input type="time" id="detail-due-time" class="plan-time-input" step="300" aria-describedby="detail-due-hint" title="keeps this task at that time" />
               </div>
             </div>
           </div>
@@ -745,7 +745,7 @@
               <span><b>remove</b><small>Undo appears after</small></span>
             </button>
             <div class="reset-confirm" id="detail-delete-confirm" hidden>
-              <p>Remove this habit?</p>
+              <p id="detail-delete-question">Remove this habit?</p>
               <div class="btn-row">
                 <button class="btn primary" id="detail-delete-yes" type="button">remove</button>
                 <button class="btn" id="detail-delete-no" type="button">keep</button>
@@ -985,7 +985,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-reminders-body" hidden>
-            <p class="field-hint">Heads-ups for dated tasks and fixed appointments.</p>
+            <p class="field-hint">Heads-ups for dated tasks and events.</p>
             <div class="settings-grid" data-ui-toggles="reminders"></div>
             <div data-settings-help-title="notification delivery &amp; privacy" data-settings-help-id="settings-notifications-help"><p class="field-hint">The in-app banner works without notification permission. System alerts are best effort and may use the encrypted push relay when available. Detailed text is optional; leave it off to keep system alerts generic.</p></div>
           </div>
@@ -1037,15 +1037,15 @@
         <div class="settings-group-head">schedule &amp; places</div>
         <section class="settings-block settings-collapsible">
           <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
-            <span class="settings-label">calendar import</span>
+            <span class="settings-label">calendars</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
             <div id="calendar-device-controls" hidden></div>
-            <p class="field-hint">Import a PDF to reserve time for meetings.</p>
+            <p class="field-hint">Add meetings from a calendar PDF.</p>
             <div class="btn-row calendar-pdf-pick-row">
               <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose PDF</label>
-              <button class="btn" id="calendar-pdf-clear" type="button">clear imported</button>
+              <button class="btn" id="calendar-pdf-clear" type="button">remove PDF meetings</button>
             </div>
             <!-- Not [hidden]: iOS Safari ignores programmatic .click() on display:none / hidden file inputs. -->
             <input type="file" id="calendar-pdf-input" class="file-input-native" accept="application/pdf,.pdf" />
@@ -1053,11 +1053,11 @@
             <select id="calendar-credit-habit" class="settings-select">
               <option value="">none</option>
             </select>
-            <p class="field-hint" id="calendar-credit-hint">Meeting minutes count toward this habit’s daily time.</p>
+            <p class="field-hint" id="calendar-credit-hint">Phone and PDF meetings count. Events you add in Tings do not.</p>
             <label class="settings-sublabel" for="calendar-allday-mode">all-day events</label>
             <select id="calendar-allday-mode" class="settings-select">
-              <option value="skip">skip them</option>
-              <option value="tasks">add as tasks with a date</option>
+              <option value="skip">skip</option>
+              <option value="tasks">show as a task on that day</option>
             </select>
             <p class="field-hint">All-day tasks don’t count toward meeting time.</p>
             <div id="calendar-pdf-preview" class="calendar-pdf-preview" hidden></div>
@@ -1183,7 +1183,7 @@
             <span class="settings-sublabel">defaults for</span>
             <div class="seg compact-seg" id="default-profile-seg" role="group" aria-label="defaults for"><button type="button" class="seg-opt" data-default-profile="habit">habits</button><button type="button" class="seg-opt" data-default-profile="task">tasks</button></div>
             <div id="default-rhythm-row"><span class="settings-sublabel">how often</span><div class="range-row"><label class="range-value"><input type="number" id="setting-default-times" min="1" max="183" aria-label="default times per period" /><span>×</span></label><span class="rhythm-in">in</span><label class="range-value"><input type="number" id="setting-default-days" min="1" max="183" aria-label="default period days" /><span>d</span></label></div></div>
-            <div id="default-due-row" hidden><label class="settings-sublabel" for="setting-default-due">due date</label><select class="settings-select" id="setting-default-due"><option value="today">today</option><option value="tomorrow">tomorrow</option><option value="none">no date · someday</option></select><p class="field-hint">Uses the day you create the task. Add an appointment time on the add page.</p></div>
+            <div id="default-due-row" hidden><label class="settings-sublabel" for="setting-default-due">due date</label><select class="settings-select" id="setting-default-due"><option value="today">today</option><option value="tomorrow">tomorrow</option><option value="none">no date · someday</option></select><p class="field-hint">Uses the day you create the task. Set a start time on the add page.</p></div>
             <span class="settings-sublabel">importance</span>
             <div class="seg compact-seg" id="default-priority-seg" role="group" aria-label="importance">
               <button type="button" class="seg-opt" data-default-priority="0" title="critical">P0</button>

@@ -119,7 +119,7 @@ $('value-log-sheet')?.addEventListener('click',e=>{
 /** Prompt for a value when trackValue is on, otherwise log immediately. */
 function requestLogTing(idx,after,opts){
   const h = load()[idx];
-  if(!h)return;
+  if(!h || isEventItem(h))return;
   if(h.trackValue){
     openValueLogSheet(idx,after,opts && opts.minutes,opts || null);
     return;
@@ -143,7 +143,7 @@ function timerSessionMinutes(h,elapsedMin){
 // PURE: whether this habit can run a session timer from home/detail.
 // Breakable tasks stay eligible until fully done (remaining minutes = 0).
 function habitTimerEligible(h){
-  if(!h || h.type === 'zero')return false;
+  if(!h || isEventItem(h) || h.type === 'zero')return false;
   if(h.type === 'task'){
     if(typeof isTaskDone === 'function')return !isTaskDone(h);
     return h.lastLog === null;

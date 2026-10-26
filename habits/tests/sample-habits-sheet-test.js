@@ -319,10 +319,12 @@ async function launchBrowser(){
     const base = dayStart(Date.now());
     const start = resolveBlockedTimeMinutes(block, 'start', base);
     const end = resolveBlockedTimeMinutes(block, 'end', base);
-    return { start, end };
+    const s=loadSortSettings();
+    const sunrise=resolvePrayerExprMinutes({latitude:s.homeCityLat,longitude:s.homeCityLng},'sunrise',0,base,0);
+    return { start, end, sunrise };
   });
   assert(resolvedSleep.start != null && resolvedSleep.start >= 1290, 'sleep start resolves to evening (got ' + resolvedSleep.start + ')');
-  assert(resolvedSleep.end != null && resolvedSleep.end < 400, 'sleep ends before sunrise (got ' + resolvedSleep.end + ')');
+  assert(resolvedSleep.end != null && resolvedSleep.sunrise != null && resolvedSleep.end === resolvedSleep.sunrise-40, 'sleep ends forty minutes before sunrise (got ' + resolvedSleep.end + ')');
   assert(resolvedSleep.start != null && resolvedSleep.end != null && resolvedSleep.start > resolvedSleep.end, 'sleep is an overnight window (wrap)');
 
   console.log('\n[F] Prayer add with city set, then add all prayers');

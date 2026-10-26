@@ -180,12 +180,15 @@ function applyAddProfile(profile){
 }
 
 function switchAddType(type){
-  const previousKind = selectedType === 'task' ? 'task' : 'habit';
-  const nextKind = type === 'task' ? 'task' : 'habit';
+  const previousKind = addAppointmentMode ? 'event' : selectedType === 'task' ? 'task' : 'habit';
+  const nextKind = type === 'event' ? 'event' : type === 'task' ? 'task' : 'habit';
+  if(previousKind===nextKind && nextKind==='event')return;
   addProfileDrafts[previousKind] = readAddProfile();
-  selectedType = type;
-  document.querySelectorAll('#type-seg .seg-opt').forEach(btn=>btn.classList.toggle('on',type === 'task' ? btn.dataset.v === 'task' : btn.dataset.v === 'keepup'));
-  applyAddProfile(addProfileDrafts[nextKind] ? refreshAddProfile(addProfileDrafts[nextKind],type) : initialAddProfile(type));
+  addAppointmentMode=nextKind==='event';
+  selectedType = addAppointmentMode ? 'keepup' : type;
+  const profile=addProfileDrafts[nextKind] ? refreshAddProfile(addProfileDrafts[nextKind],selectedType) : initialAddProfile(selectedType);
+  if(addAppointmentMode && !addProfileDrafts.event)profile.durationMinutes=60;
+  applyAddProfile(profile);
 }
 
 // Reset only for a fresh add/cancel. Branch changes retain each in-flight draft.

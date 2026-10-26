@@ -140,7 +140,7 @@ function progressCopy(h,score){
 
 // PURE: builds the about blurb string
 function aboutText(h){
-  if(isLocalAppointment(h))return 'Fixed time — Tings plans around this appointment. It leaves the agenda after it ends; attendance is not recorded automatically.';
+  if(isLocalAppointment(h))return 'Other plans fit around this event. It leaves the agenda when it ends.';
   if(isOpportunityHabit(h)){
     const gap = `At most once every ${opportunityGapDays(h)} days`;
     return opportunityTrigger(h) === 'location'

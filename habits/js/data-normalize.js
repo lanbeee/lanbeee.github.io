@@ -596,6 +596,9 @@ function normalizeAppointment(raw){
   return {repeat:raw.repeat,startDate,until:until || '',weekdays,startMinute:minute,exceptions};
 }
 function isLocalAppointment(h){return Boolean(h && h.appointment);}
+// UI identity: a timed calendar meeting is an event; a manually timed task
+// and an all-day calendar task still have ordinary task actions.
+function isEventItem(h){return isLocalAppointment(h) || (['device','pdf','gcal','msgraph'].includes(h?.source) && isFixedTimedTask(h));}
 function isFixedAppointment(h){return isLocalAppointment(h) || isFixedTimedTask(h);}
 function appointmentOccursOn(h,key){
   const a=h?.appointment;
@@ -615,7 +618,9 @@ function appointmentOccurrence(h,key){
 }
 function appointmentSummary(h){
   const a=h.appointment;
-  if(!a)return 'Fixed time';
-  const days=a.repeat==='once' ? a.startDate : a.weekdays.map(d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ');
-  return `${days} · ${minutesToTimeInput(a.startMinute)} · ${h.durationMinutes} min · Fixed time`;
+  if(!a)return '';
+  const clock=new Date(`${a.startDate}T12:00:00`);clock.setHours(Math.floor(a.startMinute/60),a.startMinute%60);
+  const days=a.repeat==='once' ? clock.toLocaleDateString(undefined,{month:'short',day:'numeric'}) : `every ${a.weekdays.map(d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')}`;
+  const duration=h.durationMinutes<60 ? `${h.durationMinutes}m` : `${Math.round(h.durationMinutes/6)/10}h`;
+  return `${days} · ${clock.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${duration}`;
 }

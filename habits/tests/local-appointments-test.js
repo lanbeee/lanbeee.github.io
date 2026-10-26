@@ -35,8 +35,8 @@ const assert=require('node:assert/strict');
     clocks:[new Date(before.start).getHours(),new Date(after.start).getHours()],
     noCredit:data[0].autoMarkMinutes,completionRows:completionRows.length,
     missed:isMissedOccurrence(data[0],false,now+86400000,'2026-10-22'),
-    score:progressScore(data[0]),events:events.filter(e=>e.owner==='item:class').map(e=>({at:e.at,edge:e.reminderEdge})),
-    expectedReminder:before.start-15*60000,dirtyBefore:homePlannerDirtyKey(data),
+    score:progressScore(data[0]),eventActions:{timer:habitTimerEligible(data[0]),plan:dayLogsHabitPlannable(data[0]),log:dayLogsHabitLoggable(data[0]),regularTask:dayLogsHabitLoggable(data[1])},events:events.filter(e=>e.owner==='item:class').map(e=>({at:e.at,edge:e.reminderEdge})),
+    noEventCompletion:events.filter(e=>e.owner==='item:class').every(e=>!e.completion),expectedReminder:before.start-15*60000,dirtyBefore:homePlannerDirtyKey(data),
     dirtyAfter:homePlannerDirtyKey(normalize([{...data[0],appointment:{...rule,until:'2026-11-01'}},...data.slice(1)]))};
   });
   for(const days of [result.fast,result.exact]){
@@ -46,7 +46,9 @@ const assert=require('node:assert/strict');
   }
   assert.deepEqual(result.noOverlap,[true,true]);assert.deepEqual(result.bounds,[null,null]);assert.deepEqual(result.clocks,[9,9]);
   assert.equal(result.noCredit,null);assert.equal(result.completionRows,1);assert.equal(result.missed,false);assert.equal(result.score,null);
+  assert.deepEqual(result.eventActions,{timer:false,plan:false,log:false,regularTask:true},'events have no tracking actions; timed tasks keep them');
   assert.notEqual(result.dirtyBefore,result.dirtyAfter,'series edits invalidate cached plans');
+  assert.equal(result.noEventCompletion,true,'event notifications do not offer mark done');
   assert.ok(result.events.some(e=>e.edge==='start' && e.at===result.expectedReminder),'native start lead is applied');
   const overnight=await page.evaluate(async()=>{
     const data=normalize([{hid:'night-class',name:'Night class',type:'keepup',durationMinutes:120,
@@ -68,6 +70,8 @@ const assert=require('node:assert/strict');
     assert.equal(result.overlap,false,'flexible work cannot overlap the overnight tail');
     assert.deepEqual(result.reminders,[{day:'2026-10-21',edge:'end',mode:'alarm'}],'overnight end reminder keeps the original date override');
   }
+  assert.equal(await page.locator('#detail-mark-log').isVisible(),false);
+  assert.equal(await page.locator('#detail-snooze').isVisible(),false);
   await page.selectOption('#detail-appt-scope','date');await page.fill('#detail-appt-occurrence','2026-10-29');
   await page.fill('#detail-appt-time','11:00');await page.fill('#detail-appt-duration','45');
   await page.click('#detail-save');
@@ -77,9 +81,16 @@ const assert=require('node:assert/strict');
   await page.click('#detail-appt-skip');
   assert.equal(await page.evaluate(()=>appointmentOccurrence(load()[0],'2026-10-29')),null);
   await page.selectOption('#detail-appt-scope','date');await page.fill('#detail-appt-occurrence','2026-10-29');await page.click('#detail-appt-reset');
+  assert.deepEqual(await page.evaluate(()=>load()[0].appointment.exceptions['2026-10-29']),{cancelled:true},'resetting the time and icon does not restore a cancelled date');
+  await page.getByRole('button',{name:'restore this date',exact:true}).click();
   assert.equal(await page.evaluate(()=>load()[0].appointment.exceptions['2026-10-29']),undefined);
   await page.evaluate(()=>{closeDetail();applyAddDefaults();openSheet('add-sheet');});
-  await page.click('#add-appointment-shortcut');await page.fill('#ting-message','Biology class');
+  await page.click('#add-appointment-shortcut');
+  assert.equal(await page.locator('#type-seg .on').count(),1,'one creation type stays selected');
+  assert.equal(await page.locator('#type-seg .on').getAttribute('data-v'),'event');
+  assert.equal(await page.locator('#add-title').textContent(),'new event');
+  assert.equal(await page.locator('#do-save').textContent(),'add event');
+  await page.selectOption('#add-appt-repeat','weekly');await page.fill('#ting-message','Biology class');
   await page.fill('#add-appt-date','2026-10-22');await page.fill('#add-appt-time','13:00');await page.fill('#ting-duration','50');
   await page.click('#do-save');
   assert.equal(await page.evaluate(()=>load().at(-1).appointment.startMinute),780);
@@ -119,14 +130,14 @@ const assert=require('node:assert/strict');
   });
   await page.selectOption('#detail-appt-scope','date');await page.fill('#detail-appt-occurrence','2026-10-29');
   await page.evaluate(()=>{$('detail-native-reminders').open=true;scrollDetailToNav('actions','auto');});
-  await page.getByLabel('Class: start reminder',{exact:true}).selectOption('alarm');
+  await page.getByLabel('Class: when it starts reminder',{exact:true}).selectOption('alarm');
   await page.waitForFunction(()=>nativeReminderPreferences().items['item:class']?.dates?.['2026-10-29']?.start==='alarm');
-  await page.getByLabel('meeting start reminder timing',{exact:true}).selectOption('30');
+  await page.getByLabel('event reminder timing',{exact:true}).selectOption('30');
   assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:class'].start),undefined,'one-date control does not enable series reminders');
-  await page.getByRole('button',{name:'Use series reminders for this date',exact:true}).click();
+  await page.getByRole('button',{name:'use the usual reminders for this date',exact:true}).click();
   assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:class'].dates['2026-10-29']),undefined,'reset restores timing as well as delivery inheritance');
   await page.fill('#detail-appt-occurrence','');
-  assert.equal(await page.getByLabel('Class: start reminder',{exact:true}).count(),0,'empty occurrence date cannot edit series reminders');
+  assert.equal(await page.getByLabel('Class: when it starts reminder',{exact:true}).count(),0,'empty occurrence date cannot edit series reminders');
   await page.setViewportSize({width:1280,height:900});
   await page.evaluate(()=>{closeDetail();openDetail(0);});
   await page.waitForFunction(()=>getSheetInner('detail-sheet').classList.contains('local-appointment'));

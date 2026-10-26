@@ -406,12 +406,12 @@ body.minimal-mode #pane-detail .minimal-detail.opportunity-mode #detail-weather-
 
 .add-presets > button[hidden]{display:none !important;}
 
-/* The appointment shortcut exposes calendar fields, without habit planning knobs. */
+/* Events reuse the calendar fields and the standard schedule chips. */
 .appointment-editor { display:grid; gap:12px; margin:12px 0; }
 .appointment-editor[hidden] { display:none; }
 .appointment-editor .planning-field { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
 .appointment-editor input,.appointment-editor select { max-width:100%; }
-.appointment-editor [aria-pressed="true"],#add-appointment-shortcut[aria-pressed="true"] { color:var(--accent); font-weight:700; outline:1px solid currentColor; }
+.appointment-editor .schedule-chip-row { flex-wrap:wrap; }
 .appointment-add #add-more-toggle,.appointment-add #add-more-options,.appointment-add #ting-ask-ai { display:none; }
 .local-appointment [data-detail-nav="schedule"] > :not(#detail-appointment-editor),
 .local-appointment [data-detail-nav="effort"],
@@ -421,3 +421,15 @@ body.minimal-mode #pane-detail .minimal-detail.opportunity-mode #detail-weather-
 
 .appointment-editor input[type="time"] { min-width:150px; }
 .local-appointment .priority-field { display:none!important; }
+
+.event-detail #detail-snooze,.event-detail #detail-share-item,.event-detail #detail-share-item + *,
+.event-detail .habit-action-with-leave,.event-detail #detail-mark-log,
+.event-detail [data-shared-display-mode="complete"],.event-detail #detail-ask-ai,
+.event-detail #detail-order-block { display:none!important; }
+.phone-calendar-detail #detail-name-disclosure,.phone-calendar-detail #detail-priority-disclosure,
+.phone-calendar-detail #detail-links-disclosure,.phone-calendar-detail #detail-actions-disclosure,.phone-calendar-detail #detail-delete,
+.phone-calendar-detail #detail-shared-display,.phone-calendar-detail .detail-shared-display-control,
+.phone-calendar-detail .habit-toggle,.phone-calendar-detail #detail-export { display:none!important; }
+.event-detail #detail-emoji-edit .emoji-help { display:none; }
+
+.appointment-editor .planning-field > span > small { display:inline; }

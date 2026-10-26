@@ -219,7 +219,7 @@ function renderCalendarImportControls(){
   // Keepup/reduce with a duration — not only already-breakable — so Work shows
   // up even if the breakable toggle was never flipped on.
   const habits = load().filter(h=>h && (h.type === 'keepup' || h.type === 'reduce')
-    && Number(h.durationMinutes) > 0);
+    && !isEventItem(h) && Number(h.durationMinutes) > 0);
   const options = [`<option value="">none</option>`].concat(
     habits.map(h=>{
       const label = `${h.emoji ? `${h.emoji} ` : ''}${h.name || 'untitled'}${h.breakable ? '' : ' (can split across sessions)'}`;
@@ -230,8 +230,8 @@ function renderCalendarImportControls(){
   const hint = $('calendar-credit-hint');
   if(hint){
     hint.textContent = habits.length
-      ? 'Meeting minutes count toward this habit’s daily time.'
-      : 'Add a build or limit habit with daily hours to use this.';
+      ? 'Phone and PDF meetings count. Events you add in Tings do not.'
+      : 'Choose a habit with daily hours to count phone and PDF meetings.';
   }
   const allDaySelect = $('calendar-allday-mode');
   if(allDaySelect){
@@ -242,7 +242,7 @@ function renderCalendarImportControls(){
   const status = $('calendar-pdf-status');
   if(status && !pendingCalendarEvents){
     status.textContent = imported
-      ? `${imported} imported meeting${imported === 1 ? '' : 's'} on this device.`
+      ? `${imported} PDF meeting${imported === 1 ? '' : 's'} on this device.`
       : '';
   }
   if(pendingCalendarEvents)showCalendarPdfPreview(pendingCalendarEvents);
@@ -347,9 +347,9 @@ function clearImportedCalendarMeetings(){
   clearCalendarPdfPreview({keepStatus:true});
   const status = $('calendar-pdf-status');
   if(status)status.textContent = result.removed
-    ? `Removed ${result.removed} imported meeting${result.removed === 1 ? '' : 's'}.`
-    : 'No imported meetings to clear.';
-  if(typeof showToast === 'function')showToast(result.removed ? 'imported meetings cleared' : 'nothing to clear');
+    ? `Removed ${result.removed} PDF meeting${result.removed === 1 ? '' : 's'}.`
+    : 'No PDF meetings to remove.';
+  if(typeof showToast === 'function')showToast(result.removed ? 'PDF meetings removed' : 'nothing to clear');
   renderCalendarImportControls();
   if(typeof render === 'function')render();
 }

@@ -77,7 +77,7 @@ const assert = require('node:assert/strict');
     await travel.locator('[data-reminder-edge="travelEnd"]').selectOption('alarm');
     await page.waitForFunction(()=>nativeReminderPreferences().items['item:walk'].travelEnd==='alarm');
     await travel.locator('[data-reminder-scope]').selectOption('date');
-    await travel.getByRole('button',{name:'use recurring reminders for this date'}).click();
+    await travel.getByRole('button',{name:'use the usual reminders for this date'}).click();
     await page.waitForFunction(()=>!nativeReminderPreferences().items['item:walk'].dates?.[cardFixture.dayKey]);
     assert.equal(await travel.locator('[data-reminder-edge="travelStart"]').inputValue(),'notification','reset restores inherited departure');
     assert.equal(await travel.locator('[data-reminder-edge="travelEnd"]').inputValue(),'alarm','reset follows latest series edit');

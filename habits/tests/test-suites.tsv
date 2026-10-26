@@ -173,3 +173,4 @@ condition-controls-test.js	ui	once
 local-appointments-test.js	planner	once
 
 optimizer-clique-test.js	planner	once
+event-ux-test.js	ui	once

@@ -11,7 +11,7 @@
 // PURE: build icon markup string
 function iconHtml(h,c){
   if(h.emoji)return `<span class="emoji-mark">${escapeHtml(h.emoji)}</span>`;
-  return `<i class="ti ${defaultIcon(h.type)}" style="color:${c.icon};" aria-hidden="true"></i>`;
+  return `<i class="ti ${defaultIcon(isEventItem(h)?'event':h.type)}" style="color:${c.icon};" aria-hidden="true"></i>`;
 }
 
 // PURE: get normalized topic list
@@ -1065,7 +1065,7 @@ function limitCue(h,days,target){
 
 // PURE: compute card status cue text
 function cardCue(h){
-  if(isLocalAppointment(h))return 'Fixed time';
+  if(isLocalAppointment(h))return h.appointment.repeat==='once' ? scheduledWhenLabel(h.eventTime) : `every ${h.appointment.weekdays.map(d=>WEEKDAY_LABELS[d]).join(', ')}`;
   if(isOpportunityHabit(h) && !hasPlannedToday(h)){
     if(habitIsSnoozed(h))return 'Snoozed for now';
     if(completedToday(h))return 'Done today';
@@ -1163,7 +1163,11 @@ function cardTone(h){
 
 // PURE: build card meta pills markup
 function cardMeta(h,options = {}){
-  if(isLocalAppointment(h))return `${options.extraPills || ''}<span class="context-pill scheduled"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(options.appointmentOccurrence ? 'Fixed time' : appointmentSummary(h))}</span>`;
+  if(isLocalAppointment(h)){
+    if(options.suppressScheduled)return options.extraPills || '';
+    const a=h.appointment,label=a.repeat==='weekly' ? `every ${a.weekdays.map(d=>WEEKDAY_LABELS[d]).join(', ')} · ${compactHomeDuration(h.durationMinutes)}` : appointmentSummary(h);
+    return `${options.extraPills || ''}<span class="context-pill scheduled"><i class="ti ti-calendar-time" aria-hidden="true"></i>${escapeHtml(label)}</span>`;
+  }
   if(options.minimalOnly){
     if(h.type === 'task'){
       if(h.eventTime !== null && !options.suppressScheduled){

@@ -57,6 +57,7 @@ function updateQuotaBar(kb){
 }
 
 function defaultIcon(type){
+  if(type === 'event')return 'ti-calendar-time';
   if(type === 'zero')return 'ti-flame-off';
   if(type === 'reduce')return 'ti-trending-down';
   if(type === 'task')return 'ti-checkbox';

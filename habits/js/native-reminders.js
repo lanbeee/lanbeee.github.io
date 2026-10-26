@@ -48,22 +48,22 @@ function nativeCalendarReminderPreferences(prefs,data){
 }
 function nativeCalendarReminderScope(h){
   const body=document.createElement('div');
-  const label=document.createElement('label');label.className='planning-field';label.textContent='change reminders for';
-  const scope=document.createElement('select');scope.className='mini-select';scope.setAttribute('aria-label','change meeting reminders for');
-  for(const [value,text] of [['series','all occurrences'],['occurrence','this meeting only']]){
+  const label=document.createElement('label');label.className='planning-field';label.textContent='edit reminders for';
+  const scope=document.createElement('select');scope.className='mini-select';scope.setAttribute('aria-label','edit reminders for');
+  for(const [value,text] of [['series','all dates'],['occurrence','this date']]){
     const option=document.createElement('option');option.value=value;option.textContent=text;scope.append(option);
   }
   label.append(scope);body.append(label);
   const controls=document.createElement('div');body.append(controls);
   const paint=()=>controls.replaceChildren(nativeItemReminderControls(scope.value==='series' ? `calendar-series:${h.calendarSeriesId}` : `item:${h.hid}`,h.name,{meeting:true,hideMissed:true}));
   scope.addEventListener('change',paint);paint();
-  const reset=document.createElement('button');reset.type='button';reset.className='btn';reset.textContent='use series reminders for this meeting';
+  const reset=document.createElement('button');reset.type='button';reset.className='btn';reset.textContent='use the usual reminders for this date';
   reset.addEventListener('click',async()=>{
     const prefs=nativeReminderPreferences();delete prefs.items[`item:${h.hid}`];
     localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
-    nativeReminderLastSignature='';await reconcileNativeReminders();paint();showToast('Series reminders restored.');
+    nativeReminderLastSignature='';await reconcileNativeReminders();paint();showToast('reminders reset');
   });body.append(reset);
-  const hint=document.createElement('p');hint.className='field-hint';hint.textContent='Future occurrences inherit series reminders. Individual overrides take priority. Your calendar app may also notify you.';body.append(hint);
+  const hint=document.createElement('p');hint.className='field-hint';hint.textContent='Your calendar app may also notify you.';body.append(hint);
   return body;
 }
 function nativeReminderDeliveryPreferences(data,prefs,now=Date.now()){
@@ -140,11 +140,11 @@ function nativeCardReminderControls(owner,name,dayKey,{travelOnly=false}={}){
   const chevron=document.createElement('i');chevron.className='ti ti-chevron-down';chevron.setAttribute('aria-hidden','true');
   summary.append(title,chevron);host.append(summary);
   const content=document.createElement('div');content.className='utility-disclosure-body';host.append(content);
-  const label=document.createElement('label');label.className='planning-field';label.textContent='change reminders for';
+  const label=document.createElement('label');label.className='planning-field';label.textContent='edit reminders for';
   const scope=document.createElement('select');scope.className='mini-select';scope.dataset.reminderScope=owner;
-  scope.setAttribute('aria-label','change reminders for');
+  scope.setAttribute('aria-label','edit reminders for');
   const dateLabel=new Date(`${dayKey}T12:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-  for(const [value,text] of [['date',`this date only · ${dateLabel}`],['series','recurring / all dates']]){
+  for(const [value,text] of [['date',`this date · ${dateLabel}`],['series','all dates']]){
     const option=document.createElement('option');option.value=value;option.textContent=text;scope.append(option);
   }
   label.append(scope);content.append(label);
@@ -153,11 +153,11 @@ function nativeCardReminderControls(owner,name,dayKey,{travelOnly=false}={}){
     body.replaceChildren(nativeItemReminderControls(owner,name,{compact:true,travelOnly,
       dayKey:scope.value==='date' ? dayKey : null}));
     if(scope.value!=='date')return;
-    const reset=document.createElement('button');reset.type='button';reset.className='mini-text-btn';reset.textContent='use recurring reminders for this date';
+    const reset=document.createElement('button');reset.type='button';reset.className='mini-text-btn';reset.textContent='use the usual reminders for this date';
     reset.addEventListener('click',async()=>{
       reset.disabled=true;
       try{
-        await nativeResetReminderDate(owner,dayKey,{travelOnly});paint();showToast('recurring reminders restored for this date');
+        await nativeResetReminderDate(owner,dayKey,{travelOnly});paint();showToast('reminders reset');
       }finally{reset.disabled=false;}
     });body.append(reset);
   };
@@ -194,8 +194,8 @@ function nativeItemReminderControls(owner,name,opts = {}){
     if(opts.meeting && !['start','end'].includes(edge))continue;
     if(edge==='missed' && !owner.startsWith('item:'))continue;
     if(edge==='missed' && optionalItem)continue;
-    const label = document.createElement('label');label.className = 'planning-field';label.append(document.createTextNode(title));
-    const select = document.createElement('select');select.className = 'mini-select';select.setAttribute('aria-label',`${name}: ${title} reminder`);
+    const label = document.createElement('label');label.className = 'planning-field';label.append(document.createTextNode(opts.meeting ? (edge==='start'?'when it starts':'when it ends') : title));
+    const select = document.createElement('select');select.className = 'mini-select';select.setAttribute('aria-label',`${name}: ${opts.meeting ? edge==='start'?'when it starts':'when it ends' : title} reminder`);
     select.dataset.reminderOwner = owner;select.dataset.reminderEdge = edge;
     for(const [value,text] of [['off','off'],['notification','notification'],['alarm','ringing alarm']]){
       const option = document.createElement('option');option.value = value;option.textContent = text;select.append(option);
@@ -223,7 +223,7 @@ function nativeItemReminderControls(owner,name,opts = {}){
         nativeSaveReminderPatch(prefs,owner,{[edge]:mode},opts.dayKey);
         document.querySelector('#native-reminder-controls [aria-label="enable phone reminders"]')?.setAttribute('aria-pressed',String(prefs.enabled));
         nativeReminderLastSignature = '';await reconcileNativeReminders();
-        showToast('phone reminder saved', 2800);
+        showToast('reminder saved', 2800);
       }catch(error){select.value = choices()[edge] || 'off';showToast(error.message, 5000);}
       finally{select.disabled = false;}
     });label.append(select);grid.append(label);
@@ -244,13 +244,13 @@ function nativeItemReminderControls(owner,name,opts = {}){
     }finally{lead.disabled=false;}
   });leadLabel.append(lead);if(!opts.meeting)grid.append(leadLabel);
   if(opts.meeting){
-    const label=document.createElement('label');label.className='planning-field';label.textContent='start reminder timing';
-    const select=document.createElement('select');select.className='mini-select';select.setAttribute('aria-label','meeting start reminder timing');
-    for(const n of [0,5,10,15,30,60]){const option=document.createElement('option');option.value=String(n);option.textContent=n ? `${n} min before meeting` : 'at meeting start';select.append(option);}
+    const label=document.createElement('label');label.className='planning-field';label.textContent='remind me';
+    const select=document.createElement('select');select.className='mini-select';select.setAttribute('aria-label','event reminder timing');
+    for(const n of [0,5,10,15,30,60]){const option=document.createElement('option');option.value=String(n);option.textContent=n ? `${n} min before` : 'at the start';select.append(option);}
     select.value=String(nativeMeetingLeadMinutes(choices()));
     select.addEventListener('change',async()=>{
       nativeSaveReminderPatch(nativeReminderPreferences(),owner,{startLeadMinutes:Number(select.value)},opts.dayKey);
-      nativeReminderLastSignature='';await reconcileNativeReminders();showToast('Meeting reminder timing saved.');
+      nativeReminderLastSignature='';await reconcileNativeReminders();showToast('reminder saved');
     });label.append(select);grid.append(label);
   }
   if(owner.startsWith('item:') && !optionalItem && !opts.travelOnly){
@@ -269,7 +269,7 @@ function nativeItemReminderControls(owner,name,opts = {}){
       }finally{select.disabled=false;}
     });label.append(select);grid.append(label);
   }
-  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = opts.compact || optionalItem ? 'Reminders save immediately on this phone. Off turns off that reminder.' : 'Warns before the estimated last chance to fit this item, which can differ from its suggested start. Choose 5 or 15 minutes and notification or ringing alarm. Both use exact timing access. Sudden drops alert promptly. Saved on this phone.';
+  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = opts.compact || optionalItem ? 'Reminders save immediately on this phone.' : 'Warns before the estimated last chance to fit this item, which can differ from its suggested start. Choose 5 or 15 minutes and notification or ringing alarm. Both use exact timing access. Sudden drops alert promptly. Saved on this phone.';
   box.append(grid,hint);return box;
 }
 function renderNativeDetailReminders(h){
@@ -280,7 +280,7 @@ function renderNativeDetailReminders(h){
     const section = document.createElement('details');section.className = 'detail-disclosure';section.id = 'detail-native-reminders';
     section.open = nativeReminderAnyOn(`item:${h.hid}`);
     const summary = document.createElement('summary');summary.textContent = 'phone notifications & alarms';
-    section.append(summary,h.source==='device' && h.calendarSeriesId ? nativeCalendarReminderScope(h) : nativeItemReminderControls(`item:${h.hid}`,h.name,{hideMissed:h.source==='device' || isLocalAppointment(h) || isOpportunityHabit(h),meeting:h.source==='device' || isLocalAppointment(h)}));
+    section.append(summary,h.source==='device' && h.calendarSeriesId ? nativeCalendarReminderScope(h) : nativeItemReminderControls(`item:${h.hid}`,h.name,{hideMissed:isEventItem(h) || isOpportunityHabit(h),meeting:isEventItem(h)}));
     // Detail pages no longer carry a section-label header (the page nav names
     // the section), so lead the actions page with the controls instead.
     host.prepend(section);
@@ -460,12 +460,12 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       }
       const h=kind==='habit' || kind==='task' ? dataById.get(owner.slice(5)) : null;
       const reminderDayKey=isLocalAppointment(h) ? dateKey(row.start) : day.dayKey || dateKey(day.dayBase);
-      const completion=h ? {hid:h.hid,dayKey:reminderDayKey,
+      const completion=h && !isEventItem(h) ? {hid:h.hid,dayKey:reminderDayKey,
         occurrenceKey:row.occurrenceKey || '',scheduleOptionId:row.scheduleOptionId || '',
         minutes:h.breakable ? Math.max(1,Math.round((row.end-row.start)/60000)) : 0} : null;
       const choices=nativeReminderChoices(prefs,owner,reminderDayKey);
       const currentDay=day.dayBase===todayBase;
-      if(h && !isLocalAppointment(h) && !isOpportunityHabit(h) && ['notification','alarm'].includes(choices?.missed) && day.dayBase>=todayBase && day.dayBase<now+7*86400000){
+      if(h && !isEventItem(h) && !isOpportunityHabit(h) && ['notification','alarm'].includes(choices?.missed) && day.dayBase>=todayBase && day.dayBase<now+7*86400000){
         const forecastKey=agendaForecastIdentity(row,data),risk=validForecast && currentDay ? forecast.risks?.[forecastKey] : null;
         // A later sample can restore an item after an earlier opportunity
         // has already passed. Never postpone the current estimate merely
@@ -504,7 +504,7 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
       }
       for(const edge of ['Start','End']){
         const agendaAt=Number(row[edge.toLowerCase()]);
-        const lead=edge==='Start' ? (kind==='travel' ? nativeReminderLeadMinutes(choices) : (h?.source==='device' || isLocalAppointment(h)) ? nativeMeetingLeadMinutes(choices) : 0) : 0;
+        const lead=edge==='Start' ? (kind==='travel' ? nativeReminderLeadMinutes(choices) : isEventItem(h) ? nativeMeetingLeadMinutes(choices) : 0) : 0;
         const desiredAt=agendaAt-lead*60000;
         // Enabling a warning after its lead window starts still warns before
         // departure; native delivery remembers that occurrence after a replan.
@@ -905,7 +905,7 @@ function initNativeReminders(){
   tools.append(actions);
   if(window.TingsNative.alarms){
     const hint = document.createElement('p');hint.className = 'field-hint';
-    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Mark done works without unlocking or opening Tings: it saves the completion and silences today’s reminders. History updates when you next open Tings; split habits log only this session. Travel and busy-time reminders have no completion action.';
+    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Mark done works without unlocking or opening Tings: it saves the completion and silences today’s reminders. History updates when you next open Tings; split habits log only this session. Events, travel and busy time have no completion action.';
     const fullScreen = document.createElement('button');fullScreen.type = 'button';fullScreen.className = 'mini-text-btn';fullScreen.textContent = 'Allow full-screen alarms';
     fullScreen.addEventListener('click',async ()=>{try{await window.TingsNative.alarms.requestFullScreen();}catch(error){showToast(error.message);}});
     const alarmTest = document.createElement('button');alarmTest.type = 'button';alarmTest.className = 'mini-text-btn';alarmTest.textContent = 'Test ringing alarm · 10s';

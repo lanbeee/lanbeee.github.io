@@ -76,6 +76,7 @@ function renderDetailOrderPage(h = null){
 // PURE: builds header subtitle from habit state
 function detailHeaderLine(h){
   if(isLocalAppointment(h))return appointmentSummary(h);
+  if(isEventItem(h))return `${scheduledWhenLabel(h.eventTime)} · ${compactHomeDuration(h.durationMinutes)}`;
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(h.type === 'task'){
     const parts = [];
