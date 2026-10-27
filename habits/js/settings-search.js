@@ -20,6 +20,7 @@ const SETTINGS_SEARCH_ALIASES = {
   'settings-prayer-body':'prayer sunrise sunset dawn dusk salah namaz fajr',
   'settings-advanced-body':'optimizer packing planner',
   'settings-assistant-body':'qwen ollama ai chatbot model',
+  'settings-android-assistant-body':'gemini google hey voice appfunctions shortcuts',
   minimalMode:'simple basic easy essentials',
   'backup-export':'download save json',
   'backup-import':'restore upload recover json',

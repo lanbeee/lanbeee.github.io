@@ -1351,6 +1351,20 @@
             <div class="settings-grid" data-ui-toggles="advanced"></div>
           </div>
         </section>
+        <section id="settings-android-assistant" class="settings-block settings-collapsible" hidden>
+          <button type="button" class="settings-collapse-head" id="settings-android-assistant-head" data-collapse-target="settings-android-assistant-body" aria-expanded="false" aria-controls="settings-android-assistant-body">
+            <span class="settings-label">Android assistant</span><i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-android-assistant-body" hidden>
+            <button class="setting-toggle setting-switch" type="button" id="setting-android-assistant" aria-pressed="false">
+              <span><b>allow Android assistant access</b><small>Let an authorized Android assistant read your tasks, schedule, weather and settings through Tings tools. Changes open a preview for you to confirm. Answers are shared with the assistant you use. No Ollama setup is needed.</small></span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+            <p class="field-hint">Gemini access to AppFunctions is currently limited by Google’s early-access rollout. Enabling this setting does not connect Tings to Gemini by itself. While waiting, long-press the Tings icon for today’s plan or add a task, or share text to Tings to review it as a task.</p>
+            <p class="field-hint" id="android-assistant-status" role="status" aria-live="polite">Open Tings once before asking an authorized assistant to read your planner. Unlock your phone to use these tools.</p>
+            <button class="btn" type="button" id="android-assistant-review" hidden>review pending request</button>
+          </div>
+        </section>
         <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-assistant-head" data-collapse-target="settings-assistant-body" aria-expanded="false" aria-controls="settings-assistant-body">
             <span class="settings-label">local assistant</span>

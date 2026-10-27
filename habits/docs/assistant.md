@@ -4,6 +4,8 @@ Read this only when the task is the Tings assistant. For planner, home, settings
 
 The assistant is optional local Qwen3.8 chat. `js/assistant-loader.js` loads it after the first home render. It must not participate in critical boot.
 
+For external Android agents (Gemini / Google Assistant), see [Android assistant integration](android-assistant.md). That native-only bridge reuses these tools without requiring the local model.
+
 ## Which file
 
 | File | Owns |
@@ -15,6 +17,7 @@ The assistant is optional local Qwen3.8 chat. `js/assistant-loader.js` loads it 
 | `js/assistant-client.js` | Ollama / LM Studio transport |
 | `js/assistant-ui.js` | Sheet, preview, settings |
 | `js/assistant-loader.js` | Deferred script load |
+| `js/assistant-external.js` | Native AppFunctions reads and confirmation previews |
 
 Open the one file that owns the change. Grep the function and read that range.
 

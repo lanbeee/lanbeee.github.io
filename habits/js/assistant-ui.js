@@ -5,6 +5,7 @@ let _assistantBusy = false;
 let _assistantPendingDraft = null;
 let _assistantPendingDrafts = null;
 let _assistantTurn = 0;
+let _assistantExternalReview = false;
 
 function assistantEnabled(){
   return Boolean(sortSettings && sortSettings.localAssistant);
@@ -29,7 +30,7 @@ function syncAssistantChrome(){
   });
   if(!on){
     assistantAbortInFlight();
-    if($('assistant-sheet') && $('assistant-sheet').classList.contains('open'))closeAssistantSheet();
+    if(!_assistantExternalReview && $('assistant-sheet') && $('assistant-sheet').classList.contains('open'))closeAssistantSheet();
   }
 }
 
@@ -139,10 +140,16 @@ function assistantSetStatus(text){
 }
 
 function openAssistantSheet(opts){
-  if(!assistantEnabled()){
+  const external = Boolean(opts && opts.external && window.TingsNative?.isNative);
+  if(!assistantEnabled() && !external){
     if(typeof showToast === 'function')showToast('Turn on local assistant in Settings');
     return;
   }
+  _assistantExternalReview = external;
+  const eyebrow = document.querySelector('#assistant-sheet .sheet-eyebrow');
+  if(eyebrow)eyebrow.textContent = external ? 'Android assistant' : 'on this computer';
+  const composer = $('assistant-input')?.parentElement;
+  if(composer)composer.hidden = external && !assistantEnabled();
   if(!_assistantSession)_assistantSession = assistantCreateSession();
   if(!(opts && opts.skipWelcome))renderAssistantThread();
   syncAssistantFocusBar();
@@ -150,7 +157,7 @@ function openAssistantSheet(opts){
   assistantResizeComposer();
   assistantSyncSend();
   const input = $('assistant-input');
-  if(input){
+  if(input && !(external && !assistantEnabled())){
     input.focus({preventScroll:true});
     setTimeout(() => {
       if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
@@ -159,9 +166,11 @@ function openAssistantSheet(opts){
 }
 
 function closeAssistantSheet(){
+  _assistantExternalReview = false;
   assistantAbortInFlight();
   assistantShowBusy(false);
   closeSheet('assistant-sheet');
+  if(window.tingsExternalAssistant)setTimeout(()=>window.tingsExternalAssistant.drain(),0);
 }
 
 // Entry points (add sheet, detail page) start a fresh conversation with the

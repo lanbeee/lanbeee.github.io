@@ -8,7 +8,8 @@
     './js/assistant-tools.js',
     './js/assistant-harness.js',
     './js/assistant-client.js',
-    './js/assistant-ui.js'
+    './js/assistant-ui.js',
+    './js/assistant-external.js'
   ];
   let loadPromise = null;
 
