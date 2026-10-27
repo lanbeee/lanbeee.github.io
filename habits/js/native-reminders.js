@@ -600,7 +600,7 @@ function scheduleNativeAgendaForecast(week,data,settings,prefs,revision){
 }
 function nativeBackgroundSnapshot(){
   const storage = {};
-  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,WEATHER_CACHE_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
+  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
     const value = localStorage.getItem(key);if(value != null)storage[key] = value;
   }
   // Last-refresh display text is not a planner input.
@@ -621,6 +621,7 @@ function nativeBackgroundSnapshot(){
   const calendarOverrides=Object.fromEntries(Object.entries(rawPrefs.items).filter(([owner])=>owner.startsWith('calendar-series:') || owner.startsWith('item:device:')));
   const prefs={...saved,calendarOverrides,items:Object.fromEntries(Object.entries(saved.items).filter(([owner])=>owners.has(owner) || owner.startsWith('calendar-series:')))};
   return {storage,prefs,week:compatible ? leanAgendaWeek(mounted) : null,
+    widgets:compileNativeWidgetSnapshot(compatible ? mounted : null,data,sortSettings),
     weatherRevision:sortSettings?._weatherContext?.revision || '',
     coord:typeof currentCoordLocation === 'function' ? currentCoordLocation() : null};
 }
@@ -631,6 +632,8 @@ function nativeBackgroundSnapshotKey(){
   return [
     typeof homePlannerDirtyKey==='function'?homePlannerDirtyKey(data):'',
     prefs.enabled,
+    missedHideSignature(),
+    JSON.stringify(loadTodaySuggested()),
     JSON.stringify(prefs.items||{}),
     typeof deviceCalendarPreferences==='function'
       ? JSON.stringify([deviceCalendarPreferences().enabled,deviceCalendarPreferences().calendarIds,deviceCalendarStyles()]) : '',

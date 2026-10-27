@@ -177,3 +177,4 @@ optimizer-clique-test.js	planner	once
 event-ux-test.js	ui	once
 detail-edit-flow-test.js	ui	once
 assistant-external-test.js	assistant	once
+native-widgets-test.js	ui	once
