@@ -117,7 +117,9 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .settings-sheet{
   height:calc(min(100dvh,var(--add-viewport-height,100dvh)) - 48px);
 }
 .settings-actions .mini-text-btn{min-height:44px;white-space:normal;line-height:1.35;}
-.native-background-row{margin-top:16px;}
+.native-background-row,.native-lock-screen-row{margin-top:16px;}
+#native-reminder-controls .settings-actions{flex-direction:column;align-items:stretch;gap:0;}
+#native-reminder-controls .settings-actions .mini-text-btn{text-align:left;}
 /* Keep native inputs and their keyboard behavior, with the app's own palette. */
 .settings-sheet input[type="checkbox"]{
   -webkit-appearance:none;appearance:none;display:inline-grid;place-content:center;

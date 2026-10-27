@@ -798,6 +798,15 @@ async function renderNativeReminderStatus(){
   const node = document.getElementById('native-reminder-status');
   if(!node || !nativeReminderSettingsOpen())return;
   const api = window.TingsNative.notifications;
+  if(window.TingsNative.lockScreen){
+    const state=await window.TingsNative.lockScreen.status();
+    const toggle=document.getElementById('native-lock-screen-toggle');
+    toggle?.setAttribute('aria-pressed',String(state.enabled));
+    const detail=document.getElementById('native-lock-screen-status');
+    if(detail)detail.textContent=!state.enabled ? 'Off.' : !state.available
+      ? 'Allow Current & next item in Android notification settings, including lock-screen notifications.'
+      : `Lock-screen agenda on.${state.exact===false ? ' Android may delay updates without exact timing access.' : ''}`;
+  }
   const permission = await api.permissions();
   const exact = await api.exactAlarmPermission();
   const pending = await api.pending();
@@ -857,10 +866,8 @@ function initNativeReminders(){
   if(!host)return;
   const panel = document.createElement('div');
   panel.id = 'native-reminder-controls';
-  panel.insertAdjacentHTML('beforeend',uiSettingsHelpHtml({id:'native-reminders-help',title:'phone notifications & alarms',body:'<p>Choose reminders in each habit or task’s Actions tab, or under each busy time. New items start with reminders off. These choices stay on this phone.</p><p id="native-reminder-detail"></p>'}));
-  const help = panel.querySelector('#native-reminders-help');
   const prefs = nativeReminderPreferences();
-  const toggle = document.createElement('div');
+  const toggle = document.createElement('div');toggle.className='settings-toggle-row';
   const title = document.createElement('span');title.innerHTML = '<b>enable phone reminders</b><small>Use the reminders chosen on each item.</small>';
   const input = document.createElement('button');input.type = 'button';input.className = 'setting-toggle setting-switch compact-toggle';input.setAttribute('aria-pressed',String(prefs.enabled));input.setAttribute('aria-label','enable phone reminders');
   input.append(title);
@@ -880,8 +887,39 @@ function initNativeReminders(){
       input.setAttribute('aria-pressed',String(enabled));nativeReminderLastSignature = '';await reconcileNativeReminders();
       showToast(enabled ? 'phone reminders on' : 'phone reminders off');
     }catch(error){showToast(error.message,5000);}finally{input.disabled = false;}
-  });toggle.append(input);panel.append(toggle);
-  const explanation = document.createElement('p');explanation.className = 'field-hint';explanation.textContent = 'Choose reminders in an item’s Actions tab or a busy time.';panel.append(explanation);
+  });toggle.append(input);
+  toggle.insertAdjacentHTML('beforeend',uiSettingsHelpButtonHtml('native-reminders-help','phone reminders')+'<div class="settings-help-body" id="native-reminders-help" hidden><p>Choose reminders in each habit or task’s Actions tab, or under each busy time. New items start with reminders off. These choices stay on this phone.</p><p id="native-reminder-detail"></p></div>');
+  panel.append(toggle);
+  const help=toggle.querySelector('#native-reminders-help');
+  if(window.TingsNative.lockScreen){
+    const lock=document.createElement('button');lock.type='button';lock.id='native-lock-screen-toggle';
+    lock.className='setting-toggle setting-switch compact-toggle';lock.disabled=true;
+    lock.setAttribute('aria-pressed','false');lock.setAttribute('aria-label','show current or next item on lock screen');
+    lock.innerHTML='<span><b>lock-screen agenda</b><small>Show your current or next item.</small></span><span class="switch-ui" aria-hidden="true"></span>';
+    const detail=document.createElement('p');detail.id='native-lock-screen-status';detail.className='field-hint';detail.setAttribute('role','status');
+    const privacy=document.createElement('p');privacy.className='field-hint';
+    privacy.textContent='A quiet card shows the current item, or the next item when you are free. Tap it to open Tings. Works even when item reminders are off. Item names and times can appear while your phone is locked. Android’s lock-screen notification settings control visibility. Updates follow the last saved agenda while Tings is closed.';
+    lock.addEventListener('click',async()=>{
+      lock.disabled=true;
+      try{
+        const enabled=lock.getAttribute('aria-pressed')!=='true';
+        if(enabled && (await window.TingsNative.notifications.requestPermissions()).display!=='granted'){
+          showToast('Allow notifications in Android settings to show the lock-screen agenda.',5000);return;
+        }
+        await window.TingsNative.lockScreen.configure(enabled);
+        await renderNativeReminderStatus();
+        showToast(enabled ? 'lock-screen agenda on' : 'lock-screen agenda off');
+      }catch(error){showToast(error.message,5000);}finally{lock.disabled=false;}
+    });
+    const lockRow=document.createElement('div');lockRow.className='settings-toggle-row native-lock-screen-row';
+    lockRow.append(lock);
+    lockRow.insertAdjacentHTML('beforeend',uiSettingsHelpButtonHtml('native-lock-screen-help','lock-screen agenda')+'<div class="settings-help-body" id="native-lock-screen-help" hidden></div>');
+    lockRow.querySelector('.settings-help-body').append(privacy);
+    panel.append(lockRow,detail);
+    window.TingsNative.lockScreen.status().then(state=>{
+      lock.setAttribute('aria-pressed',String(state.enabled));lock.disabled=false;
+    }).catch(()=>{detail.textContent='Lock-screen agenda is unavailable. Update the Android app.';});
+  }
   const exact = document.createElement('button');exact.type = 'button';exact.className = 'mini-text-btn';exact.textContent = 'Allow exact timing';
   exact.addEventListener('click',async ()=>{
     try{await window.TingsNative.notifications.requestExactAlarmPermission();}
@@ -917,7 +955,7 @@ function initNativeReminders(){
       catch(error){showToast(error.message);}
     });help.append(hint);actions.append(fullScreen,alarmTest);
   }
-  panel.append(status,tools);
+  toggle.after(status);
   if(window.TingsNative.background){
     const background=document.createElement('button');background.id='native-background-toggle';background.type='button';
     background.className='setting-toggle setting-switch compact-toggle';background.setAttribute('aria-pressed','false');
@@ -940,7 +978,8 @@ function initNativeReminders(){
     backgroundRow.append(background);
     backgroundRow.insertAdjacentHTML('beforeend',uiSettingsHelpButtonHtml('native-background-help','closed-app refresh')+'<div class="settings-help-body" id="native-background-help" hidden><p id="native-background-detail"></p></div>');
     backgroundRow.querySelector('.settings-help-body').prepend(hint);
-    panel.append(backgroundRow,location,backgroundStatus);
+    panel.append(backgroundRow,backgroundStatus);
+    actions.append(location);
     let inputRevision=homePlannerDirtyKey(load());
     window.addEventListener('tings-native-input',()=>queueMicrotask(()=>{
       const revision=homePlannerDirtyKey(load());
@@ -952,6 +991,7 @@ function initNativeReminders(){
       queueNativeReminders();
     }));
   }
+  panel.append(tools);
   host.replaceChildren(panel);
   nativeEnsureBusyReminderIds();
   renderBlockedTimeControls();

@@ -1356,12 +1356,18 @@
             <span class="settings-label">Android assistant</span><i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-android-assistant-body" hidden>
-            <button class="setting-toggle setting-switch" type="button" id="setting-android-assistant" aria-pressed="false">
-              <span><b>allow Android assistant access</b><small>Let an authorized Android assistant read your tasks, schedule, weather and settings through Tings tools. Changes open a preview for you to confirm. Answers are shared with the assistant you use. No Ollama setup is needed.</small></span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <p class="field-hint">Gemini access to AppFunctions is currently limited by Google’s early-access rollout. Enabling this setting does not connect Tings to Gemini by itself. While waiting, long-press the Tings icon for today’s plan or add a task, or share text to Tings to review it as a task.</p>
-            <p class="field-hint" id="android-assistant-status" role="status" aria-live="polite">Open Tings once before asking an authorized assistant to read your planner. Unlock your phone to use these tools.</p>
+            <div class="settings-toggle-row">
+              <button class="setting-toggle setting-switch" type="button" id="setting-android-assistant" aria-pressed="false">
+                <span><b>allow Android assistant access</b><small>Read your plan; review changes before saving.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-android-assistant-help" aria-label="about Android assistant access" aria-expanded="false" aria-controls="settings-android-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="settings-help-body" id="settings-android-assistant-help" hidden>
+                <p>An authorized Android assistant can read your tasks, schedule, weather and settings through Tings tools. Changes open a preview for you to confirm. Answers are shared with the assistant you use. No Ollama setup is needed. Open Tings once and unlock your phone to use these tools.</p>
+                <p>Gemini access to AppFunctions is currently limited by Google’s early-access rollout. Enabling this setting does not connect Tings to Gemini by itself. While waiting, long-press the Tings icon for today’s plan or add a task, or share text to Tings to review it as a task.</p>
+              </div>
+            </div>
+            <p class="field-hint" id="android-assistant-status" role="status" aria-live="polite">Unlock your phone to use these tools.</p>
             <button class="btn" type="button" id="android-assistant-review" hidden>review pending request</button>
           </div>
         </section>
@@ -1371,29 +1377,36 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-assistant-body" hidden>
-            <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
-              <span>
-                <b>use Qwen on this computer</b>
-                <small>Talk to Ollama or LM Studio on this computer, or on a laptop on this Wi-Fi or Tailscale. Clear requests are parsed here; Qwen calls tools to create or change an item. Nothing is saved until you confirm. Off by default.</small>
-              </span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <div id="assistant-reach-guide" class="assistant-reach-guide">
-              <p class="settings-sublabel">Reach the model on this computer</p>
-              <p class="field-hint" id="assistant-reach-lead"></p>
-              <ol class="assistant-reach-steps">
-                <li>Install Ollama if you have not.</li>
-                <li id="assistant-reach-step-allow"></li>
-                <li id="assistant-reach-step-listen"></li>
-                <li id="assistant-reach-step-restart"></li>
-                <li id="assistant-reach-step-phone"></li>
-                <li>Turn on <b>use Qwen</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
-              </ol>
-              <pre class="assistant-reach-cmd" id="assistant-reach-cmd"></pre>
-              <div class="btn-row assistant-reach-actions">
-                <button type="button" class="btn" id="assistant-copy-origins">copy the commands</button>
-              </div>
+            <div class="settings-toggle-row">
+              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
+                <span>
+                  <b>use Qwen on this computer</b>
+                  <small>Use your model to chat and review changes.</small>
+                </span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-local-assistant-help" aria-label="about the local assistant" aria-expanded="false" aria-controls="settings-local-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Talk to Ollama or LM Studio on this computer, or on a laptop on this Wi-Fi or Tailscale. Changes wait for your confirmation. Off by default.</p><p>Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
             </div>
+            <details class="settings-disclosure" id="assistant-setup-guide">
+              <summary>setup instructions</summary>
+              <div id="assistant-reach-guide" class="assistant-reach-guide">
+                <p class="settings-sublabel">Reach the model on this computer</p>
+                <p class="field-hint" id="assistant-reach-lead"></p>
+                <ol class="assistant-reach-steps">
+                  <li>Install Ollama if you have not.</li>
+                  <li id="assistant-reach-step-allow"></li>
+                  <li id="assistant-reach-step-listen"></li>
+                  <li id="assistant-reach-step-restart"></li>
+                  <li id="assistant-reach-step-phone"></li>
+                  <li>Turn on <b>use Qwen</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
+                </ol>
+                <pre class="assistant-reach-cmd" id="assistant-reach-cmd"></pre>
+                <div class="btn-row assistant-reach-actions">
+                  <button type="button" class="btn" id="assistant-copy-origins">copy the commands</button>
+                </div>
+              </div>
+            </details>
             <div id="assistant-setup-fields" hidden>
               <span class="settings-sublabel">server</span>
               <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="local model server">
@@ -1401,31 +1414,33 @@
                 <button type="button" class="seg-opt" data-assistant-provider="ollama">Ollama</button>
                 <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio / API</button>
               </div>
-              <span class="settings-sublabel">address</span>
+              <div data-settings-help-title="address" data-settings-help-for="assistant-url" data-settings-help-id="settings-assistant-address-help">
+                <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>. Pick <b>LM Studio / API</b> for any server that speaks the OpenAI <code>/v1</code> protocol, including a gateway to a cloud model.</p>
+              </div>
               <input id="assistant-url" class="settings-text-input" type="text" inputmode="url" maxlength="160" placeholder="https://laptop.tailnet.ts.net" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>. Pick <b>LM Studio / API</b> for any server that speaks the OpenAI <code>/v1</code> protocol, including a gateway to a cloud model.</p>
               <span class="settings-sublabel">model</span>
               <input id="assistant-model" class="settings-text-input" type="text" maxlength="80" placeholder="qwen3.8:27b-mlx" autocomplete="off" />
-              <span class="settings-sublabel">thinking</span>
+              <div data-settings-help-title="thinking" data-settings-help-id="settings-assistant-thinking-help"><p class="field-hint" id="assistant-reasoning-hint">Less thinking answers faster and uses less of a paid plan; full is the most reliable at reading an odd sentence. A model that cannot turn thinking off, like GLM 5.3, uses its shallowest level instead.</p></div>
               <div class="seg compact-seg" id="assistant-reasoning-seg" role="group" aria-label="thinking depth">
                 <button type="button" class="seg-opt on" data-assistant-reasoning="high">full</button>
                 <button type="button" class="seg-opt" data-assistant-reasoning="low">low</button>
                 <button type="button" class="seg-opt" data-assistant-reasoning="off">off</button>
               </div>
-              <p class="field-hint" id="assistant-reasoning-hint">Less thinking answers faster and uses less of a paid plan; full is the most reliable at reading an odd sentence. A model that cannot turn thinking off, like GLM 5.3, uses its shallowest level instead.</p>
               <div class="btn-row" style="flex-wrap:wrap">
                 <button type="button" class="btn" id="assistant-refresh-models">list models</button>
                 <button type="button" class="btn primary" id="assistant-test">test thinking + tool</button>
               </div>
               <p class="field-hint" id="assistant-conn-status"></p>
-              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-debug" aria-pressed="false">
-                <span>
-                  <b>show assistant debug</b>
-                  <small>In the chat, print parse, local vs Qwen, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
-                </span>
-                <span class="switch-ui" aria-hidden="true"></span>
-              </button>
-              <p class="field-hint">Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p>
+              <details class="settings-disclosure">
+                <summary>diagnostics</summary>
+                <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-debug" aria-pressed="false">
+                  <span>
+                    <b>show assistant debug</b>
+                    <small>In the chat, print parse, local vs Qwen, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
+                  </span>
+                  <span class="switch-ui" aria-hidden="true"></span>
+                </button>
+              </details>
             </div>
           </div>
         </section>

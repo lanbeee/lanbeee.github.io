@@ -376,14 +376,18 @@ const assert = require('node:assert/strict');
     assert.match(uiBits.pill,/reminder-pill/,'cards can show a reminder mark');
     const locationFlow=await page.evaluate(()=>{
       window.__tingsBackgroundCalls=[];
+      window.__lockEnabled=true;window.__lockPermission='denied';window.__lockCalls=[];
       localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({version:3,enabled:false,items:{}}));
       if(typeof updateSortSetting === 'function')updateSortSetting({locationOptIn:false},{renderNow:false,sync:false});
       window.TingsNative={isNative:true,notifications:{
         permissions:async()=>({display:'granted'}),
-        requestPermissions:async()=>({display:'granted'}),
+        requestPermissions:async()=>{window.__lockCalls.push('permission');return {display:window.__lockPermission};},
         exactAlarmPermission:async()=>({exact_alarm:'granted'}),
         pending:async()=>({notifications:[]}),
         replaceAgenda:async()=>{}
+      },lockScreen:{
+        status:async()=>({enabled:window.__lockEnabled,available:true,exact:false}),
+        configure:async enabled=>{window.__lockCalls.push(enabled);window.__lockEnabled=enabled;},
       },background:{
         status:async()=>({fine:false,background:false,enabled:false,notificationChannelEnabled:true,plannedAt:0,dropEstimated:0,dropConfirmed:0,location:null}),
         requestLocation:async()=>{window.__tingsBackgroundCalls.push('request');return {fine:true,background:false};},
@@ -398,6 +402,20 @@ const assert = require('node:assert/strict');
       return {hasButton:Boolean(document.getElementById('native-background-location'))};
     });
     assert.equal(locationFlow.hasButton,true,'native settings expose Allow background location');
+    await page.waitForFunction(()=>document.getElementById('native-lock-screen-toggle')?.disabled===false);
+    assert.equal(await page.locator('#native-lock-screen-toggle').getAttribute('aria-pressed'),'true','native lock-screen preference is shown');
+    await page.evaluate(()=>document.getElementById('native-lock-screen-toggle').click());
+    await page.waitForFunction(()=>!document.getElementById('native-lock-screen-toggle').disabled);
+    assert.deepEqual(await page.evaluate(()=>window.__lockCalls),[false],'turning off the lock-screen card requires no permission');
+    await page.evaluate(()=>document.getElementById('native-lock-screen-toggle').click());
+    await page.waitForFunction(()=>!document.getElementById('native-lock-screen-toggle').disabled);
+    assert.equal(await page.locator('#native-lock-screen-toggle').getAttribute('aria-pressed'),'false','denied notifications leave the card off');
+    assert.deepEqual(await page.evaluate(()=>window.__lockCalls),[false,'permission'],'denied enable does not change native settings');
+    await page.evaluate(()=>{window.__lockPermission='granted';document.getElementById('native-lock-screen-toggle').click();});
+    await page.waitForFunction(()=>!document.getElementById('native-lock-screen-toggle').disabled);
+    assert.equal(await page.locator('#native-lock-screen-toggle').getAttribute('aria-pressed'),'true','granted enable turns the card on');
+    assert.match(await page.locator('#native-lock-screen-status').textContent(),/may delay updates/,'inexact display updates are explained');
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().enabled),false,'lock-screen agenda works independently of item reminders');
     await page.evaluate(()=>{
       document.getElementById('settings-sheet')?.classList.add('open');
       document.getElementById('native-background-location')?.click();

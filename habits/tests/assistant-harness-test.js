@@ -427,7 +427,7 @@ async function launchBrowser(){
       debugToggle:Boolean(document.getElementById('setting-local-assistant-debug')),
       debugSheet:Boolean(document.getElementById('assistant-debug-toggle')),
       modelOnlyToggle:Boolean(document.getElementById('setting-local-assistant-model-only')),
-      modelOnlyCopy:/Every request is interpreted by the local model/i.test(document.getElementById('assistant-setup-fields')?.textContent || '')
+      modelOnlyCopy:/Every request is interpreted by the local model/i.test(document.getElementById('settings-local-assistant-help')?.textContent || '')
     };
   });
   assert(ui.off.hidden === true && ui.off.pressed === 'false', 'chat button hidden while assistant is off');
@@ -641,6 +641,7 @@ async function launchBrowser(){
   await page.locator('#settings-assistant-head').click();
   const expanded = await page.locator('#settings-assistant-head').getAttribute('aria-expanded');
   assert(expanded === 'true', 'settings local assistant section opens');
+  await page.locator('#assistant-setup-guide > summary').click();
   const guideVisible = await page.locator('#assistant-reach-guide').isVisible();
   const guideTitle = await page.locator('#assistant-reach-guide .settings-sublabel').textContent();
   assert(guideVisible && /Reach the model/i.test(guideTitle || ''), 'reach guide is visible in Settings');
