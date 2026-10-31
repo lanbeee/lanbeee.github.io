@@ -2067,16 +2067,17 @@ function weatherMetricStatsHtml(metricKey,rows,summary){
 }
 
 function plannerShiftDateKey(key,days){
-  const base=typeof dayStart==='function' ? dayStart(new Date(`${key}T12:00:00`).getTime()) : NaN;
-  if(!Number.isFinite(base) || typeof dateKey!=='function')return key;
-  return dateKey(base+days*86400000);
+  const d=new Date(`${key}T12:00:00`);
+  if(!Number.isFinite(d.getTime()) || typeof dateKey!=='function')return key;
+  // Calendar days can be 23 or 25 hours when the local clocks change.
+  d.setDate(d.getDate()+days);
+  return dateKey(d.getTime());
 }
 
 function plannerDaySwitchChipCopy(key){
   const d=new Date(`${key}T12:00:00`);
   const today=typeof todayIso==='function' ? todayIso() : '';
-  const tomorrow=typeof dateKey==='function' && typeof dayStart==='function'
-    ? dateKey(dayStart(Date.now())+86400000) : '';
+  const tomorrow=today ? plannerShiftDateKey(today,1) : '';
   const weekday=key===today ? 'today' : (key===tomorrow ? 'tmrw'
     : (typeof weekdayShort==='function' ? weekdayShort(d.getDay()) : d.toLocaleDateString(undefined,{weekday:'short'})));
   return {weekday,date:String(d.getDate())};
@@ -2086,13 +2087,13 @@ function plannerDaySwitchHtml(dayKey,attrName,ariaLabel){
   if(!dayKey || typeof dateKey!=='function' || typeof dayStart!=='function')return '';
   const selectedBase=dayStart(new Date(`${dayKey}T12:00:00`).getTime());
   if(!Number.isFinite(selectedBase))return '';
-  const today=dayStart(Date.now());
-  const inPlannerWeek=selectedBase>=today && selectedBase<=today+6*86400000;
-  const windowStart=inPlannerWeek ? today : selectedBase-3*86400000;
+  const today=dateKey(Date.now());
+  const inPlannerWeek=dayKey>=today && dayKey<=plannerShiftDateKey(today,6);
+  const windowStart=inPlannerWeek ? today : plannerShiftDateKey(dayKey,-3);
   const chips=[];
   const attr=attrName || 'data-day';
   for(let i=0;i<7;i+=1){
-    const key=dateKey(windowStart+i*86400000);
+    const key=plannerShiftDateKey(windowStart,i);
     const on=key===dayKey;
     const copy=plannerDaySwitchChipCopy(key);
     chips.push(`<button type="button" class="free-day-chip${on?' on':''}" ${attr}="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${on?' aria-current="date"':''} aria-label="${escapeHtml(`${copy.weekday} ${copy.date}`)}"><span>${escapeHtml(copy.weekday)}</span><b>${escapeHtml(copy.date)}</b></button>`);
