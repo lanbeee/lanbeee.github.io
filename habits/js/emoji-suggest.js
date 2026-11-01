@@ -344,7 +344,7 @@ function uniqueEmojiList(list){
   return out;
 }
 
-// Common daily-life emojis shown first in the one-row horizontal picker.
+// Common daily-life emojis shown first in the compact picker.
 // Remaining keyword-map emojis append so every auto-suggest pick is also tappable.
 const COMMON_PICKER_EMOJIS = [
   '🏃','🚶','🏋️','🤸','🧘','🏊','🚴','💃','🛌','🌅','👟','🧍','🧗','🏄','⛷️','🛹','🚣','🥊','🥋',
@@ -633,40 +633,157 @@ function syncGenericEmojiRows(){
   }
 }
 
-function scrollPickerToSelected(containerId){
-  const wrap = document.getElementById(containerId);
-  if(!wrap)return;
-  const on = wrap.querySelector('.generic-emoji-chip.on');
-  if(on)on.scrollIntoView({inline:'center',block:'nearest',behavior:'auto'});
+// The catalog is data only: no picker library, fonts, or boot-time fetch.
+let _emojiCatalog = null;
+let _emojiCatalogPromise = null;
+let _emojiCatalogFailed = false;
+const _emojiPickers = new Map();
+const EMOJI_PICKER_BATCH = 80;
+
+function emojiSearchText(text){
+  return text.toLowerCase().normalize('NFKD').replace(/\p{M}/gu,'').split(/[\s:,&-]+/).filter(Boolean);
 }
 
-// RENDER: fill the one-row horizontal picker (same scroll as topic/place chips).
-// Tapping a chip picks that emoji; later name edits never fight the pick.
-function renderGenericEmojiRow(containerId, inputId){
-  const wrap = document.getElementById(containerId);
-  if(!wrap)return;
-  wrap.textContent = '';
-  for(const g of PICKER_EMOJIS){
+function emojiPickerEntries(groups){
+  const aliases = new Map();
+  const labels = new Map();
+  for(const entry of EMOJI_MAP){
+    if(!labels.has(entry.emoji))labels.set(entry.emoji,entry.words[0]);
+    aliases.set(entry.emoji,`${aliases.get(entry.emoji) || ''} ${entry.words.join(' ')}`);
+  }
+  const entries = new Map();
+  for(const [group, rows] of groups){
+    for(const [emoji, name] of rows){
+      entries.set(emoji,{emoji,name,group,search:emojiSearchText(`${emoji} ${name} ${group} ${aliases.get(emoji) || ''}`)});
+    }
+  }
+  return uniqueEmojiList([...PICKER_EMOJIS,...entries.keys()]).map(emoji =>
+    entries.get(emoji) || {emoji,name:labels.get(emoji) || emoji,group:'',search:emojiSearchText(`${emoji} ${aliases.get(emoji) || ''}`)}
+  );
+}
+
+async function ensureEmojiCatalog(){
+  if(_emojiCatalog)return;
+  if(_emojiCatalogPromise)return _emojiCatalogPromise;
+  _emojiCatalogFailed = false;
+  _emojiCatalogPromise = fetch('./lib/emoji/catalog.json').then(response=>{
+    if(!response.ok)throw new Error('Emoji catalog unavailable');
+    return response.json();
+  }).then(data=>{
+    _emojiCatalog = emojiPickerEntries(data.groups);
+  }).catch(()=>{_emojiCatalogFailed = true;}).finally(()=>{
+    _emojiCatalogPromise = null;
+    for(const state of _emojiPickers.values())refreshEmojiPicker(state);
+  });
+  for(const state of _emojiPickers.values())refreshEmojiPicker(state);
+  return _emojiCatalogPromise;
+}
+
+function appendEmojiPickerBatch(state){
+  const start = state.wrap.childElementCount;
+  const fragment = document.createDocumentFragment();
+  for(const entry of state.matches.slice(start,start + EMOJI_PICKER_BATCH)){
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'generic-emoji-chip';
-    chip.textContent = g;
-    chip.setAttribute('aria-label',`use ${g} emoji`);
-    chip.addEventListener('click',()=>{
-      if(typeof isScrollGuarded === 'function' && isScrollGuarded(chip))return;
-      const input = document.getElementById(inputId);
-      if(!input)return;
-      input.value = g;
-      _emojiUserEdited = true;
-      if(inputId === 'detail-emoji')_detailEmojiUserEdited = true;
-      if(inputId === 'detail-emoji' && typeof setDetailDirty === 'function')setDetailDirty();
-      syncGenericEmojiRows();
-      updateEmojiPreview();
-    });
-    wrap.appendChild(chip);
+    chip.textContent = entry.emoji;
+    chip.title = entry.name;
+    chip.setAttribute('aria-label',entry.name);
+    chip.tabIndex = -1;
+    fragment.appendChild(chip);
   }
-  if(typeof addScrollGuard === 'function')addScrollGuard(wrap,'x');
+  state.wrap.appendChild(fragment);
   syncGenericEmojiRows();
+  // One tab stop; arrows navigate the rest, including unloaded batches.
+  if(!state.wrap.querySelector('[tabindex="0"]')){
+    const first = state.wrap.querySelector('.generic-emoji-chip.on') || state.wrap.firstElementChild;
+    if(first)first.tabIndex = 0;
+  }
+}
+
+function refreshEmojiPicker(state){
+  const focusedEmoji = state.wrap.contains(document.activeElement) ? document.activeElement.textContent : null;
+  const terms = emojiSearchText(state.search.value.trim());
+  const entries = _emojiCatalog || state.fallback;
+  state.matches = entries.filter(entry=>terms.every(term=>entry.search.some(word=>word.startsWith(term))));
+  // Keep a saved/custom icon easy to find when opening the unfiltered picker.
+  if(!terms.length){
+    const selected = state.input.value.trim();
+    const entry = state.matches.find(entry=>entry.emoji === selected);
+    if(entry)state.matches = [entry,...state.matches.filter(row=>row !== entry)];
+  }
+  state.wrap.replaceChildren();
+  state.wrap.scrollTop = 0;
+  appendEmojiPickerBatch(state);
+  if(focusedEmoji){
+    const chip = Array.from(state.wrap.children).find(chip=>chip.textContent === focusedEmoji);
+    if(chip)chip.focus({preventScroll:true});
+  }
+  state.status.replaceChildren();
+  if(_emojiCatalogFailed){
+    state.status.textContent = 'Showing common emoji. Search again or paste any emoji.';
+  }else if(!state.matches.length){
+    state.status.textContent = _emojiCatalogPromise ? 'Loading emoji…' : 'No emoji found. Try another word or paste one.';
+  }
+  state.status.hidden = !state.status.textContent;
+}
+
+function openEmojiPicker(inputId){
+  const state = _emojiPickers.get(inputId);
+  if(!state)return;
+  state.search.value = '';
+  refreshEmojiPicker(state);
+  void ensureEmojiCatalog();
+  // Phones keep the browse grid visible without bringing up a text keyboard.
+  const focus = matchMedia('(hover:hover) and (pointer:fine)').matches ? state.search : state.wrap.firstElementChild;
+  focus?.focus({preventScroll:true});
+}
+
+// RENDER: bounded batches keep thousands of emoji out of the initial DOM.
+function renderGenericEmojiRow(containerId, inputId){
+  const wrap = document.getElementById(containerId);
+  const input = document.getElementById(inputId);
+  if(!wrap || !input)return;
+  const prefix = inputId.replace(/-emoji$/,'');
+  const state = {wrap,input,search:document.getElementById(`${prefix}-emoji-search`),
+    status:document.getElementById(`${prefix}-emoji-status`),
+    fallback:emojiPickerEntries([]),matches:[]};
+  _emojiPickers.set(inputId,state);
+  const filter = ()=>{refreshEmojiPicker(state);void ensureEmojiCatalog();};
+  state.search.addEventListener('input',filter);
+  state.search.addEventListener('keydown',event=>{
+    if(event.key === 'ArrowDown' || event.key === 'Enter'){
+      event.preventDefault();
+      wrap.firstElementChild?.focus();
+    }
+  });
+  wrap.addEventListener('scroll',()=>{
+    if(wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 100)appendEmojiPickerBatch(state);
+  },{passive:true});
+  wrap.addEventListener('click',event=>{
+    const chip = event.target.closest('.generic-emoji-chip');
+    if(!chip || (event.detail !== 0 && typeof isScrollGuarded === 'function' && isScrollGuarded(chip)))return;
+    input.value = chip.textContent;
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    wrap.querySelectorAll('.generic-emoji-chip').forEach(el=>{el.tabIndex = el === chip ? 0 : -1;});
+    updateEmojiPreview();
+  });
+  wrap.addEventListener('keydown',event=>{
+    const chip = event.target.closest('.generic-emoji-chip');
+    if(!chip)return;
+    const columns = getComputedStyle(wrap).gridTemplateColumns.split(' ').length;
+    const moves = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-columns,ArrowDown:columns,Home:-Infinity,End:Infinity};
+    if(!(event.key in moves))return;
+    event.preventDefault();
+    const index = Array.from(wrap.children).indexOf(chip);
+    const next = Math.max(0,Math.min(state.matches.length - 1,index + moves[event.key]));
+    while(wrap.childElementCount <= next)appendEmojiPickerBatch(state);
+    chip.tabIndex = -1;
+    const target = wrap.children[next];
+    if(target){target.tabIndex = 0;target.focus({preventScroll:true});target.scrollIntoView({block:'nearest'});}
+  });
+  if(typeof addScrollGuard === 'function')addScrollGuard(wrap,'y');
+  refreshEmojiPicker(state);
 }
 
 // HANDLER: as the name changes, auto-fill a matching emoji (unless the user
@@ -737,8 +854,7 @@ function setupEmojiSuggestion(){
   if(preview){
     preview.addEventListener('click',()=>{
       if(editArea)editArea.hidden = false;
-      if(emojiInput)emojiInput.focus({preventScroll:true});
-      requestAnimationFrame(()=>scrollPickerToSelected('ting-generic-emoji'));
+      openEmojiPicker('ting-emoji');
     });
   }
   // The detail disclosure owns visibility; the preview opens that section.
@@ -753,9 +869,12 @@ function setupEmojiSuggestion(){
   if(typeSeg){
     typeSeg.addEventListener('click',()=>setTimeout(updateEmojiPreview,0));
   }
-  // generic quick-pick rows: always an emoji available, even with no match
+  // Compact pickers start with common emoji and load the catalog on demand.
   renderGenericEmojiRow('ting-generic-emoji','ting-emoji');
   renderGenericEmojiRow('detail-generic-emoji','detail-emoji');
+  document.getElementById('detail-appearance-disclosure')?.addEventListener('toggle',event=>{
+    if(event.target.open)void ensureEmojiCatalog();
+  });
   // detail sheet: suggest on rename only while the emoji field is empty
   const detailName = document.getElementById('detail-habit-message');
   const detailEmoji = document.getElementById('detail-emoji');
@@ -797,9 +916,7 @@ function openDetailEmojiEditor(opts){
   const disclosure = document.getElementById('detail-appearance-disclosure');
   if(disclosure)disclosure.open = true;
   const reveal = ()=>{
-    scrollPickerToSelected('detail-generic-emoji');
-    const el = document.getElementById('detail-emoji');
-    if(el)el.focus({preventScroll:true});
+    openEmojiPicker('detail-emoji');
   };
   detailEditorFocusTimer = setTimeout(()=>{detailEditorFocusTimer = null;reveal();},opts?.scroll === false ? 0 : 280);
 }
@@ -889,6 +1006,8 @@ function setupDetailMarkMenu(){
       const r = orig(i);
       const el = document.getElementById('detail-emoji');
       _detailEmojiAtOpen = el ? el.value.trim() : '';
+      const picker = _emojiPickers.get('detail-emoji');
+      if(picker){picker.search.value = '';refreshEmojiPicker(picker);}
       updateEmojiPreview();
       const mark = document.getElementById('detail-mark');
       const h = typeof load === 'function' ? load()[i] : null;

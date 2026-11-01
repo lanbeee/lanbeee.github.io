@@ -143,14 +143,13 @@
         </button>
       </div>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
-        <label class="emoji-field">
-          <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>An icon is suggested from the name. Pick another below, or clear the field to use the default icon.</div></span></span>
-          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-        </label>
         <div class="generic-emoji-wrap">
-          <span class="settings-sublabel">quick pick</span>
-          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="common emojis"></div>
+          <div class="emoji-picker-toolbar">
+            <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" title="Type or paste emoji; clear for the default icon" placeholder="🙂" maxlength="64" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+            <input type="search" id="ting-emoji-search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          </div>
+          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="Emoji choices"></div>
+          <p class="emoji-picker-status field-hint" id="ting-emoji-status" role="status" hidden></p>
         </div>
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
@@ -647,15 +646,14 @@
           </details>
           <details class="detail-disclosure" id="detail-appearance-disclosure"><summary>emoji &amp; color</summary>
           <div class="ting-emoji-edit" id="detail-emoji-edit">
-            <label class="emoji-field">
-              <span>emoji</span>
-              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-            </label>
             <div class="generic-emoji-wrap">
-              <span class="settings-sublabel">quick pick</span>
-              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="common emojis"></div>
+              <div class="emoji-picker-toolbar">
+                <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" title="Type or paste emoji; clear for the default icon" placeholder="🙂" maxlength="64" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+                <input type="search" id="detail-emoji-search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+              </div>
+              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="Emoji choices"></div>
+              <p class="emoji-picker-status field-hint" id="detail-emoji-status" role="status" hidden></p>
             </div>
-            <p class="field-hint emoji-help">Optional. Scroll sideways for common emojis. No name match uses a neutral one; blank uses the default habit icon.</p>
             <span class="settings-sublabel">emoji background</span>
             <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           </div>

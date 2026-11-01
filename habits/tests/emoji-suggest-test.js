@@ -1,5 +1,5 @@
 // Emoji suggestion: exact keywords, fuzzy misspelling recovery, ambiguity
-// rejection, and the generic quick-pick row (add + detail sheets).
+// rejection, and compact searchable pickers (add + detail sheets).
 const { chromium } = require('playwright');
 const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 
@@ -112,8 +112,8 @@ function check(label, cond, extra){
       detailSame: detRow && JSON.stringify([...detRow.querySelectorAll('.generic-emoji-chip')].map(c => c.textContent)) === JSON.stringify(generic)
     };
   });
-  check('quick-pick add row renders the full picker set', rows.chipCount === rows.pickerCount && rows.chipCount >= 80, JSON.stringify({ chipCount: rows.chipCount, pickerCount: rows.pickerCount }));
-  check('quick-pick detail row renders same set', rows.detailCount === rows.chipCount && rows.detailSame, JSON.stringify({ detailCount: rows.detailCount, chipCount: rows.chipCount }));
+  check('add picker renders only the first batch', rows.chipCount === 80 && rows.pickerCount > rows.chipCount, JSON.stringify({ chipCount: rows.chipCount, pickerCount: rows.pickerCount }));
+  check('detail picker starts with the same bounded set', rows.detailCount === rows.chipCount && rows.detailSame, JSON.stringify({ detailCount: rows.detailCount, chipCount: rows.chipCount }));
 
   // --- chip tap fills the add-sheet field and counts as a user choice ---
   const chipFill = await page.evaluate(() => {
@@ -159,23 +159,37 @@ function check(label, cond, extra){
     return !document.getElementById('ting-emoji-edit').hidden && row.querySelectorAll('.generic-emoji-chip').length > 0;
   });
   check('tapping the preview tile reveals the quick-pick chips', chipsRevealed);
+  await page.waitForFunction(() => _emojiCatalog?.length >= 3900);
   const rowLayout = await page.evaluate(() => {
     const row = document.getElementById('ting-generic-emoji');
-    const chips = [...row.querySelectorAll('.generic-emoji-chip')];
     const style = getComputedStyle(row);
-    const tops = new Set(chips.map(c => c.offsetTop));
-    return {
-      wrap: style.flexWrap,
-      overflowX: style.overflowX,
-      scrollable: row.scrollWidth > row.clientWidth + 8,
-      oneRow: tops.size === 1,
-      count: chips.length
-    };
+    return {display:style.display, height:row.clientHeight, scrollable:row.scrollHeight > row.clientHeight,
+      fits:row.scrollWidth <= row.clientWidth, count:row.childElementCount};
   });
-  check('emoji picker is a single horizontally scrollable row',
-    rowLayout.wrap === 'nowrap' && (rowLayout.overflowX === 'auto' || rowLayout.overflowX === 'scroll')
-      && rowLayout.scrollable && rowLayout.oneRow && rowLayout.count >= 80,
-    JSON.stringify(rowLayout));
+  check('emoji picker is a compact vertical grid without horizontal overflow',
+    rowLayout.display === 'grid' && rowLayout.height <= 184 && rowLayout.scrollable
+      && rowLayout.fits && rowLayout.count <= 160, JSON.stringify(rowLayout));
+  check('full catalog includes flags, skin tones, and joined emoji', await page.evaluate(() =>
+    ['🇯🇵','👍🏽','👩🏽‍❤️‍💋‍👨🏻','🦦'].every(emoji=>_emojiCatalog.some(entry=>entry.emoji === emoji))));
+  const search = page.locator('#ting-emoji-search');
+  await search.fill('otter');
+  await page.locator('#ting-generic-emoji button').filter({hasText:'🦦'}).click();
+  check('search finds and selects an emoji outside the old common set', await page.locator('#ting-emoji').inputValue() === '🦦');
+  await search.fill('thumbs up medium skin tone');
+  await page.locator('#ting-generic-emoji button').filter({hasText:'👍🏽'}).click();
+  check('skin-tone selection preserves the complete emoji', await page.locator('#ting-emoji').inputValue() === '👍🏽');
+  await search.fill('');
+  await search.fill('japan');
+  check('search finds country flags', await page.locator('#ting-generic-emoji button').filter({hasText:'🇯🇵'}).count() === 1);
+  await search.fill('nothing-matches-this-emoji');
+  check('empty search has a concise recovery hint', await page.locator('#ting-emoji-status').isVisible()
+    && (await page.locator('#ting-emoji-status').textContent()).includes('paste'));
+  await search.fill('kiss man woman');
+  const joinedEmoji = '👩🏽‍❤️‍💋‍👨🏻';
+  await page.locator('#ting-emoji').fill(joinedEmoji);
+  check('pasting a long joined emoji does not truncate it', await page.locator('#ting-emoji').inputValue() === joinedEmoji);
+  // Reset the manual-choice guard before continuing auto-suggestion checks.
+  await page.evaluate(() => {clearEmojiSuggestion();});
 
   await nameInput.fill('meditatoin');
   await page.waitForTimeout(500);
@@ -269,20 +283,14 @@ function check(label, cond, extra){
   check('edit emoji closes the menu and opens the emoji page', editorOpen.menuHidden && editorOpen.appearanceOpen && editorOpen.nav === 'identity', JSON.stringify(editorOpen));
   const detailRowLayout = await page.evaluate(() => {
     const row = document.getElementById('detail-generic-emoji');
-    const chips = [...row.querySelectorAll('.generic-emoji-chip')];
-    const style = getComputedStyle(row);
-    const tops = new Set(chips.map(c => c.offsetTop));
-    return {
-      wrap: style.flexWrap,
-      overflowX: style.overflowX,
-      scrollable: row.scrollWidth > row.clientWidth + 8,
-      oneRow: tops.size === 1
-    };
+    return {display:getComputedStyle(row).display,height:row.clientHeight,fits:row.scrollWidth <= row.clientWidth};
   });
-  check('detail emoji picker is a single horizontally scrollable row',
-    detailRowLayout.wrap === 'nowrap' && (detailRowLayout.overflowX === 'auto' || detailRowLayout.overflowX === 'scroll')
-      && detailRowLayout.scrollable && detailRowLayout.oneRow,
-    JSON.stringify(detailRowLayout));
+  check('detail uses the same compact grid', detailRowLayout.display === 'grid' && detailRowLayout.height <= 184
+    && detailRowLayout.fits, JSON.stringify(detailRowLayout));
+  await page.locator('#detail-emoji-search').fill('otter');
+  await page.locator('#detail-generic-emoji button').filter({hasText:'🦦'}).click();
+  check('detail catalog selection updates the field and marks it dirty', await page.locator('#detail-emoji').inputValue() === '🦦'
+    && await page.locator('#detail-sheet .sheet').evaluate(el=>el.classList.contains('tune-dirty')));
   await page.evaluate(() => { if(typeof openDetail === 'function')openDetail(0); });
   await page.locator('#detail-sheet.open').waitFor({ timeout: 5000 });
   await page.locator('#detail-name').click();
@@ -316,6 +324,56 @@ function check(label, cond, extra){
   await page.waitForFunction(prev => (load()[0].logs || []).length === prev + 1, homeBefore, { timeout: 4000 });
   const homeAfter = await page.evaluate(() => (load()[0].logs || []).length);
   check('home pulse still logs immediately without a menu', homeAfter === homeBefore + 1, `${homeBefore} -> ${homeAfter}`);
+
+  // Desktop: lazy loading, recovery, wheel scrolling, keyboard selection, persistence.
+  const desktop = await browser.newPage({viewport:{width:1280,height:900},serviceWorkers:'block'});
+  desktop.on('pageerror',e=>pageErrors.push(String(e)));
+  await desktop.addInitScript(()=>{
+    localStorage.setItem('tings_coach_install_v2','done');
+    localStorage.setItem('tings_coach_essentials_v2','done');
+    localStorage.setItem('tings_app_settings_v2',JSON.stringify({agendaOptimizer:false,showWeekOnHome:false}));
+  });
+  let catalogRequests = 0;
+  await desktop.route('**/lib/emoji/catalog.json',async route=>{
+    catalogRequests++;
+    if(catalogRequests === 1)await route.fulfill({status:503,body:'unavailable'});
+    else await route.continue();
+  });
+  await desktop.goto(baseUrl,{waitUntil:'networkidle'});
+  check('catalog does not load on startup', catalogRequests === 0);
+  await desktop.locator('#bar-open-add').click();
+  await desktop.locator('#ting-message').fill('Desktop emoji');
+  await desktop.locator('#ting-emoji-preview').click();
+  await desktop.locator('#ting-emoji-status').waitFor();
+  check('catalog failure leaves common emoji usable', await desktop.locator('#ting-generic-emoji button').count() === 80);
+  await desktop.locator('#ting-emoji-search').fill('otter');
+  await desktop.waitForFunction(()=>_emojiCatalog?.length >= 3900);
+  check('catalog retries successfully', catalogRequests === 2);
+  check('desktop keeps emoji search focused', await desktop.locator('#ting-emoji-search').evaluate(el=>document.activeElement === el));
+  await desktop.locator('#ting-emoji-search').fill('');
+  const gridBox = await desktop.locator('#ting-generic-emoji').boundingBox();
+  await desktop.mouse.move(gridBox.x + gridBox.width / 2,gridBox.y + gridBox.height / 2);
+  await desktop.mouse.wheel(0,1200);
+  await desktop.waitForFunction(()=>document.getElementById('ting-generic-emoji').childElementCount > 80);
+  check('mouse-wheel browsing loads more emoji', await desktop.locator('#ting-generic-emoji').evaluate(el=>el.scrollTop > 0));
+  await desktop.locator('#ting-emoji-search').fill('otter');
+  await desktop.locator('#ting-emoji-search').press('ArrowDown');
+  await desktop.keyboard.press('Enter');
+  check('desktop can select a search result with the keyboard', await desktop.locator('#ting-emoji').inputValue() === '🦦', JSON.stringify(await desktop.evaluate(()=>({active:document.activeElement.outerHTML,value:document.getElementById('ting-emoji').value}))));
+  await desktop.locator('#ting-message').fill('Saved desktop emoji');
+  await desktop.waitForTimeout(350);
+  await desktop.locator('#do-save').click();
+  await desktop.waitForFunction(()=>load().some(h=>h.name === 'Saved desktop emoji' && h.emoji === '🦦'));
+  check('selected emoji persists after adding', await desktop.evaluate(()=>load().some(h=>h.name === 'Saved desktop emoji' && h.emoji === '🦦')));
+  await desktop.evaluate(()=>openDetail(load().findIndex(h=>h.name === 'Saved desktop emoji')));
+  await desktop.locator('#detail-mark').click();
+  await desktop.locator('#detail-mark-edit-emoji').click();
+  await desktop.locator('#detail-emoji-search').fill('japan');
+  await desktop.locator('#detail-generic-emoji button').filter({hasText:'🇯🇵'}).click();
+  await desktop.screenshot({path:'test-results/emoji-picker-desktop.png',fullPage:true});
+  await desktop.locator('#detail-save').click();
+  check('detail emoji changes persist after saving', await desktop.evaluate(()=>load().some(h=>h.name === 'Saved desktop emoji' && h.emoji === '🇯🇵')));
+  await desktop.close();
 
   // --- no page errors ---
   check('no page errors', pageErrors.length === 0, pageErrors.join(' | '));
