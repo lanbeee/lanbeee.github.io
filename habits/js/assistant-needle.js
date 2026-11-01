@@ -197,7 +197,11 @@ function assistantNeedleSchema(schema){
 // use literal slices of the original text; intent never comes from a parser.
 function assistantNeedleTools(source){
   const out = [];
-  const add = (original, name, description, core, fixed)=>{
+  // Minimal-mode controls each get a closed alias. Field retrieval must not
+  // pull a neighboring setting back in, or "3 times" is read as minutes.
+  const basicEditFields = ['rhythm','timesPerPeriod','periodDays','durationMinutes','windowText','weekdays','newName','habitKind','kind','due','dueTime'];
+  const itemName = ()=>({type:'string',description:'Saved item title. Omit when the user says it, this, or that.'});
+  const add = (original, name, description, core, fixed, spec)=>{
     const parameters = assistantNeedleSchema(original.function.parameters);
     if(fixed){
       for(const key of Object.keys(fixed))delete parameters.properties[key];
@@ -208,7 +212,22 @@ function assistantNeedleTools(source){
       delete parameters.properties.ask;
       parameters.required = name === 'change_item' ? [] : ['name'];
     }
-    out.push({name,description,parameters,core,canonical:original.function.name,fixed:fixed || {}});
+    if(name === 'change_item'){
+      for(const key of basicEditFields)delete parameters.properties[key];
+      parameters.required = (parameters.required || []).filter(key=>parameters.properties[key]);
+    }
+    let exposed = core;
+    if(spec && spec.only){
+      parameters.properties = Object.fromEntries(spec.only.map(key=>{
+        const authored = spec.fields && spec.fields[key];
+        const base = parameters.properties[key];
+        return [key, authored ? {...(base || {}), ...authored} : (base || {type:'string'})];
+      }));
+      parameters.required = (spec.required || []).slice();
+      exposed = spec.only.slice();
+    }
+    out.push({name,description,parameters,core:exposed,canonical:original.function.name,fixed:fixed || {},
+      closed:Boolean(spec && spec.only)});
   };
   for(const original of source){
     const name = original.function.name;
@@ -218,8 +237,32 @@ function assistantNeedleTools(source){
         ['name','rhythm','durationMinutes','windowText'],{kind:'habit',create:true});
       add(original,'add_task','Add a one-off task or reminder. Remind me to call mom tomorrow.',
         ['name','due','dueTime','durationMinutes'],{kind:'task',create:true});
-      add(original,'change_item','Edit one existing task or habit. Change its duration to 45 minutes or change its repeating schedule.',
-        ['name','newName','durationMinutes','rhythm','windowText'],{create:false});
+      add(original,'change_item','Change the priority, topics, weather, or places of one existing task or habit.',
+        ['name'],{create:false});
+      add(original,'change_frequency','Change how many times an existing task or habit repeats. Put the whole phrase in rhythm, such as daily, weekly, or a number of times in a number of days.',
+        null,{create:false,kind:'habit'},{only:['name','rhythm'],required:['rhythm'],fields:{
+          name:itemName(),
+          rhythm:{type:'string',description:'The whole repetition phrase, such as daily or a number of times in a number of days.'}
+        }});
+      add(original,'change_duration','Change how long an existing task or habit lasts. 30 minutes, 45 minutes, or half an hour.',
+        null,{create:false},{only:['name','durationMinutes'],required:['durationMinutes'],fields:{name:itemName()}});
+      add(original,'change_availability','Change which weekdays or clock hours an existing task or habit may use. This is not how many times it repeats.',
+        null,{create:false},{only:['name','weekdays','windowText'],fields:{
+          name:itemName(),
+          weekdays:{type:'string',description:'Weekdays it may use, such as weekdays, weekends, or Tuesday and Thursday. Not a repetition count.'},
+          windowText:{type:'string',description:'Clock hours, such as between 5pm and 7pm, after 6pm, or before 9pm.'}
+        }});
+      add(original,'rename_item','Rename an existing task or habit.',
+        null,{create:false},{only:['name','newName'],required:['newName'],fields:{name:itemName()}});
+      add(original,'change_type','Change an existing item from a habit to a task, or from a task to a habit.',
+        null,{create:false},{only:['name','kind'],required:['kind'],fields:{name:itemName()}});
+      add(original,'change_kind','Change an existing habit to build, limit, or stop.',
+        null,{create:false,kind:'habit'},{only:['name','habitKind'],required:['habitKind'],fields:{
+          name:itemName(),
+          habitKind:{type:'string',enum:['build','limit','stop'],description:'build, limit, or stop'}
+        }});
+      add(original,'change_deadline','Change the due date or start time of an existing task. Due tomorrow, next Friday, or at 3pm.',
+        null,{create:false},{only:['name','due','dueTime'],fields:{name:itemName()}});
     }else if(name === 'answer_schedule'){
       const variants = [
         ['get_schedule','Get the schedule or agenda for a day. What is on my schedule today? What do I have tomorrow?','day'],
@@ -300,7 +343,14 @@ function assistantNeedleTurn(req){
 
   const results = messages.filter(m=>m.role === 'tool').map(m=>m.content);
   const system = `date: ${date}; assistant: Tings; user: ${JSON.stringify(facts)}`;
-  return {request:envelope.request, system, results};
+  // Server steering names canonical tools that Needle cannot call. Return
+  // compact validation facts alongside the unchanged request instead.
+  const feedback = req.think === false
+    ? (envelope.continueWith || assistantLastSteeringText(messages)) : '';
+  const invalid = feedback.match(/^That tool call was invalid \(([\s\S]*)\)\./);
+  const repair = feedback ? JSON.stringify({ok:false,
+    error:invalid ? invalid[1] : 'No valid tool call was returned.',request:envelope.request}) : '';
+  return {request:envelope.request, system, results, repair};
 }
 
 async function assistantNeedleComplete(req){
@@ -333,7 +383,8 @@ async function assistantNeedleComplete(req){
   return {message:{role:'assistant', content:'', thinking:raw.reasoning || '',
     tool_calls:calls.map((call,i)=>{
       const tool = tools.find(t=>t.name === call.name);
-      return {id:`needle-${i}`, type:'function', function:{name:tool.canonical, arguments:{...call.arguments,...tool.fixed}}};
+      const args = {...call.arguments,...tool.fixed};
+      return {id:`needle-${i}`, type:'function', function:{name:tool.canonical, arguments:args}};
     })},
     prompt_eval_count:raw._promptTokens || 0, _contextLimit:8192, _contextManaged:true, _needleConfidence:raw.confidence};
 }

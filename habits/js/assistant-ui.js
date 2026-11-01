@@ -114,11 +114,13 @@ function assistantEnabledStatusText(){
 }
 
 function patchLocalAssistant(patch){
+  const wasEnabled = assistantEnabled();
   if(patch.localAssistantProvider && patch.localAssistantProvider !== assistantSettings().provider)assistantAbortInFlight();
   if(typeof updateSortSetting === 'function')updateSortSetting(patch, {renderNow:false});
   else if(typeof saveSortSettings === 'function')saveSortSettings({...loadSortSettings(), ...patch});
   sortSettings = typeof loadSortSettings === 'function' ? loadSortSettings() : sortSettings;
   syncLocalAssistantControls();
+  if(wasEnabled !== assistantEnabled() && typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   if(assistantEnabled() && assistantSettings().provider === 'needle')void assistantNeedleCheckDownload();
 }
 
@@ -211,7 +213,15 @@ function closeAssistantSheet(){
   if(window.tingsExternalAssistant)setTimeout(()=>window.tingsExternalAssistant.drain(),0);
 }
 
-// Entry points (add sheet, detail page) start a fresh conversation with the
+function assistantOpenForItem(hid, entry){
+  const items = load();
+  const index = items.findIndex(item=>item.hid === hid);
+  if(index < 0)return false;
+  const draft = assistantHabitToDraft(items[index],index,loadSortSettings());
+  return assistantOpenWithInstruction('',{draft,entry});
+}
+
+// Entry points (add sheet, detail page, home swipe) start a fresh conversation with the
 // intent or item already known, so the model skips classify and extracts
 // straight away. All other natural-language turns start with the model too.
 async function assistantOpenWithInstruction(text, opts){
@@ -229,13 +239,14 @@ async function assistantOpenWithInstruction(text, opts){
   _assistantPendingDraft = null;
   _assistantPendingDrafts = null;
   _assistantSession = assistantCreateSession();
+  _assistantSession.entry = opts.entry || null;
   if(draft)_assistantSession.draft = draft;
   syncAssistantFocusBar();
   openAssistantSheet({skipWelcome:!value || Boolean(draft)});
   if(!value){
-    // Detail entry with no instruction yet: introduce the focus locally —
+    // Item entry with no instruction yet: introduce the focus locally —
     // no model call until the user types.
-    appendAssistantBubble('say', `Working on ${draft.name}. Tell me what to change — schedule, window, place, duration, anything.`);
+    appendAssistantBubble('say', `Working on ${draft.name}. Tell me what to do — change its schedule, log it, plan it, or ask a question.`);
     const input = $('assistant-input');
     if(input)input.focus({preventScroll:true});
     setTimeout(() => {
@@ -707,7 +718,7 @@ async function sendAssistantMessage(text, opts){
     const out = await runAssistantTurn(value, {
       session:_assistantSession || assistantCreateSession(),
       startIntent:opts.startIntent || undefined,
-      entry:opts.entry || undefined,
+      entry:opts.entry || _assistantSession?.entry || undefined,
       onProgress:info => {
         if(turn !== _assistantTurn)return;
         const wait = $('assistant-waiting');

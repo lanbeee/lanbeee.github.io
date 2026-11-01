@@ -252,7 +252,9 @@ async function launchBrowser(){
     r = apply({option:'Tue 09:00-11:00 at Gym'});
     check('option 24h dash', r.habit && r.habit.scheduleOptions && r.habit.scheduleOptions[0] && r.habit.scheduleOptions[0].locationId === 'gym-1' && r.habit.scheduleOptions[0].start === 9 * 60 && JSON.stringify(r.habit.scheduleOptions[0].weekdays) === JSON.stringify([2]));
     r = apply({planBy:'tomorrow'});
-    const tomorrow = typeof dayStart === 'function' ? dayStart(now) + 86400000 : now + 86400000;
+    const tomorrowDate = new Date(typeof dayStart === 'function' ? dayStart(now) : now);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrow = tomorrowDate.getTime();
     check('planBy tomorrow', r.habit && r.habit.planByDate === tomorrow, r.habit && r.habit.planByDate);
 
     const {session, context} = world();

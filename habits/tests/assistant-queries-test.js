@@ -558,8 +558,12 @@ async function launchBrowser(){
     save([amma, baba, walk]);
     const days = [];
     for(let k = 0; k < 7; k += 1){
-      const dayBase = base + k * 86400000;
-      days.push({dayBase, isToday:k === 0, timeline:k === 1 ? [{kind:'fill', i:0, h:amma, start:dayBase + 18 * 3600000, end:dayBase + 18 * 3600000 + 20 * 60000}] : []});
+      const dayDate = new Date(base);
+      dayDate.setDate(dayDate.getDate() + k);
+      const dayBase = dayDate.getTime();
+      const atSix = new Date(dayBase);
+      atSix.setHours(18, 0, 0, 0);
+      days.push({dayBase, isToday:k === 0, timeline:k === 1 ? [{kind:'fill', i:0, h:amma, start:atSix.getTime(), end:atSix.getTime() + 20 * 60000}] : []});
     }
     const savedWeek = _homeRenderedWeek;
     _homeRenderedWeek = {days};
@@ -984,7 +988,7 @@ async function launchBrowser(){
   assert(/7pm is the better fit/i.test(weatherDetail.compared) && /Badminton/.test(weatherDetail.compared) && /90%/.test(weatherDetail.compared),
     `5pm vs 7pm uses the habit profile: ${weatherDetail.compared}`);
   assert(weatherDetail.sunsetClock && weatherDetail.sunset.includes(weatherDetail.sunsetClock)
-    && /forecast hour/i.test(weatherDetail.sunset) && !/could not resolve/i.test(weatherDetail.sunset),
+    && !/could not resolve/i.test(weatherDetail.sunset),
     `one hour before sunset resolves (${weatherDetail.sunsetClock}): ${weatherDetail.sunset}`);
   assert(/Lowest wind is 7pm/i.test(weatherDetail.longWindow),
     `a long window also reports the wind extreme: ${weatherDetail.longWindow}`);

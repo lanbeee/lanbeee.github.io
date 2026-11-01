@@ -73,6 +73,21 @@ Fields that name another item (`before` / `after`, habit-window anchors) resolve
 
 The first model pass exposes final validated tools, so `classify_intent` is optional. The add-sheet sparkles button and the detail "change with AI" row pass `startIntent` / `draft` via `assistantOpenWithInstruction`, so the turn starts at extract. Trace provenance is `entry-add` / `entry-detail`.
 
+When enabled, the assistant also appears as **ask AI** when swiping right on a
+home habit or task card, in full and minimal views. It opens a fresh conversation
+focused on that saved item's identity, with no model call until an instruction
+is sent. Item actions and questions share the detail entry's draft context;
+home turns retain `entry: home` in their trace. The minimal-mode controls
+each have a closed Needle alias that stages one `draft_item` change: how often,
+duration, allowed days and hours, name, habit or task, build/limit/stop, and a
+task's due date and start time. A repetition count cannot share a schema with
+minutes. Those closed aliases stay together: once retrieval finds any of them,
+every sibling control is offered, so a value is not forced into the nearest
+field. A call that includes no new setting is rejected and repaired. A value
+that is invalid, or that already matches the item, still previews. Other
+settings stay on the general edit alias. Repair feedback continues the worker
+conversation separately from the literal request.
+
 ## Tools
 
 - `draft_item` creates or changes item settings.

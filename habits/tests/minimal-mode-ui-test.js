@@ -16,7 +16,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       localStorage.setItem('tings_coach_install_v2','done');
       localStorage.setItem('tings_coach_essentials_v2','done');
     });
-    await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'networkidle'});
+    await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'load'});
     await page.evaluate(h=>{save([h]);openDetail(0);},baseHabit({
       hid:'minimal-fixture',name:'Reading',durationMinutes:30,
       allowedWeekdays:[1],allowedTimeStart:540,allowedTimeEnd:1020,
@@ -72,6 +72,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     assert.equal(saved.earlyWindowDays,2);
     assert.deepEqual(saved.links,tune.links);
 
+    await page.evaluate(()=>closeDetail());
     await page.locator('#open-add').click();
     assert.ok(await page.locator('#ting-duration').isVisible());
     assert.equal(await page.locator('#add-open-defaults').isVisible(),false);

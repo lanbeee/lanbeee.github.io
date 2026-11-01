@@ -1799,15 +1799,10 @@ $('detail-snooze').addEventListener('click',()=>{
 $('detail-ask-ai').addEventListener('click',()=>{
   if(detailIdx === null)return;
   if(typeof tingsLoadAssistant !== 'function')return;
-  const index = detailIdx;
-  const item = load()[index];
+  const item = load()[detailIdx];
   if(!item)return;
   void tingsLoadAssistant().then(()=>{
-    if(typeof assistantOpenWithInstruction !== 'function')return;
-    const draft = typeof assistantHabitToDraft === 'function'
-      ? assistantHabitToDraft(item,index,loadSortSettings())
-      : {hid:item.hid,name:item.name,kind:item.type === 'task' ? 'task' : 'habit'};
-    assistantOpenWithInstruction('',{draft,entry:'detail'});
+    if(typeof assistantOpenForItem === 'function')assistantOpenForItem(item.hid,'detail');
   });
 });
 $('detail-export').addEventListener('click',()=>{

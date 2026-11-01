@@ -1698,6 +1698,9 @@ function render(opts){
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
     const activityAction = event ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
+    const assistantAction = !event && !synced && sortSettings.localAssistant
+      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="ask assistant about ${escapeHtml(h.name)}"><i class="ti ti-sparkles" aria-hidden="true"></i>ask AI</button>`
+      : '';
     const planAction = dayLogsHabitPlannable(h)
       ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
       : '';
@@ -1745,7 +1748,7 @@ function render(opts){
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         <div class="swipe-action-strip" role="group" aria-label="${event?'event links':'session, planning and history'}">
-          ${rightSwipeActions}
+          ${assistantAction}${rightSwipeActions}
         </div>
       </div>
       <div class="swipe-actions swipe-actions-right">
@@ -2205,6 +2208,12 @@ function render(opts){
       const row = btn.closest('.swipe-row');
       const idx = +row.dataset.realIdx;
       closeAllSwipes();
+      if(btn.dataset.action === 'assistant' && typeof tingsLoadAssistant === 'function'){
+        const hid = row.dataset.hid;
+        void tingsLoadAssistant().then(()=>{
+          if(typeof assistantOpenForItem === 'function')assistantOpenForItem(hid,'home');
+        });
+      }
       if(btn.dataset.action === 'plan')openSwipePlan(idx,Number(row.dataset.dayBase));
       if(btn.dataset.action === 'open-link'){
         const link = habitPrimaryLink(load()[idx]);

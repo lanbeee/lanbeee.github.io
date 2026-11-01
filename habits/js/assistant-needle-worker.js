@@ -58,10 +58,19 @@ function needleSimilarity(query, text){
 function needleSelectTools(data, selected){
   const query = needleEmbedding(data.request);
   const featureKinds=new Set(['calendar','reminders','sharing','widgets']);
-  const choices = (selected || data.tools).filter(t=>t.name !== 'ask_user'
-    && (selected || !featureKinds.has(t.fixed?.kind)))
-    .map(tool=>({tool,score:needleSimilarity(query,tool.description)}))
-    .sort((a,b)=>b.score-a.score).slice(0,3).map(row=>row.tool);
+  const pool = (selected || data.tools).filter(t=>t.name !== 'ask_user'
+    && (selected || !featureKinds.has(t.fixed?.kind)));
+  const ranked = pool.map(tool=>({tool,score:needleSimilarity(query,tool.description)}))
+    .sort((a,b)=>b.score-a.score);
+  const open = ranked.filter(row=>!row.tool.closed).map(row=>row.tool);
+  const choices = open.slice(0,3);
+  // Closed aliases are one control surface split so each value has its own
+  // field. Keeping only the nearest sibling forces the value into that field.
+  if(!selected && ranked.slice(0,3).some(row=>row.tool.closed)){
+    for(const row of ranked){
+      if(row.tool.closed && !choices.includes(row.tool))choices.push(row.tool);
+    }
+  }
   const ask = data.tools.find(t=>t.name === 'ask_user');
   if(ask)choices.push(ask);
   const compact = (schema, core=[])=>{
@@ -120,7 +129,8 @@ function needleRun(data){
   const key = JSON.stringify([data.request,data.system]);
   const allowed = new Set(data.tools.map(t=>t.name));
   const same = active && active.key === key && active.tools.every(t=>allowed.has(t.name))
-    && active.results.every((r,i)=>data.results[i] === r) && data.results.length > active.results.length;
+    && active.results.every((r,i)=>data.results[i] === r)
+    && (data.results.length > active.results.length || data.repair);
   if(!same){
     // These features have no write semantics and distinct user vocabulary.
     // Discover them with their own tiny toolset so an import cannot become a
@@ -161,11 +171,13 @@ function needleRun(data){
     // Replays are bounded. The original request and the latest authoritative
     // results are sufficient to retry after a changed toolset or validation.
     for(const row of data.results.slice(-2))result = needleComplete(needleResultFacts(row));
+    if(data.repair)result = needleComplete(data.repair);
     active.results = data.results.slice();
     return result;
   }
   let result;
   for(const row of data.results.slice(active.results.length))result = needleComplete(needleResultFacts(row));
+  if(data.repair)result = needleComplete(data.repair);
   active.results = data.results.slice();
   return result;
 }

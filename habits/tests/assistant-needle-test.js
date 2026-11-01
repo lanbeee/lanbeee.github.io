@@ -94,6 +94,13 @@ function assert(ok, message){
         const req = {messages:[{role:'user',content:JSON.stringify({request:'Remind me to call mom',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}],
           tools:assistantOllamaTools(['draft_item','answer_schedule','answer_settings']),step:'extract'};
         const result = await assistantComplete(req);
+        reply = {success:true,function_calls:[{name:'change_frequency',arguments:{name:'Concentricity check',rhythm:'3 times a week'}}]};
+        const frequency = await assistantComplete(req);
+        const feedback = 'You thought but did not call a tool. Call the matching tool now.';
+        await assistantComplete({...req,think:false,messages:[...req.messages,{role:'user',content:feedback}]});
+        const repair = sent[sent.length - 1];
+        const invalidTurn = assistantNeedleTurn({...req,think:false,messages:[...req.messages,{role:'user',
+          content:'That tool call was invalid (The repetition phrase could not be validated.). Think again, then call classify_intent with valid arguments.'}]});
         reply = {success:true,function_calls:[],suppressed_calls:[{name:'add_habit',arguments:{name:'Walk',rhythm:'every day'}}]};
         const held = await assistantComplete(req);
         const continued = await assistantComplete({...req,messages:[...req.messages,{role:'tool',content:'{"ok":true,"preview":"Walk"}'}]});
@@ -101,15 +108,207 @@ function assert(ok, message){
         const ungrounded = await assistantComplete(req);
         assistantAbortInFlight();
         return {calls:result.message.tool_calls,held:held.message.tool_calls,continued:continued.message.tool_calls,
+          frequency:frequency.message.tool_calls,repair,invalidTurn,
           ungrounded:ungrounded.message.tool_calls,system:sent.find(m=>m.type === 'complete').system,terminated};
       }finally{ globalThis.Worker = OriginalWorker; }
     });
     assert(transport.calls.length === 2 && transport.calls[0].function.name === 'draft_item' && transport.calls[1].function.name === 'answer_settings','transport maps writes to previews and grounded held reads to app facts');
     assert(transport.calls[0].function.arguments.kind === 'task' && transport.calls[0].function.arguments.create,'task alias retains its model-selected kind');
+    assert(transport.frequency[0].function.name === 'draft_item' && transport.frequency[0].function.arguments.create === false
+      && transport.frequency[0].function.arguments.kind === 'habit' && transport.frequency[0].function.arguments.rhythm === '3 times a week',
+      'frequency tool stages an existing habit edit, including task-to-habit conversion');
+    assert(JSON.parse(transport.repair.repair).error === 'No valid tool call was returned.'
+      && JSON.parse(transport.repair.repair).request === transport.repair.request && transport.repair.request === 'Remind me to call mom',
+      'repair facts reach the worker with the original instruction and no unavailable canonical tool names');
+    assert(JSON.parse(transport.invalidTurn.repair).error === 'The repetition phrase could not be validated.'
+      && !transport.invalidTurn.repair.includes('classify_intent'),'validation repair keeps the actual error and drops server-only steering');
     assert(transport.held.length === 1 && transport.held[0].function.arguments.kind === 'habit','a held write can stage a confirmation preview');
     assert(!transport.continued.length && !transport.ungrounded.length,'held continuations and ungrounded arguments cannot stage extra actions');
     assert(transport.system.includes('date: 2026-11-01') && !transport.system.includes('[object Object]'),'Needle receives the real ISO date');
     assert(transport.terminated,'cancel stops the inference worker');
+
+    const workerScope = vm.createContext({importScripts:()=>{},self:{},prompts:[]});
+    vm.runInContext(fs.readFileSync(require.resolve('../js/assistant-needle-worker.js'),'utf8'),workerScope);
+    vm.runInContext(`
+      needleInit=()=>{};
+      needleComplete=text=>{prompts.push(text);return {function_calls:[]};};
+      needleSelectTools=data=>data.tools;
+      needleRouteTools=()=>[];
+      var retryData={request:'Can you make Concentricity check 3 times a week',system:'date: 2026-11-01',
+        tools:[{name:'change_frequency',canonical:'draft_item'}],results:[]};
+      needleRun(retryData);
+      prompts.length=0;
+      needleRun({...retryData,repair:'Call the matching tool now.'});
+      needleRun({...retryData,repair:'Call the matching tool now.'});
+    `,workerScope);
+    assert(JSON.stringify(workerScope.prompts) === JSON.stringify(['Call the matching tool now.','Call the matching tool now.']),
+      'successive no-tool repairs continue inference with feedback instead of replaying the same failed prompt');
+
+    const selectionScope = vm.createContext({importScripts:()=>{},self:{}});
+    vm.runInContext(fs.readFileSync(require.resolve('../js/assistant-needle-worker.js'),'utf8'),selectionScope);
+    vm.runInContext(`
+      needleEmbedding=()=>[1];
+      needleSimilarity=(_query,text)=>{
+        const s=String(text);
+        if(s.includes('weekdays'))return 5;
+        if(s.includes('schedule'))return 4;
+        if(s.includes('add a habit'))return 3;
+        if(s.includes('priority'))return 2;
+        if(s.includes('repeats'))return 0.2;
+        return 0;
+      };
+      const closed=name=>({name,description:name==='change_availability'?'which weekdays or clock hours':name==='change_frequency'?'how many times it repeats':'how long it lasts',
+        closed:true,canonical:'draft_item',core:['name'],parameters:{type:'object',properties:{name:{type:'string',description:'title'}},required:[]}});
+      const open=name=>({name,description:name==='get_schedule'?'schedule for a day':name==='change_item'?'priority topics weather':'add a habit',canonical:name==='get_schedule'?'answer_schedule':'draft_item',
+        core:['name'],parameters:{type:'object',properties:{name:{type:'string',description:'title'}},required:[]}});
+      const tools=[closed('change_availability'),closed('change_frequency'),closed('change_duration'),open('get_schedule'),open('add_habit'),open('change_item'),
+        {name:'ask_user',description:'ask',core:['question'],parameters:{type:'object',properties:{question:{type:'string',description:'question'}},required:['question']}}];
+      grouped=needleSelectTools({request:'seven times in ten days',tools}).map(tool=>tool.name);
+      const readTools=tools.map(tool=>tool.closed?{...tool,description:'unrelated control'}:tool);
+      reads=needleSelectTools({request:'what is on my schedule',tools:readTools}).map(tool=>tool.name);
+    `,selectionScope);
+    assert(selectionScope.grouped.includes('change_frequency') && selectionScope.grouped.includes('change_duration')
+      && selectionScope.grouped.includes('change_availability') && selectionScope.grouped.includes('get_schedule'),
+      'one relevant closed control brings its sibling controls along');
+    assert(!selectionScope.reads.includes('change_frequency') && selectionScope.reads.includes('get_schedule')
+      && selectionScope.reads.includes('ask_user'),
+      'a read does not gain edit controls when none of them rank');
+
+    const basics = await page.evaluate(async()=>{
+      const tools = assistantNeedleTools(assistantOllamaTools(['draft_item']));
+      const by = Object.fromEntries(tools.map(tool=>[tool.name, tool]));
+      const keys = name => Object.keys(by[name].parameters.properties).sort();
+      const schemas = {
+        frequency:keys('change_frequency'),
+        duration:keys('change_duration'),
+        availability:keys('change_availability'),
+        rename:keys('rename_item'),
+        type:keys('change_type'),
+        kind:keys('change_kind'),
+        deadline:keys('change_deadline'),
+        edit:keys('change_item')
+      };
+      const OriginalWorker = Worker;
+      const mapped = {};
+      const replies = [
+        ['change_frequency',{rhythm:'3 times in 7 days'}],
+        ['change_duration',{durationMinutes:'30 minutes'}],
+        ['change_availability',{weekdays:'Tuesday and Thursday',windowText:'between 5pm and 7pm'}],
+        ['rename_item',{newName:'Morning exercise'}],
+        ['change_type',{kind:'task'}],
+        ['change_kind',{habitKind:'limit'}],
+        ['change_deadline',{due:'tomorrow',dueTime:'3pm'}]
+      ];
+      let reply = {success:true,function_calls:[]};
+      globalThis.Worker = class {
+        postMessage(data){
+          const result = data.type === 'load' ? true : reply;
+          queueMicrotask(()=>this.onmessage({data:{id:data.id,result}}));
+        }
+        terminate(){}
+      };
+      try{
+        const req = {messages:[{role:'user',content:JSON.stringify({request:'Change outside exercise',catalog:{date:{iso:'2026-11-01'}}})}],
+          tools:assistantOllamaTools(['draft_item']),step:'extract'};
+        for(const [name,args] of replies){
+          reply = {success:true,function_calls:[{name,arguments:args}]};
+          const out = await assistantComplete(req);
+          const call = out.message.tool_calls[0];
+          mapped[name] = call ? {name:call.function.name,arguments:call.function.arguments} : null;
+        }
+      }finally{ globalThis.Worker = OriginalWorker; }
+      const now = Date.parse('2026-11-01T15:00:00');
+      save([
+        {hid:'ex',name:'outside exercise',type:'keepup',target:7,durationMinutes:45,logs:[],allowedWeekdays:[2]},
+        {hid:'limit-ex',name:'outside exercise',type:'reduce',target:7,durationMinutes:45,logs:[],allowedWeekdays:[2]},
+        {hid:'task',name:'Call mom',type:'task',durationMinutes:15,logs:[]}
+      ]);
+      const context = assistantBuildContext(now);
+      const run = (hid,args)=>{
+        const items = load();
+        const index = items.findIndex(item=>item.hid === hid);
+        const session = assistantCreateSession();
+        session.draft = assistantHabitToDraft(items[index],index,loadSortSettings());
+        const out = assistantExecuteTool('draft_item',args,session,context);
+        const draft = out.draft || {};
+        return {ok:out.ok,error:out.error,hid:draft.hid,name:draft.name,kind:draft.kind,habitKind:draft.habitKind,
+          times:draft.timesPerPeriod,days:draft.periodDays,duration:draft.durationMinutes,
+          weekdays:draft.allowedWeekdays || [],
+          start:draft.window && draft.window.start && draft.window.start.minutes,
+          end:draft.window && draft.window.end && draft.window.end.minutes,
+          due:draft.dueDate,dueTime:draft.dueTime};
+      };
+      return {schemas,mapped,applied:{
+        daily:run('ex',{create:false,kind:'habit',rhythm:'daily'}),
+        weekly:run('ex',{create:false,kind:'habit',rhythm:'weekly'}),
+        week:run('ex',{create:false,kind:'habit',rhythm:'3 times a week'}),
+        custom:run('ex',{create:false,kind:'habit',rhythm:'3 times in 7 days'}),
+        everyTwo:run('ex',{create:false,kind:'habit',rhythm:'every two days'}),
+        seven:run('ex',{create:false,kind:'habit',rhythm:'seven times in ten days'}),
+        empty:run('ex',{create:false}),
+        duration:run('ex',{create:false,durationMinutes:'30 minutes'}),
+        days:run('ex',{create:false,weekdays:'weekdays'}),
+        namedDays:run('ex',{create:false,weekdays:'Tuesday and Thursday'}),
+        hours:run('ex',{create:false,windowText:'between 5pm and 7pm'}),
+        both:run('ex',{create:false,weekdays:'Tuesday and Thursday',windowText:'between 5pm and 7pm'}),
+        rename:run('ex',{create:false,newName:'Morning exercise'}),
+        task:run('ex',{create:false,kind:'task'}),
+        limit:run('ex',{create:false,kind:'habit',habitKind:'limit'}),
+        stop:run('ex',{create:false,kind:'habit',habitKind:'stop'}),
+        build:run('limit-ex',{create:false,kind:'habit',habitKind:'build'}),
+        deadline:run('task',{create:false,due:'tomorrow',dueTime:'3pm'})
+      },expectedDue:assistantParseDue('tomorrow',now)};
+    });
+    const sameKeys = (name, expected)=>JSON.stringify(basics.schemas[name]) === JSON.stringify(expected);
+    assert(sameKeys('frequency',['name','rhythm']) && sameKeys('duration',['durationMinutes','name'])
+      && sameKeys('availability',['name','weekdays','windowText']) && sameKeys('rename',['name','newName'])
+      && sameKeys('type',['kind','name']) && sameKeys('kind',['habitKind','name'])
+      && sameKeys('deadline',['due','dueTime','name']),
+      'each minimal-mode control has its own closed Needle fields');
+    assert(!basics.schemas.edit.some(key=>['rhythm','timesPerPeriod','periodDays','durationMinutes','windowText','weekdays','newName','habitKind','kind','due','dueTime'].includes(key))
+      && basics.schemas.edit.includes('priority') && basics.schemas.edit.includes('placeNames'),
+      'the general edit alias keeps advanced settings and no longer offers the basic fields');
+    const mappedArgs = name => basics.mapped[name] && basics.mapped[name].arguments;
+    assert(basics.mapped.change_frequency.name === 'draft_item' && mappedArgs('change_frequency').create === false
+      && mappedArgs('change_frequency').kind === 'habit' && mappedArgs('change_frequency').rhythm === '3 times in 7 days'
+      && mappedArgs('change_duration').durationMinutes === '30 minutes' && mappedArgs('change_duration').create === false
+      && !mappedArgs('change_duration').rhythm
+      && mappedArgs('change_availability').weekdays === 'Tuesday and Thursday'
+      && mappedArgs('change_availability').windowText === 'between 5pm and 7pm'
+      && mappedArgs('rename_item').newName === 'Morning exercise'
+      && mappedArgs('change_type').kind === 'task' && mappedArgs('change_type').create === false
+      && mappedArgs('change_kind').habitKind === 'limit' && mappedArgs('change_kind').kind === 'habit'
+      && mappedArgs('change_deadline').due === 'tomorrow' && mappedArgs('change_deadline').dueTime === '3pm'
+      && !mappedArgs('change_deadline').kind,
+      'basic aliases stage one draft_item change and do not invent neighboring fields');
+    const applied = basics.applied;
+    for(const [name,times,days] of [['daily',1,1],['weekly',1,7],['week',3,7],['custom',3,7],['everyTwo',1,2],['seven',7,10]]){
+      assert(applied[name].ok && applied[name].hid === 'ex' && applied[name].times === times && applied[name].days === days
+        && applied[name].duration === 45,`how often "${name}" updates the focused habit (${JSON.stringify(applied[name])})`);
+    }
+    assert(!applied.empty.ok && applied.empty.hid == null, `a call with no new value is not a preview (${JSON.stringify(applied.empty)})`);
+    assert(applied.duration.ok && applied.duration.hid === 'ex' && applied.duration.duration === 30
+      && applied.duration.times === 1 && applied.duration.days === 7,
+      `duration accepts 30 minutes without changing how often (${JSON.stringify(applied.duration)})`);
+    assert(applied.days.ok && JSON.stringify(applied.days.weekdays) === JSON.stringify([1,2,3,4,5])
+      && applied.days.times === 1 && applied.days.days === 7 && applied.days.duration === 45,
+      `weekdays sets allowed days only (${JSON.stringify(applied.days)})`);
+    assert(applied.namedDays.ok && JSON.stringify(applied.namedDays.weekdays) === JSON.stringify([2,4])
+      && applied.hours.ok && applied.hours.start === 17 * 60 && applied.hours.end === 19 * 60
+      && JSON.stringify(applied.hours.weekdays) === JSON.stringify([2])
+      && applied.both.ok && JSON.stringify(applied.both.weekdays) === JSON.stringify([2,4])
+      && applied.both.start === 17 * 60 && applied.both.end === 19 * 60,
+      `allowed hours can be set alone or with days (${JSON.stringify({hours:applied.hours,both:applied.both})})`);
+    assert(applied.rename.ok && applied.rename.hid === 'ex' && applied.rename.name === 'Morning exercise'
+      && applied.rename.duration === 45,
+      `rename keeps the same item (${JSON.stringify(applied.rename)})`);
+    assert(applied.task.ok && applied.task.hid === 'ex' && applied.task.kind === 'task'
+      && applied.limit.ok && applied.limit.kind === 'habit' && applied.limit.habitKind === 'reduce'
+      && applied.stop.habitKind === 'zero' && applied.build.habitKind === 'keepup',
+      `habit, task, build, limit, and stop stage on the focused item (${JSON.stringify({task:applied.task,limit:applied.limit,stop:applied.stop,build:applied.build})})`);
+    assert(applied.deadline.ok && applied.deadline.hid === 'task' && applied.deadline.kind === 'task'
+      && applied.deadline.due === basics.expectedDue && applied.deadline.dueTime === '15:00',
+      `a task due date and start time stage together (${JSON.stringify(applied.deadline)})`);
 
     await page.evaluate(()=>patchLocalAssistant({localAssistantProvider:'lmstudio',localAssistantUrl:'http://localhost:1234',localAssistantModel:'existing'}));
     assert(await page.evaluate(()=>assistantSettings().provider === 'lmstudio' && assistantSettings().model === 'existing'),'server configurations still save');
@@ -161,6 +360,31 @@ function assert(ok, message){
       assert(outcomes.habit.type === 'preview' && outcomes.habit.kind === 'habit' && outcomes.habit.duration === 20 && outcomes.habit.times === 1 && outcomes.habit.period === 1,'real Needle creates a daily habit with its duration');
       assert(outcomes.commit && outcomes.edit.type === 'preview' && outcomes.edit.name === 'Walk' && outcomes.edit.duration === 45,`real Needle edits the saved habit (${JSON.stringify(outcomes.edit)})`);
       assert(outcomes.schedule.type === 'say' && outcomes.schedule.text,'real Needle answers from the actual schedule tool');
+      const beforeFrequency = await live.evaluate(()=>load());
+      const frequency = await live.evaluate(async()=>{
+        save([...load(),{hid:'needle-concentricity',name:'Concentricity check',type:'keepup',target:7,durationMinutes:20,logs:[]}]);
+        const before = JSON.stringify(load());
+        const named = await runAssistantTurn('Can you make Concentricity check 3 times a week');
+        const session = assistantCreateSession();
+        const index = load().findIndex(h=>h.hid === 'needle-concentricity');
+        session.draft = assistantHabitToDraft(load()[index],index,loadSortSettings());
+        const focused = await runAssistantTurn('Make it 3 times a week',{session});
+        const summarize = out=>({type:out.type,hid:out.draft?.hid,name:out.draft?.name,
+          times:out.draft?.timesPerPeriod,days:out.draft?.periodDays,duration:out.draft?.durationMinutes});
+        const unchanged = before === JSON.stringify(load());
+        const commit = named.draft && assistantCommitDraft(named.draft);
+        return {named:summarize(named),focused:summarize(focused),unchanged,commit:commit?.ok,
+          count:load().filter(h=>h.name === 'Concentricity check').length,
+          savedRhythm:rhythmParts(load().find(h=>h.hid === 'needle-concentricity')?.target)};
+      });
+      for(const entry of ['named','focused'])assert(frequency[entry].type === 'preview'
+        && frequency[entry].hid === 'needle-concentricity' && frequency[entry].times === 3
+        && frequency[entry].days === 7 && frequency[entry].duration === 20,
+        `real Needle previews the ${entry} Concentricity frequency edit (${JSON.stringify(frequency[entry])})`);
+      assert(frequency.unchanged && frequency.commit && frequency.count === 1
+        && frequency.savedRhythm.times === 3 && frequency.savedRhythm.days === 7,
+        `frequency changes only after confirmation and update the existing item without duplication (${JSON.stringify(frequency)})`);
+      await live.evaluate(items=>save(items),beforeFrequency);
       const compound=await live.evaluate(async()=>{
         const out=await runAssistantTurn('Remind me to call mom tomorrow. Add a task to buy milk tomorrow. What is on my schedule tomorrow?');
         return {type:out.type,names:out.drafts?.map(d=>d.name),kinds:out.drafts?.map(d=>d.kind),answer:out.alsoText,text:out.text};

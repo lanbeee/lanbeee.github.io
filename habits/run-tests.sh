@@ -296,7 +296,7 @@ for _ in $(seq 1 60); do
     echo "test server failed to start on port $PORT (the port may already be in use)" >&2
     exit 1
   fi
-  if curl -sf -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
+  if curl -sf --connect-timeout 2 --max-time 5 -o /dev/null "http://127.0.0.1:$PORT/"; then ready=1; break; fi
   sleep 0.25
 done
 if [ "$ready" -ne 1 ]; then

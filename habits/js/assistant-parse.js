@@ -43,6 +43,14 @@ function assistantDayBase(ts){
     : new Date(new Date(ts).setHours(0, 0, 0, 0)).getTime();
 }
 
+// Calendar days, not 24-hour steps. A fallback day is 25 hours, so adding
+// 86400000 from local midnight lands at 11pm the same day.
+function assistantAddCalendarDays(base, days){
+  const date = new Date(base);
+  date.setDate(date.getDate() + days);
+  return date.getTime();
+}
+
 function assistantClockLabel(minutes){
   if(!Number.isFinite(minutes))return '';
   const wrapped = ((Math.round(minutes) % 1440) + 1440) % 1440;
@@ -364,8 +372,7 @@ function assistantParseSnoozeUntil(value, now){
   const s = assistantNormText(value);
   if(/^(off|none|clear|show|unsnooze)$/.test(s))return null;
   if(/\buntil (?:the )?end of (?:the )?day\b|\beod\b/.test(s)){
-    const start = typeof dayStart === 'function' ? dayStart(ts) : ts;
-    return start + 86400000;
+    return assistantAddCalendarDays(assistantDayBase(ts), 1);
   }
   const hours = s.match(/\b(\d+(?:\.\d+)?)\s*h(?:ours?)?\b/) || s.match(/\b(?:for )?(\d+)\s*hours?\b/);
   if(hours){
@@ -378,8 +385,7 @@ function assistantParseSnoozeUntil(value, now){
     return ts + n * 86400000;
   }
   if(/\buntil tomorrow\b|\btomorrow\b/.test(s)){
-    const start = typeof dayStart === 'function' ? dayStart(ts) : ts;
-    return start + 86400000;
+    return assistantAddCalendarDays(assistantDayBase(ts), 1);
   }
   const due = typeof assistantParseDue === 'function' ? assistantParseDue(s, ts) : null;
   if(due != null)return due;
@@ -585,7 +591,7 @@ function assistantUpcomingWeekday(want, now, skipToday){
   }else if(delta < 0){
     delta += 7;
   }
-  return base + delta * 86400000;
+  return assistantAddCalendarDays(base, delta);
 }
 
 function assistantParseDue(value, now){
@@ -594,9 +600,9 @@ function assistantParseDue(value, now){
   const s = assistantNormText(value);
   if(!s)return null;
   if(s === 'today' || s === 'tonight' || s === 'this evening' || s === 'this afternoon' || s === 'this morning')return base;
-  if(s === 'tomorrow' || s === 'tommorow' || s === 'tmrw')return base + 86400000;
-  if(s === 'day after tomorrow' || s === 'day after tommorow' || s === 'day after tmrw')return base + 2 * 86400000;
-  if(s === 'next week')return base + 7 * 86400000;
+  if(s === 'tomorrow' || s === 'tommorow' || s === 'tmrw')return assistantAddCalendarDays(base, 1);
+  if(s === 'day after tomorrow' || s === 'day after tommorow' || s === 'day after tmrw')return assistantAddCalendarDays(base, 2);
+  if(s === 'next week')return assistantAddCalendarDays(base, 7);
   if(/^\d{4}-\d{2}-\d{2}$/.test(s)){
     const parsed = new Date(`${s}T00:00:00`).getTime();
     return Number.isFinite(parsed) ? assistantDayBase(parsed) : null;
@@ -1715,7 +1721,7 @@ function assistantParseUtterance(text, catalog, now){
   if(/\bday after (?:tomorrow|tommorow|tmrw)\b/.test(s))due = assistantParseDue('day after tomorrow', now);
   else if(inRel){
     const n = /^\d+$/.test(inRel[1]) ? Number(inRel[1]) : (inRel[1] === 'a' ? 1 : assistantParseCount(inRel[1], 1, 364));
-    if(n != null)due = assistantParseDue('today', now) + n * (inRel[2] === 'week' ? 7 : 1) * 86400000;
+    if(n != null)due = assistantAddCalendarDays(assistantParseDue('today', now), n * (inRel[2] === 'week' ? 7 : 1));
   }
   else if(/\btomorrow\b|\btommorow\b|\btmrw\b/.test(s))due = assistantParseDue('tomorrow', now);
   else if(/\bnext week\b/.test(s))due = assistantParseDue('next week', now);

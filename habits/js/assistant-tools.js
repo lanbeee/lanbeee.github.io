@@ -4620,6 +4620,13 @@ function assistantExecuteTool(name, args, session, context){
         settings:context.settings
       }
     );
+    // An empty edit, such as {create:false} with no setting, is not a preview.
+    // Invalid values are ignored, and a value that already matches still previews.
+    if(applied.ok && applied.draft && resolved.existing
+      && !assistantDraftCallCarriesSetting(args, resolved.draft)
+      && assistantDraftFingerprint(resolved.draft) === assistantDraftFingerprint(applied.draft)){
+      return {ok:false, error:'That call did not change the item. Include the new value for the setting the user asked for.'};
+    }
     if(applied.ok && applied.draft){
       session.draft = applied.draft;
       if(!applied.existing)assistantStageTurnDraft(session, applied.draft);
@@ -4757,6 +4764,25 @@ function assistantWeekdaySummary(days){
   if(names.length === 1)return `every ${names[0]}`;
   if(names.length === 2)return `${names[0]} & ${names[1]}`;
   return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+}
+
+function assistantDraftCallCarriesSetting(args, existing){
+  if(!args || typeof args !== 'object')return false;
+  const existingKind = existing && existing.kind;
+  const existingName = existing && existing.name;
+  return Object.entries(args).some(([key, value])=>{
+    if(value == null || value === '')return false;
+    if(key === 'create')return false;
+    if(key === 'kind' && existingKind && value === existingKind)return false;
+    if(key === 'name' && existingName){
+      const same = typeof assistantNamesMatch === 'function'
+        ? assistantNamesMatch(String(value), existingName)
+        : String(value).trim().toLowerCase() === String(existingName).trim().toLowerCase();
+      const pronoun = typeof assistantIsPronounName === 'function' && assistantIsPronounName(value);
+      if(same || pronoun)return false;
+    }
+    return true;
+  });
 }
 
 function assistantDraftFingerprint(draft){

@@ -1,7 +1,7 @@
 // Swipe shortcuts reuse existing writes; action-strip pans never activate them.
 const assert = require('node:assert/strict');
 const {chromium} = require('playwright');
-const {baseHabit} = require('./helpers/planner-test-helpers');
+const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
 
 (async()=>{
   const browser = await chromium.launch();
@@ -52,6 +52,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       .evaluateAll(buttons=>buttons.map(b=>b.dataset.action));
     async function activate(hid,dir,action){
       await swipe(hid,dir);
+      if(action === 'assistant')await page.screenshot({path:'test-results/swipe-assistant.png'});
       await row(hid).locator(`.swipe-action[data-action="${action}"]`).click();
     }
     assert.deepEqual(await actions('swipe-main','left'),['timer','plan','activity','open-link']);
@@ -188,6 +189,38 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.waitForTimeout(250);
     await row('swipe-main').locator('.ting-name').tap();
     assert.equal(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),true,'card tap still opens detail');
+
+    await waitForAssistant(page);
+    assert.equal(await page.locator('#list [data-action="assistant"]').count(),0,'assistant swipe is absent while disabled');
+    await page.evaluate(()=>{
+      closeSheet('detail-sheet');
+      patchLocalAssistant({localAssistant:true,localAssistantProvider:'auto'});
+      window.swipeAssistantCalls=[];
+      assistantComplete=async req=>{
+        swipeAssistantCalls.push(req.step);
+        return {message:{tool_calls:req.messages.some(m=>m.role==='tool') ? [] : [
+          {function:{name:'draft_item',arguments:{rhythm:'3 times a week'}}}
+        ]}};
+      };
+    });
+    assert.equal(await row('swipe-main').locator('[data-action="assistant"]').count(),1,'enabling adds the shortcut to mounted cards');
+    const savedBeforeAssistant = await page.evaluate(()=>JSON.stringify(load()));
+    await activate('swipe-main',1,'assistant');
+    await page.waitForFunction(()=>document.querySelector('#assistant-sheet').classList.contains('open'));
+    assert.equal(await row('swipe-main').getAttribute('data-swipe-open'),null,'opening the assistant closes the swipe');
+    assert.equal(await page.locator('#assistant-focus-name').textContent(),'Read','swipe focuses the selected item');
+    assert.deepEqual(await page.evaluate(()=>swipeAssistantCalls),[],'opening costs no model call');
+    assert.equal(await page.evaluate(()=>_assistantSession.draft.hid),'swipe-main','focus retains the saved identity');
+    await page.evaluate(()=>sendAssistantMessage('make it 3 times a week'));
+    assert.equal(await page.evaluate(()=>swipeAssistantCalls[0]),'extract','focused request starts at extract');
+    assert.deepEqual(await page.evaluate(()=>({hid:_assistantSession.draft.hid,times:_assistantSession.draft.timesPerPeriod,days:_assistantSession.draft.periodDays})),
+      {hid:'swipe-main',times:3,days:7},'pronoun frequency change previews the selected item');
+    assert.equal(await page.evaluate(()=>_assistantSession.debug.find(e=>e.t==='turn').entry),'home','home entry provenance survives the empty composer');
+    assert.equal(await page.evaluate(()=>JSON.stringify(load())),savedBeforeAssistant,'opening and drafting do not save');
+    await page.evaluate(()=>{closeAssistantSheet();updateSortSetting({minimalMode:true},{renderNow:false});render();});
+    assert.equal(await row('swipe-main').locator('[data-action="assistant"]').count(),1,'minimal cards keep the assistant shortcut');
+    await page.evaluate(()=>patchLocalAssistant({localAssistant:false}));
+    assert.equal(await page.locator('#list [data-action="assistant"]').count(),0,'disabling removes the shortcut immediately');
     assert.deepEqual(errors,[]);
     console.log('PASS swipe layouts, planning/undo, primary links, Stop, Quiet, focus and native strip scrolling');
   }finally{await browser.close();}
