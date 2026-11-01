@@ -1155,8 +1155,11 @@ function assistantResolveDraftBase(args, session, context){
   }
   const spoken = String(args && args.name || '').trim();
   const want = spoken;
+  const staged = (session?.needleStaged || []).find(row=>row.name && assistantNormText(want) === assistantNormText(row.name));
+  if(staged)return {ok:true,draft:{...staged},existing:Boolean(staged.hid || staged.index != null)};
   if(current && (!want || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))
-    || (typeof assistantNamesMatch === 'function' && assistantNamesMatch(want, current.name)))){
+    || (args?.create === true ? assistantNormText(want) === assistantNormText(current.name)
+      : (typeof assistantNamesMatch === 'function' && assistantNamesMatch(want, current.name))))){
     return {ok:true, draft:{...current}, existing:Boolean(current.hid || current.index != null)};
   }
   if(want && !(typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))){
@@ -2099,6 +2102,17 @@ function assistantAnswerItems(args, context){
 function assistantAnswerSettings(args, context){
   const kind = assistantNormText(args && args.kind);
   const settings = context.settings || {};
+  const native = Boolean(window.TingsNative?.isNative);
+  const capabilities = {
+    calendar:{section:'settings-calendar-body',label:'calendar import',text:'Import meetings from an ICS calendar file or PDF in calendar settings. Review the import before saving. File selection stays on this device.'+(native ? ' Phone calendar sync is also available; choose calendars and allow access in the phone prompt.' : '')},
+    reminders:{section:'settings-reminders-body',label:'phone reminders',text:native ? 'Phone reminders support notifications or ringing alarms at the start, end, travel departure and arrival, plus drop warnings. Each item and date can have its own choices. Calendar meetings also support reminders for one date or the series. Notification and exact-alarm access must be allowed on this phone.' : 'Phone notifications and ringing alarms require the Tings Android app. They are unavailable in this browser.'},
+    sharing:{section:'settings-agenda-body',label:'pairing and displays',text:'Pair a full-app display and a glance display from pairing settings. Personal clone shares all items; shared mode uses each item’s shared-display and completion choices. Scan the display QR, enter its separate code and approve pairing.'},
+    widgets:{section:null,label:'Android widgets',text:native ? 'Add a Tings widget from your Android home-screen widget picker. Widgets use the same agenda and item state as Tings.' : 'Tings home-screen widgets require the Android app. They are unavailable in this browser.'}
+  };
+  if(capabilities[kind]){
+    const feature=capabilities[kind];
+    return {ok:true,text:feature.text,navigation:feature.section && (kind !== 'reminders' || native) ? {section:feature.section,label:feature.label} : null};
+  }
   let rows = [];
   let label = '';
   if(kind === 'places'){
@@ -4529,6 +4543,11 @@ function assistantExecuteTool(name, args, session, context){
     return applied;
   }
   if(name === 'draft_item' || name === 'draft_setting'){
+    // Validate extracted values instead of silently accepting a default when
+    // this small model outputs an unrelated repetition phrase.
+    if(name === 'draft_item' && session.needleStaged && args?.rhythm && !assistantParseRhythm(args.rhythm)){
+      return {ok:false,error:'The repetition phrase could not be validated. Return the exact frequency in rhythm, or omit it when no frequency was requested.'};
+    }
     const focusedItem = session.draft && session.draft.name
       && typeof assistantIsItemKind === 'function' && assistantIsItemKind(session.draft.kind);
     const trustFacts = !focusedItem && typeof assistantTrustParsedFacts === 'function' && assistantTrustParsedFacts(session.parsed);
@@ -4689,7 +4708,11 @@ function assistantExecuteTool(name, args, session, context){
     return assistantAnswerSchedule(args, context);
   }
   if(name === 'answer_items')return assistantAnswerItems(args, context);
-  if(name === 'answer_settings')return assistantAnswerSettings(args, context);
+  if(name === 'answer_settings'){
+    const result=assistantAnswerSettings(args,context);
+    if(result.navigation)session.navigation = (session.navigation || []).concat([result.navigation]);
+    return result;
+  }
   return {ok:false, error:`unknown tool ${name}`};
 }
 

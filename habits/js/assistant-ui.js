@@ -2,6 +2,7 @@
 
 let _assistantSession = null;
 let _assistantBusy = false;
+const _assistantActionButtons = new WeakMap();
 let _assistantPendingDraft = null;
 let _assistantPendingDrafts = null;
 let _assistantTurn = 0;
@@ -55,6 +56,10 @@ function syncLocalAssistantControls(){
   if($('assistant-model'))$('assistant-model').value = s.model;
   const extras = $('assistant-setup-fields');
   if(extras)extras.hidden = !s.on;
+  const needle = s.provider === 'needle';
+  if($('assistant-server-fields'))$('assistant-server-fields').hidden = needle;
+  if($('assistant-setup-guide'))$('assistant-setup-guide').hidden = needle;
+  syncAssistantNeedleControls();
   syncAssistantOriginHelp();
   syncAssistantChrome();
 }
@@ -101,16 +106,47 @@ function syncAssistantOriginHelp(){
 }
 
 function assistantEnabledStatusText(){
+  if(assistantSettings().provider === 'needle')return assistantNeedleState().phase === 'downloaded'
+    ? 'On. Needle 3 is ready on this device.' : 'On. Download Needle 3 once to use the assistant on this device.';
   const origin = typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '';
   if(origin)return 'On. If list models fails, follow the steps under local assistant.';
   return 'On. Keep Ollama running on this computer.';
 }
 
 function patchLocalAssistant(patch){
+  if(patch.localAssistantProvider && patch.localAssistantProvider !== assistantSettings().provider)assistantAbortInFlight();
   if(typeof updateSortSetting === 'function')updateSortSetting(patch, {renderNow:false});
   else if(typeof saveSortSettings === 'function')saveSortSettings({...loadSortSettings(), ...patch});
   sortSettings = typeof loadSortSettings === 'function' ? loadSortSettings() : sortSettings;
   syncLocalAssistantControls();
+  if(assistantEnabled() && assistantSettings().provider === 'needle')void assistantNeedleCheckDownload();
+}
+
+function assistantNeedleCanSend(){
+  return assistantSettings().provider !== 'needle' || assistantNeedleState().phase === 'downloaded';
+}
+
+function syncAssistantNeedleControls(){
+  const selected = assistantSettings().provider === 'needle';
+  const state = assistantNeedleState();
+  const downloading = state.phase === 'downloading';
+  const downloaded = state.phase === 'downloaded';
+  document.querySelectorAll('[data-needle-panel]').forEach(panel=>{
+    panel.hidden = !selected || !assistantEnabled();
+    const status = panel.querySelector('[data-needle-status]');
+    if(status)status.textContent = state.error || (downloading ? `Downloading Needle 3… ${state.progress}%`
+      : downloaded ? 'Needle 3 is downloaded. Ready to use on this device, including offline.'
+      : 'Download Needle 3 once (36.3 MB). Runs on this device; your requests stay here.');
+    const progress = panel.querySelector('progress');
+    if(progress){ progress.hidden = !downloading; progress.value = state.progress; }
+    const download = panel.querySelector('[data-needle-download]');
+    if(download){ download.hidden = downloaded || downloading; download.textContent = state.phase === 'error' ? 'retry download' : 'download Needle 3'; }
+    const cancel = panel.querySelector('[data-needle-cancel]');
+    if(cancel)cancel.hidden = !downloading;
+    const remove = panel.querySelector('[data-needle-remove]');
+    if(remove){ remove.hidden = !downloaded; remove.disabled = _assistantBusy; }
+  });
+  assistantSyncSend();
 }
 
 function commitAssistantUrlFromInput(){
@@ -147,13 +183,15 @@ function openAssistantSheet(opts){
   }
   _assistantExternalReview = external;
   const eyebrow = document.querySelector('#assistant-sheet .sheet-eyebrow');
-  if(eyebrow)eyebrow.textContent = external ? 'Android assistant' : 'on this computer';
+  if(eyebrow)eyebrow.textContent = external ? 'Android assistant' : 'on this device';
   const composer = $('assistant-input')?.parentElement;
   if(composer)composer.hidden = external && !assistantEnabled();
   if(!_assistantSession)_assistantSession = assistantCreateSession();
   if(!(opts && opts.skipWelcome))renderAssistantThread();
   syncAssistantFocusBar();
   openSheet('assistant-sheet');
+  syncAssistantNeedleControls();
+  if(assistantSettings().provider === 'needle')void assistantNeedleCheckDownload();
   assistantResizeComposer();
   assistantSyncSend();
   const input = $('assistant-input');
@@ -289,6 +327,8 @@ function assistantClearFocus(){
     _assistantSession.pendingPlan = null;
     _assistantSession.pendingDelete = null;
     _assistantSession.pendingActions = [];
+    _assistantSession.needleWorkflow = null;
+    _assistantSession.needleStaged = null;
     _assistantSession.awaiting = null;
   }
   _assistantPendingDraft = null;
@@ -502,6 +542,11 @@ function appendAssistantBubble(kind, text, extra){
   }else{
     div.innerHTML = `${think}<p>${escapeHtml(text)}</p>`;
   }
+  if(kind === 'actions'){
+    div.querySelectorAll('[data-assistant-action-index]').forEach(button=>{
+      _assistantActionButtons.set(button,extra.actions[Number(button.dataset.assistantActionIndex)]);
+    });
+  }
   thread.appendChild(div);
   thread.scrollTop = thread.scrollHeight;
   return div;
@@ -527,7 +572,7 @@ function assistantResizeComposer(){
 
 function assistantSyncSend(){
   const send = $('assistant-send');
-  if(send)send.disabled = _assistantBusy || !assistantComposerValue();
+  if(send)send.disabled = _assistantBusy || !assistantComposerValue() || !assistantNeedleCanSend();
 }
 
 function assistantShowBusy(on){
@@ -535,6 +580,7 @@ function assistantShowBusy(on){
   const input = $('assistant-input');
   if(input)input.disabled = on;
   assistantSyncSend();
+  syncAssistantNeedleControls();
   document.querySelectorAll('#assistant-thread .assistant-suggest').forEach(btn => { btn.disabled = on; });
   const wait = $('assistant-waiting');
   if(wait){
@@ -560,6 +606,19 @@ async function handleAssistantOutcome(out){
   }else if(assistantDebugOn() && out.debug && out.debug.length){
     appendAssistantBubble('debug', '', {debug:out.debug, debugText:out.debugText, debugJson:assistantDebugPayload(out.debug)});
   }
+  for(const destination of out.navigation || []){
+    const bubble=appendAssistantBubble('say','Open '+destination.label+' to continue.');
+    const button=document.createElement('button');button.type='button';button.className='btn';button.textContent='open '+destination.label;
+    button.addEventListener('click',()=>{
+      closeAssistantSheet();openSettingsSheet();
+      const section=document.getElementById(destination.section);
+      if(!section)return;
+      section.hidden=false;
+      document.querySelector(`[aria-controls="${destination.section}"]`)?.setAttribute('aria-expanded','true');
+      section.scrollIntoView({block:'center'});
+    });
+    bubble?.append(button);
+  }
   if(out.alsoText){
     appendAssistantBubble('say', out.alsoText, {thinking:out.thinking});
   }
@@ -577,6 +636,7 @@ async function handleAssistantOutcome(out){
           : 'Check these, then save all.'))
       : (setting ? 'Check this, then save.' : 'Check this, then save. Edit opens the full form.'), {thinking:out.thinking});
     appendAssistantBubble('preview', out.summary || (out.draft && out.draft.name) || 'drafts', {thinking:out.thinking, setting, drafts});
+    if(out.actions?.length)appendAssistantBubble('actions','Confirm these actions.',{actions:out.actions});
     return;
   }
   if(out.type === 'complete'){
@@ -616,13 +676,24 @@ async function handleAssistantOutcome(out){
     appendAssistantBubble('say', out.text, {thinking:out.thinking});
     return;
   }
-  appendAssistantBubble('say', out.text || 'Something went wrong.', {thinking:out.thinking});
+  const failure=appendAssistantBubble('say', out.text || 'Something went wrong.', {thinking:out.thinking});
+  if(out.type === 'error' && out.unfinished?.length){
+    const retry=document.createElement('button');retry.type='button';retry.className='btn assistant-suggest';retry.textContent='retry unfinished part';
+    retry.dataset.assistantSuggest=out.unfinished[0];failure?.append(retry);
+  }
 }
 
 async function sendAssistantMessage(text, opts){
   opts = opts || {};
   const value = String(text || '').trim();
   if(!value || _assistantBusy)return;
+  if(!assistantNeedleCanSend()){
+    const input = $('assistant-input');
+    if(input)input.value = value;
+    assistantResizeComposer();
+    if(typeof showToast === 'function')showToast('Download Needle 3 to use the assistant');
+    return;
+  }
   const turn = ++_assistantTurn;
   appendAssistantBubble('user', value);
   const input = $('assistant-input');
@@ -697,7 +768,9 @@ function assistantKeepWorkingOn(commit){
 }
 
 function assistantAfterSave(commit, openForm, toast){
+  const actions=_assistantSession?.pendingActions || [];
   assistantKeepWorkingOn(commit);
+  _assistantSession.pendingActions=actions;
   if(typeof render === 'function')render();
   if(openForm && typeof openDetailSchedule === 'function' && commit && commit.index != null){
     closeAssistantSheet();
@@ -713,6 +786,7 @@ function assistantAfterSave(commit, openForm, toast){
       : '';
     appendAssistantBubble('say', `Saved ${items} ${items === 1 ? 'item' : 'items'}.${placeNote}`);
     assistantClearFocus();
+    _assistantSession.pendingActions=actions;
     if(typeof showToast === 'function')showToast(toast || 'saved');
     return;
   }
@@ -853,7 +927,7 @@ function commitAssistantDelete(){
 function commitAssistantCompoundAction(index, button){
   const actions = _assistantSession && _assistantSession.pendingActions;
   const action = Array.isArray(actions) ? actions[index] : null;
-  if(!action || !action.pending){
+  if(!action || !action.pending || (button && _assistantActionButtons.get(button) !== action)){
     if(typeof showToast === 'function')showToast('that action is no longer pending');
     return;
   }
@@ -885,7 +959,7 @@ function commitAssistantCompoundAction(index, button){
 
 function discardAssistantCompoundAction(index, button){
   const actions = _assistantSession && _assistantSession.pendingActions;
-  if(Array.isArray(actions))actions[index] = null;
+  if(Array.isArray(actions) && (!button || _assistantActionButtons.get(button) === actions[index]))actions[index] = null;
   button && button.closest('[data-assistant-action-row]')?.remove();
 }
 
@@ -994,6 +1068,7 @@ function bindAssistantUi(){
     const opt = e.target.closest('[data-assistant-provider]');
     if(!opt)return;
     patchLocalAssistant({localAssistantProvider:normalizeLocalAssistantProvider(opt.dataset.assistantProvider)});
+    assistantSetStatus('');
   });
   $('assistant-reasoning-seg')?.addEventListener('click', e => {
     const opt = e.target.closest('[data-assistant-reasoning]');
@@ -1031,12 +1106,12 @@ function bindAssistantUi(){
   $('assistant-test')?.addEventListener('click', async () => {
     if(!commitAssistantUrlFromInput())return;
     if(!assistantEnabled())patchLocalAssistant({localAssistant:true});
-    assistantSetStatus('testing Qwen (thinking + tool call)…');
+    assistantSetStatus(assistantSettings().provider === 'needle' ? 'testing Needle 3 on this device…' : 'testing model (thinking + tool call)…');
     try{
       const result = await assistantTestConnection();
       assistantSetStatus(result.ok
         ? `${result.provider} · ${result.model} · thinking ${result.thinking ? 'on' : 'off'} · ${result.tool}`
-        : `${result.model} answered without classify_intent`);
+        : `${result.model} did not return the expected tool. Try a short request in the chat.`);
     }catch(err){
       assistantSetStatus(assistantFriendlyError(err));
     }
@@ -1044,7 +1119,14 @@ function bindAssistantUi(){
 }
 
 bindAssistantUi();
+document.addEventListener('tings-needle-state', syncAssistantNeedleControls);
+document.addEventListener('click', event=>{
+  if(event.target.closest('[data-needle-download]'))void assistantNeedleDownload();
+  if(event.target.closest('[data-needle-cancel]'))assistantNeedleCancelDownload();
+  if(event.target.closest('[data-needle-remove]'))void assistantNeedleRemove().catch(err=>assistantNeedleState({phase:'error',error:err.message}));
+});
 assistantResizeComposer();
 assistantSyncSend();
 syncAssistantChrome();
+if(assistantEnabled() && assistantSettings().provider === 'needle')void assistantNeedleCheckDownload();
 syncAssistantOriginHelp();

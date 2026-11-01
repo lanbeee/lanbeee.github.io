@@ -1,4 +1,4 @@
-// Guided Qwen3.8 loop: the model understands every natural-language request,
+// Guided model loop: the model understands every natural-language request,
 // then calls validated tools. Deterministic code validates arguments, reads
 // authoritative app state, and stages writes; it never chooses semantic intent.
 
@@ -724,6 +724,9 @@ function assistantCompactSessionMessages(session, request){
 
 function assistantMaybeCompact(session, tools, request){
   if(!session)return {compacted:false, used:0, limit:0, ratio:0};
+  // The Needle worker manages its compact tool schema and transcript budget.
+  // Estimating the much larger server prompt here would discard its app facts.
+  if(session.contextManaged)return {compacted:false,used:session.contextUsed || 0,limit:session.contextLimit || 8192,ratio:session.contextRatio || 0};
   const limit = session.contextLimit || ASSISTANT_DEFAULT_CONTEXT_TOKENS;
   if(Array.isArray(session.messages))assistantCapReplayThinking(session.messages);
   const estimated = typeof assistantPromptTokens === 'function'
@@ -749,6 +752,7 @@ function assistantMaybeCompact(session, tools, request){
 
 function assistantNoteContextUsage(session, raw, tools){
   if(!session)return;
+  session.contextManaged = Boolean(raw && raw._contextManaged);
   const measured = typeof assistantReadPromptTokens === 'function' ? assistantReadPromptTokens(raw) : 0;
   if(measured)session.contextMeasured = measured;
   if(raw && Number.isFinite(Number(raw._contextLimit)) && Number(raw._contextLimit) > 0){
@@ -756,7 +760,7 @@ function assistantNoteContextUsage(session, raw, tools){
   }
   const limit = session.contextLimit || ASSISTANT_DEFAULT_CONTEXT_TOKENS;
   session.contextLimit = limit;
-  const estimated = typeof assistantPromptTokens === 'function'
+  const estimated = !session.contextManaged && typeof assistantPromptTokens === 'function'
     ? assistantPromptTokens(session.messages, tools)
     : 0;
   session.contextUsed = Math.max(estimated, measured || 0);
@@ -1524,6 +1528,11 @@ function assistantIsBrokenToolJson(err){
 }
 
 async function runAssistantTurn(userText, opts = {}){
+  if(!opts.needleStep && !opts.complete && typeof assistantSettings === 'function'
+    && assistantSettings().provider === 'needle' && typeof assistantRunNeedleWorkflow === 'function'){
+    try{ return await assistantRunNeedleWorkflow(String(userText || '').trim(),opts); }
+    catch(error){ return {type:'error',text:assistantFriendlyError(error),session:opts.session}; }
+  }
   const complete = opts.complete || (typeof assistantComplete === 'function' ? assistantComplete : null);
   const context = opts.context || assistantBuildContext();
   const session = opts.session || assistantCreateSession();
@@ -1563,6 +1572,7 @@ async function runAssistantTurn(userText, opts = {}){
   session.requestText = text;
   session.reusedPlace = null;
   session.pendingActions = [];
+  session.navigation = [];
   session.chainWrite = null;
   session.pendingOutcome = null;
   session.onDebug = typeof opts.onDebug === 'function' ? opts.onDebug : null;
@@ -1570,6 +1580,7 @@ async function runAssistantTurn(userText, opts = {}){
   // many requests the user made or which semantic route to take.
   session.wide = false;
   session.bulk = false;
+  if(opts.needleStep)session.contextManaged = true;
   session.contextLimit = opts.contextLimit || session.contextLimit || (typeof assistantGuessContextLimit === 'function'
     ? assistantGuessContextLimit(opts.model)
     : ASSISTANT_DEFAULT_CONTEXT_TOKENS);
@@ -1584,6 +1595,7 @@ async function runAssistantTurn(userText, opts = {}){
     wide:session.wide === true
   });
   const done = out => {
+    if(out && session.navigation?.length)out.navigation = session.navigation;
     if(out && out.type && out.type !== 'ask' && out.type !== 'error' && !out.gaveUp){
       session.awaiting = null;
       session.clarifyingRequest = null;

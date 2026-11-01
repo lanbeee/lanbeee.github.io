@@ -95,6 +95,14 @@ turns: creation tools remain callable after schedule reads, `prepare_action`
 research cannot be closed by prose, one transient continuation failure retries,
 and an exhausted continuation is reported as partial instead of successful.
 
+`tests/assistant-needle-test.js` covers first-use download consent, progress,
+failure/retry, verified caching, cancellation/removal, provider compatibility,
+and model-cache survival across service-worker updates without large CI downloads.
+To also test the real pinned Needle runtime, task/habit creation, edits and an
+offline reload, set `NEEDLE_MODEL_PATH` to `needle3.cact` and `NEEDLE_WASM_PATH`
+to `needle.wasm` from the revision in `lib/needle/README.md`. The test serves
+these local files through the normal download flow and verifies their hashes.
+
 ## Adding planner tests without copying the harness
 
 Reuse `tests/helpers/planner-test-helpers.js` for the common habit fixture,
@@ -141,3 +149,10 @@ cadence, hard weather, closing venue hours, flexible critical rows and return
 travel against a real GLPK incumbent. It also rejects a clustering replay that
 keeps the week count by postponing today's due occurrence. Week totals alone
 cannot establish useful placement on a particular day.
+
+`tests/assistant-needle-workflow-test.js` verifies lossless model-proposed boundaries,
+eight-part draft accumulation, pause/resume around clarification, mixed draft and
+action confirmations, schema validity, and calendar/pairing/native capability
+navigation. These orchestration checks use scripted model output; they do not
+measure the base model's accuracy. The optional real-runtime checks in
+`assistant-needle-test.js` must stay separate from that claim.

@@ -32,7 +32,7 @@ async function launchBrowser(){
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil:'load' });
   await waitForAssistant(page);
-  await page.evaluate(() => patchLocalAssistant({ localAssistant:true }));
+  await page.evaluate(() => patchLocalAssistant({ localAssistant:true, localAssistantProvider:'auto' }));
 
   console.log('\n[A] startIntent create_task skips classify');
   const addTask = await page.evaluate(async () => {
@@ -166,7 +166,7 @@ async function launchBrowser(){
     const display = id => getComputedStyle(document.getElementById(id)).display;
     patchLocalAssistant({ localAssistant:false });
     const off = { ting:display('ting-ask-ai'), detail:display('detail-ask-ai') };
-    patchLocalAssistant({ localAssistant:true });
+    patchLocalAssistant({ localAssistant:true, localAssistantProvider:'auto' });
     // Minimal mode hides the whole detail actions page; the AI row must
     // follow its siblings there. Force full mode for the positive check.
     if(typeof updateSortSetting === 'function')updateSortSetting({ minimalMode:false }, { renderNow:false });

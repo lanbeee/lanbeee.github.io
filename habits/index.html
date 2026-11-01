@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://huggingface.co https://*.hf.co http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -285,7 +285,7 @@
     <div class="sheet assistant-sheet" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
       <div class="assistant-head">
         <div class="assistant-head-copy">
-          <span class="sheet-eyebrow">on this computer</span>
+          <span class="sheet-eyebrow">on this device</span>
           <p class="sheet-title" id="assistant-title">ask Tings</p>
         </div>
         <div class="assistant-head-actions">
@@ -301,6 +301,14 @@
           <span class="assistant-focus-meta" id="assistant-focus-meta"></span>
         </div>
         <button type="button" class="btn" id="assistant-focus-done">done</button>
+      </div>
+      <div class="assistant-needle-panel" data-needle-panel hidden>
+        <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
+        <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+        <div class="btn-row">
+          <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+          <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
+        </div>
       </div>
       <div class="assistant-thread" id="assistant-thread"></div>
       <p class="assistant-waiting" id="assistant-waiting" hidden>thinking…</p>
@@ -1384,13 +1392,13 @@
             <div class="settings-toggle-row">
               <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
                 <span>
-                  <b>use Qwen on this computer</b>
-                  <small>Use your model to chat and review changes.</small>
+                  <b>use Tings Assistant</b>
+                  <small>Use Needle 3 on this device to chat and review changes.</small>
                 </span>
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
               <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-local-assistant-help" aria-label="about the local assistant" aria-expanded="false" aria-controls="settings-local-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Talk to Ollama or LM Studio on this computer, or on a laptop on this Wi-Fi or Tailscale. Changes wait for your confirmation. Off by default.</p><p>Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
+              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Download Needle 3 once to use the assistant on this device, including offline. No account or server is needed. Downloads start only when you choose download. Your requests stay on this device and changes wait for your confirmation. Off by default. You can also use your existing Ollama or LM Studio server.</p><p>Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
             </div>
             <details class="settings-disclosure" id="assistant-setup-guide">
               <summary>setup instructions</summary>
@@ -1403,7 +1411,7 @@
                   <li id="assistant-reach-step-listen"></li>
                   <li id="assistant-reach-step-restart"></li>
                   <li id="assistant-reach-step-phone"></li>
-                  <li>Turn on <b>use Qwen</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
+                  <li>Turn on <b>use Tings Assistant</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
                 </ol>
                 <pre class="assistant-reach-cmd" id="assistant-reach-cmd"></pre>
                 <div class="btn-row assistant-reach-actions">
@@ -1412,12 +1420,24 @@
               </div>
             </details>
             <div id="assistant-setup-fields" hidden>
-              <span class="settings-sublabel">server</span>
-              <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="local model server">
-                <button type="button" class="seg-opt on" data-assistant-provider="auto">auto</button>
+              <span class="settings-sublabel">model source</span>
+              <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="assistant model source">
+                <button type="button" class="seg-opt on" data-assistant-provider="needle">Needle 3</button>
+                <button type="button" class="seg-opt" data-assistant-provider="auto">auto server</button>
                 <button type="button" class="seg-opt" data-assistant-provider="ollama">Ollama</button>
                 <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio / API</button>
               </div>
+              <div class="assistant-needle-panel" data-needle-panel hidden>
+                <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
+                <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+                <div class="btn-row" style="flex-wrap:wrap">
+                  <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+                  <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
+                  <button type="button" class="btn" data-needle-remove hidden>remove download</button>
+                </div>
+                <p class="field-hint">Saved in this browser or app. If device storage is cleared, you can download again. Needle works best with short requests; complex requests may need a larger model.</p>
+              </div>
+              <div id="assistant-server-fields" hidden>
               <div data-settings-help-title="address" data-settings-help-for="assistant-url" data-settings-help-id="settings-assistant-address-help">
                 <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>. Pick <b>LM Studio / API</b> for any server that speaks the OpenAI <code>/v1</code> protocol, including a gateway to a cloud model.</p>
               </div>
@@ -1434,13 +1454,14 @@
                 <button type="button" class="btn" id="assistant-refresh-models">list models</button>
                 <button type="button" class="btn primary" id="assistant-test">test thinking + tool</button>
               </div>
-              <p class="field-hint" id="assistant-conn-status"></p>
+              </div>
+              <p class="field-hint" id="assistant-conn-status" role="status" aria-live="polite"></p>
               <details class="settings-disclosure">
                 <summary>diagnostics</summary>
                 <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-debug" aria-pressed="false">
                   <span>
                     <b>show assistant debug</b>
-                    <small>In the chat, print parse, local vs Qwen, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
+                    <small>In the chat, print parse, model routing, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
                   </span>
                   <span class="switch-ui" aria-hidden="true"></span>
                 </button>

@@ -337,13 +337,14 @@ const DEFAULT_SORT_SETTINGS = {
   /** Timestamp of last monthly auto retention cleanup (0 = never). */
   lastRetentionCleanupAt:0,
 
-  // Local assistant on this computer (Ollama / LM Studio). Off by default.
+  // Optional on-device Needle 3, or an existing Ollama / LM Studio server.
   // URLs stay on this machine or a private LAN/Tailscale address — habit names
   // never go to a public cloud model from this toggle. A public HTTPS origin
   // (GitHub Pages) can still call that local server if Ollama allows the site
   // and the browser grants local-network access.
   localAssistant:false,
-  localAssistantProvider:'auto',
+  localAssistantProvider:'needle',
+  localAssistantSetupVersion:1,
   localAssistantUrl:'',
   localAssistantModel:'',
   localAssistantDebug:false,
@@ -361,7 +362,7 @@ const ASSISTANT_DEFAULT_MODEL = 'qwen3.8:27b-mlx';
 const ASSISTANT_LOOPBACK_HOSTS = ['127.0.0.1','localhost','[::1]','::1'];
 
 function normalizeLocalAssistantProvider(value){
-  return value === 'ollama' || value === 'lmstudio' ? value : 'auto';
+  return ['needle','auto','ollama','lmstudio'].includes(value) ? value : 'needle';
 }
 function normalizeLocalAssistantModel(value){
   return String(value || '').trim().replace(/\s+/g,' ').slice(0,80);

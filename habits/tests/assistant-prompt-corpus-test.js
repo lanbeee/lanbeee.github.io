@@ -67,7 +67,7 @@ function expectedDueKey(token){
   const owner = await page.evaluate(() => {
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       localAssistantModelOnly:false,
       localAssistantRoutingVersion:2,
       locations:[{id:'home-1', name:'Home'}, {id:'gym-1', name:'Gym'}],
@@ -90,7 +90,7 @@ function expectedDueKey(token){
   });
   assert(!owner.replica && !owner.displayMode, 'no replica enrollment on a fresh local app');
   assert(owner.hidden === false && owner.bodyClass, 'chat button shows on the regular app');
-  assert(/Ollama|LM Studio/i.test(owner.hint), 'settings copy names the local model');
+  assert(/Needle 3/i.test(owner.hint), 'settings copy names the local model');
   assert(owner.guide && owner.guideSteps === 6 && owner.copyBtn, 'settings has a six-step reach guide with copy');
 
   console.log('\n[parse] utterance corpus (' + ASSISTANT_PARSE_CASES.length + ')');
@@ -199,7 +199,7 @@ function expectedDueKey(token){
     localStorage.removeItem(KEY);
     const settings = {
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       localAssistantModelOnly:false,
       localAssistantRoutingVersion:2,
       defaultDurationMinutes:30,
@@ -294,7 +294,7 @@ function expectedDueKey(token){
     localStorage.removeItem(KEY);
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       localAssistantModelOnly:false,
       localAssistantRoutingVersion:2,
       defaultDurationMinutes:30,
@@ -366,7 +366,7 @@ function expectedDueKey(token){
     localStorage.removeItem(KEY);
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       localAssistantModelOnly:false,
       localAssistantRoutingVersion:2,
       defaultDurationMinutes:30,
@@ -577,7 +577,7 @@ function expectedDueKey(token){
 
   console.log('\n[a11y] sheet copy is short and confirm-gated');
   const a11y = await page.evaluate(() => {
-    saveSortSettings({...loadSortSettings(), localAssistant:true});
+    saveSortSettings({...loadSortSettings(), localAssistant:true, localAssistantProvider:'auto'});
     syncLocalAssistantControls();
     openAssistantSheet();
     const thread = document.getElementById('assistant-thread');
@@ -607,7 +607,7 @@ function expectedDueKey(token){
   assert(a11y.open && a11y.fullpage, 'assistant sheet opens as a full-page chat');
   assert(/ask Tings/i.test(a11y.title || ''), 'sheet title matches the launch label');
   assert(/Nothing is saved until you confirm/i.test(a11y.welcome || ''), 'welcome says confirm-before-save');
-  assert(/regular Tings app|this computer/i.test(a11y.head || ''), 'sheet header is not clone-only');
+  assert(/on this device/i.test(a11y.head || ''), 'sheet header is not clone-only');
   assert(/mom|change it/i.test(a11y.placeholder || ''), 'placeholder uses everyday phrasing');
   assert(/clear chat/i.test(a11y.clearLabel || '') && /clear chat/i.test(a11y.clearText || ''), 'header has a clear chat button');
   assert(/top bar|working on|"it"/i.test(a11y.sub || a11y.kicker || ''), 'working-on bar is the item "it" refers to');
@@ -617,7 +617,7 @@ function expectedDueKey(token){
 
   const focusUi = await page.evaluate(async () => {
     localStorage.removeItem(KEY);
-    saveSortSettings({...loadSortSettings(), localAssistant:true, defaultDurationMinutes:30});
+    saveSortSettings({...loadSortSettings(), localAssistant:true, localAssistantProvider:'auto', defaultDurationMinutes:30});
     if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
     openAssistantSheet();
     const llm = async () => ({message:{thinking:'route', tool_calls:[{function:{name:'draft_item', arguments:{kind:'task',name:'Call mom',due:'today'}}}]}});

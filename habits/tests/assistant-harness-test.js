@@ -128,7 +128,7 @@ async function launchBrowser(){
       ] } }
     ];
     globalThis.__assistantTestComplete = async () => replies.shift();
-    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, locations:[], weatherProfiles:[] });
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantProvider:'auto', locations:[], weatherProfiles:[] });
     const out = await runAssistantTurn('Remind me to go to the pharmacy for 20 minutes', { forceLlm:true });
     return { type:out.type, summary:out.summary, name:out.draft && out.draft.name, leftover:replies.length };
   });
@@ -193,7 +193,7 @@ async function launchBrowser(){
   const followLoc = await page.evaluate(async () => {
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       defaultDurationMinutes:30,
       locations:[{id:'home-1', name:'Sample Home', lat:51.5, lng:-0.12}],
       weatherProfiles:[]
@@ -275,7 +275,7 @@ async function launchBrowser(){
   const keptPlace = await page.evaluate(async () => {
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       locations:[
         {id:'home-1', name:'Sample Home', lat:51.5, lng:-0.12},
         {id:'mom-1', name:"Sample Mom's house", lat:51.51, lng:-0.13}
@@ -353,7 +353,7 @@ async function launchBrowser(){
 
   console.log('\n[D5] confusion asks the user, then stops');
   const clarify = await page.evaluate(async () => {
-    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, locations:[], weatherProfiles:[] });
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantProvider:'auto', locations:[], weatherProfiles:[] });
     const unclear = {message:{role:'assistant', tool_calls:[
       {function:{name:'classify_intent', arguments:{intent:'unclear'}}}
     ]}};
@@ -415,7 +415,7 @@ async function launchBrowser(){
       hidden:document.getElementById('open-assistant')?.hidden,
       pressed:document.getElementById('setting-local-assistant')?.getAttribute('aria-pressed')
     };
-    saveSortSettings({ ...loadSortSettings(), localAssistant:true });
+    saveSortSettings({ ...loadSortSettings(), localAssistant:true, localAssistantProvider:'auto' });
     syncLocalAssistantControls();
     return {
       off,
@@ -512,7 +512,7 @@ async function launchBrowser(){
   assert(/tailscale serve --bg 11434/i.test(reach.guideListen) && /https:\/\/.*ts\.net/i.test(reach.guidePhone), 'reach guide explains the private HTTPS phone route');
 
   const savedUrl = await page.evaluate(() => {
-    saveSortSettings({ ...loadSortSettings(), localAssistant:true, localAssistantUrl:'' });
+    saveSortSettings({ ...loadSortSettings(), localAssistant:true, localAssistantProvider:'auto', localAssistantUrl:'' });
     if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
     const el = document.getElementById('assistant-url');
     el.value = '192.168.4.20:11434';
@@ -744,7 +744,7 @@ async function launchBrowser(){
     localStorage.removeItem(KEY);
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       defaultDurationMinutes:30,
       locations:[{id:'home-1', name:'Home'}],
       weatherProfiles:[{id:'dry-1', name:'Dry'}]
@@ -831,7 +831,7 @@ async function launchBrowser(){
     localStorage.removeItem(KEY);
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       defaultDurationMinutes:30,
       defaultBreakable:false,
       defaultTopics:['inbox'],
@@ -970,7 +970,7 @@ async function launchBrowser(){
 
   console.log('\n[I] assistant debug trace');
   const debugTrace = await page.evaluate(async () => {
-    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true, localAssistantModelOnly:false, localAssistantRoutingVersion:2, locations:[], weatherProfiles:[] });
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantProvider:'auto', localAssistantDebug:true, localAssistantModelOnly:false, localAssistantRoutingVersion:2, locations:[], weatherProfiles:[] });
     if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
     const localReplies = [
       { message:{ thinking:'model first', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Mom call', due:'today' } } }] } }
@@ -1024,7 +1024,7 @@ async function launchBrowser(){
 
   console.log('\n[J] complicated phrasing routes to the model, not the fast path');
   const route = await page.evaluate(async () => {
-    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantDebug:true, localAssistantModelOnly:true, localAssistantRoutingVersion:2 });
+    saveSortSettings({ ...DEFAULT_SORT_SETTINGS, localAssistant:true, localAssistantProvider:'auto', localAssistantDebug:true, localAssistantModelOnly:true, localAssistantRoutingVersion:2 });
     const calls = [];
     const script = [
       { message:{ thinking:'relative date', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
@@ -1166,7 +1166,7 @@ async function launchBrowser(){
       { message:{ thinking:'classify', tool_calls:[{ function:{ name:'classify_intent', arguments:{ intent:'create_task' } } }] } },
       { message:{ thinking:'draft', tool_calls:[{ function:{ name:'draft_item', arguments:{ kind:'task', name:'Mom call', due:'today' } } }] } }
     ];
-    patchLocalAssistant({ localAssistant:true, localAssistantModelOnly:true });
+    patchLocalAssistant({ localAssistant:true, localAssistantProvider:'auto', localAssistantModelOnly:true });
     const out = await runAssistantTurn('Remind me to call mom', {
       complete:async () => script.shift()
     });
@@ -1293,7 +1293,7 @@ async function launchBrowser(){
   const researchedCreate = await page.evaluate(async () => {
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       weatherProfiles:[],
       locations:[]
     });
@@ -1404,7 +1404,7 @@ async function launchBrowser(){
   const stagedProfile = await page.evaluate(async () => {
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       weatherProfiles:[],
       locations:[]
     });
@@ -1519,7 +1519,7 @@ async function launchBrowser(){
   const stagedEdges = await page.evaluate(async () => {
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       weatherProfiles:[],
       locations:[]
     });
@@ -1693,7 +1693,7 @@ async function launchBrowser(){
     localStorage.removeItem(KEY);
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       weatherProfiles:[],
       locations:[]
     });
@@ -1769,7 +1769,7 @@ async function launchBrowser(){
     localStorage.removeItem(KEY);
     saveSortSettings({
       ...DEFAULT_SORT_SETTINGS,
-      localAssistant:true,
+      localAssistant:true, localAssistantProvider:'auto',
       weatherProfiles:[],
       locations:[]
     });

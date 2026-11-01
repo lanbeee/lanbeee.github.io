@@ -343,12 +343,12 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   answer_settings:{
-    description:'List configured places, weather profiles, topics, or busy times. Use this for questions about what app settings are already available.',
+    description:'List configured places, weather profiles, topics, or busy times. Use this for questions about saved settings, importing ICS/PDF meetings, phone calendar sync, phone notifications/alarms, pairing/sharing displays, or Android widgets. Returns verified capabilities and a button to the relevant controls; it never pretends OS permission or file selection has happened.',
     parameters:{
       type:'object',
       required:['kind'],
       properties:{
-        kind:{type:'string', enum:['places','weather','topics','busy']},
+        kind:{type:'string', enum:['places','weather','topics','busy','calendar','reminders','sharing','widgets']},
         purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }

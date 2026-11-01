@@ -208,6 +208,14 @@ function loadSortSettings(){
     // only so older backups continue to import cleanly.
     merged.localAssistantModelOnly = true;
     merged.localAssistantRoutingVersion = 3;
+    // Old defaults were saved alongside ordinary planner settings, even when
+    // the assistant had never been set up. Give those installs Needle too,
+    // while retaining active or explicitly configured local servers.
+    if(!saved.localAssistantSetupVersion && saved.localAssistantProvider === 'auto'
+      && !saved.localAssistant && !saved.localAssistantUrl && !saved.localAssistantModel){
+      merged.localAssistantProvider = 'needle';
+    }
+    merged.localAssistantSetupVersion = 1;
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
@@ -306,7 +314,7 @@ function loadSortSettings(){
     merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
     merged.localAssistant = Boolean(merged.localAssistant);
     merged.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
-      ? normalizeLocalAssistantProvider(merged.localAssistantProvider) : 'auto';
+      ? normalizeLocalAssistantProvider(merged.localAssistantProvider) : 'needle';
     merged.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
       ? normalizeLocalAssistantUrl(merged.localAssistantUrl) : '';
     merged.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'
@@ -420,7 +428,8 @@ function saveSortSettings(settings){
   next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
   next.localAssistant = Boolean(next.localAssistant);
   next.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
-    ? normalizeLocalAssistantProvider(next.localAssistantProvider) : 'auto';
+    ? normalizeLocalAssistantProvider(next.localAssistantProvider) : 'needle';
+  next.localAssistantSetupVersion = 1;
   next.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
     ? normalizeLocalAssistantUrl(next.localAssistantUrl) : '';
   next.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'

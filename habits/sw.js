@@ -1,4 +1,4 @@
-const CACHE = 'tings-v684';
+const CACHE = 'tings-v686';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -148,6 +148,10 @@ const PRECACHE = [
   './js/assistant-parse.js',
   './js/assistant-tools.js',
   './js/assistant-harness.js',
+  './js/assistant-needle.js',
+  './js/assistant-workflow.js',
+  './js/assistant-needle-worker.js',
+  './lib/needle/needle.js',
   './js/assistant-client.js',
   './js/assistant-ui.js',
   './js/assistant-external.js',
@@ -222,7 +226,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE && k !== MAPS_CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k !== CACHE && k !== MAPS_CACHE && k !== 'tings-needle-v1').map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -247,6 +251,9 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (isLoopbackRequest(req)) return;
   if (req.method !== 'GET') return;
+  // The assistant owns verified optional downloads. Never duplicate weights in
+  // the app-shell cache or let SWR bypass an explicit retry/removal.
+  if (new URL(req.url).hostname === 'huggingface.co' || new URL(req.url).hostname.endsWith('.hf.co')) return;
   // Pairing status and encrypted agenda reads must hit the network. Cache Storage
   // ignores Cache-Control: no-store when cache.put() is used, and a cached 200
   // would hide later 401/410 revoke responses.
