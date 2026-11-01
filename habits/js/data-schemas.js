@@ -121,7 +121,8 @@
  * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
  * @property {number|null} planByDate         — keepup/reduce only: one-off soft "do by" day (ms day-start). Week planner may place it any day on/before this date; cleared on the next actual log. null = none.
  * @property {string|null} externalId         — stable id from an external calendar/PDF import; null for Tings-native items. Used to de-dupe on re-import.
- * @property {'pdf'|'msgraph'|'gcal'|'device'|null} source — which importer produced this row; null for Tings-native items.
+ * @property {'pdf'|'ics'|'msgraph'|'gcal'|'device'|null} source — which importer produced this row; null for Tings-native items.
+ * @property {string|null} [calendarSubject] — original ICS title, to preserve local renames on re-import.
  * @property {string|null} [calendarId] — selected Android calendar id for device imports.
  * @property {string|null} [calendarSeriesId] — provider series identity; shared by recurring instances and exceptions.
  * @property {number|null} [calendarStart] — source occurrence start (also for all-day dates).

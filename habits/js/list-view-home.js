@@ -110,19 +110,109 @@ function selectedLocationPrefs(){
   return selectedLocationPrefsFrom('ting-tag-chips');
 }
 
-// RENDER: split chip layout — places on one horizontal-scroll row, topics on
-// another. A container may opt into only one row with data-tag-content so the
+// RENDER: compact chip rows expand for search and a complete selection list.
+// Selected chips stay visible during search. A container may opt into one kind so the
 // detail sheet can keep schedule places separate from identity topics.
+function filterTagChoices(row){
+  const query = row.querySelector('.tag-search')?.value.trim().toLocaleLowerCase() || '';
+  let matches = 0;
+  let selected = 0;
+  row.querySelectorAll('[data-topic], [data-location-id], [data-anywhere]').forEach(btn=>{
+    const on = btn.classList.contains('on');
+    const label = btn.dataset.topic || btn.dataset.locationName || 'anywhere';
+    const match = label.toLocaleLowerCase().includes(query);
+    const unavailable = row.dataset.preferenceOnly === '1' && !on;
+    btn.hidden = unavailable || (!on && !match) || (btn.hasAttribute('data-anywhere') && row.dataset.hideAnywhere === '1');
+    if(on && !btn.hidden)selected++;
+    if(match && !unavailable && !btn.hidden)matches++;
+  });
+  const expanded = row.classList.contains('is-expanded');
+  row.querySelector('.tag-selection-count').textContent = expanded ? `${selected} selected` : String(selected);
+  const toggle = row.querySelector('.tag-picker-toggle');
+  toggle.setAttribute('aria-label',`${expanded ? 'Collapse' : 'Search'} ${row.dataset.tagKind}, ${selected} selected`);
+  const summary = row.closest('.add-topic-disclosure')?.querySelector('summary');
+  if(summary)summary.textContent = selected ? `Topics · ${selected} selected` : 'Topics (optional)';
+  const empty = row.querySelector('.tag-search-empty');
+  empty.hidden = !expanded || !query || matches > 0;
+}
+
+function setTagPickerExpanded(row,expanded,focus = false){
+  row.classList.toggle('is-expanded',expanded);
+  row.querySelector('.tag-picker-toggle').setAttribute('aria-expanded',String(expanded));
+  const input = row.querySelector('.tag-search');
+  input.hidden = !expanded;
+  if(!expanded)input.value = '';
+  filterTagChoices(row);
+  if(expanded && focus){
+    input.focus({preventScroll:true});
+    if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
+    if(typeof keepFocusedInputVisible === 'function')keepFocusedInputVisible();
+  }
+}
+
+function addTagSearch(row,kind,containerId,value = '',expanded = false){
+  row.dataset.tagKind = kind;
+  row.classList.toggle('is-expanded',expanded);
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.className = 'tag-picker-toggle';
+  head.setAttribute('aria-expanded',String(expanded));
+  head.setAttribute('aria-controls',`${containerId}-${kind}-search`);
+  head.innerHTML = `<i class="ti ti-search" aria-hidden="true"></i><span>${kind}</span><span class="tag-selection-count"></span><span class="tag-picker-action">done</span>`;
+  head.addEventListener('click',()=>{
+    if(!row._sg)setTagPickerExpanded(row,!row.classList.contains('is-expanded'),true);
+  });
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.id = `${containerId}-${kind}-search`;
+  input.className = 'tag-search';
+  input.hidden = !expanded;
+  input.placeholder = `Search ${kind}`;
+  input.setAttribute('aria-label',`Search ${kind}`);
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.enterKeyHint = 'search';
+  input.value = value;
+  input.addEventListener('input',()=>filterTagChoices(row));
+  input.addEventListener('keydown',e=>{
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      input.blur();
+    }else if(e.key === 'Escape' && input.value){
+      e.preventDefault();
+      e.stopPropagation();
+      input.value = '';
+      filterTagChoices(row);
+    }
+  });
+  const empty = document.createElement('p');
+  empty.className = 'field-hint tag-search-empty';
+  empty.setAttribute('role','status');
+  empty.textContent = `No ${kind} match your search. Selected ${kind} stay visible.`;
+  empty.hidden = true;
+  row.prepend(head,input);
+  row.append(empty);
+}
+
 // Location pref cycle: off → on → little → high → avoid → off
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null,anywhereAllowed = null){
   const wrap = $(containerId);
   if(!wrap)return;
-  // Preserve horizontal scroll position across the rebuild so toggling a chip
-  // doesn't snap the row back to the start.
-  const prevPlaceScroll = wrap.querySelector('.tag-row-places')?.scrollLeft ?? 0;
-  const prevTopicScroll = wrap.querySelector('.tag-row-topics')?.scrollLeft ?? 0;
+  const placeQuery = wrap.querySelector('.tag-row-places .tag-search')?.value || '';
+  const topicQuery = wrap.querySelector('.tag-row-topics .tag-search')?.value || '';
+  const placesExpanded = wrap.querySelector('.tag-row-places')?.classList.contains('is-expanded') || false;
+  const topicsExpanded = wrap.querySelector('.tag-row-topics')?.classList.contains('is-expanded') || false;
+  const placeScroll = wrap.querySelector('.tag-row-places')?.scrollLeft || 0;
+  const topicScroll = wrap.querySelector('.tag-row-topics')?.scrollLeft || 0;
+  const focusedSearch = document.activeElement?.matches('.tag-search')
+    ? document.activeElement.closest('.tag-row') : null;
+  const restoreSearch = focusedSearch && wrap.contains(focusedSearch)
+    ? (focusedSearch.classList.contains('tag-row-places') ? '.tag-row-places' : '.tag-row-topics') : null;
   const prevTopicOpen = wrap.querySelector('.add-topic-disclosure')?.open || false;
-  const topics = topicOptions();
+  // The registry and an item's saved topics each have their own size limit.
+  // Merging must not truncate saved selections when the registry is full.
+  const topics = [...new Map([...normalizeTopics(selectedTopics),...topicOptions()]
+    .map(topic=>[topic.toLowerCase(),topic])).values()];
   const locations = locationOptions();
   const selectedSet = new Set(normalizeTopics(selectedTopics).map(topic=>topic.toLowerCase()));
   const selectedLocs = normalizeLocationIds(selectedLocIds,locations);
@@ -160,20 +250,21 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   }).join('');
   const topicHtml = orderedTopics.map(topic=>{
     const on = selectedSet.has(topic.toLowerCase());
-    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>`;
+    return `<button type="button" class="topic-chip ${on ? 'on' : ''}" data-topic="${escapeHtml(topic)}" aria-pressed="${on}">${escapeHtml(topic)}</button>`;
   }).join('');
-  // Build via DOM (not innerHTML) so the pill buttons retain their dataset and
-  // event-less state cleanly. Order: place pill, anywhere option, then real places.
+  // Keep the search, choices, and create action in keyboard reading order.
   wrap.innerHTML = '';
   const locRow = document.createElement('div');
   locRow.className = 'tag-row tag-row-places';
-  locRow.appendChild(createAddLocationPill());
   locRow.insertAdjacentHTML('beforeend',anywhereHtml + locHtml);
+  locRow.appendChild(createAddLocationPill());
   const topicRow = document.createElement('div');
   topicRow.className = 'tag-row tag-row-topics';
-  topicRow.appendChild(createAddTopicPill());
   topicRow.insertAdjacentHTML('beforeend',topicHtml);
-  // Scroll guard: prevents accidental chip taps during horizontal scroll.
+  if(containerId !== 'default-topics-chips')topicRow.appendChild(createAddTopicPill());
+  addTagSearch(locRow,'places',containerId,placeQuery,placesExpanded);
+  addTagSearch(topicRow,'topics',containerId,topicQuery,topicsExpanded);
+  // Scroll guard: prevents accidental chip taps while scrolling the sheet.
   // Sets a flag on the row as soon as touch displacement (finger movement)
   // is detected. The flag lingers for 500ms to cover the synthetic click
   // that mobile browsers fire after touchend. The click handlers in main.js
@@ -207,7 +298,7 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
     && $('ting-repeat-mode')?.value === 'opportunity'){
     const disclosure = document.createElement('details');
     disclosure.className = 'add-topic-disclosure';
-    disclosure.open = prevTopicOpen;
+    disclosure.open = prevTopicOpen || selectedSet.size > 0;
     const summary = document.createElement('summary');
     summary.textContent = selectedSet.size ? `Topics · ${selectedSet.size} selected` : 'Topics (optional)';
     disclosure.append(summary,topicRow);
@@ -217,14 +308,12 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   const content = wrap.dataset.tagContent;
   if(content === 'places')topicRow.hidden = true;
   if(content === 'topics')locRow.hidden = true;
-  // Restore horizontal scroll position saved before rebuild.
-  locRow.scrollLeft = prevPlaceScroll;
-  topicRow.scrollLeft = prevTopicScroll;
-  // Setting scrollLeft fires an async scroll event that arms the scroll guard,
-  // which would swallow the next click within 500ms. Disarm on the next tick
-  // (the scroll event is queued before this timeout so it fires first).
-  setTimeout(() => { locRow._sg = 0; topicRow._sg = 0; }, 0);
   if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip(containerId);
+  filterTagChoices(locRow);
+  filterTagChoices(topicRow);
+  if(!placesExpanded)locRow.scrollLeft = placeScroll;
+  if(!topicsExpanded)topicRow.scrollLeft = topicScroll;
+  if(restoreSearch)wrap.querySelector(`${restoreSearch} .tag-search`)?.focus({preventScroll:true});
 }
 
 // RENDER: allowed view edits which places are valid for the general time
@@ -249,7 +338,12 @@ function applyTagChipLocationMode(wrap,selectedLocIds = selectedLocationIdsFrom(
     }
   });
   const placeRow = wrap.querySelector('.tag-row-places');
-  if(placeRow)placeRow.hidden = preferenceOnly && selected.size === 0;
+  if(placeRow){
+    placeRow.hidden = preferenceOnly && selected.size === 0;
+    placeRow.dataset.preferenceOnly = preferenceOnly ? '1' : '0';
+    placeRow.dataset.hideAnywhere = preferenceOnly || optional ? '1' : '0';
+    filterTagChoices(placeRow);
+  }
 }
 
 // HANDLER: toggle a location chip — off → on → little → high → avoid → off
@@ -665,6 +759,7 @@ function beginNewTopicInput(containerId){
   }
   const pill = wrap.querySelector('[data-topic-add]');
   if(!pill)return;
+  setTagPickerExpanded(pill.closest('.tag-row'),true);
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'topic-chip topic-chip-input';
@@ -709,10 +804,7 @@ function beginNewTopicInput(containerId){
   input.addEventListener('keydown',e=>{
     if(e.key === 'Enter'){
       e.preventDefault();
-      if(!settled){
-        settled = true;
-        commit();
-      }
+      commit();
     }else if(e.key === 'Escape'){
       e.preventDefault();
       if(settled)return;
@@ -727,6 +819,9 @@ function toggleTopicChip(e){
   const btn = e.target.closest('.topic-chip[data-topic]');
   if(!btn)return;
   btn.classList.toggle('on');
+  btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
+  const row = btn.closest('.tag-row');
+  if(row)filterTagChoices(row);
   if(btn.closest('#detail-topic-chips'))setDetailDirty();
 }
 

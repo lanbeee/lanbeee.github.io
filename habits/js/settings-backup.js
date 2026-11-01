@@ -106,8 +106,9 @@ function cancelBackupImport(){
   if(confirmBox)confirmBox.hidden = true;
 }
 
-// ── Calendar PDF import (temporary until OAuth providers) ──
+// ── Calendar file import (PDF + ICS) ──
 let pendingCalendarEvents = null;
+let calendarFileReadVersion = 0;
 // Set of event keys the user wants imported; every parsed event is in it by
 // default so "import" acts as before unless the user deselects rows.
 let pendingCalendarSelection = null;
@@ -118,6 +119,7 @@ function calendarPdfSelectionKey(ev, index){
 }
 
 function clearCalendarPdfPreview({keepStatus = true} = {}){
+  calendarFileReadVersion++;
   pendingCalendarEvents = null;
   pendingCalendarSelection = null;
   const preview = $('calendar-pdf-preview');
@@ -141,7 +143,7 @@ function formatCalendarEventPreview(ev, allDayMode, index){
   const end = Number(ev.end);
   let when = '';
   if(allDay){
-    when = mode === 'skip' ? 'all day · skipped' : 'all day · dated task';
+    when = `${new Date(start).toLocaleDateString()} · ${mode === 'skip' ? 'all day · skipped' : 'all day · dated task'}`;
   }else{
     when = (typeof scheduledWhenLabel === 'function' && Number.isFinite(start))
       ? scheduledWhenLabel(start)
@@ -212,6 +214,8 @@ function onCalendarPdfSelectNone(){
 }
 
 function renderCalendarImportControls(){
+  // Keep a user's chosen range while settings re-render.
+  try{calendarIcsDateRange();}catch(_){}
   const select = $('calendar-credit-habit');
   if(!select)return;
   const settings = sortSettings || loadSortSettings();
@@ -230,19 +234,19 @@ function renderCalendarImportControls(){
   const hint = $('calendar-credit-hint');
   if(hint){
     hint.textContent = habits.length
-      ? 'Phone and PDF meetings count. Events you add in Tings do not.'
-      : 'Choose a habit with daily hours to count phone and PDF meetings.';
+      ? 'Phone, ICS and PDF meetings count. Events you add in Tings do not.'
+      : 'Choose a habit with daily hours to count phone, ICS and PDF meetings.';
   }
   const allDaySelect = $('calendar-allday-mode');
   if(allDaySelect){
     const mode = normalizeCalendarAllDayMode(settings.calendarAllDayMode);
     allDaySelect.value = mode;
   }
-  const imported = load().filter(h=>h && h.source === 'pdf').length;
+  const imported = load().filter(h=>h && (h.source === 'pdf' || h.source === 'ics')).length;
   const status = $('calendar-pdf-status');
   if(status && !pendingCalendarEvents){
     status.textContent = imported
-      ? `${imported} PDF meeting${imported === 1 ? '' : 's'} on this device.`
+      ? `${imported} imported file meeting${imported === 1 ? '' : 's'} on this device.`
       : '';
   }
   if(pendingCalendarEvents)showCalendarPdfPreview(pendingCalendarEvents);
@@ -277,15 +281,23 @@ async function handleCalendarPdfChosen(file){
     if(status)status.textContent = 'No file selected.';
     return;
   }
-  if(status)status.textContent = 'Reading PDF…';
+  clearCalendarPdfPreview();
+  const version = calendarFileReadVersion;
+  const ics = /\.ics$/i.test(file.name || '') || /^text\/calendar(?:;|$)/i.test(file.type || '');
+  if(status)status.textContent = ics ? 'Reading ICS…' : 'Reading PDF…';
   try{
-    const {events} = await parseCalendarPdfFile(file);
+    if(!ics && !/\.pdf$/i.test(file.name || '') && file.type !== 'application/pdf'){
+      throw new Error('Choose an .ics or .pdf file. For a Google export ZIP, extract it and choose the .ics file inside.');
+    }
+    const {events} = ics ? await parseCalendarIcsFile(file,calendarIcsDateRange()) : await parseCalendarPdfFile(file);
+    if(version !== calendarFileReadVersion)return;
     pendingCalendarSelection = null;
     showCalendarPdfPreview(events);
     if(typeof showToast === 'function')showToast(`${events.length} event${events.length === 1 ? '' : 's'} ready`);
   }catch(err){
+    if(version !== calendarFileReadVersion)return;
     clearCalendarPdfPreview({keepStatus:true});
-    const msg = (err && err.message) || 'Could not read that PDF.';
+    const msg = (err && err.message) || 'Could not read that calendar file.';
     if(status)status.textContent = msg;
     if(typeof showToast === 'function')showToast(msg);
   }
@@ -313,7 +325,7 @@ function confirmCalendarPdfImport(){
   });
   sortSettings = loadSortSettings();
   const result = applyCalendarImport(selected, {
-    source:'pdf',
+    source:selected[0].source || 'pdf',
     creditHabitId,
     allDayMode
   });
@@ -342,14 +354,15 @@ function cancelCalendarPdfImport(){
   renderCalendarImportControls();
 }
 
-function clearImportedCalendarMeetings(){
-  const result = clearCalendarImport('pdf');
+function clearImportedCalendarMeetings(source = 'pdf'){
+  const label = source.toUpperCase();
+  const result = clearCalendarImport(source);
   clearCalendarPdfPreview({keepStatus:true});
   const status = $('calendar-pdf-status');
   if(status)status.textContent = result.removed
-    ? `Removed ${result.removed} PDF meeting${result.removed === 1 ? '' : 's'}.`
-    : 'No PDF meetings to remove.';
-  if(typeof showToast === 'function')showToast(result.removed ? 'PDF meetings removed' : 'nothing to clear');
+    ? `Removed ${result.removed} ${label} meeting${result.removed === 1 ? '' : 's'}.`
+    : `No ${label} meetings to remove.`;
+  if(typeof showToast === 'function')showToast(result.removed ? `${label} meetings removed` : 'nothing to clear');
   renderCalendarImportControls();
   if(typeof render === 'function')render();
 }

@@ -88,9 +88,8 @@
     flex-wrap:wrap;gap:4px;max-width:100%;max-height:none;overflow:visible;
   }
   .context-pill{font-size:calc(9px * var(--font-scale));padding:2px 4px;max-width:100%;}
-  /* Chips can wrap at phone-zoom widths; a partially sliced chip is a poor
-     scroll affordance once the effective viewport is this narrow. */
-  .tag-row{flex-wrap:wrap;overflow-x:visible;scroll-snap-type:none;padding-right:0;}
+  /* Expanded choices still wrap at phone-zoom widths. */
+  .tag-row.is-expanded{flex-wrap:wrap;overflow-x:visible;scroll-snap-type:none;padding-right:0;}
   .plan-field-main{flex-wrap:wrap;}
   .ting-visual{margin-top:0;}
   .trail-week{margin-right:4px;}

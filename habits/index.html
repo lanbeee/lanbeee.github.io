@@ -1042,18 +1042,24 @@
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
             <div id="calendar-device-controls" hidden></div>
-            <p class="field-hint">Add meetings from a calendar PDF.</p>
+            <p class="field-hint">Import a Google, Apple or Outlook calendar export (.ics), or a calendar PDF. Choose the .ics file inside Google's export ZIP.</p>
+            <p class="field-hint">ICS import dates (including recurring events). Times appear in this device's time zone. Imported copies stay on this device; re-import to add or update meetings.</p>
+            <label class="settings-sublabel" for="calendar-ics-from">ICS from</label>
+            <input type="date" id="calendar-ics-from" class="settings-select" />
+            <label class="settings-sublabel" for="calendar-ics-to">ICS through</label>
+            <input type="date" id="calendar-ics-to" class="settings-select" />
             <div class="btn-row calendar-pdf-pick-row">
-              <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose PDF</label>
+              <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose ICS or PDF</label>
               <button class="btn" id="calendar-pdf-clear" type="button">remove PDF meetings</button>
+              <button class="btn" id="calendar-ics-clear" type="button">remove ICS meetings</button>
             </div>
             <!-- Not [hidden]: iOS Safari ignores programmatic .click() on display:none / hidden file inputs. -->
-            <input type="file" id="calendar-pdf-input" class="file-input-native" accept="application/pdf,.pdf" />
+            <input type="file" id="calendar-pdf-input" class="file-input-native" accept="text/calendar,.ics,application/pdf,.pdf" />
             <div data-settings-help-title="count meeting time toward" data-settings-help-for="calendar-credit-habit" data-settings-help-id="settings-calendar-credit-help"><p>Choose a build or limit habit with daily hours, such as Work. Overlapping meetings count once. The habit is allowed to split across sessions so it can fit around meetings.</p></div>
             <select id="calendar-credit-habit" class="settings-select">
               <option value="">none</option>
             </select>
-            <p class="field-hint" id="calendar-credit-hint">Phone and PDF meetings count. Events you add in Tings do not.</p>
+            <p class="field-hint" id="calendar-credit-hint">Phone, ICS and PDF meetings count. Events you add in Tings do not.</p>
             <label class="settings-sublabel" for="calendar-allday-mode">all-day events</label>
             <select id="calendar-allday-mode" class="settings-select">
               <option value="skip">skip</option>
@@ -1065,7 +1071,7 @@
               <button class="btn primary" id="calendar-pdf-import" type="button">import meetings</button>
               <button class="btn" id="calendar-pdf-cancel" type="button">cancel</button>
             </div>
-            <p class="field-hint sample-count" id="calendar-pdf-status"></p>
+            <p class="field-hint sample-count" id="calendar-pdf-status" role="status" aria-live="polite"></p>
           </div>
         </section>
         <section class="settings-block settings-collapsible settings-full-only">
@@ -1992,6 +1998,8 @@
 <script src="./js/ui-kit.js" defer></script>
 <script src="./js/tap.js" defer></script>
 <script src="./js/calendar-import.js" defer></script>
+<script src="./lib/js/ical.min.js" defer></script>
+<script src="./js/calendar-ics.js" defer></script>
 <script src="./js/calendar-device.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>

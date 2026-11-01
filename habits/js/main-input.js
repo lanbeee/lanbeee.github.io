@@ -804,7 +804,13 @@ $('calendar-pdf-input')?.addEventListener('change',e=>{
 });
 $('calendar-pdf-import')?.addEventListener('click',confirmCalendarPdfImport);
 $('calendar-pdf-cancel')?.addEventListener('click',cancelCalendarPdfImport);
-$('calendar-pdf-clear')?.addEventListener('click',clearImportedCalendarMeetings);
+$('calendar-pdf-clear')?.addEventListener('click',()=>clearImportedCalendarMeetings('pdf'));
+$('calendar-ics-clear')?.addEventListener('click',()=>clearImportedCalendarMeetings('ics'));
+['calendar-ics-from','calendar-ics-to'].forEach(id=>$(id)?.addEventListener('change',()=>{
+  clearCalendarPdfPreview({keepStatus:false});
+  const status = $('calendar-pdf-status');
+  if(status)status.textContent = 'Date range changed. Choose your ICS file to preview these dates.';
+}));
 $('calendar-pdf-preview')?.addEventListener('change',onCalendarPdfSelectChange);
 $('calendar-pdf-preview')?.addEventListener('click',e=>{
   const btn = e.target.closest('[data-calendar-select-all],[data-calendar-select-none]');

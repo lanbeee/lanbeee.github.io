@@ -27,20 +27,32 @@
   display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:-2px 0 12px;
   min-width:0;
 }
-/* Split tag layout: one horizontal-scroll row for places, one for topics.
-   No wrapping inside each row — long lists scroll sideways like the home
-   filter row. The rows themselves stack (parent .topic-chip-row wraps). */
+/* A single scrolling row expands only when searching or reviewing choices. */
 .tag-row{
   display:flex;align-items:center;gap:7px;flex-wrap:nowrap;
   flex:0 0 100%;min-width:0;
-  overflow-x:auto;scroll-snap-type:x proximity;
-  -webkit-overflow-scrolling:touch;
+  overflow-x:auto;scrollbar-width:none;
   margin:0 0 8px;padding:2px 0;
-  scrollbar-width:none;
 }
 .tag-row::-webkit-scrollbar{display:none;}
-.tag-row > .topic-chip{scroll-snap-align:start;flex-shrink:0;}
-.tag-row .topic-chip-add{flex-shrink:0;}
+.tag-row > .topic-chip{flex-shrink:0;min-height:44px;white-space:nowrap;}
+.tag-row > .topic-chip.on{order:-1;}
+.tag-row .topic-chip-add{order:1;}
+.tag-picker-toggle{order:-3;display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:44px;padding:9px 11px;border:0.5px solid var(--border);border-radius:999px;background:var(--bg);color:var(--text2);font:inherit;font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer;}
+.tag-row:not(.is-expanded) > .tag-picker-toggle{position:sticky;left:0;z-index:1;}
+/* Cover the full pinned area, including the pill's corners and trailing gap. */
+.tag-row:not(.is-expanded) > .tag-picker-toggle::before{content:"";position:absolute;inset:-2px -7px -2px -1px;background:var(--bg);z-index:-1;pointer-events:none;}
+.tag-row:not(.is-expanded) > .tag-picker-toggle::after{content:"";position:absolute;inset:-0.5px;border:0.5px solid var(--border);border-radius:inherit;pointer-events:none;}
+.tag-picker-action{display:none;margin-left:auto;color:var(--text);}
+.tag-selection-count{color:var(--text3);font-weight:400;}
+.tag-row.is-expanded{flex-wrap:wrap;overflow:visible;}
+.tag-row.is-expanded > .topic-chip{max-width:100%;min-width:0;overflow-wrap:anywhere;white-space:normal;}
+.tag-row.is-expanded > .tag-picker-toggle{flex:0 0 100%;border-color:transparent;border-radius:var(--radius-sm);padding:0;}
+.tag-row.is-expanded .tag-picker-action{display:inline;}
+.tag-picker-toggle:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+.tag-row > .tag-search{order:-2;flex:0 0 100%;width:100%;min-width:0;min-height:44px;margin:0 0 3px;padding:10px 12px;border:0.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font:inherit;font-size:16px;-webkit-appearance:none;appearance:none;}
+.tag-search-empty{order:2;flex:0 0 100%;margin:2px 0 0;}
+.tag-row:not(.is-expanded) > .tag-search-empty{display:none;}
 .tag-row.scrolling > *{pointer-events:none;}
 .topic-chip,.schedule-chip,.monthday-chip{
   border:0.5px solid var(--border);background:var(--bg);color:var(--text2);

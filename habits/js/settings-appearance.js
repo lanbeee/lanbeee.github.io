@@ -191,16 +191,14 @@ function clearHomeCity(){
 function renderDefaultTopicsChips(){
   const wrap = $('default-topics-chips');
   if(!wrap)return;
-  const allTopics = Array.isArray(sortSettings.topics) ? sortSettings.topics : [];
-  const selected = currentDefaultProfile().topics;
-  if(!allTopics.length){
-    wrap.innerHTML = '<p class="field-hint">Add topics in the Topics section first.</p>';
-    return;
+  wrap.dataset.tagContent = 'topics';
+  renderTagChips('default-topics-chips',currentDefaultProfile().topics);
+  if(!wrap.querySelector('[data-topic]')){
+    const hint = document.createElement('p');
+    hint.className = 'field-hint tag-search-empty';
+    hint.textContent = 'Add topics in the Topics section first.';
+    wrap.querySelector('.tag-row-topics').append(hint);
   }
-  wrap.innerHTML = allTopics.map(t=>{
-    const on = selected.includes(t);
-    return `<button type="button" class="topic-filter${on ? ' on' : ''}" data-topic="${escapeHtml(t)}">${escapeHtml(t)}</button>`;
-  }).join('');
 }
 
 function toggleDefaultTopic(topic){
