@@ -1,0 +1,1008 @@
+{
+  "version": 1,
+  "clock": "2026-11-01T12:00:00-05:00",
+  "timezone": "America/New_York",
+  "description": "Single-action interpretation corpus. No independent compound actions. Creates may specify frequency, duration, date and time. Negative and missing-input cases must not execute a write. See docs/assistant-needle-basics.md for results and limitations.",
+  "fixtures": {
+    "comparison": {
+      "items": [
+        {
+          "name": "Walk",
+          "type": "keepup"
+        },
+        {
+          "name": "Evening walk",
+          "type": "keepup"
+        },
+        {
+          "name": "Read",
+          "type": "keepup"
+        },
+        {
+          "name": "Gym",
+          "type": "keepup"
+        },
+        {
+          "name": "Meditate",
+          "type": "keepup"
+        },
+        {
+          "name": "Journal",
+          "type": "keepup"
+        },
+        {
+          "name": "Call mom",
+          "type": "task"
+        },
+        {
+          "name": "Dentist appointment",
+          "type": "task"
+        },
+        {
+          "name": "Pay rent",
+          "type": "task"
+        },
+        {
+          "name": "Buy groceries",
+          "type": "task"
+        }
+      ],
+      "note": "Retains the earlier comparison adapter facts for matched before/after measurement; these are not the normalized browser catalog type labels."
+    },
+    "canonical": {
+      "items": [
+        {
+          "name": "Walk",
+          "type": "habit"
+        },
+        {
+          "name": "Evening walk",
+          "type": "habit"
+        },
+        {
+          "name": "Read",
+          "type": "habit"
+        },
+        {
+          "name": "Gym",
+          "type": "habit"
+        },
+        {
+          "name": "Meditate",
+          "type": "habit"
+        },
+        {
+          "name": "Journal",
+          "type": "habit"
+        },
+        {
+          "name": "Call mom",
+          "type": "task"
+        },
+        {
+          "name": "Dentist appointment",
+          "type": "task"
+        },
+        {
+          "name": "Pay rent",
+          "type": "task"
+        },
+        {
+          "name": "Buy groceries",
+          "type": "task"
+        },
+        {
+          "name": "Yoga",
+          "type": "habit"
+        },
+        {
+          "name": "Practice piano",
+          "type": "habit"
+        },
+        {
+          "name": "Study",
+          "type": "habit"
+        },
+        {
+          "name": "Drink water",
+          "type": "habit"
+        }
+      ],
+      "note": "Normalized browser catalog types; used by the final held-out adapter test."
+    }
+  },
+  "cases": [
+    {
+      "id": "known-frequency",
+      "split": "previous",
+      "family": "frequency",
+      "prompt": "Change Gym to 3 times a week",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Gym",
+          "times": 3,
+          "days": 7
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "known-duration",
+      "split": "previous",
+      "family": "duration",
+      "prompt": "Change Walk to 45 minutes",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Walk",
+          "minutes": 45
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "known-habit",
+      "split": "previous",
+      "family": "habit_create",
+      "prompt": "Add a 20 minute Stretch habit every day",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Stretch",
+          "times": 1,
+          "days": 1,
+          "minutes": 20
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "control-task",
+      "split": "previous",
+      "family": "task_create",
+      "prompt": "Add a task to buy milk",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Buy milk"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "control-dated-task",
+      "split": "previous",
+      "family": "task_create",
+      "prompt": "Remind me to call mom tomorrow",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Call mom",
+          "date": "2026-11-02"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "control-list",
+      "split": "previous",
+      "family": "read",
+      "prompt": "What habits do I have?",
+      "expected": [
+        {
+          "op": "list_habits"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "control-complete",
+      "split": "previous",
+      "family": "completion",
+      "prompt": "Mark Walk as done",
+      "expected": [
+        {
+          "op": "complete",
+          "name": "Walk"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "control-negation",
+      "split": "previous",
+      "family": "negation",
+      "prompt": "Don't delete Walk",
+      "expected": [],
+      "allowClarification": true,
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-freq-1",
+      "split": "previous",
+      "family": "frequency",
+      "prompt": "I'd like Gym to happen three times each week.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Gym",
+          "times": 3,
+          "days": 7
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-freq-2",
+      "split": "previous",
+      "family": "frequency",
+      "prompt": "Set the repetition for Meditate to every other day.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Meditate",
+          "times": 1,
+          "days": 2
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-freq-3",
+      "split": "previous",
+      "family": "frequency",
+      "prompt": "Make Read twice a week instead.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Read",
+          "times": 2,
+          "days": 7
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-duration-1",
+      "split": "previous",
+      "family": "duration",
+      "prompt": "Each Walk session should last three quarters of an hour.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Walk",
+          "minutes": 45
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-duration-2",
+      "split": "previous",
+      "family": "duration",
+      "prompt": "Give Journal a session length of half an hour.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Journal",
+          "minutes": 30
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-duration-3",
+      "split": "previous",
+      "family": "duration",
+      "prompt": "I want to spend 1.5 hours on Read each time.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Read",
+          "minutes": 90
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-habit-1",
+      "split": "previous",
+      "family": "habit_create",
+      "prompt": "Create a daily habit called Stretch lasting twenty minutes.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Stretch",
+          "times": 1,
+          "days": 1,
+          "minutes": 20
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-habit-2",
+      "split": "previous",
+      "family": "habit_create",
+      "prompt": "I'd like a new habit named Sketch: ten minutes, three times a week.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Sketch",
+          "times": 3,
+          "days": 7,
+          "minutes": 10
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-habit-3",
+      "split": "previous",
+      "family": "habit_create",
+      "prompt": "Add Breathe as a habit, every other day for five minutes.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Breathe",
+          "times": 1,
+          "days": 2,
+          "minutes": 5
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-task-1",
+      "split": "previous",
+      "family": "task_create",
+      "prompt": "Put calling the bank on my task list for tomorrow.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Call the bank",
+          "date": "2026-11-02"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-task-2",
+      "split": "previous",
+      "family": "task_create",
+      "prompt": "Create a task called Book haircut, due November 3, 2026.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Book haircut",
+          "date": "2026-11-03"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-task-3",
+      "split": "previous",
+      "family": "task_create",
+      "prompt": "Add Send invoice to my tasks for tomorrow at 3pm.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Send invoice",
+          "date": "2026-11-02",
+          "time": 900
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-complete",
+      "split": "previous",
+      "family": "completion",
+      "prompt": "I've finished Meditate; mark it complete.",
+      "expected": [
+        {
+          "op": "complete",
+          "name": "Meditate"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-list",
+      "split": "previous",
+      "family": "read",
+      "prompt": "Show me my repeating habits.",
+      "expected": [
+        {
+          "op": "list_habits"
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-negation",
+      "split": "previous",
+      "family": "negation",
+      "prompt": "Keep Walk; I do not want it deleted.",
+      "expected": [],
+      "allowClarification": true,
+      "fixture": "comparison"
+    },
+    {
+      "id": "unseen-correction",
+      "split": "previous",
+      "family": "correction",
+      "prompt": "Change Read, not Walk, to 25 minutes.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Read",
+          "minutes": 25
+        }
+      ],
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-frequency-1",
+      "family": "frequency",
+      "prompt": "Gym should repeat four times a week.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Gym",
+          "times": 4,
+          "days": 7
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-frequency-2",
+      "family": "frequency",
+      "prompt": "Can you change Meditate to twice daily?",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Meditate",
+          "times": 2,
+          "days": 1
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-frequency-3",
+      "family": "frequency",
+      "prompt": "I only want Read once every three days.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Read",
+          "times": 1,
+          "days": 3
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-duration-1",
+      "family": "duration",
+      "prompt": "Please make Walk last fifty minutes.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Walk",
+          "minutes": 50
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-duration-2",
+      "family": "duration",
+      "prompt": "The duration for Journal should be a quarter of an hour.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Journal",
+          "minutes": 15
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-duration-3",
+      "family": "duration",
+      "prompt": "Set Read's session length to two hours.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Read",
+          "minutes": 120
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-habit-1",
+      "family": "habit_create",
+      "prompt": "Add a habit called Stretch for 25 minutes every morning.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Stretch",
+          "times": 1,
+          "days": 1,
+          "minutes": 25,
+          "windowText": "morning"
+        }
+      ],
+      "note": "Morning is an additional time constraint: a missing window must not be treated as complete.",
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-habit-2",
+      "family": "habit_create",
+      "prompt": "Create Sketch, a habit I do twice a week for fifteen minutes.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Sketch",
+          "times": 2,
+          "days": 7,
+          "minutes": 15
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-habit-3",
+      "family": "habit_create",
+      "prompt": "I'd like a daily five-minute habit named Breathe.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Breathe",
+          "times": 1,
+          "days": 1,
+          "minutes": 5
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-task-1",
+      "family": "task_create",
+      "prompt": "Please put Buy stamps on my task list.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Buy stamps"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-task-2",
+      "family": "task_create",
+      "prompt": "Remind me tomorrow to book a haircut.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Book a haircut",
+          "date": "2026-11-02"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-task-3",
+      "family": "task_create",
+      "prompt": "Make a task called Send receipt for November 4, 2026 at 4pm.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Send receipt",
+          "date": "2026-11-04",
+          "time": 960
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-complete-1",
+      "family": "completion",
+      "prompt": "I did Walk. Log it as done.",
+      "expected": [
+        {
+          "op": "complete",
+          "name": "Walk"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-complete-2",
+      "family": "completion",
+      "prompt": "Please tick Gym off for today.",
+      "expected": [
+        {
+          "op": "complete",
+          "name": "Gym"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-list-1",
+      "family": "read",
+      "prompt": "List all my habits, please.",
+      "expected": [
+        {
+          "op": "list_habits"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-list-2",
+      "family": "read",
+      "prompt": "Which tasks have I saved?",
+      "expected": [
+        {
+          "op": "list_tasks"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-delete-1",
+      "family": "delete",
+      "prompt": "Remove the habit Journal.",
+      "expected": [
+        {
+          "op": "delete",
+          "name": "Journal"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-delete-2",
+      "family": "delete",
+      "prompt": "Delete my Pay rent task.",
+      "expected": [
+        {
+          "op": "delete",
+          "name": "Pay rent"
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-negation-1",
+      "family": "negation",
+      "prompt": "Please don't remove Meditate.",
+      "expected": [],
+      "allowClarification": true,
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-negation-2",
+      "family": "negation",
+      "prompt": "Do not mark Walk complete.",
+      "expected": [],
+      "allowClarification": true,
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "hold-correction",
+      "family": "correction",
+      "prompt": "Make Gym, not Meditate, last 35 minutes.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Gym",
+          "minutes": 35
+        }
+      ],
+      "split": "extension",
+      "fixture": "comparison"
+    },
+    {
+      "id": "final-freq-1",
+      "family": "frequency",
+      "prompt": "Set Yoga to five repetitions per week.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Yoga",
+          "times": 5,
+          "days": 7
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-freq-2",
+      "family": "frequency",
+      "prompt": "Practice piano should happen every three days.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Practice piano",
+          "times": 1,
+          "days": 3
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-freq-3",
+      "family": "frequency",
+      "prompt": "Make Study repeat twice daily.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Study",
+          "times": 2,
+          "days": 1
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-duration-1",
+      "family": "duration",
+      "prompt": "Let Yoga sessions run for ten minutes.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Yoga",
+          "minutes": 10
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-duration-2",
+      "family": "duration",
+      "prompt": "Change the length of Practice piano to one hour.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Practice piano",
+          "minutes": 60
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-duration-3",
+      "family": "duration",
+      "prompt": "Give Study a 75-minute session length.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Study",
+          "minutes": 75
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-habit-1",
+      "family": "habit_create",
+      "prompt": "Add Floss as a daily two-minute habit.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Floss",
+          "times": 1,
+          "days": 1,
+          "minutes": 2
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-habit-2",
+      "family": "habit_create",
+      "prompt": "Create a habit named Draw, three times a week for 20 minutes.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Draw",
+          "times": 3,
+          "days": 7,
+          "minutes": 20
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-habit-3",
+      "family": "habit_create",
+      "prompt": "I'd like a new daily Stretch habit that lasts 10 minutes.",
+      "expected": [
+        {
+          "op": "create_habit",
+          "name": "Stretch",
+          "times": 1,
+          "days": 1,
+          "minutes": 10
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-task-1",
+      "family": "task_create",
+      "prompt": "Remind me to call the plumber tomorrow.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Call the plumber",
+          "date": "2026-11-02"
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-task-2",
+      "family": "task_create",
+      "prompt": "Add a task called Send report for November 5, 2026 at 11am.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Send report",
+          "date": "2026-11-05",
+          "time": 660
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-task-3",
+      "family": "task_create",
+      "prompt": "Add Buy batteries to my tasks.",
+      "expected": [
+        {
+          "op": "create_task",
+          "name": "Buy batteries"
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-done-1",
+      "family": "completion",
+      "prompt": "Mark Yoga done for today.",
+      "expected": [
+        {
+          "op": "complete",
+          "name": "Yoga"
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-done-2",
+      "family": "completion",
+      "prompt": "Study is finished; log it as complete.",
+      "expected": [
+        {
+          "op": "complete",
+          "name": "Study"
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-list-1",
+      "family": "read",
+      "prompt": "Show my saved tasks.",
+      "expected": [
+        {
+          "op": "list_tasks"
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-list-2",
+      "family": "read",
+      "prompt": "What repeating habits are in my list?",
+      "expected": [
+        {
+          "op": "list_habits"
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-delete",
+      "family": "delete",
+      "prompt": "Delete Drink water from my habits.",
+      "expected": [
+        {
+          "op": "delete",
+          "name": "Drink water"
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-negation",
+      "family": "negation",
+      "prompt": "Don't delete Study.",
+      "expected": [],
+      "allowClarification": true,
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-correction",
+      "family": "correction",
+      "prompt": "Set Study, not Yoga, to 40 minutes.",
+      "expected": [
+        {
+          "op": "edit",
+          "name": "Study",
+          "minutes": 40
+        }
+      ],
+      "split": "final_holdout",
+      "fixture": "canonical"
+    },
+    {
+      "id": "final-missing",
+      "family": "missing_input",
+      "prompt": "Add a habit named Balance.",
+      "expected": [],
+      "allowClarification": true,
+      "expectedClarification": "frequency",
+      "split": "final_holdout",
+      "fixture": "canonical"
+    }
+  ]
+}

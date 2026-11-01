@@ -113,6 +113,12 @@ function assistantNeedleCancelDownload(){
 
 function assistantNeedleStop(reason){
   _assistantNeedleGeneration += 1;
+  assistantNeedleResetRuntime(reason);
+}
+
+// A broken runtime can be restarted without cancelling the user's workflow.
+// Only an explicit stop invalidates the conversation generation.
+function assistantNeedleResetRuntime(reason){
   if(_assistantNeedleWorker)_assistantNeedleWorker.terminate();
   _assistantNeedleWorker = null;
   _assistantNeedleReady = null;
@@ -135,7 +141,7 @@ function assistantNeedleRequest(type, payload, transfer){
   const id = ++_assistantNeedleSerial;
   return new Promise((resolve,reject)=>{
     const timer = setTimeout(()=>{
-      assistantNeedleStop(new Error('Needle took too long. Try a shorter request.'));
+      assistantNeedleResetRuntime(new Error('The assistant took too long. Retry the unfinished part.'));
     }, 180000);
     _assistantNeedlePending.set(id, {resolve,reject,timer});
     try{ _assistantNeedleWorker.postMessage({id,type,...payload}, transfer || []); }
@@ -168,11 +174,11 @@ function assistantNeedleEnsureReady(){
       if(data.error)pending.reject(new Error(data.error));
       else pending.resolve(data.result);
     };
-    _assistantNeedleWorker.onerror = ()=>assistantNeedleStop(new Error('Needle could not start on this device. Try again or choose a local server in Settings.'));
+    _assistantNeedleWorker.onerror = ()=>assistantNeedleResetRuntime(new Error('The on-device assistant stopped unexpectedly. Retry the unfinished part to restart it.'));
     await assistantNeedleRequest('load', {wasm:buffers[0], model:buffers[1]}, buffers);
     return true;
   })().catch(err=>{
-    if(generation === _assistantNeedleGeneration)assistantNeedleStop();
+    if(generation === _assistantNeedleGeneration)assistantNeedleResetRuntime();
     throw err;
   });
   return _assistantNeedleReady;
@@ -183,6 +189,13 @@ function assistantNeedleEnsureReady(){
 // then refuses. "90 minutes" only appeared to work because those digits were spoken.
 const ASSISTANT_SPOKEN_DURATION_FIELDS = new Set(['durationMinutes','minChunkMinutes','autoMarkMinutes','minutes']);
 const ASSISTANT_SPOKEN_DURATION_DESCRIPTION = 'the user\'s words or a minute count, such as "1.5 hours", "90 minutes", or "half an hour"';
+const ASSISTANT_NEEDLE_ACTION_CHOICES = [
+  ['change_frequency','Change frequency'],['change_duration','Change session length'],
+  ['add_task','Add a task'],['add_habit','Add a habit'],['complete_item','Mark done'],
+  ['rename_item','Rename an item'],['change_deadline','Change a task date or time'],
+  ['change_availability','Change allowed days or hours'],['delete_item','Delete an item'],
+  ['get_habits','List habits'],['get_tasks','List tasks'],['get_schedule','Show the agenda']
+];
 
 // Select primitive schema types instead of union dialects. Keep every supported
 // field; only descriptions are shortened for Needle's 8192-token context.
@@ -396,10 +409,22 @@ function assistantNeedleTurn(req){
   const repair = feedback ? JSON.stringify({ok:false,
     error:invalid ? invalid[1] : 'No valid tool call was returned.',request:envelope.request}) : '';
   const routingSystem=`date: ${date}; assistant: Tings; user: ${JSON.stringify({currentDraft:facts.currentDraft,recent:facts.recent,clarification:facts.clarification,habits:facts.habits,places:facts.places})}`;
-  return {request:envelope.request,system,routingSystem,results,repair,entryIntent:envelope.entryIntent || null};
+  return {request:envelope.request,system,routingSystem,results,repair,entryIntent:envelope.entryIntent || null,
+    selectedAction:envelope.selectedNeedleAction || null,
+    hasItemContext:Boolean(draft?.name || recent?.referent?.name),itemNames:catalog.habits?.map(row=>row.name).filter(Boolean)};
 }
 
-function assistantNeedleEntryTools(tools, intent){
+function assistantNeedleEntryTools(tools, intent, selectedAction){
+  if(selectedAction){
+    if(!ASSISTANT_NEEDLE_ACTION_CHOICES.some(([name])=>name === selectedAction)
+      || !tools.some(tool=>tool.name === selectedAction))throw new Error('Choose an available assistant action.');
+    return tools.filter(tool=>tool.name === selectedAction || tool.name === 'ask_user').map(tool=>{
+      if(selectedAction !== 'complete_item' || tool.name !== selectedAction)return tool;
+      const parameters={...tool.parameters,properties:{...tool.parameters.properties}};
+      delete parameters.properties.action;
+      return {...tool,parameters,core:tool.core.filter(key=>key !== 'action'),fixed:{...tool.fixed,action:'log'}};
+    });
+  }
   const keep = intent === 'create_habit' ? ['add_habit','ask_user']
     : intent === 'create_task' ? ['add_task','create_reminder','ask_user']
     : intent === 'create_setting' ? ['save_setting','ask_user']
@@ -415,24 +440,183 @@ function assistantNeedleGroundedArguments(call, request, ungrounded){
   const bad = ungrounded.filter(field=>field.startsWith(prefix));
   if(!bad.length)return true;
   return bad.every(field=>{
-    const key = field.slice(prefix.length);
-    if(!key || key.includes('.') || !call.arguments || !Object.prototype.hasOwnProperty.call(call.arguments, key))return false;
+    const nativeKey = field.slice(prefix.length);
+    if(!nativeKey || nativeKey.includes('.') || !call.arguments)return false;
+    // Native diagnostics sometimes use duration_minutes for durationMinutes.
+    // Accept only an unambiguous spelling of an actual returned argument.
+    const matches=Object.keys(call.arguments).filter(key=>key.replace(/_/g,'').toLowerCase() === nativeKey.replace(/_/g,'').toLowerCase());
+    if(matches.length !== 1)return false;
+    const key=matches[0];
     if(key === 'frequency' || key === 'rhythm'){
       const spoken=assistantParseRhythm(request),value=assistantParseRhythm(call.arguments[key]);
       return Boolean(spoken && value && spoken.timesPerPeriod === value.timesPerPeriod && spoken.periodDays === value.periodDays
         && JSON.stringify(spoken.weekdays || []) === JSON.stringify(value.weekdays || []));
     }
+    if(key === 'time' || key === 'dueTime')return assistantNeedleFieldGrounded('time',call.arguments[key],request);
+    if(key === 'date' || key === 'due')return assistantNeedleFieldGrounded('date',call.arguments[key],request);
     return ASSISTANT_SPOKEN_DURATION_FIELDS.has(key) && assistantSpokenDurationMatches(request, call.arguments[key]);
   });
+}
+
+function assistantNeedleNormalizeBasicEdit(call, request, raw){
+  const args=call.arguments || {};
+  let from,to,value;
+  if(call.name === 'change_frequency' && args.frequency != null && !assistantParseRhythm(args.frequency)
+    && assistantSpokenDurationMatches(request,args.frequency)){
+    from='frequency';to='durationMinutes';value=args.frequency;
+  }else if(call.name === 'change_duration' && args.durationMinutes != null
+    && !assistantSpokenDurationMatches(request,args.durationMinutes)
+    && assistantNeedleFrequencyMatches(request,args.durationMinutes)){
+    from='durationMinutes';to='frequency';value=args.durationMinutes;
+  }else return null;
+  // Both aliases are the same model-selected saved-item edit. Reassign only
+  // the model's own value when its unit has one valid field type. Never infer
+  // a count, period, target, action, or missing value from the user's text.
+  const previous=call.name,next=to === 'frequency' ? 'change_frequency' : 'change_duration';
+  call.name=next;call.arguments={...args,[to]:value};delete call.arguments[from];
+  if(raw.validation?.ungrounded)raw.validation.ungrounded=raw.validation.ungrounded.map(path=>{
+    if(!path.startsWith(previous+'.'))return path;
+    const key=path.slice(previous.length+1);
+    return next+'.'+(key.replace(/_/g,'').toLowerCase() === from.toLowerCase() ? to : key);
+  });
+  return {kind:'field-type',from:previous,to:next,value};
+}
+
+function assistantNeedleFrequencyMatches(request, value){
+  const spoken=assistantParseRhythm(request),extracted=assistantParseRhythm(value);
+  return Boolean(spoken && extracted && spoken.timesPerPeriod === extracted.timesPerPeriod
+    && spoken.periodDays === extracted.periodDays
+    && JSON.stringify(spoken.weekdays || []) === JSON.stringify(extracted.weekdays || []));
+}
+
+// These readers check coverage only AFTER Needle has selected an action. Their
+// values never populate arguments or select an operation. Every repair value
+// comes from another actual model inference over the unchanged request.
+function assistantNeedleTimingEvidence(request){
+  const clocks=Array.from(request.matchAll(/\b(?:\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?|\d{1,2}:\d{2}|noon|midnight)\b/gi),m=>m[0]);
+  const dates=Array.from(request.matchAll(/\b(?:day after tomorrow|tomorrow|today|tonight|next\s+(?:week|sunday|monday|tuesday|wednesday|thursday|friday|saturday)|\d{4}-\d{2}-\d{2}|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:,?\s+\d{4})?)\b/gi),m=>m[0]);
+  return {clocks,dates};
+}
+
+function assistantNeedleBasicFields(call, turn){
+  const a=call.arguments || {},fields=[];
+  if(!turn.hasItemContext && !a.name && ['change_frequency','change_duration','change_availability','change_deadline','rename_item','complete_item','delete_item'].includes(call.name))fields.push('name');
+  if(['add_habit','change_frequency'].includes(call.name) && assistantParseRhythm(turn.request)
+    && !assistantNeedleFrequencyMatches(turn.request,a.frequency))fields.push('frequency');
+  if(['add_habit','add_task','create_reminder','change_duration'].includes(call.name)
+    && assistantDurationHits(turn.request).length && !assistantSpokenDurationMatches(turn.request,a.durationMinutes))fields.push('duration');
+  if(['add_habit','change_availability'].includes(call.name) && assistantParseWindowFromText(turn.request)
+    && !assistantNeedleFieldGrounded('window',a.windowText,turn.request))fields.push('window');
+  if(['add_task','create_reminder','change_deadline'].includes(call.name)){
+    const evidence=assistantNeedleTimingEvidence(turn.request);
+    if(evidence.dates.length && !evidence.dates.some(value=>assistantParseDue(value) != null && assistantParseDue(value) === assistantParseDue(a.date ?? a.due)))fields.push('date');
+    if(evidence.clocks.length && !evidence.clocks.some(value=>assistantParseClock(value) != null && assistantParseClock(value) === assistantParseClock(a.time ?? a.dueTime)))fields.push('time');
+  }
+  return fields;
+}
+
+function assistantNeedleFieldGrounded(field, value, request){
+  if(typeof value !== 'string' || !value.trim())return false;
+  if(field === 'frequency')return assistantNeedleFrequencyMatches(request,value);
+  if(field === 'duration')return assistantSpokenDurationMatches(request,value);
+  if(field === 'window'){
+    const spoken=assistantWindowToOptionTimes(assistantParseWindowFromText(request));
+    const extracted=assistantWindowToOptionTimes(assistantParseWindowFromText(value));
+    return Boolean(spoken && extracted && JSON.stringify(spoken) === JSON.stringify(extracted));
+  }
+  if(field === 'date' || field === 'time'){
+    const timing=assistantNeedleTimingEvidence(request);
+    return field === 'date' ? timing.dates.some(v=>assistantParseDue(v) != null && assistantParseDue(v) === assistantParseDue(value))
+      : timing.clocks.some(v=>assistantParseClock(v) != null && assistantParseClock(v) === assistantParseClock(value));
+  }
+  const words=s=>' '+s.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';
+  return field === 'name' && words(request).includes(words(value));
+}
+
+async function assistantNeedleRepairBasicFields(raw, turn, tools){
+  if(turn.results.length || turn.repair || raw.validation?.negation || raw._needleIssue)return raw;
+  let candidates=[...(raw.function_calls || []),...(raw.suppressed_calls || [])];
+  if(candidates.some(call=>['change_frequency','change_duration'].includes(call.name))
+    && assistantParseRhythm(turn.request) && assistantDurationHits(turn.request).length){
+    return {...raw,function_calls:[{name:'ask_user',arguments:{
+      question:'Please send one setting change at a time: change the frequency first, then the session length in a separate message.'}}],suppressed_calls:[]};
+  }
+  if(candidates.length !== 1)return raw;
+  let call=candidates[0];
+  if(!tools.some(t=>t.name === call.name))return raw;
+  const original=JSON.parse(JSON.stringify({calls:candidates,confidence:raw.confidence,validation:raw.validation}));
+  const originalHeld=Boolean(raw.suppressed_calls?.length);
+  const diagnostics=[];
+  const normalized=!turn.selectedAction && assistantNeedleNormalizeBasicEdit(call,turn.request,raw);
+  if(normalized)diagnostics.push(normalized);
+  // Reject incompatible slot types, then let the model reconsider among a
+  // small set of real item schemas. No parser supplies the replacement action.
+  const args=call.arguments || {};
+  const incompatible=(call.name === 'add_habit' && !assistantParseRhythm(turn.request))
+    || (call.name === 'change_duration' && args.durationMinutes != null
+      && !assistantSpokenDurationMatches(turn.request,args.durationMinutes) && !assistantDurationHits(turn.request).length)
+    || (call.name === 'change_frequency' && !assistantParseRhythm(turn.request));
+  if(incompatible && !turn.selectedAction){
+    const itemTools=tools.filter(t=>['add_habit','create_reminder','change_frequency','change_duration','ask_user'].includes(t.name));
+    if(itemTools.length > 1){
+      const retry=await assistantNeedleRequest('complete',{...turn,tools:itemTools});
+      diagnostics.push({kind:'item-reconsider',raw:JSON.parse(JSON.stringify(retry))});
+      candidates=[...(retry.function_calls || []),...(retry.suppressed_calls || [])];
+      if(candidates.length === 1){raw=retry;call=candidates[0];}
+    }
+  }
+  const renormalized=!turn.selectedAction && !raw.validation?.negation && assistantNeedleNormalizeBasicEdit(call,turn.request,raw);
+  if(renormalized)diagnostics.push(renormalized);
+  const fields=assistantNeedleBasicFields(call,turn).slice(0,3);
+  for(const field of fields){
+    const description={name:'Name of the existing item.',frequency:'The complete repetition phrase copied from the text.',
+      duration:'Length of one session, in minutes or hours.',window:'Allowed hours copied from the text.',date:'Due date.',time:'Clock time at which the task starts.'}[field];
+    const result=await assistantNeedleRequest('extract',{request:turn.request,system:turn.system,field,description,
+      ...(field === 'name' && turn.itemNames?.length ? {values:turn.itemNames} : {})});
+    const values=[...(result.function_calls || []),...(result.suppressed_calls || [])]
+      .filter(row=>row.name === field).map(row=>row.arguments?.[field]);
+    const accepted=!result.validation?.negation && values.length === 1 && assistantNeedleFieldGrounded(field,values[0],turn.request);
+    diagnostics.push({kind:'field',field,accepted,raw:result});
+    if(!accepted)continue;
+    const key=field === 'duration' ? 'durationMinutes' : field === 'window' ? 'windowText'
+      : call.name === 'change_deadline' && field === 'date' ? 'due'
+      : call.name === 'change_deadline' && field === 'time' ? 'dueTime' : field;
+    call.arguments={...call.arguments,[key]:values[0]};
+    if(raw.validation?.ungrounded)raw.validation.ungrounded=raw.validation.ungrounded.filter(path=>path !== `${call.name}.${key}`);
+    // A suppressed record remains an interpretation proposal, never an approval.
+    if(result.suppressed_calls?.length && !(raw.suppressed_calls || []).includes(call)){
+      raw.function_calls=(raw.function_calls || []).filter(row=>row !== call);
+      raw.suppressed_calls=[...(raw.suppressed_calls || []),call];
+    }
+    const scores=[raw.confidence,result.confidence].filter(Number.isFinite);
+    raw.confidence=scores.length ? Math.min(...scores) : undefined;
+  }
+  if(diagnostics.length){
+    raw._basicRepairs=[{kind:'initial',...original},...diagnostics];
+    const scores=[original.confidence,raw.confidence].filter(Number.isFinite);
+    raw.confidence=scores.length ? Math.min(...scores) : undefined;
+    raw._basicNeedsConfirmation=originalHeld;
+  }
+  const unfinished=assistantNeedleBasicFields(call,turn);
+  if(call.name === 'change_frequency' && !assistantNeedleFrequencyMatches(turn.request,call.arguments?.frequency))unfinished.unshift('frequency');
+  if(call.name === 'change_duration' && !assistantSpokenDurationMatches(turn.request,call.arguments?.durationMinutes))unfinished.unshift('duration');
+  if(call.name === 'add_habit' && !assistantNeedleFrequencyMatches(turn.request,call.arguments?.frequency))unfinished.unshift('frequency');
+  if(unfinished.length){
+    const question={name:'Which saved task or habit should I change?',frequency:'How often should it repeat?',
+      duration:'How long should one session last?',window:'During which hours should it be allowed?',date:'What date should the task be due?',time:'What time should the task start?'}[unfinished[0]];
+    return {...raw,function_calls:[{name:'ask_user',arguments:{question}}],suppressed_calls:[]};
+  }
+  return raw;
 }
 
 async function assistantNeedleComplete(req){
   await assistantNeedleEnsureReady();
   const turn = assistantNeedleTurn(req);
   const source = req.tools?.length ? req.tools : assistantOllamaTools(['draft_item','draft_setting','draft_batch','ask_user']);
-  const tools = assistantNeedleEntryTools(assistantNeedleTools(source), turn.entryIntent);
-  const raw = await assistantNeedleRequest('complete', {...turn, tools});
+  const tools = assistantNeedleEntryTools(assistantNeedleTools(source), turn.entryIntent, turn.selectedAction);
+  let raw = await assistantNeedleRequest('complete', {...turn, tools});
   if(raw.success === false || raw.type === 'error')throw new Error(raw.error || 'Needle could not complete this request.');
+  raw=await assistantNeedleRepairBasicFields(raw,turn,tools);
   // Needle explicitly allows suppressed candidates to be offered for user
   // confirmation. Writes only stage previews on the first pass. Grounded
   // read candidates can safely return authoritative app facts. A length that
@@ -455,7 +639,10 @@ async function assistantNeedleComplete(req){
       || !(' '+turn.request.toLowerCase().split(/[^a-z0-9]+/).join(' ')+' ').includes(' '+call.arguments[key].toLowerCase().split(/[^a-z0-9]+/).join(' ')+' ')))return false;
     const invented = ungrounded.some(field=>field.startsWith(prefix))
       && !assistantNeedleGroundedArguments(call, turn.request, ungrounded);
-    if(!tools.some(t=>t.name === call.name) || raw.validation?.negation || seen.has(key) || invented)return false;
+    const frequency=call.arguments?.frequency;
+    const invalidFrequency=frequency != null && ['add_habit','change_frequency'].includes(call.name)
+      && !assistantNeedleFrequencyMatches(turn.request,frequency);
+    if(!tools.some(t=>t.name === call.name) || raw.validation?.negation || seen.has(key) || invented || invalidFrequency)return false;
     seen.add(key);
     return true;
   });
@@ -469,6 +656,7 @@ async function assistantNeedleComplete(req){
       return {id:`needle-${i}`, type:'function', function:{name:tool.canonical, arguments:args}};
     })},
     prompt_eval_count:raw._promptTokens || 0, _contextLimit:8192, _contextManaged:true, _needleConfidence:confidence,_needleRoute:raw._route,_needleValidation:raw.validation,_needleIssue:raw._needleIssue,
+    _needleBasicRepairs:raw._basicRepairs,
     _needleNeedsConfirmation:calls.some(call=>{const tool=tools.find(t=>t.name === call.name);return tool?.canonical !== 'ask_user' && tool?.fixed?.kind !== 'assistant';})
-      && ((!scores.length || confidence < 0.7) || calls.some(call=>held.includes(call)))};
+      && ((!scores.length || confidence < 0.7) || raw._basicNeedsConfirmation || calls.some(call=>held.includes(call)))};
 }

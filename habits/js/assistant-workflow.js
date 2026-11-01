@@ -26,7 +26,7 @@ async function assistantRunNeedleWorkflow(text, opts){
   let slices;
   const retained = session.needleWorkflow;
   const generation = _assistantNeedleGeneration;
-  const oneItem = opts.startIntent === 'create_habit' || opts.startIntent === 'create_task' || opts.startIntent === 'create_setting';
+  const oneItem = Boolean(opts.needleAction) || opts.startIntent === 'create_habit' || opts.startIntent === 'create_task' || opts.startIntent === 'create_setting';
   if(oneItem && !retained){
     // The add screen is one new item. A second sentence must not become another draft.
     slices = [text];
@@ -48,7 +48,7 @@ async function assistantRunNeedleWorkflow(text, opts){
   const drafts = retained?.drafts || (Array.isArray(session.drafts) && !session._focusOnly ? session.drafts.slice() : []);
   const actions = retained?.actions || (session.pendingActions || []).slice();
   const answers = retained?.answers || [];
-  const trace = [];
+  const trace = (retained?.trace || []).slice();
   const navigation = retained?.navigation || [];
   session.needleWorkflow = null;
   let last;
@@ -86,7 +86,7 @@ async function assistantRunNeedleWorkflow(text, opts){
     }
     for(const answer of session.lastReadParts || [])if(answer && !answers.includes(answer))answers.push(answer);
     if(last.type === 'ask' || last.type === 'error' || last.gaveUp){
-      session.needleWorkflow = {request:retained?.request || text,remaining:slices.slice(i+1),drafts,actions,answers,navigation};
+      session.needleWorkflow = {request:retained?.request || text,remaining:slices.slice(i+1),drafts,actions,answers,navigation,trace:trace.slice()};
       last.partial = drafts.length > 0 || actions.length > 0 || answers.length > 0;
       last.unfinished = slices.slice(i);
       last.alsoText = [answers.join('\n\n'),last.partial ? 'Work so far is kept for review after this part is resolved. Nothing has been saved.' : ''].filter(Boolean).join('\n\n');

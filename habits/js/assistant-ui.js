@@ -278,6 +278,12 @@ async function assistantOpenWithInstruction(text, opts){
 }
 
 function assistantWelcomeHtml(){
+  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Ask for one action at a time. Nothing is saved until you confirm.</p>
+      <div class="assistant-suggestions">
+        <button type="button" class="assistant-suggest" data-assistant-suggest="Add a task to buy milk">Add a task</button>
+        <button type="button" class="assistant-suggest" data-assistant-suggest="What habits do I have?">List my habits</button>
+        <button type="button" class="assistant-suggest" data-assistant-suggest="Add a 20 minute Stretch habit every day">Add a habit</button>
+      </div></div>`;
   return `<div class="assistant-bubble assistant-bubble-say"><p>Say it like a person. Nothing is saved until you confirm.</p>
       <div class="assistant-suggestions">
         <button type="button" class="assistant-suggest" data-assistant-suggest="Remind me to call mom">Remind me to call mom</button>
@@ -288,6 +294,33 @@ function assistantWelcomeHtml(){
 
 function assistantThreadEl(){
   return $('assistant-thread');
+}
+
+function assistantAppendActionChoice(bubble, out, request){
+  if(!bubble || assistantSettings().provider !== 'needle' || !request || out.partial)return;
+  const turn=_assistantTurn;
+  const controls=document.createElement('div');controls.className='assistant-suggestions';
+  const select=document.createElement('select');select.dataset.assistantAction='true';
+  select.setAttribute('aria-label','Choose the action for this request');
+  const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a different action…';select.append(placeholder);
+  for(const [name,label] of ASSISTANT_NEEDLE_ACTION_CHOICES){
+    const option=document.createElement('option');option.value=name;option.textContent=label;select.append(option);
+  }
+  const retry=document.createElement('button');retry.type='button';retry.className='btn';retry.dataset.assistantAction='true';
+  retry.textContent='retry action';retry.disabled=true;
+  select.addEventListener('change',()=>{retry.disabled=!select.value || _assistantBusy || turn !== _assistantTurn;});
+  retry.addEventListener('click',()=>{
+    if(_assistantBusy || turn !== _assistantTurn || !select.value)return;
+    const tool=select.value;
+    if(!ASSISTANT_NEEDLE_ACTION_CHOICES.some(([name])=>name === tool))return;
+    if(_assistantSession){
+      _assistantSession.needleProposal=null;_assistantSession.needleApproved=null;
+      _assistantSession.awaiting=null;_assistantSession.clarifyingRequest=null;_assistantSession.clarifyCount=0;
+    }
+    retry.disabled=true;select.disabled=true;
+    void sendAssistantMessage(request,{needleAction:tool,displayText:select.selectedOptions[0].textContent});
+  });
+  controls.append(select,retry);bubble.append(controls);
 }
 
 function assistantFocusedDraft(){
@@ -631,11 +664,11 @@ function assistantShowBusy(on){
 
 async function handleAssistantOutcome(out, feedbackContext){
   if(!out)return;
-  await renderAssistantOutcome(out);
+  await renderAssistantOutcome(out, feedbackContext);
   assistantAppendFeedback(out, feedbackContext);
 }
 
-async function renderAssistantOutcome(out){
+async function renderAssistantOutcome(out, feedbackContext){
   if(!out)return;
   assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button').forEach(button=>{button.disabled=true;});
   if(out.draft)_assistantPendingDraft = out.draft;
@@ -646,7 +679,7 @@ async function renderAssistantOutcome(out){
   if(out.draft && _assistantSession && !_assistantSession.draft)_assistantSession.draft = out.draft;
   if(_assistantPendingDrafts && _assistantSession && !_assistantSession.drafts)_assistantSession.drafts = _assistantPendingDrafts;
   syncAssistantFocusBar();
-  assistantThreadEl()?.querySelectorAll('[data-assistant-choice], [data-assistant-proposal]').forEach(button=>{button.disabled=true;});
+  assistantThreadEl()?.querySelectorAll('[data-assistant-choice], [data-assistant-proposal], [data-assistant-action]').forEach(button=>{button.disabled=true;});
   const live = assistantThreadEl()?.querySelector('.assistant-bubble-debug.is-live');
   if(live && out.debug){
     assistantFillDebugBubble(live, out.debug, {debugText:out.debugText, debugJson:assistantDebugPayload(out.debug)});
@@ -729,6 +762,7 @@ async function renderAssistantOutcome(out){
       });
       bubble?.append(button);
     }
+    assistantAppendActionChoice(bubble,out,feedbackContext?.request);
     return;
   }
   if(out.type === 'today' || out.type === 'say'){
@@ -754,7 +788,7 @@ async function sendAssistantMessage(text, opts){
     return;
   }
   const turn = ++_assistantTurn;
-  assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button, [data-assistant-choice], [data-assistant-proposal]').forEach(button=>{button.disabled=true;});
+  assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button, [data-assistant-choice], [data-assistant-proposal], [data-assistant-action]').forEach(button=>{button.disabled=true;});
   appendAssistantBubble('user', opts.displayText || value);
   const input = $('assistant-input');
   if(input){
@@ -769,6 +803,7 @@ async function sendAssistantMessage(text, opts){
       startIntent:opts.startIntent || undefined,
       entry:opts.entry || _assistantSession?.entry || undefined,
       form:opts.form || undefined,
+      needleAction:opts.needleAction || undefined,
       onProgress:info => {
         if(turn !== _assistantTurn)return;
         const wait = $('assistant-waiting');

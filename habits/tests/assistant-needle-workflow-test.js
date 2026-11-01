@@ -74,6 +74,53 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     });
     assert(incomplete.type !== 'preview' && incomplete.partial && incomplete.drafts === 1,'an earlier draft cannot make an unanswered later question appear finished');
     assert(incomplete.unfinished?.[0] === 'Answer the question.','unfinished requests remain available for retry');
+    const recovery=await page.evaluate(async()=>{
+      const ready=assistantNeedleEnsureReady,request=assistantNeedleRequest;
+      assistantNeedleEnsureReady=async()=>true;
+      assistantNeedleRequest=async()=>({steps:['Add Alpha.','Add Beta.','Add Omega.']});
+      const session=assistantCreateSession(),before=JSON.stringify(load());
+      let fail=true;
+      const complete=async req=>{
+        const text=JSON.parse(req.messages.find(m=>m.role==='user').content).request;
+        if(text==='Add Beta.' && fail){
+          // Exercise the runtime fault boundary used by worker errors/timeouts.
+          assistantNeedleResetRuntime(new Error('Synthetic worker failure'));
+          throw new Error('Synthetic worker failure');
+        }
+        return {message:{role:'assistant',content:'',tool_calls:req.messages.some(m=>m.role==='tool') ? []
+          : [{function:{name:'draft_item',arguments:{name:text.slice(4,-1),kind:'task',create:true}}}]}};
+      };
+      try{
+        const first=await assistantRunNeedleWorkflow('Add Alpha. Add Beta. Add Omega.',{session,complete});
+        const paused={type:first.type,partial:first.partial,unfinished:first.unfinished,
+          names:session.needleWorkflow?.drafts.map(d=>d.name),remaining:session.needleWorkflow?.remaining};
+        fail=false;
+        const second=await assistantRunNeedleWorkflow(first.unfinished?.[0] || 'missing retry',{session,complete});
+        const generation=_assistantNeedleGeneration;
+        assistantNeedleStop();
+        return {paused,type:second.type,names:second.drafts?.map(d=>d.name),
+          parts:second.debug.filter(row=>row.t==='part').map(row=>row.request.trim()),
+          unchanged:before===JSON.stringify(load()),cancelled:_assistantNeedleGeneration!==generation};
+      }finally{assistantNeedleEnsureReady=ready;assistantNeedleRequest=request;}
+    });
+    assert(recovery.paused.type==='error' && recovery.paused.partial && recovery.paused.names?.join(',')==='Alpha',
+      'runtime failure preserves earlier work instead of treating the request as cancelled');
+    assert(recovery.paused.unfinished?.map(s=>s.trim()).join(',')==='Add Beta.,Add Omega.',
+      'runtime failure retains the exact unfinished part and following queue');
+    assert(recovery.type==='preview' && recovery.names?.join(',')==='Alpha,Beta,Omega' && recovery.unchanged,
+      'retry completes every part once without saving before confirmation');
+    assert(recovery.parts.join(',')==='Add Alpha.,Add Beta.,Add Beta.,Add Omega.',
+      'retry diagnostics retain both the original attempt and resumed work');
+    assert(recovery.cancelled,'explicit cancellation still invalidates the workflow generation');
+    const emptyEdit=await page.evaluate(async()=>{
+      const before=JSON.stringify(load());
+      const out=await runAssistantTurn('Change Gym to 3 times a week',{needleStep:true,
+        complete:async()=>({message:{role:'assistant',content:'',tool_calls:[{function:{name:'draft_item',arguments:{name:'Gym',create:false}}}]},
+          _needleNeedsConfirmation:true,_needleConfidence:0.01})});
+      return {type:out.type,question:out.question,proposal:!!out.proposal,unchanged:before===JSON.stringify(load())};
+    });
+    assert(emptyEdit.type==='ask' && !emptyEdit.proposal && /setting and new value/.test(emptyEdit.question) && emptyEdit.unchanged,
+      'an empty edit asks for a concrete change before offering interpretation approval');
     const confidence=await page.evaluate(async()=>{
       const ready=assistantNeedleEnsureReady,request=assistantNeedleRequest;
       assistantNeedleEnsureReady=async()=>true;assistantNeedleRequest=async()=>({steps:[]});

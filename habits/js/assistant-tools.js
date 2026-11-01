@@ -4527,6 +4527,9 @@ function assistantApplyItems(args, session, context){
 }
 
 function assistantValidateNeedleDraftArgs(args, request){
+  if(args?.create === false && !Object.entries(args).some(([key,value])=>
+    !['name','create'].includes(key) && value != null && value !== ''))return {error:'Missing change',
+    ask:'I did not understand the change. What setting and new value should I use?'};
   if(args?.rhythm && !assistantParseRhythm(args.rhythm))return {error:'Invalid frequency',
     ask:'How often should it repeat? Please give the full frequency in one phrase.'};
   if(args?.dueTime != null && args.dueTime !== '' && assistantParseClock(args.dueTime) == null)return {error:'Invalid start time',

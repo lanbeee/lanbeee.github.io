@@ -144,7 +144,8 @@ function assistantQueryRouteHint(text, parsed){
 
 function assistantUserEnvelope(text, catalog, draft, parsed, opts){
   const compact = Boolean(opts && opts.compact);
-  const habitLimit = compact ? 6 : 12;
+  const needle=typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
+  const habitLimit = needle ? 24 : compact ? 6 : 12;
   const payload = {
     request:String(text || '').trim(),
     catalog:{
@@ -164,6 +165,7 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
   if(current)payload.currentDraft = current;
   if(opts && opts.recent)payload.recent = opts.recent;
   if(opts && opts.entryIntent)payload.entryIntent = opts.entryIntent;
+  if(opts && opts.selectedNeedleAction)payload.selectedNeedleAction = opts.selectedNeedleAction;
   return JSON.stringify(payload);
 }
 
@@ -1524,6 +1526,7 @@ async function assistantCallStep(session, step, complete, onProgress, context){
     route:raw?._needleRoute,
     issue:raw?._needleIssue,
     validation:raw?._needleValidation,
+    basicRepairs:raw?._needleBasicRepairs,
     promptTokens:(raw && raw.prompt_eval_count) || null,
     evalTokens:(raw && raw.eval_count) || null,
     thinking:assistantTraceClip(parsed.thinking, 600),
@@ -1658,6 +1661,8 @@ async function runAssistantTurn(userText, opts = {}){
   session._responseGen = 0;
   session.executedToolKeys = [];
   session.requestText = text;
+  if(opts.needleAction)session.needleActionChoice={request:text,tool:opts.needleAction};
+  else if(session.needleActionChoice?.request !== text)session.needleActionChoice=null;
   session.addForm = opts.form || null;
   session.needleProposal = null;
   session.reusedPlace = null;
@@ -1682,6 +1687,7 @@ async function runAssistantTurn(userText, opts = {}){
     focus:session.draft && session.draft.name ? session.draft.name : null,
     entry:opts.entry || null,
     startIntent:entryIntent,
+    selectedNeedleAction:session.needleActionChoice?.tool || null,
     wide:session.wide === true
   });
   const done = out => {
@@ -1714,6 +1720,7 @@ async function runAssistantTurn(userText, opts = {}){
     {role:'user', content:assistantUserEnvelope(text, context.catalog, session.draft, session.parsed, {
       compact:(session.contextRatio || 0) >= ASSISTANT_CONTEXT_COMPACT_AT,
       recent:typeof assistantEnvelopeRecent === 'function' ? assistantEnvelopeRecent(session) : null,
+      selectedNeedleAction:session.needleActionChoice?.tool || null,
       entryIntent
     })}
   ];

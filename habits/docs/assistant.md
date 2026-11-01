@@ -1,5 +1,12 @@
 # Tings assistant
 
+For the current Needle architecture assessment and staged improvement plan, see
+[Needle as the everyday assistant](assistant-needle-next.md).
+For the measured LFM2.5 Q5 versus Needle evaluation, see
+[the model comparison](assistant-model-comparison.md).
+For the subsequent single-action implementation and its measured limits, see
+[the Needle basics pass](assistant-needle-basics.md).
+
 Read this only when the task is the Tings assistant. For planner, home, settings, and habit work, leave this file and every `js/assistant-*.js` file closed. `js/assistant-tools.js` is about 5,300 lines and is not on that path.
 
 The assistant is optional local chat. New setups default to on-device Needle 3;
@@ -69,13 +76,33 @@ between parts. A clarification retains the remaining queue; a failure keeps work
 and exposes a retry of the unfinished part. Cancelling or clearing focus drops
 the queue. No workflow operation saves before normal confirmation.
 
-Needle first tries a few complete action schemas retrieved by its own embedding
-head. If that pass declines, an identity-only menu exposes ordinary actions,
+Needle first tries a stable twelve-tool basic scope with core fields. This avoids
+retrieving availability instead of frequency and exposing oversized schemas.
+If that pass declines, an identity-only menu exposes ordinary actions,
 settings, features and saved-item queries together, with `ask_user` available.
 Only the selected schemas are expanded for extraction. Item edits get a separate
 small control menu. Features have no privileged first pass; a capability tool
 also needs a quoted feature word grounded in the actual request. This validates
 model output rather than routing natural language with a parser.
+
+Single-action extraction checks coverage of names, frequency, session length,
+task dates/clocks and habit windows. Missing or invalid values get at most three
+separate one-field Needle extractions. Values still come from the model and must
+match the request through the normalizers. A duration accidentally returned in
+the frequency slot can move to the duration slot of the same saved-item edit;
+this never changes create/edit intent or supplies a missing value. An incompatible
+item candidate can get one bounded reconsideration with five item schemas.
+Unresolved fields ask a focused question. Native snake-case argument diagnostics
+are matched unambiguously to returned fields before checking converted units.
+
+Needle's welcome now asks for one action at a time. A combined frequency/session
+length edit asks for separate requests instead of presenting a partial change.
+An ask or interpretation proposal offers an optional action selector: choosing
+an action retries the unchanged request with only that action and clarification
+available. This is explicit user steering, not automatic model understanding.
+The choice survives approval of that request and clears on different text.
+Stale selectors are disabled, and selecting Mark done fixes logging rather than
+undo. Interpretation approval and the normal write confirmation remain separate.
 
 Routing sees compact item identities, focus and clarification context. Embeddings
 also rank optional fields inside selected schemas. Field order and short
@@ -125,9 +152,10 @@ duration, allowed days and hours, name, habit or task, build/limit/stop, and a
 task's due date and start time. A repetition count cannot share a schema with
 minutes. Duration fields keep the user's words, including hours, fractions, and
 number words; Tings converts them, and a minute count is still grounded when it
-is that same spoken length. Those closed aliases stay together: once retrieval finds any of them,
-every sibling control is offered, so a value is not forced into the nearest
-field. A call that includes no new setting is rejected and repaired. A value
+is that same spoken length. The first pass retrieves at most two closed control
+aliases; the fallback edit menu exposes a broader selection. Retrieval can omit
+a relevant sibling control, and an actionable partial call does not itself
+prove the whole request was understood. A call that includes no new setting is rejected and repaired. A value
 that is invalid, or that already matches the item, still previews. Other
 settings stay on the general edit alias. Repair feedback continues the worker
 conversation separately from the literal request.

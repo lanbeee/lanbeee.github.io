@@ -156,3 +156,9 @@ action confirmations, schema validity, and calendar/pairing/native capability
 navigation. These orchestration checks use scripted model output; they do not
 measure the base model's accuracy. The optional real-runtime checks in
 `assistant-needle-test.js` must stay separate from that claim.
+
+The versioned single-action model corpus is
+`tests/fixtures/assistant-needle-basics-corpus.json`. Its real-model results and
+remaining browser failures are recorded in `docs/assistant-needle-basics.md`.
+The Needle suite also checks field-repair grounding and explicit action-retry
+scope with scripted responses; those passes do not measure free-form accuracy.

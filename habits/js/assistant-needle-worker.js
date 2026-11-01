@@ -9,6 +9,21 @@ let routeTrace = null;
 const embeddings = new Map();
 const OUTPUT_CAPACITY = 262144;
 const NEEDLE_CONTEXT_BUDGET = 6200;
+// Keep the ordinary contract stable. Embedding retrieval across the full
+// catalogue used to hide frequency behind availability and exhaust extraction.
+const NEEDLE_BASIC_TOOLS = new Set(['add_habit','add_task','change_frequency','change_duration',
+  'change_availability','rename_item','get_habits','get_tasks','complete_item','delete_item','get_schedule','ask_user']);
+
+function needleBasicTools(data){
+  const source=data.tools.length <= 5 ? data.tools : data.tools.filter(tool=>NEEDLE_BASIC_TOOLS.has(tool.name));
+  return source.map(tool=>{
+    const parameters=tool.parameters || {type:'object',properties:{}};
+    const keep=new Set([...(tool.core || []),...(parameters.required || [])]);
+    // Preserve authored property order; order changes affect these small weights.
+    return {...tool,parameters:{...parameters,properties:Object.fromEntries(
+      Object.entries(parameters.properties || {}).filter(([key])=>keep.has(key)))}};
+  });
+}
 
 function needleError(){ return engine.ccall('needle_last_error','string',[],[]) || 'Needle runtime failed.'; }
 function needleInit(system, tools){
@@ -25,6 +40,9 @@ function needleComplete(text){
     ['string','number','number','number','number','number'],[text,0,0,768,output,OUTPUT_CAPACITY]);
   if(n < 0)throw new Error(needleError());
   const result = JSON.parse(engine.UTF8ToString(output));
+  // Native failures can arrive as JSON as well as a negative return code.
+  // Both must use the same recovery/clarification path below.
+  if(result.success === false || result.type === 'error')throw new Error(result.error || 'Needle could not complete this request.');
   result._promptTokens = usedTokens + Math.ceil(text.length / 2);
   usedTokens = result._promptTokens + 768;
   return result;
@@ -144,17 +162,7 @@ function needleRun(data){
     && active.results.every((r,i)=>data.results[i] === r)
     && (data.results.length > active.results.length || data.repair);
   if(!same){
-    // Start with a few complete action schemas. Unlike identity-only routing,
-    // these let Needle recognize ordinary commands by their actual value slots.
-    const query=needleEmbedding(data.request);
-    const ranked=data.tools.filter(tool=>tool.name !== 'ask_user' && tool.canonical !== 'answer_settings')
-      .map(tool=>({tool,score:needleSimilarity(query,tool.description)})).sort((a,b)=>b.score-a.score);
-    const focused=ranked.filter(row=>!row.tool.closed).slice(0,3).map(row=>row.tool);
-    if(ranked.slice(0,3).some(row=>row.tool.closed))focused.push(...ranked.filter(row=>row.tool.closed).slice(0,2).map(row=>row.tool));
-    // Basic creation and reads stay visible. Retrieval must not force an
-    // ordinary request into a neighboring operation with a similar value slot.
-    focused.push(...data.tools.filter(tool=>['add_habit','add_task','get_schedule','get_week_schedule','get_habits','get_tasks'].includes(tool.name)));
-    let tools=needleSelectTools(data,[...new Set(focused)]);
+    let tools=needleBasicTools(data);
     if(!tools?.length){active=null;return {success:true,function_calls:[]};}
     needleInit(data.system,tools);
     let result=needleComplete(data.request);
@@ -217,6 +225,15 @@ self.onmessage = event=>{
       }else if(data.type === 'split'){
         if(!engine)throw new Error('Needle is not loaded.');
         self.postMessage({id:data.id,result:needleSplit(data.request)});
+      }else if(data.type === 'extract'){
+        if(!engine)throw new Error('Needle is not loaded.');
+        // A separate one-field record cannot execute an action. The host
+        // validates its value before merging it into the original candidate.
+        active=null;
+        needleInit(data.system,[{name:data.field,description:`Extract the ${data.field} record.`,
+          parameters:{type:'object',properties:{[data.field]:{type:'string',description:data.description,
+            ...(data.values?.length ? {enum:data.values} : {})}},required:[data.field]}}]);
+        self.postMessage({id:data.id,result:needleComplete(`Extract the ${data.field} record from this text: ${data.request}`)});
       }else if(data.type === 'complete'){
         if(!engine)throw new Error('Needle is not loaded.');
         self.postMessage({id:data.id,result:needleRun(data)});

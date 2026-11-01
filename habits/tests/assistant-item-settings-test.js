@@ -80,6 +80,19 @@ async function launchBrowser(){
     check('place prefs', prefs && prefs[0].name === 'Home' && prefs[0].level === 'high' && prefs[1].name === 'Gym' && prefs[1].level === 'avoid');
     check('priority urgent/someday', assistantParsePriority('urgent') === 0 && assistantParsePriority('someday') === 5);
     check('duration half an hour', assistantParseDuration('half an hour') === 30);
+    check('duration quarter hours preserve the fraction', assistantParseDuration('three quarters of an hour') === 45
+      && assistantParseDuration('three-quarters of an hour') === 45
+      && assistantParseDuration('a quarter of an hour') === 15);
+    check('spoken quarter hours match converted minutes', assistantSpokenDurationMatches('Each Walk session should last three quarters of an hour.',45)
+      && !assistantSpokenDurationMatches('Each Walk session should last three quarters of an hour.',60));
+    check('bare duration replies retain their units', assistantSpokenDurationMatches('45',45)
+      && assistantSpokenDurationMatches('1.5',90) && !assistantSpokenDurationMatches('3 times a week',3));
+    check('hyphenated session lengths retain their units', assistantParseDuration('five-minute')===5
+      && assistantSpokenDurationMatches('a daily five-minute habit',5)
+      && assistantParseDuration('twenty-five-minute')===25);
+    check('daily repetitions preserve the count', assistantParseRhythm('twice daily').timesPerPeriod===2
+      && assistantParseRhythm('three times every day').timesPerPeriod===3
+      && assistantParseRhythm('once each day').timesPerPeriod===1);
     check('duration 1.5 hours', assistantParseDuration('1.5 hours') === 90 && assistantParseDuration('1.5 hrs') === 90);
     check('duration fractional number is hours', assistantParseDuration(1.5) === 90 && assistantParseDuration('1.5') === 90 && assistantParseDuration('1 1/2 hours') === 90);
     check('duration integer stays minutes', assistantParseDuration(90) === 90 && assistantParseDuration('90 minutes') === 90 && assistantParseDuration(2) === 2);

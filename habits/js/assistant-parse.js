@@ -160,7 +160,7 @@ function assistantDurationNumberSource(){
 
 function assistantSpokenQuantitySource(){
   const unit = '(?:hours?|hrs?|h|minutes?|mins?|m)';
-  return `(?:${assistantDurationNumberSource()}\\s*${unit}|an\\s+hour\\s+and\\s+a\\s+half|one\\s+hour\\s+and\\s+a\\s+half|hour\\s+and\\s+a\\s+half|half\\s+an?\\s+hour|a\\s+half\\s+hour|quarter(?:\\s+of)?(?:\\s+an)?\\s+hour|an\\s+hour)`;
+  return `(?:${assistantDurationNumberSource()}\\s*${unit}|an\\s+hour\\s+and\\s+a\\s+half|one\\s+hour\\s+and\\s+a\\s+half|hour\\s+and\\s+a\\s+half|three[\\s-]+quarters(?:\\s+of)?\\s+an?\\s+hour|half\\s+an?\\s+hour|a\\s+half\\s+hour|(?:a\\s+)?quarter(?:\\s+of)?(?:\\s+an?)?\\s+hour|an\\s+hour)`;
 }
 
 function assistantNormalizeDurationText(value){
@@ -169,6 +169,7 @@ function assistantNormalizeDurationText(value){
   s = s.replace(/½/g, ' 1/2 ').replace(/¼/g, ' 1/4 ').replace(/¾/g, ' 3/4 ')
     .replace(/⅓/g, ' 1/3 ').replace(/⅔/g, ' 2/3 ').replace(/⅛/g, ' 1/8 ');
   s = s.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\s*-\s*(one|two|three|four|five|six|seven|eight|nine)\b/g, '$1 $2');
+  s = s.replace(new RegExp(`\\b(${assistantDurationNumberSource()})\\s*-\\s*(hours?|hrs?|minutes?|mins?)\\b`, 'g'), '$1 $2');
   s = s.replace(/\b(\d+(?:\.\d+)?)h\s*(\d+(?:\.\d+)?)m\b/g, '$1 hours $2 minutes');
   s = s.replace(/\s+/g, ' ').trim();
   s = s.replace(/\b(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+hours?\s+and\s+a\s+half\b/g, (_, n)=>{
@@ -179,7 +180,8 @@ function assistantNormalizeDurationText(value){
   s = s.replace(/\bhour\s+and\s+a\s+half\b/g, '1.5 hours');
   s = s.replace(/\bhalf\s+an?\s+hour\b/g, '30 minutes');
   s = s.replace(/\ba\s+half\s+hour\b/g, '30 minutes');
-  s = s.replace(/\bquarter(?:\s+of)?(?:\s+an)?\s+hour\b/g, '15 minutes');
+  s = s.replace(/\bthree[\s-]+quarters(?:\s+of)?\s+an?\s+hour\b/g, '45 minutes');
+  s = s.replace(/\b(?:a\s+)?quarter(?:\s+of)?(?:\s+an?)?\s+hour\b/g, '15 minutes');
   s = s.replace(/\ban\s+hour\b/g, '1 hour');
   return s;
 }
@@ -236,6 +238,8 @@ function assistantSpokenDurations(text){
   const normalized = assistantNormalizeDurationText(text);
   const hits = assistantDurationHitsFromNormalized(normalized);
   const values = [];
+  const bareLength=assistantBareDuration(normalized);
+  if(bareLength != null)values.push(bareLength);
   for(let i = 0; i < hits.length; i++){
     values.push(hits[i].mins);
     const next = hits[i + 1];
@@ -675,9 +679,13 @@ function assistantParseRhythm(text){
   if(!s)return null;
   let timesPerPeriod = null;
   let periodDays = null;
+  const dailyCount=s.match(new RegExp(`\\b(${ASSISTANT_COUNT_WORD}|\\d+)\\s*(?:x|times?)?\\s+(?:daily|(?:every|each)\\s+day)\\b`));
   if(/\bevery other day\b/.test(s)){
     timesPerPeriod = 1;
     periodDays = 2;
+  }else if(dailyCount){
+    timesPerPeriod = assistantParseCount(dailyCount[1], 1, 30);
+    periodDays = 1;
   }else if(/\bevery day\b|\beach day\b|\bdaily\b|\bevery morning\b|\bevery night\b|\bevery evening\b/.test(s)){
     timesPerPeriod = 1;
     periodDays = 1;

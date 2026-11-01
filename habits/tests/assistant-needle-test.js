@@ -77,6 +77,40 @@ function assert(ok, message){
     await page.evaluate(()=>assistantNeedleDownload());
     assert(downloads === beforeReuse,'cached assets require no second download');
 
+    const faults = await page.evaluate(async()=>{
+      const OriginalWorker=Worker,originalTimer=setTimeout;
+      let terminated=0;
+      globalThis.Worker=class{
+        postMessage(data){if(data.type==='load')queueMicrotask(()=>this.onmessage({data:{id:data.id,result:true}}));}
+        terminate(){terminated++;}
+      };
+      try{
+        const rows=[];
+        for(const mode of ['crash','timeout']){
+          await assistantNeedleEnsureReady();
+          const generation=_assistantNeedleGeneration;
+          let expire;
+          if(mode==='timeout')globalThis.setTimeout=(fn,ms,...args)=>{
+            if(ms===180000){expire=fn;return originalTimer(()=>{},180000);}
+            return originalTimer(fn,ms,...args);
+          };
+          const pending=assistantNeedleRequest('complete',{}).catch(error=>error.message);
+          if(mode==='crash')_assistantNeedleWorker.onerror();else expire();
+          rows.push({mode,error:await pending,preserved:generation===_assistantNeedleGeneration,
+            reset:!_assistantNeedleReady && !_assistantNeedleWorker && !_assistantNeedlePending.size});
+          globalThis.setTimeout=originalTimer;
+        }
+        await assistantNeedleEnsureReady();
+        const generation=_assistantNeedleGeneration;
+        const pending=assistantNeedleRequest('complete',{}).catch(error=>error.name);
+        assistantNeedleStop();
+        return {rows,terminated,cancelled:(await pending)==='AbortError' && generation!==_assistantNeedleGeneration};
+      }finally{assistantNeedleStop();globalThis.Worker=OriginalWorker;globalThis.setTimeout=originalTimer;}
+    });
+    for(const row of faults.rows)assert(row.preserved && row.reset && /retry/i.test(row.error),
+      `${row.mode} releases the runtime and requests without cancelling staged work`);
+    assert(faults.terminated===3 && faults.cancelled,'failed runtimes restart and an explicit stop still cancels');
+
     const transport = await page.evaluate(async()=>{
       const OriginalWorker = Worker;
       const sent = [];
@@ -97,21 +131,22 @@ function assert(ok, message){
           tools:assistantOllamaTools(['draft_item','answer_schedule','answer_settings']),step:'extract'};
         const result = await assistantComplete(req);
         reply = {success:true,function_calls:[{name:'change_frequency',arguments:{name:'Concentricity check',frequency:'3 times a week'}}]};
-        const frequency = await assistantComplete(req);
+        const frequency = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change Concentricity check to 3 times a week',catalog:{date:{iso:'2026-11-01'}}})}]});
         const feedback = 'You thought but did not call a tool. Call the matching tool now.';
         await assistantComplete({...req,think:false,messages:[...req.messages,{role:'user',content:feedback}]});
         const repair = sent[sent.length - 1];
         const invalidTurn = assistantNeedleTurn({...req,think:false,messages:[...req.messages,{role:'user',
           content:'That tool call was invalid (The repetition phrase could not be validated.). Think again, then call classify_intent with valid arguments.'}]});
-        reply = {success:true,function_calls:[],suppressed_calls:[{name:'add_habit',arguments:{name:'Walk',rhythm:'every day'}}]};
-        const held = await assistantComplete(req);
-        const continued = await assistantComplete({...req,messages:[...req.messages,{role:'tool',content:'{"ok":true,"preview":"Walk"}'}]});
+        reply = {success:true,function_calls:[],suppressed_calls:[{name:'add_habit',arguments:{name:'Walk',frequency:'every day'}}]};
+        const habitReq={...req,messages:[{role:'user',content:JSON.stringify({request:'Add a Walk habit every day',catalog:{date:{iso:'2026-11-01'}}})}]};
+        const held = await assistantComplete(habitReq);
+        const continued = await assistantComplete({...habitReq,messages:[...habitReq.messages,{role:'tool',content:'{"ok":true,"preview":"Walk"}'}]});
         reply = {success:true,function_calls:[{name:'add_task',arguments:{name:'Invented',durationMinutes:90}}],validation:{ungrounded:['add_task.durationMinutes']}};
         const ungrounded = await assistantComplete(req);
         reply = {success:true,function_calls:[{name:'change_duration',arguments:{durationMinutes:90}}],validation:{ungrounded:['change_duration.durationMinutes']}};
-        const converted = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to 1.5 hours',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
+        const converted = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to 1.5 hours',currentDraft:{name:'Walk',kind:'habit'},catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
         reply = {success:true,function_calls:[{name:'change_duration',arguments:{durationMinutes:'two hours'}}]};
-        const words = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to two hours',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
+        const words = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to two hours',currentDraft:{name:'Walk',kind:'habit'},catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
         reply={success:true,confidence:0.8,function_calls:[{name:'import_calendar',arguments:{subject:'calendar'}}]};
         const feature=await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Import my calendar',catalog:{date:{iso:'2026-11-01'}}})}]});
         assistantAbortInFlight();
@@ -170,6 +205,16 @@ function assert(ok, message){
     assert(runtimeMessages[0]?.result?.function_calls?.[0]?.name === 'ask_user'
       && runtimeMessages[0].result._needleIssue.includes('token budget'),
       'a runtime budget failure becomes a short clarification while retaining its diagnostic reason');
+    const nativeMessages=[];
+    const nativeScope=vm.createContext({importScripts:()=>{},self:{postMessage:value=>nativeMessages.push(value)}});
+    vm.runInContext(fs.readFileSync(require.resolve('../js/assistant-needle-worker.js'),'utf8'),nativeScope);
+    vm.runInContext(`engine={ccall:()=>1,UTF8ToString:()=>JSON.stringify({success:false,error:'tool call truncated: token budget exhausted'})};
+      needleRun=()=>needleComplete('Add a daily habit');
+      self.onmessage({data:{type:'complete',id:8}});`,nativeScope);
+    await vm.runInContext('queue',nativeScope);
+    assert(nativeMessages[0]?.result?.function_calls?.[0]?.name === 'ask_user'
+      && nativeMessages[0].result._needleIssue.includes('token budget'),
+      'native JSON budget failures use the same clarification path as thrown failures');
 
     const selectionScope = vm.createContext({importScripts:()=>{},self:{}});
     vm.runInContext(fs.readFileSync(require.resolve('../js/assistant-needle-worker.js'),'utf8'),selectionScope);
@@ -201,6 +246,96 @@ function assert(ok, message){
       && selectionScope.reads.includes('ask_user'),
       'a read does not gain edit controls when none of them rank');
 
+    const repairs=await page.evaluate(async()=>{
+      const original=assistantNeedleRequest,requests=[];
+      const tools=assistantNeedleTools(assistantOllamaTools(['draft_item','ask_user']));
+      const raw=(name,args,extra={})=>({success:true,confidence:0.8,function_calls:[{name,arguments:args}],...extra});
+      let responses={};
+      assistantNeedleRequest=async(type,payload)=>{
+        requests.push({type,...payload});
+        if(type==='complete')return responses.create;
+        return responses[payload.field] || raw(payload.field,{[payload.field]:'unrelated value'});
+      };
+      const turn=request=>({request,system:'synthetic facts',results:[],repair:'',hasItemContext:false});
+      try{
+        responses={duration:raw('duration',{duration:'20 minutes'},{confidence:0.2})};
+        const habit=await assistantNeedleRepairBasicFields(raw('add_habit',{name:'Stretch',frequency:'every day'}),turn('Add a daily Stretch habit lasting twenty minutes'),tools);
+        responses={name:raw('name',{name:'Read'}),frequency:raw('frequency',{frequency:'twice a week'})};
+        const frequency=await assistantNeedleRepairBasicFields(raw('change_frequency',{frequency:'daily'}),turn('Make Read twice a week instead'),tools);
+        responses={time:raw('time',{time:'15:00'})};
+        const timed=await assistantNeedleRepairBasicFields(raw('add_task',{name:'Send invoice',date:'tomorrow'}),turn('Add Send invoice tomorrow at 3pm'),tools);
+        responses={duration:raw('duration',{duration:'90 minutes'})};
+        const rejected=await assistantNeedleRepairBasicFields(raw('add_habit',{name:'Stretch',frequency:'every day'}),turn('Add a daily Stretch habit lasting twenty minutes'),tools);
+        const typed=await assistantNeedleRepairBasicFields(raw('change_frequency',{name:'Walk',frequency:'50 minutes'},
+          {validation:{ungrounded:['change_frequency.frequency'],negation:false}}),turn('Make Walk last fifty minutes'),tools);
+        const combined=await assistantNeedleRepairBasicFields(raw('change_frequency',{name:'Gym',frequency:'3 times a week'}),
+          turn('Change Gym to 3 times a week for 30 minutes'),tools);
+        const snake=assistantNeedleGroundedArguments({name:'change_duration',arguments:{durationMinutes:'120'}},"Set Read's session length to two hours",['change_duration.duration_minutes']);
+        const invented=assistantNeedleGroundedArguments({name:'change_duration',arguments:{durationMinutes:'90'}},"Set Read's session length to two hours",['change_duration.duration_minutes']);
+        const catalog=JSON.parse(assistantUserEnvelope('What habits do I have?',{habits:Array.from({length:24},(_,i)=>({name:'Habit '+i,type:'habit'}))},null,null,{})).catalog.habits.length;
+        responses={create:raw('create_reminder',{name:'Call mom',date:'tomorrow'},{confidence:0.9})};
+        const reconsidered=await assistantNeedleRepairBasicFields({success:true,confidence:0.1,function_calls:[],
+          suppressed_calls:[{name:'add_habit',arguments:{name:'Call mom',frequency:'daily',durationMinutes:'tomorrow'}}]},turn('Remind me to call mom tomorrow'),tools);
+        const count=requests.length;
+        const negated=await assistantNeedleRepairBasicFields(raw('change_duration',{name:'Walk',durationMinutes:'45'},{validation:{negation:true}}),turn("Don't change Walk to 45 minutes"),tools);
+        const continued=await assistantNeedleRepairBasicFields(raw('change_frequency',{frequency:'daily'}),{...turn('Make Read twice a week'),results:['done']},tools);
+        return {habit,frequency,timed,rejected,typed,combined,snake,invented,catalog,reconsidered,requests,untouched:requests.length===count,negated,continued};
+      }finally{assistantNeedleRequest=original;}
+    });
+    const repairedArgs=row=>row.function_calls[0].arguments;
+    assert(repairedArgs(repairs.habit).name==='Stretch' && repairedArgs(repairs.habit).frequency==='every day'
+      && repairedArgs(repairs.habit).durationMinutes==='20 minutes' && repairs.habit.confidence===0.2,
+      'isolated duration extraction fills an omission while preserving the target, frequency and lower confidence');
+    assert(repairedArgs(repairs.frequency).name==='Read' && repairedArgs(repairs.frequency).frequency==='twice a week',
+      'model-extracted name and frequency repair an incomplete edit without changing its operation');
+    assert(repairedArgs(repairs.timed).time==='15:00' && repairedArgs(repairs.timed).date==='tomorrow',
+      'a clock conversion is accepted only as the same requested start time');
+    assert(repairs.rejected.function_calls[0].name==='ask_user' && !repairs.rejected.suppressed_calls.length,
+      'a wrong repair becomes a focused question instead of a partial preview');
+    assert(repairs.typed.function_calls[0].name==='change_duration' && repairedArgs(repairs.typed).durationMinutes==='50 minutes'
+      && repairedArgs(repairs.typed).name==='Walk' && repairs.typed._basicRepairs[0].validation.ungrounded[0]==='change_frequency.frequency',
+      'typed edit normalization preserves the model value, saved target and original validation evidence');
+    assert(repairs.snake && !repairs.invented,'native snake-case diagnostics permit equivalent units and still reject a wrong quantity');
+    assert(repairs.combined.function_calls[0].name==='ask_user' && !repairs.combined.suppressed_calls.length,
+      'a combined frequency and duration edit asks for separate requests instead of offering a partial change');
+    assert(repairs.catalog===24,'Needle receives the full bounded saved-name catalogue');
+    assert(repairs.reconsidered.function_calls[0].name==='create_reminder' && repairs.reconsidered.confidence===0.1
+      && repairs.reconsidered._basicNeedsConfirmation && JSON.stringify(repairs.reconsidered).includes('item-reconsider'),
+      'create reconsideration retains uncertainty and serializable diagnostic evidence');
+    assert(repairs.untouched && repairs.negated.validation.negation && repairedArgs(repairs.continued).frequency==='daily',
+      'negated actions and post-tool continuations do not run basic field repairs');
+    assert(repairs.requests.every(r=>r.request && r.system==='synthetic facts')
+      && repairs.requests.filter(r=>r.type==='complete').every(r=>r.tools.every(t=>['add_habit','create_reminder','change_frequency','change_duration','ask_user'].includes(t.name))),
+      'field extraction retains the literal original request and never receives parser-supplied values');
+
+    const choices=await page.evaluate(async()=>{
+      const tools=assistantNeedleTools(assistantOllamaTools(['draft_item','complete_item','ask_user']));
+      const narrowed=assistantNeedleEntryTools(tools,null,'change_duration');
+      const done=assistantNeedleEntryTools(tools,null,'complete_item').find(t=>t.name==='complete_item');
+      let invalid=false;try{assistantNeedleEntryTools(tools,null,'delete_everything');}catch(_){invalid=true;}
+      const before=JSON.stringify(load()),original=runAssistantTurn,captured=[];
+      runAssistantTurn=async(text,opts)=>{captured.push({text,action:opts.needleAction});return {type:'say',text:'Test response',session:opts.session};};
+      try{
+        const session=assistantCreateSession();
+        await handleAssistantOutcome({type:'ask',question:'What would you like to do?',session},{request:'Practice piano should happen every three days.'});
+        const select=document.querySelector('#assistant-thread select[data-assistant-action]');
+        const button=select?.parentElement.querySelector('button');
+        select.value='change_frequency';select.dispatchEvent(new Event('change'));button.click();
+        await new Promise(resolve=>setTimeout(resolve,30));
+        const retired=select.disabled&&button.disabled;
+        select.value='add_task';select.dispatchEvent(new Event('change'));button.click();
+        await new Promise(resolve=>setTimeout(resolve,30));
+        return {narrowed:narrowed.map(t=>t.name),done,invalid,captured,retired,unchanged:before===JSON.stringify(load())};
+      }finally{runAssistantTurn=original;}
+    });
+    assert(choices.narrowed.join(',')==='change_duration,ask_user' && choices.invalid,
+      'an explicit action choice exposes only that action and clarification, with unknown choices rejected');
+    assert(choices.done.fixed.action==='log' && !choices.done.parameters.properties.action,
+      'the user-selected Mark done action cannot turn into undo');
+    assert(choices.captured.length===1 && choices.captured[0].action==='change_frequency'
+      && choices.captured[0].text==='Practice piano should happen every three days.' && choices.retired && choices.unchanged,
+      'action recovery retries the unchanged request, retires old controls and saves nothing');
+
     const basics = await page.evaluate(async()=>{
       const tools = assistantNeedleTools(assistantOllamaTools(['draft_item']));
       const by = Object.fromEntries(tools.map(tool=>[tool.name, tool]));
@@ -228,6 +363,9 @@ function assert(ok, message){
         ['change_kind',{habitKind:'limit'}],
         ['change_deadline',{due:'tomorrow',dueTime:'3pm'}]
       ];
+      const prompts={change_frequency:'Change outside exercise to 3 times in 7 days',change_duration:'Change outside exercise to 30 minutes',
+        change_availability:'Allow outside exercise Tuesday and Thursday between 5pm and 7pm',rename_item:'Rename outside exercise to Morning exercise',
+        change_type:'Make outside exercise a task',change_kind:'Make outside exercise a limit habit',change_deadline:'Move outside exercise to tomorrow at 3pm'};
       let reply = {success:true,function_calls:[]};
       globalThis.Worker = class {
         postMessage(data){
@@ -237,9 +375,9 @@ function assert(ok, message){
         terminate(){}
       };
       try{
-        const req = {messages:[{role:'user',content:JSON.stringify({request:'Change outside exercise',catalog:{date:{iso:'2026-11-01'}}})}],
-          tools:assistantOllamaTools(['draft_item']),step:'extract'};
         for(const [name,args] of replies){
+          const req = {messages:[{role:'user',content:JSON.stringify({request:prompts[name],currentDraft:{name:'outside exercise',kind:'habit'},catalog:{date:{iso:'2026-11-01'}}})}],
+            tools:assistantOllamaTools(['draft_item']),step:'extract'};
           reply = {success:true,function_calls:[{name,arguments:args}]};
           const out = await assistantComplete(req);
           const call = out.message.tool_calls[0];
