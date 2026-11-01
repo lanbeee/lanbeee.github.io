@@ -44,7 +44,7 @@ function syncLocalAssistantControls(){
   const sheetDebug = $('assistant-debug-toggle');
   if(sheetDebug){
     sheetDebug.setAttribute('aria-pressed', String(s.debug));
-    sheetDebug.hidden = !s.on;
+    sheetDebug.hidden = !s.on || !s.debug;
   }
   document.querySelectorAll('#assistant-provider-seg .seg-opt').forEach(btn => {
     btn.classList.toggle('on', btn.dataset.assistantProvider === s.provider);
@@ -134,7 +134,8 @@ function syncAssistantNeedleControls(){
   const downloading = state.phase === 'downloading';
   const downloaded = state.phase === 'downloaded';
   document.querySelectorAll('[data-needle-panel]').forEach(panel=>{
-    panel.hidden = !selected || !assistantEnabled();
+    const chatReady = panel.closest('#assistant-sheet') && downloaded && !state.error;
+    panel.hidden = !selected || !assistantEnabled() || chatReady;
     const status = panel.querySelector('[data-needle-status]');
     if(status)status.textContent = state.error || (downloading ? `Downloading Needle 3… ${state.progress}%`
       : downloaded ? 'Needle 3 is downloaded. Ready to use on this device, including offline.'
@@ -384,7 +385,7 @@ function assistantDebugHtml(events, extra){
   const text = extra && extra.debugText
     || (typeof assistantFormatDebug === 'function' ? assistantFormatDebug(events) : '');
   if(!text && !(events && events.length))return '';
-  return `<details class="assistant-debug" open>
+  return `<details class="assistant-debug">
     <summary>debug</summary>
     <pre class="assistant-debug-log">${escapeHtml(text)}</pre>
     <textarea class="assistant-debug-json" hidden></textarea>
@@ -417,7 +418,7 @@ function assistantEnsureLiveDebug(){
     thread.querySelectorAll('.assistant-bubble-debug.is-live').forEach(node => node.classList.remove('is-live'));
     el = document.createElement('div');
     el.className = 'assistant-bubble assistant-bubble-debug is-live';
-    el.innerHTML = `<details class="assistant-debug" open><summary>debug</summary><pre class="assistant-debug-log">starting…</pre></details>`;
+    el.innerHTML = `<details class="assistant-debug"><summary>debug</summary><pre class="assistant-debug-log">starting…</pre></details>`;
     thread.appendChild(el);
   }
   return el;
@@ -1035,9 +1036,6 @@ function bindAssistantUi(){
   $('bar-open-assistant')?.addEventListener('click', openAssistantSheet);
   $('assistant-clear')?.addEventListener('click', clearAssistantChat);
   $('assistant-debug-toggle')?.addEventListener('click', () => {
-    patchLocalAssistant({localAssistantDebug:!assistantDebugOn()});
-  });
-  $('setting-local-assistant-debug')?.addEventListener('click', () => {
     patchLocalAssistant({localAssistantDebug:!assistantDebugOn()});
   });
   $('assistant-focus-done')?.addEventListener('click', assistantClearFocus);

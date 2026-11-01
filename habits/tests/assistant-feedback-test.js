@@ -32,13 +32,32 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const details=document.querySelector('.assistant-feedback');
       const url=new URL(details.querySelector('a').href);
       const report=details.querySelector('pre').textContent;
+      const general=new URL(feedbackFormHref());
       window.feedbackSnapshot=report;
       return {type:out.type,report,href:url.href,entry:url.searchParams.get(ASSISTANT_FEEDBACK_ENTRY),
-        keys:[...url.searchParams.keys()],closed:!details.open,label:details.querySelector('summary').textContent,
+        keys:[...new Set(url.searchParams.keys())],
+        uses:url.searchParams.getAll(FEEDBACK_FORM_ENTRIES.uses),
+        tenure:url.searchParams.get(FEEDBACK_FORM_ENTRIES.tenure),
+        fix:url.searchParams.get(FEEDBACK_FORM_ENTRIES.fixNext),
+        rating:url.searchParams.get('entry.402961364'),
+        email:url.searchParams.get(FEEDBACK_FORM_ENTRIES.email),
+        plan:url.searchParams.get(FEEDBACK_FORM_ENTRIES.plan),
+        generalUses:general.searchParams.getAll(FEEDBACK_FORM_ENTRIES.uses),
+        generalConfusing:general.searchParams.get(FEEDBACK_FORM_ENTRIES.confusing),
+        filled:details.textContent,
+        closed:!details.open,label:details.querySelector('summary').textContent,
         target:details.querySelector('a').target,rel:details.querySelector('a').rel};
     });
     assert(failed.type==='error' && failed.label==='send feedback','a model failure offers feedback with diagnostics off');
     assert(failed.closed && external.length===0,'diagnostics stay local until the user chooses to open the form');
+    assert(failed.uses.join('|')==='Tasks & Deadlines' && !failed.tenure
+      && failed.fix==='The assistant failed on my last request. I expected it to: '
+      && failed.rating==null && failed.email==null && failed.plan==null,
+      'known planning kind and a rewriteable expectation are filled; rating, email, and tenure stay blank when unknown');
+    assert(failed.generalUses.join('|')==='Tasks & Deadlines' && failed.generalConfusing==null,
+      'About feedback fills the same planning answers without the assistant report');
+    assert(failed.filled.includes('Tasks & Deadlines') && !failed.filled.includes('UNRELATED PRIVATE HABIT'),
+      'the chat shows the filled answers and not the item name');
     const report=JSON.parse(failed.report);
     assert(report.request==='Add café ☕ & tea tomorrow' && report.environment.model==='test-model',
       'report preserves the literal request, Unicode, provider and model');
@@ -48,7 +67,8 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       'report excludes unrelated saved items and server configuration');
     assert(failed.entry.endsWith(failed.report) && failed.href.includes('/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform'),
       'the supplied form receives the complete report in its confusing-or-in-the-way field');
-    assert(failed.keys.join(',')==='usp,entry.1563652333','survey ratings, usage history and email remain for the user to answer');
+    assert(failed.keys.join(',')==='usp,entry.593100343,entry.1988333965,entry.1563652333',
+      'the form link carries usage, the editable expectation, and diagnostics, and leaves the rating for the user');
     assert(failed.target==='_blank' && failed.rel.includes('noreferrer'),'form opens separately without a referrer');
     await page.locator('.assistant-feedback > summary').click();
     await page.locator('.assistant-feedback details > summary').click();
@@ -138,6 +158,36 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     const redacted=await page.evaluate(()=>assistantFeedbackRedact(
       'https://name:secret@localhost/path?api_key=abc&next=yes Authorization: Bearer token-value password=hunter2'));
     assert(!/secret|abc|token-value|hunter2/.test(redacted),'diagnostics redact recognizable credentials');
+    const inferred=await page.evaluate(()=>{
+      const old=Date.now()-40*86400000;
+      const recent=Date.now()-2*86400000;
+      const weeks=Date.now()-14*86400000;
+      const settings={locations:[{id:'home',name:'Family home',lat:40,lng:-73}],
+        blockedTimes:[{label:'focus',days:[1,2,3,4,5],start:540,end:1020}]};
+      const items=[
+        {type:'keepup',name:'Secret walk',createdAt:old,logs:[old],breakable:true,locationIds:['home'],allowedTimeStartAnchor:'fajr'},
+        {type:'task',name:'Call',dueDate:Date.now(),logs:[]}
+      ];
+      localStorage.setItem(AGENDA_DISPLAY_KEY,JSON.stringify({syncMode:'glance'}));
+      const uses=feedbackUseChoices(items,settings);
+      localStorage.removeItem(AGENDA_DISPLAY_KEY);
+      const named=feedbackUseChoices([{type:'keepup',name:'Secret sleep plan',logs:[]}],{blockedTimes:DEFAULT_BLOCKED_TIMES});
+      return {uses,named,
+        tenure:feedbackTenureChoice(items),
+        days:feedbackTenureChoice([{createdAt:recent,logs:[]}]),
+        weeks:feedbackTenureChoice([{createdAt:weeks,logs:[]}]),
+        looking:feedbackTenureChoice([]),
+        undated:feedbackTenureChoice([{type:'task',logs:[]}]),
+        defaults:feedbackUseChoices([{type:'task',name:'Call',logs:[]}],loadSortSettings())};
+    });
+    assert(inferred.uses.join('|')==='Daily Habits|Tasks & Deadlines|Work/Tasks that splits across the day|Places and travel|Prayer-time windows|Shared Display|Sleep and routine planning'
+      && !inferred.uses.join(' ').includes('Secret') && !inferred.uses.join(' ').includes('Family'),
+      'usage answers follow what is on the device and never include names or places');
+    assert(inferred.named.join('|')==='Daily Habits|Sleep and routine planning' && !inferred.named.join(' ').includes('Secret'),
+      'a sleep item checks the routine answer without sending its name');
+    assert(inferred.tenure==='A month or more' && inferred.days==='A few days' && inferred.weeks==='A few weeks'
+      && inferred.looking==='Just looking around' && inferred.undated==='' && inferred.defaults.join('|')==='Tasks & Deadlines',
+      'tenure follows the oldest item, and the factory sleep block is not treated as a choice');
     assert(errors.length===0,'feedback flow has no page errors');
     console.log(`\n${passed} assistant feedback assertions passed`);
   }finally{await browser.close();}

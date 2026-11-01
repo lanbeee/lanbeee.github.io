@@ -70,6 +70,8 @@ function assert(ok, message){
     assert(downloads === beforeRetry + 1,'retry reuses the already verified runtime');
     assert(await page.evaluate(()=>assistantNeedleHasDownload()),'both verified assets are cached');
     assert(await page.locator('#assistant-send').isEnabled(),'download completion enables sending');
+    assert(await page.locator('#assistant-sheet [data-needle-panel]').isHidden(),'ready chat hides the downloaded note');
+    assert(/downloaded/i.test(await page.locator('#settings-assistant-body [data-needle-status]').textContent()),'settings still says Needle is downloaded');
     const beforeReuse = downloads;
     await page.evaluate(()=>assistantNeedleCheckDownload());
     await page.evaluate(()=>assistantNeedleDownload());

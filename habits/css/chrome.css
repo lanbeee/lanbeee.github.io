@@ -37,7 +37,7 @@
 .topbar .home-filter-selections .home-active-filter{
   flex:1 1 140px;max-width:100%;height:44px;
 }
-.topbar .assistant-launch{flex:0 0 44px;}
+.topbar .assistant-launch{flex:0 0 40px;}
 /* Current place takes the remaining header space; selected filters use the
    full-width row below it rather than competing with the header controls. */
 .topbar .presence-filter{

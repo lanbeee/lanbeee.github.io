@@ -134,6 +134,99 @@ function syncInstallGuideVisibility(){
   btn.hidden = installed;
   btn.setAttribute('aria-hidden', installed ? 'true' : 'false');
 }
+function feedbackHasPrayerAnchor(row){
+  if(!row || typeof cleanPrayerAnchor !== 'function')return false;
+  return ['allowedTimeStartAnchor','allowedTimeEndAnchor','allowedTimeStartAnchor2','allowedTimeEndAnchor2',
+    'preferredTimeStartAnchor','preferredTimeEndAnchor','preferredTimeStartAnchor2','preferredTimeEndAnchor2',
+    'startAnchor','endAnchor','startAnchor2','endAnchor2'].some(key => cleanPrayerAnchor(row[key]));
+}
+function feedbackBlockedTimesAreDefault(times){
+  if(typeof normalizeBlockedTimes !== 'function' || typeof DEFAULT_BLOCKED_TIMES === 'undefined')return false;
+  const sign = row => [String(row.label || '').trim().toLowerCase(), (row.days || []).join(','), row.start, row.end,
+    row.locationId || '', row.startAnchor || '', row.endAnchor || ''].join('|');
+  const current = normalizeBlockedTimes(times);
+  const defaults = normalizeBlockedTimes(DEFAULT_BLOCKED_TIMES);
+  return current.length === defaults.length && current.every((row, index) => sign(row) === sign(defaults[index]));
+}
+function feedbackTenureChoice(items){
+  let earliest = null;
+  const consider = value => {
+    const ts = value && typeof value === 'object' && typeof logTime === 'function' ? logTime(value) : Number(value);
+    if(!Number.isFinite(ts) || ts < 1262304000000 || ts > Date.now() + 86400000)return;
+    if(earliest == null || ts < earliest)earliest = ts;
+  };
+  for(const item of items || []){
+    consider(item && item.createdAt);
+    for(const log of (item && item.logs) || [])consider(log);
+  }
+  if(earliest == null)return (items || []).length ? '' : FEEDBACK_TENURE_LOOKING;
+  const days = (Date.now() - earliest) / 86400000;
+  if(days < 7)return FEEDBACK_TENURE_DAYS;
+  if(days < 28)return FEEDBACK_TENURE_WEEKS;
+  return FEEDBACK_TENURE_MONTH;
+}
+function feedbackHasPlaces(items, settings){
+  if(typeof normalizeLocationRegistry === 'function' && normalizeLocationRegistry(settings && settings.locations).length)return true;
+  return (items || []).some(item => Array.isArray(item && item.locationIds) && item.locationIds.some(Boolean)
+    || (item && item.preferredLocationId)
+    || (Array.isArray(item && item.scheduleOptions) && item.scheduleOptions.some(option => option && option.locationId)));
+}
+function feedbackHasPrayer(items, settings){
+  if((items || []).some(item => feedbackHasPrayerAnchor(item) || (item && item.scheduleOptions || []).some(feedbackHasPrayerAnchor)))return true;
+  const blocks = typeof normalizeBlockedTimes === 'function'
+    ? normalizeBlockedTimes(settings && settings.blockedTimes) : ((settings && settings.blockedTimes) || []);
+  return blocks.some(feedbackHasPrayerAnchor);
+}
+function feedbackHasSharedDisplay(){
+  try{ if(typeof replicaEnrollment === 'function' && replicaEnrollment())return true; }catch(_){}
+  try{
+    const state = typeof loadShareState === 'function' ? loadShareState() : null;
+    const feed = state && state.feeds && state.feeds.agenda;
+    return Boolean(feed && (feed.ownerId || feed.replicaKey));
+  }catch(_){ return false; }
+}
+function feedbackHasSleepOrRoutine(items, settings){
+  const prefs = settings || {};
+  if(Array.isArray(prefs.blockedTimes) && prefs.blockedTimes.length && !feedbackBlockedTimesAreDefault(prefs.blockedTimes))return true;
+  if(prefs.blockedTimeOverrides && Object.keys(prefs.blockedTimeOverrides).length)return true;
+  if(prefs.cancelledBlocks && Object.keys(prefs.cancelledBlocks).length)return true;
+  if(prefs.availabilityOverrides && Object.keys(prefs.availabilityOverrides).length)return true;
+  return (items || []).some(item => /\bsleep\b/i.test(String(item && item.name || '')));
+}
+function feedbackUseChoices(items, settings){
+  const uses = [];
+  if((items || []).some(item => item && item.type && item.type !== 'task'))uses.push(FEEDBACK_USE_HABITS);
+  if((items || []).some(item => item && (item.type === 'task' || item.dueDate)))uses.push(FEEDBACK_USE_TASKS);
+  if((items || []).some(item => item && item.breakable))uses.push(FEEDBACK_USE_SPLIT);
+  if(feedbackHasPlaces(items, settings))uses.push(FEEDBACK_USE_PLACES);
+  if(feedbackHasPrayer(items, settings))uses.push(FEEDBACK_USE_PRAYER);
+  if(feedbackHasSharedDisplay())uses.push(FEEDBACK_USE_DISPLAY);
+  if(feedbackHasSleepOrRoutine(items, settings))uses.push(FEEDBACK_USE_SLEEP);
+  return uses;
+}
+function feedbackKnownAnswers(items, settings){
+  const library = items || (typeof load === 'function' ? load() : []);
+  const prefs = settings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const fields = [];
+  const tenure = feedbackTenureChoice(library);
+  if(tenure)fields.push([FEEDBACK_FORM_ENTRIES.tenure, tenure]);
+  for(const use of feedbackUseChoices(library, prefs))fields.push([FEEDBACK_FORM_ENTRIES.uses, use]);
+  return fields;
+}
+function feedbackKnownSummary(fields){
+  const rows = fields || feedbackKnownAnswers();
+  const tenure = (rows.find(pair => pair[0] === FEEDBACK_FORM_ENTRIES.tenure) || [])[1];
+  const uses = rows.filter(pair => pair[0] === FEEDBACK_FORM_ENTRIES.uses).map(pair => pair[1]);
+  const bits = [];
+  if(tenure)bits.push(tenure);
+  if(uses.length)bits.push(uses.join(', '));
+  if(!bits.length)return '';
+  return `Filled in from this device: ${bits.join(' · ')}. You can change any answer before sending.`;
+}
+function feedbackFormHref(extra){
+  if(typeof feedbackFormUrl !== 'function')return FEEDBACK_FORM_URL;
+  return feedbackFormUrl([...(typeof feedbackKnownAnswers === 'function' ? feedbackKnownAnswers() : []), ...(extra || [])]).href;
+}
 function syncFeedbackLink(){
   const row = $('about-feedback-row');
   const link = $('open-feedback');
@@ -145,7 +238,7 @@ function syncFeedbackLink(){
   if(link){
     link.hidden = !on;
     link.setAttribute('aria-hidden', on ? 'false' : 'true');
-    if(on)link.href = FEEDBACK_FORM_URL;
+    if(on)link.href = feedbackFormHref();
   }
 }
 window.syncInstallGuideVisibility = syncInstallGuideVisibility;

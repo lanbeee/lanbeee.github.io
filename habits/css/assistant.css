@@ -1,7 +1,11 @@
 .assistant-launch{display:none;}
-body.assistant-on .assistant-launch{display:flex;color:var(--teal-icon);}
+body.assistant-on .assistant-launch{display:flex;}
 body.assistant-on .assistant-launch[hidden]{display:none;}
-.topbar .assistant-launch{flex:0 0 auto;margin-left:2px;}
+/* Phone home header: same 40px circle as the filter, not a larger teal glyph. */
+body.assistant-on .topbar .assistant-launch{
+  flex:0 0 40px;width:40px;height:40px;margin:0;padding:0;
+  justify-content:center;border-radius:50%;box-shadow:none;
+}
 
 #assistant-sheet{z-index:125;}
 .assistant-sheet{

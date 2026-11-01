@@ -69,7 +69,9 @@ async function launchBrowser(){
   assert(feedback.leave && /Google Form/i.test(feedback.leaveAria), 'Feedback carries a leave-device mark naming Google Form');
   assert(feedback.rowHidden === !feedback.configured, 'Feedback row is visible only when a form URL is configured');
   if(feedback.configured){
-    assert(feedback.href === 'https://forms.gle/KNnXKCH55VfzCNeo8', 'Configured feedback URL is the published Google Form');
+    const feedbackUrl = new URL(feedback.href);
+    assert(feedbackUrl.pathname.includes('/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform'), 'Configured feedback URL is the published Google Form');
+    assert(feedbackUrl.searchParams.get('entry.457400724') === 'Just looking around' && !feedbackUrl.searchParams.has('entry.593100343'), 'A fresh device prefills only that someone is just looking around');
     await page.locator('[data-ui-leave="feedback"] .leave-btn').click();
     const tipFit = await page.evaluate(() => {
       const tip = document.querySelector('[data-ui-leave="feedback"] .leave-tooltip');

@@ -1,6 +1,7 @@
 // Feedback stays on this device until the user opens the prefilled Google Form.
 // Never include the saved library, whole settings, or the model's context envelope.
 const ASSISTANT_FEEDBACK_ENTRY = 'entry.1563652333'; // What's confusing or in the way?
+const ASSISTANT_FEEDBACK_FIX = 'entry.1988333965'; // What should we fix next?
 const ASSISTANT_FEEDBACK_URL_MAX = 7500;
 
 function assistantFeedbackRedact(text){
@@ -56,15 +57,17 @@ function assistantFeedbackReport(out, context = {}){
   return assistantFeedbackRedact(JSON.stringify(report, null, 2));
 }
 
-function assistantFeedbackPrefill(report){
-  const url = new URL(FEEDBACK_FORM_URL);
-  url.search = '';
-  url.searchParams.set('usp', 'pp_url');
+function assistantFeedbackExpectation(out){
+  if(out && out.partial)return 'The assistant only finished part of my request. I expected it to: ';
+  if(out && (out.type === 'error' || out.gaveUp))return 'The assistant failed on my last request. I expected it to: ';
+  return 'The assistant reply was not what I wanted. I expected it to: ';
+}
+
+function assistantFeedbackPrefill(report, known, expectation){
+  const base = [...(known || [])];
+  if(expectation)base.push([ASSISTANT_FEEDBACK_FIX, expectation]);
   const prefix = 'Assistant feedback — please describe what you expected here.\n\nDiagnostics:\n';
-  const setReport = text => {
-    url.searchParams.set(ASSISTANT_FEEDBACK_ENTRY, prefix + text);
-    return url.href;
-  };
+  const setReport = text => feedbackFormUrl([...base, [ASSISTANT_FEEDBACK_ENTRY, prefix + text]]).href;
   const full = setReport(report);
   if(full.length <= ASSISTANT_FEEDBACK_URL_MAX)return {url:full,truncated:false};
   // Google and browser URL limits vary. Keep both the context and final error;
@@ -86,13 +89,18 @@ function assistantAppendFeedback(out, context){
   if(!bubble || bubble.querySelector('.assistant-feedback'))return;
   // Snapshot now: an old failure must keep its own request and trace after retry.
   const report = assistantFeedbackReport(out, context);
-  const prefill = assistantFeedbackPrefill(report);
+  const known = typeof feedbackKnownAnswers === 'function' ? feedbackKnownAnswers() : [];
+  const expectation = assistantFeedbackExpectation(out);
+  const prefill = assistantFeedbackPrefill(report, known, expectation);
   const details = document.createElement('details');
   details.className = 'assistant-feedback';
   const summary = document.createElement('summary');
   summary.textContent = out.type === 'error' || out.gaveUp ? 'send feedback' : 'report a problem';
   const hint = document.createElement('p');
-  hint.textContent = 'Includes your request, assistant response, model trace and device details. These may contain personal information. Review below, then open Google Forms to edit and submit if you choose.';
+  hint.textContent = 'The form is filled in where this device already knows the answer, including how long you have used Tings and which kinds of planning you use. The rating and email are left blank. This report goes in “What’s confusing or in the way?”, and a short note you can rewrite goes in “What should we fix next?”. The report can include what you typed. Review it, then change anything in the form before you send.';
+  const filledText = typeof feedbackKnownSummary === 'function' ? feedbackKnownSummary(known) : '';
+  const filled = document.createElement('p');
+  if(filledText)filled.textContent = filledText;
   const preview = document.createElement('details');
   const label = document.createElement('summary');
   label.textContent = 'review diagnostics';
@@ -113,7 +121,7 @@ function assistantAppendFeedback(out, context){
   copy.textContent = 'copy all diagnostics';
   copy.addEventListener('click',()=>void assistantCopyText(report, 'diagnostics copied'));
   actions.append(link,copy);
-  details.append(summary,hint,preview);
+  details.append(summary, hint, ...(filledText ? [filled] : []), preview);
   if(prefill.truncated){
     const note=document.createElement('p');
     note.textContent='This report is too long for a form link. The form includes a shortened report. Copy all diagnostics and paste them into the form to include everything.';

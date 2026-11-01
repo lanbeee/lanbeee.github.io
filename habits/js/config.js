@@ -18,6 +18,38 @@ const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v4';
 const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
 const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform';
+// Entry ids from the published form. Choice values must match its option text.
+const FEEDBACK_FORM_ENTRIES = {
+  tenure:'entry.457400724',
+  uses:'entry.593100343',
+  working:'entry.285325873',
+  confusing:'entry.1563652333',
+  fixNext:'entry.1988333965',
+  email:'entry.1260316969',
+  plan:'entry.1530293007',
+  planDetail:'entry.247866906'
+};
+const FEEDBACK_TENURE_LOOKING = 'Just looking around';
+const FEEDBACK_TENURE_DAYS = 'A few days';
+const FEEDBACK_TENURE_WEEKS = 'A few weeks';
+const FEEDBACK_TENURE_MONTH = 'A month or more';
+const FEEDBACK_USE_HABITS = 'Daily Habits';
+const FEEDBACK_USE_TASKS = 'Tasks & Deadlines';
+const FEEDBACK_USE_SPLIT = 'Work/Tasks that splits across the day';
+const FEEDBACK_USE_PLACES = 'Places and travel';
+const FEEDBACK_USE_PRAYER = 'Prayer-time windows';
+const FEEDBACK_USE_DISPLAY = 'Shared Display';
+const FEEDBACK_USE_SLEEP = 'Sleep and routine planning';
+function feedbackFormUrl(fields){
+  const url = new URL(FEEDBACK_FORM_URL);
+  url.search = '';
+  url.searchParams.set('usp','pp_url');
+  for(const pair of fields || []){
+    if(!pair || pair[1] == null || pair[1] === '')continue;
+    url.searchParams.append(String(pair[0]), String(pair[1]));
+  }
+  return url;
+}
 const PRIVACY_POLICY_URL = 'https://aretefoundry.github.io/tings/privacy';
 // Play background-location disclosure. Must include "location" and
 // "even when the app is closed or not in use", and name those features.

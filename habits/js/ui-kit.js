@@ -261,8 +261,8 @@ const UI_PRIVACY_BLOCKS = [
     'Relative times such as sunrise and sunset are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
   ]},
   {id:'privacy-feedback-body', label:'Send feedback', summary:'Optional. Opens a Google Form in your browser. Answers go to Google, not into Tings.', body:[
-    'The send-feedback button on About opens a Google Form in a new browser tab. Tings does not receive those answers, and nothing from your list is attached.',
-    'Google collects whatever you type in that form. Skip habit names, addresses, notes, and logs. You can leave the form without sending anything.',
+    'The send-feedback button on About opens a Google Form in a new browser tab. Tings fills in how long this device has used Tings, and which kinds of planning are already in use, such as habits, tasks, places, prayer windows, or a shared display. It does not attach item names, notes, addresses, or logs. You can change every answer before sending. Tings does not receive the form.',
+    'Google receives the filled-in answers, including the ones in the link, and whatever you type. An assistant problem report can also include what you typed to the assistant. Leave out anything you do not want Google to have. You can close the form without sending it.',
     'Look for the cloud-up mark on that button.'
   ]}
 ];
@@ -294,7 +294,7 @@ const UI_LEAVE_HINTS = {
   },
   feedback:{
     aria:'this opens a Google Form off this device',
-    body:'Send feedback opens a Google Form in your browser. Tings does not receive the answers, and nothing from your list is attached. Skip habit names, addresses, and logs. Full story: About → privacy.'
+    body:'Send feedback opens a Google Form with a few answers filled in from this device: how long you have used Tings, and which kinds of planning are in use. Item names, notes, addresses, and logs stay here. You can change every answer. Google receives the form, including the filled-in link. Full story: About → privacy.'
   }
 };
 

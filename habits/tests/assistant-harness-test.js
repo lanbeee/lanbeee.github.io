@@ -999,6 +999,16 @@ async function launchBrowser(){
     };
   });
   assert(debugTrace.debugPressed === 'true' && debugTrace.sheetPressed === 'true' && debugTrace.bodyClass, 'debug switch is on');
+  const debugToggle = await page.evaluate(() => {
+    const button = document.getElementById('setting-local-assistant-debug');
+    const sheet = document.getElementById('assistant-debug-toggle');
+    button.click();
+    const off = !assistantSettings().debug && sheet.hidden;
+    button.click();
+    const on = assistantSettings().debug && !sheet.hidden;
+    return {off, on};
+  });
+  assert(debugToggle.off && debugToggle.on, 'settings debug switch turns off and back on, and the chat control follows it');
   assert(debugTrace.localPath === 'llm' && debugTrace.localTool === 'draft_item', 'every natural-language turn records an LLM path and validated tool');
   assert(/parse /.test(debugTrace.localText) && /path llm/.test(debugTrace.localText), 'model-only debug text has parse and LLM path');
   assert(debugTrace.llmTools.includes('classify_intent') && debugTrace.llmTools.includes('draft_item'), 'llm debug lists classify and draft_item');
@@ -1017,6 +1027,7 @@ async function launchBrowser(){
   });
   await page.locator('#assistant-input').fill('Remind me to call mom');
   await page.locator('#assistant-send').click();
+  await page.locator('#assistant-thread .assistant-bubble-debug summary').last().click();
   await page.waitForSelector('#assistant-thread .assistant-bubble-debug .assistant-debug-log');
   const debugUi = await page.locator('#assistant-thread .assistant-bubble-debug .assistant-debug-log').last().textContent();
   assert(/parse /.test(debugUi) && /path llm/.test(debugUi) && /call draft_item/.test(debugUi), 'chat debug card shows model path and validated tool');

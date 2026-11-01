@@ -36,18 +36,24 @@ Open the one file that owns the change. Grep the function and read that range.
 ## Feedback
 
 Failed replies offer **send feedback**; other replies offer **report a problem**.
-The report snapshots that turn's request, response, retained trace, model and
-device details even when debug display is off. Partial Needle failures retain
-the traces of earlier parts. Saved libraries and server settings are excluded;
-recognizable credentials are redacted. Review and copy happen locally. Only
-the user's **open feedback form** link sends the prefill to Google, where they
-can edit and submit it. Required survey answers are left for the user.
+About → send feedback uses the same form. Both open it with answers already
+filled where this device can tell: how long Tings has been in use
+(`entry.457400724`) and which planning kinds are in use (`entry.593100343`,
+one value per checked option). The user can change every answer. The rating,
+email, what’s working, and the day-plan questions stay blank.
 
-The form's `entry.1563652333` paragraph holds diagnostics. Keep its mapping in
-`assistant-feedback.js` in sync if the form changes. Reports too long for the
-bounded URL use an explicitly shortened prefill, with the full local report
-available to copy and paste. Register new assistant slices in both the deferred
-loader and service-worker precache.
+An assistant report also puts a short editable expectation in
+`entry.1988333965` and the diagnostic snapshot in `entry.1563652333`. That
+snapshot is the turn's request, response, retained trace, model and device
+details even when debug display is off. Partial Needle failures retain the
+traces of earlier parts. Saved libraries and server settings are excluded;
+recognizable credentials are redacted. Review and copy happen locally. Only
+the user's **open feedback form** link sends the prefill to Google.
+
+Keep those entry ids in `js/config.js` in sync if the form changes. Reports
+too long for the bounded URL use an explicitly shortened prefill, with the
+full local report available to copy and paste. Register new assistant slices
+in both the deferred loader and service-worker precache.
 
 ## Routing
 
