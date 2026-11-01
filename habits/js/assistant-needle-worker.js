@@ -101,28 +101,19 @@ function needleSplit(request){
   return {steps:calls.flatMap(call=>call.arguments?.steps || []).filter(x=>typeof x === 'string')};
 }
 
+// Select the operation with a small, complete menu before exposing its fields.
+// No feature has an exclusive first pass. ask_user is always a valid escape.
 function needleRouteTools(data){
-  // Model-first discovery for settings/features and library queries. Embeddings
-  // alone can hide these behind unrelated action aliases. Routing exposes
-  // only identity fields; a second model pass extracts the real arguments.
-  const routes=data.tools.filter(t=>['answer_settings','answer_items'].includes(t.canonical)).map(tool=>{
-    const required=tool.parameters.required || [];
-    return {...tool,parameters:{type:'object',properties:Object.fromEntries(
-      Object.entries(tool.parameters.properties || {}).filter(([key,value])=>
-        (required.includes(key) || key === 'name') && value.type !== 'array' && value.type !== 'object')),
-      required:required.filter(key=>tool.parameters.properties[key]?.type !== 'array' && tool.parameters.properties[key]?.type !== 'object')}};
-  });
+  const routes=data.tools.map(tool=>tool.name === 'ask_user' ? tool : ({
+    ...tool,parameters:{type:'object',properties:{},required:[]}
+  }));
   needleInit(data.system,routes);
   const route=needleComplete(data.request);
-  const candidates=[...(route.function_calls || []),...(route.suppressed_calls || [])];
-  if(route.validation?.negation)return [];
-  const first=candidates.find(call=>data.tools.some(tool=>tool.name === call.name)
-    && !(route.validation?.ungrounded || []).some(field=>field.startsWith(call.name+'.')));
-  const chosen=first && data.tools.find(tool=>tool.name === first.name);
-  // The broad route is most useful for feature discovery and library queries.
-  // Creation keeps its focused action schemas, which preserve kind/rhythm.
-  return chosen && ['answer_settings','answer_items'].includes(chosen.canonical)
-    ? needleSelectTools(data,[chosen]) : [];
+  const calls=[...(route.function_calls || []),...(route.suppressed_calls || [])];
+  const chosen=calls.map(call=>data.tools.find(tool=>tool.name === call.name))
+    .filter(tool=>tool && tool.name !== 'ask_user');
+  if(!chosen.length)return {result:route,tools:routes};
+  return {tools:needleSelectTools(data,[...new Set(chosen)].slice(0,2))};
 }
 
 function needleRun(data){
@@ -132,53 +123,21 @@ function needleRun(data){
     && active.results.every((r,i)=>data.results[i] === r)
     && (data.results.length > active.results.length || data.repair);
   if(!same){
-    // These features have no write semantics and distinct user vocabulary.
-    // Discover them with their own tiny toolset so an import cannot become a
-    // fabricated busy-time draft. Reminder tasks still use the action pass.
-    if(!data.results.length){
-      const features=data.tools.filter(tool=>['calendar','sharing','widgets'].includes(tool.fixed?.kind));
-      if(features.length){
-        needleInit(data.system,features);
-        const feature=needleComplete(data.request);
-        const proposed=[...(feature.function_calls || []),...(feature.suppressed_calls || [])]
-          .filter(call=>features.some(tool=>tool.name === call.name));
-        if(proposed.length && !feature.validation?.negation && !feature.validation?.ungrounded?.length){
-          active={key,tools:features,results:[]};return feature;
-        }
-      }
-    }
-    let tools = needleSelectTools(data);
-    if(!tools.length){ active = null; return {success:true,function_calls:[]}; }
-    needleInit(data.system,tools);
-    active = {key,tools,results:[]};
-    let result = needleComplete(data.request);
-    const writes=new Set(['draft_item','draft_setting','draft_batch','apply_items','complete_item','plan_item','delete_item']);
-    const actionable=(result.function_calls || []).length || (result.suppressed_calls || []).some(call=>
-      writes.has(tools.find(tool=>tool.name === call.name)?.canonical)
-      && !(result.validation?.ungrounded || []).some(field=>field.startsWith(call.name+'.')));
-    // Try discovery only after the focused model pass declines. This prevents
-    // a broad phone-reminder tool from stealing an ordinary reminder task.
-    if(!actionable && !data.results.length){
-      const discovered=needleRouteTools(data);
-      if(discovered.length){
-        tools=discovered;needleInit(data.system,tools);result=needleComplete(data.request);
-        active={key,tools,results:[]};
-      }else{
-        // Discovery reset native state; restore the original conversation.
-        needleInit(data.system,tools);result=needleComplete(data.request);
-      }
-    }
-    // Replays are bounded. The original request and the latest authoritative
-    // results are sufficient to retry after a changed toolset or validation.
-    for(const row of data.results.slice(-2))result = needleComplete(needleResultFacts(row));
-    if(data.repair)result = needleComplete(data.repair);
-    active.results = data.results.slice();
+    const route=needleRouteTools(data);
+    const tools=route.tools;
+    if(!tools?.length){active=null;return {success:true,function_calls:[]};}
+    active={key,tools,results:[]};
+    let result=route.result;
+    if(!result){needleInit(data.system,tools);result=needleComplete(data.request);}
+    for(const row of data.results.slice(-2))result=needleComplete(needleResultFacts(row));
+    if(data.repair)result=needleComplete(data.repair);
+    active.results=data.results.slice();
     return result;
   }
   let result;
-  for(const row of data.results.slice(active.results.length))result = needleComplete(needleResultFacts(row));
-  if(data.repair)result = needleComplete(data.repair);
-  active.results = data.results.slice();
+  for(const row of data.results.slice(active.results.length))result=needleComplete(needleResultFacts(row));
+  if(data.repair)result=needleComplete(data.repair);
+  active.results=data.results.slice();
   return result;
 }
 

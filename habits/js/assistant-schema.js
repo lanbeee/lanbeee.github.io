@@ -88,7 +88,7 @@ const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   newName:{type:['string','null'], description:'Rename the current item'},
   emoji:{type:['string','null'], description:'emoji, or none'},
   emojiColor:{type:['string','null'], description:'teal, amber, red, purple, blue, green, pink, orange, indigo, cyan, lime, slate, or none'},
-  durationMinutes:{type:['integer','string','null'], description:'minutes, or "45 minutes" / "half an hour"'},
+  durationMinutes:{type:['integer','string','null'], description:'The user\'s words or a minute count, such as "1.5 hours", "90 minutes", or "half an hour"'},
   priority:{type:['integer','string','null'], description:'0 critical … 5 someday, or urgent / someday'},
   topics:{type:['array','string','null'], items:{type:'string'}, description:'"health, wellness", catalog topic names, or none'},
   due:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD'},
@@ -107,8 +107,8 @@ const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   earlyDays:{type:['integer','string','null'], description:'days it may start early, 0-60'},
   delayDays:{type:['integer','string','null'], description:'days it may stay on time late, 0-60'},
   breakable:{type:['boolean','string','null'], description:'true/split, or false/one session'},
-  minChunkMinutes:{type:['integer','string','null'], description:'shortest split, or "15 minutes"'},
-  autoMarkMinutes:{type:['integer','string','null'], description:'minutes, or manual/off'},
+  minChunkMinutes:{type:['integer','string','null'], description:'Shortest split in the user\'s words or minutes, such as "15 minutes" or "1.5 hours"'},
+  autoMarkMinutes:{type:['integer','string','null'], description:'The user\'s words or minutes, such as "30 minutes" or "1.5 hours", or manual/off'},
   trackValue:{type:['boolean','string','null'], description:'log a numeric value'},
   pinned:{type:['boolean','string','null']},
   snooze:{type:['string','null'], description:'off, 2 hours, until tomorrow, 3 days'},
@@ -274,7 +274,7 @@ const ASSISTANT_TOOL_DEFS = {
       properties:{
         name:{type:'string'},
         action:{type:['string','null'], enum:['log','undo_today',null], description:'log by default; undo_today means mark it not done / undo today’s latest completion'},
-        minutes:{type:['integer','null'], description:'optional chunk minutes for a split habit'},
+        minutes:{type:['integer','string','null'], description:'The user\'s words or a minute count, such as "1.5 hours" or "20 minutes"'},
         value:{type:['number','string','null'], description:'optional numeric tracked value'},
         note:{type:['string','null'], description:'optional short note about this completion'}
       }
@@ -365,7 +365,7 @@ const ASSISTANT_TOOL_DEFS = {
         end:{type:['string','null'], description:'6pm, 18:00, or sunset. Omit for the rest of the day'},
         compareStart:{type:['string','null'], description:'Second moment for query compare: 7pm or 1 hour before sunset'},
         name:{type:['string','null'], description:'Saved item for query item or compare'},
-        durationMinutes:{type:['integer','null'], description:'Session length when scoring a habit. Defaults to the item duration or 60'},
+        durationMinutes:{type:['integer','string','null'], description:'Session length in the user\'s words or minutes, such as "1.5 hours". Defaults to the item duration or 60'},
         conditions:{
           type:['array','null'],
           description:'AND filters for query hours. metric is temperature, feels, rain, wind, gusts, or uv. Absolute: op gte/lte/gt/lt/eq and value in the display unit. Relative: relative high, low, very_high, or very_low.',
@@ -397,7 +397,7 @@ const ASSISTANT_TOOL_DEFS = {
         date:{type:['string','null'], description:'today, tomorrow, a weekday, or YYYY-MM-DD. Default today'},
         start:{type:['string','null'], description:'window start: 5pm or 17:00'},
         end:{type:['string','null'], description:'window end: 6pm or 18:00'},
-        minutes:{type:['integer','null'], description:'duration in minutes, e.g. a 45 minute task'},
+        minutes:{type:['integer','string','null'], description:'The user\'s words or a minute count, such as "1.5 hours" or "45 minutes"'},
         select:{type:['string','null'], enum:['most_important','most_frequent','longest',null], description:'Compute one ranked choice from query day or missed. Omit for the full list.'},
         ...ASSISTANT_QUERY_PROPERTIES,
         purpose:ASSISTANT_READ_PURPOSE_PROPERTY

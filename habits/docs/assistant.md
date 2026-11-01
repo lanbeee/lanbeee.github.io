@@ -81,7 +81,9 @@ home turns retain `entry: home` in their trace. The minimal-mode controls
 each have a closed Needle alias that stages one `draft_item` change: how often,
 duration, allowed days and hours, name, habit or task, build/limit/stop, and a
 task's due date and start time. A repetition count cannot share a schema with
-minutes. Those closed aliases stay together: once retrieval finds any of them,
+minutes. Duration fields keep the user's words, including hours, fractions, and
+number words; Tings converts them, and a minute count is still grounded when it
+is that same spoken length. Those closed aliases stay together: once retrieval finds any of them,
 every sibling control is offered, so a value is not forced into the nearest
 field. A call that includes no new setting is rejected and repaired. A value
 that is invalid, or that already matches the item, still previews. Other

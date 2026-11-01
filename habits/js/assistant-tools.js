@@ -2477,7 +2477,9 @@ function assistantQueryWindow(args, dayBase){
   if(dayBase == null)return null;
   let startMin = typeof assistantParseClock === 'function' ? assistantParseClock(args && args.start) : null;
   let endMin = typeof assistantParseClock === 'function' ? assistantParseClock(args && args.end) : null;
-  const minutes = Number(args && args.minutes);
+  const minutes = typeof assistantParseDuration === 'function'
+    ? assistantParseDuration(args && args.minutes)
+    : Number(args && args.minutes);
   const hasDuration = Number.isFinite(minutes) && minutes > 0 && minutes <= 1440;
   if(startMin != null && endMin == null && hasDuration)endMin = startMin + Math.round(minutes);
   if(endMin != null && startMin == null && hasDuration)startMin = endMin - Math.round(minutes);
@@ -2962,7 +2964,9 @@ function assistantWeatherMomentSummary(context, dayBase, minutes){
 }
 
 function assistantWeatherDuration(args, habit){
-  const requested = Number(args && args.durationMinutes);
+  const requested = typeof assistantParseDuration === 'function'
+    ? assistantParseDuration(args && args.durationMinutes)
+    : Number(args && args.durationMinutes);
   if(Number.isFinite(requested) && requested >= 15 && requested <= 1440)return Math.round(requested);
   const own = Number(habit && habit.durationMinutes);
   if(Number.isFinite(own) && own >= 15 && own <= 1440)return Math.round(own);
@@ -3315,7 +3319,9 @@ async function assistantAnswerSchedule(args, context){
   if(!window){
     if(query === 'conflict')return {ok:true, text:`Tell me the time window, like "tomorrow 5 to 6 pm", and I will check what it would displace. ${assistantQueryCapabilities()}`};
     if(!gapsInfo)return {ok:true, text:'I could not read the plan for that day yet — open the home view once, then ask again.'};
-    const requestedMinutes = Math.round(Number(args && args.minutes));
+    const requestedMinutes = typeof assistantParseDuration === 'function'
+      ? assistantParseDuration(args && args.minutes)
+      : Math.round(Number(args && args.minutes));
     if(Number.isFinite(requestedMinutes) && requestedMinutes > 0){
       const fitting = gapsInfo.gaps.find(gap => Math.round((gap.end - gap.start) / 60000) >= requestedMinutes);
       if(fitting){

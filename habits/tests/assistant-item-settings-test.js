@@ -66,6 +66,8 @@ async function launchBrowser(){
     check('flex 3', assistantParseFlexDays(3) === 3);
     const snooze2h = assistantParseSnoozeUntil('2 hours', now);
     check('snooze 2 hours', snooze2h === now + 2 * 3600000, snooze2h);
+    check('snooze 1.5 hours', assistantParseSnoozeUntil('1.5 hours', now) === now + 90 * 60000);
+    check('snooze 90 minutes', assistantParseSnoozeUntil('90 minutes', now) === now + 90 * 60000);
     check('snooze off', assistantParseSnoozeUntil('off', now) === null);
     const phone = assistantParseLinkText('call 5551234567');
     check('link call', phone && phone.kind === 'phone' && /5551234567/.test(phone.value));
@@ -78,6 +80,14 @@ async function launchBrowser(){
     check('place prefs', prefs && prefs[0].name === 'Home' && prefs[0].level === 'high' && prefs[1].name === 'Gym' && prefs[1].level === 'avoid');
     check('priority urgent/someday', assistantParsePriority('urgent') === 0 && assistantParsePriority('someday') === 5);
     check('duration half an hour', assistantParseDuration('half an hour') === 30);
+    check('duration 1.5 hours', assistantParseDuration('1.5 hours') === 90 && assistantParseDuration('1.5 hrs') === 90);
+    check('duration fractional number is hours', assistantParseDuration(1.5) === 90 && assistantParseDuration('1.5') === 90 && assistantParseDuration('1 1/2 hours') === 90);
+    check('duration integer stays minutes', assistantParseDuration(90) === 90 && assistantParseDuration('90 minutes') === 90 && assistantParseDuration(2) === 2);
+    check('duration words and mixed units', assistantParseDuration('two and a half hours') === 150 && assistantParseDuration('1 hour 30 minutes') === 90 && assistantParseDuration('an hour and a half') === 90);
+    check('spoken length matches converted minutes', assistantSpokenDurationMatches('change the duration to 1.5 hours', 90)
+      && assistantSpokenDurationMatches('make it 1 hour 30 minutes', 90)
+      && !assistantSpokenDurationMatches('remind me to call mom', 90)
+      && !assistantSpokenDurationMatches('make it 3 times a week', 3));
     check('packed name dump', assistantNameLooksLikeSettingsDump('limit kettlebells topics health and fitness'));
     check('packed later-of name', assistantNameLooksLikeSettingsDump('maghrib stroll allowed later of 6pm and sunset until isha'));
     check('short title ok', assistantNameLooksLikeSettingsDump('Kettlebells') !== true && assistantNameLooksLikeSettingsDump('hike habit') !== true);
@@ -141,6 +151,10 @@ async function launchBrowser(){
     const studyWin = assistantParseWindowFromText('from 15 min before sunrise to 2 hours after sunrise or 9 AM whichever is earlier');
     check('sunrise-15 start', studyWin && studyWin.start && studyWin.start.anchor === 'sunrise' && studyWin.start.offsetMin === -15);
     check('sunrise+2h earlier-of 9am end', studyWin && studyWin.end && studyWin.end.anchor === 'sunrise' && studyWin.end.offsetMin === 120 && studyWin.end.combine === 'earlier' && studyWin.end.second && studyWin.end.second.minutes === 9 * 60, studyWin && studyWin.end);
+    const hourAndHalf = assistantParseWindowFromText('1.5 hours before sunset');
+    check('1.5 hours before sunset', hourAndHalf && hourAndHalf.start && hourAndHalf.start.offsetMin === -90, hourAndHalf && hourAndHalf.start);
+    const twoHours = assistantParseWindowFromText('two hours after sunrise');
+    check('two hours after sunrise', twoHours && twoHours.start && twoHours.start.offsetMin === 120, twoHours && twoHours.start);
     return rows;
   });
   report(windows);
@@ -199,6 +213,10 @@ async function launchBrowser(){
     check('emoji+color', r.habit && r.habit.emoji === '💪' && r.habit.emojiBgColor === 'purple');
     r = apply({durationMinutes:'45 minutes'});
     check('duration 45m', r.habit && r.habit.durationMinutes === 45);
+    r = apply({durationMinutes:'1.5 hours'});
+    check('duration 1.5 hours saves 90', r.habit && r.habit.durationMinutes === 90);
+    r = apply({durationMinutes:'two hours'});
+    check('duration two hours saves 120', r.habit && r.habit.durationMinutes === 120);
     r = apply({priority:'someday'});
     check('priority someday', r.habit && r.habit.priority === 5);
     r = apply({topics:'wellness'});

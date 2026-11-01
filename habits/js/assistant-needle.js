@@ -178,6 +178,12 @@ function assistantNeedleEnsureReady(){
   return _assistantNeedleReady;
 }
 
+// Lengths stay in the user's words. An integer grammar makes the model turn
+// "1.5 hours" into a minute count that is not in the request, which grounding
+// then refuses. "90 minutes" only appeared to work because those digits were spoken.
+const ASSISTANT_SPOKEN_DURATION_FIELDS = new Set(['durationMinutes','minChunkMinutes','autoMarkMinutes','minutes']);
+const ASSISTANT_SPOKEN_DURATION_DESCRIPTION = 'the user\'s words or a minute count, such as "1.5 hours", "90 minutes", or "half an hour"';
+
 // Select primitive schema types instead of union dialects. Keep every supported
 // field; only descriptions are shortened for Needle's 8192-token context.
 function assistantNeedleSchema(schema){
@@ -186,7 +192,17 @@ function assistantNeedleSchema(schema){
   if(schema.enum)out.enum = schema.enum.filter(v=>v !== null);
   if(schema.description)out.description = schema.description.split('. ')[0].slice(0,100);
   if(schema.required)out.required = schema.required;
-  if(schema.properties)out.properties = Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>[key,assistantNeedleSchema(value)]));
+  if(schema.properties){
+    out.properties = Object.fromEntries(Object.entries(schema.properties).map(([key,value])=>{
+      const child = assistantNeedleSchema(value);
+      if(ASSISTANT_SPOKEN_DURATION_FIELDS.has(key)){
+        child.type = 'string';
+        const off = /manual|off/.test(String(value && value.description || ''));
+        child.description = (ASSISTANT_SPOKEN_DURATION_DESCRIPTION + (off ? ', or off' : '')).slice(0,100);
+      }
+      return [key, child];
+    }));
+  }
   if(schema.items && out.type === 'array')out.items = assistantNeedleSchema(schema.items);
   return out;
 }
@@ -244,7 +260,7 @@ function assistantNeedleTools(source){
           name:itemName(),
           rhythm:{type:'string',description:'The whole repetition phrase, such as daily or a number of times in a number of days.'}
         }});
-      add(original,'change_duration','Change how long an existing task or habit lasts. 30 minutes, 45 minutes, or half an hour.',
+      add(original,'change_duration','Change how long an existing task or habit lasts. Pass the duration in the user\'s words, such as 30 minutes, 1.5 hours, or half an hour.',
         null,{create:false},{only:['name','durationMinutes'],required:['durationMinutes'],fields:{name:itemName()}});
       add(original,'change_availability','Change which weekdays or clock hours an existing task or habit may use. This is not how many times it repeats.',
         null,{create:false},{only:['name','weekdays','windowText'],fields:{
@@ -353,6 +369,18 @@ function assistantNeedleTurn(req){
   return {request:envelope.request, system, results, repair};
 }
 
+function assistantNeedleSpokenDurations(call, request, ungrounded){
+  if(typeof assistantSpokenDurationMatches !== 'function')return false;
+  const prefix = `${call.name}.`;
+  const bad = ungrounded.filter(field=>field.startsWith(prefix));
+  if(!bad.length)return true;
+  return bad.every(field=>{
+    const key = field.slice(prefix.length);
+    if(!key || key.includes('.') || !call.arguments || !Object.prototype.hasOwnProperty.call(call.arguments, key))return false;
+    return assistantSpokenDurationMatches(request, call.arguments[key]);
+  });
+}
+
 async function assistantNeedleComplete(req){
   await assistantNeedleEnsureReady();
   const turn = assistantNeedleTurn(req);
@@ -362,8 +390,9 @@ async function assistantNeedleComplete(req){
   if(raw.success === false || raw.type === 'error')throw new Error(raw.error || 'Needle could not complete this request.');
   // Needle explicitly allows suppressed candidates to be offered for user
   // confirmation. Writes only stage previews on the first pass. Grounded
-  // read candidates can safely return authoritative app facts. Ungrounded
-  // arguments and negated actions are always refused.
+  // read candidates can safely return authoritative app facts. A length that
+  // is only the user's quantity in other units stays. Invented arguments and
+  // negated actions are refused.
   const ungrounded = raw.validation?.ungrounded || [];
   const previewTools = new Set(['draft_item','draft_setting','draft_batch','apply_items','complete_item','plan_item','delete_item']);
   const safeReads = new Set(['answer_settings']);
@@ -375,8 +404,10 @@ async function assistantNeedleComplete(req){
   const seen = new Set();
   const calls = candidates.filter(call=>{
     const key = JSON.stringify(call);
-    if(!tools.some(t=>t.name === call.name) || raw.validation?.negation || seen.has(key)
-      || ungrounded.some(field=>field.startsWith(`${call.name}.`)))return false;
+    const prefix = `${call.name}.`;
+    const invented = ungrounded.some(field=>field.startsWith(prefix))
+      && !assistantNeedleSpokenDurations(call, turn.request, ungrounded);
+    if(!tools.some(t=>t.name === call.name) || raw.validation?.negation || seen.has(key) || invented)return false;
     seen.add(key);
     return true;
   });

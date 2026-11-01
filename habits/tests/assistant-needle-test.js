@@ -106,10 +106,16 @@ function assert(ok, message){
         const continued = await assistantComplete({...req,messages:[...req.messages,{role:'tool',content:'{"ok":true,"preview":"Walk"}'}]});
         reply = {success:true,function_calls:[{name:'add_task',arguments:{name:'Invented',durationMinutes:90}}],validation:{ungrounded:['add_task.durationMinutes']}};
         const ungrounded = await assistantComplete(req);
+        reply = {success:true,function_calls:[{name:'change_duration',arguments:{durationMinutes:90}}],validation:{ungrounded:['change_duration.durationMinutes']}};
+        const converted = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to 1.5 hours',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
+        reply = {success:true,function_calls:[{name:'change_duration',arguments:{durationMinutes:'two hours'}}]};
+        const words = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to two hours',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
         assistantAbortInFlight();
         return {calls:result.message.tool_calls,held:held.message.tool_calls,continued:continued.message.tool_calls,
           frequency:frequency.message.tool_calls,repair,invalidTurn,
-          ungrounded:ungrounded.message.tool_calls,system:sent.find(m=>m.type === 'complete').system,terminated};
+          ungrounded:ungrounded.message.tool_calls,
+          converted:converted.message.tool_calls,words:words.message.tool_calls,
+          system:sent.find(m=>m.type === 'complete').system,terminated};
       }finally{ globalThis.Worker = OriginalWorker; }
     });
     assert(transport.calls.length === 2 && transport.calls[0].function.name === 'draft_item' && transport.calls[1].function.name === 'answer_settings','transport maps writes to previews and grounded held reads to app facts');
@@ -124,6 +130,9 @@ function assert(ok, message){
       && !transport.invalidTurn.repair.includes('classify_intent'),'validation repair keeps the actual error and drops server-only steering');
     assert(transport.held.length === 1 && transport.held[0].function.arguments.kind === 'habit','a held write can stage a confirmation preview');
     assert(!transport.continued.length && !transport.ungrounded.length,'held continuations and ungrounded arguments cannot stage extra actions');
+    assert(transport.converted.length === 1 && transport.converted[0].function.arguments.durationMinutes === 90
+      && transport.words.length === 1 && transport.words[0].function.arguments.durationMinutes === 'two hours',
+      'a minute count is kept when it is the length the user spoke, and the spoken words pass through');
     assert(transport.system.includes('date: 2026-11-01') && !transport.system.includes('[object Object]'),'Needle receives the real ISO date');
     assert(transport.terminated,'cancel stops the inference worker');
 
@@ -181,6 +190,8 @@ function assert(ok, message){
       const schemas = {
         frequency:keys('change_frequency'),
         duration:keys('change_duration'),
+        durationType:by.change_duration.parameters.properties.durationMinutes.type,
+        addDurationType:by.add_habit.parameters.properties.durationMinutes.type,
         availability:keys('change_availability'),
         rename:keys('rename_item'),
         type:keys('change_type'),
@@ -247,6 +258,8 @@ function assert(ok, message){
         seven:run('ex',{create:false,kind:'habit',rhythm:'seven times in ten days'}),
         empty:run('ex',{create:false}),
         duration:run('ex',{create:false,durationMinutes:'30 minutes'}),
+        fractional:run('ex',{create:false,durationMinutes:'1.5 hours'}),
+        wordDuration:run('ex',{create:false,durationMinutes:'two and a half hours'}),
         days:run('ex',{create:false,weekdays:'weekdays'}),
         namedDays:run('ex',{create:false,weekdays:'Tuesday and Thursday'}),
         hours:run('ex',{create:false,windowText:'between 5pm and 7pm'}),
@@ -260,6 +273,8 @@ function assert(ok, message){
       },expectedDue:assistantParseDue('tomorrow',now)};
     });
     const sameKeys = (name, expected)=>JSON.stringify(basics.schemas[name]) === JSON.stringify(expected);
+    assert(basics.schemas.durationType === 'string' && basics.schemas.addDurationType === 'string',
+      'Needle duration fields accept the user\'s words instead of an integer minute count');
     assert(sameKeys('frequency',['name','rhythm']) && sameKeys('duration',['durationMinutes','name'])
       && sameKeys('availability',['name','weekdays','windowText']) && sameKeys('rename',['name','newName'])
       && sameKeys('type',['kind','name']) && sameKeys('kind',['habitKind','name'])
@@ -290,6 +305,9 @@ function assert(ok, message){
     assert(applied.duration.ok && applied.duration.hid === 'ex' && applied.duration.duration === 30
       && applied.duration.times === 1 && applied.duration.days === 7,
       `duration accepts 30 minutes without changing how often (${JSON.stringify(applied.duration)})`);
+    assert(applied.fractional.ok && applied.fractional.duration === 90
+      && applied.wordDuration.ok && applied.wordDuration.duration === 150,
+      `spoken lengths convert to minutes (${JSON.stringify(applied.fractional)} ${JSON.stringify(applied.wordDuration)})`);
     assert(applied.days.ok && JSON.stringify(applied.days.weekdays) === JSON.stringify([1,2,3,4,5])
       && applied.days.times === 1 && applied.days.days === 7 && applied.days.duration === 45,
       `weekdays sets allowed days only (${JSON.stringify(applied.days)})`);
