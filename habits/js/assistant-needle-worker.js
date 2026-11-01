@@ -62,7 +62,7 @@ function needleSelectTools(data, selected){
     && (selected || !featureKinds.has(t.fixed?.kind)));
   const ranked = pool.map(tool=>({tool,score:needleSimilarity(query,tool.description)}))
     .sort((a,b)=>b.score-a.score);
-  const open = ranked.filter(row=>!row.tool.closed).map(row=>row.tool);
+  const open = ranked.filter(row=>selected || !row.tool.closed).map(row=>row.tool);
   const choices = open.slice(0,3);
   // Closed aliases are one control surface split so each value has its own
   // field. Keeping only the nearest sibling forces the value into that field.
