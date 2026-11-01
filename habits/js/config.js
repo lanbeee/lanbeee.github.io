@@ -17,7 +17,7 @@ const SHARE_STATE_KEY = 'tings_share_v1';
 const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v4';
 const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
-const FEEDBACK_FORM_URL = 'https://forms.gle/KNnXKCH55VfzCNeo8';
+const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform';
 const PRIVACY_POLICY_URL = 'https://aretefoundry.github.io/tings/privacy';
 // Play background-location disclosure. Must include "location" and
 // "even when the app is closed or not in use", and name those features.

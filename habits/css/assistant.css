@@ -187,6 +187,15 @@ body:not(.assistant-debug-on) .assistant-bubble-debug{display:none;}
 .assistant-retry{
   font-size:12.5px;padding:5px 12px;border-radius:999px;opacity:.78;
 }
+.assistant-feedback{margin-top:12px;font-size:12px;color:var(--text3);}
+.assistant-feedback summary{cursor:pointer;}
+.assistant-feedback p{font-size:12px;}
+.assistant-feedback pre{
+  white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;
+  font-size:11px;user-select:text;
+}
+.assistant-feedback .btn-row{margin-top:10px;flex-wrap:wrap;}
+.assistant-feedback .btn{white-space:normal;min-width:0;}
 
 /* Entry buttons: add-sheet name row + detail actions row. Visibility is
    CSS-driven off body.assistant-on (syncAssistantChrome) so the buttons

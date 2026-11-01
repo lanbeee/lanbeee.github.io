@@ -610,7 +610,13 @@ function assistantShowBusy(on){
   }
 }
 
-async function handleAssistantOutcome(out){
+async function handleAssistantOutcome(out, feedbackContext){
+  if(!out)return;
+  await renderAssistantOutcome(out);
+  assistantAppendFeedback(out, feedbackContext);
+}
+
+async function renderAssistantOutcome(out){
   if(!out)return;
   assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button').forEach(button=>{button.disabled=true;});
   if(out.draft)_assistantPendingDraft = out.draft;
@@ -763,10 +769,11 @@ async function sendAssistantMessage(text, opts){
       }
     });
     if(turn !== _assistantTurn)return;
-    await handleAssistantOutcome(out);
+    await handleAssistantOutcome(out, {request:value});
   }catch(err){
     if(turn !== _assistantTurn)return;
-    appendAssistantBubble('say', assistantFriendlyError(err));
+    await handleAssistantOutcome({type:'error', text:assistantFriendlyError(err),
+      diagnosticError:String(err.stack || err.message || err), session:_assistantSession}, {request:value});
   }finally{
     if(turn === _assistantTurn)assistantShowBusy(false);
   }

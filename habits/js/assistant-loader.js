@@ -10,6 +10,7 @@
     './js/assistant-needle.js',
     './js/assistant-workflow.js',
     './js/assistant-client.js',
+    './js/assistant-feedback.js',
     './js/assistant-ui.js',
     './js/assistant-external.js'
   ];

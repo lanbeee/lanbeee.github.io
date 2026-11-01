@@ -60,7 +60,8 @@ async function assistantRunNeedleWorkflow(text, opts){
       last = await runAssistantTurn(slices[i].trim(), {...opts,context,session,needleStep:true,
         onProgress:info=>progress({...info,step:`part ${i+1} of ${slices.length}: ${info.step || 'thinking'}`})});
     }catch(error){
-      last = {type:'error',text:assistantFriendlyError(error),session};
+      last = {type:'error',text:assistantFriendlyError(error),
+        diagnosticError:String(error.stack || error.message || error),session};
     }
     if(generation !== _assistantNeedleGeneration){
       session.needleWorkflow=null;session.needleStaged=null;
@@ -86,6 +87,8 @@ async function assistantRunNeedleWorkflow(text, opts){
       last.unfinished = slices.slice(i);
       last.alsoText = [answers.join('\n\n'),last.partial ? 'Work so far is kept for review after this part is resolved. Nothing has been saved.' : ''].filter(Boolean).join('\n\n');
       last.navigation=navigation;
+      last.debug=trace.slice();
+      last.debugText=assistantFormatDebug(trace);
       return last;
     }
   }

@@ -1,4 +1,4 @@
-const CACHE = 'tings-v695';
+const CACHE = 'tings-v696';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -153,6 +153,7 @@ const PRECACHE = [
   './js/assistant-needle-worker.js',
   './lib/needle/needle.js',
   './js/assistant-client.js',
+  './js/assistant-feedback.js',
   './js/assistant-ui.js',
   './js/assistant-external.js',
   './js/agenda-display.js',

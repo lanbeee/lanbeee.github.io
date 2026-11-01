@@ -1564,7 +1564,8 @@ async function runAssistantTurn(userText, opts = {}){
   if(!opts.needleStep && !opts.complete && typeof assistantSettings === 'function'
     && assistantSettings().provider === 'needle' && typeof assistantRunNeedleWorkflow === 'function'){
     try{ return await assistantRunNeedleWorkflow(String(userText || '').trim(),opts); }
-    catch(error){ return {type:'error',text:assistantFriendlyError(error),session:opts.session}; }
+    catch(error){ return {type:'error',text:assistantFriendlyError(error),
+      diagnosticError:String(error.stack || error.message || error),session:opts.session}; }
   }
   const complete = opts.complete || (typeof assistantComplete === 'function' ? assistantComplete : null);
   const context = opts.context || assistantBuildContext();

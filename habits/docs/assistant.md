@@ -27,10 +27,27 @@ For external Android agents (Gemini / Google Assistant), see [Android assistant 
 | `js/assistant-needle-worker.js` | Needle WASM inference, model routing, bounded schemas and request boundaries |
 | `js/assistant-workflow.js` | Lossless multi-part queue, staged work, clarification and retry |
 | `js/assistant-ui.js` | Sheet, preview, settings |
+| `js/assistant-feedback.js` | Local diagnostic snapshots and opt-in Google Form prefill |
 | `js/assistant-loader.js` | Deferred script load |
 | `js/assistant-external.js` | Native AppFunctions reads and confirmation previews |
 
 Open the one file that owns the change. Grep the function and read that range.
+
+## Feedback
+
+Failed replies offer **send feedback**; other replies offer **report a problem**.
+The report snapshots that turn's request, response, retained trace, model and
+device details even when debug display is off. Partial Needle failures retain
+the traces of earlier parts. Saved libraries and server settings are excluded;
+recognizable credentials are redacted. Review and copy happen locally. Only
+the user's **open feedback form** link sends the prefill to Google, where they
+can edit and submit it. Required survey answers are left for the user.
+
+The form's `entry.1563652333` paragraph holds diagnostics. Keep its mapping in
+`assistant-feedback.js` in sync if the form changes. Reports too long for the
+bounded URL use an explicitly shortened prefill, with the full local report
+available to copy and paste. Register new assistant slices in both the deferred
+loader and service-worker precache.
 
 ## Routing
 
