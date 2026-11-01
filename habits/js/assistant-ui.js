@@ -339,7 +339,12 @@ function assistantClearFocus(){
     _assistantSession.pendingDelete = null;
     _assistantSession.pendingActions = [];
     _assistantSession.needleWorkflow = null;
+    _assistantSession.needleProposal = null;
+    _assistantSession.needleApproved = null;
     _assistantSession.needleStaged = null;
+    _assistantSession.drafts = null;
+    _assistantSession.turnDrafts = null;
+    _assistantSession._focusOnly = true;
     _assistantSession.awaiting = null;
   }
   _assistantPendingDraft = null;
@@ -544,7 +549,7 @@ function appendAssistantBubble(kind, text, extra){
     }).join('');
     div.innerHTML = `${think}${rows}`;
   }else if(kind === 'ask'){
-    const choices = (extra && extra.choices || []).map(choice =>
+    const choices = [...new Set((extra && extra.choices || []).map(choice=>String(choice).trim()).filter(Boolean))].slice(0,4).map(choice =>
       `<button type="button" class="btn" data-assistant-choice="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`
     ).join('');
     div.innerHTML = `${think}<p>${escapeHtml(text)}</p>${choices ? `<div class="btn-row assistant-choices">${choices}</div>` : ''}`;
@@ -592,7 +597,12 @@ function assistantShowBusy(on){
   if(input)input.disabled = on;
   assistantSyncSend();
   syncAssistantNeedleControls();
-  document.querySelectorAll('#assistant-thread .assistant-suggest').forEach(btn => { btn.disabled = on; });
+  document.querySelectorAll('#assistant-thread .assistant-suggest').forEach(btn => {
+    btn.disabled=on || (btn.hasAttribute('data-assistant-proposal') && btn._assistantProposal !== _assistantSession?.needleProposal);
+  });
+  document.querySelectorAll('#assistant-thread [data-assistant-choice]').forEach(btn => {
+    btn.disabled=on || btn.closest('.assistant-bubble') !== assistantThreadEl()?.lastElementChild;
+  });
   const wait = $('assistant-waiting');
   if(wait){
     wait.hidden = !on;
@@ -602,6 +612,7 @@ function assistantShowBusy(on){
 
 async function handleAssistantOutcome(out){
   if(!out)return;
+  assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button').forEach(button=>{button.disabled=true;});
   if(out.draft)_assistantPendingDraft = out.draft;
   _assistantPendingDrafts = Array.isArray(out.drafts) && out.drafts.length
     ? out.drafts
@@ -610,6 +621,7 @@ async function handleAssistantOutcome(out){
   if(out.draft && _assistantSession && !_assistantSession.draft)_assistantSession.draft = out.draft;
   if(_assistantPendingDrafts && _assistantSession && !_assistantSession.drafts)_assistantSession.drafts = _assistantPendingDrafts;
   syncAssistantFocusBar();
+  assistantThreadEl()?.querySelectorAll('[data-assistant-choice], [data-assistant-proposal]').forEach(button=>{button.disabled=true;});
   const live = assistantThreadEl()?.querySelector('.assistant-bubble-debug.is-live');
   if(live && out.debug){
     assistantFillDebugBubble(live, out.debug, {debugText:out.debugText, debugJson:assistantDebugPayload(out.debug)});
@@ -680,7 +692,18 @@ async function handleAssistantOutcome(out){
     return;
   }
   if(out.type === 'ask'){
-    appendAssistantBubble('ask', out.question, {choices:out.choices, thinking:out.thinking});
+    const bubble=appendAssistantBubble('ask', out.question, {choices:out.choices, thinking:out.thinking});
+    if(out.proposal){
+      const button=document.createElement('button');button.type='button';button.className='btn assistant-suggest';
+      button.textContent='use this interpretation';button.dataset.assistantProposal='true';button._assistantProposal=out.proposal;
+      button.addEventListener('click',()=>{
+        if(_assistantBusy || _assistantSession?.needleProposal !== out.proposal)return;
+        _assistantSession.needleApproved=out.proposal;
+        button.disabled=true;
+        void sendAssistantMessage(out.proposal.request,{displayText:'Use this interpretation'});
+      });
+      bubble?.append(button);
+    }
     return;
   }
   if(out.type === 'today' || out.type === 'say'){
@@ -706,7 +729,8 @@ async function sendAssistantMessage(text, opts){
     return;
   }
   const turn = ++_assistantTurn;
-  appendAssistantBubble('user', value);
+  assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button, [data-assistant-choice], [data-assistant-proposal]').forEach(button=>{button.disabled=true;});
+  appendAssistantBubble('user', opts.displayText || value);
   const input = $('assistant-input');
   if(input){
     input.value = '';
@@ -766,6 +790,9 @@ function assistantKeepWorkingOn(commit){
   _assistantSession.pendingActions = [];
   _assistantSession.awaiting = null;
   _assistantSession.messages = [];
+  _assistantSession.drafts = null;
+  _assistantSession.turnDrafts = null;
+  _assistantSession._focusOnly = true;
   if(commit && commit.habit && typeof assistantHabitToDraft === 'function'){
     const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (typeof sortSettings !== 'undefined' ? sortSettings : {});
     _assistantSession.draft = assistantHabitToDraft(commit.habit, commit.index, settings);

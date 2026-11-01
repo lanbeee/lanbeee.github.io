@@ -74,6 +74,62 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     });
     assert(incomplete.type !== 'preview' && incomplete.partial && incomplete.drafts === 1,'an earlier draft cannot make an unanswered later question appear finished');
     assert(incomplete.unfinished?.[0] === 'Answer the question.','unfinished requests remain available for retry');
+    const confidence=await page.evaluate(async()=>{
+      const ready=assistantNeedleEnsureReady,request=assistantNeedleRequest;
+      assistantNeedleEnsureReady=async()=>true;assistantNeedleRequest=async()=>({steps:[]});
+      const before=JSON.stringify(load()),session=assistantCreateSession();
+      const complete=async req=>({message:{role:'assistant',content:'',tool_calls:[
+        {function:{name:'draft_item',arguments:req.messages.some(m=>m.role==='tool')
+          ? {due:'tomorrow',create:true,kind:'task',name:'Confidence task'}
+          : {name:'Confidence task',kind:'task',create:true,due:'tomorrow'}}}
+      ]},_contextManaged:true,_contextLimit:8192,_needleConfidence:0.07,_needleNeedsConfirmation:true});
+      try{
+        const first=await assistantRunNeedleWorkflow('Add Confidence task tomorrow',{session,complete});
+        await handleAssistantOutcome(first);
+        const held={type:first.type,question:first.question,draft:session.draft,pending:session.turnDrafts?.length || 0,
+          button:!!document.querySelector('[data-assistant-proposal]'),unchanged:before===JSON.stringify(load())};
+        session.needleApproved=first.proposal;
+        const approved=await assistantRunNeedleWorkflow(first.proposal.request,{session,complete});
+        const due=approved.draft?.dueDate;
+        const follow=await assistantRunNeedleWorkflow('Change that to 5pm',{session,complete:async req=>({message:{role:'assistant',content:'',tool_calls:
+          req.messages.some(m=>m.role==='tool') ? [] : [{function:{name:'draft_item',arguments:{create:false,dueTime:'5pm'}}}]
+        }})});
+        return {held,type:approved.type,name:approved.draft?.name,followType:follow.type,followName:follow.draft?.name,
+          time:follow.draft?.dueTime,dueRetained:follow.draft?.dueDate===due,drafts:follow.drafts?.length,unchanged:before===JSON.stringify(load())};
+      }finally{assistantNeedleEnsureReady=ready;assistantNeedleRequest=request;}
+    });
+    assert(confidence.held.type==='ask' && confidence.held.question.includes('7%') && confidence.held.button,
+      'low-confidence output asks about the specific interpretation and exposes a proceed control');
+    assert(!confidence.held.draft && !confidence.held.pending && confidence.held.unchanged,
+      'an uncertain interpretation executes no tool and stages or saves nothing');
+    assert(confidence.type==='preview' && confidence.name==='Confidence task' && confidence.unchanged,
+      'one approval previews without saving or asking again when the model repeats the same call in a different field order');
+    assert(confidence.followType==='preview' && confidence.followName==='Confidence task' && confidence.time==='17:00'
+      && confidence.dueRetained && confidence.drafts===1,'a second message edits the same unsaved draft and preserves its due date');
+    const invalid=await page.evaluate(async()=>{
+      const session=assistantCreateSession();session.needleStaged=[];session.requestText='Add a workout habit 3 times a week';
+      const result=await assistantExecuteTool('draft_item',{name:'Workout',kind:'habit',create:true,durationMinutes:3},session,assistantBuildContext());
+      const missing=await assistantExecuteTool('draft_item',{name:'Workout',kind:'habit',create:true},session,assistantBuildContext());
+      const noItem=assistantResolveDraftBase({create:false,durationMinutes:20},session,assistantBuildContext());
+      const clock=assistantValidateNeedleDraftArgs({create:true,kind:'task',name:'Walk',dueTime:'20 minute'},'Add a 20 minute Walk habit every day');
+      return {result,missing,noItem,clock,draft:session.draft};
+    });
+    assert(!invalid.result.ok && invalid.result.ask && !invalid.draft,'a repetition count cannot become a saveable three-minute session');
+    assert(!invalid.missing.ok && invalid.missing.ask && !invalid.noItem.ok && invalid.noItem.ask,
+      'missing frequency or edit target asks a concrete question before staging');
+    assert(invalid.clock?.ask,'a duration placed in a clock field asks before an interpretation can be approved');
+    const undo=await page.evaluate(async()=>{
+      const context=assistantBuildContext();context.data=[{hid:'undo-last',name:'Recent completion',type:'task',logs:[]}];
+      const session=assistantCreateSession();
+      const empty=await assistantExecuteTool('complete_item',{action:'undo_today',latest:true},session,context);
+      context.data[0].logs=[{ts:Date.now()-1000}];
+      const before=JSON.stringify(context.data);
+      const preview=await assistantExecuteTool('complete_item',{action:'undo_today',latest:true},session,context);
+      return {empty,preview,unchanged:before===JSON.stringify(context.data)};
+    });
+    assert(undo.empty.noChange && undo.empty.text.includes('no completion'),'nameless undo reports an empty history without guessing an item');
+    assert(undo.preview.pendingComplete?.hid==='undo-last' && undo.preview.pendingComplete.action==='undo_today' && undo.unchanged,
+      'nameless undo targets the latest actual completion and stays confirmation-only');
     const mixed=await page.evaluate(async()=>{
       save([{hid:'workflow-existing',name:'Existing',type:'task',logs:[],durationMinutes:10}]);
       const originalReady=assistantNeedleEnsureReady,originalRequest=assistantNeedleRequest;
@@ -123,6 +179,24 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     assert(capabilities.buttons.includes('open calendar import'),'assistant shows a working navigation button');
     await page.getByRole('button',{name:'open calendar import',exact:true}).click();
     assert(await page.locator('#settings-calendar-body').isVisible(),'calendar button opens the actual import section');
+    await page.setViewportSize({width:320,height:700});
+    const mobile=await page.evaluate(async()=>{
+      closeSettingsSheet();assistantNeedleState({phase:'downloaded'});await openAssistantSheet();
+      await handleAssistantOutcome({type:'ask',question:'Which item should I change?',choices:['An old choice']});
+      const previous=document.querySelector('[data-assistant-choice="An old choice"]');
+      await handleAssistantOutcome({type:'ask',question:'Which item should I change?',choices:[
+        'A very long saved item title that needs to wrap onto multiple lines', 'Evening walk', 'Read', 'Gym', 'Journal', 'Walk'
+      ]});
+      const buttons=[...document.querySelectorAll('.assistant-bubble-ask:last-child [data-assistant-choice]')];
+      return {oldDisabled:previous.disabled,count:buttons.length,noOverflow:buttons.every(button=>button.scrollWidth<=button.clientWidth+1)
+        && document.documentElement.scrollWidth<=innerWidth};
+    });
+    await page.locator('#assistant-sheet').evaluate(async element=>{
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));
+    });
+    await page.screenshot({path:'test-results/needle-clarification-mobile.png'});
+    assert(mobile.count===4 && mobile.noOverflow && mobile.oldDisabled,'phone clarification choices wrap, stay bounded, and retire earlier answers');
     console.log(`\n${passed} passed`);
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

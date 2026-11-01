@@ -31,11 +31,18 @@ async function assistantRunNeedleWorkflow(text, opts){
   }else{
     progress({phase:'think',step:'breaking down request'});
     await assistantNeedleEnsureReady();
-    const split = await assistantNeedleRequest('split',{request:text});
+    // Splitting is optional extraction metadata. A bounded splitter failure
+    // must not replace or discard the literal request before the action pass.
+    let split;
+    try{split=await assistantNeedleRequest('split',{request:text});}
+    catch(error){
+      if(generation !== _assistantNeedleGeneration)throw error;
+      split={steps:[]};
+    }
     slices = assistantNeedleSlices(text,split.steps);
   }
-  const drafts = retained?.drafts || [];
-  const actions = retained?.actions || [];
+  const drafts = retained?.drafts || (Array.isArray(session.drafts) && !session._focusOnly ? session.drafts.slice() : []);
+  const actions = retained?.actions || (session.pendingActions || []).slice();
   const answers = retained?.answers || [];
   const trace = [];
   const navigation = retained?.navigation || [];
@@ -47,6 +54,7 @@ async function assistantRunNeedleWorkflow(text, opts){
     // Keep the staged library visible for references and links between steps.
     session.needleStaged = drafts;
     session.drafts=null;
+    // Prior drafts remain references; only a new validated tool can stage this part.
     session._focusOnly=true;
     try{
       last = await runAssistantTurn(slices[i].trim(), {...opts,context,session,needleStep:true,
@@ -85,6 +93,7 @@ async function assistantRunNeedleWorkflow(text, opts){
   session.pendingActions = actions;
   session.turnDrafts = drafts;
   session.drafts = drafts;
+  session._focusOnly = !drafts.length;
   const extra = answers.join('\n\n');
   let out;
   if(drafts.length){

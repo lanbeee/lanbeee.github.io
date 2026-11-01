@@ -270,9 +270,10 @@ const ASSISTANT_TOOL_DEFS = {
     description:'Log an existing item, or undo its latest completion from today. Tings previews before saving. Include minutes for a habit chunk, value for a tracked measurement, and note for optional log detail.',
     parameters:{
       type:'object',
-      required:['name'],
+      required:[],
       properties:{
         name:{type:'string'},
+        latest:{type:'boolean',description:'Undo the most recent completion today across all items; name may be omitted.'},
         action:{type:['string','null'], enum:['log','undo_today',null], description:'log by default; undo_today means mark it not done / undo today’s latest completion'},
         minutes:{type:['integer','string','null'], description:'The user\'s words or a minute count, such as "1.5 hours" or "20 minutes"'},
         value:{type:['number','string','null'], description:'optional numeric tracked value'},
@@ -348,7 +349,8 @@ const ASSISTANT_TOOL_DEFS = {
       type:'object',
       required:['kind'],
       properties:{
-        kind:{type:'string', enum:['places','weather','topics','busy','calendar','reminders','sharing','widgets']},
+        kind:{type:'string', enum:['places','weather','topics','busy','calendar','reminders','sharing','widgets','assistant']},
+        query:{type:'string',enum:['greeting','thanks','identity','help','joke','date'],description:'Only for kind assistant.'},
         purpose:ASSISTANT_READ_PURPOSE_PROPERTY
       }
     }

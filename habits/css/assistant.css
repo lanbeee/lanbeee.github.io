@@ -99,6 +99,8 @@ body[data-pane-count="3"] .assistant-sheet{
 }
 .assistant-preview-actions,.assistant-choices{margin-top:12px;flex-wrap:wrap;}
 .assistant-preview-actions .btn,.assistant-choices .btn{min-width:0;padding:11px 12px;}
+.assistant-choices{display:grid;grid-template-columns:minmax(0,1fr);width:100%;}
+.assistant-choices .btn{width:100%;height:auto;white-space:normal;overflow-wrap:anywhere;text-align:left;}
 .assistant-suggestions{
   display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0;
 }

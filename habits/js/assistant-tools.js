@@ -847,7 +847,7 @@ function assistantPlaceAsk(error, places, matches){
     const labels = (matches || []).map(item => item && item.name).filter(Boolean);
     return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which place: ${labels.join(', ')}?`, choices:labels};
   }
-  if(error === 'NO_PLACES'){
+  if(error === 'NO_PLACES' || !names.length){
     return {ok:false, error:'NO_PLACES', ask:'No saved places yet. Add one in Settings → locations, or drop the place.'};
   }
   return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${names.join(', ')}.`, choices:names};
@@ -1205,6 +1205,7 @@ function assistantResolveDraftBase(args, session, context){
     }
   }
   if(current)return {ok:true, draft:{...current}, existing:Boolean(current.hid || current.index != null)};
+  if(args?.create === false)return {ok:false,error:'MISSING_ITEM',ask:'Which item should I change?',choices:(context.catalog?.habits || []).map(row=>row.name).slice(0,4)};
   return {ok:true, draft:assistantEmptyDraft(), existing:false};
 }
 
@@ -1403,7 +1404,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
         if(match.error === 'AMBIGUOUS'){
           return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which forecast place: ${match.matches.map(item => item.name).join(', ')}?`};
         }
-        return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${((catalog && catalog.places) || []).map(item => item.name).join(', ')}.`};
+        return assistantPlaceAsk('UNKNOWN',catalog?.places || []);
       }
       next.weatherLocationId = match.item.id;
       next.weatherLocationName = match.item.name;
@@ -1423,7 +1424,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
           if(match.error === 'AMBIGUOUS'){
             return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which place: ${match.matches.map(item => item.name).join(', ')}?`};
           }
-          return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${((catalog && catalog.places) || []).map(item => item.name).join(', ')}.`};
+          return assistantPlaceAsk('UNKNOWN',catalog?.places || []);
         }
         prefs[match.item.id] = row.level;
         if(!ids.includes(match.item.id)){
@@ -1727,7 +1728,7 @@ function assistantCompletePreview(found, options){
   const todayActual = logs.filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log))
     && (!todayKey || (typeof dateKey === 'function' && dateKey(logTime(log)) === todayKey)));
   if(action === 'undo_today'){
-    const target = todayActual[todayActual.length - 1];
+    const target = todayActual.slice().sort((a,b)=>logTime(b)-logTime(a))[0];
     if(!target)return {ok:true, noChange:true, text:`${found.name} has no completion to undo today.`};
     return {
       ok:true,
@@ -2103,6 +2104,13 @@ function assistantAnswerSettings(args, context){
   const kind = assistantNormText(args && args.kind);
   const settings = context.settings || {};
   const native = Boolean(window.TingsNative?.isNative);
+  if(kind === 'assistant'){
+    const replies={greeting:'Hi! What would you like to plan or change?',thanks:'You’re welcome!',
+      identity:'I’m the Tings assistant. I help with your tasks, habits, and plans on this device.',
+      help:assistantUnsupportedText(),joke:'My to-do list and I have a lot in common: we both need a day off.',
+      date:new Date(context.now || Date.now()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})};
+    return {ok:true,text:replies[args.query] || replies.help};
+  }
   const capabilities = {
     calendar:{section:'settings-calendar-body',label:'calendar import',text:'Import meetings from an ICS calendar file or PDF in calendar settings. Review the import before saving. File selection stays on this device.'+(native ? ' Phone calendar sync is also available; choose calendars and allow access in the phone prompt.' : '')},
     reminders:{section:'settings-reminders-body',label:'phone reminders',text:native ? 'Phone reminders support notifications or ringing alarms at the start, end, travel departure and arrival, plus drop warnings. Each item and date can have its own choices. Calendar meetings also support reminders for one date or the series. Notification and exact-alarm access must be allowed on this phone.' : 'Phone notifications and ringing alarms require the Tings Android app. They are unavailable in this browser.'},
@@ -4518,6 +4526,18 @@ function assistantApplyItems(args, session, context){
   };
 }
 
+function assistantValidateNeedleDraftArgs(args, request){
+  if(args?.rhythm && !assistantParseRhythm(args.rhythm))return {error:'Invalid frequency',
+    ask:'How often should it repeat? Please give the full frequency in one phrase.'};
+  if(args?.dueTime != null && args.dueTime !== '' && assistantParseClock(args.dueTime) == null)return {error:'Invalid start time',
+    ask:'I may have confused a date or duration with a clock time. What should the timing be?'};
+  if(args?.durationMinutes != null && !assistantSpokenDurationMatches(request,args.durationMinutes))return {error:'Invalid session length',
+    ask:'Could you give the frequency and session length separately? I may have mixed them up.'};
+  if(args?.create === true && args.kind === 'habit' && !args.rhythm && args.timesPerPeriod == null && args.periodDays == null)return {error:'Missing frequency',
+    ask:'How often should this habit repeat?'};
+  return null;
+}
+
 function assistantExecuteTool(name, args, session, context){
   const catalog = context.catalog;
   const draft = session.draft || assistantEmptyDraft();
@@ -4525,6 +4545,12 @@ function assistantExecuteTool(name, args, session, context){
   if(name === 'ask_user'){
     const question = String(args && args.question || '').trim();
     if(!question)return {ok:false, error:'question is required'};
+    if(!/[?？]/.test(question) && !/^(?:which|what|how|when|where|who|would|could|can|do|did|is|are)\b/i.test(question)){
+      return {ok:false,error:'Ask one specific question rather than returning a statement or greeting.'};
+    }
+    if(assistantNormText(question).replace(/[?？.!]+$/,'') === assistantNormText(session.requestText).replace(/[?？.!]+$/,'')){
+      return {ok:false,error:'Ask a specific clarification question instead of repeating the request.'};
+    }
     const choices = Array.isArray(args.choices) ? args.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
     return {ok:true, ask:question, choices};
   }
@@ -4539,6 +4565,10 @@ function assistantExecuteTool(name, args, session, context){
     return applied;
   }
   if(name === 'draft_batch'){
+    if(session.needleStaged){
+      const invalid=(args?.items || []).map(row=>assistantValidateNeedleDraftArgs({...row,create:true},session.requestText)).find(Boolean);
+      if(invalid)return {ok:false,...invalid};
+    }
     const applied = assistantApplyDraftBatch(args, session, context);
     if(applied.ok){
       session.drafts = applied.drafts;
@@ -4549,10 +4579,9 @@ function assistantExecuteTool(name, args, session, context){
     return applied;
   }
   if(name === 'draft_item' || name === 'draft_setting'){
-    // Validate extracted values instead of silently accepting a default when
-    // this small model outputs an unrelated repetition phrase.
-    if(name === 'draft_item' && session.needleStaged && args?.rhythm && !assistantParseRhythm(args.rhythm)){
-      return {ok:false,error:'The repetition phrase could not be validated. Return the exact frequency in rhythm, or omit it when no frequency was requested.'};
+    if(name === 'draft_item' && session.needleStaged){
+      const invalid=assistantValidateNeedleDraftArgs(args,session.requestText);
+      if(invalid)return {ok:false,...invalid};
     }
     const focusedItem = session.draft && session.draft.name
       && typeof assistantIsItemKind === 'function' && assistantIsItemKind(session.draft.kind);
@@ -4670,6 +4699,13 @@ function assistantExecuteTool(name, args, session, context){
   if(name === 'complete_item' || name === 'plan_item' || name === 'delete_item' || name === 'lookup_item'){
     const spoken = (session.parsed && session.parsed.text) || '';
     let want = (args && args.name) || '';
+    if(name === 'complete_item' && args?.action === 'undo_today' && args.latest === true){
+      const today=dateKey(context.now || Date.now());
+      const latest=context.data.flatMap((habit,index)=>normalizeLogs(habit.logs).filter(log=>!isPlanLog(log) && dateKey(logTime(log)) === today)
+        .map(log=>({habit,index,ts:logTime(log)}))).sort((a,b)=>b.ts-a.ts)[0];
+      if(!latest)return {ok:true,noChange:true,text:'There is no completion to undo today.'};
+      want=latest.habit.name;
+    }
     const pronoun = !String(want).trim()
       || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(want));
     if(pronoun){

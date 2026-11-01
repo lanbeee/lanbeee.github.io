@@ -5,6 +5,7 @@ let engine = null;
 let output = 0;
 let active = null;
 let usedTokens = 0;
+let routeTrace = null;
 const embeddings = new Map();
 const OUTPUT_CAPACITY = 262144;
 const NEEDLE_CONTEXT_BUDGET = 6200;
@@ -52,27 +53,14 @@ function needleSimilarity(query, text){
   return query.reduce((sum,x,i)=>sum + x * vector[i],0);
 }
 
-// Needle's own embedding head retrieves tools and optional fields. This keeps
-// common actions and relevant fields within an 8192-token model context,
-// without a semantic parser or an extra generative classification pass.
-function needleSelectTools(data, selected){
-  const query = needleEmbedding(data.request);
-  const featureKinds=new Set(['calendar','reminders','sharing','widgets']);
-  const pool = (selected || data.tools).filter(t=>t.name !== 'ask_user'
-    && (selected || !featureKinds.has(t.fixed?.kind)));
-  const ranked = pool.map(tool=>({tool,score:needleSimilarity(query,tool.description)}))
-    .sort((a,b)=>b.score-a.score);
-  const open = ranked.filter(row=>selected || !row.tool.closed).map(row=>row.tool);
-  const choices = open.slice(0,3);
-  // Closed aliases are one control surface split so each value has its own
-  // field. Keeping only the nearest sibling forces the value into that field.
-  if(!selected && ranked.slice(0,3).some(row=>row.tool.closed)){
-    for(const row of ranked){
-      if(row.tool.closed && !choices.includes(row.tool))choices.push(row.tool);
-    }
-  }
-  const ask = data.tools.find(t=>t.name === 'ask_user');
+// The model selects tools. Embeddings rank only optional fields inside those
+// selected schemas; they never decide whether an action or feature is relevant.
+function needleSelectTools(data, selected=data.tools){
+  const query=needleEmbedding(data.request);
+  const choices=selected.filter(tool=>tool.name !== 'ask_user');
+  const ask=data.tools.find(tool=>tool.name === 'ask_user');
   if(ask)choices.push(ask);
+  let toolBudget=0;
   const compact = (schema, core=[])=>{
     if(!schema.properties){
       return schema.items ? {...schema,items:compact(schema.items)} : schema;
@@ -84,11 +72,14 @@ function needleSelectTools(data, selected){
     const ranked = entries.filter(([key])=>!keep.has(key))
       .map(([key,value])=>({key,score:needleSimilarity(query,`${key}: ${value.description || key}`)}))
       .sort((a,b)=>b.score-a.score);
-    for(const row of ranked.slice(0,3))keep.add(row.key);
-    return {...schema,properties:Object.fromEntries(entries.filter(([key])=>keep.has(key))
-      .map(([key,value])=>[key,compact(value)]))};
+    for(const row of ranked.slice(0,toolBudget))keep.add(row.key);
+    const ordered=[...new Set([...core,...(schema.required || []),...keep])].filter(key=>schema.properties[key]);
+    return {...schema,properties:Object.fromEntries(ordered.map(key=>[key,compact(schema.properties[key])]))};
   };
-  return choices.map(tool=>({...tool,parameters:compact(tool.parameters,tool.core)}));
+  return choices.map(tool=>{
+    toolBudget=tool.closed || ['add_habit','add_task','create_reminder','get_schedule','get_week_schedule','get_habits','get_tasks'].includes(tool.name) ? 0 : 3;
+    return {...tool,parameters:compact(tool.parameters,tool.core)};
+  });
 }
 
 function needleSplit(request){
@@ -101,19 +92,49 @@ function needleSplit(request){
   return {steps:calls.flatMap(call=>call.arguments?.steps || []).filter(x=>typeof x === 'string')};
 }
 
-// Select the operation with a small, complete menu before exposing its fields.
-// No feature has an exclusive first pass. ask_user is always a valid escape.
+// Choose an operation with identity-only schemas before exposing its fields.
+// Every feature competes with ordinary actions and ask_user can always decline.
 function needleRouteTools(data){
-  const routes=data.tools.map(tool=>tool.name === 'ask_user' ? tool : ({
-    ...tool,parameters:{type:'object',properties:{},required:[]}
-  }));
-  needleInit(data.system,routes);
+  const ask=data.tools.find(tool=>tool.name === 'ask_user');
+  const menu=tools=>tools.map(tool=>{
+    if(tool.name === 'ask_user')return tool;
+    const properties=Object.fromEntries(Object.entries(tool.parameters?.properties || {}).filter(([key,value])=>
+      ['name','query','date','kind','action','search'].includes(key) && value.type === 'string'));
+    return {...tool,parameters:{type:'object',properties,required:(tool.parameters?.required || []).filter(key=>properties[key])}};
+  });
+  const groups=[];
+  for(const tool of data.tools){
+    const name=tool.closed && tool.canonical === 'draft_item' ? 'change_item' : tool.name;
+    if(groups.some(row=>row.name === name))continue;
+    groups.push({...tool,name,description:name === 'change_item'
+      ? 'Change or rename an existing task or habit: duration, frequency, weekdays, hours, due date, priority, type, or other settings.' : tool.description});
+  }
+  const system=data.routingSystem || data.system;
+  needleInit(system,menu(groups));
   const route=needleComplete(data.request);
-  const calls=[...(route.function_calls || []),...(route.suppressed_calls || [])];
-  const chosen=calls.map(call=>data.tools.find(tool=>tool.name === call.name))
-    .filter(tool=>tool && tool.name !== 'ask_user');
-  if(!chosen.length)return {result:route,tools:routes};
-  return {tools:needleSelectTools(data,[...new Set(chosen)].slice(0,2))};
+  const candidates=raw=>[...(raw.function_calls || []),...(raw.suppressed_calls || [])];
+  routeTrace={confidence:route.confidence,reasoning:route.reasoning,tools:candidates(route).map(call=>call.name)};
+  const selected=[];
+  for(const call of candidates(route)){
+    let tool=data.tools.find(tool=>tool.name === call.name && tool.name !== 'ask_user');
+    if(!tool)continue;
+    if(tool.name === 'change_item'){
+      const edits=data.tools.filter(row=>row.name === 'change_item' || (row.closed && row.canonical === 'draft_item') || row.name === 'ask_user');
+      needleInit(system,menu(edits));
+      const detail=needleComplete(data.request);
+      routeTrace.detail={confidence:detail.confidence,reasoning:detail.reasoning,tools:candidates(detail).map(call=>call.name)};
+      tool=candidates(detail).map(call=>edits.find(row=>row.name === call.name)).find(Boolean);
+      if(tool?.name === 'ask_user')return {result:detail,tools:edits};
+    }
+    if(tool)selected.push(tool);
+  }
+  if(!selected.length)return {result:route,tools:ask ? [ask] : []};
+  const tools=needleSelectTools(data,[...new Set(selected)].slice(0,2));
+  const concrete=tools.filter(tool=>tool.name !== 'ask_user');
+  if(concrete.length && concrete.every(tool=>!Object.keys(tool.parameters.properties || {}).length)){
+    return {tools,result:{success:true,confidence:route.confidence,function_calls:concrete.map(tool=>({name:tool.name,arguments:{}}))}};
+  }
+  return {tools};
 }
 
 function needleRun(data){
@@ -123,15 +144,36 @@ function needleRun(data){
     && active.results.every((r,i)=>data.results[i] === r)
     && (data.results.length > active.results.length || data.repair);
   if(!same){
-    const route=needleRouteTools(data);
-    const tools=route.tools;
+    // Start with a few complete action schemas. Unlike identity-only routing,
+    // these let Needle recognize ordinary commands by their actual value slots.
+    const query=needleEmbedding(data.request);
+    const ranked=data.tools.filter(tool=>tool.name !== 'ask_user' && tool.canonical !== 'answer_settings')
+      .map(tool=>({tool,score:needleSimilarity(query,tool.description)})).sort((a,b)=>b.score-a.score);
+    const focused=ranked.filter(row=>!row.tool.closed).slice(0,3).map(row=>row.tool);
+    if(ranked.slice(0,3).some(row=>row.tool.closed))focused.push(...ranked.filter(row=>row.tool.closed).slice(0,2).map(row=>row.tool));
+    // Basic creation and reads stay visible. Retrieval must not force an
+    // ordinary request into a neighboring operation with a similar value slot.
+    focused.push(...data.tools.filter(tool=>['add_habit','add_task','get_schedule','get_week_schedule','get_habits','get_tasks'].includes(tool.name)));
+    let tools=needleSelectTools(data,[...new Set(focused)]);
     if(!tools?.length){active=null;return {success:true,function_calls:[]};}
+    needleInit(data.system,tools);
+    let result=needleComplete(data.request);
+    const candidates=[...(result.function_calls || []),...(result.suppressed_calls || [])];
+    // The host validates and normalizes candidate values. A converted unit or
+    // frequency can be grounded there even when the native literal check held it.
+    const actionable=candidates.some(call=>call.name !== 'ask_user' && tools.some(tool=>tool.name === call.name));
+    routeTrace=null;
+    if(!actionable && !data.results.length){
+      const route=needleRouteTools(data);
+      tools=route.tools;
+      result=route.result;
+      if(!result){needleInit(data.system,tools);result=needleComplete(data.request);}
+    }
     active={key,tools,results:[]};
-    let result=route.result;
-    if(!result){needleInit(data.system,tools);result=needleComplete(data.request);}
     for(const row of data.results.slice(-2))result=needleComplete(needleResultFacts(row));
     if(data.repair)result=needleComplete(data.repair);
     active.results=data.results.slice();
+    result._route=routeTrace;
     return result;
   }
   let result;
@@ -179,6 +221,14 @@ self.onmessage = event=>{
         if(!engine)throw new Error('Needle is not loaded.');
         self.postMessage({id:data.id,result:needleRun(data)});
       }
-    }catch(err){ active = null; self.postMessage({id:data.id,error:String(err.message || err)}); }
+    }catch(err){
+      active=null;
+      const error=String(err.message || err);
+      if(data.type === 'complete' && /token budget|context|too many settings/i.test(error)){
+        self.postMessage({id:data.id,result:{success:true,_needleIssue:error,function_calls:[{name:'ask_user',arguments:{
+          question:'Could you restate this part in one short sentence? I couldn’t reliably finish reading it.'
+        }}]}});
+      }else self.postMessage({id:data.id,error});
+    }
   });
 };

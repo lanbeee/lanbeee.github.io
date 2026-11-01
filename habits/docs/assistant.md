@@ -46,18 +46,35 @@ between parts. A clarification retains the remaining queue; a failure keeps work
 and exposes a retry of the unfinished part. Cancelling or clearing focus drops
 the queue. No workflow operation saves before normal confirmation.
 
-Calendar import, display pairing and widgets have a dedicated model discovery
-pass with a tiny read-only toolset. After the focused action pass declines a
-request, another small-schema pass sees settings and saved-item query tools. The worker
-uses this route for settings/features and saved-item queries. Ordinary reminder tasks keep their
-focused action schemas, so phone-reminder setup does not steal task creation. Nested filters and bulk-change
-groups can now be selected rather than being excluded from Needle's grammar.
-Fixed alias arguments are removed from both properties and required fields.
-Grounded suppressed writes can stage a preview only on the first pass. Suppressed
-settings reads can return verified feature information; other suppressed reads,
-negations and ungrounded arguments are refused. Tool results continue the native
-model conversation without the large server-model steering prose. Replay and
-context budgets are bounded.
+Needle first tries a few complete action schemas retrieved by its own embedding
+head. If that pass declines, an identity-only menu exposes ordinary actions,
+settings, features and saved-item queries together, with `ask_user` available.
+Only the selected schemas are expanded for extraction. Item edits get a separate
+small control menu. Features have no privileged first pass; a capability tool
+also needs a quoted feature word grounded in the actual request. This validates
+model output rather than routing natural language with a parser.
+
+Routing sees compact item identities, focus and clarification context. Embeddings
+also rank optional fields inside selected schemas. Field order and short
+descriptions matter: frequency precedes duration, dates and clocks have separate
+slots, and illustrative names or quantities must not become extraction evidence.
+
+Needle confidence is retained, including the routing passes. Below 0.7, or for
+a suppressed candidate, the assistant asks about the specific interpretation
+before executing tools. **Use this interpretation** approves only those tool
+arguments. Normal validation and the separate Save/log/plan/delete confirmation
+still follow. A typed correction clears the old proposal. Native negation and
+ungrounded arguments remain blocked; equivalent spoken lengths and normalized
+frequencies can be validated without inventing a field. Missing habit frequency,
+invalid units and empty tool responses ask a short question instead of waiting
+for repeated failures. Context exhaustion returns a clarification and preserves
+the unfinished workflow. Diagnostics retain route, confidence and runtime errors.
+
+Unsaved drafts survive follow-up messages, including dates and stable draft
+identity. Prior drafts remain references; an unanswered later part cannot reuse
+an old preview as a successful result. Clarification answers retain the original
+request in the model envelope. The phone UI shows at most four wrapping choices
+and retires earlier choices and confirmations when a new response arrives.
 
 The base Needle weights still sometimes omit requested fields or choose an
 incorrect argument on advanced requests, including opportunity recurrence,

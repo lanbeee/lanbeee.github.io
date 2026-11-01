@@ -81,7 +81,7 @@ function assert(ok, message){
       let terminated = false;
       let reply = {success:true,confidence:0.9,
         function_calls:[{name:'add_task',arguments:{name:'Mom'}}],
-        suppressed_calls:[{name:'import_calendar',arguments:{}}]};
+        suppressed_calls:[{name:'import_calendar',arguments:{subject:'calendar'}}]};
       globalThis.Worker = class {
         postMessage(data){
           sent.push(data);
@@ -94,7 +94,7 @@ function assert(ok, message){
         const req = {messages:[{role:'user',content:JSON.stringify({request:'Remind me to call mom',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}],
           tools:assistantOllamaTools(['draft_item','answer_schedule','answer_settings']),step:'extract'};
         const result = await assistantComplete(req);
-        reply = {success:true,function_calls:[{name:'change_frequency',arguments:{name:'Concentricity check',rhythm:'3 times a week'}}]};
+        reply = {success:true,function_calls:[{name:'change_frequency',arguments:{name:'Concentricity check',frequency:'3 times a week'}}]};
         const frequency = await assistantComplete(req);
         const feedback = 'You thought but did not call a tool. Call the matching tool now.';
         await assistantComplete({...req,think:false,messages:[...req.messages,{role:'user',content:feedback}]});
@@ -110,15 +110,21 @@ function assert(ok, message){
         const converted = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to 1.5 hours',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
         reply = {success:true,function_calls:[{name:'change_duration',arguments:{durationMinutes:'two hours'}}]};
         const words = await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Change the duration to two hours',catalog:{date:{iso:'2026-11-01',weekday:'Sun'}}})}]});
+        reply={success:true,confidence:0.8,function_calls:[{name:'import_calendar',arguments:{subject:'calendar'}}]};
+        const feature=await assistantComplete({...req,messages:[{role:'user',content:JSON.stringify({request:'Import my calendar',catalog:{date:{iso:'2026-11-01'}}})}]});
         assistantAbortInFlight();
-        return {calls:result.message.tool_calls,held:held.message.tool_calls,continued:continued.message.tool_calls,
+        return {feature:feature.message.tool_calls,calls:result.message.tool_calls,held:held.message.tool_calls,continued:continued.message.tool_calls,
           frequency:frequency.message.tool_calls,repair,invalidTurn,
           ungrounded:ungrounded.message.tool_calls,
           converted:converted.message.tool_calls,words:words.message.tool_calls,
           system:sent.find(m=>m.type === 'complete').system,terminated};
       }finally{ globalThis.Worker = OriginalWorker; }
     });
-    assert(transport.calls.length === 2 && transport.calls[0].function.name === 'draft_item' && transport.calls[1].function.name === 'answer_settings','transport maps writes to previews and grounded held reads to app facts');
+    assert(transport.calls.length === 1 && transport.calls[0].function.name === 'draft_item',
+      'an unrelated capability candidate cannot accompany an ordinary task without a quoted feature in the request');
+    assert(transport.feature.length===1 && transport.feature[0].function.name==='answer_settings'
+      && transport.feature[0].function.arguments.kind==='calendar' && !('subject' in transport.feature[0].function.arguments),
+      'an explicitly named feature routes to verified facts and keeps extraction evidence out of app arguments');
     assert(transport.calls[0].function.arguments.kind === 'task' && transport.calls[0].function.arguments.create,'task alias retains its model-selected kind');
     assert(transport.frequency[0].function.name === 'draft_item' && transport.frequency[0].function.arguments.create === false
       && transport.frequency[0].function.arguments.kind === 'habit' && transport.frequency[0].function.arguments.rhythm === '3 times a week',
@@ -139,10 +145,10 @@ function assert(ok, message){
     const workerScope = vm.createContext({importScripts:()=>{},self:{},prompts:[]});
     vm.runInContext(fs.readFileSync(require.resolve('../js/assistant-needle-worker.js'),'utf8'),workerScope);
     vm.runInContext(`
-      needleInit=()=>{};
+      needleInit=()=>{};needleEmbedding=()=>[1];needleSimilarity=()=>1;
       needleComplete=text=>{prompts.push(text);return {function_calls:[]};};
       needleSelectTools=data=>data.tools;
-      needleRouteTools=()=>[];
+      needleRouteTools=data=>({tools:data.tools});
       var retryData={request:'Can you make Concentricity check 3 times a week',system:'date: 2026-11-01',
         tools:[{name:'change_frequency',canonical:'draft_item'}],results:[]};
       needleRun(retryData);
@@ -152,6 +158,16 @@ function assert(ok, message){
     `,workerScope);
     assert(JSON.stringify(workerScope.prompts) === JSON.stringify(['Call the matching tool now.','Call the matching tool now.']),
       'successive no-tool repairs continue inference with feedback instead of replaying the same failed prompt');
+
+    const runtimeMessages=[];
+    const runtimeScope=vm.createContext({importScripts:()=>{},self:{postMessage:value=>runtimeMessages.push(value)}});
+    vm.runInContext(fs.readFileSync(require.resolve('../js/assistant-needle-worker.js'),'utf8'),runtimeScope);
+    vm.runInContext(`engine={};needleRun=()=>{throw new Error('tool call truncated: token budget exhausted');};
+      self.onmessage({data:{type:'complete',id:7}});`,runtimeScope);
+    await vm.runInContext('queue',runtimeScope);
+    assert(runtimeMessages[0]?.result?.function_calls?.[0]?.name === 'ask_user'
+      && runtimeMessages[0].result._needleIssue.includes('token budget'),
+      'a runtime budget failure becomes a short clarification while retaining its diagnostic reason');
 
     const selectionScope = vm.createContext({importScripts:()=>{},self:{}});
     vm.runInContext(fs.readFileSync(require.resolve('../js/assistant-needle-worker.js'),'utf8'),selectionScope);
@@ -172,13 +188,13 @@ function assert(ok, message){
         core:['name'],parameters:{type:'object',properties:{name:{type:'string',description:'title'}},required:[]}});
       const tools=[closed('change_availability'),closed('change_frequency'),closed('change_duration'),open('get_schedule'),open('add_habit'),open('change_item'),
         {name:'ask_user',description:'ask',core:['question'],parameters:{type:'object',properties:{question:{type:'string',description:'question'}},required:['question']}}];
-      grouped=needleSelectTools({request:'seven times in ten days',tools}).map(tool=>tool.name);
+      grouped=needleSelectTools({request:'seven times in ten days',tools},tools.filter(tool=>tool.closed)).map(tool=>tool.name);
       const readTools=tools.map(tool=>tool.closed?{...tool,description:'unrelated control'}:tool);
-      reads=needleSelectTools({request:'what is on my schedule',tools:readTools}).map(tool=>tool.name);
+      reads=needleSelectTools({request:'what is on my schedule',tools:readTools},readTools.filter(tool=>tool.name === 'get_schedule')).map(tool=>tool.name);
     `,selectionScope);
     assert(selectionScope.grouped.includes('change_frequency') && selectionScope.grouped.includes('change_duration')
-      && selectionScope.grouped.includes('change_availability') && selectionScope.grouped.includes('get_schedule'),
-      'one relevant closed control brings its sibling controls along');
+      && selectionScope.grouped.includes('change_availability') && !selectionScope.grouped.includes('get_schedule'),
+      'the model-selected control menu keeps its fields without gaining unrelated tools');
     assert(!selectionScope.reads.includes('change_frequency') && selectionScope.reads.includes('get_schedule')
       && selectionScope.reads.includes('ask_user'),
       'a read does not gain edit controls when none of them rank');
@@ -202,7 +218,7 @@ function assert(ok, message){
       const OriginalWorker = Worker;
       const mapped = {};
       const replies = [
-        ['change_frequency',{rhythm:'3 times in 7 days'}],
+        ['change_frequency',{frequency:'3 times in 7 days'}],
         ['change_duration',{durationMinutes:'30 minutes'}],
         ['change_availability',{weekdays:'Tuesday and Thursday',windowText:'between 5pm and 7pm'}],
         ['rename_item',{newName:'Morning exercise'}],
@@ -272,10 +288,10 @@ function assert(ok, message){
         deadline:run('task',{create:false,due:'tomorrow',dueTime:'3pm'})
       },expectedDue:assistantParseDue('tomorrow',now)};
     });
-    const sameKeys = (name, expected)=>JSON.stringify(basics.schemas[name]) === JSON.stringify(expected);
+    const sameKeys = (name, expected)=>JSON.stringify(basics.schemas[name]) === JSON.stringify(expected.slice().sort());
     assert(basics.schemas.durationType === 'string' && basics.schemas.addDurationType === 'string',
       'Needle duration fields accept the user\'s words instead of an integer minute count');
-    assert(sameKeys('frequency',['name','rhythm']) && sameKeys('duration',['durationMinutes','name'])
+    assert(sameKeys('frequency',['name','frequency']) && sameKeys('duration',['durationMinutes','name'])
       && sameKeys('availability',['name','weekdays','windowText']) && sameKeys('rename',['name','newName'])
       && sameKeys('type',['kind','name']) && sameKeys('kind',['habitKind','name'])
       && sameKeys('deadline',['due','dueTime','name']),
@@ -354,6 +370,17 @@ function assert(ok, message){
     assert(errors.length === 0,`no page errors (${errors.join('; ')})`);
     if(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH){
       const live = await browser.newPage({viewport:{width:390,height:844}});
+      await live.addInitScript(()=>{
+        window.needleTestTurn=async(text,opts={})=>{
+          const session=opts.session || assistantCreateSession();
+          let out=await runAssistantTurn(text,{...opts,session});
+          for(let i=0;out.proposal && i<3;i++){
+            session.needleApproved=out.proposal;
+            out=await runAssistantTurn(out.proposal.request,{...opts,session});
+          }
+          return out;
+        };
+      });
       let fetches = 0;
       await live.route('https://huggingface.co/**',route=>{
         fetches++;
@@ -364,12 +391,12 @@ function assert(ok, message){
       await live.evaluate(()=>patchLocalAssistant({localAssistant:true,localAssistantProvider:'needle'}));
       assert(await live.evaluate(()=>assistantNeedleDownload()),'real pinned model and WASM pass integrity checks');
       const outcomes = await live.evaluate(async()=>{
-        const task = await runAssistantTurn('Remind me to call mom tomorrow');
-        const habit = await runAssistantTurn('Add a 20 minute Walk habit every day');
+        const task = await needleTestTurn('Remind me to call mom tomorrow');
+        const habit = await needleTestTurn('Add a 20 minute Walk habit every day');
         const commit = habit.draft ? assistantCommitDraft(habit.draft) : {ok:false};
-        const edit = await runAssistantTurn('Change Walk to 45 minutes');
-        const schedule = await runAssistantTurn('What is on my schedule today?');
-        return {task:{type:task.type,kind:task.draft?.kind,name:task.draft?.name},
+        const edit = await needleTestTurn('Change Walk to 45 minutes');
+        const schedule = await needleTestTurn('What is on my schedule today?');
+        return {task:{type:task.type,kind:task.draft?.kind,name:task.draft?.name,question:task.question,trace:task.debug?.filter(row=>row.t==='model').slice(-2)},
           habit:{type:habit.type,kind:habit.draft?.kind,duration:habit.draft?.durationMinutes,times:habit.draft?.timesPerPeriod,period:habit.draft?.periodDays},
           commit:commit.ok,edit:{type:edit.type,name:edit.draft?.name,duration:edit.draft?.durationMinutes},
           schedule:{type:schedule.type,text:schedule.text}};
@@ -382,11 +409,11 @@ function assert(ok, message){
       const frequency = await live.evaluate(async()=>{
         save([...load(),{hid:'needle-concentricity',name:'Concentricity check',type:'keepup',target:7,durationMinutes:20,logs:[]}]);
         const before = JSON.stringify(load());
-        const named = await runAssistantTurn('Can you make Concentricity check 3 times a week');
+        const named = await needleTestTurn('Can you make Concentricity check 3 times a week');
         const session = assistantCreateSession();
         const index = load().findIndex(h=>h.hid === 'needle-concentricity');
         session.draft = assistantHabitToDraft(load()[index],index,loadSortSettings());
-        const focused = await runAssistantTurn('Make it 3 times a week',{session});
+        const focused = await needleTestTurn('Make it 3 times a week',{session});
         const summarize = out=>({type:out.type,hid:out.draft?.hid,name:out.draft?.name,
           times:out.draft?.timesPerPeriod,days:out.draft?.periodDays,duration:out.draft?.durationMinutes});
         const unchanged = before === JSON.stringify(load());
@@ -404,14 +431,14 @@ function assert(ok, message){
         `frequency changes only after confirmation and update the existing item without duplication (${JSON.stringify(frequency)})`);
       await live.evaluate(items=>save(items),beforeFrequency);
       const compound=await live.evaluate(async()=>{
-        const out=await runAssistantTurn('Remind me to call mom tomorrow. Add a task to buy milk tomorrow. What is on my schedule tomorrow?');
+        const out=await needleTestTurn('Remind me to call mom tomorrow. Add a task to buy milk tomorrow. What is on my schedule tomorrow?');
         return {type:out.type,names:out.drafts?.map(d=>d.name),kinds:out.drafts?.map(d=>d.kind),answer:out.alsoText,text:out.text};
       });
       assert(compound.type === 'preview' && compound.names?.length === 2 && compound.kinds.every(k=>k === 'task') && compound.answer,
         `real Needle handles two task requests and a schedule question (${JSON.stringify(compound)})`);
       const features=await live.evaluate(async()=>{
-        const calendar=await runAssistantTurn('Import my meetings from an ICS calendar file');
-        const display=await runAssistantTurn('How do I pair a glance display?');
+        const calendar=await needleTestTurn('Import my meetings from an ICS calendar file');
+        const display=await needleTestTurn('How do I pair a glance display?');
         return {calendar:{type:calendar.type,nav:calendar.navigation},display:{type:display.type,nav:display.navigation}};
       });
       assert(features.calendar.type === 'say' && features.calendar.nav?.[0]?.section === 'settings-calendar-body','real Needle discovers calendar import');
@@ -422,7 +449,7 @@ function assert(ok, message){
       await live.reload({waitUntil:'load'});
       await waitForAssistant(live);
       const offline = await live.evaluate(async()=>{
-        const out = await runAssistantTurn('Remind me to call mom tomorrow');
+        const out = await needleTestTurn('Remind me to call mom tomorrow');
         return {type:out.type,name:out.draft?.name,text:out.text};
       });
       assert(offline.type === 'preview' && /mom/i.test(offline.name),`real Needle works after an offline page reload (${JSON.stringify(offline)})`);

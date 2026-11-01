@@ -243,24 +243,36 @@ function assistantNeedleTools(source){
       exposed = spec.only.slice();
     }
     out.push({name,description,parameters,core:exposed,canonical:original.function.name,fixed:fixed || {},
-      closed:Boolean(spec && spec.only)});
+      closed:Boolean(spec && spec.only) || original.function.name === 'answer_settings'});
   };
   for(const original of source){
     const name = original.function.name;
     if(name === 'classify_intent')continue;
     if(name === 'draft_item'){
-      add(original,'add_habit','Add a repeating habit. Walk every day, exercise every Tuesday, study five times a week.',
-        ['name','rhythm','durationMinutes','windowText'],{kind:'habit',create:true});
-      add(original,'add_task','Add a one-off task or reminder. Remind me to call mom tomorrow.',
+      add(original,'add_habit','Add a repeating habit.',
+        ['name','rhythm','durationMinutes'],{kind:'habit',create:true});
+      const habit=out[out.length-1].parameters.properties;
+      habit.frequency={type:'string',description:'How often it repeats: 3 times a week, every two days, daily, Sundays. Copy the full frequency phrase.'};
+      delete habit.rhythm;
+      out[out.length-1].core=out[out.length-1].core.map(key=>key === 'rhythm' ? 'frequency' : key);
+      out[out.length-1].argumentNames={frequency:'rhythm'};
+      out[out.length-1].parameters.required=['name','frequency'];
+      habit.durationMinutes.description='Length of ONE session, only when the user names minutes or hours. Never a repetition count or period.';
+      add(original,'add_task','Add a one-off task or reminder.',
         ['name','due','dueTime','durationMinutes'],{kind:'task',create:true});
+      const task=out[out.length-1];
+      task.parameters.properties.date=task.parameters.properties.due;delete task.parameters.properties.due;
+      task.parameters.properties.time=task.parameters.properties.dueTime;delete task.parameters.properties.dueTime;
+      task.core=['name','date','time','durationMinutes'];task.argumentNames={date:'due',time:'dueTime'};
+      out.push({...task,name:'create_reminder',description:'Create a task to remind the user to do something.'});
       add(original,'change_item','Change the priority, topics, weather, or places of one existing task or habit.',
-        ['name'],{create:false});
-      add(original,'change_frequency','Change how many times an existing task or habit repeats. Put the whole phrase in rhythm, such as daily, weekly, or a number of times in a number of days.',
+        ['name','priority','placeNames','weatherText','topics'],{create:false});
+      add(original,'change_frequency','Change how often an existing task or habit repeats.',
         null,{create:false,kind:'habit'},{only:['name','rhythm'],required:['rhythm'],fields:{
           name:itemName(),
-          rhythm:{type:'string',description:'The whole repetition phrase, such as daily or a number of times in a number of days.'}
+          rhythm:{type:'string',description:'The full repetition phrase copied from the request.'}
         }});
-      add(original,'change_duration','Change how long an existing task or habit lasts. Pass the duration in the user\'s words, such as 30 minutes, 1.5 hours, or half an hour.',
+      add(original,'change_duration','Change how long one session of an existing task or habit lasts.',
         null,{create:false},{only:['name','durationMinutes'],required:['durationMinutes'],fields:{name:itemName()}});
       add(original,'change_availability','Change which weekdays or clock hours an existing task or habit may use. This is not how many times it repeats.',
         null,{create:false},{only:['name','weekdays','windowText'],fields:{
@@ -280,25 +292,14 @@ function assistantNeedleTools(source){
       add(original,'change_deadline','Change the due date or start time of an existing task. Due tomorrow, next Friday, or at 3pm.',
         null,{create:false},{only:['name','due','dueTime'],fields:{name:itemName()}});
     }else if(name === 'answer_schedule'){
-      const variants = [
-        ['get_schedule','Get the schedule or agenda for a day. What is on my schedule today? What do I have tomorrow?','day'],
-        ['get_week_schedule','Get the schedule or agenda for this week.','week'],
-        ['get_free_time','Find free time or available gaps in the schedule.','free'],
-        ['get_freest_day','Find the day with the most free time this week.','freest'],
-        ['get_missed_items','List the tasks and habits missed today.','missed'],
-        ['check_schedule_conflict','Check what a proposed time window would conflict with.','conflict']
-      ];
-      for(const [alias,description,query] of variants)add(original,alias,description,['date'],{query});
+      add(original,'get_schedule','Read the planned agenda for one date.',
+        ['date'],{query:'day'});
+      add(original,'get_week_schedule','Read the agenda for the whole week.',[],{query:'week'});
+      add(original,'analyze_schedule','Analyze free time, missed items, the freest day or schedule conflicts.',['query','date'],null);
     }else if(name === 'answer_weather'){
-      const variants = [
-        ['get_weather','Get the weather forecast. Will it rain today?','day'],
-        ['get_weather_window','Get the weather forecast between two times.','window'],
-        ['find_weather_hours','Find the hours with the best weather or lowest wind or rain.','hours'],
-        ['check_item_weather','Check whether the weather suits a saved habit.','item'],
-        ['compare_weather','Compare the weather at two different times.','compare'],
-        ['find_best_weather','Find the best weather window this week for a saved habit.','best']
-      ];
-      for(const [alias,description,query] of variants)add(original,alias,description,['date','start','end','name'],{query});
+      add(original,'get_weather','Read the weather forecast for one date.',
+        ['date'],{query:'day'});
+      add(original,'analyze_weather','Compare weather times, find suitable hours, or check weather for a habit.', ['query','date','start','end','name'],null);
     }else if(name === 'answer_settings'){
       for(const [alias,description,kind] of [
         ['get_settings','List saved places, weather profiles, busy times or topics.',null],
@@ -306,8 +307,22 @@ function assistantNeedleTools(source){
         ['phone_reminders','Set up phone reminders, notifications, ringing alarms or travel alerts.','reminders'],
         ['pair_display','Pair or sync a shared display, personal clone or glance display.','sharing'],
         ['home_widget','Add a Tings Android home-screen widget.','widgets']
-      ])add(original,alias,description,[],kind ? {kind,purpose:'answer'} : null);
+      ]){
+        add(original,alias,description,[],kind ? {kind,purpose:'answer'} : null);
+        if(kind){
+          const tool=out[out.length-1];
+          const subjects={calendar:['calendar','ics','ical','pdf'],reminders:['notification','notifications','alarm','alarms','phone reminders','travel alerts'],
+            sharing:['pair','pairing','display','glance','clone','qr'],widgets:['widget','widgets']};
+          tool.parameters.properties.subject={type:'string',enum:subjects[kind],description:'The feature word actually present in the request.'};
+          tool.parameters.required=['subject'];tool.core=['subject'];tool.evidence=['subject'];
+        }
+      }
+      add(original,'assistant_info','Introduce yourself, explain your capabilities, or reply to a greeting or thanks.',
+        null,{kind:'assistant'},{only:['query'],required:['query'],fields:{query:{type:'string',enum:['greeting','thanks','identity','help','joke','date']}}});
     }else{
+      if(name === 'complete_item'){
+        add(original,'undo_last_completion','Undo the most recent completion.',[],{action:'undo_today',latest:true},{only:[],required:[]});
+      }
       const aliases = {
         draft_setting:['save_setting','Create or change a place, busy time, topic or weather profile.'],
         draft_batch:['add_items','Add several new tasks or habits from a list.'],
@@ -323,14 +338,27 @@ function assistantNeedleTools(source){
         delete_item:['delete_item','Delete an existing task or habit.'],
         ask_user:['ask_user','Ask a short question when the request is unclear.']
       };
+      if(name === 'answer_items'){
+        add(original,'get_habits','List or count your saved repeating habits.',
+          ['aggregate','search'],{query:'list',kind:'habit'});
+        add(original,'get_tasks','List or count your saved one-off tasks.',
+          ['aggregate','search'],{query:'list',kind:'task'});
+      }
       const alias = aliases[name];
-      const core = name === 'apply_items' ? ['action','search','names','durationMinutes','priority','snooze','placeNames']
+      const core = name === 'answer_items' ? ['kind','search','status','aggregate'] : name === 'apply_items' ? ['action','search','names','durationMinutes','priority','snooze','placeNames']
         : name === 'draft_setting' ? ['kind','name','newName','weatherText','address','windowText','days']
         : name === 'complete_item' ? ['name','action','minutes','value','note']
         : name === 'plan_item' ? ['name','action','date','time','place']
         : ['name','query','date','kind','action','question','search','purpose'];
-      if(alias)add(original,alias[0],alias[1],core);
+      if(alias)add(original,alias[0],alias[1],core,name === 'answer_items' ? {query:'list'} : null);
     }
+  }
+  const frequency=out.find(tool=>tool.name === 'change_frequency');
+  if(frequency){
+    frequency.parameters.properties.frequency=frequency.parameters.properties.rhythm;
+    delete frequency.parameters.properties.rhythm;
+    frequency.parameters.required=['frequency'];frequency.core=['name','frequency'];
+    frequency.argumentNames={frequency:'rhythm'};
   }
   return out;
 }
@@ -352,9 +380,10 @@ function assistantNeedleTurn(req){
   // The host owns draft merging and lookup. Keep only the facts needed to
   // resolve references here; replaying an earlier request can make this tiny
   // model perform that earlier action instead of the new question.
-  const facts = {currentDraft:draft ? {name:draft.name,kind:draft.kind,durationMinutes:draft.durationMinutes,rules:draft.rules} : undefined,
-    recent:recent ? {referent:recent.referent,items:recent.items,say:recent.say} : undefined,
-    places:catalog.places, habits:catalog.habits, weather:catalog.weather, topics:catalog.topics};
+  const facts = {currentDraft:draft ? {name:draft.name,kind:draft.kind,durationMinutes:draft.durationMinutes,rhythm:draft.timesPerPeriod && `${draft.timesPerPeriod} times in ${draft.periodDays} days`,due:draft.dueDate != null ? dateKey(draft.dueDate) : undefined,dueTime:draft.dueTime,rules:draft.rules} : undefined,
+    recent:recent ? {referent:recent.referent,items:recent.items,answer:recent.answer,tools:recent.tools} : undefined,
+    clarification:envelope.clarification,
+    places:catalog.places?.map(row=>({name:row.name})), habits:catalog.habits?.map(row=>({name:row.name,type:row.type})), weather:catalog.weather?.map(row=>({name:row.name})), topics:catalog.topics};
   const date = catalog.date?.iso || catalog.date || new Date().toLocaleDateString('en-CA');
 
   const results = messages.filter(m=>m.role === 'tool').map(m=>m.content);
@@ -366,10 +395,11 @@ function assistantNeedleTurn(req){
   const invalid = feedback.match(/^That tool call was invalid \(([\s\S]*)\)\./);
   const repair = feedback ? JSON.stringify({ok:false,
     error:invalid ? invalid[1] : 'No valid tool call was returned.',request:envelope.request}) : '';
-  return {request:envelope.request, system, results, repair};
+  const routingSystem=`date: ${date}; assistant: Tings; user: ${JSON.stringify({currentDraft:facts.currentDraft,recent:facts.recent,clarification:facts.clarification,habits:facts.habits,places:facts.places})}`;
+  return {request:envelope.request,system,routingSystem,results,repair};
 }
 
-function assistantNeedleSpokenDurations(call, request, ungrounded){
+function assistantNeedleGroundedArguments(call, request, ungrounded){
   if(typeof assistantSpokenDurationMatches !== 'function')return false;
   const prefix = `${call.name}.`;
   const bad = ungrounded.filter(field=>field.startsWith(prefix));
@@ -377,7 +407,12 @@ function assistantNeedleSpokenDurations(call, request, ungrounded){
   return bad.every(field=>{
     const key = field.slice(prefix.length);
     if(!key || key.includes('.') || !call.arguments || !Object.prototype.hasOwnProperty.call(call.arguments, key))return false;
-    return assistantSpokenDurationMatches(request, call.arguments[key]);
+    if(key === 'frequency' || key === 'rhythm'){
+      const spoken=assistantParseRhythm(request),value=assistantParseRhythm(call.arguments[key]);
+      return Boolean(spoken && value && spoken.timesPerPeriod === value.timesPerPeriod && spoken.periodDays === value.periodDays
+        && JSON.stringify(spoken.weekdays || []) === JSON.stringify(value.weekdays || []));
+    }
+    return ASSISTANT_SPOKEN_DURATION_FIELDS.has(key) && assistantSpokenDurationMatches(request, call.arguments[key]);
   });
 }
 
@@ -395,7 +430,7 @@ async function assistantNeedleComplete(req){
   // negated actions are refused.
   const ungrounded = raw.validation?.ungrounded || [];
   const previewTools = new Set(['draft_item','draft_setting','draft_batch','apply_items','complete_item','plan_item','delete_item']);
-  const safeReads = new Set(['answer_settings']);
+  const safeReads = new Set(['answer_settings','answer_items','answer_schedule','answer_weather','lookup_item','find_item']);
   const held = (raw.suppressed_calls || []).filter(call=>{
     const canonical=tools.find(t=>t.name === call.name)?.canonical;
     return safeReads.has(canonical) || (!turn.results.length && previewTools.has(canonical));
@@ -405,17 +440,25 @@ async function assistantNeedleComplete(req){
   const calls = candidates.filter(call=>{
     const key = JSON.stringify(call);
     const prefix = `${call.name}.`;
+    const tool=tools.find(tool=>tool.name === call.name);
+    if((tool?.evidence || []).some(key=>typeof call.arguments?.[key] !== 'string' || !call.arguments[key].trim()
+      || !(' '+turn.request.toLowerCase().split(/[^a-z0-9]+/).join(' ')+' ').includes(' '+call.arguments[key].toLowerCase().split(/[^a-z0-9]+/).join(' ')+' ')))return false;
     const invented = ungrounded.some(field=>field.startsWith(prefix))
-      && !assistantNeedleSpokenDurations(call, turn.request, ungrounded);
+      && !assistantNeedleGroundedArguments(call, turn.request, ungrounded);
     if(!tools.some(t=>t.name === call.name) || raw.validation?.negation || seen.has(key) || invented)return false;
     seen.add(key);
     return true;
   });
+  const scores=[raw.confidence,raw._route?.confidence,raw._route?.detail?.confidence].filter(value=>typeof value === 'number' && Number.isFinite(value));
+  const confidence=scores.length ? Math.min(...scores) : undefined;
   return {message:{role:'assistant', content:'', thinking:raw.reasoning || '',
     tool_calls:calls.map((call,i)=>{
       const tool = tools.find(t=>t.name === call.name);
-      const args = {...call.arguments,...tool.fixed};
+      const extracted=Object.fromEntries(Object.entries(call.arguments || {}).filter(([key])=>!tool.evidence?.includes(key)).map(([key,value])=>[tool.argumentNames?.[key] || key,value]));
+      const args = {...extracted,...tool.fixed};
       return {id:`needle-${i}`, type:'function', function:{name:tool.canonical, arguments:args}};
     })},
-    prompt_eval_count:raw._promptTokens || 0, _contextLimit:8192, _contextManaged:true, _needleConfidence:raw.confidence};
+    prompt_eval_count:raw._promptTokens || 0, _contextLimit:8192, _contextManaged:true, _needleConfidence:confidence,_needleRoute:raw._route,_needleValidation:raw.validation,_needleIssue:raw._needleIssue,
+    _needleNeedsConfirmation:calls.some(call=>{const tool=tools.find(t=>t.name === call.name);return tool?.canonical !== 'ask_user' && tool?.fixed?.kind !== 'assistant';})
+      && ((!scores.length || confidence < 0.7) || calls.some(call=>held.includes(call)))};
 }

@@ -32,7 +32,7 @@ function assistantUnsupportedText(){
 
 // Name-clarification chips start a fresh turn, so remember which action the
 // original request was heading toward. Classify/extract have to infer it.
-const ASSISTANT_CONFUSION_CHOICES = ['task', 'habit', "what's today", 'schedule question', 'weather', 'log done'];
+const ASSISTANT_CONFUSION_CHOICES = [];
 
 function assistantCanClarify(session, required){
   const max = typeof ASSISTANT_MAX_CLARIFY === 'number' ? ASSISTANT_MAX_CLARIFY : 2;
@@ -55,13 +55,13 @@ function assistantConfusionQuestion(parsed){
     && !(typeof assistantLooksLikeToolNarration === 'function' && assistantLooksLikeToolNarration(spoken))){
     return spoken;
   }
-  return 'I am not sure what you want. A one-off task, a repeating habit, something already on your list, or a schedule or weather question?';
+  return 'What would you like me to do? Tell me the item and the change, or ask a question about your plan.';
 }
 
 function assistantClarifyOutcome(session, parsed, opts){
   const required = Boolean(opts && opts.required);
   const question = String((opts && opts.question) || '').trim();
-  const choices = Array.isArray(opts && opts.choices) ? opts.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
+  const choices = Array.isArray(opts && opts.choices) ? [...new Set(opts.choices.map(v => String(v).trim()).filter(Boolean))].slice(0, 4) : [];
   if(!question)return assistantGiveUpClarify(session, parsed);
   if(!assistantCanClarify(session, required))return assistantGiveUpClarify(session, parsed);
   session.clarifyCount = (session.clarifyCount || 0) + 1;
@@ -81,6 +81,29 @@ function assistantClarifyOutcome(session, parsed, opts){
     draft:session.draft,
     session
   };
+}
+
+function assistantNeedleProposalQuestion(proposal){
+  const fields={newName:'new name',durationMinutes:'session length',rhythm:'frequency',due:'due date',dueTime:'start time',
+    windowText:'allowed hours',weekdays:'allowed days',habitKind:'habit goal',priority:'priority',placeNames:'places',topics:'topics'};
+  const operations=proposal.toolCalls.map(call=>{
+    const args=call.args || {},name=args.name ? `“${args.name}”` : 'the current item';
+    if(call.name === 'answer_schedule')return `Show ${args.query === 'week' ? 'this week’s agenda' : args.query === 'missed' ? 'missed items' : args.query === 'free' ? 'free time' : 'the agenda'}${args.date ? ' for '+args.date : ''}.`;
+    if(call.name === 'answer_items')return `${args.aggregate === 'count' ? 'Count' : 'Show'} your ${args.kind === 'habit' ? 'habits' : args.kind === 'task' ? 'tasks' : 'saved items'}${args.search ? ' matching “'+args.search+'”' : ''}.`;
+    if(call.name === 'answer_settings')return `Explain ${({calendar:'calendar import',reminders:'phone notifications',sharing:'display pairing',widgets:'Android widgets',places:'saved places',weather:'weather profiles',topics:'topics',busy:'busy times'})[args.kind] || 'Tings capabilities'}.`;
+    if(call.name === 'complete_item')return args.latest ? 'Undo the most recent completion from today.'
+      : args.action === 'undo_today' ? `Undo today’s latest completion of ${name}.` : `Log ${name}${args.minutes ? ' for '+args.minutes+' minutes' : ' as done'}.`;
+    if(call.name === 'delete_item')return `Remove ${name}.`;
+    if(call.name === 'plan_item')return `${args.action === 'remove' ? 'Unplan' : 'Plan'} ${name}${args.date ? ' for '+args.date : ''}${args.time ? ' at '+args.time : ''}.`;
+    if(call.name === 'lookup_item' || call.name === 'find_item')return `Look up ${name}.`;
+    const detail=Object.entries(args).filter(([key,value])=>fields[key] && value != null && value !== '')
+      .map(([key,value])=>`${fields[key]}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : value}`).join('; ');
+    const action=call.name === 'draft_item' ? (args.create ? `Add a ${args.kind || 'new item'} called ${name}` : `Change ${name}`)
+      : call.name === 'answer_weather' ? 'Check the weather' : call.name === 'draft_batch' ? 'Prepare new items' : call.name === 'apply_items' ? 'Prepare changes to matching items' : 'Prepare setting changes';
+    return `${action}${detail ? ' — '+detail : ''}.`;
+  });
+  const score=typeof proposal.confidence === 'number' ? ` (${Math.round(proposal.confidence * 100)}% model confidence)` : '';
+  return `I’m unsure I understood${score}. Did you mean this?\n\n${operations.join('\n')}\n\nYou can proceed with this interpretation or tell me what to change. Nothing has been saved.`;
 }
 
 function assistantAwaitingFromAsk(step, text){
@@ -363,7 +386,9 @@ function assistantReadCallIsTerminal(call, result){
 
 function assistantToolCallKey(call){
   let args = '';
-  try{ args = JSON.stringify(call && call.args || {}); }catch(_){ args = String(call && call.args || ''); }
+  const stable=value=>Array.isArray(value) ? value.map(stable) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])) : value;
+  try{ args = JSON.stringify(stable(call && call.args || {})); }catch(_){ args = String(call && call.args || ''); }
   return `${(call && call.name) || ''}:${args}`;
 }
 
@@ -635,11 +660,11 @@ function assistantPartialFailure(session, err){
   const partial = String(parts.join('\n\n') || (session && session.lastGroundedText) || '').trim();
   const reason = err
     ? assistantFriendlyError(err)
-    : 'I could not finish the action that this research was meant to support.';
+    : 'I could not finish this part. Please tell me the item and the change you want, or retry this part.';
   const prefix = partial ? `I got partway through and verified this:\n\n${partial}\n\n` : '';
   return {
     type:'error',
-    text:`${prefix}${reason} I could not verify that the whole request finished, so I did not treat this as complete.`,
+    text:`${prefix}${reason} Nothing has been saved.`,
     partial:true,
     session
   };
@@ -1420,7 +1445,9 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   const repairingThinkOff = repairing;
   session.llmCalls += 1;
   const stepStartedAt = Date.now();
-  const raw = await complete({
+  const approved=session.needleApproved?.request === session.requestText ? session.needleApproved : null;
+  session.needleApproved=null;
+  const raw = approved ? {_contextManaged:true,_contextLimit:8192,message:{role:'assistant',content:'',tool_calls:approved.toolCalls.map(call=>({function:{name:call.name,arguments:call.args}}))}} : await complete({
     messages:session.messages,
     tools,
     think:!repairingThinkOff,
@@ -1433,10 +1460,16 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   });
   if(typeof assistantNoteContextUsage === 'function')assistantNoteContextUsage(session, raw, tools);
   const parsed = assistantParseReply(raw, step);
+  parsed.needleNeedsConfirmation=raw?._needleNeedsConfirmation;
+  parsed.needleConfidence=raw?._needleConfidence;
   assistantTracePush(session, {
     t:'model',
     step,
     ms:Date.now() - stepStartedAt,
+    confidence:raw?._needleConfidence ?? null,
+    route:raw?._needleRoute,
+    issue:raw?._needleIssue,
+    validation:raw?._needleValidation,
     promptTokens:(raw && raw.prompt_eval_count) || null,
     evalTokens:(raw && raw.eval_count) || null,
     thinking:assistantTraceClip(parsed.thinking, 600),
@@ -1479,7 +1512,7 @@ function assistantHandleIntent(session, context, intent, thinking){
     if(session.draft && session.draft.name)return null;
     if(assistantWideSession(session))return null;
     return assistantClarifyOutcome(session, {thinking}, {
-      question:'That was unclear. Do you want a one-off task, a repeating habit, what is on today, weather or schedule info, or to log something done?',
+      question:assistantConfusionQuestion(session.parsed),
       choices:ASSISTANT_CONFUSION_CHOICES,
       awaiting:null
     });
@@ -1570,6 +1603,7 @@ async function runAssistantTurn(userText, opts = {}){
   session._responseGen = 0;
   session.executedToolKeys = [];
   session.requestText = text;
+  session.needleProposal = null;
   session.reusedPlace = null;
   session.pendingActions = [];
   session.navigation = [];
@@ -1626,6 +1660,11 @@ async function runAssistantTurn(userText, opts = {}){
       recent:typeof assistantEnvelopeRecent === 'function' ? assistantEnvelopeRecent(session) : null
     })}
   ];
+  if(session.clarifyingRequest){
+    const envelope=JSON.parse(session.messages[1].content);
+    envelope.clarification={request:session.clarifyingRequest,question:session.recent?.say,reply:text};
+    session.messages[1].content=JSON.stringify(envelope);
+  }
   let step = 'classify';
   const hasQueryRecent = Boolean(session.recent && (
     (Array.isArray(session.recent.items) && session.recent.items.length)
@@ -1718,6 +1757,17 @@ async function runAssistantTurn(userText, opts = {}){
         }
         return done({type:'error', text:assistantFriendlyError(err), session});
       }
+      if(opts.needleStep && typeof assistantValidateNeedleDraftArgs === 'function'){
+        const invalid=(parsed.toolCalls || []).flatMap(call=>call.name === 'draft_item' ? [call.args]
+          : call.name === 'draft_batch' ? (call.args?.items || []) : []).map(args=>assistantValidateNeedleDraftArgs(args,text)).find(Boolean);
+        if(invalid)return done(assistantClarifyOutcome(session,parsed,{question:invalid.ask,request:text}));
+      }
+      const uncertainCalls=(parsed.toolCalls || []).filter(call=>!session.executedToolKeys.includes(assistantToolCallKey(call)));
+      if(parsed.needleNeedsConfirmation && uncertainCalls.length){
+        const proposal={request:text,toolCalls:uncertainCalls,confidence:parsed.needleConfidence};
+        session.needleProposal=proposal;
+        return done({type:'ask',question:assistantNeedleProposalQuestion(proposal),proposal,session});
+      }
       queuedCalls = (parsed.toolCalls || []).slice();
       session._responseGen = (session._responseGen || 0) + 1;
       session._replayed = null;
@@ -1751,6 +1801,11 @@ async function runAssistantTurn(userText, opts = {}){
       }
       if(assistantCanFinalize(session)){
         return done(assistantFinalizeFromAnswer(session, parsed));
+      }
+      if(opts.needleStep && !call && !session.researchPending){
+        return done(assistantClarifyOutcome(session, parsed, {
+          question:assistantConfusionQuestion(parsed),request:text
+        }));
       }
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         assistantTracePush(session, {t:'repair', step, error:call && call.parseError || 'no tool', gaveUp:true});

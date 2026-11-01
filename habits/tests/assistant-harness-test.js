@@ -397,7 +397,7 @@ async function launchBrowser(){
       repairN:repairs.length
     };
   });
-  assert(clarify.firstType === 'ask' && (clarify.firstChoices || []).includes('task') && clarify.firstCount === 1,
+  assert(clarify.firstType === 'ask' && (clarify.firstChoices || []).length === 0 && clarify.firstCount === 1,
     'classify unclear asks instead of guessing');
   assert(clarify.secondType === 'ask' && clarify.secondCount === 2, 'a second unclear turn may still ask');
   assert(clarify.thirdType === 'say' && clarify.thirdGaveUp && /do not follow|short request/i.test(clarify.thirdText || ''),
