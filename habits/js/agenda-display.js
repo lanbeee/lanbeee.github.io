@@ -3,6 +3,8 @@ const AGENDA_STALE_MS = 24 * 60 * 60 * 1000;
 // the Worker without the phone; this is just how often an open screen looks.
 const AGENDA_POLL_MS = 3 * 60 * 1000;
 const AGENDA_PAIR_POLL_MS = 4 * 1000;
+const AGENDA_PAIR_REQUEST_TIMEOUT_MS = 8 * 1000;
+const AGENDA_PAIR_CONSUME_TIMEOUT_MS = 3 * 1000;
 const AGENDA_DISPLAY_STORAGE_KEY = typeof AGENDA_DISPLAY_KEY !== 'undefined' && AGENDA_DISPLAY_KEY
   ? AGENDA_DISPLAY_KEY
   : 'tings_agenda_display_v4';
@@ -41,6 +43,8 @@ let _displayPairPollTimer = null;
 let _displayPairExpiryTimer = null;
 let _displayFeed = null;
 let _displayPairing = null;
+let _displayPairPollInFlight = null;
+let _displayPairGeneration = 0;
 let _displayProjection = null;
 let _displayClockTimer = null;
 let _displayTouchStart = null;
@@ -1266,6 +1270,7 @@ function escapeDisplay(value){
 }
 
 function stopDisplayPairing(){
+  _displayPairGeneration += 1;
   if(_displayPairPollTimer) clearInterval(_displayPairPollTimer);
   if(_displayPairExpiryTimer) clearInterval(_displayPairExpiryTimer);
   _displayPairPollTimer = null;
@@ -1306,7 +1311,9 @@ function updateDisplayPairingExpiry(){
   const seconds = Math.max(0,Math.ceil((_displayPairing.expiresAt - Date.now()) / 1000));
   const expiry = $('agenda-pair-expiry');
   if(expiry) expiry.textContent = seconds > 0 ? `Expires in ${seconds} seconds` : '';
-  if(seconds <= 0) expireDisplayPairing();
+  // A status request made before expiry may already be returning approval.
+  // Keep its private key until that bounded request finishes decrypting it.
+  if(seconds <= 0 && _displayPairPollInFlight !== _displayPairing) expireDisplayPairing();
 }
 
 async function beginDisplayPairing(reason = 'new'){
@@ -1349,7 +1356,8 @@ async function beginDisplayPairing(reason = 'new'){
         confirmationProof:pairing.confirmationProof,
         displayPublicKey:pairing.displayPublicKey,
         protocolVersion:AGENDA_PAIR_PROTOCOL_VERSION
-      }
+      },
+      timeoutMs:AGENDA_PAIR_REQUEST_TIMEOUT_MS
     });
     pairing.expiresAt = Number(result.body && result.body.expiresAt) || (Date.now() + 30 * 1000);
     _displayPairing = pairing;
@@ -1368,11 +1376,13 @@ async function beginDisplayPairing(reason = 'new'){
 
 async function pollDisplayPairing(){
   const pairing = _displayPairing;
-  if(!pairing || pairing.expiresAt <= Date.now()) return;
+  if(!pairing || pairing.expiresAt <= Date.now() || _displayPairPollInFlight === pairing) return;
+  _displayPairPollInFlight = pairing;
   try{
     const result = await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}/status`,{
-      credential:pairing.pollCredential
+      credential:pairing.pollCredential,timeoutMs:AGENDA_PAIR_REQUEST_TIMEOUT_MS
     });
+    if(_displayPairing !== pairing) return;
     if(!result.body || result.body.state !== 'approved') return;
     const feedId = result.body.feedId;
     const transferred = await shareAgendaPairDecrypt(
@@ -1381,6 +1391,8 @@ async function pollDisplayPairing(){
       feedId,
       pairing.pairingId
     );
+    // A replacement QR or clear action invalidates any older response.
+    if(_displayPairing !== pairing) return;
     const enrolled = {
       feedId,
       contentKey:transferred.contentKey,
@@ -1392,6 +1404,9 @@ async function pollDisplayPairing(){
     if(transferred.syncMode) enrolled.syncMode = transferred.syncMode;
     _displayFeed = enrolled;
     displayWriteEnrollment(enrolled);
+    stopDisplayPairing();
+    const handoffGeneration = _displayPairGeneration;
+    $('agenda-enroll-status').textContent = 'Display authorized. Opening Tings…';
     if(typeof tingsShareLog === 'function'){
       tingsShareLog('display.paired', {
         enrollment:typeof tingsShareEnrollmentSummary === 'function'
@@ -1404,10 +1419,10 @@ async function pollDisplayPairing(){
     if(passcode && passcode.failures) writeDisplayPasscode({ ...passcode,failures:0 });
     try{
       await shareFetch(`/v1/agenda-pairings/${pairing.pairingId}/consume`,{
-        method:'POST',credential:pairing.pollCredential
+        method:'POST',credential:pairing.pollCredential,timeoutMs:AGENDA_PAIR_CONSUME_TIMEOUT_MS
       });
     }catch(_){}
-    stopDisplayPairing();
+    if(_displayFeed !== enrolled || _displayPairGeneration !== handoffGeneration) return;
     $('agenda-enroll').hidden = true;
     if(displayEnrollmentWantsFullApp(enrolled)){
       openDisplayFullApp();
@@ -1417,6 +1432,7 @@ async function pollDisplayPairing(){
     await refreshDisplay();
     startDisplayPolling();
   }catch(error){
+    if(_displayPairing !== pairing) return;
     if(error && (error.status === 410 || error.message === 'pairing_unavailable')){
       expireDisplayPairing();
     }else if(error && (error.status === 401 || error.message === 'invalid_pairing_transfer' || error.message === 'invalid_pairing_key')){
@@ -1425,6 +1441,9 @@ async function pollDisplayPairing(){
       const status = $('agenda-enroll-status');
       if(status) status.textContent = 'Waiting for the owner phone. The connection will retry until this QR expires.';
     }
+  }finally{
+    if(_displayPairPollInFlight === pairing) _displayPairPollInFlight = null;
+    if(_displayPairing === pairing && pairing.expiresAt <= Date.now()) expireDisplayPairing();
   }
 }
 
