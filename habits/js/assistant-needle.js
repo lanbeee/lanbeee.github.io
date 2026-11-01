@@ -396,7 +396,17 @@ function assistantNeedleTurn(req){
   const repair = feedback ? JSON.stringify({ok:false,
     error:invalid ? invalid[1] : 'No valid tool call was returned.',request:envelope.request}) : '';
   const routingSystem=`date: ${date}; assistant: Tings; user: ${JSON.stringify({currentDraft:facts.currentDraft,recent:facts.recent,clarification:facts.clarification,habits:facts.habits,places:facts.places})}`;
-  return {request:envelope.request,system,routingSystem,results,repair};
+  return {request:envelope.request,system,routingSystem,results,repair,entryIntent:envelope.entryIntent || null};
+}
+
+function assistantNeedleEntryTools(tools, intent){
+  const keep = intent === 'create_habit' ? ['add_habit','ask_user']
+    : intent === 'create_task' ? ['add_task','create_reminder','ask_user']
+    : intent === 'create_setting' ? ['save_setting','ask_user']
+    : null;
+  if(!keep)return tools;
+  const narrowed = (tools || []).filter(tool => keep.includes(tool.name));
+  return narrowed.length ? narrowed : tools;
 }
 
 function assistantNeedleGroundedArguments(call, request, ungrounded){
@@ -420,7 +430,7 @@ async function assistantNeedleComplete(req){
   await assistantNeedleEnsureReady();
   const turn = assistantNeedleTurn(req);
   const source = req.tools?.length ? req.tools : assistantOllamaTools(['draft_item','draft_setting','draft_batch','ask_user']);
-  const tools = assistantNeedleTools(source);
+  const tools = assistantNeedleEntryTools(assistantNeedleTools(source), turn.entryIntent);
   const raw = await assistantNeedleRequest('complete', {...turn, tools});
   if(raw.success === false || raw.type === 'error')throw new Error(raw.error || 'Needle could not complete this request.');
   // Needle explicitly allows suppressed candidates to be offered for user

@@ -136,12 +136,13 @@
       <p class="field-hint" id="add-type-help" hidden>Keep up a habit, finish a task, or reserve time for an event.</p>
       <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <input type="text" id="ting-message" name="message" maxlength="240" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="choose an icon (optional)" title="Choose an icon (optional)"></button>
-        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="create with the local assistant" title="Create from your description with the local assistant">
+        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="add this with the assistant" title="Add a new habit or task from what you typed" aria-describedby="add-ask-hint">
           <i class="ti ti-sparkles" aria-hidden="true"></i>
         </button>
       </div>
+      <p class="field-hint" id="add-ask-hint">Sparkles adds a new habit or task from what you type. Add saves a short name.</p>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <div class="generic-emoji-wrap">
           <div class="emoji-picker-toolbar">

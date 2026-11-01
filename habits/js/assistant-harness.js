@@ -163,7 +163,44 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
   const current = typeof assistantCompactDraft === 'function' ? assistantCompactDraft(draft) : null;
   if(current)payload.currentDraft = current;
   if(opts && opts.recent)payload.recent = opts.recent;
+  if(opts && opts.entryIntent)payload.entryIntent = opts.entryIntent;
   return JSON.stringify(payload);
+}
+
+function assistantApplyAddForm(args, form){
+  const next = Object.assign({}, args || {});
+  if(!form)return next;
+  const missingRhythm = next.rhythm == null && next.frequency == null
+    && next.timesPerPeriod == null && next.periodDays == null;
+  if(missingRhythm && form.rhythm)next.rhythm = form.rhythm;
+  if((next.durationMinutes == null || next.durationMinutes === '') && form.durationMinutes != null){
+    next.durationMinutes = form.durationMinutes;
+  }
+  if((next.due == null || next.due === '') && form.due)next.due = form.due;
+  if((next.dueTime == null || next.dueTime === '') && form.dueTime)next.dueTime = form.dueTime;
+  if((next.habitKind == null || next.habitKind === '') && form.habitKind)next.habitKind = form.habitKind;
+  if((next.repeatMode == null || next.repeatMode === '') && form.repeatMode)next.repeatMode = form.repeatMode;
+  return next;
+}
+
+function assistantAddFormCheckText(text, form){
+  const note = form && String(form.note || '').trim();
+  return note ? `${text}\n${note}` : text;
+}
+
+function assistantAddFormFallback(session){
+  if(!session || !session.addForm)return null;
+  const described = String(session.requestText || '').replace(/^Add a (?:repeating habit|one-off task):\s*/i, '').trim();
+  const name = described.slice(0, 60);
+  if(!name)return null;
+  return {
+    name:'draft_item',
+    args:assistantApplyAddForm({
+      name,
+      kind:session.intent === 'create_task' ? 'task' : 'habit',
+      create:true
+    }, session.addForm)
+  };
 }
 
 function assistantDraftSettingSteerText(){
@@ -1460,7 +1497,24 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   });
   if(typeof assistantNoteContextUsage === 'function')assistantNoteContextUsage(session, raw, tools);
   const parsed = assistantParseReply(raw, step);
-  parsed.needleNeedsConfirmation=raw?._needleNeedsConfirmation;
+  if(session.addForm){
+    if(parsed.toolCalls){
+      parsed.toolCalls.forEach(call => {
+        if(call && call.name === 'draft_item')call.args = assistantApplyAddForm(call.args, session.addForm);
+      });
+    }
+    const drafted = (parsed.toolCalls || []).some(call => call && call.name === 'draft_item' && !call.parseError);
+    const alreadyDrafted = (Array.isArray(session.turnDrafts) && session.turnDrafts.some(row => row && row.name))
+      || Boolean(session.draft && session.draft.name);
+    // A later "anything else?" pass must not draft the sentence a second time.
+    if(!drafted && !alreadyDrafted){
+      const fallback = assistantAddFormFallback(session);
+      if(fallback)parsed.toolCalls = [fallback];
+    }
+  }
+  const usedFormFallback = Boolean(session.addForm) && (parsed.toolCalls || []).some(call => call && call.name === 'draft_item')
+    && !(raw && raw.message && raw.message.tool_calls && raw.message.tool_calls.length);
+  parsed.needleNeedsConfirmation = usedFormFallback ? false : raw?._needleNeedsConfirmation;
   parsed.needleConfidence=raw?._needleConfidence;
   assistantTracePush(session, {
     t:'model',
@@ -1604,6 +1658,7 @@ async function runAssistantTurn(userText, opts = {}){
   session._responseGen = 0;
   session.executedToolKeys = [];
   session.requestText = text;
+  session.addForm = opts.form || null;
   session.needleProposal = null;
   session.reusedPlace = null;
   session.pendingActions = [];
@@ -1658,7 +1713,8 @@ async function runAssistantTurn(userText, opts = {}){
     {role:'system', content:assistantSystemPrompt()},
     {role:'user', content:assistantUserEnvelope(text, context.catalog, session.draft, session.parsed, {
       compact:(session.contextRatio || 0) >= ASSISTANT_CONTEXT_COMPACT_AT,
-      recent:typeof assistantEnvelopeRecent === 'function' ? assistantEnvelopeRecent(session) : null
+      recent:typeof assistantEnvelopeRecent === 'function' ? assistantEnvelopeRecent(session) : null,
+      entryIntent
     })}
   ];
   if(session.clarifyingRequest){
@@ -1708,11 +1764,14 @@ async function runAssistantTurn(userText, opts = {}){
     step = 'extract';
     session.intent = entryIntent;
     assistantTracePush(session, {t:'path', path:'llm', via:'entry' + (opts.entry ? '-' + opts.entry : ''), intent:entryIntent});
+    const addScreen = opts.entry === 'add'
+      ? 'The user is adding a new item from the add screen. Create it. Do not answer a question or change a saved item. '
+      : '';
     session.messages.push({role:'user', content:session.wide
-      ? assistantWideExtractSteerText() + factsHint
+      ? addScreen + assistantWideExtractSteerText() + factsHint
       : (entryIntent === 'create_setting'
-        ? assistantDraftSettingSteerText() + factsHint
-        : assistantDraftItemSteerText(entryIntent, factsHint))});
+        ? addScreen + assistantDraftSettingSteerText() + factsHint
+        : addScreen + assistantDraftItemSteerText(entryIntent, factsHint))});
   }
   if(session.clarifyingRequest && session.clarifyingRequest !== text
     && (session.awaiting || assistantLooksLikeNameReply(text))){
@@ -1759,12 +1818,14 @@ async function runAssistantTurn(userText, opts = {}){
         return done({type:'error', text:assistantFriendlyError(err), session});
       }
       if(opts.needleStep && typeof assistantValidateNeedleDraftArgs === 'function'){
+        const checkText = assistantAddFormCheckText(text, session.addForm);
         const invalid=(parsed.toolCalls || []).flatMap(call=>call.name === 'draft_item' ? [call.args]
-          : call.name === 'draft_batch' ? (call.args?.items || []) : []).map(args=>assistantValidateNeedleDraftArgs(args,text)).find(Boolean);
+          : call.name === 'draft_batch' ? (call.args?.items || []) : []).map(args=>assistantValidateNeedleDraftArgs(args,checkText)).find(Boolean);
         if(invalid)return done(assistantClarifyOutcome(session,parsed,{question:invalid.ask,request:text}));
       }
       const uncertainCalls=(parsed.toolCalls || []).filter(call=>!session.executedToolKeys.includes(assistantToolCallKey(call)));
-      if(parsed.needleNeedsConfirmation && uncertainCalls.length){
+      // The add sheet already asked for a new item. The preview is the confirmation.
+      if(parsed.needleNeedsConfirmation && uncertainCalls.length && opts.entry !== 'add'){
         const proposal={request:text,toolCalls:uncertainCalls,confidence:parsed.needleConfidence};
         session.needleProposal=proposal;
         return done({type:'ask',question:assistantNeedleProposalQuestion(proposal),proposal,session});

@@ -26,7 +26,11 @@ async function assistantRunNeedleWorkflow(text, opts){
   let slices;
   const retained = session.needleWorkflow;
   const generation = _assistantNeedleGeneration;
-  if(retained){
+  const oneItem = opts.startIntent === 'create_habit' || opts.startIntent === 'create_task' || opts.startIntent === 'create_setting';
+  if(oneItem && !retained){
+    // The add screen is one new item. A second sentence must not become another draft.
+    slices = [text];
+  }else if(retained){
     slices = [text,...retained.remaining];
   }else{
     progress({phase:'think',step:'breaking down request'});

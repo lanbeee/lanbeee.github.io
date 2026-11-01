@@ -165,17 +165,21 @@ async function launchBrowser(){
   const chrome = await page.evaluate(() => {
     const display = id => getComputedStyle(document.getElementById(id)).display;
     patchLocalAssistant({ localAssistant:false });
-    const off = { ting:display('ting-ask-ai'), detail:display('detail-ask-ai') };
+    const off = { ting:display('ting-ask-ai'), detail:display('detail-ask-ai'), hint:display('add-ask-hint') };
     patchLocalAssistant({ localAssistant:true, localAssistantProvider:'auto' });
     // Minimal mode hides the whole detail actions page; the AI row must
     // follow its siblings there. Force full mode for the positive check.
     if(typeof updateSortSetting === 'function')updateSortSetting({ minimalMode:false }, { renderNow:false });
     if(typeof applyDetailMinimalMode === 'function')applyDetailMinimalMode();
-    const on = { ting:display('ting-ask-ai'), detail:display('detail-ask-ai'), snooze:display('detail-snooze') };
-    return { off, on };
+    const on = { ting:display('ting-ask-ai'), detail:display('detail-ask-ai'), snooze:display('detail-snooze'), hint:display('add-ask-hint') };
+    document.getElementById('add-sheet').classList.add('appointment-add');
+    const eventHint = display('add-ask-hint');
+    document.getElementById('add-sheet').classList.remove('appointment-add');
+    return { off, on, eventHint };
   });
-  assert(chrome.off.ting === 'none' && chrome.off.detail === 'none', 'entry buttons hidden when assistant is off');
-  assert(chrome.on.ting !== 'none' && chrome.on.detail !== 'none', 'entry buttons visible when assistant is on');
+  assert(chrome.off.ting === 'none' && chrome.off.detail === 'none' && chrome.off.hint === 'none', 'entry buttons hidden when assistant is off');
+  assert(chrome.on.ting !== 'none' && chrome.on.detail !== 'none' && chrome.on.hint === 'block', 'entry buttons and the add hint are visible when assistant is on');
+  assert(chrome.eventHint === 'none', 'events hide the add-sheet assistant hint');
   assert(chrome.on.detail === chrome.on.snooze, 'detail AI row matches sibling visibility');
 
   const addWiring = await page.evaluate(async () => {
@@ -184,6 +188,8 @@ async function launchBrowser(){
     ] } });
     clearAssistantChat();
     closeAssistantSheet();
+    appendAssistantBubble('user', 'Earlier reminder about taxes');
+    _assistantSession.recent = {request:'Earlier reminder about taxes', referent:'Taxes', say:'Saved taxes'};
     openSheet('add-sheet');
     document.querySelector('#type-seg [data-v="task"]').click();
     document.getElementById('ting-message').value = 'Trash out the day after tomorrow, 5 minutes';
@@ -196,11 +202,16 @@ async function launchBrowser(){
       textKept:document.getElementById('ting-message').value,
       entry:turn.entry,
       startIntent:turn.startIntent,
+      request:_assistantSession && _assistantSession.requestText,
+      recent:_assistantSession && _assistantSession.recent && _assistantSession.recent.request,
+      thread:document.getElementById('assistant-thread').textContent,
       userBubble:Array.from(document.querySelectorAll('#assistant-thread .assistant-bubble-user'))
         .some(node => /Trash out the day after tomorrow/.test(node.textContent || ''))
     };
   });
   assert(addWiring.sheetOpen && addWiring.userBubble, 'add-sheet AI button sends the typed instruction');
+  assert(!/taxes/i.test(addWiring.thread || '') && !/taxes/i.test(addWiring.recent || ''), 'an add-sheet chat drops the previous conversation');
+  assert(/^Add a one-off task:/.test(addWiring.request || '') && !/^Add a one-off task:/.test('Trash out the day after tomorrow, 5 minutes'), 'the model hears an add-task request while the chat shows the typed words');
   assert(addWiring.entry === 'add' && addWiring.startIntent === 'create_task', 'add-sheet click carries entry provenance and kind');
   assert(addWiring.addSheetStillOpen && /Trash out/.test(addWiring.textKept), 'add sheet stays underneath with text intact');
 
@@ -211,16 +222,91 @@ async function launchBrowser(){
     document.getElementById('ting-ask-ai').click();
     await new Promise(resolve => setTimeout(resolve, 60));
     return {
-      sheetOpen:document.querySelector('#assistant-sheet').classList.contains('open')
+      sheetOpen:document.querySelector('#assistant-sheet').classList.contains('open'),
+      toast:document.getElementById('toast-text') && document.getElementById('toast-text').textContent
     };
   });
   assert(!emptyAddClick.sheetOpen, 'empty add text does not open the assistant');
+  assert(/Describe the new habit or task first/.test(emptyAddClick.toast || ''), 'empty add text asks for a description');
+
+  const addSave = await page.evaluate(async () => {
+    assistantComplete = async () => ({ message:{ thinking:'entry add', tool_calls:[
+      { id:'c1', function:{ name:'draft_item', arguments:{ kind:'task', name:'Trash out', durationMinutes:'5' } } }
+    ] } });
+    clearAssistantChat();
+    closeAssistantSheet();
+    applyAddDefaults();
+    openSheet('add-sheet');
+    document.querySelector('#type-seg [data-v="task"]').click();
+    document.getElementById('ting-message').value = 'Trash out';
+    document.getElementById('ting-ask-ai').click();
+    const deadline = Date.now() + 4000;
+    let save = null;
+    while(Date.now() < deadline){
+      save = document.querySelector('#assistant-thread [data-assistant-act="add"]');
+      if(save)break;
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    if(save)save.click();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    return {
+      saved:load().some(item => item.name === 'Trash out'),
+      addOpen:document.querySelector('#add-sheet').classList.contains('open'),
+      leftover:document.getElementById('ting-message').value
+    };
+  });
+  assert(addSave.saved && !addSave.addOpen && !addSave.leftover, 'saving the add-screen preview closes the add sheet');
+
+  const longName = await page.evaluate(() => {
+    applyAddDefaults();
+    openSheet('add-sheet');
+    const before = load().length;
+    document.getElementById('ting-message').value = 'x'.repeat(80);
+    document.getElementById('do-save').click();
+    return {
+      count:load().length - before,
+      open:document.querySelector('#add-sheet').classList.contains('open'),
+      toast:document.getElementById('toast-text').textContent,
+      max:document.getElementById('ting-message').maxLength
+    };
+  });
+  assert(longName.max >= 80 && longName.count === 0 && longName.open, 'a long description is not saved as a chopped name');
+  assert(/60 characters/.test(longName.toast) && /sparkles/.test(longName.toast), 'the add button points a long description at sparkles');
+
+  const narrowed = await page.evaluate(() => {
+    const tools = assistantNeedleTools(assistantOllamaTools(['draft_item','answer_weather','answer_schedule','draft_setting']));
+    const habit = assistantNeedleEntryTools(tools, 'create_habit').map(tool => tool.name);
+    const task = assistantNeedleEntryTools(tools, 'create_task').map(tool => tool.name);
+    const open = assistantNeedleEntryTools(tools, null).map(tool => tool.name);
+    const filled = assistantApplyAddForm({name:'Read'}, {rhythm:'weekly', durationMinutes:30, habitKind:'reduce'});
+    const kept = assistantApplyAddForm({name:'Walk', rhythm:'every night', durationMinutes:20}, {rhythm:'weekly', durationMinutes:30});
+    const fallback = assistantAddFormFallback({
+      requestText:'Add a repeating habit: Read a book',
+      intent:'create_habit',
+      addForm:{rhythm:'weekly', durationMinutes:30, note:'weekly, 30 minutes'}
+    });
+    const taskText = assistantAddFormCheckText('Add a one-off task: Call mom tomorrow', {note:'due today, 30 minutes'});
+    const bare = assistantValidateNeedleDraftArgs({name:'Call mom', kind:'task', create:true, durationMinutes:30}, 'Add a one-off task: Call mom tomorrow');
+    const grounded = assistantValidateNeedleDraftArgs({name:'Call mom', kind:'task', create:true, durationMinutes:30}, taskText);
+    const habitGrounded = assistantValidateNeedleDraftArgs(fallback && fallback.args, assistantAddFormCheckText('Add a repeating habit: Read a book', {note:'weekly, 30 minutes'}));
+    return {habit, task, openCount:open.length, filled, kept, fallback, bare:Boolean(bare), grounded, habitGrounded};
+  });
+  assert(narrowed.habit.includes('add_habit') && !narrowed.habit.includes('add_task') && !narrowed.habit.includes('get_weather'), 'a habit add only offers habit creation');
+  assert(narrowed.task.includes('add_task') && !narrowed.task.includes('add_habit'), 'a task add only offers task creation');
+  assert(narrowed.openCount > narrowed.habit.length, 'other assistant turns keep the full tool list');
+  assert(narrowed.filled.rhythm === 'weekly' && narrowed.filled.durationMinutes === 30 && narrowed.filled.habitKind === 'reduce', 'a name-only add keeps the form frequency and length');
+  assert(narrowed.kept.rhythm === 'every night' && narrowed.kept.durationMinutes === 20, 'a description that already names a schedule is left as said');
+  assert(narrowed.fallback && narrowed.fallback.args.name === 'Read a book' && narrowed.fallback.args.kind === 'habit'
+    && narrowed.fallback.args.rhythm === 'weekly' && narrowed.fallback.args.durationMinutes === 30, 'a name-only add still drafts from the form when the model returns no tool');
+  assert(narrowed.bare && !narrowed.grounded && !narrowed.habitGrounded, 'form frequency and length count as spoken for the add-sheet check');
 
   const detailWiring = await page.evaluate(async () => {
     localStorage.removeItem(KEY);
     save([{ name:'Walk', type:'keepup', logs:[], durationMinutes:30 }]);
     closeAssistantSheet();
     clearAssistantChat();
+    appendAssistantBubble('user', 'Earlier reminder about taxes');
+    _assistantSession.recent = {request:'Earlier reminder about taxes', referent:'Taxes', say:'Saved taxes'};
     openDetail(0);
     document.getElementById('detail-ask-ai').click();
     await new Promise(resolve => setTimeout(resolve, 120));
@@ -231,11 +317,27 @@ async function launchBrowser(){
       draftName:session && session.draft && session.draft.name,
       draftHid:session && session.draft && session.draft.hid,
       intro:Array.from(document.querySelectorAll('#assistant-thread .assistant-bubble-say'))
-        .some(node => /Working on Walk/.test(node.textContent || ''))
+        .some(node => /Working on Walk/.test(node.textContent || '')),
+      thread:document.getElementById('assistant-thread').textContent,
+      recent:_assistantSession && _assistantSession.recent
     };
   });
   assert(detailWiring.sheetOpen && detailWiring.draftName === 'Walk', 'detail AI button focuses the open item');
   assert(detailWiring.intro, 'detail entry shows the local intro without a model call');
+  assert(!/taxes/i.test(detailWiring.thread || '') && !detailWiring.recent, 'changing an item starts a new chat');
+
+  const homeAsk = await page.evaluate(() => {
+    appendAssistantBubble('user', 'Earlier reminder about taxes');
+    _assistantSession.recent = {request:'Earlier reminder about taxes', referent:'Taxes', say:'Saved taxes'};
+    assistantOpenForItem(load()[0].hid, 'home');
+    return {
+      entry:_assistantSession && _assistantSession.entry,
+      thread:document.getElementById('assistant-thread').textContent,
+      recent:_assistantSession && _assistantSession.recent
+    };
+  });
+  assert(homeAsk.entry === 'home' && /Working on Walk/.test(homeAsk.thread || '')
+    && !/taxes/i.test(homeAsk.thread || '') && !homeAsk.recent, 'asking from a card starts a new chat');
   assert(detailWiring.draftHid === 'w1' || detailWiring.draftHid != null, 'focused draft keeps the saved hid');
 
   console.log('\n[F] formatter surfaces timing');

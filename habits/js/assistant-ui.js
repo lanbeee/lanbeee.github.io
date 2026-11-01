@@ -25,6 +25,7 @@ function syncAssistantChrome(){
   const on = assistantEnabled();
   document.body.classList.toggle('assistant-on', on);
   document.body.classList.toggle('assistant-debug-on', on && assistantDebugOn());
+  if(typeof syncAddNamePlaceholder === 'function')syncAddNamePlaceholder();
   ['open-assistant','bar-open-assistant'].forEach(id => {
     const btn = $(id);
     if(btn)btn.hidden = !on;
@@ -242,8 +243,14 @@ async function assistantOpenWithInstruction(text, opts){
   _assistantSession = assistantCreateSession();
   _assistantSession.entry = opts.entry || null;
   if(draft)_assistantSession.draft = draft;
+  // Add, detail, and a home-card ask each start a blank chat. Earlier turns
+  // stay on screen otherwise, and a tiny model will repeat them.
+  const thread = assistantThreadEl();
+  if(thread)thread.replaceChildren();
+  const input = $('assistant-input');
+  if(input)input.value = '';
   syncAssistantFocusBar();
-  openAssistantSheet({skipWelcome:!value || Boolean(draft)});
+  openAssistantSheet({skipWelcome:true});
   if(!value){
     // Item entry with no instruction yet: introduce the focus locally —
     // no model call until the user types.
@@ -255,7 +262,18 @@ async function assistantOpenWithInstruction(text, opts){
     }, 260);
     return true;
   }
-  await sendAssistantMessage(value, {startIntent:opts.intent, entry:opts.entry});
+  const spoken = value;
+  let modelText = String(opts.modelText || '').trim();
+  if(!modelText && opts.entry === 'add' && opts.intent && typeof addAssistantModelText === 'function'){
+    modelText = addAssistantModelText(spoken, opts.intent);
+  }
+  if(!modelText)modelText = spoken;
+  await sendAssistantMessage(modelText, {
+    startIntent:opts.intent,
+    entry:opts.entry,
+    displayText:spoken,
+    form:opts.form || null
+  });
   return true;
 }
 
@@ -750,6 +768,7 @@ async function sendAssistantMessage(text, opts){
       session:_assistantSession || assistantCreateSession(),
       startIntent:opts.startIntent || undefined,
       entry:opts.entry || _assistantSession?.entry || undefined,
+      form:opts.form || undefined,
       onProgress:info => {
         if(turn !== _assistantTurn)return;
         const wait = $('assistant-waiting');
@@ -813,7 +832,15 @@ function assistantKeepWorkingOn(commit){
   syncAssistantFocusBar();
 }
 
+function assistantReleaseAddEntry(){
+  if(!_assistantSession || _assistantSession.entry !== 'add')return;
+  const sheet = $('add-sheet');
+  if(!sheet || !sheet.classList.contains('open'))return;
+  if(typeof cancelAdd === 'function')cancelAdd();
+}
+
 function assistantAfterSave(commit, openForm, toast){
+  assistantReleaseAddEntry();
   const actions=_assistantSession?.pendingActions || [];
   assistantKeepWorkingOn(commit);
   _assistantSession.pendingActions=actions;

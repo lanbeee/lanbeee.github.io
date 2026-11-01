@@ -113,9 +113,11 @@ Fields that name another item (`before` / `after`, habit-window anchors) resolve
 
 The first model pass exposes final validated tools, so `classify_intent` is optional. The add-sheet sparkles button and the detail "change with AI" row pass `startIntent` / `draft` via `assistantOpenWithInstruction`, so the turn starts at extract. Trace provenance is `entry-add` / `entry-detail`.
 
+The add-sheet button is only for a new habit or task of the kind already chosen on that sheet. The model request says so, and Needle is offered only the matching create tool. A short name is not a weather question, a phone call, or an edit of a saved item. Frequency, length, and date already showing on the form fill anything the description leaves out. If the model returns no create call, the host still drafts that one item from the typed name and those form values. The chat starts blank, shows the typed words, and does not send earlier turns. Nothing is saved until the preview **save**, which also closes the add sheet. Dismissing the chat leaves the typed draft on the add sheet.
+
 When enabled, the assistant also appears as **ask AI** when swiping right on a
 home habit or task card, in full and minimal views. It opens a fresh conversation
-focused on that saved item's identity, with no model call until an instruction
+focused on that saved item's identity: earlier turns are removed and are not sent, and there is no model call until an instruction
 is sent. Item actions and questions share the detail entry's draft context;
 home turns retain `entry: home` in their trace. The minimal-mode controls
 each have a closed Needle alias that stages one `draft_item` change: how often,

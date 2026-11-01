@@ -129,7 +129,7 @@ function syncAddTypeUi(type){
   const isTask = type === 'task';
   $('add-title').textContent = isTask ? 'new task' : 'new habit';
   $('do-save').textContent = isTask ? 'add task' : 'add habit';
-  $('ting-message').placeholder = isTask ? 'e.g. Book a dentist visit' : 'e.g. Read a book';
+  syncAddNamePlaceholder();
   document.querySelector('label[for="ting-message"]').textContent='What would you like to do?';
   document.querySelectorAll('#type-seg [data-v]').forEach(button=>{
     const on=button.dataset.v === (isTask ? 'task' : 'keepup');
@@ -518,9 +518,19 @@ function readAddRecord(){
 }
 
 $('do-save').addEventListener('click',()=>{
-  if(typeof applyAutoEmoji === 'function')applyAutoEmoji();
   const name = $('ting-message').value.trim();
   if(!name){$('ting-message').focus();return;}
+  if(name.length > 60){
+    $('ting-message').focus();
+    const assisted = document.body.classList.contains('assistant-on') && !addAppointmentMode;
+    if(typeof showToast === 'function'){
+      showToast(assisted
+        ? 'Names stop at 60 characters. Tap sparkles to add it from this description.'
+        : 'Names stop at 60 characters.');
+    }
+    return;
+  }
+  if(typeof applyAutoEmoji === 'function')applyAutoEmoji();
   const data = load();
   if(data.length >= MAX_TINGS){alert(`${MAX_TINGS} habits max`);return;}
   if(addAppointmentMode && !validateAppointmentFields('add-appt'))return;
@@ -540,17 +550,101 @@ $('do-save').addEventListener('click',()=>{
   }
 });
 
-// WIRE: create-with-AI — hand the typed instruction to the assistant with
-// the kind already known, so the model skips classify and extracts directly.
-// The add sheet stays underneath (assistant overlays at z 125), so the typed
-// text survives if the assistant is dismissed.
+// The name field teaches a short title. With the assistant on, it can also
+// hold the sentence sparkles turns into a new item.
+function syncAddNamePlaceholder(){
+  if(typeof addAppointmentMode !== 'undefined' && addAppointmentMode)return;
+  const assisted = document.body.classList.contains('assistant-on');
+  const isTask = selectedType === 'task';
+  $('ting-message').placeholder = isTask
+    ? (assisted ? 'e.g. Call mom tomorrow' : 'e.g. Book a dentist visit')
+    : (assisted ? 'e.g. Read 20 minutes every night' : 'e.g. Read a book');
+}
+
+function addRhythmPhrase(target, type, opportunity){
+  const parts = rhythmParts(target);
+  const times = parts.times;
+  const days = parts.days;
+  let phrase = times === 1 && days === 1 ? 'daily'
+    : times === 1 && days === 7 ? 'weekly'
+    : times === 1 ? `every ${days} days`
+    : days === 7 ? `${times} times a week`
+    : days === 1 ? `${times} times a day`
+    : `${times} times every ${days} days`;
+  if(type === 'reduce')phrase = `at most ${phrase}`;
+  if(opportunity)phrase = `when conditions fit, ${phrase}`;
+  return phrase;
+}
+
+function addDueToken(iso){
+  if(!iso)return '';
+  const today = typeof dateInputValue === 'function' ? dateInputValue(Date.now()) : '';
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowIso = typeof dateInputValue === 'function' ? dateInputValue(tomorrow.getTime()) : '';
+  if(iso === today)return 'today';
+  if(iso === tomorrowIso)return 'tomorrow';
+  return iso;
+}
+
+// Visible add-sheet choices. The description wins when it names the same
+// detail; these fill whatever it leaves out.
+function addAssistantForm(){
+  if(typeof readAddProfile !== 'function')return null;
+  const current = readAddProfile();
+  const task = selectedType === 'task';
+  const bits = [];
+  const form = {};
+  if(!task){
+    const opportunity = selectedType === 'keepup' && current.repeatMode === 'opportunity';
+    const rhythm = addRhythmPhrase(current.target, selectedType, opportunity);
+    bits.push(rhythm);
+    form.rhythm = rhythm;
+    if(opportunity)form.repeatMode = 'opportunity';
+    if(selectedType === 'reduce')form.habitKind = 'reduce';
+    if(selectedType === 'zero')form.habitKind = 'zero';
+  }else{
+    const due = addDueToken(current.dueDate);
+    if(due){
+      bits.push(`due ${due}`);
+      form.due = due;
+    }else bits.push('no due date');
+    if(current.dueTime){
+      bits.push(`at ${current.dueTime}`);
+      form.dueTime = current.dueTime;
+    }
+  }
+  if(selectedType !== 'zero' && selectedType !== 'reduce'){
+    bits.push(`${current.durationMinutes} minutes`);
+    form.durationMinutes = current.durationMinutes;
+  }
+  form.note = bits.join(', ');
+  return form;
+}
+
+function addAssistantModelText(text, intent){
+  const lead = intent === 'create_task' ? 'Add a one-off task' : 'Add a repeating habit';
+  return `${lead}: ${text}`;
+}
+
+// WIRE: sparkles adds a new item of the kind already chosen on this sheet.
+// The add sheet stays underneath, so the typed text survives a dismiss.
+// Saving the preview closes it.
 $('ting-ask-ai').addEventListener('click',()=>{
   const text = $('ting-message').value.trim();
-  if(!text){$('ting-message').focus();return;}
+  if(!text){
+    $('ting-message').focus();
+    if(typeof showToast === 'function')showToast('Describe the new habit or task first');
+    return;
+  }
   if(typeof tingsLoadAssistant !== 'function')return;
   const intent = selectedType === 'task' ? 'create_task' : 'create_habit';
+  const form = addAssistantForm();
+  const modelText = addAssistantModelText(text, intent);
   void tingsLoadAssistant().then(()=>{
-    if(typeof assistantOpenWithInstruction === 'function')assistantOpenWithInstruction(text,{intent,entry:'add'});
+    if(typeof assistantOpenWithInstruction === 'function'){
+      assistantOpenWithInstruction(text,{intent,entry:'add',modelText,form});
+    }
   });
 });
 

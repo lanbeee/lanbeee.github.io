@@ -4566,7 +4566,9 @@ function assistantExecuteTool(name, args, session, context){
   }
   if(name === 'draft_batch'){
     if(session.needleStaged){
-      const invalid=(args?.items || []).map(row=>assistantValidateNeedleDraftArgs({...row,create:true},session.requestText)).find(Boolean);
+      const checkText = typeof assistantAddFormCheckText === 'function'
+        ? assistantAddFormCheckText(session.requestText, session.addForm) : session.requestText;
+      const invalid=(args?.items || []).map(row=>assistantValidateNeedleDraftArgs({...row,create:true},checkText)).find(Boolean);
       if(invalid)return {ok:false,...invalid};
     }
     const applied = assistantApplyDraftBatch(args, session, context);
@@ -4580,7 +4582,9 @@ function assistantExecuteTool(name, args, session, context){
   }
   if(name === 'draft_item' || name === 'draft_setting'){
     if(name === 'draft_item' && session.needleStaged){
-      const invalid=assistantValidateNeedleDraftArgs(args,session.requestText);
+      const checkText = typeof assistantAddFormCheckText === 'function'
+        ? assistantAddFormCheckText(session.requestText, session.addForm) : session.requestText;
+      const invalid=assistantValidateNeedleDraftArgs(args,checkText);
       if(invalid)return {ok:false,...invalid};
     }
     const focusedItem = session.draft && session.draft.name
