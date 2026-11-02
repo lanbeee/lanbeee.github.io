@@ -116,6 +116,65 @@ function assert(ok, message){
       `${row.mode} releases the runtime and requests without cancelling staged work`);
     assert(faults.terminated===3 && faults.cancelled,'failed runtimes restart and an explicit stop still cancels');
 
+    const pool = await page.evaluate(async()=>{
+      const OriginalWorker = Worker, instances = [];
+      let active = 0, maximum = 0, terminated = 0;
+      globalThis.Worker = class {
+        constructor(){this.index = instances.length;instances.push(this);}
+        postMessage(data){
+          if(data.type === 'load'){queueMicrotask(()=>this.onmessage({data:{id:data.id,result:true}}));return;}
+          active++;maximum = Math.max(maximum, active);
+          setTimeout(()=>{
+            active--;
+            if(data.crash)this.onerror();
+            else this.onmessage({data:{id:data.id,result:{nonce:data.nonce,function_calls:[]}}});
+          },20);
+        }
+        terminate(){terminated++;}
+      };
+      try{
+        const results = await Promise.all(Array.from({length:6},(_,nonce)=>assistantNeedleFocusRequest({nonce})));
+        const capacity = {maximum, workers:instances.length, lanes:[...new Set(results.map(row=>row._workerLane))],
+          ordered:results.every((row,index)=>row.nonce === index)};
+        const isolated = await Promise.allSettled([
+          assistantNeedleFocusRequest({nonce:'first'}), assistantNeedleFocusRequest({crash:true}), assistantNeedleFocusRequest({nonce:'third'})
+        ]);
+        const restarted = await Promise.all(Array.from({length:3},(_,nonce)=>assistantNeedleFocusRequest({nonce:'restart-'+nonce})));
+        const restartCount = instances.length;
+        const waiting = Array.from({length:6},()=>assistantNeedleFocusRequest({}).catch(error=>error.name));
+        await new Promise(resolve=>setTimeout(resolve,0));
+        assistantNeedleStop();
+        const cancelled = await Promise.all(waiting);
+        return {capacity, statuses:isolated.map(row=>row.status), restarted:restarted.every((row,index)=>row.nonce==='restart-'+index), restartCount,
+          cancelled:cancelled.every(name=>name==='AbortError'), empty:!_assistantNeedleFocusLanes.length && !_assistantNeedleFocusWaiting.length,
+          terminated};
+      }finally{assistantNeedleStop();globalThis.Worker = OriginalWorker;}
+    });
+    assert(pool.capacity.maximum === 3 && pool.capacity.workers === 3 && pool.capacity.lanes.length === 3 && pool.capacity.ordered,
+      'three independent focus workers bound concurrency and keep queued replies matched to their jobs');
+    assert(pool.statuses.join() === 'fulfilled,rejected,fulfilled' && pool.restarted && pool.restartCount === 4,
+      'a failed focus worker leaves its siblings running and later requests can restart');
+    assert(pool.cancelled && pool.empty && pool.terminated >= 3,
+      'stopping inference rejects active and queued focus jobs and releases all three workers');
+
+    const memoryFallback = await page.evaluate(async()=>{
+      const OriginalWorker = Worker;let created = 0;
+      globalThis.Worker = class {
+        constructor(){this.index = created++;}
+        postMessage(data){queueMicrotask(()=>this.onmessage({data:{id:data.id,
+          ...(data.type==='load' && this.index ? {error:'Not enough memory to load Needle 3.'}
+            : {result:data.type==='load' ? true : {nonce:data.nonce}})}}));}
+        terminate(){}
+      };
+      try{
+        const results = await Promise.allSettled(Array.from({length:5},(_,nonce)=>assistantNeedleFocusRequest({nonce})));
+        const after = await assistantNeedleFocusRequest({nonce:'after'});
+        return results.filter(row=>row.status==='fulfilled').length===3 && results.filter(row=>row.status==='rejected').length===2
+          && _assistantNeedleFocusLanes.filter(lane=>lane.disabled).length===2 && after.nonce==='after' && after._workerLane===0;
+      }finally{assistantNeedleStop();globalThis.Worker=OriginalWorker;}
+    });
+    assert(memoryFallback,'extra-worker allocation failures release queued work onto the surviving worker');
+
     const transport = await page.evaluate(async()=>{
       const OriginalWorker = Worker;
       const sent = [];

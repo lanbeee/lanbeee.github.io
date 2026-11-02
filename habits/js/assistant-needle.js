@@ -15,6 +15,11 @@ let _assistantNeedleReady = null;
 let _assistantNeedleSerial = 0;
 let _assistantNeedleGeneration = 0;
 const _assistantNeedlePending = new Map();
+let _assistantNeedlePrimaryEpoch = 0;
+let _assistantNeedlePoolEpoch = 0;
+let _assistantNeedleFocusLanes = [];
+const _assistantNeedleFocusWaiting = [];
+const ASSISTANT_NEEDLE_FOCUS_WORKERS = 3;
 
 function assistantNeedleState(next){
   if(next){
@@ -119,6 +124,15 @@ function assistantNeedleStop(reason){
 // A broken runtime can be restarted without cancelling the user's workflow.
 // Only an explicit stop invalidates the conversation generation.
 function assistantNeedleResetRuntime(reason){
+  _assistantNeedlePoolEpoch += 1;
+  assistantNeedleResetPrimary(reason);
+  for(const lane of _assistantNeedleFocusLanes)if(lane.index)assistantNeedleResetLane(lane, reason);
+  _assistantNeedleFocusLanes = [];
+  for(const waiting of _assistantNeedleFocusWaiting.splice(0))waiting.reject(reason || new DOMException('Cancelled', 'AbortError'));
+}
+
+function assistantNeedleResetPrimary(reason){
+  _assistantNeedlePrimaryEpoch += 1;
   if(_assistantNeedleWorker)_assistantNeedleWorker.terminate();
   _assistantNeedleWorker = null;
   _assistantNeedleReady = null;
@@ -141,7 +155,7 @@ function assistantNeedleRequest(type, payload, transfer){
   const id = ++_assistantNeedleSerial;
   return new Promise((resolve,reject)=>{
     const timer = setTimeout(()=>{
-      assistantNeedleResetRuntime(new Error('The assistant took too long. Retry the unfinished part.'));
+      assistantNeedleResetPrimary(new Error('The assistant took too long. Retry the unfinished part.'));
     }, 180000);
     _assistantNeedlePending.set(id, {resolve,reject,timer});
     try{ _assistantNeedleWorker.postMessage({id,type,...payload}, transfer || []); }
@@ -152,6 +166,7 @@ function assistantNeedleRequest(type, payload, transfer){
 function assistantNeedleEnsureReady(){
   if(_assistantNeedleReady)return _assistantNeedleReady;
   const generation = _assistantNeedleGeneration;
+  const epoch = _assistantNeedlePrimaryEpoch;
   _assistantNeedleReady = (async()=>{
     if(!(await assistantNeedleHasDownload()))throw new Error('Download Needle 3 first using the download button in the assistant or Settings.');
     const cache = await caches.open(ASSISTANT_NEEDLE_CACHE);
@@ -163,9 +178,10 @@ function assistantNeedleEnsureReady(){
       catch(err){ await cache.delete(ASSISTANT_NEEDLE_BASE + asset.path); assistantNeedleState({phase:'missing'}); throw err; }
       buffers.push(bytes);
     }
-    if(generation !== _assistantNeedleGeneration)throw new DOMException('Cancelled', 'AbortError');
-    _assistantNeedleWorker = new Worker('./js/assistant-needle-worker.js');
-    _assistantNeedleWorker.onmessage = event=>{
+    if(generation !== _assistantNeedleGeneration || epoch !== _assistantNeedlePrimaryEpoch)throw new DOMException('Cancelled', 'AbortError');
+    const worker = new Worker('./js/assistant-needle-worker.js');
+    _assistantNeedleWorker = worker;
+    worker.onmessage = event=>{
       const data = event.data || {};
       const pending = _assistantNeedlePending.get(data.id);
       if(!pending)return;
@@ -174,14 +190,102 @@ function assistantNeedleEnsureReady(){
       if(data.error)pending.reject(new Error(data.error));
       else pending.resolve(data.result);
     };
-    _assistantNeedleWorker.onerror = ()=>assistantNeedleResetRuntime(new Error('The on-device assistant stopped unexpectedly. Retry the unfinished part to restart it.'));
+    worker.onerror = ()=>{if(_assistantNeedleWorker === worker)assistantNeedleResetPrimary(new Error('The on-device assistant stopped unexpectedly. Retry the unfinished part to restart it.'));};
     await assistantNeedleRequest('load', {wasm:buffers[0], model:buffers[1]}, buffers);
     return true;
   })().catch(err=>{
-    if(generation === _assistantNeedleGeneration)assistantNeedleResetRuntime();
+    if(generation === _assistantNeedleGeneration && epoch === _assistantNeedlePrimaryEpoch)assistantNeedleResetPrimary();
     throw err;
   });
   return _assistantNeedleReady;
+}
+
+// Focused extractions have independent contexts. A lease covers both boot and
+// inference, so concurrent callers cannot accidentally share a native engine.
+function assistantNeedleAcquireLane(){
+  if(!_assistantNeedleFocusLanes.length)_assistantNeedleFocusLanes = Array.from({length:ASSISTANT_NEEDLE_FOCUS_WORKERS},
+    (_,index)=>({index, busy:false, worker:null, ready:null, epoch:0, pending:new Map()}));
+  const lane = _assistantNeedleFocusLanes.find(row => !row.busy && !row.disabled);
+  if(lane){lane.busy = true; return Promise.resolve(lane);}
+  return new Promise((resolve,reject)=>_assistantNeedleFocusWaiting.push({resolve,reject}));
+}
+
+function assistantNeedleReleaseLane(lane){
+  if(!_assistantNeedleFocusLanes.includes(lane))return;
+  lane.busy = false;
+  const available = _assistantNeedleFocusLanes.find(row => !row.busy && !row.disabled);
+  if(available && _assistantNeedleFocusWaiting.length){
+    available.busy = true;_assistantNeedleFocusWaiting.shift().resolve(available);
+  }
+}
+
+function assistantNeedleResetLane(lane, reason){
+  lane.epoch += 1;
+  lane.worker?.terminate();lane.worker = null;lane.ready = null;
+  for(const pending of lane.pending.values()){
+    clearTimeout(pending.timer);pending.reject(reason || new DOMException('Cancelled', 'AbortError'));
+  }
+  lane.pending.clear();
+}
+
+function assistantNeedleLaneRequest(lane, type, payload, transfer){
+  const id = ++_assistantNeedleSerial;
+  return new Promise((resolve,reject)=>{
+    const timer = setTimeout(()=>assistantNeedleResetLane(lane,
+      new Error('The assistant took too long. Retry the unfinished part.')), 180000);
+    lane.pending.set(id, {resolve,reject,timer});
+    try{lane.worker.postMessage({id,type,...payload}, transfer || []);}
+    catch(error){clearTimeout(timer);lane.pending.delete(id);reject(error);}
+  });
+}
+
+function assistantNeedleEnsureLane(lane){
+  if(!lane.index)return assistantNeedleEnsureReady();
+  if(lane.ready)return lane.ready;
+  const epoch = lane.epoch, poolEpoch = _assistantNeedlePoolEpoch;
+  lane.ready = (async()=>{
+    if(!await assistantNeedleHasDownload())throw new Error('Download Needle 3 first.');
+    const cache = await caches.open(ASSISTANT_NEEDLE_CACHE), buffers = [];
+    for(const asset of ASSISTANT_NEEDLE_ASSETS){
+      const response = await cache.match(ASSISTANT_NEEDLE_BASE + asset.path);
+      if(!response)throw new Error('Download Needle 3 first.');
+      const bytes = await response.arrayBuffer();
+      await assistantNeedleVerify(asset, bytes);buffers.push(bytes);
+    }
+    if(epoch !== lane.epoch || poolEpoch !== _assistantNeedlePoolEpoch)throw new DOMException('Cancelled', 'AbortError');
+    const worker = new Worker('./js/assistant-needle-worker.js');lane.worker = worker;
+    worker.onmessage = event=>{
+      const data = event.data || {}, pending = lane.pending.get(data.id);
+      if(!pending)return;
+      clearTimeout(pending.timer);lane.pending.delete(data.id);
+      if(data.error)pending.reject(new Error(data.error));else pending.resolve(data.result);
+    };
+    worker.onerror = ()=>{if(lane.worker === worker)assistantNeedleResetLane(lane,
+      new Error('The on-device assistant stopped unexpectedly. Retry the unfinished part to restart it.'));};
+    await assistantNeedleLaneRequest(lane, 'load', {wasm:buffers[0], model:buffers[1]}, buffers);
+  })().catch(error=>{if(epoch === lane.epoch)assistantNeedleResetLane(lane, error);throw error;});
+  return lane.ready;
+}
+
+async function assistantNeedleFocusRequest(payload){
+  const epoch = _assistantNeedlePoolEpoch;
+  const lane = await assistantNeedleAcquireLane();
+  try{
+    const readyStarted = performance.now();
+    await assistantNeedleEnsureLane(lane);
+    const readyMs = performance.now() - readyStarted;
+    if(epoch !== _assistantNeedlePoolEpoch)throw new DOMException('Cancelled', 'AbortError');
+    const raw = lane.index ? await assistantNeedleLaneRequest(lane, 'focus', payload)
+      : await assistantNeedleRequest('focus', payload);
+    if(epoch !== _assistantNeedlePoolEpoch)throw new DOMException('Cancelled', 'AbortError');
+    return {...raw, _workerLane:lane.index, _readyMs:readyMs};
+  }catch(error){
+    if(/memory|allocation|out of bounds/i.test(String(error.message || error))){
+      if(lane.index){lane.disabled = true;assistantNeedleResetLane(lane, error);}
+      else if(_assistantNeedleWorker)assistantNeedleResetPrimary(error);
+    }
+    throw error;
+  }finally{assistantNeedleReleaseLane(lane);}
 }
 
 // Lengths stay in the user's words. An integer grammar makes the model turn

@@ -837,6 +837,7 @@ async function sendAssistantMessage(text, opts){
   }
   assistantShowBusy(true);
   if(assistantSettings().provider === 'needle' && !opts.needleAction){
+    assistantRetireFocusControls();
     const focus = _assistantSession && _assistantSession.focus;
     if(!focus || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(focus) || typeof assistantFocusTurn !== 'function'){
       appendAssistantBubble('say', 'Needle changes one item at a time. Use Add, Edit with AI on a card, or Change with AI in details.');
@@ -847,6 +848,7 @@ async function sendAssistantMessage(text, opts){
       const out = await assistantFocusTurn(focus, value, {
         onProgress:info => {
           if(turn !== _assistantTurn)return;
+          if(info && info.phase === 'staged')assistantShowFocusReview(focus, {live:true});
           const wait = $('assistant-waiting');
           if(!wait)return;
           const pending = info && info.pending && info.pending.length ? ` · ${info.pending.join(', ')}` : '';
@@ -1165,14 +1167,18 @@ function assistantRetireFocusControls(){
   });
 }
 
-function assistantShowFocusReview(session){
+function assistantShowFocusReview(session, opts){
   if(!session || typeof assistantFocusReviewHtml !== 'function')return;
   assistantRetireFocusControls();
-  const bubble = document.createElement('div');
+  const thread = assistantThreadEl();
+  const bubble = thread?.querySelector('[data-focus-live]') || document.createElement('div');
   bubble.className = 'assistant-bubble assistant-bubble-say';
   bubble.innerHTML = assistantFocusReviewHtml(session);
-  assistantThreadEl()?.append(bubble);
-  const thread = assistantThreadEl();
+  if(opts && opts.live){
+    bubble.dataset.focusLive = 'true';
+    bubble.querySelectorAll('button,input').forEach(control => {control.disabled = true;});
+  }else delete bubble.dataset.focusLive;
+  if(!bubble.isConnected)thread?.append(bubble);
   if(thread)thread.scrollTop = thread.scrollHeight;
 }
 
@@ -1187,6 +1193,7 @@ function assistantRefreshFocusReview(review){
 async function assistantHandleFocusClick(target){
   const session = _assistantSession && _assistantSession.focus;
   if(!session)return false;
+  if(_assistantBusy || target.closest('button')?.disabled)return true;
   const save = target.closest('[data-focus-save]');
   if(save){
     if(save.disabled || typeof assistantFocusCommit !== 'function')return true;
@@ -1218,11 +1225,15 @@ async function assistantHandleFocusClick(target){
     const which = choice.dataset.focusChoice;
     const value = choice.dataset.focusValue || '';
     if(which === 'resume' && typeof assistantFocusTurn === 'function'){
+      const turn = ++_assistantTurn;
+      assistantRetireFocusControls();
       assistantShowBusy(true);
       try{
-        await assistantFocusTurn(session, '', {resume:true});
-        assistantShowFocusReview(session);
-      }finally{ assistantShowBusy(false); }
+        const out = await assistantFocusTurn(session, '', {resume:true, onProgress:info => {
+          if(turn === _assistantTurn && info.phase === 'staged')assistantShowFocusReview(session, {live:true});
+        }});
+        if(turn === _assistantTurn && !out.cancelled)assistantShowFocusReview(session);
+      }finally{ if(turn === _assistantTurn)assistantShowBusy(false); }
       return true;
     }
     if((which === 'eventScope' || value === 'series' || value === 'occurrence') && typeof assistantFocusSetScope === 'function' && (value === 'series' || value === 'occurrence')){

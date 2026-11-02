@@ -27,6 +27,33 @@ corrections and clarification choices stage real values, and remaining uncertain
 fields retain their interpretation-approval button. Reminder previews show the
 actual mode and lead time.
 
+Focused inference uses a lazy pool of three Needle workers. Each has an
+independent model instance and context; their contexts do not form one larger
+prompt. New-item name extraction and habit-frequency extraction start alongside
+setting discovery. Discovered independent families run through the same pool.
+An edit's identity/kind and event scope resolve before dependent fields;
+alternative schedules wait for new places and weather profiles. Completed
+families update one editable preview as other jobs finish. These checkpoints
+live in the current session, not in the habit list or across a page reload.
+
+The job ledger retains attempts, input, status, and staged fields. Follow-ups
+replace work in the same family and preserve unfinished work in other families
+with its original input. A request revision rejects late results. A crashed or
+timed-out worker releases only its own requests; its failed job gets one fresh
+attempt while siblings retain their results. Extra workers that cannot allocate
+memory are disabled for that runtime, allowing queued work to use survivors.
+Closing, cancelling, removing the model, or changing provider stops the whole
+pool and rejects its queued jobs. Each worker reads the same verified cached
+assets; additional workers do not download another model.
+
+Availability schemas start compact. A native token-budget failure subdivides
+the selected schema without dropping fields or raising the context limit.
+Unfinished jobs remain available through **continue**, including a failed final
+completeness check. Save stays blocked during inference, pending work, errors,
+clarifications, and interpretation approval. A model-supplied new-item title
+that includes scheduling words can be shortened through the existing title
+normalizer, with source grounding and explicit interpretation approval.
+
 The assistant is optional local chat. New setups default to on-device Needle 3;
 existing Ollama / LM Studio selections remain available. `js/assistant-loader.js`
 loads the assistant code after the first home render. It must not participate in

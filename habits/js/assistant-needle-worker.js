@@ -241,7 +241,10 @@ self.onmessage = event=>{
         active=null;
         const tools=Array.isArray(data.tools) ? data.tools.slice(0,16) : [];
         needleInit(data.system || '', tools);
-        self.postMessage({id:data.id,result:needleComplete(String(data.request || ''))});
+        const startedAt = Date.now();
+        const result = needleComplete(String(data.request || ''));
+        result._inference = {startedAt, endedAt:Date.now(), heapBytes:engine.HEAPU8.byteLength};
+        self.postMessage({id:data.id,result});
       }else if(data.type === 'complete'){
         if(!engine)throw new Error('Needle is not loaded.');
         self.postMessage({id:data.id,result:needleRun(data)});

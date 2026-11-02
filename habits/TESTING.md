@@ -102,9 +102,17 @@ To also test the real pinned Needle runtime, task/habit creation, edits and an
 offline reload, set `NEEDLE_MODEL_PATH` to `needle3.cact` and `NEEDLE_WASM_PATH`
 to `needle.wasm` from the revision in `lib/needle/README.md`. The test serves
 these local files through the normal download flow and verifies their hashes.
-`tests/assistant-focus-test.js` uses the same two variables for a live edit of
-one habit. Scripted cases in that file do not load the model. Neither file is a
-held-out accuracy score.
+`tests/assistant-focus-test.js` uses the same two variables for live focused edits
+and two complete add-screen runs of “Walk every other day before sunset”. It
+checks all three worker lanes, overlapping native inference, interpretation
+approval, confirmed saves, and recovery after terminating a real in-flight
+worker. Scripted cases cover schema subdivision, retained partial results,
+continuation, independent create jobs, stale replies, and follow-up grounding.
+The transport tests also cover the three-worker bound, isolated crashes,
+cancellation of active/queued jobs, and allocation fallback. Neither file is a
+held-out accuracy score. Live traces are written to
+`test-results/needle-focus-sunset-add-live.json` and
+`test-results/needle-focus-worker-recovery-live.json`.
 
 ## Adding planner tests without copying the harness
 

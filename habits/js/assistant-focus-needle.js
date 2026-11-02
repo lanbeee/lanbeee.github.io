@@ -91,23 +91,19 @@ function assistantFocusSystem(session){
 }
 
 async function assistantFocusLiveExtract(spec){
-  if(typeof assistantNeedleEnsureReady !== 'function' || typeof assistantNeedleRequest !== 'function'){
+  if(typeof assistantNeedleFocusRequest !== 'function'){
     throw new Error('Needle is not available on this page.');
   }
-  const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  await assistantNeedleEnsureReady();
-  const ready = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started;
-  const result = await assistantNeedleRequest('focus', {
+  const result = await assistantNeedleFocusRequest({
     system:spec.system,
     request:spec.request,
     tools:spec.tools || [spec.tool]
   });
-  if(result && typeof result === 'object')result._readyMs = ready;
   return result;
 }
 
-function assistantFocusEnsure(session){
-  if(!assistantFocusAlive(session)){
+function assistantFocusEnsure(session, revision){
+  if(!assistantFocusAlive(session) || revision != null && revision !== session.requestRevision){
     const error = new DOMException('Cancelled', 'AbortError');
     throw error;
   }
@@ -120,11 +116,54 @@ function assistantFocusNoteTiming(session, family, started, ready){
 }
 
 async function assistantFocusModel(session, spec, extract){
-  assistantFocusEnsure(session);
+  spec = {...spec, revision:spec.revision == null ? session.requestRevision : spec.revision};
+  assistantFocusEnsure(session, spec.revision);
   const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const raw = await extract(spec);
-  assistantFocusEnsure(session);
-  assistantFocusNoteTiming(session, spec.family, started, raw && raw._readyMs);
+  const properties = Object.entries(spec.tool && spec.tool.parameters.properties || {});
+  const partition = async size => {
+    const args = {}, confidences = [], issues = [];
+    for(let offset = 0; offset < properties.length; offset += size){
+      const subset = Object.fromEntries(properties.slice(offset, offset + size));
+      const tool = {...spec.tool, parameters:{...spec.tool.parameters, properties:subset,
+        required:(spec.tool.parameters.required || []).filter(key => Object.hasOwn(subset, key))}};
+      const part = await assistantFocusModel(session, {...spec, tool}, extract);
+      Object.entries(part.args).forEach(([key,value]) => {if(Object.hasOwn(subset,key))args[key] = value;});
+      if(part.confidence != null)confidences.push(part.confidence);
+      if(part.raw._needleIssue)issues.push(part.raw._needleIssue);
+    }
+    return {function_calls:[{name:spec.tool.name, arguments:args}],
+      confidence:confidences.length ? Math.min(...confidences) : 0,
+      _needleIssue:issues.join('; '), _recoveredBudget:true};
+  };
+  // Keep ordinary availability records compact before decoding starts. Wider
+  // advanced families can shrink further after a budget failure.
+  const width = session._focusSchemaWidths && session._focusSchemaWidths[spec.family] || (spec.family === 'schedule' ? 4 : 0);
+  let measured = false;
+  let raw;
+  try{
+    if(width && properties.length > width){
+      raw = await partition(width);
+      measured = true; // Each actual inference has its own timing entry.
+    }else raw = await extract(spec);
+  }catch(error){
+    assistantFocusEnsure(session, spec.revision);
+    if(!/token budget|context|too many settings/i.test(String(error && error.message || error)))throw error;
+    assistantFocusNoteTiming(session, spec.family, started);
+    measured = true;
+    session.trace = session.trace || [];
+    session.trace.push({family:spec.family, error:String(error.message || error)});
+    // A mandatory multi-field record can make Needle repeat empty fields until
+    // decoding runs out. Reset with smaller schemas, retaining every field and
+    // the literal request. Each subdivision strictly shrinks the schema.
+    if(ASSISTANT_FOCUS_EXTRACT_FIELDS[spec.family] && properties.length > 1){
+      const size = Math.ceil(properties.length / 2);
+      session._focusSchemaWidths = session._focusSchemaWidths || {};
+      session._focusSchemaWidths[spec.family] = Math.min(session._focusSchemaWidths[spec.family] || size, size);
+      raw = await partition(size);
+    }else raw = {function_calls:[], _needleIssue:String(error.message || error)};
+  }
+  assistantFocusEnsure(session, spec.revision);
+  if(!measured)assistantFocusNoteTiming(session, spec.family, started, raw && raw._readyMs);
   const parsed = assistantFocusArgs(raw);
   session.trace = session.trace || [];
   session.trace.push({
@@ -134,7 +173,9 @@ async function assistantFocusModel(session, spec, extract){
     calls:(raw && raw.function_calls || []).map(call => call.name),
     suppressed:(raw && raw.suppressed_calls || []).map(call => call.name),
     content:raw && raw.content || '',
-    reasoning:raw && raw.reasoning || ''
+    reasoning:raw && raw.reasoning || '',
+    issue:raw && raw._needleIssue || '', recoveredBudget:Boolean(raw && raw._recoveredBudget),
+    workerLane:raw && raw._workerLane, inference:raw && raw._inference
   });
   return parsed;
 }
@@ -316,6 +357,22 @@ function assistantFocusApplyModelField(session, fieldId, rawValue, phrase, confi
   const valueInPhrase = Boolean(text) && !copiedPhrase && assistantFocusPhraseIn(phrase, text);
   const contextualLength = target === 'locationPrefs' && /\b(?:prefer|avoid|high|little|low)\b/i.test(phrase) || ['minChunkMinutes','minGapMinutes','timerAutoStopMinutes','autoMarkMinutes'].includes(target) && assistantFocusDurationSlot(phrase) === target;
   const stray = (valueInPhrase || copiedPhrase) && !contextualLength && assistantFocusStrayValue(target, text);
+  if(target === 'name' && session.operation === 'create' && stray && (valueInPhrase || copiedPhrase)
+    && typeof assistantCutNameTail === 'function'){
+    // Normalize a model-supplied title that still includes scheduling words.
+    // The shortened title must remain grounded, short, and free of settings;
+    // it always needs interpretation approval before Save.
+    const title = assistantCutNameTail(text);
+    if(title && title.length < text.length && assistantFocusPhraseIn(text, title)
+      && !assistantFocusStrayValue('name', title)){
+      const normalized = assistantFocusNormalize('name', title, session);
+      if(normalized.ok && assistantFocusNorm(title).split(' ').length <= 6){
+        const at = text.toLowerCase().indexOf(title.toLowerCase());
+        normalized.value = at >= 0 ? text.slice(at, at + title.length) : title;
+        return assistantFocusStageParsed(session, target, normalized, phrase, confidence, true);
+      }
+    }
+  }
   if(target === 'name' && !stray && fromModel && fromModel.ok && (valueInPhrase || copiedPhrase) && assistantFocusNorm(fromModel.value) !== assistantFocusNorm((session.currentRequest || session.originalRequest))){
     return assistantFocusStageParsed(session, target, fromModel, phrase, confidence, repaired);
   }
@@ -507,6 +564,11 @@ async function assistantFocusExtractOne(session, row, extract, opts){
     request:session.currentRequest || session.originalRequest,
     tool:assistantFocusToolFor(row.family, session)
   };
+  if(row.family === 'identity' && session.operation === 'create' && opts.repair){
+    // The add screen already selected this action. Make it explicit after a
+    // declined title extraction; all returned words still need user grounding.
+    spec.request = `Add a ${session.kind}: ${spec.request}`;
+  }
   if(opts.onProgress)opts.onProgress({phase:'think', step:row.family, pending:session.pendingFamilies.slice()});
   const call = await assistantFocusModel(session, spec, extract);
   const spoken = String(call.args.phrase || '').trim();
@@ -514,6 +576,14 @@ async function assistantFocusExtractOne(session, row, extract, opts){
   call.args.phrase = spokenOk ? spoken : (session.currentRequest || session.originalRequest);
   const before = JSON.stringify([session.changes, session.unresolved]);
   const applied = assistantFocusApplyFamily(session, row.family, call, Boolean(opts.repair));
+  if(call.raw._needleIssue)assistantFocusUnresolve(session, {field:`budget:${row.family}`, family:row.family,
+    question:`I couldn’t finish reading ${row.family}. Please enter that setting below or restate it.`});
+  else session.unresolved = session.unresolved.filter(item => item.field !== `budget:${row.family}`);
+  if(row.optional && !applied.ok && !call.raw._needleIssue){
+    session._focusDone = session._focusDone || [];
+    if(!session._focusDone.includes(row.family))session._focusDone.push(row.family);
+    return true;
+  }
   if(row.family === 'event')assistantFocusEventScope(session, call.args, call.args.phrase || row.phrase);
   if(row.family === 'places' && session.eventScope === 'occurrence' && session.changes.some(change => change.field === 'places')){
     assistantFocusUnresolve(session, {
@@ -524,10 +594,10 @@ async function assistantFocusExtractOne(session, row, extract, opts){
     });
   }
   const progressed = before !== JSON.stringify([session.changes, session.unresolved]);
-  if(!applied.ok && !session.repairs[row.family]){
+  if(!applied.ok && !call.raw._needleIssue && !session.repairs[row.family]){
     session.repairs[row.family] = 1;
     session.timing.repair += 1;
-    await assistantFocusExtractOne(session, row, extract, Object.assign({}, opts, {repair:true}));
+    if(await assistantFocusExtractOne(session, row, extract, Object.assign({}, opts, {repair:true})) === false)return false;
   }
   const covered = (ASSISTANT_FOCUS_EXTRACT_FIELDS[row.family] || []).some(([fieldId]) => {
     const target = assistantFocusPreferField(fieldId, row.phrase);
@@ -542,7 +612,8 @@ async function assistantFocusExtractOne(session, row, extract, opts){
     session.unresolved = session.unresolved.filter(item => item.field !== `missing:${row.family}`);
   }
   session._focusDone = session._focusDone || [];
-  if(!session._focusDone.includes(row.family))session._focusDone.push(row.family);
+  if(!call.raw._needleIssue && !session._focusDone.includes(row.family))session._focusDone.push(row.family);
+  return !call.raw._needleIssue;
 }
 
 const ASSISTANT_FOCUS_GROUP_HINTS = {
@@ -637,28 +708,92 @@ async function assistantFocusDetect(session, extract, opts){
   else session.unresolved = session.unresolved.filter(item => item.field !== 'request');
   session._focusSelected = found.families.map(row => ({family:row.family}));
   const existing = Array.isArray(session._focusQueue) ? session._focusQueue : [];
-  const queued = found.families.filter((row, index, rows) => !existing.concat(rows.slice(0,index)).some(item => item.family === row.family));
-  session._focusQueue = queued.concat(existing);
-  session.pendingFamilies = session._focusQueue.map(row => row.family);
+  for(let index = existing.length - 1; index >= 0; index--){
+    if(existing[index].request && existing[index].request !== session.currentRequest
+      && found.families.some(row => row.family === existing[index].family)){
+      existing[index].status = 'superseded';existing.splice(index, 1);
+    }
+  }
+  const queued = found.families.filter((row, index, rows) => !(session._focusDone || []).includes(row.family)
+    && !existing.concat(rows.slice(0,index)).some(item => item.family === row.family))
+    .map(row => ({...row, request:session.currentRequest}));
+  // Keep one queue object: known create fields may already be running while
+  // the discovery job identifies additional independent settings.
+  existing.push(...queued);
+  session._focusQueue = existing;
+  session.pendingFamilies = existing.map(row => row.family);
   session.timing.families += Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started);
   if(opts.onProgress)opts.onProgress({phase:'think', step:'families', pending:session.pendingFamilies.slice()});
 }
 
+async function assistantFocusRunJobs(session, rows, extract, opts){
+  const revision = session.requestRevision, queue = session._focusQueue;
+  const pass = session.runSequence;
+  session.jobs = session.jobs || [];
+  let cursor = 0;
+  await Promise.all(Array.from({length:Math.min(3, rows.length)}, async()=>{
+    while(cursor < rows.length){
+      const row = rows[cursor++];
+      assistantFocusEnsure(session, revision);
+      if(row.runPass === pass)continue;
+      row.runPass = pass;
+      if(!session.jobs.includes(row))session.jobs.push(row);
+      row.revision = revision;row.request = row.request || session.currentRequest;row.status = 'running';
+      // Keep the exact input with unfinished work across follow-up messages.
+      // Validation writes through to the shared draft, while grounding reads
+      // the request that actually produced this job's model arguments.
+      const context = new Proxy(session, {get:(target,key)=>key === 'currentRequest' ? row.request : Reflect.get(target,key)});
+      let finished = false;
+      for(let attempt = 0; attempt < 2; attempt++){
+        row.attempts = (row.attempts || 0) + 1;
+        try{
+          finished = await assistantFocusExtractOne(context, row, extract, opts);
+          break;
+        }catch(error){
+          assistantFocusEnsure(session, revision);
+          if(error.name === 'AbortError')throw error;
+          row.error = String(error.message || error);
+          session.trace = session.trace || [];
+          session.trace.push({family:row.family, error:row.error, attempt:row.attempts});
+          // Restart only the failed inference. Semantic ambiguity uses the
+          // review controls; retrying identical guesses cannot resolve it.
+          if(attempt === 0 && /stopped unexpectedly|took too long|runtime failed|memory|allocation|out of bounds/i.test(row.error))continue;
+          session.continuationError = 'Your draft is kept. Continue to retry the unfinished settings.';
+          break;
+        }
+      }
+      assistantFocusEnsure(session, revision);
+      if(finished){
+        const index = queue.indexOf(row);if(index >= 0)queue.splice(index, 1);
+        row.status = session.unresolved.some(item => item.family === row.family) ? 'needs_input'
+          : session.changes.some(change => change.family === row.family) ? 'staged' : 'not_mentioned';
+      }else row.status = 'retryable_failed';
+      row.fields = session.changes.filter(change => change.family === row.family).map(change => change.field);
+      session.pendingFamilies = queue.map(item => item.family);
+      if(opts.onProgress)opts.onProgress({phase:'staged', step:row.family, pending:session.pendingFamilies.slice()});
+    }
+  }));
+}
+
 async function assistantFocusExtractPending(session, extract, opts){
   const queue = Array.isArray(session._focusQueue) ? session._focusQueue : [];
-  const batch = queue.splice(0, 3);
-  session.pendingFamilies = queue.map(row => row.family);
-  for(const row of batch){
-    assistantFocusEnsure(session);
-    await assistantFocusExtractOne(session, row, extract, opts);
-    session.pendingFamilies = queue.map(item => item.family);
-    await new Promise(resolve => setTimeout(resolve, 0));
+  // A kind or event-scope change affects applicability. Resolve those first;
+  // the remaining families own separate fields and can merge independently.
+  const barriers = queue.filter(row => session.operation === 'edit' &&
+    (row.family === 'identity' || session.kind === 'event' && row.family === 'event'));
+  if(barriers.length){
+    await assistantFocusRunJobs(session, barriers, extract, opts);
+    if(barriers.some(row => queue.includes(row)))return;
+  }
+  await assistantFocusRunJobs(session, queue.filter(row => row.family !== 'alternatives'), extract, opts);
+  // Alternative schedules can refer to a newly staged place/weather profile.
+  if(!queue.some(row => row.family === 'weather' || row.family === 'places')){
+    await assistantFocusRunJobs(session, queue.filter(row => row.family === 'alternatives'), extract, opts);
   }
 }
 
 async function assistantFocusCompleteness(session, extract, opts){
   if(session.pendingFamilies.length || session._focusChecked)return;
-  session._focusChecked = true;
   const staged = session.changes.map(change => change.field).join(', ').slice(0, 180);
   const call = await assistantFocusModel(session, {
     family:'completeness',
@@ -668,15 +803,20 @@ async function assistantFocusCompleteness(session, extract, opts){
   }, extract);
   const found = assistantFocusGroupsFromCall(session, call);
   assistantFocusBlockOutside(session, found.outside);
+  if(call.raw._needleIssue){
+    session.continuationError = 'Your draft is kept. Continue to check the remaining settings.';
+    return;
+  }
   // A missing sibling field can belong to a group already extracted. Every
   // returned omission must either stage a value or remain explicitly blocked.
   if((session._focusSelected || []).some(row => row.family === 'alternatives')){
     found.families.forEach(row => {if(row.family === 'schedule')row.family = 'alternatives';});
   }
   const extra = found.families.filter((row, index, rows) => !rows.slice(0,index).some(item => item.family === row.family && item.phrase === row.phrase));
-  for(const row of extra){
-    await assistantFocusExtractOne(session, row, extract, Object.assign({}, opts, {missing:true}));
-  }
+  extra.forEach(row => session._focusQueue.push({...row, request:session.currentRequest}));
+  session.pendingFamilies = session._focusQueue.map(row => row.family);
+  if(extra.length)await assistantFocusExtractPending(session, extract, Object.assign({}, opts, {missing:true}));
+  session._focusChecked = true;
 }
 
 function assistantFocusFinishScope(session){
@@ -691,24 +831,50 @@ function assistantFocusFinishScope(session){
   assistantFocusEventScope(session, {}, '');
 }
 
-async function assistantFocusTurn(session, text, opts){
+async function assistantFocusRunTurn(session, text, opts){
   opts = opts || {};
   if(!session)throw new Error('Open one item before asking Needle.');
   const extract = opts.extract || assistantFocusLiveExtract;
   if(!opts.resume){
     const spoken = String(text || '').trim();
     if(!spoken)return {type:'focus', empty:true};
+    const unfinished = (session._focusQueue || []).map(row => ({...row, request:row.request || session.currentRequest,
+      runPass:undefined, status:'queued'}));
+    (session.jobs || []).filter(row => row.status === 'running').forEach(row => {row.status = 'superseded';});
     session.requests.push(spoken);
     session.originalRequest = session.requests.join('\n');
     session.currentRequest = spoken;
+    session.requestRevision = (session.requestRevision || 0) + 1;
     session.requestText = session.originalRequest;
     session.repairs = {};
     session._focusDone = [];
     session._focusChecked = false;
-    await assistantFocusDetect(session, extract, opts);
+    session._focusNeedsDetect = true;
+    session._focusQueue = unfinished;
+    session.pendingFamilies = unfinished.map(row => row.family);
   }
   const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const revision = session.requestRevision;
+  session.runSequence = (session.runSequence || 0) + 1;
+  session.continuationError = '';
   try{
+    if(session._focusNeedsDetect){
+      if(!opts.resume && session.operation === 'create' && session.requests.length === 1){
+        const known = [{family:'identity', phrase:session.currentRequest}];
+        if(session.kind === 'habit')known.push({family:'recurrence', phrase:session.currentRequest, optional:true});
+        session._focusQueue.push(...known);session.pendingFamilies = known.map(row => row.family);
+        // Name and habit rhythm are known from the entry point. Neither waits
+        // for discovery, and discovery does not wait for those extractions.
+        const outcomes = await Promise.allSettled([
+          assistantFocusDetect(session, extract, opts), assistantFocusRunJobs(session, known, extract, opts)
+        ]);
+        assistantFocusEnsure(session, revision);
+        const failed = outcomes.find(outcome => outcome.status === 'rejected');
+        if(failed)throw failed.reason;
+      }else await assistantFocusDetect(session, extract, opts);
+      assistantFocusEnsure(session, revision);
+      session._focusNeedsDetect = false;
+    }
     await assistantFocusExtractPending(session, extract, opts);
     if(!session.pendingFamilies.length)await assistantFocusCompleteness(session, extract, opts);
     assistantFocusFinishScope(session);
@@ -719,8 +885,10 @@ async function assistantFocusTurn(session, text, opts){
       }
     }
   }catch(error){
-    if(error && error.name === 'AbortError')return {type:'focus', cancelled:true, session};
-    throw error;
+    if(error && error.name === 'AbortError' || revision !== session.requestRevision)return {type:'focus', cancelled:true, session};
+    session.trace = session.trace || [];
+    session.trace.push({family:session._focusNeedsDetect ? 'families' : session.pendingFamilies[0] || 'completeness', error:String(error.message || error)});
+    session.continuationError = 'Your draft is kept. Continue to retry the unfinished settings.';
   }
   session.timing.total += Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started);
   return {
@@ -728,4 +896,11 @@ async function assistantFocusTurn(session, text, opts){
     session,
     html:typeof assistantFocusReviewHtml === 'function' ? assistantFocusReviewHtml(session) : ''
   };
+}
+
+function assistantFocusTurn(session, text, opts){
+  if(session && session._focusInFlight && opts && opts.resume)return session._focusInFlight;
+  const pending = assistantFocusRunTurn(session, text, opts);
+  if(session)session._focusInFlight = pending;
+  return pending.finally(()=>{if(session && session._focusInFlight === pending)session._focusInFlight = null;});
 }

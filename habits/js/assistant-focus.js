@@ -183,6 +183,7 @@ function assistantFocusOpen(opts){
     needsInterpretation:false,
     correctionError:'',
     pendingFamilies:[],
+    continuationError:'',
     repairs:{},
     timing:{init:0, families:0, extract:0, repair:0, validate:0, total:0, passes:[]},
     savedFingerprint:'',
@@ -1110,7 +1111,8 @@ function assistantFocusFingerprint(session){
 
 function assistantFocusCanSave(session){
   if(!assistantFocusAlive(session))return false;
-  if(session.unresolved.length || session.pendingFamilies.length || session.correctionError)return false;
+  if(session._focusInFlight)return false;
+  if(session.unresolved.length || session.pendingFamilies.length || session.correctionError || session.continuationError)return false;
   session.needsInterpretation = session.changes.some(change => change.origin === 'extracted' && change.uncertain);
   if(session.needsInterpretation && session.interpretationApproved !== assistantFocusFingerprint(session))return false;
   if(session.operation === 'edit' && !session.changes.length)return false;
@@ -1144,7 +1146,7 @@ function assistantFocusReviewHtml(session){
   const rules = model.weatherProfile ? `<section class="focus-extra"><h3>${model.weatherProfile.mode === 'edit' ? 'Updated weather profile' : 'New weather profile'} ${assistantFocusEscape(model.weatherProfile.name)}</h3><ul>${model.weatherProfile.rules.map(rule => `<li>${assistantFocusEscape(rule)}</li>`).join('') || '<li>No rules yet</li>'}</ul></section>` : '';
   const topics = model.topics.length ? `<p class="focus-extra">New topics: ${model.topics.map(assistantFocusEscape).join(', ')}</p>` : '';
   const notes = model.notes.map(note => `<p class="focus-note">${assistantFocusEscape(note)}</p>`).join('');
-  const pending = model.pending.length ? `<p class="focus-note">Still reading: ${model.pending.map(assistantFocusEscape).join(', ')}. <button type="button" class="btn" data-focus-choice="resume">keep reading</button></p>` : '';
+  const pending = model.pending.length || session.continuationError ? `<p class="focus-note">${assistantFocusEscape(session.continuationError || `Still reading: ${model.pending.join(', ')}.`)} <button type="button" class="btn" data-focus-choice="resume">continue</button></p>` : '';
   const question = model.question ? `<div class="focus-ask"><p>${assistantFocusEscape(model.question.question)}</p>${(model.question.choices || []).map(choice => {
     const id = typeof choice === 'string' ? choice : choice.id;
     const label = typeof choice === 'string' ? choice : choice.label;
