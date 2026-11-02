@@ -107,42 +107,92 @@ artifacts remain `needle-focus-sunset-add-live.json` and
 checks omitted/shortened evidence, competing proposals, dependency ordering,
 ambiguous values, continuation, stale results and long-context trailing fields.
 
+## Field audit and follow-up context
+
+`tests/assistant-field-coverage-test.js` has a predefined language case for every
+one of the 66 registered fields. Frequency checks its coupled count/period;
+occurrence fields are covered through their scoped time/duration/appearance
+aliases. All cases use the production scheduler, evidence validation, review and
+commit path. The audit checks intended values, absence of unrelated proposals,
+unchanged storage before confirmation, normalized saved values and preserved
+history. Reminder cases emulate Android permissions and reconciliation only;
+they use the real model, without testing actual OS notification delivery.
+
+Ownership policies are now shared across retrieval, source boundaries, model
+evidence and coverage. They distinguish preferences from restrictions, timer and
+reminder lengths from session duration, event end dates from start dates, and
+travel reminders from item reminders. Source excerpts preserve quantities before
+their labels and qualifiers such as “immediately.” Scalar validation rejects
+conflicting, negative or out-of-range values; date validation rejects calendar
+rollover, including February 30. Named dates keep their explicit year across a
+comma. A coverage report records an obligation for its original instruction,
+rather than marking every sibling in a guessed family as required.
+
+Task “plan by” language maps to the task's due date without changing its deadline
+strictness. A date-only edit moves its existing clock to the new day. Habits keep
+their separate soft plan-by date. The Pay rent request “Can you plan this by next
+week” preserves its 7-minute duration and 28-day frequency. “Next week” retains
+the existing seven-calendar-day convention; “first week of 2027” asks for a date.
+An incomplete field label does not clear an existing value.
+
+Each follow-up job receives a stable field-value snapshot and relevant earlier
+user excerpts. Validated earlier evidence also retains its original message and
+offsets, including bare replies to field questions. Explicit first/last references
+narrow the candidate evidence. The field's model extraction reads that original
+wording; only the model's exact returned quote can
+supply a value. Several distinct earlier values without a clear reference ask
+which one. A concrete current value cannot be replaced by historical evidence,
+and old unrelated changes are not replayed. These reads share the same three
+runtime leases. History and provenance are in memory only.
+
+Run the complete field audit:
+
+```bash
+NEEDLE_MODEL_PATH=test-results/needle-live/needle3.cact \
+NEEDLE_WASM_PATH=test-results/needle-live/needle.wasm \
+node tests/assistant-field-coverage-test.js
+```
+
+Evidence is `test-results/needle-field-coverage-live.json`. Without the asset
+variables the same file uses scripted adapters to test host behavior; those
+results are not model-accuracy measurements. `FIELD_CASE` filters case ids for
+diagnosis; omit it for the full audit.
+
 ## Recorded results
 
-- Ten live complex requests passed every predefined expected field and confirmed
-  persistence. The largest produced seventeen field proposals. These cases
-  cover habits, tasks and local events, both Add and Edit, including the previously
-  omitted duration-plus-sunset edit.
-- Sixteen scripted scheduler/trust-boundary checks passed. The joined hour/minute
-  parser remains supported, while conflicting alternative lengths are rejected.
-- The real-model/UI focused test passed 29 checks, including two actual add-sheet
-  runs, native inference overlap across all three lanes and a terminated-worker
-  recovery that retried only its own job.
-- The focused regression test passed 30 checks across scripted/live modes,
-  including save/undo, concurrent edits, event scope and ambiguous-place choices.
-- Detail search/navigation passed after moving its aliases into the shared file.
-- The broad assistant matrix passed 15 of 16 test files with zero page errors;
-  the remaining file has the three independently reproduced baseline failures
-  described below. Those failures were not changed or suppressed.
+- The field audit passed **75 live Needle cases**: 69 positive cases, including
+  date clarification/recovery and historical references, plus six guards for
+  invalid dates, ambiguous week ranges, conflicting quantities, negative radius
+  and ambiguous prior durations. It covers all 66 registered fields; each
+  positive case checks confirmed persistence and no unintended sibling edits.
+- The assistant suite passed **17 files / 1,257 assertions**, with zero page
+  errors. It includes failure recovery, stale replies, evidence grounding,
+  save/undo and concurrent-edit regressions. These suite assertions use scripted
+  inference unless the individual test explicitly enables live assets.
+- The **14 complex live create/edit cases** also passed every expected field and
+  confirmed persistence, including natural “remind me to” task creation,
+  simultaneous restrictions/preferences and the seventeen-proposal Study case.
+- A further live recheck verifies historical references and actual saved
+  reminder modes/lead times. Reminder reset now removes existing overrides in
+  its own scope, preserves other dates and applies explicit replacement modes.
+  The focused regression suite checks reset plus replacement in both scopes.
+- Detail search/navigation passed after updating its shared date aliases.
+- Earlier UI/runtime measurements include actual Add-sheet interactions,
+  three-lane inference overlap and terminated-worker recovery. Those earlier
+  measurements are distinct from this field audit.
 
-## Limits and baseline failures
+## Limits
 
-This is an evaluated improvement on these requests, not proof that every field
-or natural-language paraphrase works. The catalog covers registered settings;
-that is distinct from end-to-end language coverage. Retrieval/model omissions
-remain possible. Unknown/contradictory values must remain visible, and complex
-linked alternatives without a supported structured interpretation require
-clarification. Keywords can nominate extra jobs; a nomination is not evidence
-that a value should change. An uncertain reading stays visible in the summary
-and does not add a separate approval step before Save.
+Representative coverage of every field is not exhaustive natural-language
+coverage. Unknown paraphrases, semantic omissions and complex linked alternatives
+can still require clarification. A reference that needs an unsupported
+transformation of an earlier value asks for a concrete value; history does not
+justify inventing a new one. Several prior values without a clear reference
+remain ambiguous. Over-budget historical references ask which instruction to use
+instead of silently selecting one.
 
-Measurements are desktop Chrome tests. Physical Android throughput and memory
-pressure have not been measured. Three independent contexts do not form one
-24K-token input.
-
-The broad assistant suite currently has three query/weather failures: ordinal
-overdue ranking, a multi-condition count, and weekly best-weather scoring. They
-also reproduce when the modified runtime scripts and index are replaced by the
-previous commit's bytes. Baseline evidence is in
-`test-results/baseline-queries-final.log`; these are separate from the field scheduler
-and are not counted as passing.
+Measurements use desktop Chrome with synthetic data and the pinned live Needle
+WASM. Physical Android throughput, memory pressure and notification delivery
+have not been measured by this audit. Three independent contexts do not form one
+24K-token input. The earlier query/weather baseline failures are historical;
+the current broad suite passed, without a dedicated query/weather fix here.

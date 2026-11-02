@@ -65,6 +65,30 @@ original-text contexts; embeddings process every query batch. An excessive
 number of instructions for one required field asks for clarification rather
 than silently truncating that field's results.
 
+Field ownership policies are shared by candidate retrieval, source boundaries,
+extraction and coverage. A preferred weekday is not an allowed weekday; a
+departure reminder is not an item-start reminder; an end date is not a start
+date. Quantities keep their leading numbers and qualifiers. Coverage tracks an
+unaccounted original instruction rather than demanding every sibling in a
+guessed family. Invalid calendar dates and conflicting scalar values ask for
+clarification instead of rolling over or choosing the first number.
+
+On follow-up turns, each field receives a stable snapshot of its draft value
+and bounded, relevant earlier user excerpts. A reference may nominate earlier
+evidence, with its original message and offsets retained. Only the model's exact
+selection can be normalized and staged. First/last references narrow that
+evidence; several distinct earlier values without a clear reference ask which
+one. The current explicit value takes precedence, and earlier unrelated edits
+are not replayed. A field question accepts a bare value; a successful correction
+retires that question. History and these provenance records stay in session
+memory and disappear when the focused chat is cleared.
+
+Tasks interpret “plan by” as their due date, preserving the clock and deadline
+strictness. Habits retain their separate soft plan-by date. “Next week” uses the
+existing seven-calendar-day convention; a week range such as “first week of
+2027” asks for an exact date. Naming the date setting without a value never
+clears its existing date.
+
 Crashes and timeouts restart only the failed runtime/job, with one automatic
 runtime retry. Completed sibling proposals remain staged. While a read is still
 running, the summary keeps the settings found so far and shows a short progress

@@ -169,6 +169,7 @@ async function assistantFocusModel(session, spec, extract){
   session.trace.push({
     family:spec.family,
     jobId:spec.jobId,
+    context:spec.context || '',
     args:parsed.args,
     confidence:parsed.confidence,
     calls:(raw && raw.function_calls || []).map(call => call.name),

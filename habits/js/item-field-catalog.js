@@ -3,7 +3,7 @@ const ITEM_DETAIL_SEARCH_FIELDS = [
   ['detail-frequency-presets','How often','optional conditions opportunity location weather maximum frequency repeat rhythm daily weekly week times goal when fit'],
   ['detail-times','Times per cycle','frequency repeat repetitions rhythm'],
   ['detail-days','Cycle days','frequency interval cadence rhythm'],
-  ['detail-due-date','Due date','deadline appointment task date'],
+  ['detail-due-date','Due date','deadline appointment task date plan by do by finish by'],
   ['detail-due-time','Start time','due time deadline appointment fixed start task time'],
   ['detail-weekday-chips','Allowed weekdays','days monday tuesday wednesday thursday friday saturday sunday weekend'],
   ['detail-monthday-toggle','Allowed month days','dates monthly calendar'],

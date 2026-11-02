@@ -94,6 +94,31 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         &&r.name==='Gym'&&r.durationMinutes===45&&r.target===7&&r.pinned&&assistantFocusCanSave(edit);
     });
     assert(essentialFailures,'explicit create extraction failures and missing names block Save; edit omission preserves existing essentials');
+    const followupRecovery=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open();
+      await assistantFocusTurn(s,'Make it 40 minutes long.',t.options());
+      await assistantFocusTurn(s,'Okay, something else.',t.options());
+      const blocked=!assistantFocusCanSave(s)&&s.unresolved.some(row=>row.field==='request')&&assistantFocusMaterialize(s).durationMinutes===40&&load()[0].durationMinutes===45;
+      await assistantFocusTurn(s,'Make it 60 minutes long.',t.options());
+      const recovered=assistantFocusCanSave(s)&&!s.unresolved.length&&assistantFocusMaterialize(s).durationMinutes===60;
+      const reference='Use the first duration I mentioned earlier';
+      await assistantFocusTurn(s,reference,t.options({extract:async spec=>spec.family==='completeness'
+        ?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{missing:`effort: ${reference}`}}]}:t.reply(spec)}));
+      const referred=assistantFocusCanSave(s)&&assistantFocusMaterialize(s).durationMinutes===40&&!s.unresolved.length;
+      const poisoned=t.open();
+      await assistantFocusTurn(poisoned,'Make it 40 minutes long.',t.options({extract:async spec=>spec.jobId==='durationMinutes'
+        ?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{duration:'keep the current duration'}}]}:t.reply(spec)}));
+      const rejected=poisoned.unresolved.some(row=>row.field==='durationMinutes')&&assistantFocusMaterialize(poisoned).durationMinutes===45;
+      await assistantFocusTurn(poisoned,'Keep the current duration.',t.options());
+      const preserved=!poisoned.unresolved.length&&assistantFocusMaterialize(poisoned).durationMinutes===45;
+      const rhythm=t.open();
+      await assistantFocusTurn(rhythm,'Three times a week.',t.options({extract:async spec=>spec.jobId==='frequency'
+        ?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{frequency:''}}]}:t.reply(spec)}));
+      const asked=rhythm.unresolved.some(row=>row.field==='timesPerPeriod');
+      await assistantFocusTurn(rhythm,'Use that pattern again.',t.options());
+      return blocked&&recovered&&referred&&rejected&&preserved&&asked&&!rhythm.unresolved.length&&rhythmParts(assistantFocusMaterialize(rhythm).target).times===3;
+    });
+    assert(followupRecovery,'an unanswered follow-up blocks the existing draft, a correction recovers, and only grounded preservation clears a field question');
     const separation=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open();
       await assistantFocusTurn(s,'60 minutes each, split into chunks of at least 15 minutes, with a gap of 30 minutes.',t.options());

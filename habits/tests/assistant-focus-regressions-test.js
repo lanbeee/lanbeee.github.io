@@ -227,6 +227,26 @@ function assert(ok, message){
           return result.ok && load()[0].durationMinutes===45 && Number($('detail-duration').value)===30
             && sheet.classList.contains('tune-dirty') && $('detail-sheet').classList.contains('open');
         })],
+        ['reminder reset clears its scope and keeps explicit replacements and other dates', async()=>page.evaluate(async()=>{
+          const t=focusTest,native=window.TingsNative;
+          window.TingsNative={isNative:true,notifications:{permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})}};
+          try{
+            for(const scope of ['series','occurrence']){
+              t.seed();
+              const original={start:'notification',end:'alarm',travelLeadMinutes:60,dates:{'2026-11-09':{start:'notification',end:'alarm'},'2026-11-16':{end:'notification'}}};
+              localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY,JSON.stringify({version:4,enabled:true,items:{'item:event':original,'item:other':{start:'alarm'}}}));
+              const s=t.open('event');assistantFocusSetScope(s,scope,'2026-11-09');
+              if(!assistantFocusCorrect(s,'reminderReset','reset').ok||!assistantFocusCorrect(s,'reminderStart','alarm').ok)return false;
+              await t.commit(s);
+              const prefs=JSON.parse(localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY)),choice=prefs.items['item:event'];
+              if(prefs.items['item:other'].start!=='alarm'||choice.dates['2026-11-16'].end!=='notification')return false;
+              if(scope==='series'){
+                if(choice.start!=='alarm'||choice.end!==undefined||choice.travelLeadMinutes!==undefined||choice.dates['2026-11-09'].end!=='alarm')return false;
+              }else if(choice.start!=='notification'||choice.end!=='alarm'||choice.dates['2026-11-09'].start!=='alarm'||choice.dates['2026-11-09'].end!==undefined)return false;
+            }
+            return true;
+          }finally{window.TingsNative=native;}
+        })],
         ['reminder review shows mode and undo preserves other owners', async()=>page.evaluate(async()=>{
           const t=focusTest;t.seed();const s=t.open();
           const native=window.TingsNative;

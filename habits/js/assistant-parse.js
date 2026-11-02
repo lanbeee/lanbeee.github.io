@@ -749,14 +749,18 @@ function assistantParseDue(value, now){
   const ts = now != null ? Number(now) : Date.now();
   const base = assistantDayBase(ts);
   const s = assistantNormText(value);
+  const calendarDate = (year, month, day) => {
+    const date = new Date(year, month, day);
+    return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day ? assistantDayBase(date.getTime()) : null;
+  };
   if(!s)return null;
   if(s === 'today' || s === 'tonight' || s === 'this evening' || s === 'this afternoon' || s === 'this morning')return base;
   if(s === 'tomorrow' || s === 'tommorow' || s === 'tmrw')return assistantAddCalendarDays(base, 1);
   if(s === 'day after tomorrow' || s === 'day after tommorow' || s === 'day after tmrw')return assistantAddCalendarDays(base, 2);
   if(s === 'next week')return assistantAddCalendarDays(base, 7);
   if(/^\d{4}-\d{2}-\d{2}$/.test(s)){
-    const parsed = new Date(`${s}T00:00:00`).getTime();
-    return Number.isFinite(parsed) ? assistantDayBase(parsed) : null;
+    const [year, month, day] = s.split('-').map(Number);
+    return calendarDate(year, month - 1, day);
   }
   const md = s.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?$/);
   if(md){
@@ -764,15 +768,14 @@ function assistantParseDue(value, now){
     const day = Number(md[2]);
     let year = md[3] ? Number(md[3]) : new Date(base).getFullYear();
     if(year < 100)year += 2000;
-    const parsed = new Date(year, month, day).getTime();
-    if(Number.isFinite(parsed) && month >= 0 && month <= 11 && day >= 1 && day <= 31)return assistantDayBase(parsed);
+    return calendarDate(year, month, day);
   }
-  const named = s.match(/^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,\s*(\d{4}))?$/);
+  const named = s.match(/^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:(?:,\s*|\s+)(\d{4}))?$/);
   if(named){
     const month = ASSISTANT_MONTH_NAMES[named[1]];
     const day = Number(named[2]);
     const year = named[3] ? Number(named[3]) : new Date(base).getFullYear();
-    if(month != null)return assistantDayBase(new Date(year, month, day).getTime());
+    if(month != null)return calendarDate(year, month, day);
   }
   const nextDay = s.match(/^next\s+(sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?)$/);
   if(nextDay){

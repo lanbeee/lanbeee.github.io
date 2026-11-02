@@ -588,9 +588,11 @@ function assistantFocusNormalize(fieldId, raw, session){
     const orderText = (text.match(/\b(?:before|after)\s+.+/i) || [text])[0];
     const parsed = assistantParseOrderText(orderText);
     if(!parsed || !parsed.links)return fail('Use before or after followed by an item name.');
+    const modifiers = assistantParseOrderModifiers(text);
     const data = load().filter(item => item.hid !== session.targetId);
     const links = [];
-    for(const row of parsed.links){
+    for(const link of parsed.links){
+      const row = {...link, ...modifiers};
       const found = assistantResolveOrderLink(row.name, data, row, [], null);
       if(!found || !found.ok)return fail(found && found.ask || 'Choose a saved item for the order.');
       links.push(found.link);
@@ -772,7 +774,15 @@ function assistantFocusWrite(record, change, session, scratch, data){
     scratch.mode = value;
   }else if(change.field === 'conditionTrigger')record.conditionTrigger = value;
   else if(change.field === 'conditionRadiusM')record.conditionRadiusM = value;
-  else if(change.field === 'dueDate')record.dueDate = op === 'clear' ? null : value;
+  else if(change.field === 'dueDate'){
+    record.dueDate = op === 'clear' ? null : value;
+    // A date-only edit moves an existing clock time with the task. Otherwise
+    // its fixed session would remain on the old day despite the new review.
+    if(record.eventTime != null){
+      const clock = new Date(record.eventTime);
+      record.eventTime = record.dueDate == null ? null : parseTaskWhen(dateKey(record.dueDate), assistantClockLabel(clock.getHours()*60+clock.getMinutes()));
+    }
+  }
   else if(change.field === 'dueTime'){
     if(op === 'clear' || record.dueDate == null)record.eventTime = null;
     else if(typeof parseTaskWhen === 'function'){
@@ -1529,13 +1539,18 @@ function assistantFocusWriteReminders(session, hid){
   const owner = `item:${hid}`;
   const choice = Object.assign({}, prefs.items[owner]);
   const date = session.eventScope === 'occurrence' ? session.occurrenceDate : '';
+  const overrides = ['start','end','startLeadMinutes','travelStart','travelEnd','travelLeadMinutes','missed','missedLeadMinutes'];
   if(staged.reset && date){
     const dates = Object.assign({}, choice.dates);
     const entry = Object.assign({}, dates[date]);
-    ['start','end','startLeadMinutes','travelStart','travelEnd','travelLeadMinutes','missed','missedLeadMinutes'].forEach(key => delete entry[key]);
+    overrides.forEach(key => delete entry[key]);
+    Object.assign(entry, staged.patch);
     if(Object.keys(entry).length)dates[date] = entry;
     else delete dates[date];
     choice.dates = dates;
+  }else if(staged.reset){
+    overrides.forEach(key => delete choice[key]);
+    Object.assign(choice, staged.patch);
   }else if(date){
     choice.dates = Object.assign({}, choice.dates, {[date]:Object.assign({}, choice.dates && choice.dates[date], staged.patch)});
   }else Object.assign(choice, staged.patch);

@@ -211,3 +211,15 @@ interception uses unmodified pinned files; inference is never replaced in live
 mode. Evidence is written to `test-results/needle-field-jobs-live.json`, including
 prompts, previews, source spans, job attempts, native traces and timing. Details
 and remaining evaluation gaps are in `docs/assistant-field-extraction.md`.
+
+`assistant-field-coverage-test.js` declares a representative language case for
+every registered editable field (including occurrence fields through their
+scoped aliases). It checks the intended proposals, absence of sibling edits,
+preserved history, no writes before confirmation, and normalized persistence.
+It also covers incomplete/invalid dates, conflicting quantities and references
+to earlier messages. Run it with the same pinned asset variables to use actual
+Needle inference; without them, its adapters test host behavior only. Results
+are `test-results/needle-field-coverage-live.json` and
+`test-results/needle-field-coverage-scripted.json`. `FIELD_CASE` selects case ids
+for diagnosis; omit it for the complete catalog run. Native reminder tests stub
+OS permissions and reconciliation only, never model responses or extraction.
