@@ -35,6 +35,14 @@ jobs immediately; Needle embeddings and model discovery nominate additional
 candidates. Retrieval supplies no executable values. Frequency keeps its count
 and period together; windows retain their endpoints and modifiers.
 
+Create freezes its baseline when the session opens. Essential frequency and
+duration use the chosen Add form values first, then the kind's configured
+creation defaults (including the separate task profile). The review always
+shows applicable essential fields, labeling form values and defaults. Omission
+may use a default; a requested value that fails extraction stays unresolved.
+Names still need user-supplied evidence, and events need an actual date/start
+time. Edit omission preserves the existing item, including its essentials.
+
 A lazy pool has at most **three** independent Needle runtimes. Extraction,
 embedding retrieval, discovery and coverage all use those same leases. Each
 extraction exposes one tool with one evidence field. The model selects an exact

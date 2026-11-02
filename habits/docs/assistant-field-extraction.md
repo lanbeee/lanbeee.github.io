@@ -4,6 +4,19 @@ The product's focused Add and Edit flows use one patch pipeline. Create has a
 baseline from the form and defaults; Edit has a baseline from the selected saved
 item. Neither operation lets the model choose another item or save directly.
 
+Create requires a complete set of applicable essentials. Its baseline is frozen
+at session open: Add form values override configured creation defaults, and
+tasks use their independent creation profile. A name-only habit can therefore
+use its configured frequency and duration. The review includes these essentials
+with their form/default origins even when no extraction proposed them. Settings
+changes in another tab cannot change the reviewed defaults before Save. Edit
+keeps unmentioned values from the saved item.
+
+Defaults handle omission, not extraction errors. Explicit frequency/duration
+instructions that cannot be extracted still block Save. A missing name asks for
+one, and an event without a valid date/start remains unresolved rather than
+inventing a schedule. Stop habits do not require duration or frequency.
+
 ## Execution
 
 - `item-field-catalog.js` supplies the detail UI's DOM-independent labels and
@@ -69,6 +82,8 @@ Cases include:
 | Edit restrictions and preferences | Frequency, duration, allowed weekdays/window and separate preferred weekdays/window |
 | Create Study | Sixteen semantic settings producing seventeen field proposals, including saved Home/Dry references and a link |
 | Edit negation | Do not pin, do not split, duration; preserve unrelated settings |
+| Create with omitted essentials | Name-only habit uses configured rhythm/duration; an explicit recurrence retains default duration; a task uses its own duration profile |
+| Edit after changing creation defaults | Pin an existing item while preserving its name, frequency and duration |
 
 The original add-screen Walk flow and the four-setting Gym edit are also tested
 through the existing real-model/UI tests. A real in-flight worker is terminated

@@ -33,6 +33,47 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     assert(compound.r.name==='Walk'&&compound.parts.times===1&&compound.parts.days===2&&compound.r.durationMinutes===30&&compound.r.allowedTimeEndAnchor==='maghrib'
       &&compound.r.allowedWeekdays.join()==='1,2,3,4,5'&&compound.r.priority===1&&compound.r.pinned&&compound.r.emoji==='🚶'&&compound.r.topics.join()==='Health'
       &&!compound.unresolved.length&&!compound.pending.length&&compound.unchanged&&compound.max===3&&compound.oneTool,'one shared pipeline fills a complex draft, uses one tool per job and caps active work at three');
+    const createDefaults=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const settings=loadSortSettings();
+      try{
+        saveSortSettings({...settings,defaultTarget:2,defaultDurationMinutes:35,taskDefaults:{...settings.taskDefaults,durationMinutes:20}});
+        const habit=t.open('create'),task=t.open('create','task');
+        const form=assistantFocusOpen({operation:'create',kind:'habit',addForm:{record:{target:3,durationMinutes:50}}});
+        const invalidForm=assistantFocusOpen({operation:'create',kind:'habit',addForm:{record:{target:null,durationMinutes:null}}});
+        saveSortSettings({...loadSortSettings(),defaultTarget:7,defaultDurationMinutes:90});
+        await assistantFocusTurn(habit,'Walk',t.options());
+        await assistantFocusTurn(task,'Call mom',t.options());
+        await assistantFocusTurn(form,'Read',t.options());
+        await assistantFocusTurn(invalidForm,'Stretch',t.options());
+        const h=assistantFocusMaterialize(habit),f=assistantFocusMaterialize(form),bad=assistantFocusMaterialize(invalidForm);
+        const review=assistantFocusReviewModel(habit);
+        const shown=['durationMinutes','timesPerPeriod','periodDays'].every(id=>review.rows.some(r=>r.id===id&&r.origin==='default'));
+        const good=h.name==='Walk'&&h.durationMinutes===35&&h.target===2&&assistantFocusCanSave(habit)&&shown
+          &&assistantFocusMaterialize(task).name==='Call mom'&&assistantFocusMaterialize(task).durationMinutes===20&&assistantFocusCanSave(task)
+          &&f.target===3&&f.durationMinutes===50&&assistantFocusCanSave(form)
+          &&bad.target===2&&bad.durationMinutes===35&&assistantFocusCanSave(invalidForm);
+        const saved=await assistantFocusCommit(habit);
+        return good&&saved.ok&&load().find(row=>row.hid===habit.draftId)?.durationMinutes===35;
+      }finally{saveSortSettings(settings);}
+    });
+    assert(createDefaults,'name-only create uses stable kind-specific defaults, form values win, and essential defaults are reviewed and saved');
+    const essentialFailures=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open('create');
+      await assistantFocusTurn(s,'Walk every other day for 40 minutes.',t.options({extract:async spec=>{
+        if(['frequency','durationMinutes'].includes(spec.jobId)){
+          const key=Object.keys(spec.tool.parameters.properties)[0];
+          return {confidence:1,function_calls:[{name:spec.tool.name,arguments:{[key]:''}}]};
+        }return t.reply(spec);
+      }}));
+      const blocked=!assistantFocusCanSave(s)&&s.unresolved.some(r=>r.field==='timesPerPeriod')&&s.unresolved.some(r=>r.field==='durationMinutes');
+      const missing=t.open('create');await assistantFocusTurn(missing,'30 minutes long.',t.options({extract:async spec=>{
+        if(spec.jobId==='name')return {confidence:1,function_calls:[]};return t.reply(spec);
+      }}));
+      const edit=t.open();await assistantFocusTurn(edit,'Pin it.',t.options());const r=assistantFocusMaterialize(edit);
+      return blocked&&!assistantFocusCanSave(missing)&&missing.unresolved.some(r=>r.field==='name')
+        &&r.name==='Gym'&&r.durationMinutes===45&&r.target===7&&r.pinned&&assistantFocusCanSave(edit);
+    });
+    assert(essentialFailures,'explicit create extraction failures and missing names block Save; edit omission preserves existing essentials');
     const separation=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open();
       await assistantFocusTurn(s,'60 minutes each, split into chunks of at least 15 minutes, with a gap of 30 minutes.',t.options());
@@ -144,13 +185,17 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         {id:'edit-duration-and-sunset',operation:'edit',kind:'habit',prompt:'Make it 30 minutes long, only before sunset',expected:{name:'Gym',durationMinutes:30,allowedTimeEndAnchor:'maghrib',priority:2,emoji:'🏋️',topics:['Original']}},
         {id:'edit-hard-and-preferred',operation:'edit',kind:'habit',prompt:'Three times a week for 30 minutes, weekdays only between 6pm and 9pm, preferably on Monday and Wednesday, preferably before sunset.',expected:{name:'Gym',durationMinutes:30,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1080,allowedTimeEnd:1260,allowedTimeEndAnchor:null,preferredWeekdays:[1,3],preferredTimeEndAnchor:'maghrib'},rhythm:[3,7]},
         {id:'create-many-controls',operation:'create',kind:'habit',prompt:'Create a habit called Study, every day for 60 minutes, weekdays only between 7pm and 9pm, split into chunks of at least 15 minutes, with a gap of 30 minutes. Set priority P1, pin it, use the 📚 emoji, a purple color, tag it Learning, at Home, use weather profile Dry, add link https://example.com/study.',expected:{name:'Study',durationMinutes:60,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1140,allowedTimeEnd:1260,breakable:true,minChunkMinutes:15,minGapMinutes:30,priority:1,pinned:true,emoji:'📚',emojiBgColor:'purple',topics:['Learning'],locationIds:['home'],weatherProfileId:'dry'},rhythm:[1,1],link:'https://example.com/study'},
-        {id:'edit-negation',operation:'edit',kind:'habit',prompt:'Do not pin it, do not split it, 30 minutes long.',expected:{name:'Gym',pinned:false,breakable:false,durationMinutes:30,priority:2,emoji:'🏋️',topics:['Original']}}
+        {id:'edit-negation',operation:'edit',kind:'habit',prompt:'Do not pin it, do not split it, 30 minutes long.',expected:{name:'Gym',pinned:false,breakable:false,durationMinutes:30,priority:2,emoji:'🏋️',topics:['Original']}},
+        {id:'create-name-only-defaults',operation:'create',kind:'habit',prompt:'Walk',expected:{name:'Walk',durationMinutes:35},rhythm:[1,2],settings:{defaultDurationMinutes:35,defaultTarget:2}},
+        {id:'create-frequency-default-duration',operation:'create',kind:'habit',prompt:'Walk every other day before sunset',expected:{name:'Walk',durationMinutes:35,allowedTimeEndAnchor:'maghrib'},rhythm:[1,2]},
+        {id:'create-task-default-duration',operation:'create',kind:'task',prompt:'Call mom',expected:{name:'Call mom',durationMinutes:20},settings:{taskDefaults:{durationMinutes:20}}},
+        {id:'edit-defaults-do-not-overwrite',operation:'edit',kind:'habit',prompt:'Pin it.',expected:{name:'Gym',durationMinutes:45,pinned:true},rhythm:[1,7]}
       ];
       const results=[],failures=[];
       for(const test of cases){
         const result=await live.evaluate(async test=>{
           save([{hid:'gym',name:'Gym',type:'keepup',target:7,durationMinutes:45,priority:2,emoji:'🏋️',logs:[{ts:1}],topics:['Original'],pinned:false,breakable:false}]);
-          saveSortSettings({...loadSortSettings(),locations:[{id:'home',name:'Home',lat:40,lng:-74}],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
+          saveSortSettings({...loadSortSettings(),...test.settings,locations:[{id:'home',name:'Home',lat:40,lng:-74}],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
           const before=JSON.stringify(load());const s=assistantFocusOpen({operation:test.operation,kind:test.kind,targetId:test.operation==='edit'?'gym':null,now:new Date('2026-11-01T12:00:00-05:00').getTime()});
           await assistantFocusTurn(s,test.prompt);const r=assistantFocusMaterialize(s);
           const baseline=JSON.parse(before)[0];

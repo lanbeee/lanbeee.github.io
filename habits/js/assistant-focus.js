@@ -52,8 +52,10 @@ function assistantFocusAlive(session){
 }
 
 function assistantFocusBlank(session){
+  if(session.createBaseline)return assistantFocusClone(session.createBaseline);
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
   const kind = session.kind;
+  const defaults = newItemDefaults(settings, kind === 'task' ? 'task' : 'keepup');
   const record = {
     hid:session.draftId,
     name:'',
@@ -61,7 +63,7 @@ function assistantFocusBlank(session){
     repeatMode:'routine',
     conditionTrigger:'weather',
     conditionRadiusM:200,
-    target:kind === 'habit' ? (settings.defaultTarget || 7) : null,
+    target:kind === 'habit' ? defaults.target : null,
     dueDate:null,
     hardDue:false,
     autoMarkMinutes:settings.defaultAutoMarkMinutes != null ? settings.defaultAutoMarkMinutes : null,
@@ -98,13 +100,13 @@ function assistantFocusBlank(session){
     scheduleLinks:[],
     earlyWindowDays:settings.defaultEarlyWindowDays || 0,
     delayAllowanceDays:settings.defaultDelayAllowanceDays || 0,
-    durationMinutes:settings.defaultDurationMinutes || 30,
+    durationMinutes:defaults.durationMinutes,
     breakable:Boolean(settings.defaultBreakable),
     minChunkMinutes:settings.defaultMinChunkMinutes || 15,
     minGapMinutes:0,
     timerAutoStopMinutes:null,
     trackValue:false,
-    priority:settings.defaultPriority != null ? settings.defaultPriority : 2,
+    priority:defaults.priority,
     locationIds:[],
     anywhereAllowed:true,
     locationPrefs:{},
@@ -120,6 +122,14 @@ function assistantFocusBlank(session){
     externalId:null,
     importedAt:null
   };
+  if(kind !== 'event'){
+    for(const key of ['earlyWindowDays','delayAllowanceDays','breakable','minChunkMinutes','topics',
+      'allowedWeekdays','allowedTimeStart','allowedTimeEnd','locationIds','anywhereAllowed']){
+      record[key] = assistantFocusClone(defaults[key]);
+    }
+    record.autoMarkMinutes = defaults.autoMarkMode === 'duration' ? defaults.durationMinutes
+      : defaults.autoMarkMode === 'minutes' ? defaults.autoMarkMinutes : null;
+  }
   const form = session.addForm && session.addForm.record;
   session.formKeys = [];
   if(form && typeof form === 'object'){
@@ -134,6 +144,13 @@ function assistantFocusBlank(session){
     record.logs = [];
     record.createdAt = session.now || Date.now();
   }
+  for(const [key, fallback] of [['durationMinutes',defaults.durationMinutes],['target',defaults.target]]){
+    if(key === 'target' && kind !== 'habit')continue;
+    if(!Number.isFinite(record[key]) || record[key] <= 0){
+      record[key] = fallback;
+      session.formKeys = session.formKeys.filter(field => field !== key);
+    }
+  }
   if(kind === 'event'){
     record.allowSharedDisplayCompletion = false;
     record.breakable = false;
@@ -141,6 +158,9 @@ function assistantFocusBlank(session){
     if(!record.appointment)record.appointment = {repeat:'once', startDate:'', startMinute:null, weekdays:[], until:'', exceptions:{}};
     record.priority = settings.defaultPriority != null ? settings.defaultPriority : 2;
   }
+  // Keep the reviewed defaults stable across jobs, follow-ups and Save, even
+  // when another tab changes creation settings while this draft is open.
+  if(session.operation === 'create')session.createBaseline = assistantFocusClone(record);
   return record;
 }
 
@@ -157,7 +177,7 @@ function assistantFocusOpen(opts){
     source = assistantFocusClone(item);
   }
   const once = source && source.appointment && source.appointment.repeat === 'once';
-  return {
+  const session = {
     id:`focus-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     epoch:_assistantFocusEpoch,
     operation,
@@ -192,6 +212,34 @@ function assistantFocusOpen(opts){
     now:opts.now || Date.now(),
     notes:[]
   };
+  if(operation === 'create')assistantFocusBlank(session);
+  return session;
+}
+
+function assistantFocusEssentialFields(session, record){
+  const ids = ['name','durationMinutes'];
+  if(session.kind === 'habit' && record.type !== 'zero')ids.push('timesPerPeriod','periodDays');
+  if(session.kind === 'event')ids.push('appointmentStartDate','appointmentStartMinute','appointmentRepeat');
+  return ids.filter(id => assistantFocusFieldApplies(id, assistantFocusState(session, record)));
+}
+
+function assistantFocusCreateIssues(session){
+  if(session.operation !== 'create')return [];
+  const record = assistantFocusMaterialize(session);
+  const issues = [];
+  if(!String(record.name || '').trim())issues.push({field:'name',family:'identity',question:'What should the item be called?'});
+  if(record.type !== 'zero' && (!Number.isFinite(record.durationMinutes) || record.durationMinutes <= 0)){
+    issues.push({field:'durationMinutes',family:'effort',question:'How long should one session last?'});
+  }
+  if(session.kind === 'habit' && record.type !== 'zero' && (!Number.isFinite(record.target) || record.target <= 0)){
+    issues.push({field:'timesPerPeriod',family:'recurrence',question:'How often should it repeat?'});
+  }
+  // Events cannot safely invent a date or clock when neither the form nor the
+  // request supplied one. Duration and recurrence still have ordinary defaults.
+  if(session.kind === 'event' && !normalizeAppointment(record.appointment)){
+    issues.push({field:'appointmentStartDate',family:'event',question:'The event needs a date, a start time, and repeat weekdays when applicable.'});
+  }
+  return issues;
 }
 
 function assistantFocusEffectiveKind(session){
@@ -1000,6 +1048,7 @@ function assistantFocusReviewModel(session){
   const touched = new Set(session.changes.map(change => change.family));
   const rows = [];
   const seen = new Set();
+  const essentials = new Set(assistantFocusEssentialFields(session, after));
   session.changes.forEach(change => {
     if(seen.has(change.field))return;
     seen.add(change.field);
@@ -1035,7 +1084,7 @@ function assistantFocusReviewModel(session){
       const origin = assistantFocusOrigin(session, field.id, false);
       const afterText = assistantFocusFormatValue(field.id, after, session);
       if(origin === 'default' && (afterText === '—' || afterText === 'none' || afterText === 'not pinned' || afterText === 'off'))return;
-      if(origin === 'form' || session.formKeys.includes(field.persist)){
+      if(essentials.has(field.id) || origin === 'form' || session.formKeys.includes(field.persist)){
         rows.push({
           id:field.id, label:field.label, family:field.family, origin:session.formKeys.includes(field.persist) ? 'form' : 'default',
           source:'', before:'—', after:afterText, uncertain:false
@@ -1130,6 +1179,7 @@ function assistantFocusCanSave(session){
   if(session.needsInterpretation && session.interpretationApproved !== assistantFocusFingerprint(session))return false;
   if(session.operation === 'edit' && !session.changes.length)return false;
   if(session.operation === 'create' && !session.changes.some(change => change.field === 'name' && change.op === 'set' && change.value))return false;
+  if(assistantFocusCreateIssues(session).length)return false;
   if(session.kind === 'event' && session.eventScope == null)return false;
   return true;
 }

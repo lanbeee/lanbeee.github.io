@@ -292,7 +292,7 @@ function assistantFieldNormalize(def,text,session){
   }
   let value=text;
   if(def.id==='scheduleOptions' && /\bor\b/i.test(text))return {ok:false,error:'Please give each alternative separately with its time and place.'};
-  if(def.id==='name')value=text.replace(/^(?:(?:create|add)(?: a| an)? (?:habit|task|event)(?: (?:called|named))?|(?:rename|name|call)(?: it| this)?(?: to| as)?)\s+/i,'').replace(/^['"]|['"]$/g,'').trim();
+  if(def.id==='name')value=text.replace(/^(?:(?:create|add)(?: a| an)? (?:habit|task|event)(?: (?:called|named))?|(?:rename|name)(?: it| this)?(?: to| as)?|call (?:it|this)(?: to| as)?)\s+/i,'').replace(/^['"]|['"]$/g,'').trim();
   if(def.id==='name')value=value.replace(/^(?:remind me to|remember to|i (?:need|want) to)\s+/i,'');
   if(def.id==='name' && assistantFocusStrayValue('name',value))return {ok:false,error:'Please give just the item title.'};
   if(def.id==='name' && (!value || /^(?:create|add|habit|task|event|rename|name|it)$/i.test(value)))return {ok:false,error:'Name the item.'};
@@ -521,7 +521,9 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     if(proposed('weatherRules') && proposed('weatherProfile'))assistantFocusUnresolve(session,{field:'weatherRules',family:'weather',question:'Use the saved weather profile or custom weather rules? Please choose one.',choices:[{id:'use-profile',label:'saved profile'},{id:'use-rules',label:'custom rules'}]});
     if(proposed('hardDue') && proposed('delayAllowanceDays') && change('hardDue')?.value===true && change('delayAllowanceDays')?.value>0)assistantFocusUnresolve(session,{field:'hardDue',family:'dates',question:'Should this be a hard deadline or allow a delay?',choices:[{id:'hard-deadline',label:'hard deadline'},{id:'allow-delay',label:'allow delay'}]});
     assistantFocusFinishScope(session);
-    if(session.operation==='create'&&!session.changes.some(c=>c.field==='name'))assistantFocusUnresolve(session,{field:'name',family:'identity',question:'What should the item be called?'});
+    for(const issue of assistantFocusCreateIssues(session)){
+      if(!session.unresolved.some(row=>row.field===issue.field))assistantFocusUnresolve(session,issue);
+    }
     if(!session.changes.length&&!session.unresolved.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should change?'});
   }catch(error){
     if(error.name==='AbortError'||session.requestRevision!==state.revision)return {type:'focus',cancelled:true,session};
