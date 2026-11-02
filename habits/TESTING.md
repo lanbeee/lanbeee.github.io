@@ -102,6 +102,9 @@ To also test the real pinned Needle runtime, task/habit creation, edits and an
 offline reload, set `NEEDLE_MODEL_PATH` to `needle3.cact` and `NEEDLE_WASM_PATH`
 to `needle.wasm` from the revision in `lib/needle/README.md`. The test serves
 these local files through the normal download flow and verifies their hashes.
+`tests/assistant-focus-test.js` uses the same two variables for a live edit of
+one habit. Scripted cases in that file do not load the model. Neither file is a
+held-out accuracy score.
 
 ## Adding planner tests without copying the harness
 
@@ -162,3 +165,16 @@ The versioned single-action model corpus is
 remaining browser failures are recorded in `docs/assistant-needle-basics.md`.
 The Needle suite also checks field-repair grounding and explicit action-retry
 scope with scripted responses; those passes do not measure free-form accuracy.
+
+`assistant-focus-regressions-test.js` covers focused concurrent saves, field-level
+undo, event occurrences and creation, topic/profile dependencies, same-family
+omissions, follow-ups, clarification choices, review approval, reminders, and
+normalization for every registered field. To run its inference scenarios against
+real pinned Needle 3 assets (native permission responses alone are stubbed):
+
+```bash
+NEEDLE_MODEL_PATH=/absolute/path/needle3.cact NEEDLE_WASM_PATH=/absolute/path/needle.wasm node tests/assistant-focus-regressions-test.js
+```
+
+Full extracted arguments and model traces are saved to
+`test-results/needle-focus-regressions-live.json`. These use synthetic items.

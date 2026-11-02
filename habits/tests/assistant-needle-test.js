@@ -44,9 +44,14 @@ function assert(ok, message){
       return {unused,active,explicit};
     });
     assert(migration.unused === 'needle' && migration.active === 'auto' && migration.explicit === 'auto','unused legacy defaults migrate, while active servers and later choices survive');
-    await page.evaluate(()=>patchLocalAssistant({localAssistant:true}));
-    await page.evaluate(()=>openAssistantSheet());
-    assert(downloads === 0,'enabling and opening the assistant does not download');
+    await page.evaluate(()=>{
+      save([{hid:'needle-gate',name:'Walk',type:'keepup',target:7,durationMinutes:20,logs:[]}]);
+      patchLocalAssistant({localAssistant:true});
+    });
+    assert(await page.locator('#open-assistant').isHidden() && await page.locator('#bar-open-assistant').isHidden(),'Needle hides standalone chat buttons');
+    assert(await page.evaluate(()=>openAssistantSheet()) === false,'Needle does not open a general chat');
+    assert(downloads === 0,'enabling the assistant does not download');
+    assert(await page.evaluate(()=>assistantOpenForItem('needle-gate','home')) === true,'Edit with AI opens the focused sheet');
     assert(await page.locator('#assistant-sheet [data-needle-download]').isVisible(),'first-use sheet offers the download');
     await page.locator('#assistant-input').fill('Remind me to call mom');
     assert(await page.locator('#assistant-send').isDisabled(),'sending waits for an explicit download');
@@ -510,17 +515,6 @@ function assert(ok, message){
     assert(errors.length === 0,`no page errors (${errors.join('; ')})`);
     if(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH){
       const live = await browser.newPage({viewport:{width:390,height:844}});
-      await live.addInitScript(()=>{
-        window.needleTestTurn=async(text,opts={})=>{
-          const session=opts.session || assistantCreateSession();
-          let out=await runAssistantTurn(text,{...opts,session});
-          for(let i=0;out.proposal && i<3;i++){
-            session.needleApproved=out.proposal;
-            out=await runAssistantTurn(out.proposal.request,{...opts,session});
-          }
-          return out;
-        };
-      });
       let fetches = 0;
       await live.route('https://huggingface.co/**',route=>{
         fetches++;
@@ -530,69 +524,70 @@ function assert(ok, message){
       await waitForAssistant(live);
       await live.evaluate(()=>patchLocalAssistant({localAssistant:true,localAssistantProvider:'needle'}));
       assert(await live.evaluate(()=>assistantNeedleDownload()),'real pinned model and WASM pass integrity checks');
-      const outcomes = await live.evaluate(async()=>{
-        const task = await needleTestTurn('Remind me to call mom tomorrow');
-        const habit = await needleTestTurn('Add a 20 minute Walk habit every day');
-        const commit = habit.draft ? assistantCommitDraft(habit.draft) : {ok:false};
-        const edit = await needleTestTurn('Change Walk to 45 minutes');
-        const schedule = await needleTestTurn('What is on my schedule today?');
-        return {task:{type:task.type,kind:task.draft?.kind,name:task.draft?.name,question:task.question,trace:task.debug?.filter(row=>row.t==='model').slice(-2)},
-          habit:{type:habit.type,kind:habit.draft?.kind,duration:habit.draft?.durationMinutes,times:habit.draft?.timesPerPeriod,period:habit.draft?.periodDays},
-          commit:commit.ok,edit:{type:edit.type,name:edit.draft?.name,duration:edit.draft?.durationMinutes},
-          schedule:{type:schedule.type,text:schedule.text}};
+      const focused = await live.evaluate(async()=>{
+        save([]);
+        const summarize = session => {
+          const record = assistantFocusMaterialize(session);
+          return {
+            name:record.name,
+            duration:record.durationMinutes,
+            target:record.target,
+            changes:session.changes.map(change => ({field:change.field, value:change.value, source:change.source})),
+            unresolved:session.unresolved.map(item => item.field),
+            passes:(session.timing.passes || []).map(pass => pass.family)
+          };
+        };
+        const created = assistantFocusOpen({operation:'create', kind:'habit', entry:'add'});
+        await assistantFocusTurn(created, 'Add a 20 minute Walk habit every day');
+        const preview = summarize(created);
+        const nameOk = /walk/i.test(preview.name) && preview.name.split(/\s+/).length <= 3;
+        if(nameOk && preview.duration === 20 && created.needsInterpretation)assistantFocusApprove(created);
+        const commit = assistantFocusCanSave(created) ? await assistantFocusCommit(created) : {ok:false, alive:assistantFocusAlive(created), pending:created.pendingFamilies, correction:created.correctionError, needs:created.needsInterpretation, unresolved:created.unresolved.map(item => item.field)};
+        const saved = load();
+        const edit = saved[0] ? assistantFocusOpen({operation:'edit', kind:'habit', targetId:saved[0].hid, entry:'home'}) : null;
+        if(!edit){
+          return {preview, commit, savedCount:saved.length, edited:{name:preview.name, duration:null, changes:preview.changes}, afterName:null, afterDuration:null, afterCount:saved.length, questionChanges:[], questionBlocked:true, questionUntouched:true};
+        }
+        await assistantFocusTurn(edit, 'Make this 45 minutes');
+        const edited = summarize(edit);
+        if(edited.duration === 45 && edited.name === preview.name && !edited.changes.some(change => change.field === 'name')){
+          if(edit.needsInterpretation)assistantFocusApprove(edit);
+          if(assistantFocusCanSave(edit))await assistantFocusCommit(edit);
+        }
+        const afterEdit = load();
+        const question = assistantFocusOpen({operation:'edit', kind:'habit', targetId:afterEdit[0] && afterEdit[0].hid, entry:'home'});
+        const beforeQuestion = JSON.stringify(load());
+        await assistantFocusTurn(question, 'What is on my schedule today?');
+        return {
+          preview, commit, edited,
+          savedCount:saved.length,
+          afterName:afterEdit[0] && afterEdit[0].name,
+          afterDuration:afterEdit[0] && afterEdit[0].durationMinutes,
+          afterCount:afterEdit.length,
+          questionChanges:question.changes.map(change => change.field),
+          questionBlocked:!assistantFocusCanSave(question) || question.unresolved.length > 0,
+          questionUntouched:beforeQuestion === JSON.stringify(load())
+        };
       });
-      assert(outcomes.task.type === 'preview' && outcomes.task.kind === 'task' && /mom/i.test(outcomes.task.name),`real Needle creates a task preview (${JSON.stringify(outcomes.task)})`);
-      assert(outcomes.habit.type === 'preview' && outcomes.habit.kind === 'habit' && outcomes.habit.duration === 20 && outcomes.habit.times === 1 && outcomes.habit.period === 1,'real Needle creates a daily habit with its duration');
-      assert(outcomes.commit && outcomes.edit.type === 'preview' && outcomes.edit.name === 'Walk' && outcomes.edit.duration === 45,`real Needle edits the saved habit (${JSON.stringify(outcomes.edit)})`);
-      assert(outcomes.schedule.type === 'say' && outcomes.schedule.text,'real Needle answers from the actual schedule tool');
-      const beforeFrequency = await live.evaluate(()=>load());
-      const frequency = await live.evaluate(async()=>{
-        save([...load(),{hid:'needle-concentricity',name:'Concentricity check',type:'keepup',target:7,durationMinutes:20,logs:[]}]);
-        const before = JSON.stringify(load());
-        const named = await needleTestTurn('Can you make Concentricity check 3 times a week');
-        const session = assistantCreateSession();
-        const index = load().findIndex(h=>h.hid === 'needle-concentricity');
-        session.draft = assistantHabitToDraft(load()[index],index,loadSortSettings());
-        const focused = await needleTestTurn('Make it 3 times a week',{session});
-        const summarize = out=>({type:out.type,hid:out.draft?.hid,name:out.draft?.name,
-          times:out.draft?.timesPerPeriod,days:out.draft?.periodDays,duration:out.draft?.durationMinutes});
-        const unchanged = before === JSON.stringify(load());
-        const commit = named.draft && assistantCommitDraft(named.draft);
-        return {named:summarize(named),focused:summarize(focused),unchanged,commit:commit?.ok,
-          count:load().filter(h=>h.name === 'Concentricity check').length,
-          savedRhythm:rhythmParts(load().find(h=>h.hid === 'needle-concentricity')?.target)};
-      });
-      for(const entry of ['named','focused'])assert(frequency[entry].type === 'preview'
-        && frequency[entry].hid === 'needle-concentricity' && frequency[entry].times === 3
-        && frequency[entry].days === 7 && frequency[entry].duration === 20,
-        `real Needle previews the ${entry} Concentricity frequency edit (${JSON.stringify(frequency[entry])})`);
-      assert(frequency.unchanged && frequency.commit && frequency.count === 1
-        && frequency.savedRhythm.times === 3 && frequency.savedRhythm.days === 7,
-        `frequency changes only after confirmation and update the existing item without duplication (${JSON.stringify(frequency)})`);
-      await live.evaluate(items=>save(items),beforeFrequency);
-      const compound=await live.evaluate(async()=>{
-        const out=await needleTestTurn('Remind me to call mom tomorrow. Add a task to buy milk tomorrow. What is on my schedule tomorrow?');
-        return {type:out.type,names:out.drafts?.map(d=>d.name),kinds:out.drafts?.map(d=>d.kind),answer:out.alsoText,text:out.text};
-      });
-      assert(compound.type === 'preview' && compound.names?.length === 2 && compound.kinds.every(k=>k === 'task') && compound.answer,
-        `real Needle handles two task requests and a schedule question (${JSON.stringify(compound)})`);
-      const features=await live.evaluate(async()=>{
-        const calendar=await needleTestTurn('Import my meetings from an ICS calendar file');
-        const display=await needleTestTurn('How do I pair a glance display?');
-        return {calendar:{type:calendar.type,nav:calendar.navigation},display:{type:display.type,nav:display.navigation}};
-      });
-      assert(features.calendar.type === 'say' && features.calendar.nav?.[0]?.section === 'settings-calendar-body','real Needle discovers calendar import');
-      assert(features.display.type === 'say' && features.display.nav?.[0]?.section === 'settings-agenda-body','real Needle discovers display pairing');
-      // Make sure the shell has installed before taking the device offline.
+      assert(focused.preview && /walk/i.test(focused.preview.name) && focused.preview.name.split(/\s+/).length <= 3
+        && focused.preview.duration === 20 && focused.commit.ok && focused.savedCount === 1,
+        `real Needle creates only the Walk habit (${JSON.stringify(focused.preview)} ${JSON.stringify(focused.commit)})`);
+      assert(focused.edited.duration === 45 && focused.afterDuration === 45 && focused.afterCount === 1
+        && focused.afterName === focused.preview.name
+        && !focused.edited.changes.some(change => change.field === 'name'),
+        `real Needle edits only that habit's duration (${JSON.stringify(focused.edited)})`);
+      assert(focused.questionUntouched && focused.questionBlocked, `a schedule question does not change the open habit (${JSON.stringify(focused.questionChanges)})`);
       await live.evaluate(async()=>{await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;});
       await live.context().setOffline(true);
       await live.reload({waitUntil:'load'});
       await waitForAssistant(live);
       const offline = await live.evaluate(async()=>{
-        const out = await needleTestTurn('Remind me to call mom tomorrow');
-        return {type:out.type,name:out.draft?.name,text:out.text};
+        const session = assistantFocusOpen({operation:'create', kind:'task', entry:'add'});
+        await assistantFocusTurn(session, 'Remind me to call mom tomorrow');
+        const record = assistantFocusMaterialize(session);
+        return {name:record.name, passes:(session.timing.passes || []).map(pass => pass.family), changes:session.changes.map(change => change.field)};
       });
-      assert(offline.type === 'preview' && /mom/i.test(offline.name),`real Needle works after an offline page reload (${JSON.stringify(offline)})`);
+      assert(/mom/i.test(offline.name) && offline.passes.length > 0, `real Needle still reads one new task offline (${JSON.stringify(offline)})`);
       assert(fetches === 2,'real model is downloaded once and reused after reload');
       await live.close();
     }else console.log('  skip: real Needle checks (set NEEDLE_MODEL_PATH and NEEDLE_WASM_PATH)');

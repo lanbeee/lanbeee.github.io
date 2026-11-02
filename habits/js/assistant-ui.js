@@ -26,9 +26,10 @@ function syncAssistantChrome(){
   document.body.classList.toggle('assistant-on', on);
   document.body.classList.toggle('assistant-debug-on', on && assistantDebugOn());
   if(typeof syncAddNamePlaceholder === 'function')syncAddNamePlaceholder();
+  const needle = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
   ['open-assistant','bar-open-assistant'].forEach(id => {
     const btn = $(id);
-    if(btn)btn.hidden = !on;
+    if(btn)btn.hidden = !on || needle;
   });
   if(!on){
     assistantAbortInFlight();
@@ -179,11 +180,19 @@ function assistantSetStatus(text){
   if(el)el.textContent = text || '';
 }
 
+function assistantNeedleFocused(opts){
+  return Boolean(opts && opts.focused && _assistantSession && _assistantSession.focus && typeof assistantFocusAlive === 'function' && assistantFocusAlive(_assistantSession.focus));
+}
+
 function openAssistantSheet(opts){
   const external = Boolean(opts && opts.external && window.TingsNative?.isNative);
   if(!assistantEnabled() && !external){
     if(typeof showToast === 'function')showToast('Turn on local assistant in Settings');
-    return;
+    return false;
+  }
+  if(assistantSettings().provider === 'needle' && !external && !assistantNeedleFocused(opts)){
+    if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+    return false;
   }
   _assistantExternalReview = external;
   const eyebrow = document.querySelector('#assistant-sheet .sheet-eyebrow');
@@ -205,6 +214,7 @@ function openAssistantSheet(opts){
       if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
     }, 260);
   }
+  return true;
 }
 
 function closeAssistantSheet(){
@@ -215,12 +225,28 @@ function closeAssistantSheet(){
   if(window.tingsExternalAssistant)setTimeout(()=>window.tingsExternalAssistant.drain(),0);
 }
 
-function assistantOpenForItem(hid, entry){
+function assistantOpenForItem(hid, entry, extra){
   const items = load();
   const index = items.findIndex(item=>item.hid === hid);
   if(index < 0)return false;
-  const draft = assistantHabitToDraft(items[index],index,loadSortSettings());
-  return assistantOpenWithInstruction('',{draft,entry});
+  const item = items[index];
+  extra = extra || {};
+  if(assistantSettings().provider === 'needle' && typeof assistantFocusImported === 'function' && assistantFocusImported(item)){
+    if(typeof showToast === 'function')showToast('Imported calendar events stay outside Edit with AI.');
+    return false;
+  }
+  const draft = assistantHabitToDraft(item,index,loadSortSettings());
+  return assistantOpenWithInstruction('',{
+    draft,
+    entry,
+    focusOpts:assistantSettings().provider === 'needle' ? {
+      operation:'edit',
+      kind:typeof assistantFocusKindOf === 'function' ? assistantFocusKindOf(item) : (item.type === 'task' ? 'task' : 'habit'),
+      targetId:item.hid,
+      entry,
+      occurrenceDate:extra.occurrenceDate || ''
+    } : null
+  });
 }
 
 // Entry points (add sheet, detail page, home swipe) start a fresh conversation with the
@@ -243,6 +269,20 @@ async function assistantOpenWithInstruction(text, opts){
   _assistantSession = assistantCreateSession();
   _assistantSession.entry = opts.entry || null;
   if(draft)_assistantSession.draft = draft;
+  if(assistantSettings().provider === 'needle' && typeof assistantFocusOpen === 'function'){
+    const kind = opts.intent === 'create_task' ? 'task' : (opts.intent === 'create_event' ? 'event' : 'habit');
+    const spec = opts.focusOpts || (opts.entry === 'add' ? {
+      operation:'create',
+      kind,
+      entry:'add',
+      addForm:{record:opts.addRecord || null}
+    } : null);
+    _assistantSession.focus = spec ? assistantFocusOpen(spec) : null;
+    if(!_assistantSession.focus){
+      if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+      return false;
+    }
+  }
   // Add, detail, and a home-card ask each start a blank chat. Earlier turns
   // stay on screen otherwise, and a tiny model will repeat them.
   const thread = assistantThreadEl();
@@ -250,11 +290,15 @@ async function assistantOpenWithInstruction(text, opts){
   const input = $('assistant-input');
   if(input)input.value = '';
   syncAssistantFocusBar();
-  openAssistantSheet({skipWelcome:true});
+  const opened = openAssistantSheet({skipWelcome:true, focused:Boolean(_assistantSession.focus)});
+  if(opened === false)return false;
   if(!value){
     // Item entry with no instruction yet: introduce the focus locally —
     // no model call until the user types.
-    appendAssistantBubble('say', `Working on ${draft.name}. Tell me what to do — change its schedule, log it, plan it, or ask a question.`);
+    const intro = assistantSettings().provider === 'needle'
+      ? `Working on ${draft.name}. Tell me what to change. Several settings in one message are fine. Nothing is saved until you confirm.`
+      : `Working on ${draft.name}. Tell me what to do — change its schedule, log it, plan it, or ask a question.`;
+    appendAssistantBubble('say', intro);
     const input = $('assistant-input');
     if(input)input.focus({preventScroll:true});
     setTimeout(() => {
@@ -267,7 +311,7 @@ async function assistantOpenWithInstruction(text, opts){
   if(!modelText && opts.entry === 'add' && opts.intent && typeof addAssistantModelText === 'function'){
     modelText = addAssistantModelText(spoken, opts.intent);
   }
-  if(!modelText)modelText = spoken;
+  if(!modelText || assistantSettings().provider === 'needle')modelText = spoken;
   await sendAssistantMessage(modelText, {
     startIntent:opts.intent,
     entry:opts.entry,
@@ -278,12 +322,7 @@ async function assistantOpenWithInstruction(text, opts){
 }
 
 function assistantWelcomeHtml(){
-  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Ask for one action at a time. Nothing is saved until you confirm.</p>
-      <div class="assistant-suggestions">
-        <button type="button" class="assistant-suggest" data-assistant-suggest="Add a task to buy milk">Add a task</button>
-        <button type="button" class="assistant-suggest" data-assistant-suggest="What habits do I have?">List my habits</button>
-        <button type="button" class="assistant-suggest" data-assistant-suggest="Add a 20 minute Stretch habit every day">Add a habit</button>
-      </div></div>`;
+  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Needle edits one habit, task, or local event at a time. Start from Add, Edit with AI, or Change with AI. Nothing is saved until you confirm.</p></div>`;
   return `<div class="assistant-bubble assistant-bubble-say"><p>Say it like a person. Nothing is saved until you confirm.</p>
       <div class="assistant-suggestions">
         <button type="button" class="assistant-suggest" data-assistant-suggest="Remind me to call mom">Remind me to call mom</button>
@@ -797,6 +836,33 @@ async function sendAssistantMessage(text, opts){
     assistantSyncSend();
   }
   assistantShowBusy(true);
+  if(assistantSettings().provider === 'needle' && !opts.needleAction){
+    const focus = _assistantSession && _assistantSession.focus;
+    if(!focus || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(focus) || typeof assistantFocusTurn !== 'function'){
+      appendAssistantBubble('say', 'Needle changes one item at a time. Use Add, Edit with AI on a card, or Change with AI in details.');
+      assistantShowBusy(false);
+      return;
+    }
+    try{
+      const out = await assistantFocusTurn(focus, value, {
+        onProgress:info => {
+          if(turn !== _assistantTurn)return;
+          const wait = $('assistant-waiting');
+          if(!wait)return;
+          const pending = info && info.pending && info.pending.length ? ` · ${info.pending.join(', ')}` : '';
+          wait.textContent = info && info.step ? `reading ${info.step}${pending}` : 'reading…';
+        }
+      });
+      if(turn !== _assistantTurn || (out && out.cancelled))return;
+      assistantShowFocusReview(focus);
+    }catch(err){
+      if(turn !== _assistantTurn || (err && err.name === 'AbortError'))return;
+      appendAssistantBubble('say', err && err.message ? err.message : 'Needle could not read that.');
+    }finally{
+      if(turn === _assistantTurn)assistantShowBusy(false);
+    }
+    return;
+  }
   try{
     const out = await runAssistantTurn(value, {
       session:_assistantSession || assistantCreateSession(),
@@ -1093,6 +1159,98 @@ function assistantDiscardPending(){
   assistantClearFocus();
 }
 
+function assistantRetireFocusControls(){
+  assistantThreadEl()?.querySelectorAll('[data-focus-save],[data-focus-approve],[data-focus-choice],[data-focus-field]').forEach(button => {
+    button.disabled = true;
+  });
+}
+
+function assistantShowFocusReview(session){
+  if(!session || typeof assistantFocusReviewHtml !== 'function')return;
+  assistantRetireFocusControls();
+  const bubble = document.createElement('div');
+  bubble.className = 'assistant-bubble assistant-bubble-say';
+  bubble.innerHTML = assistantFocusReviewHtml(session);
+  assistantThreadEl()?.append(bubble);
+  const thread = assistantThreadEl();
+  if(thread)thread.scrollTop = thread.scrollHeight;
+}
+
+function assistantRefreshFocusReview(review){
+  const session = _assistantSession && _assistantSession.focus;
+  if(!session || !review)return;
+  // Rebuild the preview after a correction so other uncertain fields retain
+  // their approval action and displayed values agree with the staged record.
+  review.outerHTML = assistantFocusReviewHtml(session);
+}
+
+async function assistantHandleFocusClick(target){
+  const session = _assistantSession && _assistantSession.focus;
+  if(!session)return false;
+  const save = target.closest('[data-focus-save]');
+  if(save){
+    if(save.disabled || typeof assistantFocusCommit !== 'function')return true;
+    save.disabled = true;
+    const result = await assistantFocusCommit(session);
+    const status = save.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
+    if(result && result.ok){
+      if(status)status.textContent = 'Saved.';
+      assistantRetireFocusControls();
+      if(session.operation === 'create' && session.entry === 'add' && typeof cancelAdd === 'function')cancelAdd();
+      return true;
+    }
+    if(status)status.textContent = result && result.error || 'Nothing was saved.';
+    if(result && result.stale)assistantShowFocusReview(session);
+    else save.disabled = typeof assistantFocusCanSave !== 'function' || !assistantFocusCanSave(session);
+    return true;
+  }
+  const approve = target.closest('[data-focus-approve]');
+  if(approve){
+    if(typeof assistantFocusApprove === 'function')assistantFocusApprove(session);
+    const review = approve.closest('[data-focus-review]');
+    approve.remove();
+    const button = review && review.querySelector('[data-focus-save]');
+    if(button)button.disabled = typeof assistantFocusCanSave !== 'function' || !assistantFocusCanSave(session);
+    return true;
+  }
+  const choice = target.closest('[data-focus-choice]');
+  if(choice){
+    const which = choice.dataset.focusChoice;
+    const value = choice.dataset.focusValue || '';
+    if(which === 'resume' && typeof assistantFocusTurn === 'function'){
+      assistantShowBusy(true);
+      try{
+        await assistantFocusTurn(session, '', {resume:true});
+        assistantShowFocusReview(session);
+      }finally{ assistantShowBusy(false); }
+      return true;
+    }
+    if((which === 'eventScope' || value === 'series' || value === 'occurrence') && typeof assistantFocusSetScope === 'function' && (value === 'series' || value === 'occurrence')){
+      assistantFocusSetScope(session, value, session.occurrenceDate);
+      assistantShowFocusReview(session);
+      return true;
+    }
+    if(value === 'series-place' && typeof assistantFocusSetScope === 'function'){
+      assistantFocusSetScope(session, 'series');
+      session.unresolved = session.unresolved.filter(item => item.field !== 'places');
+      assistantShowFocusReview(session);
+      return true;
+    }
+    if(value === 'skip-place'){
+      session.changes = session.changes.filter(change => change.field !== 'places');
+      session.unresolved = session.unresolved.filter(item => item.field !== 'places');
+      assistantShowFocusReview(session);
+      return true;
+    }
+    if(value && typeof assistantFocusChoose === 'function'){
+      assistantFocusChoose(session, which, value);
+      assistantShowFocusReview(session);
+    }
+    return true;
+  }
+  return false;
+}
+
 function bindAssistantUi(){
   $('open-assistant')?.addEventListener('click', openAssistantSheet);
   $('bar-open-assistant')?.addEventListener('click', openAssistantSheet);
@@ -1116,7 +1274,24 @@ function bindAssistantUi(){
       sendAssistantMessage($('assistant-input').value);
     }
   });
+  $('assistant-thread')?.addEventListener('focusin', e => {
+    if(e.target && e.target.matches && e.target.matches('[data-focus-field]') && typeof updateKeyboardLift === 'function'){
+      updateKeyboardLift();
+    }
+  });
+  $('assistant-thread')?.addEventListener('change', e => {
+    const field = e.target && e.target.closest ? e.target.closest('[data-focus-field]') : null;
+    const session = _assistantSession && _assistantSession.focus;
+    if(!field || !session || typeof assistantFocusCorrect !== 'function')return;
+    assistantFocusCorrect(session, field.dataset.focusField, field.value);
+    assistantRefreshFocusReview(field.closest('[data-focus-review]'));
+  });
   $('assistant-thread')?.addEventListener('click', e => {
+    if(e.target.closest('[data-focus-save],[data-focus-approve],[data-focus-choice]')){
+      e.preventDefault();
+      void assistantHandleFocusClick(e.target);
+      return;
+    }
     const suggest = e.target.closest('[data-assistant-suggest]');
     if(suggest){
       sendAssistantMessage(suggest.dataset.assistantSuggest);

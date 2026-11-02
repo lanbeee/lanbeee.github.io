@@ -43,6 +43,7 @@ function assistantOriginFor(provider, url){
 }
 
 function assistantAbortInFlight(){
+  if(typeof assistantFocusInvalidate === 'function')assistantFocusInvalidate();
   if(typeof assistantNeedleStop === 'function')assistantNeedleStop();
   if(_assistantAbort){
     try{ _assistantAbort.abort(); }catch(_){}

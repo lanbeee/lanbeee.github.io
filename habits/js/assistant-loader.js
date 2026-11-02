@@ -8,6 +8,9 @@
     './js/assistant-tools.js',
     './js/assistant-harness.js',
     './js/assistant-needle.js',
+    './js/assistant-focus-registry.js',
+    './js/assistant-focus.js',
+    './js/assistant-focus-needle.js',
     './js/assistant-workflow.js',
     './js/assistant-client.js',
     './js/assistant-feedback.js',
@@ -46,10 +49,23 @@
     if(ok && typeof run === 'function')run();
   }
 
+  if(typeof sortSettings !== 'undefined' && sortSettings.localAssistantProvider === 'needle'){
+    ['open-assistant','bar-open-assistant'].forEach(id => {
+      const button = document.getElementById(id);
+      if(button)button.hidden = true;
+    });
+  }
+
   document.addEventListener('click',event=>{
     const open = event.target.closest('#open-assistant, #bar-open-assistant');
     const toggle = event.target.closest('#setting-local-assistant');
     if(!open && !toggle)return;
+    if(open && typeof sortSettings !== 'undefined' && sortSettings.localAssistantProvider === 'needle'){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+      return;
+    }
     if(typeof window.openAssistantSheet === 'function')return;
     event.preventDefault();
     event.stopImmediatePropagation();

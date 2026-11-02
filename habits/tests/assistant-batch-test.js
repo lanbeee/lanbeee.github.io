@@ -68,7 +68,7 @@ async function launchBrowser(){
 
   console.log('\n[batch] composer accepts a long paste');
   const composer = await page.evaluate(paste => {
-    saveSortSettings({ ...loadSortSettings(), localAssistant:true });
+    saveSortSettings({ ...loadSortSettings(), localAssistant:true, localAssistantProvider:'auto' });
     if(typeof syncLocalAssistantControls === 'function')syncLocalAssistantControls();
     openAssistantSheet();
     const input = document.getElementById('assistant-input');

@@ -208,6 +208,8 @@ body:not(.assistant-debug-on) .assistant-bubble-debug{display:none;}
 body.assistant-on #ting-ask-ai{display:inline-flex;}
 body.assistant-on #add-ask-hint{display:block;margin:8px 0 12px;}
 body.assistant-on .appointment-add #add-ask-hint{display:none;}
+body.assistant-on .appointment-add #ting-ask-ai{display:inline-flex;}
+body.assistant-on .local-appointment #detail-ask-ai{display:flex !important;}
 body.assistant-on .add-sheet .name-icon-row{grid-template-columns:minmax(0,1fr) 46px 46px;}
 .ting-ask-ai{
   width:44px;height:44px;border-radius:50%;

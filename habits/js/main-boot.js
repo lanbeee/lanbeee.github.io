@@ -623,7 +623,7 @@ function addAssistantForm(){
 }
 
 function addAssistantModelText(text, intent){
-  const lead = intent === 'create_task' ? 'Add a one-off task' : 'Add a repeating habit';
+  const lead = intent === 'create_task' ? 'Add a one-off task' : (intent === 'create_event' ? 'Add a local event' : 'Add a repeating habit');
   return `${lead}: ${text}`;
 }
 
@@ -632,18 +632,20 @@ function addAssistantModelText(text, intent){
 // Saving the preview closes it.
 $('ting-ask-ai').addEventListener('click',()=>{
   const text = $('ting-message').value.trim();
+  const eventAdd = typeof addAppointmentMode !== 'undefined' && addAppointmentMode;
   if(!text){
     $('ting-message').focus();
-    if(typeof showToast === 'function')showToast('Describe the new habit or task first');
+    if(typeof showToast === 'function')showToast(eventAdd ? 'Describe the new event first' : 'Describe the new habit or task first');
     return;
   }
   if(typeof tingsLoadAssistant !== 'function')return;
-  const intent = selectedType === 'task' ? 'create_task' : 'create_habit';
+  const intent = eventAdd ? 'create_event' : (selectedType === 'task' ? 'create_task' : 'create_habit');
   const form = addAssistantForm();
   const modelText = addAssistantModelText(text, intent);
+  const addRecord = typeof readAddRecord === 'function' ? readAddRecord() : null;
   void tingsLoadAssistant().then(()=>{
     if(typeof assistantOpenWithInstruction === 'function'){
-      assistantOpenWithInstruction(text,{intent,entry:'add',modelText,form});
+      assistantOpenWithInstruction(text,{intent,entry:'add',modelText,form,addRecord});
     }
   });
 });
@@ -1896,7 +1898,8 @@ $('detail-ask-ai').addEventListener('click',()=>{
   const item = load()[detailIdx];
   if(!item)return;
   void tingsLoadAssistant().then(()=>{
-    if(typeof assistantOpenForItem === 'function')assistantOpenForItem(item.hid,'detail');
+    const local = typeof isLocalAppointment === 'function' && isLocalAppointment(item);
+    if(typeof assistantOpenForItem === 'function')assistantOpenForItem(item.hid,'detail', local ? {occurrenceDate:''} : null);
   });
 });
 $('detail-export').addEventListener('click',()=>{

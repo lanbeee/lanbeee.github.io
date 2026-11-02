@@ -215,7 +215,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const calendar=await assistantExecuteTool('answer_settings',{kind:'calendar'},session,context);
       const reminders=assistantAnswerSettings({kind:'reminders'},context);
       const sharing=assistantAnswerSettings({kind:'sharing'},context);
-      patchLocalAssistant({localAssistant:true});
+      patchLocalAssistant({localAssistant:true, localAssistantProvider:'auto'});
       await openAssistantSheet();
       await handleAssistantOutcome({type:'say',text:calendar.text,navigation:session.navigation});
       return {calendar,reminders,sharing,buttons:[...document.querySelectorAll('#assistant-thread button')].map(b=>b.textContent)};

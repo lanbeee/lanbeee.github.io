@@ -1698,8 +1698,10 @@ function render(opts){
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
     const activityAction = event ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
-    const assistantAction = !event && !synced && sortSettings.localAssistant
-      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="ask assistant about ${escapeHtml(h.name)}"><i class="ti ti-sparkles" aria-hidden="true"></i>ask AI</button>`
+    const importedEvent = Boolean(h && ['device','pdf','ics','gcal','msgraph'].includes(h.source));
+    const localEvent = Boolean(event && typeof isLocalAppointment === 'function' && isLocalAppointment(h) && !importedEvent);
+    const assistantAction = sortSettings.localAssistant && !importedEvent && !synced && (!event || localEvent)
+      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="edit ${escapeHtml(h.name)} with AI"><i class="ti ti-sparkles" aria-hidden="true"></i>edit with AI</button>`
       : '';
     const planAction = dayLogsHabitPlannable(h)
       ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
@@ -2211,7 +2213,11 @@ function render(opts){
       if(btn.dataset.action === 'assistant' && typeof tingsLoadAssistant === 'function'){
         const hid = row.dataset.hid;
         void tingsLoadAssistant().then(()=>{
-          if(typeof assistantOpenForItem === 'function')assistantOpenForItem(hid,'home');
+          if(typeof assistantOpenForItem === 'function'){
+            const item = load()[idx];
+            const local = item && typeof isLocalAppointment === 'function' && isLocalAppointment(item);
+            assistantOpenForItem(hid,'home', local ? {occurrenceDate:row.dataset.scheduledDay || ''} : null);
+          }
         });
       }
       if(btn.dataset.action === 'plan')openSwipePlan(idx,Number(row.dataset.dayBase));

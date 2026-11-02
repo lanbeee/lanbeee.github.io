@@ -9,6 +9,24 @@ For the subsequent single-action implementation and its measured limits, see
 
 Read this only when the task is the Tings assistant. For planner, home, settings, and habit work, leave this file and every `js/assistant-*.js` file closed. `js/assistant-tools.js` is about 5,300 lines and is not on that path.
 
+When Needle is the provider, the only entry is one item. Add, Edit with AI on a card, and Change with AI in details open a focused session. The top-bar and bottom-bar chat buttons stay hidden. A session creates one habit, task, or local event, or edits the item the host already selected. Needle cannot switch items, add a second item, answer a general question, log a completion, or run a planner action. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing or contradictory, and an uncertain reading needs interpretation approval before the separate save confirmation. Ollama, LM Studio, and the external Android bridge still use the general assistant.
+
+Focused saves apply the staged fields to the current saved item. A concurrent
+change to a field in the preview requires another review; unrelated edits and
+logs survive. Undo reverses this action’s item, topic, weather-profile, and
+reminder changes while preserving later edits and newly shared dependencies.
+An occurrence-scoped event edit writes time, duration, emoji, and color into
+that date’s exception. A new event starts with series scope.
+
+The focused path keeps the latest message separate from its request history,
+so a follow-up can replace an earlier value. A completeness pass can recover
+another field in a family already processed. A bounded model menu handles
+unlabeled groups; routing text cannot itself
+supply an executable value. Invalid or missing values stay unresolved. Review
+corrections and clarification choices stage real values, and remaining uncertain
+fields retain their interpretation-approval button. Reminder previews show the
+actual mode and lead time.
+
 The assistant is optional local chat. New setups default to on-device Needle 3;
 existing Ollama / LM Studio selections remain available. `js/assistant-loader.js`
 loads the assistant code after the first home render. It must not participate in
@@ -32,6 +50,9 @@ For external Android agents (Gemini / Google Assistant), see [Android assistant 
 | `js/assistant-client.js` | Ollama / LM Studio transport |
 | `js/assistant-needle.js` | Needle download, integrity, storage, transport adapter |
 | `js/assistant-needle-worker.js` | Needle WASM inference, model routing, bounded schemas and request boundaries |
+| `js/assistant-focus-registry.js` | Editable fields for one focused item |
+| `js/assistant-focus.js` | Focused session, review, save, and undo |
+| `js/assistant-focus-needle.js` | Live Needle passes for that one item |
 | `js/assistant-workflow.js` | Lossless multi-part queue, staged work, clarification and retry |
 | `js/assistant-ui.js` | Sheet, preview, settings |
 | `js/assistant-feedback.js` | Local diagnostic snapshots and opt-in Google Form prefill |
@@ -95,8 +116,8 @@ item candidate can get one bounded reconsideration with five item schemas.
 Unresolved fields ask a focused question. Native snake-case argument diagnostics
 are matched unambiguously to returned fields before checking converted units.
 
-Needle's welcome now asks for one action at a time. A combined frequency/session
-length edit asks for separate requests instead of presenting a partial change.
+On the general Needle tool path, the welcome asks for one action at a time. A combined frequency/session
+length edit asks for separate requests instead of presenting a partial change. The focused item editor does not use that split: one message may change frequency and duration together.
 An ask or interpretation proposal offers an optional action selector: choosing
 an action retries the unchanged request with only that action and clarification
 available. This is explicit user steering, not automatic model understanding.

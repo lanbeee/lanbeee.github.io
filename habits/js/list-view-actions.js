@@ -970,6 +970,12 @@ function movePlanTo(idx,fromKey,toKey){
 // HYBRID: revert last action and refresh
 function executeUndo(){
   if(!pendingAction)return;
+  if(pendingAction.type === 'focus-edit'){
+    if(typeof assistantFocusUndo === 'function')assistantFocusUndo(pendingAction.snapshot);
+    hideActionToast();
+    showToast('undone');
+    return;
+  }
   if(pendingAction.type === 'missed-hide'){
     const {id, previousUntil} = pendingAction;
     if(typeof setMissedHideUntil === 'function')setMissedHideUntil(id, previousUntil);

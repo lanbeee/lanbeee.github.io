@@ -234,6 +234,14 @@ self.onmessage = event=>{
           parameters:{type:'object',properties:{[data.field]:{type:'string',description:data.description,
             ...(data.values?.length ? {enum:data.values} : {})}},required:[data.field]}}]);
         self.postMessage({id:data.id,result:needleComplete(`Extract the ${data.field} record from this text: ${data.request}`)});
+      }else if(data.type === 'focus'){
+        if(!engine)throw new Error('Needle is not loaded.');
+        // A bounded routing menu or extraction schema, then a reset. The host checks the
+        // original request. This pass cannot call the general tool catalog.
+        active=null;
+        const tools=Array.isArray(data.tools) ? data.tools.slice(0,16) : [];
+        needleInit(data.system || '', tools);
+        self.postMessage({id:data.id,result:needleComplete(String(data.request || ''))});
       }else if(data.type === 'complete'){
         if(!engine)throw new Error('Needle is not loaded.');
         self.postMessage({id:data.id,result:needleRun(data)});
