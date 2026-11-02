@@ -64,6 +64,7 @@ function syncLocalAssistantControls(){
   syncAssistantNeedleControls();
   syncAssistantOriginHelp();
   syncAssistantChrome();
+  syncAssistantFocusBar();
 }
 
 function syncAssistantOriginHelp(){
@@ -419,9 +420,33 @@ function syncAssistantFocusBar(){
   if(meta)meta.textContent = assistantFocusMetaText(draft);
   if(kicker)kicker.textContent = (draft.hid || draft.settingId) ? 'working on' : 'draft';
   bar.classList.toggle('is-draft', !(draft.hid || draft.settingId));
+  const done = $('assistant-focus-done');
+  if(done)done.hidden = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
+}
+
+function assistantNeedleFocusLock(){
+  if(typeof assistantSettings !== 'function' || assistantSettings().provider !== 'needle')return null;
+  const focus = _assistantSession && _assistantSession.focus;
+  if(!focus)return null;
+  return {
+    draft:_assistantSession.draft,
+    entry:_assistantSession.entry || focus.entry || null,
+    spec:{
+      operation:focus.operation,
+      kind:focus.kind,
+      targetId:focus.targetId,
+      entry:focus.entry || _assistantSession.entry || null,
+      occurrenceDate:focus.occurrenceDate || '',
+      addForm:focus.addForm || null
+    }
+  };
 }
 
 function assistantClearFocus(){
+  if(assistantNeedleFocusLock()){
+    syncAssistantFocusBar();
+    return;
+  }
   if(_assistantSession){
     _assistantSession.draft = null;
     _assistantSession.pendingEdit = null;
@@ -444,18 +469,32 @@ function assistantClearFocus(){
 }
 
 function clearAssistantChat(){
+  const needleFocus = assistantNeedleFocusLock();
   _assistantTurn += 1;
   assistantAbortInFlight();
   assistantShowBusy(false);
-  assistantClearFocus();
+  if(!needleFocus)assistantClearFocus();
   _assistantSession = typeof assistantCreateSession === 'function' ? assistantCreateSession() : null;
+  if(needleFocus && _assistantSession && typeof assistantFocusOpen === 'function'){
+    _assistantSession.entry = needleFocus.entry;
+    _assistantSession.draft = needleFocus.draft;
+    _assistantSession.focus = assistantFocusOpen(needleFocus.spec);
+    _assistantSession._focusOnly = true;
+    _assistantPendingDraft = needleFocus.draft;
+    _assistantPendingDrafts = null;
+  }
   const input = $('assistant-input');
   if(input){
     input.value = '';
     input.focus({preventScroll:true});
   }
   const thread = assistantThreadEl();
-  if(thread)thread.innerHTML = assistantWelcomeHtml();
+  if(thread){
+    thread.replaceChildren();
+    const name = needleFocus && needleFocus.draft && needleFocus.draft.name;
+    if(name)appendAssistantBubble('say', `Working on ${name}. Tell me what to change. Several settings in one message are fine. Nothing is saved until you confirm.`);
+    else thread.innerHTML = assistantWelcomeHtml();
+  }
   assistantResizeComposer();
   assistantSyncSend();
   syncAssistantFocusBar();
@@ -846,14 +885,7 @@ async function sendAssistantMessage(text, opts){
     }
     try{
       const out = await assistantFocusTurn(focus, value, {
-        onProgress:info => {
-          if(turn !== _assistantTurn)return;
-          if(info && info.phase === 'staged')assistantShowFocusReview(focus, {live:true});
-          const wait = $('assistant-waiting');
-          if(!wait)return;
-          const pending = info && info.pending && info.pending.length ? ` · ${info.pending.join(', ')}` : '';
-          wait.textContent = info && info.step ? `reading ${info.step}${pending}` : 'reading…';
-        }
+        onProgress:info => assistantNoteFocusProgress(focus, info, turn)
       });
       if(turn !== _assistantTurn || (out && out.cancelled))return;
       assistantShowFocusReview(focus);
@@ -1162,9 +1194,18 @@ function assistantDiscardPending(){
 }
 
 function assistantRetireFocusControls(){
-  assistantThreadEl()?.querySelectorAll('[data-focus-save],[data-focus-approve],[data-focus-choice],[data-focus-field]').forEach(button => {
+  assistantThreadEl()?.querySelectorAll('[data-focus-save],[data-focus-edit],[data-focus-choice]').forEach(button => {
     button.disabled = true;
   });
+}
+
+function assistantNoteFocusProgress(session, info, turn){
+  if(turn !== _assistantTurn)return;
+  if(info && (info.phase === 'staged' || info.phase === 'think'))assistantShowFocusReview(session, {live:true});
+  const wait = $('assistant-waiting');
+  if(!wait)return;
+  const step = info && info.step ? String(info.step) : '';
+  wait.textContent = step ? `reading ${step}` : 'reading…';
 }
 
 function assistantShowFocusReview(session, opts){
@@ -1180,14 +1221,6 @@ function assistantShowFocusReview(session, opts){
   }else delete bubble.dataset.focusLive;
   if(!bubble.isConnected)thread?.append(bubble);
   if(thread)thread.scrollTop = thread.scrollHeight;
-}
-
-function assistantRefreshFocusReview(review){
-  const session = _assistantSession && _assistantSession.focus;
-  if(!session || !review)return;
-  // Rebuild the preview after a correction so other uncertain fields retain
-  // their approval action and displayed values agree with the staged record.
-  review.outerHTML = assistantFocusReviewHtml(session);
 }
 
 async function assistantHandleFocusClick(target){
@@ -1211,13 +1244,16 @@ async function assistantHandleFocusClick(target){
     else save.disabled = typeof assistantFocusCanSave !== 'function' || !assistantFocusCanSave(session);
     return true;
   }
-  const approve = target.closest('[data-focus-approve]');
-  if(approve){
-    if(typeof assistantFocusApprove === 'function')assistantFocusApprove(session);
-    const review = approve.closest('[data-focus-review]');
-    approve.remove();
-    const button = review && review.querySelector('[data-focus-save]');
-    if(button)button.disabled = typeof assistantFocusCanSave !== 'function' || !assistantFocusCanSave(session);
+  const edit = target.closest('[data-focus-edit]');
+  if(edit){
+    if(edit.disabled || typeof assistantFocusEditDraft !== 'function')return true;
+    const result = assistantFocusEditDraft(session);
+    const status = edit.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
+    if(result && result.ok){
+      if(typeof closeAssistantSheet === 'function')closeAssistantSheet();
+      return true;
+    }
+    if(status)status.textContent = result && result.error || 'The detail editor is unavailable.';
     return true;
   }
   const choice = target.closest('[data-focus-choice]');
@@ -1229,9 +1265,7 @@ async function assistantHandleFocusClick(target){
       assistantRetireFocusControls();
       assistantShowBusy(true);
       try{
-        const out = await assistantFocusTurn(session, '', {resume:true, onProgress:info => {
-          if(turn === _assistantTurn && info.phase === 'staged')assistantShowFocusReview(session, {live:true});
-        }});
+        const out = await assistantFocusTurn(session, '', {resume:true, onProgress:info => assistantNoteFocusProgress(session, info, turn)});
         if(turn === _assistantTurn && !out.cancelled)assistantShowFocusReview(session);
       }finally{ if(turn === _assistantTurn)assistantShowBusy(false); }
       return true;
@@ -1285,20 +1319,8 @@ function bindAssistantUi(){
       sendAssistantMessage($('assistant-input').value);
     }
   });
-  $('assistant-thread')?.addEventListener('focusin', e => {
-    if(e.target && e.target.matches && e.target.matches('[data-focus-field]') && typeof updateKeyboardLift === 'function'){
-      updateKeyboardLift();
-    }
-  });
-  $('assistant-thread')?.addEventListener('change', e => {
-    const field = e.target && e.target.closest ? e.target.closest('[data-focus-field]') : null;
-    const session = _assistantSession && _assistantSession.focus;
-    if(!field || !session || typeof assistantFocusCorrect !== 'function')return;
-    assistantFocusCorrect(session, field.dataset.focusField, field.value);
-    assistantRefreshFocusReview(field.closest('[data-focus-review]'));
-  });
   $('assistant-thread')?.addEventListener('click', e => {
-    if(e.target.closest('[data-focus-save],[data-focus-approve],[data-focus-choice]')){
+    if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice]')){
       e.preventDefault();
       void assistantHandleFocusClick(e.target);
       return;

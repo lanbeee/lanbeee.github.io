@@ -120,17 +120,21 @@ function assert(ok, message){
       await assistantFocusTurn(session, 'Make it 30 minutes long, only before sunset', {extract, onProgress:info => {
         if(info.phase === 'staged')checkpoints.push(session.changes.map(row => row.field));
       }});
+      session._focusInFlight = true;
+      const live = assistantFocusReviewHtml(session);
+      session._focusInFlight = null;
       const paused = {duration:assistantFocusMaterialize(session).durationMinutes, pending:session.pendingFamilies.slice(),
-        canSave:assistantFocusCanSave(session), html:assistantFocusReviewHtml(session)};
+        canSave:assistantFocusCanSave(session), html:assistantFocusReviewHtml(session),
+        live:live.includes('focus-progress') && live.includes('Reading') && !live.includes('data-focus-choice="resume"') && !live.includes('data-focus-save')};
       await assistantFocusTurn(session, '', {extract, resume:true});
       assistantFocusApprove(session);
       return {paused, counts, checkpoints, pending:session.pendingFamilies, canSave:assistantFocusCanSave(session),
         same:before === JSON.stringify(load()), end:assistantFocusMaterialize(session).allowedTimeEndAnchor,
         jobs:session.jobs.map(row=>({id:row.id,family:row.family,attempts:row.attempts,status:row.status}))};
     });
-    assert(continuation.paused.duration === 30 && !continuation.paused.canSave
+    assert(continuation.paused.duration === 30 && !continuation.paused.canSave && continuation.paused.live
       && continuation.paused.pending.join() === 'schedule' && continuation.paused.html.includes('data-focus-choice="resume"')
-      && continuation.checkpoints.some(fields=>fields.includes('durationMinutes')), 'an interrupted pass shows the completed draft and offers Continue');
+      && continuation.checkpoints.some(fields=>fields.includes('durationMinutes')), 'an interrupted pass shows progress while running and offers Continue after it stops');
     assert(continuation.counts.effort === 1 && continuation.jobs.find(row=>row.family==='schedule').attempts === 2 && continuation.counts.families === 1
       && !continuation.pending.length && continuation.canSave && continuation.same && continuation.end === 'maghrib',
       'Continue retries only unfinished work and never writes the habit before confirmation');

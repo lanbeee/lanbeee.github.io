@@ -30,6 +30,12 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const r=assistantFocusMaterialize(s),parts=rhythmParts(r.target);
       return {r,parts,max,completed,unresolved:s.unresolved,pending:s.pendingFamilies,unchanged:before===JSON.stringify(load()),oneTool:s.trace.filter(x=>x.jobId).every(x=>x.calls.length===1)};
     });
+    const opening=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open();let html='';
+      await assistantFocusTurn(s,'Make this 30 minutes',t.options({onProgress(){if(!html)html=assistantFocusReviewHtml(s);}}));
+      return html.includes('focus-progress')&&html.includes('Reading')&&!html.includes('data-focus-choice="resume"');
+    });
+    assert(opening,'the first progress paint shows the meter instead of Continue');
     assert(compound.r.name==='Walk'&&compound.parts.times===1&&compound.parts.days===2&&compound.r.durationMinutes===30&&compound.r.allowedTimeEndAnchor==='maghrib'
       &&compound.r.allowedWeekdays.join()==='1,2,3,4,5'&&compound.r.priority===1&&compound.r.pinned&&compound.r.emoji==='🚶'&&compound.r.topics.join()==='Health'
       &&!compound.unresolved.length&&!compound.pending.length&&compound.unchanged&&compound.max===3&&compound.oneTool,'one shared pipeline fills a complex draft, uses one tool per job and caps active work at three');
@@ -57,6 +63,20 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       }finally{saveSortSettings(settings);}
     });
     assert(createDefaults,'name-only create uses stable kind-specific defaults, form values win, and essential defaults are reviewed and saved');
+    const summaryCard=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();
+      const create=t.open('create');
+      await assistantFocusTurn(create,'Walk every other day before sunset',t.options());
+      const createHtml=assistantFocusReviewHtml(create);
+      const edit=t.open();
+      await assistantFocusTurn(edit,'Pin it.',t.options());
+      const editHtml=assistantFocusReviewHtml(edit);
+      return {
+        create:createHtml.includes('assistant-preview-name')&&createHtml.includes('assistant-chip')&&createHtml.includes('Walk')&&!createHtml.includes('focus-rows')&&!createHtml.includes('focus-origin'),
+        edit:editHtml.includes('45 min')&&/pinned/i.test(editHtml)&&!editHtml.includes('Shared display')&&!editHtml.includes('Links')&&!editHtml.includes('focus-rows')
+      };
+    });
+    assert(summaryCard.create&&summaryCard.edit,'the review is a summary of essentials and changes, not every field in a touched family');
     const essentialFailures=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open('create');
       await assistantFocusTurn(s,'Walk every other day for 40 minutes.',t.options({extract:async spec=>{

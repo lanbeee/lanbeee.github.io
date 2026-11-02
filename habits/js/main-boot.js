@@ -1700,9 +1700,10 @@ document.addEventListener('focusin',()=>scheduleKeyboardLayout(false));
 document.addEventListener('focusout',()=>scheduleKeyboardLayout(false));
 
 $('detail-save').addEventListener('click',()=>{
-  if(detailIdx === null)return;
   const data = load();
-  const h = data[detailIdx];
+  const creating = detailIdx === null && detailUnsavedCreate;
+  if(detailIdx === null && !creating)return;
+  const h = creating ? detailUnsavedCreate : data[detailIdx];
   if(!h)return;
   if(isDeviceCalendarTask(h)){saveDeviceCalendarDetail(h);return;}
   if(isLocalAppointment(h)){saveLocalAppointmentDetail(data,h);return;}
@@ -1868,7 +1869,20 @@ $('detail-save').addEventListener('click',()=>{
   h.hardDue = h.type === 'task' && h.dueDate !== null && h.delayAllowanceDays === 0;
   if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
-  if(!save(data))return;
+  if(creating){
+    if(data.length >= (typeof MAX_TINGS === 'number' ? MAX_TINGS : 300)){
+      if(typeof showToast === 'function')showToast(`${typeof MAX_TINGS === 'number' ? MAX_TINGS : 300} habits max`);
+      return;
+    }
+    data.push(h);
+    detailIdx = data.length - 1;
+  }
+  if(!save(data)){
+    if(creating)detailIdx = null;
+    return;
+  }
+  detailUnsavedCreate = null;
+  if(typeof detailCommitUnsavedReminders === 'function')detailCommitUnsavedReminders(h.hid);
   showToast('saved');
   refreshDetailView();
   render();

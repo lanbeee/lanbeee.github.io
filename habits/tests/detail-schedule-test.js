@@ -30,6 +30,11 @@ async function scrollDetailToSchedule(page, paneIndex = 1){
 }
 
 async function openCardDetail(page,name){
+  // Save commits in place; dismiss Detail before tapping the home card.
+  if(await page.locator('#detail-sheet.open').count()){
+    await page.locator('#detail-cool').click();
+    await page.waitForSelector('#detail-sheet.open',{state:'hidden'});
+  }
   const card = page.locator('#list .ting-card',{hasText:name}).first();
   await card.locator('.ting-main').click();
   await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
@@ -52,6 +57,8 @@ async function assertAttr(page, selector, attr, expected, msg){
   // per-pane navigation), all of which minimal mode strips. Opt out before the
   // app boots so a fresh profile does not start minimal.
   await page.addInitScript(()=>{
+    localStorage.setItem('tings_coach_install_v2','done');
+    localStorage.setItem('tings_coach_essentials_v2','done');
     localStorage.setItem('tings_app_settings_v2', JSON.stringify({
       preset:'todayFirst', minimalMode:false
     }));
@@ -305,7 +312,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(!taskItem?.hardDue) throw new Error('delay allowance 0 should infer hardDue');
   console.log('  Due/time + inferred hardDue: OK');
 
-  // Save closes the sheet — reopen for schedule-pane tests.
+  // Reopen from home to verify the saved schedule.
   await openCardDetail(page,taskName);
 
   // ═══════════════════════════════════════════════

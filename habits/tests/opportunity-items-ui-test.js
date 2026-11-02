@@ -128,9 +128,21 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
     await page.evaluate(()=>{document.documentElement.style.setProperty('--font-scale','2');scrollDetailToNav('schedule');});
     const clipped=await page.evaluate(()=>{
       const panel=$('detail-conditions'),rect=panel.getBoundingClientRect();
-      return [...panel.querySelectorAll('button,select')].filter(el=>el.getClientRects().length).some(el=>{const r=el.getBoundingClientRect();return r.left<rect.left-1 || r.right>rect.right+1;});
+      return [...panel.querySelectorAll('button,select')].filter(el=>el.getClientRects().length).some(el=>{
+        const r=el.getBoundingClientRect();
+        // Place chips intentionally scroll horizontally. Their viewport must
+        // fit the panel, and each chip must fit that viewport when scrolled in.
+        const row=el.closest('.tag-row');
+        if(row && getComputedStyle(row).overflowX==='auto'){
+          const viewport=row.getBoundingClientRect();
+          return viewport.left<rect.left-1 || viewport.right>rect.right+1 || r.width>row.clientWidth+1;
+        }
+        return r.left<rect.left-1 || r.right>rect.right+1;
+      });
     });
     assert(!clipped,`rounded condition controls fit a ${width}px pane with enlarged text`);
+    // Exercise scrolling/actionability as well as the viewport geometry.
+    await page.locator('#detail-conditions .location-chip-add').click({trial:true});
   }
   await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>{document.documentElement.style.removeProperty('--font-scale');scrollDetailToNav('schedule');});

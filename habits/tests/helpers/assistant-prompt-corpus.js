@@ -99,6 +99,8 @@ const ASSISTANT_LIVE_CORE = [
   {prompt:'When is Pharmacy?', intent:['lookup_item']},
   {prompt:'Add a daily stretch habit every morning', intent:['create_habit']},
   {prompt:'Remind me to call mom tomorrow', intent:['create_task']},
+  {prompt:'Remind me to call mom', intent:['create_task']},
+  {prompt:'Plan Walk for tomorrow', intent:['plan_item']},
   {prompt:'Reschedule the whole week for me', intent:['unsupported']},
   {prompt:'Do I have Walk today?', intent:['lookup_item','ask_today','ask_schedule']}
 ];

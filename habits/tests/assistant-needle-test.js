@@ -548,6 +548,25 @@ function assert(ok, message){
       && applied.deadline.due === basics.expectedDue && applied.deadline.dueTime === '15:00',
       `a task due date and start time stage together (${JSON.stringify(applied.deadline)})`);
 
+    const focusLock = await page.evaluate(()=>{
+      patchLocalAssistant({localAssistant:true, localAssistantProvider:'needle'});
+      save([{hid:'gym', name:'Gym', type:'keepup', target:7, durationMinutes:45, emoji:'🏋️', logs:[]}]);
+      const opened = assistantOpenForItem('gym', 'home');
+      const done = document.getElementById('assistant-focus-done');
+      const before = {hidden:done.hidden, name:document.getElementById('assistant-focus-name').textContent, hid:_assistantSession.focus && _assistantSession.focus.targetId};
+      done.click();
+      const afterDone = {name:document.getElementById('assistant-focus-name').textContent, hid:_assistantSession.focus && _assistantSession.focus.targetId, barHidden:document.getElementById('assistant-focus').hidden, alive:assistantFocusAlive(_assistantSession.focus)};
+      clearAssistantChat();
+      const afterClear = {name:document.getElementById('assistant-focus-name').textContent, hid:_assistantSession.focus && _assistantSession.focus.targetId, alive:assistantFocusAlive(_assistantSession.focus), doneHidden:document.getElementById('assistant-focus-done').hidden};
+      closeAssistantSheet();
+      return {opened, before, afterDone, afterClear};
+    });
+    assert(focusLock.opened && focusLock.before.hidden && focusLock.before.hid === 'gym'
+      && focusLock.afterDone.alive && focusLock.afterDone.hid === 'gym' && !focusLock.afterDone.barHidden && /Gym/.test(focusLock.afterDone.name),
+      'Needle hides Done and keeps the focused item');
+    assert(focusLock.afterClear.alive && focusLock.afterClear.hid === 'gym' && focusLock.afterClear.doneHidden && /Gym/.test(focusLock.afterClear.name),
+      'clearing the Needle chat stays on the same item');
+
     await page.evaluate(()=>patchLocalAssistant({localAssistantProvider:'lmstudio',localAssistantUrl:'http://localhost:1234',localAssistantModel:'existing'}));
     assert(await page.evaluate(()=>assistantSettings().provider === 'lmstudio' && assistantSettings().model === 'existing'),'server configurations still save');
     assert(!(await page.locator('#assistant-sheet [data-needle-download]').isVisible()),'server mode hides the download controls');

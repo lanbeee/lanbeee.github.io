@@ -157,7 +157,15 @@ function saveLocalAppointmentDetail(data,h){
     h.locationIds=$('detail-appt-place').value ? [$('detail-appt-place').value] : [];h.topics=selectedTopicsFrom('detail-topic-chips');
     const current=currentDetailTune();h.pinned=current.pinned;h.showOnSharedDisplay=current.showOnSharedDisplay;h.allowSharedDisplayCompletion=false;
   }
-  if(save(data)){refreshDetailView();render();showToast('event saved');}
+  if(detailUnsavedCreate === h && !data.includes(h)){
+    data.push(h);
+    detailIdx = data.length - 1;
+  }
+  if(save(data)){
+    detailUnsavedCreate = null;
+    if(typeof detailCommitUnsavedReminders === 'function')detailCommitUnsavedReminders(h.hid);
+    refreshDetailView();render();showToast('event saved');
+  }else if(detailUnsavedCreate === h)detailIdx = null;
 }
 
 function renderEventDetailUi(h){

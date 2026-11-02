@@ -740,6 +740,7 @@ async function assistantFocusRunJobs(session, rows, extract, opts){
       row.runPass = pass;
       if(!session.jobs.includes(row))session.jobs.push(row);
       row.revision = revision;row.request = row.request || session.currentRequest;row.status = 'running';
+      if(opts.onProgress)opts.onProgress({phase:'think', step:row.family, pending:(session.pendingFamilies || []).slice()});
       // Keep the exact input with unfinished work across follow-up messages.
       // Validation writes through to the shared draft, while grounding reads
       // the request that actually produced this job's model arguments.
@@ -771,7 +772,8 @@ async function assistantFocusRunJobs(session, rows, extract, opts){
       }else row.status = 'retryable_failed';
       row.fields = session.changes.filter(change => change.family === row.family).map(change => change.field);
       session.pendingFamilies = queue.map(item => item.family);
-      if(opts.onProgress)opts.onProgress({phase:'staged', step:row.family, pending:session.pendingFamilies.slice()});
+      const next = queue.find(item => item.status === 'running') || queue[0];
+      if(opts.onProgress)opts.onProgress({phase:'staged', step:next ? next.family : row.family, pending:session.pendingFamilies.slice()});
     }
   }));
 }
@@ -901,9 +903,18 @@ async function assistantFocusRunTurn(session, text, opts){
 
 function assistantFocusTurn(session, text, opts){
   if(session && session._focusInFlight && opts && opts.resume)return session._focusInFlight;
-  const pending = opts && opts.familyExtract
-    ? assistantFocusRunTurn(session, text, opts)
-    : assistantFocusRunFieldTurn(session, text, opts);
+  // The runner reports progress before its first await. Mark the read in
+  // progress first so that opening paint is the progress line, not Continue.
+  if(session)session._focusInFlight = true;
+  let pending;
+  try{
+    pending = opts && opts.familyExtract
+      ? assistantFocusRunTurn(session, text, opts)
+      : assistantFocusRunFieldTurn(session, text, opts);
+  }catch(error){
+    if(session && session._focusInFlight === true)session._focusInFlight = null;
+    throw error;
+  }
   if(session)session._focusInFlight = pending;
   return pending.finally(()=>{if(session && session._focusInFlight === pending)session._focusInFlight = null;});
 }

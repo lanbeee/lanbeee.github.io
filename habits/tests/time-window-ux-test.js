@@ -108,7 +108,10 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       assert.deepEqual(overflowing,[],width+'px controls fit the editor');
     }
     await page.setViewportSize({width:390,height:844});
-    await page.evaluate(()=>{document.body.style.fontSize='';setMinimalMode(false);setScheduleView('preferred');});
+    await page.evaluate(()=>{document.body.style.fontSize='';setMinimalMode(false);scrollDetailToNav('schedule');});
+    // Regular mode restores its disclosure state; open it before editing.
+    await page.locator('#detail-availability-disclosure > summary').click();
+    await page.locator('[data-schedule-view="preferred"]').click();
     const preferred = page.locator('#detail-preferred-time-row .time-endpoint').first();
     await preferred.locator('[data-time-mode="relative"]').click();
     assert.equal(await preferred.locator('.time-combine').isVisible(),false,'preferred hours use the same disclosure');

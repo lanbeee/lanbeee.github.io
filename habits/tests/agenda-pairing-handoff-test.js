@@ -80,6 +80,8 @@ function assert(value,message){
     assert(opened,'a stalled cleanup request cannot strand an approved clone on the QR screen');
     if(opened){
       await page.waitForFunction(()=>typeof load === 'function' && load().some(h=>h.name === 'Synced from phone'));
+      // Persistence precedes the asynchronous home render. Wait for the UI too.
+      await page.getByText('Synced from phone',{exact:true}).first().waitFor({state:'visible'});
       assert(await page.locator('#list').innerText().then(text=>text.includes('Synced from phone')),
         'the computer opens the full app and displays the encrypted phone library');
       await page.goto(baseUrl,{waitUntil:'load'});

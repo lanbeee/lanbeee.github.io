@@ -45,15 +45,18 @@ inventing a schedule. Stop habits do not require duration or frequency.
 - Each job retains its source text, revision, attempt count, status and proposed
   fields. Follow-ups supersede affected settings and preserve unrelated
   unfinished work. Late replies cannot mutate a newer revision.
-- A crashed/timed-out runtime receives one automatic job retry. Continue retries
-  unfinished work, including failed retrieval/discovery/coverage. Completed
-  siblings remain staged. Cancellation stops all runtimes and queued work.
+- A crashed/timed-out runtime receives one automatic job retry. While the read
+  is still running, the summary shows a short progress line. Continue appears
+  after the read stops and retries unfinished work, including failed
+  retrieval/discovery/coverage. Completed siblings remain staged. Cancellation
+  stops all runtimes and queued work.
 - Long requests use overlapping unchanged contexts for discovery/coverage and
   bounded source windows for extraction. A required field with more than twelve
   relevant windows asks for clarification rather than accepting a truncated set.
 
-The resulting editable preview still requires interpretation approval when
-uncertain and a separate Save. Existing commit conflict checks and undo apply.
+The summary lists essentials and the settings this request changed. Save writes
+that summary; Edit opens it in the detail editor without saving. Existing commit
+conflict checks and undo apply.
 Draft/job checkpoints are in session memory and do not survive page reload.
 
 ## Live evaluation
@@ -130,7 +133,8 @@ that is distinct from end-to-end language coverage. Retrieval/model omissions
 remain possible. Unknown/contradictory values must remain visible, and complex
 linked alternatives without a supported structured interpretation require
 clarification. Keywords can nominate extra jobs; a nomination is not evidence
-that a value should change. Confidence still governs interpretation approval.
+that a value should change. An uncertain reading stays visible in the summary
+and does not add a separate approval step before Save.
 
 Measurements are desktop Chrome tests. Physical Android throughput and memory
 pressure have not been measured. Three independent contexts do not form one

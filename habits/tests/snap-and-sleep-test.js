@@ -24,7 +24,9 @@ function assert(cond,msg){
 
 (async () => {
   const browser = await chromium.launch({ headless:true });
-  const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
+  const page = await browser.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true, timezoneId:'America/New_York' });
+  // Keep the fall-back boundary in every run, regardless of the host clock.
+  await page.clock.setFixedTime(new Date('2026-11-02T12:00:00-05:00'));
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e)));
 
@@ -56,7 +58,11 @@ function assert(cond,msg){
     const today = dayStart(Date.now());
     const lateToday = today + 23 * 3600000;            // 11pm today
     const earlyToday = today + 5 * 3600000;            // 5am today (before window)
-    const midYesterday = today - 1 * 86400000 + 30 * 60000; // 12:30am yesterday
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayMidnight = yesterday.getTime();
+    yesterday.setHours(0,30,0,0);
+    const midYesterday = yesterday.getTime(); // 12:30am yesterday, a 25-hour day
     // keepup with a 6am–10am window
     const h610 = { type:'keepup', allowedTimeStart:360, allowedTimeEnd:600,
       allowedTimeStartAnchor:null, allowedTimeEndAnchor:null };
@@ -76,7 +82,7 @@ function assert(cond,msg){
       // Reference points for assertions
       today_6am:      today + 360 * 60000,
       today_midnight: today,
-      yest_midnight:  today - 1 * 86400000
+      yest_midnight:  yesterdayMidnight
     };
   });
   console.log(snap);

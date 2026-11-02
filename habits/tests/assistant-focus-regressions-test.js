@@ -201,7 +201,7 @@ function assert(ok, message){
           await t.commit(s);
           return load()[0].locationIds.join()==='gym-west';
         })],
-        ['correcting one uncertain field retains approval for the others', async()=>page.evaluate(async()=>{
+        ['the summary keeps save and edit, without a separate interpretation step', async()=>page.evaluate(async()=>{
           const t=focusTest;t.seed();const s=t.open();
           await t.turn(s,'Three times a week, 30 minutes each','recurrence: Three times a week; effort: 30 minutes each',{
             recurrence:{phrase:'Three times a week',times:'3',period:'a week'}, effort:{phrase:'30 minutes each',duration:'30 minutes'}
@@ -209,13 +209,23 @@ function assert(ok, message){
           if(s.changes.length<2)return false;
           s.changes.forEach(row=>row.uncertain=true);
           _assistantSession = {focus:s};assistantShowFocusReview(s);
-          let review=assistantThreadEl().lastElementChild.querySelector('[data-focus-review]');
-          assistantFocusCorrect(s,'durationMinutes','60 minutes');assistantRefreshFocusReview(review);
-          review=assistantThreadEl().lastElementChild.querySelector('[data-focus-review]');
-          const approve=review.querySelector('[data-focus-approve]');
-          if(!approve || !review.querySelector('[data-focus-save]').disabled)return false;
-          await assistantHandleFocusClick(approve);
-          return !review.querySelector('[data-focus-save]').disabled;
+          const review=assistantThreadEl().lastElementChild.querySelector('[data-focus-review]');
+          const html=review.innerHTML;
+          const note=html.indexOf('Settings outside this request stay as they are.');
+          const buttons=html.indexOf('data-focus-save');
+          return Boolean(review.querySelector('[data-focus-save]') && review.querySelector('[data-focus-edit]')
+            && !review.querySelector('[data-focus-approve]')
+            && !html.includes('never mind') && !html.includes('correct a value')
+            && note>=0 && buttons>note && assistantFocusCanSave(s));
+        })],
+        ['edit opens detail with the staged values and does not save', async()=>page.evaluate(async()=>{
+          const t=focusTest;t.seed();const s=t.open();
+          await t.turn(s,'Make this 30 minutes','effort: 30 minutes',{effort:{phrase:'30 minutes',duration:'30 minutes'}});
+          _assistantSession={focus:s};
+          const result=assistantFocusEditDraft(s);
+          const sheet=getSheetInner('detail-sheet');
+          return result.ok && load()[0].durationMinutes===45 && Number($('detail-duration').value)===30
+            && sheet.classList.contains('tune-dirty') && $('detail-sheet').classList.contains('open');
         })],
         ['reminder review shows mode and undo preserves other owners', async()=>page.evaluate(async()=>{
           const t=focusTest;t.seed();const s=t.open();

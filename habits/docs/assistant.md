@@ -9,7 +9,7 @@ For the subsequent single-action implementation and its measured limits, see
 
 Read this only when the task is the Tings assistant. For planner, home, settings, and habit work, leave this file and every `js/assistant-*.js` file closed. `js/assistant-tools.js` is about 5,300 lines and is not on that path.
 
-When Needle is the provider, the only entry is one item. Add, Edit with AI on a card, and Change with AI in details open a focused session. The top-bar and bottom-bar chat buttons stay hidden. A session creates one habit, task, or local event, or edits the item the host already selected. Needle cannot switch items, add a second item, answer a general question, log a completion, or run a planner action. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing or contradictory, and an uncertain reading needs interpretation approval before the separate save confirmation. Ollama, LM Studio, and the external Android bridge still use the general assistant.
+When Needle is the provider, the only entry is one item. Add, Edit with AI on a card, and Change with AI in details open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The working-on bar names that item and has no Done control; clearing the chat keeps the same item. A session creates one habit, task, or local event, or edits the item the host already selected. Needle cannot switch items, add a second item, answer a general question, log a completion, or run a planner action. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
 
 Focused saves apply the staged fields to the current saved item. A concurrent
 change to a field in the preview requires another review; unrelated edits and
@@ -22,10 +22,10 @@ The focused path keeps the latest message separate from its request history,
 so a follow-up can replace an earlier value. A completeness pass can recover
 another field in a family already processed. A bounded model menu handles
 unlabeled groups; routing text cannot itself
-supply an executable value. Invalid or missing values stay unresolved. Review
-corrections and clarification choices stage real values, and remaining uncertain
-fields retain their interpretation-approval button. Reminder previews show the
-actual mode and lead time.
+supply an executable value. Invalid or missing values stay unresolved. Clarification
+choices stage real values. Reminder previews show the actual mode and lead time.
+Save writes the staged item. Edit opens the detail editor with those changes
+filled in and leaves them unsaved until the detail save.
 
 Focused create and edit now use the same semantic-field pipeline: a baseline
 record plus validated field proposals. Create starts from form values and app
@@ -37,8 +37,10 @@ and period together; windows retain their endpoints and modifiers.
 
 Create freezes its baseline when the session opens. Essential frequency and
 duration use the chosen Add form values first, then the kind's configured
-creation defaults (including the separate task profile). The review always
-shows applicable essential fields, labeling form values and defaults. Omission
+creation defaults (including the separate task profile). The review is a short summary in the chat: applicable essential fields,
+labeling form values and defaults, plus only the settings this request
+changed. Unmentioned settings stay as they are and are not listed. The note is
+the last line of the summary; Save and Edit sit under it. Omission
 may use a default; a requested value that fails extraction stays unresolved.
 Names still need user-supplied evidence, and events need an actual date/start
 time. Edit omission preserves the existing item, including its essentials.
@@ -64,14 +66,16 @@ number of instructions for one required field asks for clarification rather
 than silently truncating that field's results.
 
 Crashes and timeouts restart only the failed runtime/job, with one automatic
-runtime retry. Completed sibling proposals remain staged. Continue retries
-unfinished jobs, including discovery, retrieval and coverage. Workers that fail
-memory allocation fall back to surviving pool members. Cancellation or changing
+runtime retry. Completed sibling proposals remain staged. While a read is still
+running, the summary keeps the settings found so far and shows a short progress
+line for the current setting. Continue appears only after that read stops with
+unfinished settings, and retries those jobs, including discovery, retrieval and
+coverage. Workers that fail memory allocation fall back to surviving pool members. Cancellation or changing
 provider stops the whole pool. All workers reuse the same verified cached assets.
 Checkpoints remain in the current session; they are not persisted across reload.
 
-Save remains blocked during inference, unfinished work, errors, clarifications
-and interpretation approval. Confirmed writes and undo still use the existing
+Save remains blocked during inference, unfinished work, errors, and
+clarifications. Confirmed writes and undo still use the existing
 focused commit path. The older family extractor remains explicitly selectable
 by scripted regression adapters; the product uses semantic-field jobs. See
 [the field-extraction evaluation](assistant-field-extraction.md) for live results

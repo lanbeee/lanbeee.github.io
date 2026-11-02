@@ -436,10 +436,17 @@ async function assistantFieldCoverage(state,extract){
   }
 }
 
+function assistantFieldReportProgress(state, opts, phase, step){
+  const open = ['queued','running','waiting','retryable_failed'];
+  state.session.pendingFamilies = state.jobs.filter(job => open.includes(job.status)).map(job => job.def?.label || job.family);
+  if(opts.onProgress)opts.onProgress({phase, step:step || state.session.pendingFamilies[0] || '', pending:state.session.pendingFamilies.slice()});
+}
+
 async function assistantFieldSchedule(state,extract,opts){
   const active=new Set();
   const launch=job=>{
     job.status='running';
+    assistantFieldReportProgress(state, opts, 'think', job.def?.label || job.family);
     const task=(async()=>{
       try{
         for(let attempt=0;attempt<2;attempt++){
@@ -466,8 +473,8 @@ async function assistantFieldSchedule(state,extract,opts){
       for(const waiting of state.jobs.filter(j=>j.status==='waiting')){
         if(!assistantFieldDependencies(waiting,state).length)assistantFieldMerge(state,waiting,waiting.result);
       }
-      state.session.pendingFamilies=state.jobs.filter(j=>['queued','running','waiting','retryable_failed'].includes(j.status)).map(j=>j.def?.label||j.family);
-      if(opts.onProgress)opts.onProgress({phase:'staged',step:job.def?.label||job.family,pending:state.session.pendingFamilies.slice()});
+      const activeJob = state.jobs.find(row => row.status === 'running');
+      assistantFieldReportProgress(state, opts, 'staged', activeJob && (activeJob.def?.label || activeJob.family) || job.def?.label || job.family);
     })();
     active.add(task);return task;
   };
