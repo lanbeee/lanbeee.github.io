@@ -27,32 +27,47 @@ corrections and clarification choices stage real values, and remaining uncertain
 fields retain their interpretation-approval button. Reminder previews show the
 actual mode and lead time.
 
-Focused inference uses a lazy pool of three Needle workers. Each has an
-independent model instance and context; their contexts do not form one larger
-prompt. New-item name extraction and habit-frequency extraction start alongside
-setting discovery. Discovered independent families run through the same pool.
-An edit's identity/kind and event scope resolve before dependent fields;
-alternative schedules wait for new places and weather profiles. Completed
-families update one editable preview as other jobs finish. These checkpoints
-live in the current session, not in the habit list or across a page reload.
+Focused create and edit now use the same semantic-field pipeline: a baseline
+record plus validated field proposals. Create starts from form values and app
+defaults; Edit starts from the saved item. The field catalog reuses the detail
+search labels and aliases in `js/item-field-catalog.js`. Keyword cues nominate
+jobs immediately; Needle embeddings and model discovery nominate additional
+candidates. Retrieval supplies no executable values. Frequency keeps its count
+and period together; windows retain their endpoints and modifiers.
 
-The job ledger retains attempts, input, status, and staged fields. Follow-ups
-replace work in the same family and preserve unfinished work in other families
-with its original input. A request revision rejects late results. A crashed or
-timed-out worker releases only its own requests; its failed job gets one fresh
-attempt while siblings retain their results. Extra workers that cannot allocate
-memory are disabled for that runtime, allowing queued work to use survivors.
-Closing, cancelling, removing the model, or changing provider stops the whole
-pool and rejects its queued jobs. Each worker reads the same verified cached
-assets; additional workers do not download another model.
+A lazy pool has at most **three** independent Needle runtimes. Extraction,
+embedding retrieval, discovery and coverage all use those same leases. Each
+extraction exposes one tool with one evidence field. The model selects an exact
+original-source excerpt or declines it with an empty string. The host enforces
+that evidence enum again, including its original source offsets, before applying
+only that job's field normalizer. Shortened replies cannot drop negation,
+preferences or time-window endpoints. Empty, failed and invalid results never
+cause parsers to supply a value from the query. Unsupported negative restrictions,
+conflicting lengths and ambiguous place matches remain visible questions.
 
-Availability schemas start compact. A native token-budget failure subdivides
-the selected schema without dropping fields or raising the context limit.
-Unfinished jobs remain available through **continue**, including a failed final
-completeness check. Save stays blocked during inference, pending work, errors,
-clarifications, and interpretation approval. A model-supplied new-item title
-that includes scheduling words can be shortened through the existing title
-normalizer, with source grounding and explicit interpretation approval.
+Core name/frequency/duration checks and discovered jobs share a continuously
+drained queue. Completed jobs update the editable preview while siblings run.
+Kind, habit mode and recurrence prerequisites merge in a fixed order; chunk size
+waits for splitting. The original text stays with each job. Follow-ups replace
+only the affected setting and preserve unrelated interrupted work; revision
+checks reject late replies. Long discovery/coverage input uses overlapping
+original-text contexts; embeddings process every query batch. An excessive
+number of instructions for one required field asks for clarification rather
+than silently truncating that field's results.
+
+Crashes and timeouts restart only the failed runtime/job, with one automatic
+runtime retry. Completed sibling proposals remain staged. Continue retries
+unfinished jobs, including discovery, retrieval and coverage. Workers that fail
+memory allocation fall back to surviving pool members. Cancellation or changing
+provider stops the whole pool. All workers reuse the same verified cached assets.
+Checkpoints remain in the current session; they are not persisted across reload.
+
+Save remains blocked during inference, unfinished work, errors, clarifications
+and interpretation approval. Confirmed writes and undo still use the existing
+focused commit path. The older family extractor remains explicitly selectable
+by scripted regression adapters; the product uses semantic-field jobs. See
+[the field-extraction evaluation](assistant-field-extraction.md) for live results
+and the limits of this approach.
 
 The assistant is optional local chat. New setups default to on-device Needle 3;
 existing Ollama / LM Studio selections remain available. `js/assistant-loader.js`
@@ -79,7 +94,9 @@ For external Android agents (Gemini / Google Assistant), see [Android assistant 
 | `js/assistant-needle-worker.js` | Needle WASM inference, model routing, bounded schemas and request boundaries |
 | `js/assistant-focus-registry.js` | Editable fields for one focused item |
 | `js/assistant-focus.js` | Focused session, review, save, and undo |
-| `js/assistant-focus-needle.js` | Live Needle passes for that one item |
+| `js/assistant-focus-needle.js` | Grounding helpers, trace and older family extraction |
+| `js/assistant-focus-fields.js` | Shared create/edit semantic jobs, retrieval, scheduling and proposals |
+| `js/item-field-catalog.js` | DOM-independent setting labels and search aliases |
 | `js/assistant-workflow.js` | Lossless multi-part queue, staged work, clarification and retry |
 | `js/assistant-ui.js` | Sheet, preview, settings |
 | `js/assistant-feedback.js` | Local diagnostic snapshots and opt-in Google Form prefill |
@@ -112,7 +129,7 @@ in both the deferred loader and service-worker precache.
 
 ## Routing
 
-Natural-language routing is model-first. Parser output does not choose intent, split clauses, populate the model envelope, merge tool arguments, or recover from a failed model call. Deterministic helpers validate tool schemas, normalize dates and clocks, read authoritative app data, and perform confirmed writes.
+The general assistant route is model-first. The focused item editor uses the candidate retrieval described above; only model-returned evidence can supply field values. On the general route, parser output does not choose intent, split clauses, populate the model envelope, merge tool arguments, or recover from a failed model call. Deterministic helpers validate tool schemas, normalize dates and clocks, read authoritative app data, and perform confirmed writes.
 
 Needle has an 8192-token context. A model pass proposes separate requests as
 verbatim strings. `assistantNeedleSlices` uses their positions only as boundaries:

@@ -186,3 +186,28 @@ NEEDLE_MODEL_PATH=/absolute/path/needle3.cact NEEDLE_WASM_PATH=/absolute/path/ne
 
 Full extracted arguments and model traces are saved to
 `test-results/needle-focus-regressions-live.json`. These use synthetic items.
+
+## Semantic field extraction
+
+`tests/assistant-field-jobs-test.js` tests the production create/edit scheduler
+with deterministic model/rank adapters for failures and trust boundaries. It
+checks the three-job cap, one-tool schemas, separate duration/chunk/gap values,
+preferences, negation, omitted/shortened evidence, corrections, continuation,
+control dependencies, and bounded contexts with trailing instructions retained.
+The older focused tests explicitly select the family adapter for their existing
+scripted fixtures; their optional live sections use the production field path.
+
+Run the new complex request battery against actual pinned Needle WASM:
+
+```bash
+NEEDLE_MODEL_PATH=test-results/needle-live/needle3.cact \
+NEEDLE_WASM_PATH=test-results/needle-live/needle.wasm \
+node tests/assistant-field-jobs-test.js
+```
+
+Expected results are defined before inference. Successful cases must match every
+expected value, retain unrelated state, and pass confirmed persistence. Asset
+interception uses unmodified pinned files; inference is never replaced in live
+mode. Evidence is written to `test-results/needle-field-jobs-live.json`, including
+prompts, previews, source spans, job attempts, native traces and timing. Details
+and remaining evaluation gaps are in `docs/assistant-field-extraction.md`.

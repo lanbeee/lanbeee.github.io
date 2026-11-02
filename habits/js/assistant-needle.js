@@ -267,7 +267,7 @@ function assistantNeedleEnsureLane(lane){
   return lane.ready;
 }
 
-async function assistantNeedleFocusRequest(payload){
+async function assistantNeedleFocusRequest(payload, type = 'focus'){
   const epoch = _assistantNeedlePoolEpoch;
   const lane = await assistantNeedleAcquireLane();
   try{
@@ -275,8 +275,8 @@ async function assistantNeedleFocusRequest(payload){
     await assistantNeedleEnsureLane(lane);
     const readyMs = performance.now() - readyStarted;
     if(epoch !== _assistantNeedlePoolEpoch)throw new DOMException('Cancelled', 'AbortError');
-    const raw = lane.index ? await assistantNeedleLaneRequest(lane, 'focus', payload)
-      : await assistantNeedleRequest('focus', payload);
+    const raw = lane.index ? await assistantNeedleLaneRequest(lane, type, payload)
+      : await assistantNeedleRequest(type, payload);
     if(epoch !== _assistantNeedlePoolEpoch)throw new DOMException('Cancelled', 'AbortError');
     return {...raw, _workerLane:lane.index, _readyMs:readyMs};
   }catch(error){

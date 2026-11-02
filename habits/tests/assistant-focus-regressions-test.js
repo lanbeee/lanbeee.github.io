@@ -56,8 +56,8 @@ function assert(ok, message){
               else args = typeof fields[spec.family] === 'function' ? fields[spec.family](completeness) : fields[spec.family] || {};
               return {confidence:0.95, function_calls:[{arguments:args}]};
             };
-            await assistantFocusTurn(session, text, this.live ? {} : {extract});
-            while(session.pendingFamilies.length)await assistantFocusTurn(session, '', this.live ? {resume:true} : {resume:true, extract});
+            await assistantFocusTurn(session, text, this.live ? {} : {extract,familyExtract:true});
+            while(session.pendingFamilies.length)await assistantFocusTurn(session, '', this.live ? {resume:true} : {resume:true, extract,familyExtract:true});
             this.traces.push({text, changes:assistantFocusClone(session.changes), unresolved:assistantFocusClone(session.unresolved), trace:assistantFocusClone(session.trace)});
             console.log(text, JSON.stringify(session.changes.map(row => [row.field,row.value])), JSON.stringify(session.unresolved));
             return session;

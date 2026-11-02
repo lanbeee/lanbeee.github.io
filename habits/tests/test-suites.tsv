@@ -187,3 +187,4 @@ assistant-external-test.js	assistant	once
 native-widgets-test.js	ui	once
 assistant-needle-workflow-test.js	assistant	default-only
 assistant-focus-regressions-test.js	assistant	once
+assistant-field-jobs-test.js	assistant	once

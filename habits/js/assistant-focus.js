@@ -232,6 +232,8 @@ function assistantFocusWriteOrder(field){
   if(field === 'timesPerPeriod' || field === 'periodDays')return 3;
   if(field === 'allowedWindow' || field === 'preferredWindow')return 10;
   if(field === 'allowedTimeFixedStart')return 11;
+  if(field === 'places' || field === 'weatherProfile')return 12;
+  if(field === 'locationPrefs' || field === 'weatherRules')return 13;
   if(field === 'dueDate' || field === 'planByDate' || field === 'appointmentStartDate')return 40;
   if(field === 'dueTime' || field === 'appointmentStartMinute')return 45;
   if(String(field || '').startsWith('appointment'))return 20;
@@ -601,6 +603,17 @@ function assistantFocusChoose(session, fieldId, value){
   const question = session.unresolved.find(item => item.field === fieldId);
   const choice = question && question.choices.find(row => (typeof row === 'string' ? row : row.id) === value);
   if(!choice)return {ok:false, error:'That choice is no longer available.'};
+  if(fieldId === 'weatherRules' && ['use-profile','use-rules'].includes(value)
+    || fieldId === 'hardDue' && ['hard-deadline','allow-delay'].includes(value)){
+    const drop = value === 'use-profile' ? 'weatherRules' : value === 'use-rules' ? 'weatherProfile'
+      : value === 'hard-deadline' ? 'delayAllowanceDays' : 'hardDue';
+    session.changes = session.changes.filter(change => change.field !== drop);
+    if(value === 'use-profile')session.dependencies.weatherProfile = null;
+    session.unresolved = session.unresolved.filter(item => item !== question);
+    session.interpretationApproved = null;
+    session.savedFingerprint = '';
+    return {ok:true};
+  }
   if(question.family === 'request'){
     session.unresolved = session.unresolved.filter(item => item !== question);
     return {ok:true};

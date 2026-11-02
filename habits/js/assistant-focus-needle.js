@@ -168,6 +168,7 @@ async function assistantFocusModel(session, spec, extract){
   session.trace = session.trace || [];
   session.trace.push({
     family:spec.family,
+    jobId:spec.jobId,
     args:parsed.args,
     confidence:parsed.confidence,
     calls:(raw && raw.function_calls || []).map(call => call.name),
@@ -900,7 +901,9 @@ async function assistantFocusRunTurn(session, text, opts){
 
 function assistantFocusTurn(session, text, opts){
   if(session && session._focusInFlight && opts && opts.resume)return session._focusInFlight;
-  const pending = assistantFocusRunTurn(session, text, opts);
+  const pending = opts && opts.familyExtract
+    ? assistantFocusRunTurn(session, text, opts)
+    : assistantFocusRunFieldTurn(session, text, opts);
   if(session)session._focusInFlight = pending;
   return pending.finally(()=>{if(session && session._focusInFlight === pending)session._focusInFlight = null;});
 }

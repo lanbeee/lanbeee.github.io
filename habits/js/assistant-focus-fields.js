@@ -1,0 +1,533 @@
+// One baseline + field proposals for both Add and Edit. Retrieval nominates jobs;
+// only grounded model output can supply a value. All inference uses the same
+// three leased runtimes, including embeddings and coverage checks.
+const ASSISTANT_FIELD_SEARCH = {
+  name:'detail-habit-message', kind:'detail-type-seg', habitKind:'detail-mode-seg', emoji:'detail-emoji', emojiBgColor:'detail-emoji-bg', priority:'detail-priority-seg',
+  frequency:'detail-frequency-presets', repeatMode:'detail-frequency-presets', conditionTrigger:'detail-frequency-presets', conditionRadiusM:'detail-frequency-presets',
+  dueDate:'detail-due-date', dueTime:'detail-due-time', hardDue:'detail-due-date', planByDate:'detail-due-date', earlyWindowDays:'detail-early-window', delayAllowanceDays:'detail-delay-allowance',
+  allowedWeekdays:'detail-weekday-chips', preferredWeekdays:'detail-preferred-weekday-chips', allowedMonthDays:'detail-monthday-toggle', preferredMonthDays:'detail-preferred-monthday-toggle',
+  allowedWindow:'detail-allowed-time-row', preferredWindow:'detail-preferred-time-row', allowedTimeFixedStart:'detail-time-kind',
+  durationMinutes:'detail-duration', breakable:'detail-breakable', minChunkMinutes:'detail-min-chunk', minGapMinutes:'detail-min-gap', timerAutoStopMinutes:'detail-timer-auto-stop', autoMarkMinutes:'detail-auto-mark', trackValue:'detail-track-value',
+  places:'detail-places-label', anywhereAllowed:'detail-places-label', locationPrefs:'detail-place-chips', weatherProfile:'detail-weather-profile', weatherRules:'detail-weather-profile', showWeather:'detail-show-weather', showWeatherAtLocation:'detail-show-weather-location', weatherLocationId:'detail-weather-location',
+  scheduleOptions:'detail-habit-option-add', scheduleLinks:'detail-schedule-link-add', topics:'detail-topic-chips', pinned:'detail-pinned', snoozedUntil:'detail-snooze', sharedDisplay:'detail-shared-display', links:'detail-link-add'
+};
+// Signals select original-text windows, never executable values. Broader shared
+// aliases and embeddings supply additional candidates beyond these strong cues.
+const ASSISTANT_FIELD_SIGNALS = {
+  name:/\b(?:rename|named?|called?|title)\b/i,
+  kind:/\b(?:convert|turn|change|make)\b.{0,24}\b(?:habit|task)\b/i,
+  habitKind:/\b(?:build|limit|reduce|stop)\b/i,
+  emoji:/\p{Extended_Pictographic}|\b(?:emoji|icon)\b/iu,
+  emojiBgColor:/\b(?:colou?r|red|blue|green|purple|orange|yellow|pink)\b|\b(?:set|change|use) (?:the |a )?background\b/i,
+  priority:/\b(?:priority|p[0-5]|urgent|critical|someday)\b/i,
+  frequency:/\b(?:every|each (?:day|week)|daily|weekly|once|twice|thrice|\w+ times? (?:a|per|in)|\d+ times?)\b/i,
+  repeatMode:/\b(?:opportunity|routine|when (?:it fits|conditions)|regular rhythm)\b/i,
+  conditionTrigger:/\b(?:trigger|nearby|proximity)\b/i,
+  conditionRadiusM:/\b(?:radius|\d+\s*(?:meters?|metres?))\b/i,
+  dueDate:/\b(?:due|deadline|tomorrow|today|next (?:week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d{4}-\d{2}-\d{2})\b/i,
+  dueTime:/\b(?:at|start(?:ing)?(?: at)?|by)\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2}|noon|midnight)\b/i,
+  hardDue:/\b(?:hard|strict|firm|must finish|no delay)\b/i,
+  planByDate:/\b(?:do by|finish by|plan by)\b/i,
+  earlyWindowDays:/\b(?:early|earlier|in advance)\b/i,
+  delayAllowanceDays:/\b(?:late|delay|postpone)\b/i,
+  allowedWeekdays:/\b(?:weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|any day)\b/i,
+  preferredWeekdays:/\bprefer\w*\b.{0,35}\b(?:days?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+  allowedMonthDays:/\b(?:month days?|days? of (?:the )?month|\d+(?:st|nd|rd|th))\b/i,
+  preferredMonthDays:/\bprefer\w*\b.{0,35}\b(?:month|\d+(?:st|nd|rd|th))\b/i,
+  allowedWindow:/\b(?:(?:before|after|between|from)\s+(?:\d[\d:]*(?:\s*[ap]m)?|sunrise|sunset|noon|midnight|fajr|dhuhr|zuhr|asr|maghrib|isha)|morning|evening|overnight|any time|clear (?:the )?(?:hours|window))\b/i,
+  preferredWindow:/\bprefer\w*\b.{0,40}\b(?:hours?|morning|evening|before|after|between|from)\b/i,
+  allowedTimeFixedStart:/\b(?:fixed|exact)(?: start| time)?\b/i,
+  durationMinutes:/\b(?:(?:for\s+)?(?:\d+(?:\.\d+)?|half an?|one(?: and a half)?|two|three|four|five|ten|fifteen|twenty|thirty|forty five|sixty)\s*(?:minutes?|mins?|hours?)|duration|long|twice as long)\b/i,
+  breakable:/\b(?:split|breakable|unbreakable|continuous|uninterrupted|chunks?)\b/i,
+  minChunkMinutes:/\b(?:minimum chunk|shortest session|chunks? (?:of|at least)|\d+[- ]minute chunks?)\b/i,
+  minGapMinutes:/\b(?:(?:\d+|one|two|five|ten|fifteen|twenty|thirty)\s*[- ]?minutes?\s+gap|gap|apart|between sessions|spacing)\b/i,
+  timerAutoStopMinutes:/\b(?:timer|auto stop|stop timer)\b/i,
+  autoMarkMinutes:/\b(?:auto.?mark|automatic completion|automatically (?:complete|mark)|manual completion)\b/i,
+  trackValue:/\b(?:track|log)\b.{0,20}\b(?:value|weight|note|measurement)\b/i,
+  places:/\b(?:at (?:home|work)|place|location|venue)\b/i,
+  anywhereAllowed:/\b(?:anywhere|any place)\b/i,
+  locationPrefs:/\b(?:prefer|avoid|favou?rite)\b.{0,30}\b(?:place|location|home|work)\b/i,
+  weatherProfile:/\b(?:weather profile|use .{0,20} weather)\b/i,
+  weatherRules:/\b(?:temperature|rain|wind|gust|humidity|uv|feels like|dry weather)\b/i,
+  showWeather:/\b(?:show|hide|display)\b.{0,18}\b(?:weather|forecast)\b/i,
+  showWeatherAtLocation:/\b(?:weather|forecast)\b.{0,20}\b(?:item.?s place|this place)\b/i,
+  weatherLocationId:/\b(?:forecast|weather) (?:at|in|for)\b/i,
+  scheduleOptions:/\b(?:alternatives?|options?|either)\b|\bor\b.{0,40}\b(?:at|before|after|from)\b/i,
+  scheduleLinks:/\b(?:right|directly|immediately) (?:before|after)\b|\b(?:order|adjacen|partner|same day)\w*\b/i,
+  topics:/\b(?:topics?|tags?|categor\w*)\b/i,
+  pinned:/\b(?:pin|pinned|unpin|unpinned)\b/i,
+  snoozedUntil:/\b(?:snooze|unsnooze|unhide|hide until)\b/i,
+  sharedDisplay:/\b(?:shared display|view only)\b/i,
+  links:/https?:\/\/|www\.|\b(?:link|url|shortcut|whatsapp|facetime)\b/i,
+  appointmentRepeat:/\b(?:repeat|weekly|once|every week)\b/i,
+  appointmentStartDate:/\b(?:date|today|tomorrow|\d{4}-\d{2}-\d{2})\b/i,
+  appointmentWeekdays:/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekdays?)\b/i,
+  appointmentUntil:/\b(?:until|through|end date)\b/i,
+  appointmentStartMinute:/\b(?:at|start)\s+(?:\d|noon|midnight)/i,
+  exceptionTime:/\b(?:at|time|start)\b/i, exceptionDuration:/\b(?:minutes?|hours?|duration|long)\b/i,
+  exceptionEmoji:/\p{Extended_Pictographic}|\bemoji\b/iu, exceptionColor:/\bcolou?r\b/i,
+  exceptionCancelled:/\b(?:cancel|skip|restore|uncancel)\b/i, exceptionReset:/\b(?:reset|usual values)\b/i,
+  reminderStart:/\b(?:start reminder|remind.{0,12}start)\b/i, reminderEnd:/\b(?:end reminder|remind.{0,12}(?:end|finish))\b/i,
+  reminderTravelStart:/\b(?:depart|travel start)\w*\b/i, reminderTravelEnd:/\b(?:arriv|travel end)\w*\b/i,
+  reminderMissed:/\b(?:drop warning|missed|cutoff)\b/i, reminderTravelLead:/\b(?:depart|travel)\w*.{0,20}\b(?:before|lead)\b/i,
+  reminderStartLead:/\b(?:remind|alarm|notif)\w*.{0,25}\bbefore\b/i, reminderMissedLead:/\b(?:drop|missed).{0,20}\b(?:before|lead)\b/i,
+  reminderReset:/\b(?:usual|default|reset) reminders?\b/i
+};
+const ASSISTANT_FIELD_HINTS = {
+  name:'Item title only. Exclude create verbs, dates, frequency and other settings.',
+  frequency:'Complete repetition phrase, including count and period. Exclude session length.',
+  durationMinutes:'Length of one session. Exclude frequency, chunk length, gap and timer.',
+  allowedWindow:'Required allowed hours, preserving before/after, anchors and offsets. Exclude preferences.',
+  preferredWindow:'Preferred hours, not a required restriction.',
+  allowedWeekdays:'Allowed weekdays.',
+  preferredWeekdays:'Preferred weekdays only, not a required restriction.',
+  pinned:'Words asking to pin or unpin the item.',
+  topics:'Requested topic names only.',
+  kind:'Explicit conversion to habit or task; leave empty otherwise.',
+  breakable:'Words requesting split sessions or uninterrupted sessions.',
+  scheduleOptions:'All alternatives together; preserve which place goes with which time.',
+  scheduleLinks:'Before or after another named item, preserving adjacency and same-day qualifiers.'
+};
+
+function assistantFieldCatalog(){
+  const defs = ASSISTANT_FOCUS_FIELDS.filter(f=>!['timesPerPeriod','periodDays'].includes(f.id)).map(f=>({...f, fields:[f.id]}));
+  defs.splice(6,0,{id:'frequency',label:'Frequency',family:'recurrence',kinds:['habit'],fields:['timesPerPeriod','periodDays']});
+  return defs.map(f=>{
+    const search = ITEM_DETAIL_SEARCH_FIELDS.find(row=>row[0] === ASSISTANT_FIELD_SEARCH[f.id]);
+    const pair = (ASSISTANT_FOCUS_EXTRACT_FIELDS[f.family] || []).find(row=>row[0]===f.id);
+    return {...f,key:f.id==='frequency'?'frequency':pair?.[1] || f.id,
+      signal:ASSISTANT_FIELD_SIGNALS[f.id], aliases:search ? `${search[1]} ${search[2]}` : f.label,
+      hint:ASSISTANT_FIELD_HINTS[f.id] || `The requested ${f.label.toLowerCase()} setting only.`};
+  });
+}
+
+function assistantFieldApplicable(def, session){
+  // Prerequisites are checked when proposals merge, allowing the extraction to
+  // run before a kind/mode/splitting change has been validated.
+  const kind = assistantFocusEffectiveKind(session);
+  if(def.family==='exception' && !['exceptionCancelled','exceptionReset'].includes(def.id))return false;
+  if(def.family==='exception' && (session.operation==='create'||session.eventScope==='series'))return false;
+  return def.kinds.includes(kind) || session._fieldKindChanging && def.kinds.some(k=>k==='habit'||k==='task');
+}
+
+function assistantFieldContexts(request){
+  if(request.length<=1000)return [request];
+  const contexts=[];let start=0;
+  while(start<request.length){
+    let end=Math.min(request.length,start+1000);
+    if(end<request.length){const space=request.lastIndexOf(' ',end);if(space>start+500)end=space;}
+    contexts.push(request.slice(start,end));
+    if(end===request.length)break;
+    const overlap=Math.max(start+1,end-150),space=request.indexOf(' ',overlap);
+    start=space>=overlap&&space<end?space+1:overlap;
+  }
+  return contexts;
+}
+
+function assistantFieldSpans(request){
+  const spans=[];
+  const add=(start,end)=>{while(start<end && /\s/.test(request[start]))start++;while(end>start && /\s/.test(request[end-1]))end--;
+    if(end<=start)return;
+    if(end-start>600){
+      const words=Array.from(request.slice(start,end).matchAll(/\S+/g));
+      for(let i=0;i<words.length;i+=22){
+        const last=words[Math.min(words.length-1,i+29)];
+        spans.push({start:start+words[i].index,end:start+last.index+last[0].length,text:request.slice(start+words[i].index,start+last.index+last[0].length)});
+        if(i+30>=words.length)break;
+      }
+    }else if(!spans.some(s=>s.start===start&&s.end===end))spans.push({start,end,text:request.slice(start,end)});};
+  let start=0;
+  // Keep URLs, decimals and clocks intact. Every piece retains source offsets.
+  for(const match of request.matchAll(/[,;\n]+|[.!?](?=\s|$)|\s+and\s+(?=(?:tag|use|pin|set|show|hide|add|make|prefer)\b)/gi)){add(start,match.index);start=match.index+match[0].length;}
+  add(start,request.length);
+  return spans.length ? spans : [{start:0,end:request.length,text:request}];
+}
+
+function assistantFieldSource(def, request, spans){
+  const meaningful=span=>{
+    if(def.id==='places' && /^trigger (?:is )?location$/i.test(span.text))return false;
+    if(['allowedWeekdays','allowedWindow','allowedMonthDays'].includes(def.id) && /\bprefer/i.test(span.text))return false;
+    if(def.id==='durationMinutes'){
+      const length=def.signal.exec(span.text);
+      for(const id of ['minGapMinutes','minChunkMinutes','timerAutoStopMinutes','autoMarkMinutes']){
+        const setting=ASSISTANT_FIELD_SIGNALS[id].exec(span.text);
+        if(setting && (!length || setting.index<=length.index))return false;
+      }
+    }
+    return true;
+  };
+  spans=spans.filter(meaningful);
+  if(!spans.length)return [];
+  const score=span=>{
+    const text=span.text;
+    let n=def.signal?.test(text)?20:0;
+    const words=new Set(assistantFocusNorm(def.aliases).split(' ').filter(w=>w.length>3));
+    for(const word of words)if(new RegExp(`\\b${word}\\b`,'i').test(text))n++;
+    if(def.id==='name' && span===spans[0])n+=5;
+    return n;
+  };
+  const ranked=spans.map(span=>({span,score:score(span)})).sort((a,b)=>b.score-a.score || a.span.start-b.span.start);
+  const threshold=ranked.some(row=>row.score>=20)?20:1;
+  const selected=ranked.filter(row=>row.score>=threshold).map(row=>row.span).sort((a,b)=>a.start-b.start);
+  const source=selected.length ? selected : [spans[0]];
+  return source.map(span=>{
+    const own=def.signal?.exec(span.text);
+    if(!own && def.id!=='name')return span;
+    let start=def.id==='name'?0:own.index, end=span.text.length;
+    const named=def.id==='name' && /\b(?:called|named)\s+|\brename(?: it)?(?: to)?\s+/i.exec(span.text);
+    if(named)start=named.index+named[0].length;
+    if(/\b(?:no|not|never|don.t|without|prefer|avoid|keep|unchanged)\b/i.test(span.text.slice(0,start)))start=0;
+    // Retrieval boundaries, not values: keep the untouched source between
+    // setting cues. Coupled lengths (chunks/gaps/timers) keep their units.
+    for(const [id,signal] of Object.entries(ASSISTANT_FIELD_SIGNALS)){
+      if(id==='dueDate' && def.id==='name'){const date=signal.exec(span.text);if(date&&date.index>start)end=Math.min(end,date.index);continue;}
+      if(!['name','frequency','durationMinutes','dueTime','appointmentStartMinute','allowedWeekdays','allowedWindow','topics','priority','pinned','emoji','links','minGapMinutes','minChunkMinutes','timerAutoStopMinutes','autoMarkMinutes'].includes(id))continue;
+      if(id===def.id || ['kind','habitKind','emojiBgColor','dueDate','allowedTimeFixedStart','preferredWeekdays','preferredWindow','preferredMonthDays'].includes(id))continue;
+      if(['minChunkMinutes','minGapMinutes','timerAutoStopMinutes','autoMarkMinutes','breakable'].includes(def.id) && ['durationMinutes','breakable','minChunkMinutes','minGapMinutes'].includes(id))continue;
+      const other=signal.exec(span.text);
+      if(other && other.index>=(own?own.index+own[0].length:start) && other.index>start)end=Math.min(end,other.index);
+    }
+    while(start<end && /\s/.test(span.text[start]))start++;
+    while(end>start && /\s/.test(span.text[end-1]))end--;
+    const text=span.text.slice(start,end);
+    return text?{start:span.start+start,end:span.start+end,text,context:span.text}:span;
+  });
+}
+
+function assistantFieldEnqueue(state, id, reason, source){
+  const def=state.catalog.find(d=>d.id===id);
+  if(!def || !assistantFieldApplicable(def,state.session))return;
+  const prior=state.jobs.find(j=>j.id===id&&j.request!==state.request&&j.status==='queued');
+  if(prior && !['explicit','coverage'].includes(reason))return prior;
+  const existing=state.jobs.find(j=>j.id===id && j.revision===state.revision && j.request===state.request);
+  if(existing){if(reason==='explicit'||reason==='coverage')existing.required=true;return existing;}
+  const spans=source || (id==='scheduleOptions'?[{start:0,end:state.request.length,text:state.request}]:assistantFieldSource(def,state.request,state.spans));
+  const row={id,family:def.family,def,request:state.request,spans,revision:state.revision,status:'queued',attempts:0,
+    required:reason==='explicit'||reason==='coverage',reason,baseline:{durationMinutes:assistantFocusMaterialize(state.session).durationMinutes}};
+  // Replace only work for this setting; unrelated interrupted fields keep their
+  // frozen text. Completed draft values remain until a valid replacement lands.
+  state.jobs.filter(j=>j.id===id&&j.status==='queued').forEach(j=>{j.status='superseded';});
+  state.jobs.push(row);return row;
+}
+
+async function assistantFieldScope(state,extract){
+  const session=state.session;
+  const tool=assistantFocusPackTool('scope','Extract the scope record.',{scope:{type:'string',description:'Exact words choosing this date or all dates, or empty',enum:[state.request,'']}},['scope']);
+  const call=await assistantFocusModel(session,{family:'event-scope',revision:state.revision,request:assistantFocusRequestLine('scope',state.request),tool},extract);
+  if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
+  const evidence=String(call.args.scope||'');
+  if(evidence!==state.request)return;
+  const scope=/\b(?:all dates|whole series|entire series|every occurrence)\b/i.test(evidence)?'series':/\b(?:this date|this occurrence|just (?:this|on)|only on)\b/i.test(evidence)?'occurrence':null;
+  if(scope)assistantFocusEventScope(session,{scope,scopePhrase:evidence},evidence);
+}
+
+function assistantFieldCandidates(state){
+  const text=state.request;
+  state.catalog.filter(d=>assistantFieldApplicable(d,state.session)).forEach(def=>{
+    if(def.signal?.test(text) && assistantFieldSource(def,text,state.spans).some(s=>def.signal.test(s.text)))assistantFieldEnqueue(state,def.id,'explicit');
+  });
+  for(const id of ['name','frequency','durationMinutes'])assistantFieldEnqueue(state,id,'core');
+  if(state.session.kind==='task')for(const id of ['dueDate','dueTime'])assistantFieldEnqueue(state,id,'core');
+  if(state.session.kind==='event' && state.session.operation==='edit' && !state.session.eventScope)state.jobs.push({id:'$scope',family:'scope',status:'queued',attempts:0,revision:state.revision});
+  if(state.session.kind==='event')for(const id of ['appointmentStartDate','appointmentStartMinute','appointmentRepeat'])assistantFieldEnqueue(state,id,'core');
+  // A named saved place or order partner is also retrieval evidence. It never
+  // selects a value, and the extractor still has to quote the instruction.
+  for(const place of assistantFocusSettings().locations || []){
+    if(assistantFocusPhraseIn(text,place.name))assistantFieldEnqueue(state,'places','explicit');
+  }
+  if(/\b(?:before|after)\b/i.test(text) && load().some(item=>item.hid!==state.session.targetId&&assistantFocusPhraseIn(text,item.name)))assistantFieldEnqueue(state,'scheduleLinks','explicit');
+}
+
+async function assistantFieldDiscover(state, extract){
+  const session=state.session;
+  for(const context of assistantFieldContexts(state.request)){
+    const call=await assistantFocusModel(session,{family:'families',revision:state.revision,
+      system:'Find requested setting groups. Copy exact words; do not summarize.',
+      request:assistantFocusRequestLine('families',context),
+      tool:assistantFocusPackTool('families','Extract the families record.',{evidence:{type:'string',description:'family: exact words; family: exact words'},outside:{type:'string',description:'other action: exact words, or empty'}},['evidence'])},extract);
+    assistantFocusEnsure(session,state.revision);
+    if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
+    const found=assistantFocusGroupsFromCall(session,call);
+    assistantFocusBlockOutside(session,found.outside);
+    assistantFocusSplitEvidence(call.args.outside).forEach(row=>{
+      if(assistantFocusPhraseIn(state.request,row.phrase))assistantFocusBlockOutside(session,[{kind:ASSISTANT_FOCUS_OUTSIDE_ALIAS[row.label]||'question',phrase:row.phrase}]);
+    });
+    for(const row of found.families){
+      const candidates=state.catalog.filter(d=>d.family===row.family && assistantFieldApplicable(d,session));
+      const hits=candidates.filter(d=>d.signal?.test(row.phrase));
+      for(const def of hits.length ? hits : candidates)assistantFieldEnqueue(state,def.id,'discovery');
+    }
+  }
+}
+
+async function assistantFieldRetrieve(state, rank){
+  const defs=state.catalog.filter(d=>assistantFieldApplicable(d,state.session));
+  const queries=[...assistantFieldContexts(state.request),...state.spans.map(s=>s.text)];
+  for(let offset=0;offset<queries.length;offset+=13){
+    const raw=await rank({queries:queries.slice(offset,offset+13),fields:defs.map(d=>({id:d.id,text:`${d.label}. ${d.hint} ${d.aliases}`}))});
+    assistantFocusEnsure(state.session,state.revision);
+    state.session.trace.push({family:'retrieval',ranking:raw.rankings,workerLane:raw._workerLane});
+    for(const list of raw.rankings || [])for(const row of list.slice(0,3)){
+      if(Number.isFinite(row.score))assistantFieldEnqueue(state,row.id,'embedding');
+    }
+  }
+}
+
+function assistantFieldTool(def, span){
+  return assistantFocusPackTool(def.key,`Extract the ${def.key} record.`,{
+    [def.key]:{type:'string',description:`${def.hint} Exact source evidence, or empty.`,enum:[span.text,'']}
+  },[def.key]);
+}
+
+function assistantFieldNormalize(def,text,session){
+  if(['allowedWindow','preferredWindow','allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays','frequency','dueDate','dueTime','places','weatherProfile'].includes(def.id)
+    && /\b(?:no|not|never|don.t|except|without|or)\b/i.test(text))return {ok:false,error:'Please clarify the positive restriction or clear this setting.'};
+  if(def.id==='frequency'){
+    const rhythm=assistantParseRhythm(text);
+    if(!rhythm?.timesPerPeriod || !rhythm.periodDays)return {ok:false,error:'How often should it repeat?'};
+    // On Edit, weekdays alone restrict availability; they must not silently
+    // replace an existing frequency.
+    if(session.operation==='edit' && !ASSISTANT_FIELD_SIGNALS.frequency.test(text))return {ok:false,error:'Specify a repetition count and period.'};
+    return {ok:true,changes:[{field:'timesPerPeriod',op:'set',value:rhythm.timesPerPeriod},{field:'periodDays',op:'set',value:rhythm.periodDays}]};
+  }
+  let value=text;
+  if(def.id==='scheduleOptions' && /\bor\b/i.test(text))return {ok:false,error:'Please give each alternative separately with its time and place.'};
+  if(def.id==='name')value=text.replace(/^(?:(?:create|add)(?: a| an)? (?:habit|task|event)(?: (?:called|named))?|(?:rename|name|call)(?: it| this)?(?: to| as)?)\s+/i,'').replace(/^['"]|['"]$/g,'').trim();
+  if(def.id==='name')value=value.replace(/^(?:remind me to|remember to|i (?:need|want) to)\s+/i,'');
+  if(def.id==='name' && assistantFocusStrayValue('name',value))return {ok:false,error:'Please give just the item title.'};
+  if(def.id==='name' && (!value || /^(?:create|add|habit|task|event|rename|name|it)$/i.test(value)))return {ok:false,error:'Name the item.'};
+  if(def.id==='conditionRadiusM')value=text.replace(/^(?:radius(?: of)?|within)\s+/i,'');
+  if(['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(def.id))value=text.replace(/^(?:due(?: on)?|on|by|until|through|start(?:s|ing)?(?: on)?|date)\s+/i,'');
+  if(['dueTime','appointmentStartMinute','exceptionTime'].includes(def.id))value=text.replace(/^(?:at|start(?:s|ing)?(?: at)?|time)\s+/i,'');
+  if(['emojiBgColor','exceptionColor'].includes(def.id))value=text.replace(/^(?:use|set|a|an|the)\s+/gi,'').replace(/^(?:a|an|the)\s+/i,'').replace(/\s+(?:colou?r|background)$/i,'').trim();
+  if(def.id==='topics')value=text.replace(/^(?:(?:add|use|set|with)\s+)?(?:topics?|tags?|categor(?:y|ies))(?:\s+(?:it|as|to))?\s*:?\s*/i,'').replace(/\s+(?:topic|tag)$/i,'').replace(/^(?:it|as|to)\s+/i,'').trim();
+  if(def.id==='topics' && (!value || /\p{Extended_Pictographic}|\b(?:minutes?|hours?|priority|emoji|tag it)\b/iu.test(value)))return {ok:false,error:'Name the requested topics.'};
+  const booleans=['pinned','breakable','trackValue','hardDue','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
+  if(booleans.includes(def.id) && assistantParseBool(value)==null){
+    const negative=/\b(?:no|not|never|don.t|disable|off|unpin|unpinned|unbreakable|uninterrupted|continuous|hide)\b/i.test(value);
+    const positive=def.signal?.test(value);
+    if(positive)value=negative?'false':'true';
+  }
+  // Convert only the model's quoted relative expression, using the baseline
+  // duration supplied to this job. No prior conversation is sent to the model.
+  if(def.id==='durationMinutes' && /^(?:twice as long|double (?:it|the duration))$/i.test(value))value=String((session._fieldBaseline||assistantFocusMaterialize(session)).durationMinutes*2);
+  if(['places','weatherLocationId'].includes(def.id))value=value.replace(/^(?:(?:use|add|set|at|in|place|location|venue)(?: (?:the|to))?\s+)+/i,'').replace(/\s+(?:as )?(?:the )?(?:place|location)$/i,'').trim();
+  if(def.id==='weatherProfile')value=value.replace(/^(?:use|weather profile|profile)\s+/i,'').replace(/\s+(?:weather|profile)$/i,'').trim();
+  if(['minChunkMinutes','minGapMinutes','durationMinutes','timerAutoStopMinutes'].includes(def.id)){
+    const normalized=assistantNormalizeDurationText(value),hits=assistantDurationHitsFromNormalized(normalized);
+    const joined=hits.length===2 && hits[0].unit==='h' && hits[1].unit==='m'
+      && /^[\s,]*(?:and[\s,]*)?$/.test(normalized.slice(hits[0].end,hits[1].index));
+    if(hits.length>1&&!joined)return {ok:false,error:'There is more than one length in that instruction.'};
+  }
+  const parsed=assistantFocusNormalize(def.id,value,session);
+  return parsed.ok ? {ok:true,changes:[{field:def.id,...parsed}]} : parsed;
+}
+
+async function assistantFieldExtract(state,row,extract){
+  const def=row.def,session=state.session;
+  const normalizeContext={...session,_fieldBaseline:row.baseline};
+  if(row.spans.length>12)return {status:row.required?'needs_input':'not_mentioned',error:`There are many instructions for ${def.label.toLowerCase()}. Please clarify this setting.`};
+  const values=[],invalid=[];
+  let preserved=false;
+  for(const span of row.spans){
+    const evidence=span.context||span.text;
+    const call=await assistantFocusModel(session,{family:def.family,jobId:row.id,revision:state.revision,
+      system:'Copy the user exact words into the record. Leave empty if absent.',
+      request:assistantFocusRequestLine(def.key,span.text),tool:assistantFieldTool(def,span)},extract);
+    if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
+    const calls=[...(call.raw.function_calls||[]),...(call.raw.suppressed_calls||[])];
+    for(const result of calls){
+      if(result.name && result.name!==def.key)continue;
+      const args=typeof result.arguments==='string'?JSON.parse(result.arguments):result.arguments||{};
+      const text=String(args[def.key]||'').trim();
+      if(!text)continue;
+      if(/\b(?:keep (?:the )?(?:current|existing|same)|preserve|unchanged|don.t change|do not change|leave.+(?:alone|same|as is))\b/i.test(text)){preserved=true;continue;}
+      // Enforce the evidence enum again on the host. A shortened reply can
+      // drop a negation, preference or endpoint even when its words are grounded.
+      if(text!==span.text || row.request.slice(span.start,span.end)!==span.text)continue;
+      if(!['name','frequency','durationMinutes','dueDate','dueTime','appointmentStartDate','appointmentStartMinute','places','weatherProfile'].includes(def.id) && !def.signal?.test(evidence))continue;
+      if(def.id==='topics'){
+        const wanted=assistantFieldNormalize(def,span.text,normalizeContext),got=assistantFieldNormalize(def,text,normalizeContext);
+        if(!wanted.ok||!got.ok||JSON.stringify(wanted.changes)!==JSON.stringify(got.changes))continue;
+      }
+      if(def.id==='kind' && !ASSISTANT_FIELD_SIGNALS.kind.test(evidence))continue;
+      if(def.id==='name' && session.operation==='edit' && !ASSISTANT_FIELD_SIGNALS.name.test(evidence) && !session.unresolved.some(r=>r.field==='name'))continue;
+      if(def.id==='allowedWeekdays' && /\bprefer/i.test(evidence))continue;
+      if(def.id==='allowedWindow' && /\bprefer/i.test(evidence))continue;
+      if(def.id==='preferredWeekdays' || def.id==='preferredWindow' || def.id==='preferredMonthDays'){
+        if(!/\bprefer/i.test(evidence))continue;
+      }
+      if(def.id==='durationMinutes' && /\b(?:gaps?|chunks?|timer|auto.?mark|between sessions)\b/i.test(span.text))continue;
+      const parsed=assistantFieldNormalize(def,text,normalizeContext);
+      if(!parsed.ok)invalid.push(parsed);
+      if(parsed.ok)values.push({changes:parsed.changes,source:text,span,uncertain:call.confidence==null||call.confidence<0.7||Boolean(call.raw.suppressed_calls?.includes(result))});
+    }
+  }
+  const unique=values.filter((v,i)=>!values.slice(0,i).some(other=>JSON.stringify(v.changes)===JSON.stringify(other.changes)));
+  if(unique.length>1)return {status:'needs_input',error:`I found conflicting values for ${def.label.toLowerCase()}. Which should I use?`};
+  if(unique.length)return {status:'extracted',...unique[0]};
+  const choices=invalid.find(result=>result.choices?.length);
+  if(choices)return {status:'needs_input',error:choices.error,choices:choices.choices};
+  return {status:row.required&&!preserved?'needs_input':'not_mentioned',error:`Please specify ${def.label.toLowerCase()}; I couldn’t extract it reliably.`};
+}
+
+function assistantFieldDependencies(row,state){
+  const order=['kind','habitKind','repeatMode'];
+  const own=order.indexOf(row.id);
+  const controls=own>=0?order.slice(0,own):order.slice();
+  if(row.id==='minChunkMinutes')controls.push('breakable');
+  if(row.id==='weatherRules')controls.push('weatherProfile');
+  if(row.id==='scheduleOptions')controls.push('places','weatherRules','weatherProfile');
+  return state.jobs.filter(job=>job!==row&&controls.includes(job.id)&&!['superseded','not_mentioned','staged'].includes(job.status) && !state.session.changes.some(c=>job.def?.fields.includes(c.field)&&c.origin==='correction'));
+}
+
+function assistantFieldMerge(state,row,result){
+  assistantFocusEnsure(state.session,state.revision);
+  const session=state.session;
+  if(result.status!=='extracted'){
+    row.status=result.status;
+    if(result.status==='needs_input')assistantFocusUnresolve(session,{field:row.id==='frequency'?'timesPerPeriod':row.id,family:row.family,question:result.error,choices:result.choices||[]});
+    return;
+  }
+  const dependencies=assistantFieldDependencies(row,state);
+  if(dependencies.length){row.status='waiting';row.result=result;return;}
+  const context={...session,currentRequest:row.request};
+  const applicable=result.changes.every(change=>assistantFocusFieldApplies(change.field,assistantFocusState(session,assistantFocusMaterialize(session))));
+  if(!applicable && !row.required){row.status='not_mentioned';return;}
+  if(!applicable){row.status='needs_input';assistantFocusUnresolve(session,{field:row.id,family:row.family,question:`${row.def.label} doesn’t apply to this item’s current settings.`});return;}
+  for(const change of result.changes){
+    if(change.field==='weatherRules')assistantFocusStageWeatherRules(session,change.value);
+    if(change.field==='topics'){
+      const known=new Set((assistantFocusSettings().topics||[]).map(t=>t.toLowerCase()));
+      session.dependencies.topics=(change.value||[]).filter(t=>!known.has(t.toLowerCase()));
+    }
+    if(!assistantFocusStageParsed(context,change.field,{...change,ok:true},result.source,result.uncertain?0:1,false))continue;
+    session.changes=context.changes;session.unresolved=context.unresolved;
+    session.interpretationApproved=null;session.savedFingerprint='';
+  }
+  row.status='staged';row.fields=result.changes.map(c=>c.field);row.source=result.source;row.proposal=result;
+  session.unresolved=session.unresolved.filter(r=>!row.def.fields.includes(r.field)&&r.field!==row.id);
+  row.result=null;
+}
+
+async function assistantFieldCoverage(state,extract){
+  const session=state.session;
+  const staged=state.jobs.filter(j=>j.status==='staged').map(j=>`${j.def?.label||j.family}: ${j.source||''}`).join('; ');
+  for(const context of assistantFieldContexts(state.request)){
+    const call=await assistantFocusModel(session,{family:'completeness',revision:state.revision,
+      system:`Already extracted: ${staged.slice(0,1400)||'nothing'}. Find a missing setting and its exact words. Leave missing empty if complete.`,
+      request:assistantFocusRequestLine('missing',context),tool:assistantFocusPackTool('missing','Extract the missing record.',{missing:{type:'string',description:'family: exact missing instruction, or empty'}},['missing'])},extract);
+    assistantFocusEnsure(session,state.revision);
+    if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
+    const found=assistantFocusGroupsFromCall(session,call);assistantFocusBlockOutside(session,found.outside);
+    for(const row of found.families){
+      const defs=state.catalog.filter(d=>d.family===row.family&&assistantFieldApplicable(d,session));
+      const hits=defs.filter(d=>d.signal?.test(row.phrase));
+      const targets=hits.length?hits:defs;
+      let newJob=false;
+      for(const def of targets){
+        const existing=state.jobs.find(j=>j.id===def.id&&j.request===state.request);
+        if(!existing){assistantFieldEnqueue(state,def.id,'coverage');newJob=true;}
+      }
+      if(!newJob && row.phrase.length<state.request.length*0.8 && assistantFocusPhraseIn(state.request,row.phrase) && !targets.some(def=>state.jobs.some(j=>j.id===def.id&&j.status==='staged'))){
+        assistantFocusUnresolve(session,{field:`coverage:${row.family}`,family:'request',choices:[{id:'skip',label:'skip this instruction'}],question:`I still need to account for “${row.phrase}”. Please clarify that setting.`});
+      }
+    }
+  }
+}
+
+async function assistantFieldSchedule(state,extract,opts){
+  const active=new Set();
+  const launch=job=>{
+    job.status='running';
+    const task=(async()=>{
+      try{
+        for(let attempt=0;attempt<2;attempt++){
+          job.attempts++;
+          try{
+            if(job.id==='$discover'){await assistantFieldDiscover(state,extract);job.status='staged';}
+            else if(job.id==='$scope'){await assistantFieldScope(state,extract);job.status='staged';}
+            else if(job.id==='$retrieve'){await assistantFieldRetrieve(state,opts.rank || (payload=>assistantNeedleFocusRequest(payload,'rankFields')));job.status='staged';}
+            else if(job.id==='$coverage'){await assistantFieldCoverage(state,extract);job.status='staged';}
+            else {const result=await assistantFieldExtract(state,job,extract);assistantFieldMerge(state,job,result);}
+            break;
+          }catch(error){
+            assistantFocusEnsure(state.session,state.revision);
+            job.error=String(error.message||error);
+            state.session.trace.push({family:job.family,jobId:job.id,error:job.error,attempt:job.attempts});
+            if(!attempt && /stopped unexpectedly|took too long|runtime failed|memory|allocation|out of bounds/i.test(job.error))continue;
+            job.status='retryable_failed';break;
+          }
+        }
+      }finally{
+        active.delete(task);
+      }
+      assistantFocusEnsure(state.session,state.revision);
+      for(const waiting of state.jobs.filter(j=>j.status==='waiting')){
+        if(!assistantFieldDependencies(waiting,state).length)assistantFieldMerge(state,waiting,waiting.result);
+      }
+      state.session.pendingFamilies=state.jobs.filter(j=>['queued','running','waiting','retryable_failed'].includes(j.status)).map(j=>j.def?.label||j.family);
+      if(opts.onProgress)opts.onProgress({phase:'staged',step:job.def?.label||job.family,pending:state.session.pendingFamilies.slice()});
+    })();
+    active.add(task);return task;
+  };
+  while(true){
+    assistantFocusEnsure(state.session,state.revision);
+    while(active.size<3){
+      const next=state.jobs.find(j=>j.status==='queued');if(!next)break;launch(next);
+    }
+    if(!active.size)break;
+    await Promise.race(active);
+  }
+}
+
+async function assistantFocusRunFieldTurn(session,text,opts){
+  opts=opts||{};
+  const extract=opts.extract||assistantFocusLiveExtract;
+  let state=session._fieldState;
+  if(!opts.resume){
+    const request=String(text||'').trim();if(!request)return {type:'focus',empty:true};
+    const unfinished=(state?.jobs||[]).filter(j=>!j.id.startsWith('$')&&['queued','running','waiting','retryable_failed'].includes(j.status)).map(j=>({...j,status:'queued',result:null}));
+    (state?.jobs||[]).filter(j=>j.status==='running').forEach(j=>{j.status='superseded';});
+    session.requests.push(request);session.currentRequest=request;session.originalRequest=session.requests.join('\n');session.requestText=session.originalRequest;
+    session.requestRevision=(session.requestRevision||0)+1;
+    session._fieldKindChanging=ASSISTANT_FIELD_SIGNALS.kind.test(request);
+    state={request,revision:session.requestRevision,catalog:assistantFieldCatalog(),spans:assistantFieldSpans(request),jobs:unfinished};
+    Object.defineProperty(state,'session',{value:session});
+    unfinished.forEach(j=>{j.revision=state.revision;});
+    session._fieldState=state;session.jobs=state.jobs;session.trace=session.trace||[];
+    assistantFieldCandidates(state);
+    state.jobs.unshift({id:'$discover',family:'families',status:'queued',attempts:0,revision:state.revision});
+    // Embeddings use a lease from the same pool. Test callers may supply a
+    // deterministic rank adapter; production always uses the pinned runtime.
+    state.jobs.splice(2,0,{id:'$retrieve',family:'retrieval',status:'queued',attempts:0,revision:state.revision});
+    state.coverage=false;
+  }else if(state){
+    state.jobs.filter(j=>j.status==='retryable_failed').forEach(j=>{j.status='queued';});
+  }
+  if(!state)return {type:'focus',empty:true};
+  const started=performance.now();
+  session.continuationError='';
+  try{
+    await assistantFieldSchedule(state,extract,opts);
+    if(!state.coverage && !state.jobs.some(j=>j.status==='retryable_failed')){
+      state.jobs.push({id:'$coverage',family:'completeness',status:'queued',attempts:0,revision:state.revision});state.coverage=true;
+      await assistantFieldSchedule(state,extract,opts);
+    }
+    assistantFocusEnsure(session,state.revision);
+    if(state.jobs.some(j=>j.status==='retryable_failed'))session.continuationError='Your draft is kept. Continue to retry the unfinished settings.';
+    const change=id=>session.changes.find(c=>c.field===id);
+    const proposed=id=>state.jobs.some(j=>j.id===id&&j.request===state.request&&j.proposal);
+    if(proposed('weatherRules') && proposed('weatherProfile'))assistantFocusUnresolve(session,{field:'weatherRules',family:'weather',question:'Use the saved weather profile or custom weather rules? Please choose one.',choices:[{id:'use-profile',label:'saved profile'},{id:'use-rules',label:'custom rules'}]});
+    if(proposed('hardDue') && proposed('delayAllowanceDays') && change('hardDue')?.value===true && change('delayAllowanceDays')?.value>0)assistantFocusUnresolve(session,{field:'hardDue',family:'dates',question:'Should this be a hard deadline or allow a delay?',choices:[{id:'hard-deadline',label:'hard deadline'},{id:'allow-delay',label:'allow delay'}]});
+    assistantFocusFinishScope(session);
+    if(session.operation==='create'&&!session.changes.some(c=>c.field==='name'))assistantFocusUnresolve(session,{field:'name',family:'identity',question:'What should the item be called?'});
+    if(!session.changes.length&&!session.unresolved.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should change?'});
+  }catch(error){
+    if(error.name==='AbortError'||session.requestRevision!==state.revision)return {type:'focus',cancelled:true,session};
+    session.continuationError='Your draft is kept. Continue to retry the unfinished settings.';
+    session.trace.push({family:'scheduler',error:String(error.message||error)});
+  }
+  session.timing.total+=Math.round(performance.now()-started);
+  return {type:'focus',session,html:assistantFocusReviewHtml(session)};
+}

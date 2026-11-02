@@ -234,6 +234,17 @@ self.onmessage = event=>{
           parameters:{type:'object',properties:{[data.field]:{type:'string',description:data.description,
             ...(data.values?.length ? {enum:data.values} : {})}},required:[data.field]}}]);
         self.postMessage({id:data.id,result:needleComplete(`Extract the ${data.field} record from this text: ${data.request}`)});
+      }else if(data.type === 'rankFields'){
+        if(!engine)throw new Error('Needle is not loaded.');
+        active=null;
+        const fields=Array.isArray(data.fields) ? data.fields.slice(0,80) : [];
+        const queries=Array.isArray(data.queries) ? data.queries.slice(0,13) : [];
+        const rankings=queries.map(text=>{
+          const query=needleEmbedding(String(text));
+          return fields.map(field=>({id:field.id,score:needleSimilarity(query,String(field.text))}))
+            .sort((a,b)=>b.score-a.score).slice(0,3);
+        });
+        self.postMessage({id:data.id,result:{rankings}});
       }else if(data.type === 'focus'){
         if(!engine)throw new Error('Needle is not loaded.');
         // A bounded routing menu or extraction schema, then a reset. The host checks the

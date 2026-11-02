@@ -11,6 +11,7 @@
     './js/assistant-focus-registry.js',
     './js/assistant-focus.js',
     './js/assistant-focus-needle.js',
+    './js/assistant-focus-fields.js',
     './js/assistant-workflow.js',
     './js/assistant-client.js',
     './js/assistant-feedback.js',

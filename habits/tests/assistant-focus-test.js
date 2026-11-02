@@ -19,6 +19,7 @@ function assert(ok, message){
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(BASE, {waitUntil:'load'});
     await waitForAssistant(page);
+    await page.evaluate(()=>{const turn=assistantFocusTurn;assistantFocusTurn=(session,text,opts)=>turn(session,text,{familyExtract:true,...opts});});
     const gym = await page.evaluate(async()=>{
       save([{
         hid:'gym', name:'Gym', type:'keepup', target:7, durationMinutes:45,
@@ -125,7 +126,7 @@ function assert(ok, message){
       assistantFocusApprove(session);
       return {paused, counts, checkpoints, pending:session.pendingFamilies, canSave:assistantFocusCanSave(session),
         same:before === JSON.stringify(load()), end:assistantFocusMaterialize(session).allowedTimeEndAnchor,
-        jobs:session.jobs.map(row=>({family:row.family,attempts:row.attempts,status:row.status}))};
+        jobs:session.jobs.map(row=>({id:row.id,family:row.family,attempts:row.attempts,status:row.status}))};
     });
     assert(continuation.paused.duration === 30 && !continuation.paused.canSave
       && continuation.paused.pending.join() === 'schedule' && continuation.paused.html.includes('data-focus-choice="resume"')
@@ -326,7 +327,7 @@ function assert(ok, message){
         const original = assistantNeedleLaneRequest;let injected = false;
         assistantNeedleLaneRequest = (lane,type,payload,transfer)=>{
           const pending = original(lane,type,payload,transfer);
-          if(type==='focus' && payload.tools[0].name==='change_availability' && !injected){
+          if(type==='focus' && payload.tools[0].name==='window' && !injected){
             injected = true;
             setTimeout(()=>{const worker=lane.worker;if(worker){worker.terminate();worker.onerror();}},30);
           }
@@ -336,14 +337,14 @@ function assert(ok, message){
           await assistantFocusTurn(session,'Three times a week, 30 minutes each, weekdays after 6pm');
           const record = assistantFocusMaterialize(session);
           return {injected,duration:record.durationMinutes,start:record.allowedTimeStart,pending:session.pendingFamilies,
-            unresolved:session.unresolved,jobs:session.jobs.map(row=>({family:row.family,attempts:row.attempts,status:row.status})),trace:session.trace};
+            unresolved:session.unresolved,jobs:session.jobs.map(row=>({id:row.id,family:row.family,attempts:row.attempts,status:row.status})),trace:session.trace};
         }finally{assistantNeedleLaneRequest = original;}
       });
       fs.writeFileSync('test-results/needle-focus-worker-recovery-live.json',JSON.stringify(liveRecovery,null,2));
       assert(liveRecovery.injected && liveRecovery.duration===30 && liveRecovery.start===18*60
         && !liveRecovery.pending.length && !liveRecovery.unresolved.length
-        && liveRecovery.jobs.find(row=>row.family==='effort')?.attempts===1
-        && liveRecovery.jobs.find(row=>row.family==='schedule')?.attempts===2,
+        && liveRecovery.jobs.find(row=>row.id==='durationMinutes')?.attempts===1
+        && liveRecovery.jobs.find(row=>row.id==='allowedWindow')?.attempts===2,
         `live model recovers a terminated worker without restarting its successful sibling (${JSON.stringify(liveRecovery.jobs)})`);
       assert(!errors.length, `live add screen has no page errors (${errors.join('; ')})`);
       await livePage.close();
