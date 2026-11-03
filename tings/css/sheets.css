@@ -16,7 +16,9 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
    open from detail (snooze/activity) and the day drill-down stay on top. */
 #detail-sheet{z-index:110;}
 #settings-sheet{z-index:115;}
-/* Privacy can open from Settings while its underlying draft stays open. */
+/* Help, samples, and privacy open from Settings and stay above that page. */
+#about-sheet{z-index:118;}
+#sample-habits-sheet{z-index:119;}
 #privacy-sheet{z-index:120;}
 #value-log-sheet{z-index:115;}
 #snooze-sheet,#activity-sheet,#day-capacity-sheet,#day-logs-sheet{z-index:120;}
@@ -97,7 +99,10 @@ body[data-pane-count="3"] #assistant-sheet{
   padding-bottom:calc(14px + var(--content-safe-bottom));
 }
 .settings-sheet > .sheet-title,
+.settings-sheet > .settings-page-head,
 .settings-sheet > .about-copy{flex:0 0 auto;}
+.settings-sheet.detail-search-open > .settings-stack{display:none;}
+.settings-sheet.detail-search-open > .detail-search-panel{flex:1 1 auto;min-height:0;}
 .settings-sheet > .settings-stack{
   flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;
   overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;

@@ -1,5 +1,5 @@
-// Ollama native /api/chat (preferred for Qwen3.8 think+tools) and LM Studio
-// OpenAI-compatible /v1/chat/completions. Loopback, LAN, or Tailscale only.
+// On-device Needle 3 by default; optional Ollama native /api/chat and
+// LM Studio / OpenAI-compatible local servers on loopback, LAN or Tailscale.
 
 let _assistantAbort = null;
 let _assistantModelsCache = {at:0, origin:'', models:[]};
@@ -43,6 +43,8 @@ function assistantOriginFor(provider, url){
 }
 
 function assistantAbortInFlight(){
+  if(typeof assistantFocusInvalidate === 'function')assistantFocusInvalidate();
+  if(typeof assistantNeedleStop === 'function')assistantNeedleStop();
   if(_assistantAbort){
     try{ _assistantAbort.abort(); }catch(_){}
     _assistantAbort = null;
@@ -195,6 +197,7 @@ async function assistantProbeLmStudio(origin){
 
 async function assistantDiscover(settings){
   const s = settings || assistantSettings();
+  if(s.provider === 'needle')return {provider:'needle',origin:'',models:['needle3']};
   const forced = s.provider;
   const origin = assistantOriginFor(forced === 'auto' ? 'ollama' : forced, s.url);
   if(forced === 'lmstudio')return assistantProbeLmStudio(origin);
@@ -404,6 +407,7 @@ async function assistantComplete(req){
   }
   const s = assistantSettings();
   if(!s.on)throw new Error('Local assistant is off.');
+  if(s.provider === 'needle')return assistantNeedleComplete(req);
   const found = await assistantResolveTarget(s);
   const model = pickAssistantModel(found.models, s.model);
   const contextLimit = await assistantLookupContextLimit(found.origin, found.provider, model);
@@ -457,6 +461,13 @@ async function assistantComplete(req){
 }
 
 async function assistantTestConnection(){
+  if(assistantSettings().provider === 'needle'){
+    const raw = await assistantComplete({messages:[{role:'user',content:JSON.stringify({request:'What is on my schedule today?',catalog:{date:new Date().toLocaleDateString('en-CA')}})}],
+      tools:assistantOllamaTools(['answer_schedule']),step:'query'});
+    const parsed = assistantParseReply(raw);
+    const call = parsed.toolCalls?.[0];
+    return {provider:'needle',origin:'',model:'needle3',models:['needle3'],thinking:Boolean(parsed.thinking),tool:call?.name,ok:call?.name === 'answer_schedule'};
+  }
   const found = await assistantListModels(true);
   const model = pickAssistantModel(found.models, assistantSettings().model);
   const raw = await assistantComplete({

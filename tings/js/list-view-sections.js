@@ -330,93 +330,6 @@ function laterDayPlannedHids(data,projectionHids){
   return set;
 }
 
-// TRUE: this occurrence is still eligible to be done today (calendar day +
-// clock window).
-function occurrenceStillDoableToday(h,now){
-  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
-    && typeof nextEligibleDistance === 'function' && nextEligibleDistance(h,now) !== 0){
-    return false;
-  }
-  return typeof windowStillDoableToday === 'function' ? windowStillDoableToday(h,now) : true;
-}
-
-function missedOccurrenceDayBase(day,now = Date.now()){
-  if(typeof day === 'number' && Number.isFinite(day))return dayStart(day);
-  if(typeof day === 'string'){
-    const parsed = new Date(`${day}T12:00:00`).getTime();
-    if(Number.isFinite(parsed))return dayStart(parsed);
-  }
-  return dayStart(now);
-}
-
-function missedOccurrenceResolved(h,expectedDayBase,now){
-  if(h.type === 'task')return isTaskDone(h);
-  if(typeof completedOnDay === 'function' && completedOnDay(h,expectedDayBase))return true;
-  if(typeof actualLogs !== 'function')return completedToday(h,now);
-  // This is an actionable catch-up list, not permanent history: a later real
-  // completion resolves earlier outstanding expectations for the same item.
-  return actualLogs(h.logs || []).some(ts=>ts >= expectedDayBase && ts <= now);
-}
-
-function missedOpportunityPassedToday(h,dayBase,now){
-  let fixedStart = null;
-  if(h.type === 'task' && h.eventTime != null && dateKey(h.eventTime) === dateKey(dayBase)){
-    fixedStart = Number(h.eventTime);
-  }else if(typeof timedPlanLogForDay === 'function'){
-    const plan = timedPlanLogForDay(h,dateKey(dayBase));
-    if(plan)fixedStart = logTime(plan);
-  }
-  if(Number.isFinite(fixedStart)){
-    return now >= fixedStart + clampDuration(h.durationMinutes) * 60000;
-  }
-  return !occurrenceStillDoableToday(h,now);
-}
-
-// TRUE only for a dated planner expectation whose usable opportunity passed
-// without a completion, including a row actually rendered today and later
-// dropped by replanning. This rejects the old broad "everything overdue"
-// sweep: an off-day or impossible item has no qualifying planner evidence.
-function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
-  if(isLocalAppointment(h))return false;
-  if(isOpportunityHabit(h))return false;
-  if(!h || !h.hid)return false;
-  if(h.snoozedUntil && now < h.snoozedUntil)return false;
-  const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
-  const todayBase = dayStart(now);
-  if(expectedDayBase > todayBase)return false;
-  if(expectedDayBase < todayBase && habitHasMultipleDailyOccurrences(h))return false;
-  if(h.createdAt != null && Number(h.createdAt) >= expectedDayBase + 86400000)return false;
-  if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
-    && typeof isDateEligibleForHabit === 'function'
-    && !isDateEligibleForHabit(h,expectedDayBase))return false;
-  if(missedOccurrenceResolved(h,expectedDayBase,now))return false;
-  if(expectedDayBase === todayBase){
-    // A row the user actually saw in today's agenda is a commitment, not just
-    // a broad eligibility guess. If a later/cold optimization drops that row,
-    // preserve it as missed even when its raw clock window is still open. This
-    // is intentionally narrower than treating every full-day reconstruction
-    // candidate as missed: only snap.hids contains previously rendered rows.
-    if(!evidence?.renderedToday
-      && !missedOpportunityPassedToday(h,expectedDayBase,now))return false;
-  }else if(occurrenceStillDoableToday(h,now)){
-    // Midnight is not an opportunity ending. Yesterday's dated row for a
-    // daily that is still doable today is the same live occurrence rolling
-    // forward, not a miss — otherwise 2am dumps every unfinished meal and
-    // prayer into the pill before those windows have even opened.
-    return false;
-  }
-  return true;
-}
-
-function missedOccurrenceDayLabel(day,now = Date.now()){
-  const base = missedOccurrenceDayBase(day,now);
-  const diff = Math.round((dayStart(now) - base) / 86400000);
-  if(diff === 0)return 'today';
-  if(diff === 1)return 'yesterday';
-  if(diff < 7)return new Date(base).toLocaleDateString(undefined,{weekday:'short'}).toLowerCase();
-  return new Date(base).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toLowerCase();
-}
-
 // Same list as the today-header "N missed" pill. The assistant reads this
 // instead of inventing its own overdue sweep.
 function collectDroppedItems(data, settings, todayHids, now = Date.now()){
@@ -459,79 +372,12 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     );
   }
 
-  const currentSet = new Set(todayHids);
-  const laterPlanned = laterDayPlannedHids(data, projectionHids || (snap.projection && snap.projection.hids));
-  const droppedMap = new Map();
-  const addMissed = (hid, name, emoji, idx, first, expectedDay) => {
-    const h = data[idx];
-    if(!h)return;
-    const renderedToday = expectedDay === today && Boolean(snap.hids?.[hid]);
-    if(!isMissedOccurrence(h, laterPlanned, now, expectedDay, {renderedToday}))return;
-    const prior = droppedMap.get(hid);
-    if(prior && prior.expectedDay >= expectedDay)return;
-    droppedMap.set(hid, {
-      hid, name, emoji:emoji || h.emoji, idx, first, expectedDay,
-      dayLabel:missedOccurrenceDayLabel(expectedDay, now)
-    });
-  };
-
-  for(const [expectedDay, entry] of Object.entries(snap.expectations || {})){
-    if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
-    const occurrenceHids = new Set((entry.occurrences || []).map(row=>row.hid));
-    for(const hid of occurrenceHids){
-      // Daily sessions belong to their calendar day. Keep past expectations
-      // as history, but do not turn yesterday's sessions into today's misses.
-      if(expectedDay !== today)continue;
-      const idx = data.findIndex(h=>h && h.hid === hid);
-      const h = data[idx];
-      if(!h || !habitHasMultipleDailyOccurrences(h)
-        || (h.snoozedUntil && now < h.snoozedUntil))continue;
-      const dayBase = missedOccurrenceDayBase(expectedDay,now);
-      if(h.createdAt != null && Number(h.createdAt) >= dayBase + 86400000)continue;
-      if(hasDaySchedule(h) && !isDateEligibleForHabit(h,dayBase))continue;
-      const rows = entry.occurrences.filter(row=>row.hid === hid);
-      const unresolved = agendaRowsAfterCompletions(h,rows,dayBase);
-      const currentKeys = new Set(renderedProjection[today]?.occurrences.map(row=>row.occurrenceKey) || []);
-      for(const row of unresolved){
-        const option = normalizeHabitScheduleOptions(h.scheduleOptions).find(option=>option.id === row.scheduleOptionId);
-        const subject = option ? habitBoundToScheduleOption(h,option) : h;
-        const expired = row.dropAt != null
-          ? now >= row.dropAt : !occurrenceStillDoableToday(subject,now);
-        const dropped = expectedDay === today && row.rendered && !currentKeys.has(row.occurrenceKey);
-        if(!expired && !dropped)continue;
-        droppedMap.set(row.occurrenceKey,{hid,name:h.name,emoji:h.emoji,idx,
-          first:row.start || entry.recordedAt || now,expectedDay,
-          dayLabel:missedOccurrenceDayLabel(expectedDay,now),
-          occurrenceKey:row.occurrenceKey,scheduleOptionId:row.scheduleOptionId,
-          scheduledDay:expectedDay,start:row.start,end:row.end});
-      }
-    }
-    for(const hid of entry.hids){
-      if(occurrenceHids.has(hid))continue;
-      if(currentSet.has(hid))continue;
-      const idx = data.findIndex(h => h && h.hid === hid);
-      if(idx < 0)continue;
-      const info = expectedDay === today ? snap.hids[hid] : null;
-      addMissed(hid, data[idx].name, data[idx].emoji, idx, info?.first || entry.recordedAt || now, expectedDay);
-    }
-  }
-
-  return [...droppedMap.values()].sort((a, b) =>
-    a.expectedDay.localeCompare(b.expectedDay) || a.first - b.first);
+  return collectMissedFromSnapshot(data,todayHids,snap,renderedProjection,now);
 }
 
 let _slippedSheetDayLabel = 'today';
 let _slippedTodayHids = [];
 
-function partitionDroppedItems(dropped, now = Date.now()){
-  const visible = [];
-  const hidden = [];
-  for(const row of dropped || []){
-    if(typeof missedHideIsActive === 'function' && missedHideIsActive(row, now))hidden.push(row);
-    else visible.push(row);
-  }
-  return {visible, hidden};
-}
 
 function collectSlippedDropped(now = Date.now()){
   return typeof collectDroppedItems === 'function'
@@ -1631,6 +1477,18 @@ function switchFreeTimeDay(nextKey){
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
 // agenda work and emits a basic grouped list. Normal home renders reuse a
 // same-day plan cache, then refresh either planner in a worker.
+// PURE: four swipe actions fit. Five or more keep the first three and fold the
+// rest behind More, which reveals them in the same tray.
+function packSwipeActions(parts){
+  const buttons = (parts || []).filter(Boolean);
+  const max = typeof SWIPE_VISIBLE_MAX === 'number' ? SWIPE_VISIBLE_MAX : 4;
+  if(buttons.length <= max)return buttons.join('');
+  const more = '<button class="swipe-action sa-more" data-action="swipe-more" aria-expanded="false" aria-label="more"><span class="swipe-more-glyph" aria-hidden="true"><i class="ti ti-dots swipe-more-icon"></i><i class="ti ti-chevron-left swipe-back-icon"></i></span><span class="swipe-more-labels"><span class="swipe-more-label">more</span><span class="swipe-back-label">back</span></span></button>';
+  return `<div class="swipe-action-set" data-set="main">${buttons.slice(0, max - 1).join('')}</div>`
+    + `<div class="swipe-action-set" data-set="more" hidden>${buttons.slice(max - 1).join('')}</div>`
+    + more;
+}
+
 function render(opts){
   const o = opts || {};
   const list = $('list');
@@ -1702,7 +1560,7 @@ function render(opts){
         ? 'all clear<br><span class="empty-sub">completed tasks stay searchable; use + to add what is next</span>'
         : 'nothing active<br><span class="empty-sub">use Calendar for scheduled items, or + to add a habit</span>';
     }else{
-      empty.innerHTML = 'habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span>';
+      empty.innerHTML = 'habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for settings, + to add, or tap here to try samples.</span>';
       empty.classList.add('is-action');
       empty.onclick = ()=>{
         if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
@@ -1792,7 +1650,11 @@ function render(opts){
     const cue = event && agendaRow ? (agendaRow.start<=Date.now() && agendaRow.end>Date.now()
       ? `until ${new Date(agendaRow.end).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`
       : scheduledWhenLabel(agendaRow.start)) : cardCue(h);
-    const agendaPill = minimal ? '' : agendaCardPill(agendaRow,h);
+    const agendaPill = minimal
+      ? (sortSettings.minimalShowAgendaTimeOnCards ? agendaCardPill(agendaRow,h,Date.now(),'time') : '')
+      : agendaCardPill(agendaRow,h);
+    const showCue = (minimal ? sortSettings.minimalShowCueOnCards !== false : sortSettings.showCueOnCards !== false)
+      && !(event && agendaPill);
     const weatherPill = weatherCardPill(agendaRow,h);
     const earlyPill = earlyCardPill(earlyReasonText || '');
     const showOrderPills = sortSettings.showOrderPillsOnCards !== false;
@@ -1848,6 +1710,11 @@ function render(opts){
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
     const activityAction = event ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
+    const importedEvent = Boolean(h && ['device','pdf','ics','gcal','msgraph'].includes(h.source));
+    const localEvent = Boolean(event && typeof isLocalAppointment === 'function' && isLocalAppointment(h) && !importedEvent);
+    const assistantAction = sortSettings.localAssistant && !importedEvent && !synced && (!event || localEvent)
+      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="edit ${escapeHtml(h.name)}"><i class="ti ti-sparkles" aria-hidden="true"></i>edit</button>`
+      : '';
     const planAction = dayLogsHabitPlannable(h)
       ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
       : '';
@@ -1855,14 +1722,22 @@ function render(opts){
     const linkAction = !minimal && primaryLink
       ? `<button class="swipe-action sa-open" data-action="open-link" aria-label="${primaryLink.kind === 'phone' ? 'call' : 'open'} ${escapeHtml(linkLabel(primaryLink))}"><i class="ti ${linkIconClass(primaryLink)}" aria-hidden="true"></i>${primaryLink.kind === 'phone' ? 'call' : 'open'}</button>`
       : '';
-    const rightSwipeActions = event ? linkAction : minimal
-      ? `${timerRunning ? timerAction : (h.sample ? keepAction : planAction)}${activityAction}`
-      : `${timerAction}${planAction}${activityAction}${linkAction}${keepAction}`;
+    const leftSwipeHtml = packSwipeActions(event
+      ? [assistantAction, linkAction]
+      : minimal
+        ? [assistantAction, timerRunning ? timerAction : (h.sample ? keepAction : planAction), activityAction]
+        : [assistantAction, timerAction, planAction, activityAction, linkAction, keepAction]);
     const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
       && nativeReminderAnyOn(`item:${h.hid}`);
     const reminderAction = reminderOn
       ? `<button class="swipe-action sa-reminder" data-action="reminders-off" aria-label="turn off phone reminders"><i class="ti ti-bell-off" aria-hidden="true"></i>quiet</button>`
       : '';
+    const rightSwipeHtml = packSwipeActions([
+      snoozeAction,
+      pinAction,
+      reminderAction,
+      synced ? '' : '<button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>'
+    ]);
     const canDrag = !minimal && dayBase != null && typeof isAgendaFillDraggable === 'function' && isAgendaFillDraggable(h,agendaRow);
     const dragHandle = canDrag
       ? `<button type="button" class="agenda-drag-handle" aria-label="drag to reorder" title="drag to reorder"><i class="ti ti-grip-vertical" aria-hidden="true"></i></button>`
@@ -1895,13 +1770,12 @@ function render(opts){
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         <div class="swipe-action-strip" role="group" aria-label="${event?'event links':'session, planning and history'}">
-          ${rightSwipeActions}
+          ${leftSwipeHtml}
         </div>
       </div>
       <div class="swipe-actions swipe-actions-right">
         <div class="swipe-action-strip" role="group" aria-label="visibility and reminders">
-          ${snoozeAction}${pinAction}${reminderAction}
-          ${synced ? '' : '<button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>'}
+          ${rightSwipeHtml}
         </div>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
@@ -1916,7 +1790,7 @@ function render(opts){
             </span>
             ${agendaPill}
           </div>
-          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${sortSettings.showCueOnCards !== false && !(event && agendaPill) ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
+          ${(!minimal && isBreakable) ? ((appointmentPill || reminderPill || orderPill || nowPill || weatherPill) ? `<div class="ting-meta" aria-label="order">${appointmentPill}${reminderPill}${nowPill}${orderPill}${weatherPill}</div>` : '') : `${showCue ? `<div class="ting-cue">${escapeHtml(cue)}</div>` : ''}
           <div class="ting-meta" aria-label="rhythm and plan">${context}</div>`}
           ${!visualHtml ? '' : `<div class="ting-visual">
             ${visualHtml}
@@ -2352,9 +2226,23 @@ function render(opts){
     btn.addEventListener('click',e=>{
       e.stopPropagation();
       if(isScrollGuarded(btn))return;
+      if(btn.dataset.action === 'swipe-more'){
+        if(typeof toggleSwipeMore === 'function')toggleSwipeMore(btn);
+        return;
+      }
       const row = btn.closest('.swipe-row');
       const idx = +row.dataset.realIdx;
       closeAllSwipes();
+      if(btn.dataset.action === 'assistant' && typeof tingsLoadAssistant === 'function'){
+        const hid = row.dataset.hid;
+        void tingsLoadAssistant().then(()=>{
+          if(typeof assistantOpenForItem === 'function'){
+            const item = load()[idx];
+            const local = item && typeof isLocalAppointment === 'function' && isLocalAppointment(item);
+            assistantOpenForItem(hid,'home', local ? {occurrenceDate:row.dataset.scheduledDay || ''} : null);
+          }
+        });
+      }
       if(btn.dataset.action === 'plan')openSwipePlan(idx,Number(row.dataset.dayBase));
       if(btn.dataset.action === 'open-link'){
         const link = habitPrimaryLink(load()[idx]);

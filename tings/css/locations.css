@@ -9,10 +9,11 @@
 #location-permission-sheet,#background-location-disclosure-sheet{z-index:130;}
 #location-picker-sheet,#travel-edit-sheet,#block-edit-sheet,#presence-picker-sheet,#home-filter-sheet,#calendar-filter-sheet{z-index:125;}
 .location-access-row{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;
   margin:0 0 14px;padding:10px 12px;border-radius:10px;
   border:0.5px solid var(--border);background:var(--bg2);
 }
+.location-access-row > div{flex:1 1 120px;min-width:0;}
 .location-access-row .settings-sublabel{display:block;margin-bottom:2px;}
 .location-access-row .field-hint{margin:0;}
 .location-access-row .btn{flex:0 0 auto;width:auto;padding:9px 12px;font-size:13px;white-space:nowrap;}

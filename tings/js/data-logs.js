@@ -105,7 +105,7 @@ function normalizeLogs(logs){
         if(optionId)entry.scheduleOptionId = optionId;
         if(scheduledDay)entry.scheduledDay = scheduledDay;
         if(log.source === 'calendar')entry.source = 'calendar';
-        if(['shared_display','native_alarm'].includes(log.source) && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
+        if(['shared_display','native_alarm','native_widget'].includes(log.source) && /^[0-9a-f]{32}$/.test(String(log.operationId || ''))){
           entry.source = log.source;
           entry.operationId = String(log.operationId);
         }
@@ -166,7 +166,7 @@ function makeActualLog(ts,opts = {}){
   if(occurrenceKey)entry.occurrenceKey = occurrenceKey;
   if(optionId)entry.scheduleOptionId = optionId;
   if(scheduledDay)entry.scheduledDay = scheduledDay;
-  if(['shared_display','native_alarm'].includes(opts.source) && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
+  if(['shared_display','native_alarm','native_widget'].includes(opts.source) && /^[0-9a-f]{32}$/.test(String(opts.operationId || ''))){
     entry.source = opts.source;
     entry.operationId = String(opts.operationId);
   }
@@ -290,6 +290,12 @@ function dayDistance(ts){
   return Math.round((dayStart(Date.now()) - dayStart(ts)) / 86400000);
 }
 function daysUntil(ts){return ts ? Math.floor((dayStart(ts) - dayStart(Date.now())) / 86400000) : null;}
+// Local calendar arithmetic keeps day-based flexibility at midnight across DST.
+function offsetCalendarDay(ts,offset){
+  const date = new Date(dayStart(ts));
+  date.setDate(date.getDate() + offset);
+  return date.getTime();
+}
 function dayStart(ts){
   const d = new Date(ts);
   return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();

@@ -1,4 +1,4 @@
-const CACHE = 'tings-v659';
+const CACHE = 'tings-v733';
 const MAPS_CACHE = 'tings-maps-v3';
 const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
 const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
@@ -93,12 +93,15 @@ const PRECACHE = [
   './js/ui-kit.js',
   './js/tap.js',
   './js/calendar-import.js',
+  './lib/js/ical.min.js',
+  './js/calendar-ics.js',
   './js/calendar-device.js',
   './js/locations.js',
   './js/prayer-times.js',
   './js/weather.js',
   './js/scoring.js',
   './js/list-view-home.js',
+  './js/agenda-missed.js',
   './js/list-view-sections.js',
   './js/list-view-planner.js',
   './js/list-view-actions.js',
@@ -108,6 +111,7 @@ const PRECACHE = [
   './js/detail-view-tune.js',
   './js/detail-view-stats.js',
   './js/detail-view-pages.js',
+  './js/item-field-catalog.js',
   './js/detail-view-search.js',
   './js/overview-view.js',
   './js/today-view-fits.js',
@@ -124,10 +128,13 @@ const PRECACHE = [
   './js/push-client.js',
   './js/reminders.js',
   './js/native-reminders.js',
+  './js/native-widgets.js',
   './js/shell-ui.js',
   './js/time-picker.js',
   './js/emoji-suggest.js',
+  './lib/emoji/catalog.json',
   './js/settings-core.js',
+  './js/settings-search.js',
   './js/settings-weather.js',
   './js/settings-backup.js',
   './js/settings-blocked.js',
@@ -142,8 +149,18 @@ const PRECACHE = [
   './js/assistant-parse.js',
   './js/assistant-tools.js',
   './js/assistant-harness.js',
+  './js/assistant-needle.js',
+  './js/assistant-focus-registry.js',
+  './js/assistant-focus.js',
+  './js/assistant-focus-needle.js',
+  './js/assistant-focus-fields.js',
+  './js/assistant-workflow.js',
+  './js/assistant-needle-worker.js',
+  './lib/needle/needle.js',
   './js/assistant-client.js',
+  './js/assistant-feedback.js',
   './js/assistant-ui.js',
+  './js/assistant-external.js',
   './js/agenda-display.js',
   './js/display-mode.js',
   './js/agenda-display-boot.js',
@@ -215,7 +232,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE && k !== MAPS_CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k !== CACHE && k !== MAPS_CACHE && k !== 'tings-needle-v1').map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -240,6 +257,9 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (isLoopbackRequest(req)) return;
   if (req.method !== 'GET') return;
+  // The assistant owns verified optional downloads. Never duplicate weights in
+  // the app-shell cache or let SWR bypass an explicit retry/removal.
+  if (new URL(req.url).hostname === 'huggingface.co' || new URL(req.url).hostname.endsWith('.hf.co')) return;
   // Pairing status and encrypted agenda reads must hit the network. Cache Storage
   // ignores Cache-Control: no-store when cache.put() is used, and a cached 200
   // would hide later 401/410 revoke responses.

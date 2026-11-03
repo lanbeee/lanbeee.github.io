@@ -289,6 +289,8 @@ function pullFastLinkedOccurrenceForward(c,earlier,later,candidates,states,setti
   if(!laterTrial || persistentLinkViolationsForState(laterTrial).size)return false;
   const earlierTrial = fitFastLinkedGroup(earlier,group,settings,budget);
   if(!earlierTrial)return false;
+  const proposed = states.map(state=>state === earlier ? earlierTrial : state === later ? laterTrial : state);
+  if(![...group.values()].every(member=>candidateWeekOccurrencesFit(member,proposed)))return false;
   applyPlacementState(earlier,earlierTrial);
   earlier.day.linkOmissions=earlierTrial.day.linkOmissions;
   applyPlacementState(later,laterTrial);
@@ -451,7 +453,8 @@ function repairFastLinkedGroups(states,candidates,settings,budget){
 function insertUnplacedFastGraphChoices(unplaced,candidates,states,settings,frozen,budget){
   let accepted = 0;
   const byIndex = new Map(candidates.map(c=>[c.i,c]));
-  const canClaim = (c,state,trialStates)=>!weatherShouldDeferCandidate(c,state,settings,trialStates)
+  const canClaim = (c,state,trialStates)=>candidateOccurrenceFitsOnDay(c,state,trialStates)
+    && !weatherShouldDeferCandidate(c,state,settings,trialStates)
     && clusterFlexPartnerPlacedForDay(c,state)
     && (requiredOccurrenceCanClaimDay(c,state,candidates)
       || !fastPathDefersMovable(c,state,candidates,trialStates));
@@ -887,7 +890,8 @@ function fastTodayLinkedChoice(c,today,source,candidates,states,settings,budget)
         // Existing must-do build reps can be closer than the ordinary rhythm
         // (including beside an open reduce partner). Keep those real pairs;
         // eligibility alone must not invent an extra rep on an empty date.
-        const linkedRep=member.h.type==='keepup' && sameDayScheduleLinks(member.h).some(link=>
+        const linkedRep=member.h.type==='keepup' && rhythmFlexAllowsDay(member.h,last,s.dayBase,offset)
+          && sameDayScheduleLinks(member.h).some(link=>
           s.fills.some(e=>e.fill.h.hid===link.anchorHid)
             || scheduleAnchorCommitForDay(link.anchorHid,s.dayBase));
         if(member.h.type!=='task' && !rhythmEligibleOnDay(member.h,last,s.dayBase,s.weekday,offset)

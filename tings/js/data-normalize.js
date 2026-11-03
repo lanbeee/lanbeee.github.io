@@ -420,7 +420,12 @@ function normalize(items){
       scheduleOptions,
       links:normalizeLinks(Array.isArray(raw.links) && raw.links.length ? raw.links : legacyCallLinks(raw)),
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
-      source: (raw.source === 'pdf' || raw.source === 'msgraph' || raw.source === 'gcal' || raw.source === 'device') ? raw.source : null,
+      source: (raw.source === 'pdf' || raw.source === 'ics' || raw.source === 'msgraph' || raw.source === 'gcal' || raw.source === 'device') ? raw.source : null,
+      ...(raw.source === 'ics' ? {
+        calendarSubject:typeof raw.calendarSubject === 'string' ? raw.calendarSubject.slice(0,60) : null,
+        calendarStart:Number.isFinite(raw.calendarStart) ? raw.calendarStart : null,
+        calendarEnd:Number.isFinite(raw.calendarEnd) ? raw.calendarEnd : null
+      } : {}),
       ...(raw.source === 'device' ? {
         calendarSeriesId:typeof raw.calendarSeriesId === 'string' && /^device:\d+:\d+$/.test(raw.calendarSeriesId) ? raw.calendarSeriesId : null,
         calendarId:typeof raw.calendarId === 'string' ? raw.calendarId.slice(0,20) : null,
@@ -598,7 +603,7 @@ function normalizeAppointment(raw){
 function isLocalAppointment(h){return Boolean(h && h.appointment);}
 // UI identity: a timed calendar meeting is an event; a manually timed task
 // and an all-day calendar task still have ordinary task actions.
-function isEventItem(h){return isLocalAppointment(h) || (['device','pdf','gcal','msgraph'].includes(h?.source) && isFixedTimedTask(h));}
+function isEventItem(h){return isLocalAppointment(h) || (['device','pdf','ics','gcal','msgraph'].includes(h?.source) && isFixedTimedTask(h));}
 function isFixedAppointment(h){return isLocalAppointment(h) || isFixedTimedTask(h);}
 function appointmentOccursOn(h,key){
   const a=h?.appointment;

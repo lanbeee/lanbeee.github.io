@@ -11,20 +11,11 @@
 //   - HYBRID  -> split into a component + hooks + handlers.
 //   - PURE    -> port verbatim into shared utils.
 
-// HYBRID: opens sheet, syncs DOM and detail state
-function openDetail(i){
-  const h = load()[i];
-  if(!h)return;
-  const inner = getSheetInner('detail-sheet');
-  if(inner?.contains(document.activeElement))document.activeElement.blur();
-  inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open');
-  closeSearch();
-  const changedHabit = detailIdx !== i;
-  if(changedHabit){
-    detailStripOffset = 0;
-    detailVizMode = 'calendar';
-  }
-  detailIdx = i;
+// A detail preview can show a new item, or staged edits, before anything is saved.
+let detailUnsavedCreate = null;
+let detailUnsavedReminders = null;
+
+function paintDetailFields(h){
   const days = daysSince(h.lastLog);
   const c = habitColors(h,days);
   const cardScoreTone = cardTone(h);
@@ -82,7 +73,37 @@ function openDetail(i){
   $('detail-delete-confirm').hidden = true;
   setDetailTypeUi(h.type);
   setDetailPriorityUi(effectivePriority(h));
-  detailTuneOriginal = {
+}
+
+function paintDetailChrome(h){
+  const days = daysSince(h.lastLog);
+  const c = habitColors(h,days);
+  syncRhythm('detail',h.target || 7);
+  syncBreakableUi();
+  if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi();
+  $('detail-mark').style.cssText = '';
+  const markStyle = typeof emojiBgInlineStyle === 'function'
+    ? emojiBgInlineStyle(h,c.bg,c.icon)
+    : `background:${c.bg};color:${c.icon}`;
+  $('detail-mark').style.cssText = markStyle;
+  $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
+  $('detail-mark').classList.toggle('has-emoji-bg',Boolean(normalizeEmojiBgColor(h.emojiBgColor)));
+  $('detail-mark').setAttribute('aria-label',`add entry for ${h.name}`);
+  $('detail-mark').setAttribute('aria-description',`Priority P${effectivePriority(h)}`);
+  $('detail-mark').innerHTML = iconHtml(h,c);
+  renderStats(h);
+  renderGraph(h);
+  renderCalendar(h);
+  syncDetailVizMode();
+  renderDetailOrderPage(h);
+  applyDetailMinimalMode();
+  renderLocalAppointmentDetail(h);
+  syncDeviceCalendarDetail(h);
+  renderEventDetailUi(h);
+}
+
+function detailTuneSnapshot(h){
+  return {
     hid:h.hid,
     name:h.name || '',
     type:h.type || 'keepup',
@@ -150,36 +171,38 @@ function openDetail(i){
     eventTime:h.eventTime ?? null,
     planByDate:h.planByDate ?? null
   };
-  syncRhythm('detail',h.target || 7);
-  syncBreakableUi();
-  if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi();
-  $('detail-mark').style.cssText = '';
-  const markStyle = typeof emojiBgInlineStyle === 'function'
-    ? emojiBgInlineStyle(h,c.bg,c.icon)
-    : `background:${c.bg};color:${c.icon}`;
-  $('detail-mark').style.cssText = markStyle;
-  $('detail-mark').classList.toggle('emoji-pulse',Boolean(h.emoji));
-  $('detail-mark').classList.toggle('has-emoji-bg',Boolean(normalizeEmojiBgColor(h.emojiBgColor)));
-  $('detail-mark').setAttribute('aria-label',`add entry for ${h.name}`);
-  $('detail-mark').setAttribute('aria-description',`Priority P${effectivePriority(h)}`);
-  $('detail-mark').innerHTML = iconHtml(h,c);
-  renderStats(h);
-  renderGraph(h);
-  renderCalendar(h);
-  syncDetailVizMode();
-  renderDetailOrderPage(h);
+}
+
+// HYBRID: opens sheet, syncs DOM and detail state
+function openDetail(i){
+  const h = load()[i];
+  if(!h)return;
+  const inner = getSheetInner('detail-sheet');
+  if(inner?.contains(document.activeElement))document.activeElement.blur();
+  inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open');
+  closeSearch();
+  const changedHabit = detailIdx !== i;
+  if(changedHabit){
+    detailStripOffset = 0;
+    detailVizMode = 'calendar';
+  }
+  detailIdx = i;
+  detailUnsavedCreate = null;
+  detailUnsavedReminders = null;
+  paintDetailFields(h);
+  detailTuneOriginal = detailTuneSnapshot(h);
+  // Reset disclosures before painting chrome: the section renderers force some
+  // disclosures open (device personalization reveals the emoji editor), and a
+  // later reset would close them again and hide their controls.
+  if(changedHabit)resetDetailDisclosures(h);
+  paintDetailChrome(h);
   setDetailDirty(false);
   if(changedHabit){
-    resetDetailDisclosures(h);
     $('detail-search-input').value = '';
     setDetailSearchOpen(false,false);
   }else if(!$('detail-search-panel').hidden){
     renderDetailSearch();
   }
-  applyDetailMinimalMode();
-  renderLocalAppointmentDetail(h);
-  syncDeviceCalendarDetail(h);
-  renderEventDetailUi(h);
   openSheet('detail-sheet');
   if(changedHabit){
     const inner = getSheetInner('detail-sheet');
@@ -207,6 +230,81 @@ function openDetail(i){
   }
   renderDetailTabs();
   updateDetailPagerDots();
+}
+
+function detailDisplayRecord(saved, draft){
+  const display = Object.assign({}, saved, draft, {
+    hid:saved.hid,
+    logs:saved.logs,
+    lastLog:saved.lastLog,
+    createdAt:saved.createdAt,
+    sample:saved.sample,
+    externalId:saved.externalId,
+    source:saved.source,
+    importedAt:saved.importedAt
+  });
+  if(saved.source === 'ics' || saved.source === 'device'){
+    display.calendarSubject = saved.calendarSubject;
+    display.calendarStart = saved.calendarStart;
+    display.calendarEnd = saved.calendarEnd;
+    display.calendarSeriesId = saved.calendarSeriesId;
+    display.calendarId = saved.calendarId;
+  }
+  return display;
+}
+
+// Show staged edits in the detail editor. The saved item stays unchanged until Detail's own save.
+function openDetailUnsaved(index, draft){
+  const saved = load()[index];
+  if(!saved || !draft)return false;
+  openDetail(index);
+  const original = typeof currentDetailTune === 'function' ? currentDetailTune() : detailTuneOriginal;
+  const display = detailDisplayRecord(saved, draft);
+  paintDetailFields(display);
+  paintDetailChrome(display);
+  detailTuneOriginal = original;
+  setDetailDirty();
+  return true;
+}
+
+function openDetailUnsavedCreate(draft){
+  if(!draft || !String(draft.name || '').trim())return false;
+  const inner = getSheetInner('detail-sheet');
+  if(inner?.contains(document.activeElement))document.activeElement.blur();
+  inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open','tune-dirty');
+  closeSearch();
+  detailIdx = null;
+  detailUnsavedCreate = draft;
+  detailUnsavedReminders = null;
+  detailStripOffset = 0;
+  detailVizMode = 'calendar';
+  paintDetailFields(draft);
+  paintDetailChrome(draft);
+  detailTuneOriginal = null;
+  setDetailDirty(true);
+  openSheet('detail-sheet');
+  if(inner)inner.scrollTop = 0;
+  const pager = inner?.querySelector('.detail-pager');
+  if(pager){
+    pager.querySelectorAll('.detail-page').forEach(page => { page.scrollTop = 0; });
+    requestAnimationFrame(() => {
+      if(draft.type === 'task' || (typeof isLocalAppointment === 'function' && isLocalAppointment(draft)))scrollDetailToNav('schedule','auto');
+      else{
+        pager.scrollTo({left:0, behavior:'auto'});
+        updateDetailPagerDots();
+      }
+    });
+  }
+  renderDetailTabs();
+  updateDetailPagerDots();
+  return true;
+}
+
+function detailCommitUnsavedReminders(hid){
+  const pending = detailUnsavedReminders;
+  detailUnsavedReminders = null;
+  if(!pending || pending.hid !== hid || typeof assistantFocusWriteReminders !== 'function')return;
+  assistantFocusWriteReminders(pending.session, hid);
 }
 
 // HYBRID: opens detail then scrolls to calendar (now the default first pane —

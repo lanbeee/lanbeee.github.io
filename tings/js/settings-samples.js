@@ -488,7 +488,10 @@ function openHomeCitySettings(){
   const head = $('settings-locations-head');
   const body = $('settings-locations-body');
   if(body)body.hidden = false;
-  if(head)head.setAttribute('aria-expanded','true');
+  if(head){
+    head.setAttribute('aria-expanded','true');
+    head.closest('.settings-full-only')?.classList.add('settings-revealed');
+  }
   const input = $('home-city-input');
   if(input){
     try{ input.focus({preventScroll:false}); }catch(_){ input.focus(); }

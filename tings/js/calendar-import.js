@@ -1,4 +1,4 @@
-// Calendar import — temporary PDF path (Outlook/Teams + Google Calendar prints)
+// Calendar import — PDF prints and ICS exports (see calendar-ics.js)
 // feeding the same timed-task pipeline that Microsoft/Google OAuth will reuse.
 //
 // RN PORT NOTES:
@@ -281,6 +281,7 @@ function mapEventToTask(ev, source){
     logs:[],
     externalId,
     source:src,
+    ...(src === 'ics' ? {calendarStart:startMs,calendarEnd:endMs,calendarSubject:(ev.subject || 'untitled').slice(0,60)} : {}),
     importedAt:Date.now(),
     priority: typeof DEFAULT_PRIORITY !== 'undefined' ? DEFAULT_PRIORITY : 2
   };
@@ -331,7 +332,7 @@ function stripCalendarCreditLogs(habits, onlyHid){
 }
 
 function calendarImportedEvents(data){
-  return data.filter(h=>h?.externalId && ['pdf','msgraph','gcal','device'].includes(h.source) && h.type === 'task' && Number.isFinite(h.eventTime))
+  return data.filter(h=>h?.externalId && ['pdf','ics','msgraph','gcal','device'].includes(h.source) && h.type === 'task' && Number.isFinite(h.eventTime))
     .map(h=>({start:h.eventTime,end:h.calendarEnd || h.eventTime + clampDuration(h.durationMinutes)*60000}));
 }
 function rebuildCalendarCredits(data,creditHabitId,options={}){
@@ -393,12 +394,20 @@ function applyCalendarImport(incoming, options = {}){
       return;
     }
     // User renamed the local copy — leave their edit alone.
-    if(existing.importedAt && existing.name && mapped.name && existing.name !== mapped.name){
+    if(source !== 'ics' && existing.importedAt && existing.name && mapped.name && existing.name !== mapped.name){
       skipped += 1;
       return;
     }
-    const keepLogs = normalizeLogs(existing.logs);
-    Object.assign(existing, mapped, {hid:existing.hid, logs:keepLogs});
+    if(source === 'ics' && existing.calendarSubject && existing.name !== existing.calendarSubject)mapped.name = existing.name;
+    const moved = source === 'ics' && (existing.calendarStart !== ev.start || existing.calendarEnd !== ev.end);
+    const keepLogs = moved && ev.end > Date.now() ? [] : normalizeLogs(existing.logs);
+    // An ICS export owns the meeting's title/time; local icons, topics, links
+    // and priority remain editable without being reset by the next import.
+    const importedFields = source === 'ics' ? Object.fromEntries([
+      'name','eventTime','dueDate','autoMarkMinutes','durationMinutes','externalId',
+      'source','calendarStart','calendarEnd','calendarSubject','importedAt'
+    ].map(key=>[key,mapped[key]])) : mapped;
+    Object.assign(existing, importedFields, {hid:existing.hid, logs:keepLogs});
     existing.lastLog = latestActualLog(existing.logs);
     updated += 1;
   });

@@ -3507,7 +3507,7 @@ Driving estimates send origin and destination coordinates to OSRM, an open routi
 ### 27.6 Send feedback 👤👨‍💻
 | Service | URL | What leaves the device |
 |---------|-----|------------------------|
-| Google Forms | `FEEDBACK_FORM_URL` in `js/config.js` | Whatever the person types in the form. Tings attaches nothing from the habit list. Hidden until the URL is set (no `YOUR_` prefix). |
+| Google Forms | `FEEDBACK_FORM_URL` in `js/config.js` | The form opens with how long Tings has been in use and which planning kinds are in use, when those can be told from this device. The person can change every answer. Item names, notes, addresses, and logs are not attached. An assistant report can also include that request and its diagnostic trace. Hidden until the URL is set (no `YOUR_` prefix). |
 
 ---
 

@@ -13,7 +13,7 @@
  * (e.g. weight), minutes (chunk progress on breakable items), and/or a
  * free-form text note. Day plans may carry `timed` (hard clock) and
  * `locationId` (one-day place override); plan-by (`planByDate`) is separate.
- * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display'|'native_alarm',operationId?:string})} LogEntry
+ * @typedef {(number|{ts:number,plan:true,timed?:true,locationId?:string}|{ts:number,value?:number,minutes?:number,note?:string,source?:'calendar'|'shared_display'|'native_alarm'|'native_widget',operationId?:string})} LogEntry
  */
 
 /**
@@ -121,7 +121,8 @@
  * @property {number|null} createdAt          — ms timestamp set at creation; secondary sort key + "added Nd ago" copy. null on legacy records.
  * @property {number|null} planByDate         — keepup/reduce only: one-off soft "do by" day (ms day-start). Week planner may place it any day on/before this date; cleared on the next actual log. null = none.
  * @property {string|null} externalId         — stable id from an external calendar/PDF import; null for Tings-native items. Used to de-dupe on re-import.
- * @property {'pdf'|'msgraph'|'gcal'|'device'|null} source — which importer produced this row; null for Tings-native items.
+ * @property {'pdf'|'ics'|'msgraph'|'gcal'|'device'|null} source — which importer produced this row; null for Tings-native items.
+ * @property {string|null} [calendarSubject] — original ICS title, to preserve local renames on re-import.
  * @property {string|null} [calendarId] — selected Android calendar id for device imports.
  * @property {string|null} [calendarSeriesId] — provider series identity; shared by recurring instances and exceptions.
  * @property {number|null} [calendarStart] — source occurrence start (also for all-day dates).
@@ -219,6 +220,8 @@
  * @property {string} showAgendaTimesOnCards                   — agenda time on home cards: 'time' | 'icon' | 'hide'
  * @property {boolean} showTrailOnCards                        — show two-week activity dots on home cards
  * @property {boolean} minimalShowTrailOnCards                 — minimal mode: opt-in activity dots on home cards (default off)
+ * @property {boolean} minimalShowAgendaTimeOnCards            — minimal mode: opt-in scheduled time on home cards (default off)
+ * @property {boolean} minimalShowCueOnCards                   — minimal mode: one-line status on home cards (default on)
  * @property {boolean} showCueOnCards                          — show one-line status on home cards
  * @property {boolean} showOrderPillsOnCards                   — show before/after, doing-now, linked marks on home cards
  * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview (default off, opt-in)

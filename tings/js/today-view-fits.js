@@ -48,6 +48,55 @@ function scheduledBreakableMinutes(events){
   return (events || []).reduce((sum,ev)=>sum+(ev.breakableStart ? scheduledEventDuration(ev) : 0),0);
 }
 
+// Explicit clocks still obey allowed days, windows and places. Appointments
+// own their calendar rule (including per-date exceptions and overnight carry).
+function scheduledEventAllowed(ev,settings){
+  const h = ev.h;
+  if(isLocalAppointment(h))return true;
+  const start = scheduledEventStart(ev), base = dayStart(start);
+  if(!isDateEligibleForHabit(h,base))return false;
+  const end = start + scheduledEventDuration(ev) * 60000;
+  const registry = normalizeLocationRegistry(settings && settings.locations);
+  if(hasHabitScheduleOptions(h)){
+    const fill = {h,i:ev.i,...(ev.locationId ? {locationId:ev.locationId} : {})};
+    return (habitSchedulePlacementVariants(fill,base,registry) || []).some(variant=>{
+      const candidate = {...ev,h:variant.h,locationId:variant.locationId};
+      if(!scheduledEventAllowed(candidate,settings))return false;
+      ev.locationId = candidate.locationId;
+      return true;
+    });
+  }
+  if(h.allowedTimeFixedStart === true){
+    const minute = resolveHabitTimeField(h,'allowedTimeStart',base,ev.locationId);
+    if(minute == null || start !== base + minute * 60000)return false;
+  }
+  const ids = habitLocationIdsForDay(h,base,registry);
+  const anywhere = habitHasAnywhereForDay(h,base,registry) || !ids.length;
+  if(ev.locationId && !anywhere && !ids.includes(ev.locationId))return false;
+  const locations = ev.locationId ? [ev.locationId] : [...ids,...(anywhere ? [null] : [])];
+  return locations.some(id=>{
+    const loc = id ? registry.find(item=>item.id === id) : null;
+    const intervals = effectiveLocationWindow(h,loc,new Date(base).getDay(),base);
+    const from = (start-base)/60000, to = (end-base)/60000;
+    if(intervals.some(win=>from >= win.start && to <= win.end)){
+      if(id)ev.locationId = id;
+      return true;
+    }
+    // A literal overnight event can continue through midnight inside its
+    // continuous allowed window; the day-bounded fitter uses separate pieces.
+    if(to <= 1440 || hasHabitScheduleOptions(h))return false;
+    const win = fillTimeWindow(h,base,id);
+    if(!hasTimeWindow(h) || (win && start >= win.start && end <= win.end)){
+      const hours = loc && resolveLocationWindow(loc,new Date(base).getDay());
+      const allowed = !hours || (hours.start === 0 && hours.end === 1440)
+        || (hours.end <= hours.start && from >= hours.start && to <= 1440+hours.end);
+      if(allowed && id)ev.locationId = id;
+      return allowed;
+    }
+    return false;
+  });
+}
+
 /**
  * PURE: hard clock blocks for a day — timed tasks plus timed day-plan logs.
  * Returns {h,i,eventTime,locationId?,fromTimedPlan?} sorted by start.
@@ -86,7 +135,8 @@ function collectScheduledAgendaEvents(data,dayKey,settings){
       breakableStart:Boolean(h.breakable)
     });
   });
-  return out.filter(ev=>scheduledEventDuration(ev)>0).sort((a,b)=>a.eventTime - b.eventTime);
+  return out.filter(ev=>scheduledEventDuration(ev)>0 && scheduledEventAllowed(ev,settings))
+    .sort((a,b)=>a.eventTime - b.eventTime);
 }
 
 // Five-minute rounding must not close a fixed start that is still ahead of now.
@@ -270,7 +320,7 @@ function fillClockWindowOnDay(startMin,endMin,dayBase){
 function fillSimpleDayWindows(h,dayBase,contextLocId){
   const rawStart = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
   const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
-  if(rawStart == null || rawEnd == null)return h.allowedTimeFixedStart === true ? [] : null;
+  if(rawStart == null || rawEnd == null)return hasSimpleAllowedTimeWindow(h) ? [] : null;
   if(h.allowedTimeFixedStart === true){
     return [{start:dayBase + rawStart * 60000,end:dayBase + rawEnd * 60000}];
   }

@@ -419,8 +419,7 @@ function isWeekCandidate(h,settings,dayBase,weekday){
     const todayBase = dayStart(Date.now());
     // Overdue: catch up any day in the week.
     if(dueBase < todayBase)return true;
-    const lastOnTime = dueBase + (typeof habitDelayAllowanceDays === 'function'
-      ? habitDelayAllowanceDays(h) : 0) * 86400000;
+    const lastOnTime = offsetCalendarDay(dueBase,habitDelayAllowanceDays(h));
     // Before the due window expires, the explicit delay allowance is the hard
     // latest day. Once already overdue, future rows are catch-up rather than a
     // claim that the original deadline was still on time.
@@ -485,9 +484,8 @@ function isWeekCandidate(h,settings,dayBase,weekday){
   return false;
 }
 
-// Flex window for schedule-link pull. Keepup effectiveTarget is (raw+flex), so
-// isWeekCandidate only opens at the raw target — too late for "do early with
-// my linked habit". This mirrors canDoEarlyToday: raw target − flex.
+// Schedule links may open days between the cadence due day minus the early
+// allowance and its ordinary due boundary. A partner cannot widen that range.
 function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   if(isLocalAppointment(h))return false;
   if(isOpportunityHabit(h))return hasPlannedForDay(h,dayBase);
@@ -518,11 +516,8 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
   const days = daysSince(h.lastLog);
   if(days !== null && days < 0)return false;
   if(days === null)return true;
-  // When a scarce must-do partner is present, a build (keepup) habit may join
-  // regardless of its own cadence. Open reduce partners (eligible every day
-  // until done) must not unlock this — they would flood daily extras.
-  if(opts && opts.partnerPresent && h.type === 'keepup')return true;
-  const rawTarget = Math.max(MIN_RHYTHM_DAYS,Number(h.target) || 7);
+  // A partner may use the early window, never bypass the item's cadence.
+  const rawTarget = rhythmCadenceGapDays(h,0);
   const flex = typeof habitEarlyWindowDays === 'function' ? habitEarlyWindowDays(h) : 0;
   const offsetDays = Math.round((dayBase - dayStart(Date.now())) / 86400000);
   const ageOnDay = days + offsetDays;
@@ -532,9 +527,9 @@ function scheduleLinkFlexAllowsDay(h,dayBase,weekday,settings,opts){
 }
 
 /**
- * PURE: whether a must-do partner may unlock unlimited keepup extras on its days.
- * Keepup and day-pinned habits are scarce; open reduce (eligible every day until
- * done) is not — joining those days still uses the subject's own flex/rhythm.
+ * PURE: whether a partner has scarce occurrences that can justify an early rep.
+ * Keepup and day-pinned habits qualify; an open reduce habit does not. Every
+ * resulting rep must still fit the subject's own early/delay bounds.
  */
 function scheduleLinkPartnerAllowsKeepupExtra(anchorH){
   if(!anchorH)return false;
@@ -627,12 +622,21 @@ function sameDayPartnerEligibleOnDay(h,dayBase,candidates){
   return false;
 }
 
-// A keepup habit may place an extra rep on a day a scarce must-do partner is
-// eligible — the OR between rhythm and must-do links (more is fine for build).
-function keepupAllowsLinkExtraOnDay(h,dayBase,candidates){
-  if(isOpportunityHabit(h))return false;
-  if(!h || h.type !== 'keepup' || dayBase == null)return false;
-  return sameDayPartnerEligibleOnDay(h,dayBase,candidates);
+// Interactions may spend only the explicit early allowance for this occurrence.
+function rhythmFlexAllowsDay(h,lastLogTs,dayBase,completionOffset = 0){
+  if(!h || !isDateEligibleForHabit(h,dayBase) || completedOnDay(h,dayBase))return false;
+  if(lastLogTs != null){
+    const age = Math.round((dayBase - dayStart(lastLogTs)) / 86400000);
+    if(age <= 0 || age < rhythmCadenceGapDays(h,completionOffset) - habitEarlyWindowDays(h))return false;
+  }
+  return candidateOccurrenceAllowsDay({h},dayBase,lastLogTs,completionOffset);
+}
+
+// A scarce linked partner can pull a keepup within its current early window.
+function keepupAllowsLinkExtraOnDay(h,dayBase,candidates,lastLogTs = h && h.lastLog,completionOffset = 0){
+  if(isOpportunityHabit(h) || !h || h.type !== 'keepup' || dayBase == null)return false;
+  return rhythmFlexAllowsDay(h,lastLogTs,dayBase,completionOffset)
+    && sameDayPartnerEligibleOnDay(h,dayBase,candidates);
 }
 
 // ─── Flexibility pull-earlier for location clustering ──────────────────────
@@ -877,6 +881,8 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
     if(!myLocs.length)continue; // anywhere-allowed: no fixed cluster anchor
     for(const {dayBase,weekday,seedLocId} of dayMeta){
       if(c.eligible.has(dayBase))continue;
+      if(!isDateEligibleForHabit(h,dayBase))continue;
+      if(c.pinned && !plannerPinnedAllowsDay(h,dayBase,c.pinnedDay))continue;
       // Flex clustering may open an earlier day, but a logged occurrence has
       // already consumed that day. Re-adding it here duplicates completed work
       // and can manufacture an unnecessary trip to its saved place.
@@ -910,7 +916,7 @@ function applyClusterFlexEligibility(candidates,dayStates,settings){
 //  1) Reverse pull: subject days may attract anchors only within the anchor's
 //     own flex/rhythm (never unlimited keepup bypass — that made Exercise daily).
 //  2) Forward pull: scarce partner *occurrences* attract subjects with keepup
-//     extras; open reduce / post-due keepup days only pull within subject flex.
+//     reps within their early window; no link can bypass the subject's cadence.
 // Subjects may still appear alone on other days (must-do does not gate them off).
 function applyPersistentLinkEligibility(candidates,dayStates,settings){
   if(!Array.isArray(candidates) || !Array.isArray(dayStates))return candidates;
@@ -1152,15 +1158,29 @@ function weekPreferencePenalty(h,fit,day,registry){
 // target:1 lands every day, target:3 every third day, etc. Tasks and
 // breakable habits keep one-shot best-day scoring.
 
+// Explicit timed habit plans consume a cadence occurrence just like a fill.
+// Auto-placement counts stay separate so these fixed rows are counted once.
+function candidateScheduledRhythmContext(c,dayStates,dayBase,reference,count){
+  const h = c.h;
+  if(h.type === 'task' || h.breakable)return {reference,count};
+  for(const prior of dayStates){
+    if(prior.dayBase >= dayBase)continue;
+    if(h.lastLog != null && prior.dayBase <= dayStart(h.lastLog))continue;
+    if(!(prior.day.scheduled || []).some(ev=>ev.i === c.i && ev.fromTimedPlan))continue;
+    count += 1;
+    if(reference == null || prior.dayBase > dayStart(reference))reference = prior.dayBase;
+  }
+  return {reference,count};
+}
+
 // PURE: rhythm check for multi-day week placement. Given a habit and the
 // timestamp it was last "completed" (real lastLog, or a virtual one advanced
 // after each prior placement this pass), is it due again on dayBase? Mirrors
 // the rhythm logic in isWeekCandidate but accepts a lastLog override so the
 // placement loop can simulate "if I did this on Tuesday, am I due again on
-// Wednesday?". Schedule calendar-date gates still apply. Flexibility pull-forward
-// is intentionally NOT consulted here — flex only widens the INITIAL eligible
-// set (via isWeekCandidate); spacing between successive placements uses the
-// raw target so a daily habit lands on every day, not every (target+flex) days.
+// Wednesday?". Calendar-date gates and delay bounds still apply. This is the
+// ordinary cadence gate; interaction-specific early permission is checked
+// separately against the current actual or virtual completion.
 function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday,completionOffset = 0){
   if(!h)return false;
   if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
@@ -1173,7 +1193,7 @@ function rhythmEligibleOnDay(h,lastLogTs,dayBase,weekday,completionOffset = 0){
   const ageDays = Math.round((dayBase - dayStart(lastLogTs)) / 86400000);
   if(typeof rhythmFillsEveryEligibleDay === 'function'
     && rhythmFillsEveryEligibleDay(h))return ageDays > 0;
-  return ageDays >= target;
+  return ageDays >= target && candidateOccurrenceAllowsDay({h},dayBase,lastLogTs,completionOffset);
 }
 
 // MUTATE: a legacy schedule row is an alternative for the day's ordinary
@@ -1510,10 +1530,12 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
       for(const state of dayStates){
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(!candidateMatchesPinnedDay(c,state))continue;
+        if(!candidateOccurrenceAllowsDay(c,state.dayBase,
+          rhythmPlacementCount > 0 ? virtualLastLog : undefined,rhythmPlacementCount))continue;
         if(rhythmPlacementCount > 0 && virtualLastLog != null
           && !rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount)
           && !(state.dayBase > dayStart(virtualLastLog)
-            && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates)))continue;
+            && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates,virtualLastLog,rhythmPlacementCount)))continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
         const offset = Math.round((state.dayBase - todayBase) / 86400000);
         const dayOpts = {
@@ -1586,34 +1608,38 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
       const rawTarget = rhythmHabit
         ? Math.max(1,Number(c.h && c.h.target) || 7) : null;
       for(const state of dayStates){
+        const context = candidateScheduledRhythmContext(c,dayStates,state.dayBase,virtualLastLog,rhythmPlacementCount);
+        const occurrenceLast = context.reference, occurrenceCount = context.count;
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(!candidateMatchesPinnedDay(c,state))continue;
         if(!clusterFlexPartnerPlacedForDay(c,state))continue;
-        if(rhythmHabit && rhythmPlacementCount > 0 && virtualLastLog != null){
-          const afterLast = state.dayBase > dayStart(virtualLastLog);
-          const spaced = rhythmEligibleOnDay(c.h,virtualLastLog,state.dayBase,state.weekday,rhythmPlacementCount);
-          const linkExtra = afterLast && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
+        if(!candidateOccurrenceAllowsDay(c,state.dayBase,
+          occurrenceCount > 0 ? occurrenceLast : undefined,occurrenceCount))continue;
+        if(rhythmHabit && occurrenceCount > 0 && occurrenceLast != null){
+          const afterLast = state.dayBase > dayStart(occurrenceLast);
+          const spaced = rhythmEligibleOnDay(c.h,occurrenceLast,state.dayBase,state.weekday,occurrenceCount);
+          const linkExtra = afterLast && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates,occurrenceLast,occurrenceCount);
           if(!spaced && !linkExtra)continue;
         }
         // Reservation: defer this movable to a quieter eligible day when placing
         // it here would breach a daily breakable's target. No-alternative and
         // higher-priority cases still place here (handled inside the helper).
-        const occurrenceReference = rhythmHabit && rhythmPlacementCount > 0
-          ? virtualLastLog : undefined;
+        const occurrenceReference = rhythmHabit && occurrenceCount > 0
+          ? occurrenceLast : undefined;
         const occurrenceRequired = typeof mustPlaceOccurrenceByDay === 'function'
           && mustPlaceOccurrenceByDay(
-            c,state.dayBase,occurrenceReference,rhythmPlacementCount
+            c,state.dayBase,occurrenceReference,occurrenceCount
           );
         const weatherDefers = typeof weatherShouldDeferCandidate === 'function'
           && weatherShouldDeferCandidate(c,state,settings,dayStates);
         const requiredCanClaim = occurrenceRequired && !weatherDefers
           && typeof requiredOccurrenceCanClaimDay === 'function'
           && requiredOccurrenceCanClaimDay(
-            c,state,candidates,occurrenceReference,rhythmPlacementCount
+            c,state,candidates,occurrenceReference,occurrenceCount
           );
         if(!requiredCanClaim && typeof fastPathDefersMovable === 'function'
           && fastPathDefersMovable(
-            c,state,candidates,dayStates,occurrenceReference,rhythmPlacementCount
+            c,state,candidates,dayStates,occurrenceReference,occurrenceCount
           ))continue;
         if(!requiredCanClaim && weatherDefers)continue;
         const fill = { h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity };
@@ -1643,7 +1669,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
         const consider = (cand,withLink,linkBonus)=>{
           // Week graph edges change the first feasible day choice, never the
           // eligibility set, cadence progression or latest-day guard below.
-          if(rhythmPlacementCount === 0 && preferredDays
+          if(occurrenceCount === 0 && preferredDays
             && preferredDays.get(c.i) === state.dayBase
             && (!preferredBest || cand.score < preferredBest.score))preferredBest = cand;
           if(occurrenceRequired){
@@ -1658,7 +1684,7 @@ function assignWeekCandidatesByPlacement(candidates,dayStates,settings,locHints,
             if(!earlyBest || cand.score < earlyBest.score)earlyBest = cand;
             return;
           }
-          const refLog = virtualLastLog;
+          const refLog = occurrenceLast;
           const isDue = refLog == null
             || Math.round((state.dayBase - dayStart(refLog)) / 86400000) >= rawTarget;
           if(isDue){
@@ -1856,6 +1882,7 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
     for(const state of orderedStates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(!candidateMatchesPinnedDay(c,state))continue;
+      if(!candidateOccurrenceAllowsDay(c,state.dayBase))continue;
       const fill = {
         h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity,
         chunkMinutes:left, chunkIndex, placeKey:`${c.i}:${chunkIndex}`
@@ -1900,6 +1927,7 @@ function placeBreakableAcrossWeek(c,dayStates,settings,locHints,ctx){
       for(const state of orderedStates){
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(!candidateMatchesPinnedDay(c,state))continue;
+        if(!candidateOccurrenceAllowsDay(c,state.dayBase))continue;
         const fill = {
           h:c.h, i:c.i, priority:c.priority, scarcity:c.scarcity,
           chunkMinutes:left, chunkIndex, placeKey:`${c.i}:${chunkIndex}`
@@ -2020,16 +2048,19 @@ function rescueLeftoverWeekFits(candidates,dayStates,settings,opts = {}){
     }
     if(alreadyOneShot)continue;
     for(const state of dayStates){
+      const context = candidateScheduledRhythmContext(c,dayStates,state.dayBase,lastPlaced,rhythmPlacementCount);
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(!candidateMatchesPinnedDay(c,state))continue;
       if(!clusterFlexPartnerPlacedForDay(c,state))continue;
+      if(!candidateOccurrenceAllowsDay(c,state.dayBase,
+        context.count > 0 ? context.reference : undefined,context.count))continue;
       if(hasOccurrence(state)){
         lastPlaced = state.dayBase;
         if(fillsEveryEligibleDay)rhythmPlacementCount += 1;
         continue;
       }
-      if(rhythmHabit && lastPlaced != null
-        && !rhythmEligibleOnDay(c.h,lastPlaced,state.dayBase,state.weekday,rhythmPlacementCount))continue;
+      if(rhythmHabit && context.reference != null
+        && !rhythmEligibleOnDay(c.h,context.reference,state.dayBase,state.weekday,context.count))continue;
       // Same week-holistic rule as the ILP reserve: can-wait yields; packed
       // equal/lower priority must not steal a daily breakable chunk.
       if(typeof fastPathDefersMovable === 'function'
@@ -2415,6 +2446,8 @@ function pullStrictDueMovablesForward(candidates,dayStates,settings,graphBudget)
       settings,allowNetwork:true
     });
     if(!later)continue;
+    const proposed = dayStates.map(state=>state === dueState ? earlier : state === placedState ? later : state);
+    if(!candidateWeekOccurrencesFit(c,proposed))continue;
     applyPlacementState(dueState,earlier);
     applyPlacementState(placedState,later);
     moved += 1;
@@ -3105,7 +3138,7 @@ function persistentLinkViolationsForState(state){
 
 // Try moving a flexible keepup/task predecessor to abut its direct successor
 // (Shower just before Juma) before dropping either side.
-function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings){
+function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings,dayStates = [state]){
   if(!state || !edge || edge.adjacency !== 'direct')return false;
   const beforeHid = edge.beforeHid;
   const afterHid = edge.afterHid;
@@ -3115,6 +3148,7 @@ function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings){
   }
   const beforeCand = (candidates || []).find(c=>c && c.h && c.h.hid === beforeHid);
   if(!beforeCand || !beforeCand.h)return false;
+  if(!candidateOccurrenceFitsOnDay(beforeCand,state,dayStates))return false;
   if(beforeCand.h.type !== 'keepup' && beforeCand.h.type !== 'task')return false;
 
   // Reuse committed fits for fixed items — a full re-place often fails when
@@ -3162,9 +3196,49 @@ function tryRelocateDirectBeforeAnchor(state,edge,candidates,settings){
   syncDayAgendaItemsFromFills(trial);
   const stillBad = persistentLinkViolationsForState(trial);
   if(edge.subjectHid && stillBad.has(edge.subjectHid))return false;
+  if(!candidateWeekOccurrencesFit(beforeCand,dayStates.map(day=>day === state ? trial : day)))return false;
   applyPlacementState(state,trial);
   syncDayAgendaItemsFromFills(state);
   return true;
+}
+
+// Repair passes must use the latest real or planned occurrence, rather than
+// treating a linked partner as permission to create another cadence cycle.
+function candidateOccurrenceFitsOnDay(c,state,dayStates){
+  if(!c || !state || !isDateEligibleForHabit(c.h,state.dayBase))return false;
+  if(c.eligible && !c.eligible.has(state.dayBase))return false;
+  const h = c.h;
+  if(h.type === 'task')return candidateOccurrenceAllowsDay(c,state.dayBase);
+  let reference = h.lastLog, offset = 0;
+  for(const prior of dayStates || []){
+    if(prior.dayBase >= state.dayBase)continue;
+    const present = prior.fills.some(entry=>entry.fill.i === c.i)
+      || prior.rows.some(row=>row.kind === 'scheduled' && row.i === c.i);
+    if(present && (reference == null || prior.dayBase > dayStart(reference))){
+      reference = prior.dayBase;offset += 1;
+    }
+  }
+  if(!candidateOccurrenceAllowsDay(c,state.dayBase,offset ? reference : undefined,offset))return false;
+  if(reference == null || habitPlanByDate(h) != null)return true;
+  if(rhythmEligibleOnDay(h,reference,state.dayBase,state.weekday,offset))return true;
+  if(h.breakable && dayStart(reference) === state.dayBase && !completedOnDay(h,state.dayBase))return true;
+  if(!rhythmFlexAllowsDay(h,reference,state.dayBase,offset))return false;
+  // Initial eligibility already carries any link/cluster pull permission.
+  if(offset === 0 && c.eligible && c.eligible.has(state.dayBase))return true;
+  if(h.type !== 'keepup')return false;
+  const linked = sameDayScheduleLinks(h).some(link=>
+    state.fills.some(entry=>entry.fill.h.hid === link.anchorHid)
+      || scheduleAnchorCommitForDay(link.anchorHid,state.dayBase));
+  if(linked)return true;
+  const myLocs = normalizeLocationIds(h.locationIds,state.registry);
+  return state.fills.some(entry=>entry.fill.i !== c.i
+    && clusterFlexPairSavesTravel(myLocs,normalizeLocationIds(entry.fill.h.locationIds,state.registry),
+      state.seedLocId,state.registry,state.mode));
+}
+
+function candidateWeekOccurrencesFit(c,dayStates){
+  return dayStates.every(state=>!state.fills.some(entry=>entry.fill.i === c.i)
+    || candidateOccurrenceFitsOnDay(c,state,dayStates));
 }
 
 // Final invariant pass shared by Fast and GLPK. Repair/rescue stages are free
@@ -3186,7 +3260,7 @@ function enforcePersistentLinkInvariants(dayStates,candidates,settings){
         if(!edge || edge.adjacency !== 'direct')continue;
         const subjectHit = edge.subjectHid && violations.has(edge.subjectHid);
         if(!subjectHit)continue;
-        if(tryRelocateDirectBeforeAnchor(state,edge,candidates,settings)){
+        if(tryRelocateDirectBeforeAnchor(state,edge,candidates,settings,dayStates)){
           relocated = true;
           break;
         }
@@ -3206,6 +3280,7 @@ function enforcePersistentLinkInvariants(dayStates,candidates,settings){
         addScheduleLinkOmission(state.day,hid,reason);
         const cand = byHid.get(hid);
         if(!cand || state.placed.has(cand.i))continue;
+        if(!candidateOccurrenceFitsOnDay(cand,state,dayStates))continue;
         const fill = {
           h:cand.h,i:cand.i,
           priority:cand.priority,scarcity:cand.scarcity
@@ -3215,7 +3290,10 @@ function enforcePersistentLinkInvariants(dayStates,candidates,settings){
           ? tryPlaceOnDay(state,fill,scoreOpts)
           : null;
         if(fit){
-          commitPlacement(state,fill,fit);
+          const trial = clonePlacementState(state);
+          commitPlacement(trial,fill,fit);
+          if(!candidateWeekOccurrencesFit(cand,dayStates.map(day=>day === state ? trial : day)))continue;
+          applyPlacementState(state,trial);
           syncDayAgendaItemsFromFills(state);
           placedMissing = true;
         }
@@ -3326,6 +3404,7 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
       if(other === fromState)continue;
       if(c.eligible && !c.eligible.has(other.dayBase))continue;
       if(!candidateMatchesPinnedDay(c,other))continue;
+      if(!candidateOccurrenceFitsOnDay(c,other,dayStates.filter(day=>day !== fromState)))continue;
       if(other.placed.has(c.i))continue;
       const cap = movableCapacityForDay(other,candidates);
       if(!Number.isFinite(cap) || cap >= dur)return true;
@@ -3369,6 +3448,7 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
         if(other === short.state)continue;
         if(vc.eligible && !vc.eligible.has(other.dayBase))continue;
         if(!candidateMatchesPinnedDay(vc,other))continue;
+        if(!candidateOccurrenceFitsOnDay(vc,other,dayStates.filter(day=>day !== short.state)))continue;
         if(other.placed.has(vc.i))continue;
         attempts += 1;
 
@@ -3447,6 +3527,7 @@ function repairWeekPlacedHours(candidates,dayStates,settings,options = {}){
           if(st === other)return targetClean;
           return st;
         });
+        if(!candidateWeekOccurrencesFit(vc,hypo))continue;
         const afterMinutes = weekPlacedMinutes(hypo);
         const afterTravel = weekTravelSecondsFromStates(hypo);
         const afterRes = dailyBreakableReservations(sourceClean,candidates)
@@ -3555,6 +3636,7 @@ function repairBreakableContiguityNeighborhood(candidates,dayStates,settings,opt
         if(!targetBase)continue;
         if(c.eligible && !c.eligible.has(targetBase.dayBase))continue;
         if(!candidateMatchesPinnedDay(c,targetBase))continue;
+        if(!candidateOccurrenceFitsOnDay(c,targetBase,dayStates.map((day,i)=>working.get(i) || day)))continue;
         if(targetBase.placed && targetBase.placed.has(c.i))continue;
         const trial = clonePlacementState(targetBase);
         trial.day = {...targetBase.day,agendaItems:[]};
@@ -3624,6 +3706,7 @@ function repairBreakableContiguityNeighborhood(candidates,dayStates,settings,opt
             const afterMinutes = weekPlacedMinutes(hypothetical);
             const afterTravel = weekTravelSecondsFromStates(hypothetical);
             const finalSource = placed.get(sourceIndex) || sourceClean;
+            if(!combo.every(victim=>candidateWeekOccurrencesFit(victim.c,hypothetical)))continue;
             const afterDeficit = deficitFor(finalSource,short.i);
             if(afterDeficit >= beforeDeficit)continue;
             if(afterMinutes < beforeMinutes)continue;
@@ -3662,6 +3745,12 @@ function rebalanceScarcePlacements(candidates,dayStates,_settings,_locHints){
       if(!candidateMatchesPinnedDay(c,state))continue;
       if(!clusterFlexPartnerPlacedForDay(c,state))continue;
       const existing = dayStates.filter(day=>day.fills.some(entry=>entry.fill.i === c.i));
+      const context = candidateScheduledRhythmContext(c,dayStates,state.dayBase,
+        existing.length ? existing[existing.length-1].dayBase : c.h.lastLog,existing.length);
+      if(!candidateOccurrenceAllowsDay(c,state.dayBase,
+        context.count ? context.reference : undefined,context.count))continue;
+      if(context.count > existing.length && c.h.type !== 'task'
+        && !rhythmEligibleOnDay(c.h,context.reference,state.dayBase,state.weekday,context.count))continue;
       if(existing.includes(state))continue;
       if(c.h.type === 'task' && existing.length)continue;
       if(c.h.type !== 'task' && Number(c.h.target) > 1 && existing.length){

@@ -217,10 +217,15 @@ function applyAddDefaults(){
   if(typeof applyAddMinimalMode === 'function')applyAddMinimalMode();
 }
 
-function openMinimalModeSettings(){
+function openSettingsSheet(){
+  if(typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
   resetSettingsSheetState();
   syncSettingsControls();
   openSheet('settings-sheet');
+}
+
+function openMinimalModeSettings(){
+  openSettingsSheet();
   const toggle = document.querySelector('[data-setting-toggle="minimalMode"]');
   requestAnimationFrame(()=>{
     toggle?.scrollIntoView({block:'center',inline:'nearest'});
@@ -243,7 +248,7 @@ function openAddSettings(section){
   const head = document.querySelector(`[data-collapse-target="${body.id}"]`);
   body.hidden = false;
   head.setAttribute('aria-expanded','true');
-  $('settings-close').textContent = 'back to new ' + (kind === 'task' ? 'task' : 'habit');
+  $('settings-close').setAttribute('aria-label','back to new ' + (kind === 'task' ? 'task' : 'habit'));
   openSheet('settings-sheet');
   requestAnimationFrame(()=>head.scrollIntoView({block:'start'}));
 }
@@ -264,7 +269,7 @@ function closeSettingsSheet(){
   }
   if(!addSettingsReturn)return;
   addSettingsReturn = false;
-  $('settings-close').textContent = 'done';
+  $('settings-close').setAttribute('aria-label','close settings');
   const kind = selectedType === 'task' ? 'task' : 'habit';
   applyAddProfile(refreshAddProfile(addProfileDrafts[kind],selectedType));
   delete addProfileDrafts[kind];
@@ -278,6 +283,8 @@ function closeSettingsSheet(){
 // an open section (blocked time, topics, defaults, …) would collapse that
 // section out from under the user mid-edit.
 function resetSettingsSheetState(){
+  if(typeof setSettingsSearchOpen === 'function')setSettingsSearchOpen(false,false);
+  document.querySelectorAll('#settings-sheet .settings-revealed').forEach(el=>el.classList.remove('settings-revealed'));
   document.querySelectorAll('#settings-sheet [data-settings-help-target]').forEach(button=>{
     const body = $(button.dataset.settingsHelpTarget);
     if(body)body.hidden = true;

@@ -17,7 +17,39 @@ const SHARE_STATE_KEY = 'tings_share_v1';
 const AGENDA_DISPLAY_KEY = 'tings_agenda_display_v4';
 const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
-const FEEDBACK_FORM_URL = 'https://forms.gle/KNnXKCH55VfzCNeo8';
+const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform';
+// Entry ids from the published form. Choice values must match its option text.
+const FEEDBACK_FORM_ENTRIES = {
+  tenure:'entry.457400724',
+  uses:'entry.593100343',
+  working:'entry.285325873',
+  confusing:'entry.1563652333',
+  fixNext:'entry.1988333965',
+  email:'entry.1260316969',
+  plan:'entry.1530293007',
+  planDetail:'entry.247866906'
+};
+const FEEDBACK_TENURE_LOOKING = 'Just looking around';
+const FEEDBACK_TENURE_DAYS = 'A few days';
+const FEEDBACK_TENURE_WEEKS = 'A few weeks';
+const FEEDBACK_TENURE_MONTH = 'A month or more';
+const FEEDBACK_USE_HABITS = 'Daily Habits';
+const FEEDBACK_USE_TASKS = 'Tasks & Deadlines';
+const FEEDBACK_USE_SPLIT = 'Work/Tasks that splits across the day';
+const FEEDBACK_USE_PLACES = 'Places and travel';
+const FEEDBACK_USE_PRAYER = 'Prayer-time windows';
+const FEEDBACK_USE_DISPLAY = 'Shared Display';
+const FEEDBACK_USE_SLEEP = 'Sleep and routine planning';
+function feedbackFormUrl(fields){
+  const url = new URL(FEEDBACK_FORM_URL);
+  url.search = '';
+  url.searchParams.set('usp','pp_url');
+  for(const pair of fields || []){
+    if(!pair || pair[1] == null || pair[1] === '')continue;
+    url.searchParams.append(String(pair[0]), String(pair[1]));
+  }
+  return url;
+}
 const PRIVACY_POLICY_URL = 'https://aretefoundry.github.io/tings/privacy';
 // Play background-location disclosure. Must include "location" and
 // "even when the app is closed or not in use", and name those features.
@@ -151,6 +183,8 @@ const DEFAULT_BLOCKED_TIMES = [
 const WEEKDAY_LABELS = ['sun','mon','tue','wed','thu','fri','sat'];
 const SWIPE_THRESHOLD = 60;
 const SWIPE_ACTION_WIDTH = 68;
+// A tray shows every action up to this many. Past that, the last slot is More.
+const SWIPE_VISIBLE_MAX = 4;
 // The revealed action panel is anchored at the row edge, so it must extend this
 // far under the card's rounded corner (matches --card-radius:20px) or the card's
 // round corner leaves a blank gap with a sharp panel corner showing through.
@@ -255,11 +289,12 @@ const DEFAULT_SORT_SETTINGS = {
   showAgendaTimesOnCards:'time',
   // Two-week dot history under each item.
   showTrailOnCards:true,
-  // Minimal mode keeps the card quiet: dots stay off until switched on for
-  // minimal specifically (Settings → show activity dots while minimal is on).
+  // Minimal mode keeps the card quiet: dots and the scheduled time stay off
+  // until switched on under Appearance → on each card. The status line stays on.
   minimalShowTrailOnCards:false,
-  // One-line status ("due today", "on track", ...) — also part of minimal
-  // mode's core card, so it stays on.
+  minimalShowAgendaTimeOnCards:false,
+  minimalShowCueOnCards:true,
+  // One-line status ("due today", "on track", ...) on the full card.
   showCueOnCards:true,
   // Before/after, doing-now, and linked marks between items.
   showOrderPillsOnCards:false,
@@ -336,13 +371,17 @@ const DEFAULT_SORT_SETTINGS = {
   /** Timestamp of last monthly auto retention cleanup (0 = never). */
   lastRetentionCleanupAt:0,
 
-  // Local assistant on this computer (Ollama / LM Studio). Off by default.
-  // URLs stay on this machine or a private LAN/Tailscale address — habit names
-  // never go to a public cloud model from this toggle. A public HTTPS origin
-  // (GitHub Pages) can still call that local server if Ollama allows the site
-  // and the browser grants local-network access.
-  localAssistant:false,
-  localAssistantProvider:'auto',
+  // On by default with on-device Needle 3, or an existing Ollama / LM Studio
+  // server. URLs stay on this machine or a private LAN/Tailscale address —
+  // habit names never go to a public cloud model from this toggle. A public
+  // HTTPS origin (GitHub Pages) can still call that local server if Ollama
+  // allows the site and the browser grants local-network access. Turning the
+  // assistant on never downloads model assets; that stays an explicit action.
+  localAssistant:true,
+  localAssistantProvider:'needle',
+  // v2 flips installs that never configured an assistant to enabled Needle 3.
+  // Persisted on every save so the migration runs at most once.
+  localAssistantSetupVersion:2,
   localAssistantUrl:'',
   localAssistantModel:'',
   localAssistantDebug:false,
@@ -360,7 +399,7 @@ const ASSISTANT_DEFAULT_MODEL = 'qwen3.8:27b-mlx';
 const ASSISTANT_LOOPBACK_HOSTS = ['127.0.0.1','localhost','[::1]','::1'];
 
 function normalizeLocalAssistantProvider(value){
-  return value === 'ollama' || value === 'lmstudio' ? value : 'auto';
+  return ['needle','auto','ollama','lmstudio'].includes(value) ? value : 'needle';
 }
 function normalizeLocalAssistantModel(value){
   return String(value || '').trim().replace(/\s+/g,' ').slice(0,80);

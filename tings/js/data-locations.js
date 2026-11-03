@@ -908,7 +908,8 @@ function habitGeneralAppliesAtLocation(h,loc,dayBase,registry){
   if(!hasGeneralAllowedSchedule(h,registry))return false;
   if(!isDateEligibleForGeneralSchedule(h,dayBase != null ? dayBase : Date.now()))return false;
   const locationId = loc ? loc.id : null;
-  if(locationId)return normalizeLocationIds(h && h.locationIds,registry).includes(locationId);
+  if(locationId)return Boolean(h && h.anywhereAllowed)
+    || normalizeLocationIds(h && h.locationIds,registry).includes(locationId);
   return Boolean(h && h.anywhereAllowed) || !normalizeLocationIds(h && h.locationIds,registry).length;
 }
 

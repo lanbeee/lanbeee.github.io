@@ -847,7 +847,7 @@ function assistantPlaceAsk(error, places, matches){
     const labels = (matches || []).map(item => item && item.name).filter(Boolean);
     return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which place: ${labels.join(', ')}?`, choices:labels};
   }
-  if(error === 'NO_PLACES'){
+  if(error === 'NO_PLACES' || !names.length){
     return {ok:false, error:'NO_PLACES', ask:'No saved places yet. Add one in Settings → locations, or drop the place.'};
   }
   return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${names.join(', ')}.`, choices:names};
@@ -1155,8 +1155,11 @@ function assistantResolveDraftBase(args, session, context){
   }
   const spoken = String(args && args.name || '').trim();
   const want = spoken;
+  const staged = (session?.needleStaged || []).find(row=>row.name && assistantNormText(want) === assistantNormText(row.name));
+  if(staged)return {ok:true,draft:{...staged},existing:Boolean(staged.hid || staged.index != null)};
   if(current && (!want || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))
-    || (typeof assistantNamesMatch === 'function' && assistantNamesMatch(want, current.name)))){
+    || (args?.create === true ? assistantNormText(want) === assistantNormText(current.name)
+      : (typeof assistantNamesMatch === 'function' && assistantNamesMatch(want, current.name))))){
     return {ok:true, draft:{...current}, existing:Boolean(current.hid || current.index != null)};
   }
   if(want && !(typeof assistantIsPronounName === 'function' && assistantIsPronounName(want))){
@@ -1202,6 +1205,7 @@ function assistantResolveDraftBase(args, session, context){
     }
   }
   if(current)return {ok:true, draft:{...current}, existing:Boolean(current.hid || current.index != null)};
+  if(args?.create === false)return {ok:false,error:'MISSING_ITEM',ask:'Which item should I change?',choices:(context.catalog?.habits || []).map(row=>row.name).slice(0,4)};
   return {ok:true, draft:assistantEmptyDraft(), existing:false};
 }
 
@@ -1400,7 +1404,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
         if(match.error === 'AMBIGUOUS'){
           return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which forecast place: ${match.matches.map(item => item.name).join(', ')}?`};
         }
-        return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${((catalog && catalog.places) || []).map(item => item.name).join(', ')}.`};
+        return assistantPlaceAsk('UNKNOWN',catalog?.places || []);
       }
       next.weatherLocationId = match.item.id;
       next.weatherLocationName = match.item.name;
@@ -1420,7 +1424,7 @@ function assistantApplyExtraDraftFields(next, raw, catalog, data, opts){
           if(match.error === 'AMBIGUOUS'){
             return {ok:false, error:'AMBIGUOUS_PLACE', ask:`Which place: ${match.matches.map(item => item.name).join(', ')}?`};
           }
-          return {ok:false, error:'UNKNOWN_PLACE', ask:`Use a saved place: ${((catalog && catalog.places) || []).map(item => item.name).join(', ')}.`};
+          return assistantPlaceAsk('UNKNOWN',catalog?.places || []);
         }
         prefs[match.item.id] = row.level;
         if(!ids.includes(match.item.id)){
@@ -1724,7 +1728,7 @@ function assistantCompletePreview(found, options){
   const todayActual = logs.filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log))
     && (!todayKey || (typeof dateKey === 'function' && dateKey(logTime(log)) === todayKey)));
   if(action === 'undo_today'){
-    const target = todayActual[todayActual.length - 1];
+    const target = todayActual.slice().sort((a,b)=>logTime(b)-logTime(a))[0];
     if(!target)return {ok:true, noChange:true, text:`${found.name} has no completion to undo today.`};
     return {
       ok:true,
@@ -2099,6 +2103,24 @@ function assistantAnswerItems(args, context){
 function assistantAnswerSettings(args, context){
   const kind = assistantNormText(args && args.kind);
   const settings = context.settings || {};
+  const native = Boolean(window.TingsNative?.isNative);
+  if(kind === 'assistant'){
+    const replies={greeting:'Hi! What would you like to plan or change?',thanks:'You’re welcome!',
+      identity:'I’m the Tings assistant. I help with your tasks, habits, and plans on this device.',
+      help:assistantUnsupportedText(),joke:'My to-do list and I have a lot in common: we both need a day off.',
+      date:new Date(context.now || Date.now()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})};
+    return {ok:true,text:replies[args.query] || replies.help};
+  }
+  const capabilities = {
+    calendar:{section:'settings-calendar-body',label:'calendar import',text:'Import meetings from an ICS calendar file or PDF in calendar settings. Review the import before saving. File selection stays on this device.'+(native ? ' Phone calendar sync is also available; choose calendars and allow access in the phone prompt.' : '')},
+    reminders:{section:'settings-reminders-body',label:'phone reminders',text:native ? 'Phone reminders support notifications or ringing alarms at the start, end, travel departure and arrival, plus drop warnings. Each item and date can have its own choices. Calendar meetings also support reminders for one date or the series. Notification and exact-alarm access must be allowed on this phone.' : 'Phone notifications and ringing alarms require the Tings Android app. They are unavailable in this browser.'},
+    sharing:{section:'settings-agenda-body',label:'pairing and displays',text:'Pair a full-app display and a glance display from pairing settings. Personal clone shares all items; shared mode uses each item’s shared-display and completion choices. Scan the display QR, enter its separate code and approve pairing.'},
+    widgets:{section:null,label:'Android widgets',text:native ? 'Add a Tings widget from your Android home-screen widget picker. Widgets use the same agenda and item state as Tings.' : 'Tings home-screen widgets require the Android app. They are unavailable in this browser.'}
+  };
+  if(capabilities[kind]){
+    const feature=capabilities[kind];
+    return {ok:true,text:feature.text,navigation:feature.section && (kind !== 'reminders' || native) ? {section:feature.section,label:feature.label} : null};
+  }
   let rows = [];
   let label = '';
   if(kind === 'places'){
@@ -2463,7 +2485,9 @@ function assistantQueryWindow(args, dayBase){
   if(dayBase == null)return null;
   let startMin = typeof assistantParseClock === 'function' ? assistantParseClock(args && args.start) : null;
   let endMin = typeof assistantParseClock === 'function' ? assistantParseClock(args && args.end) : null;
-  const minutes = Number(args && args.minutes);
+  const minutes = typeof assistantParseDuration === 'function'
+    ? assistantParseDuration(args && args.minutes)
+    : Number(args && args.minutes);
   const hasDuration = Number.isFinite(minutes) && minutes > 0 && minutes <= 1440;
   if(startMin != null && endMin == null && hasDuration)endMin = startMin + Math.round(minutes);
   if(endMin != null && startMin == null && hasDuration)startMin = endMin - Math.round(minutes);
@@ -2948,7 +2972,9 @@ function assistantWeatherMomentSummary(context, dayBase, minutes){
 }
 
 function assistantWeatherDuration(args, habit){
-  const requested = Number(args && args.durationMinutes);
+  const requested = typeof assistantParseDuration === 'function'
+    ? assistantParseDuration(args && args.durationMinutes)
+    : Number(args && args.durationMinutes);
   if(Number.isFinite(requested) && requested >= 15 && requested <= 1440)return Math.round(requested);
   const own = Number(habit && habit.durationMinutes);
   if(Number.isFinite(own) && own >= 15 && own <= 1440)return Math.round(own);
@@ -3301,7 +3327,9 @@ async function assistantAnswerSchedule(args, context){
   if(!window){
     if(query === 'conflict')return {ok:true, text:`Tell me the time window, like "tomorrow 5 to 6 pm", and I will check what it would displace. ${assistantQueryCapabilities()}`};
     if(!gapsInfo)return {ok:true, text:'I could not read the plan for that day yet — open the home view once, then ask again.'};
-    const requestedMinutes = Math.round(Number(args && args.minutes));
+    const requestedMinutes = typeof assistantParseDuration === 'function'
+      ? assistantParseDuration(args && args.minutes)
+      : Math.round(Number(args && args.minutes));
     if(Number.isFinite(requestedMinutes) && requestedMinutes > 0){
       const fitting = gapsInfo.gaps.find(gap => Math.round((gap.end - gap.start) / 60000) >= requestedMinutes);
       if(fitting){
@@ -4498,6 +4526,21 @@ function assistantApplyItems(args, session, context){
   };
 }
 
+function assistantValidateNeedleDraftArgs(args, request){
+  if(args?.create === false && !Object.entries(args).some(([key,value])=>
+    !['name','create'].includes(key) && value != null && value !== ''))return {error:'Missing change',
+    ask:'I did not understand the change. What setting and new value should I use?'};
+  if(args?.rhythm && !assistantParseRhythm(args.rhythm))return {error:'Invalid frequency',
+    ask:'How often should it repeat? Please give the full frequency in one phrase.'};
+  if(args?.dueTime != null && args.dueTime !== '' && assistantParseClock(args.dueTime) == null)return {error:'Invalid start time',
+    ask:'I may have confused a date or duration with a clock time. What should the timing be?'};
+  if(args?.durationMinutes != null && !assistantSpokenDurationMatches(request,args.durationMinutes))return {error:'Invalid session length',
+    ask:'Could you give the frequency and session length separately? I may have mixed them up.'};
+  if(args?.create === true && args.kind === 'habit' && !args.rhythm && args.timesPerPeriod == null && args.periodDays == null)return {error:'Missing frequency',
+    ask:'How often should this habit repeat?'};
+  return null;
+}
+
 function assistantExecuteTool(name, args, session, context){
   const catalog = context.catalog;
   const draft = session.draft || assistantEmptyDraft();
@@ -4505,6 +4548,12 @@ function assistantExecuteTool(name, args, session, context){
   if(name === 'ask_user'){
     const question = String(args && args.question || '').trim();
     if(!question)return {ok:false, error:'question is required'};
+    if(!/[?？]/.test(question) && !/^(?:which|what|how|when|where|who|would|could|can|do|did|is|are)\b/i.test(question)){
+      return {ok:false,error:'Ask one specific question rather than returning a statement or greeting.'};
+    }
+    if(assistantNormText(question).replace(/[?？.!]+$/,'') === assistantNormText(session.requestText).replace(/[?？.!]+$/,'')){
+      return {ok:false,error:'Ask a specific clarification question instead of repeating the request.'};
+    }
     const choices = Array.isArray(args.choices) ? args.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
     return {ok:true, ask:question, choices};
   }
@@ -4519,6 +4568,12 @@ function assistantExecuteTool(name, args, session, context){
     return applied;
   }
   if(name === 'draft_batch'){
+    if(session.needleStaged){
+      const checkText = typeof assistantAddFormCheckText === 'function'
+        ? assistantAddFormCheckText(session.requestText, session.addForm) : session.requestText;
+      const invalid=(args?.items || []).map(row=>assistantValidateNeedleDraftArgs({...row,create:true},checkText)).find(Boolean);
+      if(invalid)return {ok:false,...invalid};
+    }
     const applied = assistantApplyDraftBatch(args, session, context);
     if(applied.ok){
       session.drafts = applied.drafts;
@@ -4529,6 +4584,12 @@ function assistantExecuteTool(name, args, session, context){
     return applied;
   }
   if(name === 'draft_item' || name === 'draft_setting'){
+    if(name === 'draft_item' && session.needleStaged){
+      const checkText = typeof assistantAddFormCheckText === 'function'
+        ? assistantAddFormCheckText(session.requestText, session.addForm) : session.requestText;
+      const invalid=assistantValidateNeedleDraftArgs(args,checkText);
+      if(invalid)return {ok:false,...invalid};
+    }
     const focusedItem = session.draft && session.draft.name
       && typeof assistantIsItemKind === 'function' && assistantIsItemKind(session.draft.kind);
     const trustFacts = !focusedItem && typeof assistantTrustParsedFacts === 'function' && assistantTrustParsedFacts(session.parsed);
@@ -4601,6 +4662,13 @@ function assistantExecuteTool(name, args, session, context){
         settings:context.settings
       }
     );
+    // An empty edit, such as {create:false} with no setting, is not a preview.
+    // Invalid values are ignored, and a value that already matches still previews.
+    if(applied.ok && applied.draft && resolved.existing
+      && !assistantDraftCallCarriesSetting(args, resolved.draft)
+      && assistantDraftFingerprint(resolved.draft) === assistantDraftFingerprint(applied.draft)){
+      return {ok:false, error:'That call did not change the item. Include the new value for the setting the user asked for.'};
+    }
     if(applied.ok && applied.draft){
       session.draft = applied.draft;
       if(!applied.existing)assistantStageTurnDraft(session, applied.draft);
@@ -4638,6 +4706,13 @@ function assistantExecuteTool(name, args, session, context){
   if(name === 'complete_item' || name === 'plan_item' || name === 'delete_item' || name === 'lookup_item'){
     const spoken = (session.parsed && session.parsed.text) || '';
     let want = (args && args.name) || '';
+    if(name === 'complete_item' && args?.action === 'undo_today' && args.latest === true){
+      const today=dateKey(context.now || Date.now());
+      const latest=context.data.flatMap((habit,index)=>normalizeLogs(habit.logs).filter(log=>!isPlanLog(log) && dateKey(logTime(log)) === today)
+        .map(log=>({habit,index,ts:logTime(log)}))).sort((a,b)=>b.ts-a.ts)[0];
+      if(!latest)return {ok:true,noChange:true,text:'There is no completion to undo today.'};
+      want=latest.habit.name;
+    }
     const pronoun = !String(want).trim()
       || (typeof assistantIsPronounName === 'function' && assistantIsPronounName(want));
     if(pronoun){
@@ -4689,7 +4764,11 @@ function assistantExecuteTool(name, args, session, context){
     return assistantAnswerSchedule(args, context);
   }
   if(name === 'answer_items')return assistantAnswerItems(args, context);
-  if(name === 'answer_settings')return assistantAnswerSettings(args, context);
+  if(name === 'answer_settings'){
+    const result=assistantAnswerSettings(args,context);
+    if(result.navigation)session.navigation = (session.navigation || []).concat([result.navigation]);
+    return result;
+  }
   return {ok:false, error:`unknown tool ${name}`};
 }
 
@@ -4734,6 +4813,25 @@ function assistantWeekdaySummary(days){
   if(names.length === 1)return `every ${names[0]}`;
   if(names.length === 2)return `${names[0]} & ${names[1]}`;
   return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+}
+
+function assistantDraftCallCarriesSetting(args, existing){
+  if(!args || typeof args !== 'object')return false;
+  const existingKind = existing && existing.kind;
+  const existingName = existing && existing.name;
+  return Object.entries(args).some(([key, value])=>{
+    if(value == null || value === '')return false;
+    if(key === 'create')return false;
+    if(key === 'kind' && existingKind && value === existingKind)return false;
+    if(key === 'name' && existingName){
+      const same = typeof assistantNamesMatch === 'function'
+        ? assistantNamesMatch(String(value), existingName)
+        : String(value).trim().toLowerCase() === String(existingName).trim().toLowerCase();
+      const pronoun = typeof assistantIsPronounName === 'function' && assistantIsPronounName(value);
+      if(same || pronoun)return false;
+    }
+    return true;
+  });
 }
 
 function assistantDraftFingerprint(draft){

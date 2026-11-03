@@ -1,4 +1,4 @@
-// Guided Qwen3.8 loop: the model understands every natural-language request,
+// Guided model loop: the model understands every natural-language request,
 // then calls validated tools. Deterministic code validates arguments, reads
 // authoritative app state, and stages writes; it never chooses semantic intent.
 
@@ -14,10 +14,10 @@ function assistantSystemPrompt(){
     '',
     'READS AND ACTIONS',
     'Use answer_schedule for agendas, missed items, free time, freest day, open windows, and what-if conflicts. Use answer_items for questions across saved tasks/habits. For arbitrary filters, rankings, ordinals, counts, or duration math, put the whole operation in conditions + sortBy/sortOrder + position/limit + aggregate; Tings must compute it. Example: second most overdue missed = answer_schedule query missed, sortBy overdue_days, sortOrder desc, position 2. Importance is P0-P5 (lower is more important); urgency is the app attention score (higher is more urgent). Use answer_weather for forecast facts and weather fit. query best finds the best weather window across the next seven days for a saved item using its weighted profile. query hours finds the time: lowest wind after 5pm is sortBy wind, sortOrder asc, position 1; relatively hot with very low wind is conditions on temperature and wind. query compare scores two times, including 1 hour before sunset, and can use a habit weather profile. query item with start checks that habit in the window even when it is not already planned. Use answer_settings for saved configuration, and lookup_item for one item’s next time, last completion, history, stats, or planner reason.',
-    'Use complete_item to log or undo completion, plan_item for one-day plan changes, and delete_item to remove one item. Use apply_items to change, snooze, show, or delete a matching set. These tools preview changes for confirmation.',
+    'Use complete_item to log or undo completion, plan_item to plan or unplan an occurrence of an existing saved item on one date, and delete_item to remove one item. Use apply_items to change, snooze, show, or delete a matching set. These tools preview changes for confirmation.',
     '',
     'CREATION AND EDITING',
-    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. Use draft_item once for one task/habit and include every requested field. Set create true when the request makes something new and false when it changes something that already exists; omit it only when the request could genuinely be either. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several new items. before/after name another item by its title — saved, already staged this turn, or another row in the same call. Put adjacency wording such as “right after, same day” in order; do not use order alone to name the other item. Use apply_items when the change, snooze, show, or delete hits more than one saved item — do not call draft_item once per row and do not create replacements. search is a name or topic ("dental" matches every saved dental item). fromRecent means those/them. groups apply different changes; rest true takes the items earlier groups left. Example: all dental appointments to three hours is apply_items search "dental", durationMinutes 180. Example: all dental appointments to a saved place is apply_items search "dental", placeNames that place. Use draft_setting only for a setting that is not already saved. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
+    'A task is one-off; a habit repeats; a setting is a weather profile, place, busy time, or topic. A new one-off reminder creates a task (create_task / draft_item with create true), including when a date is given. A repeating reminder creates a habit. Use plan_item only when the request refers to an existing saved item or currentDraft. Use draft_item once for one task/habit and include every requested field. Set create true when the request makes something new and false when it changes something that already exists; omit it only when the request could genuinely be either. Use a short title, flat fields, and omit unspecified fields. Use draft_batch once for several new items. before/after name another item by its title — saved, already staged this turn, or another row in the same call. Put adjacency wording such as “right after, same day” in order; do not use order alone to name the other item. Use apply_items when the change, snooze, show, or delete hits more than one saved item — do not call draft_item once per row and do not create replacements. search is a name or topic ("dental" matches every saved dental item). fromRecent means those/them. groups apply different changes; rest true takes the items earlier groups left. Example: all dental appointments to three hours is apply_items search "dental", durationMinutes 180. Example: all dental appointments to a saved place is apply_items search "dental", placeNames that place. Use draft_setting only for a setting that is not already saved. Recurring meetings are habits. Weather conditions belong in weatherText even when no profile exists; draft_item will create and attach that profile on save.',
     'currentDraft is the item being edited. “it”, “this”, and “that” refer to currentDraft, otherwise recent.referent when appropriate. A question about it uses lookup_item; done uses complete_item; plan/unplan uses plan_item; remove uses delete_item. A named saved place may update placeNames on the current item; do not turn it into a new item.',
     '',
     'GROUNDING',
@@ -32,7 +32,7 @@ function assistantUnsupportedText(){
 
 // Name-clarification chips start a fresh turn, so remember which action the
 // original request was heading toward. Classify/extract have to infer it.
-const ASSISTANT_CONFUSION_CHOICES = ['task', 'habit', "what's today", 'schedule question', 'weather', 'log done'];
+const ASSISTANT_CONFUSION_CHOICES = [];
 
 function assistantCanClarify(session, required){
   const max = typeof ASSISTANT_MAX_CLARIFY === 'number' ? ASSISTANT_MAX_CLARIFY : 2;
@@ -55,13 +55,13 @@ function assistantConfusionQuestion(parsed){
     && !(typeof assistantLooksLikeToolNarration === 'function' && assistantLooksLikeToolNarration(spoken))){
     return spoken;
   }
-  return 'I am not sure what you want. A one-off task, a repeating habit, something already on your list, or a schedule or weather question?';
+  return 'What would you like me to do? Tell me the item and the change, or ask a question about your plan.';
 }
 
 function assistantClarifyOutcome(session, parsed, opts){
   const required = Boolean(opts && opts.required);
   const question = String((opts && opts.question) || '').trim();
-  const choices = Array.isArray(opts && opts.choices) ? opts.choices.map(v => String(v).trim()).filter(Boolean).slice(0, 6) : [];
+  const choices = Array.isArray(opts && opts.choices) ? [...new Set(opts.choices.map(v => String(v).trim()).filter(Boolean))].slice(0, 4) : [];
   if(!question)return assistantGiveUpClarify(session, parsed);
   if(!assistantCanClarify(session, required))return assistantGiveUpClarify(session, parsed);
   session.clarifyCount = (session.clarifyCount || 0) + 1;
@@ -81,6 +81,29 @@ function assistantClarifyOutcome(session, parsed, opts){
     draft:session.draft,
     session
   };
+}
+
+function assistantNeedleProposalQuestion(proposal){
+  const fields={newName:'new name',durationMinutes:'session length',rhythm:'frequency',due:'due date',dueTime:'start time',
+    windowText:'allowed hours',weekdays:'allowed days',habitKind:'habit goal',priority:'priority',placeNames:'places',topics:'topics'};
+  const operations=proposal.toolCalls.map(call=>{
+    const args=call.args || {},name=args.name ? `“${args.name}”` : 'the current item';
+    if(call.name === 'answer_schedule')return `Show ${args.query === 'week' ? 'this week’s agenda' : args.query === 'missed' ? 'missed items' : args.query === 'free' ? 'free time' : 'the agenda'}${args.date ? ' for '+args.date : ''}.`;
+    if(call.name === 'answer_items')return `${args.aggregate === 'count' ? 'Count' : 'Show'} your ${args.kind === 'habit' ? 'habits' : args.kind === 'task' ? 'tasks' : 'saved items'}${args.search ? ' matching “'+args.search+'”' : ''}.`;
+    if(call.name === 'answer_settings')return `Explain ${({calendar:'calendar import',reminders:'phone notifications',sharing:'display pairing',widgets:'Android widgets',places:'saved places',weather:'weather profiles',topics:'topics',busy:'busy times'})[args.kind] || 'Tings capabilities'}.`;
+    if(call.name === 'complete_item')return args.latest ? 'Undo the most recent completion from today.'
+      : args.action === 'undo_today' ? `Undo today’s latest completion of ${name}.` : `Log ${name}${args.minutes ? ' for '+args.minutes+' minutes' : ' as done'}.`;
+    if(call.name === 'delete_item')return `Remove ${name}.`;
+    if(call.name === 'plan_item')return `${args.action === 'remove' ? 'Unplan' : 'Plan'} ${name}${args.date ? ' for '+args.date : ''}${args.time ? ' at '+args.time : ''}.`;
+    if(call.name === 'lookup_item' || call.name === 'find_item')return `Look up ${name}.`;
+    const detail=Object.entries(args).filter(([key,value])=>fields[key] && value != null && value !== '')
+      .map(([key,value])=>`${fields[key]}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : value}`).join('; ');
+    const action=call.name === 'draft_item' ? (args.create ? `Add a ${args.kind || 'new item'} called ${name}` : `Change ${name}`)
+      : call.name === 'answer_weather' ? 'Check the weather' : call.name === 'draft_batch' ? 'Prepare new items' : call.name === 'apply_items' ? 'Prepare changes to matching items' : 'Prepare setting changes';
+    return `${action}${detail ? ' — '+detail : ''}.`;
+  });
+  const score=typeof proposal.confidence === 'number' ? ` (${Math.round(proposal.confidence * 100)}% model confidence)` : '';
+  return `I’m unsure I understood${score}. Did you mean this?\n\n${operations.join('\n')}\n\nYou can proceed with this interpretation or tell me what to change. Nothing has been saved.`;
 }
 
 function assistantAwaitingFromAsk(step, text){
@@ -121,7 +144,8 @@ function assistantQueryRouteHint(text, parsed){
 
 function assistantUserEnvelope(text, catalog, draft, parsed, opts){
   const compact = Boolean(opts && opts.compact);
-  const habitLimit = compact ? 6 : 12;
+  const needle=typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
+  const habitLimit = needle ? 24 : compact ? 6 : 12;
   const payload = {
     request:String(text || '').trim(),
     catalog:{
@@ -140,7 +164,45 @@ function assistantUserEnvelope(text, catalog, draft, parsed, opts){
   const current = typeof assistantCompactDraft === 'function' ? assistantCompactDraft(draft) : null;
   if(current)payload.currentDraft = current;
   if(opts && opts.recent)payload.recent = opts.recent;
+  if(opts && opts.entryIntent)payload.entryIntent = opts.entryIntent;
+  if(opts && opts.selectedNeedleAction)payload.selectedNeedleAction = opts.selectedNeedleAction;
   return JSON.stringify(payload);
+}
+
+function assistantApplyAddForm(args, form){
+  const next = Object.assign({}, args || {});
+  if(!form)return next;
+  const missingRhythm = next.rhythm == null && next.frequency == null
+    && next.timesPerPeriod == null && next.periodDays == null;
+  if(missingRhythm && form.rhythm)next.rhythm = form.rhythm;
+  if((next.durationMinutes == null || next.durationMinutes === '') && form.durationMinutes != null){
+    next.durationMinutes = form.durationMinutes;
+  }
+  if((next.due == null || next.due === '') && form.due)next.due = form.due;
+  if((next.dueTime == null || next.dueTime === '') && form.dueTime)next.dueTime = form.dueTime;
+  if((next.habitKind == null || next.habitKind === '') && form.habitKind)next.habitKind = form.habitKind;
+  if((next.repeatMode == null || next.repeatMode === '') && form.repeatMode)next.repeatMode = form.repeatMode;
+  return next;
+}
+
+function assistantAddFormCheckText(text, form){
+  const note = form && String(form.note || '').trim();
+  return note ? `${text}\n${note}` : text;
+}
+
+function assistantAddFormFallback(session){
+  if(!session || !session.addForm)return null;
+  const described = String(session.requestText || '').replace(/^Add a (?:repeating habit|one-off task):\s*/i, '').trim();
+  const name = described.slice(0, 60);
+  if(!name)return null;
+  return {
+    name:'draft_item',
+    args:assistantApplyAddForm({
+      name,
+      kind:session.intent === 'create_task' ? 'task' : 'habit',
+      create:true
+    }, session.addForm)
+  };
 }
 
 function assistantDraftSettingSteerText(){
@@ -363,7 +425,9 @@ function assistantReadCallIsTerminal(call, result){
 
 function assistantToolCallKey(call){
   let args = '';
-  try{ args = JSON.stringify(call && call.args || {}); }catch(_){ args = String(call && call.args || ''); }
+  const stable=value=>Array.isArray(value) ? value.map(stable) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])) : value;
+  try{ args = JSON.stringify(stable(call && call.args || {})); }catch(_){ args = String(call && call.args || ''); }
   return `${(call && call.name) || ''}:${args}`;
 }
 
@@ -635,11 +699,11 @@ function assistantPartialFailure(session, err){
   const partial = String(parts.join('\n\n') || (session && session.lastGroundedText) || '').trim();
   const reason = err
     ? assistantFriendlyError(err)
-    : 'I could not finish the action that this research was meant to support.';
+    : 'I could not finish this part. Please tell me the item and the change you want, or retry this part.';
   const prefix = partial ? `I got partway through and verified this:\n\n${partial}\n\n` : '';
   return {
     type:'error',
-    text:`${prefix}${reason} I could not verify that the whole request finished, so I did not treat this as complete.`,
+    text:`${prefix}${reason} Nothing has been saved.`,
     partial:true,
     session
   };
@@ -724,6 +788,9 @@ function assistantCompactSessionMessages(session, request){
 
 function assistantMaybeCompact(session, tools, request){
   if(!session)return {compacted:false, used:0, limit:0, ratio:0};
+  // The Needle worker manages its compact tool schema and transcript budget.
+  // Estimating the much larger server prompt here would discard its app facts.
+  if(session.contextManaged)return {compacted:false,used:session.contextUsed || 0,limit:session.contextLimit || 8192,ratio:session.contextRatio || 0};
   const limit = session.contextLimit || ASSISTANT_DEFAULT_CONTEXT_TOKENS;
   if(Array.isArray(session.messages))assistantCapReplayThinking(session.messages);
   const estimated = typeof assistantPromptTokens === 'function'
@@ -749,6 +816,7 @@ function assistantMaybeCompact(session, tools, request){
 
 function assistantNoteContextUsage(session, raw, tools){
   if(!session)return;
+  session.contextManaged = Boolean(raw && raw._contextManaged);
   const measured = typeof assistantReadPromptTokens === 'function' ? assistantReadPromptTokens(raw) : 0;
   if(measured)session.contextMeasured = measured;
   if(raw && Number.isFinite(Number(raw._contextLimit)) && Number(raw._contextLimit) > 0){
@@ -756,7 +824,7 @@ function assistantNoteContextUsage(session, raw, tools){
   }
   const limit = session.contextLimit || ASSISTANT_DEFAULT_CONTEXT_TOKENS;
   session.contextLimit = limit;
-  const estimated = typeof assistantPromptTokens === 'function'
+  const estimated = !session.contextManaged && typeof assistantPromptTokens === 'function'
     ? assistantPromptTokens(session.messages, tools)
     : 0;
   session.contextUsed = Math.max(estimated, measured || 0);
@@ -1416,7 +1484,9 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   const repairingThinkOff = repairing;
   session.llmCalls += 1;
   const stepStartedAt = Date.now();
-  const raw = await complete({
+  const approved=session.needleApproved?.request === session.requestText ? session.needleApproved : null;
+  session.needleApproved=null;
+  const raw = approved ? {_contextManaged:true,_contextLimit:8192,message:{role:'assistant',content:'',tool_calls:approved.toolCalls.map(call=>({function:{name:call.name,arguments:call.args}}))}} : await complete({
     messages:session.messages,
     tools,
     think:!repairingThinkOff,
@@ -1429,10 +1499,34 @@ async function assistantCallStep(session, step, complete, onProgress, context){
   });
   if(typeof assistantNoteContextUsage === 'function')assistantNoteContextUsage(session, raw, tools);
   const parsed = assistantParseReply(raw, step);
+  if(session.addForm){
+    if(parsed.toolCalls){
+      parsed.toolCalls.forEach(call => {
+        if(call && call.name === 'draft_item')call.args = assistantApplyAddForm(call.args, session.addForm);
+      });
+    }
+    const drafted = (parsed.toolCalls || []).some(call => call && call.name === 'draft_item' && !call.parseError);
+    const alreadyDrafted = (Array.isArray(session.turnDrafts) && session.turnDrafts.some(row => row && row.name))
+      || Boolean(session.draft && session.draft.name);
+    // A later "anything else?" pass must not draft the sentence a second time.
+    if(!drafted && !alreadyDrafted){
+      const fallback = assistantAddFormFallback(session);
+      if(fallback)parsed.toolCalls = [fallback];
+    }
+  }
+  const usedFormFallback = Boolean(session.addForm) && (parsed.toolCalls || []).some(call => call && call.name === 'draft_item')
+    && !(raw && raw.message && raw.message.tool_calls && raw.message.tool_calls.length);
+  parsed.needleNeedsConfirmation = usedFormFallback ? false : raw?._needleNeedsConfirmation;
+  parsed.needleConfidence=raw?._needleConfidence;
   assistantTracePush(session, {
     t:'model',
     step,
     ms:Date.now() - stepStartedAt,
+    confidence:raw?._needleConfidence ?? null,
+    route:raw?._needleRoute,
+    issue:raw?._needleIssue,
+    validation:raw?._needleValidation,
+    basicRepairs:raw?._needleBasicRepairs,
     promptTokens:(raw && raw.prompt_eval_count) || null,
     evalTokens:(raw && raw.eval_count) || null,
     thinking:assistantTraceClip(parsed.thinking, 600),
@@ -1475,7 +1569,7 @@ function assistantHandleIntent(session, context, intent, thinking){
     if(session.draft && session.draft.name)return null;
     if(assistantWideSession(session))return null;
     return assistantClarifyOutcome(session, {thinking}, {
-      question:'That was unclear. Do you want a one-off task, a repeating habit, what is on today, weather or schedule info, or to log something done?',
+      question:assistantConfusionQuestion(session.parsed),
       choices:ASSISTANT_CONFUSION_CHOICES,
       awaiting:null
     });
@@ -1524,6 +1618,12 @@ function assistantIsBrokenToolJson(err){
 }
 
 async function runAssistantTurn(userText, opts = {}){
+  if(!opts.needleStep && !opts.complete && typeof assistantSettings === 'function'
+    && assistantSettings().provider === 'needle' && typeof assistantRunNeedleWorkflow === 'function'){
+    try{ return await assistantRunNeedleWorkflow(String(userText || '').trim(),opts); }
+    catch(error){ return {type:'error',text:assistantFriendlyError(error),
+      diagnosticError:String(error.stack || error.message || error),session:opts.session}; }
+  }
   const complete = opts.complete || (typeof assistantComplete === 'function' ? assistantComplete : null);
   const context = opts.context || assistantBuildContext();
   const session = opts.session || assistantCreateSession();
@@ -1561,8 +1661,13 @@ async function runAssistantTurn(userText, opts = {}){
   session._responseGen = 0;
   session.executedToolKeys = [];
   session.requestText = text;
+  if(opts.needleAction)session.needleActionChoice={request:text,tool:opts.needleAction};
+  else if(session.needleActionChoice?.request !== text)session.needleActionChoice=null;
+  session.addForm = opts.form || null;
+  session.needleProposal = null;
   session.reusedPlace = null;
   session.pendingActions = [];
+  session.navigation = [];
   session.chainWrite = null;
   session.pendingOutcome = null;
   session.onDebug = typeof opts.onDebug === 'function' ? opts.onDebug : null;
@@ -1570,6 +1675,7 @@ async function runAssistantTurn(userText, opts = {}){
   // many requests the user made or which semantic route to take.
   session.wide = false;
   session.bulk = false;
+  if(opts.needleStep)session.contextManaged = true;
   session.contextLimit = opts.contextLimit || session.contextLimit || (typeof assistantGuessContextLimit === 'function'
     ? assistantGuessContextLimit(opts.model)
     : ASSISTANT_DEFAULT_CONTEXT_TOKENS);
@@ -1581,9 +1687,11 @@ async function runAssistantTurn(userText, opts = {}){
     focus:session.draft && session.draft.name ? session.draft.name : null,
     entry:opts.entry || null,
     startIntent:entryIntent,
+    selectedNeedleAction:session.needleActionChoice?.tool || null,
     wide:session.wide === true
   });
   const done = out => {
+    if(out && session.navigation?.length)out.navigation = session.navigation;
     if(out && out.type && out.type !== 'ask' && out.type !== 'error' && !out.gaveUp){
       session.awaiting = null;
       session.clarifyingRequest = null;
@@ -1611,9 +1719,16 @@ async function runAssistantTurn(userText, opts = {}){
     {role:'system', content:assistantSystemPrompt()},
     {role:'user', content:assistantUserEnvelope(text, context.catalog, session.draft, session.parsed, {
       compact:(session.contextRatio || 0) >= ASSISTANT_CONTEXT_COMPACT_AT,
-      recent:typeof assistantEnvelopeRecent === 'function' ? assistantEnvelopeRecent(session) : null
+      recent:typeof assistantEnvelopeRecent === 'function' ? assistantEnvelopeRecent(session) : null,
+      selectedNeedleAction:session.needleActionChoice?.tool || null,
+      entryIntent
     })}
   ];
+  if(session.clarifyingRequest){
+    const envelope=JSON.parse(session.messages[1].content);
+    envelope.clarification={request:session.clarifyingRequest,question:session.recent?.say,reply:text};
+    session.messages[1].content=JSON.stringify(envelope);
+  }
   let step = 'classify';
   const hasQueryRecent = Boolean(session.recent && (
     (Array.isArray(session.recent.items) && session.recent.items.length)
@@ -1656,11 +1771,14 @@ async function runAssistantTurn(userText, opts = {}){
     step = 'extract';
     session.intent = entryIntent;
     assistantTracePush(session, {t:'path', path:'llm', via:'entry' + (opts.entry ? '-' + opts.entry : ''), intent:entryIntent});
+    const addScreen = opts.entry === 'add'
+      ? 'The user is adding a new item from the add screen. Create it. Do not answer a question or change a saved item. '
+      : '';
     session.messages.push({role:'user', content:session.wide
-      ? assistantWideExtractSteerText() + factsHint
+      ? addScreen + assistantWideExtractSteerText() + factsHint
       : (entryIntent === 'create_setting'
-        ? assistantDraftSettingSteerText() + factsHint
-        : assistantDraftItemSteerText(entryIntent, factsHint))});
+        ? addScreen + assistantDraftSettingSteerText() + factsHint
+        : addScreen + assistantDraftItemSteerText(entryIntent, factsHint))});
   }
   if(session.clarifyingRequest && session.clarifyingRequest !== text
     && (session.awaiting || assistantLooksLikeNameReply(text))){
@@ -1706,6 +1824,19 @@ async function runAssistantTurn(userText, opts = {}){
         }
         return done({type:'error', text:assistantFriendlyError(err), session});
       }
+      if(opts.needleStep && typeof assistantValidateNeedleDraftArgs === 'function'){
+        const checkText = assistantAddFormCheckText(text, session.addForm);
+        const invalid=(parsed.toolCalls || []).flatMap(call=>call.name === 'draft_item' ? [call.args]
+          : call.name === 'draft_batch' ? (call.args?.items || []) : []).map(args=>assistantValidateNeedleDraftArgs(args,checkText)).find(Boolean);
+        if(invalid)return done(assistantClarifyOutcome(session,parsed,{question:invalid.ask,request:text}));
+      }
+      const uncertainCalls=(parsed.toolCalls || []).filter(call=>!session.executedToolKeys.includes(assistantToolCallKey(call)));
+      // The add sheet already asked for a new item. The preview is the confirmation.
+      if(parsed.needleNeedsConfirmation && uncertainCalls.length && opts.entry !== 'add'){
+        const proposal={request:text,toolCalls:uncertainCalls,confidence:parsed.needleConfidence};
+        session.needleProposal=proposal;
+        return done({type:'ask',question:assistantNeedleProposalQuestion(proposal),proposal,session});
+      }
       queuedCalls = (parsed.toolCalls || []).slice();
       session._responseGen = (session._responseGen || 0) + 1;
       session._replayed = null;
@@ -1739,6 +1870,11 @@ async function runAssistantTurn(userText, opts = {}){
       }
       if(assistantCanFinalize(session)){
         return done(assistantFinalizeFromAnswer(session, parsed));
+      }
+      if(opts.needleStep && !call && !session.researchPending){
+        return done(assistantClarifyOutcome(session, parsed, {
+          question:assistantConfusionQuestion(parsed),request:text
+        }));
       }
       if(session.repairs >= ASSISTANT_MAX_REPAIRS){
         assistantTracePush(session, {t:'repair', step, error:call && call.parseError || 'no tool', gaveUp:true});

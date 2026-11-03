@@ -231,7 +231,8 @@
   #add-sheet .add-sheet[data-coach-space]{padding-bottom:var(--coach-space);}
   #settings-sheet .sheet[data-coach-editor-space],#location-picker-sheet .sheet[data-coach-editor-space]{min-height:0;height:var(--coach-editor-height);max-height:var(--coach-editor-height);}
   /* The coach supplies the explanation and return action in this editor. */
-  #settings-sheet .sheet[data-coach-editor-space] > :is(.about-copy,.settings-actions){display:none;}
+  #settings-sheet .sheet[data-coach-editor-space] > :is(.about-copy,.settings-actions,.sheet-search-dock){display:none;}
+  #settings-sheet .sheet[data-coach-editor-space] > .settings-stack{padding-bottom:6px;}
   #location-picker-sheet:has([data-coach-editor-space]){align-items:flex-start;}
 }
 @media (prefers-reduced-motion:reduce){

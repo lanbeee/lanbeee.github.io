@@ -165,7 +165,7 @@ const UI_SETTING_TOGGLES = {
   ],
   reminders:[
     {key:'reminders', title:'remind me about commitments', hint:'Dated tasks and fixed appointments.'},
-    {key:'pushDetailed', title:'include details in notifications', hint:'Item names, topics, and places in system alerts.'}
+    {key:'pushDetailed', title:'include details in notifications', hint:'Item names, topics, and places in system alerts.', extraClass:'settings-full-only'}
   ],
   weather:[
     {key:'showWeatherTemperatureRanges', title:'day temperature ranges', hint:'Feels-like low and high on Home and Calendar.', extraClass:'settings-full-only'},
@@ -195,15 +195,19 @@ const UI_SETTING_TOGGLES = {
   ],
   cardsAfterTime:[
     {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-full-only'},
-    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-minimal-only'},
     {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}
+  ],
+  appearanceCards:[
+    {key:'minimalShowAgendaTimeOnCards', title:'show the time', hint:'The scheduled time on each item.'},
+    {key:'minimalShowCueOnCards', title:'show status line', hint:'Due today, on track, and the like.', pressed:true},
+    {key:'minimalShowTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.'}
   ],
   defaults:[
     {key:'defaultBreakable', title:'allow splitting', hint:'New habits can be split across sessions.'}
   ],
   appearance:[
-    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log or plan.'},
-    {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.'}
+    {key:'soundEffects', title:'gentle sounds', hint:'A soft chime when you log or plan.', extraClass:'settings-full-only'},
+    {key:'compactMode', title:'compact mode', hint:'Tighter list so more items fit.', extraClass:'settings-full-only'}
   ],
   prayer:[
     {key:'prayerIslamicNames', title:'use Islamic prayer names', hint:'Show prayer names and calculation settings.'}
@@ -257,8 +261,8 @@ const UI_PRIVACY_BLOCKS = [
     'Relative times such as sunrise and sunset are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
   ]},
   {id:'privacy-feedback-body', label:'Send feedback', summary:'Optional. Opens a Google Form in your browser. Answers go to Google, not into Tings.', body:[
-    'The send-feedback button on About opens a Google Form in a new browser tab. Tings does not receive those answers, and nothing from your list is attached.',
-    'Google collects whatever you type in that form. Skip habit names, addresses, notes, and logs. You can leave the form without sending anything.',
+    'The send-feedback button on About opens a Google Form in a new browser tab. Tings fills in how long this device has used Tings, and which kinds of planning are already in use, such as habits, tasks, places, prayer windows, or a shared display. It does not attach item names, notes, addresses, or logs. You can change every answer before sending. Tings does not receive the form.',
+    'Google receives the filled-in answers, including the ones in the link, and whatever you type. An assistant problem report can also include what you typed to the assistant. Leave out anything you do not want Google to have. You can close the form without sending it.',
     'Look for the cloud-up mark on that button.'
   ]}
 ];
@@ -290,7 +294,7 @@ const UI_LEAVE_HINTS = {
   },
   feedback:{
     aria:'this opens a Google Form off this device',
-    body:'Send feedback opens a Google Form in your browser. Tings does not receive the answers, and nothing from your list is attached. Skip habit names, addresses, and logs. Full story: About → privacy.'
+    body:'Send feedback opens a Google Form with a few answers filled in from this device: how long you have used Tings, and which kinds of planning are in use. Item names, notes, addresses, and logs stay here. You can change every answer. Google receives the form, including the filled-in link. Full story: About → privacy.'
   }
 };
 

@@ -208,6 +208,22 @@ function loadSortSettings(){
     // only so older backups continue to import cleanly.
     merged.localAssistantModelOnly = true;
     merged.localAssistantRoutingVersion = 3;
+    // Old defaults were saved alongside ordinary planner settings, even when
+    // the assistant had never been set up. Give those installs Needle too,
+    // while retaining active or explicitly configured local servers.
+    if(!saved.localAssistantSetupVersion && saved.localAssistantProvider === 'auto'
+      && !saved.localAssistant && !saved.localAssistantUrl && !saved.localAssistantModel){
+      merged.localAssistantProvider = 'needle';
+    }
+    // v2 enables Needle 3 on installs that never configured an assistant.
+    // A chosen server (provider, address, or model) or a later explicit
+    // toggle — setupVersion 2 persists after the first save — keeps its state.
+    if(saved.localAssistantSetupVersion !== 2
+      && !saved.localAssistantUrl && !saved.localAssistantModel
+      && normalizeLocalAssistantProvider(merged.localAssistantProvider) === 'needle'){
+      merged.localAssistant = true;
+    }
+    merged.localAssistantSetupVersion = 2;
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
@@ -306,7 +322,7 @@ function loadSortSettings(){
     merged.prayerIslamicNames = Boolean(merged.prayerIslamicNames);
     merged.localAssistant = Boolean(merged.localAssistant);
     merged.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
-      ? normalizeLocalAssistantProvider(merged.localAssistantProvider) : 'auto';
+      ? normalizeLocalAssistantProvider(merged.localAssistantProvider) : 'needle';
     merged.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
       ? normalizeLocalAssistantUrl(merged.localAssistantUrl) : '';
     merged.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'
@@ -383,6 +399,8 @@ function saveSortSettings(settings){
   next.showAgendaTimesOnCards = normalizeAgendaTimeMode(next.showAgendaTimesOnCards);
   next.showTrailOnCards = next.showTrailOnCards !== false;
   next.minimalShowTrailOnCards = Boolean(next.minimalShowTrailOnCards);
+  next.minimalShowAgendaTimeOnCards = Boolean(next.minimalShowAgendaTimeOnCards);
+  next.minimalShowCueOnCards = next.minimalShowCueOnCards !== false;
   next.minimalMode = Boolean(next.minimalMode);
   next.colorPalette = ['default','neutral','sage','sky','lavender','sand'].includes(next.colorPalette) ? next.colorPalette : 'default';
   next.soundEffects = next.soundEffects !== false;
@@ -418,7 +436,8 @@ function saveSortSettings(settings){
   next.prayerIslamicNames = Boolean(next.prayerIslamicNames);
   next.localAssistant = Boolean(next.localAssistant);
   next.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
-    ? normalizeLocalAssistantProvider(next.localAssistantProvider) : 'auto';
+    ? normalizeLocalAssistantProvider(next.localAssistantProvider) : 'needle';
+  next.localAssistantSetupVersion = 2;
   next.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
     ? normalizeLocalAssistantUrl(next.localAssistantUrl) : '';
   next.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'

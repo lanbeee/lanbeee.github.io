@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://huggingface.co https://*.hf.co http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -55,7 +55,7 @@
 <div class="app">
 
   <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
-        <button class="app-bar-logo" id="bar-open-about" aria-label="about Tings">
+        <button class="app-bar-logo" id="bar-open-about" aria-label="settings">
       <img data-header-brand src="./icons/tings-app-icon.svg" alt="" aria-hidden="true" />
       <span class="app-bar-title">Tings</span>
     </button>
@@ -83,7 +83,7 @@
 
     <div class="pane-list">
       <div class="topbar">
-        <button class="wordmark" id="open-about" aria-label="about Tings">
+        <button class="wordmark" id="open-about" aria-label="settings">
       <img data-header-brand src="./icons/tings-app-icon.svg" alt="" aria-hidden="true" />
       <span class="wordmark-copy">
         <span>Tings</span>
@@ -91,7 +91,7 @@
       </span>
     </button>
     <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
-    <button class="icon-btn assistant-launch" id="open-assistant" type="button" hidden aria-label="ask Tings">
+    <button class="assistant-launch home-filter-trigger" id="open-assistant" type="button" hidden aria-label="ask Tings">
       <i class="ti ti-message-circle" aria-hidden="true"></i>
     </button>
       </div>
@@ -99,7 +99,7 @@
       <div id="reminder-banner" class="reminder-banner" hidden></div>
       <div id="list"><div class="home-loading" role="status" aria-label="loading agenda"><span></span><span></span><span></span></div></div>
       <div id="home-week-plan" class="home-week-plan" hidden></div>
-      <p id="empty" style="display:none">habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for help and settings, + to add, or tap here to try samples.</span></p>
+      <p id="empty" style="display:none">habits, tasks, and planning<br><span class="empty-sub">Saved on this device. Tap Tings for settings, + to add, or tap here to try samples.</span></p>
     </div>
 
   <div class="pane-overview" id="pane-overview"></div>
@@ -136,21 +136,21 @@
       <p class="field-hint" id="add-type-help" hidden>Keep up a habit, finish a task, or reserve time for an event.</p>
       <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <input type="text" id="ting-message" name="message" maxlength="240" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="choose an icon (optional)" title="Choose an icon (optional)"></button>
-        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="create with the local assistant" title="Create from your description with the local assistant">
+        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="add this with the assistant" title="Add a new habit or task from what you typed" aria-describedby="add-ask-hint">
           <i class="ti ti-sparkles" aria-hidden="true"></i>
         </button>
       </div>
+      <p class="field-hint" id="add-ask-hint">Sparkles adds a new habit or task from what you type. Add saves a short name.</p>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
-        <label class="emoji-field">
-          <span id="emoji-label"><span style="position:relative;display:inline-block">emoji <button type="button" class="info-btn" data-tip="add-emoji-help" aria-label="about emoji"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-            <div class="info-tooltip" id="add-emoji-help" role="tooltip" hidden>An icon is suggested from the name. Pick another below, or clear the field to use the default icon.</div></span></span>
-          <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-        </label>
         <div class="generic-emoji-wrap">
-          <span class="settings-sublabel">quick pick</span>
-          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="common emojis"></div>
+          <div class="emoji-picker-toolbar">
+            <input type="text" id="ting-emoji" class="emoji-input" aria-label="habit emoji, optional" title="Type or paste emoji; clear for the default icon" placeholder="🙂" maxlength="64" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+            <input type="search" id="ting-emoji-search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          </div>
+          <div class="generic-emoji-row" id="ting-generic-emoji" role="group" aria-label="Emoji choices"></div>
+          <p class="emoji-picker-status field-hint" id="ting-emoji-status" role="status" hidden></p>
         </div>
         <span class="settings-sublabel">emoji background</span>
         <div class="emoji-bg-swatches" id="ting-emoji-bg" role="group" aria-label="emoji background color"></div>
@@ -286,11 +286,12 @@
     <div class="sheet assistant-sheet" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
       <div class="assistant-head">
         <div class="assistant-head-copy">
-          <span class="sheet-eyebrow">on this computer</span>
+          <span class="sheet-eyebrow">on this device</span>
           <p class="sheet-title" id="assistant-title">ask Tings</p>
         </div>
         <div class="assistant-head-actions">
-          <button type="button" class="btn" id="assistant-debug-toggle" aria-pressed="false" aria-label="assistant debug">debug</button>
+          <button type="button" class="btn" id="assistant-feedback" hidden aria-expanded="false" aria-controls="assistant-feedback-panel">feedback</button>
+          <button type="button" class="btn" id="assistant-debug-toggle" hidden aria-pressed="false" aria-expanded="false" aria-controls="assistant-debug-dock" aria-label="debug trace">debug</button>
           <button type="button" class="btn" id="assistant-clear" aria-label="clear chat">clear chat</button>
           <button type="button" class="icon-btn" id="assistant-close" aria-label="close assistant"><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
@@ -303,8 +304,30 @@
         </div>
         <button type="button" class="btn" id="assistant-focus-done">done</button>
       </div>
+      <div class="assistant-needle-panel" data-needle-panel hidden>
+        <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
+        <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+        <div class="btn-row">
+          <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+          <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
+        </div>
+      </div>
       <div class="assistant-thread" id="assistant-thread"></div>
       <p class="assistant-waiting" id="assistant-waiting" hidden>thinking…</p>
+      <div class="assistant-debug-dock" id="assistant-debug-dock" hidden>
+        <div class="assistant-debug-bar">
+          <button type="button" class="assistant-debug-fold" id="assistant-debug-fold" aria-expanded="true" aria-controls="assistant-debug-log" aria-label="compact trace">
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            <span>trace</span>
+            <span class="assistant-debug-meta" id="assistant-debug-meta">nothing yet</span>
+          </button>
+          <button type="button" class="assistant-debug-tool" id="assistant-debug-copy">copy</button>
+          <button type="button" class="assistant-debug-dismiss" id="assistant-debug-close" aria-label="close debug"><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+        <div class="assistant-debug-log" id="assistant-debug-log"></div>
+        <textarea class="assistant-debug-json" id="assistant-debug-json" hidden></textarea>
+      </div>
+      <div class="assistant-feedback-panel" id="assistant-feedback-panel" hidden></div>
       <div class="assistant-compose">
         <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
         <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
@@ -647,15 +670,14 @@
           </details>
           <details class="detail-disclosure" id="detail-appearance-disclosure"><summary>emoji &amp; color</summary>
           <div class="ting-emoji-edit" id="detail-emoji-edit">
-            <label class="emoji-field">
-              <span>emoji</span>
-              <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" placeholder="🙂" maxlength="16" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-            </label>
             <div class="generic-emoji-wrap">
-              <span class="settings-sublabel">quick pick</span>
-              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="common emojis"></div>
+              <div class="emoji-picker-toolbar">
+                <input type="text" id="detail-emoji" class="emoji-input" aria-label="habit emoji, optional" title="Type or paste emoji; clear for the default icon" placeholder="🙂" maxlength="64" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+                <input type="search" id="detail-emoji-search" placeholder="Search emoji" aria-label="Search emoji" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+              </div>
+              <div class="generic-emoji-row" id="detail-generic-emoji" role="group" aria-label="Emoji choices"></div>
+              <p class="emoji-picker-status field-hint" id="detail-emoji-status" role="status" hidden></p>
             </div>
-            <p class="field-hint emoji-help">Optional. Scroll sideways for common emojis. No name match uses a neutral one; blank uses the default habit icon.</p>
             <span class="settings-sublabel">emoji background</span>
             <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           </div>
@@ -756,14 +778,14 @@
         </details>
           </section>
       </div>
-      <div class="detail-bottom-bar" aria-label="detail actions">
+      <div class="detail-bottom-bar sheet-search-dock" aria-label="detail actions">
         <div class="detail-actions" id="detail-cool-row">
           <div class="detail-search-control detail-full-only">
-            <button type="button" id="detail-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
+            <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
             <div class="detail-search-field" hidden>
               <label class="sr-only" for="detail-search-input">Search within this item’s details</label>
               <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
-              <button type="button" id="detail-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+              <button type="button" id="detail-search-clear" class="sheet-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -840,7 +862,6 @@
           <div class="btn-row about-actions">
             <button class="btn" id="open-install-guide" type="button"><i class="ti ti-download" aria-hidden="true"></i> install app</button>
             <button class="btn" id="open-sample-habits"><i class="ti ti-sparkles" aria-hidden="true"></i> samples</button>
-            <button class="btn" id="open-settings"><i class="ti ti-settings" aria-hidden="true"></i> settings</button>
           </div>
         </section>
         <div class="btn-row about-actions about-hub-foot">
@@ -924,13 +945,16 @@
   <!-- settings sheet -->
   <div class="sheet-wrap" id="settings-sheet">
     <div class="sheet settings-sheet">
-      <p class="sheet-title">settings</p>
+      <div class="settings-page-head">
+        <p class="sheet-title">settings</p>
+        <button type="button" class="icon-btn" id="settings-open-about" aria-label="help, samples, and privacy"><i class="ti ti-help" aria-hidden="true"></i></button>
+      </div>
       <div class="settings-stack">
         <section class="settings-block">
           <span class="settings-label">display</span>
           <div class="settings-grid" data-ui-toggles="display"></div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-weather-head" data-collapse-target="settings-weather-body" aria-expanded="false" aria-controls="settings-weather-body">
               <span class="settings-label">weather guidance</span>
@@ -1007,7 +1031,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-cleanup-head" data-collapse-target="settings-cleanup-body" aria-expanded="false" aria-controls="settings-cleanup-body">
             <span class="settings-label">cleanup</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1034,26 +1058,32 @@
             <p class="field-hint sample-count" id="retention-cleanup-status"></p>
           </div>
         </section>
-        <div class="settings-group-head">schedule &amp; places</div>
-        <section class="settings-block settings-collapsible">
+        <div class="settings-group-head settings-full-only">schedule &amp; places</div>
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
             <span class="settings-label">calendars</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
             <div id="calendar-device-controls" hidden></div>
-            <p class="field-hint">Add meetings from a calendar PDF.</p>
+            <p class="field-hint">Import a Google, Apple or Outlook calendar export (.ics), or a calendar PDF. Choose the .ics file inside Google's export ZIP.</p>
+            <p class="field-hint">ICS import dates (including recurring events). Times appear in this device's time zone. Imported copies stay on this device; re-import to add or update meetings.</p>
+            <label class="settings-sublabel" for="calendar-ics-from">ICS from</label>
+            <input type="date" id="calendar-ics-from" class="settings-select" />
+            <label class="settings-sublabel" for="calendar-ics-to">ICS through</label>
+            <input type="date" id="calendar-ics-to" class="settings-select" />
             <div class="btn-row calendar-pdf-pick-row">
-              <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose PDF</label>
+              <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose ICS or PDF</label>
               <button class="btn" id="calendar-pdf-clear" type="button">remove PDF meetings</button>
+              <button class="btn" id="calendar-ics-clear" type="button">remove ICS meetings</button>
             </div>
             <!-- Not [hidden]: iOS Safari ignores programmatic .click() on display:none / hidden file inputs. -->
-            <input type="file" id="calendar-pdf-input" class="file-input-native" accept="application/pdf,.pdf" />
+            <input type="file" id="calendar-pdf-input" class="file-input-native" accept="text/calendar,.ics,application/pdf,.pdf" />
             <div data-settings-help-title="count meeting time toward" data-settings-help-for="calendar-credit-habit" data-settings-help-id="settings-calendar-credit-help"><p>Choose a build or limit habit with daily hours, such as Work. Overlapping meetings count once. The habit is allowed to split across sessions so it can fit around meetings.</p></div>
             <select id="calendar-credit-habit" class="settings-select">
               <option value="">none</option>
             </select>
-            <p class="field-hint" id="calendar-credit-hint">Phone and PDF meetings count. Events you add in Tings do not.</p>
+            <p class="field-hint" id="calendar-credit-hint">Phone, ICS and PDF meetings count. Events you add in Tings do not.</p>
             <label class="settings-sublabel" for="calendar-allday-mode">all-day events</label>
             <select id="calendar-allday-mode" class="settings-select">
               <option value="skip">skip</option>
@@ -1065,10 +1095,10 @@
               <button class="btn primary" id="calendar-pdf-import" type="button">import meetings</button>
               <button class="btn" id="calendar-pdf-cancel" type="button">cancel</button>
             </div>
-            <p class="field-hint sample-count" id="calendar-pdf-status"></p>
+            <p class="field-hint sample-count" id="calendar-pdf-status" role="status" aria-live="polite"></p>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-topics-head" data-collapse-target="settings-topics-body" aria-expanded="false" aria-controls="settings-topics-body">
             <span class="settings-label">topics</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1082,7 +1112,7 @@
             <div class="topic-list" id="topic-list"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-locations-head" data-collapse-target="settings-locations-body" aria-expanded="false" aria-controls="settings-locations-body">
               <span class="settings-label">locations</span>
@@ -1127,7 +1157,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-blocked-head" data-collapse-target="settings-blocked-body" aria-expanded="false" aria-controls="settings-blocked-body">
             <span class="settings-label">busy times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1139,7 +1169,7 @@
           </div>
         </section>
         <div class="settings-group-head">look &amp; new items</div>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-cards-head" data-collapse-target="settings-cards-body" aria-expanded="false" aria-controls="settings-cards-body">
             <span class="settings-label">what shows on each item</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1166,7 +1196,7 @@
             <div class="settings-grid" data-ui-toggles="cardsAfterTime"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-defaults-head" data-collapse-target="settings-defaults-body" aria-expanded="false" aria-controls="settings-defaults-body">
             <span class="settings-label">new habit &amp; task defaults</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1252,7 +1282,11 @@
               <button type="button" class="seg-opt" data-seg-value="dark">dark</button>
               <button type="button" class="seg-opt" data-seg-value="system">system</button>
             </div>
-            <button class="setting-toggle setting-switch" type="button" id="settings-replica-chrome" aria-pressed="true">
+            <div class="settings-minimal-only" id="settings-card-appearance">
+              <span class="settings-sublabel">on each card</span>
+              <div class="settings-grid" data-ui-toggles="appearanceCards"></div>
+            </div>
+            <button class="setting-toggle setting-switch settings-full-only" type="button" id="settings-replica-chrome" aria-pressed="true">
               <span>
                 <b>display bar</b>
                 <small>Clock, sync, and lock on this paired screen.</small>
@@ -1261,7 +1295,7 @@
             </button>
           </div>
         </section>
-        <div class="settings-group-head">more</div>
+        <div class="settings-group-head settings-full-only">more</div>
         <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
             <button type="button" class="settings-collapse-head" id="settings-agenda-head" data-collapse-target="settings-agenda-body" aria-expanded="false" aria-controls="settings-agenda-body">
@@ -1316,7 +1350,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
             <span class="settings-label">relative times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1336,7 +1370,7 @@
             </div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-advanced-head" data-collapse-target="settings-advanced-body" aria-expanded="false" aria-controls="settings-advanced-body">
             <span class="settings-label">advanced</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1345,67 +1379,109 @@
             <div class="settings-grid" data-ui-toggles="advanced"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
+        <section id="settings-android-assistant" class="settings-block settings-collapsible" hidden>
+          <button type="button" class="settings-collapse-head" id="settings-android-assistant-head" data-collapse-target="settings-android-assistant-body" aria-expanded="false" aria-controls="settings-android-assistant-body">
+            <span class="settings-label">Android assistant</span><i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-android-assistant-body" hidden>
+            <div class="settings-toggle-row">
+              <button class="setting-toggle setting-switch" type="button" id="setting-android-assistant" aria-pressed="false">
+                <span><b>allow Android assistant access</b><small>Read your plan; review changes before saving.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-android-assistant-help" aria-label="about Android assistant access" aria-expanded="false" aria-controls="settings-android-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="settings-help-body" id="settings-android-assistant-help" hidden>
+                <p>An authorized Android assistant can read your tasks, schedule, weather and settings through Tings tools. Changes open a preview for you to confirm. Answers are shared with the assistant you use. No Ollama setup is needed. Open Tings once and unlock your phone to use these tools.</p>
+                <p>Gemini access to AppFunctions is currently limited by Google’s early-access rollout. Enabling this setting does not connect Tings to Gemini by itself. While waiting, long-press the Tings icon for today’s plan or add a task, or share text to Tings to review it as a task.</p>
+              </div>
+            </div>
+            <p class="field-hint" id="android-assistant-status" role="status" aria-live="polite">Unlock your phone to use these tools.</p>
+            <button class="btn" type="button" id="android-assistant-review" hidden>review pending request</button>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-assistant-head" data-collapse-target="settings-assistant-body" aria-expanded="false" aria-controls="settings-assistant-body">
             <span class="settings-label">local assistant</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-assistant-body" hidden>
-            <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
-              <span>
-                <b>use Qwen on this computer</b>
-                <small>Talk to Ollama or LM Studio on this computer, or on a laptop on this Wi-Fi or Tailscale. Clear requests are parsed here; Qwen calls tools to create or change an item. Nothing is saved until you confirm. Off by default.</small>
-              </span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-            <div id="assistant-reach-guide" class="assistant-reach-guide">
-              <p class="settings-sublabel">Reach the model on this computer</p>
-              <p class="field-hint" id="assistant-reach-lead"></p>
-              <ol class="assistant-reach-steps">
-                <li>Install Ollama if you have not.</li>
-                <li id="assistant-reach-step-allow"></li>
-                <li id="assistant-reach-step-listen"></li>
-                <li id="assistant-reach-step-restart"></li>
-                <li id="assistant-reach-step-phone"></li>
-                <li>Turn on <b>use Qwen</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
-              </ol>
-              <pre class="assistant-reach-cmd" id="assistant-reach-cmd"></pre>
-              <div class="btn-row assistant-reach-actions">
-                <button type="button" class="btn" id="assistant-copy-origins">copy the commands</button>
-              </div>
+            <div class="settings-toggle-row">
+              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
+                <span>
+                  <b>use Tings Assistant</b>
+                  <small>Use Needle 3 on this device to chat and review changes.</small>
+                </span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-local-assistant-help" aria-label="about the local assistant" aria-expanded="false" aria-controls="settings-local-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Download Needle 3 once to use the assistant on this device, including offline. No account or server is needed. Downloads start only when you choose download. Your requests stay on this device and changes wait for your confirmation. Off by default. You can also use your existing Ollama or LM Studio server.</p><p>Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
             </div>
+            <details class="settings-disclosure" id="assistant-setup-guide">
+              <summary>setup instructions</summary>
+              <div id="assistant-reach-guide" class="assistant-reach-guide">
+                <p class="settings-sublabel">Reach the model on this computer</p>
+                <p class="field-hint" id="assistant-reach-lead"></p>
+                <ol class="assistant-reach-steps">
+                  <li>Install Ollama if you have not.</li>
+                  <li id="assistant-reach-step-allow"></li>
+                  <li id="assistant-reach-step-listen"></li>
+                  <li id="assistant-reach-step-restart"></li>
+                  <li id="assistant-reach-step-phone"></li>
+                  <li>Turn on <b>use Tings Assistant</b> if it is off, tap <b>list models</b>, and Allow if this browser asks to use apps on this device or the local network.</li>
+                </ol>
+                <pre class="assistant-reach-cmd" id="assistant-reach-cmd"></pre>
+                <div class="btn-row assistant-reach-actions">
+                  <button type="button" class="btn" id="assistant-copy-origins">copy the commands</button>
+                </div>
+              </div>
+            </details>
             <div id="assistant-setup-fields" hidden>
-              <span class="settings-sublabel">server</span>
-              <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="local model server">
-                <button type="button" class="seg-opt on" data-assistant-provider="auto">auto</button>
+              <span class="settings-sublabel">model source</span>
+              <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="assistant model source">
+                <button type="button" class="seg-opt on" data-assistant-provider="needle">Needle 3</button>
+                <button type="button" class="seg-opt" data-assistant-provider="auto">auto server</button>
                 <button type="button" class="seg-opt" data-assistant-provider="ollama">Ollama</button>
                 <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio / API</button>
               </div>
-              <span class="settings-sublabel">address</span>
+              <div class="assistant-needle-panel" data-needle-panel hidden>
+                <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
+                <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+                <div class="btn-row" style="flex-wrap:wrap">
+                  <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+                  <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
+                  <button type="button" class="btn" data-needle-remove hidden>remove download</button>
+                </div>
+                <p class="field-hint">Saved in this browser or app. If device storage is cleared, you can download again. Needle works best with short requests; complex requests may need a larger model.</p>
+              </div>
+              <div id="assistant-server-fields" hidden>
+              <div data-settings-help-title="address" data-settings-help-for="assistant-url" data-settings-help-id="settings-assistant-address-help">
+                <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>. Pick <b>LM Studio / API</b> for any server that speaks the OpenAI <code>/v1</code> protocol, including a gateway to a cloud model.</p>
+              </div>
               <input id="assistant-url" class="settings-text-input" type="text" inputmode="url" maxlength="160" placeholder="https://laptop.tailnet.ts.net" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
-              <p class="field-hint" id="assistant-url-hint">On this computer, leave blank. On a phone, use the HTTPS .ts.net URL printed by <code>tailscale serve --bg 11434</code>; plain HTTP is blocked from the secure Tings page. A path is kept, so a private gateway that fronts several servers can be reached as <code>https://laptop.tailnet.ts.net/openai</code>. Pick <b>LM Studio / API</b> for any server that speaks the OpenAI <code>/v1</code> protocol, including a gateway to a cloud model.</p>
               <span class="settings-sublabel">model</span>
               <input id="assistant-model" class="settings-text-input" type="text" maxlength="80" placeholder="qwen3.8:27b-mlx" autocomplete="off" />
-              <span class="settings-sublabel">thinking</span>
+              <div data-settings-help-title="thinking" data-settings-help-id="settings-assistant-thinking-help"><p class="field-hint" id="assistant-reasoning-hint">Less thinking answers faster and uses less of a paid plan; full is the most reliable at reading an odd sentence. A model that cannot turn thinking off, like GLM 5.3, uses its shallowest level instead.</p></div>
               <div class="seg compact-seg" id="assistant-reasoning-seg" role="group" aria-label="thinking depth">
                 <button type="button" class="seg-opt on" data-assistant-reasoning="high">full</button>
                 <button type="button" class="seg-opt" data-assistant-reasoning="low">low</button>
                 <button type="button" class="seg-opt" data-assistant-reasoning="off">off</button>
               </div>
-              <p class="field-hint" id="assistant-reasoning-hint">Less thinking answers faster and uses less of a paid plan; full is the most reliable at reading an odd sentence. A model that cannot turn thinking off, like GLM 5.3, uses its shallowest level instead.</p>
               <div class="btn-row" style="flex-wrap:wrap">
                 <button type="button" class="btn" id="assistant-refresh-models">list models</button>
                 <button type="button" class="btn primary" id="assistant-test">test thinking + tool</button>
               </div>
-              <p class="field-hint" id="assistant-conn-status"></p>
-              <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-debug" aria-pressed="false">
-                <span>
-                  <b>show assistant debug</b>
-                  <small>In the chat, print parse, local vs Qwen, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
-                </span>
-                <span class="switch-ui" aria-hidden="true"></span>
-              </button>
-              <p class="field-hint">Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p>
+              </div>
+              <p class="field-hint" id="assistant-conn-status" role="status" aria-live="polite"></p>
+              <details class="settings-disclosure">
+                <summary>diagnostics</summary>
+                <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant-debug" aria-pressed="false">
+                  <span>
+                    <b>show assistant debug</b>
+                    <small>In the chat, print parse, model routing, every tool call and result, thinking, and context use. Also logs to this browser’s console. Stays on this device.</small>
+                  </span>
+                  <span class="switch-ui" aria-hidden="true"></span>
+                </button>
+              </details>
             </div>
           </div>
         </section>
@@ -1431,8 +1507,23 @@
           </div>
         </section>
       </div>
-      <div class="btn-row settings-actions">
-        <button class="btn primary" id="settings-close">done</button>
+      <div id="settings-search-panel" class="detail-search-panel" hidden>
+        <p id="settings-search-status" class="field-hint" role="status" aria-live="polite"></p>
+        <div id="settings-search-results" class="detail-search-results" aria-label="matching settings"></div>
+      </div>
+      <div class="sheet-search-dock" aria-label="settings actions">
+        <div class="btn-row settings-actions">
+          <div class="detail-search-control settings-full-only">
+            <button type="button" id="settings-search-toggle" class="sheet-search-toggle" aria-label="search settings" aria-expanded="false" aria-controls="settings-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in settings</span></button>
+            <div class="detail-search-field" hidden>
+              <label class="sr-only" for="settings-search-input">Search settings</label>
+              <input type="search" id="settings-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
+              <button type="button" id="settings-search-clear" class="sheet-search-clear" aria-label="clear settings search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+            </div>
+          </div>
+          <button type="button" class="detail-head-btn" id="settings-search-dismiss" aria-label="close settings search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          <button type="button" class="detail-head-btn" id="settings-close" aria-label="close settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        </div>
       </div>
     </div>
   </div>
@@ -1944,6 +2035,8 @@
 <script src="./js/ui-kit.js" defer></script>
 <script src="./js/tap.js" defer></script>
 <script src="./js/calendar-import.js" defer></script>
+<script src="./lib/js/ical.min.js" defer></script>
+<script src="./js/calendar-ics.js" defer></script>
 <script src="./js/calendar-device.js" defer></script>
 <script src="./js/locations.js" defer></script>
 <script src="./js/prayer-times.js" defer></script>
@@ -1951,6 +2044,7 @@
 <script src="./js/scoring.js" defer></script>
 <!-- Large global scripts are sequential byte-exact slices; preserve this order. -->
 <script src="./js/list-view-home.js" defer></script>
+<script src="./js/agenda-missed.js" defer></script>
 <script src="./js/list-view-sections.js" defer></script>
 <script src="./js/list-view-planner.js" defer></script>
 <script src="./js/list-view-actions.js" defer></script>
@@ -1960,6 +2054,7 @@
 <script src="./js/detail-view-tune.js" defer></script>
 <script src="./js/detail-view-stats.js" defer></script>
 <script src="./js/detail-view-pages.js" defer></script>
+<script src="./js/item-field-catalog.js" defer></script>
 <script src="./js/detail-view-search.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
 <script src="./js/today-view-fits.js" defer></script>
@@ -1973,10 +2068,12 @@
 <script src="./js/push-client.js" defer></script>
 <script src="./js/reminders.js" defer></script>
 <script src="./js/native-reminders.js" defer></script>
+<script src="./js/native-widgets.js" defer></script>
 <script src="./js/shell-ui.js" defer></script>
 <script src="./js/time-picker.js" defer></script>
 <script src="./js/emoji-suggest.js" defer></script>
 <script src="./js/settings-core.js" defer></script>
+<script src="./js/settings-search.js" defer></script>
 <script src="./js/settings-weather.js" defer></script>
 <script src="./js/settings-backup.js" defer></script>
 <script src="./js/settings-blocked.js" defer></script>
