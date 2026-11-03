@@ -124,15 +124,17 @@ by scripted regression adapters; the product uses semantic-field jobs. See
 [the field-extraction evaluation](assistant-field-extraction.md) for live results
 and the limits of this approach.
 
-The assistant is optional local chat. New setups default to on-device Needle 3;
-existing Ollama / LM Studio selections remain available. `js/assistant-loader.js`
-loads the assistant code after the first home render. It must not participate in
-critical boot. Model assets are never fetched at boot or merely by enabling the
-assistant. The user chooses **download Needle 3** in Settings or the assistant
-sheet (36.3 MB, including WASM). Progress, cancellation, retry and removal share
-one download state. Verified immutable assets live in `tings-needle-v1`, outside
-the versioned app-shell cache, and are reused offline. Storage eviction requires
-a new download. Only public model files are fetched; inference runs in a worker.
+The assistant is local chat, on by default with on-device Needle 3
+(`localAssistantSetupVersion` 2 migrates installs that never configured an
+assistant; an explicit toggle or a chosen Ollama / LM Studio server keeps its
+state). `js/assistant-loader.js` loads the assistant code after the first home
+render. It must not participate in critical boot. Model assets are never
+fetched at boot or merely by enabling the assistant. The user chooses
+**download Needle 3** in Settings or the assistant sheet (36.3 MB, including
+WASM). Progress, cancellation, retry and removal share one download state.
+Verified immutable assets live in `tings-needle-v1`, outside the versioned
+app-shell cache, and are reused offline. Storage eviction requires a new
+download. Only public model files are fetched; inference runs in a worker.
 
 For external Android agents (Gemini / Google Assistant), see [Android assistant integration](android-assistant.md). That native-only bridge reuses these tools without requiring the local model.
 

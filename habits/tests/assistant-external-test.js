@@ -31,7 +31,7 @@ const {chromium, BASE, waitForAssistant} = require('./helpers/planner-test-helpe
     const checks=await page.evaluate(async()=>{
       const results=[];
       const check=(value,label)=>results.push({value:Boolean(value),label});
-      check(!assistantEnabled(),'local assistant remains off');
+      check(assistantEnabled(),'local assistant on by default');
       const denied=await tingsExternalAssistant.read('answer_items',{query:'list'});
       check(denied.status==='disabled','off by default');
       window.__nativeEnabled=true;
@@ -58,6 +58,9 @@ const {chromium, BASE, waitForAssistant} = require('./helpers/planner-test-helpe
       TingsNative.assistant.takeLaunchRequest=take;
       closeAssistantSheet();
       globalThis.__assistantTestComplete=()=>{throw new Error('must never call a model');};
+      // The rest of this block exercises the external review with the local
+      // model deliberately off; shipping default is on.
+      patchLocalAssistant({localAssistant:false});
       const before=JSON.stringify(load());
       window.__launch={kind:'tool',tool:'draft_item',arguments:{kind:'task',create:true,name:'External test task',durationMinutes:15}};
       await tingsExternalAssistant.drain();

@@ -371,14 +371,17 @@ const DEFAULT_SORT_SETTINGS = {
   /** Timestamp of last monthly auto retention cleanup (0 = never). */
   lastRetentionCleanupAt:0,
 
-  // Optional on-device Needle 3, or an existing Ollama / LM Studio server.
-  // URLs stay on this machine or a private LAN/Tailscale address — habit names
-  // never go to a public cloud model from this toggle. A public HTTPS origin
-  // (GitHub Pages) can still call that local server if Ollama allows the site
-  // and the browser grants local-network access.
-  localAssistant:false,
+  // On by default with on-device Needle 3, or an existing Ollama / LM Studio
+  // server. URLs stay on this machine or a private LAN/Tailscale address —
+  // habit names never go to a public cloud model from this toggle. A public
+  // HTTPS origin (GitHub Pages) can still call that local server if Ollama
+  // allows the site and the browser grants local-network access. Turning the
+  // assistant on never downloads model assets; that stays an explicit action.
+  localAssistant:true,
   localAssistantProvider:'needle',
-  localAssistantSetupVersion:1,
+  // v2 flips installs that never configured an assistant to enabled Needle 3.
+  // Persisted on every save so the migration runs at most once.
+  localAssistantSetupVersion:2,
   localAssistantUrl:'',
   localAssistantModel:'',
   localAssistantDebug:false,

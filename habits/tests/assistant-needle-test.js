@@ -31,7 +31,7 @@ function assert(ok, message){
     await page.goto(BASE,{waitUntil:'load'});
     await waitForAssistant(page);
     assert(downloads === 0,'normal boot does not fetch model assets');
-    assert(await page.evaluate(()=>assistantSettings().provider === 'needle' && !assistantSettings().on),'fresh settings default to optional Needle');
+    assert(await page.evaluate(()=>assistantSettings().provider === 'needle' && assistantSettings().on),'fresh settings default to on-device Needle');
     const migration = await page.evaluate(()=>{
       Storage.write(SORT_SETTINGS_KEY,{localAssistantProvider:'auto',localAssistant:false});
       const unused = loadSortSettings().localAssistantProvider;

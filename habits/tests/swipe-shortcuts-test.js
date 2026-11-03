@@ -29,6 +29,10 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
       baseHabit({hid:'swipe-zero',name:'Avoid',type:'zero',target:1,pinned:true})
     ]);
     await page.waitForSelector('#list .swipe-row[data-hid="swipe-main"] .swipe-actions-left .swipe-action');
+    // The assistant ships enabled; pin it off so the tray assertions below keep
+    // the four-action layout. The shipped five-action tray is covered in the
+    // assistant section.
+    await page.evaluate(()=>patchLocalAssistant({localAssistant:false}));
     const client = await context.newCDPSession(page);
     const row = hid=>page.locator(`#list .swipe-row[data-hid="${hid}"]`).first();
     async function drag(x,y,dx){
@@ -235,6 +239,7 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
       };
     });
     assert.equal(await row('swipe-main').locator('[data-action="assistant"]').count(),1,'enabling adds the shortcut to mounted cards');
+    assert.deepEqual(await visibleActions('swipe-main','left'),['assistant','timer','plan','swipe-more'],'shipped tray keeps three actions plus More');
     const savedBeforeAssistant = await page.evaluate(()=>JSON.stringify(load()));
     await activate('swipe-main',1,'assistant');
     await page.waitForFunction(()=>document.querySelector('#assistant-sheet').classList.contains('open'));

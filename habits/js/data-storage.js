@@ -215,7 +215,15 @@ function loadSortSettings(){
       && !saved.localAssistant && !saved.localAssistantUrl && !saved.localAssistantModel){
       merged.localAssistantProvider = 'needle';
     }
-    merged.localAssistantSetupVersion = 1;
+    // v2 enables Needle 3 on installs that never configured an assistant.
+    // A chosen server (provider, address, or model) or a later explicit
+    // toggle — setupVersion 2 persists after the first save — keeps its state.
+    if(saved.localAssistantSetupVersion !== 2
+      && !saved.localAssistantUrl && !saved.localAssistantModel
+      && normalizeLocalAssistantProvider(merged.localAssistantProvider) === 'needle'){
+      merged.localAssistant = true;
+    }
+    merged.localAssistantSetupVersion = 2;
     if(saved && !Object.prototype.hasOwnProperty.call(saved,'stopMode')){
       merged.stopMode = saved.keepStopsQuiet ? 'quiet' : DEFAULT_SORT_SETTINGS.stopMode;
     }
@@ -429,7 +437,7 @@ function saveSortSettings(settings){
   next.localAssistant = Boolean(next.localAssistant);
   next.localAssistantProvider = typeof normalizeLocalAssistantProvider === 'function'
     ? normalizeLocalAssistantProvider(next.localAssistantProvider) : 'needle';
-  next.localAssistantSetupVersion = 1;
+  next.localAssistantSetupVersion = 2;
   next.localAssistantUrl = typeof normalizeLocalAssistantUrl === 'function'
     ? normalizeLocalAssistantUrl(next.localAssistantUrl) : '';
   next.localAssistantModel = typeof normalizeLocalAssistantModel === 'function'
