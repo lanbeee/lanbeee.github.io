@@ -726,7 +726,7 @@ function defaultSettings(overrides = {}) {
     const earlyPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill:has-text("early")').count();
     const suggestedPill = await page.locator('.ting-card:has-text("Laundry upcoming") .context-pill.agenda-lead').count();
     check('6a later assignment has no early-today pill', earlyPill === 0, `early=${earlyPill}`);
-    check('6a do-early card shows an agenda-suggested time pill', suggestedPill >= 1, `suggested=${suggestedPill}`);
+    check('6a no time promised when the due-day capacity is exhausted and delay is zero', suggestedPill === 0, `suggested=${suggestedPill}`);
 
     // The standalone "do it early" header must be gone.
     const staleHeader = await page.locator('.section-header:text("do it early")').count();

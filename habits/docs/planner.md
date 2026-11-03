@@ -16,6 +16,22 @@ Read this when changing scheduling, placement, reservations, time budgets, or pl
 
 Both engines call `tryPlaceOnDay`, `auditFillFitInGap`, `freeSegmentsInWindow`, `commitPlacement`, `dailyBreakableReservations`, `movableCapacityForDay`, `breakableReservationWindows`, and `plannerOrderConstraintsForDay`. A behaviour change usually means editing the shared primitive or landing it in both engines.
 
+## Allowed settings, flexibility and clustering
+
+Allowed weekdays, month days, clock windows and places are hard placement gates,
+including overdue catch-up, explicit timed plans and link/repair passes. An
+unresolved allowed-time anchor is closed, not unrestricted. Time/place option
+rows remain explicit alternatives to the general allowed schedule.
+
+`earlyWindowDays` permits an interaction (links or travel-saving clustering) to
+pull an occurrence earlier; `delayAllowanceDays` is its latest on-time bound.
+Links cannot create unlimited keepup extras. Recheck each subsequent occurrence
+against its latest actual or virtual completion and fractional cadence phase.
+Already overdue work remains available for catch-up within its allowed settings.
+Daily/every-eligible-day rhythms retain their separate calendar-day obligations.
+Use local calendar arithmetic for due/readiness bounds so DST cannot remove a
+permitted date or grant another one.
+
 ## Fixed appointments
 
 Local meetings/classes store an `appointment` rule (once or weekly, local start date/time, optional end date, and per-date exceptions). `appointmentOccurrence` expands that rule; `collectScheduledAgendaEvents` reserves the literal interval in both engines, including an overnight carry from the previous date. These items bypass flexible candidates and habit cadence. Completion logs do not release their reservation, and elapsed appointments leave today's agenda without recording attendance or becoming missed work.

@@ -12,12 +12,12 @@ const {chromium,BASE,baseHabit,openEveningSettings,runPlannerPair,glpkAvailable}
       globalThis.Date=class extends RealDate{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}};
       const day=dayStart(now);
       try{
-        const make=({end=1439,planned=false,closedWindow=false}={})=>{
+        const make=({end=1439,planned=false,closedWindow=false,strictCadence=false}={})=>{
           const data=normalize([
             {...base,hid:'activity',name:'Activity',target:3,logs:[day-3*86400000],priority:1,
               durationMinutes:45,preferredTimeStart:1020,preferredTimeEnd:1380},
             {...base,hid:'recovery',name:'Recovery',target:2.5,logs:[day-86400000],priority:2,
-              durationMinutes:5,earlyWindowDays:3,scheduleLinks:[
+              durationMinutes:5,earlyWindowDays:3,delayAllowanceDays:strictCadence?0:1,scheduleLinks:[
                 {anchorHid:'activity',direction:'after',adjacency:'direct',requireSameDay:true}
               ]},
             {...base,hid:'neighbor',name:'Neighbor',target:1,logs:[day-86400000],priority:2,
@@ -51,7 +51,7 @@ const {chromium,BASE,baseHabit,openEveningSettings,runPlannerPair,glpkAvailable}
           endPlannerSolveCaches();return {moved,rows,unchanged,frozen,probes:96-budget.linkRemaining,
             paired:rows[0].some(a=>a.hid==='activity' && rows[0].some(b=>b.hid==='recovery' && b.start===a.end))};
         };
-        return {normal:make(),tight:make({end:1097}),planned:make({planned:true}),closedWindow:make({closedWindow:true})};
+        return {normal:make(),strictCadence:make({strictCadence:true}),tight:make({end:1097}),planned:make({planned:true}),closedWindow:make({closedWindow:true})};
       }finally{globalThis.Date=RealDate;endPlannerSolveCaches();}
     },{base:baseHabit({}),settings:openEveningSettings()});
     assert(result.normal.paired,'due sparse occurrence and required partner move to today together');
@@ -59,6 +59,7 @@ const {chromium,BASE,baseHabit,openEveningSettings,runPlannerPair,glpkAvailable}
     assert(result.normal.frozen,'unrelated committed clocks are preserved');
     assert(!result.normal.rows[1].some(r=>['activity','recovery'].includes(r.hid)),'old pair is removed atomically');
     assert(result.normal.rows[2].some(r=>r.hid==='activity') && result.normal.rows[2].some(r=>r.hid==='recovery'),'subsequent cadence pair survives');
+    assert(result.strictCadence.unchanged,'moving the first pair cannot push the next fractional occurrence beyond its delay');
     assert(result.tight.unchanged,'too-short day rolls back both dates');
     assert(result.planned.unchanged,'explicit future plan stays on its date');
     assert(result.closedWindow.unchanged,'closed partner window cannot produce a half pair');
@@ -69,12 +70,12 @@ const {chromium,BASE,baseHabit,openEveningSettings,runPlannerPair,glpkAvailable}
       const day=dayStart(now);
       try{
         const make=({reverse=false,daily=false,end=1399,planned=false,closedWindow=false,protectLater=false,
-          linkedExtra=false,missingExtraPartner=false}={})=>{
+          linkedExtra=false,missingExtraPartner=false,strictDelay=false}={})=>{
           const data=normalize([
-            {...base,hid:'activity',name:'Activity',type:'reduce',target:daily?1:3,logs:[day-(daily?1:3)*ms],
+            {...base,hid:'activity',name:'Activity',type:'reduce',target:daily?1:3,delayAllowanceDays:strictDelay?0:1,logs:[day-(daily?1:3)*ms],
               priority:1,durationMinutes:45,preferredTimeStart:1020,preferredTimeEnd:1380,
               scheduleLinks:reverse?[{anchorHid:'recovery',direction:'before',adjacency:'direct',requireSameDay:true}]:[]},
-            {...base,hid:'recovery',name:'Recovery',target:daily?1:2.5,logs:[day-ms],earlyWindowDays:3,
+            {...base,hid:'recovery',name:'Recovery',target:daily?1:2.5,logs:[day-ms],earlyWindowDays:3,delayAllowanceDays:3,
               priority:2,durationMinutes:5,scheduleLinks:reverse?[]:[
                 {anchorHid:'activity',direction:'after',adjacency:'direct',requireSameDay:true}]},
             {...base,hid:'finish',name:'Finish',target:7,logs:[day-7*ms],priority:4,durationMinutes:10,
@@ -125,7 +126,7 @@ const {chromium,BASE,baseHabit,openEveningSettings,runPlannerPair,glpkAvailable}
             workFrozen:rows[0].some(r=>r.hid==='work' && r.start===work.fit.placeStart && r.end===work.fit.placeEnd),
             violations:states.map(s=>[...persistentLinkViolationsForState(s)])};
         };
-        return {normal:make(),reverse:make({reverse:true}),daily:make({daily:true}),tight:make({end:1040}),
+        return {normal:make(),strictDelay:make({strictDelay:true}),reverse:make({reverse:true}),daily:make({daily:true}),tight:make({end:1040}),
           planned:make({planned:true}),closedWindow:make({closedWindow:true}),protectLater:make({protectLater:true}),
           linkedExtra:make({linkedExtra:true}),missingExtraPartner:make({linkedExtra:true,missingExtraPartner:true})};
       }finally{globalThis.Date=RealDate;endPlannerSolveCaches();}
@@ -144,7 +145,7 @@ const {chromium,BASE,baseHabit,openEveningSettings,runPlannerPair,glpkAvailable}
       'daily recovery adds today without stealing tomorrow\'s obligations');
     assert(chain.linkedExtra.rows[3].some(r=>r.hid==='recovery') && chain.linkedExtra.rows[3].some(r=>r.hid==='extra-partner'),
       'existing must-do rep beside a reduce partner survives despite a shorter-than-rhythm gap');
-    for(const mode of ['tight','planned','closedWindow','protectLater','missingExtraPartner'])
+    for(const mode of ['tight','planned','closedWindow','protectLater','missingExtraPartner','strictDelay'])
       assert(chain[mode].unchanged,mode+' rolls back both dates atomically');
     for(const r of Object.values(chain))assert(r.diagnostics.probes<=96,'chain recovery shares the capped budget');
     // Complete week regression: the greedy seed claims Finish today and the

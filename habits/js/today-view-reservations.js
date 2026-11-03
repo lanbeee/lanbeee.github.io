@@ -54,6 +54,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
   const placeKey = fill.placeKey != null ? fill.placeKey : fill.i;
   if(state.placed.has(placeKey))return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
+  if(!isDateEligibleForHabit(fill.h,dayBase))return null;
   // Untimed day plans store locationId on the plan log. That override wins over
   // reorder/pick defaults stamped onto the fill (preferred location, travel
   // clustering), since the user explicitly chose the place for this day.
@@ -408,7 +409,7 @@ function candidateOccurrenceDueDay(c,lastLogTs,completionOffset = 0){
   const cadence = typeof rhythmCadenceGapDays === 'function'
     ? rhythmCadenceGapDays(h,completionOffset)
     : Math.max(1,Number(h.target) || 1);
-  return dayStart(reference) + cadence * 86400000;
+  return offsetCalendarDay(reference,cadence);
 }
 
 function candidateOccurrenceLastOnTimeDay(c,lastLogTs,completionOffset = 0){
@@ -416,7 +417,20 @@ function candidateOccurrenceLastOnTimeDay(c,lastLogTs,completionOffset = 0){
   if(due == null)return null;
   const delay = typeof habitDelayAllowanceDays === 'function'
     ? habitDelayAllowanceDays(c && c.h) : 0;
-  return due + delay * 86400000;
+  return offsetCalendarDay(due,delay);
+}
+
+// Hard latest day for an occurrence that is still on time. Existing overdue
+// work remains catch-up; it must not be presented as a newly extended deadline.
+// Daily rhythms have separate obligations on each allowed calendar date.
+function candidateOccurrenceAllowsDay(c,dayBase,lastLogTs,completionOffset = 0){
+  const h = c && c.h;
+  if(!h || isOpportunityHabit(h))return true;
+  if(h.type !== 'task' && (Number(h.target) <= 1 || rhythmFillsEveryEligibleDay(h)))return true;
+  const reference = lastLogTs === undefined ? h.lastLog : lastLogTs;
+  if(h.type !== 'task' && reference == null && habitPlanByDate(h) == null)return true;
+  const latest = candidateOccurrenceLastOnTimeDay(c,lastLogTs,completionOffset);
+  return latest == null || dayStart(Date.now()) > latest || dayBase <= latest;
 }
 
 // TRUE when this occurrence has reached its last permitted on-time day. If it
@@ -1130,6 +1144,7 @@ function largestFeasibleBreakableFit(state,fill,remainingMinutes,minChunkMinutes
   const min = typeof clampMinChunk === 'function' ? clampMinChunk(minChunkMinutes) : Math.max(15,minChunkMinutes || 30);
   if(rem <= 0)return null;
   const {dayBase,weekday,registry,mode,slots,startClock} = state;
+  if(!isDateEligibleForHabit(fill.h,dayBase))return null;
   const budgetLeft = state.remaining;
   const usedMinutes = state.usedMinutes;
   const optionMode = typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(fill.h);

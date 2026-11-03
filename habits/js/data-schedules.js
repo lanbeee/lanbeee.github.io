@@ -159,7 +159,7 @@ function taskReadyDate(h){
   const when = taskWhen(h);
   if(when === null)return null;
   const window = Math.max(0,habitEarlyWindowDays(h));
-  return when - window * 86400000;
+  return offsetCalendarDay(when,-window);
 }
 function formatTimeShort(minutes){
   const h = Math.floor(minutes / 60);

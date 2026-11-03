@@ -398,11 +398,16 @@ function assert(value,message){
         const hids = fillsOn(d);
         return hids.includes('shower-or') && (hids.includes('go-out') || hids.includes('exercise'));
       });
-      // Partner days must include shower (must-do when partner lands).
+      // A partner day needs a shower only within the current early window.
+      let lastShower = today - 2 * 86400000;
       partnerDaysCovered = week.days.every(d=>{
         const hids = fillsOn(d);
         const hasPartner = hids.includes('go-out') || hids.includes('exercise');
-        return !hasPartner || hids.includes('shower-or');
+        const allowed = Math.round((d.dayBase-dayStart(lastShower))/86400000)
+          >= showerTarget-showerFlex;
+        const hasShower = hids.includes('shower-or');
+        if(hasShower)lastShower=d.dayBase;
+        return !hasPartner || !allowed || hasShower;
       });
     }finally{
       globalThis.Date = originalDate;
@@ -426,7 +431,7 @@ function assert(value,message){
   assert(flexPull.fridayHids.includes('go-out'),'going out appears Friday');
   assert(flexPull.fridayHids.includes('shower'),'flex+must-do pulls shower onto Friday with going out (' + flexPull.fridayHids.join(',') + ')');
   assert(flexPull.orPartnered,'OR places shower with at least one linked partner');
-  assert(flexPull.partnerDaysCovered,'must-do keeps shower on every partner day');
+  assert(flexPull.partnerDaysCovered,'must-do keeps shower on partner days within its current early window');
   // Alone is allowed under must-do; do not require !alone.
   if(flexPull.fridayOffset === 0){
     assert(true,'Friday-is-today early path covered by dedicated case below');
@@ -1163,13 +1168,13 @@ function assert(value,message){
       `GLPK: scarce anchor uses a later window that still admits the chain (${JSON.stringify(early)})`);
   }
 
-  console.log('\n[E] cadence OR — stiff-rhythm keepup honours a same-day partner');
+  console.log('\n[E] zero early allowance wins over a same-day partner');
   const orCase = await page.evaluate(async ()=>{
     // Monday Aug 3 2026. Shower is a keepup every 4 days, flex 0, last done Sun
     // Aug 2 → next rhythm-due day is Thu Aug 6 (ageOnDay 4). Wed Aug 5 is only
     // ageOnDay 3, so rhythm alone never makes Shower eligible Wednesday. Exercise
-    // (every 3 days) is due Wednesday; Shower must-do with Exercise must pull
-    // Shower onto Wednesday despite the stiff cadence (OR, not AND).
+    // (every 3 days) is due Wednesday; the link cannot spend an early day
+    // when Shower has no early allowance.
     const monBase = dayStart(new Date(2026,7,3).getTime());
     const wedBase = monBase + 2 * 86400000;
     const now = monBase + 9 * 3600000;
@@ -1255,13 +1260,13 @@ function assert(value,message){
       wed
     };
   });
-  assert(orCase.showerElig.includes('2026-08-05'),
-    'OR: stiff-rhythm Shower is eligible Wednesday via the Exercise link (' + orCase.showerElig.join(',') + ')');
+  assert(!orCase.showerElig.includes('2026-08-05'),
+    'zero-flex Shower stays ineligible Wednesday despite the Exercise link (' + orCase.showerElig.join(',') + ')');
   assert(orCase.showerElig.includes('2026-08-06'),
     'OR: rhythm-due Thursday stays eligible (link does not replace cadence)');
-  assert(orCase.wedHasExercise && orCase.wedHasShower,
-    'GLPK co-places Exercise + Shower on Wednesday (' + orCase.wed.join(',') + ')');
-  assert(orCase.exerciseBeforeShower,'Exercise is ordered before Shower on Wednesday');
+  assert(orCase.wedHasExercise && !orCase.wedHasShower,
+    'GLPK places Exercise without inventing an early Shower on Wednesday (' + orCase.wed.join(',') + ')');
+  assert(!orCase.wedHasShower,'link repair cannot resurrect an out-of-flex occurrence');
 
   console.log('\n[F] multi-parent right-after (exercise OR haircut → shower)');
   const multiParent = await page.evaluate(async ()=>{

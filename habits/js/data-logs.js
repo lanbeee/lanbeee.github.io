@@ -290,6 +290,12 @@ function dayDistance(ts){
   return Math.round((dayStart(Date.now()) - dayStart(ts)) / 86400000);
 }
 function daysUntil(ts){return ts ? Math.floor((dayStart(ts) - dayStart(Date.now())) / 86400000) : null;}
+// Local calendar arithmetic keeps day-based flexibility at midnight across DST.
+function offsetCalendarDay(ts,offset){
+  const date = new Date(dayStart(ts));
+  date.setDate(date.getDate() + offset);
+  return date.getTime();
+}
 function dayStart(ts){
   const d = new Date(ts);
   return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();

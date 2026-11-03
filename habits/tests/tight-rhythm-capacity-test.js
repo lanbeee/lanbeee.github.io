@@ -145,7 +145,7 @@ function weekCapacityOverrides(frozen, mins, days = 14) {
         mk({ name: 'W2 deep clean', target: targetFromRhythmParts(2, 7), durationMinutes: 25, priority: 1 }),
         mk({ name: 'E3 groceries', target: 3, durationMinutes: 30, priority: 1 }),
         mk({ name: 'W3 walk', target: targetFromRhythmParts(3, 7), durationMinutes: 15, priority: 2 }),
-        mk({ name: 'W2 call mom', target: targetFromRhythmParts(2, 7), durationMinutes: 20, priority: 3 }),
+        mk({ name: 'W2 call mom', delayAllowanceDays:7, target: targetFromRhythmParts(2, 7), durationMinutes: 20, priority: 3 }),
         // Extra pressure: another daily-sized keepup on a longer rhythm so
         // the week has more candidates than any single day can hold.
         mk({ name: 'E2 inbox zero', target: 2, durationMinutes: 20, priority: 4 }),
@@ -1525,7 +1525,7 @@ function weekCapacityOverrides(frozen, mins, days = 14) {
         mk({ name: 'D6 review', target: 1, durationMinutes: 15, priority: 2 }),
         // One light multi so breakable still competes for residual slack
         // without every day being pre-eaten by 25–30m sparse habits.
-        mk({ name: 'W3 walk', target: targetFromRhythmParts(3, 7), durationMinutes: 15, priority: 3 }),
+        mk({ name: 'W3 walk', delayAllowanceDays:7, target: targetFromRhythmParts(3, 7), durationMinutes: 15, priority: 3 }),
         // Big breakable task — flexibility opens Mon→Fri so adaptive chunks
         // can share residual slack across the week (not only on the due day).
         // After P1 dailies claim rhythm seats, this fills leftover minutes as

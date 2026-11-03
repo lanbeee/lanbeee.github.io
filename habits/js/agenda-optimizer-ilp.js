@@ -2263,12 +2263,20 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
 
   for(let dayOffset = 0;dayOffset < dayStates.length;dayOffset += 1){
     const state = dayStates[dayOffset];
+    for(const ev of state.day.scheduled || []){
+      if(!ev.fromTimedPlan || ev.h.type === 'task' || ev.h.breakable)continue;
+      virtualLogs.set(ev.i,state.dayBase);
+      virtualCompletionCounts.set(ev.i,(virtualCompletionCounts.get(ev.i) || 0) + 1);
+    }
     const dayCands = [];
     for(const c of candidates){
       if(c.eligible && !c.eligible.has(state.dayBase))continue;
       if(typeof candidateMatchesPinnedDay === 'function'
         ? !candidateMatchesPinnedDay(c,state) : (c.pinned && !state.isTodayDay))continue;
       if(c.h && c.h.type === 'task' && oneShotPlaced.has(c.i))continue;
+      if(!candidateOccurrenceAllowsDay(c,state.dayBase,
+        virtualLogs.has(c.i) ? virtualLogs.get(c.i) : undefined,
+        virtualCompletionCounts.get(c.i) || 0))continue;
       const rhythmHabit = !!(c.h && c.h.type !== 'task'
         && Number.isFinite(Number(c.h && c.h.target)));
       const breakableRhythm = !!(c.h && c.h.breakable && rhythmHabit);
@@ -2281,7 +2289,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
           );
         const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
         const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
-          && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
+          && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates,vLog,virtualCompletionCounts.get(c.i) || 0);
         if(!spaced && !linkExtra)continue;
       }
       if(c.h && c.h.breakable && c.h.type === 'task'){
@@ -2639,6 +2647,8 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
         if(c.eligible && !c.eligible.has(state.dayBase))continue;
         if(typeof candidateMatchesPinnedDay === 'function'
         ? !candidateMatchesPinnedDay(c,state) : (c.pinned && !state.isTodayDay))continue;
+        if(!candidateOccurrenceAllowsDay(c,state.dayBase,
+          rhythmPlacementCount > 0 ? vLog : undefined,rhythmPlacementCount))continue;
         const alreadyPlacedMinutes = typeof placedBreakableMinutes === 'function'
           ? placedBreakableMinutes(state,c.i) : 0;
         const remainingMinutes = typeof breakableMinutesLeft === 'function'
@@ -2660,7 +2670,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
           const spaced = rhythmEligibleOnDay(c.h,vLog,state.dayBase,state.weekday,rhythmPlacementCount);
           const afterLast = state.dayBase > (typeof dayStart === 'function' ? dayStart(vLog) : vLog);
           const linkExtra = afterLast && typeof keepupAllowsLinkExtraOnDay === 'function'
-            && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates);
+            && keepupAllowsLinkExtraOnDay(c.h,state.dayBase,candidates,vLog,rhythmPlacementCount);
           if(!spaced && !linkExtra)continue;
         }
         const fill = {h:c.h,i:c.i,priority:c.priority,scarcity:c.scarcity};

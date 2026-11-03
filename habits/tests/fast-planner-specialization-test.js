@@ -96,9 +96,9 @@ const fs=require('fs'),path=require('path');
       globalThis.Date=class extends RealDate{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}};
       try{
         const day=dayStart(now);
-        const check=(laterOffset,target=2)=>{
+        const check=(laterOffset,target=2,type='keepup')=>{
           const data=normalize([
-            {...base,hid:'sparse',name:'Sparse',type:'keepup',target,lastLog:day-ms,
+            {...base,hid:'sparse',name:'Sparse',type,target,lastLog:day-ms,
               logs:[day-ms],earlyWindowDays:2,delayAllowanceDays:0,durationMinutes:30,
               allowedTimeStart:570,allowedTimeEnd:600},
             {...base,hid:'urgent',name:'Urgent',type:'task',target:null,dueDate:day,
@@ -129,7 +129,7 @@ const fs=require('fs'),path=require('path');
             neighbor:neighbor===JSON.stringify(clock(states[0])),
             sparse:states.map(s=>s.fills.filter(e=>e.fill.i===0).length),remaining:budget.remaining};
         };
-        return {valid:check(3),invalid:check(2),early:check(4,3)};
+        return {valid:check(3),invalid:check(2),early:check(4,3),earlyReduce:check(4,3,'reduce')};
       }finally{globalThis.Date=RealDate;endPlannerSolveCaches();}
     },{base:baseHabit({priority:2,createdAt:day-86400000}),settings:deadlineSettings});
     assert.strictEqual(transferGuards.valid.accepted,1,'sparse blocker can move when subsequent cadence remains valid');
@@ -138,6 +138,7 @@ const fs=require('fs'),path=require('path');
     assert.strictEqual(transferGuards.invalid.accepted,0,'reject moving a sparse blocker too close to its next occurrence');
     assert(transferGuards.invalid.unchanged,'cadence rejection leaves the incumbent untouched');
     assert.strictEqual(transferGuards.early.accepted,1,'initial early-window permission survives cadence validation');
+    assert.strictEqual(transferGuards.earlyReduce.accepted,1,'reduce keeps initial early-window permission during transfer');
     const controls=await page.evaluate(({base,settings})=>{
       const RealDate=Date,now=new Date(2026,8,14,9).getTime();
       globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
