@@ -69,7 +69,44 @@ const cases=[
   ['reminderTravelLead','Remind me 15 minutes before departure',15,{native:true}],
   ['reminderStartLead','Remind me 15 minutes before start',15,{native:true,kind:'event'}],
   ['reminderMissedLead','Set missed warning lead to 15 minutes',15,{native:true}],
-  ['reminderReset','Reset reminders to defaults',true,{native:true,reminderSeed:{start:'alarm',end:'notification',travelLeadMinutes:60,dates:{'2026-11-09':{start:'notification'}}}}]
+  ['reminderReset','Reset reminders to defaults',true,{native:true,reminderSeed:{start:'alarm',end:'notification',travelLeadMinutes:60,dates:{'2026-11-09':{start:'notification'}}}}],
+  ['frequency','I want to do this every third day',1,{id:'language-frequency-third',extra:{periodDays:3},seed:{name:'Sample: go for a walk',durationMinutes:20},record:{name:'Sample: go for a walk',durationMinutes:20}}],
+  ['frequency','Repeat every 3rd day',1,{id:'language-frequency-digit-ordinal',extra:{periodDays:3}}],
+  ['frequency','Repeat each fourth day',1,{id:'language-frequency-each',extra:{periodDays:4}}],
+  ['frequency','Repeat every twenty-one days',1,{id:'language-frequency-compound',extra:{periodDays:21}}],
+  ['frequency','Repeat every two weeks',1,{id:'language-frequency-weeks',extra:{periodDays:14}}],
+  ['frequency','Twice every three weeks',2,{id:'language-frequency-count-period',extra:{periodDays:21}}],
+  ['frequency','Once every other week',1,{id:'language-frequency-other-week',extra:{periodDays:14}}],
+  ['frequency','Twenty-one times in thirty days',21,{id:'language-frequency-large-count',extra:{periodDays:30}}],
+  ['frequency','Every third day',1,{id:'language-frequency-correction',extra:{periodDays:3},prelude:['Repeat every zero days']}],
+  ['frequency','Use the first frequency I mentioned earlier',1,{id:'language-frequency-history',extra:{periodDays:3},historySteps:['Every third day','Every fourth day'],reuse:'Every third day'}],
+  ['allowedMonthDays','Only on the first and fifteenth of each month',[1,15],{id:'language-monthdays-words'}],
+  ['preferredMonthDays','Prefer the second and twenty-first of each month',[2,21],{id:'language-monthdays-preference'}],
+  ['earlyWindowDays','Allow one week early',7,{id:'language-early-week'}],
+  ['delayAllowanceDays','Allow a delay of two weeks',14,{id:'language-delay-weeks',kind:'task'}],
+  ['conditionRadiusM','Set radius to half a kilometer',500,{id:'language-radius-kilometer',seed:{repeatMode:'opportunity'}}],
+  ['durationMinutes','Make it twenty-five minutes long',25,{id:'language-duration-compound'}],
+  ['durationMinutes','Change it to one and a half hour long',90,{id:'language-duration-mixed-fraction'}],
+  ['durationMinutes','Change it to one and a half hour long',90,{id:'language-duration-task-fraction',kind:'task'}],
+  ['durationMinutes','Change it to one and a half hour long',90,{id:'language-duration-occurrence-fraction',kind:'event',scope:'occurrence',covers:['exceptionDuration']}],
+  ['durationMinutes','Make it two and a half hours long',150,{id:'language-duration-two-fraction'}],
+  ['durationMinutes','Make it one and a quarter hour long',75,{id:'language-duration-quarter'}],
+  ['durationMinutes','Make it an hour and a quarter long',75,{id:'language-duration-post-unit-fraction'}],
+  ['durationMinutes','Make it one and a half hours and fifteen minutes long',105,{id:'language-duration-fraction-mixed-units'}],
+  ['durationMinutes','Make it 1½ hours long',90,{id:'language-duration-vulgar-fraction'}],
+  ['durationMinutes','Make it ¾ hour long',45,{id:'language-duration-standalone-vulgar-fraction'}],
+  ['minChunkMinutes','Set minimum chunk to one and a half hours',90,{id:'language-chunk-mixed-fraction',seed:{breakable:true,durationMinutes:180}}],
+  ['minGapMinutes','Set a one and a half hour gap between sessions',90,{id:'language-gap-mixed-fraction'}],
+  ['minGapMinutes','Set a ¾ hour gap between sessions',45,{id:'language-gap-vulgar-fraction'}],
+  ['timerAutoStopMinutes','Stop timer automatically after one and a half hours',90,{id:'language-timer-mixed-fraction'}],
+  ['autoMarkMinutes','Automatically mark done after one and a half hours',90,{id:'language-auto-mixed-fraction'}],
+  ['minChunkMinutes','Set minimum chunk to twenty-five minutes',25,{id:'language-chunk-compound',seed:{breakable:true}}],
+  ['minGapMinutes','Set a quarter hour gap between sessions',15,{id:'language-gap-fraction'}],
+  ['timerAutoStopMinutes','Stop timer automatically after half an hour',30,{id:'language-timer-fraction'}],
+  ['autoMarkMinutes','Automatically mark done after a quarter hour',15,{id:'language-auto-fraction'}],
+  ['reminderTravelLead','Remind me half an hour before departure',30,{id:'language-reminder-fraction',native:true}],
+  ['reminderStartLead','Remind me one hour before start',60,{id:'language-reminder-hour',native:true,kind:'event'}],
+  ['reminderMissedLead','Set missed warning lead to a quarter hour',15,{id:'language-warning-fraction',native:true}]
 ].map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
   {field:'dueDate',kind:'task',prompt:'Set due date to 2027-02-30'},
@@ -77,7 +114,20 @@ const guards=[
   {field:'planByDate',kind:'habit',prompt:'Plan by the first week of 2027'},
   {field:'earlyWindowDays',kind:'habit',prompt:'Allow 3 or 5 days early'},
   {field:'conditionRadiusM',kind:'habit',prompt:'Set radius to -300 meters',seed:{repeatMode:'opportunity'}},
-  {field:'durationMinutes',kind:'habit',prompt:'Use the duration I mentioned earlier',historySteps:['Make it 40 minutes long','Make it 60 minutes long']}
+  {field:'durationMinutes',kind:'habit',prompt:'Use the duration I mentioned earlier',historySteps:['Make it 40 minutes long','Make it 60 minutes long']},
+  ...['every zero days','every -3 days','every 184 days','every third Monday','every three or four days','every 2.5 days','every three days and every five days'].map(phrase=>({field:'frequency',kind:'habit',prompt:`Repeat ${phrase}`})),
+  {field:'allowedMonthDays',kind:'habit',prompt:'Allow month days 1 and 32'},
+  {field:'earlyWindowDays',kind:'habit',prompt:'Allow a day and a half early'},
+  {field:'reminderStartLead',kind:'event',prompt:'Remind me two hours before start',native:true},
+  {field:'conditionRadiusM',kind:'habit',prompt:'Set radius to 300 feet',seed:{repeatMode:'opportunity'}},
+  {field:'durationMinutes',kind:'habit',prompt:'Make it -30 minutes long'},
+  {field:'durationMinutes',kind:'habit',prompt:'Make it thirteen hours long'},
+  {field:'durationMinutes',kind:'habit',prompt:'Make it twelve and a half hours long'},
+  {field:'durationMinutes',kind:'habit',prompt:'Make it one and a half hours or two hours long'},
+  {field:'durationMinutes',kind:'habit',prompt:'Make it -one and a half hours long'},
+  {field:'timerAutoStopMinutes',kind:'habit',prompt:'Stop timer after -30 minutes'},
+  {field:'autoMarkMinutes',kind:'habit',prompt:'Automatically mark done after 5 or 15 minutes'},
+  {field:'autoMarkMinutes',kind:'habit',prompt:'Automatically mark done'}
 ].map((row,index)=>({...row,id:`guard-${row.field}-${index+1}`}));
 let passed=0;
 function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${msg}`);}
@@ -164,7 +214,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         return {matched,recordOK,advancedOK,extras,unchanged,ready,commit,persisted,occurrenceOK,reminders,remindersOK,clarification,history,changes:s.changes,unresolved:s.unresolved,pending:s.pendingFamilies,record:r,saved,trace:s.trace,jobs:s.jobs.map(j=>({id:j.id,status:j.status,spans:j.spans,error:j.error}))};
       },test);
       results.push({...test,...result});fs.writeFileSync(report,JSON.stringify(results,null,2));
-      const ok=result.matched&&result.recordOK&&result.advancedOK&&!result.extras.length&&result.unchanged&&result.ready&&result.persisted&&result.occurrenceOK&&result.remindersOK&&!result.unresolved.length&&!result.pending.length&&result.history.every(row=>row.ready)&&result.clarification.every(r=>r.blocked&&r.unchanged&&r.questions.some(q=>q.field===test.field));
+      const ok=result.matched&&result.recordOK&&result.advancedOK&&!result.extras.length&&result.unchanged&&result.ready&&result.persisted&&result.occurrenceOK&&result.remindersOK&&!result.unresolved.length&&!result.pending.length&&result.history.every(row=>row.ready)&&result.clarification.every(r=>r.blocked&&r.unchanged&&r.questions.some(q=>q.field===test.field||(test.field==='frequency'&&q.field==='timesPerPeriod')));
       if(ok)assert(true,`${live?'live Needle':'host'}: ${test.id}`);
       else{failures.push(test.id);console.error(`  FAIL ${test.id}: ${JSON.stringify({matched:result.matched,record:result.recordOK,advanced:result.advancedOK,extras:result.extras,ready:result.ready,commit:result.commit,changes:result.changes,questions:result.unresolved})}`);}
     }
@@ -177,7 +227,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         return {blocked:!assistantFocusCanSave(s),kept:kept===JSON.stringify(assistantFocusMaterialize(s)),unchanged:before===JSON.stringify(load()),questions:s.unresolved,changes:s.changes,trace:s.trace};
       },test);
       results.push({...test,...result});fs.writeFileSync(report,JSON.stringify(results,null,2));
-      if(result.blocked&&result.kept&&result.unchanged&&result.questions.some(q=>q.field===test.field))assert(true,`${live?'live Needle':'host'}: ${test.id} asks without changing values`);
+      if(result.blocked&&result.kept&&result.unchanged&&result.questions.some(q=>q.field===test.field||(test.field==='frequency'&&q.field==='timesPerPeriod')))assert(true,`${live?'live Needle':'host'}: ${test.id} asks without changing values`);
       else{failures.push(test.id);console.error(`  FAIL ${test.id}: ${JSON.stringify(result)}`);}
     }
     assert(!errors.length,`no page errors (${errors.join('; ')})`);

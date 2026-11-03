@@ -290,7 +290,8 @@
           <p class="sheet-title" id="assistant-title">ask Tings</p>
         </div>
         <div class="assistant-head-actions">
-          <button type="button" class="btn" id="assistant-debug-toggle" aria-pressed="false" aria-label="assistant debug">debug</button>
+          <button type="button" class="btn" id="assistant-feedback" hidden aria-expanded="false" aria-controls="assistant-feedback-panel">feedback</button>
+          <button type="button" class="btn" id="assistant-debug-toggle" hidden aria-pressed="false" aria-expanded="false" aria-controls="assistant-debug-dock" aria-label="debug trace">debug</button>
           <button type="button" class="btn" id="assistant-clear" aria-label="clear chat">clear chat</button>
           <button type="button" class="icon-btn" id="assistant-close" aria-label="close assistant"><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
@@ -313,6 +314,20 @@
       </div>
       <div class="assistant-thread" id="assistant-thread"></div>
       <p class="assistant-waiting" id="assistant-waiting" hidden>thinking…</p>
+      <div class="assistant-debug-dock" id="assistant-debug-dock" hidden>
+        <div class="assistant-debug-bar">
+          <button type="button" class="assistant-debug-fold" id="assistant-debug-fold" aria-expanded="true" aria-controls="assistant-debug-log" aria-label="compact trace">
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            <span>trace</span>
+            <span class="assistant-debug-meta" id="assistant-debug-meta">nothing yet</span>
+          </button>
+          <button type="button" class="assistant-debug-tool" id="assistant-debug-copy">copy</button>
+          <button type="button" class="assistant-debug-dismiss" id="assistant-debug-close" aria-label="close debug"><i class="ti ti-x" aria-hidden="true"></i></button>
+        </div>
+        <div class="assistant-debug-log" id="assistant-debug-log"></div>
+        <textarea class="assistant-debug-json" id="assistant-debug-json" hidden></textarea>
+      </div>
+      <div class="assistant-feedback-panel" id="assistant-feedback-panel" hidden></div>
       <div class="assistant-compose">
         <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
         <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>

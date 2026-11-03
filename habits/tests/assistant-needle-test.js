@@ -552,20 +552,42 @@ function assert(ok, message){
       patchLocalAssistant({localAssistant:true, localAssistantProvider:'needle'});
       save([{hid:'gym', name:'Gym', type:'keepup', target:7, durationMinutes:45, emoji:'🏋️', logs:[]}]);
       const opened = assistantOpenForItem('gym', 'home');
+      const reviewText = () => {
+        const review = document.querySelector('[data-focus-review]');
+        return {
+          kicker:review && review.querySelector('.focus-kicker') && review.querySelector('.focus-kicker').textContent,
+          name:review && review.querySelector('.assistant-preview-name') && review.querySelector('.assistant-preview-name').textContent,
+          cards:document.querySelectorAll('[data-focus-card]').length,
+          save:Boolean(review && review.querySelector('[data-focus-save]')),
+          edit:Boolean(review && review.querySelector('[data-focus-edit]'))
+        };
+      };
       const done = document.getElementById('assistant-focus-done');
-      const before = {hidden:done.hidden, name:document.getElementById('assistant-focus-name').textContent, hid:_assistantSession.focus && _assistantSession.focus.targetId};
+      const before = {hidden:done.hidden, barHidden:document.getElementById('assistant-focus').hidden, review:reviewText(), intro:/Working on Gym/i.test(document.getElementById('assistant-thread').textContent || ''), hid:_assistantSession.focus && _assistantSession.focus.targetId};
       done.click();
-      const afterDone = {name:document.getElementById('assistant-focus-name').textContent, hid:_assistantSession.focus && _assistantSession.focus.targetId, barHidden:document.getElementById('assistant-focus').hidden, alive:assistantFocusAlive(_assistantSession.focus)};
+      const afterDone = {review:reviewText(), hid:_assistantSession.focus && _assistantSession.focus.targetId, barHidden:document.getElementById('assistant-focus').hidden, alive:assistantFocusAlive(_assistantSession.focus)};
       clearAssistantChat();
-      const afterClear = {name:document.getElementById('assistant-focus-name').textContent, hid:_assistantSession.focus && _assistantSession.focus.targetId, alive:assistantFocusAlive(_assistantSession.focus), doneHidden:document.getElementById('assistant-focus-done').hidden};
+      const afterClear = {review:reviewText(), intro:/Working on/i.test(document.getElementById('assistant-thread').textContent || ''), hid:_assistantSession.focus && _assistantSession.focus.targetId, alive:assistantFocusAlive(_assistantSession.focus), doneHidden:document.getElementById('assistant-focus-done').hidden, barHidden:document.getElementById('assistant-focus').hidden};
+      const staged = assistantFocusCorrect(_assistantSession.focus, 'durationMinutes', '40 minutes');
+      assistantShowFocusReview(_assistantSession.focus);
+      const afterStage = reviewText();
       closeAssistantSheet();
-      return {opened, before, afterDone, afterClear};
+      return {opened, before, afterDone, afterClear, staged:Boolean(staged && staged.ok), afterStage};
     });
-    assert(focusLock.opened && focusLock.before.hidden && focusLock.before.hid === 'gym'
-      && focusLock.afterDone.alive && focusLock.afterDone.hid === 'gym' && !focusLock.afterDone.barHidden && /Gym/.test(focusLock.afterDone.name),
-      'Needle hides Done and keeps the focused item');
-    assert(focusLock.afterClear.alive && focusLock.afterClear.hid === 'gym' && focusLock.afterClear.doneHidden && /Gym/.test(focusLock.afterClear.name),
-      'clearing the Needle chat stays on the same item');
+    assert(focusLock.opened && focusLock.before.hidden && focusLock.before.barHidden && focusLock.before.hid === 'gym'
+      && focusLock.before.review.cards === 1 && /Edit habit/i.test(focusLock.before.review.kicker || '')
+      && focusLock.before.review.name === 'Gym' && !focusLock.before.intro
+      && !focusLock.before.review.save && !focusLock.before.review.edit
+      && focusLock.afterDone.alive && focusLock.afterDone.hid === 'gym' && focusLock.afterDone.barHidden
+      && focusLock.afterDone.review.name === 'Gym' && !focusLock.afterDone.review.save && !focusLock.afterDone.review.edit,
+      'Needle opens on the Edit summary and keeps the focused item');
+    assert(focusLock.afterClear.alive && focusLock.afterClear.hid === 'gym' && focusLock.afterClear.doneHidden
+      && focusLock.afterClear.barHidden && focusLock.afterClear.review.cards === 1
+      && focusLock.afterClear.review.name === 'Gym' && /Edit habit/i.test(focusLock.afterClear.review.kicker || '')
+      && !focusLock.afterClear.intro && !focusLock.afterClear.review.save && !focusLock.afterClear.review.edit,
+      'clearing the Needle chat stays on the same Edit summary');
+    assert(focusLock.staged && focusLock.afterStage.save && focusLock.afterStage.edit,
+      'Save and Edit appear once a change is staged');
 
     await page.evaluate(()=>patchLocalAssistant({localAssistantProvider:'lmstudio',localAssistantUrl:'http://localhost:1234',localAssistantModel:'existing'}));
     assert(await page.evaluate(()=>assistantSettings().provider === 'lmstudio' && assistantSettings().model === 'existing'),'server configurations still save');

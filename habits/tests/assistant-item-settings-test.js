@@ -97,6 +97,19 @@ async function launchBrowser(){
     check('duration fractional number is hours', assistantParseDuration(1.5) === 90 && assistantParseDuration('1.5') === 90 && assistantParseDuration('1 1/2 hours') === 90);
     check('duration integer stays minutes', assistantParseDuration(90) === 90 && assistantParseDuration('90 minutes') === 90 && assistantParseDuration(2) === 2);
     check('duration words and mixed units', assistantParseDuration('two and a half hours') === 150 && assistantParseDuration('1 hour 30 minutes') === 90 && assistantParseDuration('an hour and a half') === 90);
+    const mixedLengths = [
+      ['one and a half hour',90], ['two and a half hours',150],
+      ['one and a quarter hour',75], ['two and a quarter hours',135],
+      ['twenty-one and a half minutes',22], ['twenty-five minutes',25],
+      ['1 1/2 hours',90], ['1½ hours',90], ['1.5 hours',90],
+      ['an hour and a quarter',75], ['two hours and a quarter',135],
+      ['one and a half hours and fifteen minutes',105]
+    ];
+    check('complete mixed quantities normalize before standalone fractions', mixedLengths.every(([words,minutes])=>assistantParseDuration(words)===minutes));
+    check('mixed quantity grounding cannot accept its standalone fractional tail',
+      assistantSpokenDurationMatches('Change it to one and a half hour long',90)
+      && !assistantSpokenDurationMatches('Change it to one and a half hour long',30)
+      && !assistantSpokenDurationMatches('Change it to one and a quarter hour long',15));
     check('spoken length matches converted minutes', assistantSpokenDurationMatches('change the duration to 1.5 hours', 90)
       && assistantSpokenDurationMatches('make it 1 hour 30 minutes', 90)
       && !assistantSpokenDurationMatches('remind me to call mom', 90)

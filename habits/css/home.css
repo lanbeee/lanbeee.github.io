@@ -303,6 +303,53 @@ body.reach-pad #list{padding-top:220px;}
 .sa-reminder{background:transparent;color:var(--amber-text);}
 .sa-snooze{background:transparent;color:var(--text2);}
 .sa-nuke{background:transparent;color:var(--red-text);}
+/* Five or more actions stay a four-wide tray. More holds the inner slot and
+   turns into Back there; the rest ease into the outer slots. */
+.swipe-action-set{
+  display:flex;flex:none;align-items:stretch;height:100%;
+}
+.swipe-action-set[hidden]{display:none;}
+.swipe-action-strip:has(> .sa-more){justify-content:space-between;}
+.sa-more{color:var(--text2);}
+.sa-more:active{opacity:0.62;}
+.swipe-more-glyph{
+  position:relative;width:20px;height:20px;flex:none;
+}
+.swipe-more-glyph i{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;
+  transition:opacity 180ms ease, transform 200ms var(--ease-tight);
+}
+.sa-more .swipe-back-icon{opacity:0;transform:translateX(8px);}
+.sa-more[aria-expanded="true"] .swipe-more-icon{opacity:0;transform:translateX(-8px);}
+.sa-more[aria-expanded="true"] .swipe-back-icon{opacity:1;transform:none;}
+.swipe-actions-right .sa-more .swipe-back-icon{transform:translateX(-8px) scaleX(-1);}
+.swipe-actions-right .sa-more[aria-expanded="true"] .swipe-more-icon{transform:translateX(8px);}
+.swipe-actions-right .sa-more[aria-expanded="true"] .swipe-back-icon{opacity:1;transform:scaleX(-1);}
+.swipe-more-labels{display:grid;}
+.swipe-more-labels > span{
+  grid-area:1 / 1;
+  transition:opacity 180ms ease;
+}
+.sa-more .swipe-back-label{opacity:0;}
+.sa-more[aria-expanded="true"] .swipe-more-label{opacity:0;}
+.sa-more[aria-expanded="true"] .swipe-back-label{opacity:1;}
+.swipe-action-set.is-revealing{animation:swipe-set-in 220ms var(--ease-tight);}
+@keyframes swipe-set-in{
+  from{opacity:0;transform:translateX(14px);}
+  to{opacity:1;transform:none;}
+}
+.swipe-actions-right .swipe-action-set.is-revealing{animation-name:swipe-set-in-right;}
+@keyframes swipe-set-in-right{
+  from{opacity:0;transform:translateX(-14px);}
+  to{opacity:1;transform:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  .swipe-action-set.is-revealing{animation:none;}
+  .swipe-more-glyph i,
+  .swipe-more-labels > span{transition:none;}
+}
 
 .ting-card{
   background:var(--bg);

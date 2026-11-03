@@ -7,6 +7,8 @@ let _assistantPendingDraft = null;
 let _assistantPendingDrafts = null;
 let _assistantTurn = 0;
 let _assistantExternalReview = false;
+let _assistantDebugRevealed = false;
+let _assistantTitleTaps = [];
 
 function assistantEnabled(){
   return Boolean(sortSettings && sortSettings.localAssistant);
@@ -44,10 +46,18 @@ function syncLocalAssistantControls(){
   const debugToggle = $('setting-local-assistant-debug');
   if(debugToggle)debugToggle.setAttribute('aria-pressed', String(s.debug));
   const sheetDebug = $('assistant-debug-toggle');
+  const showDebug = s.on && _assistantDebugRevealed;
   if(sheetDebug){
     sheetDebug.setAttribute('aria-pressed', String(s.debug));
-    sheetDebug.hidden = !s.on || !s.debug;
+    sheetDebug.hidden = !showDebug;
+    const dockOpen = showDebug && Boolean($('assistant-debug-dock') && !$('assistant-debug-dock').hidden);
+    sheetDebug.classList.toggle('is-open', dockOpen);
+    sheetDebug.setAttribute('aria-expanded', String(dockOpen));
+    sheetDebug.setAttribute('aria-label', dockOpen ? 'close debug' : 'debug trace');
   }
+  if(!showDebug)assistantCloseDebugDock();
+  const feedbackBtn = $('assistant-feedback');
+  if(feedbackBtn)feedbackBtn.hidden = !s.on || typeof feedbackFormConfigured !== 'function' || !feedbackFormConfigured();
   document.querySelectorAll('#assistant-provider-seg .seg-opt').forEach(btn => {
     btn.classList.toggle('on', btn.dataset.assistantProvider === s.provider);
   });
@@ -294,12 +304,11 @@ async function assistantOpenWithInstruction(text, opts){
   const opened = openAssistantSheet({skipWelcome:true, focused:Boolean(_assistantSession.focus)});
   if(opened === false)return false;
   if(!value){
-    // Item entry with no instruction yet: introduce the focus locally —
-    // no model call until the user types.
-    const intro = assistantSettings().provider === 'needle'
-      ? `Working on ${draft.name}. Tell me what to change. Several settings in one message are fine. Nothing is saved until you confirm.`
-      : `Working on ${draft.name}. Tell me what to do — change its schedule, log it, plan it, or ask a question.`;
-    appendAssistantBubble('say', intro);
+    // Item entry with no instruction yet: Needle opens on the Edit/New
+    // summary. Other providers keep a local intro. No model call until typing.
+    if(!assistantShowOpeningFocus()){
+      appendAssistantBubble('say', `Working on ${draft.name}. Tell me what to do — change its schedule, log it, plan it, or ask a question.`);
+    }
     const input = $('assistant-input');
     if(input)input.focus({preventScroll:true});
     setTimeout(() => {
@@ -397,9 +406,28 @@ function assistantFocusMetaText(draft){
   return rest && rest !== draft.name ? `${status} · ${rest}` : status;
 }
 
+function assistantNeedleFocusReview(){
+  return typeof assistantSettings === 'function'
+    && assistantSettings().provider === 'needle'
+    && _assistantSession
+    && _assistantSession.focus
+    && typeof assistantFocusAlive === 'function'
+    && assistantFocusAlive(_assistantSession.focus)
+    && typeof assistantFocusReviewHtml === 'function';
+}
+
 function syncAssistantFocusBar(){
   const bar = $('assistant-focus');
   if(!bar)return;
+  // The Edit/New summary already names the item. A second "working on" strip
+  // would repeat that name, so Needle keeps the bar hidden.
+  if(assistantNeedleFocusReview()){
+    bar.hidden = true;
+    bar.classList.remove('is-draft');
+    const done = $('assistant-focus-done');
+    if(done)done.hidden = true;
+    return;
+  }
   const draft = assistantFocusedDraft();
   if(!draft){
     bar.hidden = true;
@@ -491,13 +519,17 @@ function clearAssistantChat(){
   const thread = assistantThreadEl();
   if(thread){
     thread.replaceChildren();
-    const name = needleFocus && needleFocus.draft && needleFocus.draft.name;
-    if(name)appendAssistantBubble('say', `Working on ${name}. Tell me what to change. Several settings in one message are fine. Nothing is saved until you confirm.`);
-    else thread.innerHTML = assistantWelcomeHtml();
+    if(!assistantShowOpeningFocus()){
+      const name = needleFocus && needleFocus.draft && needleFocus.draft.name;
+      if(name)appendAssistantBubble('say', `Working on ${name}. Tell me what to change. Several settings in one message are fine. Nothing is saved until you confirm.`);
+      else thread.innerHTML = assistantWelcomeHtml();
+    }
   }
   assistantResizeComposer();
   assistantSyncSend();
   syncAssistantFocusBar();
+  assistantPresentDebug();
+  assistantRefreshFeedbackPanel();
 }
 
 function assistantThinkHtml(thinking){
@@ -510,16 +542,32 @@ function assistantDebugPayload(events){
   try{ return JSON.stringify(events || [], null, 2); }catch(_){ return '[]'; }
 }
 
+function assistantDebugMeta(events){
+  const list = Array.isArray(events) ? events : [];
+  if(!list.length)return 'nothing yet';
+  let done = null;
+  let steps = 0;
+  list.forEach(ev => {
+    if(!ev)return;
+    if(ev.t === 'done')done = ev;
+    else if(ev.t !== 'turn')steps += 1;
+  });
+  const ms = done && done.totalMs;
+  if(typeof ms === 'number' && ms >= 0)return ms >= 1000 ? `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)}s` : `${Math.round(ms)}ms`;
+  if(steps)return `${steps} ${steps === 1 ? 'step' : 'steps'}`;
+  return 'ready';
+}
+
 function assistantDebugHtml(events, extra){
   const text = extra && extra.debugText
     || (typeof assistantFormatDebug === 'function' ? assistantFormatDebug(events) : '');
   if(!text && !(events && events.length))return '';
   return `<details class="assistant-debug">
-    <summary>debug</summary>
+    <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>trace</span><span class="assistant-debug-meta">${escapeHtml(assistantDebugMeta(events))}</span></summary>
     <pre class="assistant-debug-log">${escapeHtml(text)}</pre>
     <textarea class="assistant-debug-json" hidden></textarea>
     <div class="assistant-debug-actions">
-      <button type="button" class="btn" data-assistant-copy-debug>copy json</button>
+      <button type="button" class="btn" data-assistant-copy-debug>copy</button>
     </div>
   </details>`;
 }
@@ -547,19 +595,220 @@ function assistantEnsureLiveDebug(){
     thread.querySelectorAll('.assistant-bubble-debug.is-live').forEach(node => node.classList.remove('is-live'));
     el = document.createElement('div');
     el.className = 'assistant-bubble assistant-bubble-debug is-live';
-    el.innerHTML = `<details class="assistant-debug"><summary>debug</summary><pre class="assistant-debug-log">starting…</pre></details>`;
+    el.innerHTML = `<details class="assistant-debug"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>trace</span></summary><pre class="assistant-debug-log">starting…</pre></details>`;
     thread.appendChild(el);
   }
   return el;
 }
 
 function assistantRenderLiveDebug(events){
-  if(!assistantDebugOn())return;
-  const el = assistantEnsureLiveDebug();
-  assistantFillDebugBubble(el, events, {
-    debugText:typeof assistantFormatDebug === 'function' ? assistantFormatDebug(events) : '',
-    debugJson:assistantDebugPayload(events)
+  if(assistantDebugOn()){
+    const el = assistantEnsureLiveDebug();
+    assistantFillDebugBubble(el, events, {
+      debugText:typeof assistantFormatDebug === 'function' ? assistantFormatDebug(events) : '',
+      debugJson:assistantDebugPayload(events)
+    });
+  }
+  const dock = $('assistant-debug-dock');
+  if(dock && !dock.hidden)assistantSyncDebugDock();
+}
+
+function assistantCurrentDebugEvents(){
+  const focus = _assistantSession && _assistantSession.focus;
+  if(focus && typeof assistantFeedbackFocusTrace === 'function'){
+    const events = assistantFeedbackFocusTrace(focus);
+    if(events.length)return events;
+  }
+  if(_assistantSession && Array.isArray(_assistantSession.debug) && _assistantSession.debug.length)return _assistantSession.debug;
+  return [];
+}
+
+function assistantNoteTitleTap(){
+  const now = Date.now();
+  _assistantTitleTaps = _assistantTitleTaps.filter(stamp => now - stamp < 700);
+  _assistantTitleTaps.push(now);
+  if(_assistantTitleTaps.length < 3)return;
+  _assistantTitleTaps = [];
+  _assistantDebugRevealed = true;
+  syncLocalAssistantControls();
+}
+
+function assistantDebugChrome(open){
+  const btn = $('assistant-debug-toggle');
+  if(!btn)return;
+  btn.classList.toggle('is-open', open);
+  btn.setAttribute('aria-expanded', String(open));
+  btn.setAttribute('aria-label', open ? 'close debug' : 'debug trace');
+}
+
+function assistantCloseDebugDock(){
+  const dock = $('assistant-debug-dock');
+  if(dock){
+    dock.hidden = true;
+    dock.classList.remove('is-compact');
+  }
+  const fold = $('assistant-debug-fold');
+  if(fold){
+    fold.setAttribute('aria-expanded', 'true');
+    fold.setAttribute('aria-label', 'compact trace');
+  }
+  assistantDebugChrome(false);
+}
+
+function assistantDebugKind(ev){
+  if(!ev)return '';
+  if(ev.t === 'turn')return 'you';
+  if(ev.t === 'tool')return ev.name || 'call';
+  if(ev.t === 'model')return 'note';
+  if(ev.t === 'result')return ev.name || 'result';
+  if(ev.t === 'error')return 'error';
+  if(ev.t === 'ask')return 'ask';
+  if(ev.t === 'done')return 'done';
+  return ev.t || 'trace';
+}
+
+function assistantDebugDetail(ev){
+  if(!ev)return '';
+  if(ev.t === 'turn')return ev.text || '';
+  if(ev.t === 'tool'){
+    const raw = ev.args && typeof ev.args === 'object' ? ev.args : null;
+    const inner = raw && raw.args && typeof raw.args === 'object' ? raw.args : raw;
+    if(!inner || typeof inner !== 'object')return typeof ev.args === 'string' ? ev.args : '';
+    return Object.entries(inner).filter(([, value]) => value != null && value !== '').map(([key, value]) => {
+      const shown = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      return `${key} ${shown}`;
+    }).join(' · ');
+  }
+  if(ev.t === 'model')return ev.thinking ? String(ev.thinking).replace(/\s+/g, ' ').trim() : '';
+  if(ev.t === 'result')return [ev.preview, ev.ok === false ? 'failed' : ''].filter(Boolean).join(' · ');
+  if(ev.t === 'error')return String(ev.error || '');
+  if(ev.t === 'ask')return ev.question || '';
+  if(ev.t === 'done'){
+    const ms = ev.totalMs;
+    const time = typeof ms === 'number' && ms >= 0 ? (ms >= 1000 ? `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)}s` : `${Math.round(ms)}ms`) : '';
+    return [ev.text, time].filter(Boolean).join(' · ');
+  }
+  return typeof assistantFormatDebugLine === 'function' ? assistantFormatDebugLine(ev) : '';
+}
+
+function assistantFillDebugLog(log, events){
+  if(!log)return;
+  log.replaceChildren();
+  const list = Array.isArray(events) ? events : [];
+  if(!list.length){
+    const empty = document.createElement('p');
+    empty.className = 'assistant-debug-empty';
+    empty.textContent = 'No trace yet. Send a message and this fills in.';
+    log.append(empty);
+    return;
+  }
+  list.forEach(ev => {
+    const detail = assistantDebugDetail(ev);
+    if(!detail && !(ev && ev.t === 'error'))return;
+    const row = document.createElement('div');
+    row.className = 'assistant-debug-row';
+    const kind = document.createElement('span');
+    kind.className = 'assistant-debug-kind';
+    kind.textContent = assistantDebugKind(ev);
+    const body = document.createElement('span');
+    body.className = 'assistant-debug-detail';
+    body.textContent = detail;
+    row.append(kind, body);
+    log.append(row);
   });
+  if(!log.childElementCount){
+    const empty = document.createElement('p');
+    empty.className = 'assistant-debug-empty';
+    empty.textContent = 'No trace yet. Send a message and this fills in.';
+    log.append(empty);
+  }
+}
+
+function assistantSyncDebugDock(opts){
+  const dock = $('assistant-debug-dock');
+  if(!dock)return;
+  const events = assistantCurrentDebugEvents();
+  assistantFillDebugLog(dock.querySelector('.assistant-debug-log'), events);
+  const hold = dock.querySelector('.assistant-debug-json');
+  if(hold)hold.value = assistantDebugPayload(events);
+  const meta = dock.querySelector('.assistant-debug-meta');
+  if(meta)meta.textContent = assistantDebugMeta(events);
+  if(opts && opts.open){
+    dock.hidden = false;
+    dock.classList.remove('is-compact');
+  }
+  const compact = !dock.hidden && dock.classList.contains('is-compact');
+  const fold = $('assistant-debug-fold');
+  if(fold){
+    fold.setAttribute('aria-expanded', String(!dock.hidden && !compact));
+    fold.setAttribute('aria-label', compact ? 'expand trace' : 'compact trace');
+  }
+  assistantDebugChrome(!dock.hidden);
+}
+
+function assistantToggleDebugDock(){
+  const dock = $('assistant-debug-dock');
+  if(!dock)return;
+  if(!dock.hidden){
+    assistantCloseDebugDock();
+    return;
+  }
+  assistantThreadEl()?.querySelectorAll('.assistant-bubble-debug.is-sheet').forEach(node => node.remove());
+  assistantSyncDebugDock({open:true});
+}
+
+function assistantToggleDebugCompact(){
+  const dock = $('assistant-debug-dock');
+  if(!dock || dock.hidden)return;
+  dock.classList.toggle('is-compact');
+  const compact = dock.classList.contains('is-compact');
+  const fold = $('assistant-debug-fold');
+  if(fold){
+    fold.setAttribute('aria-expanded', String(!compact));
+    fold.setAttribute('aria-label', compact ? 'expand trace' : 'compact trace');
+  }
+}
+
+// The sheet button opens one tray. A later tap, or the tray’s close control,
+// removes it. The tray bar only compacts the log.
+function assistantPresentDebug(opts){
+  const dock = $('assistant-debug-dock');
+  if(!dock)return;
+  if(dock.hidden && !(opts && opts.open))return;
+  assistantSyncDebugDock(opts);
+}
+
+function assistantFeedbackSheetBuilder(){
+  return typeof assistantFeedbackSheet === 'function' ? assistantFeedbackSheet : assistantFeedbackDetails;
+}
+
+function assistantRefreshFeedbackPanel(){
+  const panel = $('assistant-feedback-panel');
+  const build = assistantFeedbackSheetBuilder();
+  if(!panel || panel.hidden || typeof build !== 'function' || typeof assistantActiveFeedback !== 'function')return;
+  const diagnostics = panel.querySelector('details');
+  const wasOpen = Boolean(diagnostics && diagnostics.open);
+  const snap = assistantActiveFeedback();
+  panel.replaceChildren(build(snap.out, snap.context));
+  const details = panel.querySelector('details');
+  if(details)details.open = wasOpen;
+}
+
+function assistantToggleFeedbackPanel(){
+  const panel = $('assistant-feedback-panel');
+  const build = assistantFeedbackSheetBuilder();
+  if(!panel || typeof build !== 'function' || typeof assistantActiveFeedback !== 'function')return;
+  const btn = $('assistant-feedback');
+  if(!panel.hidden){
+    panel.hidden = true;
+    panel.replaceChildren();
+    if(btn)btn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  const snap = assistantActiveFeedback();
+  panel.replaceChildren(build(snap.out, snap.context));
+  panel.hidden = false;
+  if(btn)btn.setAttribute('aria-expanded', 'true');
 }
 
 async function assistantCopyText(text, okToast){
@@ -744,6 +993,7 @@ async function handleAssistantOutcome(out, feedbackContext){
   if(!out)return;
   await renderAssistantOutcome(out, feedbackContext);
   assistantAppendFeedback(out, feedbackContext);
+  assistantRefreshFeedbackPanel();
 }
 
 async function renderAssistantOutcome(out, feedbackContext){
@@ -876,13 +1126,14 @@ async function sendAssistantMessage(text, opts){
   }
   assistantShowBusy(true);
   if(assistantSettings().provider === 'needle' && !opts.needleAction){
-    assistantRetireFocusControls();
     const focus = _assistantSession && _assistantSession.focus;
     if(!focus || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(focus) || typeof assistantFocusTurn !== 'function'){
       appendAssistantBubble('say', 'Needle changes one item at a time. Use Add, Edit with AI on a card, or Change with AI in details.');
       assistantShowBusy(false);
       return;
     }
+    // Keep the one summary under the latest message. The turn repaints it.
+    assistantShowFocusReview(focus);
     try{
       const out = await assistantFocusTurn(focus, value, {
         onProgress:info => assistantNoteFocusProgress(focus, info, turn)
@@ -891,7 +1142,13 @@ async function sendAssistantMessage(text, opts){
       assistantShowFocusReview(focus);
     }catch(err){
       if(turn !== _assistantTurn || (err && err.name === 'AbortError'))return;
+      if(focus){
+        focus.trace = focus.trace || [];
+        focus.trace.push({family:'turn', error:String(err && (err.stack || err.message) || err)});
+      }
       appendAssistantBubble('say', err && err.message ? err.message : 'Needle could not read that.');
+      assistantPresentDebug();
+      assistantRefreshFeedbackPanel();
     }finally{
       if(turn === _assistantTurn)assistantShowBusy(false);
     }
@@ -1208,19 +1465,30 @@ function assistantNoteFocusProgress(session, info, turn){
   wait.textContent = step ? `reading ${step}` : 'reading…';
 }
 
+function assistantShowOpeningFocus(){
+  if(!assistantNeedleFocusReview())return false;
+  assistantShowFocusReview(_assistantSession.focus);
+  return true;
+}
+
 function assistantShowFocusReview(session, opts){
   if(!session || typeof assistantFocusReviewHtml !== 'function')return;
   assistantRetireFocusControls();
   const thread = assistantThreadEl();
-  const bubble = thread?.querySelector('[data-focus-live]') || document.createElement('div');
+  const bubble = thread?.querySelector('[data-focus-card]') || document.createElement('div');
   bubble.className = 'assistant-bubble assistant-bubble-say';
+  bubble.dataset.focusCard = 'true';
   bubble.innerHTML = assistantFocusReviewHtml(session);
   if(opts && opts.live){
     bubble.dataset.focusLive = 'true';
     bubble.querySelectorAll('button,input').forEach(control => {control.disabled = true;});
   }else delete bubble.dataset.focusLive;
-  if(!bubble.isConnected)thread?.append(bubble);
-  if(thread)thread.scrollTop = thread.scrollHeight;
+  if(thread){
+    thread.append(bubble);
+    if(!(opts && opts.live))assistantPresentDebug();
+    assistantRefreshFeedbackPanel();
+    thread.scrollTop = thread.scrollHeight;
+  }
 }
 
 async function assistantHandleFocusClick(target){
@@ -1300,9 +1568,14 @@ function bindAssistantUi(){
   $('open-assistant')?.addEventListener('click', openAssistantSheet);
   $('bar-open-assistant')?.addEventListener('click', openAssistantSheet);
   $('assistant-clear')?.addEventListener('click', clearAssistantChat);
-  $('assistant-debug-toggle')?.addEventListener('click', () => {
-    patchLocalAssistant({localAssistantDebug:!assistantDebugOn()});
+  $('assistant-title')?.addEventListener('click', assistantNoteTitleTap);
+  $('assistant-debug-toggle')?.addEventListener('click', assistantToggleDebugDock);
+  $('assistant-debug-fold')?.addEventListener('click', assistantToggleDebugCompact);
+  $('assistant-debug-close')?.addEventListener('click', assistantCloseDebugDock);
+  $('assistant-debug-copy')?.addEventListener('click', () => {
+    assistantCopyDebug($('assistant-debug-json')?.value || '');
   });
+  $('assistant-feedback')?.addEventListener('click', assistantToggleFeedbackPanel);
   $('assistant-focus-done')?.addEventListener('click', assistantClearFocus);
   $('assistant-close')?.addEventListener('click', closeAssistantSheet);
   $('assistant-sheet')?.addEventListener('click', e => {
@@ -1440,6 +1713,5 @@ document.addEventListener('click', event=>{
 });
 assistantResizeComposer();
 assistantSyncSend();
-syncAssistantChrome();
+syncLocalAssistantControls();
 if(assistantEnabled() && assistantSettings().provider === 'needle')void assistantNeedleCheckDownload();
-syncAssistantOriginHelp();

@@ -1243,6 +1243,13 @@ function assistantFocusVisibleOrigin(row){
   return 'kept';
 }
 
+// Create still saves add-form values and new-item defaults. The summary lists
+// only what this request set, matching an edit.
+function assistantFocusListedOrigin(session, origin){
+  if(session && session.operation === 'create')return origin === 'changed';
+  return origin !== 'form' && origin !== 'default';
+}
+
 function assistantFocusChangeChipText(row, session){
   const value = assistantFocusDiffText(row, session);
   if(!value || value === '—' || value === 'none' || value === 'not pinned' || value === 'off')return '';
@@ -1268,7 +1275,11 @@ function assistantFocusReviewBits(session, model){
   if(assistantFocusFieldApplies('durationMinutes', state)){
     const row = byId.get('durationMinutes');
     if(row && row.origin === 'needed')folded.add('durationMinutes');
-    else pushEssential('durationMinutes', row ? assistantFocusDiffText(row, session) : assistantFocusFormatValue('durationMinutes', after, session), row ? assistantFocusVisibleOrigin(row) : 'kept');
+    else{
+      const origin = row ? assistantFocusVisibleOrigin(row) : 'kept';
+      if(assistantFocusListedOrigin(session, origin))pushEssential('durationMinutes', row ? assistantFocusDiffText(row, session) : assistantFocusFormatValue('durationMinutes', after, session), origin);
+      else folded.add('durationMinutes');
+    }
   }
   const rhythmIds = ['timesPerPeriod', 'periodDays', 'repeatMode'];
   const rhythmRows = rhythmIds.map(id => byId.get(id)).filter(Boolean);
@@ -1286,7 +1297,7 @@ function assistantFocusReviewBits(session, model){
         : session.operation === 'create' ? 'default'
         : 'kept';
       if(text){
-        essentials.push({id:'rhythm', text, origin});
+        if(assistantFocusListedOrigin(session, origin))essentials.push({id:'rhythm', text, origin});
         rhythmIds.forEach(id => folded.add(id));
       }
     }
@@ -1295,19 +1306,23 @@ function assistantFocusReviewBits(session, model){
     const row = byId.get('dueDate');
     if(row && row.origin === 'needed')folded.add('dueDate');
     else if(row || after.dueDate){
-      pushEssential('dueDate', row ? assistantFocusDiffText(row, session) : assistantFocusFormatValue('dueDate', after, session), row ? assistantFocusVisibleOrigin(row) : 'kept');
+      const origin = row ? assistantFocusVisibleOrigin(row) : 'kept';
+      if(assistantFocusListedOrigin(session, origin))pushEssential('dueDate', row ? assistantFocusDiffText(row, session) : assistantFocusFormatValue('dueDate', after, session), origin);
+      else folded.add('dueDate');
     }
   }
   ['appointmentStartDate', 'appointmentStartMinute', 'appointmentRepeat'].forEach(id => {
     if(!assistantFocusFieldApplies(id, state))return;
     const row = byId.get(id);
     if(row && row.origin === 'needed'){folded.add(id);return;}
-    pushEssential(id, row ? assistantFocusDiffText(row, session) : assistantFocusFormatValue(id, after, session), row ? assistantFocusVisibleOrigin(row) : 'kept');
+    const origin = row ? assistantFocusVisibleOrigin(row) : 'kept';
+    if(assistantFocusListedOrigin(session, origin))pushEssential(id, row ? assistantFocusDiffText(row, session) : assistantFocusFormatValue(id, after, session), origin);
+    else folded.add(id);
   });
   const changes = [];
   model.rows.forEach(row => {
     if(folded.has(row.id))return;
-    if(row.origin !== 'extracted' && row.origin !== 'correction' && row.origin !== 'form')return;
+    if(row.origin !== 'extracted' && row.origin !== 'correction')return;
     // Staged custom rules get one dedicated chip below; a row here would only duplicate it.
     if(model.weatherProfile && (row.id === 'weatherProfile' || row.id === 'weatherRules'))return;
     const text = row.id === 'allowedWeekdays' || row.id === 'preferredWeekdays'
@@ -1316,7 +1331,7 @@ function assistantFocusReviewBits(session, model){
         ? assistantFocusWeatherSelectionText(row)
         : assistantFocusChangeChipText(row, session);
     if(!text)return;
-    changes.push({id:row.id, text, origin:row.origin === 'form' ? 'form' : 'changed'});
+    changes.push({id:row.id, text, origin:'changed'});
   });
   if(model.weatherProfile)changes.push(assistantFocusWeatherRulesChip(model.weatherProfile));
   return {essentials, changes};
@@ -1408,7 +1423,10 @@ function assistantFocusReviewHtml(session){
   const save = `<button type="button" class="btn primary" data-focus-save ${model.canSave ? '' : 'disabled'}>save</button>`;
   const editing = !session._focusInFlight && (session.operation === 'edit' || String(model.title || '').trim());
   const edit = `<button type="button" class="btn" data-focus-edit ${editing ? '' : 'disabled'}>edit</button>`;
-  const actions = session._focusInFlight ? '' : `<div class="btn-row">${save}${edit}</div>`;
+  // Save writes a staged change. Edit opens those staged changes. Neither
+  // applies to the summary shown before the user has asked for anything.
+  const readyForActions = !session._focusInFlight && (session.changes.length || session.unresolved.length);
+  const actions = readyForActions ? `<div class="btn-row">${save}${edit}</div>` : '';
   const scope = model.scope ? `<p class="focus-note">Scope: ${assistantFocusEscape(model.scope === 'occurrence' ? `this date ${model.occurrenceDate}` : 'all dates')}</p>` : '';
   return `<div class="focus-review" data-focus-review>
       <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>

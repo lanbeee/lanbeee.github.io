@@ -223,3 +223,17 @@ are `test-results/needle-field-coverage-live.json` and
 `test-results/needle-field-coverage-scripted.json`. `FIELD_CASE` selects case ids
 for diagnosis; omit it for the complete catalog run. Native reminder tests stub
 OS permissions and reconciliation only, never model responses or extraction.
+
+The field audit also includes numeric-language variants (`FIELD_CASE=language`):
+ordinal/count recurrence, week periods, spoken month dates, fractional lengths,
+unit conversion, correction and historical references. Its guards reject
+unsupported recurrence, conflicting quantities, negative lengths, invalid
+month days, unsupported units and lengths outside app limits. Use `FIELD_REPORT`
+to keep a separate JSON report for a selected live run. The complex field-job
+battery includes creation with ordinal and counted-week recurrence.
+Mixed-fraction cases cover session lengths, task edits, event occurrences,
+chunks, gaps, timer targets and automatic completion. They verify both “one and
+a half hour” and “an hour and a quarter,” numeric fractions, mixed units and
+fraction symbols. Conflicting, negative and out-of-range lengths must ask
+without changing the staged value. `FIELD_CASE='language-.*(fraction|quarter)|guard-durationMinutes'`
+selects these cases; omit the filter for all 106 positive cases and 25 guards.

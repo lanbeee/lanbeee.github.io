@@ -9,7 +9,7 @@ For the subsequent single-action implementation and its measured limits, see
 
 Read this only when the task is the Tings assistant. For planner, home, settings, and habit work, leave this file and every `js/assistant-*.js` file closed. `js/assistant-tools.js` is about 5,300 lines and is not on that path.
 
-When Needle is the provider, the only entry is one item. Add, Edit with AI on a card, and Change with AI in details open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The working-on bar names that item and has no Done control; clearing the chat keeps the same item. A session creates one habit, task, or local event, or edits the item the host already selected. Needle cannot switch items, add a second item, answer a general question, log a completion, or run a planner action. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
+When Needle is the provider, the only entry is one item. Add, Edit with AI on a card, and Change with AI in details open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The chat opens on that item's Edit or New summary, and the working-on bar stays hidden so the name is not listed twice. Clearing the chat keeps the same item and shows that summary again. A session creates one habit, task, or local event, or edits the item the host already selected. Needle cannot switch items, add a second item, answer a general question, log a completion, or run a planner action. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
 
 Focused saves apply the staged fields to the current saved item. A concurrent
 change to a field in the preview requires another review; unrelated edits and
@@ -37,10 +37,11 @@ and period together; windows retain their endpoints and modifiers.
 
 Create freezes its baseline when the session opens. Essential frequency and
 duration use the chosen Add form values first, then the kind's configured
-creation defaults (including the separate task profile). The review is a short summary in the chat: applicable essential fields,
-labeling form values and defaults, plus only the settings this request
-changed. Unmentioned settings stay as they are and are not listed. The note is
-the last line of the summary; Save and Edit sit under it. Omission
+creation defaults (including the separate task profile). The review is a short summary in the chat, on screen as soon as the item opens. It lists only the
+settings this request set, the same way an edit lists only what changed.
+Add-form values and new-item defaults stay on the draft and are not listed.
+The note is the last line of the summary. Save and Edit appear under it once a change is
+staged or a value still needs an answer. Omission
 may use a default; a requested value that fails extraction stays unresolved.
 Names still need user-supplied evidence, and events need an actual date/start
 time. Edit omission preserves the existing item, including its essentials.
@@ -72,6 +73,24 @@ date. Quantities keep their leading numbers and qualifiers. Coverage tracks an
 unaccounted original instruction rather than demanding every sibling in a
 guessed family. Invalid calendar dates and conflicting scalar values ask for
 clarification instead of rolling over or choosing the first number.
+
+Numeric evidence uses shared cardinal/ordinal readers and explicit unit tables.
+Needle still selects the field and exact original excerpt; no declined or failed
+model result is filled by a parser. Repetition intervals accept “every third
+day,” “each fourth day,” and counted week periods. Month-day lists accept spoken
+ordinals without treating interval ordinals as month dates. Fractions, hours,
+weeks and kilometers retain their units through validation. Unsupported units,
+ambiguous counts and lengths outside app limits ask rather than clamp. Source
+boundaries preserve compound numbers and signs. A model-selected but invalid
+value reports its validation question; omission still uses creation defaults.
+Incomplete automatic completion never silently switches to manual completion.
+Duration normalization consumes a complete mixed quantity before converting
+standalone fractions: “one and a half hour” is 90 minutes, and “an hour and a
+quarter” is 75. The shared conversion applies to sessions, chunks, gaps, timer
+targets and automatic completion; grounding cannot accept only the fractional
+tail of a larger quantity.
+Source boundaries retain fraction symbols such as “1½ hours” and “¾ hour”
+along with the complete quantity, so a later word such as “long” cannot remove it.
 
 On follow-up turns, each field receives a stable snapshot of its draft value
 and bounded, relevant earlier user excerpts. A reference may nominate earlier
@@ -144,6 +163,13 @@ Open the one file that owns the change. Grep the function and read that range.
 ## Feedback
 
 Failed replies offer **send feedback**; other replies offer **report a problem**.
+Ask Tings keeps **feedback** in the header. It opens a short card: the form
+link, a copy action, and collapsed diagnostics. It prefills the same form
+from the open Needle item: the typed requests, staged changes, and model
+trace. The saved item stays out of that report. **debug** stays hidden until
+the ask Tings title is tapped three times. That shows the header control,
+which opens a trace tray over the composer. Tap it again, or the tray’s close
+control, to dismiss the tray. The tray bar compacts the log in place.
 About → send feedback uses the same form. Both open it with answers already
 filled where this device can tell: how long Tings has been in use
 (`entry.457400724`) and which planning kinds are in use (`entry.593100343`,

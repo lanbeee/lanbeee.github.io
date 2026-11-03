@@ -158,8 +158,38 @@ variables the same file uses scripted adapters to test host behavior; those
 results are not model-accuracy measurements. `FIELD_CASE` filters case ids for
 diagnosis; omit it for the full audit.
 
+## Numeric-language follow-up
+
+The reported edit “I want to do this every third day” exposed a normalization
+gap: Needle selected the correct literal frequency, but the host accepted only
+cardinal intervals. Shared readers now validate cardinal and ordinal numbers,
+coupled count/period values and explicit units. No field gets a value when its
+model extraction declines or fails. Source boundaries preserve compound counts,
+fractional lengths and numeric signs; a session length cannot borrow a chunk,
+gap, timer or reminder value.
+
+The extended field corpus declares expectations for ordinal/day/week recurrence,
+spoken month dates, durations, chunks, gaps, timers, automatic completion,
+early/delay allowances, radius and reminder leads. It includes correction and
+historical frequency references. Negative or conflicting values, unsupported
+units/recurrence, invalid month days and lengths outside app limits remain
+questions. A selected but invalid excerpt reports its validation reason instead
+of a generic extraction failure. An incomplete automatic-completion instruction
+cannot silently clear the setting to manual.
+
+Before changes, a live four-case reproduction failed the exact reported edit,
+spoken month days, week-based delay and an hour-based reminder lead. In
+particular, the old week-based delay proposed 2 days for “two weeks.” The new
+unit tables validate the converted value against the field's actual limits.
+
 ## Recorded results
 
+- The November 2 live Needle rerun passed all five supported test files. The
+  field audit passed 92 positive language cases and 22 guards, covering all 66
+  registered fields; the complex battery includes 16 create/edit cases. The
+  Add-screen test exercised three concurrent workers and worker recovery. The
+  assets and inference were real; Android notification delivery and physical
+  device performance were not tested.
 - The field audit passed **75 live Needle cases**: 69 positive cases, including
   date clarification/recovery and historical references, plus six guards for
   invalid dates, ambiguous week ranges, conflicting quantities, negative radius
@@ -180,6 +210,25 @@ diagnosis; omit it for the full audit.
 - Earlier UI/runtime measurements include actual Add-sheet interactions,
   three-lane inference overlap and terminated-worker recovery. Those earlier
   measurements are distinct from this field audit.
+
+## Fractional-duration regression, November 3, 2026
+
+Live Needle returned “one and a half hour long” correctly, but the shared
+normalizer converted its inner “a half hour” first and staged 30 minutes.
+Complete quantities now normalize before standalone fractions. The same reader
+handles mixed fractions before or after their unit across sessions, chunks,
+gaps, timer targets and automatic completion. Evidence boundaries also retain
+fraction symbols and their leading whole numbers.
+
+The scoped recheck passed all **17 assistant files / 1,375 assertions**, with
+all five live Needle test sections enabled and no page errors. The field audit
+passed **106 positive cases and 25 guards**, including the exact reported
+request, task and event-occurrence edits, and rejected negative, conflicting
+and oversized lengths. All **17 complex live create/edit cases** passed,
+including simultaneous fractional session, chunk and gap lengths. The related
+swipe-shortcuts, detail-edit-flow and detail-search-navigation UI tests passed.
+Optional live Qwen checks were disabled; these results use the pinned Needle
+WASM in desktop Chrome with synthetic data.
 
 ## Limits
 

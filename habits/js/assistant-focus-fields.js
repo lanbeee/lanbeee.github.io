@@ -20,7 +20,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   emoji:/\p{Extended_Pictographic}|\b(?:emoji|icon)\b/iu,
   emojiBgColor:/\b(?:colou?r|red|blue|green|purple|orange|yellow|pink)\b|\b(?:set|change|use) (?:the |a )?background\b/i,
   priority:/\b(?:priority|p[0-5]|urgent|critical|someday)\b/i,
-  frequency:/\b(?:every|each (?:day|week)|daily|weekly|once|twice|thrice|\w+ times? (?:a|per|in)|\d+ times?)\b/i,
+  frequency:new RegExp(`\\b(?:frequency|rhythm|how often|every|each(?=\\s+(?:(?:${assistantIntegerSource()}|${assistantOrdinalSource()}|other)\\s+)?(?:days?|weeks?)\\b)|daily|weekly|once|twice|thrice|(?:${assistantIntegerSource()})\\s*(?:x|times?))\\b`,'i'),
   repeatMode:/\b(?:opportunity|routine|when (?:it fits|conditions)|regular rhythm)\b/i,
   conditionTrigger:/\b(?:trigger|nearby|proximity)\b/i,
   conditionRadiusM:/\b(?:radius|\d+\s*(?:meters?|metres?))\b/i,
@@ -28,19 +28,19 @@ const ASSISTANT_FIELD_SIGNALS = {
   dueTime:/\b(?:at|start(?:ing)?(?: at)?|by)\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2}|noon|midnight)\b/i,
   hardDue:/\b(?:hard|strict|firm|must finish|no delay)\b/i,
   planByDate:/\b(?:do|finish|plan)(?: (?:this|it))? by\b/i,
-  earlyWindowDays:/\b(?:early (?:window|allowance)|\w+ days? (?:early|earlier|in advance)|(?:early|earlier|in advance)(?: by)? \w+ days?)\b/i,
+  earlyWindowDays:/\b(?:early|in advance)\b|\b(?:days?|weeks?) earlier\b/i,
   delayAllowanceDays:/\b(?:late|delay|postpone)\b/i,
   allowedWeekdays:/\b(?:weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|any day)\b/i,
   preferredWeekdays:/\bprefer\w*\b.{0,35}\b(?:weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
-  allowedMonthDays:/\b(?:month days?|days? of (?:the )?month|\d+(?:st|nd|rd|th))\b/i,
-  preferredMonthDays:/\bprefer\w*\b.{0,35}\b(?:month|\d+(?:st|nd|rd|th))\b/i,
+  allowedMonthDays:/\bmonth(?:ly)?\b/i,
+  preferredMonthDays:/\bprefer\w*\b[^,;]*\bmonth(?:ly)?\b/i,
   allowedWindow:/\b(?:(?:before|after|between|from)\s+(?:\d[\d:]*(?:\s*[ap]m)?|sunrise|sunset|noon|midnight|fajr|dhuhr|zuhr|asr|maghrib|isha)|morning|evening|overnight|any time|clear (?:the )?(?:hours|window))\b/i,
   preferredWindow:/\bprefer\w*\b.{0,40}\b(?:hours?|morning|evening|before|after|between|from)\b/i,
   allowedTimeFixedStart:/\b(?:fixed|exact)(?: start| time)?\b/i,
-  durationMinutes:/\b(?:(?:for\s+)?(?:\d+(?:\.\d+)?|half an?|one(?: and a half)?|two|three|four|five|ten|fifteen|twenty|thirty|forty five|sixty)\s*(?:minutes?|mins?|hours?)|duration|long|twice as long)\b/i,
+  durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|duration|long|twice as long)\\b`,'i'),
   breakable:/\b(?:split(?:ting)?|breakable|unbreakable|continuous|uninterrupted|chunks?)\b/i,
   minChunkMinutes:/\b(?:minimum chunk|shortest session|chunks? (?:of|at least)|\d+[- ]minute chunks?)\b/i,
-  minGapMinutes:/\b(?:(?:\d+|one|two|five|ten|fifteen|twenty|thirty)\s*[- ]?minutes?\s+gap|gap|apart|between sessions|spacing)\b/i,
+  minGapMinutes:new RegExp(`(?<!\\w)(?:(?:${assistantSpokenQuantitySource()})\\s+gap|gap|apart|between sessions|spacing)\\b`,'i'),
   timerAutoStopMinutes:/\b(?:timer|auto stop|stop timer)\b/i,
   autoMarkMinutes:/\b(?:auto.?mark|automatic completion|automatically (?:complete|mark)|manual completion)\b/i,
   trackValue:/\b(?:track|log)\b.{0,20}\b(?:value|weight|note|measurement)\b/i,
@@ -76,6 +76,11 @@ const ASSISTANT_FIELD_SIGNALS = {
 const ASSISTANT_FIELD_HINTS = {
   name:'Item title only. Exclude create verbs, dates, frequency and other settings.',
   frequency:'Complete repetition phrase, including count and period. Exclude session length.',
+  allowedMonthDays:'Days of the month, including spelled-out ordinal dates. Exclude repetition intervals.',
+  preferredMonthDays:'Preferred days of the month, including spelled-out ordinal dates.',
+  reminderTravelLead:'How long before departure to remind, including the number or fraction and its time unit.',
+  reminderStartLead:'How long before the event start to remind, including the number or fraction and its time unit.',
+  reminderMissedLead:'Missed warning lead time, including the number or fraction and its time unit.',
   durationMinutes:'Length of one session. Exclude frequency, chunk length, gap and timer.',
   allowedWindow:'Required allowed hours, preserving before/after, anchors and offsets. Exclude preferences.',
   preferredWindow:'Preferred hours, not a required restriction.',
@@ -151,9 +156,11 @@ function assistantFieldSpans(request){
 // Shared instruction ownership. Apply these policies to candidate retrieval,
 // source boundaries, model evidence and coverage alike. They never supply values.
 const ASSISTANT_FIELD_OWNERSHIP = [
+  {fields:['frequency'], when:/\bmonth(?:ly)?\b/i},
+  {fields:['allowedWeekdays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i')},
   {fields:['allowedWeekdays','allowedWindow','allowedMonthDays'], when:/\bprefer/i},
   {fields:['allowedWindow'], when:/\b(?:rename|named?|called?)\b.*\b(?:morning|evening)\b/i, unless:/\b(?:before|after|between|from|only|in the)\b/i},
-  {fields:['allowedWindow'], when:/\b(?:before|after)\s+\d+(?:\.\d+)?\s*(?:minutes?|hours?|days?)\b/i},
+  {fields:['allowedWindow'], when:new RegExp(`\\b(?:before|after)\\s+(?:${assistantDurationNumberSource()})(?:\\s+(?:or|and)\\s+(?:${assistantDurationNumberSource()}))*\\s*(?:minutes?|mins?|hours?|days?|weeks?)\\b`,'i')},
   {fields:['habitKind'], when:/\bstop (?:the )?timer\b/i},
   {fields:['dueDate'], when:/\b(?:hard|strict|firm) deadline\b/i, unless:/\d|today|tomorrow|next\b/i},
   {fields:['appointmentRepeat'], require:/\b(?:weekly|once|every week|one.?off)\b/i},
@@ -169,6 +176,7 @@ const ASSISTANT_FIELD_OWNERSHIP = [
 ];
 const ASSISTANT_FIELD_READERS = {
   name:{retainPrefix:true}, conditionRadiusM:{retainPrefix:true},
+  allowedMonthDays:{retainPrefix:true}, preferredMonthDays:{retainPrefix:true},
   earlyWindowDays:{retainPrefix:true}, delayAllowanceDays:{retainPrefix:true},
   timerAutoStopMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes','autoMarkMinutes']},
   autoMarkMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
@@ -219,8 +227,16 @@ function assistantFieldSource(def, request, spans){
     const reader=ASSISTANT_FIELD_READERS[def.id]||{};
     const whole=reader.retainPrefix;
     let start=whole?0:own.index, end=span.text.length;
+    const sign=span.text.slice(0,start).match(/[-+−]\s*$/);
+    if(sign)start-=sign[0].length;
     const named=def.id==='name' && /\b(?:called|named)\s+|\brename(?: it)?(?: to)?\s+/i.exec(span.text);
     if(named)start=named.index+named[0].length;
+    // A leading length belongs to the session, while the title follows it.
+    // Keep the remaining original words available to the name extractor.
+    if(def.id==='name' && !named){
+      const length=ASSISTANT_FIELD_SIGNALS.durationMinutes.exec(span.text);
+      if(length && /^(?:please\s+)?(?:add|create|make)\s+(?:a|an)\s*$/i.test(span.text.slice(0,length.index)))start=length.index+length[0].length;
+    }
     if(/\b(?:no|not|never|don.t|without|prefer|avoid|keep|unchanged)\b/i.test(span.text.slice(0,start)))start=0;
     // Retrieval boundaries, not values: keep the untouched source between
     // setting cues. Coupled lengths (chunks/gaps/timers) keep their units.
@@ -371,15 +387,18 @@ function assistantFieldHistory(state,row){
 }
 
 const ASSISTANT_FIELD_QUANTITIES = {
-  conditionRadiusM:{min:1,max:100000},earlyWindowDays:{min:0,max:60},delayAllowanceDays:{min:0,max:60},
-  reminderTravelLead:{min:0,max:60},reminderStartLead:{min:0,max:60},reminderMissedLead:{min:0,max:60}
+  conditionRadiusM:{min:1,max:100000,label:'meters',units:{meter:1,meters:1,metre:1,metres:1,m:1,kilometer:1000,kilometers:1000,kilometre:1000,kilometres:1000,km:1000}},
+  earlyWindowDays:{min:0,max:60,label:'days',units:{day:1,days:1,week:7,weeks:7}},
+  delayAllowanceDays:{min:0,max:60,label:'days',units:{day:1,days:1,week:7,weeks:7}},
+  reminderTravelLead:{min:0,max:60,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60}},
+  reminderStartLead:{min:0,max:60,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60}},
+  reminderMissedLead:{min:0,max:60,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60}}
 };
 
 function assistantFieldQuantity(def, text){
   const limits=ASSISTANT_FIELD_QUANTITIES[def.id];
-  const matches=text.match(new RegExp(`\\b(?:zero|${assistantDurationNumberSource()})\\b`,'gi'))||[];
-  const value=matches.length===1 ? (matches[0].toLowerCase()==='zero'?0:assistantParseNumberPhrase(matches[0])) : null;
-  if(/\b(?:not|never|don.t|without|or)\b|(?:^|\s)-\s*\d/i.test(text) || !Number.isInteger(value) || value<limits.min || value>limits.max)return {ok:false,error:`Specify one value for ${def.label.toLowerCase()}, from ${limits.min} to ${limits.max}.`};
+  const value=assistantParseQuantity(text,limits.units,limits.min,limits.max);
+  if(/\b(?:not|never|don.t|without|or)\b/i.test(text) || value==null)return {ok:false,error:`Specify one value for ${def.label.toLowerCase()}, from ${limits.min} to ${limits.max} ${limits.label}.`};
   return {ok:true,value:String(value)};
 }
 
@@ -425,13 +444,18 @@ function assistantFieldNormalize(def,text,session){
     value=quantity.value;
   }
   if(!String(value).trim())return {ok:false,error:`What value should I use for ${def.label.toLowerCase()}?`};
-  if(['minChunkMinutes','minGapMinutes','durationMinutes','timerAutoStopMinutes'].includes(def.id)){
+  const lengthField=['minChunkMinutes','minGapMinutes','durationMinutes','exceptionDuration','timerAutoStopMinutes','autoMarkMinutes'].includes(def.id);
+  if(lengthField){
+    if(/(?:^|[^\w])[-+−]\s*(?:\d|[a-z])|\b(?:minus|negative|or)\b/i.test(value))return {ok:false,error:'Specify one non-negative length, including its unit.'};
     const normalized=assistantNormalizeDurationText(value),hits=assistantDurationHitsFromNormalized(normalized);
     const joined=hits.length===2 && hits[0].unit==='h' && hits[1].unit==='m'
       && /^[\s,]*(?:and[\s,]*)?$/.test(normalized.slice(hits[0].end,hits[1].index));
     if(hits.length>1&&!joined)return {ok:false,error:'There is more than one length in that instruction.'};
   }
   const parsed=assistantFocusNormalize(def.id,value,session);
+  const length=lengthField?assistantParseDuration(value):null;
+  if(def.id==='autoMarkMinutes'&&parsed.ok&&parsed.op==='clear'&&!/\b(?:manual|off|none|clear|disable)\b/i.test(value))return {ok:false,error:'Specify a completion length, or choose manual completion.'};
+  if(length!=null&&parsed.ok&&parsed.op==='set'&&parsed.value!==length)return {ok:false,error:`That length is outside the supported range for ${def.label.toLowerCase()}.`};
   return parsed.ok ? {ok:true,changes:[{field:def.id,...parsed}]} : parsed;
 }
 
@@ -488,6 +512,7 @@ async function assistantFieldExtract(state,row,extract){
   if(history.ambiguous)return {status:'needs_input',error:`Which earlier value for ${def.label.toLowerCase()} should I use? Please repeat it or specify the first or last value.`};
   const choices=invalid.find(result=>result.choices?.length);
   if(choices)return {status:'needs_input',error:choices.error,choices:choices.choices};
+  if(row.required&&invalid.length)return {status:'needs_input',error:invalid[0].error};
   return {status:row.required&&!preserved?'needs_input':'not_mentioned',preserved,error:`Please specify ${def.label.toLowerCase()}; I couldn’t extract it reliably.`};
 }
 

@@ -83,10 +83,120 @@ function assistantFeedbackPrefill(report, known, expectation){
   return {url:setReport(report.slice(0,Math.ceil(low/2)) + marker + report.slice(-Math.floor(low/2) || report.length)),truncated:true};
 }
 
-function assistantAppendFeedback(out, context){
-  if(!feedbackFormConfigured() || out.text === 'Cancelled.')return;
-  const bubble = assistantThreadEl()?.lastElementChild;
-  if(!bubble || bubble.querySelector('.assistant-feedback'))return;
+function assistantFeedbackClip(value){
+  if(typeof assistantTraceClip === 'function')return assistantTraceClip(value, 500);
+  if(value == null)return value;
+  const text = typeof value === 'string' ? value : (()=>{ try{ return JSON.stringify(value); }catch(_){ return String(value); } })();
+  return text.length <= 500 ? value : `${text.slice(0, 500)}…`;
+}
+
+// The saved item stays out of the report. Needle's trace, the typed requests,
+// and the staged edits are the turn the person can choose to send.
+function assistantFeedbackFocusTrace(focus){
+  if(!focus)return [];
+  const events = [];
+  const requests = Array.isArray(focus.requests) && focus.requests.length
+    ? focus.requests.filter(row => typeof row === 'string' && row.trim())
+    : [];
+  const request = focus.originalRequest || focus.requestText || requests.join('\n');
+  if(request)events.push({t:'turn', text:request, focus:focus.operation || '', entry:focus.entry || ''});
+  (focus.trace || []).forEach(row => {
+    if(!row)return;
+    const problem = row.error || row.issue || '';
+    events.push({
+      t:'tool',
+      name:row.family || row.jobId || 'focus',
+      step:row.jobId || row.family || '',
+      args:assistantFeedbackClip({
+        context:row.context || '',
+        args:row.args,
+        confidence:row.confidence,
+        calls:row.calls,
+        suppressed:row.suppressed,
+        issue:row.issue || '',
+        recoveredBudget:row.recoveredBudget,
+        workerLane:row.workerLane
+      })
+    });
+    if(problem)events.push({t:'error', step:row.family || 'focus', error:assistantFeedbackClip(problem)});
+    const thought = row.reasoning || row.content || '';
+    if(thought)events.push({
+      t:'model',
+      step:row.family || 'focus',
+      tools:(row.calls || []).map(name => ({name})),
+      thinking:assistantFeedbackClip(thought)
+    });
+  });
+  (focus.changes || []).forEach(change => {
+    if(!change)return;
+    events.push({
+      t:'result',
+      name:change.field || 'change',
+      ok:!change.uncertain,
+      preview:[change.op || 'set', assistantFeedbackClip(change.value)].filter(part => part != null && part !== '').join(' ')
+    });
+  });
+  (focus.unresolved || []).forEach((item, index) => {
+    if(item && item.question)events.push({t:'ask', n:index + 1, question:item.question, required:true});
+  });
+  if(!events.length && !focus.continuationError)return [];
+  events.push({
+    t:'done',
+    type:'focus',
+    text:focus.continuationError || '',
+    totalMs:focus.timing && focus.timing.total,
+    llmCalls:Array.isArray(focus.timing && focus.timing.passes) ? focus.timing.passes.length : (focus.trace || []).length
+  });
+  return events;
+}
+
+function assistantFocusFeedbackSummary(focus){
+  if(!focus)return '';
+  if(focus.continuationError)return focus.continuationError;
+  const pending = (focus.unresolved || []).map(item => item && item.question).filter(Boolean);
+  if(pending.length)return pending.join(' ');
+  const fields = (focus.changes || []).map(change => change && change.field).filter(Boolean);
+  if(fields.length)return `Staged ${fields.join(', ')}. Nothing is saved until you confirm.`;
+  return 'No change was staged.';
+}
+
+function assistantFeedbackFromFocus(focus){
+  const requests = Array.isArray(focus && focus.requests) ? focus.requests.filter(row => typeof row === 'string') : [];
+  const request = focus && (focus.originalRequest || focus.requestText) || requests.join('\n');
+  const debug = assistantFeedbackFocusTrace(focus);
+  const failed = Boolean(focus && (focus.continuationError || (focus.trace || []).some(row => row && row.error)));
+  return {
+    out:{
+      type:failed ? 'error' : 'focus',
+      text:assistantFocusFeedbackSummary(focus),
+      partial:Boolean(focus && (focus.continuationError || (focus.unresolved || []).length)),
+      gaveUp:false,
+      debug,
+      session:{
+        debug,
+        requestText:request,
+        entry:focus && focus.entry || null,
+        llmCalls:Array.isArray(focus && focus.timing && focus.timing.passes) ? focus.timing.passes.length : (focus && focus.trace || []).length,
+        repairs:0,
+        contextUsed:0,
+        contextLimit:0
+      }
+    },
+    context:{request, entry:focus && focus.entry || null}
+  };
+}
+
+function assistantActiveFeedback(){
+  const session = typeof _assistantSession !== 'undefined' ? _assistantSession : null;
+  if(session && session.focus)return assistantFeedbackFromFocus(session.focus);
+  const request = session && (session.needleWorkflow && session.needleWorkflow.request || session.requestText) || '';
+  return {
+    out:{type:'say', text:'', session:session || {debug:[]}},
+    context:{request, entry:session && session.entry || null}
+  };
+}
+
+function assistantFeedbackDetails(out, context){
   // Snapshot now: an old failure must keep its own request and trace after retry.
   const report = assistantFeedbackReport(out, context);
   const known = typeof feedbackKnownAnswers === 'function' ? feedbackKnownAnswers() : [];
@@ -128,5 +238,71 @@ function assistantAppendFeedback(out, context){
     details.append(note);
   }
   details.append(actions);
-  bubble.append(details);
+  return details;
+}
+
+// The composer control opens a short card. Diagnostics stay folded until asked.
+function assistantFeedbackSheet(out, context){
+  const report = assistantFeedbackReport(out, context);
+  const known = typeof feedbackKnownAnswers === 'function' ? feedbackKnownAnswers() : [];
+  const expectation = assistantFeedbackExpectation(out);
+  const prefill = assistantFeedbackPrefill(report, known, expectation);
+  const card = document.createElement('div');
+  card.className = 'assistant-feedback-card';
+  const head = document.createElement('div');
+  head.className = 'assistant-feedback-card-head';
+  const title = document.createElement('span');
+  title.textContent = out && (out.type === 'error' || out.gaveUp) ? 'Send feedback' : 'Report a problem';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'assistant-feedback-dismiss';
+  close.setAttribute('aria-label', 'close feedback');
+  close.innerHTML = '<i class="ti ti-x" aria-hidden="true"></i>';
+  close.addEventListener('click', () => {
+    if(typeof assistantToggleFeedbackPanel === 'function')assistantToggleFeedbackPanel();
+  });
+  head.append(title, close);
+  const lead = document.createElement('p');
+  lead.className = 'assistant-feedback-lead';
+  lead.textContent = 'Opens the form with this turn filled in. Change anything before you send.';
+  const filledText = typeof feedbackKnownSummary === 'function' ? feedbackKnownSummary(known) : '';
+  const filled = document.createElement('p');
+  filled.className = 'assistant-feedback-known';
+  if(filledText)filled.textContent = filledText;
+  const actions = document.createElement('div');
+  actions.className = 'assistant-feedback-actions';
+  const link = document.createElement('a');
+  link.className = 'btn primary';
+  link.textContent = 'open feedback form';
+  link.href = prefill.url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'btn';
+  copy.textContent = 'copy';
+  copy.addEventListener('click', () => void assistantCopyText(report, 'diagnostics copied'));
+  actions.append(link, copy);
+  const preview = document.createElement('details');
+  preview.className = 'assistant-feedback-diagnostics';
+  const label = document.createElement('summary');
+  label.textContent = 'diagnostics';
+  const log = document.createElement('pre');
+  log.textContent = report;
+  preview.append(label, log);
+  card.append(head, lead, ...(filledText ? [filled] : []), actions, preview);
+  if(prefill.truncated){
+    const note = document.createElement('p');
+    note.className = 'assistant-feedback-note';
+    note.textContent = 'This report is too long for a form link. Copy diagnostics and paste them into the form.';
+    card.append(note);
+  }
+  return card;
+}
+
+function assistantAppendFeedback(out, context){
+  if(!feedbackFormConfigured() || !out || out.text === 'Cancelled.')return;
+  const bubble = assistantThreadEl()?.lastElementChild;
+  if(!bubble || bubble.querySelector('.assistant-feedback'))return;
+  bubble.append(assistantFeedbackDetails(out, context));
 }

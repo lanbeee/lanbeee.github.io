@@ -50,14 +50,18 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     }
     const actions = (hid,side)=>row(hid).locator(`.swipe-actions-${side} .swipe-action`)
       .evaluateAll(buttons=>buttons.map(b=>b.dataset.action));
+    const visibleActions = (hid,side)=>row(hid).locator(`.swipe-actions-${side} .swipe-action`)
+      .evaluateAll(buttons=>buttons.filter(b=>!b.closest('[hidden]')).map(b=>b.dataset.action));
     async function activate(hid,dir,action){
       await swipe(hid,dir);
       if(action === 'assistant')await page.screenshot({path:'test-results/swipe-assistant.png'});
       await row(hid).locator(`.swipe-action[data-action="${action}"]`).click();
     }
     assert.deepEqual(await actions('swipe-main','left'),['timer','plan','activity','open-link']);
+    assert.equal(await row('swipe-main').locator('[data-action="swipe-more"]').count(),0,'four actions stay in the tray');
     assert.deepEqual(await actions('swipe-main','right'),['snooze','pin','nuke']);
-    assert.deepEqual(await actions('swipe-sample','left'),['timer','plan','activity','open-link','keep']);
+    assert.deepEqual(await actions('swipe-sample','left'),['timer','plan','activity','open-link','keep','swipe-more']);
+    assert.deepEqual(await visibleActions('swipe-sample','left'),['timer','plan','activity','swipe-more'],'five actions keep three plus More');
     assert.deepEqual(await actions('swipe-zero','left'),['activity']);
     assert.equal(await page.locator('.swipe-action[data-action="log"],.swipe-action[data-action="edit"],.swipe-action[data-action="share"]').count(),0);
     assert.equal(await row('swipe-main').locator('.swipe-actions').evaluateAll(p=>p.every(a=>a.inert)),true);
@@ -71,7 +75,7 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     });
     await activate('swipe-main',1,'open-link');
     assert.equal(await page.evaluate(()=>launchedLinks[0].value),'https://example.com/primary');
-    assert.equal(await row('swipe-sample').locator('[data-action="open-link"]').innerText(),'call');
+    assert.equal(await row('swipe-sample').locator('[data-action="open-link"]').evaluate(el=>el.textContent.trim()),'call');
     await page.evaluate(()=>{openHabitLink=savedOpenHabitLink;});
 
     const logsBefore = await page.evaluate(()=>load()[0].logs);
@@ -150,13 +154,38 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     assert.deepEqual(await page.evaluate(()=>load()[0].logs),logsBefore,'Quiet does not complete the item');
     assert.equal(await row('swipe-main').locator('[data-action="reminders-off"]').count(),0);
 
+    await swipe('swipe-sample',1);
+    assert.equal(await row('swipe-sample').locator('.swipe-actions-left [data-action="keep"]').isHidden(),true,'overflow actions stay concealed');
+    assert.equal(await row('swipe-sample').locator('.swipe-actions-left [data-action="timer"]').isHidden(),false);
+    const shiftBefore = await row('swipe-sample').evaluate(r=>r.querySelector('.ting-card').style.transform);
+    const moreBefore = await row('swipe-sample').locator('.swipe-actions-left [data-action="swipe-more"]').boundingBox();
+    await row('swipe-sample').locator('.swipe-actions-left [data-action="swipe-more"]').click();
+    assert.equal(await row('swipe-sample').getAttribute('data-swipe-open'),'1','More keeps the tray open');
+    assert.equal(await row('swipe-sample').evaluate(r=>r.querySelector('.ting-card').style.transform),shiftBefore,'More does not shove the card');
+    assert.equal(await row('swipe-sample').locator('.swipe-actions-left [data-action="swipe-more"]').getAttribute('aria-label'),'back');
+    assert.deepEqual(await visibleActions('swipe-sample','left'),['open-link','keep','swipe-more']);
+    await page.waitForTimeout(260);
+    const moreAfter = await row('swipe-sample').locator('.swipe-actions-left [data-action="swipe-more"]').boundingBox();
+    const revealed = await row('swipe-sample').locator('.swipe-actions-left [data-action="open-link"]').boundingBox();
+    const kept = await row('swipe-sample').locator('.swipe-actions-left [data-action="keep"]').boundingBox();
+    assert(Math.abs(moreBefore.x-moreAfter.x)<2 && Math.abs(moreBefore.y-moreAfter.y)<2,'Back stays in the More slot');
+    assert.equal(await row('swipe-sample').locator('.swipe-actions-left [data-action="open-link"]').innerText(),'call');
+    assert(revealed.width===68 && kept.width===68,'overflow actions keep the tap width');
+    assert(revealed.x<kept.x && kept.x+kept.width<=moreAfter.x+1,'the other two sit in the outer slots');
+    await page.screenshot({path:'test-results/swipe-more.png'});
+    await row('swipe-sample').locator('.swipe-actions-left [data-action="swipe-more"]').click();
+    assert.deepEqual(await visibleActions('swipe-sample','left'),['timer','plan','activity','swipe-more'],'Back returns to the first actions');
+    assert.equal(await row('swipe-sample').locator('.swipe-actions-left [data-action="swipe-more"]').getAttribute('aria-label'),'more');
+    await page.evaluate(()=>closeAllSwipes());
+
     await page.setViewportSize({width:280,height:844});
     await swipe('swipe-sample',1);
     const strip = row('swipe-sample').locator('.swipe-actions-left .swipe-action-strip');
     const geometry = await row('swipe-sample').evaluate(r=>({width:r.clientWidth,
       translation:parseFloat(r.querySelector('.ting-card').style.transform.match(/[-\d.]+/)[0]),
-      buttons:[...r.querySelectorAll('.swipe-actions-left button')].map(b=>b.getBoundingClientRect().width)}));
+      buttons:[...r.querySelectorAll('.swipe-actions-left button')].filter(b=>!b.closest('[hidden]')).map(b=>b.getBoundingClientRect().width)}));
     assert(geometry.translation<=geometry.width-24,'card retains its visible edge');
+    assert.equal(geometry.buttons.length,4,'narrow cards still cap the tray at four');
     assert(geometry.buttons.every(width=>width===68),'buttons retain their tap width');
     const box = await strip.boundingBox();
     await drag(box.x+box.width-20,box.y+box.height/2,-140);
@@ -164,6 +193,8 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     assert.equal(await row('swipe-sample').getAttribute('data-swipe-open'),'1','strip pan keeps the panel open');
     assert.equal(await page.evaluate(()=>load()[1].sample),true,'scrolling does not Keep the sample');
     await page.waitForTimeout(550);
+    await row('swipe-sample').locator('[data-action="swipe-more"]').click();
+    assert.deepEqual(await visibleActions('swipe-sample','left'),['open-link','keep','swipe-more']);
     await row('swipe-sample').locator('[data-action="keep"]').click();
     assert.equal(await page.evaluate(()=>load()[1].sample),false,'last action remains reachable');
     assert.equal(await row('swipe-sample').locator('.swipe-action[data-action="keep"]').count(),0,'Keep disappears immediately');
@@ -222,6 +253,6 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     await page.evaluate(()=>patchLocalAssistant({localAssistant:false}));
     assert.equal(await page.locator('#list [data-action="assistant"]').count(),0,'disabling removes the shortcut immediately');
     assert.deepEqual(errors,[]);
-    console.log('PASS swipe layouts, planning/undo, primary links, Stop, Quiet, focus and native strip scrolling');
+    console.log('PASS swipe layouts, More overflow, planning/undo, primary links, Stop, Quiet, focus and native strip scrolling');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

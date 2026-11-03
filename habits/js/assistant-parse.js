@@ -153,14 +153,15 @@ function assistantDurationNumberSource(){
   const ones = Object.keys(ASSISTANT_DURATION_ONES).join('|');
   const tens = Object.keys(ASSISTANT_DURATION_TENS).join('|');
   const small = 'one|two|three|four|five|six|seven|eight|nine';
-  const word = `(?:(?:${tens})(?:\\s+(?:${small}))?|(?:${ones}))(?:\\s+and\\s+a\\s+(?:half|quarter))?`;
+  const word = `(?:(?:${tens})(?:[ -]+(?:${small}))?|(?:${ones}))(?:\\s+and\\s+a\\s+(?:half|quarter))?`;
   const numeric = `(?:\\d+(?:\\.\\d+)?(?:\\s+\\d+\\/\\d+)?|\\d+\\/\\d+)(?:\\s+and\\s+a\\s+(?:half|quarter))?`;
   return `(?:${numeric}|${word})`;
 }
 
 function assistantSpokenQuantitySource(){
   const unit = '(?:hours?|hrs?|h|minutes?|mins?|m)';
-  return `(?:${assistantDurationNumberSource()}\\s*${unit}|an\\s+hour\\s+and\\s+a\\s+half|one\\s+hour\\s+and\\s+a\\s+half|hour\\s+and\\s+a\\s+half|three[\\s-]+quarters(?:\\s+of)?\\s+an?\\s+hour|half\\s+an?\\s+hour|a\\s+half\\s+hour|(?:a\\s+)?quarter(?:\\s+of)?(?:\\s+an?)?\\s+hour|an\\s+hour)`;
+  const number = `(?:${assistantDurationNumberSource()}|(?:\\d+\\s*)?[½¼¾⅓⅔⅛])`;
+  return `(?:${number}\\s*${unit}|an\\s+hour\\s+and\\s+a\\s+half|one\\s+hour\\s+and\\s+a\\s+half|hour\\s+and\\s+a\\s+half|three[\\s-]+quarters(?:\\s+of)?\\s+an?\\s+hour|half\\s+an?\\s+hour|a\\s+half\\s+hour|(?:a\\s+)?quarter(?:\\s+of)?(?:\\s+an?)?\\s+hour|an\\s+hour)`;
 }
 
 function assistantNormalizeDurationText(value){
@@ -172,12 +173,17 @@ function assistantNormalizeDurationText(value){
   s = s.replace(new RegExp(`\\b(${assistantDurationNumberSource()})\\s*-\\s*(hours?|hrs?|minutes?|mins?)\\b`, 'g'), '$1 $2');
   s = s.replace(/\b(\d+(?:\.\d+)?)h\s*(\d+(?:\.\d+)?)m\b/g, '$1 hours $2 minutes');
   s = s.replace(/\s+/g, ' ').trim();
-  s = s.replace(/\b(\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+hours?\s+and\s+a\s+half\b/g, (_, n)=>{
+  const unit = '(?:hours?|hrs?|h|minutes?|mins?|m)';
+  // Normalize the complete quantity before standalone fractions. Otherwise
+  // "one and a half hour" loses its whole hour to the "a half hour" rule.
+  s = s.replace(new RegExp(`\\b(${assistantDurationNumberSource()})\\s*(${unit})\\b`, 'g'), (whole, n, u)=>{
     const num = assistantParseNumberPhrase(n);
-    return num == null ? n : `${num + 0.5} hours`;
+    return num == null ? whole : `${num} ${u}`;
   });
-  s = s.replace(/\b(?:an|one)\s+hour\s+and\s+a\s+half\b/g, '1.5 hours');
-  s = s.replace(/\bhour\s+and\s+a\s+half\b/g, '1.5 hours');
+  s = s.replace(new RegExp(`\\b(?:(\\d+(?:\\.\\d+)?|an?)\\s+)?(${unit})\\s+and\\s+a\\s+(half|quarter)\\b`, 'g'), (_, n, u, fraction)=>{
+    const num = !n || /^(?:a|an)$/.test(n) ? 1 : Number(n);
+    return `${num + (fraction === 'half' ? 0.5 : 0.25)} ${u}`;
+  });
   s = s.replace(/\bhalf\s+an?\s+hour\b/g, '30 minutes');
   s = s.replace(/\ba\s+half\s+hour\b/g, '30 minutes');
   s = s.replace(/\bthree[\s-]+quarters(?:\s+of)?\s+an?\s+hour\b/g, '45 minutes');
@@ -286,6 +292,63 @@ const ASSISTANT_NUMBER_WORDS = {
   once:1, twice:2, thrice:3
 };
 const ASSISTANT_COUNT_WORD = 'once|twice|thrice|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve';
+
+// Numeric language is shared by field normalizers. These readers operate only
+// on evidence selected by the model; they never rewrite the original request.
+const ASSISTANT_ORDINAL_ONES = {
+  first:1,second:2,third:3,fourth:4,fifth:5,sixth:6,seventh:7,eighth:8,ninth:9,
+  tenth:10,eleventh:11,twelfth:12,thirteenth:13,fourteenth:14,fifteenth:15,
+  sixteenth:16,seventeenth:17,eighteenth:18,nineteenth:19
+};
+const ASSISTANT_ORDINAL_TENS = {twentieth:20,thirtieth:30,fortieth:40,fiftieth:50,sixtieth:60,seventieth:70,eightieth:80,ninetieth:90};
+
+function assistantIntegerSource(){
+  return `(?:${Object.keys(ASSISTANT_DURATION_TENS).join('|')})(?:[ -]+(?:one|two|three|four|five|six|seven|eight|nine))?|${Object.keys(ASSISTANT_DURATION_ONES).join('|')}|zero|\\d+`;
+}
+
+function assistantOrdinalSource(){
+  return `(?:${Object.keys(ASSISTANT_DURATION_TENS).join('|')})[ -]+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)|${Object.keys(ASSISTANT_ORDINAL_ONES).join('|')}|${Object.keys(ASSISTANT_ORDINAL_TENS).join('|')}|\\d+(?:st|nd|rd|th)`;
+}
+
+function assistantParseOrdinal(value){
+  const s=assistantNormText(value).replace(/-/g,' ');
+  if(ASSISTANT_ORDINAL_ONES[s]!=null)return ASSISTANT_ORDINAL_ONES[s];
+  if(ASSISTANT_ORDINAL_TENS[s]!=null)return ASSISTANT_ORDINAL_TENS[s];
+  const parts=s.split(' ');
+  if(parts.length===2 && ASSISTANT_DURATION_TENS[parts[0]]!=null && ASSISTANT_ORDINAL_ONES[parts[1]]<10)return ASSISTANT_DURATION_TENS[parts[0]]+ASSISTANT_ORDINAL_ONES[parts[1]];
+  const numeric=s.match(/^(\d+)(st|nd|rd|th)$/);
+  if(!numeric)return null;
+  const n=Number(numeric[1]),last=n%100;
+  const suffix=last>=11&&last<=13?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th');
+  return numeric[2]===suffix?n:null;
+}
+
+function assistantParseExactCount(value, min, max, ordinal=false){
+  const s=assistantNormText(value);
+  const n=Object.hasOwn(ASSISTANT_NUMBER_WORDS,s)?ASSISTANT_NUMBER_WORDS[s]
+    :s==='zero'?0:assistantParseNumberPhrase(s) ?? (ordinal?assistantParseOrdinal(s):null);
+  return Number.isInteger(n)&&n>=min&&n<=max?n:null;
+}
+
+// Preserve units until a field has declared its own conversion table. Unknown
+// units, multiple numbers, signs and out-of-range values must not be clamped.
+function assistantParseQuantity(value, units, min, max){
+  const s=assistantNormText(value).replace(/([a-z])-(?=[a-z])/g,'$1 ').replace(/½/g,' half ').replace(/¼/g,' quarter ').replace(/¾/g,' three quarters ');
+  const unitSource=Object.keys(units).sort((a,b)=>b.length-a.length).join('|');
+  const number=`(?:three[ -]+quarters|(?:a\\s+)?(?:half|quarter)(?:\\s+(?:of\\s+)?an?)?|${assistantDurationNumberSource()}|zero|(?:a|an)(?=\\s+(?:${unitSource})\\b))`;
+  const matches=[...s.matchAll(new RegExp(`\\b(${number})(?![\\w./-])`,'g'))];
+  if(matches.length!==1 || /(?:^|[^\w])[-+−]\s*(?:\d|[a-z])|\b(?:minus|negative)\b/.test(s))return null;
+  const hit=matches[0],raw=hit[1];
+  if(hit.index>0&&/[\d./]/.test(s[hit.index-1]))return null;
+  let n=/^(?:a|an)$/.test(raw)?1:/^(?:a )?half(?: (?:of )?an?)?$/.test(raw)?0.5
+    :/^(?:a )?quarter(?: (?:of )?an?)?$/.test(raw)?0.25:/^three[ -]+quarters$/.test(raw)?0.75:raw==='zero'?0:assistantParseNumberPhrase(raw);
+  if(n==null)return null;
+  const rest=s.slice(hit.index+hit[0].length);
+  const unit=rest.match(new RegExp(`^\\s*[- ]?(${unitSource})\\b`));
+  if(unit)n*=units[unit[1]];
+  else if(/^\s*(?:[a-z]+)\b/.test(rest) && !/^\s*(?:early|earlier|late|later|before|after|in advance)\b/.test(rest))return null;
+  return Number.isInteger(n)&&n>=min&&n<=max?n:null;
+}
 
 function assistantParseCount(value, min, max){
   const lo = min == null ? 1 : min;
@@ -419,7 +482,7 @@ function assistantParseMonthDays(value){
     const days = [];
     for(let i = 0; i < value.length; i += 1){
       const nested = assistantParseMonthDays(value[i]);
-      if(!nested)continue;
+      if(!nested)return null;
       for(let j = 0; j < nested.length; j += 1){
         if(days.indexOf(nested[j]) < 0)days.push(nested[j]);
       }
@@ -430,13 +493,15 @@ function assistantParseMonthDays(value){
   if(!s)return null;
   if(/^(any|all|none|everyday|every day|daily)$/.test(s))return [];
   const days = [];
-  const re = /\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b/g;
-  let match;
-  while((match = re.exec(s))){
-    const n = Number(match[1]);
-    if(n >= 1 && n <= 31 && days.indexOf(n) < 0)days.push(n);
-  }
-  return days.length ? days.sort((a, b) => a - b) : null;
+  const re = new RegExp(`\\b(?:${assistantOrdinalSource()}|${assistantIntegerSource()})\\b`,'g');
+  let invalid=false;
+  const rest=s.replace(re,token=>{
+    const n=assistantParseExactCount(token,1,31,true);
+    if(n==null)invalid=true;
+    else if(!days.includes(n))days.push(n);
+    return '';
+  }).replace(/\b(?:allow(?:ed)?|only|on|the|and|of|each|every|month(?:ly)?|days?|prefer(?:red|ably)?)\b/g,'').replace(/[\s,]/g,'');
+  return !invalid&&!rest&&days.length ? days.sort((a, b) => a - b) : null;
 }
 
 function assistantParseTopicsArg(value){
@@ -677,46 +742,37 @@ function assistantParseScheduleOptionText(value, catalog){
 function assistantParseRhythm(text){
   const s = assistantNormText(text);
   if(!s)return null;
-  let timesPerPeriod = null;
-  let periodDays = null;
-  const dailyCount=s.match(new RegExp(`\\b(${ASSISTANT_COUNT_WORD}|\\d+)\\s*(?:x|times?)?\\s+(?:daily|(?:every|each)\\s+day)\\b`));
-  if(/\bevery other day\b/.test(s)){
-    timesPerPeriod = 1;
-    periodDays = 2;
-  }else if(dailyCount){
-    timesPerPeriod = assistantParseCount(dailyCount[1], 1, 30);
-    periodDays = 1;
-  }else if(/\bevery day\b|\beach day\b|\bdaily\b|\bevery morning\b|\bevery night\b|\bevery evening\b/.test(s)){
-    timesPerPeriod = 1;
-    periodDays = 1;
-  }else{
-    const inPeriod = s.match(new RegExp(`\\b(${ASSISTANT_COUNT_WORD}|\\d+)\\s*(?:x|times?)\\s+(?:in|every|per)\\s+(${ASSISTANT_COUNT_WORD}|\\d+)\\s+days?\\b`));
-    if(inPeriod){
-      timesPerPeriod = assistantParseCount(inPeriod[1], 1, 30);
-      periodDays = assistantParseCount(inPeriod[2], 1, 183);
-    }else{
-      const short = s.match(/\b(once|twice|thrice)\s+(?:a\s+|per\s+|each\s+)?(week|day)s?\b/);
-      if(short){
-        timesPerPeriod = assistantParseCount(short[1], 1, 30);
-        periodDays = short[2] === 'day' ? 1 : 7;
-      }else{
-        const times = s.match(new RegExp(`\\b(${ASSISTANT_COUNT_WORD}|\\d+)\\s*(?:x|times?)\\s+(?:a\\s+|per\\s+|each\\s+|every\\s+)(week|day)s?\\b`));
-        if(times){
-          timesPerPeriod = assistantParseCount(times[1], 1, 30);
-          periodDays = times[2] === 'day' ? 1 : 7;
-        }else{
-          const everyN = s.match(new RegExp(`\\bevery\\s+(${ASSISTANT_COUNT_WORD}|\\d+)\\s+days?\\b`));
-          if(everyN){
-            timesPerPeriod = 1;
-            periodDays = assistantParseCount(everyN[1], 1, 183);
-          }else if(/\bonce a week\b|\bevery week\b|\bweekly\b/.test(s)){
-            timesPerPeriod = 1;
-            periodDays = 7;
-          }
-        }
-      }
+  const count=`(?:${assistantIntegerSource()}|once|twice|thrice)`;
+  const interval=`(?:${count}|${assistantOrdinalSource()}|other)`;
+  const hits=[];
+  const add=(re,read)=>{
+    for(const match of s.matchAll(re)){
+      if(hits.some(hit=>match.index<hit.end && match.index+match[0].length>hit.start))continue;
+      hits.push({start:match.index,end:match.index+match[0].length,...read(match)});
     }
-  }
+  };
+  const period=(raw,unit)=>{
+    const n=raw==='other'?2:raw?assistantParseExactCount(raw,1,183,true):1;
+    const days=n==null?null:n*(unit.startsWith('week')?7:1);
+    return days!=null&&days<=183?days:null;
+  };
+  // Consume a coupled count and period before looking for a bare interval.
+  // Otherwise "twice every three weeks" could silently become once / 21d.
+  add(new RegExp(`\\b(${count})\\s*(?:x|times?)?\\s+(?:a|per|in|every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:period(m[2],m[3])}));
+  add(new RegExp(`\\b(?:every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:1,days:period(m[1],m[2])}));
+  add(new RegExp(`\\b(${count})\\s*(?:x|times?)?\\s+(daily|weekly)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:m[2]==='daily'?1:7}));
+  add(/\b(?:daily|weekly|every (?:morning|night|evening))\b/g,m=>({times:1,days:m[0]==='weekly'?7:1}));
+  if(hits.some(hit=>hit.times==null||hit.days==null))return null;
+  const distinct=new Set(hits.map(hit=>`${hit.times}/${hit.days}`));
+  if(distinct.size>1)return null;
+  // Any unconsumed repetition instruction must be understood too. In
+  // particular, ordinal weekdays/monthly recurrence cannot degrade to weekly.
+  let rest=s;
+  for(const hit of hits.slice().sort((a,b)=>b.start-a.start))rest=rest.slice(0,hit.start)+' '.repeat(hit.end-hit.start)+rest.slice(hit.end);
+  rest=rest.replace(new RegExp(`\\b(?:every|each)\\s+(?:${ASSISTANT_WEEKDAY_TOKEN}|weekends?|weekdays?)\\b`,'g'),'');
+  if(/\b(?:every|each|daily|weekly|once|twice|thrice|times?)\b/.test(rest))return null;
+  let timesPerPeriod=hits[0]?.times??null;
+  let periodDays=hits[0]?.days??null;
   const weekdays = assistantParseWeekdaySchedule(s);
   if(timesPerPeriod == null && periodDays == null && !weekdays)return null;
   const out = {};

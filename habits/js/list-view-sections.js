@@ -1477,6 +1477,18 @@ function switchFreeTimeDay(nextKey){
 // `opts.deferAgenda` (default false): compatibility path that skips expensive
 // agenda work and emits a basic grouped list. Normal home renders reuse a
 // same-day plan cache, then refresh either planner in a worker.
+// PURE: four swipe actions fit. Five or more keep the first three and fold the
+// rest behind More, which reveals them in the same tray.
+function packSwipeActions(parts){
+  const buttons = (parts || []).filter(Boolean);
+  const max = typeof SWIPE_VISIBLE_MAX === 'number' ? SWIPE_VISIBLE_MAX : 4;
+  if(buttons.length <= max)return buttons.join('');
+  const more = '<button class="swipe-action sa-more" data-action="swipe-more" aria-expanded="false" aria-label="more"><span class="swipe-more-glyph" aria-hidden="true"><i class="ti ti-dots swipe-more-icon"></i><i class="ti ti-chevron-left swipe-back-icon"></i></span><span class="swipe-more-labels"><span class="swipe-more-label">more</span><span class="swipe-back-label">back</span></span></button>';
+  return `<div class="swipe-action-set" data-set="main">${buttons.slice(0, max - 1).join('')}</div>`
+    + `<div class="swipe-action-set" data-set="more" hidden>${buttons.slice(max - 1).join('')}</div>`
+    + more;
+}
+
 function render(opts){
   const o = opts || {};
   const list = $('list');
@@ -1701,7 +1713,7 @@ function render(opts){
     const importedEvent = Boolean(h && ['device','pdf','ics','gcal','msgraph'].includes(h.source));
     const localEvent = Boolean(event && typeof isLocalAppointment === 'function' && isLocalAppointment(h) && !importedEvent);
     const assistantAction = sortSettings.localAssistant && !importedEvent && !synced && (!event || localEvent)
-      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="edit ${escapeHtml(h.name)} with AI"><i class="ti ti-sparkles" aria-hidden="true"></i>edit with AI</button>`
+      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="edit ${escapeHtml(h.name)}"><i class="ti ti-sparkles" aria-hidden="true"></i>edit</button>`
       : '';
     const planAction = dayLogsHabitPlannable(h)
       ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
@@ -1710,14 +1722,22 @@ function render(opts){
     const linkAction = !minimal && primaryLink
       ? `<button class="swipe-action sa-open" data-action="open-link" aria-label="${primaryLink.kind === 'phone' ? 'call' : 'open'} ${escapeHtml(linkLabel(primaryLink))}"><i class="ti ${linkIconClass(primaryLink)}" aria-hidden="true"></i>${primaryLink.kind === 'phone' ? 'call' : 'open'}</button>`
       : '';
-    const rightSwipeActions = event ? linkAction : minimal
-      ? `${timerRunning ? timerAction : (h.sample ? keepAction : planAction)}${activityAction}`
-      : `${timerAction}${planAction}${activityAction}${linkAction}${keepAction}`;
+    const leftSwipeHtml = packSwipeActions(event
+      ? [assistantAction, linkAction]
+      : minimal
+        ? [assistantAction, timerRunning ? timerAction : (h.sample ? keepAction : planAction), activityAction]
+        : [assistantAction, timerAction, planAction, activityAction, linkAction, keepAction]);
     const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
       && nativeReminderAnyOn(`item:${h.hid}`);
     const reminderAction = reminderOn
       ? `<button class="swipe-action sa-reminder" data-action="reminders-off" aria-label="turn off phone reminders"><i class="ti ti-bell-off" aria-hidden="true"></i>quiet</button>`
       : '';
+    const rightSwipeHtml = packSwipeActions([
+      snoozeAction,
+      pinAction,
+      reminderAction,
+      synced ? '' : '<button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>'
+    ]);
     const canDrag = !minimal && dayBase != null && typeof isAgendaFillDraggable === 'function' && isAgendaFillDraggable(h,agendaRow);
     const dragHandle = canDrag
       ? `<button type="button" class="agenda-drag-handle" aria-label="drag to reorder" title="drag to reorder"><i class="ti ti-grip-vertical" aria-hidden="true"></i></button>`
@@ -1750,13 +1770,12 @@ function render(opts){
     row.innerHTML = `
       <div class="swipe-actions swipe-actions-left">
         <div class="swipe-action-strip" role="group" aria-label="${event?'event links':'session, planning and history'}">
-          ${assistantAction}${rightSwipeActions}
+          ${leftSwipeHtml}
         </div>
       </div>
       <div class="swipe-actions swipe-actions-right">
         <div class="swipe-action-strip" role="group" aria-label="visibility and reminders">
-          ${snoozeAction}${pinAction}${reminderAction}
-          ${synced ? '' : '<button class="swipe-action sa-nuke" data-action="nuke" aria-label="remove"><i class="ti ti-trash" aria-hidden="true"></i>remove</button>'}
+          ${rightSwipeHtml}
         </div>
       </div>
       <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
@@ -2207,6 +2226,10 @@ function render(opts){
     btn.addEventListener('click',e=>{
       e.stopPropagation();
       if(isScrollGuarded(btn))return;
+      if(btn.dataset.action === 'swipe-more'){
+        if(typeof toggleSwipeMore === 'function')toggleSwipeMore(btn);
+        return;
+      }
       const row = btn.closest('.swipe-row');
       const idx = +row.dataset.realIdx;
       closeAllSwipes();

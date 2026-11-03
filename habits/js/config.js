@@ -183,6 +183,8 @@ const DEFAULT_BLOCKED_TIMES = [
 const WEEKDAY_LABELS = ['sun','mon','tue','wed','thu','fri','sat'];
 const SWIPE_THRESHOLD = 60;
 const SWIPE_ACTION_WIDTH = 68;
+// A tray shows every action up to this many. Past that, the last slot is More.
+const SWIPE_VISIBLE_MAX = 4;
 // The revealed action panel is anchored at the row edge, so it must extend this
 // far under the card's rounded corner (matches --card-radius:20px) or the card's
 // round corner leaves a blank gap with a sharp panel corner showing through.

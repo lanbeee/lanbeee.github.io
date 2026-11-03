@@ -68,15 +68,28 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const create=t.open('create');
       await assistantFocusTurn(create,'Walk every other day before sunset',t.options());
       const createHtml=assistantFocusReviewHtml(create);
+      const quiet=t.open('create');
+      await assistantFocusTurn(quiet,'Walk',t.options());
+      const quietHtml=assistantFocusReviewHtml(quiet);
+      const formed=assistantFocusOpen({operation:'create',kind:'habit',addForm:{record:{
+        type:'keepup',emoji:'🚶',priority:2,earlyWindowDays:1,delayAllowanceDays:0,breakable:false,
+        minGapMinutes:0,locationIds:[],anywhereAllowed:true,weatherProfileMode:'inherit',showWeather:false,
+        showWeatherAtLocation:false,allowSharedDisplayCompletion:true,durationMinutes:45,target:7
+      }}});
+      await assistantFocusTurn(formed,'Walk for 45 minutes every fourth day just after sunrise',t.options());
+      const formedHtml=assistantFocusReviewHtml(formed);
       const edit=t.open();
       await assistantFocusTurn(edit,'Pin it.',t.options());
       const editHtml=assistantFocusReviewHtml(edit);
+      const formNoise=/<small>add form<\/small>|<small>default<\/small>|Priority ·|Emoji ·|Shared display|Early allowance|Splitting ·|Minimum gap|Weather profile|Places ·/;
       return {
-        create:createHtml.includes('assistant-preview-name')&&createHtml.includes('assistant-chip')&&createHtml.includes('Walk')&&!createHtml.includes('focus-rows')&&!createHtml.includes('focus-origin'),
+        create:createHtml.includes('assistant-preview-name')&&createHtml.includes('assistant-chip')&&createHtml.includes('Walk')&&createHtml.includes('1× / 2d')&&createHtml.includes('Allowed hours')&&createHtml.includes('Unmentioned settings')&&!formNoise.test(createHtml)&&!createHtml.includes('focus-rows')&&!createHtml.includes('focus-origin'),
+        quiet:quietHtml.includes('Walk')&&!quietHtml.includes('assistant-chip')&&!formNoise.test(quietHtml)&&quietHtml.includes('Unmentioned settings'),
+        formed:formedHtml.includes('Walk')&&formedHtml.includes('45 min')&&formedHtml.includes('1× / 4d')&&/sunrise/i.test(formedHtml)&&!formNoise.test(formedHtml),
         edit:editHtml.includes('45 min')&&/pinned/i.test(editHtml)&&!editHtml.includes('Shared display')&&!editHtml.includes('Links')&&!editHtml.includes('focus-rows')
       };
     });
-    assert(summaryCard.create&&summaryCard.edit,'the review is a summary of essentials and changes, not every field in a touched family');
+    assert(summaryCard.create&&summaryCard.quiet&&summaryCard.formed&&summaryCard.edit,'the review lists what the request set; add-form defaults stay on the draft and off the summary');
     const essentialFailures=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open('create');
       await assistantFocusTurn(s,'Walk every other day for 40 minutes.',t.options({extract:async spec=>{
@@ -222,6 +235,9 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       await live.evaluate(async()=>{patchLocalAssistant({localAssistant:true,localAssistantProvider:'needle'});await assistantNeedleDownload();});
       const cases=[
         {id:'create-habit-nine-settings',operation:'create',kind:'habit',prompt:'Create a habit called Walk, every other day for 30 minutes, weekdays only before sunset. Set priority P1, pin it, use the 🚶 emoji and tag it Health.',expected:{name:'Walk',durationMinutes:30,allowedWeekdays:[1,2,3,4,5],allowedTimeEndAnchor:'maghrib',priority:1,pinned:true,emoji:'🚶',topics:['Health']},rhythm:[1,2]},
+        {id:'create-ordinal-frequency',operation:'create',kind:'habit',prompt:'Create a habit called Walk, every third day for twenty-five minutes, only before sunset. Set priority P1 and pin it.',expected:{name:'Walk',durationMinutes:25,allowedTimeEndAnchor:'maghrib',priority:1,pinned:true},rhythm:[1,3]},
+        {id:'create-count-and-week-period',operation:'create',kind:'habit',prompt:'Create a habit called Study, twice every three weeks for half an hour. Tag it Learning and use the 📚 emoji.',expected:{name:'Study',durationMinutes:30,topics:['Learning'],emoji:'📚'},rhythm:[2,21]},
+        {id:'create-mixed-fraction-lengths',operation:'create',kind:'habit',prompt:'Create a habit called Study, every third day for one and a half hours, split into chunks of at least a quarter hour, with a gap of half an hour. Set priority P1 and pin it.',expected:{name:'Study',durationMinutes:90,breakable:true,minChunkMinutes:15,minGapMinutes:30,priority:1,pinned:true},rhythm:[1,3]},
         {id:'create-task-eight-settings',operation:'create',kind:'task',prompt:'Create a task called Submit report, due 2026-11-10 at 9am, for 45 minutes. Set priority P0, pin it, tag it Work and use a blue color.',expected:{name:'Submit report',dueDate:1794286800000,eventTime:1794319200000,durationMinutes:45,priority:0,pinned:true,topics:['Work'],emojiBgColor:'blue'}},
         {id:'edit-habit-nine-settings',operation:'edit',kind:'habit',prompt:'Rename it Strength, four times a week, 45 minutes each, weekdays after 6pm. Set priority P1, pin it, use the 💪 emoji and tag it Fitness.',expected:{name:'Strength',durationMinutes:45,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1080,priority:1,pinned:true,emoji:'💪',topics:['Fitness']},rhythm:[4,7]},
         {id:'create-chunks-and-gap',operation:'create',kind:'habit',prompt:'Read daily for 60 minutes, split into chunks of at least 15 minutes, with a gap of 30 minutes. Set priority P2 and pin it.',expected:{name:'Read',durationMinutes:60,breakable:true,minChunkMinutes:15,minGapMinutes:30,priority:2,pinned:true},rhythm:[1,1]},

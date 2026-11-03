@@ -1003,12 +1003,12 @@ async function launchBrowser(){
     const button = document.getElementById('setting-local-assistant-debug');
     const sheet = document.getElementById('assistant-debug-toggle');
     button.click();
-    const off = !assistantSettings().debug && sheet.hidden;
+    const off = !assistantSettings().debug && sheet.getAttribute('aria-pressed') === 'false' && sheet.hidden;
     button.click();
-    const on = assistantSettings().debug && !sheet.hidden;
+    const on = assistantSettings().debug && sheet.getAttribute('aria-pressed') === 'true' && sheet.hidden;
     return {off, on};
   });
-  assert(debugToggle.off && debugToggle.on, 'settings debug switch turns off and back on, and the chat control follows it');
+  assert(debugToggle.off && debugToggle.on, 'settings debug switch turns off and back on, and the sheet button stays hidden');
   assert(debugTrace.localPath === 'llm' && debugTrace.localTool === 'draft_item', 'every natural-language turn records an LLM path and validated tool');
   assert(/parse /.test(debugTrace.localText) && /path llm/.test(debugTrace.localText), 'model-only debug text has parse and LLM path');
   assert(debugTrace.llmTools.includes('classify_intent') && debugTrace.llmTools.includes('draft_item'), 'llm debug lists classify and draft_item');

@@ -336,6 +336,87 @@ function setupBreakableCrown(row,_realIdx){
   syncVisual(committed);
 }
 
+// PURE: width of the actions a swipe should reveal. A More tray stays four
+// slots wide so opening the rest does not shove the card.
+function swipeRevealWidth(row, actions){
+  if(!row || !actions)return 0;
+  const hasMore = !!actions.querySelector('[data-action="swipe-more"]');
+  const count = hasMore
+    ? SWIPE_VISIBLE_MAX
+    : actions.querySelectorAll('.swipe-action').length;
+  return Math.min(count * SWIPE_ACTION_WIDTH, Math.max(0, row.clientWidth - 24));
+}
+
+// HYBRID: fold an open More page back to the first actions. Safe while the
+// tray is closed; a fresh swipe also calls this before it reveals anything.
+function resetSwipeMore(row){
+  if(!row)return;
+  row._swipeMoreReset = (row._swipeMoreReset || 0) + 1;
+  row.querySelectorAll('.swipe-actions').forEach(actions=>{
+    const main = actions.querySelector('.swipe-action-set[data-set="main"]');
+    const extra = actions.querySelector('.swipe-action-set[data-set="more"]');
+    const toggle = actions.querySelector('[data-action="swipe-more"]');
+    if(main){
+      main.hidden = false;
+      main.classList.remove('is-revealing');
+    }
+    if(extra){
+      extra.hidden = true;
+      extra.classList.remove('is-revealing');
+    }
+    if(toggle){
+      toggle.setAttribute('aria-expanded','false');
+      toggle.setAttribute('aria-label','more');
+    }
+  });
+}
+
+// The close animation still shows whichever page was open. Restore the first
+// page only after the tray has finished shutting.
+function scheduleSwipeMoreReset(row){
+  if(!row)return;
+  const token = (row._swipeMoreReset || 0) + 1;
+  row._swipeMoreReset = token;
+  setTimeout(()=>{
+    if(row._swipeMoreReset !== token)return;
+    if(row.dataset.swipeOpen)return;
+    resetSwipeMore(row);
+  }, 220);
+}
+
+// WIRE: More reveals the actions that did not fit, in the same tray. Back
+// returns to the first three. The inner slot and the card stay put.
+function toggleSwipeMore(btn){
+  const actions = btn && btn.closest && btn.closest('.swipe-actions');
+  const row = btn && btn.closest && btn.closest('.swipe-row');
+  if(!actions || !row)return;
+  const main = actions.querySelector('.swipe-action-set[data-set="main"]');
+  const extra = actions.querySelector('.swipe-action-set[data-set="more"]');
+  if(!main || !extra)return;
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  main.classList.remove('is-revealing');
+  extra.classList.remove('is-revealing');
+  main.hidden = open;
+  extra.hidden = !open;
+  const shown = open ? extra : main;
+  void shown.offsetWidth;
+  shown.classList.add('is-revealing');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.setAttribute('aria-label', open ? 'back' : 'more');
+  const strip = actions.querySelector('.swipe-action-strip');
+  if(strip){
+    // Resetting the scroll fires the strip's scroll guard. This was not a
+    // user pan, so the action that just appeared has to stay tappable.
+    strip.scrollLeft = 0;
+    const release = ()=>{
+      strip._sg = 0;
+      strip.classList.remove('scrolling');
+    };
+    release();
+    requestAnimationFrame(release);
+  }
+}
+
 // WIRE: attach swipe gesture listeners
 function setupSwipe(row){
   const card = row.querySelector('.ting-card');
@@ -359,9 +440,7 @@ function setupSwipe(row){
 
   // PURE: measure total swipe action width
   function revealWidth(actions){
-    if(!actions)return 0;
-    return Math.min(actions.querySelectorAll('.swipe-action').length * SWIPE_ACTION_WIDTH,
-      Math.max(0,row.clientWidth - 24));
+    return swipeRevealWidth(row, actions);
   }
 
   // HYBRID: reset swipe DOM and clear state
@@ -383,6 +462,7 @@ function setupSwipe(row){
     swipeOpenCard = null;
     delete row.dataset.swipeOpen;
     if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
+    scheduleSwipeMoreReset(row);
     startedOpen = false;
     moved = false;
     dx = 0;
@@ -459,6 +539,7 @@ function setupSwipe(row){
       return;
     }
     if(!moved){
+      resetSwipeMore(row);
       if(typeof claimCardGesture === 'function' && !claimCardGesture(row,'swipe',{force:true})){
         touchId = null;
         return;
@@ -574,6 +655,7 @@ function closeAllSwipes(){
     });
     delete row.dataset.swipeOpen;
     if(typeof releaseCardGesture === 'function')releaseCardGesture(row,'swipe');
+    scheduleSwipeMoreReset(row);
   });
   swipeOpenCard = null;
 }
