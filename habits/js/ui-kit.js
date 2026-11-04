@@ -194,8 +194,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'}
   ],
   cardsAfterTime:[
-    {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-full-only'},
-    {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}
+    {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-full-only'}
   ],
   appearanceCards:[
     {key:'minimalShowAgendaTimeOnCards', title:'show the time', hint:'The scheduled time on each item.'},

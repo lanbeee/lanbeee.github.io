@@ -167,7 +167,10 @@ function aboutText(h){
     return `${days} clean days since the last entry.`;
   }
   const target = effectiveTarget(h);
-  const rhythm = h.target || 7;
+  // Fractional rhythms (e.g. 7/3) must not print float tails like
+  // "every 2.3333333333333335 days" — one decimal is enough for copy.
+  const rhythmRaw = h.target || 7;
+  const rhythm = Number.isInteger(rhythmRaw) ? rhythmRaw : rhythmRaw.toFixed(1);
   const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
   if(planBy != null){
     const left = daysUntil(planBy);

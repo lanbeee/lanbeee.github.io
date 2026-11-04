@@ -91,6 +91,7 @@ function renderBlockedTimeControls(){
           return `<button type="button" class="schedule-chip ${on ? 'on' : ''}" data-blocked-day="${day}" data-blocked-index="${i}" aria-pressed="${on}">${label}</button>`;
         }).join('')}
       </div>
+      ${ordinalWeekdayEditor(block.ordinalWeekdays)}
       <div class="compact-days" style="margin-top:6px;align-items:center;gap:6px;">
         <select data-blocked-location="${i}" aria-label="${escapeHtml(block.label)} place" class="mini-select">
           <option value="">any place</option>

@@ -39,6 +39,8 @@
  * @property {string[]} topics                — user-defined tags (max 24, each max 32 chars)
  * @property {number[]} allowedWeekdays       — 0=Sun … 6=Sat; empty means every day
  * @property {number[]} allowedMonthDays      — 1-31; empty means every day
+ * @property {{ordinal:-1|1|2|3|4|5,weekday:number}[]} allowedOrdinalWeekdays — any selected rule, intersected with weekday/month dates
+ * @property {{ordinal:-1|1|2|3|4|5,weekday:number}[]} preferredOrdinalWeekdays — preferred monthly weekdays
  * @property {number[]} preferredWeekdays     — like allowedWeekdays, but for the "preferred" set
  * @property {number[]} preferredMonthDays    — like allowedMonthDays, but for the "preferred" set
  * @property {number|null} allowedTimeStart   — minutes since midnight; null = unrestricted
@@ -115,6 +117,7 @@
  * @property {number|null} timerAutoStopMinutes — optional manual-session target (legacy field name; null = use durationMinutes)
  * @property {Object|null} appointment — explicit local calendar rule: once/weekly, startDate, optional until, weekdays, startMinute, and per-date exceptions. Reserves time independently of cadence; no automatic attendance.
  * @property {number|null} autoMarkMinutes — null = manual. Non-breakables complete after their trigger plus this delay; breakables reconcile captured agenda chunks after their end plus this delay.
+ * @property {boolean} tapStartsSession        — pulse starts/stops a session instead of logging; defaults false
  * @property {boolean} trackValue             — when true, logging offers a free-form numeric value field
  * @property {number} priority                — 0 (P0 critical) .. 5 (P5 someday). Manual; drives who claims today's agenda capacity first.
  * @property {number|null} lastLog            — derived: most recent actual log timestamp
@@ -144,7 +147,7 @@
  * @property {string|null} weatherLocationId — optional saved-place forecast for anywhere placements; location-bound fits use their actual place
  * @property {boolean} showWeather — show an interval forecast pill on this item's agenda card in regular mode
  * @property {boolean} showWeatherAtLocation — when showWeather is on, use this item's place instead of the home-city forecast
- * @property {{id:string,sameDayMode:'alternative'|'separate',fixedStart?:boolean,weekdays:number[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high',weatherProfileMode:'inherit'|'profile'|'none',weatherProfileId:string|null}[]} scheduleOptions — specific weekday/time/place/weather windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
+ * @property {{id:string,sameDayMode:'alternative'|'separate',fixedStart?:boolean,weekdays:number[],ordinalWeekdays:{ordinal:number,weekday:number}[],start:number|null,end:number|null,startAnchor?:string,startOffsetMin?:number,startCombine?:'later'|'earlier',startAnchor2?:string,startOffsetMin2?:number,startFixedMin2?:number|null,startDayOffset?:number,startDayOffset2?:number,endAnchor?:string,endOffsetMin?:number,endCombine?:'later'|'earlier',endAnchor2?:string,endOffsetMin2?:number,endFixedMin2?:number|null,endDayOffset?:number,endDayOffset2?:number,locationId:string|null,pref?:'avoid'|'little'|'high',weatherProfileMode:'inherit'|'profile'|'none',weatherProfileId:string|null}[]} scheduleOptions — specific weekday/time/place/weather windows. Legacy/missing sameDayMode is alternative; separate contributes another same-day occurrence opportunity. Optional pref overrides locationPrefs for that row.
  *
  * — LinkFields (optional, on every type) —
  * @property {{kind:'phone'|'whatsapp'|'facetime'|'app'|'link',value:string,label?:string,launch?:string}[]} links — things to launch when doing this; app shortcuts may have a custom label and an optional direct-open target (launch, e.g. spotify:) tried before the value; links[0] is primary and appears first in the detail link buttons
@@ -227,7 +230,6 @@
  * @property {boolean} minimalMode                             — visual-only: emoji/title/cue/repetition on cards; stripped detail & overview (default off, opt-in)
  * @property {boolean} agendaOptimizer                         — exact ILP packer for tight windows (lazy GLPK); off by default, fast planner is the default
  * @property {{travel:number,cluster:number,day:number,asap:number,scarce:number,preference:number}} agendaScoreWeights — unified placement score weights
- * @property {boolean} reachAssist                             — pull-down-at-top gesture lowers first cards
  * @property {'keepup'|'reduce'|'zero'|'task'} defaultType            — type prefilled in the add-habit sheet
  * @property {Object|null} taskDefaults                         — independent task creation profile (including dueDateMode)
  * @property {'manual'|'duration'|'minutes'} defaultAutoMarkMode — new habit scheduled completion policy

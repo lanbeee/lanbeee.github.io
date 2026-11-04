@@ -45,7 +45,7 @@ function matchesOverviewLocation(h,id){
 
 // PURE: habit passes both overview filters
 function matchesOverviewFilters(h){
-  return matchesOverviewTopic(h,overviewTopicFilter) && matchesOverviewLocation(h,overviewLocationFilter);
+  return !isCalendarIgnored(h) && matchesOverviewTopic(h,overviewTopicFilter) && matchesOverviewLocation(h,overviewLocationFilter);
 }
 
 // "When" pills for the calendar page. 'recent' is the default on open —
@@ -346,7 +346,7 @@ function weekAgendaByDay(week,data){
     const items = [];
     const seen = new Set();
     const pushHabit = (h,kind)=>{
-      if(!h || seen.has(h.hid || h.name))return;
+      if(!h || isCalendarIgnored(h) || seen.has(h.hid || h.name))return;
       seen.add(h.hid || h.name);
       items.push({name:h.name,type:h.type,tone:'agenda',planned:true,kind:kind || 'agenda'});
     };
@@ -377,7 +377,8 @@ function renderOverviewLists(data,countForHabit,scopeNote = ''){
     list.innerHTML = '';
     return;
   }
-  const rows = data.map((h,index)=>({h,index,count:countForHabit(h),c:habitColors(h)}))
+  const indices=new Map(load().map((h,index)=>[h.hid,index]));
+  const rows = data.map(h=>({h,index:indices.get(h.hid),count:countForHabit(h),c:habitColors(h)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,5);
 
   if(!rows.length){
@@ -708,7 +709,7 @@ function setOverviewMonthNav(showNav,label){
 
 // RENDER: orchestrates full overview sheet render
 function renderOverview(){
-  const allData = load();
+  const allData = load().filter(h=>!isCalendarIgnored(h));
   renderOverviewFilters(allData);
   const data = allData.filter(matchesOverviewFilters);
   if(overviewRangeFilter === 'recent')renderOverviewRecent(data);
@@ -817,6 +818,7 @@ function collectDayLogRows(key){
   const rows = [];
   const scoped = Number.isInteger(dayLogsScopeIndex);
   data.forEach((h,i)=>{
+    if(isCalendarIgnored(h))return;
     if(scoped){
       if(i !== dayLogsScopeIndex)return;
     }else if(!matchesOverviewFilters(h)){
@@ -912,7 +914,7 @@ function overviewDayAgendaTravelHtml(row){
 
 function overviewDayAgendaHabitHtml(row,data){
   const h = row.h || (row.i != null ? data[row.i] : null);
-  if(!h)return '';
+  if(!h || isCalendarIgnored(h))return '';
   const idx = row.i != null ? row.i : data.findIndex(item=>item === h || (item && h.hid && item.hid === h.hid));
   const c = habitColors(h);
   const meta = overviewIsMinimal() ? '' : [overviewDayAgendaClock(row.start),overviewDayAgendaDuration(row)].filter(Boolean).join(' · ');

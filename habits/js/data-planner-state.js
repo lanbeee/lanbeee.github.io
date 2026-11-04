@@ -144,7 +144,7 @@ function saveOrderConstraintStore(store){
   };
   const current = Storage.read(ORDER_CONSTRAINTS_KEY);
   if(JSON.stringify(current || {edges:[],doingNow:null}) === JSON.stringify(next))return false;
-  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); bumpPlannerDataRevision(); return true; }
+  try{ Storage.write(ORDER_CONSTRAINTS_KEY,next); bumpPlannerDataRevision(); if(typeof reconcileNativeQuiet==='function')void reconcileNativeQuiet(); return true; }
   catch{ return false; }
 }
 
@@ -546,7 +546,7 @@ function temporaryOrderConflict(dayBase,edges,data = null){
 }
 
 function dataFingerprint(data){
-  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.repeatMode,h.allowedWeekdays,h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeFixedStart,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
+  return data.map(h=>[h.hid,h.lastLog,h.snoozedUntil,h.target,h.repeatMode,h.allowedWeekdays,JSON.stringify(h.allowedOrdinalWeekdays),JSON.stringify(h.preferredOrdinalWeekdays),h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeFixedStart,h.dueDate,h.planByDate,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId,JSON.stringify(h.scheduleLinks || []),JSON.stringify(h.scheduleOptions || [])].join(':')).join('|');
 }
 
 function normalizeSuggestedOccurrences(rows){

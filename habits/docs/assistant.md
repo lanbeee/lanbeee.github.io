@@ -56,8 +56,17 @@ preferences or time-window endpoints. Empty, failed and invalid results never
 cause parsers to supply a value from the query. Unsupported negative restrictions,
 conflicting lengths and ambiguous place matches remain visible questions.
 
-Core name/frequency/duration checks and discovered jobs share a continuously
-drained queue. Completed jobs update the editable preview while siblings run.
+Create's core name/frequency/duration checks and discovered jobs share a
+continuously drained queue. Edit reads nominated settings and field-question
+replies; omitted essentials keep their baseline without a mandatory extraction.
+Every extraction receives the focused item and its field's meaning, including
+the option to decline unrelated evidence. Setting labels and connectors are
+removed only as whole tokens, preserving the beginning of dates and names.
+Structured values retain negation, alternatives and temporal qualifiers while
+dropping dialogue framing at their boundaries. Names and topics retain literal
+words such as “Tomorrow,” “Blue,” “Please,” and “Instead”; those words cannot
+nominate sibling settings inside an explicit naming or tagging instruction.
+Completed jobs update the editable preview while siblings run.
 Kind, habit mode and recurrence prerequisites merge in a fixed order; chunk size
 waits for splitting. The original text stays with each job. Follow-ups replace
 only the affected setting and preserve unrelated interrupted work; revision
@@ -101,6 +110,14 @@ one. The current explicit value takes precedence, and earlier unrelated edits
 are not replayed. A field question accepts a bare value; a successful correction
 retires that question. History and these provenance records stay in session
 memory and disappear when the focused chat is cleared.
+
+A bare correction also asks Needle which setting it refers to, using a bounded
+menu and the preceding user instruction. That decision owns only the original
+clause; other instructions in the message remain independent. A declined or
+invalid decision asks which setting to change, without a parser choosing one.
+The subsequent extraction still requires original-source evidence and the same
+field validation. This reference read uses the shared worker pool and can be
+continued after interruption.
 
 Tasks interpret “plan by” as their due date, preserving the clock and deadline
 strictness. Habits retain their separate soft plan-by date. “Next week” uses the

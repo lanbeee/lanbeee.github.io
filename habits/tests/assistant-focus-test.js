@@ -328,13 +328,21 @@ function assert(ok, message){
       const liveRecovery = await livePage.evaluate(async()=>{
         save([{hid:'recovery',name:'Walk',type:'keepup',target:7,durationMinutes:45,logs:[]}]);
         const session = assistantFocusOpen({operation:'edit',kind:'habit',targetId:'recovery'});
-        const original = assistantNeedleLaneRequest;let injected = false;
+        const original = assistantNeedleLaneRequest, originalPrimary=assistantNeedleRequest;let injected = false;
+        const terminate=(type,payload,worker)=>{
+          if(type==='focus' && payload.tools[0].name==='window' && worker && !injected){
+            injected = true;
+            setTimeout(()=>{worker.terminate();worker.onerror();},30);
+          }
+        };
         assistantNeedleLaneRequest = (lane,type,payload,transfer)=>{
           const pending = original(lane,type,payload,transfer);
-          if(type==='focus' && payload.tools[0].name==='window' && !injected){
-            injected = true;
-            setTimeout(()=>{const worker=lane.worker;if(worker){worker.terminate();worker.onerror();}},30);
-          }
+          terminate(type,payload,lane.worker);
+          return pending;
+        };
+        assistantNeedleRequest = (type,payload,transfer)=>{
+          const pending = originalPrimary(type,payload,transfer);
+          terminate(type,payload,_assistantNeedleWorker);
           return pending;
         };
         try{
@@ -342,7 +350,7 @@ function assert(ok, message){
           const record = assistantFocusMaterialize(session);
           return {injected,duration:record.durationMinutes,start:record.allowedTimeStart,pending:session.pendingFamilies,
             unresolved:session.unresolved,jobs:session.jobs.map(row=>({id:row.id,family:row.family,attempts:row.attempts,status:row.status})),trace:session.trace};
-        }finally{assistantNeedleLaneRequest = original;}
+        }finally{assistantNeedleLaneRequest = original;assistantNeedleRequest=originalPrimary;}
       });
       fs.writeFileSync('test-results/needle-focus-worker-recovery-live.json',JSON.stringify(liveRecovery,null,2));
       assert(liveRecovery.injected && liveRecovery.duration===30 && liveRecovery.start===18*60

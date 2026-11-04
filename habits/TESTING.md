@@ -236,4 +236,21 @@ chunks, gaps, timer targets and automatic completion. They verify both “one an
 a half hour” and “an hour and a quarter,” numeric fractions, mixed units and
 fraction symbols. Conflicting, negative and out-of-range lengths must ask
 without changing the staged value. `FIELD_CASE='language-.*(fraction|quarter)|guard-durationMinutes'`
-selects these cases; omit the filter for all 106 positive cases and 25 guards.
+selects these cases; omit the filter for all 160 positive cases and 33 guards.
+`FIELD_CASE=basics` selects everyday phrasing, correction, literal-name and clear
+operations. These check complete patches and confirmed persistence, including
+absence of sibling edits. Ambiguous references use Needle's bounded field menu;
+a declined model decision must not be replaced by parser inference.
+
+Run every optional Needle section with the actual pinned assets:
+
+```bash
+ASSISTANT_LIVE=0 \
+NEEDLE_MODEL_PATH=test-results/needle-live/needle3.cact \
+NEEDLE_WASM_PATH=test-results/needle-live/needle.wasm \
+./run-tests.sh assistant
+```
+
+`ASSISTANT_LIVE=0` skips the separate optional Qwen checks, not Needle. The live
+recovery test terminates whichever worker lane receives the target extraction,
+including worker zero; it never substitutes an inference result.

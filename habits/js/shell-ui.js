@@ -1,4 +1,4 @@
-// Shared sheet controls, toast/undo UI, reach assist, and forgiving pointer handling.
+// Shared sheet controls, toast/undo UI, and forgiving pointer handling.
 
 // ---------------------------------------------------------------------------
 // FILE PURPOSE (React Native port reference):
@@ -1429,8 +1429,8 @@ function hideActionToast(){
 }
 
 // HYBRID: re-renders currently open views after data change
-function refreshOpenViews(){
-  render();
+function refreshOpenViews(opts){
+  render(opts);
   const detailOpen = $('detail-sheet').classList.contains('open') || (paneTierActive() && getPane()?.dataset.activeSheet === 'detail-sheet');
   if(detailIdx !== null && (detailOpen || paneTierActive())){
     // Nested settings and immediate actions must not overwrite a detail draft.
@@ -1447,27 +1447,6 @@ function suppressBottomNav(ms = 300){
   document.body.classList.add('nav-suppressed');
   clearTimeout(navSuppressTimer);
   navSuppressTimer = setTimeout(()=>document.body.classList.remove('nav-suppressed'),ms);
-}
-
-// HYBRID: shows reach-assist pad based on settings and scroll
-function showReachPad(){
-  if(!sortSettings.reachAssist)return;
-  if(document.querySelector('.sheet-wrap.open'))return;
-  if(window.scrollY > 4)return;
-  if(document.body.classList.contains('reach-pad'))return;
-  document.body.classList.add('reach-pad');
-  clearTimeout(reachTimer);
-  reachTimer = setTimeout(()=>{
-    document.body.classList.remove('reach-pad');
-    requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
-  },5200);
-}
-
-// HANDLER: cancels an in-progress reach hold gesture
-function cancelReachHold(){
-  clearTimeout(reachHoldTimer);
-  reachHoldTimer = null;
-  reachArmed = false;
 }
 
 // HYBRID: tracks "at top" state for the home feed. The header itself is

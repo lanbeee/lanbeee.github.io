@@ -72,8 +72,10 @@ function currentDetailTune(){
     showWeatherAtLocation:$('detail-show-weather-location')?.getAttribute('aria-pressed') === 'true',
     allowedWeekdays:selectedWeekdaysFrom('detail-weekday-chips'),
     allowedMonthDays:selectedMonthDaysFrom('detail-monthday-chips'),
+    allowedOrdinalWeekdays:readOrdinalWeekdays($('detail-ordinal-rules')),
     preferredWeekdays:selectedWeekdaysFrom('detail-preferred-weekday-chips'),
     preferredMonthDays:selectedMonthDaysFrom('detail-preferred-monthday-chips'),
+    preferredOrdinalWeekdays:readOrdinalWeekdays($('detail-preferred-ordinal-rules')),
     allowedTimeStart:timeInputToMinutes($('detail-time-start').value),
     allowedTimeEnd:timeInputToMinutes($('detail-time-end').value),
     allowedTimeFixedStart:$('detail-time-kind')?.value === 'fixed',
@@ -102,6 +104,7 @@ function currentDetailTune(){
     minChunkMinutes:clampMinChunk($('detail-min-chunk')?.value),
     minGapMinutes:clampMinGapMinutes($('detail-min-gap')?.value),
     timerAutoStopMinutes:normalizeTimerAutoStop($('detail-timer-auto-stop')?.value),
+    tapStartsSession:$('detail-tap-session')?.getAttribute('aria-pressed') === 'true',
     autoMarkMinutes:normalizeAutoMark($('detail-auto-mark')?.value),
     trackValue:$('detail-track-value')?.getAttribute('aria-pressed') === 'true',
     earlyWindowDays:clampFlexibility($('detail-early-window').value),
@@ -164,9 +167,9 @@ function detailTuneChanged(current, original){
 
 function setDetailDirty(force){
   const sheet = getSheetInner('detail-sheet');
-  const h=load()[detailIdx],local=isLocalAppointment(h);
+  const h=detailIdx==null ? detailUnsavedCreate : load()[detailIdx],local=isLocalAppointment(h);
   if(isDeviceCalendarTask(h)){force=deviceCalendarDetailDirty(h);}
-  const dirty = force ?? (local ? true : (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal)));
+  const dirty = force ?? (detailUnsavedCreate || local ? true : (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal)));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
   $('detail-save').disabled = !dirty || (!isDeviceCalendarTask(h) && !syncDetailConditionHint());
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
@@ -219,6 +222,7 @@ function refreshDetailView(){
 }
 
 function restoreDetailTune(){
+  if(detailUnsavedCreate){closeDetail();return;}
   if(detailTuneOriginal)refreshDetailView();
 }
 
@@ -598,6 +602,8 @@ function closeDetail(){
   if($('detail-save'))$('detail-save').disabled = true;
   setDetailSearchOpen(false,false);
   detailIdx = null;
+  detailUnsavedCreate = null;
+  detailUnsavedReminders = null;
   detailTuneOriginal = null;
   detailScheduleView = 'allowed';
   closeSheet('detail-sheet');

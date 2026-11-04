@@ -258,7 +258,6 @@ const DEFAULT_SORT_SETTINGS = {
     scarce:0.05,
     preference:1.5
   },
-  reachAssist:true,
   reminders:false,
   pushDetailed:false,
   defaultType:'keepup',
@@ -644,15 +643,9 @@ let toastTimer = null;
 let actionToastTimer = null;
 let navSuppressTimer = null;
 let pendingAction = null;
-let reachTimer = null;
-let reachHoldTimer = null;
 let lastScrollY = 0;
 let headerHidden = false;
 let headerRevealPull = 0;
-let topTouchY = 0;
-let topTouchX = 0;
-let topTouchStartedAtTop = false;
-let reachArmed = false;
 let buttonPointer = null;
 let suppressNativeButton = null;
 let settingsPointer = null;

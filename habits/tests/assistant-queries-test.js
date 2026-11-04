@@ -754,25 +754,27 @@ async function launchBrowser(){
   const missedHandlers = await page.evaluate(async () => {
     const now = Date.now();
     const base = dayStart(now);
-    const dayMs = 86400000;
+    // These are calendar-day ages. Subtracting 24-hour blocks across the
+    // autumn clock change can move a late-night fixture into the next date.
+    const daysAgo = days => assistantAddCalendarDays(now, -days);
     const today = todayIso();
     const meds = {
       hid:'miss-p0', name:'Take meds', type:'keepup', target:1, priority:0,
-      durationMinutes:10, createdAt:now - 30 * dayMs,
-      logs:[makeActualLog(now - 2 * dayMs)], lastLog:now - 2 * dayMs
+      durationMinutes:10, createdAt:daysAgo(30),
+      logs:[makeActualLog(daysAgo(2))], lastLog:daysAgo(2)
     };
     const laundry = {
       hid:'miss-p5', name:'Sort laundry', type:'keepup', target:7, priority:5,
-      durationMinutes:20, createdAt:now - 30 * dayMs,
-      logs:[makeActualLog(now - 8 * dayMs)], lastLog:now - 8 * dayMs
+      durationMinutes:20, createdAt:daysAgo(30),
+      logs:[makeActualLog(daysAgo(8))], lastLog:daysAgo(8)
     };
-    const overdue = {hid:'t-overdue', name:'Return library book', type:'task', dueDate:base - 2 * dayMs, logs:[]};
+    const overdue = {hid:'t-overdue', name:'Return library book', type:'task', dueDate:assistantAddCalendarDays(base,-2), logs:[]};
     save([meds, laundry, overdue]);
     const fingerprint = missedPlannerFingerprint(load(), loadSortSettings());
-    const tomorrow = dateKey(now + 86400000);
+    const tomorrow = dateKey(assistantAddCalendarDays(now,1));
     const emptyDays = [];
     for(let k = 0; k < 7; k += 1){
-      emptyDays.push({dayBase:base + k * dayMs, isToday:k === 0, timeline:[]});
+      emptyDays.push({dayBase:assistantAddCalendarDays(base,k), isToday:k === 0, timeline:[]});
     }
     const savedWeek = _homeRenderedWeek;
     _homeRenderedWeek = {days:emptyDays};

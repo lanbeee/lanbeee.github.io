@@ -2,7 +2,6 @@ function updateSortSetting(patch,options = {}){
   const {sync = true,renderNow = true} = options;
   saveSortSettings({...sortSettings,...patch});
   if(sync)syncSettingsControls();
-  if(sortSettings.reachAssist === false)document.body.classList.remove('reach-pad');
   if(renderNow)render();
 }
 

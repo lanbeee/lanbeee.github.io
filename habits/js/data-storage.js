@@ -251,6 +251,7 @@ function loadSortSettings(){
     merged.cancelledBlocks = normalizeCancelledBlocks(merged.cancelledBlocks);
     merged.blockedTimeOverrides = normalizeBlockedTimeOverrides(merged.blockedTimeOverrides);
     merged.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(merged.calendarCreditHabitId) : '') || null;
+    merged.calendarIgnores = normalizeCalendarIgnores(merged.calendarIgnores);
     merged.calendarAllDayMode = normalizeCalendarAllDayMode(merged.calendarAllDayMode);
     merged.completedTaskRetentionDays = normalizeCompletedTaskRetentionDays(merged.completedTaskRetentionDays);
     merged.habitLogKeepCount = normalizeHabitLogKeepCount(merged.habitLogKeepCount);
@@ -380,6 +381,7 @@ function saveSortSettings(settings){
   next.cancelledBlocks = normalizeCancelledBlocks(next.cancelledBlocks);
   next.blockedTimeOverrides = normalizeBlockedTimeOverrides(next.blockedTimeOverrides);
   next.calendarCreditHabitId = (typeof cleanHabitId === 'function' ? cleanHabitId(next.calendarCreditHabitId) : '') || null;
+  next.calendarIgnores = normalizeCalendarIgnores(next.calendarIgnores);
   next.calendarAllDayMode = normalizeCalendarAllDayMode(next.calendarAllDayMode);
   next.completedTaskRetentionDays = normalizeCompletedTaskRetentionDays(next.completedTaskRetentionDays);
   next.habitLogKeepCount = normalizeHabitLogKeepCount(next.habitLogKeepCount);

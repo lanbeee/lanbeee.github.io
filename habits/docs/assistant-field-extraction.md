@@ -230,6 +230,44 @@ swipe-shortcuts, detail-edit-flow and detail-search-navigation UI tests passed.
 Optional live Qwen checks were disabled; these results use the pinned Needle
 WASM in desktop Chrome with synthetic data.
 
+## Focused everyday-language regression
+
+The feedback request “Let's plan for tomorrow” already reached the date job.
+The shared prefix remover consumed the connector “to” from “tomorrow,” leaving
+an invalid date. Prefix removal now respects token boundaries across settings.
+A fresh set of 24 everyday paraphrases then exposed nine additional failures,
+despite the earlier field catalog passing. The initial live results remain in
+`test-results/needle-focused-basics-initial-live.json`.
+
+The shared pipeline now supplies focused-item and field context to extraction,
+preserves literal names/topics and semantic modifiers, and handles dialogue
+framing consistently. Needle selects correction scope from a bounded field
+menu using prior original evidence. A declined scope decision cannot fall back
+to parser inference. Original-source extraction and typed validation still
+follow that decision. Explicit sibling instructions remain independent.
+Optional fields also accept an explicit clear instruction; a topic literally
+named “Clear” stays a topic. Omitted values never imply clearing.
+
+The final assistant run passed **17 files / 1,439 assertions**, with every
+optional Needle section enabled and **zero page errors**. Actual pinned Needle
+WASM passed **160 positive field cases and 33 invalid-input guards**, plus all
+**17 complex create/edit cases**. Positive cases check the complete intended
+patch, absence of unintended sibling edits, no writes before confirmation and
+confirmed persistence. The exact feedback request also passed through the home
+item's real chat UI, preserving its identity, clock and unrelated item until
+Save. These are desktop Chrome measurements with synthetic data; optional Qwen
+checks were disabled and Android permission responses were emulated.
+
+The run also corrected two test-fixture problems without relaxing assertions:
+calendar-day ages now survive daylight-saving changes, and the live crash test
+terminates the actual target worker even when it is assigned to worker zero.
+
+Final local evidence: `test-results/last-run.log`,
+`test-results/needle-field-coverage-live.json`,
+`test-results/needle-field-jobs-live.json`, and
+`test-results/needle-focused-request-ui.json`. Run all live sections with the
+asset variables and assistant command in [TESTING.md](../TESTING.md).
+
 ## Limits
 
 Representative coverage of every field is not exhaustive natural-language

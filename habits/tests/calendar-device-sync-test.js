@@ -153,7 +153,43 @@ const assert=require('node:assert/strict');
     await page.locator('#detail-native-reminders').getByRole('button',{name:'use the usual reminders for this date',exact:true}).click();
     assert.equal(await page.evaluate(()=>nativeReminderChoices(nativeReminderPreferences(),`item:${load().find(isDeviceCalendarTask).hid}`).start),'alarm');
     await page.screenshot({path:'test-results/calendar-personalization.png'});
-    await page.evaluate(()=>{closeDetail();openSheet('settings-sheet');});
+    // Use the rendered controls: a hidden ancestor used to make these actions
+    // unreachable even though their data handlers and hidden flags were correct.
+    for(const minimalMode of [false,true]){
+      await page.evaluate(minimalMode=>{
+        closeDetail();saveSortSettings({...loadSortSettings(),minimalMode});sortSettings=loadSortSettings();render();
+        window.calendarBeforeIgnore=JSON.stringify(load().find(isDeviceCalendarTask));
+        openDetail(load().findIndex(isDeviceCalendarTask));
+      },minimalMode);
+      await page.evaluate(()=>scrollDetailToNav('actions','auto'));
+      assert.equal(await page.locator('#detail-ignore-occurrence').isVisible(),true,'ignore date is reachable');
+      assert.equal(await page.locator('#detail-ignore-series').isVisible(),true,'ignore series is reachable');
+      assert.equal(await page.locator('#detail-delete').isVisible(),false,'source deletion stays unavailable');
+      await page.locator('#detail-ignore-occurrence').click();
+      assert.equal(await page.evaluate(()=>{
+        const h=load().find(isDeviceCalendarTask);
+        return isCalendarIgnored(h) && !visibleIndices(load()).includes(load().indexOf(h))
+          && JSON.stringify(h)===calendarBeforeIgnore;
+      }),true,'ignoring hides the event without editing the source record');
+      await page.locator('#action-undo').click();
+      assert.equal(await page.evaluate(()=>isCalendarIgnored(load().find(isDeviceCalendarTask))),false,'Undo restores the date');
+      await page.evaluate(()=>openDetail(load().findIndex(isDeviceCalendarTask)));
+      await page.evaluate(()=>scrollDetailToNav('actions','auto'));
+      await page.locator('#detail-ignore-series').click();
+      await page.evaluate(async()=>{
+        await refreshDeviceCalendars();resetSettingsSheetState();syncSettingsControls();openSheet('settings-sheet');
+      });
+      assert.equal(await page.evaluate(()=>isCalendarIgnored(load().find(isDeviceCalendarTask))),true,'series ignore survives sync');
+      await page.locator('#settings-calendar-head').click();
+      await page.locator('#calendar-ignored-list').getByRole('button',{name:'Show',exact:true}).click();
+      assert.equal(await page.evaluate(()=>isCalendarIgnored(load().find(isDeviceCalendarTask))),false,'Settings restores the series');
+      await page.evaluate(()=>closeSheet('settings-sheet'));
+    }
+    await page.evaluate(()=>{
+      closeDetail();saveSortSettings({...loadSortSettings(),minimalMode:false});sortSettings=loadSortSettings();
+      render();resetSettingsSheetState();syncSettingsControls();openSheet('settings-sheet');
+      $('settings-calendar-head').click();
+    });
     await page.evaluate(async()=>{window.calendarFailure=true;await refreshDeviceCalendars();});
     assert.equal(await page.evaluate(()=>load().filter(isDeviceCalendarTask).length),1,'failed read keeps meetings');
     await page.evaluate(async()=>{window.calendarFailure=false;calendarSnapshot.events=[];await refreshDeviceCalendars();});

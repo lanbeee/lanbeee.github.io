@@ -10,7 +10,7 @@ function resetDetailDisclosures(h){
     el.open = el.dataset.detailEssential === 'true';
   });
   const configured = {
-    'detail-availability-disclosure':Boolean(h.allowedWeekdays?.length || h.allowedMonthDays?.length || h.locationIds?.length || h.allowedTimeStart != null || h.allowedTimeEnd != null || h.allowedTimeStartAnchor || h.allowedTimeEndAnchor),
+    'detail-availability-disclosure':Boolean(h.allowedWeekdays?.length || h.allowedMonthDays?.length || h.allowedOrdinalWeekdays?.length || h.locationIds?.length || h.allowedTimeStart != null || h.allowedTimeEnd != null || h.allowedTimeStartAnchor || h.allowedTimeEndAnchor),
     'detail-weather-disclosure':Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId),
     'detail-options-disclosure':Boolean(h.scheduleOptions?.length),
     'detail-order-disclosure':Boolean(h.scheduleLinks?.length),

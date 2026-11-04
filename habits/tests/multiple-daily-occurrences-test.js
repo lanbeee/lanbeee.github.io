@@ -22,6 +22,9 @@ const {chromium,BASE,FAST_ONLY,baseHabit,openEveningSettings,glpkAvailable} = re
   await page.goto(BASE,{waitUntil:'load'});
   const glpkOk = await glpkAvailable(page);
   if(!FAST_ONLY)assert(glpkOk,'GLPK is available for parity checks');
+  // All UI-triggered renders must share the frozen page clock, including
+  // renders during logging below. Direct engine checks still run both engines.
+  await page.evaluate(()=>{buildWeekAgendaOffMain=async(data,settings,numDays,opts)=>buildWeekAgenda(data,settings,numDays,opts);});
   const settings = openEveningSettings({blockedTimes:[
     {label:'night',days:[],start:0,end:420},{label:'sleep',days:[],start:1320,end:1440}
   ],showWeekOnHome:true,agendaOptimizer:false,minimalMode:false});

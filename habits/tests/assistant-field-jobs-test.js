@@ -36,6 +36,29 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       return html.includes('focus-progress')&&html.includes('Reading')&&!html.includes('data-focus-choice="resume"');
     });
     assert(opening,'the first progress paint shows the meter instead of Continue');
+    const editScope=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open();
+      const seen=[];
+      await assistantFocusTurn(s,'Pin it.',t.options({extract:async spec=>{seen.push(spec);return t.reply(spec);}}));
+      const jobs=seen.filter(spec=>spec.jobId);
+      const isolated=jobs.length===1&&jobs[0].jobId==='pinned'&&jobs[0].system.includes('Edit only Gym.')&&jobs[0].system.includes('Read only Pinned:');
+      const task={...load()[0],type:'task',dueDate:new Date('2026-10-17T00:00:00-04:00').getTime()};save([task]);
+      const date=t.open('edit','task'),before=JSON.stringify(load());
+      await assistantFocusTurn(date,"Let's plan for tomorrow",t.options({rank:async()=>({rankings:[['weatherLocationId','links','topics','reminderTravelLead'].map(id=>({id,score:1}))]})}));
+      return isolated&&assistantFocusMaterialize(date).name==='Gym'&&date.changes.length===1&&date.changes[0].field==='dueDate'
+        &&!date.unresolved.length&&before===JSON.stringify(load());
+    });
+    assert(editScope,'Edit reads nominated settings with the focused identity; unrelated retrieval guesses cannot add sibling changes');
+    const referenceDecision=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();save([{...load()[0],type:'task'}]);const s=t.open('edit','task');
+      await assistantFocusTurn(s,'Plan this for tomorrow',t.options());
+      const before=JSON.stringify(assistantFocusMaterialize(s));
+      await assistantFocusTurn(s,'Actually Friday instead',t.options({extract:async spec=>spec.family==='reference'
+        ?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{field:'Another setting'}}]}:t.reply(spec)}));
+      return !assistantFocusCanSave(s)&&s.unresolved.some(issue=>issue.field==='request')
+        &&JSON.stringify(assistantFocusMaterialize(s))===before&&!s.changes.some(change=>change.field==='allowedWeekdays');
+    });
+    assert(referenceDecision,'a declined model reference decision asks for scope without a parser fallback or a sibling edit');
     assert(compound.r.name==='Walk'&&compound.parts.times===1&&compound.parts.days===2&&compound.r.durationMinutes===30&&compound.r.allowedTimeEndAnchor==='maghrib'
       &&compound.r.allowedWeekdays.join()==='1,2,3,4,5'&&compound.r.priority===1&&compound.r.pinned&&compound.r.emoji==='🚶'&&compound.r.topics.join()==='Health'
       &&!compound.unresolved.length&&!compound.pending.length&&compound.unchanged&&compound.max===3&&compound.oneTool,'one shared pipeline fills a complex draft, uses one tool per job and caps active work at three');

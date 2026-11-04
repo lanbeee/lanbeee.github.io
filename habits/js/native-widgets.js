@@ -1,7 +1,7 @@
 // Read-only home-screen projections. The Android shell renders these without
 // starting a WebView; both foreground and closed refresh use this same code.
 function compileNativeWidgetSnapshot(week,data,settings,now = Date.now()){
-  const byId = new Map(data.map(h=>[h.hid,h]));
+  const byId = new Map(data.filter(h=>!isCalendarIgnored(h,settings)).map(h=>[h.hid,h]));
   const suggested = loadTodaySuggested(),expectations = suggested.expectations || {};
   const planned = new Map((week?.days || []).map(day=>[dateKey(day.dayBase),day]));
   const keys = new Set([dateKey(now),...planned.keys()]);
@@ -10,7 +10,10 @@ function compileNativeWidgetSnapshot(week,data,settings,now = Date.now()){
     const start = new Date(`${key}T00:00:00`).getTime(),next = new Date(start);
     next.setDate(next.getDate()+1);
     const end = next.getTime(),day = planned.get(key);
-    const subject = row=>byId.get(row.hid || row.h?.hid) || (!row.hid && !row.h?.hid ? data[row.i] : null);
+    const subject = row=>{
+      const h=byId.get(row.hid || row.h?.hid) || (!row.hid && !row.h?.hid ? data[row.i] : null);
+      return h && !isCalendarIgnored(h,settings) ? h : null;
+    };
     const groups = new Map();
     for(const row of day?.timeline || []){
       if(!['fill','scheduled'].includes(row.kind))continue;
@@ -24,8 +27,13 @@ function compileNativeWidgetSnapshot(week,data,settings,now = Date.now()){
       if(h.type === 'task' && isTaskDone(h))continue;
       for(const row of agendaRowsAfterCompletions(h,rows,start))active.add(row);
     }
-    const timeline = (day?.timeline || []).filter(row=>
-      ['travel','blocked'].includes(row.kind) || active.has(row));
+    const timeline = (day?.timeline || []).filter((row,index,all)=>{
+      if(row.kind==='travel'){
+        const destination=all.slice(index+1).find(next=>next.kind!=='travel' && next.start===row.end && next.locationId===row.to);
+        if(destination && ['fill','scheduled'].includes(destination.kind) && !subject(destination))return false;
+      }
+      return ['travel','blocked'].includes(row.kind) || active.has(row);
+    });
     const rows = timeline.filter(row=>Number.isFinite(row.start) && Number.isFinite(row.end) && row.end>row.start)
       .map(row=>{
         const h = subject(row);
@@ -80,7 +88,7 @@ function compileNativeWidgetSnapshot(week,data,settings,now = Date.now()){
 // prompt, duplicate protection and Undo all apply to widget taps as well.
 function completeNativeWidgetItem(action){
   const data=load(),index=data.findIndex(h=>h.hid === action?.hid),h=data[index],now=Date.now();
-  if(!h || h.type === 'zero' || isEventItem(h) || action.dayKey !== dateKey(now)
+  if(!h || isCalendarIgnored(h) || h.type === 'zero' || isEventItem(h) || action.dayKey !== dateKey(now)
     || !/^[0-9a-f]{32}$/.test(action.operationId || '')){
     showToast('This widget item changed. Open Agenda to refresh it.');return;
   }

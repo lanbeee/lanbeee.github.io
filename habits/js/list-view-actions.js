@@ -1052,6 +1052,7 @@ function movePlanTo(idx,fromKey,toKey){
 // HYBRID: revert last action and refresh
 function executeUndo(){
   if(!pendingAction)return;
+  if(pendingAction.type === 'calendar-ignore'){const entry=pendingAction.entry;hideActionToast();restoreCalendarIgnored(entry);return;}
   if(pendingAction.type === 'focus-edit'){
     if(typeof assistantFocusUndo === 'function')assistantFocusUndo(pendingAction.snapshot);
     hideActionToast();
@@ -1295,6 +1296,12 @@ function commitBreakableFromCard(i,card){
 // HYBRID: log entry and flash card
 function quickLog(i,card){
   if(isEventItem(load()[i]))return;
+  const item = load()[i];
+  if(item?.tapStartsSession && typeof habitTimerEligible === 'function' && habitTimerEligible(item)){
+    if(habitTimer && habitTimer.idx === i)stopHabitTimer(true,true);
+    else startHabitTimer(i);
+    return;
+  }
   const go = ()=>{
     if(card){
       card.classList.add('logged');

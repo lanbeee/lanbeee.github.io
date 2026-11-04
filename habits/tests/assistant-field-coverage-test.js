@@ -16,6 +16,14 @@ const cases=[
   ['conditionRadiusM','Set radius to 300 meters',300,{seed:{repeatMode:'opportunity'}}],
   ['dueDate','Change plan by to 1/7/2027',day('2027-01-07'),{kind:'task',prelude:['Plan this for first week of 2027','Plan by'],record:{eventTime:day('2027-01-07')+9*3600000,hardDue:true}}],
   ['dueDate','Set due date to January 7, 2027',day('2027-01-07'),{kind:'task'}],
+  ...["Let's plan for tomorrow",'Plan this for tomorrow','Set due date to tomorrow','Move the due date to tonight'].map((prompt,index)=>
+    ['dueDate',prompt,index===3?new Date('2026-11-01T00:00:00-04:00').getTime():day('2026-11-02'),{id:`language-date-prefix-${index+1}`,kind:'task',seed:{hardDue:true},record:{name:'Apply premium',durationMinutes:30,hardDue:true,eventTime:new Date(`${index===3?'2026-11-01':'2026-11-02'}T09:00:00-05:00`).getTime()}}]),
+  ['planByDate','Plan by tomorrow',day('2026-11-02'),{id:'language-date-prefix-habit'}],
+  ['appointmentStartDate','Set date to tomorrow','2026-11-02',{id:'language-date-prefix-event',kind:'event'}],
+  ['appointmentUntil','Repeat until tomorrow','2026-11-02',{id:'language-date-prefix-until',kind:'event'}],
+  ...['Astrology','Topography','Itinerary'].map((topic,index)=>['topics',`Tag ${topic}`,[topic],{id:`language-label-prefix-${index+1}`}]),
+  ['topics','Topic:Astrology',['Astrology'],{id:'language-label-prefix-colon'}],
+  ['emojiBgColor','Color:blue','blue',{id:'language-label-prefix-color'}],
   ['dueTime','Start at 10am',600,{kind:'task'}],
   ['hardDue','Make it a hard deadline',true,{kind:'task',seed:{delayAllowanceDays:2}}],
   ['planByDate','Plan by 2027-01-07',day('2027-01-07')],
@@ -106,9 +114,52 @@ const cases=[
   ['autoMarkMinutes','Automatically mark done after a quarter hour',15,{id:'language-auto-fraction'}],
   ['reminderTravelLead','Remind me half an hour before departure',30,{id:'language-reminder-fraction',native:true}],
   ['reminderStartLead','Remind me one hour before start',60,{id:'language-reminder-hour',native:true,kind:'event'}],
-  ['reminderMissedLead','Set missed warning lead to a quarter hour',15,{id:'language-warning-fraction',native:true}]
+  ['reminderMissedLead','Set missed warning lead to a quarter hour',15,{id:'language-warning-fraction',native:true}],
+  ...["Let's do this tomorrow",'Tomorrow instead, please','Can we plan it for tomorrow?','Due tomorrow please','Tomorrow  instead'].map((prompt,index)=>
+    ['dueDate',prompt,day('2026-11-02'),{id:`basics-date-${index+1}`,kind:'task'}]),
+  ['dueTime','Start at 6pm instead',1080,{id:'basics-clock-correction',kind:'task'}],
+  ['dueTime',"Let's start at noon",720,{id:'basics-clock-noon',kind:'task'}],
+  ['durationMinutes','Half an hour, please',30,{id:'basics-duration-polite'}],
+  ['durationMinutes','Make it an hour',60,{id:'basics-duration-hour'}],
+  ['durationMinutes',"I'd like this to take 45 minutes",45,{id:'basics-duration-natural'}],
+  ['frequency',"I'd like this twice weekly",2,{id:'basics-frequency-weekly',extra:{periodDays:7}}],
+  ['frequency','Can we do this every other day?',1,{id:'basics-frequency-question',extra:{periodDays:2}}],
+  ['name','Call it Evening Walk','Evening Walk',{id:'basics-name-call'}],
+  ['name','Can you rename it to Fresh Start?','Fresh Start',{id:'basics-name-question'}],
+  ['topics','Put this under Health',['Health'],{id:'basics-topic-natural'}],
+  ['topics','Tag this Personal',['Personal'],{id:'basics-topic-pronoun'}],
+  ['pinned','Keep it pinned please',true,{id:'basics-pin-polite'}],
+  ['pinned','Unpin this',false,{id:'basics-unpin'}],
+  ['allowedWindow','Only before sunset, please',null,{id:'basics-window-polite',record:{allowedTimeEndAnchor:'maghrib'}}],
+  ['allowedWeekdays','Weekdays only, please',[1,2,3,4,5],{id:'basics-weekdays-polite'}],
+  ['emojiBgColor','Use a blue background please','blue',{id:'basics-color-polite'}],
+  ['dueDate','Actually Friday instead',day('2026-11-06'),{id:'basics-date-followup',kind:'task',historySteps:['Plan this for tomorrow']}],
+  ['dueTime','Make that 10am',600,{id:'basics-clock-followup',kind:'task',historySteps:['Start at 9am']}],
+  ['durationMinutes','45 minutes instead',45,{id:'basics-duration-followup',historySteps:['Make it an hour long']}],
+  ['frequency','Actually make it three times per week',3,{id:'basics-frequency-followup',extra:{periodDays:7},historySteps:['Every other day']}],
+  ['name','Call it Tomorrow','Tomorrow',{id:'basics-name-date-word',kind:'task',record:{dueDate:new Date('2026-10-17T00:00:00-04:00').getTime()}}],
+  ['name','Rename it Blue Sky','Blue Sky',{id:'basics-name-color-word'}],
+  ['name','Call it Daily Bread','Daily Bread',{id:'basics-name-frequency-word'}],
+  ['name','Call it Please','Please',{id:'basics-name-dialogue-word'}],
+  ['topics','Tag it Instead',['Instead'],{id:'basics-topic-dialogue-word'}],
+  ['dueDate','Plan this for the day after tomorrow',day('2026-11-03'),{id:'basics-date-relative-day',kind:'task'}],
+  ['dueDate','Actually Friday instead, pin it',day('2026-11-06'),{id:'basics-date-followup-sibling',kind:'task',extra:{pinned:true},historySteps:['Plan this for tomorrow']}],
+  ['dueDate','Clear the due date',null,{id:'basics-clear-date',kind:'task',op:'clear',record:{dueDate:null,eventTime:null}}],
+  ['dueTime','Clear the start time',null,{id:'basics-clear-clock',kind:'task',op:'clear',record:{eventTime:null}}],
+  ['allowedWeekdays','Clear allowed weekdays',null,{id:'basics-clear-weekdays',op:'clear',seed:{allowedWeekdays:[1,2]},record:{allowedWeekdays:[]}}],
+  ['allowedWindow','Clear allowed hours',null,{id:'basics-clear-window',op:'clear',seed:{allowedTimeStart:540,allowedTimeEnd:1020},record:{allowedTimeStart:null,allowedTimeEnd:null}}],
+  ['topics','Clear topics',null,{id:'basics-clear-topics',op:'clear',seed:{topics:['Work']},record:{topics:[]}}],
+  ['places','Clear places',null,{id:'basics-clear-places',op:'clear',seed:{locationIds:['home']},record:{locationIds:[]}}],
+  ['weatherProfile','Clear weather profile',null,{id:'basics-clear-weather',op:'clear',seed:{weatherProfileMode:'profile',weatherProfileId:'dry'},record:{weatherProfileId:null,weatherProfileMode:'none'}}],
+  ['links','Clear links',null,{id:'basics-clear-links',op:'clear',seed:{links:[{id:'guide',type:'url',label:'Guide',value:'https://example.com'}]},record:{links:[]}}],
+  ['topics','Tag it Clear',['Clear'],{id:'basics-topic-clear-word'}],
+  ['pinned','Pin it instead',true,{id:'basics-explicit-setting-followup',kind:'task',extra:{dueDate:day('2026-11-02')},historySteps:['Plan this for tomorrow']}]
 ].map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
+  {field:'name',kind:'habit',prompt:'Do not rename it Tomorrow'},
+  {field:'topics',kind:'habit',prompt:"Don't tag it Work"},
+  ...['Not tomorrow instead','Tomorrow or Friday please','After tomorrow instead'].map(prompt=>({field:'dueDate',kind:'task',prompt})),
+  ...['tomorrowland','tonightly','onward'].map(value=>({field:'dueDate',kind:'task',prompt:`Set due date to ${value}`})),
   {field:'dueDate',kind:'task',prompt:'Set due date to 2027-02-30'},
   {field:'dueDate',kind:'task',prompt:'Change plan by to 2/30/2027'},
   {field:'planByDate',kind:'habit',prompt:'Plan by the first week of 2027'},
@@ -147,7 +198,8 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         let args={};
         if(spec.family==='families')args={evidence:'',outside:''};
         else if(spec.family==='completeness')args={missing:''};
-        else{const key=Object.keys(spec.tool.parameters.properties)[0],choices=spec.tool.parameters.properties[key].enum||[];args={[key]:spec.jobId===test.field?(choices.includes(test.reuse)?test.reuse:choices[0]):''};}
+        else if(spec.family==='reference')args={field:spec.tool.parameters.properties.field.enum[0]};
+        else{const key=Object.keys(spec.tool.parameters.properties)[0],choices=spec.tool.parameters.properties[key].enum||[];args={[key]:spec.jobId===test.field||Object.hasOwn(test.extra||{},spec.jobId)?(choices.includes(test.reuse)?test.reuse:choices[0]):''};}
         return {confidence:1,function_calls:[{name:spec.tool.name,arguments:args}]};
       }};
       window.coverageSeed=test=>{
@@ -190,7 +242,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         const r=assistantFocusMaterialize(s),change=s.changes.find(c=>c.field===test.field);
         const expectedFields=Object.keys(test.extra||{}).concat(test.field==='frequency'?['timesPerPeriod']:test.field);
         const values={...test.extra,[test.field==='frequency'?'timesPerPeriod':test.field]:test.value};
-        const matched=Object.entries(values).every(([field,value])=>value===null?s.changes.some(c=>c.field===field):s.changes.some(c=>c.field===field&&JSON.stringify(c.value)===JSON.stringify(value)));
+        const matched=Object.entries(values).every(([field,value])=>value===null?s.changes.some(c=>c.field===field&&(!test.op||c.op===test.op)):s.changes.some(c=>c.field===field&&JSON.stringify(c.value)===JSON.stringify(value)));
         const recordOK=Object.entries(test.record||{}).every(([k,v])=>JSON.stringify(r[k]??null)===JSON.stringify(v));
         const advancedOK=(!test.rule||s.dependencies.weatherProfile?.rules?.some(rule=>rule.metric==='temperature_2m'&&rule.min===10))
           &&(!test.option||r.scheduleOptions?.some(o=>o.start===1080&&o.end===1200&&o.locationId==='home'&&o.weekdays.join()==='1'))

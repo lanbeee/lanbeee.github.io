@@ -353,7 +353,7 @@ function assistantFocusNormalize(fieldId, raw, session){
   const field = assistantFocusField(fieldId);
   if(!field)return {ok:false, error:'That setting is not editable here.'};
   const text = raw == null ? '' : String(raw).trim();
-  const cleared = /^(clear|none|any|off|manual)$/i.test(text);
+  const cleared = !session?._fieldLiteral && /^(clear|none|any|off|manual)$/i.test(text);
   if(!text || (cleared && field.clear)){
     if(!field.clear)return {ok:false, error:`${field.label} needs a value.`};
     return {ok:true, op:'clear', value:null};
@@ -543,7 +543,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:fieldId === 'places' ? ids : ids[0]};
   }
   if(fieldId === 'topics'){
-    const topics = assistantParseTopicsArg(text);
+    const topics = assistantParseTopicsArg(session?._fieldLiteral ? text.split(',') : text);
     return topics && topics.length ? {ok:true, op:'set', value:topics} : fail('Name at least one topic.');
   }
   if(fieldId === 'links'){

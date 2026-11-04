@@ -95,7 +95,7 @@ function parseCalendarIcsText(text, {from,to} = {}){
     if(start >= to || (end === start ? start < from : end <= from))return;
     const id = calendarIcsExternalId(item.uid,recurrenceId ?? 'single');
     events.set(id,{id,subject:item.summary || 'untitled',start,end,isAllDay:startDate.isDate,
-      source:'ics'});
+      source:'ics',calendarSeriesId:(item.isRecurring() || c.hasProperty('recurrence-id')) ? calendarIcsExternalId(item.uid,'series') : null});
     if(events.size > CALENDAR_ICS_MAX_EVENTS)throw new Error('More than 5,000 events in this range. Choose a shorter ICS date range.');
   };
   for(const c of components.values()){

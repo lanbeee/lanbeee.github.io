@@ -212,11 +212,12 @@ function missedPlannerFingerprint(data,settings){
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeFixedStart,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
-    h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
+    h.allowedWeekdays,h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredOrdinalWeekdays,h.locationIds,h.anywhereAllowed,h.logs,
     h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
   ]);
   const plannerSettings = {
     blockedTimes:settings?.blockedTimes,
+    calendarIgnores:settings?.calendarIgnores,
     blockedTimeOverrides:settings?.blockedTimeOverrides,
     cancelledBlocks:settings?.cancelledBlocks,
     availabilityOverrides:settings?.availabilityOverrides,
@@ -1692,7 +1693,7 @@ function render(opts){
       : (showBreakableSlider
         ? `${cardBreakableSlider(h)}${sessionHtml}`
         : (sessionHtml || trail));
-    const isDoneTask = h.type === 'task' && isTaskDone(h);
+    const isDoneTask = !event && h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
       ? habitTimerEligible(h)
       : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
@@ -1778,10 +1779,10 @@ function render(opts){
           ${rightSwipeHtml}
         </div>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+      <div class="ting-card ${cardScoreTone}${event?' event-card':''}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
-        <${event?'span':'button'} class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" ${event?'aria-hidden="true"':`data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}"`} style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
-          ${iconHtml(h,c)}
+        <${event?'span':'button'} class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" ${event?'aria-hidden="true"':`data-pulse="${realIdx}" aria-label="${h.tapStartsSession ? (timerRunning ? 'stop session for' : 'start session for') : (h.type === 'task' ? 'complete' : 'log')} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}"`} style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
+          ${h.tapStartsSession && timerRunning ? '<i class="ti ti-player-stop" aria-hidden="true"></i>' : iconHtml(h,c)}
         </${event?'span':'button'}>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">
           <div class="ting-main">

@@ -76,6 +76,8 @@ let _homeRenderedWeek = null;
 let _fastHomeRefreshToken = 0;
 let _optimizerHomeRequestKey = '';
 let _optimizerHomeRequestToken = 0;
+let _optimizerHomeRenderPromise = null;
+let _optimizerHomeRenderError = null;
 let _optimizerHomeReadyKey = '';
 let _optimizerHomeReadyWeek = null;
 let _optimizerHomeReadyDirtyKey = '';
@@ -700,7 +702,7 @@ function restoreHomeReadingPosition(snapshot,list){
   });
 }
 
-const HOME_PLANNER_ALGORITHM_VERSION = 26;
+const HOME_PLANNER_ALGORITHM_VERSION = 27;
 
 // PURE: planner dirty signature without the wall-clock minute bucket. Background
 // refreshes use this so a clock tick alone cannot force a full worker replan.
@@ -725,6 +727,7 @@ function homePlannerDirtyKey(data = (typeof load === 'function' ? load() : [])){
     availabilityMinutes:s.availabilityMinutes || [],
     availabilityOverrides:s.availabilityOverrides || {},
     blockedTimes:s.blockedTimes || [],
+    calendarIgnores:s.calendarIgnores || [],
     cancelledBlocks:s.cancelledBlocks || {},
     blockedTimeOverrides:s.blockedTimeOverrides || {},
     agendaScoreWeights:s.agendaScoreWeights || null,
@@ -1013,10 +1016,12 @@ function homeCardFaceSignature(data = (typeof load === 'function' ? load() : [])
       h.target || '',
       h.durationMinutes || 0,
       h.breakable ? 1 : 0,
+      h.tapStartsSession ? 1 : 0,
       h.minChunkMinutes || 0,
       (h.topics || []).join(','),
       (h.locationIds || []).join(','),
       (h.allowedWeekdays || []).join(','),
+      JSON.stringify([h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredWeekdays,h.preferredMonthDays,h.preferredOrdinalWeekdays]),
       h.allowedTimeStart ?? '',
       h.allowedTimeEnd ?? '',
       JSON.stringify(h.appointment || null),
@@ -1212,7 +1217,8 @@ function queueOptimizedHomeRender(data,opts){
         if($('list')?.querySelector('.home-loading'))render({...opts,deferAgenda:true});
       },HOME_COLD_BOOT_SKELETON_MAX_MS)
     : null;
-  void optimizerBuild.then(week=>{
+  _optimizerHomeRenderError = null;
+  _optimizerHomeRenderPromise = optimizerBuild.then(week=>{
     if(coldBootTimer != null)clearTimeout(coldBootTimer);
     if(token !== _optimizerHomeRequestToken)return;
     _optimizerHomeRequestKey = '';
@@ -1270,9 +1276,10 @@ function queueOptimizedHomeRender(data,opts){
     _homeListFingerprint = homeListFingerprint();
     if(exactMode && !(opts && opts.__weatherChanged))scheduleHomeAgendaRefinement(stableData,settings,week);
     if(typeof plannerPerfDump === 'function')plannerPerfDump('home');
-  }).catch(()=>{
+  }).catch(error=>{
     if(coldBootTimer != null)clearTimeout(coldBootTimer);
     if(token !== _optimizerHomeRequestToken)return;
+    _optimizerHomeRenderError = error;
     _optimizerHomeRequestKey = '';
     syncHomePlannerStatusIndicators();
     // Keep the fast planner already on screen. A cold open still sitting on
@@ -1282,6 +1289,15 @@ function queueOptimizedHomeRender(data,opts){
     if($('list')?.querySelector('.home-loading'))render({...opts,deferAgenda:true});
   });
   return true;
+}
+
+// Follow superseding foreground solves too (for example a calendar change
+// arriving during a manual refresh), without waiting for idle refinement.
+async function waitForHomeAgendaRender(){
+  let pending;
+  do{pending=_optimizerHomeRenderPromise;await pending;}
+  while(pending!==_optimizerHomeRenderPromise);
+  if(_optimizerHomeRenderError)throw _optimizerHomeRenderError;
 }
 
 // Immediate feedback for a saved travel override. The optimized replan still

@@ -38,12 +38,13 @@ function scheduledDays(h){
 function preferredDays(h){
   return {
     weekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
-    monthDays:normalizeAllowedMonthDays(h.preferredMonthDays)
+    monthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
+    ordinalWeekdays:normalizeOrdinalWeekdays(h.preferredOrdinalWeekdays)
   };
 }
 function hasDaySchedule(h){
   const schedule = scheduledDays(h);
-  return Boolean(schedule.weekdays.length || schedule.monthDays.length
+  return Boolean(schedule.weekdays.length || schedule.monthDays.length || normalizeOrdinalWeekdays(h.allowedOrdinalWeekdays).length
     || (typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h)));
 }
 const SCHEDULE_OPPORTUNITY_RATE_CACHE = new Map();
@@ -52,27 +53,20 @@ const SCHEDULE_OPPORTUNITY_RATE_CACHE = new Map();
 // 400-year Gregorian cycle so February/leap years, 30/31-day months, and
 // weekday + month-day intersections all have a stable exact rate.
 function scheduledOpportunityRate(h){
-  const schedule = scheduledDays(h);
-  const effectiveWeekdays = schedule.weekdays;
-  if(!effectiveWeekdays.length && !schedule.monthDays.length)return 1;
-  if(!schedule.monthDays.length)return effectiveWeekdays.length / 7;
-  const key = `${effectiveWeekdays.join(',')}|${schedule.monthDays.join(',')}`;
+  const general=habitSimpleAllowedDays(h),options=normalizeHabitScheduleOptions(h.scheduleOptions),hasGeneral=hasGeneralAllowedSchedule(h);
+  const key=JSON.stringify([general,options.map(o=>[o.weekdays,o.ordinalWeekdays]),hasGeneral]);
   if(SCHEDULE_OPPORTUNITY_RATE_CACHE.has(key))return SCHEDULE_OPPORTUNITY_RATE_CACHE.get(key);
-  const weekdays = new Set(effectiveWeekdays);
-  let opportunities = 0;
-  for(let year = 2000;year < 2400;year += 1){
-    for(let month = 0;month < 12;month += 1){
-      for(const monthDay of schedule.monthDays){
-        const date = new Date(Date.UTC(year,month,monthDay));
-        if(date.getUTCFullYear() !== year || date.getUTCMonth() !== month)continue;
-        if(weekdays.size && !weekdays.has(date.getUTCDay()))continue;
-        opportunities += 1;
-      }
+  if(!options.length && !general.monthDays.length && !general.ordinalWeekdays.length)return general.weekdays.length ? general.weekdays.length/7 : 1;
+  let count=0;
+  for(let year=2000;year<2400;year++)for(let month=0;month<12;month++){
+    const last=new Date(year,month+1,0).getDate();
+    for(let day=1;day<=last;day++){
+      const d=new Date(year,month,day,12),wd=d.getDay(),ts=d.getTime();
+      const hit=(weekdays,monthDays,rules)=>(!weekdays.length || weekdays.includes(wd)) && (!monthDays.length || monthDays.includes(day)) && matchesOrdinalWeekdays(rules,ts);
+      if((hasGeneral && hit(general.weekdays,general.monthDays,general.ordinalWeekdays)) || options.some(o=>hit(o.weekdays,[],o.ordinalWeekdays)))count++;
     }
   }
-  const rate = opportunities / 146097; // days in a 400-year Gregorian cycle
-  SCHEDULE_OPPORTUNITY_RATE_CACHE.set(key,rate);
-  return rate;
+  const rate=count/146097;SCHEDULE_OPPORTUNITY_RATE_CACHE.set(key,rate);return rate;
 }
 // PURE: true when the requested completion rate consumes every eligible date.
 // Examples: 3x/7d on Tue/Fri/Sat, 2x/7d on Fri/Sat, or 2x/30d on month days
@@ -91,7 +85,7 @@ function rhythmFillsEveryEligibleDay(h){
 }
 function hasPreferredDays(h){
   const pref = preferredDays(h);
-  return Boolean(pref.weekdays.length || pref.monthDays.length);
+  return Boolean(pref.weekdays.length || pref.monthDays.length || pref.ordinalWeekdays.length);
 }
 function hasTimeWindow(h){
   if(typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(h))return true;
@@ -109,10 +103,11 @@ function hasPreferredTimeWindow(h){
 }
 function isPreferredDay(h,ts = Date.now()){
   const pref = preferredDays(h);
-  if(!pref.weekdays.length && !pref.monthDays.length)return false;
+  if(!pref.weekdays.length && !pref.monthDays.length && !pref.ordinalWeekdays.length)return false;
   const d = new Date(ts);
   if(pref.weekdays.length && !pref.weekdays.includes(d.getDay()))return false;
   if(pref.monthDays.length && !pref.monthDays.includes(d.getDate()))return false;
+  if(!matchesOrdinalWeekdays(pref.ordinalWeekdays,ts))return false;
   return true;
 }
 function isDateEligibleForHabit(h,ts = Date.now()){
@@ -141,7 +136,7 @@ function nextEligibleDate(h,fromTs = Date.now(),lookAheadDays = 370){
   if(!hasDaySchedule(h))return dayStart(fromTs);
   const base = dayStart(fromTs);
   for(let offset = 0;offset <= lookAheadDays;offset++){
-    const ts = base + offset * 86400000;
+    const ts = offsetCalendarDay(base,offset);
     if(isDateEligibleForHabit(h,ts))return ts;
   }
   return null;
@@ -215,6 +210,7 @@ function scheduleSummary(h){
   const parts = [];
   if(schedule.weekdays.length)parts.push(schedule.weekdays.map(weekdayShort).join('/'));
   if(schedule.monthDays.length)parts.push(schedule.monthDays.map(monthOrdinal).join('/'));
+  if(normalizeOrdinalWeekdays(h.allowedOrdinalWeekdays).length)parts.push(ordinalWeekdaySummary(h.allowedOrdinalWeekdays));
   const tw = timeWindowSummary(h);
   if(tw)parts.push(tw);
   return parts.join(' ');
@@ -224,5 +220,6 @@ function preferredSummary(h){
   const parts = [];
   if(pref.weekdays.length)parts.push(pref.weekdays.map(weekdayShort).join('/'));
   if(pref.monthDays.length)parts.push(pref.monthDays.map(monthOrdinal).join('/'));
+  if(pref.ordinalWeekdays.length)parts.push(ordinalWeekdaySummary(pref.ordinalWeekdays));
   return parts.join(' and ');
 }

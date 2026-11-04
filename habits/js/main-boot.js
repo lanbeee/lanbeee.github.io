@@ -9,7 +9,7 @@
 // Responsibilities concentrated here:
 //   • crown dial gesture (pointer / momentum / wheel / keyboard)
 //   • keyboard lift (visualViewport-driven layout adjustment)
-//   • reach assist (pull-down-at-top gesture)
+//   • pull-to-refresh gesture
 //   • pane sync (overview / day-logs / detail sheet coordination)
 //
 // React Native port mapping:
@@ -1592,6 +1592,10 @@ $('detail-pinned').addEventListener('click',function(){
   this.setAttribute('aria-pressed',String(!pressed));
   setDetailDirty();
 });
+$('detail-tap-session').addEventListener('click',function(){
+  this.setAttribute('aria-pressed',String(this.getAttribute('aria-pressed') !== 'true'));
+  setDetailDirty();
+});
 $('detail-duration').addEventListener('input',()=>setDetailDirty());
 $('detail-early-window').addEventListener('input',()=>setDetailDirty());
 $('detail-delay-allowance').addEventListener('input',()=>setDetailDirty());
@@ -1659,33 +1663,189 @@ bindMarkLimit('detail-emoji');
 $('detail-emoji').addEventListener('input',()=>setDetailDirty());
 
 window.addEventListener('scroll',updateHeaderOnScroll,{passive:true});
-document.addEventListener('touchstart',e=>{
-  cancelReachHold();
-  topTouchStartedAtTop = sortSettings.reachAssist && window.scrollY <= 1 && !e.target.closest('button,input,select');
-  if(topTouchStartedAtTop){
-    topTouchY = e.touches[0].clientY;
-    topTouchX = e.touches[0].clientX;
+let pullRefreshStart = null, pullRefreshReady = false, pullRefreshPromise = null;
+let pullRefreshAnimation = null, pullRefreshSpin = null, pullRefreshSpinLead = null;
+const pullRefreshMotion = {offset:0,angle:0,targetOffset:0,targetAngle:0,velocity:0,angleVelocity:0,frame:0,time:0};
+const PULL_REFRESH_THRESHOLD = 72;
+const pullRefreshStatus = document.createElement('div');
+pullRefreshStatus.className = 'pull-refresh-status';pullRefreshStatus.hidden = true;
+pullRefreshStatus.setAttribute('role','status');
+pullRefreshStatus.setAttribute('aria-live','polite');
+pullRefreshStatus.innerHTML = '<span class="pull-refresh-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg></span><span class="sr-only">Pull to refresh</span>';
+const pullRefreshLabel = pullRefreshStatus.querySelector('.sr-only');
+const pullRefreshIcon = pullRefreshStatus.querySelector('.pull-refresh-icon');
+document.body.append(pullRefreshStatus);
+function paintPullRefresh(offset, angle){
+  pullRefreshStatus.style.transform = `translate3d(-50%,${offset - 52}px,0)`;
+  pullRefreshStatus.style.opacity = String(Math.min(1,Math.max(0,offset / 20)));
+  pullRefreshIcon.style.transform = `rotate3d(0,0,1,${angle}deg)`;
+}
+function stopPullRefreshMotion(){
+  cancelAnimationFrame(pullRefreshMotion.frame);
+  pullRefreshMotion.frame = 0;pullRefreshMotion.time = 0;
+  if(pullRefreshAnimation){
+    // Only an interrupted return needs a style read. Drag frames never read
+    // layout or computed styles after writing to the indicator.
+    pullRefreshMotion.offset = new DOMMatrixReadOnly(getComputedStyle(pullRefreshStatus).transform).m42 + 52;
+    pullRefreshAnimation.cancel();pullRefreshAnimation=null;
   }
+}
+function stepPullRefresh(time){
+  const motion = pullRefreshMotion;
+  const dt = Math.min(.05,(motion.time ? time-motion.time : 8)/1000);
+  motion.time = time;
+  // Exact critically damped integration keeps velocity continuous even when
+  // Android delivers touch samples in bursts. No per-frame easing jumps.
+  const frequency=100,decay=Math.exp(-frequency*dt);
+  for(const [position,target,velocity] of [['offset','targetOffset','velocity'],['angle','targetAngle','angleVelocity']]){
+    const delta=motion[position]-motion[target],c=motion[velocity]+frequency*delta;
+    motion[position]=motion[target]+(delta+c*dt)*decay;
+    motion[velocity]=(motion[velocity]-frequency*c*dt)*decay;
+  }
+  paintPullRefresh(motion.offset,motion.angle);
+  if(Math.abs(motion.targetOffset-motion.offset)>.05 || Math.abs(motion.targetAngle-motion.angle)>.1){
+    motion.frame = requestAnimationFrame(stepPullRefresh);
+  }else{motion.frame=0;motion.time=0;motion.velocity=0;motion.angleVelocity=0;}
+}
+function setPullRefreshVisual(offset, angle){
+  if(pullRefreshAnimation)stopPullRefreshMotion();
+  pullRefreshStatus.hidden = false;
+  pullRefreshMotion.targetOffset = offset;pullRefreshMotion.targetAngle = angle;
+  if(!pullRefreshMotion.frame)pullRefreshMotion.frame=requestAnimationFrame(stepPullRefresh);
+}
+async function settlePullRefresh(hide = false){
+  stopPullRefreshMotion();
+  const motion = pullRefreshMotion,target = hide ? 0 : 62;
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const duration = reduced ? 0 : 500,frames = [];
+  // A damped spring starts at the rendered position and finger velocity.
+  // Keyframes run on the compositor, including while refresh rebuilds Home.
+  const displacement=motion.offset-target,decay=19,frequency=15;
+  const velocity=Math.max(-500,Math.min(500,motion.velocity));
+  for(let i=0;i<=40;i++){
+    const t=i/40*.5;
+    const offset=i===40 ? target : target+Math.exp(-decay*t)*(displacement*Math.cos(frequency*t)
+      +(velocity+decay*displacement)/frequency*Math.sin(frequency*t));
+    frames.push({transform:`translate3d(-50%,${offset-52}px,0)`,opacity:String(Math.min(1,Math.max(0,offset/20)))});
+  }
+  motion.offset=target;motion.targetOffset=target;motion.velocity=0;
+  paintPullRefresh(target,motion.angle);
+  const animation = pullRefreshStatus.animate(frames,{duration,easing:'linear'});
+  pullRefreshAnimation = animation;
+  try{await animation.finished;}catch{} // A new pull can interrupt the return spring.
+  if(pullRefreshAnimation !== animation)return;
+  pullRefreshAnimation = null;
+  if(hide)pullRefreshStatus.hidden = true;
+}
+function startPullRefreshSpin(){
+  if(pullRefreshSpin)pullRefreshSpin.cancel();
+  if(pullRefreshSpinLead)pullRefreshSpinLead.cancel();
+  const angle=pullRefreshMotion.angle;
+  const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1800 : 900;
+  const speed=360000/duration,initial=Math.max(0,Math.min(1000,pullRefreshMotion.angleVelocity));
+  const leadAngle=t=>angle+speed*t+(initial-speed)*.03*(1-Math.exp(-t/.03));
+  const frames=Array.from({length:13},(_,i)=>({transform:`rotate3d(0,0,1,${leadAngle(i/100)}deg)`}));
+  // Both animations are scheduled together, so this velocity handoff does
+  // not depend on a main-thread callback between the lead-in and the loop.
+  pullRefreshSpinLead=pullRefreshIcon.animate(frames,{duration:120,easing:'linear'});
+  const start=leadAngle(.12);
+  pullRefreshSpin=pullRefreshIcon.animate([
+    {transform:`rotate3d(0,0,1,${start}deg)`},
+    {transform:`rotate3d(0,0,1,${start+360}deg)`}
+  ],{delay:120,duration,iterations:Infinity,easing:'linear'});
+}
+function cancelPullRefresh(){
+  const wasPulling = pullRefreshStart?.pulling;
+  pullRefreshStart = null;pullRefreshReady = false;
+  if(wasPulling && !pullRefreshPromise)void settlePullRefresh(true);
+}
+async function refreshHomeAgenda(){
+  if(pullRefreshPromise)return pullRefreshPromise;
+  const scroll={x:window.scrollX,y:window.scrollY};
+  const buttons=[...document.querySelectorAll('[data-refresh-agenda]')];
+  buttons.forEach(button=>{button.disabled=true;button.setAttribute('aria-busy','true');});
+  if(pullRefreshStatus.hidden){
+    stopPullRefreshMotion();pullRefreshMotion.offset=0;pullRefreshMotion.angle=0;
+    paintPullRefresh(0,0);pullRefreshStatus.hidden=false;
+  }
+  pullRefreshLabel.textContent = 'Refreshing…';
+  pullRefreshStatus.classList.add('is-refreshing');
+  startPullRefreshSpin();
+  const entrance = settlePullRefresh();
+  pullRefreshPromise = (async()=>{
+    // Commit the compositor animations before calendar/weather preparation
+    // can occupy the main thread.
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const work = [];
+    if(typeof refreshDeviceCalendars === 'function' && window.TingsNative?.isNative)work.push(Promise.resolve().then(()=>refreshDeviceCalendars()));
+    if(typeof refreshWeatherForecast === 'function')work.push(Promise.resolve().then(()=>refreshWeatherForecast({force:true})));
+    const results = await Promise.allSettled([...work,entrance]);
+    // Manual refresh must bypass compatible cached plans and wait until the
+    // newly resolved agenda has actually been published to Home.
+    if(typeof bumpPlannerDataRevision === 'function')bumpPlannerDataRevision();
+    if(typeof refreshOpenViews === 'function')refreshOpenViews({__forceReplan:true,__skipFreshnessGate:true});
+    if(typeof waitForHomeAgendaRender === 'function')await waitForHomeAgendaRender();
+    if(window.TingsNative?.isNative && typeof reconcileNativeReminders === 'function')await reconcileNativeReminders();
+    if(window.TingsNative?.isNative && typeof reconcileNativeQuiet === 'function')await reconcileNativeQuiet();
+    if(typeof queueNativeBackgroundSnapshot === 'function')queueNativeBackgroundSnapshot();
+    requestAnimationFrame(()=>window.scrollTo({left:scroll.x,top:scroll.y,behavior:'instant'}));
+    const weatherError=typeof weatherCacheRead==='function' && weatherCacheRead().lastError;
+    if(results.some(result=>result.status === 'rejected' || result.value?.error) || weatherError)showToast('Couldn’t refresh. Cached content was kept.',5000);
+  })();
+  try{return await pullRefreshPromise;}catch(error){
+    showToast('Couldn’t finish refreshing. Cached content was kept.',5000);
+  }finally{
+    await settlePullRefresh(true);
+    if(pullRefreshSpin){pullRefreshSpin.cancel();pullRefreshSpin=null;}
+    if(pullRefreshSpinLead){pullRefreshSpinLead.cancel();pullRefreshSpinLead=null;}
+    pullRefreshStatus.classList.remove('is-refreshing');pullRefreshReady=false;pullRefreshPromise = null;
+    buttons.forEach(button=>{button.disabled=false;button.removeAttribute('aria-busy');});
+  }
+}
+document.querySelectorAll('[data-refresh-agenda]').forEach(button=>button.addEventListener('click',()=>void refreshHomeAgenda()));
+document.addEventListener('touchstart',e=>{
+  if(pullRefreshStart)cancelPullRefresh();
+  const target = e.target instanceof Element ? e.target : null;
+  const pane = target?.closest('.pane-list');
+  // Track vertical card drags too; their horizontal swipes, dials and reorder
+  // keep ownership. Form controls and open sheets never start a refresh.
+  pullRefreshStart = !pullRefreshPromise && e.touches.length === 1 && pane && !document.querySelector('.sheet-wrap.open')
+    && !target.closest('button,input,select,textarea,a,[contenteditable],.swipe-actions,.breakable-progress,.agenda-drag-handle,.free-day-track')
+    ? {x:e.touches[0].clientX,y:e.touches[0].clientY,id:e.touches[0].identifier,pane,row:target.closest('.swipe-row'),pulling:false} : null;
+  pullRefreshReady = false;
 },{passive:true});
 document.addEventListener('touchmove',e=>{
-  if(!topTouchStartedAtTop || e.target.closest('button,input,select'))return cancelReachHold();
-  if(window.scrollY > 1)return cancelReachHold();
-  const dy = e.touches[0].clientY - topTouchY;
-  const dx = Math.abs(e.touches[0].clientX - topTouchX);
-  if(dy < 110 || dx > dy * 0.28)return cancelReachHold();
-  if(!reachArmed){
-    reachArmed = true;
-    reachHoldTimer = setTimeout(()=>{
-      showReachPad();
-      cancelReachHold();
-    },800);
+  const start = pullRefreshStart;
+  if(!start)return;
+  const owner = typeof cardGestureOwner === 'function' ? cardGestureOwner(start.row) : null;
+  if(e.touches.length!==1 || e.touches[0].identifier!==start.id || document.querySelector('.sheet-wrap.open')
+    || ['swipe','scrub','reorder'].includes(owner)){cancelPullRefresh();return;}
+  const touch=e.touches[0],dy=touch.clientY-start.y,dx=Math.abs(touch.clientX-start.x);
+  if(dy < -10 || dx > Math.max(16,Math.abs(dy)*.65)){cancelPullRefresh();return;}
+  // A drag that scrolls to the top can continue pulling in the same gesture.
+  if(window.scrollY > 1 || start.pane.scrollTop > 1){
+    if(start.pulling){cancelPullRefresh();return;}
+    start.y=touch.clientY;start.x=touch.clientX;return;
   }
+  if(dy <= 4 && !start.pulling)return;
+  if(!e.cancelable){cancelPullRefresh();return;}
+  e.preventDefault();
+  start.pulling = true;
+  if(owner === 'hold' && typeof cancelAgendaLongPress === 'function')cancelAgendaLongPress({silent:true});
+  const distance = Math.max(0,dy);
+  pullRefreshReady=distance >= PULL_REFRESH_THRESHOLD;
+  // One continuous resistance curve: no speed change at the trigger point.
+  const offset=104*(1-Math.exp(-distance/88));
+  setPullRefreshVisual(offset,distance/PULL_REFRESH_THRESHOLD*240);
+  const label=pullRefreshReady ? 'Release to refresh' : 'Pull to refresh';
+  if(pullRefreshLabel.textContent!==label)pullRefreshLabel.textContent=label;
+},{passive:false});
+document.addEventListener('touchend',()=>{
+  if(pullRefreshStart?.pulling && pullRefreshReady){
+    pullRefreshStart=null;pullRefreshReady=false;void refreshHomeAgenda();
+  }else cancelPullRefresh();
 },{passive:true});
-document.addEventListener('touchend',cancelReachHold,{passive:true});
-document.addEventListener('touchcancel',cancelReachHold,{passive:true});
-document.addEventListener('wheel',e=>{
-  if(window.scrollY <= 1 && e.deltaY < -120)showReachPad();
-},{passive:true});
+document.addEventListener('touchcancel',cancelPullRefresh,{passive:true});
 window.addEventListener('pageshow',closeAllSwipes);
 
 if(window.visualViewport){
@@ -1752,8 +1912,10 @@ $('detail-save').addEventListener('click',()=>{
   h.showWeatherAtLocation = Boolean(current.showWeatherAtLocation);
   h.allowedWeekdays = normalizeAllowedWeekdays(current.allowedWeekdays);
   h.allowedMonthDays = normalizeAllowedMonthDays(current.allowedMonthDays);
+  h.allowedOrdinalWeekdays = normalizeOrdinalWeekdays(current.allowedOrdinalWeekdays);
   h.preferredWeekdays = normalizeAllowedWeekdays(current.preferredWeekdays);
   h.preferredMonthDays = normalizeAllowedMonthDays(current.preferredMonthDays);
+  h.preferredOrdinalWeekdays = normalizeOrdinalWeekdays(current.preferredOrdinalWeekdays);
   // Anchors override fixed minutes per-endpoint. Only wipe an incomplete
   // FIXED pair when neither endpoint is anchored — otherwise a mixed window
   // (e.g. start=sunrise, end=12pm) would lose its fixed end on save.
@@ -1849,6 +2011,7 @@ $('detail-save').addEventListener('click',()=>{
   h.minChunkMinutes = clampMinChunk(current.minChunkMinutes);
   h.minGapMinutes = clampMinGapMinutes(current.minGapMinutes);
   h.timerAutoStopMinutes = normalizeTimerAutoStop(current.timerAutoStopMinutes);
+  h.tapStartsSession = Boolean(current.tapStartsSession);
   h.autoMarkMinutes = normalizeAutoMark(current.autoMarkMinutes);
   h.trackValue = Boolean(current.trackValue);
   h.earlyWindowDays = current.earlyWindowDays;
@@ -1920,6 +2083,35 @@ $('detail-export').addEventListener('click',()=>{
   if(detailIdx === null)return;
   exportToCalendar(detailIdx);
 });
+$('detail-duplicate').addEventListener('click',()=>{
+  const source = detailIdx === null ? detailUnsavedCreate : load()[detailIdx];
+  if(!source)return;
+  const copy = JSON.parse(JSON.stringify(source));
+  const sourceId = source.hid;
+  copy.hid = generateHabitId();
+  copy.name = `${String(source.name || 'Item').trim().slice(0,55)} copy`.trim();
+  copy.logs = []; copy.lastLog = null; copy.createdAt = null; copy.snoozedUntil = null;
+  copy.planByDate = null; copy.sample = false;
+  for(const key of ['externalId','source','calendarId','calendarSeriesId','calendarStart','calendarEnd','calendarSubject','importedAt','shareId','shareKey'])delete copy[key];
+  if(Array.isArray(copy.scheduleLinks))copy.scheduleLinks=copy.scheduleLinks.filter(link=>link && link.anchorHid!==sourceId);
+  for(const field of ['allowedTimeStartAnchorHabitId','allowedTimeEndAnchorHabitId','preferredTimeStartAnchorHabitId','preferredTimeEndAnchorHabitId']){
+    if(copy[field]===sourceId)copy[field]=null;
+  }
+  if(copy.appointment)copy.appointment.exceptions = {};
+  else if(isEventItem(source) && Number.isFinite(source.eventTime)){
+    const date = new Date(source.eventTime);
+    copy.appointment = {repeat:'once',startDate:dateKey(source.eventTime),until:'',weekdays:[],ordinalWeekdays:[],startMinute:date.getHours()*60+date.getMinutes(),exceptions:{}};
+  }
+  if(copy.appointment || isEventItem(source)){
+    copy.eventTime = null; copy.dueDate = null; copy.hardDue = false; copy.autoMarkMinutes = null;
+    copy.breakable = false; copy.tapStartsSession = false; copy.trackValue = false; copy.allowSharedDisplayCompletion = false;
+  }
+  const prefs = window.TingsNative?.isNative && typeof nativeReminderPreferences === 'function' ? nativeReminderPreferences() : null;
+  const inherited=source.calendarSeriesId ? prefs?.items?.[`calendar-series:${source.calendarSeriesId}`] : null;
+  const choices = prefs ? {...inherited,...prefs.items?.[`item:${source.hid}`]} : null;
+  if(choices)for(const key of ['dates','resolvedDays','resolvedOccurrences'])delete choices[key];
+  if(openDetailUnsavedCreate(copy) && choices)detailUnsavedReminders = {hid:copy.hid,duplicateChoices:JSON.parse(JSON.stringify(choices))};
+});
 $('detail-delete').addEventListener('click',()=>{
   $('detail-delete-confirm').hidden = false;
 });
@@ -1943,3 +2135,5 @@ $('detail-weather-profiles')?.addEventListener('click',()=>{
   openSheet('settings-sheet');
   requestAnimationFrame(()=>$('settings-weather-head').scrollIntoView({block:'start'}));
 });
+
+for(const scope of ['occurrence','series'])$('detail-ignore-'+scope).addEventListener('click',()=>{const h=detailIdx===null ? null : load()[detailIdx];if(h)setCalendarIgnored(h,scope);});

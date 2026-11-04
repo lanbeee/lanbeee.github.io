@@ -78,7 +78,7 @@ function syncDeviceCalendarDetail(h){
   const synced=isDeviceCalendarTask(h),sheet=getSheetInner('detail-sheet');
   for(const nav of ['schedule','identity'])sheet.querySelector(`[data-detail-nav="${nav}"]`).inert=false;
   sheet.querySelector('[data-detail-nav="schedule"]').hidden=synced;
-  sheet.querySelector('[data-detail-nav="actions"]').hidden=synced && !window.TingsNative?.isNative;
+  sheet.querySelector('[data-detail-nav="actions"]').hidden=false;
   for(const id of ['detail-name','detail-habit-message'])$(id).disabled=synced;
   $('detail-delete').disabled=synced;$('detail-mark-edit-emoji').disabled=false;
   let hint=$('detail-device-calendar-hint');
@@ -200,11 +200,12 @@ async function refreshDeviceCalendars(){
       deviceCalendarStatus(`${prefs.calendarIds.length} calendar${prefs.calendarIds.length===1?'':'s'} · updated ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`);
       const changes=document.getElementById('calendar-device-changes');
       if(changes)changes.textContent=result.added || result.updated || result.removed ? `${result.added} new, ${result.updated} changed, ${result.removed} no longer on the calendar` : '';
-    }catch(error){deviceCalendarStatus(error.message || 'Calendar refresh failed. Existing meetings were kept.');}
+    }catch(error){deviceCalendarStatus(error.message || 'Calendar refresh failed. Existing meetings were kept.');return {error:error.message || 'Calendar refresh failed'};}
     finally{deviceCalendarRefresh=null;}
   })();
-  await deviceCalendarRefresh;
+  const refreshResult=await deviceCalendarRefresh;
   if(deviceCalendarRefreshAgain){deviceCalendarRefreshAgain=false;return refreshDeviceCalendars();}
+  return refreshResult;
 }
 async function chooseDeviceCalendars(){
   const api=window.TingsNative?.calendars;if(!api)return;

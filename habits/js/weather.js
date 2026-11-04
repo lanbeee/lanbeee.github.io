@@ -3102,7 +3102,12 @@ function weatherNearParamsForRows(rows,now){
 
 let _weatherRefreshPromise = null;
 async function refreshWeatherForecast(options = {}){
-  if(_weatherRefreshPromise)return _weatherRefreshPromise;
+  if(_weatherRefreshPromise){
+    const pending=_weatherRefreshPromise;
+    if(!options.force)return pending;
+    await pending;
+    return refreshWeatherForecast(options);
+  }
   const force = Boolean(options.force);
   const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : (sortSettings || {});
   const profiles = normalizeWeatherProfiles(settings.weatherProfiles);
@@ -3114,6 +3119,8 @@ async function refreshWeatherForecast(options = {}){
     const data = typeof load === 'function' ? load() : [];
     const extras = weatherNeededExtraPlaces(settings,data);
     let changed = false;
+    cache.lastError = '';
+    cache.lastAttemptAt = now;
     const common = 'temperature_2m,apparent_temperature,precipitation_probability,precipitation,snowfall,wind_speed_10m,wind_gusts_10m,uv_index,weather_code,is_day';
     const daily = 'weather_code,temperature_2m_min,temperature_2m_max,apparent_temperature_min,apparent_temperature_max,precipitation_probability_max,precipitation_sum,snowfall_sum,wind_speed_10m_max,wind_gusts_10m_max,uv_index_max';
     const fetchWeekly = async(bucket,lat,lng)=>{
@@ -3192,7 +3199,6 @@ async function refreshWeatherForecast(options = {}){
         if(!keep.has(id))delete cache.places[id];
       }
     }
-    cache.lastError = '';
     weatherCacheWrite(cache);
     if(changed){
       _weatherRefreshLocks=weatherPlannerLocks(now);

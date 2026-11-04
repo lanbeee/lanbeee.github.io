@@ -670,6 +670,12 @@ function renderScheduleChips(prefix,h = {}){
       return `<button type="button" class="monthday-chip preferred ${on ? 'on' : ''}" data-monthday="${day}" aria-pressed="${on}">${day}</button>`;
     }).join('');
   }
+  for(const kind of ['', 'preferred-']){
+    const id=`${prefix}-${kind}ordinal-rules`;
+    $(id)?.remove();
+    const wrap=$(`${prefix}-${kind}monthday-chips`);
+    if(wrap)wrap.parentElement.insertAdjacentHTML('afterend',ordinalWeekdayEditor(h[kind ? 'preferredOrdinalWeekdays' : 'allowedOrdinalWeekdays'],id));
+  }
   if(prefix === 'detail'){
     collapseMonthDayDisclosures();
     syncMonthDayDisclosureSummary('detail-monthday-chips','detail-monthday-summary');
@@ -2724,3 +2730,84 @@ let _droppedDayBaselineDay = null;
 // reads as attached to the viewport, not the page. Scroll events don't
 // bubble but they do capture, so one document-level capture listener covers
 // window and pane scrolling alike; rAF keeps the rect reads cheap.
+
+// One week row and one day row. A lit day is saved for the lit week.
+// The chips underneath are those saved pairs.
+function ordinalWeekdayEditor(rules=[],id=''){
+  const selected=normalizeOrdinalWeekdays(rules);
+  const armed=selected.length?selected[0].ordinal:null;
+  const weeks=[1,2,3,4,5,-1].map(n=>`<button type="button" class="schedule-chip${armed===n?' on':''}" data-ordinal-pick="${n}" aria-pressed="${armed===n}">${n===-1?'Last':['','1st','2nd','3rd','4th','5th'][n]}</button>`).join('');
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day,d)=>{
+    const on=armed!=null&&selected.some(r=>r.ordinal===armed&&r.weekday===d);
+    return `<button type="button" class="schedule-chip${on?' on':''}" data-ordinal-day="${d}" aria-pressed="${on}">${day}</button>`;
+  }).join('');
+  const chosen=selected.map(r=>{
+    const label=ordinalWeekdaySummary([r]);
+    return `<button type="button" class="ordinal-rule" data-ordinal="${r.ordinal}" data-ordinal-weekday="${r.weekday}" aria-label="Remove ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+  }).join('');
+  return `<details class="ordinal-editor"${id?` id="${id}"`:''}><summary>week of the month <small data-ordinal-summary>${escapeHtml(ordinalWeekdaySummary(selected)||'any week')}</small></summary><div class="ordinal-weeks" role="group" aria-label="Week">${weeks}</div><div class="schedule-chip-row ordinal-days" role="group" aria-label="Day">${days}</div><div class="ordinal-chosen"${selected.length?'':' hidden'}>${chosen}</div></details>`;
+}
+function readOrdinalWeekdays(host){return normalizeOrdinalWeekdays([...(host?.querySelectorAll('.ordinal-chosen [data-ordinal]')||[])].map(el=>({ordinal:Number(el.dataset.ordinal),weekday:Number(el.dataset.ordinalWeekday)})));}
+function showOrdinalWeekDays(editor,rules){
+  const armed=editor.querySelector('[data-ordinal-pick][aria-pressed="true"]');
+  const ordinal=armed?Number(armed.dataset.ordinalPick):null;
+  editor.querySelectorAll('[data-ordinal-day]').forEach(el=>{
+    const on=ordinal!=null&&rules.some(r=>r.ordinal===ordinal&&r.weekday===Number(el.dataset.ordinalDay));
+    el.classList.toggle('on',on);el.classList.remove('pending');el.setAttribute('aria-pressed',String(on));
+  });
+}
+function paintOrdinalWeekdays(editor,rules){
+  rules=normalizeOrdinalWeekdays(rules);
+  const chosen=editor.querySelector('.ordinal-chosen');
+  chosen.replaceChildren(...rules.map(r=>{
+    const label=ordinalWeekdaySummary([r]);
+    const button=document.createElement('button');
+    button.type='button';button.className='ordinal-rule';
+    button.dataset.ordinal=String(r.ordinal);button.dataset.ordinalWeekday=String(r.weekday);
+    button.setAttribute('aria-label',`Remove ${label}`);button.textContent=label;
+    return button;
+  }));
+  chosen.hidden=!rules.length;
+  editor.querySelector('[data-ordinal-summary]').textContent=ordinalWeekdaySummary(rules)||'any week';
+  showOrdinalWeekDays(editor,rules);
+  const busy=editor.closest('[data-blocked-row]');
+  if(busy)saveBlockedTimePatch(Number(busy.dataset.blockedRow),{ordinalWeekdays:rules});
+  else{editor.dispatchEvent(new Event('change',{bubbles:true}));if(editor.closest('#detail-sheet'))setDetailDirty(true);}
+}
+document.addEventListener('click',e=>{
+  const editor=e.target.closest&&e.target.closest('.ordinal-editor');if(!editor)return;
+  const pick=e.target.closest('[data-ordinal-pick]');
+  const day=e.target.closest('[data-ordinal-day]');
+  const rule=e.target.closest('.ordinal-rule');
+  if(!pick&&!day&&!rule)return;
+  if(rule){
+    paintOrdinalWeekdays(editor,readOrdinalWeekdays(editor).filter(r=>!(r.ordinal===Number(rule.dataset.ordinal)&&r.weekday===Number(rule.dataset.ordinalWeekday))));
+    return;
+  }
+  if(pick){
+    const ordinal=Number(pick.dataset.ordinalPick);
+    const pending=editor.querySelector('[data-ordinal-day].pending');
+    const arm=!(pick.getAttribute('aria-pressed')==='true'&&!pending);
+    editor.querySelectorAll('[data-ordinal-pick]').forEach(el=>{
+      const on=arm&&Number(el.dataset.ordinalPick)===ordinal;
+      el.classList.toggle('on',on);el.setAttribute('aria-pressed',String(on));
+    });
+    if(pending){
+      const weekday=Number(pending.dataset.ordinalDay);
+      const rules=readOrdinalWeekdays(editor);
+      if(!rules.some(r=>r.ordinal===ordinal&&r.weekday===weekday))rules.push({ordinal,weekday});
+      paintOrdinalWeekdays(editor,rules);
+    }else showOrdinalWeekDays(editor,readOrdinalWeekdays(editor));
+    return;
+  }
+  const armed=editor.querySelector('[data-ordinal-pick][aria-pressed="true"]');
+  if(!armed){
+    editor.querySelectorAll('[data-ordinal-day].pending').forEach(el=>el.classList.remove('pending'));
+    day.classList.add('pending');
+    return;
+  }
+  const ordinal=Number(armed.dataset.ordinalPick),weekday=Number(day.dataset.ordinalDay);
+  const rules=readOrdinalWeekdays(editor);
+  const exists=rules.some(r=>r.ordinal===ordinal&&r.weekday===weekday);
+  paintOrdinalWeekdays(editor,exists?rules.filter(r=>!(r.ordinal===ordinal&&r.weekday===weekday)):rules.concat([{ordinal,weekday}]));
+});

@@ -859,6 +859,7 @@ function visibleIndices(data,settingsOverride = null){
   };
   const indices = data.map((_,i)=>i).filter(i=>{
     const h = data[i];
+    if(isCalendarIgnored(h,settings))return false;
     if(h.type === 'task' && isTaskDone(h))return false;
     return !(h.snoozedUntil && Date.now() < h.snoozedUntil && !settings.showSnoozed);
   });

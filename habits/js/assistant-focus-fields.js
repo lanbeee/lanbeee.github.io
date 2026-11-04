@@ -13,8 +13,17 @@ const ASSISTANT_FIELD_SEARCH = {
 };
 // Signals select original-text windows, never executable values. Broader shared
 // aliases and embeddings supply additional candidates beyond these strong cues.
+const ASSISTANT_FIELD_TEXT_INSTRUCTIONS = {
+  name:{signal:/\b(?:rename|named?|called|title|call (?:it|this|that))\b/i,
+    prefix:/^(?:(?:rename|name)(?:\s+(?:it|this|that))?(?:\s+(?:to|as))?|call\s+(?:it|this|that)(?:\s+(?:to|as))?|called|named|title)\s*:?\s*/i},
+  topics:{signal:/\b(?:topics?|tags?|categor\w*|(?:put|file|group)\s+(?:it\s+|this\s+|that\s+)?(?:under|into|in))\b/i,
+    prefix:/^(?:(?:(?:add|use|set|with)\s+)?(?:topics?|tags?|categor(?:y|ies))(?:\s+(?:it|this|that|as|to))?|(?:put|file|group)(?:\s+(?:it|this|that))?\s+(?:under|into|in))\s*:?\s*/i}
+};
+// Literal names and references must retain words such as "Please" or "Instead".
+// Structured values may shed conversational framing, never semantic modifiers.
+const ASSISTANT_FIELD_LITERAL_VALUES = new Set(['name','topics','places','locationPrefs','weatherProfile','weatherLocationId','links','scheduleLinks','scheduleOptions']);
 const ASSISTANT_FIELD_SIGNALS = {
-  name:/\b(?:rename|named?|called?|title)\b/i,
+  name:ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal,
   kind:/\b(?:convert|turn|change|make)\b.{0,24}\b(?:habit|task)\b/i,
   habitKind:/\b(?:build|limit|reduce|stop)\b/i,
   emoji:/\p{Extended_Pictographic}|\b(?:emoji|icon)\b/iu,
@@ -54,7 +63,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   weatherLocationId:/\b(?:forecast|weather) (?:at|in|for)\b/i,
   scheduleOptions:/\b(?:alternatives?|options?|either)\b|\bor\b.{0,40}\b(?:at|before|after|from)\b/i,
   scheduleLinks:/\b(?:right|directly|immediately) (?:before|after)\b|\b(?:order|adjacen|partner|same day)\w*\b/i,
-  topics:/\b(?:topics?|tags?|categor\w*)\b/i,
+  topics:ASSISTANT_FIELD_TEXT_INSTRUCTIONS.topics.signal,
   pinned:/\b(?:pin|pinned|unpin|unpinned)\b/i,
   snoozedUntil:/\b(?:snooze|unsnooze|unhide|hide until)\b/i,
   sharedDisplay:/\b(?:shared display|view only)\b/i,
@@ -102,7 +111,7 @@ function assistantFieldCatalog(){
     const search = ITEM_DETAIL_SEARCH_FIELDS.find(row=>row[0] === ASSISTANT_FIELD_SEARCH[f.id]);
     const pair = (ASSISTANT_FOCUS_EXTRACT_FIELDS[f.family] || []).find(row=>row[0]===f.id);
     return {...f,key:f.id==='frequency'?'frequency':pair?.[1] || f.id,
-      signal:ASSISTANT_FIELD_SIGNALS[f.id], aliases:search ? `${search[1]} ${search[2]}` : f.label,
+      signal:ASSISTANT_FIELD_SIGNALS[f.id], labelSignal:new RegExp(`\\b${f.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+')}\\b`,'i'), aliases:search ? `${search[1]} ${search[2]}` : f.label,
       hint:ASSISTANT_FIELD_HINTS[f.id] || `The requested ${f.label.toLowerCase()} setting only.`};
   });
 }
@@ -159,7 +168,7 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['frequency'], when:/\bmonth(?:ly)?\b/i},
   {fields:['allowedWeekdays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i')},
   {fields:['allowedWeekdays','allowedWindow','allowedMonthDays'], when:/\bprefer/i},
-  {fields:['allowedWindow'], when:/\b(?:rename|named?|called?)\b.*\b(?:morning|evening)\b/i, unless:/\b(?:before|after|between|from|only|in the)\b/i},
+  {fields:['allowedWindow'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:morning|evening)\\b`,'i'), unless:/\b(?:before|after|between|from|only|in the)\b/i},
   {fields:['allowedWindow'], when:new RegExp(`\\b(?:before|after)\\s+(?:${assistantDurationNumberSource()})(?:\\s+(?:or|and)\\s+(?:${assistantDurationNumberSource()}))*\\s*(?:minutes?|mins?|hours?|days?|weeks?)\\b`,'i')},
   {fields:['habitKind'], when:/\bstop (?:the )?timer\b/i},
   {fields:['dueDate'], when:/\b(?:hard|strict|firm) deadline\b/i, unless:/\d|today|tomorrow|next\b/i},
@@ -189,8 +198,37 @@ const ASSISTANT_FIELD_READERS = {
 };
 
 function assistantFieldRelevant(def, text){
+  const literal=assistantFieldLiteralOwner(text);
+  if(literal && literal.id!==def.id && assistantFieldMentioned(def,text.slice(literal.start)) && !assistantFieldMentioned(def,text.slice(0,literal.start)))return false;
   return ASSISTANT_FIELD_OWNERSHIP.every(rule=>!rule.fields.includes(def.id)
     || (rule.require ? rule.require.test(text) : !rule.when.test(text) || Boolean(rule.unless?.test(text))));
+}
+
+function assistantFieldMentioned(def,text){
+  return Boolean(def.signal?.test(text)||def.labelSignal?.test(text));
+}
+
+function assistantFieldLiteralOwner(text){
+  for(const [id,instruction] of Object.entries(ASSISTANT_FIELD_TEXT_INSTRUCTIONS)){
+    const cue=instruction.signal.exec(text);
+    if(!cue || id==='name' && /^(?:called|named)$/i.test(cue[0]))continue;
+    const source=text.slice(cue.index),value=assistantFieldStripPrefix(source,instruction.prefix);
+    if(value && value!==source)return {id,start:text.length-value.length,instructionStart:cue.index};
+  }
+  return null;
+}
+
+function assistantFieldDialogue(text){
+  let start=0,end=text.length,match;
+  // These only mark dialogue boundaries. Negation, alternatives, preferences,
+  // ordinals, units and before/after qualifiers remain in the evidence.
+  const leading=/^(?:(?:please|actually|okay|ok|instead)\b[,\s]*|the\s+|(?:make|change|set|move)\s+(?:it|this|that)(?:\s+to)?\s+)/i;
+  while((match=leading.exec(text.slice(start,end)))&&match[0].length)start+=match[0].length;
+  const trailing=/(?:^|\s)(?:please|instead|thanks)[.!?]*$/i;
+  while((match=trailing.exec(text.slice(start,end)))&&match[0].length)end=start+match.index;
+  while(start<end&&/\s/.test(text[start]))start++;
+  while(end>start&&/\s/.test(text[end-1]))end--;
+  return {start,end,text:text.slice(start,end)};
 }
 
 function assistantFieldSource(def, request, spans){
@@ -221,7 +259,7 @@ function assistantFieldSource(def, request, spans){
   const selected=ranked.filter(row=>row.score>=threshold).map(row=>row.span).sort((a,b)=>a.start-b.start);
   const source=selected.length ? selected : [spans[0]];
   return source.map(span=>{
-    const own=def.signal?.exec(span.text);
+    const own=def.signal?.exec(span.text)||def.labelSignal?.exec(span.text);
     if(!own && def.id!=='name')return span;
     // Keep quantities preceding their labels and qualifiers such as immediately.
     const reader=ASSISTANT_FIELD_READERS[def.id]||{};
@@ -229,15 +267,16 @@ function assistantFieldSource(def, request, spans){
     let start=whole?0:own.index, end=span.text.length;
     const sign=span.text.slice(0,start).match(/[-+−]\s*$/);
     if(sign)start-=sign[0].length;
-    const named=def.id==='name' && /\b(?:called|named)\s+|\brename(?: it)?(?: to)?\s+/i.exec(span.text);
-    if(named)start=named.index+named[0].length;
+    const instruction=ASSISTANT_FIELD_TEXT_INSTRUCTIONS[def.id];
+    const named=instruction && own && assistantFieldStripPrefix(span.text.slice(own.index),instruction.prefix);
+    if(named && named!==span.text.slice(own.index))start=span.text.length-named.length;
     // A leading length belongs to the session, while the title follows it.
     // Keep the remaining original words available to the name extractor.
     if(def.id==='name' && !named){
       const length=ASSISTANT_FIELD_SIGNALS.durationMinutes.exec(span.text);
       if(length && /^(?:please\s+)?(?:add|create|make)\s+(?:a|an)\s*$/i.test(span.text.slice(0,length.index)))start=length.index+length[0].length;
     }
-    if(/\b(?:no|not|never|don.t|without|prefer|avoid|keep|unchanged)\b/i.test(span.text.slice(0,start)))start=0;
+    if(/\b(?:no|not|never|don.t|without|or|prefer|avoid|keep|unchanged|clear|before|after|between|from|until|through|earlier|later)\b/i.test(span.text.slice(0,start)))start=0;
     // Retrieval boundaries, not values: keep the untouched source between
     // setting cues. Coupled lengths (chunks/gaps/timers) keep their units.
     for(const [id,signal] of Object.entries(ASSISTANT_FIELD_SIGNALS)){
@@ -252,6 +291,10 @@ function assistantFieldSource(def, request, spans){
     }
     while(start<end && /\s/.test(span.text[start]))start++;
     while(end>start && /\s/.test(span.text[end-1]))end--;
+    if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id)){
+      const dialogue=assistantFieldDialogue(span.text.slice(start,end));
+      end=start+dialogue.end;start+=dialogue.start;
+    }
     const text=span.text.slice(start,end);
     return text?{start:span.start+start,end:span.start+end,text,context:span.text}:span;
   });
@@ -264,7 +307,9 @@ function assistantFieldEnqueue(state, id, reason, source){
   if(prior && !['explicit','coverage'].includes(reason))return prior;
   const existing=state.jobs.find(j=>j.id===id && j.revision===state.revision && j.request===state.request);
   if(existing){if(['explicit','coverage','reference'].includes(reason))existing.required=true;return existing;}
-  const spans=source || (id==='scheduleOptions'?[{start:0,end:state.request.length,text:state.request}]:assistantFieldSource(def,state.request,state.spans));
+  let spans=source || (id==='scheduleOptions'?[{start:0,end:state.request.length,text:state.request}]:assistantFieldSource(def,state.request,state.spans));
+  if(state.followup && id!==state.followup.field)spans=spans.filter(span=>!state.followup.spans.some(owned=>span.start>=owned.start&&span.end<=owned.end));
+  spans=spans.filter(span=>!(state.referenceUnresolved||[]).some(owned=>span.start>=owned.start&&span.end<=owned.end));
   if(!spans.length)return;
   const row={id,family:def.family,def,request:state.request,spans,revision:state.revision,status:'queued',attempts:0,
     required:['explicit','coverage','reference'].includes(reason),reason,baseline:{durationMinutes:assistantFocusMaterialize(state.session).durationMinutes}};
@@ -290,12 +335,17 @@ async function assistantFieldScope(state,extract){
 function assistantFieldCandidates(state){
   const text=state.request;
   state.catalog.filter(d=>assistantFieldApplicable(d,state.session)).forEach(def=>{
-    if(def.signal?.test(text) && assistantFieldSource(def,text,state.spans).some(s=>def.signal.test(s.context||s.text)))assistantFieldEnqueue(state,def.id,'explicit');
+    if(assistantFieldMentioned(def,text) && assistantFieldSource(def,text,state.spans).some(s=>assistantFieldMentioned(def,s.context||s.text)))assistantFieldEnqueue(state,def.id,'explicit');
   });
-  for(const id of ['name','frequency','durationMinutes'])assistantFieldEnqueue(state,id,'core');
-  if(state.session.kind==='task')for(const id of ['dueDate','dueTime'])assistantFieldEnqueue(state,id,'core');
+  // Creation checks its essentials. Edit keeps its baseline; omitted essentials
+  // are not instructions to reread or change those settings. Explicit signals,
+  // retrieval and replies to field questions still nominate jobs in both modes.
+  if(state.session.operation==='create'){
+    for(const id of ['name','frequency','durationMinutes'])assistantFieldEnqueue(state,id,'core');
+    if(state.session.kind==='task')for(const id of ['dueDate','dueTime'])assistantFieldEnqueue(state,id,'core');
+    if(state.session.kind==='event')for(const id of ['appointmentStartDate','appointmentStartMinute','appointmentRepeat'])assistantFieldEnqueue(state,id,'core');
+  }
   if(state.session.kind==='event' && state.session.operation==='edit' && !state.session.eventScope)state.jobs.push({id:'$scope',family:'scope',status:'queued',attempts:0,revision:state.revision});
-  if(state.session.kind==='event')for(const id of ['appointmentStartDate','appointmentStartMinute','appointmentRepeat'])assistantFieldEnqueue(state,id,'core');
   // A named saved place or order partner is also retrieval evidence. It never
   // selects a value, and the extractor still has to quote the instruction.
   for(const place of assistantFocusSettings().locations || []){
@@ -347,7 +397,70 @@ function assistantFieldTool(def, span, history=[]){
 }
 
 function assistantFieldReference(text){
-  return /\b(?:earlier|previous(?:ly)?|original|first|last|same|that|again|mentioned|said|told)\b/i.test(text);
+  return /\b(?:earlier|previous(?:ly)?|original|first|last|same|that|again|mentioned|said|told|actually|instead)\b/i.test(text);
+}
+
+async function assistantFieldFollowup(state, priorFields, extract){
+  if(priorFields.length!==1 || !assistantFieldReference(state.request))return null;
+  const def=state.catalog.find(d=>d.id===priorFields[0]);
+  if(!def || ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))return null;
+  // A bare scalar correction inherits the last setting. Explicit sibling
+  // instructions in other clauses still route normally. Ownership retains the
+  // original clause offsets, so a correction cannot hide a second instruction.
+  const calendar=['dueDate','planByDate','appointmentStartDate','appointmentUntil','allowedWeekdays','preferredWeekdays','appointmentWeekdays'];
+  const selected=[];state.referenceUnresolved=[];
+  const priorEvidence=(state.session.fieldEvidence||[]).filter(row=>row.id===def.id&&row.span.requestIndex===state.session.requests.length-2).map(row=>row.span.text);
+  const previous=priorEvidence.join('; ')||state.session.requests.at(-2)||'';
+  for(const span of state.spans){
+    const content=assistantFieldDialogue(span.text).text;
+    if(!content || state.catalog.some(other=>other.id!==def.id && assistantFieldMentioned(other,content)
+      && !(calendar.includes(def.id)&&calendar.includes(other.id))))continue;
+    const candidates=[def,...state.catalog.filter(other=>other.id!==def.id&&assistantFieldMentioned(other,content)&&assistantFieldApplicable(other,state.session))];
+    const labels=[...new Set(candidates.map(d=>d.label).concat('Another setting'))];
+    if(previous.length>1800){state.referenceUnresolved.push(span);continue;}
+    const spec={family:'reference',revision:state.revision,
+      system:`${assistantFocusSystem(state.session)} Previous user evidence: ${previous}. Previously changed setting: ${def.label}. Identify which setting the current instruction refers to. A bare correction refers to the preceding setting; an explicit new setting takes precedence.`,
+      request:assistantFocusRequestLine('field',span.text),
+      tool:assistantFocusPackTool('field','Identify the setting referred to by the current instruction.',{field:{type:'string',enum:labels}},['field'])};
+    let call;
+    for(let attempt=0;attempt<2;attempt++){
+      try{call=await assistantFocusModel(state.session,spec,extract);break;}
+      catch(error){
+        assistantFocusEnsure(state.session,state.revision);
+        if(attempt || !/stopped unexpectedly|took too long|runtime failed|memory|allocation|out of bounds/i.test(String(error.message||error)))throw error;
+        state.session.trace.push({family:'reference',error:String(error.message||error),attempt:attempt+1});
+      }
+    }
+    if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
+    // This model decision only owns an instruction's scope. Extraction must
+    // still select original evidence, and validation still checks the value.
+    const chosen=candidates.find(candidate=>candidate.label===call.args.field);
+    if(chosen)selected.push({field:chosen.id,span});
+    else state.referenceUnresolved.push(span);
+  }
+  const fields=new Set(selected.map(row=>row.field));
+  if(fields.size===1)return {field:selected[0].field,spans:selected.map(row=>row.span)};
+  state.referenceUnresolved.push(...selected.map(row=>row.span));
+  return null;
+}
+
+function assistantFieldPrepare(state){
+  const session=state.session,request=state.request,priorFields=state.priorFields;
+  if(state.referenceUnresolved?.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should that correction change?'});
+  assistantFieldCandidates(state);
+  if(state.followup){
+    const def=state.catalog.find(d=>d.id===state.followup.field);
+    assistantFieldEnqueue(state,def.id,'reference',assistantFieldSource(def,request,state.followup.spans));
+  }
+  const explicitSibling=state.jobs.some(job=>job.request===request&&job.reason==='explicit'&&job.id!==priorFields[0]);
+  if(assistantFieldReference(request)&&priorFields.length===1&&!explicitSibling)assistantFieldEnqueue(state,priorFields[0],'reference');
+  // Bare replies to a field question still require model-selected evidence.
+  const question=session.unresolved[0];
+  const questionField=question&&state.catalog.find(def=>def.id===question.field||def.fields.includes(question.field));
+  if(questionField)assistantFieldEnqueue(state,questionField.id,'explicit');
+  state.jobs.unshift({id:'$discover',family:'families',status:'queued',attempts:0,revision:state.revision});
+  state.jobs.splice(2,0,{id:'$retrieve',family:'retrieval',status:'queued',attempts:0,revision:state.revision});
+  state.needsCandidates=false;
 }
 
 function assistantFieldHistory(state,row){
@@ -402,9 +515,24 @@ function assistantFieldQuantity(def, text){
   return {ok:true,value:String(value)};
 }
 
+function assistantFieldStripPrefix(text, pattern){
+  // Setting labels and connectors are whole tokens. An optional "to", "as"
+  // or "it" must not consume the beginning of the model-selected value.
+  // Backtracking leaves a connector intact unless it ends at a token boundary.
+  return text.replace(new RegExp(`(?:${pattern.source})(?:(?<=[\\s:])|(?=$|\\s|:))`,pattern.flags),'').trim();
+}
+
 function assistantFieldNormalize(def,text,session){
+  const instructionSource=session?._fieldSource||text,literal=assistantFieldLiteralOwner(instructionSource);
+  if(literal?.id===def.id && /\b(?:do not|don.t|never)\s*$/i.test(instructionSource.slice(0,literal.instructionStart)))return {ok:false,error:`Should I keep ${def.label.toLowerCase()} unchanged, or change it?`};
   if(['allowedWindow','preferredWindow','allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays','frequency','dueDate','dueTime','places','weatherProfile'].includes(def.id)
     && /\b(?:no|not|never|don.t|except|without|or)\b/i.test(text))return {ok:false,error:'Please clarify the positive restriction or clear this setting.'};
+  if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantFieldDialogue(text).text;
+  if(!text)return {ok:false,error:`What value should I use for ${def.label||def.id}?`};
+  const clearLabel=assistantFieldStripPrefix(text,/^clear(?:\s+the)?\s+/i);
+  const clearCue=def.signal?.exec(clearLabel);
+  if(assistantFocusField(def.id)?.clear && clearLabel!==text && (clearLabel.toLowerCase()===def.label.toLowerCase()
+    || clearCue?.index===0&&clearCue[0].length===clearLabel.length))return {ok:true,changes:[{field:def.id,op:'clear',value:null}]};
   if(def.id==='frequency'){
     const rhythm=assistantParseRhythm(text);
     if(!rhythm?.timesPerPeriod || !rhythm.periodDays)return {ok:false,error:'How often should it repeat?'};
@@ -415,18 +543,21 @@ function assistantFieldNormalize(def,text,session){
   }
   let value=text;
   if(def.id==='scheduleOptions' && /\bor\b/i.test(text))return {ok:false,error:'Please give each alternative separately with its time and place.'};
-  if(def.id==='name')value=text.replace(/^(?:(?:create|add)(?: a| an)? (?:habit|task|event)(?: (?:called|named))?|(?:rename|name)(?: it| this)?(?: to| as)?|call (?:it|this)(?: to| as)?)\s+/i,'').replace(/^['"]|['"]$/g,'').trim();
-  if(def.id==='name')value=value.replace(/^(?:remind me to|remember to|i (?:need|want) to)\s+/i,'');
-  if(def.id==='name' && /\b(?:\d+\s*(?:minutes?|hours?)|every (?:day|week|other)|daily|weekly)\b/i.test(value))return {ok:false,error:'Please give just the item title.'};
+  if(def.id==='name')value=assistantFieldStripPrefix(text,/^(?:create|add)(?: a| an)? (?:habit|task|event)(?: (?:called|named))?\s+/i);
+  if(def.id==='name')value=assistantFieldStripPrefix(value,ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.prefix).replace(/^['"]|['"]$/g,'').trim();
+  if(def.id==='name')value=assistantFieldStripPrefix(value,/^(?:remind me to|remember to|i (?:need|want) to)\s+/i);
+  if(def.id==='name' && assistantFieldLiteralOwner(session?._fieldSource||'')?.id!=='name'
+    && /\b(?:\d+\s*(?:minutes?|hours?)|every (?:day|week|other)|daily|weekly)\b/i.test(value))return {ok:false,error:'Please give just the item title.'};
   if(def.id==='name' && (!value || /^(?:create|add|habit|task|event|rename|name|it)$/i.test(value)))return {ok:false,error:'Name the item.'};
-  if(def.id==='conditionRadiusM')value=text.replace(/^(?:(?:set|change)\s+)?(?:radius(?: of)?|within)(?:\s+to)?\s+/i,'');
+  if(def.id==='conditionRadiusM')value=assistantFieldStripPrefix(text,/^(?:(?:set|change)\s+)?(?:radius(?: of)?|within)(?:\s+to)?\s+/i);
   if(['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(def.id)){
-    value=text.replace(/^(?:(?:change|set|move)\s+(?:the\s+)?)?(?:(?:plan|do|finish)(?: (?:this|it))? by|plan (?:this |it )?for|due(?: date)?(?: on)?|on|by|until|through|start(?:s|ing)?(?: on)?|date)(?:\s+(?:to|on))?\s*/i,'').trim();
+    value=assistantFieldStripPrefix(text,/^(?:(?:change|set|move)\s+(?:the\s+)?)?(?:(?:plan|do|finish)(?: (?:this|it))? by|plan (?:this |it )?for|due(?: date)?(?: on)?|on|by|until|through|start(?:s|ing)?(?: on)?|date)(?:\s+(?:to|on))?\s*/i);
     if(/\bweek\b/i.test(value)&&!/^next week$/i.test(value))return {ok:false,error:'Which exact date should I use? Please give a date such as 2027-01-07.'};
   }
-  if(['dueTime','appointmentStartMinute','exceptionTime'].includes(def.id))value=text.replace(/^(?:at|start(?:s|ing)?(?: at)?|time)\s+/i,'');
-  if(['emojiBgColor','exceptionColor'].includes(def.id))value=text.replace(/^(?:(?:use|set|change)\s+)?(?:(?:a|an|the)\s+)?(?:(?:emoji\s+)?(?:background(?:\s+colou?r)?|colou?r)\s*(?:to|as|:)?)?\s*/i,'').replace(/\s+(?:colou?r|background)$/i,'').trim();
-  if(def.id==='topics')value=text.replace(/^(?:(?:add|use|set|with)\s+)?(?:topics?|tags?|categor(?:y|ies))(?:\s+(?:it|as|to))?\s*:?\s*/i,'').replace(/\s+(?:topic|tag)$/i,'').replace(/^(?:it|as|to)\s+/i,'').trim();
+  if(['dueTime','appointmentStartMinute','exceptionTime'].includes(def.id))value=assistantFieldStripPrefix(text,/^(?:at|start(?:s|ing)?(?: at)?|time)\s+/i);
+  if(['emojiBgColor','exceptionColor'].includes(def.id))value=assistantFieldStripPrefix(text,/^(?:(?:use|set|change)\s+)?(?:(?:a|an|the)\s+)?(?:(?:emoji\s+)?(?:background(?:\s+colou?r)?|colou?r)\s*(?:to|as|:)?)?\s*/i).replace(/\s+(?:colou?r|background)$/i,'').trim();
+  if(def.id==='topics')value=assistantFieldStripPrefix(text,ASSISTANT_FIELD_TEXT_INSTRUCTIONS.topics.prefix).replace(/\s+(?:topic|tag)$/i,'');
+  if(def.id==='topics')value=assistantFieldStripPrefix(value,/^(?:it|as|to)\s+/i);
   if(def.id==='topics' && (!value || /\p{Extended_Pictographic}|\b(?:minutes?|hours?|priority|emoji|tag it)\b/iu.test(value)))return {ok:false,error:'Name the requested topics.'};
   const booleans=['pinned','breakable','trackValue','hardDue','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
   if(booleans.includes(def.id) && assistantParseBool(value)==null){
@@ -437,12 +568,13 @@ function assistantFieldNormalize(def,text,session){
   // Convert only the model's quoted relative expression, using the baseline
   // duration supplied to this job; a relative edit never changes that baseline.
   if(def.id==='durationMinutes' && /^(?:twice as long|double (?:it|the duration))$/i.test(value))value=String((session._fieldBaseline||assistantFocusMaterialize(session)).durationMinutes*2);
-  if(['places','weatherLocationId'].includes(def.id))value=value.replace(/^(?:(?:use|add|set|at|in|place|location|venue)(?: (?:the|to))?\s+)+/i,'').replace(/\s+(?:as )?(?:the )?(?:place|location)$/i,'').trim();
-  if(def.id==='weatherProfile')value=value.replace(/^(?:use|weather profile|profile)\s+/i,'').replace(/\s+(?:weather|profile)$/i,'').trim();
+  if(['places','weatherLocationId'].includes(def.id))value=assistantFieldStripPrefix(value,/^(?:(?:use|add|set|at|in|place|location|venue)(?: (?:the|to))?\s+)+/i).replace(/\s+(?:as )?(?:the )?(?:place|location)$/i,'').trim();
+  if(def.id==='weatherProfile')value=assistantFieldStripPrefix(value,/^(?:use|weather profile|profile)\s+/i).replace(/\s+(?:weather|profile)$/i,'').trim();
   if(ASSISTANT_FIELD_QUANTITIES[def.id]){
     const quantity=assistantFieldQuantity(def,text);if(!quantity.ok)return quantity;
     value=quantity.value;
   }
+  if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))value=assistantFieldDialogue(value).text;
   if(!String(value).trim())return {ok:false,error:`What value should I use for ${def.label.toLowerCase()}?`};
   const lengthField=['minChunkMinutes','minGapMinutes','durationMinutes','exceptionDuration','timerAutoStopMinutes','autoMarkMinutes'].includes(def.id);
   if(lengthField){
@@ -452,7 +584,7 @@ function assistantFieldNormalize(def,text,session){
       && /^[\s,]*(?:and[\s,]*)?$/.test(normalized.slice(hits[0].end,hits[1].index));
     if(hits.length>1&&!joined)return {ok:false,error:'There is more than one length in that instruction.'};
   }
-  const parsed=assistantFocusNormalize(def.id,value,session);
+  const parsed=assistantFocusNormalize(def.id,value,{...session,_fieldLiteral:literal?.id===def.id&&ASSISTANT_FIELD_LITERAL_VALUES.has(def.id)});
   const length=lengthField?assistantParseDuration(value):null;
   if(def.id==='autoMarkMinutes'&&parsed.ok&&parsed.op==='clear'&&!/\b(?:manual|off|none|clear|disable)\b/i.test(value))return {ok:false,error:'Specify a completion length, or choose manual completion.'};
   if(length!=null&&parsed.ok&&parsed.op==='set'&&parsed.value!==length)return {ok:false,error:`That length is outside the supported range for ${def.label.toLowerCase()}.`};
@@ -473,7 +605,7 @@ async function assistantFieldExtract(state,row,extract){
     const modelSpan=referenceOnly?history.choices[0]:span;
     const modelSources=referenceOnly?history.choices.slice(1):[];
     const call=await assistantFocusModel(session,{family:def.family,jobId:row.id,revision:state.revision,
-      system:referenceOnly?`Copy exact words from the selected earlier user evidence. Current instruction: ${span.context||span.text}. Do not extract the reference wording itself.`:`Copy the user exact words into the record. Leave empty if absent. ${history.context}`,
+      system:`${assistantFocusSystem(session)} Read only ${def.label}: ${def.hint} Leave empty when the excerpt does not request this setting. ${referenceOnly?`Copy exact words from the selected earlier user evidence. Current instruction: ${span.context||span.text}. Do not extract the reference wording itself.`:history.context}`,
       context:history.context,
       request:assistantFocusRequestLine(def.key,referenceOnly?history.choices.map(source=>source.text).join('; '):span.text),tool:assistantFieldTool(def,modelSpan,modelSources)},extract);
     if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
@@ -492,7 +624,7 @@ async function assistantFieldExtract(state,row,extract){
       // helps resolve an actual reference, not override the latest correction.
       if(selected.request!==row.request && assistantFieldNormalize(def,span.text,normalizeContext).ok)continue;
       const selectedEvidence=selected.context||selected.text;
-      if(selected.request===row.request && !['name','frequency','durationMinutes','dueDate','dueTime','appointmentStartDate','appointmentStartMinute','places','weatherProfile'].includes(def.id) && !def.signal?.test(selectedEvidence) && !session.unresolved.some(issue=>issue.field===def.id))continue;
+      if(selected.request===row.request && !['name','frequency','durationMinutes','dueDate','dueTime','appointmentStartDate','appointmentStartMinute','places','weatherProfile'].includes(def.id) && !assistantFieldMentioned(def,selectedEvidence) && !session.unresolved.some(issue=>issue.field===def.id))continue;
       if(def.id==='kind' && !ASSISTANT_FIELD_SIGNALS.kind.test(selectedEvidence))continue;
       if(def.id==='name' && session.operation==='edit' && !ASSISTANT_FIELD_SIGNALS.name.test(selectedEvidence) && !session.unresolved.some(r=>r.field==='name'))continue;
       if(def.id==='allowedWeekdays' && /\bprefer/i.test(selectedEvidence))continue;
@@ -501,7 +633,7 @@ async function assistantFieldExtract(state,row,extract){
         if(!/\bprefer/i.test(selectedEvidence))continue;
       }
       if(def.id==='durationMinutes' && /\b(?:gaps?|chunks?|timer|auto.?mark|between sessions)\b/i.test(span.text))continue;
-      const parsed=assistantFieldNormalize(def,text,normalizeContext);
+      const parsed=assistantFieldNormalize(def,text,{...normalizeContext,_fieldSource:selectedEvidence});
       if(!parsed.ok)invalid.push(parsed);
       if(parsed.ok)values.push({changes:parsed.changes,source:text,span:selected,instructionSpan:span,uncertain:call.confidence==null||call.confidence<0.7||Boolean(call.raw.suppressed_calls?.includes(result))});
     }
@@ -650,21 +782,10 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     session.unresolved=session.unresolved.filter(row=>row.field!=='request');
     session.requestRevision=(session.requestRevision||0)+1;
     session._fieldKindChanging=ASSISTANT_FIELD_SIGNALS.kind.test(request);
-    state={request,revision:session.requestRevision,catalog:assistantFieldCatalog(),spans:assistantFieldSpans(request),jobs:unfinished};
+    state={request,revision:session.requestRevision,catalog:assistantFieldCatalog(),spans:assistantFieldSpans(request),jobs:unfinished,priorFields,needsCandidates:true};
     Object.defineProperty(state,'session',{value:session});
     unfinished.forEach(j=>{j.revision=state.revision;});
     session._fieldState=state;session.jobs=state.jobs;session.trace=session.trace||[];
-    assistantFieldCandidates(state);
-    if(assistantFieldReference(request)&&priorFields.length===1)assistantFieldEnqueue(state,priorFields[0],'reference');
-    // A reply to a field question still needs model evidence, but need not
-    // repeat the setting name (for example a bare date after “which date?”).
-    const question=session.unresolved[0];
-    const questionField=question&&state.catalog.find(def=>def.id===question.field||def.fields.includes(question.field));
-    if(questionField)assistantFieldEnqueue(state,questionField.id,'explicit');
-    state.jobs.unshift({id:'$discover',family:'families',status:'queued',attempts:0,revision:state.revision});
-    // Embeddings use a lease from the same pool. Test callers may supply a
-    // deterministic rank adapter; production always uses the pinned runtime.
-    state.jobs.splice(2,0,{id:'$retrieve',family:'retrieval',status:'queued',attempts:0,revision:state.revision});
     state.coverage=false;
   }else if(state){
     state.jobs.filter(j=>j.status==='retryable_failed').forEach(j=>{j.status='queued';});
@@ -673,6 +794,11 @@ async function assistantFocusRunFieldTurn(session,text,opts){
   const started=performance.now();
   session.continuationError='';
   try{
+    if(state.needsCandidates){
+      state.followup=await assistantFieldFollowup(state,state.priorFields,extract);
+      assistantFocusEnsure(session,state.revision);
+      assistantFieldPrepare(state);
+    }
     await assistantFieldSchedule(state,extract,opts);
     if(!state.coverage && !state.jobs.some(j=>j.status==='retryable_failed')){
       state.jobs.push({id:'$coverage',family:'completeness',status:'queued',attempts:0,revision:state.revision});state.coverage=true;

@@ -248,7 +248,22 @@ body[data-pane-count="3"] .section-header{
 }
 .free-panel-value{font-weight:600;color:var(--text);}
 .free-panel-note{font-size:11px;color:var(--text3);padding:1px 8px;}
-body.reach-pad #list{padding-top:220px;}
+/* The root owns phone scrolling. Suppress the browser's competing reload and
+   overscroll glow; Tings supplies the pull feedback on Home. */
+html{overscroll-behavior-y:none;}
+.pull-refresh-status{
+  position:fixed;z-index:50;top:calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px)) + 8px);
+  left:50%;width:42px;height:42px;display:grid;place-items:center;
+  transform:translate(-50%,-52px);opacity:0;
+  background:var(--bg2);color:var(--teal-icon);border:1px solid var(--border);
+  border-radius:50%;box-shadow:0 3px 12px #0002;pointer-events:none;
+  will-change:transform,opacity;
+}
+.pull-refresh-icon{
+  display:block;width:23px;height:23px;will-change:transform;
+  transform:rotate3d(0,0,1,0deg);
+}
+.pull-refresh-icon svg{display:block;width:100%;height:100%;}
 
 .swipe-row{
   --card-radius:20px;

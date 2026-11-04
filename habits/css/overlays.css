@@ -242,6 +242,8 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
   mask:center/13px 13px no-repeat url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
 }
 .ting-card.is-done .pulse-btn::before{display:none;}
+/* Events retain the priority circle, without implying a completion action. */
+.ting-card.event-card .pulse-btn::before{display:none;}
 .ting-card.is-done .pulse-btn::after{
   content:"✓";display:grid;place-items:center;
   border:0;border-radius:999px;

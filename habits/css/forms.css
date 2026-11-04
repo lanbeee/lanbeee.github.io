@@ -439,9 +439,30 @@ body.minimal-mode #pane-detail .minimal-detail.opportunity-mode #detail-weather-
 .event-detail [data-shared-display-mode="complete"],.event-detail #detail-ask-ai,
 .event-detail #detail-order-block { display:none!important; }
 .phone-calendar-detail #detail-name-disclosure,.phone-calendar-detail #detail-priority-disclosure,
-.phone-calendar-detail #detail-links-disclosure,.phone-calendar-detail #detail-actions-disclosure,.phone-calendar-detail #detail-delete,
+.phone-calendar-detail #detail-links-disclosure,.phone-calendar-detail #detail-delete,
 .phone-calendar-detail #detail-shared-display,.phone-calendar-detail .detail-shared-display-control,
 .phone-calendar-detail .habit-toggle,.phone-calendar-detail #detail-export { display:none!important; }
 .event-detail #detail-emoji-edit .emoji-help { display:none; }
+/* Restoring a hidden event must remain available in minimal mode. */
+body.minimal-mode .settings-full-only:has(#calendar-ignored-list) { display:block!important; }
 
 .appointment-editor .planning-field > span > small { display:inline; }
+
+.ordinal-editor{margin:8px 0;min-width:0;}
+.ordinal-editor summary{cursor:pointer;}
+.ordinal-editor summary small{color:var(--text3);font-weight:400;}
+.ordinal-editor summary small::before{content:' · ';}
+.ordinal-editor[open] summary small{display:none;}
+.ordinal-weeks{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;margin:8px 0 6px;}
+.ordinal-weeks .schedule-chip{padding-inline:2px;min-width:0;}
+.ordinal-editor .schedule-chip{min-height:40px;}
+.ordinal-editor .ordinal-days{margin-bottom:8px;}
+.ordinal-editor [data-ordinal-day].pending{box-shadow:inset 0 0 0 1.5px var(--text);}
+.ordinal-chosen{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px;}
+.ordinal-chosen[hidden]{display:none;}
+.ordinal-rule{
+  display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 10px;
+  border:0;border-radius:999px;background:var(--text);color:var(--bg);
+  font:inherit;font-size:12px;font-weight:650;cursor:pointer;
+}
+.ordinal-rule::after{content:'×';font-weight:400;opacity:.75;}

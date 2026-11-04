@@ -105,7 +105,7 @@ function scheduledEventAllowed(ev,settings){
 function collectScheduledAgendaEvents(data,dayKey,settings){
   const out = [];
   (data || []).forEach((h,i)=>{
-    if(!h)return;
+    if(!h || isCalendarIgnored(h,settings))return;
     if(isLocalAppointment(h)){
       // Carry yesterday's occurrence through midnight with its original identity.
       const midnight=new Date(`${dayKey}T00:00:00`),previous=new Date(midnight);

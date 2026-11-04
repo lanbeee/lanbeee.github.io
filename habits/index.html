@@ -762,6 +762,10 @@
               <i class="ti ti-moon" aria-hidden="true"></i>
               <span><b>snooze</b><small>Hide for a few hours or days</small></span>
             </button>
+            <label class="setting-toggle habit-toggle"><span><b>start with a tap</b><small>Tap again to log it.</small></span><button class="setting-switch" id="detail-tap-session" type="button" aria-pressed="false"><span class="switch-ui" aria-hidden="true"></span></button></label>
+            <button class="habit-action" id="detail-ignore-occurrence" type="button" hidden><i class="ti ti-eye-off" aria-hidden="true"></i><span><b>ignore this date</b><small>Hidden in Tings</small></span></button>
+            <button class="habit-action" id="detail-ignore-series" type="button" hidden><i class="ti ti-eye-off" aria-hidden="true"></i><span><b>ignore all dates</b><small>Hidden in Tings</small></span></button>
+            <button class="habit-action" id="detail-duplicate" type="button"><i class="ti ti-copy" aria-hidden="true"></i><span><b>duplicate</b><small>Opens a copy to edit</small></span></button>
             <button class="habit-action danger" id="detail-delete" type="button">
               <i class="ti ti-trash" aria-hidden="true"></i>
               <span><b>remove</b><small>Undo appears after</small></span>
@@ -1065,6 +1069,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
+            <button type="button" class="btn" id="refresh-agenda" data-refresh-agenda>Refresh</button>
             <div id="calendar-device-controls" hidden></div>
             <p class="field-hint">Import a Google, Apple or Outlook calendar export (.ics), or a calendar PDF. Choose the .ics file inside Google's export ZIP.</p>
             <p class="field-hint">ICS import dates (including recurring events). Times appear in this device's time zone. Imported copies stay on this device; re-import to add or update meetings.</p>

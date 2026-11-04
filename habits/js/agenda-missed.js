@@ -47,6 +47,7 @@ function missedOpportunityPassedToday(h,dayBase,now){
 // dropped by replanning. This rejects the old broad "everything overdue"
 // sweep: an off-day or impossible item has no qualifying planner evidence.
 function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
+  if(isCalendarIgnored(h))return false;
   if(isLocalAppointment(h))return false;
   if(isOpportunityHabit(h))return false;
   if(!h || !h.hid)return false;
