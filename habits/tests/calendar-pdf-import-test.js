@@ -81,6 +81,10 @@ Calendar: holidays@example.com
       blockedTimes:[]
     }));
   });
+  await page.addInitScript(()=>{
+    const RealDate=Date,now=new RealDate(2026,6,1,8).getTime();
+    globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
+  });
   await page.goto(BASE, { waitUntil:'domcontentloaded' });
   await page.waitForSelector('#open-add');
 
@@ -238,6 +242,26 @@ Calendar: holidays@example.com
   }, null, { timeout:10000 });
   const fromUi = await page.evaluate(()=>load().filter(h=>h.source === 'pdf').length);
   assert(fromUi === 4, `UI import stored only the 4 selected meetings, got ${fromUi}`);
+
+  const defaults=await page.evaluate(()=>{
+    const now=Date.now(),day=86400000;
+    clearCalendarPdfPreview();
+    showCalendarPdfPreview([
+      {id:'past',start:now-day,end:now-1},
+      {id:'ongoing',start:now-3600000,end:now+3600000},
+      {id:'future',start:now+day,end:now+day+3600000},
+      {id:'distant',start:now+91*day,end:now+91*day+3600000},
+      {id:'explicit-ics',source:'ics',start:now+120*day,end:now+120*day+3600000}
+    ]);
+    const selected=[...pendingCalendarSelection];
+    onCalendarPdfSelectNone();showCalendarPdfPreview(pendingCalendarEvents);
+    const none=pendingCalendarSelection.size;
+    onCalendarPdfSelectAll();const all=pendingCalendarSelection.size;
+    clearCalendarPdfPreview();
+    return {selected,none,all};
+  });
+  assert(JSON.stringify(defaults.selected)===JSON.stringify(['id:ongoing','id:future','id:explicit-ics']),`default selection: ${JSON.stringify(defaults)}`);
+  assert(defaults.none===0 && defaults.all===5,'manual selections survive preview refresh and can include past events');
 
   // ── 5. clear imported ──
   const cleared = await page.evaluate(()=>clearCalendarImport('pdf'));

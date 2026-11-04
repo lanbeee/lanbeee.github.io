@@ -1,3 +1,5 @@
+// Shared default for calendar file previews and ICS recurrence expansion.
+const CALENDAR_IMPORT_DEFAULT_DAYS = 90;
 // Calendar import — PDF prints and ICS exports (see calendar-ics.js)
 // feeding the same timed-task pipeline that Microsoft/Google OAuth will reuse.
 //

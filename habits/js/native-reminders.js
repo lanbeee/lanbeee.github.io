@@ -614,8 +614,8 @@ function nativeBackgroundSnapshot(){
   }
   // Last-refresh display text is not a planner input.
   if(typeof deviceCalendarPreferences==='function'){
-    const {enabled,calendarIds}=deviceCalendarPreferences();
-    storage.tings_device_calendars_v1=JSON.stringify({enabled,calendarIds});
+    const {enabled,calendarIds,sourceId,adoptLegacy}=deviceCalendarPreferences({ensureSourceId:true});
+    storage.tings_device_calendars_v1=JSON.stringify({enabled,calendarIds,sourceId,adoptLegacy});
   }
   const data=load(),mounted=typeof _homeRenderedWeek !== 'undefined' ? _homeRenderedWeek : null;
   // Memoized future days are safe only when this agenda matches saved inputs.

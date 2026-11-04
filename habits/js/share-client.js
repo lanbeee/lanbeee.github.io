@@ -1,9 +1,16 @@
 function shareWorkerBaseUrl(){
   if(typeof SHARE_WORKER_URL !== 'undefined' && SHARE_WORKER_URL) return SHARE_WORKER_URL;
-  const local = typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname);
+  const local = !globalThis.TingsNative?.isNative && !globalThis.Capacitor?.isNativePlatform?.() && typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname);
   return local
     ? 'https://habits-share-staging.contactnabilkhan.workers.dev'
     : 'https://habits-share.contactnabilkhan.workers.dev';
+}
+
+function sharePairingDirectoryUrl(){
+  // QR codes use the public owner origin even inside the Android WebView.
+  // Navigation and localStorage stay on the native installation's origin.
+  return globalThis.TingsNative?.isNative || globalThis.Capacitor?.isNativePlatform?.()
+    ? new URL('https://lanbeee.github.io/habits/') : shareAppDirectoryUrl();
 }
 
 function shareAppDirectoryUrl(){
@@ -33,7 +40,7 @@ function shareAgendaFeedPath(feedId, opts = {}){
 }
 
 function agendaPairingOwnerHref(pairing){
-  const url = shareAppDirectoryUrl();
+  const url = sharePairingDirectoryUrl();
   const params = new URLSearchParams({
     agendaPair:pairing.pairingId,
     x:pairing.displayPublicKey.x,
