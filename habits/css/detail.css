@@ -243,6 +243,17 @@ body :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
   background:var(--glass-bg);box-shadow:var(--floating-shadow);
   -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
 }
+/* The right pane mounts detail in the page, outside a modal stacking context.
+   A 160 layer there paints over the assistant and other sheets. */
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-detail,.pane-overview) > :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
+  z-index:1;
+}
+/* A centered modal only dims the columns. The item's search and close sit
+   at the bottom of the right pane, so they read as a second dialog control
+   beside the modal. Hide them until the modal closes. */
+body.modal-open:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-detail,.pane-overview) > :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
+  visibility:hidden;
+}
 body :is(.detail-sheet,.settings-sheet) > .sheet-search-dock > :is(.detail-actions,.settings-actions){
   position:static;inset:auto;transform:none;min-width:0;width:100%;margin:0;padding:0;
   display:flex;align-items:center;gap:8px;

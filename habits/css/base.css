@@ -43,6 +43,7 @@ body{
 /* 2+ panes: the .app is a multi-column grid centred in the viewport. */
 body[data-pane-count="2"],
 body[data-pane-count="3"]{
+  --desktop-chrome-top:calc(var(--content-safe-top) + var(--bar-height));
   padding:0;
   display:flex;
   justify-content:center;
@@ -123,6 +124,13 @@ body[data-pane-count="1"] .pane-list{
 }
 body[data-pane-count="2"] .pane-list,
 body[data-pane-count="3"] .pane-list{padding:0 20px;}
+/* Detail search and other pane layers use high z-index values. Keep them
+   inside the column so a modal opened over the desktop shell covers them. */
+body[data-pane-count="2"] :is(.pane-list,.pane-overview,.pane-detail),
+body[data-pane-count="3"] :is(.pane-list,.pane-overview,.pane-detail){
+  isolation:isolate;
+  z-index:0;
+}
 
 .pane-overview{
   display:none;

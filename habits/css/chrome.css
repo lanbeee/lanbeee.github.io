@@ -119,7 +119,18 @@ body[data-pane-count="1"].search-active{--nav-bottom:0px;}
 }
 body[data-pane-count="2"] .app-bar,
 body[data-pane-count="3"] .app-bar{
+  /* The bar is the grid's first row. Sticky positioning inside that row can
+     fail to paint, so the wordmark and actions disappear until something
+     else invalidates the layer. */
   display:flex;
+  position:relative;
+  top:auto;
+  z-index:30;
+}
+/* Wide layout owns this bar. A leftover hidden attribute must not remove it. */
+body[data-pane-count="2"] #app-bar[hidden],
+body[data-pane-count="3"] #app-bar[hidden]{
+  display:flex !important;
 }
 .app-bar[hidden]{display:none !important;}
 
@@ -127,7 +138,7 @@ body[data-pane-count="3"] .app-bar{
   border:none;background:transparent;padding:6px 8px;margin:0;
   font:inherit;color:var(--text);cursor:pointer;
   -webkit-tap-highlight-color:transparent;
-  display:flex;align-items:center;gap:8px;
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
   border-radius:10px;
 }
 .app-bar-logo:hover{background:var(--bg2);}
@@ -135,7 +146,7 @@ body[data-pane-count="3"] .app-bar{
 .app-bar-title{font-size:17px;font-weight:650;letter-spacing:0;}
 
 .app-bar-actions{
-  display:flex;align-items:center;gap:8px;
+  display:flex;align-items:center;gap:8px;flex-shrink:0;
   margin-left:auto;
 }
 .app-bar-add{

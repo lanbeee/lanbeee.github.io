@@ -1146,11 +1146,31 @@ function openSheet(id,opts = {}){
     return;
   }
   $(id).classList.add('open');
+  // The desktop bar stays usable while a modal is open. A sheet opened from
+  // it has to paint above the one already on screen. Phone keeps the
+  // stylesheet order: detail must open behind the day sheet so that sheet
+  // can fade away and reveal it.
+  if(paneTierActive())raiseOpenSheet(id);
   // Recovered taps and synthesized clicks can land on the wrap that just
   // opened. Arm every sheet so the next card does not need a whitelist entry.
   armSheetBackdropGuard(id);
   updateFullPageState();
   updateKeyboardLift();
+}
+
+// The stylesheet stacking order is the resting order. A sheet opened while
+// another is already up takes the next layer, then gives it back on close.
+function raiseOpenSheet(id){
+  const el = $(id);
+  if(!el)return;
+  const own = parseInt(getComputedStyle(el).zIndex,10) || 0;
+  let max = own;
+  document.querySelectorAll('.sheet-wrap.open').forEach(wrap=>{
+    if(wrap === el)return;
+    const z = parseInt(getComputedStyle(wrap).zIndex,10);
+    if(Number.isFinite(z))max = Math.max(max,z);
+  });
+  if(max > own)el.style.zIndex = String(max + 1);
 }
 
 // HYBRID: ignore sheet-wrap backdrop clicks for a short window after open
@@ -1189,6 +1209,7 @@ function closeSheet(id){
     return;
   }
   $(id).classList.remove('open');
+  $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
   if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet')updateKeyboardLift();
@@ -2007,7 +2028,10 @@ document.addEventListener('tierchange',()=>{
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
   ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
-    if ($(id).classList.contains('open')) $(id).classList.remove('open');
+    if ($(id).classList.contains('open')){
+      $(id).classList.remove('open');
+      $(id).style.zIndex = '';
+    }
   });
   unmountPane();
   updateFullPageState();

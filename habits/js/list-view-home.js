@@ -904,6 +904,10 @@ function matchesHomeTopic(h,topic){
 let lastUnsearchedHomeCardCount = 0;
 
 function homeSearchAvailable(){
+  // The desktop bar always keeps search next to add. Phone search stays
+  // tucked away until there is a list worth filtering.
+  if(document.body.classList.contains('replica-display-mode'))return true;
+  if(typeof paneTierActive === 'function' && paneTierActive())return true;
   const data = load();
   return lastUnsearchedHomeCardCount >= 10
     || data.some(h=>h.type === 'task' && isTaskDone(h));
@@ -918,9 +922,7 @@ function updateSortButton(settled = false){
   if(settled && !searchQuery.trim()){
     lastUnsearchedHomeCardCount = document.querySelectorAll('#list .ting-card').length;
   }
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
-  const canSearch = lastUnsearchedHomeCardCount >= 10 || hasSearchableArchive
-    || document.body.classList.contains('replica-display-mode');
+  const canSearch = homeSearchAvailable();
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',!canSearch);

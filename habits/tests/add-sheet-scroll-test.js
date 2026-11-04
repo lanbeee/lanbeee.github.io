@@ -161,8 +161,17 @@ const {chromium} = require('playwright');
     await page.setViewportSize({width:1100,height:740});
     await page.waitForFunction(()=>document.body.dataset.paneCount!=='1');
     await page.evaluate(()=>{visualViewport.height=740;updateKeyboardLift();});
-    const nativeWide=await page.evaluate(()=>document.querySelector('.add-sheet').getBoundingClientRect().height);
-    assert.ok(Math.abs(nativeWide-(740-48))<1,'native wide modal reserves its outer padding exactly once');
+    const nativeWide=await page.evaluate(()=>{
+      const sheet=document.querySelector('.add-sheet').getBoundingClientRect();
+      const bar=document.getElementById('app-bar').getBoundingClientRect();
+      return {height:sheet.height,top:sheet.top,bottom:sheet.bottom,barBottom:bar.bottom,viewport:window.innerHeight};
+    });
+    // The bar stays visible, so the card gives it up once and keeps the
+    // wrap's 24px padding on each edge. Counting either gap twice clips Save.
+    const expectedWide=nativeWide.viewport-nativeWide.barBottom-48;
+    assert.ok(Math.abs(nativeWide.height-expectedWide)<1,`native wide modal reserves the top bar and its outer padding exactly once: ${JSON.stringify(nativeWide)}`);
+    assert.ok(nativeWide.top>=nativeWide.barBottom-1,'wide add sheet starts below the top bar');
+    assert.ok(nativeWide.bottom<=nativeWide.viewport+1,'wide add sheet stays inside the viewport');
     assert.deepEqual(errors,[]);
     console.log(`PASS add sheet scrolling: ${layouts} responsive touch layouts, PWA/native keyboard opening/closing and draft cleanup; page errors: 0`);
   }finally{await browser.close();}

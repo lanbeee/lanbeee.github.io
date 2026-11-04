@@ -36,8 +36,16 @@ function applyTier(tier) {
   document.dispatchEvent(new CustomEvent('tierchange', { detail: { tier } }));
 }
 
+function syncWideChrome(count){
+  const bar = document.getElementById('app-bar');
+  if(!bar)return;
+  if(count >= 2)bar.removeAttribute('hidden');
+  else bar.setAttribute('hidden','');
+}
+
 function applyPaneCount(count) {
   document.body.setAttribute('data-pane-count', String(count));
+  syncWideChrome(count);
   // Reuse tierchange so existing listeners (sheet reset, reparent, etc.) run
   // when the pane count crosses a threshold.
   document.dispatchEvent(new CustomEvent('tierchange', { detail: { tier: currentTier, paneCount: count } }));

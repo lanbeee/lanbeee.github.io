@@ -18,8 +18,8 @@ body.assistant-on .topbar .assistant-launch{
 body[data-pane-count="2"] .assistant-sheet,
 body[data-pane-count="3"] .assistant-sheet{
   min-height:0;
-  height:calc(100dvh - 48px);
-  max-height:calc(100dvh - 48px);
+  height:calc(100dvh - var(--desktop-chrome-top,0px) - 48px);
+  max-height:calc(100dvh - var(--desktop-chrome-top,0px) - 48px);
   padding:22px 22px calc(16px + var(--content-safe-bottom));
   border-radius:var(--sheet-radius);
 }

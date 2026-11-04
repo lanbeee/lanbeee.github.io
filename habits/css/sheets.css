@@ -8,6 +8,13 @@
   transition:opacity var(--dur-med) ease;
 }
 .sheet-wrap.open{opacity:1;pointer-events:auto;}
+/* Desktop modals cover the columns, not the wordmark / search / add bar. */
+body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap{
+  top:var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height)));
+  height:auto;
+  padding-top:0;
+  overflow:hidden;
+}
 /* Locking Home scroll unsticks its day header. Calendar must cover that
    change on its first frame, like the phone detail page. */
 body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
@@ -136,7 +143,7 @@ body[data-pane-count="2"] .sheet,
 body[data-pane-count="3"] .sheet{
   width:min(var(--sheet-max-width),calc(100vw - 48px));
   max-width:var(--sheet-max-width);
-  max-height:calc(100dvh - 48px);
+  max-height:calc(100dvh - var(--desktop-chrome-top,0px) - 48px);
   border-radius:var(--sheet-radius);
   padding:24px 24px calc(24px + var(--content-safe-bottom));
   transform:translateY(8px) scale(0.985);
@@ -160,7 +167,7 @@ body[data-pane-count="3"] .settings-sheet,
 body[data-pane-count="3"] .sample-habits-sheet,
 body[data-pane-count="3"] .assistant-sheet{
   min-height:0;
-  max-height:calc(100dvh - 48px);
+  max-height:calc(100dvh - var(--desktop-chrome-top,0px) - 48px);
   padding-top:24px;
   padding-bottom:calc(24px + var(--content-safe-bottom));
   border-radius:var(--sheet-radius);
@@ -168,8 +175,8 @@ body[data-pane-count="3"] .assistant-sheet{
 }
 body[data-pane-count="2"] .add-sheet,
 body[data-pane-count="3"] .add-sheet{
-  height:min(760px,calc(min(100dvh,var(--add-viewport-height,100dvh)) - 48px));
-  max-height:calc(100dvh - 48px);
+  height:min(760px,calc(min(100dvh,var(--add-viewport-height,100dvh)) - var(--desktop-chrome-top,0px) - 48px));
+  max-height:calc(100dvh - var(--desktop-chrome-top,0px) - 48px);
   padding:0;
 }
 body:is([data-pane-count="2"],[data-pane-count="3"]) .add-content{
