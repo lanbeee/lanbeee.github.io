@@ -2092,7 +2092,7 @@ $('detail-duplicate').addEventListener('click',()=>{
   copy.name = `${String(source.name || 'Item').trim().slice(0,55)} copy`.trim();
   copy.logs = []; copy.lastLog = null; copy.createdAt = null; copy.snoozedUntil = null;
   copy.planByDate = null; copy.sample = false;
-  for(const key of ['externalId','source','calendarId','calendarSeriesId','calendarStart','calendarEnd','calendarSubject','importedAt','shareId','shareKey'])delete copy[key];
+  for(const key of ['externalId','source','calendarDeviceId','calendarId','calendarSeriesId','calendarStart','calendarEnd','calendarSubject','importedAt','shareId','shareKey'])delete copy[key];
   if(Array.isArray(copy.scheduleLinks))copy.scheduleLinks=copy.scheduleLinks.filter(link=>link && link.anchorHid!==sourceId);
   for(const field of ['allowedTimeStartAnchorHabitId','allowedTimeEndAnchorHabitId','preferredTimeStartAnchorHabitId','preferredTimeEndAnchorHabitId']){
     if(copy[field]===sourceId)copy[field]=null;

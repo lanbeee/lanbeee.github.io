@@ -109,8 +109,7 @@ function cancelBackupImport(){
 // ── Calendar file import (PDF + ICS) ──
 let pendingCalendarEvents = null;
 let calendarFileReadVersion = 0;
-// Set of event keys the user wants imported; every parsed event is in it by
-// default so "import" acts as before unless the user deselects rows.
+// Selected event keys. Ended events start unchecked; users can override this.
 let pendingCalendarSelection = null;
 
 function calendarPdfSelectionKey(ev, index){
@@ -255,7 +254,13 @@ function renderCalendarImportControls(){
 function showCalendarPdfPreview(events){
   pendingCalendarEvents = events || [];
   if(!pendingCalendarSelection){
-    pendingCalendarSelection = new Set(pendingCalendarEvents.map((ev,i)=>calendarPdfSelectionKey(ev,i)));
+    // Keep ended meetings and distant PDF rows visible for explicit selection.
+    // ICS already expands only the chosen range (90 days by default).
+    const now = Date.now(), until = new Date(dayStart(now));
+    until.setDate(until.getDate()+CALENDAR_IMPORT_DEFAULT_DAYS+1);
+    pendingCalendarSelection = new Set(pendingCalendarEvents.flatMap((ev,i)=>
+      Number(ev.end) > now && (ev.source === 'ics' || Number(ev.start) < until.getTime())
+        ? [calendarPdfSelectionKey(ev,i)] : []));
   }
   const settings = sortSettings || loadSortSettings();
   const mode = normalizeCalendarAllDayMode(settings.calendarAllDayMode);

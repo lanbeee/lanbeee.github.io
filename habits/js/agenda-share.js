@@ -783,7 +783,7 @@ function parseHouseholdAgendaPairingUrl(value){
   let scanned;
   try{ scanned = new URL(String(value || '').trim()); }
   catch(_){ return null; }
-  const app = shareAppDirectoryUrl();
+  const app = sharePairingDirectoryUrl();
   if(scanned.origin !== app.origin
     || scanned.pathname !== app.pathname
     || scanned.search

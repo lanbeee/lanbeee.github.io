@@ -351,7 +351,7 @@ const assert = require('node:assert/strict');
       const drop=agendaLeadStatus({kind:'fill',start:now,end:now+30*60000,dropAt:now+8*60000},{
         type:'keepup',allowedTimeStart:0,allowedTimeEnd:1440
       },now);
-      window.TingsNative={isNative:true,notifications:{requestPermissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})},background:{},alarms:{}};
+      window.TingsNative={isNative:true,notifications:{requestPermissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})},background:{snapshot:async()=>{}},alarms:{}};
       localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({version:3,enabled:true,items:{'item:walk':{start:'notification'}}}));
       sortSettings={...loadSortSettings(),blockedTimes:[{label:'Lunch',start:720,end:780,days:[],reminderId:'lunch'}]};
       renderBlockedTimeControls();
@@ -445,7 +445,7 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(()=>!document.getElementById('background-location-disclosure-sheet')?.classList.contains('open'));
     assert.deepEqual(await page.evaluate(()=>window.__tingsBackgroundCalls),['request','settings'],'continue requests location then opens Android settings');
     await page.evaluate(()=>{
-      window.TingsNative={isNative:true,background:{requestLocation:async()=>{window.__tingsFineRequests=(window.__tingsFineRequests||0)+1;return {fine:true};}}};
+      window.TingsNative={isNative:true,background:{snapshot:async()=>{},requestLocation:async()=>{window.__tingsFineRequests=(window.__tingsFineRequests||0)+1;return {fine:true};}}};
     });
     await page.evaluate(()=>document.getElementById('location-access-enable')?.click());
     await page.waitForFunction(()=>document.getElementById('location-permission-sheet')?.classList.contains('open'));

@@ -7,6 +7,11 @@ const assert=require('node:assert/strict');
  try{
   const page=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true,timezoneId:'America/New_York'});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  // The planner runs in its own worker; freeze that realm as well as the page.
+  await page.route('**/js/agenda-planner-worker.js*',async route=>{
+   const response=await route.fetch();
+   await route.fulfill({response,body:`{const RealDate=Date,now=Date.parse('2026-11-03T08:00:00-05:00');globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};}\n`+await response.text()});
+  });
   let temperature=17,failAir=false,failForecast=false,delayForecast=0;const requests=[];
   await page.route('https://**.open-meteo.com/**',async route=>{
    const url=new URL(route.request().url());requests.push(url);
@@ -18,7 +23,11 @@ const assert=require('node:assert/strict');
    const payload={timezone:'America/New_York',hourly:{time,temperature_2m:time.map(()=>temperature),apparent_temperature:time.map(()=>temperature),precipitation_probability:time.map(()=>10),weather_code:time.map(()=>1),us_aqi:time.map(()=>20)},daily:{time:Array.from({length:7},(_,i)=>base+i*86400),weather_code:Array(7).fill(1),temperature_2m_min:Array(7).fill(temperature-2),temperature_2m_max:Array(7).fill(temperature+2)}};
    await route.fulfill({json:count>1?Array.from({length:count},()=>payload):payload});
   });
-  await page.addInitScript(()=>{localStorage.setItem('tings_coach_essentials_v2','done');localStorage.setItem('tings_coach_install_v2','done');});
+  await page.addInitScript(()=>{
+   const RealDate=Date,now=new RealDate('2026-11-03T08:00:00-05:00').getTime();
+   globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
+   localStorage.setItem('tings_coach_essentials_v2','done');localStorage.setItem('tings_coach_install_v2','done');
+  });
   await page.goto(process.env.HABITS_URL||'http://127.0.0.1:4181/',{waitUntil:'load'});
   await page.evaluate(async()=>{
    const RealDate=Date,now=new RealDate('2026-11-03T08:00:00-05:00').getTime();
@@ -37,7 +46,7 @@ const assert=require('node:assert/strict');
     return {complete:true,calendarIds:ids,from:dayStart(now),to:dayStart(now)+14*86400000,events:[{id:'device:7:20',calendarId:'7',seriesId:'device:7:series',subject:'Meeting '+window.refreshTestCalendarReads,start:window.refreshTestCalendarStart,end:window.refreshTestCalendarStart+3600000,isAllDay:false}]};
    }}};
    // Delivery is Android-owned. Assert it observes the newly published plan.
-   reconcileNativeReminders=async()=>{window.refreshTestNativeUpdates.push({dirty:_optimizerHomeReadyDirtyKey,current:homePlannerDirtyKey(load()),start:_homeRenderedWeek?.days.flatMap(day=>day.timeline).find(row=>row.hid==='device:7:20'||row.h?.hid==='device:7:20')?.start});};
+   reconcileNativeReminders=async()=>{window.refreshTestNativeUpdates.push({dirty:_optimizerHomeReadyDirtyKey,current:homePlannerDirtyKey(load()),start:_homeRenderedWeek?.days.flatMap(day=>day.timeline).find(row=>row.hid===load().find(h=>h.externalId==='device:7:20')?.hid||row.h?.externalId==='device:7:20')?.start});};
    await refreshHomeAgenda();
   });
   const state=()=>page.evaluate(()=>({calendarReads:refreshTestCalendarReads,event:load().find(h=>h.externalId==='device:7:20')?.calendarStart,forecast:weatherCacheRead().weekly?.samples?.[0]?.temperature_2m,airError:weatherCacheRead().lastError,ready:_optimizerHomeReadyDirtyKey===homePlannerDirtyKey(load()),pending:!!_optimizerHomeRequestKey,native:refreshTestNativeUpdates.at(-1),busy:!!pullRefreshPromise,hidden:pullRefreshStatus.hidden,toast:$('toast-text').textContent}));

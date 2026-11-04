@@ -8,7 +8,7 @@ function calendarIcsDateRange(){
   const fromInput = document.getElementById('calendar-ics-from');
   const toInput = document.getElementById('calendar-ics-to');
   const today = new Date();
-  const later = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 90);
+  const later = new Date(today.getFullYear(), today.getMonth(), today.getDate() + CALENDAR_IMPORT_DEFAULT_DAYS);
   if(fromInput && !fromInput.value)fromInput.value = dateKey(today.getTime());
   if(toInput && !toInput.value)toInput.value = dateKey(later.getTime());
   const parse = value=>{
