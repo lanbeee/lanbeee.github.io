@@ -6,7 +6,7 @@ const assert=require('node:assert/strict');
     const page=await browser.newPage();
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     // The native bridge runs before config.js in both packaged entry pages.
-    await page.addInitScript(()=>{window.TingsNative={isNative:true,platform:'android',notifications:{
+    await page.addInitScript(()=>{window.Capacitor={isNativePlatform:()=>true};window.TingsNative={isNative:true,platform:'android',notifications:{
       permissions:async()=>({display:'denied'}),exactAlarmPermission:async()=>({exact_alarm:'denied'}),pending:async()=>({notifications:[]})
     }};});
     await page.route(/habits-share.*workers\.dev/,r=>r.fulfill({json:{}}));
@@ -18,12 +18,13 @@ const assert=require('node:assert/strict');
       const path=new URL(href);path.pathname='/other/';
       const query=new URL(href);query.search='?redirect=1';
       const credentials=new URL(href);credentials.username='fake';
-      return {worker:shareWorkerBaseUrl(),href,accepted:parsed?.pairingId===pairing.pairingId,
+      return {configured:shareConfigured(),worker:shareWorkerBaseUrl(),href,accepted:parsed?.pairingId===pairing.pairingId,
         rejected:[altered,path,query,credentials].every(url=>parseHouseholdAgendaPairingUrl(url.href)===null),
         localApp:shareAppDirectoryUrl().origin===location.origin,
         join:document.getElementById('settings-agenda-join')?.getAttribute('href')};
     });
     assert.equal(result.worker,'https://habits-share.contactnabilkhan.workers.dev','Android uses the production relay even on localhost');
+    assert(result.configured,'real Capacitor devices must be able to pair and sync');
     assert(result.href.startsWith('https://lanbeee.github.io/habits/#agendaPair='));
     assert(result.accepted && result.rejected,'native pairing accepts only the canonical public URL');
     assert(result.localApp,'the full app stays inside the native local origin');

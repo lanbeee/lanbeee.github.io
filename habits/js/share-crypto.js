@@ -5,10 +5,8 @@ const SHARE_NONCE_BYTES = 12;
 const AGENDA_PAIR_PROTOCOL_VERSION = 2;
 
 function shareConfigured(){
-  // Sharing ships in the PWA only. The native (Capacitor/Play) build disables
-  // every share surface, mirroring pushConfigured()'s native check. The
-  // typeof guard keeps node-side pure-function tests working.
-  if(typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.())return false;
+  // Native personal clones use the same authenticated, encrypted relay as
+  // the PWA. The local WebView origin never grants access by itself.
   const url = typeof shareWorkerBaseUrl === 'function'
     ? shareWorkerBaseUrl()
     : (typeof SHARE_WORKER_URL !== 'undefined' ? SHARE_WORKER_URL : '');
@@ -176,7 +174,7 @@ async function shareNewAgendaPairingRequest(){
   const confirmationCode = shareNewAgendaPairCode();
   const keyPair = await crypto.subtle.generateKey(
     { name:'ECDH',namedCurve:'P-256' },
-    true,
+    false,
     ['deriveKey']
   );
   const displayPublicKey = shareAgendaPairPublicKey(await crypto.subtle.exportKey('jwk',keyPair.publicKey));
@@ -217,7 +215,7 @@ async function shareAgendaPairEncrypt(contentKey,feedId,pairingId,displayPublicK
   const displayKey = await shareImportAgendaPairPublicKey(displayPublicKey);
   const ownerKeys = await crypto.subtle.generateKey(
     { name:'ECDH',namedCurve:'P-256' },
-    true,
+    false,
     ['deriveKey']
   );
   const wrappingKey = await crypto.subtle.deriveKey(

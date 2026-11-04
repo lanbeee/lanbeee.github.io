@@ -515,6 +515,18 @@ function tingsShareDump(){
 
 async function shareFetch(path, opts = {}){
   if(!shareConfigured()) throw new Error('share_unconfigured');
+  // Credentials and pairing bodies must never follow a redirect or a
+  // configurable URL onto another service, including an insecure endpoint.
+  const base = shareWorkerBaseUrl();
+  if(![
+    'https://habits-share.contactnabilkhan.workers.dev',
+    'https://habits-share-staging.contactnabilkhan.workers.dev'
+  ].includes(base)) throw new Error('share_untrusted_relay');
+  const url = new URL(String(path),base);
+  if(typeof path !== 'string' || !path.startsWith('/v1/')
+    || url.origin !== base || !url.pathname.startsWith('/v1/') || url.hash){
+    throw new Error('share_invalid_path');
+  }
   const headers = {};
   if(opts.body != null) headers['Content-Type'] = 'application/json';
   if(opts.credential) headers.Authorization = `Bearer ${opts.credential}`;
@@ -527,11 +539,15 @@ async function shareFetch(path, opts = {}){
   if(controller) setTimeout(()=>controller.abort(),opts.timeoutMs);
   let res;
   try{
-    res = await fetch(`${shareWorkerBaseUrl()}${path}`, {
+    res = await fetch(url.href, {
       method:opts.method || 'GET',
       headers,
       body:opts.body != null ? JSON.stringify(opts.body) : undefined,
       cache:'no-store',
+      credentials:'omit',
+      mode:'cors',
+      redirect:'error',
+      referrerPolicy:'no-referrer',
       signal:controller ? controller.signal : undefined
     });
   }catch(error){
