@@ -62,6 +62,10 @@ function compileNativeWidgetSnapshot(week,data,settings,now = Date.now()){
       end:Math.max(0,...(groups.get(h.hid) || []).map(row=>row.end))}));
     const items = subjects.filter(h=>!isEventItem(h)).map(h=>({hid:h.hid,title:clean(h.name),
       done:h.type === 'task' ? isTaskDone(h) : completedOnDay(h,start),
+      completedMinutes:h.breakable ? breakableProgressMinutes(h,start) : 0,
+      totalMinutes:h.breakable ? breakableTotalMinutes(h) : 0,
+      completedCount:habitOccurrenceLogsForDay(h,start).length,
+      targetCount:habitOccurrenceTargetForDay(h,start),
       detail:h.breakable ? `${Math.min(breakableProgressMinutes(h,start),breakableTotalMinutes(h))}/${breakableTotalMinutes(h)} min`
         : habitHasMultipleDailyOccurrences(h) ? `${Math.min(habitOccurrenceLogsForDay(h,start).length,habitOccurrenceTargetForDay(h,start))}/${habitOccurrenceTargetForDay(h,start)}` : ''}));
     // Use the exact displayed IDs and occurrence keys used by Home's missed
@@ -81,7 +85,8 @@ function compileNativeWidgetSnapshot(week,data,settings,now = Date.now()){
         events:{total:events.length,upcoming:events.filter(event=>event.end>now).length},
         missed:missed.length,hidden:hidden.length,missedItems:missed.slice(0,100)}};
   });
-  return {version:1,updatedAt:now,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,days};
+  const appliedOperations=data.flatMap(h=>normalizeLogs(h.logs)).filter(log=>log?.operationId && logTime(log)>=now-8*86400000).map(log=>log.operationId).slice(-2000);
+  return {version:1,updatedAt:now,appliedOperations,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,days};
 }
 
 // Completion stays in the canonical app so its normal persistence, value

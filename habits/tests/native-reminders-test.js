@@ -329,6 +329,26 @@ const assert = require('node:assert/strict');
     assert.equal(completion.logs[1][0].minutes,30,'only the split session is credited');
     assert.equal(completion.logs[2].length,2,'a separate completed occurrence does not swallow this completion');
     assert.equal(completion.pending,0,'acknowledge only after save');
+    const receivedCompletion=await page.evaluate(async()=>{
+      const now=Date.now(),h=normalize([{hid:'remote',name:'Remote',type:'keepup',target:1,logs:[{ts:now+1000,plan:true}]}])[0];
+      Storage.writeRaw(KEY,JSON.stringify([h]));
+      const log=makeActualLog(now,{operationId:'d'.repeat(32),source:'shared_display'});
+      let actions=[{id:'d'.repeat(32),hid:h.hid,dayKey:todayIso(),source:'shared_display',remoteLog:log}];
+      let echoes=0,acks=0,fail=true;
+      const original=onReplicaDeviceDataSaved;
+      onReplicaDeviceDataSaved=()=>{echoes++;};
+      window.TingsNative.alarms.completions=async()=>({actions});
+      window.TingsNative.alarms.acknowledge=async()=>{if(fail){fail=false;throw new Error('restart');}acks++;actions=[];};
+      try{
+        try{await consumeNativeAlarmCompletions();}catch(_){}
+        await consumeNativeAlarmCompletions();await consumeNativeAlarmCompletions();
+        return {echoes,acks,logs:load()[0].logs};
+      }finally{onReplicaDeviceDataSaved=original;}
+    });
+    assert.equal(receivedCompletion.echoes,0,'received completions never echo as new clone operations');
+    assert.equal(receivedCompletion.acks,1,'received completion survives interrupted acknowledgement');
+    assert.equal(receivedCompletion.logs.length,1,'received completion consumes its plan and replays once');
+    assert.equal(receivedCompletion.logs[0].operationId,'d'.repeat(32),'foreground preserves remote log identity');
     const stalePublishes=await page.evaluate(async()=>{
       const original={native:window.TingsNative,week:_homeRenderedWeek,ready:_optimizerHomeReadyDirtyKey,
         status:refreshNativeBackgroundStatus,completion:consumeNativeAlarmCompletions,render:renderNativeReminderStatus};

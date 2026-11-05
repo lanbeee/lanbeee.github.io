@@ -629,7 +629,7 @@ function nativeBackgroundSnapshot(){
   // the raw overrides so new/moved occurrences inherit without stale completion.
   const calendarOverrides=Object.fromEntries(Object.entries(rawPrefs.items).filter(([owner])=>owner.startsWith('calendar-series:') || owner.startsWith('item:device:')));
   const prefs={...saved,calendarOverrides,items:Object.fromEntries(Object.entries(saved.items).filter(([owner])=>owners.has(owner) || owner.startsWith('calendar-series:')))};
-  return {storage,prefs,quiet:compileNativeQuietSchedule(data,sortSettings,rawPrefs),week:compatible ? leanAgendaWeek(mounted) : null,
+  return {storage,prefs,sync:{shareState:localStorage.getItem(SHARE_STATE_KEY),enrollment:localStorage.getItem(AGENDA_DISPLAY_KEY)},quiet:compileNativeQuietSchedule(data,sortSettings,rawPrefs),week:compatible ? leanAgendaWeek(mounted) : null,
     widgets:compileNativeWidgetSnapshot(compatible ? mounted : null,data,sortSettings),
     weatherRevision:sortSettings?._weatherContext?.revision || '',
     coord:typeof currentCoordLocation === 'function' ? currentCoordLocation() : null};
@@ -640,6 +640,7 @@ function nativeBackgroundSnapshotKey(){
   const mounted=typeof _homeRenderedWeek!=='undefined'?_homeRenderedWeek:null;
   return [
     typeof homePlannerDirtyKey==='function'?homePlannerDirtyKey(data):'',
+    localStorage.getItem(SHARE_STATE_KEY),localStorage.getItem(AGENDA_DISPLAY_KEY),
     prefs.enabled,JSON.stringify([prefs.daily,prefs.weekly]),
     missedHideSignature(),
     JSON.stringify(loadTodaySuggested()),
@@ -674,7 +675,8 @@ async function refreshNativeBackgroundStatus(force=false){
   const detail=document.getElementById('native-background-detail');
   if(detail)detail.textContent=state.enabled
     ? `Closed refresh: about 15 minutes with drop reminders enabled; 30 minutes otherwise. Android may delay it.${state.background ? ' Background location is allowed.' : ' Uses the last saved place. Allow background location to detect movement.'}${state.plannedAt ? ` Last background update: ${new Date(state.plannedAt).toLocaleString()}.` : ''}${state.dropEstimated ? ` ${state.dropEstimated} estimated drop warnings.` : ''}${state.dropConfirmed ? ` ${state.dropConfirmed} confirmed drop warnings.` : ''}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' Exact timing access is off: ringing drops cannot fire and drop notifications may arrive late.' : ''}${state.error ? ` ${state.error}` : ''}`
-    : 'Background refresh is off. The phone follows its last saved agenda.';
+    : 'Background planning is off. The phone follows its last saved agenda.';
+  if(detail && state.completionSyncEnabled)detail.textContent+=` Paired-device sync checks about every 15 minutes, independently of background planning. Android may delay it.${state.completionSyncAt ? ` Last paired-device sync: ${new Date(state.completionSyncAt).toLocaleString()}.` : ' Waiting for the first background sync.'}${state.completionSyncError ? ` ${state.completionSyncError}` : ''}`;
   if(node)node.textContent=state.error ? `Refresh needs attention: ${state.error}` : state.enabled
     ? `Updates about every 15–30 min · ${state.background ? 'background location allowed' : 'uses saved place'}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' · allow exact timing for drop alerts' : ''}`
     : 'Off · reminders use the last saved agenda.';
@@ -705,40 +707,70 @@ function reconcileNativeReminders(){
   nativeReminderReconcileQueue = nativeReminderReconcileQueue.catch(()=>{}).then(reconcileNativeRemindersNow);
   return nativeReminderReconcileQueue;
 }
-// Native actions stay queued until the shared completion has been saved. A
-// durable operation ID in the log prevents duplicates after an interrupted ack.
+// A durable operation ID makes replay safe in both the foreground and the
+// disposable background mirror. Never acknowledge until the caller saves.
+function applyNativeCompletion(data,action){
+  if(!/^[0-9a-f]{32}$/.test(action.id) || !/^\d{4}-\d{2}-\d{2}$/.test(action.dayKey))return false;
+  const h=data.find(h=>h.hid===action.hid);
+  // Remote logs have already passed the encrypted sync importer. Retain their
+  // exact identity (including legacy numeric logs) so foreground sync can fold
+  // the same operation without duplicating it or sending it back to the relay.
+  if(action.source==='shared_display' && action.remoteLog !== undefined){
+    if(!h)return false;
+    const log=normalizeLogs([action.remoteLog])[0];
+    if(log === undefined || isPlanLog(log) || logTime(log)>Date.now()+60000)return false;
+    const logs=normalizeLogs(h.logs);
+    const same=entry=>!isPlanLog(entry) && (log?.operationId
+      ? entry?.operationId===log.operationId : JSON.stringify(entry)===JSON.stringify(log));
+    if(logs.some(same))return false;
+    const consumed=planToConsumeForEntry(logs,logTime(log));
+    if(consumed!==null){const pos=findEntryByKind(logs,consumed,true);if(pos>=0)logs.splice(pos,1);}
+    h.logs=normalizeLogs([...logs,log]);h.lastLog=latestActualLog(h.logs);h.snoozedUntil=null;
+    if(typeof clearPlanByDateOnLog==='function')clearPlanByDateOnLog(h);
+    if(typeof pruneOrderConstraintsOnLog==='function')pruneOrderConstraintsOnLog(h);
+    return true;
+  }
+  if(!h || isCalendarIgnored(h) || h.type==='zero'
+    || (typeof replicaDeviceBlocksCompletion==='function' && replicaDeviceBlocksCompletion(h.hid)))return false;
+  const logs=normalizeLogs(h.logs),base=dayStart(new Date(`${action.dayKey}T12:00:00`).getTime());
+  const already=logs.some(log=>log?.operationId===action.id)
+    || (h.type==='task' && isTaskDone(h))
+    || (!h.breakable && (action.occurrenceKey
+      ? logs.some(log=>!isPlanLog(log) && logOccurrenceKey(log)===action.occurrenceKey && dateKey(logTime(log))===action.dayKey)
+      : completedOnDay(h,base)));
+  if(already)return false;
+  const remaining=h.breakable ? Math.max(0,breakableTotalMinutes(h)-breakableProgressMinutes(h,base)) : 0;
+  if(h.breakable && remaining===0)return false;
+  const minutes=h.breakable ? Math.min(Math.max(1,Number(action.minutes) || 1),remaining) : undefined;
+  const at=Math.min(Number(action.at),Date.now(),new Date(`${action.dayKey}T23:59:59.999`).getTime());
+  if(!Number.isFinite(at) || at<=0)throw new Error('Invalid completion time.');
+  recordHabitCompletion(h,{at,minutes,occurrenceKey:action.occurrenceKey || undefined,
+    scheduleOptionId:action.scheduleOptionId || undefined,scheduledDay:action.dayKey,
+    source:action.source==='native_widget' ? 'native_widget' : 'native_alarm',operationId:action.id});
+  return true;
+}
+async function refreshNativeCompletionPublication(){
+  const api=window.TingsNative?.alarms;
+  if(!api?.completions)return;
+  const {publication}=await api.completions();
+  if(publication && typeof adoptAgendaPublication==='function')adoptAgendaPublication(publication);
+}
 async function consumeNativeAlarmCompletions(){
   const api=window.TingsNative?.alarms;
   if(!api?.completions || !api.acknowledge)return;
-  const {actions}=await api.completions();let changed=false;
+  const {actions,publication}=await api.completions();let changed=false;
+  if(publication && typeof adoptAgendaPublication==='function')adoptAgendaPublication(publication);
   for(const action of actions || []){
-    if(!/^[0-9a-f]{32}$/.test(action.id) || !/^\d{4}-\d{2}-\d{2}$/.test(action.dayKey)){
-      await api.acknowledge(action.id);continue;
-    }
-    const data=load(),i=data.findIndex(h=>h.hid===action.hid),h=data[i];
-    if(!h || isCalendarIgnored(h) || h.type==='zero'){await api.acknowledge(action.id);continue;}
-    const logs=normalizeLogs(h.logs);
-    const row={kind:'fill',i,h,start:new Date(`${action.dayKey}T12:00:00`).getTime(),
-      occurrenceKey:action.occurrenceKey || '',scheduleOptionId:action.scheduleOptionId || ''};
-    const already=logs.some(log=>log?.source==='native_alarm' && log.operationId===action.id)
-      || (h.type==='task' && isTaskDone(h))
-      || (!h.breakable && (action.occurrenceKey
-        ? logs.some(log=>!isPlanLog(log) && logOccurrenceKey(log)===action.occurrenceKey && dateKey(logTime(log))===action.dayKey)
-        : completedOnDay(h,dayStart(row.start))));
-    if(already)changed=true;
-    if(!already){
-      const remaining=h.breakable ? Math.max(0,breakableTotalMinutes(h)-breakableProgressMinutes(h,dayStart(row.start))) : 0;
-      if(h.breakable && remaining===0){await api.acknowledge(action.id);continue;}
-      const minutes=h.breakable ? Math.min(Math.max(1,Number(action.minutes) || 1),remaining) : undefined;
-      const at=Math.min(Number(action.at),Date.now(),new Date(`${action.dayKey}T23:59:59.999`).getTime());
-      if(!Number.isFinite(at) || at<=0)throw new Error('Invalid alarm completion time.');
-      if(!logTing(i,{at,minutes,
-        occurrenceKey:action.occurrenceKey || undefined,scheduleOptionId:action.scheduleOptionId || undefined,
-        scheduledDay:action.dayKey,source:'native_alarm',operationId:action.id,feedback:false}))
-        throw new Error('Alarm stopped; open this item to finish marking it done.');
+    const data=load();
+    if(applyNativeCompletion(data,action)){
+      if(action.source==='shared_display'){
+        Storage.writeRaw(KEY,JSON.stringify(normalize(data)));bumpPlannerDataRevision();
+      }else if(!save(data))throw new Error('Could not save completion.');
+      const index=data.findIndex(h=>h.hid===action.hid);
+      if(typeof onHabitCompletionSaved==='function')onHabitCompletionSaved(data[index],index);
       changed=true;
     }
-    await api.acknowledge(action.id);
+    await api.acknowledge(action.id,nativeBackgroundSnapshot());
   }
   if(changed){nativeReminderLastSignature='';refreshOpenViews();queueNativeBackgroundSnapshot();}
 }
@@ -955,7 +987,7 @@ function initNativeReminders(){
   tools.append(actions);
   if(window.TingsNative.alarms){
     const hint = document.createElement('p');hint.className = 'field-hint';
-    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Mark done works without unlocking or opening Tings: it saves the completion and silences today’s reminders. History updates when you next open Tings; split habits log only this session. Events, travel and busy time have no completion action.';
+    hint.textContent = 'Ringing alarms use your phone’s alarm volume and continue until you act. Snooze rings again in 5 minutes. Notifications have Remind in 5 minutes, Dismiss for today, and Mark done. Stop/Dismiss for today silences this item’s reminders today, even if its schedule moves. Mark done works without unlocking or opening Tings: it saves the completion and silences today’s reminders. Completions sync in the background when online; split habits log only this session. Events, travel and busy time have no completion action.';
     const fullScreen = document.createElement('button');fullScreen.type = 'button';fullScreen.className = 'mini-text-btn';fullScreen.textContent = 'Allow full-screen alarms';
     fullScreen.addEventListener('click',async ()=>{try{await window.TingsNative.alarms.requestFullScreen();}catch(error){showToast(error.message);}});
     const alarmTest = document.createElement('button');alarmTest.type = 'button';alarmTest.className = 'mini-text-btn';alarmTest.textContent = 'Test ringing alarm · 10s';

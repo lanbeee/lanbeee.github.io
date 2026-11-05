@@ -339,3 +339,38 @@ function monthOrdinal(day){
 function weekdayShort(day){
   return WEEKDAY_LABELS[day] || '';
 }
+
+// PURE: finds an exact actual/planned log entry
+function findEntryByKind(logs,ts,plan){
+  return logs.findIndex(log=>logTime(log) === ts && isPlanLog(log) === Boolean(plan));
+}
+
+// PURE: picks the plan that should be consumed by a real entry on the same day.
+function planToConsumeForEntry(logs,entryTs){
+  const key = dateKey(entryTs);
+  const planned = normalizeLogs(logs)
+    .filter(log=>isPlanLog(log) && dateKey(logTime(log)) === key)
+    .map(logTime);
+  if(!planned.length)return null;
+  return planned.sort((a,b)=>Math.abs(a - entryTs) - Math.abs(b - entryTs))[0];
+}
+
+// Shared completion mutation for interactive and headless callers. Persistence,
+// transport and feedback belong to the caller; occurrence identity stays here.
+function recordHabitCompletion(h,opts = {}){
+  const now=opts.at;
+  const logs=normalizeLogs(h.logs);
+  const consumedPlanTs=planToConsumeForEntry(logs,now);
+  const entryTs=snapLogTimestamp(h,now);
+  const entry=makeActualLog(entryTs,opts);
+  if(consumedPlanTs !== null){
+    const pos=findEntryByKind(logs,consumedPlanTs,true);
+    if(pos>=0)logs.splice(pos,1);
+  }
+  h.logs=normalizeLogs([...logs,entry]);
+  h.lastLog=latestActualLog(h.logs);
+  h.snoozedUntil=null;
+  if(typeof clearPlanByDateOnLog==='function')clearPlanByDateOnLog(h);
+  if(typeof pruneOrderConstraintsOnLog==='function')pruneOrderConstraintsOnLog(h);
+  return {entry,entryTs,consumedPlanTs};
+}

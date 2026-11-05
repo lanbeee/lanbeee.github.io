@@ -716,21 +716,6 @@ function withEntryToastAction(action){
   return action;
 }
 
-// PURE: finds an exact actual/planned log entry
-function findEntryByKind(logs,ts,plan){
-  return logs.findIndex(log=>logTime(log) === ts && isPlanLog(log) === Boolean(plan));
-}
-
-// PURE: picks the plan that should be consumed by a real entry on the same day.
-function planToConsumeForEntry(logs,entryTs){
-  const key = dateKey(entryTs);
-  const planned = normalizeLogs(logs)
-    .filter(log=>isPlanLog(log) && dateKey(logTime(log)) === key)
-    .map(logTime);
-  if(!planned.length)return null;
-  return planned.sort((a,b)=>Math.abs(a - entryTs) - Math.abs(b - entryTs))[0];
-}
-
 // HYBRID: replace an actual entry with a plan, or a plan with an actual entry.
 function replaceEntryKind(idx,fromTs,fromPlan,toTs,toPlan,label){
   const data = load();
@@ -797,39 +782,19 @@ function logTing(i,opts = {}){
       : null;
     if(next)minutes = next;
   }
-  // Snap the stored ts to the habit's window-start for the log's day so a
-  // habit logged late still counts as "done today" by rhythm math the next
-  // time its window opens. See snapLogTimestamp in data.js.
-  const entryTs = (typeof snapLogTimestamp === 'function') ? snapLogTimestamp(h,now) : now;
-  const entry = makeActualLog(entryTs,{
-    value:opts.value,minutes,note:opts.note,
-    occurrenceKey:opts.occurrenceKey,
-    scheduleOptionId:opts.scheduleOptionId,
-    scheduledDay:opts.scheduledDay,source:opts.source,operationId:opts.operationId
-  });
+  const snoozedUntil=h.snoozedUntil || null;
+  const {entry,entryTs}=recordHabitCompletion(h,{...opts,at:now,minutes});
   const action = withEntryToastAction({
     type:'entry',
     idx:i,
     ts:entryTs,
     plan:false,
     consumedPlanTs,
-    snoozedUntil:h.snoozedUntil || null,
+    snoozedUntil,
     entry
   });
-  if(consumedPlanTs !== null){
-    const pos = findEntryByKind(logs,consumedPlanTs,true);
-    if(pos >= 0)logs.splice(pos,1);
-  }
-  h.logs = normalizeLogs([...logs,entry]);
-  h.lastLog = latestActualLog(h.logs);
-  h.snoozedUntil = null;
-  if(typeof clearPlanByDateOnLog === 'function')clearPlanByDateOnLog(h);
-  if(typeof pruneOrderConstraintsOnLog === 'function')pruneOrderConstraintsOnLog(h);
   if(!save(data))return false;
-  // Cancel any scheduled push for this completed task.
-  if(typeof cancelPush === 'function' && h.type === 'task' && isTaskDone(h)){
-    cancelPush(reminderSignature(h));
-  }
+  onHabitCompletionSaved(h,i);
   // Toast shows minutes + one detail (note preferred over value) so it never
   // overflows; the full value+note history lives in the activity sheet.
   const detail = (()=>{
@@ -842,13 +807,19 @@ function logTing(i,opts = {}){
   })();
   if(opts.feedback !== false && typeof playTingFeedback === 'function')playTingFeedback('complete');
   showActionToast(`Logged ${toastItemName(h)}${detail}`,action);
+  return true;
+}
+
+// Foreground effects are shared by direct taps and journal replay. The
+// headless runtime only mutates its mirror and never runs timer/UI effects.
+function onHabitCompletionSaved(h,i){
+  if(typeof cancelPush==='function' && h.type==='task' && isTaskDone(h))cancelPush(reminderSignature(h));
   // If a session timer was open for this habit, drop it — the entry already
   // covers the session and a later stop must not prompt a second log.
   if(typeof habitTimer !== 'undefined' && habitTimer && habitTimer.idx === i
     && typeof clearHabitTimerSilent === 'function'){
     clearHabitTimerSilent();
   }
-  return true;
 }
 
 // HYBRID: log entry at timestamp, show undo

@@ -491,6 +491,36 @@ function onReplicaDeviceDataSaved(previous,next){
   void flushReplicaOutbox();
 }
 
+async function sendReplicaOperation(enrolled,op,revision){
+  const isDefinition = op.kind === 'definition';
+  const payload = isDefinition
+    ? {
+        schemaVersion:1,action:op.action,operationId:op.operationId,
+        rowId:op.rowId,hid:op.hid,habit:op.action === 'upsert' ? op.habit : undefined,
+        baseDefinitionHash:op.baseDefinitionHash || ''
+      }
+    : {
+        schemaVersion:1,action:'complete',operationId:op.operationId,rowId:op.rowId,
+        hid:op.hid,minutes:op.minutes || null,
+        occurrenceKey:op.occurrenceKey || '',
+        scheduleOptionId:op.scheduleOptionId || '',
+        scheduledDay:op.scheduledDay || '',
+        start:Number(op.start) || null,
+        completedAt:Number(op.completedAt) || Number(op.createdAt) || Date.now()
+      };
+  const encryptionKey = isDefinition ? enrolled.replicaKey : enrolled.contentKey;
+  const envelope = await shareEncrypt(encryptionKey,payload,{
+    schemaVersion:SHARE_SCHEMA_VERSION,
+    recordKind:isDefinition ? 'agenda_definition' : 'agenda_completion',
+    objectId:enrolled.feedId,revision,operationId:op.operationId,logId:op.rowId
+  });
+  await shareFetch(`/v1/agendas/${enrolled.feedId}/${isDefinition ? 'definitions' : 'completions'}`,{
+    method:'POST',credential:enrolled.deviceCredential,
+    body:isDefinition ? {definition:envelope} : {completion:envelope},
+    timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
+  });
+}
+
 async function flushReplicaOutbox(){
   if(_replicaFlushBusy || navigator.onLine === false) return;
   let enrolled = replicaEnrollment();
@@ -508,34 +538,8 @@ async function flushReplicaOutbox(){
       const currentBinding = enrolled.replicaRows && enrolled.replicaRows[op.hid];
       if(currentBinding && currentBinding.rowId) op.rowId = currentBinding.rowId;
       if(!Number.isInteger(revision) || revision < 1 || !/^[0-9a-f]{16}$/.test(String(op.rowId || ''))) break;
-      const isDefinition = op.kind === 'definition';
-      const payload = isDefinition
-        ? {
-            schemaVersion:1,action:op.action,operationId:op.operationId,
-            rowId:op.rowId,hid:op.hid,habit:op.action === 'upsert' ? op.habit : undefined,
-            baseDefinitionHash:op.baseDefinitionHash || ''
-          }
-        : {
-            schemaVersion:1,action:'complete',operationId:op.operationId,rowId:op.rowId,
-            hid:op.hid,minutes:op.minutes || null,
-            occurrenceKey:op.occurrenceKey || '',
-            scheduleOptionId:op.scheduleOptionId || '',
-            scheduledDay:op.scheduledDay || '',
-            start:Number(op.start) || null,
-            completedAt:Number(op.completedAt) || Number(op.createdAt) || Date.now()
-          };
-      const encryptionKey = isDefinition ? enrolled.replicaKey : enrolled.contentKey;
-      const envelope = await shareEncrypt(encryptionKey,payload,{
-        schemaVersion:SHARE_SCHEMA_VERSION,
-        recordKind:isDefinition ? 'agenda_definition' : 'agenda_completion',
-        objectId:enrolled.feedId,revision,operationId:op.operationId,logId:op.rowId
-      });
       try{
-        await shareFetch(`/v1/agendas/${enrolled.feedId}/${isDefinition ? 'definitions' : 'completions'}`,{
-          method:'POST',credential:enrolled.deviceCredential,
-          body:isDefinition ? {definition:envelope} : {completion:envelope},
-          timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
-        });
+        await sendReplicaOperation(enrolled,op,revision);
       }catch(error){
         if(error && error.status === 429){
           updateReplicaSyncStatus('changes queued · will retry');
@@ -1131,7 +1135,7 @@ function replicaOwnOperationIds(enrolled){
   return ids;
 }
 
-async function applyReplicaLiveCompletions(enrolled,records){
+async function applyReplicaLiveCompletions(enrolled,records,opts = {}){
   if(!enrolled || !enrolled.contentKey) return false;
   const own = replicaOwnOperationIds(enrolled);
   const liveIds = Array.isArray(enrolled.replicaLiveOperationIds) ? enrolled.replicaLiveOperationIds.slice() : [];
@@ -1201,7 +1205,7 @@ async function applyReplicaLiveCompletions(enrolled,records){
     changed = true;
   }
   if(!changed){
-    await acknowledgeReplicaOperations(enrolled,acknowledged);
+    if(opts.acknowledge !== false)await acknowledgeReplicaOperations(enrolled,acknowledged);
     return false;
   }
   enrolled.replicaLiveOperationIds = [...new Set(liveIds)].filter(id=>/^[0-9a-f]{32}$/.test(id)).slice(-100);
@@ -1213,7 +1217,7 @@ async function applyReplicaLiveCompletions(enrolled,records){
     try{ refreshOpenViews(); }
     catch(_){ /* Local logs already saved; the next render still shows them. */ }
   }
-  await acknowledgeReplicaOperations(enrolled,acknowledged);
+  if(opts.acknowledge !== false)await acknowledgeReplicaOperations(enrolled,acknowledged);
   return true;
 }
 
@@ -1233,6 +1237,7 @@ async function acknowledgeReplicaOperations(enrolled,operationIds){
 }
 
 function mountReplicaDisplayMode(){
+  if(window.TingsNative?.isHeadless)return;
   const enrolled = replicaEnrollment();
   if(!replicaEnrollmentActive() && !replicaDisplayQueryRequested()) return;
   if(!enrolled || !enrolled.deviceCredential){

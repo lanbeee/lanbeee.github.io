@@ -531,6 +531,24 @@ function commitAgendaFeedPublish(feed,fields){
   return next;
 }
 
+// Background publication changes transport metadata, never definitions or
+// pairing credentials. Preserve its row maps for later glance completions.
+function adoptAgendaPublication(publication){
+  const feed=agendaFeedRecord();
+  if(!publication || !feed || publication.feedId!==feed.feedId || publication.ownerId!==feed.ownerId)return feed;
+  const maps=new Map();
+  for(const map of [...(publication.rowMaps || []),...(feed.rowMaps || [])]){
+    if(!maps.has(Number(map.revision)))maps.set(Number(map.revision),map);
+  }
+  const fields={rowMaps:[...maps.values()].sort((a,b)=>b.revision-a.revision).slice(0,SHARED_DISPLAY_ROW_MAP_REVISIONS)};
+  if(Number(publication.lastRevision)>Number(feed.lastRevision || 0)){
+    for(const key of ['lastRevision','lastPublishedAt','lastProjectionSig','replicaRowIds'])fields[key]=publication[key];
+  }
+  const next={...feed,...fields};
+  if(JSON.stringify(next)!==JSON.stringify(feed))saveAgendaFeedRecord(next);
+  return next;
+}
+
 function householdAgendaWithDevices(feed,devices){
   if(!feed) return feed;
   return { ...feed,devices:householdAgendaDevices({ devices }) };
@@ -1097,7 +1115,9 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
   const hasCloneDevice = libraryStyle === 'clone';
   const hasSelectedDevice = libraryStyle === 'selected';
   const queued = householdAgendaQueueRecords(result.body);
-  const pendingDefinitions = queued.definitions;
+  // A disposable native mirror only imports completions. Definition edits
+  // remain queued until the editable store can durably apply them.
+  const pendingDefinitions = opts.completionsOnly ? [] : queued.definitions;
   const pending = queued.completions;
   if(!pendingDefinitions.length && !pending.length){
     if(JSON.stringify(householdAgendaDevices(base)) !== JSON.stringify(householdAgendaDevices(nextFeed))
@@ -1297,7 +1317,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
     completedRowKeys.add(`${mapped.hid}|${mapped.start}`);
     changed = true;
   }
-  if(changed && !save(data)){
+  if(changed && opts.persist !== false && !save(data)){
     // Do not publish acceptance receipts or acknowledge definition operations
     // whose data never reached durable local storage. Returning the pre-fold
     // feed makes the Worker retain and retry them on the next sync. Completion
@@ -1309,7 +1329,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
       changed:false
     };
   }
-  if(changed && typeof cancelPush === 'function' && typeof reminderSignature === 'function'){
+  if(changed && opts.persist !== false && typeof cancelPush === 'function' && typeof reminderSignature === 'function'){
     data.forEach(h=>{
       if(h && h.type === 'task' && isTaskDone(h)) cancelPush(reminderSignature(h));
     });
@@ -1329,6 +1349,7 @@ async function syncHouseholdAgendaCompletions(feed,opts = {}){
   }
   return {
     feed:nextFeed,
+    ...(opts.persist === false ? {data} : {}),
     operationIds,
     completedRowKeys,
     changed
@@ -1502,6 +1523,7 @@ async function publishHouseholdAgendaNow(week, opts = {}){
       release();
     }
   }
+  if(typeof refreshNativeCompletionPublication==='function')await refreshNativeCompletionPublication();
   let feed = agendaFeedRecord();
   if(!feed || !shareConfigured()){
     noteAgendaPublish('skipped_unconfigured', { hasFeed:Boolean(feed), configured:Boolean(shareConfigured()) });
@@ -1509,9 +1531,18 @@ async function publishHouseholdAgendaNow(week, opts = {}){
   }
   let completionSync = { feed,operationIds:[],completedRowKeys:new Set(),changed:false };
   try{
-    completionSync = await syncHouseholdAgendaCompletions(feed,{ force:Boolean(opts.forceCompletionSync) });
+    if(opts.outboundOnly){
+      // A disposable native mirror may publish its durable action journal, but
+      // must leave inbound changes queued for the editable foreground store.
+      const current=await shareFetch(`/v1/agendas/${feed.feedId}`,{credential:feed.ownerCredential});
+      const revision=Number(current.body?.revision);
+      if(!Number.isInteger(revision) || revision<0)throw new Error('invalid_revision');
+      feed=householdAgendaWithDevices({...feed,lastRevision:revision},reconcileHouseholdAgendaDevices(feed,current.body?.sessions || []));
+      saveAgendaFeedRecord(feed);
+      completionSync.feed=feed;
+    }else completionSync = await syncHouseholdAgendaCompletions(feed,{ force:Boolean(opts.forceCompletionSync) });
     feed = completionSync.feed || feed;
-  }catch(_){ /* Publishing remains available during a transient completion-read failure. */ }
+  }catch(error){ if(opts.outboundOnly)throw error; /* Foreground can publish during a transient read failure. */ }
   feed = householdAgendaAdoptLiveFeed(feed) || feed;
   if(completionSync.changed && typeof refreshOpenViews === 'function'){
     try{ refreshOpenViews(); }
@@ -1732,6 +1763,7 @@ function rejectExternalHouseholdAgendaPairingHash(){
 
 window.addEventListener('hashchange',rejectExternalHouseholdAgendaPairingHash);
 document.addEventListener('DOMContentLoaded',()=>{
+  if(window.TingsNative?.isHeadless)return;
   rejectExternalHouseholdAgendaPairingHash();
   $('settings-agenda-scan-qr')?.addEventListener('click',()=>{
     void startHouseholdAgendaQrScanner();
@@ -1753,6 +1785,7 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden && agendaFeedRecord()) scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
 });
 window.addEventListener('pageshow',()=>{
+  if(window.TingsNative?.isHeadless)return;
   if(agendaFeedRecord()) scheduleHouseholdAgendaPublish(undefined,{ forceCompletionSync:true });
 });
 window.addEventListener('pagehide',stopHouseholdAgendaQrScanner);

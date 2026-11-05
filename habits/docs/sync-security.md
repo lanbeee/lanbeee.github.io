@@ -55,6 +55,19 @@ of a formal penetration test or a guarantee against every attack.
   Only the exact packaged Home and display documents can navigate inside the
   privileged WebView. External links from a user gesture open outside it.
   HTTP/file/content proxy paths are rejected even as subresources.
+- Notification, alarm and widget completions share a private durable journal.
+  An event-driven WorkManager job runs shared completion/encryption code in a
+  disposable asset-only WebView. Its native relay method allows only bounded
+  HTTPS requests to the two pinned relay hosts and agenda GET/PUT or completion
+  POST routes; redirects, arbitrary hosts and WebView network loads remain
+  blocked. Local application and remote delivery acknowledge independently.
+  Background publication never acknowledges inbound edits or writes the
+  foreground WebView's editable storage; foreground resume cancels the runner.
+  Paired Android installations also receive completions on a network-constrained
+  15-minute job. Only validated actual logs enter the durable journal; background
+  reception leaves definition edits and relay acknowledgements for foreground
+  sync. Incoming logs cancel resolved reminders and invalidate older planner
+  output before it can restore them. Unpaired installations do not poll.
 - Android excludes app storage from cloud backup and device transfer. The main
   app window sets FLAG_SECURE to restrict screenshots, recordings and recent-app
   previews; obscured touches are filtered against overlay tapjacking. Native
