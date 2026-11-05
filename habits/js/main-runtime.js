@@ -943,7 +943,8 @@ if(!load().length && !coachStorageValue(TINGS_ESSENTIALS_COACH_KEY)){
     const seenInstallGuide = Boolean(coachStorageValue(TINGS_INSTALL_COACH_KEY));
     void startTingsCoach(native || standalone || seenInstallGuide ? 'essentials' : 'install');
   };
-  setTimeout(offerCoach,900);
+  // The coach belongs to the usable home page, never above the launch cover.
+  Promise.resolve(window.tingsWhenLaunched).then(()=>setTimeout(offerCoach,900));
 }
 // After first paint: warm the planner worker (script parse + GLPK) off the
 // critical path so the next real request is not a cold bring-up. Exact mode only.

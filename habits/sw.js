@@ -1,9 +1,5 @@
-const CACHE = 'tings-v748';
+const CACHE = 'tings-v749';
 const MAPS_CACHE = 'tings-maps-v3';
-const TABLER_CSS = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
-const TABLER_WOFF2 = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2?v3.10.0';
-const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 const MAPS_ORIGINS = [
@@ -44,6 +40,15 @@ const PRECACHE = [
   './',
   './index.html',
   './agenda-display.html',
+  './css/vendor/tabler-icons.min.css',
+  './css/vendor/fonts/tabler-icons.woff2',
+  './css/vendor/leaflet.css',
+  './css/vendor/images/layers.png',
+  './css/vendor/images/layers-2x.png',
+  './css/vendor/images/marker-icon.png',
+  './css/vendor/images/marker-icon-2x.png',
+  './css/vendor/images/marker-shadow.png',
+  './lib/js/leaflet.js',
   './css/tokens.css',
   './css/base.css',
   './css/chrome.css',
@@ -180,7 +185,7 @@ const PRECACHE = [
   './manifest.json'
 ];
 
-const PRECACHE_CDN = [TABLER_CSS, TABLER_WOFF2, LEAFLET_CSS, LEAFLET_JS, PDFJS, PDFJS_WORKER];
+const PRECACHE_CDN = [PDFJS, PDFJS_WORKER];
 
 function isScriptAsset(url){
   return /\.(m?js)(\?|$)/i.test(url || '');

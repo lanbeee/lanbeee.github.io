@@ -125,6 +125,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(draining){again = true;return;}
     draining = true;
     try{
+      // Cold widget launches must wait for Home to become visible and lose
+      // its inert state, otherwise the quick-add field cannot take focus.
+      await window.tingsWhenLaunched;
       let request;
       while((request = (await bridge.takeLaunchRequest()).request)){
         for(const sheet of document.querySelectorAll('.sheet-wrap.open'))closeSheet(sheet.id);

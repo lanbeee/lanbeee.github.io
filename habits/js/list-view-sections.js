@@ -1572,6 +1572,7 @@ function render(opts){
     if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
     updateSortButton(true);
     restoreHomeReadingPosition(readingPosition,list);
+    if(typeof window.tingsFinishLaunch === 'function')window.tingsFinishLaunch();
     return;
   }
   empty.classList.remove('is-action');
@@ -2296,6 +2297,7 @@ function render(opts){
   if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
   updateSortButton(true);
   restoreHomeReadingPosition(readingPosition,list);
+  if(typeof window.tingsFinishLaunch === 'function')window.tingsFinishLaunch();
   return true;
 }
 

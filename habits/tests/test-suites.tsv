@@ -8,6 +8,7 @@ assistant-needle-test.js	assistant	once
 assistant-focus-test.js	assistant	once
 assistant-feedback-test.js	assistant	once
 header-brand-test.js	ui	once
+launch-flow-test.js	ui	once
 tag-selection-test.js	ui	once
 contextual-toast-test.js	ui	once
 agenda-optimizer-test.js	planner	default-only
