@@ -349,6 +349,29 @@ fields, and checks storage on cases without Save. Review evidence is in
 `results-review-extra-final.jsonl`, `review-live-literal-names.json`, and
 `review-assistant-regressions-final.log`.
 
+## Monthly habit creation feedback (November 5, 2026)
+
+The reported Family night dictation exposed missing assistant access to the
+planner's ordinal weekday fields and incorrect ownership of anchor offsets.
+Monthly weekday rules now have their own validated proposals. Shared source
+boundaries preserve titles, distinguish session lengths from anchor offsets,
+and retain a setting repeated after a sibling instruction.
+
+The exact reported wording now retains Family night, last Friday of every
+month and a 60-minute session. Its two window starts require one window
+clarification; a follow-up specifying sunset through 90 minutes after sunset
+then saves those fields together. The test requires that exchange and checks
+the known fields before the clarification, not just the eventual saved item.
+
+Desktop Chrome with the pinned live Needle assets passed seven compound-create
+cases, four direct monthly-rule edits (including preferences and ordinal lists),
+and two invalid-rule guards. Scripted regression checks passed all 18 assistant
+files, 1,419 assertions, with no page errors. Evidence is in
+`test-results/needle-monthly-create-live.json`,
+`test-results/monthly-field-live.json` and
+`test-results/monthly-assistant-final.log`. This reproduces the iPhone report's
+wording; it does not measure iPhone inference or UI performance.
+
 ## Limits
 
 Representative coverage of every field is not exhaustive natural-language

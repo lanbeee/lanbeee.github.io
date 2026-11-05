@@ -478,6 +478,11 @@ function assistantFocusNormalize(fieldId, raw, session){
     if(!days)return fail('Name the days of the month, or say any.');
     return {ok:true, op:days.length ? 'set' : 'clear', value:days};
   }
+  if(fieldId === 'allowedOrdinalWeekdays' || fieldId === 'preferredOrdinalWeekdays'){
+    const rules=assistantParseOrdinalWeekdays(text);
+    if(!rules)return fail('Which weekday and week of the month? For example, the last Friday of each month.');
+    return {ok:true,op:rules.length?'set':'clear',value:rules};
+  }
   if(fieldId === 'allowedWindow' || fieldId === 'preferredWindow'){
     const window = typeof assistantParseWindowFromText === 'function' ? (assistantParseWindowFromText(text) || (/^\d/.test(text) ? assistantParseWindowFromText(`from ${text}`) : null)) : null;
     if(!window)return fail('I couldn’t read that time window.');
@@ -830,6 +835,7 @@ function assistantFocusWrite(record, change, session, scratch, data){
   else if(change.field === 'allowedMonthDays')record.allowedMonthDays = op === 'clear' ? [] : value.slice();
   else if(change.field === 'preferredWeekdays')record.preferredWeekdays = op === 'clear' ? [] : value.slice();
   else if(change.field === 'preferredMonthDays')record.preferredMonthDays = op === 'clear' ? [] : value.slice();
+  else if(change.field === 'allowedOrdinalWeekdays' || change.field === 'preferredOrdinalWeekdays')record[change.field] = op === 'clear' ? [] : value.map(rule=>({...rule}));
   else if(change.field === 'allowedWindow'){
     if(op === 'clear')assistantFocusApplyWindow(record, null, 'allowed', data);
     else assistantFocusApplyWindow(record, value, 'allowed', data);
@@ -989,6 +995,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
   if(fieldId === 'preferredWeekdays')return assistantFocusFormatWeekdays(record.preferredWeekdays);
   if(fieldId === 'allowedMonthDays')return record.allowedMonthDays && record.allowedMonthDays.length ? record.allowedMonthDays.join(', ') : 'any';
   if(fieldId === 'preferredMonthDays')return record.preferredMonthDays && record.preferredMonthDays.length ? record.preferredMonthDays.join(', ') : 'any';
+  if(fieldId === 'allowedOrdinalWeekdays' || fieldId === 'preferredOrdinalWeekdays')return ordinalWeekdaySummary(record[fieldId]) || 'any';
   if(fieldId === 'allowedWindow' || fieldId === 'allowedTimeFixedStart')return assistantFocusFormatWindow(record, 'allowed', data);
   if(fieldId === 'preferredWindow')return assistantFocusFormatWindow(record, 'preferred', data);
   if(fieldId === 'durationMinutes')return `${record.durationMinutes} min`;

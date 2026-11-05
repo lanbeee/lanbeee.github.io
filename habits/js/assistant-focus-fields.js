@@ -6,6 +6,7 @@ const ASSISTANT_FIELD_SEARCH = {
   frequency:'detail-frequency-presets', repeatMode:'detail-frequency-presets', conditionTrigger:'detail-frequency-presets', conditionRadiusM:'detail-frequency-presets',
   dueDate:'detail-due-date', dueTime:'detail-due-time', hardDue:'detail-due-date', planByDate:'detail-due-date', earlyWindowDays:'detail-early-window', delayAllowanceDays:'detail-delay-allowance',
   allowedWeekdays:'detail-weekday-chips', preferredWeekdays:'detail-preferred-weekday-chips', allowedMonthDays:'detail-monthday-toggle', preferredMonthDays:'detail-preferred-monthday-toggle',
+  allowedOrdinalWeekdays:'detail-ordinal-rules', preferredOrdinalWeekdays:'detail-preferred-ordinal-rules',
   allowedWindow:'detail-allowed-time-row', preferredWindow:'detail-preferred-time-row', allowedTimeFixedStart:'detail-time-kind',
   durationMinutes:'detail-duration', breakable:'detail-breakable', minChunkMinutes:'detail-min-chunk', minGapMinutes:'detail-min-gap', timerAutoStopMinutes:'detail-timer-auto-stop', autoMarkMinutes:'detail-auto-mark', trackValue:'detail-track-value',
   places:'detail-places-label', anywhereAllowed:'detail-places-label', locationPrefs:'detail-place-chips', weatherProfile:'detail-weather-profile', weatherRules:'detail-weather-profile', showWeather:'detail-show-weather', showWeatherAtLocation:'detail-show-weather-location', weatherLocationId:'detail-weather-location',
@@ -56,7 +57,9 @@ const ASSISTANT_FIELD_SIGNALS = {
   preferredWeekdays:/\bprefer\w*\b.{0,35}\b(?:weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
   allowedMonthDays:/\bmonth(?:ly)?\b/i,
   preferredMonthDays:/\bprefer\w*\b[^,;]*\bmonth(?:ly)?\b/i,
-  allowedWindow:/\b(?:(?:before|after|between|from)\s+(?:\d[\d:]*(?:\s*[ap]m)?|sunrise|sunset|noon|midnight|fajr|dhuhr|zuhr|asr|maghrib|isha)|morning|afternoon|evening|overnight|(?:at|during|in|not|never|except|without)\s+(?:the\s+)?night(?:time)?|any time|clear (?:the )?(?:hours|window))\b/i,
+  allowedOrdinalWeekdays:new RegExp(`\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i'),
+  preferredOrdinalWeekdays:new RegExp(`\\bprefer\\w*\\b[^,;]*\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i'),
+  allowedWindow:new RegExp(`\\b(?:(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})|(?:allowed|preferred)\\s+(?:time(?: window)?|hours)|(?:before|after|between|from)\\s+(?:\\d[\\d:]*(?:\\s*[ap]m)?|sunrise|sunset|noon|midnight|fajr|dhuhr|zuhr|asr|maghrib|isha)|morning|afternoon|evening|overnight|(?:at|during|in|not|never|except|without)\\s+(?:the\\s+)?night(?:time)?|any time|clear (?:the )?(?:hours|window))\\b`,'i'),
   preferredWindow:/\bprefer\w*\b.{0,40}\b(?:hours?|morning|afternoon|evening|night|nighttime|before|after|between|from)\b/i,
   allowedTimeFixedStart:/\b(?:fixed|exact)(?: start| time)?\b/i,
   durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|duration|long|twice as long)\\b`,'i'),
@@ -100,6 +103,8 @@ const ASSISTANT_FIELD_HINTS = {
   frequency:'Complete repetition phrase, including count and period. Exclude session length.',
   allowedMonthDays:'Days of the month, including spelled-out ordinal dates. Exclude repetition intervals.',
   preferredMonthDays:'Preferred days of the month, including spelled-out ordinal dates.',
+  allowedOrdinalWeekdays:'Monthly weekday rule, including the ordinal, weekday and calendar month. For example last Friday of every month. Exclude simple weekdays and month dates.',
+  preferredOrdinalWeekdays:'Preferred monthly weekday rule, including ordinal, weekday and month.',
   reminderTravelLead:'How long before departure to remind, including the number or fraction and its time unit.',
   reminderStartLead:'How long before the event start to remind, including the number or fraction and its time unit.',
   reminderMissedLead:'Missed warning lead time, including the number or fraction and its time unit.',
@@ -179,8 +184,9 @@ function assistantFieldSpans(request){
 // source boundaries, model evidence and coverage alike. They never supply values.
 const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['frequency'], when:/\bmonth(?:ly)?\b/i},
+  {fields:['allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays'], when:new RegExp(`\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i')},
   {fields:['allowedWeekdays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i')},
-  {fields:['allowedWeekdays','allowedWindow','allowedMonthDays'], when:/\bprefer/i},
+  {fields:['allowedWeekdays','allowedWindow','allowedMonthDays','allowedOrdinalWeekdays'], when:/\bprefer/i},
   {fields:['allowedWindow','preferredWindow'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:morning|afternoon|evening|night|nighttime)\\b`,'i'), unless:/\b(?:before|after|between|from|only|in the)\b/i},
   {fields:['scheduleLinks'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:before|after)\\b`,'i')},
   {fields:['allowedWindow'], when:new RegExp(`\\b(?:before|after)\\s+(?:${assistantDurationNumberSource()})(?:\\s+(?:or|and)\\s+(?:${assistantDurationNumberSource()}))*\\s*(?:minutes?|mins?|hours?|days?|weeks?)\\b`,'i')},
@@ -208,16 +214,18 @@ const ASSISTANT_FIELD_READERS = {
   minChunkMinutes:{shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
   minGapMinutes:{shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
   breakable:{shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
-  appointmentRepeat:{shares:['frequency']}
+  appointmentRepeat:{shares:['frequency']},
+  appointmentWeekdays:{shares:['allowedWeekdays','preferredWeekdays']}
 };
 
 function assistantFieldRelevant(def, text){
   const literal=assistantFieldLiteralOwner(text);
   if(literal && literal.id!==def.id && assistantFieldMentioned(def,text.slice(literal.start)) && !assistantFieldMentioned(def,text.slice(0,literal.start)))return false;
   const assignments=ASSISTANT_FIELD_ASSIGNMENTS.map(row=>({...row,match:row.pattern.exec(text)})).filter(row=>row.match).sort((a,b)=>a.match.index-b.match.index);
-  const cue=def.signal?.exec(text)||def.labelSignal?.exec(text);
+  const cue=assistantFieldCue(def,text);
   const owner=assignments.filter(row=>!cue || row.match.index<=cue.index).at(-1);
-  if(owner && owner.id!==def.id && !(owner.id==='dueTime' && ['appointmentStartMinute','exceptionTime'].includes(def.id))){
+  if(owner && owner.id!==def.id && !(def.id==='name'&&!cue&&assignments[0].match.index>0)
+    && !(owner.id==='dueTime' && ['appointmentStartMinute','exceptionTime'].includes(def.id))){
     // A sibling instruction after a conjunction owns its own value. Lists and
     // mixed quantities inside the assigned value retain the original owner.
     const between=text.slice(owner.match.index+owner.match[0].length,cue?.index??text.length);
@@ -242,7 +250,26 @@ function assistantFieldAssignmentComplete(id,text){
 }
 
 function assistantFieldMentioned(def,text){
-  return Boolean(def.signal?.test(text)||def.labelSignal?.test(text)||ASSISTANT_FIELD_ASSIGNMENTS.find(field=>field.id===def.id)?.pattern.test(text));
+  return Boolean(assistantFieldCue(def,text));
+}
+
+function assistantFieldCue(def,text,from=0){
+  const signal=def.signal;
+  if(signal){
+    // A quantity attached to a solar/prayer anchor is a window offset. It
+    // cannot also nominate a session length or cut that window's evidence.
+    const offsets=def.id==='durationMinutes'?Array.from(text.matchAll(new RegExp(`(?<!\\w)(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})\\b`,'gi'))):[];
+    for(const match of text.matchAll(new RegExp(signal.source,signal.flags.replace(/g/g,'')+'g'))){
+      if(match.index<from)continue;
+      if(!offsets.some(offset=>match.index<offset.index+offset[0].length&&match.index+match[0].length>offset.index))return match;
+    }
+  }
+  for(const pattern of [def.labelSignal,ASSISTANT_FIELD_ASSIGNMENTS.find(field=>field.id===def.id)?.pattern]){
+    if(!pattern)continue;
+    const match=Array.from(text.matchAll(new RegExp(pattern.source,pattern.flags.replace(/g/g,'')+'g'))).find(match=>match.index>=from);
+    if(match)return match;
+  }
+  return null;
 }
 
 function assistantFieldLiteralOwner(text){
@@ -273,7 +300,8 @@ function assistantFieldSource(def, request, spans){
     if(!assistantFieldRelevant(def,span.text))return false;
     if(def.id==='places' && /^trigger (?:is )?location$/i.test(span.text))return false;
     if(def.id==='durationMinutes'){
-      const length=def.signal.exec(span.text);
+      const length=assistantFieldCue(def,span.text);
+      if(!length&&def.signal.test(span.text))return false;
       for(const id of ['minGapMinutes','minChunkMinutes','timerAutoStopMinutes','autoMarkMinutes']){
         const setting=ASSISTANT_FIELD_SIGNALS[id].exec(span.text);
         if(setting && (!length || setting.index<=length.index))return false;
@@ -295,9 +323,9 @@ function assistantFieldSource(def, request, spans){
   const threshold=ranked.some(row=>row.score>=20)?20:1;
   const selected=ranked.filter(row=>row.score>=threshold).map(row=>row.span).sort((a,b)=>a.start-b.start);
   const source=selected.length ? selected : [spans[0]];
-  return source.map(span=>{
-    const own=def.signal?.exec(span.text)||def.labelSignal?.exec(span.text)||ASSISTANT_FIELD_ASSIGNMENTS.find(field=>field.id===def.id)?.pattern.exec(span.text);
-    if(!own && def.id!=='name')return span;
+  return source.flatMap(span=>{
+    const own=assistantFieldCue(def,span.text);
+    if(!own && def.id!=='name')return [span];
     // Keep quantities preceding their labels and qualifiers such as immediately.
     const reader=ASSISTANT_FIELD_READERS[def.id]||{};
     const whole=reader.retainPrefix;
@@ -313,23 +341,31 @@ function assistantFieldSource(def, request, spans){
       const length=ASSISTANT_FIELD_SIGNALS.durationMinutes.exec(span.text);
       if(length && /^(?:please\s+)?(?:add|create|make)\s+(?:a|an)\s*$/i.test(span.text.slice(0,length.index)))start=length.index+length[0].length;
     }
-    if(/\b(?:no|not|never|don.t|without|or|prefer|avoid|keep|unchanged|clear|before|after|between|from|until|through|earlier|later)\b/i.test(span.text.slice(0,start)))start=0;
+    const prefix=span.text.slice(0,start);
+    // Earlier windows cannot pull a later session-length excerpt back across
+    // its boundary. A temporal qualifier immediately before the length still
+    // belongs to that length and must remain available for validation.
+    const temporal=def.id==='durationMinutes'
+      ?/\b(?:before|after|between|from|until|through|earlier|later)\s*$/i
+      :/\b(?:before|after|between|from|until|through|earlier|later)\b/i;
+    if(/\b(?:no|not|never|don.t|without|or|prefer|avoid|keep|unchanged|clear)\b/i.test(prefix)||temporal.test(prefix))start=0;
     // Retrieval boundaries, not values: keep the untouched source between
     // setting cues. Coupled lengths (chunks/gaps/timers) keep their units.
     for(const [id,signal] of Object.entries(ASSISTANT_FIELD_SIGNALS)){
       if(!assistantFieldRelevant({id,signal},span.text))continue;
       if(id==='dueDate' && def.id==='name'){const date=signal.exec(span.text);if(date&&date.index>start)end=Math.min(end,date.index);continue;}
-      if(!['name','frequency','durationMinutes','dueTime','appointmentStartMinute','allowedWeekdays','allowedWindow','topics','priority','pinned','emoji','links','minGapMinutes','minChunkMinutes','timerAutoStopMinutes','autoMarkMinutes'].includes(id))continue;
+      if(!['name','frequency','durationMinutes','dueTime','appointmentStartMinute','allowedWeekdays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','allowedWindow','topics','priority','pinned','emoji','links','minGapMinutes','minChunkMinutes','timerAutoStopMinutes','autoMarkMinutes'].includes(id))continue;
       if(id===def.id || ['kind','habitKind','emojiBgColor','dueDate','allowedTimeFixedStart','preferredWeekdays','preferredWindow','preferredMonthDays'].includes(id))continue;
       if(reader.shares?.includes(id))continue;
       if(def.id.startsWith('reminder') && ['durationMinutes','dueTime','appointmentStartMinute','allowedWindow'].includes(id))continue;
-      const other=signal.exec(span.text);
-      if(other && other.index>=(own?own.index+own[0].length:start) && other.index>start)end=Math.min(end,other.index);
+      const other=assistantFieldCue({id,signal},span.text,own?own.index+own[0].length:start);
+      if(other && other.index>=(own?own.index+own[0].length:start) && (other.index>start||def.id==='name'&&!own))end=Math.min(end,other.index);
     }
-    // A title cannot end on a connector owned by the next phrase ("Walk on
-    // weekdays" is Walk plus an allowed-weekdays instruction).
-    if(def.id==='name' && end<span.text.length){
-      const dangling=/\s+(?:on|in|at|for|before|after|during|from|every|each|with|to|by|and)\s*$/i.exec(span.text.slice(start,end));
+    // A connector leading into a sibling setting belongs to that sibling,
+    // whether the preceding value is a title or a structured restriction.
+    if((def.id==='name'||!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id)) && end<span.text.length){
+      const narrative=def.id==='name'&&!named?'|happens|occurs|repeats':'';
+      const dangling=new RegExp(`\\s+(?:on|in|at|for|before|after|during|from|every|each|with|to|by|and${narrative})(?:\\s+the)?\\s*$`,'i').exec(span.text.slice(start,end));
       if(dangling)end=start+dangling.index;
     }
     // A clock is a scalar, not all prose up to the next field. Keep the exact
@@ -348,12 +384,20 @@ function assistantFieldSource(def, request, spans){
       end=start+dialogue.end;start+=dialogue.start;
     }
     const text=span.text.slice(start,end);
+    if(!text&&def.id==='name')return [];
     // A title cut down to dialogue framing alone ("make it") names nothing;
     // dropping the span keeps a follow-up correction from reopening the name.
     // Explicit naming instructions keep their literal words, including "Please".
     if(def.id==='name' && !assistantFieldLiteralOwner(request)
       && /^(?:(?:please|actually|okay|ok|instead)\b[,\s]*)?(?:(?:make|change|set|move|rename|call)\s+)?(?:it|this|that)\.?$/i.test(text))return null;
-    return text?{start:span.start+start,end:span.start+end,text,context:span.text}:span;
+    const selected=text?{start:span.start+start,end:span.start+end,text,context:span.text}:span;
+    // A setting may reappear after a sibling setting in the same sentence.
+    // Retain every such instruction so incompatible values ask, rather than
+    // silently losing the trailing restriction. Names use only their title.
+    const tail=span.text.slice(end);
+    const more=def.id!=='name'&&end>0&&end<span.text.length&&assistantFieldCue(def,tail)
+      ?assistantFieldSource(def,request,[{start:span.start+end,end:span.end,text:tail}]):[];
+    return [selected,...more];
   }).filter(Boolean);
 }
 
@@ -586,7 +630,7 @@ function assistantFieldStripPrefix(text, pattern){
 function assistantFieldNormalize(def,text,session){
   const instructionSource=session?._fieldSource||text,literal=assistantFieldLiteralOwner(instructionSource);
   if(literal?.id===def.id && /\b(?:do not|don.t|never)\s*$/i.test(instructionSource.slice(0,literal.instructionStart)))return {ok:false,error:`Should I keep ${def.label.toLowerCase()} unchanged, or change it?`};
-  if(['allowedWindow','preferredWindow','allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays','frequency','dueDate','dueTime','places','weatherProfile'].includes(def.id)
+  if(['allowedWindow','preferredWindow','allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','frequency','dueDate','dueTime','places','weatherProfile'].includes(def.id)
     && /\b(?:no|not|never|don.t|except|without|or)\b/i.test(text))return {ok:false,error:'Please clarify the positive restriction or clear this setting.'};
   if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantFieldDialogue(text).text;
   if(!text)return {ok:false,error:`What value should I use for ${def.label||def.id}?`};
@@ -699,7 +743,7 @@ async function assistantFieldExtract(state,row,extract){
       if(def.id==='name' && session.operation==='edit' && !ASSISTANT_FIELD_SIGNALS.name.test(selectedEvidence) && !session.unresolved.some(r=>r.field==='name'))continue;
       if(def.id==='allowedWeekdays' && /\bprefer/i.test(selectedEvidence))continue;
       if(def.id==='allowedWindow' && /\bprefer/i.test(selectedEvidence))continue;
-      if(def.id==='preferredWeekdays' || def.id==='preferredWindow' || def.id==='preferredMonthDays'){
+      if(def.id==='preferredWeekdays' || def.id==='preferredWindow' || def.id==='preferredMonthDays' || def.id==='preferredOrdinalWeekdays'){
         if(!/\bprefer/i.test(selectedEvidence))continue;
       }
       if(def.id==='durationMinutes' && /\b(?:gaps?|chunks?|timer|auto.?mark|between sessions)\b/i.test(span.text))continue;

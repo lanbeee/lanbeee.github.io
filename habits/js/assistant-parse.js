@@ -504,6 +504,25 @@ function assistantParseMonthDays(value){
   return !invalid&&!rest&&days.length ? days.sort((a, b) => a - b) : null;
 }
 
+// Calendar weekday rules are distinct from both weekday availability and an
+// elapsed-day rhythm. Validate the entire selected phrase before normalizing.
+const ASSISTANT_ORDINAL_LIST = `(?:${assistantOrdinalSource()}|last)(?:\\s+and\\s+(?:${assistantOrdinalSource()}|last))*`;
+const ASSISTANT_ORDINAL_WEEKDAY = `(?:${ASSISTANT_ORDINAL_LIST})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`;
+function assistantParseOrdinalWeekdays(value){
+  const s=assistantNormText(value);
+  if(/^(?:any|all|none|clear)$/.test(s))return [];
+  const rules=[];
+  const rest=s.replace(new RegExp(`\\b(${ASSISTANT_ORDINAL_LIST})\\s+(${ASSISTANT_WEEKDAY_TOKEN})\\b`,'g'),(phrase,ordinals,day)=>{
+    const numbers=ordinals.split(/\s+and\s+/).map(ordinal=>ordinal==='last'?-1:assistantParseExactCount(ordinal,1,5,true));
+    const weekday=assistantCollectWeekdays(day)[0];
+    if(numbers.some(n=>n==null)||weekday==null)return phrase;
+    rules.push(...numbers.map(ordinal=>({ordinal,weekday})));return '';
+  }).replace(/\b(?:only|allow(?:ed)?|prefer(?:red|ably)?|on|the|and|of|each|every|month(?:ly)?|weekdays?)\b/g,'').replace(/[\s,]/g,'');
+  // "Every third Monday" could mean an interval; require a calendar month.
+  if(rest||!rules.length||!(/\bmonth(?:ly)?\b/.test(s)))return null;
+  return normalizeOrdinalWeekdays(rules);
+}
+
 function assistantParseTopicsArg(value){
   if(value == null || value === '')return null;
   const s = typeof value === 'string' ? assistantNormText(value) : '';

@@ -31,10 +31,12 @@ const ASSISTANT_FOCUS_FIELDS = [
 
   {id:'allowedWeekdays', label:'Allowed weekdays', family:'schedule', kinds:['habit','task'], persist:'allowedWeekdays', clear:true},
   {id:'allowedMonthDays', label:'Allowed month days', family:'schedule', kinds:['habit','task'], persist:'allowedMonthDays', clear:true},
+  {id:'allowedOrdinalWeekdays', label:'Allowed monthly weekdays', family:'schedule', kinds:['habit','task'], persist:'allowedOrdinalWeekdays', clear:true},
   {id:'allowedWindow', label:'Allowed hours', family:'schedule', kinds:['habit','task'], persist:'allowedTimeStart', clear:true},
   {id:'allowedTimeFixedStart', label:'Fixed start', family:'schedule', kinds:['habit','task'], persist:'allowedTimeFixedStart', clear:false},
   {id:'preferredWeekdays', label:'Preferred weekdays', family:'schedule', kinds:['habit','task'], persist:'preferredWeekdays', clear:true},
   {id:'preferredMonthDays', label:'Preferred month days', family:'schedule', kinds:['habit','task'], persist:'preferredMonthDays', clear:true},
+  {id:'preferredOrdinalWeekdays', label:'Preferred monthly weekdays', family:'schedule', kinds:['habit','task'], persist:'preferredOrdinalWeekdays', clear:true},
   {id:'preferredWindow', label:'Preferred hours', family:'schedule', kinds:['habit','task'], persist:'preferredTimeStart', clear:true},
 
   {id:'durationMinutes', label:'Duration', family:'effort', kinds:['habit','task','event'], persist:'durationMinutes', clear:false, unless:'zero'},

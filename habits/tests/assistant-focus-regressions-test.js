@@ -81,6 +81,7 @@ function assert(ok, message){
             dueDate:'2026-11-09',dueTime:'9am',hardDue:'yes',planByDate:'2026-11-09',earlyWindowDays:'2',delayAllowanceDays:'2',
             allowedWeekdays:'Monday',allowedMonthDays:'1, 15',allowedWindow:'6pm to 8pm',allowedTimeFixedStart:'yes',
             preferredWeekdays:'Monday',preferredMonthDays:'1, 15',preferredWindow:'6pm to 8pm',
+            allowedOrdinalWeekdays:'last Friday of every month',preferredOrdinalWeekdays:'second Tuesday of every month',
             durationMinutes:'30 minutes',breakable:'yes',minChunkMinutes:'15 minutes',minGapMinutes:'20 minutes',
             timerAutoStopMinutes:'30 minutes',autoMarkMinutes:'5 minutes',trackValue:'yes',places:'Home',anywhereAllowed:'no',locationPrefs:'prefer Home',
             weatherProfile:'Dry',weatherRules:'temperature above 10 C',showWeather:'yes',showWeatherAtLocation:'yes',weatherLocationId:'Home',

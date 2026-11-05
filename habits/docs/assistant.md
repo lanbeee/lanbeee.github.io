@@ -35,6 +35,14 @@ jobs immediately; Needle embeddings and model discovery nominate additional
 candidates. Retrieval supplies no executable values. Frequency keeps its count
 and period together; windows retain their endpoints and modifiers.
 
+Monthly weekday restrictions and preferences use the planner's existing ordinal
+weekday fields, separately from weekdays, month dates and elapsed-day frequency.
+The selected evidence must include the calendar month, ordinal and weekday;
+an ambiguous interval such as “every third Monday” still asks. Solar/prayer
+offset quantities belong to windows, not session duration. A field repeated
+after another setting retains all its excerpts, so conflicting windows ask
+without discarding the title, monthly rule or session length.
+
 Create freezes its baseline when the session opens. Essential frequency and
 duration use the chosen Add form values first, then the kind's configured
 creation defaults (including the separate task profile). The review is a short summary in the chat, on screen as soon as the item opens. It lists only the

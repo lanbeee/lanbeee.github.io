@@ -29,7 +29,7 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   identity:[['name','name'],['kind','kind'],['habitKind','habit'],['emoji','emoji'],['emojiBgColor','color'],['priority','priority']],
   recurrence:[['timesPerPeriod','times'],['periodDays','period'],['repeatMode','mode'],['conditionTrigger','trigger'],['conditionRadiusM','radius']],
   dates:[['dueDate','due'],['dueTime','time'],['hardDue','hard'],['planByDate','planBy'],['earlyWindowDays','early'],['delayAllowanceDays','late']],
-  schedule:[['allowedWeekdays','weekdays'],['allowedMonthDays','monthDays'],['allowedWindow','window'],['allowedTimeFixedStart','fixed'],['preferredWeekdays','preferredDays'],['preferredMonthDays','preferredMonthDays'],['preferredWindow','preferredWindow']],
+  schedule:[['allowedWeekdays','weekdays'],['allowedMonthDays','monthDays'],['allowedOrdinalWeekdays','ordinalWeekdays'],['allowedWindow','window'],['allowedTimeFixedStart','fixed'],['preferredWeekdays','preferredDays'],['preferredMonthDays','preferredMonthDays'],['preferredOrdinalWeekdays','preferredOrdinalWeekdays'],['preferredWindow','preferredWindow']],
   effort:[['durationMinutes','duration'],['breakable','split'],['minChunkMinutes','chunk'],['minGapMinutes','gap'],['timerAutoStopMinutes','timer'],['autoMarkMinutes','auto'],['trackValue','value']],
   places:[['places','places'],['anywhereAllowed','anywhere'],['locationPrefs','prefs']],
   weather:[['weatherRules','rules'],['showWeather','show'],['showWeatherAtLocation','atPlace'],['weatherLocationId','forecastPlace'],['weatherProfile','profile']],
@@ -302,6 +302,8 @@ function assistantFocusPreferField(fieldId, phrase){
   if(fieldId === 'preferredWindow' && !prefer)return null;
   if(fieldId === 'allowedMonthDays' && prefer)return 'preferredMonthDays';
   if(fieldId === 'preferredMonthDays' && !prefer)return null;
+  if(fieldId === 'allowedOrdinalWeekdays' && prefer)return 'preferredOrdinalWeekdays';
+  if(fieldId === 'preferredOrdinalWeekdays' && !prefer)return null;
   return fieldId;
 }
 

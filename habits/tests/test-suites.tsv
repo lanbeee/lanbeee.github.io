@@ -194,6 +194,7 @@ assistant-needle-workflow-test.js	assistant	default-only
 assistant-focus-regressions-test.js	assistant	once
 assistant-field-jobs-test.js	assistant	once
 assistant-field-coverage-test.js	assistant	once
+assistant-monthly-create-test.js	assistant	once
 
 allowed-flexibility-boundaries-test.js	planner	once
 item-controls-recurrence-test.js	planner	once

@@ -52,6 +52,7 @@ function assert(ok, message){
     assert(await page.evaluate(()=>openAssistantSheet()) === false,'Needle does not open a general chat');
     assert(downloads === 0,'enabling the assistant does not download');
     assert(await page.evaluate(()=>assistantOpenForItem('needle-gate','home')) === true,'Edit with AI opens the focused sheet');
+    await page.locator('#assistant-sheet [data-needle-download]').waitFor({state:'visible'});
     assert(await page.locator('#assistant-sheet [data-needle-download]').isVisible(),'first-use sheet offers the download');
     await page.locator('#assistant-input').fill('Remind me to call mom');
     assert(await page.locator('#assistant-send').isDisabled(),'sending waits for an explicit download');

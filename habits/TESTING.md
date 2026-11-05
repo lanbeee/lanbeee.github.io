@@ -242,6 +242,15 @@ operations. These check complete patches and confirmed persistence, including
 absence of sibling edits. Ambiguous references use Needle's bounded field menu;
 a declined model decision must not be replaced by parser inference.
 
+`tests/assistant-monthly-create-test.js` covers the reported Family night
+dictation and variants with monthly weekday rules, solar/prayer offsets and
+independent session lengths. The ambiguous dictation must retain its known
+fields, ask only about the conflicting window, and save correctly after a
+window correction. Every case checks the complete change allowlist, storage
+before confirmation and confirmed persistence. The same pinned asset variables
+switch this test from a deterministic host adapter to real Needle inference;
+evidence is `test-results/needle-monthly-create-{live,scripted}.json`.
+
 Run every optional Needle section with the actual pinned assets:
 
 ```bash
