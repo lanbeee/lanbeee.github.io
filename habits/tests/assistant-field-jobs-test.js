@@ -72,6 +72,77 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       return assistantFocusCanSave(s)&&r.durationMinutes===20&&new Date(r.eventTime).getHours()===18&&s.changes.length===2;
     });
     assert(adjacentFields,'a complete assigned quantity leaves a following clock available without requiring a conjunction');
+    const createTitles=await page.evaluate(async()=>{
+      const t=fieldTest,results=[];
+      for(const [prompt,title] of [
+        ['Add a task to buy milk','buy milk'],
+        ['Add a workout habit','workout'],
+        ['Walk on weekdays for 20 minutes','Walk'],
+        ['Add a habit called Read before bed','Read before bed'],
+        ['Add a habit called New Task','New Task'],
+        ['Add a habit called Add Water','Add Water'],
+        ['Night shift','Night shift'],
+        ['New York','New York'],
+        ['Call it Carry On','Carry On'],
+        ['Call it Not at Night','Not at Night']
+      ]){
+        t.seed();save([...load(),{hid:'read',name:'Read',type:'keepup',target:7,durationMinutes:30,logs:[]}]);
+        const s=t.open('create',prompt.includes('task to')?'task':'habit'),before=JSON.stringify(load());
+        await assistantFocusTurn(s,prompt,t.options());const r=assistantFocusMaterialize(s);
+        const expectedFields=prompt==='Walk on weekdays for 20 minutes'?['name','allowedWeekdays','durationMinutes','timesPerPeriod','periodDays']:['name'];
+        const ready=assistantFocusCanSave(s),unchanged=before===JSON.stringify(load());
+        const extras=s.changes.filter(c=>!expectedFields.includes(c.field));
+        const commit=ready&&!extras.length?await assistantFocusCommit(s):null;
+        results.push({prompt,title:r.name,ok:r.name===title&&ready&&unchanged&&!extras.length&&commit?.ok,questions:s.unresolved,extras});
+      }
+      return results;
+    });
+    assert(createTitles.every(r=>r.ok),`create framing and field boundaries preserve literal titles through confirmed saves (${JSON.stringify(createTitles)})`);
+    const createFollowup=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open('create');
+      await assistantFocusTurn(s,'Add a journaling habit',t.options());
+      await assistantFocusTurn(s,'Make it 10 minutes',t.options());
+      const r=assistantFocusMaterialize(s);
+      const followup=s.jobs.filter(j=>j.request==='Make it 10 minutes');
+      return r.name==='journaling'&&r.durationMinutes===10&&assistantFocusCanSave(s)&&!followup.some(j=>j.id==='name');
+    });
+    assert(createFollowup,'a create follow-up changes duration without restaging the pronoun as its name');
+    const frequencyCount=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open('create');
+      await assistantFocusTurn(s,'Add a soda limit habit, at most one per day',t.options());
+      const r=assistantFocusMaterialize(s),parts=rhythmParts(r.target);
+      return r.name==='soda limit'&&parts.times===1&&parts.days===1&&assistantFocusCanSave(s);
+    });
+    assert(frequencyCount,'count plus period nominates the complete frequency without a times keyword');
+    const missingCreateTitle=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open('create');
+      await assistantFocusTurn(s,'Add a habit',t.options());
+      return !assistantFocusCanSave(s)&&s.unresolved.some(q=>q.field==='name')&&!s.changes.some(c=>c.field==='name');
+    });
+    assert(missingCreateTitle,'a bare create command asks for a name instead of saving the kind noun');
+    const windowOwnership=await page.evaluate(async()=>{
+      const t=fieldTest,results=[];
+      for(const [prompt,field] of [
+        ['Not at night','allowedWindow'],['Only at night','allowedWindow'],
+        ['Prefer not at night','preferredWindow'],['Prefer at night','preferredWindow']
+      ]){
+        t.seed();const s=t.open(),before=JSON.stringify(load()),baseline=JSON.stringify(assistantFocusMaterialize(s));
+        await assistantFocusTurn(s,prompt,t.options());
+        results.push({prompt,ok:!assistantFocusCanSave(s)&&s.unresolved.some(q=>q.field===field)
+          &&!s.jobs.some(j=>j.id===(field==='preferredWindow'?'allowedWindow':'preferredWindow'))
+          &&before===JSON.stringify(load())&&baseline===JSON.stringify(assistantFocusMaterialize(s)),questions:s.unresolved});
+      }
+      return results;
+    });
+    assert(windowOwnership.every(r=>r.ok),`unsupported day-part windows ask on their own setting without changing another window (${JSON.stringify(windowOwnership)})`);
+    const separateOrder=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();save([...load(),{hid:'meeting',name:'Meeting',type:'keepup',target:7,durationMinutes:30,logs:[]}]);
+      const s=t.open(),before=JSON.stringify(load());
+      await assistantFocusTurn(s,'Call it Yoga, after Meeting',t.options());
+      return assistantFocusMaterialize(s).name==='Yoga'&&!assistantFocusCanSave(s)
+        &&s.unresolved.some(q=>q.field==='scheduleLinks')&&before===JSON.stringify(load());
+    });
+    assert(separateOrder,'a naming clause cannot silently hide a separate ordering instruction');
     const clockBoundaries=await page.evaluate(async()=>{
       const t=fieldTest,results=[];
       for(const [kind,prompt,minute,duration] of [

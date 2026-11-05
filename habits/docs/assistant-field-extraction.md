@@ -326,6 +326,29 @@ Local evidence is `test-results/needle-live/focused-regression-final.log`,
 `focused-priority-fields-final.json`, and
 `test-results/needle-field-jobs-live.json`.
 
+The follow-up focused battery review keeps title framing, count-plus-period
+frequency and follow-up corrections in the shared field pipeline. Title
+connectors are trimmed only when another setting actually cut the source;
+literal titles such as “Carry On,” “New Task,” and “Not at Night” remain intact.
+Day-part requests use the same candidate and ownership checks as other time
+windows, including the distinction between required and preferred hours.
+Unrepresentable night windows ask for concrete hours. A naming clause owns its
+order words, while a separate ordering clause remains accounted for.
+
+The reviewed November 5 check passed 17 deterministic assistant files (1,406
+assertions, no page errors). The original 30 live focused cases yielded 26
+completed saves and four justified questions, with no unexpected staged fields.
+Ten additional live boundary cases yielded five completed saves and five
+justified questions; three live literal-name cases also passed confirmed
+persistence. These 43 targeted cases used the pinned model in desktop Chrome.
+A justified question is a safe unresolved outcome, not a completed edit or a
+demonstrated successful clarification exchange. The scratch harness now checks
+expected values even when another field asks, enforces requested question
+fields, and checks storage on cases without Save. Review evidence is in
+`test-results/needle-live/review-live-audit.json`,
+`results-review-extra-final.jsonl`, `review-live-literal-names.json`, and
+`review-assistant-regressions-final.log`.
+
 ## Limits
 
 Representative coverage of every field is not exhaustive natural-language

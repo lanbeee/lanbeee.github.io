@@ -42,7 +42,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   emoji:/\p{Extended_Pictographic}|\b(?:emoji|icon)\b/iu,
   emojiBgColor:/\b(?:colou?r|red|blue|green|purple|orange|yellow|pink)\b|\b(?:set|change|use) (?:the |a )?background\b/i,
   priority:/\b(?:priority|p[0-5]|urgent|critical|someday)\b/i,
-  frequency:new RegExp(`\\b(?:frequency|rhythm|how often|every|each(?=\\s+(?:(?:${assistantIntegerSource()}|${assistantOrdinalSource()}|other)\\s+)?(?:days?|weeks?)\\b)|daily|weekly|once|twice|thrice|(?:${assistantIntegerSource()})\\s*(?:x|times?))\\b`,'i'),
+  frequency:new RegExp(`\\b(?:frequency|rhythm|how often|every|each(?=\\s+(?:(?:${assistantIntegerSource()}|${assistantOrdinalSource()}|other)\\s+)?(?:days?|weeks?)\\b)|daily|weekly|once|twice|thrice|(?:${assistantIntegerSource()})\\s*(?:x|times?)|(?:${assistantIntegerSource()})\\s*(?:x|times?)?\\s+(?:a|per|in|every|each)\\s+(?:days?|weeks?)\\b)\\b`,'i'),
   repeatMode:/\b(?:opportunity|routine|when (?:it fits|conditions)|regular rhythm)\b/i,
   conditionTrigger:/\b(?:trigger|nearby|proximity)\b/i,
   conditionRadiusM:/\b(?:radius|\d+\s*(?:meters?|metres?))\b/i,
@@ -56,8 +56,8 @@ const ASSISTANT_FIELD_SIGNALS = {
   preferredWeekdays:/\bprefer\w*\b.{0,35}\b(?:weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
   allowedMonthDays:/\bmonth(?:ly)?\b/i,
   preferredMonthDays:/\bprefer\w*\b[^,;]*\bmonth(?:ly)?\b/i,
-  allowedWindow:/\b(?:(?:before|after|between|from)\s+(?:\d[\d:]*(?:\s*[ap]m)?|sunrise|sunset|noon|midnight|fajr|dhuhr|zuhr|asr|maghrib|isha)|morning|evening|overnight|any time|clear (?:the )?(?:hours|window))\b/i,
-  preferredWindow:/\bprefer\w*\b.{0,40}\b(?:hours?|morning|evening|before|after|between|from)\b/i,
+  allowedWindow:/\b(?:(?:before|after|between|from)\s+(?:\d[\d:]*(?:\s*[ap]m)?|sunrise|sunset|noon|midnight|fajr|dhuhr|zuhr|asr|maghrib|isha)|morning|afternoon|evening|overnight|(?:at|during|in|not|never|except|without)\s+(?:the\s+)?night(?:time)?|any time|clear (?:the )?(?:hours|window))\b/i,
+  preferredWindow:/\bprefer\w*\b.{0,40}\b(?:hours?|morning|afternoon|evening|night|nighttime|before|after|between|from)\b/i,
   allowedTimeFixedStart:/\b(?:fixed|exact)(?: start| time)?\b/i,
   durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|duration|long|twice as long)\\b`,'i'),
   breakable:/\b(?:split(?:ting)?|breakable|unbreakable|continuous|uninterrupted|chunks?)\b/i,
@@ -181,7 +181,8 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['frequency'], when:/\bmonth(?:ly)?\b/i},
   {fields:['allowedWeekdays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i')},
   {fields:['allowedWeekdays','allowedWindow','allowedMonthDays'], when:/\bprefer/i},
-  {fields:['allowedWindow'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:morning|evening)\\b`,'i'), unless:/\b(?:before|after|between|from|only|in the)\b/i},
+  {fields:['allowedWindow','preferredWindow'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:morning|afternoon|evening|night|nighttime)\\b`,'i'), unless:/\b(?:before|after|between|from|only|in the)\b/i},
+  {fields:['scheduleLinks'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:before|after)\\b`,'i')},
   {fields:['allowedWindow'], when:new RegExp(`\\b(?:before|after)\\s+(?:${assistantDurationNumberSource()})(?:\\s+(?:or|and)\\s+(?:${assistantDurationNumberSource()}))*\\s*(?:minutes?|mins?|hours?|days?|weeks?)\\b`,'i')},
   {fields:['habitKind'], when:/\bstop (?:the )?timer\b/i},
   {fields:['dueDate'], when:/\b(?:hard|strict|firm) deadline\b/i, unless:/\d|today|tomorrow|next\b/i},
@@ -325,6 +326,12 @@ function assistantFieldSource(def, request, spans){
       const other=signal.exec(span.text);
       if(other && other.index>=(own?own.index+own[0].length:start) && other.index>start)end=Math.min(end,other.index);
     }
+    // A title cannot end on a connector owned by the next phrase ("Walk on
+    // weekdays" is Walk plus an allowed-weekdays instruction).
+    if(def.id==='name' && end<span.text.length){
+      const dangling=/\s+(?:on|in|at|for|before|after|during|from|every|each|with|to|by|and)\s*$/i.exec(span.text.slice(start,end));
+      if(dangling)end=start+dangling.index;
+    }
     // A clock is a scalar, not all prose up to the next field. Keep the exact
     // clock token as evidence; retain alternatives/negation for validation.
     if(['dueTime','appointmentStartMinute','exceptionTime'].includes(def.id)){
@@ -341,8 +348,13 @@ function assistantFieldSource(def, request, spans){
       end=start+dialogue.end;start+=dialogue.start;
     }
     const text=span.text.slice(start,end);
+    // A title cut down to dialogue framing alone ("make it") names nothing;
+    // dropping the span keeps a follow-up correction from reopening the name.
+    // Explicit naming instructions keep their literal words, including "Please".
+    if(def.id==='name' && !assistantFieldLiteralOwner(request)
+      && /^(?:(?:please|actually|okay|ok|instead)\b[,\s]*)?(?:(?:make|change|set|move|rename|call)\s+)?(?:it|this|that)\.?$/i.test(text))return null;
     return text?{start:span.start+start,end:span.start+end,text,context:span.text}:span;
-  });
+  }).filter(Boolean);
 }
 
 function assistantFieldEnqueue(state, id, reason, source){
@@ -397,7 +409,11 @@ function assistantFieldCandidates(state){
     const def=state.catalog.find(d=>d.id==='places');
     if(assistantFocusPhraseIn(text,place.name)&&state.spans.some(span=>assistantFocusPhraseIn(span.text,place.name)&&assistantFieldRelevant(def,span.text)))assistantFieldEnqueue(state,'places','explicit');
   }
-  if(/\b(?:before|after)\b/i.test(text) && load().some(item=>item.hid!==state.session.targetId&&assistantFocusPhraseIn(text,item.name)))assistantFieldEnqueue(state,'scheduleLinks','explicit');
+  const order=state.catalog.find(def=>def.id==='scheduleLinks');
+  const orderSpans=state.spans.filter(span=>/\b(?:before|after)\b/i.test(span.text)
+    && assistantFieldRelevant(order,span.text)
+    && load().some(item=>item.hid!==state.session.targetId&&assistantFocusPhraseIn(span.text,item.name)));
+  if(orderSpans.length)assistantFieldEnqueue(state,'scheduleLinks','explicit',assistantFieldSource(order,text,orderSpans));
 }
 
 async function assistantFieldDiscover(state, extract){
@@ -588,12 +604,21 @@ function assistantFieldNormalize(def,text,session){
   }
   let value=text;
   if(def.id==='scheduleOptions' && /\bor\b/i.test(text))return {ok:false,error:'Please give each alternative separately with its time and place.'};
-  if(def.id==='name')value=assistantFieldStripPrefix(text,/^(?:create|add)(?: a| an)? (?:habit|task|event)(?: (?:called|named))?\s+/i);
+  if(def.id==='name')value=assistantFieldStripPrefix(text,/^(?:create|add)(?: a| an)? (?:habit|task|event)(?: (?:called|named|to))?\s+/i);
   if(def.id==='name')value=assistantFieldStripPrefix(value,ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.prefix).replace(/^['"]|['"]$/g,'').trim();
   if(def.id==='name')value=assistantFieldStripPrefix(value,/^(?:remind me to|remember to|i (?:need|want) to)\s+/i);
+  // A create title drops its verb and kind noun ("add a workout habit" is
+  // Workout). Explicit called/named titles keep every literal word, and a
+  // "make it …" reference is not a create title. When nothing remains but a
+  // kind noun, keep the stripped value so the generic-title guard asks.
+  if(def.id==='name' && session && session.operation==='create' && !ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.test(session._fieldSource||'')){
+    const headed=assistantFieldStripPrefix(value,/^(?:please\s+)?(?:create|add|make)\s+(?:(?:a|an|the)\s+)?(?!(?:it|this|that)\b)/i);
+    if(headed!==value)value=headed.replace(/\s+(?:habit|task|event|reminder|limit)\s*$/i,'').trim();
+  }
   if(def.id==='name' && assistantFieldLiteralOwner(session?._fieldSource||'')?.id!=='name'
     && /\b(?:\d+\s*(?:minutes?|hours?)|every (?:day|week|other)|daily|weekly)\b/i.test(value))return {ok:false,error:'Please give just the item title.'};
-  if(def.id==='name' && (!value || /^(?:create|add|habit|task|event|rename|name|it)$/i.test(value)))return {ok:false,error:'Name the item.'};
+  if(def.id==='name' && (!value || !ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.test(instructionSource)
+    && /^(?:create|add|(?:new\s+)?(?:habit|task|event|reminder)|rename|name|it)$/i.test(value)))return {ok:false,error:'Name the item.'};
   if(def.id==='conditionRadiusM')value=assistantFieldStripPrefix(text,/^(?:(?:set|change)\s+)?(?:radius(?: of)?|within)(?:\s+to)?\s+/i);
   if(['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(def.id)){
     value=assistantFieldStripPrefix(text,/^(?:(?:change|set|move)\s+(?:the\s+)?)?(?:(?:plan|do|finish)(?: (?:this|it))? by|plan (?:this |it )?for|due(?: date)?(?: on)?|on|by|until|through|start(?:s|ing)?(?: on)?|date)(?:\s+(?:to|on))?\s*/i);
