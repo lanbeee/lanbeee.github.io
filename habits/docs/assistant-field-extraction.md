@@ -372,6 +372,29 @@ files, 1,419 assertions, with no page errors. Evidence is in
 `test-results/monthly-assistant-final.log`. This reproduces the iPhone report's
 wording; it does not measure iPhone inference or UI performance.
 
+## Window clarification follow-up (November 5, 2026)
+
+The next iPhone report used “After sunset to two hours after sunset” as its
+clarification. Replaying it reproduced a significant wrong-value result:
+sunset + 120 minutes became the start and the end was unset. The previous
+test's clarification said “from sunset to…” and did not cover this variant.
+
+Range validation now processes complete endpoint pairs before single-bound
+fallbacks. Unreadable explicit ranges ask rather than dropping an endpoint.
+Clock validation also rejects malformed clocks without recursive retries or
+clamping. Schedule alternatives keep their known place separate from their
+window. Feedback records the structured staged values, which previously
+appeared as `[object Object]` in previews.
+
+All 18 assistant regression files passed, with 1,442 assertions and no page
+errors. Eight compound-create cases passed with the pinned live Needle assets,
+including the exact two-turn report and confirmed persistence. Additional live
+field checks cover three allowed/preferred bounded windows and three invalid range
+endings. Evidence is in `test-results/needle-monthly-create-live.json`,
+`test-results/window-range-fields-live.json` and
+`test-results/window-range-assistant.log`. These runs use desktop Chrome and
+synthetic data; the iPhone report's wording was reproduced, not its device.
+
 ## Limits
 
 Representative coverage of every field is not exhaustive natural-language

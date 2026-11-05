@@ -37,6 +37,9 @@ const cases=[
   ['allowedOrdinalWeekdays','Only on the first Monday and third Monday of each month',[{ordinal:1,weekday:1},{ordinal:3,weekday:1}],{id:'monthly-weekday-list'}],
   ['allowedOrdinalWeekdays','Only on the first and third Monday of each month',[{ordinal:1,weekday:1},{ordinal:3,weekday:1}],{id:'monthly-weekday-shared-day'}],
   ['allowedWindow','Only between 6pm and 8pm',null,{record:{allowedTimeStart:1080,allowedTimeEnd:1200}}],
+  ['allowedWindow','After sunset to two hours after sunset',null,{id:'basics-window-bounded-solar',record:{allowedTimeStartAnchor:'maghrib',allowedTimeStartOffsetMin:0,allowedTimeEndAnchor:'maghrib',allowedTimeEndOffsetMin:120}}],
+  ['allowedWindow','One hour before sunrise until sunrise',null,{id:'basics-window-bounded-offset',record:{allowedTimeStartAnchor:'sunrise',allowedTimeStartOffsetMin:-60,allowedTimeEndAnchor:'sunrise',allowedTimeEndOffsetMin:0}}],
+  ['preferredWindow','Prefer after sunset until one hour after isha',null,{id:'basics-window-bounded-preference',record:{preferredTimeStartAnchor:'maghrib',preferredTimeStartOffsetMin:0,preferredTimeEndAnchor:'isha',preferredTimeEndOffsetMin:60}}],
   ['allowedTimeFixedStart','Use a fixed start time',true],
   ['preferredWeekdays','Prefer Monday and Wednesday',[1,3]],
   ['preferredMonthDays','Prefer month days 1 and 15',[1,15]],
@@ -163,6 +166,7 @@ const cases=[
   ['pinned','Pin it instead',true,{id:'basics-explicit-setting-followup',kind:'task',extra:{dueDate:day('2026-11-02')},historySteps:['Plan this for tomorrow']}]
 ].map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
+  ...['after sunset to','after sunset until sometime','from sunset to 99pm'].map(prompt=>({field:'allowedWindow',kind:'habit',prompt,seed:{allowedTimeStartAnchor:'maghrib',allowedTimeStartOffsetMin:30,allowedTimeEndAnchor:'isha',allowedTimeEndOffsetMin:0}})),
   {field:'name',kind:'habit',prompt:'Do not rename it Tomorrow'},
   {field:'topics',kind:'habit',prompt:"Don't tag it Work"},
   ...['Not tomorrow instead','Tomorrow or Friday please','After tomorrow instead'].map(prompt=>({field:'dueDate',kind:'task',prompt})),

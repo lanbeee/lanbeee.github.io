@@ -129,11 +129,15 @@ function assistantFeedbackFocusTrace(focus){
   });
   (focus.changes || []).forEach(change => {
     if(!change)return;
+    const value=assistantFeedbackClip(change.value);
     events.push({
       t:'result',
       name:change.field || 'change',
       ok:!change.uncertain,
-      preview:[change.op || 'set', assistantFeedbackClip(change.value)].filter(part => part != null && part !== '').join(' ')
+      status:'staged',
+      uncertain:Boolean(change.uncertain),
+      value,
+      preview:[change.op || 'set',value!=null&&typeof value==='object'?JSON.stringify(value):value].filter(part => part != null && part !== '').join(' ')
     });
   });
   (focus.unresolved || []).forEach((item, index) => {

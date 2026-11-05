@@ -223,6 +223,14 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       'Ask Tings feedback opens a short card and prefills the form without the saved item');
     assert(sheetFeedback.fix === 'The assistant reply was not what I wanted. I expected it to: ',
       'a completed Needle turn still leaves the expectation note editable');
+    const structured=await page.evaluate(()=>{
+      const value={start:{kind:'anchor',anchor:'maghrib',offsetMin:0},end:{kind:'anchor',anchor:'maghrib',offsetMin:120}};
+      const trace=assistantFeedbackFocusTrace({changes:[{field:'allowedWindow',value,op:'set',uncertain:true}]});
+      return trace.find(row=>row.t==='result');
+    });
+    assert(structured.status==='staged'&&structured.uncertain&&structured.value.start.offsetMin===0&&structured.value.end.offsetMin===120
+      &&structured.preview.includes('120')&&!structured.preview.includes('[object Object]'),
+      'feedback retains actual window endpoints and distinguishes staged values from confidence');
     await page.locator('#assistant-feedback').click();
     const feedbackClosed = await page.evaluate(()=>({
       hidden:document.getElementById('assistant-feedback-panel').hidden,

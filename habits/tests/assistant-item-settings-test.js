@@ -181,6 +181,23 @@ async function launchBrowser(){
     check('1.5 hours before sunset', hourAndHalf && hourAndHalf.start && hourAndHalf.start.offsetMin === -90, hourAndHalf && hourAndHalf.start);
     const twoHours = assistantParseWindowFromText('two hours after sunrise');
     check('two hours after sunrise', twoHours && twoHours.start && twoHours.start.offsetMin === 120, twoHours && twoHours.start);
+    for(const phrase of ['After sunset to two hours after sunset','sunset until two hours after sunset','after sunset till two hours after sunset','from sunset to two hours after sunset','between sunset and two hours after sunset']){
+      const range=assistantParseWindowFromText(phrase);
+      check(`complete sunset range: ${phrase}`,range?.start.anchor==='maghrib'&&range.start.offsetMin===0&&range.end.anchor==='maghrib'&&range.end.offsetMin===120,range);
+    }
+    const fractionalRange=assistantParseWindowFromText('between one and a half hours after sunrise and two hours after sunrise');
+    check('range separators retain mixed fractions',fractionalRange?.start.offsetMin===90&&fractionalRange.end.offsetMin===120,fractionalRange);
+    const prayerRange=assistantParseWindowFromText('after maghrib until one hour after isha');
+    check('range preserves different prayer anchors',prayerRange?.start.anchor==='maghrib'&&prayerRange.start.offsetMin===0&&prayerRange.end.anchor==='isha'&&prayerRange.end.offsetMin===60,prayerRange);
+    const clockBounds=assistantParseWindowFromText('after 6pm until 8pm');
+    check('clock range preserves both boundaries',clockBounds?.start.minutes===1080&&clockBounds.end.minutes===1200,clockBounds);
+    const spokenStart=assistantParseWindowFromText('one hour before sunrise till sunrise');
+    check('spoken offset start retains its range end',spokenStart?.start.anchor==='sunrise'&&spokenStart.start.offsetMin===-60&&spokenStart.end.anchor==='sunrise'&&spokenStart.end.offsetMin===0,spokenStart);
+    const midnightRange=assistantParseWindowFromText('midnight to 2am');
+    check('named clock endpoints retain their range',midnightRange?.start.minutes===0&&midnightRange.end.minutes===120,midnightRange);
+    for(const phrase of ['after sunset to','after sunset until sometime','from sunset to 99pm','between sunset and someday','from sunset to two hours after sunset or three hours after sunset']){
+      check(`invalid range cannot become one bound: ${phrase}`,assistantParseWindowFromText(phrase)===null);
+    }
     return rows;
   });
   report(windows);

@@ -42,6 +42,11 @@ an ambiguous interval such as “every third Monday” still asks. Solar/prayer
 offset quantities belong to windows, not session duration. A field repeated
 after another setting retains all its excerpts, so conflicting windows ask
 without discarding the title, monthly rule or session length.
+Bounded windows validate both complete endpoints before one-sided window
+fallbacks. “After sunset to two hours after sunset” retains sunset as the
+start and sunset + 120 minutes as the end. An unreadable endpoint blocks that
+setting instead of silently retaining only one bound. Feedback includes the
+structured staged values and marks interpretation uncertainty separately.
 
 Create freezes its baseline when the session opens. Essential frequency and
 duration use the chosen Add form values first, then the kind's configured

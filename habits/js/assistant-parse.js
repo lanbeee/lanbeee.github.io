@@ -80,19 +80,17 @@ function assistantParseClock(value){
     const h = Number(match[1]);
     const min = Number(match[2]);
     if(h >= 0 && h <= 23 && min >= 0 && min <= 59)return h * 60 + min;
+    return null;
   }
   match = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(a|am|p|pm)$/);
   if(match){
     let h = Number(match[1]);
     const min = match[2] ? Number(match[2]) : 0;
     const ap = match[3][0];
+    if(h < 1 || h > 12 || min < 0 || min > 59)return null;
     if(h === 12)h = 0;
     if(ap === 'p')h += 12;
     if(h >= 0 && h <= 23 && min >= 0 && min <= 59)return h * 60 + min;
-  }
-  match = s.match(/^(\d{1,2})(a|am|p|pm)$/);
-  if(match){
-    return assistantParseClock(`${match[1]} ${match[2]}`);
   }
   return typeof timeInputToMinutes === 'function' ? timeInputToMinutes(s) : null;
 }
@@ -735,13 +733,19 @@ function assistantParseScheduleOptionText(value, catalog){
   if(value == null || value === '')return null;
   const s = assistantNormText(value);
   if(/^(none|off|clear)$/.test(s))return {clear:true};
-  const window = typeof assistantParseWindowFromText === 'function' ? assistantParseWindowFromText(s) : null;
-  const times = assistantWindowToOptionTimes(window);
-  if(!times)return null;
-  const weekdays = typeof assistantNormalizeWeekdaysArg === 'function' ? assistantNormalizeWeekdaysArg(s) : [];
   const places = typeof assistantMatchCatalogNames === 'function'
     ? assistantMatchCatalogNames((catalog && catalog.places) || [], s)
     : [];
+  let windowText=s;
+  // A known place at the end is a sibling field, not part of the end time.
+  for(const place of places){
+    const name=assistantNormText(place.name).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    windowText=windowText.replace(new RegExp(`\\s+(?:at|in)\\s+${name}$`),'').trim();
+  }
+  const window = typeof assistantParseWindowFromText === 'function' ? assistantParseWindowFromText(windowText) : null;
+  const times = assistantWindowToOptionTimes(window);
+  if(!times)return null;
+  const weekdays = typeof assistantNormalizeWeekdaysArg === 'function' ? assistantNormalizeWeekdaysArg(s) : [];
   const anywhere = /\banywhere\b/.test(s);
   const pref = /\bavoid\b/.test(s) ? 'avoid'
     : (/\bhigh|prefer\b/.test(s) ? 'high'
@@ -1357,7 +1361,7 @@ function assistantParseSimpleEndpointPhrase(phrase){
     const anchor = typeof assistantCleanAnchor === 'function' ? assistantCleanAnchor(only[1]) : only[1];
     if(anchor)return {kind:'anchor', anchor, offsetMin:0};
   }
-  const clock = assistantParseClock(s);
+  const clock = assistantParseClock(s.replace(/^(?:at|before|after)\s+/, ''));
   if(clock != null)return {kind:'clock', minutes:clock, clock:assistantClockLabel(clock)};
   return null;
 }
@@ -1401,11 +1405,33 @@ function assistantWindowFromClocks(start, end){
   };
 }
 
+function assistantParseWindowRange(text){
+  const lead=/\b(?:from|between)\s+/.exec(text);
+  const body=lead?text.slice(lead.index+lead[0].length):text;
+  // A create verb's "to" ("remind me to walk") is not a range separator.
+  if(!lead&&!new RegExp(`^(?:(?:at|before|after|noon|midday|midnight)\\b|(?:${ASSISTANT_ANCHOR_WORD})\\b|(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\b|\\d)`).test(body))return undefined;
+  // Try whole endpoint pairs. "And" may be inside a mixed fraction, so it
+  // is a separator only when both complete sides validate as endpoints.
+  const separators=lead
+    ?/\s+(?:to|until|till|and)(?=\s|$)\s*|\s+[-–]\s+/g
+    :/\s+(?:to|until|till)(?=\s|$)\s*|\s+[-–]\s+/g;
+  const splits=Array.from(body.matchAll(separators));
+  if(!lead&&!splits.length)return undefined;
+  for(const split of splits){
+    const start=assistantParseEndpointPhrase(body.slice(0,split.index));
+    const end=assistantParseEndpointPhrase(body.slice(split.index+split[0].length));
+    if(start&&end)return {start,end};
+  }
+  // An explicit range must never fall through to a one-sided interpretation.
+  return null;
+}
+
 function assistantParseWindowFromText(text){
   let s = assistantNormText(text);
   s = s.replace(/[.?!,;:]+$/g, '').trim();
   s = s.replace(/^(?:please |can you |could you )?(?:change|update|edit|make)(?: it| this| that| this one)?(?: to(?: be)?)?\s+/, '');
-  s = s.replace(/^(?:allowed|preferred)(?: to be)?\s+/, '');
+  s = s.replace(/^(?:only\s+)?(?:allowed|prefer(?:red|ably)?)(?: time(?: window)?| hours| window)?(?: to be)?\s+/, '');
+  s = s.replace(/^only\s+/, '');
   const endBit = `(?:${ASSISTANT_ANCHOR_WORD}|\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)`;
   const combineRange = s.match(new RegExp(`\\b(later|earlier)\\s+of\\s+(.+?)\\s+and\\s+(.+?)(?:\\s+(?:until|till|to)\\s+(${endBit}))?(?=\\s*[.?!,;:]|$)`));
   if(combineRange){
@@ -1413,7 +1439,7 @@ function assistantParseWindowFromText(text){
     const start = assistantParseEndpointPhrase(combineRange[2]);
     const second = assistantParseEndpointPhrase(combineRange[3]);
     const end = combineRange[4] ? assistantParseEndpointPhrase(combineRange[4]) : {kind:'unset'};
-    if(start && second)return assistantAttachCombine({start, end:end || {kind:'unset'}}, combine, second);
+    if(start && second)return end?assistantAttachCombine({start, end}, combine, second):null;
   }
   const whicheverRange = s.match(/\b(?:from|between)\s+(.+?)\s+(?:to|until|till|and)\s+(.+?)\s+or\s+(.+?)\s*,?\s*whichever is (later|earlier)\b/);
   if(whicheverRange){
@@ -1429,24 +1455,14 @@ function assistantParseWindowFromText(text){
   if(/^(any|all day|none|open|24h|all day long)$/.test(s)){
     return {start:{kind:'unset'}, end:{kind:'unset'}};
   }
+  const range=assistantParseWindowRange(s);
+  if(range!==undefined)return range;
   const clockRange = s.match(/\b(?:between|from)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s+(?:and|to|-)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/)
     || s.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*[-–]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))/)
     || s.match(/\b(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\b/);
   if(clockRange){
     const ranged = assistantWindowFromClocks(assistantParseClock(clockRange[1]), assistantParseClock(clockRange[2]));
     if(ranged)return ranged;
-  }
-  const between = s.match(/\b(?:(?:to be )?allowed(?: to be)? )?(?:between|from)\s+(.+?)\s+(?:and|to)\s+(?:(?:till|until|to|by)\s+)?(.+?)(?:[.!?]|$)/);
-  if(between){
-    const start = assistantParseEndpointPhrase(between[1]);
-    const end = assistantParseEndpointPhrase(between[2]);
-    if(start && end)return {start, end};
-  }
-  const tillRange = s.match(new RegExp(`\\b((?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD}))\\s+(?:till|until|to)\\s+(${ASSISTANT_ANCHOR_WORD})\\b`));
-  if(tillRange){
-    const start = assistantParseEndpointPhrase(tillRange[1]);
-    const end = assistantParseEndpointPhrase(tillRange[2]);
-    if(start && end)return {start, end};
   }
   const afterClock = s.match(/\bafter\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))/);
   if(afterClock){

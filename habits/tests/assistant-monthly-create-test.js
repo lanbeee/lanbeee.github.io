@@ -4,6 +4,7 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
 const fs=require('fs');
 const cases=[
   {id:'reported-dictation',prompt:'Family night happens last Friday of every month after sunset duration is one hour and they allowed time and one and a half hours after sunset',question:true},
+  {id:'reported-window-correction',prompt:'Family night happens last Friday of every month after sunset duration is one hour and they allowed time and one and a half hours after sunset',question:true,correction:'After sunset to two hours after sunset',endOffset:120},
   {id:'monthly-solar-window',prompt:'Family night happens last Friday of every month from sunset to one and a half hours after sunset duration is one hour'},
   {id:'length-before-window',prompt:'Create a habit called Family night, duration is one hour, only on the last Friday of every month, from sunset to one and a half hours after sunset'},
   {id:'offset-before-length',prompt:'Family night on the last Friday of every month one and a half hours after sunset for one hour',offset:90},
@@ -38,14 +39,14 @@ const cases=[
         // useful fields and ask only about the window, then accept a correction.
         const clarificationOK=!test.question||(originalBlocked&&questions.length===1&&questions[0].field==='allowedWindow'
           &&first.name==='Family night'&&first.durationMinutes===60&&first.allowedOrdinalWeekdays?.[0]?.ordinal===-1);
-        if(test.question){await assistantFocusTurn(s,'Allowed hours from sunset to one and a half hours after sunset',options);assistantFocusApprove(s);}
+        if(test.question){await assistantFocusTurn(s,test.correction||'Allowed hours from sunset to one and a half hours after sunset',options);assistantFocusApprove(s);}
         const r=assistantFocusMaterialize(s),rules=r.allowedOrdinalWeekdays;
         const allowed=new Set(['name','allowedOrdinalWeekdays','allowedWindow','durationMinutes']);
         const extras=s.changes.filter(c=>!allowed.has(c.field));
         const expected=r.name==='Family night'&&r.durationMinutes===(test.duration||60)
           &&JSON.stringify(rules)===JSON.stringify([{ordinal:-1,weekday:5}])
           &&r.allowedTimeStartAnchor===(test.anchor||'maghrib')&&r.allowedTimeStartOffsetMin===(test.offset||0)
-          &&(test.offset?true:r.allowedTimeEndAnchor==='maghrib'&&r.allowedTimeEndOffsetMin===90)
+          &&(test.offset?true:r.allowedTimeEndAnchor==='maghrib'&&r.allowedTimeEndOffsetMin===(test.endOffset||90))
           &&!r.allowedWeekdays.length&&!r.allowedMonthDays.length;
         const unchanged=before===JSON.stringify(load()),ready=assistantFocusCanSave(s);
         let committed=null;
