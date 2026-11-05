@@ -904,6 +904,7 @@ async function assistantFocusRunTurn(session, text, opts){
 
 function assistantFocusTurn(session, text, opts){
   if(session && session._focusInFlight && opts && opts.resume)return session._focusInFlight;
+  if(String(text||'').trim())assistantFocusContinueSavedCreate(session);
   // The runner reports progress before its first await. Mark the read in
   // progress first so that opening paint is the progress line, not Continue.
   if(session)session._focusInFlight = true;

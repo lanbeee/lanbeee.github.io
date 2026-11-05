@@ -242,6 +242,32 @@ function assistantFocusCreateIssues(session){
   return issues;
 }
 
+function assistantFocusDraftIssues(session){
+  const issues=assistantFocusCreateIssues(session);
+  const record=assistantFocusMaterialize(session);
+  // A time without a date cannot be represented by eventTime. Do not show a
+  // successful clock proposal and then silently discard it during Save.
+  if(record.type==='task' && record.dueDate==null && session.changes.some(change=>change.field==='dueTime'&&change.op==='set')){
+    issues.push({field:'dueDate',family:'dates',question:'Which date should this start time apply to?'});
+  }
+  return issues;
+}
+
+function assistantFocusContinueSavedCreate(session){
+  if(session?.operation!=='create' || !session.savedResult)return;
+  // A follow-up belongs to the item just created. Rebase on its current saved
+  // record so later logs and unrelated edits survive, with the same identity.
+  const item=load().find(row=>row.hid===session.savedResult.hid);
+  const baseline=item || assistantFocusMaterialize(session);
+  session.operation='edit';
+  session.targetId=session.savedResult.hid;
+  session.source=assistantFocusClone(baseline);
+  session.changes=[];
+  session.dependencies={topics:[],weatherProfile:null};
+  session.watched=null;
+  session.savedFingerprint='';
+}
+
 function assistantFocusEffectiveKind(session){
   if(!session || session.kind === 'event')return session ? session.kind : 'habit';
   const change = session.changes.find(row => row.field === 'kind' && row.op === 'set');
@@ -618,6 +644,7 @@ function assistantFocusStageWeatherRules(session, rules){
 
 function assistantFocusCorrect(session, fieldId, raw){
   if(!session)return {ok:false, error:'Nothing is open to edit.'};
+  assistantFocusContinueSavedCreate(session);
   if(fieldId === 'occurrenceDate'){
     const set = assistantFocusSetScope(session, 'occurrence', raw);
     session.correctionError = set.ok ? '' : set.error;
@@ -1187,7 +1214,7 @@ function assistantFocusCanSave(session){
   if(session.unresolved.length || session.pendingFamilies.length || session.correctionError || session.continuationError)return false;
   if(session.operation === 'edit' && !session.changes.length)return false;
   if(session.operation === 'create' && !session.changes.some(change => change.field === 'name' && change.op === 'set' && change.value))return false;
-  if(assistantFocusCreateIssues(session).length)return false;
+  if(assistantFocusDraftIssues(session).length)return false;
   if(session.kind === 'event' && session.eventScope == null)return false;
   return true;
 }
@@ -1444,6 +1471,9 @@ function assistantFocusSettings(){
 function assistantFocusPreflight(session, record){
   const data = typeof load === 'function' ? load() : [];
   const settings = assistantFocusSettings();
+  if(session.operation === 'create' && data.some(item=>item.hid===record.hid)){
+    return {ok:false,error:'This item was already created. Review it as an edit before saving again.'};
+  }
   if(session.operation === 'create' && data.length >= (typeof MAX_TINGS === 'number' ? MAX_TINGS : 300)){
     return {ok:false, error:`${typeof MAX_TINGS === 'number' ? MAX_TINGS : 300} habits max`};
   }
@@ -1688,6 +1718,7 @@ function assistantFocusPreviewReminders(session, hid){
 
 function assistantFocusEditDraft(session){
   if(!session || session._focusInFlight)return {ok:false, error:'Still reading that request.'};
+  assistantFocusContinueSavedCreate(session);
   const record = assistantFocusMaterialize(session);
   const reminders = session.changes.some(change => String(change.field).startsWith('reminder'))
     ? {hid:record.hid, session:{changes:session.changes.slice(), eventScope:session.eventScope, occurrenceDate:session.occurrenceDate}}

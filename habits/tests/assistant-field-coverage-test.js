@@ -178,7 +178,11 @@ const guards=[
   {field:'durationMinutes',kind:'habit',prompt:'Make it -one and a half hours long'},
   {field:'timerAutoStopMinutes',kind:'habit',prompt:'Stop timer after -30 minutes'},
   {field:'autoMarkMinutes',kind:'habit',prompt:'Automatically mark done after 5 or 15 minutes'},
-  {field:'autoMarkMinutes',kind:'habit',prompt:'Automatically mark done'}
+  {field:'autoMarkMinutes',kind:'habit',prompt:'Automatically mark done'},
+  {field:'durationMinutes',kind:'habit',prompt:'Set duration to three times a week'},
+  {field:'frequency',kind:'habit',prompt:'Set frequency to 30 minutes'},
+  {field:'minGapMinutes',kind:'habit',prompt:'Set minimum gap to three times a week'},
+  {field:'timerAutoStopMinutes',kind:'habit',prompt:'Set timer target to three times a week'}
 ].map((row,index)=>({...row,id:`guard-${row.field}-${index+1}`}));
 let passed=0;
 function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${msg}`);}

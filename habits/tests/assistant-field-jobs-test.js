@@ -49,6 +49,82 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         &&!date.unresolved.length&&before===JSON.stringify(load());
     });
     assert(editScope,'Edit reads nominated settings with the focused identity; unrelated retrieval guesses cannot add sibling changes');
+    const assignmentOwnership=await page.evaluate(async()=>{
+      const t=fieldTest;
+      for(const [request,field,correction,value] of [
+        ['Set duration to three times a week','durationMinutes','Set duration to 20 minutes',20],
+        ['Set frequency to 30 minutes','timesPerPeriod','Set frequency to three times a week',3],
+        ['Set minimum gap to three times a week','minGapMinutes','Set minimum gap to 15 minutes',15],
+        ['Set timer target to three times a week','timerAutoStopMinutes','Set timer target to 25 minutes',25]
+      ]){
+        t.seed();const s=t.open(),before=JSON.stringify(load()),baseline=JSON.stringify(assistantFocusMaterialize(s));
+        await assistantFocusTurn(s,request,t.options());
+        if(assistantFocusCanSave(s)||JSON.stringify(assistantFocusMaterialize(s))!==baseline||!s.unresolved.some(q=>q.field===field))return {request,changes:s.changes,questions:s.unresolved};
+        await assistantFocusTurn(s,correction,t.options());
+        if(!assistantFocusCanSave(s)||s.changes.some(c=>c.field!==field && !(field==='timesPerPeriod'&&c.field==='periodDays'))||s.changes.find(c=>c.field===field)?.value!==value||before!==JSON.stringify(load()))return {request,correction,changes:s.changes,questions:s.unresolved};
+      }
+      return true;
+    });
+    assert(assignmentOwnership===true,`incompatible values stay with their named field; corrections cannot retain an unintended sibling patch (${JSON.stringify(assignmentOwnership)})`);
+    const adjacentFields=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();save([{...load()[0],type:'task',dueDate:new Date('2026-11-02T00:00:00-05:00').getTime()}]);const s=t.open('edit','task');
+      await assistantFocusTurn(s,'Set duration to 20 minutes at 6pm',t.options());const r=assistantFocusMaterialize(s);
+      return assistantFocusCanSave(s)&&r.durationMinutes===20&&new Date(r.eventTime).getHours()===18&&s.changes.length===2;
+    });
+    assert(adjacentFields,'a complete assigned quantity leaves a following clock available without requiring a conjunction');
+    const clockBoundaries=await page.evaluate(async()=>{
+      const t=fieldTest,results=[];
+      for(const [kind,prompt,minute,duration] of [
+        ['task','Go to park today at 12 pm and this will be for one and a half hours',720,90],
+        ['task','Go to park today at 12 pm and stay for 90 minutes',720,90],
+        ['event','Create an event called Park, today at 2 pm and this will be for 45 minutes',840,45]
+      ]){
+        t.seed();const s=t.open('create',kind),before=JSON.stringify(load());
+        await assistantFocusTurn(s,prompt,t.options());const r=assistantFocusMaterialize(s);
+        const time=kind==='task'?new Date(r.eventTime).getHours()*60+new Date(r.eventTime).getMinutes():r.appointment?.startMinute;
+        const allowed=new Set(['name','dueDate','dueTime','durationMinutes','appointmentStartDate','appointmentStartMinute','appointmentRepeat']);
+        const ready=assistantFocusCanSave(s),untouched=before===JSON.stringify(load());
+        const unwanted=s.changes.filter(c=>!allowed.has(c.field));
+        const saved=ready&&!unwanted.length?await assistantFocusCommit(s):null;
+        results.push({kind,time,duration:r.durationMinutes,ready,untouched,unwanted,questions:s.unresolved,saved:saved?.ok,expected:time===minute&&r.durationMinutes===duration});
+      }
+      return results;
+    });
+    assert(clockBoundaries.every(r=>r.expected&&r.ready&&r.untouched&&!r.unwanted.length&&r.saved),`clock and duration evidence stay separate through confirmed create (${JSON.stringify(clockBoundaries)})`);
+    const competingClocks=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();save([{...load()[0],type:'task'}]);const s=t.open('edit','task');
+      await assistantFocusTurn(s,'Start at 12 pm or 1 pm for 90 minutes',t.options());
+      return !assistantFocusCanSave(s)&&!s.changes.some(c=>c.field==='dueTime')&&s.unresolved.some(q=>q.field==='dueTime');
+    });
+    assert(competingClocks,'bounding clock evidence never drops a competing time to manufacture a valid scalar');
+    const missingClockDate=await page.evaluate(async()=>{
+      const t=fieldTest,results=[];
+      for(const operation of ['create','edit']){
+        t.seed();save([{...load()[0],type:'task',dueDate:null,eventTime:null}]);const s=t.open(operation,'task');
+        const before=JSON.stringify(load());
+        await assistantFocusTurn(s,operation==='create'?'Call mom at 10am':'Start at 10am',t.options());
+        const blocked=!assistantFocusCanSave(s)&&s.unresolved.some(q=>q.field==='dueDate')&&!(await assistantFocusCommit(s)).ok;
+        await assistantFocusTurn(s,'Tomorrow',t.options());const r=assistantFocusMaterialize(s);
+        const ready=assistantFocusCanSave(s),time=new Date(r.eventTime);
+        results.push(blocked&&ready&&time.getHours()===10&&time.getMinutes()===0&&before===JSON.stringify(load())&&(await assistantFocusCommit(s)).ok);
+      }
+      return results.every(Boolean);
+    });
+    assert(missingClockDate,'create and edit ask for the missing date instead of saving a clock proposal that cannot persist');
+    const continuedCreate=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open('create','task');
+      await assistantFocusTurn(s,'Call mom tomorrow at 10am for 20 minutes',t.options());
+      const first=await assistantFocusCommit(s),repeated=await assistantFocusCommit(s);
+      if(!first.ok||!repeated.idempotent)return {first,repeated};
+      const data=load(),created=data.find(row=>row.hid===first.hid);
+      created.logs=[{ts:Date.now()-1000}];created.priority=0;save(data);
+      await assistantFocusTurn(s,'Make it 30 minutes long',t.options());
+      const preview=assistantFocusMaterialize(s),second=await assistantFocusCommit(s),after=load();
+      return second.ok&&s.operation==='edit'&&preview.hid===first.hid&&after.length===2&&after.filter(r=>r.hid===first.hid).length===1
+        &&after.find(r=>r.hid===first.hid).durationMinutes===30&&after.find(r=>r.hid===first.hid).priority===0&&after.find(r=>r.hid===first.hid).logs.length===1
+        &&after.find(r=>r.hid==='gym').durationMinutes===45;
+    });
+    assert(continuedCreate===true,`a follow-up after creating an item edits that same saved identity and preserves later logs (${JSON.stringify(continuedCreate)})`);
     const referenceDecision=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();save([{...load()[0],type:'task'}]);const s=t.open('edit','task');
       await assistantFocusTurn(s,'Plan this for tomorrow',t.options());
@@ -265,6 +341,10 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         {id:'edit-habit-nine-settings',operation:'edit',kind:'habit',prompt:'Rename it Strength, four times a week, 45 minutes each, weekdays after 6pm. Set priority P1, pin it, use the 💪 emoji and tag it Fitness.',expected:{name:'Strength',durationMinutes:45,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1080,priority:1,pinned:true,emoji:'💪',topics:['Fitness']},rhythm:[4,7]},
         {id:'create-chunks-and-gap',operation:'create',kind:'habit',prompt:'Read daily for 60 minutes, split into chunks of at least 15 minutes, with a gap of 30 minutes. Set priority P2 and pin it.',expected:{name:'Read',durationMinutes:60,breakable:true,minChunkMinutes:15,minGapMinutes:30,priority:2,pinned:true},rhythm:[1,1]},
         {id:'create-natural-task',operation:'create',kind:'task',prompt:'Remind me to call mom tomorrow at 10am for 20 minutes, priority P1, pin it.',expected:{name:'call mom',dueDate:1793595600000,eventTime:1793631600000,durationMinutes:20,priority:1,pinned:true}},
+        {id:'create-feedback-clock-and-duration',operation:'create',kind:'task',prompt:'Go to park today at 12 pm and this will be for one and a half hours',expected:{name:'Go to park',dueDate:1793505600000,eventTime:1793552400000,durationMinutes:90}},
+        {id:'create-clock-with-duration-clause',operation:'create',kind:'task',prompt:'Go to park today at 12 pm and stay for 90 minutes',expected:{name:'Go to park',dueDate:1793505600000,eventTime:1793552400000,durationMinutes:90}},
+        {id:'edit-duration-and-priority',operation:'edit',kind:'habit',prompt:'Set duration to 20 minutes and priority to P1',expected:{name:'Gym',durationMinutes:20,priority:1},rhythm:[1,7]},
+        {id:'edit-duration-following-clock',operation:'edit',kind:'task',seed:{type:'task',target:null,dueDate:1793595600000,eventTime:null},prompt:'Set duration to 20 minutes at 6pm',expected:{name:'Gym',durationMinutes:20,dueDate:1793595600000,eventTime:1793660400000}},
         {id:'create-event',operation:'create',kind:'event',prompt:'Create an event called Dentist, on 2026-11-10 at 2pm, for 45 minutes. Use the 🦷 emoji, a blue color, and tag it Health.',expected:{name:'Dentist',durationMinutes:45,emoji:'🦷',emojiBgColor:'blue',topics:['Health']},appointment:{startDate:'2026-11-10',startMinute:840}},
         {id:'edit-duration-and-sunset',operation:'edit',kind:'habit',prompt:'Make it 30 minutes long, only before sunset',expected:{name:'Gym',durationMinutes:30,allowedTimeEndAnchor:'maghrib',priority:2,emoji:'🏋️',topics:['Original']}},
         {id:'edit-hard-and-preferred',operation:'edit',kind:'habit',prompt:'Three times a week for 30 minutes, weekdays only between 6pm and 9pm, preferably on Monday and Wednesday, preferably before sunset.',expected:{name:'Gym',durationMinutes:30,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1080,allowedTimeEnd:1260,allowedTimeEndAnchor:null,preferredWeekdays:[1,3],preferredTimeEndAnchor:'maghrib'},rhythm:[3,7]},
@@ -278,7 +358,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const results=[],failures=[];
       for(const test of cases){
         const result=await live.evaluate(async test=>{
-          save([{hid:'gym',name:'Gym',type:'keepup',target:7,durationMinutes:45,priority:2,emoji:'🏋️',logs:[{ts:1}],topics:['Original'],pinned:false,breakable:false}]);
+          save([{hid:'gym',name:'Gym',type:'keepup',target:7,durationMinutes:45,priority:2,emoji:'🏋️',logs:[{ts:1}],topics:['Original'],pinned:false,breakable:false,...test.seed}]);
           saveSortSettings({...loadSortSettings(),...test.settings,locations:[{id:'home',name:'Home',lat:40,lng:-74}],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
           const before=JSON.stringify(load());const s=assistantFocusOpen({operation:test.operation,kind:test.kind,targetId:test.operation==='edit'?'gym':null,now:new Date('2026-11-01T12:00:00-05:00').getTime()});
           await assistantFocusTurn(s,test.prompt);const r=assistantFocusMaterialize(s);
@@ -288,14 +368,21 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
           const ready=assistantFocusCanSave(s);let committed=null;
           // Only commit a preview after all predefined semantic expectations match.
           const matches=Object.entries(test.expected).every(([key,value])=>JSON.stringify(r[key]??null)===JSON.stringify(value));
+          const fieldForKey=key=>key==='eventTime'?'dueTime':key==='locationIds'?'places':key==='weatherProfileId'?'weatherProfile'
+            :key.startsWith('allowedTime')?'allowedWindow':key.startsWith('preferredTime')?'preferredWindow':key;
+          const allowed=new Set(Object.keys(test.expected).map(fieldForKey));
+          if(test.rhythm){allowed.add('timesPerPeriod');allowed.add('periodDays');}
+          if(test.link)allowed.add('links');
+          for(const key of Object.keys(test.appointment||{}))allowed.add('appointment'+key[0].toUpperCase()+key.slice(1));
+          const extras=s.changes.filter(change=>!allowed.has(change.field));
           const rhythm=rhythmParts(r.target),rhythmOK=!test.rhythm||(rhythm.times===test.rhythm[0]&&rhythm.days===test.rhythm[1]);
           const linkOK=!test.link||r.links.some(link=>link.value===test.link);
           const appointmentOK=linkOK&&(!test.appointment||Object.entries(test.appointment).every(([k,v])=>r.appointment?.[k]===v));
-          if(matches&&rhythmOK&&appointmentOK&&ready)committed=await assistantFocusCommit(s);
-          return {record:r,preserved,changes:s.changes,unresolved:s.unresolved,pending:s.pendingFamilies,trace:s.trace,jobs:s.jobs.map(j=>({id:j.id,status:j.status,attempts:j.attempts,spans:j.spans,error:j.error})),timing:s.timing,unchanged,initialCanSave,ready,matches,rhythmOK,appointmentOK,committed,saved:load()};
+          if(matches&&rhythmOK&&appointmentOK&&ready&&!extras.length)committed=await assistantFocusCommit(s);
+          return {record:r,preserved,extras,changes:s.changes,unresolved:s.unresolved,pending:s.pendingFamilies,trace:s.trace,jobs:s.jobs.map(j=>({id:j.id,status:j.status,attempts:j.attempts,spans:j.spans,error:j.error})),timing:s.timing,unchanged,initialCanSave,ready,matches,rhythmOK,appointmentOK,committed,saved:load()};
         },test);
         results.push({...test,...result});fs.writeFileSync('test-results/needle-field-jobs-live.json',JSON.stringify(results,null,2));
-        const okay=result.matches&&result.rhythmOK&&result.appointmentOK&&!result.unresolved.length&&!result.pending.length&&result.unchanged&&result.preserved&&result.ready&&result.committed?.ok;
+        const okay=result.matches&&result.rhythmOK&&result.appointmentOK&&!result.extras.length&&!result.unresolved.length&&!result.pending.length&&result.unchanged&&result.preserved&&result.ready&&result.committed?.ok;
         if(okay)assert(true,`live Needle: ${test.id} fills every expected field and saves only after confirmation`);
         else {failures.push(test.id);console.error(`  FAIL live ${test.id}: ${JSON.stringify({changes:result.changes,unresolved:result.unresolved,pending:result.pending,ready:result.ready})}`);}
       }

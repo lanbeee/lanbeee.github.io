@@ -22,6 +22,19 @@ const ASSISTANT_FIELD_TEXT_INSTRUCTIONS = {
 // Literal names and references must retain words such as "Please" or "Instead".
 // Structured values may shed conversational framing, never semantic modifiers.
 const ASSISTANT_FIELD_LITERAL_VALUES = new Set(['name','topics','places','locationPrefs','weatherProfile','weatherLocationId','links','scheduleLinks','scheduleOptions']);
+// Explicit setting assignments own their values, even when the value has the
+// wrong unit. Retrieval must not reinterpret "duration: three times a week"
+// as permission to change frequency. This is field validation, not item routing.
+const ASSISTANT_FIELD_ASSIGNMENT_ALIASES = {
+  durationMinutes:'duration|session length', frequency:'frequency|rhythm|how often',
+  minChunkMinutes:'minimum chunk|chunk length', minGapMinutes:'minimum gap|gap',
+  timerAutoStopMinutes:'timer target|timer auto stop', autoMarkMinutes:'automatic completion|auto.?mark'
+};
+const ASSISTANT_FIELD_ASSIGNMENTS = [...ASSISTANT_FOCUS_FIELDS.filter(field=>!['timesPerPeriod','periodDays'].includes(field.id)),{id:'frequency',label:'Frequency'}]
+  .filter(field=>!ASSISTANT_FIELD_LITERAL_VALUES.has(field.id))
+  .map(field=>({...field,pattern:new RegExp(`\\b(?:${ASSISTANT_FIELD_ASSIGNMENT_ALIASES[field.id]||field.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})\\s*(?:(?:to|is|of)\\b\\s*|[:=]\\s*|(?=\\d))`,'i')}));
+const ASSISTANT_FIELD_CLOCK_VALUE = /^(?:(?:at|start(?:s|ing)?(?: at)?|time)\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\d{1,2}:\d{2}\b|noon\b|midnight\b)/i;
+const ASSISTANT_FIELD_LENGTHS = new Set(['minChunkMinutes','minGapMinutes','durationMinutes','exceptionDuration','timerAutoStopMinutes','autoMarkMinutes']);
 const ASSISTANT_FIELD_SIGNALS = {
   name:ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal,
   kind:/\b(?:convert|turn|change|make)\b.{0,24}\b(?:habit|task)\b/i,
@@ -200,12 +213,35 @@ const ASSISTANT_FIELD_READERS = {
 function assistantFieldRelevant(def, text){
   const literal=assistantFieldLiteralOwner(text);
   if(literal && literal.id!==def.id && assistantFieldMentioned(def,text.slice(literal.start)) && !assistantFieldMentioned(def,text.slice(0,literal.start)))return false;
+  const assignments=ASSISTANT_FIELD_ASSIGNMENTS.map(row=>({...row,match:row.pattern.exec(text)})).filter(row=>row.match).sort((a,b)=>a.match.index-b.match.index);
+  const cue=def.signal?.exec(text)||def.labelSignal?.exec(text);
+  const owner=assignments.filter(row=>!cue || row.match.index<=cue.index).at(-1);
+  if(owner && owner.id!==def.id && !(owner.id==='dueTime' && ['appointmentStartMinute','exceptionTime'].includes(def.id))){
+    // A sibling instruction after a conjunction owns its own value. Lists and
+    // mixed quantities inside the assigned value retain the original owner.
+    const between=text.slice(owner.match.index+owner.match[0].length,cue?.index??text.length);
+    const complete=cue && assistantFieldAssignmentComplete(owner.id,between);
+    if(!complete && !/[,;\n]|\band\b(?=\s+(?:(?:set|change|use|make|pin|prefer)\b|\w+\s+(?:to\b|is\b|[:=])))/i.test(between))return false;
+  }
   return ASSISTANT_FIELD_OWNERSHIP.every(rule=>!rule.fields.includes(def.id)
     || (rule.require ? rule.require.test(text) : !rule.when.test(text) || Boolean(rule.unless?.test(text))));
 }
 
+function assistantFieldAssignmentComplete(id,text){
+  // Boundary metadata only: a complete assigned value can be followed by a
+  // sibling instruction without a conjunction ("duration to 20 minutes at
+  // 6pm"). These reads never stage values or recover a declined extraction.
+  if(ASSISTANT_FIELD_LENGTHS.has(id))return assistantDurationHits(text).length>0;
+  if(id==='frequency')return Boolean(assistantParseRhythm(text));
+  if(['dueTime','appointmentStartMinute','exceptionTime'].includes(id))return assistantParseClock(text)!=null;
+  if(['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(id))return assistantParseDue(text)!=null;
+  if(id==='priority')return assistantParsePriority(text)!=null;
+  if(ASSISTANT_FIELD_QUANTITIES[id])return assistantFieldQuantity({id,label:id},text).ok;
+  return false;
+}
+
 function assistantFieldMentioned(def,text){
-  return Boolean(def.signal?.test(text)||def.labelSignal?.test(text));
+  return Boolean(def.signal?.test(text)||def.labelSignal?.test(text)||ASSISTANT_FIELD_ASSIGNMENTS.find(field=>field.id===def.id)?.pattern.test(text));
 }
 
 function assistantFieldLiteralOwner(text){
@@ -259,7 +295,7 @@ function assistantFieldSource(def, request, spans){
   const selected=ranked.filter(row=>row.score>=threshold).map(row=>row.span).sort((a,b)=>a.start-b.start);
   const source=selected.length ? selected : [spans[0]];
   return source.map(span=>{
-    const own=def.signal?.exec(span.text)||def.labelSignal?.exec(span.text);
+    const own=def.signal?.exec(span.text)||def.labelSignal?.exec(span.text)||ASSISTANT_FIELD_ASSIGNMENTS.find(field=>field.id===def.id)?.pattern.exec(span.text);
     if(!own && def.id!=='name')return span;
     // Keep quantities preceding their labels and qualifiers such as immediately.
     const reader=ASSISTANT_FIELD_READERS[def.id]||{};
@@ -288,6 +324,15 @@ function assistantFieldSource(def, request, spans){
       if(def.id.startsWith('reminder') && ['durationMinutes','dueTime','appointmentStartMinute','allowedWindow'].includes(id))continue;
       const other=signal.exec(span.text);
       if(other && other.index>=(own?own.index+own[0].length:start) && other.index>start)end=Math.min(end,other.index);
+    }
+    // A clock is a scalar, not all prose up to the next field. Keep the exact
+    // clock token as evidence; retain alternatives/negation for validation.
+    if(['dueTime','appointmentStartMinute','exceptionTime'].includes(def.id)){
+      const clock=ASSISTANT_FIELD_CLOCK_VALUE.exec(span.text.slice(start,end));
+      if(clock){
+        const tail=span.text.slice(start+clock[0].length,end);
+        if(!/\b(?:not|never|except|instead|or)\b|\d|\b(?:noon|midnight)\b/i.test(tail))end=start+clock[0].length;
+      }
     }
     while(start<end && /\s/.test(span.text[start]))start++;
     while(end>start && /\s/.test(span.text[end-1]))end--;
@@ -576,7 +621,7 @@ function assistantFieldNormalize(def,text,session){
   }
   if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))value=assistantFieldDialogue(value).text;
   if(!String(value).trim())return {ok:false,error:`What value should I use for ${def.label.toLowerCase()}?`};
-  const lengthField=['minChunkMinutes','minGapMinutes','durationMinutes','exceptionDuration','timerAutoStopMinutes','autoMarkMinutes'].includes(def.id);
+  const lengthField=ASSISTANT_FIELD_LENGTHS.has(def.id);
   if(lengthField){
     if(/(?:^|[^\w])[-+−]\s*(?:\d|[a-z])|\b(?:minus|negative|or)\b/i.test(value))return {ok:false,error:'Specify one non-negative length, including its unit.'};
     const normalized=assistantNormalizeDurationText(value),hits=assistantDurationHitsFromNormalized(normalized);
@@ -816,7 +861,7 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     if(proposed('weatherRules') && proposed('weatherProfile'))assistantFocusUnresolve(session,{field:'weatherRules',family:'weather',question:'Use the saved weather profile or custom weather rules? Please choose one.',choices:[{id:'use-profile',label:'saved profile'},{id:'use-rules',label:'custom rules'}]});
     if(proposed('hardDue') && proposed('delayAllowanceDays') && change('hardDue')?.value===true && change('delayAllowanceDays')?.value>0)assistantFocusUnresolve(session,{field:'hardDue',family:'dates',question:'Should this be a hard deadline or allow a delay?',choices:[{id:'hard-deadline',label:'hard deadline'},{id:'allow-delay',label:'allow delay'}]});
     assistantFocusFinishScope(session);
-    for(const issue of assistantFocusCreateIssues(session)){
+    for(const issue of assistantFocusDraftIssues(session)){
       if(!session.unresolved.some(row=>row.field===issue.field))assistantFocusUnresolve(session,issue);
     }
     const handled=state.jobs.some(job=>job.request===state.request&&(job.status==='staged'&&job.proposal||job.preserved));

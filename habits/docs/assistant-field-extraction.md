@@ -268,6 +268,64 @@ Final local evidence: `test-results/last-run.log`,
 `test-results/needle-focused-request-ui.json`. Run all live sections with the
 asset variables and assistant command in [TESTING.md](../TESTING.md).
 
+## Focused reliability priorities
+
+Needle's product scope is creating one item or editing the item already in
+focus. The focused identity is supplied by the UI and is assumed throughout
+the request; this pipeline does not route a request to a different saved item.
+Score focused results independently of the historical general-chat battery.
+
+| Priority | Error category | What to check |
+| --- | --- | --- |
+| High | Incorrect field or value | Compare the complete staged patch with the intended fields, even if another clarification blocks Save. An unintended proposal can otherwise survive a correction and be saved later. Check persisted values and preserved fields too. |
+| High | Lost essential value | Name, duration, recurrence count/period, and applicable date/time must survive review and confirmed Save. An unrepresentable requested value must block Save. |
+| Lower | Safe clarification or unsupported wording | A request remains unresolved with its prior values preserved and no unintended proposal. Record the usability failure without counting it as a wrong change. |
+| Lower | Minor title wording | Track separately from wrong settings and lost essentials. |
+
+Explicit setting assignments now retain ownership of their values through
+candidate retrieval, source selection and extraction. The existing field
+catalog supplies setting labels, with aliases for core quantities. A value
+with an incompatible unit asks about that setting; it cannot become a proposal
+for a sibling field. No executable value is supplied without model-selected
+original evidence. The regression includes correction after an invalid
+assignment, checking that the corrected draft retains no unintended patch.
+
+Clock evidence uses the complete scalar clock token rather than all prose up
+to the next field. This fixes “Go to park today at 12 pm and this will be for one
+and a half hours”: the requested time is noon and the duration is 90 minutes.
+Competing clock values and negative restrictions stay in the evidence and ask
+for clarification. A task time without a date asks for the missing date in both
+Create and Edit, instead of silently saving without the requested time.
+
+After a confirmed create, another instruction in the same chat rebases onto
+that saved item as an edit. It keeps the same ID and current history; it cannot
+append a second item. Repeated Save without another change remains idempotent.
+
+`tests/assistant-field-jobs-test.js` covers these host boundaries and the original
+feedback request through the real pinned model when asset paths are provided.
+Its live positive cases now reject unexpected staged fields as well as checking
+requested values. `tests/assistant-field-coverage-test.js` includes invalid-unit
+guards for duration, frequency, gap and timer assignments. Run the deterministic
+assistant suite separately from live model scoring:
+
+```bash
+ASSISTANT_LIVE=0 ./run-tests.sh assistant
+NEEDLE_MODEL_PATH=test-results/needle-live/needle3.cact \
+NEEDLE_WASM_PATH=test-results/needle-live/needle.wasm \
+node tests/assistant-field-jobs-test.js
+```
+
+The November 5, 2026 check passed all 17 deterministic assistant files (1,397
+assertions, no page errors). The actual pinned Needle runtime passed 21 complex
+Create/Edit cases, 21 selected essential-field language cases, and 18 invalid
+input guards: 60 targeted case-runs in desktop Chrome with synthetic data. The
+clock feedback request is among these cases. This is targeted focused coverage,
+not a rerun of the general-route battery or a Safari/physical Android audit.
+Local evidence is `test-results/needle-live/focused-regression-final.log`,
+`focused-final-live.log`, `focused-priority-fields-final.log`,
+`focused-priority-fields-final.json`, and
+`test-results/needle-field-jobs-live.json`.
+
 ## Limits
 
 Representative coverage of every field is not exhaustive natural-language
