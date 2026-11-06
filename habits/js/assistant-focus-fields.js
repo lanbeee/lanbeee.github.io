@@ -35,6 +35,11 @@ const ASSISTANT_FIELD_ASSIGNMENTS = [...ASSISTANT_FOCUS_FIELDS.filter(field=>!['
   .filter(field=>!ASSISTANT_FIELD_LITERAL_VALUES.has(field.id))
   .map(field=>({...field,pattern:new RegExp(`\\b(?:${ASSISTANT_FIELD_ASSIGNMENT_ALIASES[field.id]||field.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})\\s*(?:(?:to|is|of)\\b\\s*|[:=]\\s*|(?=\\d))`,'i')}));
 const ASSISTANT_FIELD_CLOCK_VALUE = /^(?:(?:at|start(?:s|ing)?(?: at)?|time)\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\d{1,2}:\d{2}\b|noon\b|midnight\b)/i;
+// Complete temporal expressions are shared boundary metadata. A window owns
+// both endpoints and every anchor offset; none of those quantities is effort.
+const ASSISTANT_FIELD_ENDPOINT = `(?:(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+)?(?:${ASSISTANT_ANCHOR_WORD}|midnight|\\d{1,2}(?::\\d{2}(?:\\s*[ap]m)?|\\s*[ap]m))`;
+const ASSISTANT_FIELD_RANGE = `${ASSISTANT_FIELD_ENDPOINT}(?:\\s*(?:plus|minus|[+−])\\s*(?:${assistantSpokenQuantitySource()}))?\\s*(?:to|until|till|through|[–-])\\s*${ASSISTANT_FIELD_ENDPOINT}`;
+const ASSISTANT_FIELD_OFFSET = `(?:(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})|(?:${ASSISTANT_ANCHOR_WORD})\\s*(?:plus|minus|[+−-])\\s*(?:${assistantSpokenQuantitySource()}))`;
 const ASSISTANT_FIELD_LENGTHS = new Set(['minChunkMinutes','minGapMinutes','durationMinutes','exceptionDuration','timerAutoStopMinutes','autoMarkMinutes']);
 const ASSISTANT_FIELD_SIGNALS = {
   name:ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal,
@@ -42,7 +47,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   habitKind:/\b(?:build|limit|reduce|stop)\b/i,
   emoji:/\p{Extended_Pictographic}|\b(?:emoji|icon)\b/iu,
   emojiBgColor:/\b(?:colou?r|red|blue|green|purple|orange|yellow|pink)\b|\b(?:set|change|use) (?:the |a )?background\b/i,
-  priority:/\b(?:priority|p[0-5]|urgent|critical|someday)\b/i,
+  priority:/\b(?:(?:high|low|normal|medium|important)\s+priority|priority|p[0-5]|urgent|critical|someday)\b/i,
   frequency:new RegExp(`\\b(?:frequency|rhythm|how often|every|each(?=\\s+(?:(?:${assistantIntegerSource()}|${assistantOrdinalSource()}|other)\\s+)?(?:days?|weeks?)\\b)|daily|weekly|once|twice|thrice|(?:${assistantIntegerSource()})\\s*(?:x|times?)|(?:${assistantIntegerSource()})\\s*(?:x|times?)?\\s+(?:a|per|in|every|each)\\s+(?:days?|weeks?)\\b)\\b`,'i'),
   repeatMode:/\b(?:opportunity|routine|when (?:it fits|conditions)|regular rhythm)\b/i,
   conditionTrigger:/\b(?:trigger|nearby|proximity)\b/i,
@@ -53,16 +58,16 @@ const ASSISTANT_FIELD_SIGNALS = {
   planByDate:/\b(?:do|finish|plan)(?: (?:this|it))? by\b/i,
   earlyWindowDays:/\b(?:early|in advance)\b|\b(?:days?|weeks?) earlier\b/i,
   delayAllowanceDays:/\b(?:late|delay|postpone)\b/i,
-  allowedWeekdays:/\b(?:weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|any day)\b/i,
-  preferredWeekdays:/\bprefer\w*\b.{0,35}\b(?:weekdays?|weekends?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
-  allowedMonthDays:/\bmonth(?:ly)?\b/i,
+  allowedWeekdays:new RegExp(`\\b(?:weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?|any day)\\b`,'i'),
+  preferredWeekdays:new RegExp(`\\bprefer\\w*\\b.{0,35}\\b(?:weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?)\\b`,'i'),
+  allowedMonthDays:new RegExp(`\\b(?:(?:month(?:ly)?\\s*days?|days? of (?:the )?month)|(?:${assistantOrdinalSource()}|${assistantIntegerSource()})(?:\\s+and\\s+(?:${assistantOrdinalSource()}|${assistantIntegerSource()}))*\\s+(?:day\\s+)?of\\s+(?:(?:the|each|every)\\s+)?month)\\b`,'i'),
   preferredMonthDays:/\bprefer\w*\b[^,;]*\bmonth(?:ly)?\b/i,
   allowedOrdinalWeekdays:new RegExp(`\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i'),
   preferredOrdinalWeekdays:new RegExp(`\\bprefer\\w*\\b[^,;]*\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i'),
-  allowedWindow:new RegExp(`\\b(?:(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})|(?:allowed|preferred)\\s+(?:time(?: window)?|hours)|(?:before|after|between|from)\\s+(?:\\d[\\d:]*(?:\\s*[ap]m)?|sunrise|sunset|noon|midnight|fajr|dhuhr|zuhr|asr|maghrib|isha)|morning|afternoon|evening|overnight|(?:at|during|in|not|never|except|without)\\s+(?:the\\s+)?night(?:time)?|any time|clear (?:the )?(?:hours|window))\\b`,'i'),
-  preferredWindow:/\bprefer\w*\b.{0,40}\b(?:hours?|morning|afternoon|evening|night|nighttime|before|after|between|from)\b/i,
+  allowedWindow:new RegExp(`\\b(?:${ASSISTANT_FIELD_RANGE}|${ASSISTANT_FIELD_OFFSET}|(?:from|between)\\s+(?:the\\s+)?(?:(?:later|earlier)\\s+of|whichever is (?:later|earlier))|(?:no later than|no earlier than)\\s+${ASSISTANT_FIELD_ENDPOINT}|(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})|(?:time\\s+)?window|(?:allowed|preferred)\\s+(?:time(?: window)?|hours)|(?:before|after|between|from)\\s+(?:\\d[\\d:]*(?:\\s*[ap]m)?|${ASSISTANT_ANCHOR_WORD}|midnight)|(?:every|each|this|in(?: the)?|during(?: the)?)\\s+(?:morning|afternoon|evening)|(?:morning|afternoon|evening|overnight)(?=\\s*(?:$|[,;.!?]))|(?:at|during|in|not|never|except|without)\\s+(?:the\\s+)?night(?:time)?|any time|clear (?:the )?(?:hours|window))\\b`,'i'),
+  preferredWindow:new RegExp(`\\bprefer\\w*\\b.{0,40}\\b(?:${ASSISTANT_FIELD_RANGE}|hours?|morning|afternoon|evening|night|nighttime|before|after|between|from)\\b`,'i'),
   allowedTimeFixedStart:/\b(?:fixed|exact)(?: start| time)?\b/i,
-  durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|duration|long|twice as long)\\b`,'i'),
+  durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|for\\s+\\w+\\s+(?:minutes?|hours?)|double (?:it|the duration)|duration|long|twice as long)\\b`,'i'),
   breakable:/\b(?:split(?:ting)?|breakable|unbreakable|continuous|uninterrupted|chunks?)\b/i,
   minChunkMinutes:/\b(?:minimum chunk|shortest session|chunks? (?:of|at least)|\d+[- ]minute chunks?)\b/i,
   minGapMinutes:new RegExp(`(?<!\\w)(?:(?:${assistantSpokenQuantitySource()})\\s+gap|gap|apart|between sessions|spacing)\\b`,'i'),
@@ -73,7 +78,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   anywhereAllowed:/\b(?:anywhere|any place)\b/i,
   locationPrefs:/\b(?:prefer|avoid|favou?rite)\b.{0,30}\b(?:place|location|home|work)\b/i,
   weatherProfile:/\b(?:weather profile|use .{0,20} weather)\b/i,
-  weatherRules:/\b(?:temperature|rain|wind|gust|humidity|uv|feels like|dry weather)\b/i,
+  weatherRules:/\b(?:temperature|precipitation|rain|wind|gust|humidity|uv|feels like|dry weather)\b/i,
   showWeather:/\b(?:show|hide|display)\b.{0,18}\b(?:weather|forecast)\b/i,
   showWeatherAtLocation:/\b(?:weather|forecast)\b.{0,20}\b(?:item.?s place|this place)\b/i,
   weatherLocationId:/\b(?:forecast|weather) (?:at|in|for)\b/i,
@@ -92,9 +97,9 @@ const ASSISTANT_FIELD_SIGNALS = {
   exceptionTime:/\b(?:at|time|start)\b/i, exceptionDuration:/\b(?:minutes?|hours?|duration|long)\b/i,
   exceptionEmoji:/\p{Extended_Pictographic}|\bemoji\b/iu, exceptionColor:/\bcolou?r\b/i,
   exceptionCancelled:/\b(?:cancel|skip|restore|uncancel)\b/i, exceptionReset:/\b(?:reset|usual values)\b/i,
-  reminderStart:/\b(?:start reminder|remind.{0,12}start)\b/i, reminderEnd:/\b(?:end reminder|remind.{0,12}(?:end|finish))\b/i,
-  reminderTravelStart:/\b(?:depart|travel start)\w*\b/i, reminderTravelEnd:/\b(?:arriv|travel end)\w*\b/i,
-  reminderMissed:/\b(?:drop warning|missed|cutoff)\b/i, reminderTravelLead:/\b(?:depart|travel)\w*.{0,35}\b(?:before|lead)\b|\b(?:remind|alarm|notif)\w*.{0,35}\bbefore (?:depart|travel)\w*\b/i,
+  reminderStart:/\b(?:start reminder|remind.{0,12}start|remind me(?! to\b)|no reminders|(?:use|with) (?:an? )?(?:alarm|notifications?))\b/i, reminderEnd:/\b(?:end reminder|remind[^,;]*\b(?:end|finish)\w*)\b/i,
+  reminderTravelStart:/\b(?:depart|travel start)\w*\b|\bremind[^,;]*\bleave\b/i, reminderTravelEnd:/\b(?:arriv|travel end)\w*\b/i,
+  reminderMissed:/\b(?:drop warning|missed|cutoff)\b|\bwarn[^,;]*\bfall behind\b/i, reminderTravelLead:/\b(?:depart|travel|leave)\w*.{0,35}\b(?:before|lead)\b|\b(?:remind|alarm|notif)\w*.{0,35}\bbefore (?:depart|travel)\w*\b/i,
   reminderStartLead:/\b(?:remind|alarm|notif)\w*.{0,35}\bbefore\b/i, reminderMissedLead:/\b(?:drop|missed).{0,25}\b(?:before|lead)\b/i,
   reminderReset:/\b(?:usual|default|reset) reminders?\b/i
 };
@@ -128,8 +133,16 @@ function assistantFieldCatalog(){
   return defs.map(f=>{
     const search = ITEM_DETAIL_SEARCH_FIELDS.find(row=>row[0] === ASSISTANT_FIELD_SEARCH[f.id]);
     const pair = (ASSISTANT_FOCUS_EXTRACT_FIELDS[f.family] || []).find(row=>row[0]===f.id);
+    let signal=ASSISTANT_FIELD_SIGNALS[f.id];
+    // Saved place names are retrieval vocabulary only. A locative or a
+    // preference must introduce them; an item's title is not its location.
+    const names=(assistantFocusSettings().locations||[]).map(place=>String(place.name||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).filter(Boolean);
+    if(names.length&&['places','locationPrefs'].includes(f.id)){
+      const qualifier=f.id==='places'?'(?:at|in|near)':'(?:prefer\\w*|avoid|favou?rite)';
+      signal=new RegExp(`(?:${signal.source})|\\b${qualifier}\\s+(?:the\\s+)?(?:${names.join('|')})(?=\\s|[.,;!?]|$)`,'i');
+    }
     return {...f,key:f.id==='frequency'?'frequency':pair?.[1] || f.id,
-      signal:ASSISTANT_FIELD_SIGNALS[f.id], labelSignal:new RegExp(`\\b${f.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+')}\\b`,'i'), aliases:search ? `${search[1]} ${search[2]}` : f.label,
+      signal, labelSignal:new RegExp(`\\b${f.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+')}\\b`,'i'), aliases:search ? `${search[1]} ${search[2]}` : f.label,
       hint:ASSISTANT_FIELD_HINTS[f.id] || `The requested ${f.label.toLowerCase()} setting only.`};
   });
 }
@@ -171,9 +184,14 @@ function assistantFieldSpans(request){
     }else if(!spans.some(s=>s.start===start&&s.end===end))spans.push({start,end,text:request.slice(start,end)});};
   let start=0;
   // Keep URLs, decimals and clocks intact. Every piece retains source offsets.
-  for(const match of request.matchAll(/[,;\n]+|[.!?](?=\s|$)|\s+and\s+(?=(?:tag|use|pin|set|show|hide|add|make|prefer)\b)/gi)){
+  for(const match of request.matchAll(/[,;\n]+|[.!?](?=\s|$)|\s+and\s+(?=(?:tag|use|pin|set|show|hide|add|make|prefer\w*)\b)/gi)){
     // A comma before an explicit year belongs to its date, not a new setting.
     if(match[0]===',' && /\b[a-z]+\s+\d{1,2}(?:st|nd|rd|th)?$/i.test(request.slice(start,match.index)) && /^\s*\d{4}\b/.test(request.slice(match.index+1)))continue;
+    // A comma inside a calendar list or a combined time range does not
+    // separate settings. Keep the complete instruction for its field reader.
+    if(match[0]===',' && (new RegExp(`^\\s*(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i').test(request.slice(match.index+1))
+      && new RegExp(`\\b(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i').test(request.slice(start,match.index))
+      || /^\s*(?:until|till|to)\b/i.test(request.slice(match.index+1)) && /\b(?:later|earlier)\b/i.test(request.slice(start,match.index))))continue;
     add(start,match.index);start=match.index+match[0].length;
   }
   add(start,request.length);
@@ -186,7 +204,7 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['frequency'], when:/\bmonth(?:ly)?\b/i},
   {fields:['allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays'], when:new RegExp(`\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i')},
   {fields:['allowedWeekdays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i')},
-  {fields:['allowedWeekdays','allowedWindow','allowedMonthDays','allowedOrdinalWeekdays'], when:/\bprefer/i},
+  {fields:['frequency','allowedWeekdays','allowedWindow','allowedMonthDays','allowedOrdinalWeekdays'], when:/\bprefer/i, beforeCue:true},
   {fields:['allowedWindow','preferredWindow'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:morning|afternoon|evening|night|nighttime)\\b`,'i'), unless:/\b(?:before|after|between|from|only|in the)\b/i},
   {fields:['scheduleLinks'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:before|after)\\b`,'i')},
   {fields:['allowedWindow'], when:new RegExp(`\\b(?:before|after)\\s+(?:${assistantDurationNumberSource()})(?:\\s+(?:or|and)\\s+(?:${assistantDurationNumberSource()}))*\\s*(?:minutes?|mins?|hours?|days?|weeks?)\\b`,'i')},
@@ -197,15 +215,18 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['places'], when:/\b(?:trigger|prefer|avoid|weather|forecast)\b/i},
   {fields:['showWeather','weatherLocationId'], when:/\b(?:this place|item.?s place)\b/i},
   {fields:['durationMinutes','allowedWindow'], when:/\b(?:remind|alarm|notif|missed|warning)\w*[^,;]*\b(?:lead|\w+\s*(?:minutes?|mins?|hours?)\s+before)\b/i},
-  {fields:['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'], require:/\b(?:off|notification|alarm)\b/i},
-  {fields:['reminderStart','reminderEnd'], when:/\b(?:travel|depart|arrival)\w*/i},
-  {fields:['reminderStartLead'], when:/\b(?:travel|depart|missed|drop)\w*/i},
+  {fields:['allowedWindow','preferredWindow'], when:/\b(?:remind|alarm|notification)\b/i, beforeCue:true, unless:/\b(?:allowed|preferred)\s+(?:time|hours|window)\b/i},
+  {fields:['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'], require:/\b(?:off|notifications?|alarm|remind|reminders|warn)\b/i},
+  {fields:['reminderStart','reminderEnd'], when:/\b(?:travel|depart|arrival|leave)\w*/i},
+  {fields:['reminderStart'], when:/\bremind[^,;]*\b(?:end|finish)\w*\b/i, unless:/\bstart\b/i},
+  {fields:['reminderStartLead'], when:/\b(?:travel|depart|leave|missed|drop)\w*/i},
   {fields:['breakable'], when:/\b(?:minimum chunk|shortest session)\b/i, unless:/\bsplit/i},
   {fields:['allowedWeekdays','allowedWindow','places'], when:/\b(?:options?|alternatives?)\b/i}
 ];
 const ASSISTANT_FIELD_READERS = {
   name:{retainPrefix:true}, conditionRadiusM:{retainPrefix:true},
-  allowedMonthDays:{retainPrefix:true}, preferredMonthDays:{retainPrefix:true},
+  allowedWindow:{shares:['dueTime','appointmentStartMinute']},
+  preferredWindow:{shares:['dueTime','appointmentStartMinute','allowedWindow']},
   earlyWindowDays:{retainPrefix:true}, delayAllowanceDays:{retainPrefix:true},
   timerAutoStopMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes','autoMarkMinutes']},
   autoMarkMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
@@ -232,8 +253,11 @@ function assistantFieldRelevant(def, text){
     const complete=cue && assistantFieldAssignmentComplete(owner.id,between);
     if(!complete && !/[,;\n]|\band\b(?=\s+(?:(?:set|change|use|make|pin|prefer)\b|\w+\s+(?:to\b|is\b|[:=])))/i.test(between))return false;
   }
-  return ASSISTANT_FIELD_OWNERSHIP.every(rule=>!rule.fields.includes(def.id)
-    || (rule.require ? rule.require.test(text) : !rule.when.test(text) || Boolean(rule.unless?.test(text))));
+  return ASSISTANT_FIELD_OWNERSHIP.every(rule=>{
+    const scope=rule.beforeCue&&cue?text.slice(0,cue.index+cue[0].length):text;
+    return !rule.fields.includes(def.id)
+      || (rule.require ? rule.require.test(scope) : !rule.when.test(scope) || Boolean(rule.unless?.test(scope)));
+  });
 }
 
 function assistantFieldAssignmentComplete(id,text){
@@ -258,7 +282,7 @@ function assistantFieldCue(def,text,from=0){
   if(signal){
     // A quantity attached to a solar/prayer anchor is a window offset. It
     // cannot also nominate a session length or cut that window's evidence.
-    const offsets=def.id==='durationMinutes'?Array.from(text.matchAll(new RegExp(`(?<!\\w)(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})\\b`,'gi'))):[];
+    const offsets=def.id==='durationMinutes'?Array.from(text.matchAll(new RegExp(`(?<!\\w)${ASSISTANT_FIELD_OFFSET}\\b`,'gi'))):[];
     for(const match of text.matchAll(new RegExp(signal.source,signal.flags.replace(/g/g,'')+'g'))){
       if(match.index<from)continue;
       if(!offsets.some(offset=>match.index<offset.index+offset[0].length&&match.index+match[0].length>offset.index))return match;
@@ -317,12 +341,16 @@ function assistantFieldSource(def, request, spans){
     const words=new Set(assistantFocusNorm(def.aliases).split(' ').filter(w=>w.length>3));
     for(const word of words)if(new RegExp(`\\b${word}\\b`,'i').test(text))n++;
     if(def.id==='name' && span===spans[0])n+=5;
+    if(def.id==='name'&&!ASSISTANT_FIELD_SIGNALS.name.test(text)){
+      const cue=ASSISTANT_FIELD_SIGNALS.allowedWindow.exec(text);
+      if(cue&&/^(?:allowed|preferred?|only|time|hours|window)?\s*$/i.test(text.slice(0,cue.index)))n=-1;
+    }
     return n;
   };
   const ranked=spans.map(span=>({span,score:score(span)})).sort((a,b)=>b.score-a.score || a.span.start-b.span.start);
   const threshold=ranked.some(row=>row.score>=20)?20:1;
   const selected=ranked.filter(row=>row.score>=threshold).map(row=>row.span).sort((a,b)=>a.start-b.start);
-  const source=selected.length ? selected : [spans[0]];
+  const source=selected.length ? selected : [ranked[0].span];
   return source.flatMap(span=>{
     const own=assistantFieldCue(def,span.text);
     if(!own && def.id!=='name')return [span];
@@ -348,15 +376,16 @@ function assistantFieldSource(def, request, spans){
     const temporal=def.id==='durationMinutes'
       ?/\b(?:before|after|between|from|until|through|earlier|later)\s*$/i
       :/\b(?:before|after|between|from|until|through|earlier|later)\b/i;
-    if(/\b(?:no|not|never|don.t|without|or|prefer|avoid|keep|unchanged|clear)\b/i.test(prefix)||temporal.test(prefix))start=0;
+    if(/\b(?:no|not|never|don.t|without|or|minus|negative|prefer|avoid|keep|unchanged|clear)\b/i.test(prefix)||temporal.test(prefix))start=0;
     // Retrieval boundaries, not values: keep the untouched source between
     // setting cues. Coupled lengths (chunks/gaps/timers) keep their units.
     for(const [id,signal] of Object.entries(ASSISTANT_FIELD_SIGNALS)){
       if(!assistantFieldRelevant({id,signal},span.text))continue;
       if(id==='dueDate' && def.id==='name'){const date=signal.exec(span.text);if(date&&date.index>start)end=Math.min(end,date.index);continue;}
-      if(!['name','frequency','durationMinutes','dueTime','appointmentStartMinute','allowedWeekdays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','allowedWindow','topics','priority','pinned','emoji','links','minGapMinutes','minChunkMinutes','timerAutoStopMinutes','autoMarkMinutes'].includes(id))continue;
-      if(id===def.id || ['kind','habitKind','emojiBgColor','dueDate','allowedTimeFixedStart','preferredWeekdays','preferredWindow','preferredMonthDays'].includes(id))continue;
+      if(!id.startsWith('reminder')&&!['name','frequency','durationMinutes','dueTime','appointmentStartMinute','allowedWeekdays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','allowedWindow','preferredWindow','allowedMonthDays','preferredMonthDays','topics','priority','pinned','emoji','links','minGapMinutes','minChunkMinutes','timerAutoStopMinutes','autoMarkMinutes'].includes(id))continue;
+      if(id===def.id || ['kind','habitKind','emojiBgColor','dueDate','allowedTimeFixedStart','preferredWeekdays'].includes(id))continue;
       if(reader.shares?.includes(id))continue;
+      if(['frequency','allowedWindow'].includes(def.id)&&['frequency','allowedWindow'].includes(id) && /\bevery (?:morning|afternoon|evening|night)\b/i.test(span.text))continue;
       if(def.id.startsWith('reminder') && ['durationMinutes','dueTime','appointmentStartMinute','allowedWindow'].includes(id))continue;
       const other=assistantFieldCue({id,signal},span.text,own?own.index+own[0].length:start);
       if(other && other.index>=(own?own.index+own[0].length:start) && (other.index>start||def.id==='name'&&!own))end=Math.min(end,other.index);
@@ -364,7 +393,7 @@ function assistantFieldSource(def, request, spans){
     // A connector leading into a sibling setting belongs to that sibling,
     // whether the preceding value is a title or a structured restriction.
     if((def.id==='name'||!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id)) && end<span.text.length){
-      const narrative=def.id==='name'&&!named?'|happens|occurs|repeats':'';
+      const narrative=def.id==='name'?`|allowed|preferred${!named?'|happens|occurs|repeats|runs|lasts':''}`:'';
       const dangling=new RegExp(`\\s+(?:on|in|at|for|before|after|during|from|every|each|with|to|by|and${narrative})(?:\\s+the)?\\s*$`,'i').exec(span.text.slice(start,end));
       if(dangling)end=start+dangling.index;
     }
@@ -385,11 +414,12 @@ function assistantFieldSource(def, request, spans){
     }
     const text=span.text.slice(start,end);
     if(!text&&def.id==='name')return [];
+    if(def.id==='name'&&!named&&/^(?:only|allowed|preferred?|time|hours|window)\s*$/i.test(text))return [];
     // A title cut down to dialogue framing alone ("make it") names nothing;
     // dropping the span keeps a follow-up correction from reopening the name.
     // Explicit naming instructions keep their literal words, including "Please".
     if(def.id==='name' && !assistantFieldLiteralOwner(request)
-      && /^(?:(?:please|actually|okay|ok|instead)\b[,\s]*)?(?:(?:make|change|set|move|rename|call)\s+)?(?:it|this|that)\.?$/i.test(text))return null;
+      && /^(?:(?:please|actually|okay|ok|instead)\b[,\s]*)?(?:(?:make|change|set|move|rename|call|end)\s+)?(?:it|this|that)\.?$/i.test(text))return null;
     const selected=text?{start:span.start+start,end:span.start+end,text,context:span.text}:span;
     // A setting may reappear after a sibling setting in the same sentence.
     // Retain every such instruction so incompatible values ask, rather than
@@ -404,6 +434,10 @@ function assistantFieldSource(def, request, spans){
 function assistantFieldEnqueue(state, id, reason, source){
   const def=state.catalog.find(d=>d.id===id);
   if(!def || !assistantFieldApplicable(def,state.session))return;
+  // Changing a lead time on Edit preserves the existing delivery mode.
+  // Create can explicitly request its first reminder without naming a mode.
+  if(state.session.operation==='edit'&&['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'].includes(id)
+    && /\b(?:before|lead)\b/i.test(state.request)&&!/\b(?:off|notifications?|alarm)\b/i.test(state.request))return;
   const prior=state.jobs.find(j=>j.id===id&&j.request!==state.request&&j.status==='queued');
   if(prior && !['explicit','coverage'].includes(reason))return prior;
   const existing=state.jobs.find(j=>j.id===id && j.revision===state.revision && j.request===state.request);
@@ -442,7 +476,10 @@ function assistantFieldCandidates(state){
   // are not instructions to reread or change those settings. Explicit signals,
   // retrieval and replies to field questions still nominate jobs in both modes.
   if(state.session.operation==='create'){
-    for(const id of ['name','frequency','durationMinutes'])assistantFieldEnqueue(state,id,'core');
+    for(const id of ['name','frequency','durationMinutes']){
+      if(id==='name'&&assistantFocusMaterialize(state.session).name)continue;
+      assistantFieldEnqueue(state,id,'core');
+    }
     if(state.session.kind==='task')for(const id of ['dueDate','dueTime'])assistantFieldEnqueue(state,id,'core');
     if(state.session.kind==='event')for(const id of ['appointmentStartDate','appointmentStartMinute','appointmentRepeat'])assistantFieldEnqueue(state,id,'core');
   }
@@ -451,12 +488,12 @@ function assistantFieldCandidates(state){
   // selects a value, and the extractor still has to quote the instruction.
   for(const place of assistantFocusSettings().locations || []){
     const def=state.catalog.find(d=>d.id==='places');
-    if(assistantFocusPhraseIn(text,place.name)&&state.spans.some(span=>assistantFocusPhraseIn(span.text,place.name)&&assistantFieldRelevant(def,span.text)))assistantFieldEnqueue(state,'places','explicit');
+    if(assistantFocusPhraseIn(text,place.name)&&state.spans.some(span=>assistantFocusPhraseIn(span.text,place.name)&&assistantFieldMentioned(def,span.text)&&assistantFieldRelevant(def,span.text)))assistantFieldEnqueue(state,'places','explicit');
   }
   const order=state.catalog.find(def=>def.id==='scheduleLinks');
   const orderSpans=state.spans.filter(span=>/\b(?:before|after)\b/i.test(span.text)
     && assistantFieldRelevant(order,span.text)
-    && load().some(item=>item.hid!==state.session.targetId&&assistantFocusPhraseIn(span.text,item.name)));
+    && load().some(item=>item.hid!==state.session.targetId&&assistantFocusPhraseIn(span.text.slice(span.text.search(/\b(?:before|after)\b/i)),item.name)));
   if(orderSpans.length)assistantFieldEnqueue(state,'scheduleLinks','explicit',assistantFieldSource(order,text,orderSpans));
 }
 
@@ -630,8 +667,12 @@ function assistantFieldStripPrefix(text, pattern){
 function assistantFieldNormalize(def,text,session){
   const instructionSource=session?._fieldSource||text,literal=assistantFieldLiteralOwner(instructionSource);
   if(literal?.id===def.id && /\b(?:do not|don.t|never)\s*$/i.test(instructionSource.slice(0,literal.instructionStart)))return {ok:false,error:`Should I keep ${def.label.toLowerCase()} unchanged, or change it?`};
+  // Positive bounds and comparator operands contain "no" / "or" without
+  // negating a restriction. All other negatives and alternatives still ask.
+  const restrictionText=['allowedWindow','preferredWindow'].includes(def.id)
+    ?text.replace(/\bno (?:later|earlier) than\b/gi,'').replace(/\b((?:later|earlier) of|whichever is (?:later|earlier):?)\s+(.+?)\s+or\s+/gi,'$1 $2 and '):text;
   if(['allowedWindow','preferredWindow','allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','frequency','dueDate','dueTime','places','weatherProfile'].includes(def.id)
-    && /\b(?:no|not|never|don.t|except|without|or)\b/i.test(text))return {ok:false,error:'Please clarify the positive restriction or clear this setting.'};
+    && /\b(?:no|not|never|don.t|except|without|or)\b/i.test(restrictionText))return {ok:false,error:'Please clarify the positive restriction or clear this setting.'};
   if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantFieldDialogue(text).text;
   if(!text)return {ok:false,error:`What value should I use for ${def.label||def.id}?`};
   const clearLabel=assistantFieldStripPrefix(text,/^clear(?:\s+the)?\s+/i);
@@ -639,6 +680,7 @@ function assistantFieldNormalize(def,text,session){
   if(assistantFocusField(def.id)?.clear && clearLabel!==text && (clearLabel.toLowerCase()===def.label.toLowerCase()
     || clearCue?.index===0&&clearCue[0].length===clearLabel.length))return {ok:true,changes:[{field:def.id,op:'clear',value:null}]};
   if(def.id==='frequency'){
+    if(/\b(?:minus|negative)\b|[-+−]\s*\d/i.test(text))return {ok:false,error:'Specify one positive repetition count and period.'};
     const rhythm=assistantParseRhythm(text);
     if(!rhythm?.timesPerPeriod || !rhythm.periodDays)return {ok:false,error:'How often should it repeat?'};
     // On Edit, weekdays alone restrict availability; they must not silently
@@ -663,6 +705,11 @@ function assistantFieldNormalize(def,text,session){
     && /\b(?:\d+\s*(?:minutes?|hours?)|every (?:day|week|other)|daily|weekly)\b/i.test(value))return {ok:false,error:'Please give just the item title.'};
   if(def.id==='name' && (!value || !ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.test(instructionSource)
     && /^(?:create|add|(?:new\s+)?(?:habit|task|event|reminder)|rename|name|it)$/i.test(value)))return {ok:false,error:'Name the item.'};
+  if(def.id==='priority'){
+    if(/\b(?:not|never|don.t|without|or)\b/i.test(value))return {ok:false,error:'Which priority should I use?'};
+    value=assistantFieldStripPrefix(value,/^(?:(?:set|change|use)\s+)?priority(?:\s+(?:to|is))?\s*:?\s*/i);
+    if(/^[+-]?\d/.test(value)&&!/^\d$/.test(value)||/^\d$/.test(value)&&Number(value)>5)return {ok:false,error:'Priority must be 0–5.'};
+  }
   if(def.id==='conditionRadiusM')value=assistantFieldStripPrefix(text,/^(?:(?:set|change)\s+)?(?:radius(?: of)?|within)(?:\s+to)?\s+/i);
   if(['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(def.id)){
     value=assistantFieldStripPrefix(text,/^(?:(?:change|set|move)\s+(?:the\s+)?)?(?:(?:plan|do|finish)(?: (?:this|it))? by|plan (?:this |it )?for|due(?: date)?(?: on)?|on|by|until|through|start(?:s|ing)?(?: on)?|date)(?:\s+(?:to|on))?\s*/i);
@@ -683,6 +730,7 @@ function assistantFieldNormalize(def,text,session){
   // duration supplied to this job; a relative edit never changes that baseline.
   if(def.id==='durationMinutes' && /^(?:twice as long|double (?:it|the duration))$/i.test(value))value=String((session._fieldBaseline||assistantFocusMaterialize(session)).durationMinutes*2);
   if(['places','weatherLocationId'].includes(def.id))value=assistantFieldStripPrefix(value,/^(?:(?:use|add|set|at|in|place|location|venue)(?: (?:the|to))?\s+)+/i).replace(/\s+(?:as )?(?:the )?(?:place|location)$/i,'').trim();
+  if(def.id==='weatherLocationId'&&/\b(?:show|display)\b[^,;]*\b(?:forecast|weather)\b[^,;]*\bplace\b/i.test(instructionSource))return {ok:false,error:'Should the forecast follow this item’s place, or use a separate weather location?'};
   if(def.id==='weatherProfile')value=assistantFieldStripPrefix(value,/^(?:use|weather profile|profile)\s+/i).replace(/\s+(?:weather|profile)$/i,'').trim();
   if(ASSISTANT_FIELD_QUANTITIES[def.id]){
     const quantity=assistantFieldQuantity(def,text);if(!quantity.ok)return quantity;
@@ -740,9 +788,10 @@ async function assistantFieldExtract(state,row,extract){
       const selectedEvidence=selected.context||selected.text;
       if(selected.request===row.request && !['name','frequency','durationMinutes','dueDate','dueTime','appointmentStartDate','appointmentStartMinute','places','weatherProfile'].includes(def.id) && !assistantFieldMentioned(def,selectedEvidence) && !session.unresolved.some(issue=>issue.field===def.id))continue;
       if(def.id==='kind' && !ASSISTANT_FIELD_SIGNALS.kind.test(selectedEvidence))continue;
-      if(def.id==='name' && session.operation==='edit' && !ASSISTANT_FIELD_SIGNALS.name.test(selectedEvidence) && !session.unresolved.some(r=>r.field==='name'))continue;
-      if(def.id==='allowedWeekdays' && /\bprefer/i.test(selectedEvidence))continue;
-      if(def.id==='allowedWindow' && /\bprefer/i.test(selectedEvidence))continue;
+      if(def.id==='name' && (session.operation==='edit'||assistantFocusMaterialize(session).name) && !ASSISTANT_FIELD_SIGNALS.name.test(selectedEvidence) && !session.unresolved.some(r=>r.field==='name'))continue;
+      if(!assistantFieldRelevant(def,selectedEvidence))continue;
+      if(def.id==='places'&&!assistantFieldMentioned(def,selectedEvidence)&&!session.unresolved.some(issue=>issue.field==='places'))continue;
+
       if(def.id==='preferredWeekdays' || def.id==='preferredWindow' || def.id==='preferredMonthDays' || def.id==='preferredOrdinalWeekdays'){
         if(!/\bprefer/i.test(selectedEvidence))continue;
       }
@@ -753,6 +802,9 @@ async function assistantFieldExtract(state,row,extract){
     }
   }
   const unique=values.filter((v,i)=>!values.slice(0,i).some(other=>JSON.stringify(v.changes)===JSON.stringify(other.changes)));
+  // One readable excerpt must not hide another unreadable instruction for
+  // the same requested setting. Keep the question until every part validates.
+  if(row.required&&invalid.length)return {status:'needs_input',...invalid[0]};
   if(unique.length>1)return {status:'needs_input',error:`I found conflicting values for ${def.label.toLowerCase()}. Which should I use?`};
   if(unique.length)return {status:'extracted',...unique[0]};
   if(history.ambiguous)return {status:'needs_input',error:`Which earlier value for ${def.label.toLowerCase()} should I use? Please repeat it or specify the first or last value.`};

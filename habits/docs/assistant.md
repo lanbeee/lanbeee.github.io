@@ -48,6 +48,20 @@ start and sunset + 120 minutes as the end. An unreadable endpoint blocks that
 setting instead of silently retaining only one bound. Feedback includes the
 structured staged values and marks interpretation uncertainty separately.
 
+Time-expression boundaries are shared across field discovery and extraction.
+Bare clock ranges and solar/prayer ranges retain both endpoints; infix plus or
+minus offsets, spoken hundreds and fractional hours belong to the window rather
+than session length. Calendar dates cannot nominate clock ranges. An unreadable
+second instruction for a requested setting blocks that setting even when its
+first instruction validated. Focused one-sided windows validate the entire
+selected excerpt, so a saved-item name cannot be shortened to a solar anchor.
+Preference cues apply to the instruction they qualify, preserving earlier
+required settings in the same message. A follow-up cannot replace an existing
+creation title without a naming instruction or an outstanding title question.
+Basic creation reminder requests can select notification delivery; editing a
+lead time alone preserves its delivery mode. These reads still require exact
+model-selected evidence and the existing native reminder availability checks.
+
 Create freezes its baseline when the session opens. Essential frequency and
 duration use the chosen Add form values first, then the kind's configured
 creation defaults (including the separate task profile). The review is a short summary in the chat, on screen as soon as the item opens. It lists only the

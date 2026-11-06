@@ -484,7 +484,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true,op:rules.length?'set':'clear',value:rules};
   }
   if(fieldId === 'allowedWindow' || fieldId === 'preferredWindow'){
-    const window = typeof assistantParseWindowFromText === 'function' ? (assistantParseWindowFromText(text) || (/^\d/.test(text) ? assistantParseWindowFromText(`from ${text}`) : null)) : null;
+    const window = typeof assistantParseWindowFromText === 'function' ? (assistantParseWindowFromText(text,true) || (/^\d/.test(text) ? assistantParseWindowFromText(`from ${text}`,true) : null)) : null;
     if(!window)return fail('I couldn’t read that time window.');
     return {ok:true, op:'set', value:window};
   }
@@ -541,7 +541,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:true};
   }
   if(String(fieldId).startsWith('reminder') && fieldId !== 'reminderReset' && !/Lead/.test(fieldId)){
-    const mode = ASSISTANT_FOCUS_REMINDER_MODES.find(item => text.toLowerCase().includes(item === 'notification' ? 'notif' : item));
+    const mode = /\bno reminders?\b/i.test(text)?'off':ASSISTANT_FOCUS_REMINDER_MODES.find(item => text.toLowerCase().includes(item === 'notification' ? 'notif' : item)) || (/\b(?:remind|warn)\b/i.test(text)&&!/\b(?:not|never|don.t|without)\b/i.test(text)?'notification':null);
     if(!mode)return fail('Choose off, notification, or ringing alarm.');
     return {ok:true, op:'set', value:mode};
   }

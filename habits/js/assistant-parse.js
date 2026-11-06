@@ -137,6 +137,11 @@ function assistantParseNumberPhrase(value){
   }
   match = s.match(/^(\d+(?:\.\d+)?)$/);
   if(match)return Number(match[1]) + extra;
+  match=s.match(/^(one|two|three|four|five|six|seven|eight|nine) hundred(?: (?:and )?(.+))?$/);
+  if(match){
+    const remainder=match[2]?assistantParseNumberPhrase(match[2]):0;
+    return remainder!=null&&remainder<100?ASSISTANT_DURATION_ONES[match[1]]*100+remainder+extra:null;
+  }
   const parts = s.split(' ');
   if(parts.length === 1 && ASSISTANT_DURATION_ONES[parts[0]] != null)return ASSISTANT_DURATION_ONES[parts[0]] + extra;
   if(parts.length === 1 && ASSISTANT_DURATION_TENS[parts[0]] != null)return ASSISTANT_DURATION_TENS[parts[0]] + extra;
@@ -151,7 +156,8 @@ function assistantDurationNumberSource(){
   const ones = Object.keys(ASSISTANT_DURATION_ONES).join('|');
   const tens = Object.keys(ASSISTANT_DURATION_TENS).join('|');
   const small = 'one|two|three|four|five|six|seven|eight|nine';
-  const word = `(?:(?:${tens})(?:[ -]+(?:${small}))?|(?:${ones}))(?:\\s+and\\s+a\\s+(?:half|quarter))?`;
+  const underHundred=`(?:(?:${tens})(?:[ -]+(?:${small}))?|(?:${ones}))`;
+  const word = `(?:(?:${small})\\s+hundred(?:\\s+(?:and\\s+)?${underHundred})?|${underHundred})(?:\\s+and\\s+a\\s+(?:half|quarter))?`;
   const numeric = `(?:\\d+(?:\\.\\d+)?(?:\\s+\\d+\\/\\d+)?|\\d+\\/\\d+)(?:\\s+and\\s+a\\s+(?:half|quarter))?`;
   return `(?:${numeric}|${word})`;
 }
@@ -159,7 +165,7 @@ function assistantDurationNumberSource(){
 function assistantSpokenQuantitySource(){
   const unit = '(?:hours?|hrs?|h|minutes?|mins?|m)';
   const number = `(?:${assistantDurationNumberSource()}|(?:\\d+\\s*)?[½¼¾⅓⅔⅛])`;
-  return `(?:${number}\\s*${unit}|an\\s+hour\\s+and\\s+a\\s+half|one\\s+hour\\s+and\\s+a\\s+half|hour\\s+and\\s+a\\s+half|three[\\s-]+quarters(?:\\s+of)?\\s+an?\\s+hour|half\\s+an?\\s+hour|a\\s+half\\s+hour|(?:a\\s+)?quarter(?:\\s+of)?(?:\\s+an?)?\\s+hour|an\\s+hour)`;
+  return `(?:${number}\\s*${unit}(?:\\s+and\\s+a\\s+(?:half|quarter))?|(?:an?|one)?\\s*hour\\s+and\\s+a\\s+(?:half|quarter)|three[\\s-]+quarters(?:\\s+of)?\\s+an?\\s+hour|half\\s+an?\\s+hour|a\\s+half\\s+hour|(?:a\\s+)?quarter(?:\\s+of)?(?:\\s+an?)?\\s+hour|an?\\s+hour)`;
 }
 
 function assistantNormalizeDurationText(value){
@@ -1343,6 +1349,14 @@ function assistantParseSimpleEndpointPhrase(phrase){
   let s = assistantNormText(phrase);
   if(!s)return null;
   s = s.replace(/^(?:till|until|to|by)\s+/, '');
+  const infix=s.match(new RegExp(`^(${ASSISTANT_ANCHOR_WORD})\\s*(plus|minus|[+−-])\\s*(${assistantSpokenQuantitySource()})$`));
+  if(infix){
+    const minutes=assistantParseDuration(infix[3]),anchor=assistantCleanAnchor(infix[1]);
+    if(minutes==null||!anchor)return null;
+    return {kind:'anchor',anchor,offsetMin:minutes*(/^(?:minus|−|-)$/.test(infix[2])?-1:1)};
+  }
+  // Noon is a clock. Dhuhr remains its own prayer anchor.
+  if(s==='noon'||s==='midday')return {kind:'clock',minutes:720,clock:assistantClockLabel(720)};
   const off = s.match(new RegExp(`^(${assistantSpokenQuantitySource()})\\s+(before|after)\\s+(${ASSISTANT_ANCHOR_WORD})$`));
   if(off){
     let minutes = assistantParseDuration(off[1]);
@@ -1371,8 +1385,10 @@ function assistantParseCombinedEndpointParts(text){
   if(!s)return null;
   const whichever = s.match(/^(.+?)\s+or\s+(.+?)\s*,?\s*whichever is (later|earlier)$/);
   if(whichever)return {a:whichever[1], b:whichever[2], combine:whichever[3]};
-  const ofAnd = s.match(/^(?:the )?(later|earlier)\s+of\s+(.+?)\s+and\s+(.+)$/);
+  const ofAnd = s.match(/^(?:the )?(later|earlier)\s+of\s+(.+?)\s+(?:and|or)\s+(.+)$/);
   if(ofAnd)return {a:ofAnd[2], b:ofAnd[3], combine:ofAnd[1]};
+  const leading=s.match(/^whichever is (later|earlier):?\s+(.+?)\s+or\s+(.+)$/);
+  if(leading)return {a:leading[2],b:leading[3],combine:leading[1]};
   return null;
 }
 
@@ -1413,12 +1429,12 @@ function assistantParseWindowRange(text){
   // Try whole endpoint pairs. "And" may be inside a mixed fraction, so it
   // is a separator only when both complete sides validate as endpoints.
   const separators=lead
-    ?/\s+(?:to|until|till|and)(?=\s|$)\s*|\s+[-–]\s+/g
-    :/\s+(?:to|until|till)(?=\s|$)\s*|\s+[-–]\s+/g;
+    ?/\s+(?:to|until|till|through|and)(?=\s|$)\s*|\s+[-–]\s+/g
+    :/\s+(?:to|until|till|through)(?=\s|$)\s*|\s*[-–](?=\s*\d)\s*/g;
   const splits=Array.from(body.matchAll(separators));
   if(!lead&&!splits.length)return undefined;
   for(const split of splits){
-    const start=assistantParseEndpointPhrase(body.slice(0,split.index));
+    const start=assistantParseEndpointPhrase(body.slice(0,split.index).replace(/,\s*$/,''));
     const end=assistantParseEndpointPhrase(body.slice(split.index+split[0].length));
     if(start&&end)return {start,end};
   }
@@ -1426,12 +1442,14 @@ function assistantParseWindowRange(text){
   return null;
 }
 
-function assistantParseWindowFromText(text){
+function assistantParseWindowFromText(text, strict=false){
   let s = assistantNormText(text);
   s = s.replace(/[.?!,;:]+$/g, '').trim();
   s = s.replace(/^(?:please |can you |could you )?(?:change|update|edit|make)(?: it| this| that| this one)?(?: to(?: be)?)?\s+/, '');
-  s = s.replace(/^(?:only\s+)?(?:allowed|prefer(?:red|ably)?)(?: time(?: window)?| hours| window)?(?: to be)?\s+/, '');
+  s = s.replace(/^(?:only\s+)?(?:allowed|prefer(?:red|ably)?)(?: time(?: window)?| hours| window)?(?:\s+(?:to be|is|are|to))?\s+/, '');
+  s = s.replace(/^(?:time\s+)?window(?:\s+(?:is|are|to))?\s+/, '');
   s = s.replace(/^only\s+/, '');
+  s = s.replace(/^no later than\s+/, 'before ').replace(/^no earlier than\s+/, 'after ');
   const endBit = `(?:${ASSISTANT_ANCHOR_WORD}|\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)`;
   const combineRange = s.match(new RegExp(`\\b(later|earlier)\\s+of\\s+(.+?)\\s+and\\s+(.+?)(?:\\s+(?:until|till|to)\\s+(${endBit}))?(?=\\s*[.?!,;:]|$)`));
   if(combineRange){
@@ -1466,21 +1484,25 @@ function assistantParseWindowFromText(text){
   }
   const afterClock = s.match(/\bafter\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))/);
   if(afterClock){
+    if(strict&&afterClock[0]!==s)return null;
     const start = assistantParseClock(afterClock[1]);
     if(start != null)return {start:{kind:'clock', minutes:start, clock:assistantClockLabel(start)}, end:{kind:'unset'}};
   }
   const beforeClock = s.match(/\bbefore\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))/);
   if(beforeClock){
+    if(strict&&beforeClock[0]!==s)return null;
     const end = assistantParseClock(beforeClock[1]);
     if(end != null)return {start:{kind:'unset'}, end:{kind:'clock', minutes:end, clock:assistantClockLabel(end)}};
   }
   const atClock = s.match(/\b(?:at|around)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))/);
   if(atClock){
+    if(strict&&atClock[0]!==s)return null;
     const start = assistantParseClock(atClock[1]);
     if(start != null)return assistantWindowFromClocks(start, Math.min(1440, start + 60));
   }
   const offsetAnchor = s.match(new RegExp(`\\b((?:${assistantSpokenQuantitySource()})\\s+(before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD}))\\b`));
   if(offsetAnchor){
+    if(strict&&offsetAnchor[0]!==s)return null;
     const start = assistantParseEndpointPhrase(offsetAnchor[1]);
     if(start){
       const end = offsetAnchor[2] === 'before'
@@ -1491,6 +1513,7 @@ function assistantParseWindowFromText(text){
   }
   const afterAnchor = s.match(new RegExp(`\\bafter\\s+(${ASSISTANT_ANCHOR_WORD})`));
   if(afterAnchor){
+    if(strict&&afterAnchor[0]!==s)return null;
     const anchor = typeof assistantCleanAnchor === 'function' ? assistantCleanAnchor(afterAnchor[1]) : afterAnchor[1];
     if(anchor){
       const end = afterAnchor[1] === 'sunset' || afterAnchor[1] === 'maghrib' || afterAnchor[1] === 'dusk'
@@ -1501,16 +1524,17 @@ function assistantParseWindowFromText(text){
   }
   const beforeAnchor = s.match(new RegExp(`\\bbefore\\s+(${ASSISTANT_ANCHOR_WORD})`));
   if(beforeAnchor){
+    if(strict&&beforeAnchor[0]!==s)return null;
     const anchor = typeof assistantCleanAnchor === 'function' ? assistantCleanAnchor(beforeAnchor[1]) : beforeAnchor[1];
     if(anchor)return {start:{kind:'unset'}, end:{kind:'anchor', anchor, offsetMin:0}};
   }
-  if(/\b(?:this evening|in the evening)\b/.test(s) || (/\bevening\b/.test(s) && !/\bevery evening\b/.test(s))){
+  if(/^evening$/.test(s) || /\b(?:this evening|in the evening)\b/.test(s) || (/\bevening\b/.test(s) && !/\bevery evening\b/.test(s))){
     return assistantWindowFromClocks(17 * 60, 21 * 60);
   }
-  if(/\b(?:this morning|in the morning|every morning)\b/.test(s)){
+  if(/^morning$/.test(s) || /\b(?:this morning|in the morning|every morning)\b/.test(s)){
     return assistantWindowFromClocks(6 * 60, 12 * 60);
   }
-  if(/\bthis afternoon\b|\bin the afternoon\b/.test(s)){
+  if(/^afternoon$/.test(s) || /\bthis afternoon\b|\bin the afternoon\b/.test(s)){
     return assistantWindowFromClocks(12 * 60, 17 * 60);
   }
   if(/\bevery night\b|\bevery evening\b/.test(s)){

@@ -3,6 +3,14 @@
 const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers');
 const fs=require('fs');
 const cases=[
+  {id:'word-number-offset',prompt:'Family night last Friday of every month duration is one hour allowed time from sunset to sunset plus one hundred twenty minutes',endOffset:120},
+  {id:'through-bounds',prompt:'Family night last Friday of every month duration is one hour window sunset through two hours after sunset',endOffset:120},
+  {id:'reported-plus-dictation',prompt:'Family night happens last Friday of every month duration is one hour and allowed time is from sunset to sunset Plus 2 hours .',endOffset:120},
+  {id:'symbol-offset-independent-duration',prompt:'Family night last Friday of every month duration is one hour allowed time from sunset to sunset + 2 hours',endOffset:120},
+  {id:'changed-length-independent-offset',prompt:'Family night last Friday of every month duration is two hours allowed time from sunset to sunset plus 90 minutes',duration:120},
+  {id:'changed-monthly-rule',prompt:'Family night first Friday of every month duration is one hour allowed time from sunset to sunset plus 90 minutes',ordinal:1},
+  {id:'plus-fraction',prompt:'Family night last Friday of every month duration is one hour allowed time from sunset to sunset plus an hour and a quarter',endOffset:75},
+  {id:'two-offset-bounds',prompt:'Family night last Friday of every month duration is one hour allowed time from sunset minus 30 minutes to sunset plus 30 minutes',startOffset:-30,endOffset:30},
   {id:'reported-dictation',prompt:'Family night happens last Friday of every month after sunset duration is one hour and they allowed time and one and a half hours after sunset',question:true},
   {id:'reported-window-correction',prompt:'Family night happens last Friday of every month after sunset duration is one hour and they allowed time and one and a half hours after sunset',question:true,correction:'After sunset to two hours after sunset',endOffset:120},
   {id:'monthly-solar-window',prompt:'Family night happens last Friday of every month from sunset to one and a half hours after sunset duration is one hour'},
@@ -44,8 +52,8 @@ const cases=[
         const allowed=new Set(['name','allowedOrdinalWeekdays','allowedWindow','durationMinutes']);
         const extras=s.changes.filter(c=>!allowed.has(c.field));
         const expected=r.name==='Family night'&&r.durationMinutes===(test.duration||60)
-          &&JSON.stringify(rules)===JSON.stringify([{ordinal:-1,weekday:5}])
-          &&r.allowedTimeStartAnchor===(test.anchor||'maghrib')&&r.allowedTimeStartOffsetMin===(test.offset||0)
+          &&JSON.stringify(rules)===JSON.stringify([{ordinal:test.ordinal??-1,weekday:5}])
+          &&r.allowedTimeStartAnchor===(test.anchor||'maghrib')&&r.allowedTimeStartOffsetMin===(test.startOffset??test.offset??0)
           &&(test.offset?true:r.allowedTimeEndAnchor==='maghrib'&&r.allowedTimeEndOffsetMin===(test.endOffset||90))
           &&!r.allowedWeekdays.length&&!r.allowedMonthDays.length;
         const unchanged=before===JSON.stringify(load()),ready=assistantFocusCanSave(s);
