@@ -424,7 +424,7 @@ body.minimal-mode #pane-detail .minimal-detail.opportunity-mode #detail-weather-
 .appointment-editor .planning-field { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
 .appointment-editor input,.appointment-editor select { max-width:100%; }
 .appointment-editor .schedule-chip-row { flex-wrap:wrap; }
-.appointment-add #add-more-toggle,.appointment-add #add-more-options,.appointment-add #ting-ask-ai { display:none; }
+.appointment-add #add-more-toggle,.appointment-add #add-more-options { display:none; }
 .local-appointment [data-detail-nav="schedule"] > :not(#detail-appointment-editor),
 .local-appointment [data-detail-nav="effort"],
 .local-appointment #detail-type-seg,.local-appointment #detail-mode-seg,

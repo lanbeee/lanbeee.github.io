@@ -27,7 +27,10 @@ function syncAssistantChrome(){
   const on = assistantEnabled();
   document.body.classList.toggle('assistant-on', on);
   document.body.classList.toggle('assistant-debug-on', on && assistantDebugOn());
-  if(typeof syncAddNamePlaceholder === 'function')syncAddNamePlaceholder();
+  if(typeof syncDetailSearchAssistant === 'function'){
+    if($('detail-search-panel').hidden)syncDetailSearchAssistant();
+    else renderDetailSearch();
+  }
   const needle = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
   ['open-assistant','bar-open-assistant'].forEach(id => {
     const btn = $(id);
@@ -202,7 +205,7 @@ function openAssistantSheet(opts){
     return false;
   }
   if(assistantSettings().provider === 'needle' && !external && !assistantNeedleFocused(opts)){
-    if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+    if(typeof showToast === 'function')showToast('Open an item and ask for a change from its details.');
     return false;
   }
   _assistantExternalReview = external;
@@ -260,7 +263,7 @@ function assistantOpenForItem(hid, entry, extra){
   });
 }
 
-// Entry points (add sheet, detail page, home swipe) start a fresh conversation with the
+// Entry points (detail search, detail actions, home swipe) start a fresh conversation with the
 // intent or item already known, so the model skips classify and extracts
 // straight away. All other natural-language turns start with the model too.
 async function assistantOpenWithInstruction(text, opts){
@@ -290,7 +293,7 @@ async function assistantOpenWithInstruction(text, opts){
     } : null);
     _assistantSession.focus = spec ? assistantFocusOpen(spec) : null;
     if(!_assistantSession.focus){
-      if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+      if(typeof showToast === 'function')showToast('Open an item and ask for a change from its details.');
       return false;
     }
   }
@@ -318,9 +321,6 @@ async function assistantOpenWithInstruction(text, opts){
   }
   const spoken = value;
   let modelText = String(opts.modelText || '').trim();
-  if(!modelText && opts.entry === 'add' && opts.intent && typeof addAssistantModelText === 'function'){
-    modelText = addAssistantModelText(spoken, opts.intent);
-  }
   if(!modelText || assistantSettings().provider === 'needle')modelText = spoken;
   await sendAssistantMessage(modelText, {
     startIntent:opts.intent,
@@ -332,7 +332,7 @@ async function assistantOpenWithInstruction(text, opts){
 }
 
 function assistantWelcomeHtml(){
-  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Needle edits one habit, task, or local event at a time. Start from Add, Edit with AI, or Change with AI. Nothing is saved until you confirm.</p></div>`;
+  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Needle edits one habit, task, or local event at a time. Open an item and use its search box or Edit with AI. Nothing is saved until you confirm.</p></div>`;
   return `<div class="assistant-bubble assistant-bubble-say"><p>Say it like a person. Nothing is saved until you confirm.</p>
       <div class="assistant-suggestions">
         <button type="button" class="assistant-suggest" data-assistant-suggest="Remind me to call mom">Remind me to call mom</button>
@@ -1128,7 +1128,7 @@ async function sendAssistantMessage(text, opts){
   if(assistantSettings().provider === 'needle' && !opts.needleAction){
     const focus = _assistantSession && _assistantSession.focus;
     if(!focus || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(focus) || typeof assistantFocusTurn !== 'function'){
-      appendAssistantBubble('say', 'Needle changes one item at a time. Use Add, Edit with AI on a card, or Change with AI in details.');
+      appendAssistantBubble('say', 'Needle changes one item at a time. Open an item and use its search box or Edit with AI on a card.');
       assistantShowBusy(false);
       return;
     }

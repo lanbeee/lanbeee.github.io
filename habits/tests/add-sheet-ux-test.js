@@ -113,7 +113,7 @@ const {chromium} = require('playwright');
         for(const task of [false,true]){
           await page.evaluate(task=>switchAddType(task ? 'task' : 'keepup'),task);
           await page.waitForTimeout(250);
-          const ids = ['ting-message','ting-emoji-preview','ting-ask-ai','ting-duration','do-save','do-cancel',...(task ? ['ting-due-date','ting-due-time'] : ['ting-times','ting-days'])];
+          const ids = ['ting-message','ting-emoji-preview','ting-duration','do-save','do-cancel',...(task ? ['ting-due-date','ting-due-time'] : ['ting-times','ting-days'])];
           for(const id of ids){
             const control = page.locator('#'+id);
             assert.ok(await control.isVisible(),`${id} visible at ${width}, minimal=${minimal}, task=${task}`);

@@ -293,38 +293,70 @@ function assert(ok, message){
       for(let attempt = 0; attempt < 2; attempt++){
         await livePage.evaluate(()=>{
           closeAssistantSheet();save([]);$('open-add').click();
-          $('ting-message').value = 'Walk every other day before sunset';
-          $('ting-ask-ai').click();
+          $('ting-message').value = 'Walk';
+          $('do-save').click();
+          setDetailSearchOpen(true);
+          $('detail-search-input').value = 'Every other day before sunset';
+          renderDetailSearch();$('detail-search-ask').click();
         });
-        await livePage.waitForFunction(()=>_assistantSession?.focus?.currentRequest === 'Walk every other day before sunset' && !_assistantBusy, null, {timeout:120000});
+        await livePage.waitForFunction(()=>_assistantSession?.focus?.currentRequest === 'Every other day before sunset' && !_assistantBusy, null, {timeout:120000});
         const added = await livePage.evaluate(async()=>{
           const session = _assistantSession.focus, record = assistantFocusMaterialize(session), rhythm = rhythmParts(record.target);
           const review = assistantThreadEl().querySelector('[data-focus-review]');
           const before = load().length;
+          const beforeRecord = load()[0];
           const approve = review?.querySelector('[data-focus-approve]');
           if(approve)await assistantHandleFocusClick(approve);
           const saveButton = assistantThreadEl().querySelector('[data-focus-save]');
           const ready = saveButton && !saveButton.disabled;
           if(ready)await assistantHandleFocusClick(saveButton);
           return {name:record.name, rhythm, end:record.allowedTimeEndAnchor, fixed:record.allowedTimeFixedStart,
-            weekdays:record.allowedWeekdays, unresolved:session.unresolved, before, ready, saved:load().length,
+            weekdays:record.allowedWeekdays, unresolved:session.unresolved, before, beforeRecord, ready, saved:load().length,
             savedRecord:load()[0], addClosed:!$('add-sheet').classList.contains('open'),
             errorText:/tool call truncated|token budget exhausted/i.test(assistantThreadEl().textContent), trace:session.trace};
         });
         addRuns.push(added);
-        fs.writeFileSync('test-results/needle-focus-sunset-add-live.json', JSON.stringify(addRuns, null, 2));
+        fs.writeFileSync('test-results/needle-focus-sunset-edit-live.json', JSON.stringify(addRuns, null, 2));
         assert(added.name === 'Walk' && added.rhythm.times === 1 && added.rhythm.days === 2 && added.end === 'maghrib'
           && !added.fixed && !added.weekdays.length && !added.unresolved.length && !added.errorText,
-          `live add screen reads Walk every other day before sunset (attempt ${attempt + 1})`);
-        assert(added.before === 0 && added.ready && added.saved === 1 && added.savedRecord.name === 'Walk'
+          `live detail search reads every other day before sunset (attempt ${attempt + 1})`);
+        assert(added.before === 1 && !added.beforeRecord.allowedTimeEndAnchor && added.ready && added.saved === 1 && added.savedRecord.name === 'Walk'
           && added.savedRecord.allowedTimeEndAnchor === 'maghrib' && added.addClosed,
-          `live add screen requires approval and saves the complete habit on confirmation (attempt ${attempt + 1})`);
+          `live detail search requires confirmation before saving the edit (attempt ${attempt + 1})`);
         const intervals = added.trace.filter(row=>row.inference).map(row=>({...row.inference,lane:row.workerLane}));
         const lanes = new Set(intervals.map(row=>row.lane));
         const overlap = intervals.some((row,index)=>intervals.slice(index+1).some(other=>row.lane!==other.lane
           && row.startedAt < other.endedAt && other.startedAt < row.endedAt));
-        assert(lanes.size === 3 && overlap, `live add screen uses three workers with overlapping inference (attempt ${attempt + 1})`);
+        assert(lanes.size === 3 && overlap, `live focused edit uses three workers with overlapping inference (attempt ${attempt + 1})`);
       }
+      const familyInstruction = 'Family night happens last Friday of every month duration is one hour and allowed time is from sunset to sunset Plus 2 hours .';
+      await livePage.evaluate(text=>{
+        closeAssistantSheet();save([]);$('open-add').click();
+        $('ting-message').value='Family night';$('ting-duration').value='60';$('do-save').click();
+        window.familyBefore=JSON.stringify(load());
+        setDetailSearchOpen(true);$('detail-search-input').value=text;
+        renderDetailSearch();$('detail-search-ask').click();
+      },familyInstruction);
+      await livePage.waitForFunction(text=>_assistantSession?.focus?.currentRequest===text && !_assistantBusy,familyInstruction,{timeout:120000});
+      const familyEdit = await livePage.evaluate(async()=>{
+        const session=_assistantSession.focus,record=assistantFocusMaterialize(session);
+        const unchanged=JSON.stringify(load())===familyBefore;
+        const approve=assistantThreadEl().querySelector('[data-focus-approve]');
+        if(approve)await assistantHandleFocusClick(approve);
+        const button=assistantThreadEl().querySelector('[data-focus-save]');
+        const ready=Boolean(button&&!button.disabled);
+        if(ready)await assistantHandleFocusClick(button);
+        return {record,unchanged,ready,saved:load(),operation:session.operation};
+      });
+      assert(familyEdit.operation==='edit' && familyEdit.record.name==='Family night'
+        && familyEdit.record.durationMinutes===60
+        && JSON.stringify(familyEdit.record.allowedOrdinalWeekdays)===JSON.stringify([{ordinal:-1,weekday:5}])
+        && familyEdit.record.allowedTimeStartAnchor==='maghrib' && familyEdit.record.allowedTimeStartOffsetMin===0
+        && familyEdit.record.allowedTimeEndAnchor==='maghrib' && familyEdit.record.allowedTimeEndOffsetMin===120,
+        'live Add → detail search preserves Family night and stages its monthly rule, duration and solar window');
+      assert(familyEdit.unchanged && familyEdit.ready && familyEdit.saved.length===1
+        && familyEdit.saved[0].allowedTimeEndOffsetMin===120,
+        'Family night edits require confirmation and update the existing item');
       const liveRecovery = await livePage.evaluate(async()=>{
         save([{hid:'recovery',name:'Walk',type:'keepup',target:7,durationMinutes:45,logs:[]}]);
         const session = assistantFocusOpen({operation:'edit',kind:'habit',targetId:'recovery'});
@@ -358,7 +390,7 @@ function assert(ok, message){
         && liveRecovery.jobs.find(row=>row.id==='durationMinutes')?.attempts===1
         && liveRecovery.jobs.find(row=>row.id==='allowedWindow')?.attempts===2,
         `live model recovers a terminated worker without restarting its successful sibling (${JSON.stringify(liveRecovery.jobs)})`);
-      assert(!errors.length, `live add screen has no page errors (${errors.join('; ')})`);
+      assert(!errors.length, `live focused edit has no page errors (${errors.join('; ')})`);
       await livePage.close();
     }else console.log('  skip: live focused Needle (set NEEDLE_MODEL_PATH and NEEDLE_WASM_PATH)');
     console.log(`\n${passed} passed`);

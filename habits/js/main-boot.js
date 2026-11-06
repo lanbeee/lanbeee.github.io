@@ -522,12 +522,7 @@ $('do-save').addEventListener('click',()=>{
   if(!name){$('ting-message').focus();return;}
   if(name.length > 60){
     $('ting-message').focus();
-    const assisted = document.body.classList.contains('assistant-on') && !addAppointmentMode;
-    if(typeof showToast === 'function'){
-      showToast(assisted
-        ? 'Names stop at 60 characters. Tap sparkles to add it from this description.'
-        : 'Names stop at 60 characters.');
-    }
+    if(typeof showToast === 'function')showToast('Names stop at 60 characters.');
     return;
   }
   if(typeof applyAutoEmoji === 'function')applyAutoEmoji();
@@ -550,105 +545,12 @@ $('do-save').addEventListener('click',()=>{
   }
 });
 
-// The name field teaches a short title. With the assistant on, it can also
-// hold the sentence sparkles turns into a new item.
+// Add takes a literal name. Schedule and other instructions belong in details.
 function syncAddNamePlaceholder(){
   if(typeof addAppointmentMode !== 'undefined' && addAppointmentMode)return;
-  const assisted = document.body.classList.contains('assistant-on');
-  const isTask = selectedType === 'task';
-  $('ting-message').placeholder = isTask
-    ? (assisted ? 'e.g. Call mom tomorrow' : 'e.g. Book a dentist visit')
-    : (assisted ? 'e.g. Read 20 minutes every night' : 'e.g. Read a book');
+  $('ting-message').placeholder = selectedType === 'task'
+    ? 'e.g. Book a dentist visit' : 'e.g. Read a book';
 }
-
-function addRhythmPhrase(target, type, opportunity){
-  const parts = rhythmParts(target);
-  const times = parts.times;
-  const days = parts.days;
-  let phrase = times === 1 && days === 1 ? 'daily'
-    : times === 1 && days === 7 ? 'weekly'
-    : times === 1 ? `every ${days} days`
-    : days === 7 ? `${times} times a week`
-    : days === 1 ? `${times} times a day`
-    : `${times} times every ${days} days`;
-  if(type === 'reduce')phrase = `at most ${phrase}`;
-  if(opportunity)phrase = `when conditions fit, ${phrase}`;
-  return phrase;
-}
-
-function addDueToken(iso){
-  if(!iso)return '';
-  const today = typeof dateInputValue === 'function' ? dateInputValue(Date.now()) : '';
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowIso = typeof dateInputValue === 'function' ? dateInputValue(tomorrow.getTime()) : '';
-  if(iso === today)return 'today';
-  if(iso === tomorrowIso)return 'tomorrow';
-  return iso;
-}
-
-// Visible add-sheet choices. The description wins when it names the same
-// detail; these fill whatever it leaves out.
-function addAssistantForm(){
-  if(typeof readAddProfile !== 'function')return null;
-  const current = readAddProfile();
-  const task = selectedType === 'task';
-  const bits = [];
-  const form = {};
-  if(!task){
-    const opportunity = selectedType === 'keepup' && current.repeatMode === 'opportunity';
-    const rhythm = addRhythmPhrase(current.target, selectedType, opportunity);
-    bits.push(rhythm);
-    form.rhythm = rhythm;
-    if(opportunity)form.repeatMode = 'opportunity';
-    if(selectedType === 'reduce')form.habitKind = 'reduce';
-    if(selectedType === 'zero')form.habitKind = 'zero';
-  }else{
-    const due = addDueToken(current.dueDate);
-    if(due){
-      bits.push(`due ${due}`);
-      form.due = due;
-    }else bits.push('no due date');
-    if(current.dueTime){
-      bits.push(`at ${current.dueTime}`);
-      form.dueTime = current.dueTime;
-    }
-  }
-  if(selectedType !== 'zero' && selectedType !== 'reduce'){
-    bits.push(`${current.durationMinutes} minutes`);
-    form.durationMinutes = current.durationMinutes;
-  }
-  form.note = bits.join(', ');
-  return form;
-}
-
-function addAssistantModelText(text, intent){
-  const lead = intent === 'create_task' ? 'Add a one-off task' : (intent === 'create_event' ? 'Add a local event' : 'Add a repeating habit');
-  return `${lead}: ${text}`;
-}
-
-// WIRE: sparkles adds a new item of the kind already chosen on this sheet.
-// The add sheet stays underneath, so the typed text survives a dismiss.
-// Saving the preview closes it.
-$('ting-ask-ai').addEventListener('click',()=>{
-  const text = $('ting-message').value.trim();
-  const eventAdd = typeof addAppointmentMode !== 'undefined' && addAppointmentMode;
-  if(!text){
-    $('ting-message').focus();
-    if(typeof showToast === 'function')showToast(eventAdd ? 'Describe the new event first' : 'Describe the new habit or task first');
-    return;
-  }
-  if(typeof tingsLoadAssistant !== 'function')return;
-  const intent = eventAdd ? 'create_event' : (selectedType === 'task' ? 'create_task' : 'create_habit');
-  const form = addAssistantForm();
-  const modelText = addAssistantModelText(text, intent);
-  const addRecord = typeof readAddRecord === 'function' ? readAddRecord() : null;
-  void tingsLoadAssistant().then(()=>{
-    if(typeof assistantOpenWithInstruction === 'function'){
-      assistantOpenWithInstruction(text,{intent,entry:'add',modelText,form,addRecord});
-    }
-  });
-});
 
 // PURE: "YYYY-MM-DD" -> day-start ms timestamp, or null when blank
 function parseDateInput(value){
@@ -2067,18 +1969,8 @@ $('detail-snooze').addEventListener('click',()=>{
   snoozeFromDetail = true;
   openSnooze(detailIdx);
 });
-// WIRE: change-with-AI — open the assistant focused on this item; typed
-// instructions extract against currentDraft without a classify round trip.
-$('detail-ask-ai').addEventListener('click',()=>{
-  if(detailIdx === null)return;
-  if(typeof tingsLoadAssistant !== 'function')return;
-  const item = load()[detailIdx];
-  if(!item)return;
-  void tingsLoadAssistant().then(()=>{
-    const local = typeof isLocalAppointment === 'function' && isLocalAppointment(item);
-    if(typeof assistantOpenForItem === 'function')assistantOpenForItem(item.hid,'detail', local ? {occurrenceDate:''} : null);
-  });
-});
+// The action row and the shared search box use the same focused edit entry.
+$('detail-ask-ai').addEventListener('click',()=>void openDetailAssistant());
 $('detail-export').addEventListener('click',()=>{
   if(detailIdx === null)return;
   exportToCalendar(detailIdx);

@@ -194,6 +194,7 @@ function openDetail(i){
     detailVizMode = 'calendar';
   }
   detailIdx = i;
+  syncDetailSearchAssistant();
   detailUnsavedCreate = null;
   detailUnsavedReminders = null;
   paintDetailFields(h);

@@ -152,13 +152,9 @@
       <p class="field-hint" id="add-type-help" hidden>Keep up a habit, finish a task, or reserve time for an event.</p>
       <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" maxlength="240" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="choose an icon (optional)" title="Choose an icon (optional)"></button>
-        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="add this with the assistant" title="Add a new habit or task from what you typed" aria-describedby="add-ask-hint">
-          <i class="ti ti-sparkles" aria-hidden="true"></i>
-        </button>
       </div>
-      <p class="field-hint" id="add-ask-hint">Sparkles adds a new habit or task from what you type. Add saves a short name.</p>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <div class="generic-emoji-wrap">
           <div class="emoji-picker-toolbar">
@@ -380,6 +376,11 @@
         <div class="detail-dots" role="tablist" aria-label="detail pages"></div>
       </div>
       <div id="detail-search-panel" class="detail-search-panel" hidden>
+        <button type="button" id="detail-search-ask" class="detail-search-assistant" hidden>
+          <i class="ti ti-sparkles" aria-hidden="true"></i>
+          <span><b id="detail-search-ask-label">Ask Needle</b><small>Review before saving</small></span>
+          <i class="ti ti-arrow-up-right" aria-hidden="true"></i>
+        </button>
         <p id="detail-search-status" class="field-hint" role="status" aria-live="polite"></p>
         <div id="detail-search-results" class="detail-search-results" aria-label="matching detail settings"></div>
       </div>
@@ -800,11 +801,11 @@
       </div>
       <div class="detail-bottom-bar sheet-search-dock" aria-label="detail actions">
         <div class="detail-actions" id="detail-cool-row">
-          <div class="detail-search-control detail-full-only">
+          <div class="detail-search-control">
             <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
             <div class="detail-search-field" hidden>
               <label class="sr-only" for="detail-search-input">Search within this item’s details</label>
-              <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
+              <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="12000" enterkeyhint="search" aria-describedby="detail-search-status" />
               <button type="button" id="detail-search-clear" class="sheet-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
           </div>

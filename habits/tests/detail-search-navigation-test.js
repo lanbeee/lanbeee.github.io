@@ -7,7 +7,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     const page = await browser.newPage({viewport:{width:390,height:844}});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.addInitScript(()=>{
-      localStorage.setItem('tings_app_settings_v2',JSON.stringify({minimalMode:false,showWeekOnHome:false}));
+      localStorage.setItem('tings_app_settings_v2',JSON.stringify({minimalMode:false,showWeekOnHome:false,localAssistant:false,localAssistantSetupVersion:2}));
       localStorage.setItem('tings_coach_install_v2','done');
       localStorage.setItem('tings_coach_essentials_v2','done');
     });
@@ -278,12 +278,25 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     }
     await page.setViewportSize({width:390,height:568});await page.waitForTimeout(250);
     await page.evaluate(()=>{sortSettings.minimalMode=true;applyAppearanceSettings();openDetail(0);});
-    assert.equal(await page.locator('#detail-search-toggle').isVisible(),false);
+    assert.equal(await page.locator('#detail-search-toggle').isVisible(),true,'minimal mode keeps the shared search entry');
+    await search('duration');
+    assert.ok(await result('Duration').count()>0,'minimal search finds essentials');
+    await page.keyboard.press('Enter');
+    assert.ok(await page.locator('#detail-duration').isVisible(),'minimal search opens its setting');
+    await page.locator('#detail-duration').blur();
     assert.ok(await page.locator('#detail-duration').isVisible());
     assert.equal(await page.locator('#detail-priority-seg').isVisible(),false);
     assert.ok(await page.locator('#detail-rhythm-disclosure > summary').isVisible(),'minimal mode keeps section headers');
     assert.ok(await page.locator('#detail-name-disclosure > summary').isVisible(),'identity section header stays visible');
     assert.ok(await page.locator('#detail-actions-disclosure > summary').isVisible(),'actions section header stays visible');
+    await search('weather');
+    assert.equal(await result('Weather guidance').count(),0,'minimal search omits hidden advanced settings');
+    await page.evaluate(()=>{
+      window.searchRoutineBefore=load();const items=load();items[0].repeatMode='opportunity';save(items);openDetail(0);
+    });
+    await search('weather');
+    assert.ok(await result('Weather guidance').count()>0,'minimal search keeps essential condition controls for opportunity habits');
+    await page.evaluate(()=>{save(searchRoutineBefore);delete window.searchRoutineBefore;openDetail(0);setDetailSearchOpen(false,false);});
     const minimalPad=await page.evaluate(()=>{
       const pages=[...getSheetInner('detail-sheet').querySelectorAll('.detail-pager > .detail-page')];
       const visible=pages.filter(p=>!p.hidden);

@@ -1,5 +1,5 @@
-// In-item navigation only. Search never changes a saved setting or enables a
-// prerequisite. Destinations are resolved from the live DOM on every search.
+// Search navigates settings. Its explicit assistant action opens a focused edit
+// in chat; typing alone never changes a setting or invokes the model.
 const DETAIL_SEARCH_FIELDS = ITEM_DETAIL_SEARCH_FIELDS;
 
 function resetDetailDisclosures(h){
@@ -26,12 +26,19 @@ function detailSearchNormalize(value){
 
 function detailSearchEntries(){
   const inner = getSheetInner('detail-sheet');
-  if(!inner || detailIsSingleView())return [];
+  if(!inner)return [];
   const entries = [];
   const optional = $('detail-sheet').classList.contains('opportunity-mode');
   const add = (target,label,aliases='')=>{
     const page = target?.closest('.detail-page');
     if(!page || page.hidden || (target.disabled && target.id !== 'detail-due-time'))return;
+    if(detailIsSingleView()){
+      // Condition-based habits expose their place/weather controls even in
+      // minimal mode. Respect those live visibility rules as well.
+      for(let section=target.closest('.detail-full-only');section;section=section.parentElement.closest('.detail-full-only')){
+        if(getComputedStyle(section).display === 'none')return;
+      }
+    }
     if(optional && (target.id === 'detail-times'
       || target.closest('#detail-flexibility-disclosure') || label === 'Place preferences'))return;
     // Platform-only controls are deliberately absent, including native sharing.
@@ -100,6 +107,66 @@ function detailSearchTokenMatch(text,token){
   });
 }
 
+function detailAssistantAvailable(){
+  const item = detailIdx === null ? null : load()[detailIdx];
+  if(!sortSettings?.localAssistant || !item)return false;
+  return sortSettings.localAssistantProvider !== 'needle'
+    || !['device','pdf','ics','gcal','msgraph'].includes(item.source);
+}
+
+function syncDetailSearchAssistant(){
+  const enabled = detailAssistantAvailable();
+  const label = enabled ? 'Find or change a setting' : 'Find a setting';
+  $('detail-search-input').placeholder = label;
+  $('detail-search-input').setAttribute('aria-label',label);
+  $('detail-search-toggle').querySelector('span').textContent = enabled ? 'find or change' : 'find in details';
+  $('detail-search-ask').hidden = !enabled || !$('detail-search-input').value.trim();
+  $('detail-search-ask-label').textContent = sortSettings?.localAssistantProvider === 'needle' ? 'Ask Needle' : 'Ask assistant';
+}
+
+let detailAssistantOpening = false;
+async function openDetailAssistant(instruction = ''){
+  if(detailAssistantOpening || !detailAssistantAvailable())return false;
+  const inner = getSheetInner('detail-sheet');
+  if(inner?.classList.contains('tune-dirty')){
+    showToast('Save or cancel your edits before asking for a change.');
+    return false;
+  }
+  const item = load()[detailIdx];
+  if(typeof tingsLoadAssistant !== 'function')return false;
+  detailAssistantOpening = true;
+  $('detail-search-ask').disabled = true;
+  try{
+    const loaded = await tingsLoadAssistant();
+    // Loading the optional bundle must not move an instruction to another item
+    // if the user has navigated away, changed settings, or begun a manual edit.
+    if(!loaded){
+      showToast('Assistant could not open. Try again.');
+      return false;
+    }
+    const visible = $('detail-sheet').classList.contains('open') || getPane()?.dataset.activeSheet === 'detail-sheet';
+    if(!detailAssistantAvailable() || load()[detailIdx]?.hid !== item.hid
+      || !visible || inner?.classList.contains('tune-dirty'))return false;
+    if(typeof assistantOpenForItem !== 'function')return false;
+    const opened = await assistantOpenForItem(item.hid,'detail',{occurrenceDate:''});
+    if(opened){
+      setDetailSearchOpen(false,false);
+      $('detail-search-input').value = '';
+      syncDetailSearchAssistant();
+      const text = String(instruction || '').trim();
+      if(text)void sendAssistantMessage(text);
+    }
+    return opened;
+  }catch(error){
+    console.warn('[tings assistant] detail entry unavailable',error);
+    showToast('Assistant could not open. Try again.');
+    return false;
+  }finally{
+    detailAssistantOpening = false;
+    $('detail-search-ask').disabled = false;
+  }
+}
+
 function renderDetailSearch(){
   const query = detailSearchNormalize($('detail-search-input').value).slice(0,120);
   const tokens = query.split(' ').filter(Boolean);
@@ -119,14 +186,20 @@ function renderDetailSearch(){
     button.addEventListener('click',()=>revealDetailSearchEntry(entry));
     results.append(button);
   });
-  $('detail-search-status').textContent = !tokens.length ? 'Browse settings, or search by name.' : matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}` : 'No matching settings. Try “duration”, “weather”, “reminder” or “days”.';
+  syncDetailSearchAssistant();
+  const assistant = detailAssistantAvailable();
+  $('detail-search-status').textContent = !tokens.length
+    ? (assistant ? 'Find a setting or describe a change.' : 'Browse settings, or search by name.')
+    : matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`
+    : assistant ? ''
+    : 'No matching settings. Try “duration”, “weather”, “reminder” or “days”.';
   $('detail-search-clear').hidden = !$('detail-search-input').value;
 }
 
 let detailSearchReturnNav = null;
 let detailSearchReturnScroll = [];
 function setDetailSearchOpen(open,focus = true){
-  open = Boolean(open && !detailIsSingleView() && !getSheetInner('detail-sheet')?.classList.contains('tune-dirty'));
+  open = Boolean(open && !getSheetInner('detail-sheet')?.classList.contains('tune-dirty'));
   const inner = getSheetInner('detail-sheet');
   if(!inner)return;
   const wasOpen = inner.classList.contains('detail-search-open');
@@ -135,7 +208,7 @@ function setDetailSearchOpen(open,focus = true){
     const index = Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth));
     const pages = visibleDetailPages(pager);
     detailSearchReturnNav = pages[index]?.dataset.detailNav;
-    detailSearchReturnScroll = pages.map(page=>({page,top:page.scrollTop}));
+    detailSearchReturnScroll = [pager,...pages].map(page=>({page,top:page.scrollTop}));
   }
   inner.classList.toggle('detail-search-open',open);
   $('detail-search-panel').hidden = !open;
@@ -162,7 +235,7 @@ function setDetailSearchOpen(open,focus = true){
 }
 
 function revealDetailSearchEntry(entry){
-  if(!entry.target.isConnected || detailIsSingleView())return;
+  if(!entry.target.isConnected)return;
   let target = entry.target;
   const original = target;
   setDetailSearchOpen(false,false);
@@ -262,12 +335,16 @@ document.addEventListener('focusin',syncDetailEditingChrome);
 document.addEventListener('focusout',()=>requestAnimationFrame(syncDetailEditingChrome));
 $('detail-search-input').addEventListener('input',renderDetailSearch);
 $('detail-search-input').addEventListener('keydown',event=>{
+  if(event.isComposing)return;
+  const first = $('detail-search-results').querySelector('button')
+    || (!$('detail-search-ask').hidden ? $('detail-search-ask') : null);
   if(event.key === 'ArrowDown'){
-    event.preventDefault();$('detail-search-results').querySelector('button')?.focus();
+    event.preventDefault();first?.focus();
   }else if(event.key === 'Enter'){
-    event.preventDefault();$('detail-search-results').querySelector('button')?.click();
+    event.preventDefault();first?.click();
   }
 });
+$('detail-search-ask').addEventListener('click',()=>void openDetailAssistant($('detail-search-input').value));
 $('detail-search-clear').addEventListener('click',()=>{
   $('detail-search-input').value='';renderDetailSearch();$('detail-search-input').focus();
 });

@@ -321,25 +321,7 @@ body:not(.assistant-debug-on) .assistant-bubble-debug{display:none;}
 .assistant-feedback .btn-row{margin-top:10px;flex-wrap:wrap;}
 .assistant-feedback .btn{white-space:normal;min-width:0;}
 
-/* Entry buttons: add-sheet name row + detail actions row. Visibility is
-   CSS-driven off body.assistant-on (syncAssistantChrome) so the buttons
-   appear/disappear with the local assistant setting without a re-render. */
-#ting-ask-ai,#add-ask-hint{display:none;}
-body.assistant-on #ting-ask-ai{display:inline-flex;}
-body.assistant-on #add-ask-hint{display:block;margin:8px 0 12px;}
-body.assistant-on .appointment-add #add-ask-hint{display:none;}
-body.assistant-on .appointment-add #ting-ask-ai{display:inline-flex;}
+/* Focused editing is available from details and home cards. */
 body.assistant-on .local-appointment #detail-ask-ai{display:flex !important;}
-body.assistant-on .add-sheet .name-icon-row{grid-template-columns:minmax(0,1fr) 46px 46px;}
-.ting-ask-ai{
-  width:44px;height:44px;border-radius:50%;
-  align-items:center;justify-content:center;
-  font:inherit;font-size:20px;line-height:1;
-  background:var(--bg2);color:var(--teal-icon);
-  border:0.5px solid var(--border);margin:0 0 12px;padding:0;cursor:pointer;
-  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
-  transition:transform var(--dur-fast) var(--ease-tight),box-shadow var(--dur-fast) ease;
-}
-.ting-ask-ai:active{transform:scale(0.94);}
 #detail-ask-ai{display:none;}
 body.assistant-on #detail-ask-ai{display:flex;}

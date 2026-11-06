@@ -96,7 +96,7 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom
 .about-hero{padding:8px;border-radius:22px;gap:12px;}
 .about-hero img,.privacy-hero-icon{border-radius:14px;}
 .about-hero-close{border-radius:14px;}
-.name-icon-row .ting-emoji-preview,.ting-ask-ai{border-radius:14px;}
+.name-icon-row .ting-emoji-preview{border-radius:14px;}
 .about-hero > div{padding:6px 40px 6px 6px;}
 .about-hub-group{padding:6px;border-radius:22px;}
 .about-hub-group .about-block{border-radius:16px;}
