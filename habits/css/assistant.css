@@ -114,6 +114,14 @@ body[data-pane-count="3"] .assistant-sheet{
 }
 .focus-review .assistant-preview-name{margin:0;}
 .focus-review .assistant-chip-row{margin:0;}
+.focus-field{border:0;cursor:pointer;touch-action:manipulation;font-family:inherit;}
+.assistant-chip.focus-field{min-height:36px;gap:5px;}
+.focus-name{font:inherit;color:inherit;background:transparent;padding:0;text-align:left;}
+.focus-name.focus-field{display:inline-flex;align-items:center;gap:6px;min-height:36px;}
+.focus-field > i{font-size:12px;opacity:.6;flex-shrink:0;}
+.focus-field:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
+.focus-field:active:not(:disabled){filter:brightness(.92);}
+.focus-field:disabled{cursor:default;opacity:.6;}
 .focus-note{margin:0;color:var(--text3);font-size:12px;line-height:1.35;}
 .focus-progress{display:flex;flex-direction:column;gap:6px;}
 .focus-meter{height:4px;border-radius:999px;background:var(--bg3);overflow:hidden;}

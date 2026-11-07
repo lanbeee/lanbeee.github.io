@@ -1450,8 +1450,9 @@ function assistantDiscardPending(){
   assistantClearFocus();
 }
 
-function assistantRetireFocusControls(){
-  assistantThreadEl()?.querySelectorAll('[data-focus-save],[data-focus-edit],[data-focus-choice]').forEach(button => {
+function assistantRetireFocusControls(keepFields = false){
+  const selector = '[data-focus-save],[data-focus-edit],[data-focus-choice]' + (keepFields ? '' : ',[data-focus-field]');
+  assistantThreadEl()?.querySelectorAll(selector).forEach(button => {
     button.disabled = true;
   });
 }
@@ -1495,6 +1496,25 @@ async function assistantHandleFocusClick(target){
   const session = _assistantSession && _assistantSession.focus;
   if(!session)return false;
   if(_assistantBusy || target.closest('button')?.disabled)return true;
+  const field = target.closest('[data-focus-field]');
+  if(field){
+    const selector = assistantFocusDetailSelector(field.dataset.focusField, session);
+    if(!selector || typeof assistantFocusEditDraft !== 'function')return true;
+    const result = assistantFocusEditDraft(session);
+    const status = field.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
+    if(!result?.ok){
+      if(status)status.textContent = result?.error || 'The detail editor is unavailable.';
+      return true;
+    }
+    closeAssistantSheet();
+    // Opening details can schedule its default page for the next frame. Jump
+    // after that, and use the live control (event editors rebuild their DOM).
+    requestAnimationFrame(() => {
+      const control = getSheetInner('detail-sheet')?.querySelector(selector);
+      if(control)revealDetailSearchEntry({target:control, label:assistantFocusField(field.dataset.focusField)?.label || '', revealHidden:true});
+    });
+    return true;
+  }
   const save = target.closest('[data-focus-save]');
   if(save){
     if(save.disabled || typeof assistantFocusCommit !== 'function')return true;
@@ -1503,7 +1523,7 @@ async function assistantHandleFocusClick(target){
     const status = save.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
     if(result && result.ok){
       if(status)status.textContent = 'Saved.';
-      assistantRetireFocusControls();
+      assistantRetireFocusControls(true);
       if(session.operation === 'create' && session.entry === 'add' && typeof cancelAdd === 'function')cancelAdd();
       return true;
     }
@@ -1593,7 +1613,7 @@ function bindAssistantUi(){
     }
   });
   $('assistant-thread')?.addEventListener('click', e => {
-    if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice]')){
+    if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field]')){
       e.preventDefault();
       void assistantHandleFocusClick(e.target);
       return;

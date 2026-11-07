@@ -348,7 +348,7 @@ body .detail-search-field input{
 body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail[data-active-sheet="detail-sheet"] > .detail-sheet{position:relative;height:calc(100% - var(--keyboard-lift,0px));max-height:100%;}
 body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap .detail-sheet{height:calc(100dvh - 48px - var(--keyboard-lift,0px));}
 .detail-head .ting-name{overflow-wrap:anywhere;}
-body .minimal-detail .detail-full-only{display:none !important;}
+body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none !important;}
 .detail-disclosure[data-detail-essential]{margin-top:0;border-top:0;}
 .detail-disclosure > summary{min-height:44px;cursor:pointer;}
 .detail-disclosure > summary:focus-visible,.detail-search-result:focus-visible{outline:2px solid var(--text);outline-offset:-2px;}

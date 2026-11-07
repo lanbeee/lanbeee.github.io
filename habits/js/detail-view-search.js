@@ -234,12 +234,20 @@ function setDetailSearchOpen(open,focus = true){
   }
 }
 
+let detailSearchHitTarget = null;
+let detailSearchHitTimer = null;
 function revealDetailSearchEntry(entry){
   if(!entry.target.isConnected)return;
   let target = entry.target;
   const original = target;
   setDetailSearchOpen(false,false);
   $('detail-search-input').blur();
+  if(entry.revealHidden && detailIsSingleView()){
+    // A chat summary may refer to an advanced setting hidden in minimal mode.
+    // Reveal only its section for this visit, without changing the preference.
+    target.closest('.detail-page').hidden = false;
+    for(let p=target.closest('.detail-full-only');p;p=p.parentElement.closest('.detail-full-only'))p.classList.add('detail-field-revealed');
+  }
   const preferred = target.closest('#detail-schedule-preferred') || entry.label === 'Place preferences';
   if(target.closest('[data-detail-nav="schedule"]'))setScheduleView(preferred ? 'preferred' : 'allowed');
   if(target.id === 'detail-viz-seg'){
@@ -274,8 +282,11 @@ function revealDetailSearchEntry(entry){
     // visible section without turning on or altering any saved settings.
     if(!target.getClientRects().length)target = original.closest('details')?.querySelector('summary') || target;
     target.scrollIntoView({block:'center',inline:'nearest',behavior:'auto'});
+    clearTimeout(detailSearchHitTimer);
+    detailSearchHitTarget?.classList.remove('detail-search-hit');
+    detailSearchHitTarget = target;
     target.classList.add('detail-search-hit');
-    setTimeout(()=>target.classList.remove('detail-search-hit'),2400);
+    detailSearchHitTimer = setTimeout(()=>target.classList.remove('detail-search-hit'),2400);
     const focus = target.matches('input,select,button,summary') ? target : target.querySelector('input,select,button,summary');
     if(focus)focus.focus({preventScroll:true});
     if(message)showToast(message,4500);

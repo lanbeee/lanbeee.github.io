@@ -41,7 +41,7 @@ function assistantFocusInvalidate(){
     _assistantSession.focus.interpretationApproved = null;
   }
   if(typeof document !== 'undefined'){
-    document.querySelectorAll('[data-focus-save],[data-focus-edit],[data-focus-choice]').forEach(el => {
+    document.querySelectorAll('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field]').forEach(el => {
       el.disabled = true;
     });
   }
@@ -1390,10 +1390,47 @@ function assistantFocusWeatherRulesChip(profile){
   return {id:'weatherRules', text, origin:'changed'};
 }
 
-function assistantFocusChipHtml(chip){
+// Reuse the field catalog's detail targets, with explicit destinations for
+// grouped rhythm chips, event controls, and native-only reminders.
+function assistantFocusDetailSelector(field, session){
+  if(field === 'planByDate')return null; // No editable detail control yet.
+  if(field === 'name' && session.eventScope === 'occurrence')return null;
+  if(field.startsWith('reminder')){
+    if(!window.TingsNative?.isNative)return null;
+    const edges = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
+    if(edges[field])return `#detail-native-reminders [data-reminder-edge="${edges[field]}"]`;
+    return ({reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderReset:'#detail-native-reminders'})[field] || null;
+  }
+  if(session.kind === 'event'){
+    const event = {
+      durationMinutes:'detail-appt-duration', places:'detail-appt-place',
+      appointmentRepeat:'detail-appt-repeat', appointmentStartDate:'detail-appt-date',
+      appointmentStartMinute:'detail-appt-time', appointmentWeekdays:'detail-appt-weekly', appointmentUntil:'detail-appt-until',
+      exceptionTime:'detail-appt-time', exceptionDuration:'detail-appt-duration',
+      exceptionEmoji:'detail-emoji', exceptionColor:'detail-emoji-bg',
+      exceptionCancelled:'detail-appt-skip', exceptionReset:'detail-appt-reset'
+    };
+    if(event[field])return `#${event[field]}`;
+  }
+  const id = ({rhythm:'detail-frequency-presets', timesPerPeriod:'detail-times', periodDays:'detail-days',
+    conditionTrigger:'detail-condition-trigger', conditionRadiusM:'detail-condition-radius', hardDue:'detail-delay-allowance'})[field]
+    || (typeof ASSISTANT_FIELD_SEARCH !== 'undefined' && ASSISTANT_FIELD_SEARCH[field]);
+  return id ? `#${id}` : null;
+}
+
+function assistantFocusFieldHtml(field, text, className, session){
+  const value = assistantFocusEscape(text);
+  if(!assistantFocusDetailSelector(field, session))return `<span class="${className}">${value}</span>`;
+  const label = assistantFocusField(field)?.label || (field === 'rhythm' ? 'How often' : field);
+  const disabled = session._focusInFlight || (session.operation === 'create' && !String(assistantFocusMaterialize(session).name || '').trim());
+  return `<button type="button" class="${className} focus-field" data-focus-field="${assistantFocusEscape(field)}" aria-label="${assistantFocusEscape(`Edit ${label} in details: ${text}`)}" title="${assistantFocusEscape(`Edit ${label} in details`)}" ${disabled ? 'disabled' : ''}>${value}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`;
+}
+
+function assistantFocusChipHtml(chip, session){
   const suffix = chip.origin === 'default' ? '<small>default</small>' : chip.origin === 'form' ? '<small>add form</small>' : '';
   const changed = chip.origin === 'changed' ? ' is-changed' : '';
-  return `<span class="assistant-chip${changed}">${assistantFocusEscape(chip.text)}${suffix}</span>`;
+  const html = assistantFocusFieldHtml(chip.id, chip.text, `assistant-chip${changed}`, session);
+  return suffix ? html.replace(/<\/(button|span)>$/, `${suffix}</$1>`) : html;
 }
 
 function assistantFocusWorkLabel(job){
@@ -1442,10 +1479,10 @@ function assistantFocusReviewHtml(session){
   const model = assistantFocusReviewModel(session);
   const bits = assistantFocusReviewBits(session, model);
   const essentials = bits.essentials.length
-    ? `<div class="assistant-chip-row" aria-label="Essentials">${bits.essentials.map(assistantFocusChipHtml).join('')}</div>`
+    ? `<div class="assistant-chip-row" aria-label="Essentials">${bits.essentials.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
     : '';
   const changes = bits.changes.length
-    ? `<p class="focus-section">Changed</p><div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(assistantFocusChipHtml).join('')}</div>`
+    ? `<p class="focus-section">Changed</p><div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
     : '';
   const notes = model.notes.map(note => `<p class="focus-note">${assistantFocusEscape(note)}</p>`).join('');
   const pending = assistantFocusActivityHtml(session, model);
@@ -1464,7 +1501,7 @@ function assistantFocusReviewHtml(session){
   const scope = model.scope ? `<p class="focus-note">Scope: ${assistantFocusEscape(model.scope === 'occurrence' ? `this date ${model.occurrenceDate}` : 'all dates')}</p>` : '';
   return `<div class="focus-review" data-focus-review>
       <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
-      <p class="assistant-preview-name">${assistantFocusEscape(model.title)}</p>
+      <p class="assistant-preview-name">${assistantFocusFieldHtml('name', model.title, 'focus-name', session)}</p>
       ${essentials}${changes}${pending}${question}${scope}${notes}
       <p class="focus-status" data-focus-status role="status">${assistantFocusEscape(session.correctionError || '')}</p>
       ${actions}
@@ -1735,6 +1772,11 @@ function assistantFocusEditDraft(session){
     const index = data.findIndex(item => item && item.hid === session.targetId);
     if(index < 0 || typeof openDetailUnsaved !== 'function')return {ok:false, error:'That item is no longer on the list.'};
     if(!openDetailUnsaved(index, record))return {ok:false, error:'The detail editor is unavailable.'};
+    if(session.kind === 'event' && session.eventScope === 'occurrence' && $('detail-appt-scope')){
+      $('detail-appt-scope').value = 'date';
+      $('detail-appt-occurrence').value = session.occurrenceDate;
+      $('detail-appt-scope').dispatchEvent(new Event('change'));
+    }
     detailUnsavedReminders = reminders;
     assistantFocusPreviewReminders(session, record.hid || session.targetId);
     return {ok:true};

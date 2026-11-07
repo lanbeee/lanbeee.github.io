@@ -16,6 +16,7 @@ function applyDetailMinimalMode(){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   const sheet = $('detail-sheet');
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  pager?.querySelectorAll('.detail-field-revealed').forEach(el=>el.classList.remove('detail-field-revealed'));
   if(sheet)sheet.classList.toggle('minimal-detail', minimal);
   // A previously selected Preferred view must never hide the basic controls.
   if(minimal && typeof setScheduleView === 'function')setScheduleView('allowed');
