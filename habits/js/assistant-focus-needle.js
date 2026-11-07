@@ -94,11 +94,28 @@ async function assistantFocusLiveExtract(spec){
   if(typeof assistantNeedleFocusRequest !== 'function'){
     throw new Error('Needle is not available on this page.');
   }
+  let tools=spec.tools||[spec.tool],request=spec.request;
+  const properties=Object.entries(tools.length===1&&tools[0]?.parameters?.properties||{});
+  const [key,property]=properties[0]||[];
+  let choices=null;
+  // The pinned native enum grammar can emit unescaped quotes/backslashes in
+  // string choices. Ask for a bounded evidence token instead, then restore
+  // only that exact original choice. Never repair or infer model prose.
+  if(properties.length===1&&property.enum?.some(value=>typeof value==='string'&&/["\\\u0000-\u001f]/.test(value))){
+    choices=new Map(property.enum.filter(value=>value!=='').map((value,index)=>[`evidence_${index+1}`,value]));
+    tools=[{...tools[0],parameters:{...tools[0].parameters,properties:{[key]:{...property,enum:[...choices.keys(),'']}}}}];
+    request+=`\nSelect the token for the exact evidence, or empty if unrelated:\n${[...choices].map(([token,value])=>`${token}: ${JSON.stringify(value)}`).join('\n')}`;
+  }
   const result = await assistantNeedleFocusRequest({
     system:spec.system,
-    request:spec.request,
-    tools:spec.tools || [spec.tool]
+    request,
+    tools
   });
+  if(choices)for(const call of [...(result.function_calls||[]),...(result.suppressed_calls||[])]){
+    if(call.name!==tools[0].name)continue;
+    const args=typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments||{};
+    call.arguments={...args,[key]:choices.get(args[key])||''};
+  }
   return result;
 }
 

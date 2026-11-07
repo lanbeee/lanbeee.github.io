@@ -407,8 +407,9 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:habitKind};
   }
   if(fieldId === 'emoji' || fieldId === 'exceptionEmoji'){
-    const symbols = typeof markSegments === 'function' ? markSegments(text).filter(part => /\p{Extended_Pictographic}/u.test(part)) : [];
+    const symbols = typeof markSegments === 'function' ? markSegments(text).filter(part => /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\ufe0f?\u20e3/u.test(part)) : [];
     const mark = symbols.length ? symbols.slice(0,2).join('') : text;
+    if(!symbols.length&&!/\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\ufe0f?\u20e3/u.test(text))return fail('Choose an emoji, or remove it.');
     const emoji = typeof assistantParseEmoji === 'function' ? assistantParseEmoji(mark) : mark;
     return {ok:true, op:text.toLowerCase() === 'none' ? 'clear' : 'set', value:emoji || ''};
   }
@@ -433,7 +434,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:days};
   }
   if(fieldId === 'repeatMode'){
-    const mode = /opportunit|when conditions|when it fits/.test(text.toLowerCase()) ? 'opportunity' : (/routine|regular/.test(text.toLowerCase()) ? 'routine' : '');
+    const mode = /opportunit|when conditions|when it fits|when the chance/.test(text.toLowerCase()) ? 'opportunity' : (/routine|regular/.test(text.toLowerCase()) ? 'routine' : '');
     if(!mode)return fail('Choose a regular rhythm or only when conditions fit.');
     return {ok:true, op:'set', value:mode};
   }
@@ -527,7 +528,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:until == null ? 'clear' : 'set', value:until};
   }
   if(fieldId === 'appointmentRepeat'){
-    const repeat = /week/.test(text.toLowerCase()) ? 'weekly' : (/once|one/.test(text.toLowerCase()) ? 'once' : '');
+    const repeat = /week/.test(text.toLowerCase()) ? 'weekly' : (/once|one|single event/.test(text.toLowerCase()) ? 'once' : '');
     if(!repeat)return fail('An event repeats once, or every week.');
     return {ok:true, op:'set', value:repeat};
   }
@@ -541,7 +542,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:true};
   }
   if(String(fieldId).startsWith('reminder') && fieldId !== 'reminderReset' && !/Lead/.test(fieldId)){
-    const mode = /\bno reminders?\b/i.test(text)?'off':ASSISTANT_FOCUS_REMINDER_MODES.find(item => text.toLowerCase().includes(item === 'notification' ? 'notif' : item)) || (/\b(?:remind|warn)\b/i.test(text)&&!/\b(?:not|never|don.t|without)\b/i.test(text)?'notification':null);
+    const mode = /\bno reminders?\b/i.test(text)||typeof assistantFieldAllRemindersOff==='function'&&assistantFieldAllRemindersOff(text)?'off':ASSISTANT_FOCUS_REMINDER_MODES.find(item => text.toLowerCase().includes(item === 'notification' ? 'notif' : item)) || (/\b(?:remind|warn|alert|notify)\b/i.test(text)&&!/\b(?:not|never|don.t|without)\b/i.test(text)?'notification':null);
     if(!mode)return fail('Choose off, notification, or ringing alarm.');
     return {ok:true, op:'set', value:mode};
   }
@@ -624,7 +625,11 @@ function assistantFocusNormalize(fieldId, raw, session){
     const links = [];
     for(const link of parsed.links){
       const row = {...link, ...modifiers};
-      const found = assistantResolveOrderLink(row.name, data, row, [], null);
+      let found = assistantResolveOrderLink(row.name, data, row, [], null);
+      if(!found?.ok&&found?.error!=='AMBIGUOUS'){
+        const bare=row.name.replace(/\s+(?:workout|habit|task|event)$/i,'');
+        if(bare!==row.name)found=assistantResolveOrderLink(bare,data,row,[],null);
+      }
       if(!found || !found.ok)return fail(found && found.ask || 'Choose a saved item for the order.');
       links.push(found.link);
     }
@@ -931,7 +936,14 @@ function assistantFocusMaterialize(session, baseline){
   if(typeof primaryPreferredLocationId === 'function'){
     record.preferredLocationId = primaryPreferredLocationId(record.locationPrefs, record.locationIds);
   }
-  return record;
+  // Review and Save share the persistence normalizer: derived deadline flags,
+  // flexibility aliases, event projections and order-link defaults must agree.
+  // Include saved partners so normalization retains valid order references.
+  if(typeof normalize!=='function')return record;
+  const normalized=normalize([record,...data.filter(item=>item.hid!==record.hid)]);
+  // Switching weekly/one-off recurrence projects the record's type and date.
+  // Settle their derived flags too, before persistence normalizes it again.
+  return record.appointment?normalize(normalized)[0]:normalized[0];
 }
 
 function assistantFocusFormatWeekdays(days){

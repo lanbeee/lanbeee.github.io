@@ -75,6 +75,14 @@ function assistantParseClock(value){
   if(!s)return null;
   if(s === 'noon' || s === 'midday')return 12 * 60;
   if(s === 'midnight')return 0;
+  const spoken=s.match(/^(?:(half|quarter) (past|to) )?(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?:\s*(am|pm)| in (?:the )?(morning|afternoon|evening|night))$/);
+  if(spoken){
+    const hour=assistantParseNumberPhrase(spoken[3]);
+    if(hour==null||hour<1||hour>12)return null;
+    const pm=spoken[4]==='pm'||['afternoon','evening','night'].includes(spoken[5]);
+    const base=hour%12*60+(pm?720:0),offset=spoken[1]==='half'?30:spoken[1]==='quarter'?15:0;
+    return (base+(spoken[2]==='to'?-offset:offset)+1440)%1440;
+  }
   let match = s.match(/^(\d{1,2}):(\d{2})$/);
   if(match){
     const h = Number(match[1]);
@@ -665,9 +673,10 @@ function assistantParseLinksArg(value){
 
 function assistantParseOrderModifiers(text){
   const s = assistantNormText(text);
+  const direct=/\b(?:right|direct(?:ly)?|immediately|straight)\b/.test(s);
   return {
-    adjacency:/\b(?:right|direct(?:ly)?|immediately|straight)\b/.test(s) ? 'direct' : 'sometime',
-    requireSameDay:/\bsame day\b/.test(s)
+    adjacency:direct ? 'direct' : 'sometime',
+    requireSameDay:direct || /\bsame day\b/.test(s)
   };
 }
 
@@ -679,7 +688,7 @@ function assistantParseOrderName(text){
   s = s.replace(/^(?:after|before)\s+/, '');
   s = s.replace(/[.,].*$/, '');
   s = s.replace(/\s+\b(?:the|a|an)\b\s*$/, '');
-  s = s.replace(/^(?:the|a|an)\s+/, '');
+  s = s.replace(/^(?:the|a|an|my)\s+/, '');
   s = s.replace(/\s+/g, ' ').trim();
   if(!s || /^(none|off|clear|it|this|that)$/.test(s))return null;
   return s.slice(0, ASSISTANT_NAME_MAX);
@@ -748,6 +757,11 @@ function assistantParseScheduleOptionText(value, catalog){
     const name=assistantNormText(place.name).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
     windowText=windowText.replace(new RegExp(`\\s+(?:at|in)\\s+${name}$`),'').trim();
   }
+  windowText=windowText.replace(/\s+(?:alternative|option)\s*$/,'');
+  // Weekday/day-part prose is metadata for the option. An explicit clock pair
+  // takes precedence over "evening" and both clocks must validate together.
+  const clockPair=windowText.match(/(?:^|\s)(\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:to|until|through|[–-])\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?)$/);
+  if(clockPair)windowText=clockPair[1];
   const window = typeof assistantParseWindowFromText === 'function' ? assistantParseWindowFromText(windowText) : null;
   const times = assistantWindowToOptionTimes(window);
   if(!times)return null;
@@ -787,9 +801,9 @@ function assistantParseRhythm(text){
   };
   // Consume a coupled count and period before looking for a bare interval.
   // Otherwise "twice every three weeks" could silently become once / 21d.
-  add(new RegExp(`\\b(${count})\\s*(?:x|times?)?\\s+(?:a|per|in|every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:period(m[2],m[3])}));
+  add(new RegExp(`\\b(${count})\\s*(?:x|times?|sessions?)?\\s+(?:a|per|in|every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:period(m[2],m[3])}));
   add(new RegExp(`\\b(?:every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:1,days:period(m[1],m[2])}));
-  add(new RegExp(`\\b(${count})\\s*(?:x|times?)?\\s+(daily|weekly)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:m[2]==='daily'?1:7}));
+  add(new RegExp(`\\b(${count})\\s*(?:x|times?|sessions?)?\\s+(daily|weekly)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:m[2]==='daily'?1:7}));
   add(/\b(?:daily|weekly|every (?:morning|night|evening))\b/g,m=>({times:1,days:m[0]==='weekly'?7:1}));
   if(hits.some(hit=>hit.times==null||hit.days==null))return null;
   const distinct=new Set(hits.map(hit=>`${hit.times}/${hit.days}`));
@@ -1046,7 +1060,13 @@ function assistantParseWeatherImportanceFromText(s,rules){
 }
 
 function assistantParseWeatherRulesFromText(text){
-  const s = assistantNormText(text);
+  // Numbers and comparisons have the same meaning whether dictated or typed.
+  // Convert only complete numeric operands; retain units for storage conversion.
+  let s = assistantNormText(text).replace(/\b(?:warmer|hotter) than\b/g,'temperature above')
+    .replace(/\b(?:colder|cooler) than\b/g,'temperature below');
+  s=s.replace(new RegExp(`\\b(${assistantDurationNumberSource()})\\s*(?=degrees?\\b|celsius\\b|fahrenheit\\b|[cf]\\b|°)`,'g'),phrase=>{
+    const number=assistantParseNumberPhrase(phrase.trim());return number==null?phrase:`${number} `;
+  });
   const hints = assistantParseWeatherHints(s);
   const rules = [];
   if(hints.notWindy)assistantPushWeatherRule(rules, 'wind_speed_10m', {max:20, relative:'low', hard:false});
@@ -1424,6 +1444,10 @@ function assistantWindowFromClocks(start, end){
 function assistantParseWindowRange(text){
   const lead=/\b(?:from|between)\s+/.exec(text);
   const body=lead?text.slice(lead.index+lead[0].length):text;
+  // One explicit meridiem can qualify both endpoints, including spoken hours.
+  // Validate the complete pair; no fallback may discard an unreadable bound.
+  const shared=body.match(/^(\d{1,2}(?::\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:and|to)\s+(\d{1,2}(?::\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(am|pm|in the morning|in the afternoon|in the evening)$/);
+  if(shared)return assistantWindowFromClocks(assistantParseClock(`${shared[1]} ${shared[3]}`),assistantParseClock(`${shared[2]} ${shared[3]}`));
   // A create verb's "to" ("remind me to walk") is not a range separator.
   if(!lead&&!new RegExp(`^(?:(?:at|before|after|noon|midday|midnight)\\b|(?:${ASSISTANT_ANCHOR_WORD})\\b|(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\b|\\d)`).test(body))return undefined;
   // Try whole endpoint pairs. "And" may be inside a mixed fraction, so it

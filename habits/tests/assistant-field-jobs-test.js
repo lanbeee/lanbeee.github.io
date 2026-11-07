@@ -49,6 +49,56 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         &&!date.unresolved.length&&before===JSON.stringify(load());
     });
     assert(editScope,'Edit reads nominated settings with the focused identity; unrelated retrieval guesses cannot add sibling changes');
+    const semanticRouting=await page.evaluate(async()=>{
+      const t=fieldTest,phrase='Capture a numeric reading with each check-in',runs=[];
+      for(const decision of ['accept','decline','invalid-route']){
+        t.seed();const s=t.open(),before=JSON.stringify(load()),calls=[];
+        const extract=async spec=>{
+          calls.push(spec);
+          if(spec.family==='families')return {confidence:1,function_calls:[{arguments:{evidence:`effort: ${phrase}`,outside:''}}]};
+          if(spec.family==='field-routing'){
+            await new Promise(resolve=>setTimeout(resolve,10));
+            return {confidence:1,function_calls:[{arguments:{field:decision==='invalid-route'?'nonexistent':'trackValue'}}]};
+          }
+          if(spec.jobId==='trackValue'&&decision==='decline')return {confidence:1,function_calls:[{arguments:{[Object.keys(spec.tool.parameters.properties)[0]]:''}}]};
+          return t.reply(spec);
+        };
+        await assistantFocusTurn(s,`Pin it, ${phrase}`,t.options({extract,rank:async()=>({rankings:[[{id:'trackValue',score:1}]]})}));
+        const untouched=before===JSON.stringify(load()),r=assistantFocusMaterialize(s);
+        const route=calls.filter(spec=>spec.family==='field-routing');
+        const read=calls.filter(spec=>spec.jobId==='trackValue').at(-1);
+        const ok=untouched&&r.pinned&&route.length===1&&route[0].tool.parameters.properties.field.enum.length<=13
+          &&(decision==='accept'?r.trackValue&&assistantFocusCanSave(s)&&Object.values(read.tool.parameters.properties)[0].enum.includes(phrase)
+            :!r.trackValue&&!assistantFocusCanSave(s)&&s.unresolved.length>0);
+        runs.push({decision,ok,changes:s.changes,questions:s.unresolved});
+      }
+      return runs;
+    });
+    assert(semanticRouting.every(r=>r.ok),`unknown paraphrases use a bounded field menu, then independent original evidence; declined or invalid decisions block partial saves (${JSON.stringify(semanticRouting)})`);
+    const retrievalWork=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open(),queries=[];
+      await assistantFocusTurn(s,'Pin it.',t.options({rank:async payload=>{queries.push(...payload.queries);return {rankings:[]};}}));
+      return queries.length>0&&queries.length===new Set(queries).size&&assistantFocusCanSave(s);
+    });
+    assert(retrievalWork,'identical context and source excerpts are embedded only once per turn');
+    const effortOwnership=await page.evaluate(async()=>{
+      const t=fieldTest,runs=[];
+      for(const [prompt,field,value] of [
+        ['Leave twenty minutes between two sessions','minGapMinutes',20],
+        ['Auto-stop the timer at half an hour','timerAutoStopMinutes',30],
+        ['Auto-complete once ten minutes are logged','autoMarkMinutes',10]
+      ]){
+        t.seed();const s=t.open(),before=JSON.stringify(load());
+        const rank=async()=>({rankings:[['durationMinutes','habitKind','frequency','timerAutoStopMinutes','autoMarkMinutes','minGapMinutes'].map(id=>({id,score:1}))]});
+        await assistantFocusTurn(s,prompt,t.options({rank}));
+        const r=assistantFocusMaterialize(s),ready=assistantFocusCanSave(s),untouched=before===JSON.stringify(load());
+        const correct=s.changes.length===1&&s.changes[0].field===field&&s.changes[0].value===value&&r.durationMinutes===45&&r.type==='keepup'&&r.target===7;
+        assistantFocusApprove(s);const commit=correct&&ready?await assistantFocusCommit(s):null;
+        runs.push({prompt,ok:correct&&untouched&&ready&&commit?.ok,changes:s.changes,questions:s.unresolved});
+      }
+      return runs;
+    });
+    assert(effortOwnership.every(r=>r.ok),`misleading retrieval cannot turn effort quantities into duration, recurrence or habit-mode changes (${JSON.stringify(effortOwnership)})`);
     const assignmentOwnership=await page.evaluate(async()=>{
       const t=fieldTest;
       for(const [request,field,correction,value] of [
@@ -388,13 +438,81 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     });
     assert(collisions,'competing proposals for a saved weather profile and custom rules require clarification');
     const longInput=await page.evaluate(async()=>{
-      const t=fieldTest;t.seed();const s=t.open();const background=Array(180).fill('background context').join(' ');
+      const t=fieldTest;t.seed();const s=t.open();const background=Array.from({length:180},(_,i)=>`background context ${i}`).join(' ');
       const request=background+'; 60 minutes long; '+background+'; only before sunset; priority P1.';let max=0,ranked=0;
       const extract=async spec=>{max=Math.max(max,spec.request.length);return t.reply(spec);};
       await assistantFocusTurn(s,request,t.options({extract,rank:async payload=>{ranked+=payload.queries.length;return {rankings:[]};}}));const r=assistantFocusMaterialize(s);
       return {duration:r.durationMinutes,end:r.allowedTimeEndAnchor,priority:r.priority,max,ranked,pending:s.pendingFamilies,unresolved:s.unresolved};
     });
     assert(longInput.duration===60&&longInput.end==='maghrib'&&longInput.priority===1&&longInput.max<1300&&longInput.ranked>13&&!longInput.pending.length&&!longInput.unresolved.length,'long requests retain trailing settings while routing and extraction receive bounded original contexts');
+    const reminderSafety=await page.evaluate(async()=>{
+      const t=fieldTest,oldNative=window.TingsNative,oldRefresh=window.refreshOpenViews;
+      window.TingsNative={isNative:true,notifications:{permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})}};
+      window.refreshOpenViews=()=>{};
+      const rank=async()=>({rankings:[['durationMinutes','reminderStart','reminderTravelStart'].map(id=>({id,score:1}))]});
+      try{
+        for(const [prompt,field,key,supported,kind] of [
+          ['Give me a 20 minute heads-up before leaving','reminderTravelLead','travelLeadMinutes',false,'habit'],
+          ['Give me a 15 minute heads-up before leaving','reminderTravelLead','travelLeadMinutes',true,'habit'],
+          ['Departure lead time 15 min','reminderTravelLead','travelLeadMinutes',true,'habit'],
+          ['Alert me 15 minutes before it begins','reminderStartLead','startLeadMinutes',true,'event']
+        ]){
+          t.seed();if(kind==='event')save([{...load()[0],appointment:{repeat:'weekly',startDate:'2026-11-02',startMinute:540,weekdays:[1]}}]);
+          const original={version:4,enabled:true,items:{'item:gym':{start:'off',end:'alarm',travelStart:'notification'},'item:other':{travelLeadMinutes:5}}};
+          localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY,JSON.stringify(original));
+          const before=JSON.stringify(load()),beforeReminders=localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY),s=t.open('edit',kind);
+          if(kind==='event')assistantFocusSetScope(s,'series','2026-11-09');
+          await assistantFocusTurn(s,prompt,t.options({rank}));assistantFocusApprove(s);
+          if(before!==JSON.stringify(load())||beforeReminders!==localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY))return {prompt,error:'unconfirmed write'};
+          if(s.changes.some(c=>c.field!==field)||assistantFocusMaterialize(s).durationMinutes!==45)return {prompt,changes:s.changes};
+          if(!supported){
+            const blocked=await assistantFocusCommit(s);
+            if(blocked.ok||!s.unresolved.some(q=>q.field===field)||before!==JSON.stringify(load())||beforeReminders!==localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY))return {prompt,error:'unsupported value did not block safely'};
+          }else{
+            const commit=await assistantFocusCommit(s),saved=JSON.parse(localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY));
+            if(!commit.ok||JSON.stringify(load())!==before||JSON.stringify(saved.items)!==JSON.stringify({...original.items,'item:gym':{...original.items['item:gym'],[key]:15}}))return {prompt,commit,saved};
+          }
+        }
+        t.seed();localStorage.removeItem(ASSISTANT_FOCUS_REMINDER_KEY);const off=t.open();
+        await assistantFocusTurn(off,'Remove all reminders for this',t.options());assistantFocusApprove(off);
+        const expected=['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'];
+        if(off.changes.length!==5||expected.some(field=>!off.changes.some(c=>c.field===field&&c.value==='off'))||!(await assistantFocusCommit(off)).ok)return {error:'all-reminder off request',changes:off.changes,questions:off.unresolved};
+        const stored=JSON.parse(localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY)).items['item:gym'];
+        if(['start','end','travelStart','travelEnd','missed'].some(key=>stored[key]!=='off'))return {error:'off was not persisted',stored};
+        t.seed();const declined=t.open();
+        await assistantFocusTurn(declined,'Give me a 15 minute heads-up before leaving',t.options({rank,extract:async spec=>spec.jobId?{function_calls:[{name:spec.tool.name,arguments:{[Object.keys(spec.tool.parameters.properties)[0]]:''}}]}:t.reply(spec)}));
+        if(declined.changes.length||assistantFocusCanSave(declined)||!declined.unresolved.some(q=>q.field==='reminderTravelLead'))return {error:'declined evidence supplied a value'};
+        return true;
+      }finally{window.TingsNative=oldNative;window.refreshOpenViews=oldRefresh;}
+    });
+    assert(reminderSafety===true,`lead times cannot change duration, delivery modes or another owner; unsupported/declined reads block Save; all-reminder off persists (${JSON.stringify(reminderSafety)})`);
+    const quotedEvidence=await page.evaluate(async()=>{
+      const original=window.assistantNeedleFocusRequest,source='Call it "Evening \\ Stroll"',second='two\nlines';
+      const tool=assistantFocusPackTool('name','Read name.',{name:{type:'string',enum:[source,second,'']}},['name']);
+      let payload;
+      try{
+        window.assistantNeedleFocusRequest=async request=>{
+          payload=request;
+          return {function_calls:[{name:'name',arguments:{name:'evidence_1'}}],suppressed_calls:[{name:'name',arguments:JSON.stringify({name:'evidence_2'})}]};
+        };
+        const raw=await assistantFocusLiveExtract({request:source,tool});
+        if(raw.function_calls[0].arguments.name!==source||raw.suppressed_calls[0].arguments.name!==second||payload.tools[0].parameters.properties.name.enum.some(value=>/["\\\n]/.test(value)))return false;
+        window.assistantNeedleFocusRequest=async()=>({function_calls:[{name:'name',arguments:{name:'evidence_99'}}]});
+        return (await assistantFocusLiveExtract({request:source,tool})).function_calls[0].arguments.name==='';
+      }finally{window.assistantNeedleFocusRequest=original;}
+    });
+    assert(quotedEvidence,'quoted/backslash/newline evidence uses a closed token menu and restores only exact selected sources');
+    const malformed=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open();let attempts=0;
+      await assistantFocusTurn(s,'Rename it "Evening Stroll"',t.options({extract:async spec=>{
+        if(spec.jobId==='name'){attempts++;throw new Error('malformed function_calls JSON');}
+        return t.reply(spec);
+      }}));
+      const blocked=attempts===1&&!s.continuationError&&!s.pendingFamilies.length&&!assistantFocusCanSave(s)&&s.unresolved.some(q=>q.field==='name');
+      await assistantFocusTurn(s,'Rename it Evening Stroll',t.options());
+      return blocked&&assistantFocusCanSave(s)&&assistantFocusMaterialize(s).name==='Evening Stroll';
+    });
+    assert(malformed,'malformed extraction asks for new wording instead of looping Continue, and a rephrase recovers');
     assert(!errors.length,`scripted field jobs have no page errors (${errors.join('; ')})`);
     await page.close();
     if(process.env.NEEDLE_MODEL_PATH&&process.env.NEEDLE_WASM_PATH){

@@ -270,6 +270,52 @@ asset variables and assistant command in [TESTING.md](../TESTING.md).
 
 ## Focused reliability priorities
 
+The edit-product-v3 follow-up applies quantity ownership to chunks, gaps, timer
+targets and automatic completion throughout candidate selection, excerpt cuts
+and extraction. A single effort quantity cannot become a session duration,
+habit-mode conversion, clock or repetition count. Negative scalar instructions
+ask for a positive value. Named places retain qualifiers before the field label;
+alternatives keep explicit clocks ahead of day-part defaults. Shared-display
+visibility preserves completion permissions, and weekly weekday edits omit a
+redundant repeat proposal while still allowing a once event to become weekly.
+
+When discovery finds a clause without a recognized field cue, a bounded family
+menu nominates a semantic field instead of extracting every sibling. A separate
+extraction must still select original evidence and pass typed validation. A
+declined or invalid selection remains a coverage obligation, including in a
+partially successful request. A late semantic nomination refreshes an earlier
+retrieval-only read; it cannot disappear because that read already declined.
+Coverage requires a matching family/field, not merely another change quoting
+the same clause. Host tests exercise this fallback with scripted selections;
+its live accuracy still requires the independent battery.
+
+Retrieval embeds duplicate context/excerpt text only once per turn. Candidate
+jobs reuse one materialized baseline for their duration and context snapshot;
+effort ownership metadata has a bounded exact-text cache. These reduce duplicate
+host and embedding work without changing the three-runtime inference bound.
+They do not establish a measured device-latency improvement.
+
+The ignored edit-battery checker exempts the documented target/rhythm/timestamp/
+hard-deadline mirrors only for a declared once conversion. Its self-tests still
+reject corrupted conversion mirrors, preview/persistence drift and unrelated
+changes. Use a fresh run tag after either product or harness changes.
+
+The edit-v2 failure regressions cover reminder lead ownership, clear operations,
+clock labels and spoken clocks, complete month-day lists, plural event weekdays,
+forecast locations and preview/persistence agreement. A reminder lead cannot
+supply session duration or an implicit delivery-mode override, including when
+retrieval nominates those siblings. Unsupported leads ask about that lead and
+block Save. Removing all reminders writes explicit off values; resetting them
+still restores inheritance.
+
+Review materializes through the same normalizer as persistence, including
+deadline/flexibility aliases, order-link defaults and event projections. Quoted
+or escaped enum evidence uses a closed token menu to avoid the pinned runtime's
+string-escaping failure; only the selected original source is restored. A
+malformed decode asks for new wording instead of repeating Continue indefinitely.
+These host regressions do not establish a new live Needle accuracy score; rerun
+the independent edit battery with a fresh tag after a product change.
+
 Needle's product scope is creating one item or editing the item already in
 focus. The focused identity is supplied by the UI and is assumed throughout
 the request; this pipeline does not route a request to a different saved item.

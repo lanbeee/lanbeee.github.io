@@ -179,9 +179,108 @@ const cases=[
   ['weatherProfile','Clear weather profile',null,{id:'basics-clear-weather',op:'clear',seed:{weatherProfileMode:'profile',weatherProfileId:'dry'},record:{weatherProfileId:null,weatherProfileMode:'none'}}],
   ['links','Clear links',null,{id:'basics-clear-links',op:'clear',seed:{links:[{id:'guide',type:'url',label:'Guide',value:'https://example.com'}]},record:{links:[]}}],
   ['topics','Tag it Clear',['Clear'],{id:'basics-topic-clear-word'}],
-  ['pinned','Pin it instead',true,{id:'basics-explicit-setting-followup',kind:'task',extra:{dueDate:day('2026-11-02')},historySteps:['Plan this for tomorrow']}]
+  ['pinned','Pin it instead',true,{id:'basics-explicit-setting-followup',kind:'task',extra:{dueDate:day('2026-11-02')},historySteps:['Plan this for tomorrow']}],
+  // Saved edit-v2 failures. Scripted runs verify host boundaries only; the same
+  // cases can use real assets without changing evidence or expectations.
+  ...['Set the start time to 3:30pm','Start time 15:30','Set it to start at half past three in the afternoon'].map(prompt=>['dueTime',prompt,930,{id:`edit-v2-clock-${prompt}`,kind:'task'}]),
+  ['appointmentStartMinute','Move the start time to 2:30pm',870,{id:'edit-v2-event-clock',kind:'event'}],
+  ['appointmentStartMinute','Start time 14:30',870,{id:'edit-v2-event-clock-label',kind:'event'}],
+  ['appointmentStartMinute','Move this occurrence to 4pm',960,{id:'edit-v2-occurrence-clock',kind:'event',scope:'occurrence',covers:['exceptionTime']}],
+  ['appointmentStartMinute','For this one occurrence, 4pm instead',960,{id:'edit-v2-occurrence-clock-framing',kind:'event',scope:'occurrence'}],
+  ['appointmentStartMinute','This date only: move it to four in the afternoon',960,{id:'edit-v2-occurrence-clock-spoken',kind:'event',scope:'occurrence'}],
+  ['appointmentWeekdays','Repeat on Tuesdays and Thursdays instead',[2,4],{id:'edit-v2-plural-event-days',kind:'event'}],
+  ['appointmentRepeat','Make it a one-time event','once',{id:'edit-v2-event-once',kind:'event'}],
+  ['appointmentRepeat','Change the series to a single event','once',{id:'edit-v2-event-single',kind:'event'}],
+  ['name','From now on call it "Evening Stroll"','Evening Stroll',{id:'edit-v2-quoted-name'}],
+  ['name','The name should be Evening Stroll','Evening Stroll',{id:'edit-v2-name-framing'}],
+  ['name','Name it Should Be Ready','Should Be Ready',{id:'edit-v2-name-literal-verb'}],
+  ['emoji','Use the 🇺🇸 emoji','🇺🇸',{id:'edit-v2-flag-emoji'}],
+  ['emojiBgColor','Use purple for the card background','purple',{id:'edit-v2-card-background'}],
+  ['kind','I want it as a task instead of a habit','task',{id:'edit-v2-kind-conversion'}],
+  ['conditionTrigger','Only when I am at a location','location',{id:'edit-v2-location-trigger',seed:{repeatMode:'opportunity'}}],
+  ['hardDue','This cannot slip past its due date',true,{id:'edit-v2-hard-deadline',kind:'task',seed:{delayAllowanceDays:2}}],
+  ['allowedMonthDays','Only on the 1st and the 15th of each month',[1,15],{id:'edit-v2-month-list'}],
+  ['allowedMonthDays','Only on the 1st or the 15th',[1,15],{id:'edit-v2-month-list-or'}],
+  ['allowedWeekdays','This can only happen on Tuesday or Thursday',[2,4],{id:'edit-v2-weekday-list-or'}],
+  ['frequency','Schedule it for three sessions weekly',3,{id:'edit-v2-counted-sessions',extra:{periodDays:7}}],
+  ['earlyWindowDays','Allow starting 2 days early',2,{id:'edit-v2-flexibility-alias',record:{earlyWindowDays:2,flexibilityDays:2}}],
+  ['earlyWindowDays','It can start two days before',2,{id:'edit-v2-early-before'}],
+  ['earlyWindowDays','Enable a 2 day early window',2,{id:'edit-v2-early-window'}],
+  ['delayAllowanceDays','Give it a 3 day grace period',3,{id:'edit-v2-grace-period'}],
+  ['dueDate','Change the deadline to 11/04/2026',day('2026-11-04'),{id:'edit-v2-deadline-prefix',kind:'task'}],
+  ['planByDate','I should have this planned by November 8',day('2026-11-08'),{id:'edit-v2-planned-by'}],
+  ['planByDate','Plan-by date: Nov 8',day('2026-11-08'),{id:'edit-v2-plan-by-label'}],
+  ['autoMarkMinutes','Mark it done automatically after 10 minutes',10,{id:'edit-v2-auto-completion'}],
+  ['showWeatherAtLocation','Show the forecast at the place',true,{id:'edit-v2-forecast-at-place'}],
+  ['weatherLocationId','Show the weather forecast for Home','home',{id:'edit-v2-forecast-place'}],
+  ['weatherProfile','Use the Dry weather profile',{mode:'profile',profileId:'dry'},{id:'edit-v2-saved-weather-profile'}],
+  ['snoozedUntil','Snooze until tomorrow',day('2026-11-02'),{id:'edit-v2-snooze-date',kind:'task'}],
+  ['sharedDisplay','Show it on the shared display','complete',{id:'edit-v2-show-shared-display'}],
+  ['scheduleLinks','Do it right after Meeting on the same day',null,{id:'edit-v2-order-normalization',order:true}],
+  ['preferredWeekdays',"I'd like it on Mondays and Wednesdays if possible",[1,3],{id:'edit-v2-preferred-weekdays'}],
+  ['preferredOrdinalWeekdays','Ideally the second Tuesday every month',[{ordinal:2,weekday:2}],{id:'edit-v2-preferred-ordinal'}],
+  ['preferredMonthDays','Prefer the fifth when possible',[5],{id:'edit-v2-preferred-monthday'}],
+  ['allowedWindow','Keep it between six and eight in the evening',null,{id:'edit-v2-spoken-window',record:{allowedTimeStart:1080,allowedTimeEnd:1200}}],
+  ['preferredWindow','If possible, fit it between 7 and 8 pm',null,{id:'edit-v2-preferred-window',record:{preferredTimeStart:1140,preferredTimeEnd:1200,allowedTimeStart:null,allowedTimeEnd:null}}],
+  ...['Give me a 15 minute heads-up before leaving','Departure lead time 15 min'].map((prompt,i)=>['reminderTravelLead',prompt,15,{id:`edit-v2-departure-lead-${i}`,native:true,selectAll:true}]),
+  ['reminderStartLead','Alert me 15 minutes before it begins',15,{id:'edit-v2-event-lead',kind:'event',native:true,selectAll:true}],
+  ['reminderStartLead','Start reminder lead: 15 minutes',15,{id:'edit-v2-event-lead-label',kind:'event',native:true,selectAll:true}],
+  ['reminderTravelEnd','Remind me on arrival','notification',{id:'edit-v2-arrival-reminder',native:true}],
+  ['reminderStart','Alarm me when it starts','alarm',{id:'edit-v2-start-alarm',native:true}],
+  ['reminderEnd','Notify me when it ends','notification',{id:'edit-v2-end-notification',native:true}],
+  ...['Chunks should be at least 15 minutes','Split it in 15 minute pieces minimum','Keep chunks no shorter than a quarter hour'].map((prompt,i)=>
+    ['minChunkMinutes',prompt,15,{id:`robust-edit-chunk-${i}`,seed:{breakable:true,durationMinutes:90},extra:{breakable:true},selectAll:true,record:{durationMinutes:90,minChunkMinutes:15}}]),
+  ...['Leave at least 20 minutes between sessions','A 20 minute break is needed between two sessions','Keep sessions twenty minutes apart'].map((prompt,i)=>
+    ['minGapMinutes',prompt,20,{id:`robust-edit-gap-${i}`,selectAll:true,record:{durationMinutes:30,minGapMinutes:20}}]),
+  ...['The timer should stop on its own after half an hour','Auto-stop the timer at 30 min'].map((prompt,i)=>
+    ['timerAutoStopMinutes',prompt,30,{id:`robust-edit-timer-${i}`,selectAll:true,record:{durationMinutes:30,type:'keepup',target:7}}]),
+  ...['After ten minutes consider it done','Auto-complete once 10 minutes are logged'].map((prompt,i)=>
+    ['autoMarkMinutes',prompt,10,{id:`robust-edit-complete-${i}`,selectAll:true,record:{durationMinutes:30}}]),
+  ['breakable','Make it splittable',true,{id:'robust-edit-splittable',selectAll:true}],
+  ...['Log a number each time','Enable value tracking'].map((prompt,i)=>['trackValue',prompt,true,{id:`robust-edit-value-${i}`,selectAll:true}]),
+  ['places','Restrict it to the Home location',['home'],{id:'robust-edit-restrict-place',selectAll:true}],
+  ['anywhereAllowed','No location restriction needed',true,{id:'robust-edit-anywhere',seed:{anywhereAllowed:false},selectAll:true}],
+  ['locationPrefs','Home works best for me',{home:'high'},{id:'robust-edit-preferred-place',selectAll:true}],
+  ...["Only when it's warmer than 80 degrees",'Skip it unless the temperature is over eighty degrees'].map((prompt,i)=>
+    ['weatherRules',prompt,null,{id:`robust-edit-weather-rule-${i}`,ruleMin:80,selectAll:true}]),
+  ...['Include the forecast on this card','I want to see the weather on it'].map((prompt,i)=>['showWeather',prompt,true,{id:`robust-edit-forecast-${i}`,selectAll:true}]),
+  ['weatherLocationId','Use Home for the forecast','home',{id:'robust-edit-forecast-place',selectAll:true}],
+  ...['Alternatively it can run Mondays 6 to 8 pm','Add a Monday evening 18:00 to 20:00 alternative'].map((prompt,i)=>
+    ['scheduleOptions',prompt,null,{id:`robust-edit-alternative-${i}`,optionClocks:true,selectAll:true}]),
+  ...['Schedule it right after my Meeting workout, same day','It must come directly after Meeting'].map((prompt,i)=>
+    ['scheduleLinks',prompt,null,{id:`robust-edit-order-${i}`,order:true,selectAll:true,orderSameDay:true}]),
+  ...['Put it in the Fitness topic','Categorize it under Fitness'].map((prompt,i)=>['topics',prompt,['Fitness'],{id:`robust-edit-topic-${i}`,selectAll:true}]),
+  ...['Push it back to tomorrow','Snooze this until November 2'].map((prompt,i)=>['snoozedUntil',prompt,day('2026-11-02'),{id:`robust-edit-snooze-${i}`,kind:'task',selectAll:true}]),
+  ...['It should appear on the shared display','Make it visible on the shared screen'].map((prompt,i)=>
+    ['sharedDisplay',prompt,'view',{id:`robust-edit-shared-${i}`,seed:{showOnSharedDisplay:false,allowSharedDisplayCompletion:false},selectAll:true,record:{showOnSharedDisplay:true,allowSharedDisplayCompletion:false}}]),
+  ['allowedWeekdays','Allow any weekday',null,{id:'robust-edit-any-weekday',op:'clear',seed:{allowedWeekdays:[1,3]},record:{allowedWeekdays:[]},selectAll:true}],
+  ['reminderReset','Reset the reminders to the usual settings',true,{id:'robust-edit-reminder-reset',native:true,reminderSeed:{start:'alarm',dates:{'2026-11-09':{start:'notification'}}},selectAll:true}],
+  ['appointmentStartDate','The series starts on November 9 now','2026-11-09',{id:'robust-edit-event-date',kind:'event',selectAll:true}],
+  ['appointmentWeekdays','Repeat weekly on Tuesday and Thursday',[2,4],{id:'robust-edit-event-weekdays',kind:'event',selectAll:true}],
+  ['appointmentWeekdays','Repeat weekly on Tuesday and Thursday',[2,4],{id:'robust-edit-once-to-weekly',kind:'event',selectAll:true,extra:{appointmentRepeat:'weekly'},seed:{appointment:{repeat:'once',startDate:'2026-11-02',startMinute:540,weekdays:[1],until:'',exceptions:{}}}}],
+  ...[
+    ['emoji','Remove the emoji',{emoji:'🌙'},{emoji:''}],
+    ['emoji','Get rid of the emoji',{emoji:'🌙'},{emoji:''}],
+    ['emojiBgColor','Remove the background color',{emojiBgColor:'blue'},{emojiBgColor:''}],
+    ['dueDate','No due date anymore',{}, {dueDate:null,eventTime:null,hardDue:false}],
+    ['dueTime','Remove the start time',{}, {eventTime:null}],
+    ['allowedWeekdays','Any day is fine',{allowedWeekdays:[1,3]},{allowedWeekdays:[]}],
+    ['preferredWindow','Drop the preferred hours',{preferredTimeStart:540,preferredTimeEnd:600},{preferredTimeStart:null,preferredTimeEnd:null}],
+    ['topics','Remove the topic tags',{topics:['Work']},{topics:[]}],
+    ['places','Remove the place',{locationIds:['home']},{locationIds:[]}],
+    ['weatherProfile',"Don't use a weather profile",{weatherProfileMode:'profile',weatherProfileId:'dry'},{weatherProfileMode:'none',weatherProfileId:null}],
+    ['weatherProfile','Stop using a weather profile',{weatherProfileMode:'profile',weatherProfileId:'dry'},{weatherProfileMode:'none',weatherProfileId:null}],
+    ['links','Take the link off',{links:[{id:'guide',type:'url',label:'Guide',value:'https://example.com'}]},{links:[]}]
+  ].map(([field,prompt,seed,record],i)=>[field,prompt,null,{id:`edit-v2-clear-${i}`,op:'clear',kind:['dueDate','dueTime'].includes(field)?'task':'habit',seed,record}])
 ].map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
+  ...[
+    ['timerAutoStopMinutes',"Don't auto-stop the timer at 30 minutes"],
+    ['minGapMinutes','Not a 20 minute gap between sessions'],
+    ['weatherRules','Not warmer than eighty degrees'],
+    ['weatherRules','Skip it when the temperature is over eighty degrees'],
+    ['sharedDisplay','Do not make it visible on the shared display']
+  ].map(([field,prompt],i)=>({field,prompt,kind:'habit',id:`robust-negative-${i}`,selectAll:true})),
   {field:'priority',kind:'habit',prompt:'Priority 12'},
   {field:'priority',kind:'habit',prompt:'Not high priority'},
   {field:'frequency',kind:'habit',prompt:'Minus 2 times per week'},
@@ -215,7 +314,9 @@ const guards=[
   {field:'durationMinutes',kind:'habit',prompt:'Set duration to three times a week'},
   {field:'frequency',kind:'habit',prompt:'Set frequency to 30 minutes'},
   {field:'minGapMinutes',kind:'habit',prompt:'Set minimum gap to three times a week'},
-  {field:'timerAutoStopMinutes',kind:'habit',prompt:'Set timer target to three times a week'}
+  {field:'timerAutoStopMinutes',kind:'habit',prompt:'Set timer target to three times a week'},
+  {field:'emoji',kind:'habit',prompt:'Use a friendly emoji'},
+  ...['Give me a 20 minute heads-up before leaving','Departure lead time 20 min'].map(prompt=>({field:'reminderTravelLead',kind:'habit',prompt,native:true,selectAll:true}))
 ].map((row,index)=>({...row,id:`guard-${row.field}-${index+1}`}));
 let passed=0;
 function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${msg}`);}
@@ -236,7 +337,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         if(spec.family==='families')args={evidence:'',outside:''};
         else if(spec.family==='completeness')args={missing:''};
         else if(spec.family==='reference')args={field:spec.tool.parameters.properties.field.enum[0]};
-        else{const key=Object.keys(spec.tool.parameters.properties)[0],choices=spec.tool.parameters.properties[key].enum||[];args={[key]:spec.jobId===test.field||Object.hasOwn(test.extra||{},spec.jobId)?(choices.includes(test.reuse)?test.reuse:choices[0]):''};}
+        else{const key=Object.keys(spec.tool.parameters.properties)[0],choices=spec.tool.parameters.properties[key].enum||[];args={[key]:test.selectAll||spec.jobId===test.field||Object.hasOwn(test.extra||{},spec.jobId)?(choices.includes(test.reuse)?test.reuse:choices[0]):''};}
         return {confidence:1,function_calls:[{name:spec.tool.name,arguments:args}]};
       }};
       window.coverageSeed=test=>{
@@ -282,6 +383,9 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         const matched=Object.entries(values).every(([field,value])=>value===null?s.changes.some(c=>c.field===field&&(!test.op||c.op===test.op)):s.changes.some(c=>c.field===field&&JSON.stringify(c.value)===JSON.stringify(value)));
         const recordOK=Object.entries(test.record||{}).every(([k,v])=>JSON.stringify(r[k]??null)===JSON.stringify(v));
         const advancedOK=(!test.rule||s.dependencies.weatherProfile?.rules?.some(rule=>rule.metric==='temperature_2m'&&rule.min===10))
+          &&(test.ruleMin==null||s.dependencies.weatherProfile?.rules?.some(rule=>rule.metric==='temperature_2m'&&rule.min===test.ruleMin&&rule.hard===true))
+          &&(!test.optionClocks||r.scheduleOptions?.length===1&&r.scheduleOptions[0].start===1080&&r.scheduleOptions[0].end===1200&&r.scheduleOptions[0].weekdays.join()==='1')
+          &&(!test.orderSameDay||r.scheduleLinks?.every(link=>link.requireSameDay===true))
           &&(!test.option||r.scheduleOptions?.some(o=>o.start===1080&&o.end===1200&&o.locationId==='home'&&o.weekdays.join()==='1'))
           &&(!test.order||r.scheduleLinks?.some(o=>o.anchorHid==='meeting'&&o.adjacency==='direct'))
           &&(!test.link||r.links?.some(l=>l.value===test.link));
@@ -292,7 +396,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         const saved=load().find(r=>r.hid==='target');
         const expectedSaved=normalize([r,...load().filter(row=>row.hid!==r.hid)]).find(row=>row.hid===r.hid);
         const persistedKeys=s.changes.filter(c=>!c.field.startsWith('reminder')).map(c=>assistantFocusField(c.field)?.persist).filter(Boolean);
-        const persisted=commit?.ok&&JSON.stringify(saved.logs)===JSON.stringify(JSON.parse(before)[0].logs)
+        const persisted=commit?.ok&&JSON.stringify(r)===JSON.stringify(expectedSaved)&&JSON.stringify(saved.logs)===JSON.stringify(JSON.parse(before)[0].logs)
           &&persistedKeys.every(key=>JSON.stringify(saved[key])===JSON.stringify(expectedSaved[key]));
         const occurrenceOK=test.scope!=='occurrence'||(JSON.stringify(saved?.appointment?.exceptions['2026-11-09']||null)===JSON.stringify(r.appointment.exceptions['2026-11-09']||null)&&saved?.durationMinutes===30&&saved?.appointment.startMinute===540);
         const reminderKeys={reminderStart:'start',reminderEnd:'end',reminderTravelStart:'travelStart',reminderTravelEnd:'travelEnd',reminderMissed:'missed',reminderTravelLead:'travelLeadMinutes',reminderStartLead:'startLeadMinutes',reminderMissedLead:'missedLeadMinutes'};
