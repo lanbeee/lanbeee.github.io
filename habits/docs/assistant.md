@@ -86,6 +86,37 @@ alarm is a delivery mode, not Do Not Disturb. The setting preserves reminder
 delivery modes, global reminder enablement, and other items. It participates in
 the same review, Save and undo flow.
 
+The composer always offers three setting names for the open item. They follow
+the draft, or the last request when the box is empty. Tapping a name puts it in
+the message and does not send; tapping it again removes it and keeps anything
+typed after it. The message can be sent as that setting alone, or with extra
+detail. A bare setting name reads that setting from the previous request when
+those earlier words belong to it, and otherwise asks for the value. Detail in
+the same message is the value, so the setting’s own label cannot widen it.
+Unanswered field questions take priority when the composer is empty. The selected
+setting shows a plain-language explanation and an example; examples are help text
+and never become executable input. **All settings** searches applicable item
+fields by their labels, aliases and explanations. Android reminders stay absent
+in the PWA. Choosing a result only fills the composer and returns focus to it.
+An explicitly selected field supplies the setting's meaning to Needle, while its
+value still requires exact model-selected evidence and validation. **Name** accepts
+the literal new title, including titles such as “Every day,” without requiring
+another rename instruction or turning those words into recurrence.
+
+**Fix last request** restores the draft from before the last unsaved request and
+puts that request back in the composer. Earlier edits, questions and dependencies
+are kept; the discarded request's proposals and new dependencies are removed.
+The user can choose another field or rewrite the value and send again. This
+action cannot undo a saved request and is disabled while reading or while the
+user has another message in progress. Repeated bare field guides refer back to
+the latest request with actual content, rather than to another bare field name.
+
+`tests/assistant-guide-recovery-test.js` replays historical field-edit failures
+and ambiguous requests with real Needle inference when `NEEDLE_MODEL_PATH` and
+`NEEDLE_WASM_PATH` are set. It records initial and guided outcomes separately,
+checks draft restoration and confirmed persistence, and exercises mobile guide
+selection through the UI. Evidence is `test-results/needle-guide-recovery-live.json`.
+
 Focused create and edit now use the same semantic-field pipeline: a baseline
 record plus validated field proposals. Create starts from form values and app
 defaults; Edit starts from the saved item. The field catalog reuses the detail

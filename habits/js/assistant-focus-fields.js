@@ -161,7 +161,7 @@ function assistantFieldApplicable(def, session){
   // Prerequisites are checked when proposals merge, allowing the extraction to
   // run before a kind/mode/splitting change has been validated.
   const kind = assistantFocusEffectiveKind(session);
-  if(kind==='task'&&['allowedWindow','allowedTimeFixedStart'].includes(def.id)&&assistantFieldFixedClock(session.currentRequest)!=null)return false;
+  if(kind==='task'&&['allowedWindow','allowedTimeFixedStart'].includes(def.id)&&assistantFieldFixedClock(session.currentRequest||'')!=null)return false;
   if(def.family==='exception' && !['exceptionCancelled','exceptionReset'].includes(def.id))return false;
   if(def.family==='exception' && (session.operation==='create'||session.eventScope==='series'))return false;
   return def.kinds.includes(kind) || session._fieldKindChanging && def.kinds.some(k=>k==='habit'||k==='task');
@@ -881,6 +881,270 @@ async function assistantFieldFollowup(state, priorFields, extract){
   return null;
 }
 
+function assistantGuidePattern(label){
+  return String(label || '').replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+}
+
+// A chip names a setting. Strict form is the label alone, or "Label: value".
+// Loose form also accepts the label followed by the words the user kept typing.
+function assistantGuideRead(text, session, loose){
+  const raw=String(text || '').trim();
+  if(!raw || !session)return null;
+  const catalog=assistantFieldCatalog().filter(def=>assistantFieldApplicable(def,session))
+    .sort((a,b)=>b.label.length-a.label.length || a.label.localeCompare(b.label));
+  for(const def of catalog){
+    const body=assistantGuidePattern(def.label);
+    if(loose){
+      const started=new RegExp(`^${body}\\b(?:\\s*[:\\-–—]\\s*|\\s+)?([\\s\\S]*)$`,'i').exec(raw);
+      if(started)return {id:def.id,label:def.label,rest:started[1].trim()};
+      continue;
+    }
+    if(new RegExp(`^${body}\\s*$`,'i').test(raw))return {id:def.id,label:def.label,rest:''};
+    const prefixed=new RegExp(`^${body}\\s*[:\\-–—]\\s*([\\s\\S]*)$`,'i').exec(raw);
+    if(prefixed)return {id:def.id,label:def.label,rest:prefixed[1].trim()};
+  }
+  return null;
+}
+
+function assistantGuideParse(text, session){
+  return assistantGuideRead(text, session, false);
+}
+
+function assistantGuideOutgoing(text, session){
+  const trimmed=String(text || '').trim();
+  const parsed=assistantGuideParse(trimmed, session);
+  return parsed && !parsed.rest ? parsed.label : trimmed;
+}
+
+function assistantGuideCompose(current, label, session){
+  const trimmed=String(current || '').trim();
+  const wanted=String(label || '').trim();
+  if(!wanted)return trimmed;
+  const leading=assistantGuideRead(trimmed, session, true);
+  if(leading && leading.label.toLowerCase()===wanted.toLowerCase())return leading.rest;
+  if(leading)return leading.rest ? `${wanted}: ${leading.rest}` : wanted;
+  return trimmed ? `${wanted}: ${trimmed}` : wanted;
+}
+
+function assistantGuideSpan(request, guide){
+  const match=new RegExp(`^\\s*${assistantGuidePattern(guide.label)}\\s*[:\\-–—]\\s*`,'i').exec(String(request || ''));
+  if(!match || match.index!==0)return null;
+  let start=match[0].length,end=request.length;
+  while(start<end && /\s/.test(request[start]))start++;
+  while(end>start && /\s/.test(request[end-1]))end--;
+  if(end<=start)return null;
+  return {start,end,text:request.slice(start,end)};
+}
+
+const ASSISTANT_GUIDE_DEFAULTS={
+  habit:['frequency','durationMinutes','allowedWeekdays'],
+  task:['dueDate','durationMinutes','dueTime'],
+  event:['appointmentStartDate','appointmentStartMinute','appointmentRepeat']
+};
+const ASSISTANT_GUIDE_NEAR={
+  allowedWeekdays:['preferredWeekdays','allowedMonthDays'],
+  preferredWeekdays:['allowedWeekdays','preferredMonthDays'],
+  allowedMonthDays:['preferredMonthDays','allowedWeekdays'],
+  preferredMonthDays:['allowedMonthDays','preferredWeekdays'],
+  allowedOrdinalWeekdays:['preferredOrdinalWeekdays','allowedMonthDays'],
+  preferredOrdinalWeekdays:['allowedOrdinalWeekdays','preferredMonthDays'],
+  durationMinutes:['frequency','minChunkMinutes'],
+  frequency:['durationMinutes','repeatMode'],
+  repeatMode:['frequency','durationMinutes'],
+  dueDate:['dueTime','hardDue'],
+  dueTime:['dueDate','allowedWindow'],
+  allowedWindow:['preferredWindow','allowedTimeFixedStart'],
+  preferredWindow:['allowedWindow','preferredWeekdays'],
+  reminderStart:['reminderEnd','reminderDnd'],
+  reminderEnd:['reminderStart','reminderDnd'],
+  reminderDnd:['reminderStart','tapStartsSession'],
+  tapStartsSession:['reminderDnd','autoMarkMinutes'],
+  places:['locationPrefs','anywhereAllowed'],
+  weatherProfile:['weatherRules','showWeather'],
+  weatherRules:['weatherProfile','showWeather'],
+  appointmentStartDate:['appointmentStartMinute','appointmentWeekdays'],
+  appointmentStartMinute:['appointmentStartDate','appointmentRepeat'],
+  appointmentWeekdays:['appointmentRepeat','appointmentStartDate'],
+  appointmentRepeat:['appointmentWeekdays','appointmentUntil'],
+  pinned:['topics','snoozedUntil'],
+  topics:['pinned','links'],
+  priority:['pinned','habitKind'],
+  habitKind:['frequency','repeatMode'],
+  name:['emoji','topics']
+};
+
+// Product help only. Examples never enter extraction until the user types
+// their own value and sends it; choosing a guide supplies only a field name.
+const ASSISTANT_GUIDE_HELP={
+  frequency:['How often it repeats, rather than how long it lasts.','3 times a week'],
+  durationMinutes:['How long one session lasts.','30 minutes'],
+  allowedWeekdays:['Only schedule on these days.','Tuesday and Thursday only'],
+  preferredWeekdays:['Try these days first; other allowed days can still be used.','Prefer Tuesday and Thursday'],
+  allowedMonthDays:['Only schedule on these dates of each month.','The 1st and 15th'],
+  preferredMonthDays:['Try these dates first without ruling out other dates.','Prefer the 1st and 15th'],
+  allowedOrdinalWeekdays:['Only schedule on particular weekdays of each month.','The first Monday of each month'],
+  preferredOrdinalWeekdays:['Favor particular weekdays of each month.','Prefer the last Friday of each month'],
+  allowedWindow:['The hours a session must fit inside.','Between 6 pm and 8 pm'],
+  preferredWindow:['Try these hours first; other allowed hours can still be used.','Prefer between 6 pm and 8 pm'],
+  allowedTimeFixedStart:['Choose an exact start or let the planner fit it into its allowed hours.','Start exactly at 6 pm'],
+  repeatMode:['A routine has a repeating goal. An opportunity fits when its conditions allow.','Make this a routine'],
+  conditionTrigger:['For an opportunity habit, choose weather or location as its trigger.','When I am near its place'],
+  conditionRadiusM:['For a location opportunity, how close to its place counts as nearby.','500 meters'],
+  dueDate:['The date a task is due.','November 20, 2026'],
+  dueTime:['The time a task starts on its date.','6 pm'],
+  hardDue:['Whether the due date is strict or allows flexibility.','Make this a hard deadline'],
+  planByDate:['The date to finish this habit by.','November 20, 2026'],
+  earlyWindowDays:['How many days before its date it can be planned.','2 days early'],
+  delayAllowanceDays:['How many days after its date it can be planned.','Allow 1 day late'],
+  breakable:['Whether the work can be split into smaller sessions.','Allow split sessions'],
+  minChunkMinutes:['The shortest piece when splitting work. Enable splitting first.','At least 15 minutes per session'],
+  minGapMinutes:['The shortest wait between this item’s sessions on the same day.','At least 2 hours apart'],
+  timerAutoStopMinutes:['The target length for a timer you start yourself.','30 minutes'],
+  autoMarkMinutes:['When scheduled work should be marked done automatically.','Keep completion manual'],
+  tapStartsSession:['Whether tapping starts a session instead of checking it off.','Turn on start with a tap'],
+  trackValue:['Record a number or note when checking it off.','Let me record a number'],
+  places:['The saved places where this item can happen.','Use one of your saved place names'],
+  anywhereAllowed:['Whether it can happen away from its saved places too.','Allow anywhere'],
+  locationPrefs:['Which saved places to favor.','Prefer one of your saved places'],
+  weatherProfile:['Use an existing saved weather profile.','Use one of your saved weather profile names'],
+  weatherRules:['The weather conditions this item needs.','Only when it is dry'],
+  showWeather:['Whether to show a forecast for this item.','Show the forecast'],
+  showWeatherAtLocation:['Use the activity’s place for its forecast.','Use the activity location for weather'],
+  weatherLocationId:['A saved place to use for the forecast.','Use one of your saved place names'],
+  scheduleOptions:['Alternative combinations of days, hours and places.','Monday from 6 pm to 8 pm at a saved place'],
+  scheduleLinks:['Place this before or after another saved item.','Directly after another item’s name'],
+  name:['The name shown for this item.','Evening walk'],
+  kind:['Convert this item between a habit and a task.','Make this a task'],
+  habitKind:['Build a habit, limit it, or aim to stop it.','Make this a build habit'],
+  emoji:['The icon for this item.','🌱'],
+  emojiBgColor:['The background color behind its icon.','Blue'],
+  priority:['How strongly the planner should prioritize this item.','High priority'],
+  topics:['The topics used to organize this item.','Tag it Health'],
+  pinned:['Keep this item pinned near the top of the list.','Pin it'],
+  snoozedUntil:['Hide it until a date, or show it again.','Show it again'],
+  sharedDisplay:['How this item appears on a paired shared display.','View only'],
+  links:['A link to keep with this item.','https://example.com'],
+  appointmentStartDate:['The date this event begins.','November 20, 2026'],
+  appointmentStartMinute:['The time this event starts.','6 pm'],
+  appointmentRepeat:['Whether this event is once, daily or weekly.','Repeat weekly'],
+  appointmentWeekdays:['The weekdays on which a weekly event repeats.','Tuesday and Thursday'],
+  appointmentUntil:['When this repeating event ends.','November 30, 2026'],
+  exceptionCancelled:['Skip or restore this occurrence of the event.','Skip this date'],
+  exceptionReset:['Remove this date’s overrides and use the series settings.','Use the usual values for this date'],
+  reminderDnd:['Silence the phone during this item’s session. Requires Android access.','Stop silencing my phone'],
+  reminderStart:['How to be reminded when this item starts.','Notify me at the start'],
+  reminderEnd:['How to be reminded when this item ends.','Notify me at the end'],
+  reminderTravelStart:['A reminder to leave for this item.','Notify me when it is time to leave'],
+  reminderTravelEnd:['A reminder at the end of travel.','Turn off the arrival reminder'],
+  reminderMissed:['A warning before the item is dropped from the plan.','Notify me before it is dropped'],
+  reminderTravelLead:['How early to send the departure reminder.','10 minutes before'],
+  reminderStartLead:['How early to send the event reminder.','15 minutes before'],
+  reminderMissedLead:['How early to send the drop warning.','5 minutes before'],
+  reminderReset:['Use the usual reminder settings for this occurrence.','Use the usual reminders']
+};
+
+function assistantGuideCatalog(session){
+  return assistantFieldCatalog().filter(def=>assistantFieldApplicable(def,session)
+    && (def.family!=='reminders' || window.TingsNative?.isNative));
+}
+
+function assistantGuideHelp(id){
+  const [description,example]=ASSISTANT_GUIDE_HELP[id] || ['Choose this setting and describe the value you want.',''];
+  return {description,example};
+}
+
+function assistantGuideBrowse(session,query){
+  const words=String(query||'').toLowerCase().trim().split(/\s+/).filter(Boolean);
+  return assistantGuideCatalog(session).filter(def=>{
+    const help=assistantGuideHelp(def.id);
+    const text=`${def.label} ${def.aliases} ${help.description} ${help.example}`.toLowerCase();
+    return words.every(word=>text.includes(word));
+  }).sort((a,b)=>a.label.localeCompare(b.label));
+}
+
+function assistantGuideSuggestions(session, text){
+  if(!session)return [];
+  const catalog=assistantGuideCatalog(session);
+  const byId=new Map(catalog.map(def=>[def.id,def]));
+  const hint=String(text || '').trim();
+  const ranked=catalog.map(def=>{
+    if(!hint || !assistantFieldMentioned(def,hint) || !assistantFieldRelevant(def,hint))return null;
+    const cue=assistantFieldCue(def,hint);
+    const named=def.labelSignal && def.labelSignal.test(hint) ? 30 : 0;
+    return {def,score:named+(cue ? Math.min(cue[0].length,48) : 1)};
+  }).filter(Boolean).sort((a,b)=>b.score-a.score || a.def.label.localeCompare(b.def.label));
+  const picked=[];
+  const add=def=>{
+    if(!def || picked.length>=3 || picked.some(row=>row.id===def.id))return;
+    picked.push({id:def.id,label:def.label});
+  };
+  const active=assistantGuideRead(hint,session,true);
+  if(active)add(byId.get(active.id));
+  // Once the composer is empty, prioritize the questions blocking Save.
+  // An explicitly typed setting always remains first.
+  if(!hint || hint===session.currentRequest)for(const issue of session.unresolved||[]){
+    add(catalog.find(def=>def.id===issue.field||def.fields.includes(issue.field)));
+  }
+  for(const row of ranked)add(row.def);
+  const anchor=(active && byId.get(active.id)) || (ranked[0] && ranked[0].def);
+  for(const id of (anchor && ASSISTANT_GUIDE_NEAR[anchor.id]) || [])add(byId.get(id));
+  const kind=assistantFocusEffectiveKind(session);
+  for(const id of ASSISTANT_GUIDE_DEFAULTS[kind] || ASSISTANT_GUIDE_DEFAULTS.habit)add(byId.get(id));
+  return picked;
+}
+
+function assistantGuidePreviousRequest(session, before=session.requests.length){
+  for(let index=before-1;index>=0;index--){
+    const request=session.requests[index];
+    const guide=assistantGuideParse(request,session);
+    if(!guide || guide.rest)return {request,index};
+  }
+  return null;
+}
+
+// Explicitly revising a request discards only that turn's unsaved interpretation.
+// Keep the earlier draft and a real field-state reference (its catalog has regexes).
+const ASSISTANT_GUIDE_REVIEW_KEYS=['changes','unresolved','dependencies','reminders','notes','eventScope','scopeSource','occurrenceDate','placeResolution','fieldEvidence','pendingFamilies','continuationError','correctionError','needsInterpretation','_fieldKindChanging'];
+
+function assistantGuideCanRevise(session){
+  const revision=session?._guideRevision;
+  return Boolean(revision && assistantFocusAlive(session) && !session._focusInFlight && !session.saving
+    && session.savedResult===revision.savedResult && session.requests.length===revision.requestCount+1);
+}
+
+function assistantGuideRevise(session){
+  if(!assistantGuideCanRevise(session))return null;
+  const revision=session._guideRevision;
+  for(const key of ASSISTANT_GUIDE_REVIEW_KEYS)session[key]=assistantFocusClone(revision.values[key]);
+  session.requests.length=revision.requestCount;
+  session.currentRequest=session.requests.at(-1)||'';
+  session.originalRequest=session.requestText=session.requests.join('\n');
+  session.requestRevision=(session.requestRevision||0)+1;
+  session._fieldState=revision.state;
+  session.jobs=revision.state?.jobs||[];
+  if(revision.state){
+    revision.state.revision=session.requestRevision;
+    session.jobs.forEach(job=>{job.revision=session.requestRevision;});
+  }
+  session.interpretationApproved=null;session.savedFingerprint='';session.watched=null;
+  session._guideRevision=null;
+  session.trace.push({family:'guide',action:'revise-last-request',request:revision.request});
+  return revision.request;
+}
+
+// The named setting is required. Added words are its whole value, so the label
+// itself cannot widen "Allowed weekdays: Friday" into every weekday.
+function assistantGuidePin(state){
+  const guide=state.guide;
+  if(!guide)return;
+  const span=guide.rest?assistantGuideSpan(state.request,guide):null;
+  const job=assistantFieldEnqueue(state,guide.id,guide.rest?'explicit':'reference',span?[span]:undefined);
+  if(job && span && job.status==='queued'){
+    job.spans=[span];
+    job.required=true;
+  }
+}
+
 function assistantFieldPrepare(state){
   const session=state.session,request=state.request,priorFields=state.priorFields;
   // Events have no priority control. Ask about the named unsupported setting
@@ -905,6 +1169,7 @@ function assistantFieldPrepare(state){
   // Edit replies repeat the naming instruction; Create still accepts a title.
   const nameReply=session.operation==='create'||ASSISTANT_FIELD_SIGNALS.name.test(request);
   if(questionField&&(questionField.id!=='name'||nameReply))assistantFieldEnqueue(state,questionField.id,'explicit');
+  assistantGuidePin(state);
   state.jobs.unshift({id:'$discover',family:'families',status:'queued',attempts:0,revision:state.revision});
   state.jobs.splice(2,0,{id:'$retrieve',family:'retrieval',status:'queued',attempts:0,revision:state.revision});
   state.needsCandidates=false;
@@ -926,10 +1191,18 @@ function assistantFieldHistory(state,row){
     if(!sources.some(span=>span.requestIndex===evidence.span.requestIndex&&span.start===evidence.span.start&&span.end===evidence.span.end))sources.push({...evidence.span});
   }
   sources.sort((a,b)=>a.requestIndex-b.requestIndex||a.start-b.start);
-  const reference=assistantFieldReference(row.request)&&row.required;
-  const modified=/\b(?:not|never|don.t|without|except|or|next|more|less|longer|shorter|double|twice|half|increase|decrease)\b/i.test(row.request);
+  // A bare setting name points at the previous message. Words inside that
+  // label, such as "not" or "or", are not a new modification.
+  const guided=Boolean(state.guide&&state.guide.id===row.id&&!state.guide.rest&&row.required);
+  const outside=guided?row.request.replace(new RegExp(`^\\s*${assistantGuidePattern(state.guide.label)}\\b\\s*[:\\-–—]?\\s*`,'i'),''):row.request;
+  const reference=(assistantFieldReference(row.request)||guided)&&row.required;
+  const modified=/\b(?:not|never|don.t|without|except|or|next|more|less|longer|shorter|double|twice|half|increase|decrease)\b/i.test(outside);
   const candidates=sources.filter(span=>assistantFieldNormalize(row.def,span.text,state.session).ok);
   let choices=reference&&!modified?candidates:[];
+  if(guided){
+    const previous=assistantGuidePreviousRequest(state.session,currentIndex);
+    choices=choices.filter(span=>span.requestIndex===previous?.index);
+  }
   if(/\b(?:first|original)\b/i.test(row.request))choices=choices.slice(0,1);
   else if(/\b(?:last|most recent)\b/i.test(row.request))choices=choices.slice(-1);
   const values=new Set(choices.map(span=>JSON.stringify(assistantFieldNormalize(row.def,span.text,state.session).changes)));
@@ -1158,19 +1431,25 @@ function assistantFieldNormalize(def,text,session){
 
 async function assistantFieldExtract(state,row,extract){
   const def=row.def,session=state.session;
+  const guidedField=Boolean(state.guide&&state.guide.id===row.id);
+  const guided=guidedField&&!state.guide.rest&&row.required;
+  if(guidedField&&state.guide.rest){
+    const span=assistantGuideSpan(row.request||state.request,state.guide);
+    if(span)row.spans=[span];
+  }
   const normalizeContext={...session,_fieldBaseline:row.baseline,_fieldSemantic:row.semantic===true};
   if(row.spans.length>12)return {status:row.required?'needs_input':'not_mentioned',error:`There are many instructions for ${def.label.toLowerCase()}. Please clarify this setting.`};
   const values=[],invalid=[];
   const history=assistantFieldHistory(state,row);
   let preserved=false;
   for(const span of row.spans){
-    const evidence=span.context||span.text;
+    const evidence=def.id==='name'&&guidedField?row.request:span.context||span.text;
     if(!assistantFieldRelevant(def,evidence))continue;
-    const referenceOnly=history.choices.length&&!assistantFieldNormalize(def,span.text,normalizeContext).ok;
+    const referenceOnly=(guided&&history.choices.length)||(history.choices.length&&!assistantFieldNormalize(def,span.text,normalizeContext).ok);
     const modelSpan=referenceOnly?history.choices[0]:span;
     const modelSources=referenceOnly?history.choices.slice(1):[];
     const call=await assistantFocusModel(session,{family:def.family,jobId:row.id,revision:state.revision,
-      system:`${assistantFocusSystem(session)} Read only ${def.label}: ${def.hint} Leave empty when the excerpt does not request this setting. ${referenceOnly?`Copy exact words from the selected earlier user evidence. Current instruction: ${span.context||span.text}. Do not extract the reference wording itself.`:history.context}`,
+      system:`${assistantFocusSystem(session)} Read only ${def.label}: ${def.hint} ${guidedField&&state.guide.rest?`The user explicitly selected ${def.label}; this excerpt is its requested value.`:'Leave empty when the excerpt does not request this setting.'} ${referenceOnly?`Copy exact words from the selected earlier user evidence. Current instruction: ${span.context||span.text}. Do not extract the reference wording itself.`:history.context}`,
       context:history.context,
       request:assistantFocusRequestLine(def.key,referenceOnly?history.choices.map(source=>source.text).join('; '):span.text),tool:assistantFieldTool(def,modelSpan,modelSources)},extract);
     if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
@@ -1187,17 +1466,19 @@ async function assistantFieldExtract(state,row,extract){
       if(/\b(?:keep (?:the )?(?:current|existing|same)|preserve|unchanged|don.t change|do not change|leave.+(?:alone|same|as is))\b/i.test(text)){preserved=true;continue;}
       // A concrete new value cannot be replaced by a historical one. History
       // helps resolve an actual reference, not override the latest correction.
-      if(selected.request!==row.request && assistantFieldNormalize(def,span.text,normalizeContext).ok)continue;
-      const selectedEvidence=selected.context||selected.text;
-      if(selected.request===row.request && !row.semantic && !['name','frequency','durationMinutes','dueDate','dueTime','appointmentStartDate','appointmentStartMinute','places','weatherProfile'].includes(def.id) && !assistantFieldMentioned(def,selectedEvidence) && !session.unresolved.some(issue=>issue.field===def.id))continue;
-      if(def.id==='kind' && !ASSISTANT_FIELD_SIGNALS.kind.test(selectedEvidence))continue;
-      if(def.id==='name' && (session.operation==='edit'||assistantFocusMaterialize(session).name) && !ASSISTANT_FIELD_SIGNALS.name.test(selectedEvidence))continue;
+      if(selected.request!==row.request && !guided && assistantFieldNormalize(def,span.text,normalizeContext).ok)continue;
+      const selectedEvidence=def.id==='name'&&guidedField?selected.request:selected.context||selected.text;
+      if(selected.request===row.request && !guidedField && !row.semantic && !['name','frequency','durationMinutes','dueDate','dueTime','appointmentStartDate','appointmentStartMinute','places','weatherProfile'].includes(def.id) && !assistantFieldMentioned(def,selectedEvidence) && !session.unresolved.some(issue=>issue.field===def.id))continue;
+      if(def.id==='kind' && !guidedField && !ASSISTANT_FIELD_SIGNALS.kind.test(selectedEvidence))continue;
+      if(def.id==='name' && !guidedField && (session.operation==='edit'||assistantFocusMaterialize(session).name) && !ASSISTANT_FIELD_SIGNALS.name.test(selectedEvidence))continue;
       if(!assistantFieldRelevant(def,selectedEvidence))continue;
-      if(def.id==='places'&&!assistantFieldMentioned(def,selectedEvidence)&&!session.unresolved.some(issue=>issue.field==='places'))continue;
+      if(def.id==='places'&&!guidedField&&!assistantFieldMentioned(def,selectedEvidence)&&!session.unresolved.some(issue=>issue.field==='places'))continue;
 
       if(def.id==='preferredWeekdays' || def.id==='preferredWindow' || def.id==='preferredMonthDays' || def.id==='preferredOrdinalWeekdays'){
-        if(!assistantFieldPreference(selectedEvidence))continue;
+        if(!assistantFieldPreference(selectedEvidence) && !guidedField)continue;
       }
+      // An explicit Name guide grants naming permission. Retain that label as
+      // context so a literal title such as "Every day" stays a title.
       const parsed=assistantFieldNormalize(def,text,{...normalizeContext,_fieldSource:selectedEvidence});
       if(!parsed.ok)invalid.push(parsed);
       if(parsed.ok)values.push({changes:parsed.changes,source:text,span:selected,instructionSpan:span,uncertain:call.confidence==null||call.confidence<0.7||Boolean(call.raw.suppressed_calls?.includes(result))});
@@ -1413,6 +1694,9 @@ async function assistantFocusRunFieldTurn(session,text,opts){
   let state=session._fieldState;
   if(!opts.resume){
     const request=String(text||'').trim();if(!request)return {type:'focus',empty:true};
+    session._guideRevision={request,requestCount:session.requests.length,state,
+      savedResult:session.savedResult,
+      values:Object.fromEntries(ASSISTANT_GUIDE_REVIEW_KEYS.map(key=>[key,assistantFocusClone(session[key])]))};
     const priorFields=(state?.jobs||[]).filter(j=>j.proposal&&j.request===state.request).map(j=>j.id);
     const unfinished=(state?.jobs||[]).filter(j=>!j.id.startsWith('$')&&['queued','running','waiting','retryable_failed'].includes(j.status)).map(j=>({...j,status:'queued',result:null}));
     (state?.jobs||[]).filter(j=>j.status==='running').forEach(j=>{j.status='superseded';});
@@ -1422,6 +1706,7 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     session._fieldKindChanging=ASSISTANT_FIELD_SIGNALS.kind.test(request);
     state={request,revision:session.requestRevision,catalog:assistantFieldCatalog(),spans:assistantFieldSpans(request),jobs:unfinished,priorFields,needsCandidates:true};
     Object.defineProperty(state,'session',{value:session});
+    state.guide=assistantGuideParse(request,session);
     unfinished.forEach(j=>{j.revision=state.revision;});
     session._fieldState=state;session.jobs=state.jobs;session.trace=session.trace||[];
     state.coverage=false;

@@ -417,6 +417,7 @@ function assistantNeedleFocusReview(){
 }
 
 function syncAssistantFocusBar(){
+  assistantRenderGuides();
   const bar = $('assistant-focus');
   if(!bar)return;
   // The Edit/New summary already names the item. A second "working on" strip
@@ -957,6 +958,137 @@ function assistantComposerValue(){
   return String($('assistant-input')?.value || '').trim();
 }
 
+const ASSISTANT_GUIDE_PLACEHOLDER = 'Describe a change to this item';
+
+function assistantRenderGuides(){
+  const row = $('assistant-guides');
+  const list = $('assistant-guides-row');
+  const input = $('assistant-input');
+  if(!row || !list)return;
+  const session = _assistantSession && _assistantSession.focus;
+  const alive = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle'
+    && session && typeof assistantFocusAlive === 'function' && assistantFocusAlive(session)
+    && !row.closest('.assistant-compose')?.hidden
+    && typeof assistantGuideSuggestions === 'function';
+  if(!alive){
+    row.hidden = true;
+    list.replaceChildren();
+    delete row.dataset.guideSignature;
+    delete row.dataset.guideSession;
+    assistantToggleGuideBrowser(false);
+    if(input){
+      input.placeholder = 'Remind me, paste a schedule, or change it';
+      input.removeAttribute('aria-describedby');
+    }
+    return;
+  }
+  const typed = String(input?.value || '');
+  if(row.dataset.guideSession!==session.id){
+    row.dataset.guideSession=session.id;
+    delete row.dataset.guideRevising;
+    assistantToggleGuideBrowser(false);
+    if($('assistant-guide-search'))$('assistant-guide-search').value='';
+  }
+  const hint = typed.trim() || String(session.currentRequest || (session.requests || []).at(-1) || '');
+  const active = assistantGuideRead(typed, session, true);
+  if(input){
+    input.placeholder = active ? (active.rest ? 'Edit this, then send' : 'Add details, or send') : ASSISTANT_GUIDE_PLACEHOLDER;
+    input.setAttribute('aria-describedby', 'assistant-guides-label assistant-guide-hint');
+  }
+  const label=$('assistant-guides-label'),help=$('assistant-guide-hint');
+  if(label)label.textContent=active?'Change this setting':session.unresolved?.length?'Help Needle understand':session.requests.length?'Keep editing this item':'What would you like to change?';
+  if(help){
+    if(active){
+      const detail=assistantGuideHelp(active.id);
+      help.textContent=`${detail.description}${detail.example ? ` Example: ${detail.example}.` : ''}${!active.rest ? ' Add a value, or send to clarify your last request.' : ''}`;
+    }else if(row.dataset.guideRevising){
+      help.textContent='The last request’s unsaved changes were removed. Earlier edits are kept. Choose the intended setting or rewrite the request, then send.';
+    }else if(session.continuationError){
+      help.textContent='Your draft is kept. Use Continue above to retry, or fix your last request below.';
+    }else if(session.unresolved?.length){
+      help.textContent='Choose the setting you meant, then add its value. You can also answer the question above.';
+    }else{
+      help.textContent=session.requests.length?'Choose another setting, or fix the last request if Needle misunderstood. Review the changes before saving.':'Choose a setting to see what it does and how to ask. Nothing is saved until you choose Save.';
+    }
+  }
+  const revise=$('assistant-guide-revise');
+  if(revise){
+    revise.hidden=!assistantGuideCanRevise(session);
+    revise.disabled=Boolean(_assistantBusy||typed.trim());
+    revise.title=typed.trim()?'Send or clear the message you are writing first.':'Remove only the last request’s unsaved changes and edit its wording. Earlier edits are kept.';
+  }
+  if($('assistant-guide-more'))$('assistant-guide-more').disabled=Boolean(_assistantBusy);
+  if($('assistant-guide-search'))$('assistant-guide-search').disabled=Boolean(_assistantBusy);
+  assistantRenderGuideBrowser();
+  const suggestions = assistantGuideSuggestions(session, hint);
+  const signature = `${suggestions.map(item => item.id).join(',')}|${active ? active.id : ''}|${_assistantBusy ? 1 : 0}`;
+  row.hidden = suggestions.length === 0;
+  if(row.dataset.guideSignature === signature)return;
+  row.dataset.guideSignature = signature;
+  list.replaceChildren();
+  for(const item of suggestions){
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'assistant-guide';
+    button.dataset.assistantGuide = item.id;
+    button.textContent = item.label;
+    button.title = assistantGuideHelp(item.id).description;
+    button.setAttribute('aria-pressed', active && active.id === item.id ? 'true' : 'false');
+    button.disabled = Boolean(_assistantBusy);
+    list.append(button);
+  }
+}
+
+function assistantToggleGuideBrowser(open){
+  const browser=$('assistant-guide-browser'),button=$('assistant-guide-more');
+  if(browser)browser.hidden=!open;
+  if(button){button.setAttribute('aria-expanded',String(Boolean(open)));button.textContent=open?'Close settings':'All settings';}
+  if(!open&&$('assistant-guides'))$('assistant-guides').scrollTop=0;
+}
+
+function assistantRenderGuideBrowser(){
+  const browser=$('assistant-guide-browser'),results=$('assistant-guide-results');
+  const session=_assistantSession?.focus;
+  if(!browser||browser.hidden||!results||!session)return;
+  const rows=assistantGuideBrowse(session,$('assistant-guide-search')?.value);
+  const signature=`${session.id}|${rows.map(row=>row.id).join(',')}|${Boolean(_assistantBusy)}`;
+  if(results.dataset.signature===signature)return;
+  results.dataset.signature=signature;
+  results.replaceChildren();
+  for(const def of rows){
+    const button=document.createElement('button');button.type='button';button.className='assistant-guide';
+    button.dataset.assistantGuide=def.id;button.dataset.guideLabel=def.label;button.disabled=Boolean(_assistantBusy);
+    const title=document.createElement('span');title.textContent=def.label;
+    const detail=document.createElement('span');detail.className='assistant-guide-description';
+    detail.textContent=assistantGuideHelp(def.id).description;
+    button.append(title,detail);results.append(button);
+  }
+  if(!rows.length){
+    const empty=document.createElement('p');empty.className='assistant-guide-hint';
+    empty.textContent='No matching setting for this item. Try days, hours, duration, or name.';results.append(empty);
+  }
+}
+
+function assistantApplyGuide(label){
+  const input = $('assistant-input');
+  const session = _assistantSession && _assistantSession.focus;
+  if(!input || input.disabled || _assistantBusy || !session || !assistantFocusAlive(session) || typeof assistantGuideCompose !== 'function')return;
+  assistantToggleGuideBrowser(false);
+  let value = assistantGuideCompose(input.value, label, session);
+  const parsed = value && typeof assistantGuideParse === 'function' ? assistantGuideParse(value, session) : null;
+  if(parsed && !parsed.rest)value = `${parsed.label}: `;
+  input.value = value;
+  const end = input.value.length;
+  input.focus({preventScroll:true});
+  try{ input.setSelectionRange(end, end); }catch(_){}
+  assistantResizeComposer();
+  assistantSyncSend();
+  assistantRenderGuides();
+  setTimeout(() => {
+    if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
+  }, 260);
+}
+
 function assistantResizeComposer(){
   const input = $('assistant-input');
   if(!input)return;
@@ -982,6 +1114,7 @@ function assistantShowBusy(on){
   document.querySelectorAll('#assistant-thread [data-assistant-choice]').forEach(btn => {
     btn.disabled=on || btn.closest('.assistant-bubble') !== assistantThreadEl()?.lastElementChild;
   });
+  assistantRenderGuides();
   const wait = $('assistant-waiting');
   if(wait){
     wait.hidden = !on;
@@ -1106,11 +1239,14 @@ async function renderAssistantOutcome(out, feedbackContext){
 
 async function sendAssistantMessage(text, opts){
   opts = opts || {};
-  const value = String(text || '').trim();
+  const typed = String(text || '').trim();
+  let value = typed;
+  const guideSession = _assistantSession && _assistantSession.focus;
+  if(guideSession && typeof assistantGuideOutgoing === 'function')value = assistantGuideOutgoing(typed, guideSession);
   if(!value || _assistantBusy)return;
   if(!assistantNeedleCanSend()){
     const input = $('assistant-input');
-    if(input)input.value = value;
+    if(input)input.value = text == null ? value : String(text);
     assistantResizeComposer();
     if(typeof showToast === 'function')showToast('Download Needle 3 to use the assistant');
     return;
@@ -1118,6 +1254,7 @@ async function sendAssistantMessage(text, opts){
   const turn = ++_assistantTurn;
   assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button, [data-assistant-choice], [data-assistant-proposal], [data-assistant-action]').forEach(button=>{button.disabled=true;});
   appendAssistantBubble('user', opts.displayText || value);
+  if($('assistant-guides'))delete $('assistant-guides').dataset.guideRevising;
   const input = $('assistant-input');
   if(input){
     input.value = '';
@@ -1524,6 +1661,7 @@ async function assistantHandleFocusClick(target){
     if(result && result.ok){
       if(status)status.textContent = 'Saved.';
       assistantRetireFocusControls(true);
+      assistantRenderGuides();
       if(session.operation === 'create' && session.entry === 'add' && typeof cancelAdd === 'function')cancelAdd();
       return true;
     }
@@ -1605,6 +1743,45 @@ function bindAssistantUi(){
   $('assistant-input')?.addEventListener('input', () => {
     assistantResizeComposer();
     assistantSyncSend();
+    assistantRenderGuides();
+  });
+  $('assistant-guides')?.addEventListener('click', e => {
+    const button = e.target.closest('[data-assistant-guide]');
+    if(!button || button.disabled)return;
+    e.preventDefault();
+    assistantApplyGuide(button.dataset.guideLabel || button.textContent);
+  });
+  $('assistant-guide-more')?.addEventListener('click',()=>{
+    if(_assistantBusy)return;
+    const open=$('assistant-guide-browser')?.hidden;
+    assistantToggleGuideBrowser(open);
+    if(open){
+      assistantRenderGuideBrowser();
+      $('assistant-guide-search')?.focus({preventScroll:true});
+      const guides=$('assistant-guides'),search=$('assistant-guide-search');
+      if(guides&&search)guides.scrollTop+=search.getBoundingClientRect().top-guides.getBoundingClientRect().top;
+    }else $('assistant-input')?.focus({preventScroll:true});
+    if(typeof updateKeyboardLift==='function')updateKeyboardLift();
+  });
+  $('assistant-guide-search')?.addEventListener('input',assistantRenderGuideBrowser);
+  $('assistant-guide-search')?.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){
+      e.preventDefault();assistantToggleGuideBrowser(false);$('assistant-input')?.focus({preventScroll:true});
+    }
+    if(e.key==='Enter')e.preventDefault();
+  });
+  $('assistant-guide-revise')?.addEventListener('click',()=>{
+    const input=$('assistant-input'),session=_assistantSession?.focus;
+    if(_assistantBusy||input?.value.trim()||!session||!assistantFocusAlive(session))return;
+    const request=assistantGuideRevise(session);
+    if(request==null||!input)return;
+    $('assistant-guides').dataset.guideRevising='true';
+    input.value=request;
+    assistantToggleGuideBrowser(false);
+    assistantShowFocusReview(session);
+    assistantResizeComposer();assistantSyncSend();assistantRenderGuides();
+    input.focus({preventScroll:true});
+    if(typeof updateKeyboardLift==='function')updateKeyboardLift();
   });
   $('assistant-input')?.addEventListener('keydown', e => {
     if(e.key === 'Enter' && !e.shiftKey){
