@@ -27,6 +27,34 @@ choices stage real values. Reminder previews show the actual mode and lead time.
 Save writes the staged item. Edit opens the detail editor with those changes
 filled in and leaves them unsaved until the detail save.
 
+Explicit field reads finish before unfamiliar clauses receive a bounded group
+and field routing pass. A routing nomination alone never makes a sibling field
+mandatory. Completeness accounts for the original instruction across groups,
+so a mislabelled group cannot reopen a completed weekday or duration edit.
+An unclear remaining clause blocks partial Save; a model-classified background
+clause does not. Reminder warning/heads-up quantities belong to their lead-time
+field, including spoken and fractional values; they cannot edit session length.
+Unsupported lead times ask instead of selecting a supported value or another field.
+
+Title edits require an explicit naming instruction on the current turn,
+including replies to a title question. A routing question cannot grant permission
+to treat a later setting request as a title.
+Clear instructions retain their whole setting label, keeping monthly weekday
+rules, ordinary weekdays, place preferences and schedule links separate. Exact
+versus flexible start policies keep their negation together. Occurrence wording
+qualifies the following clock or duration rather than becoming a separate value.
+Spoken dates, abbreviated months, dotted clocks and four-digit 24-hour clocks
+use the shared validators; invalid dates, clocks and conflicting start policies
+remain questions. Event priority requests explain that the setting is unavailable.
+Deadline strictness is separate from its date: a strict or soft deadline alone
+preserves the saved date. Anywhere permissions preserve saved places, and a
+request to record a number when checking an item off enables value tracking.
+Forecasts that follow the activity location use that flag rather than changing
+the saved place or picking a separate forecast location. Monthly date rules
+accept ordinary framing such as “the month's first Monday.” Named dates accept
+day-first order as well as month-first order. Contradictory policies and place
+exclusions that this editor cannot represent ask for clarification.
+
 Focused create and edit now use the same semantic-field pipeline: a baseline
 record plus validated field proposals. Create starts from form values and app
 defaults; Edit starts from the saved item. The field catalog reuses the detail

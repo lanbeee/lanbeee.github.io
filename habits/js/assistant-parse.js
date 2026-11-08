@@ -71,10 +71,20 @@ function assistantFriendlyClock(minutes){
 }
 
 function assistantParseClock(value){
-  const s = assistantNormText(value).replace(/\./g, '');
+  const s = assistantNormText(value).replace(/\s+(?:sharp|exactly|on the dot)$/,'').replace(/(\d)\.(\d{2})(?=\s*(?:a\.?m\.?|p\.?m\.?)?$)/g, '$1:$2').replace(/\./g, '');
   if(!s)return null;
   if(s === 'noon' || s === 'midday')return 12 * 60;
   if(s === 'midnight')return 0;
+  const military=s.match(/^(\d{2})(\d{2})(?:\s*(?:hours?|hrs?))?$/);
+  if(military)return Number(military[1])<24&&Number(military[2])<60?Number(military[1])*60+Number(military[2]):null;
+  const spokenMinutes=s.match(/^(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(.+?)(?:\s*(am|pm)| in (?:the )?(morning|afternoon|evening|night))$/);
+  if(spokenMinutes){
+    const hour=assistantParseNumberPhrase(spokenMinutes[1]),minutes=assistantParseNumberPhrase(spokenMinutes[2]);
+    if(minutes!=null&&Number.isInteger(minutes)&&minutes>=0&&minutes<60){
+      const pm=spokenMinutes[3]==='pm'||['afternoon','evening','night'].includes(spokenMinutes[4]);
+      return hour%12*60+minutes+(pm?720:0);
+    }
+  }
   const spoken=s.match(/^(?:(half|quarter) (past|to) )?(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?:\s*(am|pm)| in (?:the )?(morning|afternoon|evening|night))$/);
   if(spoken){
     const hour=assistantParseNumberPhrase(spoken[3]);
@@ -173,7 +183,7 @@ function assistantDurationNumberSource(){
 function assistantSpokenQuantitySource(){
   const unit = '(?:hours?|hrs?|h|minutes?|mins?|m)';
   const number = `(?:${assistantDurationNumberSource()}|(?:\\d+\\s*)?[½¼¾⅓⅔⅛])`;
-  return `(?:${number}\\s*${unit}(?:\\s+and\\s+a\\s+(?:half|quarter))?|(?:an?|one)?\\s*hour\\s+and\\s+a\\s+(?:half|quarter)|three[\\s-]+quarters(?:\\s+of)?\\s+an?\\s+hour|half\\s+an?\\s+hour|a\\s+half\\s+hour|(?:a\\s+)?quarter(?:\\s+of)?(?:\\s+an?)?\\s+hour|an?\\s+hour)`;
+  return `(?:${number}[\\s-]*${unit}(?:\\s+and\\s+a\\s+(?:half|quarter))?|(?:an?|one)?\\s*hour\\s+and\\s+a\\s+(?:half|quarter)|(?:${assistantIntegerSource()}|a)\\s+(?:thirds?|quarters?|fourths?|eighths?)(?:\\s+of)?\\s+an?\\s+hour|half\\s+an?\\s+hour|a\\s+half\\s+hour|(?:a\\s+)?quarter(?:\\s+of)?(?:\\s+an?)?\\s+hour|an?\\s+hour)`;
 }
 
 function assistantNormalizeDurationText(value){
@@ -198,6 +208,10 @@ function assistantNormalizeDurationText(value){
   });
   s = s.replace(/\bhalf\s+an?\s+hour\b/g, '30 minutes');
   s = s.replace(/\ba\s+half\s+hour\b/g, '30 minutes');
+  s = s.replace(new RegExp(`\\b(${assistantIntegerSource()}|a)\\s+(thirds?|quarters?|fourths?|eighths?)(?:\\s+of)?\\s+an?\\s+hour\\b`,'g'),(whole,raw,part)=>{
+    const count=raw==='a'?1:assistantParseNumberPhrase(raw),den=part.startsWith('third')?3:part.startsWith('eighth')?8:4;
+    return count==null?whole:`${count/den} hours`;
+  });
   s = s.replace(/\bthree[\s-]+quarters(?:\s+of)?\s+an?\s+hour\b/g, '45 minutes');
   s = s.replace(/\b(?:a\s+)?quarter(?:\s+of)?(?:\s+an?)?\s+hour\b/g, '15 minutes');
   s = s.replace(/\ban\s+hour\b/g, '1 hour');
@@ -345,7 +359,7 @@ function assistantParseExactCount(value, min, max, ordinal=false){
 // Preserve units until a field has declared its own conversion table. Unknown
 // units, multiple numbers, signs and out-of-range values must not be clamped.
 function assistantParseQuantity(value, units, min, max){
-  const s=assistantNormText(value).replace(/([a-z])-(?=[a-z])/g,'$1 ').replace(/½/g,' half ').replace(/¼/g,' quarter ').replace(/¾/g,' three quarters ');
+  const s=assistantNormalizeDurationText(value).replace(/([a-z])-(?=[a-z])/g,'$1 ').replace(/½/g,' half ').replace(/¼/g,' quarter ').replace(/¾/g,' three quarters ');
   const unitSource=Object.keys(units).sort((a,b)=>b.length-a.length).join('|');
   const number=`(?:three[ -]+quarters|(?:a\\s+)?(?:half|quarter)(?:\\s+(?:of\\s+)?an?)?|${assistantDurationNumberSource()}|zero|(?:a|an)(?=\\s+(?:${unitSource})\\b))`;
   const matches=[...s.matchAll(new RegExp(`\\b(${number})(?![\\w./-])`,'g'))];
@@ -512,7 +526,7 @@ function assistantParseMonthDays(value){
     if(n==null)invalid=true;
     else if(!days.includes(n))days.push(n);
     return '';
-  }).replace(/\b(?:allow(?:ed)?|only|on|the|and|of|each|every|month(?:ly)?|days?|prefer(?:red|ably)?)\b/g,'').replace(/[\s,]/g,'');
+  }).replace(/\s+works? best(?: for me)?$/,'').replace(/\b(?:allow(?:ed)?|only|on|in|the|and|of|each|every|month(?:ly)?|days?|dates?|is|prefer(?:red|ably)?)\b/g,'').replace(/[\s,]/g,'');
   return !invalid&&!rest&&days.length ? days.sort((a, b) => a - b) : null;
 }
 
@@ -521,7 +535,7 @@ function assistantParseMonthDays(value){
 const ASSISTANT_ORDINAL_LIST = `(?:${assistantOrdinalSource()}|last)(?:\\s+and\\s+(?:${assistantOrdinalSource()}|last))*`;
 const ASSISTANT_ORDINAL_WEEKDAY = `(?:${ASSISTANT_ORDINAL_LIST})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`;
 function assistantParseOrdinalWeekdays(value){
-  const s=assistantNormText(value);
+  const s=assistantNormText(value).replace(/\bmonth['’]s\b/g,'month');
   if(/^(?:any|all|none|clear)$/.test(s))return [];
   const rules=[];
   const rest=s.replace(new RegExp(`\\b(${ASSISTANT_ORDINAL_LIST})\\s+(${ASSISTANT_WEEKDAY_TOKEN})\\b`,'g'),(phrase,ordinals,day)=>{
@@ -529,7 +543,7 @@ function assistantParseOrdinalWeekdays(value){
     const weekday=assistantCollectWeekdays(day)[0];
     if(numbers.some(n=>n==null)||weekday==null)return phrase;
     rules.push(...numbers.map(ordinal=>({ordinal,weekday})));return '';
-  }).replace(/\b(?:only|allow(?:ed)?|prefer(?:red|ably)?|on|the|and|of|each|every|month(?:ly)?|weekdays?)\b/g,'').replace(/[\s,]/g,'');
+  }).replace(/\b(?:use|only|allow(?:ed)?|prefer(?:red|ably)?|on|in|the|and|of|each|every|month(?:ly)?|weekdays?|rule|should be)\b/g,'').replace(/[\s,]/g,'');
   // "Every third Monday" could mean an interval; require a calendar month.
   if(rest||!rules.length||!(/\bmonth(?:ly)?\b/.test(s)))return null;
   return normalizeOrdinalWeekdays(rules);
@@ -783,7 +797,7 @@ function assistantParseScheduleOptionText(value, catalog){
 }
 
 function assistantParseRhythm(text){
-  const s = assistantNormText(text);
+  const s = assistantNormText(text).replace(/\b(\d+)\s*x?\s*\/\s*(days?|weeks?|wk)\b/g,(_,n,unit)=>`${n} times per ${unit==='wk'?'week':unit}`);
   if(!s)return null;
   const count=`(?:${assistantIntegerSource()}|once|twice|thrice)`;
   const interval=`(?:${count}|${assistantOrdinalSource()}|other)`;
@@ -801,7 +815,8 @@ function assistantParseRhythm(text){
   };
   // Consume a coupled count and period before looking for a bare interval.
   // Otherwise "twice every three weeks" could silently become once / 21d.
-  add(new RegExp(`\\b(${count})\\s*(?:x|times?|sessions?)?\\s+(?:a|per|in|every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:period(m[2],m[3])}));
+  add(new RegExp(`\\b(${count})\\s*(?:x|times?|sessions?|occurrences?|repetitions?)?\\s+(?:a|per|in\\s+(?:every|each)|in|every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:period(m[2],m[3])}));
+  add(new RegExp(`\\b(daily|weekly)\\s+frequency\\s+(?:(?:to|is|of|should be)\\s+)?(${count})\\b`,'g'),m=>({times:assistantParseExactCount(m[2],1,30),days:m[1]==='daily'?1:7}));
   add(new RegExp(`\\b(?:every|each)\\s+(?:(${interval})\\s+)?(days?|weeks?)\\b`,'g'),m=>({times:1,days:period(m[1],m[2])}));
   add(new RegExp(`\\b(${count})\\s*(?:x|times?|sessions?)?\\s+(daily|weekly)\\b`,'g'),m=>({times:assistantParseExactCount(m[1],1,30),days:m[2]==='daily'?1:7}));
   add(/\b(?:daily|weekly|every (?:morning|night|evening))\b/g,m=>({times:1,days:m[0]==='weekly'?7:1}));
@@ -847,12 +862,31 @@ function assistantUpcomingWeekday(want, now, skipToday){
 function assistantParseDue(value, now){
   const ts = now != null ? Number(now) : Date.now();
   const base = assistantDayBase(ts);
-  const s = assistantNormText(value);
+  let s = assistantNormText(value);
+  // A complete spoken calendar date stays a scalar. Convert its ordinal only
+  // after a month is named; recurrence ordinals use a separate grammar.
+  s=s.replace(/^(jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.\s+/,'$1 ');
+  const monthWords=Object.keys(ASSISTANT_MONTH_NAMES).join('|');
+  const spokenDate=s.match(new RegExp(`^(?:the\\s+)?(${assistantOrdinalSource()})\\s+(?:of\\s+)?(${monthWords})(?:\\s+(\\d{4}))?$`,'i'));
+  const monthFirst=s.match(new RegExp(`^(${monthWords})\\s+(${assistantOrdinalSource()})(?:\\s*,?\\s+(\\d{4}))?$`,'i'));
+  if(spokenDate||monthFirst){
+    const day=assistantParseOrdinal(spokenDate?spokenDate[1]:monthFirst[2]);
+    if(day==null||day<1||day>31)return null;
+    const month=spokenDate?spokenDate[2]:monthFirst[1],year=(spokenDate||monthFirst)[3];
+    s=`${month} ${day}${year?' '+year:''}`;
+  }
   const calendarDate = (year, month, day) => {
     const date = new Date(year, month, day);
     return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day ? assistantDayBase(date.getTime()) : null;
   };
   if(!s)return null;
+  s=s.replace(/^the\s+(?=day after tomorrow$)/,'');
+  if(s==='the next day'||s==='next day')return assistantAddCalendarDays(base,1);
+  const relative=s.match(new RegExp(`^in\\s+(${assistantIntegerSource()})\\s+(days?|weeks?)$`,'i'));
+  if(relative){
+    const n=assistantParseExactCount(relative[1],0,365),days=n==null?null:n*(relative[2].startsWith('week')?7:1);
+    return days!=null&&days<=365?assistantAddCalendarDays(base,days):null;
+  }
   if(s === 'today' || s === 'tonight' || s === 'this evening' || s === 'this afternoon' || s === 'this morning')return base;
   if(s === 'tomorrow' || s === 'tommorow' || s === 'tmrw')return assistantAddCalendarDays(base, 1);
   if(s === 'day after tomorrow' || s === 'day after tommorow' || s === 'day after tmrw')return assistantAddCalendarDays(base, 2);
@@ -869,6 +903,8 @@ function assistantParseDue(value, now){
     if(year < 100)year += 2000;
     return calendarDate(year, month, day);
   }
+  const dayFirst=s.match(new RegExp(`^(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${monthWords})(?:\\s*,?\\s+(\\d{4}))?$`,'i'));
+  if(dayFirst)return calendarDate(dayFirst[3]?Number(dayFirst[3]):new Date(base).getFullYear(),ASSISTANT_MONTH_NAMES[dayFirst[2]],Number(dayFirst[1]));
   const named = s.match(/^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:(?:,\s*|\s+)(\d{4}))?$/);
   if(named){
     const month = ASSISTANT_MONTH_NAMES[named[1]];
@@ -1469,6 +1505,7 @@ function assistantParseWindowRange(text){
 function assistantParseWindowFromText(text, strict=false){
   let s = assistantNormText(text);
   s = s.replace(/[.?!,;:]+$/g, '').trim();
+  s = s.replace(/\s+(?:time )?window$/i,'');
   s = s.replace(/^(?:please |can you |could you )?(?:change|update|edit|make)(?: it| this| that| this one)?(?: to(?: be)?)?\s+/, '');
   s = s.replace(/^(?:only\s+)?(?:allowed|prefer(?:red|ably)?)(?: time(?: window)?| hours| window)?(?:\s+(?:to be|is|are|to))?\s+/, '');
   s = s.replace(/^(?:time\s+)?window(?:\s+(?:is|are|to))?\s+/, '');

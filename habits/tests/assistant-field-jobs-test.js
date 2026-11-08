@@ -17,6 +17,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         reply(spec){
           if(spec.family==='families')return {confidence:0.95,function_calls:[{arguments:{evidence:'',outside:''}}]};
           if(spec.family==='completeness')return {confidence:0.95,function_calls:[{arguments:{missing:''}}]};
+          if(spec.family==='family-routing')return {confidence:0.95,function_calls:[{arguments:{family:'conversation'}}]};
           const [key,property]=Object.entries(spec.tool.parameters.properties)[0];
           return {confidence:0.95,function_calls:[{name:spec.tool.name,arguments:{[key]:property.enum?.[0]||''}}]};
         },
@@ -50,7 +51,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     });
     assert(editScope,'Edit reads nominated settings with the focused identity; unrelated retrieval guesses cannot add sibling changes');
     const semanticRouting=await page.evaluate(async()=>{
-      const t=fieldTest,phrase='Capture a numeric reading with each check-in',runs=[];
+      const t=fieldTest,phrase='Include a quantitative reading at check-in',runs=[];
       for(const decision of ['accept','decline','invalid-route']){
         t.seed();const s=t.open(),before=JSON.stringify(load()),calls=[];
         const extract=async spec=>{
@@ -81,6 +82,79 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       return queries.length>0&&queries.length===new Set(queries).size&&assistantFocusCanSave(s);
     });
     assert(retrievalWork,'identical context and source excerpts are embedded only once per turn');
+    const basicsCoverage=await page.evaluate(async()=>{
+      const t=fieldTest,runs=[];
+      for(const [prompt,field,wrongFamily] of [
+        ['Only on Tuesdays and Thursdays','allowedWeekdays','recurrence'],
+        ['Prefer Mondays and Wednesdays','preferredWeekdays','recurrence'],
+        ['Make it three times per week','frequency','schedule'],
+        ['Block out three quarters of an hour for each session','durationMinutes','effort']
+      ]){
+        t.seed();const s=t.open(),before=JSON.stringify(load());let routes=0;
+        await assistantFocusTurn(s,prompt,t.options({extract:async spec=>{
+          if(spec.family==='families')return {function_calls:[{arguments:{evidence:`${wrongFamily}: ${prompt}`}}]};
+          if(spec.family==='completeness')return {function_calls:[{arguments:{missing:`${wrongFamily}: ${prompt}`}}]};
+          if(spec.family==='field-routing'){routes++;return {function_calls:[{arguments:{field:'repeatMode'}}]};}
+          return t.reply(spec);
+        }}));
+        const correct=s.changes.every(c=>c.field===field||(field==='frequency'&&['timesPerPeriod','periodDays'].includes(c.field)))&&s.changes.length>0;
+        const ready=assistantFocusCanSave(s),untouched=before===JSON.stringify(load());assistantFocusApprove(s);
+        const commit=ready&&correct?await assistantFocusCommit(s):null;
+        runs.push({prompt,ok:correct&&ready&&untouched&&commit?.ok&&routes===0,changes:s.changes,questions:s.unresolved,routes});
+      }
+      return runs;
+    });
+    assert(basicsCoverage.every(row=>row.ok),`completed everyday clauses cannot acquire speculative sibling questions from discovery or completeness (${JSON.stringify(basicsCoverage)})`);
+    const missedRouting=await page.evaluate(async()=>{
+      const t=fieldTest,phrase='Include a quantitative reading at check-in',runs=[];
+      for(const answer of ['effort','','conversation']){
+        t.seed();const s=t.open(),before=JSON.stringify(load());let reads=0;
+        await assistantFocusTurn(s,`Pin it; ${phrase}`,t.options({extract:async spec=>{
+          if(spec.family==='family-routing')return {function_calls:[{arguments:{family:answer}}]};
+          if(spec.family==='field-routing')return {function_calls:[{arguments:{field:'trackValue'}}]};
+          if(spec.jobId==='trackValue')reads++;
+          return t.reply(spec);
+        }}));
+        runs.push({answer,ok:before===JSON.stringify(load())&&s.changes.some(c=>c.field==='pinned')
+          &&(answer==='effort'?reads===1&&assistantFocusMaterialize(s).trackValue&&assistantFocusCanSave(s)
+            :answer===''?!assistantFocusCanSave(s)&&!assistantFocusMaterialize(s).trackValue
+              :assistantFocusCanSave(s)&&!assistantFocusMaterialize(s).trackValue),questions:s.unresolved});
+      }
+      return runs;
+    });
+    assert(missedRouting.every(row=>row.ok),`a missed clause gets a bounded group and field read; abstention blocks partial Save, while explicit background does not (${JSON.stringify(missedRouting)})`);
+    const routingRecovery=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open();let failures=2;
+      const options=t.options({extract:async spec=>{
+        if(spec.family==='family-routing')return {function_calls:[{arguments:{family:'effort'}}]};
+        if(spec.family==='field-routing'){
+          if(failures-->0)throw new Error('runtime failed');
+          return {function_calls:[{arguments:{field:'trackValue'}}]};
+        }
+        return t.reply(spec);
+      }});
+      const before=JSON.stringify(load());
+      await assistantFocusTurn(s,'Pin it; Include a quantitative reading at check-in',options);
+      const stopped=!assistantFocusCanSave(s)&&Boolean(s.continuationError)&&assistantFocusMaterialize(s).pinned&&!assistantFocusMaterialize(s).trackValue;
+      await assistantFocusTurn(s,'',{...options,resume:true});
+      return {stopped,untouched:before===JSON.stringify(load()),ready:assistantFocusCanSave(s),trackValue:assistantFocusMaterialize(s).trackValue,error:s.continuationError,questions:s.unresolved,jobs:s.jobs.map(job=>({id:job.id,status:job.status,error:job.error}))};
+    });
+    assert(routingRecovery.stopped&&routingRecovery.untouched&&routingRecovery.ready&&routingRecovery.trackValue&&!routingRecovery.error,`a failed fallback route keeps sibling proposals, retries once and can Continue without losing its clause (${JSON.stringify(routingRecovery)})`);
+    const unresolvedSibling=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open();
+      await assistantFocusTurn(s,'Pin it; Include a quantitative reading at check-in',t.options({extract:async spec=>{
+        if(spec.family==='family-routing')return {function_calls:[{arguments:{family:'effort'}}]};
+        if(spec.family==='field-routing')return {function_calls:[{arguments:{field:'trackValue'}}]};
+        if(spec.jobId==='trackValue')return {function_calls:[{arguments:{value:''}}]};
+        return t.reply(spec);
+      }}));
+      const asked=s.unresolved.some(issue=>issue.field==='trackValue');
+      await assistantFocusTurn(s,'Make it 60 minutes long',t.options());
+      const kept=asked&&!assistantFocusCanSave(s)&&s.unresolved.some(issue=>issue.field==='trackValue')&&assistantFocusMaterialize(s).durationMinutes===60;
+      await assistantFocusTurn(s,'Enable value tracking',t.options());
+      return kept&&assistantFocusCanSave(s)&&assistantFocusMaterialize(s).trackValue&&assistantFocusMaterialize(s).pinned;
+    });
+    assert(unresolvedSibling,'a missing paraphrased setting stays unresolved across an unrelated edit and clears when its own correction succeeds');
     const effortOwnership=await page.evaluate(async()=>{
       const t=fieldTest,runs=[];
       for(const [prompt,field,value] of [
@@ -331,7 +405,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const t=fieldTest;t.seed();const s=t.open();
       await assistantFocusTurn(s,'Make it 40 minutes long.',t.options());
       await assistantFocusTurn(s,'Okay, something else.',t.options());
-      const blocked=!assistantFocusCanSave(s)&&s.unresolved.some(row=>row.field==='request')&&assistantFocusMaterialize(s).durationMinutes===40&&load()[0].durationMinutes===45;
+      const blocked=!assistantFocusCanSave(s)&&s.unresolved.some(row=>row.family==='request')&&assistantFocusMaterialize(s).durationMinutes===40&&load()[0].durationMinutes===45;
       await assistantFocusTurn(s,'Make it 60 minutes long.',t.options());
       const recovered=assistantFocusCanSave(s)&&!s.unresolved.length&&assistantFocusMaterialize(s).durationMinutes===60;
       const reference='Use the first duration I mentioned earlier';
@@ -349,9 +423,9 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         ?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{frequency:''}}]}:t.reply(spec)}));
       const asked=rhythm.unresolved.some(row=>row.field==='timesPerPeriod');
       await assistantFocusTurn(rhythm,'Use that pattern again.',t.options());
-      return blocked&&recovered&&referred&&rejected&&preserved&&asked&&!rhythm.unresolved.length&&rhythmParts(assistantFocusMaterialize(rhythm).target).times===3;
+      return {blocked,recovered,referred,rejected,preserved,asked,rhythmReady:!rhythm.unresolved.length&&rhythmParts(assistantFocusMaterialize(rhythm).target).times===3,questions:s.unresolved,rhythmQuestions:rhythm.unresolved};
     });
-    assert(followupRecovery,'an unanswered follow-up blocks the existing draft, a correction recovers, and only grounded preservation clears a field question');
+    assert(['blocked','recovered','referred','rejected','preserved','asked','rhythmReady'].every(key=>followupRecovery[key]),`an unanswered follow-up blocks the existing draft, a correction recovers, and only grounded preservation clears a field question (${JSON.stringify(followupRecovery)})`);
     const separation=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open();
       await assistantFocusTurn(s,'60 minutes each, split into chunks of at least 15 minutes, with a gap of 30 minutes.',t.options());
@@ -455,6 +529,14 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
           ['Give me a 20 minute heads-up before leaving','reminderTravelLead','travelLeadMinutes',false,'habit'],
           ['Give me a 15 minute heads-up before leaving','reminderTravelLead','travelLeadMinutes',true,'habit'],
           ['Departure lead time 15 min','reminderTravelLead','travelLeadMinutes',true,'habit'],
+          ['Give me fifteen minutes of warning before leaving','reminderTravelLead','travelLeadMinutes',true,'habit'],
+          ['Use a 0.25-hour heads-up before I leave','reminderTravelLead','travelLeadMinutes',true,'habit'],
+          ['Set the leaving reminder fifteen minutes in advance','reminderTravelLead','travelLeadMinutes',true,'habit'],
+          ['Set the missed warning to fifteen minutes beforehand','reminderMissedLead','missedLeadMinutes',true,'habit'],
+          ['Use a quarter hour for the missed-warning lead','reminderMissedLead','missedLeadMinutes',true,'habit'],
+          ['Set the start alert advance time to a quarter hour','reminderStartLead','startLeadMinutes',true,'event'],
+          ['Set the start alert advance time to three quarters of an hour','reminderStartLead','startLeadMinutes',false,'event'],
+          ...[20,25,45,90,-15].map(value=>[`Give me ${value} minutes of warning before leaving`,'reminderTravelLead','travelLeadMinutes',false,'habit']),
           ['Alert me 15 minutes before it begins','reminderStartLead','startLeadMinutes',true,'event']
         ]){
           t.seed();if(kind==='event')save([{...load()[0],appointment:{repeat:'weekly',startDate:'2026-11-02',startMinute:540,weekdays:[1]}}]);
@@ -473,6 +555,14 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
             if(!commit.ok||JSON.stringify(load())!==before||JSON.stringify(saved.items)!==JSON.stringify({...original.items,'item:gym':{...original.items['item:gym'],[key]:15}}))return {prompt,commit,saved};
           }
         }
+        t.seed();const shortened=t.open();
+        await assistantFocusTurn(shortened,'Give me fifteen minutes of warning before leaving',t.options({rank,extract:async spec=>{
+          if(spec.family==='families')return {function_calls:[{arguments:{evidence:'effort: fifteen minutes'}}]};
+          if(spec.family==='completeness')return {function_calls:[{arguments:{missing:'effort: fifteen minutes'}}]};
+          if(spec.family==='field-routing')return {function_calls:[{arguments:{field:'durationMinutes'}}]};
+          return t.reply(spec);
+        }}));
+        if(!assistantFocusCanSave(shortened)||shortened.changes.length!==1||shortened.changes[0].field!=='reminderTravelLead'||assistantFocusMaterialize(shortened).durationMinutes!==45)return {error:'a shortened routing excerpt escaped the reminder owner',changes:shortened.changes,questions:shortened.unresolved};
         t.seed();localStorage.removeItem(ASSISTANT_FOCUS_REMINDER_KEY);const off=t.open();
         await assistantFocusTurn(off,'Remove all reminders for this',t.options());assistantFocusApprove(off);
         const expected=['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'];
@@ -486,6 +576,41 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       }finally{window.TingsNative=oldNative;window.refreshOpenViews=oldRefresh;}
     });
     assert(reminderSafety===true,`lead times cannot change duration, delivery modes or another owner; unsupported/declined reads block Save; all-reminder off persists (${JSON.stringify(reminderSafety)})`);
+    const titleSafety=await page.evaluate(async()=>{
+      const t=fieldTest,oldNative=window.TingsNative,oldRefresh=window.refreshOpenViews;
+      window.TingsNative={isNative:true};window.refreshOpenViews=()=>{};
+      try{
+        for(const poisonedQuestion of [false,true]){
+          t.seed();const s=t.open(),before=JSON.stringify(load());
+          for(let turn=0;turn<2;turn++){
+            // Simulate the old fallback's mistaken name question. It must not
+            // become permission to rename on an unrelated repeated request.
+            if(poisonedQuestion)assistantFocusUnresolve(s,{field:'name',family:'identity',question:'What title?'});
+            await assistantFocusTurn(s,'The start alert should ring',t.options({
+              rank:async()=>({rankings:[['name','durationMinutes','reminderStart'].map(id=>({id,score:1}))]}),
+              extract:async spec=>{
+                if(spec.family==='families')return {function_calls:[{arguments:{evidence:'identity: The start alert should ring'}}]};
+                if(spec.family==='field-routing')return {function_calls:[{arguments:{field:'name'}}]};
+                return t.reply(spec);
+              }
+            }));
+            if(assistantFocusMaterialize(s).name!=='Gym'||s.changes.some(c=>c.field!=='reminderStart')||before!==JSON.stringify(load()))return {turn,poisonedQuestion,changes:s.changes};
+            if(!poisonedQuestion&&!assistantFocusCanSave(s))return {error:'repeated alert was not saveable',questions:s.unresolved};
+          }
+        }
+        t.seed();const renamed=t.open();
+        // Even a genuine title question cannot consume a later bare message.
+        await assistantFocusTurn(renamed,'Rename it Evening Gym',t.options({extract:async spec=>spec.jobId==='name'
+          ?{function_calls:[{name:spec.tool.name,arguments:{[Object.keys(spec.tool.parameters.properties)[0]]:''}}]}:t.reply(spec)}));
+        if(!renamed.unresolved.some(issue=>issue.field==='name'))return {error:'missing title clarification',questions:renamed.unresolved};
+        await assistantFocusTurn(renamed,'Evening Gym',t.options());
+        if(assistantFocusMaterialize(renamed).name!=='Gym'||assistantFocusCanSave(renamed))return {error:'bare message became a title',changes:renamed.changes};
+        await assistantFocusTurn(renamed,'Rename it Evening Gym',t.options());
+        if(assistantFocusMaterialize(renamed).name!=='Evening Gym'||!assistantFocusCanSave(renamed))return {error:'explicit title clarification failed',changes:renamed.changes,questions:renamed.unresolved};
+        return true;
+      }finally{window.TingsNative=oldNative;window.refreshOpenViews=oldRefresh;}
+    });
+    assert(titleSafety===true,`a repeated reminder cannot become a title through retrieval, routing or an invented title question (${JSON.stringify(titleSafety)})`);
     const quotedEvidence=await page.evaluate(async()=>{
       const original=window.assistantNeedleFocusRequest,source='Call it "Evening \\ Stroll"',second='two\nlines';
       const tool=assistantFocusPackTool('name','Read name.',{name:{type:'string',enum:[source,second,'']}},['name']);

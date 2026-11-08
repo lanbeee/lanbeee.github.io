@@ -236,11 +236,21 @@ chunks, gaps, timer targets and automatic completion. They verify both “one an
 a half hour” and “an hour and a quarter,” numeric fractions, mixed units and
 fraction symbols. Conflicting, negative and out-of-range lengths must ask
 without changing the staged value. `FIELD_CASE='language-.*(fraction|quarter)|guard-durationMinutes'`
-selects these cases; omit the filter for all 160 positive cases and 33 guards.
+selects these cases; omit the filter for the complete catalog and guard suite.
 `FIELD_CASE=basics` selects everyday phrasing, correction, literal-name and clear
 operations. These check complete patches and confirmed persistence, including
 absence of sibling edits. Ambiguous references use Needle's bounded field menu;
 a declined model decision must not be replaced by parser inference.
+These cases also cover fractional reminder advance times, repeated ringing-alert
+instructions, natural clear requests, exact/flexible start policies, occurrence
+clock and duration qualifiers, spoken series dates, snoozing and clock formats.
+The field-job tests force misleading title routing and invented title questions
+to verify that neither authorizes a rename on a subsequent reminder instruction.
+`FIELD_CASE=everyday` includes strict/soft deadlines, anywhere permissions,
+numeric completion values, weather at the activity location, monthly date rules
+and day-first dates. Explicit guard ids are retained so the same filter includes
+their contradictory-value and invalid-date checks. Positive cases verify the
+complete staged patch, absence of writes before approval, and saved values.
 
 `tests/assistant-monthly-create-test.js` covers the reported Family night
 dictation and variants with monthly weekday rules, solar/prayer offsets and

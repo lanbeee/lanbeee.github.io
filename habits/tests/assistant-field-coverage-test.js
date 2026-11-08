@@ -180,6 +180,67 @@ const cases=[
   ['links','Clear links',null,{id:'basics-clear-links',op:'clear',seed:{links:[{id:'guide',type:'url',label:'Guide',value:'https://example.com'}]},record:{links:[]}}],
   ['topics','Tag it Clear',['Clear'],{id:'basics-topic-clear-word'}],
   ['pinned','Pin it instead',true,{id:'basics-explicit-setting-followup',kind:'task',extra:{dueDate:day('2026-11-02')},historySteps:['Plan this for tomorrow']}],
+  ['reminderStartLead','Set the start alert advance time to a quarter hour',15,{id:'basics-alert-advance-fraction',kind:'event',native:true,selectAll:true}],
+  ['reminderStart','The start alert should ring','alarm',{id:'basics-alert-repeat',native:true,selectAll:true,historySteps:['The start alert should ring']}],
+  ['reminderEnd','The end alert should ring','alarm',{id:'basics-alert-end-ring',native:true,selectAll:true}],
+  ...['The start time should be exact, not flexible','Pin the allowed start time exactly','Use an exact start instead of a flexible window','Do not slide its start time around','Make the allowed start non-flexible'].map((prompt,i)=>[
+    'allowedTimeFixedStart',prompt,true,{id:`basics-fixed-policy-${i}`,kind:'task',selectAll:true}]),
+  ['allowedTimeFixedStart','Allow a flexible start time',false,{id:'basics-flexible-policy',seed:{allowedTimeFixedStart:true},selectAll:true}],
+  ['durationMinutes','Just this time, make it 90 min',90,{id:'basics-occurrence-duration-scope',kind:'event',scope:'occurrence',covers:['exceptionDuration'],selectAll:true}],
+  ...['For this occurrence only, start at 12:00 am','Just this time, start at 6:05am','Only this date, start at noon'].map((prompt,i)=>[
+    'appointmentStartMinute',prompt,[0,365,720][i],{id:`basics-occurrence-clock-${i}`,kind:'event',scope:'occurrence',covers:['exceptionTime'],selectAll:true}]),
+  ...['9am sharp','18.30','1830 hours','9 a.m.','half past three in the afternoon'].map((time,i)=>[
+    'dueTime',`Set start time to ${time}`,[540,1110,1110,540,930][i],{id:`basics-clock-format-${i}`,kind:'task'}]),
+  ...['November ninth','the ninth of November 2026','Nov. 9th','in eight days'].map((date,i)=>[
+    'dueDate',`Set due date to ${date}`,day('2026-11-09'),{id:`basics-date-format-${i}`,kind:'task'}]),
+  ...['Begin the event series on November ninth','Set the event series start day to 11/09/2026','The first date of the series is now Nov 9','The series should begin on the ninth of November 2026'].map((prompt,i)=>[
+    'appointmentStartDate',prompt,'2026-11-09',{id:`basics-series-date-${i}`,kind:'event'}]),
+  ...['Use December first as the series end date','The recurrence end date should be December 1, 2026','The series should stop after December 1','Set the last date for repeats to 2026-12-01'].map((prompt,i)=>[
+    'appointmentUntil',prompt,'2026-12-01',{id:`basics-series-until-${i}`,kind:'event'}]),
+  ...['Hide it until tomorrow','Snooze this task to November 2','Put this on hold until tomorrow','Do not show this again until 2026-11-02','Pause showing this until the next day'].map((prompt,i)=>[
+    'snoozedUntil',prompt,day('2026-11-02'),{id:`basics-snooze-phrase-${i}`,kind:'task',selectAll:true}]),
+  ...[
+    ['dueDate','This task should have no due date',{}, {dueDate:null,eventTime:null,hardDue:false}],
+    ['dueDate','Get rid of its deadline',{}, {dueDate:null,eventTime:null,hardDue:false}],
+    ['dueTime',"Remove the task's clock time",{}, {eventTime:null}],
+    ['dueTime','Clear the start-time field',{}, {eventTime:null}],
+    ['dueTime','This task no longer has a start time',{}, {eventTime:null}],
+    ['allowedWeekdays','All days are fine',{allowedWeekdays:[1,3]},{allowedWeekdays:[]}],
+    ['allowedMonthDays','Remove the day-of-month restrictions',{allowedMonthDays:[1,15]},{allowedMonthDays:[]}],
+    ['allowedMonthDays','Any date in the month is fine',{allowedMonthDays:[1,15]},{allowedMonthDays:[]}],
+    ['allowedOrdinalWeekdays','Clear the allowed monthly weekday rules',{allowedOrdinalWeekdays:[{ordinal:1,weekday:1}]},{allowedOrdinalWeekdays:[]}],
+    ['preferredOrdinalWeekdays','Drop all ordinal weekday preferences',{preferredOrdinalWeekdays:[{ordinal:2,weekday:2}]},{preferredOrdinalWeekdays:[]}],
+    ['preferredWeekdays','I have no preferred days of the week',{preferredWeekdays:[1,3]},{preferredWeekdays:[]}],
+    ['locationPrefs','Remove my location preferences',{locationPrefs:{home:'high'}},{locationPrefs:{}}],
+    ['minGapMinutes','No minimum spacing between sessions',{minGapMinutes:20},{minGapMinutes:0}],
+    ['timerAutoStopMinutes','Disable the automatic timer stop',{timerAutoStopMinutes:30},{timerAutoStopMinutes:null}],
+    ['timerAutoStopMinutes','Let the timer run without an automatic cutoff',{timerAutoStopMinutes:30},{timerAutoStopMinutes:null}],
+    ['autoMarkMinutes','Do not mark this done automatically anymore',{autoMarkMinutes:10},{autoMarkMinutes:null}],
+    ['scheduleOptions','Clear all schedule alternatives',{scheduleOptions:[{weekdays:[1],start:540,end:600}]},{scheduleOptions:[]}],
+    ['scheduleLinks','Clear the schedule links',{scheduleLinks:[{anchorHid:'meeting',relation:'after',adjacency:'direct'}]},{scheduleLinks:[]}],
+    ['weatherLocationId','Unset the weather forecast place',{weatherLocationId:'home'},{weatherLocationId:null}],
+    ['snoozedUntil','Unsnooze it',{snoozedUntil:day('2026-11-04')},{snoozedUntil:null}]
+  ].map(([field,prompt,seed,record],i)=>[field,prompt,null,{id:`basics-clear-natural-${i}`,op:'clear',kind:['dueDate','dueTime'].includes(field)?'task':'habit',seed,record,selectAll:true}]),
+  ['appointmentUntil','Let the series repeat without an end date',null,{id:'basics-clear-series-until',op:'clear',kind:'event',seed:{appointment:{repeat:'weekly',startDate:'2026-11-02',startMinute:540,weekdays:[1],until:'2026-12-01'}}}],
+  ...['The deadline must be strict','Make the due date non-negotiable','Do not allow this task to slip past its due date','Treat the deadline as hard','It must be completed by the deadline with no delay'].map((prompt,i)=>[
+    'hardDue',prompt,true,{id:`everyday-deadline-strict-${i}`,kind:'task',selectAll:true}]),
+  ...['Use a soft deadline','Make the deadline flexible','The deadline is not strict'].map((prompt,i)=>[
+    'hardDue',prompt,false,{id:`everyday-deadline-soft-${i}`,kind:'task',seed:{hardDue:true},selectAll:true}]),
+  ['dueDate','Set a strict deadline for tomorrow',day('2026-11-02'),{id:'everyday-deadline-date',kind:'task',extra:{hardDue:true}}],
+  ...['Permit doing it at any location','This does not require a particular place','There should be no geographic restriction','I can do this wherever I am','Allow it regardless of location'].map((prompt,i)=>[
+    'anywhereAllowed',prompt,true,{id:`everyday-anywhere-${i}`,seed:{anywhereAllowed:false,locationIds:['home']},record:{locationIds:['home']},selectAll:true}]),
+  ['anywhereAllowed','Allow only at saved places',false,{id:'everyday-only-saved-places',seed:{locationIds:['home']},selectAll:true}],
+  ['anywhereAllowed','Let me do it anywhere, not just at a saved place',true,{id:'everyday-anywhere-restatement',seed:{anywhereAllowed:false,locationIds:['home']},selectAll:true}],
+  ...['Ask me for a number whenever I log this','I want to enter a numeric result when I check it off','Capture a numeric reading with every check-in','Turn on recording a value for each log','Enable a number field for logging this habit'].map((prompt,i)=>[
+    'trackValue',prompt,true,{id:`everyday-track-number-${i}`,selectAll:true}]),
+  ...['Show the weather at the activity location',"Use this item's place for its displayed forecast",'Display weather for the assigned place','Make the forecast follow wherever this item takes place','Use the item location when showing weather'].map((prompt,i)=>[
+    'showWeatherAtLocation',prompt,true,{id:`everyday-weather-place-${i}`,selectAll:true}]),
+  ...['Use the first Monday in every month',"Only allow the month's first Monday",'The monthly rule should be first Monday'].map((prompt,i)=>[
+    'allowedOrdinalWeekdays',prompt,[{ordinal:1,weekday:1}],{id:`everyday-monthly-monday-${i}`,selectAll:true}]),
+  ...['Prefer the monthly date 5','My preferred monthly day is the fifth','The fifth of the month works best'].map((prompt,i)=>[
+    'preferredMonthDays',prompt,[5],{id:`everyday-monthly-preferred-${i}`,selectAll:true}]),
+  ...['9 November 2026','9th of November','November ninth, 2026'].map((date,i)=>[
+    'dueDate',`Set due date to ${date}`,day('2026-11-09'),{id:`everyday-date-order-${i}`,kind:'task',selectAll:true}]),
   // Saved edit-v2 failures. Scripted runs verify host boundaries only; the same
   // cases can use real assets without changing evidence or expectations.
   ...['Set the start time to 3:30pm','Start time 15:30','Set it to start at half past three in the afternoon'].map(prompt=>['dueTime',prompt,930,{id:`edit-v2-clock-${prompt}`,kind:'task'}]),
@@ -258,6 +319,27 @@ const cases=[
   ['appointmentStartDate','The series starts on November 9 now','2026-11-09',{id:'robust-edit-event-date',kind:'event',selectAll:true}],
   ['appointmentWeekdays','Repeat weekly on Tuesday and Thursday',[2,4],{id:'robust-edit-event-weekdays',kind:'event',selectAll:true}],
   ['appointmentWeekdays','Repeat weekly on Tuesday and Thursday',[2,4],{id:'robust-edit-once-to-weekly',kind:'event',selectAll:true,extra:{appointmentRepeat:'weekly'},seed:{appointment:{repeat:'once',startDate:'2026-11-02',startMinute:540,weekdays:[1],until:'',exceptions:{}}}}],
+  ...['Move its start clock to 3:30 pm','I want a 3.30pm start time','Change the time to three thirty in the afternoon','Its start time should read 15:30'].map((prompt,i)=>
+    ['dueTime',prompt,930,{id:`everyday-clock-${i}`,kind:'task',selectAll:true}]),
+  ...['This task is due on the fourth of November 2026','I need this finished by Nov 4','Set its deadline date to 2026-11-04','The due day should be 11/04/2026','Change the date it is due to November fourth'].map((prompt,i)=>
+    ['dueDate',prompt,day('2026-11-04'),{id:`everyday-date-${i}`,kind:'task',selectAll:true}]),
+  ...['Keep it within 18:00 to 20:00','Fit this between 18:00 and 20:00 only','Do not place it outside the 6 to 8 pm window'].map((prompt,i)=>
+    ['allowedWindow',prompt,null,{id:`everyday-hours-${i}`,record:{allowedTimeStart:1080,allowedTimeEnd:1200},selectAll:true}]),
+  ...['Any time of day is fine','Remove all restrictions on the time of day','Leave the allowed time window empty'].map((prompt,i)=>
+    ['allowedWindow',prompt,null,{id:`everyday-clear-hours-${i}`,op:'clear',seed:{allowedTimeStart:540,allowedTimeEnd:1020},record:{allowedTimeStart:null,allowedTimeEnd:null},selectAll:true}]),
+  ...['Mondays and Wednesdays work best, but other days are fine','Favour Mon and Wed without restricting other days','Give Monday and Wednesday higher scheduling preference'].map((prompt,i)=>
+    ['preferredWeekdays',prompt,[1,3],{id:`everyday-preferred-days-${i}`,selectAll:true,record:{allowedWeekdays:[],preferredWeekdays:[1,3]}}]),
+  ['allowedWeekdays','Do not schedule it outside Tuesday and Thursday',[2,4],{id:'everyday-restricted-days',selectAll:true}],
+  ...['Use a 0.25-hour session','Block out three quarters of an hour for each session','can u make it three quarters of an hour pls'].map((prompt,i)=>
+    ['durationMinutes',prompt,i===0?15:45,{id:`everyday-length-${i}`,selectAll:true}]),
+  ['breakable','This does not need one uninterrupted session',true,{id:'everyday-split-negation',selectAll:true}],
+  ...['Three occurrences in every week','Make the weekly frequency three','Repeat 3x/week','Repeat 3/week'].map((prompt,i)=>
+    ['frequency',prompt,3,{id:`everyday-frequency-${i}`,extra:{periodDays:7},selectAll:true}]),
+  ['minGapMinutes','Allow at least one third of an hour between sessions',20,{id:'everyday-gap-third',selectAll:true}],
+  ['minGapMinutes','Separate any two sessions by twenty minutes',20,{id:'everyday-gap-separate',selectAll:true}],
+  ...['The smallest block of work should be a quarter hour','Minimum time per piece is 0.25 hours','Keep the minimum block size at 15 min','Do not split it into pieces shorter than 15 minutes'].map((prompt,i)=>
+    ['minChunkMinutes',prompt,15,{id:`everyday-chunk-${i}`,seed:{breakable:true,durationMinutes:90},record:{breakable:true,durationMinutes:90,minChunkMinutes:15},selectAll:true}]),
+  ['appointmentStartMinute','Move the whole series to a 14:30 start',870,{id:'everyday-event-start',kind:'event',selectAll:true}],
   ...[
     ['emoji','Remove the emoji',{emoji:'🌙'},{emoji:''}],
     ['emoji','Get rid of the emoji',{emoji:'🌙'},{emoji:''}],
@@ -274,6 +356,16 @@ const cases=[
   ].map(([field,prompt,seed,record],i)=>[field,prompt,null,{id:`edit-v2-clear-${i}`,op:'clear',kind:['dueDate','dueTime'].includes(field)?'task':'habit',seed,record}])
 ].map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
+  {field:'hardDue',kind:'task',prompt:'Make the deadline strict and flexible',id:'everyday-deadline-conflict',selectAll:true},
+  {field:'hardDue',kind:'task',prompt:'Do not make the deadline strict',id:'everyday-deadline-negation',selectAll:true},
+  {field:'anywhereAllowed',kind:'habit',prompt:'Allow anywhere and only at saved places',id:'everyday-anywhere-conflict',selectAll:true},
+  {field:'anywhereAllowed',kind:'habit',prompt:'Allow anywhere except Home',id:'everyday-anywhere-exclusion',selectAll:true},
+  {field:'dueDate',kind:'task',prompt:'Set due date to 31 November 2026',id:'everyday-invalid-day-first',selectAll:true},
+  ...['Set priority to high','Make this event urgent'].map((prompt,i)=>({field:'priority',kind:'event',prompt,id:`basics-event-priority-guard-${i}`,selectAll:true})),
+  {field:'dueTime',kind:'task',prompt:'Set start time to 1860 hours',id:'basics-clock-invalid-military'},
+  {field:'dueDate',kind:'task',prompt:'Set due date to November thirty-first',id:'basics-date-invalid-spoken'},
+  {field:'allowedWeekdays',kind:'habit',prompt:'Clear weekdays except Monday',seed:{allowedWeekdays:[1,3]},id:'basics-clear-partial-guard',selectAll:true},
+  {field:'allowedTimeFixedStart',kind:'task',prompt:'Make the start time exact and flexible',id:'basics-fixed-conflict-guard',selectAll:true},
   ...[
     ['timerAutoStopMinutes',"Don't auto-stop the timer at 30 minutes"],
     ['minGapMinutes','Not a 20 minute gap between sessions'],
@@ -317,7 +409,7 @@ const guards=[
   {field:'timerAutoStopMinutes',kind:'habit',prompt:'Set timer target to three times a week'},
   {field:'emoji',kind:'habit',prompt:'Use a friendly emoji'},
   ...['Give me a 20 minute heads-up before leaving','Departure lead time 20 min'].map(prompt=>({field:'reminderTravelLead',kind:'habit',prompt,native:true,selectAll:true}))
-].map((row,index)=>({...row,id:`guard-${row.field}-${index+1}`}));
+].map((row,index)=>({...row,id:row.id||`guard-${row.field}-${index+1}`}));
 let passed=0;
 function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${msg}`);}
 (async()=>{
