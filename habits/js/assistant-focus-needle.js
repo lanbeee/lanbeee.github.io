@@ -359,6 +359,7 @@ function assistantFocusReminderFieldGrounded(fieldId, phrase){
   if(fieldId === 'reminderReset')return /\b(?:usual|default|reset)\b/.test(text);
   if(fieldId === 'reminderEnd')return /\b(?:end|finish)\b/.test(text) && !/\btravel\b/.test(text);
   if(fieldId === 'reminderStart')return /\bstart\b/.test(text) && !/\b(?:travel|depart(?:ure)?)\b/.test(text);
+  if(fieldId === 'reminderDnd')return /\bdnd\b|\bdo not disturb\b|\bsilenc|\bmute/.test(text);
   return true;
 }
 

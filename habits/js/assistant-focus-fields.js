@@ -61,16 +61,16 @@ const ASSISTANT_FIELD_SIGNALS = {
   delayAllowanceDays:/\b(?:late|delay|postpone|slip|grace period)\b/i,
   allowedWeekdays:new RegExp(`\\b(?:all days|weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?|any day)\\b`,'i'),
   preferredWeekdays:new RegExp(`\\bprefer\\w*\\b.{0,35}\\b(?:weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?)\\b`,'i'),
-  allowedMonthDays:new RegExp(`\\b(?:month(?:ly)?\\s*days?|days? of (?:the )?month|(?:${assistantOrdinalSource()}|${assistantIntegerSource()})(?:\\s+(?:and|or)\\s+(?:the\\s+)?(?:${assistantOrdinalSource()}|${assistantIntegerSource()}))*\\s+(?:day\\s+)?of\\s+(?:(?:the|each|every)\\s+)?month|(?:on|prefer(?:red)?(?: doing it on)?)\\s+(?:the\\s+)?(?:${assistantOrdinalSource()})(?!\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})s?\\b))\\b`,'i'),
-  preferredMonthDays:new RegExp(`\\bprefer\\w*\\b[^,;]*\\b(?:month(?:ly)?|${assistantOrdinalSource()})\\b`,'i'),
-  allowedOrdinalWeekdays:new RegExp(`\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i'),
-  preferredOrdinalWeekdays:new RegExp(`\\bprefer\\w*\\b[^,;]*\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i'),
+  allowedMonthDays:new RegExp(`\\b(?:month(?:ly)?\\s*days?|days? of (?:the )?month|(?:${assistantOrdinalSource()}|${assistantIntegerSource()})(?:\\s+(?:and|or)\\s+(?:the\\s+)?(?:${assistantOrdinalSource()}|${assistantIntegerSource()}))*\\s+(?:day\\s+)?of\\s+(?:(?:the|each|every)\\s+)?month|(?:on|prefer(?:red)?(?: doing it on)?)\\s+(?:the\\s+)?(?:${assistantOrdinalSource()})(?!\\s+(?:(?:${ASSISTANT_WEEKDAY_TOKEN})s?|weekdays?|weeks?)\\b)|${assistantMonthDayCueSource()})\\b`,'i'),
+  preferredMonthDays:new RegExp(`\\bprefer\\w*\\b[^,;]*\\b(?:month(?:ly)?|${assistantOrdinalSource()}|week|half|fortnight)\\b`,'i'),
+  allowedOrdinalWeekdays:new RegExp(`\\b(?:${ASSISTANT_ORDINAL_WEEKDAY}|${assistantOrdinalCueSource()})`,'i'),
+  preferredOrdinalWeekdays:new RegExp(`\\bprefer\\w*\\b[^,;]*\\b(?:${ASSISTANT_ORDINAL_WEEKDAY}|${assistantOrdinalCueSource()})`,'i'),
   allowedWindow:new RegExp(`\\b(?:${ASSISTANT_FIELD_RANGE}|${ASSISTANT_FIELD_OFFSET}|(?:from|between)\\s+(?:the\\s+)?(?:(?:later|earlier)\\s+of|whichever is (?:later|earlier))|(?:no later than|no earlier than)\\s+${ASSISTANT_FIELD_ENDPOINT}|(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})|(?:time\\s+)?window|(?:allowed|preferred)\\s+(?:time(?: window)?|hours)|(?:before|after|between|from)\\s+(?:\\d[\\d:]*(?:\\s*[ap]m)?|${ASSISTANT_ANCHOR_WORD}|midnight)|(?:every|each|this|in(?: the)?|during(?: the)?)\\s+(?:morning|afternoon|evening)|(?:morning|afternoon|evening|overnight)(?=\\s*(?:$|[,;.!?]))|(?:at|during|in|not|never|except|without)\\s+(?:the\\s+)?night(?:time)?|any time|clear (?:the )?(?:hours|window))\\b`,'i'),
   preferredWindow:new RegExp(`\\bprefer\\w*\\b.{0,40}\\b(?:${ASSISTANT_FIELD_RANGE}|hours?|morning|afternoon|evening|night|nighttime|before|after|between|from)\\b`,'i'),
   allowedTimeFixedStart:/\b(?:fixed|exact)(?: start| time)?\b|\bpin (?:the )?start time\b/i,
   durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|for\\s+\\w+\\s+(?:minutes?|hours?)|double (?:it|the duration)|duration|long|twice as long)\\b`,'i'),
   tapStartsSession:/\b(?:start with a tap|tap to start|tap (?:starts?|starting)|tapping[^,;]*\b(?:start|session)|start[^,;]*\b(?:tap|tapping))\b/i,
-  reminderDnd:/\bdnd\b|\bdo not disturb\b|\b(?:silence|mute) (?:my |the )?phone\b/i,
+  reminderDnd:/\bdnd\b|\bdo not disturb\b|\b(?:silenc\w*|mut\w*) (?:my |the )?phone\b/i,
   breakable:/\b(?:split(?:ting|table)?|breakable|unbreakable|continuous|uninterrupted|chunks?)\b/i,
   minChunkMinutes:/\b(?:minimum chunk|shortest session|(?:minimum|smallest) (?:block|time per piece)|minimum block size|pieces shorter than|chunks?\b[^,;]*\b(?:minimum|at least|minutes?|hours?)|(?:pieces|chunks?)\s+minimum|\d+[- ]minute chunks?)\b/i,
   minGapMinutes:new RegExp(`(?<!\\w)(?:(?:${assistantSpokenQuantitySource()})\\s+gap|gap|apart|between (?:two |the )?sessions|spacing|separate (?:any )?(?:two |the )?sessions|rest between (?:blocks|sessions))\\b`,'i'),
@@ -100,7 +100,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   exceptionTime:/\b(?:at|time|start)\b/i, exceptionDuration:/\b(?:minutes?|hours?|duration|long)\b/i,
   exceptionEmoji:/\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\ufe0f?\u20e3|\bemoji\b/iu, exceptionColor:/\bcolou?r\b/i,
   exceptionCancelled:/\b(?:cancel|skip|restore|uncancel)\b/i, exceptionReset:/\b(?:reset|usual values|back to the regular|follow the series again)\b/i,
-  reminderStart:/\b(?:(?:start|beginning) (?:reminder|alert|alarm)|(?:remind|alarm|alert|notify)[^,;]*\b(?:start|begin)\w*|remind me(?! to\b)|no reminders|(?:use|with) (?:an? )?(?:alarm|notifications?))\b/i, reminderEnd:/\b(?:(?:end|finish) (?:reminder|alert|alarm)|(?:remind|alarm|alert|notify)[^,;]*\b(?:end|finish)\w*)\b/i,
+  reminderStart:/\b(?:(?:start|beginning) (?:reminders?|alerts?|alarms?)|(?:remind|alarm|alert|notify)[^,;]*\b(?:start|begin)\w*|remind me(?! to\b)|no reminders|(?:use|with) (?:an? )?(?:alarm|notifications?))\b/i, reminderEnd:/\b(?:(?:end|finish) (?:reminders?|alerts?|alarms?)|(?:remind|alarm|alert|notify)[^,;]*\b(?:end|finish)\w*)\b/i,
   reminderTravelStart:/\b(?:depart|travel start)\w*\b|\b(?:remind|alert|notify)[^,;]*\b(?:leave|leaving)\b/i, reminderTravelEnd:/\b(?:arriv|travel end)\w*\b/i,
   reminderMissed:/\b(?:drop warning|missed|cutoff)\b|\bwarn[^,;]*\b(?:fall behind|miss)\b/i, reminderTravelLead:/\b(?:depart|travel|leav)\w*[^,;]*\b(?:before|lead)\b|\b(?:remind|alarm|notif|alert|heads[ -]?up)\w*[^,;]*\bbefore (?:depart|travel|leav)\w*\b/i,
   reminderStartLead:/\b(?:remind|alarm|notif|alert)\w*[^,;]*\b(?:before|lead)\b/i, reminderMissedLead:/\b(?:drop|missed).{0,25}\b(?:before|lead)\b/i,
@@ -109,10 +109,10 @@ const ASSISTANT_FIELD_SIGNALS = {
 const ASSISTANT_FIELD_HINTS = {
   name:'Item title only. Exclude create verbs, dates, frequency and other settings.',
   frequency:'Complete repetition phrase, including count and period. Exclude session length.',
-  allowedMonthDays:'Days of the month, including spelled-out ordinal dates. Exclude repetition intervals.',
-  preferredMonthDays:'Preferred days of the month, including spelled-out ordinal dates.',
-  allowedOrdinalWeekdays:'Monthly weekday rule, including the ordinal, weekday and calendar month. For example last Friday of every month. Exclude simple weekdays and month dates.',
-  preferredOrdinalWeekdays:'Preferred monthly weekday rule, including ordinal, weekday and month.',
+  allowedMonthDays:'Days of the month: dates, inclusive ranges, numbered weeks as 7-day bands, halves, fortnights, odd or even dates, and exclusions. The moving last week is a monthly weekday rule. Exclude repetition intervals and named weekdays.',
+  preferredMonthDays:'Preferred days of the month, including ranges, numbered weeks, halves and exclusions. Not a required restriction.',
+  allowedOrdinalWeekdays:'Monthly weekday rule: an ordinal or week of the month plus the weekday, such as the last Friday, the first Monday through Friday, or Mondays in the first week. The last week is the final occurrence of each weekday. Exclude plain weekdays and plain dates.',
+  preferredOrdinalWeekdays:'Preferred monthly weekday rule, including a week of the month. Not a required restriction.',
   reminderTravelLead:'How long before departure to remind, including the number or fraction and its time unit.',
   reminderStartLead:'How long before the event start to remind, including the number or fraction and its time unit.',
   reminderMissedLead:'Missed warning lead time, including the number or fraction and its time unit.',
@@ -212,6 +212,7 @@ function assistantFieldSpans(request){
     if(match[0]===',' && (new RegExp(`^\\s*(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i').test(request.slice(match.index+1))
       && new RegExp(`\\b(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i').test(request.slice(start,match.index))
       || /^\s*(?:until|till|to)\b/i.test(request.slice(match.index+1)) && /\b(?:later|earlier)\b/i.test(request.slice(start,match.index))))continue;
+    if(match[0]===',' && assistantFieldCalendarComma(request,start,match.index))continue;
     add(start,match.index);start=match.index+match[0].length;
   }
   add(start,request.length);
@@ -230,6 +231,7 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['scheduleLinks'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:before|after)\\b`,'i')},
   {fields:['allowedWindow'], when:new RegExp(`\\b(?:before|after)\\s+(?:${assistantDurationNumberSource()})(?:\\s+(?:or|and)\\s+(?:${assistantDurationNumberSource()}))*\\s*(?:minutes?|mins?|hours?|days?|weeks?)\\b`,'i')},
   {fields:['habitKind'], when:/\btimer\b|\b(?:stop using|limit (?:it|this|that) to)\b/i},
+  {fields:['habitKind'], when:ASSISTANT_FIELD_SIGNALS.reminderDnd, unless:/\b(?:build|limit|reduce|stop)\s+(?:this\s+)?habit\b/i},
   {fields:['dueDate','appointmentStartDate','appointmentUntil'], when:/\b(?:snooze|hide until|push (?:it|this|that) back|this (?:one )?(?:date|occurrence))\b/i, unless:/\b(?:due|start date|end date)\b/i},
   {fields:['dueDate'], when:/\b(?:(?:hard|strict|firm) deadline|deadline (?:hard|strict|firm)|cannot slip)\b/i, unless:/\d|today|tomorrow|next\b/i},
   {fields:['delayAllowanceDays'], when:/\bcannot slip\b/i},
@@ -404,16 +406,38 @@ function assistantFieldAnywherePolicy(text){
   return restricted?false:unrestricted?true:null;
 }
 
+function assistantFieldCalendarComma(request,start,index){
+  const day=`(?:the\\s+)?(?:${assistantOrdinalSource()}|${assistantIntegerSource()}|last|final)`;
+  const left=request.slice(Math.max(start,index-40),index);
+  const right=request.slice(index+1,index+40);
+  if(!new RegExp(`(?:${day})\\s*$`,'i').test(left))return false;
+  if(!new RegExp(`^\\s*(?:and\\s+|or\\s+)?(?:${day})\\b`,'i').test(right))return false;
+  if(new RegExp(`^\\s*(?:and\\s+|or\\s+)?(?:the\\s+)?(?:\\d+|${assistantIntegerSource()})\\s+(?:minutes?|mins?|hours?|hrs?|meters?|metres?|seconds?|am|pm)\\b`,'i').test(right))return false;
+  const around=request.slice(Math.max(0,index-60),Math.min(request.length,index+80));
+  return new RegExp(`\\b(?:months?|weeks?|dates?|days?|${ASSISTANT_WEEKDAY_TOKEN})\\b|\\d+(?:st|nd|rd|th)\\b`,'i').test(around);
+}
+
 function assistantFieldRelevant(def, text){
   const target=assistantEditTarget(text);
   if(target!==text&&!def.signal?.test(target)&&!assistantFieldClear(def,target))return false;
   text=target;
   if(['minGapMinutes','allowedWindow'].includes(def.id)&&assistantParseWeekdaySet(text))return false;
+  const monthDays=assistantParseMonthDaySet(text);
+  const ordinalRules=assistantParseOrdinalWeekdays(text);
+  if(['allowedWeekdays','preferredWeekdays','appointmentWeekdays'].includes(def.id)&&(monthDays?.length||ordinalRules?.length))return false;
+  if(['allowedMonthDays','preferredMonthDays'].includes(def.id)&&ordinalRules?.length)return false;
+  if(['allowedOrdinalWeekdays','preferredOrdinalWeekdays'].includes(def.id)&&monthDays?.length&&!ordinalRules?.length)return false;
+  if(def.id==='scheduleOptions'&&monthDays?.length&&/\bon or (?:before|after)\b/i.test(text)&&!/\b(?:alternative|options?|either)\b/i.test(text))return false;
+  if(def.id==='frequency'&&(monthDays?.length||ordinalRules?.length)
+    &&!new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()}|${assistantIntegerSource()})\\s+(?:days?|weeks?)\\b`,'i').test(text)
+    &&!/\b(?:once|twice|thrice|times?|sessions?)\b/i.test(text)
+    &&!assistantParseWeekdaySet(text))return false;
   if(def.id==='kind'&&ASSISTANT_FIELD_SIGNALS.habitKind.test(text)&&!/(?:convert|turn|change|make)\b[^,;]*\b(?:to|into|a)\s+(?:habit|task)\b/i.test(text))return false;
   const literal=assistantFieldLiteralOwner(text);
   if(literal && literal.id!==def.id && !assistantFieldMentioned(def,text.slice(0,literal.start)))return false;
   if(!literal&&ASSISTANT_FIELD_SIGNALS.tapStartsSession.test(text)&&['dueTime','appointmentStartMinute','allowedWindow','durationMinutes','reminderStart'].includes(def.id))return false;
   if(!literal&&ASSISTANT_FIELD_SIGNALS.reminderDnd.test(text)&&def.id!=='reminderDnd')return false;
+  if(def.id==='reminderDnd'&&!ASSISTANT_FIELD_SIGNALS.reminderDnd.test(text))return false;
   if(def.id==='frequency'&&ASSISTANT_FIELD_SIGNALS.repeatMode.test(text)&&!assistantParseRhythm(text))return false;
   if(def.id==='weatherRules'&&ASSISTANT_FIELD_SIGNALS.weatherProfile.test(text)
     &&(assistantFocusSettings().weatherProfiles||[]).some(profile=>assistantFocusPhraseIn(text,profile.name))
@@ -479,6 +503,8 @@ function assistantFieldCue(def,text,from=0){
     const target=assistantEditTarget(text);
     if(target!==text)return assistantFieldCue(def,target)?/^.*$/s.exec(text):null;
     if(['allowedWeekdays','appointmentWeekdays'].includes(def.id)&&def.signal?.test(text)&&assistantParseWeekdaySet(text))return /^.*$/s.exec(text);
+    if(['allowedMonthDays','preferredMonthDays'].includes(def.id)&&def.signal?.test(text)&&assistantParseMonthDaySet(text)?.length)return /^.*$/s.exec(text);
+    if(['allowedOrdinalWeekdays','preferredOrdinalWeekdays'].includes(def.id)&&def.signal?.test(text)&&assistantParseOrdinalWeekdays(text)?.length)return /^.*$/s.exec(text);
   }
   if(from===0&&def.id==='hardDue'&&assistantFieldDeadlinePolicy(text)!=null)return /^.*$/s.exec(text);
   if(from===0&&def.id==='allowedTimeFixedStart'&&assistantFieldStartPolicy(text)!=null)return /^.*$/s.exec(text);
@@ -589,7 +615,9 @@ function assistantFieldSource(def, request, spans){
     const temporal=def.id==='durationMinutes'
       ?/\b(?:before|after|between|from|until|through|earlier|later)\s*$/i
       :/\b(?:before|after|between|from|until|through|earlier|later)\b/i;
-    if(/\b(?:no|not|never|don.t|without|or|minus|negative|prefer|avoid|keep|unchanged|clear|remove|drop|rid|off)\b/i.test(prefix)||temporal.test(prefix))start=0;
+    const calendarPrefix=['allowedMonthDays','preferredMonthDays','allowedOrdinalWeekdays','preferredOrdinalWeekdays'].includes(def.id)
+      && /\b(?:except|excluding|penultimate|to last|last but one)\b/i.test(prefix);
+    if(/\b(?:no|not|never|don.t|without|or|minus|negative|prefer|avoid|keep|unchanged|clear|remove|drop|rid|off)\b/i.test(prefix)||temporal.test(prefix)||calendarPrefix)start=0;
     // Retrieval boundaries, not values: keep the untouched source between
     // setting cues. Coupled lengths (chunks/gaps/timers) keep their units.
     for(const [id,signal] of Object.entries(ASSISTANT_FIELD_SIGNALS)){
@@ -975,9 +1003,9 @@ function assistantFieldNormalize(def,text,session){
     restrictionText=restrictionText.replace(/\s+without restricting (?:the )?other days\b/gi,'');
     text=restrictionText;
   }
-  if(['allowedWeekdays','allowedWindow'].includes(def.id)){
-    restrictionText=restrictionText.replace(/^(?:do not|don['’]t) (?:schedule|place) (?:it|this) outside (?:the )?(.+)$/i,'$1');
-    text=text.replace(/^(?:do not|don['’]t) (?:schedule|place) (?:it|this) outside (?:the )?(.+)$/i,'$1');
+  if(['allowedWeekdays','allowedWindow','allowedMonthDays','preferredMonthDays','allowedOrdinalWeekdays','preferredOrdinalWeekdays'].includes(def.id)){
+    restrictionText=restrictionText.replace(/^(?:do not|don['’]t|never|not)\s+(?:(?:schedule|place)\s+)?(?:(?:it|this|that)\s+)?outside\s+(?:the\s+)?(.+)$/i,'$1');
+    text=text.replace(/^(?:do not|don['’]t|never|not)\s+(?:(?:schedule|place)\s+)?(?:(?:it|this|that)\s+)?outside\s+(?:the\s+)?(.+)$/i,'$1');
   }
   if(['allowedWeekdays','preferredWeekdays','appointmentWeekdays'].includes(def.id)){
     text=text.replace(/^(?:(?:set|change|use)\s+)?(?:(?:the|my)\s+)?(?:(?:allowed|preferred|repeat)\s+)?(?:weekdays|days of the week)\s+(?:to|as|is|should be)\s+/i,'');
@@ -992,6 +1020,8 @@ function assistantFieldNormalize(def,text,session){
     text=restrictionText;
   }
   if(['allowedWeekdays','preferredWeekdays','appointmentWeekdays','frequency'].includes(def.id)&&assistantParseWeekdaySet(text))restrictionText='';
+  if(['allowedMonthDays','preferredMonthDays'].includes(def.id)&&assistantParseMonthDaySet(text)?.length)restrictionText='';
+  if(['allowedOrdinalWeekdays','preferredOrdinalWeekdays'].includes(def.id)&&assistantParseOrdinalWeekdays(text)?.length)restrictionText='';
   if(['allowedWindow','preferredWindow','allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','frequency','dueDate','dueTime','places','weatherProfile'].includes(def.id)
     && /\b(?:no|not|never|don.t|except|without|or)\b/i.test(restrictionText))return {ok:false,error:'Please clarify the positive restriction or clear this setting.'};
   if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantFieldDialogue(text).text;
@@ -1074,7 +1104,8 @@ function assistantFieldNormalize(def,text,session){
   const booleans=['tapStartsSession','reminderDnd','pinned','breakable','trackValue','hardDue','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
   if(booleans.includes(def.id) && assistantParseBool(value)==null){
     const polarity=value.replace(def.id==='reminderDnd'?/\bdo not disturb\b/gi:/$^/g,'DND').replace(/\bno (?:shorter|less) than\b/gi,'at least')
-      .replace(def.id==='trackValue'?/\bcheck(?:ed|ing)? (?:it|this|that) off\b/gi:/$^/g,'');
+      .replace(def.id==='trackValue'||def.id==='tapStartsSession'?/\bcheck(?:ed|ing)? (?:it|this|that) off\b/gi:/$^/g,'')
+      .replace(def.id==='reminderDnd'?/\b(?:stop|end|quit|disable)\s+(?:silenc\w*|mut\w*|dnd)\b/gi:/$^/g,'off');
     const negative=/\b(?:no|not|never|don.t|disable|off|unpin|unpinned|unbreakable|uninterrupted|continuous|hide)\b/i.test(polarity);
     const positive=def.signal?.test(value)||session._fieldSemantic&&/\b(?:enable|include|record|capture|show|allow|keep|use)\b/i.test(value);
     if(positive)value=negative?'false':'true';

@@ -469,9 +469,9 @@ function assistantParseWeekdaySet(text){
     rest=rest.replace(/\bweekdays?\b/g,()=>{days.push(1,2,3,4,5);return ' ';});
     rest=rest.replace(/\bweekends?\b/g,()=>{days.push(0,6);return ' ';});
     rest=rest.replace(new RegExp(`\\b(${day})\\b`,'g'),(_,token)=>{days.push(assistantWeekdayIndex(token));return ' ';});
-    // Only ordinary request framing may remain. In particular, don't discard
-    // not/except/next/ordinal words or numbers as if they were punctuation.
-    rest=rest.replace(/\b(?:please|only|on|the|and|or|to|from|every|each|allow|allowed|use|schedule|scheduled|repeat|repeats|run|runs|happen|happens|do|it|this|that|can|should|be|for|days|of|week|is|are|fine|okay|ok|make|set|change)\b/g,'').replace(/[\s,&/]+/g,'');
+    // Only ordinary request framing may remain, including pronouns and "plus".
+    // Negation, exceptions, ordinals and numbers still reject the phrase.
+    rest=rest.replace(/\b(?:please|only|on|the|and|or|to|from|every|each|allow|allowed|use|schedule|scheduled|repeat|repeats|run|runs|happen|happens|do|it|this|that|can|should|be|for|days|of|week|is|are|fine|okay|ok|make|set|change|plus|i(?:'m)?|my|me|we|our|you|your|preferred|preferably|available|both|just)\b/g,'').replace(/[\s,&/]+/g,'');
     return days.length&&!rest?[...new Set(days)].sort((a,b)=>a-b):null;
   };
   // "Don't change weekdays" is preservation, not an exclusion.
@@ -551,6 +551,234 @@ function assistantParseHabitKind(value){
   return null;
 }
 
+// Month dates are a fixed 1–31 set. Numbered weeks use the planner's bands
+// (1–7, 8–14, 15–21, 22–28, 29–31). The moving last week is not a date list.
+const ASSISTANT_WEEK_OF_MONTH = 'first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|one|two|three|four|five|[1-5]';
+const ASSISTANT_MONTH_DAY_WORD = `(?:${assistantOrdinalSource()}|${assistantIntegerSource()})`;
+const ASSISTANT_MONTH_DAY = `(?:the\\s+)?(?:${ASSISTANT_MONTH_DAY_WORD})`;
+const ASSISTANT_DAY_SPAN = `(?:-|–|—|to|through|thru|until|till|up\\s+to)`;
+const ASSISTANT_ORDINAL_LIST = `(?:${assistantOrdinalSource()}|last|final)(?:\\s*(?:,\\s*(?:and\\s+|or\\s+)?|\\s+and\\s+|\\s+or\\s+)(?:${assistantOrdinalSource()}|last|final))*`;
+const ASSISTANT_ORDINAL_WEEKDAY = `(?:${ASSISTANT_ORDINAL_LIST})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`;
+
+function assistantMonthCueSource(){
+  return '(?:(?:the|each|every|a)\\s+)?months?';
+}
+
+function assistantMonthDayCueSource(){
+  const day=ASSISTANT_MONTH_DAY_WORD, month=assistantMonthCueSource();
+  const week=ASSISTANT_WEEK_OF_MONTH;
+  return [
+    `(?:${assistantOrdinalSource()})\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(?:${assistantOrdinalSource()})`,
+    `(?:${day})\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(?:${day})\\s+of\\s+${month}`,
+    `first\\s+(?:${assistantIntegerSource()})\\s+(?:days?|weeks?)\\s+of\\s+${month}`,
+    `(?:${week})(?:\\s*(?:,\\s*(?:and\\s+|or\\s+)?|\\s+(?:and|or)\\s+|\\s+${ASSISTANT_DAY_SPAN}\\s+)(?:${week}))*\\s+weeks?\\s+of\\s+${month}`,
+    `weeks?\\s+(?:number\\s+)?(?:[1-5]|one|two|three|four|five)\\s+of\\s+${month}`,
+    `(?:first|second|latter)\\s+half\\s+of\\s+${month}`,
+    `(?:first|second)\\s+fortnights?\\s+of\\s+${month}`,
+    `(?:odd|even)\\s+(?:numbered\\s+)?(?:days?|dates?|weeks?)\\s+of\\s+${month}`,
+    `(?:before|after|on or before|on or after|no later than|no earlier than|from|through|until|till|starting(?:\\s+on)?)\\s+(?:the\\s+)?(?:${day})\\s+of\\s+${month}`,
+    `(?:every|each|any|all)\\s+days?(?:\\s+of\\s+${month})?\\s+except\\s+(?:the\\s+)?\\d+(?:st|nd|rd|th)\\b`,
+    `last\\s+(?:\\d+|an?|${assistantIntegerSource()})?\\s*days?\\s+of\\s+${month}`,
+    `(?:first|second|third|fourth|last)\\s+quarters?\\s+of\\s+${month}`
+  ].join('|');
+}
+
+function assistantOrdinalCueSource(){
+  const week=`(?:${assistantOrdinalSource()}|last|final)`;
+  const day=`(?:(?:${ASSISTANT_WEEKDAY_TOKEN})s?|weekdays?|weekends?)`;
+  const month=assistantMonthCueSource();
+  return [
+    `(?:last|final)\\s+weeks?\\s+of\\s+${month}`,
+    `(?:first|last)\\s+weekdays?\\s+of\\s+${month}`,
+    `${day}\\s+(?:in|of|during)\\s+(?:the\\s+)?${week}\\s+weeks?`,
+    `${day}\\s+except\\s+(?:the\\s+)?${week}\\s+(?:${ASSISTANT_WEEKDAY_TOKEN}s?|weeks?)`,
+    `${week}\\s+weeks?(?:\\s+of\\s+${month})?\\s+except\\s+`,
+    `(?:every|each|all|any)\\s+${day}\\s+except\\s+(?:the\\s+)?(?:${assistantOrdinalSource()}|last|final)\\b`,
+    `(?:second|third|fourth|fifth|\\d+(?:st|nd|rd|th))\\s+to\\s+last(?:\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})s?)?`,
+    `penultimate(?:\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})s?)?`,
+    `last but one(?:\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})s?)?`
+  ].join('|');
+}
+
+function assistantDaysBetween(start,end){
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<1||end>31||start>end)return null;
+  const days=[];
+  for(let n=start;n<=end;n+=1)days.push(n);
+  return days;
+}
+
+function assistantWeekOfMonthNumber(token){
+  const s=assistantNormText(token).replace(/^(?:the|a)\s+/,'');
+  if(s==='last'||s==='final')return -1;
+  const word={first:1,second:2,third:3,fourth:4,fifth:5,one:1,two:2,three:3,four:4,five:5};
+  if(word[s])return word[s];
+  const n=assistantParseExactCount(s,1,5,true);
+  if(n!=null)return n;
+  return assistantParseExactCount(s,1,31,true)!=null?NaN:null;
+}
+
+function assistantWeekBand(start,end){
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<1||end>5||start>end)return null;
+  return assistantDaysBetween((start-1)*7+1,Math.min(end*7,31));
+}
+
+function assistantMonthDayNumber(token){
+  const s=assistantNormText(token).replace(/^(?:the|a)\s+/,'');
+  if(!s||/^(?:last|final|end|start|beginning)$/.test(s))return null;
+  return assistantParseExactCount(s,1,31,true);
+}
+
+function assistantFinishMonthDays(days){
+  const unique=[...new Set(days)].sort((a,b)=>a-b);
+  if(!unique.length||unique.some(n=>n<1||n>31))return null;
+  return unique.length===31?[]:unique;
+}
+
+// A bounded month-date grammar. Expand inclusive ranges, numbered weeks and
+// open bounds, then subtract exclusions. Unknown, backwards or moving-end
+// phrases invalidate the whole expression instead of dropping a piece.
+function assistantParseMonthDaySet(text){
+  let s=assistantNormText(assistantEditTarget(text)).replace(/\bmonth['’]s\b/g,'month').replace(/[.!?]+$/,'').trim();
+  if(!s)return null;
+  if(/^(?:any|all|none|everyday|every day|daily)$/.test(s))return [];
+  s=s.replace(/^(?:do not|don't|never|not)\s+(?:(?:schedule|place)\s+)?(?:(?:it|this|that)\s+)?outside\s+(?:the\s+)?(.+)$/,'$1');
+  s=s.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)-+(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b/g,'$1 $2');
+  // A hyphen between two dates is a range. A sign on a date, or the words
+  // minus/negative, is not a day and must not be stripped down to that day.
+  if(/\b(?:minus|negative)\b/.test(s))return null;
+  const signedDay=/[-+−]\s*(?=\d)/g;
+  let signed;
+  while((signed=signedDay.exec(s))){
+    const before=s.slice(0,signed.index).trimEnd();
+    if(!new RegExp(`(?:${ASSISTANT_MONTH_DAY_WORD})$`).test(before))return null;
+  }
+  const monthName=Object.keys(ASSISTANT_MONTH_NAMES).join('|');
+  if(new RegExp(`\\b(?:${monthName})\\s+(?:\\d{1,4}|${assistantOrdinalSource()})\\b|\\b(?:${assistantOrdinalSource()}|\\d{1,2}(?:st|nd|rd|th)?)\\s+(?:of\\s+)?(?:${monthName})\\b`).test(s))return null;
+  if(new RegExp(`\\b(?:${ASSISTANT_WEEKDAY_TOKEN})s?\\b|\\bweek(?:days?|ends?)\\b`).test(s))return null;
+  if(/\bweeks?\b/.test(s)&&!new RegExp(`\\b(?:${ASSISTANT_WEEK_OF_MONTH})\\s+weeks?\\b|\\bweeks?\\s+(?:number\\s+)?(?:${ASSISTANT_WEEK_OF_MONTH})\\b|\\b(?:odd|even)(?:\\s+numbered)?\\s+weeks?\\b`).test(s))return null;
+  if(!/\bmonth/.test(s)&&new RegExp(`\\b(?:every|each)\\s+(?:[-+]?\\d+(?:\\.\\d+)?|${assistantIntegerSource()}|${assistantOrdinalSource()})(?:\\s+(?:or|and)\\s+(?:[-+]?\\d+(?:\\.\\d+)?|${assistantIntegerSource()}|${assistantOrdinalSource()}))*\\s+(?:days?|weeks?)\\b`).test(s))return null;
+  if(!/\bmonth/.test(s)&&new RegExp(`\\b(?:in|within|after|for)\\s+(?:an?|the\\s+)?(?:${assistantIntegerSource()})\\s+(?:days?|weeks?)\\b`).test(s))return null;
+  if(/\b(?:second|third|fourth|fifth|\d+(?:st|nd|rd|th))\s+to\s+last\b|\bpenultimate\b|\blast but one\b|\bnext to last\b|\b(?:last|final)\s+weeks?\b|\blast\s+(?:\d+|an?|[a-z]+)\s+days?\b|\blast\s+days?\b|\b(?:business|work)\s+days?\b|\b(?:first|second|third|fourth|last)\s+quarters?\b|\b(?:end|beginning|middle|mid)(?:\s*-\s*|\s+of\s+(?:the\s+)?)?months?\b|\bstart\s+of\s+(?:the\s+)?months?\b/.test(s))return null;
+  const dated=/\bmonth|\b(?:half|fortnights?)\b|\b(?:odd|even)(?:\s+numbered)?\s+(?:days?|dates?|weeks?)\b/.test(s)
+    ||new RegExp(`\\b(?:${ASSISTANT_WEEK_OF_MONTH})\\s+weeks?\\b|\\bweeks?\\s+(?:number\\s+)?(?:${ASSISTANT_WEEK_OF_MONTH})\\b`).test(s)
+    ||new RegExp(`\\b(?:${assistantOrdinalSource()}|${assistantIntegerSource()})\\b`).test(s);
+  if(!dated)return null;
+  s=s.replace(new RegExp(`\\b(${ASSISTANT_MONTH_DAY_WORD})\\s+or\\s+(?=(?:the\\s+)?${ASSISTANT_MONTH_DAY_WORD}\\b)`,'g'),'$1 and ');
+  const negative=/^(?:(?:do not|don't|never|not)\s+(?:(?:schedule|plan|run|do|allow|place)\s+)?(?:(?:it|this|that)\s+)?(?:on\s+)?|(?:skip|avoid)\s+(?:on\s+)?)(.+)$/.exec(s);
+  const group=part=>{
+    let rest=part,days=[],invalid=false;
+    const take=(re,read)=>{
+      rest=rest.replace(re,(...args)=>{
+        const got=read(...args);
+        if(!got)invalid=true;
+        else days.push(...got);
+        return ' ';
+      });
+    };
+    const weekList=text=>{
+      const nums=text.split(/\s*(?:,\s*(?:and\s+|or\s+)?|and\s+|or\s+)\s*/).map(assistantWeekOfMonthNumber);
+      if(nums.some(n=>n==null||Number.isNaN(n)||n<1))return null;
+      return nums.flatMap(n=>assistantWeekBand(n,n)||[]);
+    };
+    take(new RegExp(`\\b(?:the\\s+)?first\\s+(${assistantIntegerSource()})\\s+days?\\b`,'g'),(_,count)=>{
+      const n=assistantParseExactCount(count,1,31);
+      return n==null?null:assistantDaysBetween(1,n);
+    });
+    take(new RegExp(`\\b(?:the\\s+)?first\\s+(${assistantIntegerSource()})\\s+weeks?\\b`,'g'),(_,count)=>{
+      const n=assistantParseExactCount(count,1,5);
+      return n==null?null:assistantWeekBand(1,n);
+    });
+    take(new RegExp(`\\b(?:the\\s+)?(${ASSISTANT_WEEK_OF_MONTH})\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(${ASSISTANT_WEEK_OF_MONTH})\\s+weeks?\\b`,'g'),(_,a,b)=>{
+      const start=assistantWeekOfMonthNumber(a),end=assistantWeekOfMonthNumber(b);
+      return Number.isNaN(start)||Number.isNaN(end)?null:assistantWeekBand(start,end);
+    });
+    take(new RegExp(`\\b(?:the\\s+)?((?:${ASSISTANT_WEEK_OF_MONTH})(?:\\s*(?:,\\s*(?:and\\s+|or\\s+)?|\\s+(?:and|or)\\s+)(?:${ASSISTANT_WEEK_OF_MONTH}))+)\\s+weeks?\\b`,'g'),(_,list)=>weekList(list));
+    take(new RegExp(`\\b(?:the\\s+)?(${ASSISTANT_WEEK_OF_MONTH})\\s+weeks?\\b|\\bweeks?\\s+(?:number\\s+)?(${ASSISTANT_WEEK_OF_MONTH})\\b`,'g'),(_,lead,tail)=>{
+      const n=assistantWeekOfMonthNumber(lead||tail);
+      return Number.isNaN(n)?null:assistantWeekBand(n,n);
+    });
+    take(/\b(?:the\s+)?first\s+half\b/g,()=>assistantDaysBetween(1,15));
+    take(/\b(?:the\s+)?(?:second|latter)\s+half\b/g,()=>assistantDaysBetween(16,31));
+    take(/\b(?:the\s+)?first\s+fortnights?\b/g,()=>assistantDaysBetween(1,14));
+    take(/\b(?:the\s+)?second\s+fortnights?\b/g,()=>assistantDaysBetween(15,28));
+    take(/\bodd(?:\s+numbered)?\s+weeks?\b/g,()=>[1,3,5].flatMap(n=>assistantWeekBand(n,n)));
+    take(/\beven(?:\s+numbered)?\s+weeks?\b/g,()=>[2,4].flatMap(n=>assistantWeekBand(n,n)));
+    take(/\bodd(?:\s+numbered)?\s+(?:days?|dates?)\b/g,()=>assistantDaysBetween(1,31).filter(n=>n%2));
+    take(/\beven(?:\s+numbered)?\s+(?:days?|dates?)\b/g,()=>assistantDaysBetween(1,31).filter(n=>n%2===0));
+    take(new RegExp(`\\bbetween\\s+${ASSISTANT_MONTH_DAY}\\s+and\\s+${ASSISTANT_MONTH_DAY}\\b`,'g'),full=>{
+      const hits=[...full.matchAll(new RegExp(ASSISTANT_MONTH_DAY_WORD,'g'))].map(hit=>assistantMonthDayNumber(hit[0]));
+      return hits.length===2?assistantDaysBetween(hits[0],hits[1]):null;
+    });
+    take(new RegExp(`\\bfrom\\s+${ASSISTANT_MONTH_DAY}\\s+${ASSISTANT_DAY_SPAN}\\s+${ASSISTANT_MONTH_DAY}\\b`,'g'),full=>{
+      const hits=[...full.matchAll(new RegExp(ASSISTANT_MONTH_DAY_WORD,'g'))].map(hit=>assistantMonthDayNumber(hit[0]));
+      return hits.length===2?assistantDaysBetween(hits[0],hits[1]):null;
+    });
+    const bound=`(?:on or after|on or before|no earlier than|no later than|starting(?:\\s+on)?|after|before)`;
+    take(new RegExp(`\\b(${bound})\\s+${ASSISTANT_MONTH_DAY}\\s+and\\s+(${bound})\\s+${ASSISTANT_MONTH_DAY}\\b`,'g'),full=>{
+      const words=[...full.matchAll(new RegExp(`\\b(?:on or after|on or before|no earlier than|no later than|starting(?:\\s+on)?|after|before)\\s+${ASSISTANT_MONTH_DAY}`,'g'))];
+      if(words.length!==2)return null;
+      const edge=phrase=>{
+        const kind=/^(on or after|no earlier than|starting(?:\s+on)?|after|on or before|no later than|before)\b/.exec(phrase);
+        const n=assistantMonthDayNumber(phrase.match(new RegExp(ASSISTANT_MONTH_DAY_WORD))[0]);
+        if(!kind||n==null)return null;
+        if(/^after$/.test(kind[1]))return assistantDaysBetween(n+1,31);
+        if(/^(?:on or after|no earlier than|starting)/.test(kind[1]))return assistantDaysBetween(n,31);
+        if(/^before$/.test(kind[1]))return assistantDaysBetween(1,n-1);
+        return assistantDaysBetween(1,n);
+      };
+      const left=edge(words[0][0]),right=edge(words[1][0]);
+      if(!left||!right)return null;
+      const shared=left.filter(n=>right.includes(n));
+      return shared.length?shared:null;
+    });
+    take(new RegExp(`\\b${ASSISTANT_MONTH_DAY}\\s*${ASSISTANT_DAY_SPAN}\\s*${ASSISTANT_MONTH_DAY}\\b`,'g'),full=>{
+      const hits=[...full.matchAll(new RegExp(ASSISTANT_MONTH_DAY_WORD,'g'))].map(hit=>assistantMonthDayNumber(hit[0]));
+      return hits.length===2?assistantDaysBetween(hits[0],hits[1]):null;
+    });
+    take(new RegExp(`\\b(?:on or after|no earlier than|starting(?:\\s+on)?|from)\\s+${ASSISTANT_MONTH_DAY}(?:\\s+(?:on|onward|onwards))?\\b`,'g'),full=>{
+      const n=assistantMonthDayNumber(full.match(new RegExp(ASSISTANT_MONTH_DAY_WORD))[0]);
+      return n==null?null:assistantDaysBetween(n,31);
+    });
+    take(new RegExp(`\\bafter\\s+${ASSISTANT_MONTH_DAY}\\b`,'g'),full=>{
+      const n=assistantMonthDayNumber(full.match(new RegExp(ASSISTANT_MONTH_DAY_WORD))[0]);
+      return n==null?null:assistantDaysBetween(n+1,31);
+    });
+    take(new RegExp(`\\b(?:on or before|no later than|through|thru|until|till|up to)\\s+${ASSISTANT_MONTH_DAY}\\b`,'g'),full=>{
+      const n=assistantMonthDayNumber(full.match(new RegExp(ASSISTANT_MONTH_DAY_WORD))[0]);
+      return n==null?null:assistantDaysBetween(1,n);
+    });
+    take(new RegExp(`\\bbefore\\s+${ASSISTANT_MONTH_DAY}\\b`,'g'),full=>{
+      const n=assistantMonthDayNumber(full.match(new RegExp(ASSISTANT_MONTH_DAY_WORD))[0]);
+      return n==null?null:assistantDaysBetween(1,n-1);
+    });
+    take(new RegExp(`\\b${ASSISTANT_MONTH_DAY}\\s+(?:onward|onwards)\\b`,'g'),full=>{
+      const n=assistantMonthDayNumber(full.match(new RegExp(ASSISTANT_MONTH_DAY_WORD))[0]);
+      return n==null?null:assistantDaysBetween(n,31);
+    });
+    take(/\b(?:all|any|every|each)\s+(?:days?|dates?)\b|\b(?:daily|everyday)\b/g,()=>assistantDaysBetween(1,31));
+    take(new RegExp(`\\b${ASSISTANT_MONTH_DAY_WORD}\\b`,'g'),token=>{
+      const n=assistantMonthDayNumber(token);
+      return n==null?null:[n];
+    });
+    rest=rest.replace(/\b(?:please|only|just|on|the|and|or|a|an|of|in|during|within|per|every|each|allow(?:ed)?|use|schedul(?:e|ed|ing)|repeats?|do|it|this|that|can|should|be|for|days?|dates?|months?|monthly|is|are|fine|okay|ok|make|set|change|my|its|i|me|restrict(?:ed|ion)?|limit(?:ed)?|happens?|occurr?(?:ing|s|ed)|available|availability|calendar|numbered|numbers?|inclusive(?:ly)?|prefer(?:red|ably)?|doing|works?|best|when|possible|ideally|also|them)\b/g,'').replace(/[\s,;&/+'’.()-]+/g,'');
+    return !invalid&&!rest&&days.length?assistantFinishMonthDays(days):null;
+  };
+  let base,excluded;
+  if(negative){
+    base=assistantDaysBetween(1,31);
+    excluded=group(negative[1]);
+    if(!excluded)return null;
+  }else{
+    const parts=s.split(/\b(?:except(?: for)?|excluding|apart from|other than|but not|without)\b/);
+    if(parts.length>2)return null;
+    base=group(parts[0]);
+    if(!base)return null;
+    if(parts.length===2){excluded=group(parts[1]);if(!excluded)return null;}
+  }
+  const chosen=(base.length?base:assistantDaysBetween(1,31)).filter(day=>!excluded?.includes(day));
+  return chosen.length?assistantFinishMonthDays(chosen):null;
+}
+
 function assistantParseMonthDays(value){
   if(value == null || value === '')return null;
   if(typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 31)return [value];
@@ -565,38 +793,195 @@ function assistantParseMonthDays(value){
     }
     return days.sort((a, b) => a - b);
   }
-  const s = assistantNormText(value);
-  if(!s)return null;
-  if(/^(any|all|none|everyday|every day|daily)$/.test(s))return [];
-  const days = [];
-  const re = new RegExp(`\\b(?:${assistantOrdinalSource()}|${assistantIntegerSource()})\\b`,'g');
-  let invalid=false;
-  const rest=s.replace(re,token=>{
-    const n=assistantParseExactCount(token,1,31,true);
-    if(n==null)invalid=true;
-    else if(!days.includes(n))days.push(n);
-    return '';
-  }).replace(/\s+works? best(?: for me)?$/,'').replace(/\b(?:allow(?:ed)?|only|on|in|the|and|of|each|every|month(?:ly)?|days?|dates?|is|prefer(?:red|ably)?)\b/g,'').replace(/[\s,]/g,'');
-  return !invalid&&!rest&&days.length ? days.sort((a, b) => a - b) : null;
+  return assistantParseMonthDaySet(value);
 }
 
-// Calendar weekday rules are distinct from both weekday availability and an
-// elapsed-day rhythm. Validate the entire selected phrase before normalizing.
-const ASSISTANT_ORDINAL_LIST = `(?:${assistantOrdinalSource()}|last)(?:\\s+and\\s+(?:${assistantOrdinalSource()}|last))*`;
-const ASSISTANT_ORDINAL_WEEKDAY = `(?:${ASSISTANT_ORDINAL_LIST})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`;
-function assistantParseOrdinalWeekdays(value){
-  const s=assistantNormText(value).replace(/\bmonth['’]s\b/g,'month');
-  if(/^(?:any|all|none|clear)$/.test(s))return [];
-  const rules=[];
-  const rest=s.replace(new RegExp(`\\b(${ASSISTANT_ORDINAL_LIST})\\s+(${ASSISTANT_WEEKDAY_TOKEN})\\b`,'g'),(phrase,ordinals,day)=>{
-    const numbers=ordinals.split(/\s+and\s+/).map(ordinal=>ordinal==='last'?-1:assistantParseExactCount(ordinal,1,5,true));
-    const weekday=assistantCollectWeekdays(day)[0];
-    if(numbers.some(n=>n==null)||weekday==null)return phrase;
-    rules.push(...numbers.map(ordinal=>({ordinal,weekday})));return '';
-  }).replace(/\b(?:use|only|allow(?:ed)?|prefer(?:red|ably)?|on|in|the|and|of|each|every|month(?:ly)?|weekdays?|rule|should be)\b/g,'').replace(/[\s,]/g,'');
-  // "Every third Monday" could mean an interval; require a calendar month.
-  if(rest||!rules.length||!(/\bmonth(?:ly)?\b/.test(s)))return null;
+// Monthly weekday rules share one grammar with week-of-month filters. A
+// numbered week is every weekday in that planner band; the last week is the
+// moving final occurrence of each weekday. Overlapping "last" exclusions ask.
+function assistantCalendarOrdinal(token){
+  const s=assistantNormText(token).replace(/^(?:the|a)\s+/,'');
+  if(s==='last'||s==='final')return -1;
+  const n=assistantParseExactCount(s,1,5,true);
+  if(n!=null)return n;
+  return assistantParseExactCount(s,1,31,true)!=null?NaN:null;
+}
+
+function assistantExpandOrdinalRange(start,end){
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start===-1||start<1)return null;
+  const out=[];
+  if(end===-1){
+    if(start>5)return null;
+    for(let n=start;n<=5;n+=1)out.push(n);
+    out.push(-1);
+    return out;
+  }
+  if(end>5||start>end)return null;
+  for(let n=start;n<=end;n+=1)out.push(n);
+  return out;
+}
+
+function assistantExpandWeekdaySpan(text){
+  const s=assistantNormText(text);
+  if(/^weekdays?$/.test(s))return [1,2,3,4,5];
+  if(/^weekends?$/.test(s))return [0,6];
+  if(/^(?:all|any|every|each)\s+days?$/.test(s))return [0,1,2,3,4,5,6];
+  const span=s.match(new RegExp(`^(?:the\\s+)?(${ASSISTANT_WEEKDAY_TOKEN})s?\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(${ASSISTANT_WEEKDAY_TOKEN})s?$`));
+  if(span){
+    const first=assistantWeekdayIndex(span[1]),last=assistantWeekdayIndex(span[2]);
+    if(first==null||last==null)return null;
+    const days=[];
+    for(let n=first;;n=(n+1)%7){days.push(n);if(n===last)break;if(days.length>7)return null;}
+    return days;
+  }
+  const parts=s.split(/\s*(?:,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+)\s*/).filter(Boolean);
+  const days=[];
+  for(const part of parts){
+    const idx=assistantWeekdayIndex(part.replace(/^(?:the|a)\s+/,''));
+    if(idx==null)return null;
+    days.push(idx);
+  }
+  return days.length?[...new Set(days)]:null;
+}
+
+function assistantOrdinalNumbers(text){
+  const parts=assistantNormText(text).split(/\s*(?:,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+)\s*/).map(part=>part.replace(/^(?:the|a)\s+/,'')).filter(Boolean);
+  if(!parts.length)return null;
+  const span=parts.length===1&&parts[0].match(new RegExp(`^(${assistantOrdinalSource()}|last|final)\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(${assistantOrdinalSource()}|last|final)$`));
+  if(span){
+    const start=assistantCalendarOrdinal(span[1]),end=assistantCalendarOrdinal(span[2]);
+    if(Number.isNaN(start)||Number.isNaN(end))return NaN;
+    return assistantExpandOrdinalRange(start,end);
+  }
+  const nums=parts.map(assistantCalendarOrdinal);
+  if(nums.some(n=>n==null||Number.isNaN(n)))return nums.some(n=>Number.isNaN(n))?NaN:null;
+  return nums;
+}
+
+function assistantMonthlyWeekdayPhrase(text){
+  const s=assistantNormText(text);
+  if(!/\bmonth(?:ly)?\b/.test(s))return false;
+  if(new RegExp(`\\b(?:${assistantOrdinalSource()}|last|final)\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})s?\\b`).test(s))return true;
+  if(/\b(?:last|final)\s+weeks?\b/.test(s))return true;
+  if(new RegExp(`\\b(?:(?:${ASSISTANT_WEEKDAY_TOKEN})s?|weekdays?|weekends?)\\b`).test(s)&&/\bweeks?\b/.test(s))return true;
+  return new RegExp(`\\b(?:every|each|all|any)\\s+(?:(?:${ASSISTANT_WEEKDAY_TOKEN})s?|weekdays?|weekends?|days?)\\b`).test(s)
+    && new RegExp(`\\bexcept\\s+(?:the\\s+)?(?:${assistantOrdinalSource()}|last|final)\\b`).test(s);
+}
+
+function assistantOrdinalRulesIn(part,bareWeekday){
+  const ord=`(?:${assistantOrdinalSource()}|last|final)`;
+  const day=`(?:${ASSISTANT_WEEKDAY_TOKEN})s?`;
+  const listJoin=`(?:\\s*,\\s*(?:and\\s+|or\\s+)?|\\s+and\\s+|\\s+or\\s+)`;
+  const ordList=`(?:the\\s+)?(?:${ord})(?:${listJoin}(?:the\\s+)?(?:${ord}))*`;
+  const dayList=`(?:the\\s+)?(?:${day})(?:${listJoin}(?:the\\s+)?(?:${day}))*`;
+  const daySpan=`(?:the\\s+)?(?:${day})\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(?:${day})`;
+  let rest=part,rules=[],invalid=false;
+  const add=(ordinals,weekdays)=>{
+    if(ordinals===null||weekdays==null||Number.isNaN(ordinals)||ordinals.some?.(n=>!Number.isInteger(n))||!weekdays.length){invalid=true;return;}
+    for(const ordinal of ordinals)for(const weekday of weekdays)rules.push({ordinal,weekday});
+  };
+  const take=(re,read)=>{
+    rest=rest.replace(re,(...args)=>{
+      const got=read(...args);
+      if(got===false)return args[0];
+      add(got?.ordinals,got?.weekdays);
+      return ' ';
+    });
+  };
+  take(new RegExp(`\\b(${ordList})\\s+(${day})\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(${ordList})\\s+(${day})\\b`,'g'),(_,o1,d1,o2,d2)=>{
+    const left=assistantOrdinalNumbers(o1),right=assistantOrdinalNumbers(o2);
+    const weekdays=assistantExpandWeekdaySpan(`${d1} through ${d2}`);
+    if(Number.isNaN(left)||Number.isNaN(right))return null;
+    if(!left||!right||left.length!==1||right.length!==1||!weekdays)return null;
+    const ordinals=assistantExpandOrdinalRange(left[0],right[0]);
+    return ordinals&&weekdays.length===1?{ordinals,weekdays}:null;
+  });
+  take(new RegExp(`\\b(${ordList})\\s+(${daySpan})\\b`,'g'),(_,ordinals,days)=>{
+    const numbers=assistantOrdinalNumbers(ordinals),weekdays=assistantExpandWeekdaySpan(days);
+    if(Number.isNaN(numbers))return null;
+    return numbers&&weekdays?{ordinals:numbers,weekdays}:null;
+  });
+  take(new RegExp(`\\b((?:the\\s+)?(?:${ord})\\s*${ASSISTANT_DAY_SPAN}\\s*(?:the\\s+)?(?:${ord}))\\s+(${daySpan}|${dayList}|weekdays?|weekends?)\\b`,'g'),(_,ordinals,days)=>{
+    const numbers=assistantOrdinalNumbers(ordinals),weekdays=assistantExpandWeekdaySpan(days);
+    if(Number.isNaN(numbers))return null;
+    return numbers&&weekdays?{ordinals:numbers,weekdays}:null;
+  });
+  take(new RegExp(`\\b(${ordList})\\s+(${dayList})\\b`,'g'),(_,ordinals,days)=>{
+    const numbers=assistantOrdinalNumbers(ordinals),weekdays=assistantExpandWeekdaySpan(days);
+    if(Number.isNaN(numbers))return null;
+    return numbers&&weekdays?{ordinals:numbers,weekdays}:null;
+  });
+  take(new RegExp(`\\b(weekdays?|weekends?|${daySpan}|${dayList})\\s+(?:in|of|during)\\s+(?:the\\s+)?(${ord})\\s+weeks?\\b`,'g'),(_,days,ordinal)=>{
+    const number=assistantCalendarOrdinal(ordinal),weekdays=assistantExpandWeekdaySpan(days);
+    if(Number.isNaN(number))return null;
+    return Number.isInteger(number)&&weekdays?{ordinals:[number],weekdays}:null;
+  });
+  take(new RegExp(`\\b(?:the\\s+)?(last|final|${assistantOrdinalSource()})\\s+weeks?\\b`,'g'),(_,ordinal)=>{
+    const number=assistantCalendarOrdinal(ordinal);
+    if(Number.isNaN(number))return null;
+    return Number.isInteger(number)?{ordinals:[number],weekdays:[0,1,2,3,4,5,6]}:null;
+  });
+  take(new RegExp(`\\b(?:every|each|all|any)\\s+(?:the\\s+)?(weekdays?|weekends?|${dayList}|days?)\\b`,'g'),(_,days)=>{
+    const weekdays=/^days?$/.test(days)?[0,1,2,3,4,5,6]:assistantExpandWeekdaySpan(days);
+    return weekdays?{ordinals:[1,2,3,4,5],weekdays}:null;
+  });
+  take(/\bweekdays?\b/g,()=>({ordinals:[1,2,3,4,5],weekdays:[1,2,3,4,5]}));
+  take(/\bweekends?\b/g,()=>({ordinals:[1,2,3,4,5],weekdays:[0,6]}));
+  if(bareWeekday)take(new RegExp(`\\b(${dayList})\\b`,'g'),(_,days)=>{
+    const weekdays=assistantExpandWeekdaySpan(days);
+    return weekdays?{ordinals:[1,2,3,4,5],weekdays}:false;
+  });
+  rest=rest.replace(/\b(?:please|only|just|on|the|and|or|a|an|of|in|during|within|per|every|each|allow(?:ed)?|use|schedul(?:e|ed|ing)|repeats?|do|it|this|that|can|should|be|for|days?|dates?|months?|monthly|is|are|fine|okay|ok|make|set|change|my|its|i|me|restrict(?:ed|ion)?|limit(?:ed)?|happens?|available|calendar|inclusive(?:ly)?|prefer(?:red|ably)?|doing|works?|best|when|possible|ideally|also|rule|rules)\b/g,'').replace(/[\s,;&/+'’.()-]+/g,'');
+  if(invalid||rest||!rules.length)return null;
   return normalizeOrdinalWeekdays(rules);
+}
+
+function assistantOrdinalExclusion(part,base){
+  const bare=assistantNormText(part);
+  const mentionsWhen=/\bweeks?\b/.test(bare)||new RegExp(`\\b(?:${assistantOrdinalSource()}|last|final)\\b`).test(bare);
+  if(!mentionsWhen){
+    const weekdays=assistantExpandWeekdaySpan(bare.replace(/\b(?:please|only|on|the|and|or|of|in|during|every|each|month(?:ly)?|days?)\b/g,' '));
+    if(!weekdays)return null;
+    const dropped=base.filter(rule=>weekdays.includes(rule.weekday));
+    return dropped.length?dropped:null;
+  }
+  const concrete=assistantOrdinalRulesIn(part,false);
+  if(!concrete)return null;
+  for(const rule of concrete){
+    const aliases=rule.ordinal===-1?[4,5]:rule.ordinal===4||rule.ordinal===5?[-1]:[];
+    if(base.some(kept=>kept.weekday===rule.weekday&&aliases.includes(kept.ordinal)&&!concrete.some(drop=>drop.ordinal===kept.ordinal&&drop.weekday===kept.weekday)))return null;
+  }
+  return concrete.some(rule=>base.some(kept=>kept.ordinal===rule.ordinal&&kept.weekday===rule.weekday))?concrete:null;
+}
+
+function assistantParseOrdinalWeekdays(value){
+  let s=assistantNormText(assistantEditTarget(value)).replace(/\bmonth['’]s\b/g,'month').replace(/[.!?]+$/,'').trim();
+  if(/^(?:any|all|none|clear)$/.test(s))return [];
+  s=s.replace(/^(?:do not|don't|never|not)\s+(?:(?:schedule|place)\s+)?(?:(?:it|this|that)\s+)?outside\s+(?:the\s+)?(.+)$/,'$1');
+  if(!assistantMonthlyWeekdayPhrase(s))return null;
+  if(/\b(?:second|third|fourth|fifth|\d+(?:st|nd|rd|th))\s+to\s+last\b|\blast but one\b|\bnext to last\b|\bpenultimate\b|\b(?:first|last)\s+weekday\b(?!s)/.test(s))return null;
+  const negative=/^(?:(?:do not|don't|never|not)\s+(?:(?:schedule|plan|run|do|allow|place)\s+)?(?:(?:it|this|that)\s+)?(?:on\s+)?|(?:skip|avoid)\s+(?:on\s+)?)(.+)$/.exec(s);
+  let base,excluded;
+  if(negative){
+    const all=[];
+    for(const ordinal of [1,2,3,4,5])for(const weekday of [0,1,2,3,4,5,6])all.push({ordinal,weekday});
+    excluded=assistantOrdinalExclusion(negative[1],all);
+    if(!excluded)return null;
+    base=all;
+  }else{
+    const parts=s.split(/\b(?:except(?: for)?|excluding|apart from|other than|but not|without)\b/);
+    if(parts.length>2)return null;
+    base=assistantOrdinalRulesIn(parts[0],true);
+    if(!base)return null;
+    if(parts.length===2){
+      excluded=assistantOrdinalExclusion(parts[1],base);
+      if(!excluded)return null;
+    }
+  }
+  if(!excluded)return normalizeOrdinalWeekdays(base);
+  const gone=new Set(excluded.map(rule=>`${rule.ordinal}:${rule.weekday}`));
+  const left=base.filter(rule=>!gone.has(`${rule.ordinal}:${rule.weekday}`));
+  return left.length?normalizeOrdinalWeekdays(left):null;
 }
 
 function assistantParseTopicsArg(value){

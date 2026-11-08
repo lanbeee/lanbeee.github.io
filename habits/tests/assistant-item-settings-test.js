@@ -55,6 +55,18 @@ async function launchBrowser(){
     check('month days the 1st', JSON.stringify(assistantParseMonthDays('the 1st')) === JSON.stringify([1]));
     check('month days any', JSON.stringify(assistantParseMonthDays('any')) === JSON.stringify([]));
     check('month days garbage', assistantParseMonthDays('asdf') == null);
+    check('month days 1st to 5th', JSON.stringify(assistantParseMonthDays('1st to 5th of every month')) === JSON.stringify([1,2,3,4,5]));
+    check('month days first week', JSON.stringify(assistantParseMonthDays('the first week of every month')) === JSON.stringify([1,2,3,4,5,6,7]));
+    check('month days first half', JSON.stringify(assistantParseMonthDays('first half of the month')) === JSON.stringify(Array.from({length:15},(_,i)=>i+1)));
+    check('month days except 31', JSON.stringify(assistantParseMonthDays('every day of the month except the 31st')) === JSON.stringify(Array.from({length:30},(_,i)=>i+1)));
+    check('month days invalid', assistantParseMonthDays('1 and 32') == null && assistantParseMonthDays('the last day of the month') == null && assistantParseMonthDays('from the 5th to the 1st') == null && assistantParseMonthDays('-1 and 15') == null && assistantParseMonthDays('minus 1 and 15') == null);
+    check('weekday sentence', JSON.stringify(assistantParseWeekdaySet('Tuesday plus Thursday')) === JSON.stringify([2,4]) && JSON.stringify(assistantParseWeekdaySet('Tuesdays and Thursdays are the only days I can do it')) === JSON.stringify([2,4]) && JSON.stringify(assistantParseWeekdaySet('My preferred days are Monday and Wednesday')) === JSON.stringify([1,3]) && assistantParseWeekdaySet('Monday to Blursday') == null && assistantParseWeekdaySet('Not only Monday') == null);
+    check('month days not a date', assistantParseMonthDays('Monday to Friday') == null && assistantParseMonthDays('in eight days') == null && assistantParseMonthDays('November ninth') == null);
+    check('ordinal last friday', JSON.stringify(assistantParseOrdinalWeekdays('the last Friday of every month')) === JSON.stringify([{ordinal:-1,weekday:5}]));
+    check('ordinal first through third', JSON.stringify(assistantParseOrdinalWeekdays('the first through third Monday of every month')) === JSON.stringify([{ordinal:1,weekday:1},{ordinal:2,weekday:1},{ordinal:3,weekday:1}]));
+    check('ordinal or list', JSON.stringify(assistantParseOrdinalWeekdays('the first or third Monday of each month')) === JSON.stringify([{ordinal:1,weekday:1},{ordinal:3,weekday:1}]));
+    check('ordinal last week', JSON.stringify(assistantParseOrdinalWeekdays('the last week of every month')) === JSON.stringify([0,1,2,3,4,5,6].map(weekday=>({ordinal:-1,weekday}))));
+    check('ordinal unrepresentable', assistantParseOrdinalWeekdays('the second to last Friday of every month') == null && assistantParseOrdinalWeekdays('every third Monday') == null && assistantParseOrdinalWeekdays('the sixth Friday of every month') == null);
     check('topics csv', JSON.stringify(assistantParseTopicsArg('health, fitness')) === JSON.stringify(['health','fitness']));
     check('topics none', JSON.stringify(assistantParseTopicsArg('none')) === JSON.stringify([]));
     check('emoji color amber/none/garbage', assistantParseEmojiColor('amber') === 'amber' && assistantParseEmojiColor('none') === '' && assistantParseEmojiColor('chartreuse') == null);

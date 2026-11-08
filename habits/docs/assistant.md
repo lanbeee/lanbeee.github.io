@@ -57,9 +57,20 @@ exclusions that this editor cannot represent ask for clarification.
 
 Weekday edits validate the complete selected set: inclusive ranges such as
 Monday through Friday, ranges crossing Sunday, and exclusions such as all days
-except Friday. An unreadable or empty allowed set asks; it never becomes an
-unrestricted schedule. Explicit old-to-new recurrence and duration instructions
-read the new value. Weekday-only edits preserve the saved frequency. Exact-start
+except Friday. Ordinary framing around that set, such as “Tuesday plus
+Thursday” or “the only days I can do it,” still names those days. An unreadable
+or empty allowed set asks; it never becomes an unrestricted schedule. A signed
+month date such as “-1” asks and is never stored as day 1. Explicit old-to-new recurrence and duration instructions
+read the new value. Weekday-only edits preserve the saved frequency. Month-day
+edits use that same complete-set rule. Inclusive ranges (“the 1st to the 5th”),
+the first N days, numbered weeks as the planner’s 7-day bands (1–7, 8–14,
+15–21, 22–28, 29–31), halves, fortnights, odd and even dates, and before/after
+bounds are stored as month dates. An unreadable or moving end, such as “the
+last day,” “the last three days,” or “the second to last Friday,” asks and
+never clears the saved dates. The last week of a month is the final occurrence
+of each weekday, not a fixed date list. A weekday named with a week (“Mondays
+in the first week,” “the first week except Friday,” “weekdays except the first
+week”) is one ordinal rule. Exact-start
 clock instructions set both a habit's allowed start and fixed-start policy;
 task/event instructions use their existing start-time field. Routine-mode wording
 does not by itself request a different frequency. Condition triggers retain the
@@ -67,8 +78,11 @@ weather/location operand, and named saved weather profiles remain separate from
 custom weather rules.
 
 The minimal-mode “start with a tap” control is editable as its own boolean.
-On Android, session Do Not Disturb is a separate per-item setting; enabling it
-requires existing DND access before any changes are saved. It preserves reminder
+“Checking it off” names the action a tap replaces; it does not turn the control
+off. On Android, session Do Not Disturb is a separate per-item setting; enabling
+it requires existing DND access before any changes are saved. “Stop silencing my
+phone” turns that setting off and does not change the habit mode. A start-reminder
+alarm is a delivery mode, not Do Not Disturb. The setting preserves reminder
 delivery modes, global reminder enablement, and other items. It participates in
 the same review, Save and undo flow.
 
@@ -82,8 +96,11 @@ and period together; windows retain their endpoints and modifiers.
 
 Monthly weekday restrictions and preferences use the planner's existing ordinal
 weekday fields, separately from weekdays, month dates and elapsed-day frequency.
-The selected evidence must include the calendar month, ordinal and weekday;
-an ambiguous interval such as “every third Monday” still asks. Solar/prayer
+The selected evidence must include the calendar month and either an ordinal
+weekday or a week of the month. Ranges such as “the first through the third
+Monday” and “the first Monday through Friday” stay one rule. An ambiguous
+interval such as “every third Monday” still asks, and “the first week of 2027”
+still asks for an exact date. Solar/prayer
 offset quantities belong to windows, not session duration. A field repeated
 after another setting retains all its excerpts, so conflicting windows ask
 without discarding the title, monthly rule or session length.
