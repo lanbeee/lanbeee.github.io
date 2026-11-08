@@ -229,16 +229,17 @@ function feedbackFormHref(extra){
 }
 function syncFeedbackLink(){
   const row = $('about-feedback-row');
-  const link = $('open-feedback');
   const on = typeof feedbackFormConfigured === 'function' && feedbackFormConfigured();
+  const href = on ? feedbackFormHref() : '#';
   if(row){
     row.hidden = !on;
     row.setAttribute('aria-hidden', on ? 'false' : 'true');
   }
-  if(link){
+  for(const link of [$('open-feedback'), $('home-open-feedback'), $('bar-open-feedback')]){
+    if(!link)continue;
     link.hidden = !on;
     link.setAttribute('aria-hidden', on ? 'false' : 'true');
-    if(on)link.href = feedbackFormHref();
+    if(on)link.href = href;
   }
 }
 window.syncInstallGuideVisibility = syncInstallGuideVisibility;

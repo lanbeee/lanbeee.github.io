@@ -237,38 +237,66 @@ function assert(ok, message){
     assert(await browserChoice.isVisible() && (await browserChoice.textContent()).includes('other allowed days'),
       'All settings finds a field by everyday language and explains it');
     await browserChoice.click();
-    assert(await page.locator('#assistant-input').inputValue()==='Preferred weekdays: '
+    const tagged = await page.evaluate(() => ({
+      value:document.getElementById('assistant-input').value,
+      mention:document.getElementById('assistant-mention-label').textContent,
+      hidden:document.getElementById('assistant-mention').hidden,
+      draft:assistantComposerDraft()
+    }));
+    assert(tagged.mention === 'Preferred weekdays' && tagged.hidden === false && tagged.value === ''
+      && tagged.draft === 'Preferred weekdays: '
       && !(await page.locator('#assistant-guide-browser').isVisible())
       && (await page.locator('#assistant-guide-hint').textContent()).includes('Example:'),
-      'choosing a search result inserts only its label, closes the browser, and shows an example');
-    await page.locator('#assistant-input').fill('');
+      'choosing a search result tags only its name, closes the browser, and shows an example');
+    await page.locator('#assistant-mention-remove').click();
     const bubblesBefore = await page.locator('.assistant-bubble-user').count();
     await page.locator('#assistant-guides-row').getByRole('button', {name:'Duration', exact:true}).click();
     const drafted = await page.evaluate(() => ({
       value:document.getElementById('assistant-input').value,
+      mention:document.getElementById('assistant-mention-label').textContent,
+      hidden:document.getElementById('assistant-mention').hidden,
       placeholder:document.getElementById('assistant-input').placeholder,
       pressed:document.querySelector('[data-assistant-guide="durationMinutes"]')?.getAttribute('aria-pressed'),
       focused:document.activeElement === document.getElementById('assistant-input'),
       sent:window.__guideSent.slice(),
       bubbles:document.querySelectorAll('.assistant-bubble-user').length
     }));
-    assert(drafted.value === 'Duration: ' && drafted.placeholder === 'Add details, or send' && drafted.pressed === 'true',
-      'a tap puts the setting in the box and leaves room to type');
+    assert(drafted.mention === 'Duration' && drafted.hidden === false && drafted.value === ''
+      && drafted.placeholder === 'Add details, or send' && drafted.pressed === 'true',
+      'a tap tags the setting and leaves the box for the value');
     assert(drafted.focused && drafted.sent.length === 0 && drafted.bubbles === bubblesBefore, 'a tap does not send');
     assert(await page.locator('#assistant-send').isEnabled(), 'the draft can be sent immediately');
     await page.keyboard.type('45 minutes');
-    assert(await page.locator('#assistant-input').inputValue() === 'Duration: 45 minutes', 'typing continues after the setting');
+    const beside = await page.evaluate(() => ({
+      value:document.getElementById('assistant-input').value,
+      mention:document.getElementById('assistant-mention-label').textContent,
+      draft:assistantComposerDraft()
+    }));
+    assert(beside.value === '45 minutes' && beside.mention === 'Duration' && beside.draft === 'Duration: 45 minutes',
+      'typing continues beside the setting tag');
     await page.locator('#assistant-guides-row').getByRole('button', {name:'Duration', exact:true}).click();
-    assert((await page.locator('#assistant-input').inputValue()).trim() === '45 minutes', 'tapping the same setting removes it and keeps the typed detail');
+    assert((await page.locator('#assistant-input').inputValue()).trim() === '45 minutes'
+      && await page.locator('#assistant-mention').isHidden(),
+      'tapping the same setting removes the tag and keeps the typed detail');
     await page.locator('#assistant-input').fill('Tuesday plus Thursday');
     await page.locator('#assistant-guides-row').getByRole('button', {name:'Allowed weekdays', exact:true}).click();
-    assert(await page.locator('#assistant-input').inputValue() === 'Allowed weekdays: Tuesday plus Thursday',
+    let moved = await page.evaluate(() => ({
+      value:document.getElementById('assistant-input').value,
+      mention:document.getElementById('assistant-mention-label').textContent
+    }));
+    assert(moved.mention === 'Allowed weekdays' && moved.value === 'Tuesday plus Thursday',
       'a tap keeps a sentence already in the box');
     await page.locator('#assistant-guides-row').getByRole('button', {name:'Preferred weekdays', exact:true}).click();
-    assert(await page.locator('#assistant-input').inputValue() === 'Preferred weekdays: Tuesday plus Thursday',
+    moved = await page.evaluate(() => ({
+      value:document.getElementById('assistant-input').value,
+      mention:document.getElementById('assistant-mention-label').textContent
+    }));
+    assert(moved.mention === 'Preferred weekdays' && moved.value === 'Tuesday plus Thursday',
       'another tap moves those words to the other setting');
     await page.locator('#assistant-guides-row').getByRole('button', {name:'Preferred weekdays', exact:true}).click();
-    assert(await page.locator('#assistant-input').inputValue() === 'Tuesday plus Thursday', 'removing the setting restores the sentence');
+    assert(await page.locator('#assistant-input').inputValue() === 'Tuesday plus Thursday'
+      && await page.locator('#assistant-mention').isHidden(),
+      'removing the setting restores the sentence');
 
     await page.locator('#assistant-input').fill('Tuesday plus Thursday');
     await page.locator('#assistant-send').click();

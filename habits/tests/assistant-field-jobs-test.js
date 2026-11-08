@@ -377,8 +377,8 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const editHtml=assistantFocusReviewHtml(edit);
       const formNoise=/<small>add form<\/small>|<small>default<\/small>|Priority ·|Emoji ·|Shared display|Early allowance|Splitting ·|Minimum gap|Weather profile|Places ·/;
       return {
-        create:createHtml.includes('assistant-preview-name')&&createHtml.includes('assistant-chip')&&createHtml.includes('Walk')&&createHtml.includes('1× / 2d')&&createHtml.includes('Allowed hours')&&createHtml.includes('Unmentioned settings')&&!formNoise.test(createHtml)&&!createHtml.includes('focus-rows')&&!createHtml.includes('focus-origin'),
-        quiet:quietHtml.includes('Walk')&&!quietHtml.includes('assistant-chip')&&!formNoise.test(quietHtml)&&quietHtml.includes('Unmentioned settings'),
+        create:createHtml.includes('assistant-preview-name')&&createHtml.includes('assistant-chip')&&createHtml.includes('Walk')&&createHtml.includes('1× / 2d')&&createHtml.includes('Allowed hours')&&!createHtml.includes('Unmentioned settings')&&!formNoise.test(createHtml)&&!createHtml.includes('focus-rows')&&!createHtml.includes('focus-origin'),
+        quiet:quietHtml.includes('Walk')&&!quietHtml.includes('assistant-chip')&&!formNoise.test(quietHtml)&&!quietHtml.includes('Unmentioned settings'),
         formed:formedHtml.includes('Walk')&&formedHtml.includes('45 min')&&formedHtml.includes('1× / 4d')&&/sunrise/i.test(formedHtml)&&!formNoise.test(formedHtml),
         edit:editHtml.includes('45 min')&&/pinned/i.test(editHtml)&&!editHtml.includes('Shared display')&&!editHtml.includes('Links')&&!editHtml.includes('focus-rows')
       };

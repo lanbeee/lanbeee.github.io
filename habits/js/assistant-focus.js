@@ -1171,13 +1171,12 @@ function assistantFocusReviewModel(session){
     });
   });
   const notes = [];
-  if(session.operation === 'edit')notes.push('Settings outside this request stay as they are.');
-  else notes.push('Unmentioned settings use the add form, then the usual new-item defaults.');
-  if(after.appointment && session.eventScope === 'series' && Object.keys(after.appointment.exceptions || {}).length){
-    notes.push('Dates you already changed individually keep those changes.');
+  if(session.eventScope === 'occurrence'){
+    notes.push(session.occurrenceDate ? `This date only · ${session.occurrenceDate}` : 'This date only');
+  }else if(session.kind === 'event' && session.eventScope === 'series'){
+    const exceptions = after.appointment && Object.keys(after.appointment.exceptions || {}).length;
+    notes.push(exceptions ? 'Whole series. Other dates keep their own changes.' : 'Whole series.');
   }
-  if(session.eventScope === 'occurrence')notes.push(`This applies to ${session.occurrenceDate || 'one date'} only.`);
-  if(session.eventScope === 'series' && session.kind === 'event')notes.push('This applies to the whole series.');
   const profile = session.dependencies && session.dependencies.weatherProfile;
   const weatherRules = profile && Array.isArray(profile.rules) ? profile.rules.map(assistantFocusFormatRule) : [];
   session.needsInterpretation = session.changes.some(change => change.origin === 'extracted' && change.uncertain) || session.scopeSource === 'request' && session.changes.some(change => change.uncertain);
@@ -1441,7 +1440,7 @@ function assistantFocusDetailSelector(field, session){
 }
 
 function assistantFocusFieldHtml(field, text, className, session){
-  const value = assistantFocusEscape(text);
+  const value = `<span class="focus-field-text">${assistantFocusEscape(text)}</span>`;
   if(!assistantFocusDetailSelector(field, session))return `<span class="${className}">${value}</span>`;
   const label = assistantFocusField(field)?.label || (field === 'rhythm' ? 'How often' : field);
   const disabled = session._focusInFlight || (session.operation === 'create' && !String(assistantFocusMaterialize(session).name || '').trim());
@@ -1504,7 +1503,7 @@ function assistantFocusReviewHtml(session){
     ? `<div class="assistant-chip-row" aria-label="Essentials">${bits.essentials.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
     : '';
   const changes = bits.changes.length
-    ? `<p class="focus-section">Changed</p><div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
+    ? `<div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
     : '';
   const notes = model.notes.map(note => `<p class="focus-note">${assistantFocusEscape(note)}</p>`).join('');
   const pending = assistantFocusActivityHtml(session, model);
@@ -1520,11 +1519,12 @@ function assistantFocusReviewHtml(session){
   // applies to the summary shown before the user has asked for anything.
   const readyForActions = !session._focusInFlight && (session.changes.length || session.unresolved.length);
   const actions = readyForActions ? `<div class="btn-row">${save}${edit}</div>` : '';
-  const scope = model.scope ? `<p class="focus-note">Scope: ${assistantFocusEscape(model.scope === 'occurrence' ? `this date ${model.occurrenceDate}` : 'all dates')}</p>` : '';
   return `<div class="focus-review" data-focus-review>
-      <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
-      <p class="assistant-preview-name">${assistantFocusFieldHtml('name', model.title, 'focus-name', session)}</p>
-      ${essentials}${changes}${pending}${question}${scope}${notes}
+      <div class="focus-review-head">
+        <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
+        <p class="assistant-preview-name">${assistantFocusFieldHtml('name', model.title, 'focus-name', session)}</p>
+      </div>
+      ${essentials}${changes}${pending}${question}${notes}
       <p class="focus-status" data-focus-status role="status">${assistantFocusEscape(session.correctionError || '')}</p>
       ${actions}
     </div>`;

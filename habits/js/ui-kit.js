@@ -260,9 +260,9 @@ const UI_PRIVACY_BLOCKS = [
     'Relative times such as sunrise and sunset are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
   ]},
   {id:'privacy-feedback-body', label:'Send feedback', summary:'Optional. Opens a Google Form in your browser. Answers go to Google, not into Tings.', body:[
-    'The send-feedback button on About opens a Google Form in a new browser tab. Tings fills in how long this device has used Tings, and which kinds of planning are already in use, such as habits, tasks, places, prayer windows, or a shared display. It does not attach item names, notes, addresses, or logs. You can change every answer before sending. Tings does not receive the form.',
+    'The send-feedback button on Home and on About opens a Google Form in a new browser tab. Tings fills in how long this device has used Tings, and which kinds of planning are already in use, such as habits, tasks, places, prayer windows, or a shared display. It does not attach item names, notes, addresses, or logs. You can change every answer before sending. Tings does not receive the form.',
     'Google receives the filled-in answers, including the ones in the link, and whatever you type. An assistant problem report can also include what you typed to the assistant. Leave out anything you do not want Google to have. You can close the form without sending it.',
-    'Look for the cloud-up mark on that button.'
+    'About keeps the cloud-up mark beside that button.'
   ]}
 ];
 

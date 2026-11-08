@@ -68,6 +68,11 @@
 <path id="eight-point-star" transform="translate(1024 1024) scale(1.18) translate(-1024 -1024)" fill="#E4A11B" d="M1024 808L1087.27 871.265H1176.74V960.735L1240 1024L1176.74 1087.27V1176.74H1087.27L1024 1240L960.735 1176.74H871.265V1087.27L808 1024L871.265 960.735V871.265H960.735Z"/></svg>
 </div>
 <noscript><style>#launch-screen{display:none}html[data-launch-state] body > *{visibility:visible}</style><p>Tings needs JavaScript to open your agenda.</p></noscript>
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="icon-feedback" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2m-5.4 12L12 12.4 9.4 14l.7-3-2.3-2 3-.3L12 6l1.2 2.8 3 .3-2.3 2z"/>
+  </symbol>
+</svg>
 <div class="app" inert>
 
   <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
@@ -85,6 +90,7 @@
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>
+      <a class="icon-btn" id="bar-open-feedback" href="#" target="_blank" rel="noopener" hidden aria-label="send feedback, opens a Google Form"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></a>
       <button class="icon-btn assistant-launch" id="bar-open-assistant" type="button" hidden aria-label="ask Tings">
         <i class="ti ti-message-circle" aria-hidden="true"></i>
       </button>
@@ -107,6 +113,7 @@
       </span>
     </button>
     <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
+    <a class="home-feedback" id="home-open-feedback" href="#" target="_blank" rel="noopener" hidden aria-label="send feedback, opens a Google Form"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></a>
     <button class="assistant-launch home-filter-trigger" id="open-assistant" type="button" hidden aria-label="ask Tings">
       <i class="ti ti-message-circle" aria-hidden="true"></i>
     </button>
@@ -298,13 +305,13 @@
     <div class="sheet assistant-sheet" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
       <div class="assistant-head">
         <div class="assistant-head-copy">
-          <span class="sheet-eyebrow">on this device</span>
+          <span class="sheet-eyebrow sr-only">on this device</span>
           <p class="sheet-title" id="assistant-title">ask Tings</p>
         </div>
         <div class="assistant-head-actions">
-          <button type="button" class="btn" id="assistant-feedback" hidden aria-expanded="false" aria-controls="assistant-feedback-panel">feedback</button>
-          <button type="button" class="btn" id="assistant-debug-toggle" hidden aria-pressed="false" aria-expanded="false" aria-controls="assistant-debug-dock" aria-label="debug trace">debug</button>
-          <button type="button" class="btn" id="assistant-clear" aria-label="clear chat">clear chat</button>
+          <button type="button" class="btn" id="assistant-feedback" hidden aria-expanded="false" aria-controls="assistant-feedback-panel"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg><span>feedback</span></button>
+          <button type="button" class="btn" id="assistant-debug-toggle" hidden aria-pressed="false" aria-expanded="false" aria-controls="assistant-debug-dock" aria-label="debug trace"><i class="ti ti-bug assistant-head-icon" aria-hidden="true"></i><span>debug</span></button>
+          <button type="button" class="btn" id="assistant-clear" aria-label="clear chat"><i class="ti ti-eraser assistant-head-icon" aria-hidden="true"></i><span>clear chat</span></button>
           <button type="button" class="icon-btn" id="assistant-close" aria-label="close assistant"><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -342,19 +349,29 @@
       <div class="assistant-feedback-panel" id="assistant-feedback-panel" hidden></div>
       <div class="assistant-compose">
         <div class="assistant-guides" id="assistant-guides" hidden>
-          <div class="assistant-guides-head">
-            <p class="assistant-guides-label" id="assistant-guides-label">What would you like to change?</p>
-            <button type="button" class="assistant-guide-more" id="assistant-guide-more" aria-expanded="false" aria-controls="assistant-guide-browser">All settings</button>
+          <p class="sr-only" id="assistant-guides-label">Settings</p>
+          <div class="assistant-guides-bar">
+            <div class="assistant-guides-row" id="assistant-guides-row" role="group" aria-labelledby="assistant-guides-label"></div>
+            <div class="assistant-guide-search" hidden>
+              <svg class="assistant-guide-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg>
+              <input type="search" id="assistant-guide-search" placeholder="Find a setting" aria-label="Find an item setting" autocomplete="off" enterkeyhint="search" />
+              <button type="button" class="assistant-guide-search-clear" id="assistant-guide-clear" aria-label="clear setting search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+            </div>
+            <button type="button" class="assistant-guide-more" id="assistant-guide-more" aria-expanded="false" aria-controls="assistant-guide-browser" aria-label="All settings"><i class="ti ti-search assistant-guide-more-icon" aria-hidden="true"></i><span class="assistant-guide-more-label">All settings</span></button>
           </div>
-          <div class="assistant-guides-row" id="assistant-guides-row" role="group" aria-labelledby="assistant-guides-label"></div>
-          <p class="assistant-guide-hint" id="assistant-guide-hint"></p>
           <div class="assistant-guide-browser" id="assistant-guide-browser" hidden>
-            <input type="search" id="assistant-guide-search" placeholder="Find a setting, e.g. days or reminders" aria-label="Find an item setting" autocomplete="off" />
             <div class="assistant-guide-results" id="assistant-guide-results" role="group" aria-label="Item settings"></div>
           </div>
+          <p class="assistant-guide-hint" id="assistant-guide-hint" hidden></p>
           <button type="button" class="assistant-guide-more assistant-guide-revise" id="assistant-guide-revise" hidden>Fix last request</button>
         </div>
-        <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
+        <div class="assistant-field" id="assistant-field">
+          <span class="assistant-mention" id="assistant-mention" hidden>
+            <span class="assistant-mention-label" id="assistant-mention-label"></span>
+            <button type="button" class="assistant-mention-remove" id="assistant-mention-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
+          </span>
+          <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
+        </div>
         <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
       </div>
     </div>
@@ -901,7 +918,7 @@
         <div class="btn-row about-actions about-hub-foot">
           <!-- real anchor + target=_blank so installed PWAs hand the form to the actual browser instead of keeping it in the standalone window -->
           <div class="about-feedback-row" id="about-feedback-row" hidden>
-            <a class="btn" id="open-feedback" href="#" target="_blank" rel="noopener" hidden><i class="ti ti-message" aria-hidden="true"></i> send feedback</a>
+            <a class="btn" id="open-feedback" href="#" target="_blank" rel="noopener" hidden><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg> send feedback</a>
             <span data-ui-leave="feedback"></span>
           </div>
           <button class="btn" id="open-privacy" type="button"><i class="ti ti-shield-lock" aria-hidden="true"></i> privacy</button>

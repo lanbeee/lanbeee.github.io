@@ -404,6 +404,8 @@ body[data-pane-count="3"] .pane-overview .overview-page-close{display:none;}
 }
 .about-sheet .about-actions .about-feedback-row[hidden]{display:none;}
 .about-sheet .about-actions .about-feedback-row .btn{flex:1;min-height:48px;font-size:12px;}
+.about-sheet .about-actions #open-feedback{--feedback-mark-fill:var(--bg3);}
+.about-sheet .about-actions #open-feedback .feedback-mark{width:16px;height:16px;}
 .about-sheet .about-actions .about-feedback-row .leave-btn{flex-shrink:0;z-index:1;}
 .about-sheet .about-actions .about-feedback-row > span{position:static;}
 .about-sheet .about-hub .about-hub-foot{overflow:visible;}

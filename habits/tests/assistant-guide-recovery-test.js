@@ -121,7 +121,7 @@ const cases=[
       await page.locator('#assistant-guide-search').fill(test.label);
       const traceBefore=await page.evaluate(()=>_assistantSession.focus.trace.length);
       await page.locator(`#assistant-guide-results [data-guide-label="${test.label}"]`).click();
-      const guided=await page.locator('#assistant-input').inputValue();
+      const guided=await page.evaluate(()=>assistantComposerDraft());
       if(!guided.startsWith(`${test.label}:`)||traceBefore!==await page.evaluate(()=>_assistantSession.focus.trace.length))throw new Error('Guide tap sent a request or lost its label');
       if(!(await page.locator('#assistant-guide-hint').textContent()).includes('Example:'))throw new Error('Selected field has no example');
       await send(`${test.label}: ${test.detail}`);

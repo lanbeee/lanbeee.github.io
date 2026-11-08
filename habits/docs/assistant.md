@@ -87,14 +87,14 @@ delivery modes, global reminder enablement, and other items. It participates in
 the same review, Save and undo flow.
 
 The composer always offers three setting names for the open item. They follow
-the draft, or the last request when the box is empty. Tapping a name puts it in
-the message and does not send; tapping it again removes it and keeps anything
-typed after it. The message can be sent as that setting alone, or with extra
-detail. A bare setting name reads that setting from the previous request when
+the draft, or the last request when the box is empty. Tapping a name places it
+as a tag in the message and does not send; tapping it again removes the tag and
+keeps anything typed beside it. The message can be sent as that setting alone,
+or with extra detail. A bare setting name reads that setting from the previous request when
 those earlier words belong to it, and otherwise asks for the value. Detail in
 the same message is the value, so the setting’s own label cannot widen it.
-Unanswered field questions take priority when the composer is empty. The selected
-setting shows a plain-language explanation and an example; examples are help text
+Unanswered field questions take priority when the composer is empty. Choosing a
+setting shows one line: what it does, and an example. Examples are help text
 and never become executable input. **All settings** searches applicable item
 fields by their labels, aliases and explanations. Android reminders stay absent
 in the PWA. Choosing a result only fills the composer and returns focus to it.
@@ -160,8 +160,9 @@ duration use the chosen Add form values first, then the kind's configured
 creation defaults (including the separate task profile). The review is a short summary in the chat, on screen as soon as the item opens. It lists only the
 settings this request set, the same way an edit lists only what changed.
 Add-form values and new-item defaults stay on the draft and are not listed.
-The note is the last line of the summary. Save and Edit appear under it once a change is
-staged or a value still needs an answer. Omission
+The summary does not repeat that. A note appears only to say when a save
+applies to one date or the whole series. Save and Edit appear under the
+summary once a change is staged or a value still needs an answer. Omission
 may use a default; a requested value that fails extraction stays unresolved.
 Names still need user-supplied evidence, and events need an actual date/start
 time. Edit omission preserves the existing item, including its essentials.

@@ -154,8 +154,8 @@ function syncAssistantNeedleControls(){
     panel.hidden = !selected || !assistantEnabled() || chatReady;
     const status = panel.querySelector('[data-needle-status]');
     if(status)status.textContent = state.error || (downloading ? `Downloading Needle 3… ${state.progress}%`
-      : downloaded ? 'Needle 3 is downloaded. Ready to use on this device, including offline.'
-      : 'Download Needle 3 once (36.3 MB). Runs on this device; your requests stay here.');
+      : downloaded ? 'Needle 3 is ready, including offline.'
+      : 'Needle 3 is 36.3 MB and stays on this device.');
     const progress = panel.querySelector('progress');
     if(progress){ progress.hidden = !downloading; progress.value = state.progress; }
     const download = panel.querySelector('[data-needle-download]');
@@ -211,7 +211,7 @@ function openAssistantSheet(opts){
   _assistantExternalReview = external;
   const eyebrow = document.querySelector('#assistant-sheet .sheet-eyebrow');
   if(eyebrow)eyebrow.textContent = external ? 'Android assistant' : 'on this device';
-  const composer = $('assistant-input')?.parentElement;
+  const composer = $('assistant-input')?.closest('.assistant-compose');
   if(composer)composer.hidden = external && !assistantEnabled();
   if(!_assistantSession)_assistantSession = assistantCreateSession();
   if(!(opts && opts.skipWelcome))renderAssistantThread();
@@ -301,8 +301,7 @@ async function assistantOpenWithInstruction(text, opts){
   // stay on screen otherwise, and a tiny model will repeat them.
   const thread = assistantThreadEl();
   if(thread)thread.replaceChildren();
-  const input = $('assistant-input');
-  if(input)input.value = '';
+  assistantPresentComposer('');
   syncAssistantFocusBar();
   const opened = openAssistantSheet({skipWelcome:true, focused:Boolean(_assistantSession.focus)});
   if(opened === false)return false;
@@ -512,11 +511,8 @@ function clearAssistantChat(){
     _assistantPendingDraft = needleFocus.draft;
     _assistantPendingDrafts = null;
   }
-  const input = $('assistant-input');
-  if(input){
-    input.value = '';
-    input.focus({preventScroll:true});
-  }
+  assistantPresentComposer('');
+  $('assistant-input')?.focus({preventScroll:true});
   const thread = assistantThreadEl();
   if(thread){
     thread.replaceChildren();
@@ -935,6 +931,8 @@ function appendAssistantBubble(kind, text, extra){
     div.innerHTML = `${think}<p>${escapeHtml(text)}</p>${choices ? `<div class="btn-row assistant-choices">${choices}</div>` : ''}`;
   }else if(kind === 'debug'){
     assistantFillDebugBubble(div, extra && extra.debug, extra);
+  }else if(kind === 'user'){
+    div.innerHTML = assistantUserMessageHtml(text);
   }else{
     div.innerHTML = `${think}<p>${escapeHtml(text)}</p>`;
   }
@@ -955,12 +953,135 @@ function renderAssistantThread(){
 }
 
 function assistantComposerValue(){
-  return String($('assistant-input')?.value || '').trim();
+  return String($('assistant-input')?.value || '').trim() || assistantMentionName();
 }
 
-const ASSISTANT_GUIDE_PLACEHOLDER = 'Describe a change to this item';
+function assistantMentionName(){
+  const mention = $('assistant-mention');
+  if(!mention || mention.hidden)return '';
+  return String($('assistant-mention-label')?.textContent || '').trim();
+}
+
+function assistantSetMention(label){
+  const mention = $('assistant-mention');
+  const text = $('assistant-mention-label');
+  const remove = $('assistant-mention-remove');
+  const field = $('assistant-field');
+  const name = String(label || '').trim();
+  if(text)text.textContent = name;
+  if(mention){
+    mention.hidden = !name;
+    if(name)mention.setAttribute('aria-label', name);
+    else mention.removeAttribute('aria-label');
+  }
+  if(field)field.classList.toggle('has-mention', Boolean(name));
+  if(remove){
+    remove.disabled = Boolean(_assistantBusy);
+    remove.setAttribute('aria-label', name ? `Remove ${name}` : 'Remove setting');
+  }
+}
+
+// A typed "Label: value" is the wire form. The label renders as a tag, and
+// only the value stays in the text box. Catalog matching is expensive, so a
+// value with no separator, or a separator head already known not to be a
+// setting, never enters it.
+let assistantGuidePrefixMiss = '';
+function assistantGuideSeparated(text, session){
+  const raw = String(text || '');
+  if(!session || typeof assistantGuideParse !== 'function' || typeof assistantGuidePattern !== 'function')return null;
+  const cut = raw.search(/[:\-–—]/);
+  if(cut < 0)return null;
+  const head = raw.slice(0, cut).trim().toLowerCase();
+  if(!head || head.length > 48 || head === assistantGuidePrefixMiss)return null;
+  const parsed = assistantGuideParse(raw, session);
+  if(!parsed || !new RegExp(`^\\s*${assistantGuidePattern(parsed.label)}\\s*[:\\-–—]\\s*`,'i').test(raw)){
+    assistantGuidePrefixMiss = head;
+    return null;
+  }
+  assistantGuidePrefixMiss = '';
+  return parsed;
+}
+
+function assistantComposerDraft(){
+  const rest = String($('assistant-input')?.value || '');
+  const session = _assistantSession && _assistantSession.focus;
+  if(assistantGuideSeparated(rest, session))return rest.trim();
+  const label = assistantMentionName();
+  if(!label)return rest;
+  const detail = rest.trim();
+  return detail ? `${label}: ${detail}` : `${label}: `;
+}
+
+function assistantAbsorbGuidePrefix(){
+  const input = $('assistant-input');
+  const session = _assistantSession && _assistantSession.focus;
+  if(!input || !session || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(session))return;
+  const parsed = assistantGuideSeparated(input.value, session);
+  if(!parsed)return;
+  assistantSetMention(parsed.label);
+  input.value = parsed.rest;
+}
+
+function assistantPresentComposer(text){
+  const input = $('assistant-input');
+  if(!input)return;
+  assistantSetMention('');
+  input.value = text == null ? '' : String(text);
+  assistantAbsorbGuidePrefix();
+  if(assistantMentionName())return;
+  const session = _assistantSession && _assistantSession.focus;
+  const parsed = session && typeof assistantGuideParse === 'function' ? assistantGuideParse(input.value, session) : null;
+  if(parsed && !parsed.rest && parsed.label.toLowerCase() === input.value.trim().toLowerCase()){
+    assistantSetMention(parsed.label);
+    input.value = '';
+  }
+}
+
+function assistantUserMessageHtml(text){
+  const session = _assistantSession && _assistantSession.focus;
+  const parsed = session && typeof assistantGuideParse === 'function' ? assistantGuideParse(text, session) : null;
+  if(!parsed)return `<p>${escapeHtml(text)}</p>`;
+  const tag = `<span class="assistant-mention assistant-mention-static"><span class="assistant-mention-label">${escapeHtml(parsed.label)}</span></span>`;
+  if(!parsed.rest)return `<p class="assistant-user-line">${tag}</p>`;
+  return `<p class="assistant-user-line">${tag} <span class="assistant-user-detail">${escapeHtml(parsed.rest)}</span></p>`;
+}
+
+const ASSISTANT_GUIDE_PLACEHOLDER = 'Describe the change';
+
+function assistantGuideHintText(session, active, revising){
+  if(active && typeof assistantGuideHelp === 'function'){
+    const detail = assistantGuideHelp(active.id);
+    return `${detail.description}${detail.example ? ` Example: ${detail.example}.` : ''}`;
+  }
+  if(revising)return 'Last change undone. Edit it and send.';
+  if(session.continuationError)return 'Draft kept. Continue above, or fix the last request.';
+  if(session.unresolved?.length)return 'Pick the setting you meant, then add its value.';
+  return '';
+}
+
+function assistantGuideSearchWrap(){
+  return $('assistant-guide-search')?.closest('.assistant-guide-search') || null;
+}
+
+function assistantSyncGuideSearchClear(){
+  const clear = $('assistant-guide-clear');
+  if(clear)clear.hidden = !String($('assistant-guide-search')?.value || '').length;
+}
+
+let assistantGuideRenderTimer = 0;
+function assistantScheduleGuideRender(){
+  clearTimeout(assistantGuideRenderTimer);
+  assistantGuideRenderTimer = setTimeout(() => {
+    assistantGuideRenderTimer = 0;
+    assistantRenderGuides();
+  }, 80);
+}
 
 function assistantRenderGuides(){
+  if(assistantGuideRenderTimer){
+    clearTimeout(assistantGuideRenderTimer);
+    assistantGuideRenderTimer = 0;
+  }
   const row = $('assistant-guides');
   const list = $('assistant-guides-row');
   const input = $('assistant-input');
@@ -976,13 +1097,18 @@ function assistantRenderGuides(){
     delete row.dataset.guideSignature;
     delete row.dataset.guideSession;
     assistantToggleGuideBrowser(false);
+    if(assistantMentionName() && input){
+      const draft = assistantComposerDraft().trim();
+      input.value = draft.endsWith(':') ? draft.slice(0, -1).trim() : draft;
+    }
+    assistantSetMention('');
     if(input){
       input.placeholder = 'Remind me, paste a schedule, or change it';
       input.removeAttribute('aria-describedby');
     }
     return;
   }
-  const typed = String(input?.value || '');
+  const typed = assistantComposerDraft();
   if(row.dataset.guideSession!==session.id){
     row.dataset.guideSession=session.id;
     delete row.dataset.guideRevising;
@@ -991,34 +1117,27 @@ function assistantRenderGuides(){
   }
   const hint = typed.trim() || String(session.currentRequest || (session.requests || []).at(-1) || '');
   const active = assistantGuideRead(typed, session, true);
+  const hintText = assistantGuideHintText(session, active, row.dataset.guideRevising === 'true');
   if(input){
     input.placeholder = active ? (active.rest ? 'Edit this, then send' : 'Add details, or send') : ASSISTANT_GUIDE_PLACEHOLDER;
-    input.setAttribute('aria-describedby', 'assistant-guides-label assistant-guide-hint');
+    if(hintText)input.setAttribute('aria-describedby', 'assistant-guide-hint');
+    else input.removeAttribute('aria-describedby');
   }
   const label=$('assistant-guides-label'),help=$('assistant-guide-hint');
-  if(label)label.textContent=active?'Change this setting':session.unresolved?.length?'Help Needle understand':session.requests.length?'Keep editing this item':'What would you like to change?';
+  if(label)label.textContent=active?'Change this setting':session.unresolved?.length?'Which setting':'Settings';
   if(help){
-    if(active){
-      const detail=assistantGuideHelp(active.id);
-      help.textContent=`${detail.description}${detail.example ? ` Example: ${detail.example}.` : ''}${!active.rest ? ' Add a value, or send to clarify your last request.' : ''}`;
-    }else if(row.dataset.guideRevising){
-      help.textContent='The last request’s unsaved changes were removed. Earlier edits are kept. Choose the intended setting or rewrite the request, then send.';
-    }else if(session.continuationError){
-      help.textContent='Your draft is kept. Use Continue above to retry, or fix your last request below.';
-    }else if(session.unresolved?.length){
-      help.textContent='Choose the setting you meant, then add its value. You can also answer the question above.';
-    }else{
-      help.textContent=session.requests.length?'Choose another setting, or fix the last request if Needle misunderstood. Review the changes before saving.':'Choose a setting to see what it does and how to ask. Nothing is saved until you choose Save.';
-    }
+    help.hidden=!hintText;
+    help.textContent=hintText;
   }
   const revise=$('assistant-guide-revise');
   if(revise){
     revise.hidden=!assistantGuideCanRevise(session);
     revise.disabled=Boolean(_assistantBusy||typed.trim());
-    revise.title=typed.trim()?'Send or clear the message you are writing first.':'Remove only the last request’s unsaved changes and edit its wording. Earlier edits are kept.';
+    revise.title=typed.trim()?'Clear the message first.':'Undo the last unsaved change and edit it.';
   }
   if($('assistant-guide-more'))$('assistant-guide-more').disabled=Boolean(_assistantBusy);
   if($('assistant-guide-search'))$('assistant-guide-search').disabled=Boolean(_assistantBusy);
+  if($('assistant-guide-clear'))$('assistant-guide-clear').disabled=Boolean(_assistantBusy);
   assistantRenderGuideBrowser();
   const suggestions = assistantGuideSuggestions(session, hint);
   const signature = `${suggestions.map(item => item.id).join(',')}|${active ? active.id : ''}|${_assistantBusy ? 1 : 0}`;
@@ -1040,10 +1159,23 @@ function assistantRenderGuides(){
 }
 
 function assistantToggleGuideBrowser(open){
-  const browser=$('assistant-guide-browser'),button=$('assistant-guide-more');
+  const browser=$('assistant-guide-browser'),button=$('assistant-guide-more'),guides=$('assistant-guides');
+  const search=assistantGuideSearchWrap();
   if(browser)browser.hidden=!open;
-  if(button){button.setAttribute('aria-expanded',String(Boolean(open)));button.textContent=open?'Close settings':'All settings';}
-  if(!open&&$('assistant-guides'))$('assistant-guides').scrollTop=0;
+  if(search)search.hidden=!open;
+  if(guides)guides.classList.toggle('is-browsing', Boolean(open));
+  if(button){
+    button.setAttribute('aria-expanded',String(Boolean(open)));
+    button.setAttribute('aria-label', open?'Close settings':'All settings');
+    const label=button.querySelector('.assistant-guide-more-label');
+    if(label)label.textContent=open?'Close':'All settings';
+  }
+  if(!open){
+    if(guides)guides.scrollTop=0;
+    const input=$('assistant-guide-search');
+    if(input)input.value='';
+    assistantSyncGuideSearchClear();
+  }
 }
 
 function assistantRenderGuideBrowser(){
@@ -1064,8 +1196,8 @@ function assistantRenderGuideBrowser(){
     button.append(title,detail);results.append(button);
   }
   if(!rows.length){
-    const empty=document.createElement('p');empty.className='assistant-guide-hint';
-    empty.textContent='No matching setting for this item. Try days, hours, duration, or name.';results.append(empty);
+    const empty=document.createElement('p');empty.className='assistant-guide-empty';
+    empty.textContent='No matching setting.';results.append(empty);
   }
 }
 
@@ -1074,10 +1206,7 @@ function assistantApplyGuide(label){
   const session = _assistantSession && _assistantSession.focus;
   if(!input || input.disabled || _assistantBusy || !session || !assistantFocusAlive(session) || typeof assistantGuideCompose !== 'function')return;
   assistantToggleGuideBrowser(false);
-  let value = assistantGuideCompose(input.value, label, session);
-  const parsed = value && typeof assistantGuideParse === 'function' ? assistantGuideParse(value, session) : null;
-  if(parsed && !parsed.rest)value = `${parsed.label}: `;
-  input.value = value;
+  assistantPresentComposer(assistantGuideCompose(assistantComposerDraft(), label, session));
   const end = input.value.length;
   input.focus({preventScroll:true});
   try{ input.setSelectionRange(end, end); }catch(_){}
@@ -1093,8 +1222,10 @@ function assistantResizeComposer(){
   const input = $('assistant-input');
   if(!input)return;
   if(typeof ASSISTANT_INPUT_MAX === 'number')input.maxLength = ASSISTANT_INPUT_MAX;
+  const guided = $('assistant-guides') && !$('assistant-guides').hidden;
+  const max = guided ? 88 : 160;
   input.style.height = 'auto';
-  input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), 220)}px`;
+  input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), max)}px`;
 }
 
 function assistantSyncSend(){
@@ -1106,6 +1237,8 @@ function assistantShowBusy(on){
   _assistantBusy = on;
   const input = $('assistant-input');
   if(input)input.disabled = on;
+  const mentionRemove = $('assistant-mention-remove');
+  if(mentionRemove)mentionRemove.disabled = on;
   assistantSyncSend();
   syncAssistantNeedleControls();
   document.querySelectorAll('#assistant-thread .assistant-suggest').forEach(btn => {
@@ -1245,8 +1378,7 @@ async function sendAssistantMessage(text, opts){
   if(guideSession && typeof assistantGuideOutgoing === 'function')value = assistantGuideOutgoing(typed, guideSession);
   if(!value || _assistantBusy)return;
   if(!assistantNeedleCanSend()){
-    const input = $('assistant-input');
-    if(input)input.value = text == null ? value : String(text);
+    assistantPresentComposer(text == null ? value : String(text));
     assistantResizeComposer();
     if(typeof showToast === 'function')showToast('Download Needle 3 to use the assistant');
     return;
@@ -1255,12 +1387,9 @@ async function sendAssistantMessage(text, opts){
   assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button, [data-assistant-choice], [data-assistant-proposal], [data-assistant-action]').forEach(button=>{button.disabled=true;});
   appendAssistantBubble('user', opts.displayText || value);
   if($('assistant-guides'))delete $('assistant-guides').dataset.guideRevising;
-  const input = $('assistant-input');
-  if(input){
-    input.value = '';
-    assistantResizeComposer();
-    assistantSyncSend();
-  }
+  assistantPresentComposer('');
+  assistantResizeComposer();
+  assistantSyncSend();
   assistantShowBusy(true);
   if(assistantSettings().provider === 'needle' && !opts.needleAction){
     const focus = _assistantSession && _assistantSession.focus;
@@ -1614,7 +1743,7 @@ function assistantShowFocusReview(session, opts){
   assistantRetireFocusControls();
   const thread = assistantThreadEl();
   const bubble = thread?.querySelector('[data-focus-card]') || document.createElement('div');
-  bubble.className = 'assistant-bubble assistant-bubble-say';
+  bubble.className = 'assistant-bubble assistant-bubble-say assistant-bubble-review';
   bubble.dataset.focusCard = 'true';
   bubble.innerHTML = assistantFocusReviewHtml(session);
   if(opts && opts.live){
@@ -1739,8 +1868,19 @@ function bindAssistantUi(){
   $('assistant-sheet')?.addEventListener('click', e => {
     if(e.target === e.currentTarget)closeAssistantSheet();
   });
-  $('assistant-send')?.addEventListener('click', () => sendAssistantMessage($('assistant-input')?.value));
+  $('assistant-send')?.addEventListener('click', () => sendAssistantMessage(assistantComposerDraft()));
   $('assistant-input')?.addEventListener('input', () => {
+    assistantAbsorbGuidePrefix();
+    assistantResizeComposer();
+    assistantSyncSend();
+    assistantScheduleGuideRender();
+  });
+  $('assistant-mention-remove')?.addEventListener('pointerdown', e => e.preventDefault());
+  $('assistant-mention-remove')?.addEventListener('click', () => {
+    if(_assistantBusy)return;
+    assistantSetMention('');
+    const input = $('assistant-input');
+    input?.focus({preventScroll:true});
     assistantResizeComposer();
     assistantSyncSend();
     assistantRenderGuides();
@@ -1763,20 +1903,35 @@ function bindAssistantUi(){
     }else $('assistant-input')?.focus({preventScroll:true});
     if(typeof updateKeyboardLift==='function')updateKeyboardLift();
   });
-  $('assistant-guide-search')?.addEventListener('input',assistantRenderGuideBrowser);
+  $('assistant-guide-search')?.addEventListener('input',()=>{
+    assistantSyncGuideSearchClear();
+    assistantRenderGuideBrowser();
+  });
+  $('assistant-guide-clear')?.addEventListener('click',()=>{
+    const input=$('assistant-guide-search');
+    if(!input || input.disabled)return;
+    input.value='';
+    assistantSyncGuideSearchClear();
+    assistantRenderGuideBrowser();
+    input.focus({preventScroll:true});
+  });
   $('assistant-guide-search')?.addEventListener('keydown',e=>{
     if(e.key==='Escape'){
       e.preventDefault();assistantToggleGuideBrowser(false);$('assistant-input')?.focus({preventScroll:true});
     }
-    if(e.key==='Enter')e.preventDefault();
+    if(e.key==='Enter'){
+      e.preventDefault();
+      const first=$('assistant-guide-results')?.querySelector('[data-assistant-guide]:not(:disabled)');
+      if(first)assistantApplyGuide(first.dataset.guideLabel || first.querySelector('.focus-field-text')?.textContent || first.textContent);
+    }
   });
   $('assistant-guide-revise')?.addEventListener('click',()=>{
     const input=$('assistant-input'),session=_assistantSession?.focus;
-    if(_assistantBusy||input?.value.trim()||!session||!assistantFocusAlive(session))return;
+    if(_assistantBusy||assistantComposerDraft().trim()||!session||!assistantFocusAlive(session))return;
     const request=assistantGuideRevise(session);
     if(request==null||!input)return;
     $('assistant-guides').dataset.guideRevising='true';
-    input.value=request;
+    assistantPresentComposer(request);
     assistantToggleGuideBrowser(false);
     assistantShowFocusReview(session);
     assistantResizeComposer();assistantSyncSend();assistantRenderGuides();
@@ -1784,9 +1939,19 @@ function bindAssistantUi(){
     if(typeof updateKeyboardLift==='function')updateKeyboardLift();
   });
   $('assistant-input')?.addEventListener('keydown', e => {
+    if(e.key === 'Backspace' && !e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey){
+      const input = e.currentTarget;
+      if(assistantMentionName() && input.selectionStart === 0 && input.selectionEnd === 0){
+        e.preventDefault();
+        assistantSetMention('');
+        assistantSyncSend();
+        assistantRenderGuides();
+        return;
+      }
+    }
     if(e.key === 'Enter' && !e.shiftKey){
       e.preventDefault();
-      sendAssistantMessage($('assistant-input').value);
+      sendAssistantMessage(assistantComposerDraft());
     }
   });
   $('assistant-thread')?.addEventListener('click', e => {

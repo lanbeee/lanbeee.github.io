@@ -212,12 +212,11 @@ function assert(ok, message){
           _assistantSession = {focus:s};assistantShowFocusReview(s);
           const review=assistantThreadEl().lastElementChild.querySelector('[data-focus-review]');
           const html=review.innerHTML;
-          const note=html.indexOf('Settings outside this request stay as they are.');
-          const buttons=html.indexOf('data-focus-save');
           return Boolean(review.querySelector('[data-focus-save]') && review.querySelector('[data-focus-edit]')
             && !review.querySelector('[data-focus-approve]')
             && !html.includes('never mind') && !html.includes('correct a value')
-            && note>=0 && buttons>note && assistantFocusCanSave(s));
+            && !html.includes('Settings outside this request')
+            && assistantFocusCanSave(s));
         })],
         ['edit opens detail with the staged values and does not save', async()=>page.evaluate(async()=>{
           const t=focusTest;t.seed();const s=t.open();
