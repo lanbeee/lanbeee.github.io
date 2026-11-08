@@ -83,12 +83,12 @@ function assert(ok, message){
             preferredWeekdays:'Monday',preferredMonthDays:'1, 15',preferredWindow:'6pm to 8pm',
             allowedOrdinalWeekdays:'last Friday of every month',preferredOrdinalWeekdays:'second Tuesday of every month',
             durationMinutes:'30 minutes',breakable:'yes',minChunkMinutes:'15 minutes',minGapMinutes:'20 minutes',
-            timerAutoStopMinutes:'30 minutes',autoMarkMinutes:'5 minutes',trackValue:'yes',places:'Home',anywhereAllowed:'no',locationPrefs:'prefer Home',
+            timerAutoStopMinutes:'30 minutes',autoMarkMinutes:'5 minutes',tapStartsSession:'yes',trackValue:'yes',places:'Home',anywhereAllowed:'no',locationPrefs:'prefer Home',
             weatherProfile:'Dry',weatherRules:'temperature above 10 C',showWeather:'yes',showWeatherAtLocation:'yes',weatherLocationId:'Home',
             scheduleOptions:'Monday from 6pm to 8pm',scheduleLinks:'after Meeting',topics:'Fitness',pinned:'yes',snoozedUntil:'tomorrow',sharedDisplay:'view',links:'https://example.com',
             appointmentRepeat:'weekly',appointmentStartDate:'2026-11-09',appointmentWeekdays:'Monday',appointmentUntil:'2026-12-01',appointmentStartMinute:'9am',
             exceptionTime:'10am',exceptionDuration:'30 minutes',exceptionEmoji:'🌟',exceptionColor:'blue',exceptionCancelled:'cancel',exceptionReset:'reset',
-            reminderStart:'alarm',reminderEnd:'off',reminderTravelStart:'notification',reminderTravelEnd:'off',reminderMissed:'notification',
+            reminderDnd:'yes',reminderStart:'alarm',reminderEnd:'off',reminderTravelStart:'notification',reminderTravelEnd:'off',reminderMissed:'notification',
             reminderTravelLead:'15',reminderStartLead:'15',reminderMissedLead:'15',reminderReset:'reset'};
           const failed=ASSISTANT_FOCUS_FIELDS.flatMap(field=>{
             const value=values[field.id], parsed=value && assistantFocusNormalize(field.id,value,s);
@@ -227,6 +227,27 @@ function assert(ok, message){
           const sheet=getSheetInner('detail-sheet');
           return result.ok && load()[0].durationMinutes===45 && Number($('detail-duration').value)===30
             && sheet.classList.contains('tune-dirty') && $('detail-sheet').classList.contains('open');
+        })],
+        ['DND requires device access, saves its own owner only, and undoes independently', async()=>page.evaluate(async()=>{
+          const t=focusTest,native=window.TingsNative,quiet=reconcileNativeQuiet;
+          let granted=false;
+          window.TingsNative={isNative:true,quiet:{status:async()=>({granted})},notifications:{}};
+          reconcileNativeQuiet=async()=>{};
+          try{
+            t.seed();
+            localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY,JSON.stringify({version:4,enabled:false,items:{'item:gym':{start:'alarm'},'item:event':{dnd:true}}}));
+            const before=JSON.stringify(load()),prefs=localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY),s=t.open();
+            if(!assistantFocusCorrect(s,'reminderDnd','yes').ok)return false;
+            assistantFocusApprove(s);
+            const denied=await assistantFocusCommit(s);
+            if(denied.ok||!denied.error.includes('Do Not Disturb')||JSON.stringify(load())!==before||localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY)!==prefs)return false;
+            granted=true;
+            await t.commit(s);
+            const saved=JSON.parse(localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY));
+            if(!saved.items['item:gym'].dnd||saved.items['item:gym'].start!=='alarm'||!saved.items['item:event'].dnd||saved.enabled)return false;
+            assistantFocusUndo(t.snapshot);
+            return localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY)===prefs&&JSON.stringify(load())===before;
+          }finally{window.TingsNative=native;reconcileNativeQuiet=quiet;}
         })],
         ['reminder reset clears its scope and keeps explicit replacements and other dates', async()=>page.evaluate(async()=>{
           const t=focusTest,native=window.TingsNative;

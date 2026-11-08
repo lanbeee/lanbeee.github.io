@@ -45,6 +45,7 @@ const ASSISTANT_FOCUS_FIELDS = [
   {id:'minGapMinutes', label:'Minimum gap', family:'effort', kinds:['habit','task'], persist:'minGapMinutes', clear:true},
   {id:'timerAutoStopMinutes', label:'Timer target', family:'effort', kinds:['habit','task'], persist:'timerAutoStopMinutes', clear:true},
   {id:'autoMarkMinutes', label:'Automatic completion', family:'effort', kinds:['habit','task'], persist:'autoMarkMinutes', clear:true},
+  {id:'tapStartsSession', label:'Start with a tap', family:'effort', kinds:['habit','task'], persist:'tapStartsSession', clear:false, unless:'zero'},
   {id:'trackValue', label:'Value tracking', family:'effort', kinds:['habit','task'], persist:'trackValue', clear:false},
 
   {id:'places', label:'Places', family:'places', kinds:['habit','task','event'], persist:'locationIds', clear:true},
@@ -79,6 +80,7 @@ const ASSISTANT_FOCUS_FIELDS = [
   {id:'exceptionCancelled', label:'This date', family:'exception', kinds:['event'], persist:'appointment', clear:false, scope:'occurrence'},
   {id:'exceptionReset', label:'Use the usual values', family:'exception', kinds:['event'], persist:'appointment', clear:false, scope:'occurrence'},
 
+  {id:'reminderDnd', label:'Do Not Disturb during session', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false, unless:'zero'},
   {id:'reminderStart', label:'Start reminder', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:false},
   {id:'reminderEnd', label:'End reminder', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:false},
   {id:'reminderTravelStart', label:'Travel departure reminder', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false},

@@ -3,12 +3,12 @@
 // three leased runtimes, including embeddings and coverage checks.
 const ASSISTANT_FIELD_SEARCH = {
   name:'detail-habit-message', kind:'detail-type-seg', habitKind:'detail-mode-seg', emoji:'detail-emoji', emojiBgColor:'detail-emoji-bg', priority:'detail-priority-seg',
-  frequency:'detail-frequency-presets', repeatMode:'detail-frequency-presets', conditionTrigger:'detail-frequency-presets', conditionRadiusM:'detail-frequency-presets',
+  frequency:'detail-frequency-presets', repeatMode:'detail-frequency-presets', conditionTrigger:'detail-condition-trigger', conditionRadiusM:'detail-condition-radius',
   dueDate:'detail-due-date', dueTime:'detail-due-time', hardDue:'detail-due-date', planByDate:'detail-due-date', earlyWindowDays:'detail-early-window', delayAllowanceDays:'detail-delay-allowance',
   allowedWeekdays:'detail-weekday-chips', preferredWeekdays:'detail-preferred-weekday-chips', allowedMonthDays:'detail-monthday-toggle', preferredMonthDays:'detail-preferred-monthday-toggle',
   allowedOrdinalWeekdays:'detail-ordinal-rules', preferredOrdinalWeekdays:'detail-preferred-ordinal-rules',
   allowedWindow:'detail-allowed-time-row', preferredWindow:'detail-preferred-time-row', allowedTimeFixedStart:'detail-time-kind',
-  durationMinutes:'detail-duration', breakable:'detail-breakable', minChunkMinutes:'detail-min-chunk', minGapMinutes:'detail-min-gap', timerAutoStopMinutes:'detail-timer-auto-stop', autoMarkMinutes:'detail-auto-mark', trackValue:'detail-track-value',
+  tapStartsSession:'detail-tap-session', durationMinutes:'detail-duration', breakable:'detail-breakable', minChunkMinutes:'detail-min-chunk', minGapMinutes:'detail-min-gap', timerAutoStopMinutes:'detail-timer-auto-stop', autoMarkMinutes:'detail-auto-mark', trackValue:'detail-track-value',
   places:'detail-places-label', anywhereAllowed:'detail-places-label', locationPrefs:'detail-place-chips', weatherProfile:'detail-weather-profile', weatherRules:'detail-weather-profile', showWeather:'detail-show-weather', showWeatherAtLocation:'detail-show-weather-location', weatherLocationId:'detail-weather-location',
   scheduleOptions:'detail-habit-option-add', scheduleLinks:'detail-schedule-link-add', topics:'detail-topic-chips', pinned:'detail-pinned', snoozedUntil:'detail-snooze', sharedDisplay:'detail-shared-display', links:'detail-link-add'
 };
@@ -51,7 +51,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   priority:/\b(?:(?:high|low|normal|medium|important)\s+priority|priority|p[0-5]|urgent|critical|someday)\b/i,
   frequency:new RegExp(`\\b(?:frequency|rhythm|how often|every|each(?=\\s+(?:(?:${assistantIntegerSource()}|${assistantOrdinalSource()}|other)\\s+)?(?:days?|weeks?)\\b)|daily|weekly|once|twice|thrice|(?:${assistantIntegerSource()})\\s*(?:x|times?|sessions?|occurrences?|repetitions?)|(?:${assistantIntegerSource()})\\s*\\/\\s*(?:days?|weeks?|wk)|(?:${assistantIntegerSource()})\\s*(?:x|times?|sessions?)?\\s+(?:a|per|in|every|each)\\s+(?:days?|weeks?)\\b)\\b`,'i'),
   repeatMode:/\b(?:opportunity|routine|when (?:it fits|conditions|the chance)|regular rhythm)\b/i,
-  conditionTrigger:/\b(?:trigger|nearby|proximity|only when[^,;]*\bat a location)\b/i,
+  conditionTrigger:/\b(?:trigger|nearby|proximity|only when (?:the weather matches|[^,;]*\bnear a place)|only when[^,;]*\bat a location)\b/i,
   conditionRadiusM:/\b(?:radius|\d+\s*(?:meters?|metres?))\b/i,
   dueDate:/\b(?:due|deadline|(?:plan|do|finish(?:ed)?)(?: (?:this|it))? by|plan (?:this |it )?for|tomorrow|today|next (?:week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})\b/i,
   dueTime:/\b(?:start (?:time|clock)|(?:change|set) (?:the )?time|\d{1,2}\.\d{2}\s*[ap]m|(?:at|start(?:ing)?(?: at)?|by)\s+(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2}|noon|midnight|half past|quarter (?:past|to)))\b/i,
@@ -59,7 +59,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   planByDate:/\b(?:(?:do|finish|plan(?:ned)?)(?: (?:this|it))? by|plan-by)\b/i,
   earlyWindowDays:/\b(?:early|in advance)\b|\b(?:days?|weeks?) (?:earlier|before)\b/i,
   delayAllowanceDays:/\b(?:late|delay|postpone|slip|grace period)\b/i,
-  allowedWeekdays:new RegExp(`\\b(?:weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?|any day)\\b`,'i'),
+  allowedWeekdays:new RegExp(`\\b(?:all days|weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?|any day)\\b`,'i'),
   preferredWeekdays:new RegExp(`\\bprefer\\w*\\b.{0,35}\\b(?:weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?)\\b`,'i'),
   allowedMonthDays:new RegExp(`\\b(?:month(?:ly)?\\s*days?|days? of (?:the )?month|(?:${assistantOrdinalSource()}|${assistantIntegerSource()})(?:\\s+(?:and|or)\\s+(?:the\\s+)?(?:${assistantOrdinalSource()}|${assistantIntegerSource()}))*\\s+(?:day\\s+)?of\\s+(?:(?:the|each|every)\\s+)?month|(?:on|prefer(?:red)?(?: doing it on)?)\\s+(?:the\\s+)?(?:${assistantOrdinalSource()})(?!\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})s?\\b))\\b`,'i'),
   preferredMonthDays:new RegExp(`\\bprefer\\w*\\b[^,;]*\\b(?:month(?:ly)?|${assistantOrdinalSource()})\\b`,'i'),
@@ -69,6 +69,8 @@ const ASSISTANT_FIELD_SIGNALS = {
   preferredWindow:new RegExp(`\\bprefer\\w*\\b.{0,40}\\b(?:${ASSISTANT_FIELD_RANGE}|hours?|morning|afternoon|evening|night|nighttime|before|after|between|from)\\b`,'i'),
   allowedTimeFixedStart:/\b(?:fixed|exact)(?: start| time)?\b|\bpin (?:the )?start time\b/i,
   durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|for\\s+\\w+\\s+(?:minutes?|hours?)|double (?:it|the duration)|duration|long|twice as long)\\b`,'i'),
+  tapStartsSession:/\b(?:start with a tap|tap to start|tap (?:starts?|starting)|tapping[^,;]*\b(?:start|session)|start[^,;]*\b(?:tap|tapping))\b/i,
+  reminderDnd:/\bdnd\b|\bdo not disturb\b|\b(?:silence|mute) (?:my |the )?phone\b/i,
   breakable:/\b(?:split(?:ting|table)?|breakable|unbreakable|continuous|uninterrupted|chunks?)\b/i,
   minChunkMinutes:/\b(?:minimum chunk|shortest session|(?:minimum|smallest) (?:block|time per piece)|minimum block size|pieces shorter than|chunks?\b[^,;]*\b(?:minimum|at least|minutes?|hours?)|(?:pieces|chunks?)\s+minimum|\d+[- ]minute chunks?)\b/i,
   minGapMinutes:new RegExp(`(?<!\\w)(?:(?:${assistantSpokenQuantitySource()})\\s+gap|gap|apart|between (?:two |the )?sessions|spacing|separate (?:any )?(?:two |the )?sessions|rest between (?:blocks|sessions))\\b`,'i'),
@@ -78,7 +80,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   places:/\b(?:at (?:home|work)|place|location|venue)\b/i,
   anywhereAllowed:/\b(?:anywhere|wherever|any (?:place|location)|(?:no|regardless of) (?:place|location|geographic)|(?:not|doesn['’]t) require a (?:particular|specific) place|only (?:at|in) (?:the )?saved places)\b/i,
   locationPrefs:/\b(?:prefer|avoid|favou?rite)\b.{0,30}\b(?:place|location|home|work)\b|\bworks? best(?: for me)?\b/i,
-  weatherProfile:/\b(?:weather profile|use .{0,20} weather)\b/i,
+  weatherProfile:/\b(?:weather profile|(?:use|apply|choose) .{0,20} weather)\b/i,
   weatherRules:/\b(?:temperature|precipitation|rain|wind|gust|humidity|uv|feels like|dry weather|(?:warmer|colder|hotter|cooler) than)\b/i,
   showWeather:/\b(?:show|hide|display|include|see)\b.{0,25}\b(?:weather|forecast)\b/i,
   showWeatherAtLocation:/\b(?:weather|forecast)\b.{0,40}\b(?:(?:the|this|item.?s|activity|assigned|item) (?:place|location)|wherever this item takes place)\b|\b(?:item.?s|item) (?:place|location)\b[^,;]*\b(?:weather|forecast)\b/i,
@@ -119,6 +121,8 @@ const ASSISTANT_FIELD_HINTS = {
   minGapMinutes:'Rest or spacing between two sessions. Exclude session length, chunk length and frequency.',
   timerAutoStopMinutes:'Elapsed time at which the running timer stops itself. Exclude habit mode and marking the item done.',
   autoMarkMinutes:'Logged time needed to automatically mark the item complete. Exclude session length, timer stopping and frequency.',
+  tapStartsSession:'Whether tapping the item starts a session instead of immediately logging completion.',
+  reminderDnd:'Whether Do Not Disturb silences the phone during this item’s session. Not a reminder or a session duration.',
   trackValue:'Whether each completion records a number or measurement, rather than just a checkmark.',
   allowedWindow:'Required allowed hours, preserving before/after, anchors and offsets. Exclude preferences.',
   preferredWindow:'Preferred hours, not a required restriction.',
@@ -157,6 +161,7 @@ function assistantFieldApplicable(def, session){
   // Prerequisites are checked when proposals merge, allowing the extraction to
   // run before a kind/mode/splitting change has been validated.
   const kind = assistantFocusEffectiveKind(session);
+  if(kind==='task'&&['allowedWindow','allowedTimeFixedStart'].includes(def.id)&&assistantFieldFixedClock(session.currentRequest)!=null)return false;
   if(def.family==='exception' && !['exceptionCancelled','exceptionReset'].includes(def.id))return false;
   if(def.family==='exception' && (session.operation==='create'||session.eventScope==='series'))return false;
   return def.kinds.includes(kind) || session._fieldKindChanging && def.kinds.some(k=>k==='habit'||k==='task');
@@ -231,6 +236,7 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['appointmentRepeat'], require:/\b(?:weekly|once|every week|one[ -](?:time|off)|single event)\b/i},
   {fields:['allowedMonthDays','preferredMonthDays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:days?|weeks?)\\b`,'i'), unless:/\bmonth\b/i},
   {fields:['durationMinutes','allowedWindow'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i},
+  {fields:['places'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i},
   {fields:['conditionTrigger'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i},
   {fields:['appointmentStartDate'], when:/\b(?:until|through|end date|last date for repeats|recurrence cutoff date)\b/i, unless:/\bstart(?:s|ing)?\b/i},
   {fields:['places'], when:/\b(?:trigger|prefer|avoid|weather|forecast|anywhere|wherever|any (?:place|location)|no (?:place|location|geographic) restriction|regardless of location|(?:not|doesn['’]t) require a (?:particular|specific) place|works? best|only when[^,;]*\bat a location)\b/i},
@@ -254,11 +260,12 @@ const ASSISTANT_FIELD_OWNERSHIP = [
 ];
 const ASSISTANT_FIELD_READERS = {
   appointmentStartDate:{retainPrefix:true}, appointmentUntil:{retainPrefix:true},
-  name:{retainPrefix:true}, conditionRadiusM:{retainPrefix:true},
+  name:{retainPrefix:true}, repeatMode:{retainPrefix:true}, conditionTrigger:{retainPrefix:true}, allowedWeekdays:{shares:['frequency']}, appointmentWeekdays:{shares:['allowedWeekdays','preferredWeekdays','frequency']}, conditionRadiusM:{retainPrefix:true},
   places:{retainPrefix:true}, locationPrefs:{retainPrefix:true}, weatherRules:{retainPrefix:true},
-  allowedWindow:{shares:['dueTime','appointmentStartMinute']},
+  allowedWindow:{shares:['dueTime','appointmentStartMinute','allowedTimeFixedStart']},
   preferredWindow:{shares:['dueTime','appointmentStartMinute','allowedWindow']},
   earlyWindowDays:{retainPrefix:true}, delayAllowanceDays:{retainPrefix:true},
+  tapStartsSession:{retainPrefix:true}, reminderDnd:{retainPrefix:true},
   hardDue:{retainPrefix:true}, anywhereAllowed:{retainPrefix:true}, trackValue:{retainPrefix:true},
   showWeatherAtLocation:{retainPrefix:true}, weatherLocationId:{retainPrefix:true}, sharedDisplay:{retainPrefix:true},
   reminderStart:{retainPrefix:true}, reminderEnd:{retainPrefix:true}, reminderTravelStart:{retainPrefix:true}, reminderTravelEnd:{retainPrefix:true}, reminderMissed:{retainPrefix:true},
@@ -269,12 +276,12 @@ const ASSISTANT_FIELD_READERS = {
   minChunkMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
   minGapMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
   breakable:{shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
+  frequency:{retainPrefix:true,shares:['allowedWeekdays']},
   appointmentRepeat:{shares:['frequency']},
-  appointmentWeekdays:{shares:['allowedWeekdays','preferredWeekdays']}
 };
 
 function assistantFieldReminderLead(text){
-  if(!/\b(?:lead|before(?:hand)?|ahead|early|earlier|advance)\b/i.test(text) || !/\b(?:remind\w*|alarm|notif\w*|alert|warn\w*|heads[ -]?up|depart\w*|travel|missed|drop.warning)\b/i.test(text))return null;
+  if((!/\b(?:lead|before(?:hand)?|ahead|early|earlier|advance)\b/i.test(text)&&!assistantDurationHits(text).length) || !/\b(?:remind\w*|alarm|notif\w*|alert|warn\w*|heads[ -]?up|depart\w*|travel|missed|drop.warning)\b/i.test(text))return null;
   return /\b(?:depart|travel|leav)\w*\b/i.test(text)?'reminderTravelLead'
     :/\b(?:missed|drop.warning)\b/i.test(text)?'reminderMissedLead':'reminderStartLead';
 }
@@ -334,7 +341,7 @@ function assistantFieldClear(def,text){
       ||new RegExp(`^(?:clear|remove) (?:just )?this (?:date|occurrence)['’]s custom (?:${mark})$`,'i').test(value)
       ||new RegExp(`^let this (?:occurrence|date) inherit the series (?:${mark})$`,'i').test(value))return true;
   }
-  return def.id==='allowedWeekdays'&&/^(?:(?:allow|use)\s+)?(?:any (?:day|weekday)|all days|every day)(?: (?:is|are) fine)?$/i.test(value)
+  return def.id==='allowedWeekdays'&&/^(?:(?:allow|use|go back to)\s+)?(?:any (?:day|weekday)(?: of the week)?|all days|every day)(?: (?:is|are) fine)?$/i.test(value)
     ||def.id==='allowedMonthDays'&&/^any (?:date|day) (?:in|of) the month(?: is fine)?$/i.test(value)
     ||def.id==='allowedWindow'&&/^(?:no time restrictions?|any time(?: of day)?(?: is fine)?|remove all restrictions on the time of day)$/i.test(value)
     ||def.id==='timerAutoStopMinutes'&&/^let the timer run without an automatic cutoff$/i.test(value)
@@ -343,12 +350,22 @@ function assistantFieldClear(def,text){
     ||def.id==='appointmentUntil'&&/^let the series repeat without an end date$/i.test(value);
 }
 
+// An exact start with a clock supplies both the hour and its fixed policy.
+// Tasks/events already have a fixed start; habits use the allowed-time control.
+function assistantFieldFixedClock(text){
+  const value=assistantFieldDialogue(text).text.replace(/[.!?]+$/,'');
+  const match=value.match(/^(?:(?:use|set|make|change)\s+(?:(?:it|this)\s+(?:to\s+)?)?)?(?:an?\s+|the\s+)?(?:fixed|exact) start(?: time)?(?:\s+(?:to|at|of|is))?\s+(.+)$/i)
+    ||value.match(/^(?:start|begin)(?:\s+(?:it|this))?\s+exactly(?:\s+at)?\s+(.+)$/i)
+    ||value.match(/^(?:start|begin)(?:\s+(?:it|this))?\s+at\s+(.+?)\s+(?:exactly|sharp|on the dot)$/i);
+  return match?assistantParseClock(match[1]):null;
+}
+
 // Start policy has no clock operand. Preserve the complete policy rather than
 // inventing a time/window or treating "not flexible" as another instruction.
 function assistantFieldStartPolicy(text){
   if(!/\bstart(?:[ -]time)?\b/i.test(text))return null;
   if(assistantDurationHits(text).length||/\d|\b(?:noon|midnight|sunrise|sunset)\b/i.test(text))return null;
-  const policy=text.replace(/\binstead of (?:a |the )?(?:flexible|fixed|exact)(?: (?:window|start|time))?\b/gi,'');
+  const policy=text.replace(/\b(?:should|must|is|be)\s+not\s+(?:be\s+)?(fixed|exact|flexible)\b/gi,'not $1').replace(/\binstead of (?:a |the )?(?:flexible|fixed|exact)(?: (?:window|start|time))?\b/gi,'');
   const fixed=/\b(?:fixed|exact(?:ly)?|non[ -]flexible|not flexible|(?:do not|don['’]t) slide)\b/i.test(policy.replace(/\bnot (?:fixed|exact)\b/gi,''));
   const flexible=/\b(?:flexible|not fixed|not exact)\b/i.test(policy.replace(/\b(?:non[ -]|not )flexible\b/gi,''));
   if(fixed&&flexible)return 'conflict';
@@ -388,8 +405,19 @@ function assistantFieldAnywherePolicy(text){
 }
 
 function assistantFieldRelevant(def, text){
+  const target=assistantEditTarget(text);
+  if(target!==text&&!def.signal?.test(target)&&!assistantFieldClear(def,target))return false;
+  text=target;
+  if(['minGapMinutes','allowedWindow'].includes(def.id)&&assistantParseWeekdaySet(text))return false;
+  if(def.id==='kind'&&ASSISTANT_FIELD_SIGNALS.habitKind.test(text)&&!/(?:convert|turn|change|make)\b[^,;]*\b(?:to|into|a)\s+(?:habit|task)\b/i.test(text))return false;
   const literal=assistantFieldLiteralOwner(text);
   if(literal && literal.id!==def.id && !assistantFieldMentioned(def,text.slice(0,literal.start)))return false;
+  if(!literal&&ASSISTANT_FIELD_SIGNALS.tapStartsSession.test(text)&&['dueTime','appointmentStartMinute','allowedWindow','durationMinutes','reminderStart'].includes(def.id))return false;
+  if(!literal&&ASSISTANT_FIELD_SIGNALS.reminderDnd.test(text)&&def.id!=='reminderDnd')return false;
+  if(def.id==='frequency'&&ASSISTANT_FIELD_SIGNALS.repeatMode.test(text)&&!assistantParseRhythm(text))return false;
+  if(def.id==='weatherRules'&&ASSISTANT_FIELD_SIGNALS.weatherProfile.test(text)
+    &&(assistantFocusSettings().weatherProfiles||[]).some(profile=>assistantFocusPhraseIn(text,profile.name))
+    &&! /\b(?:temperature|precipitation|rain|wind|gust|humidity|uv|feels like|above|below|warmer|colder)\b/i.test(text))return false;
   const clears=assistantFieldClearOwners(text);
   if(clears.length&&!clears.includes(def.id))return false;
   if(assistantFieldStartPolicy(text)!=null&&['dueTime','appointmentStartMinute','allowedWindow','preferredWindow','pinned'].includes(def.id))return false;
@@ -446,6 +474,12 @@ function assistantFieldMentioned(def,text){
 }
 
 function assistantFieldCue(def,text,from=0){
+  if(from===0){
+    if(['allowedWindow','allowedTimeFixedStart','dueTime','appointmentStartMinute'].includes(def.id)&&assistantFieldFixedClock(text)!=null)return /^.*$/s.exec(text);
+    const target=assistantEditTarget(text);
+    if(target!==text)return assistantFieldCue(def,target)?/^.*$/s.exec(text):null;
+    if(['allowedWeekdays','appointmentWeekdays'].includes(def.id)&&def.signal?.test(text)&&assistantParseWeekdaySet(text))return /^.*$/s.exec(text);
+  }
   if(from===0&&def.id==='hardDue'&&assistantFieldDeadlinePolicy(text)!=null)return /^.*$/s.exec(text);
   if(from===0&&def.id==='allowedTimeFixedStart'&&assistantFieldStartPolicy(text)!=null)return /^.*$/s.exec(text);
   if(from===0&&assistantFieldReminderLead(text)===def.id)return /^.*$/s.exec(text);
@@ -908,6 +942,14 @@ function assistantFieldStripPrefix(text, pattern){
 }
 
 function assistantFieldNormalize(def,text,session){
+  if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantEditTarget(text);
+  if(['kind','habitKind'].includes(def.id)&&/\b(?:not|never|don.t|without|or)\b/i.test(text))return {ok:false,error:'Which item type should I use? Please state the type to change to.'};
+  const fixedClock=assistantFieldFixedClock(text);
+  if(fixedClock!=null){
+    if(def.id==='allowedTimeFixedStart')return {ok:true,changes:[{field:def.id,op:'set',value:true}]};
+    if(def.id==='allowedWindow')return {ok:true,changes:[{field:def.id,op:'set',value:{start:{kind:'clock',minutes:fixedClock,clock:assistantClockLabel(fixedClock)},end:{kind:'unset'}}}]};
+    if(['dueTime','appointmentStartMinute'].includes(def.id))return {ok:true,changes:[{field:def.id,op:'set',value:fixedClock}]};
+  }
   const instructionSource=session?._fieldSource||text,literal=assistantFieldLiteralOwner(instructionSource);
   if(literal?.id===def.id && /\b(?:do not|don.t|never)\s*$/i.test(instructionSource.slice(0,literal.instructionStart)))return {ok:false,error:`Should I keep ${def.label.toLowerCase()} unchanged, or change it?`};
   if(assistantFieldClear(def,text))return {ok:true,changes:[{field:def.id,op:'clear',value:null}]};
@@ -937,11 +979,19 @@ function assistantFieldNormalize(def,text,session){
     restrictionText=restrictionText.replace(/^(?:do not|don['’]t) (?:schedule|place) (?:it|this) outside (?:the )?(.+)$/i,'$1');
     text=text.replace(/^(?:do not|don['’]t) (?:schedule|place) (?:it|this) outside (?:the )?(.+)$/i,'$1');
   }
+  if(['allowedWeekdays','preferredWeekdays','appointmentWeekdays'].includes(def.id)){
+    text=text.replace(/^(?:(?:set|change|use)\s+)?(?:(?:the|my)\s+)?(?:(?:allowed|preferred|repeat)\s+)?(?:weekdays|days of the week)\s+(?:to|as|is|should be)\s+/i,'');
+    if(def.id==='appointmentWeekdays')text=text.replace(/^(?:repeat\s+)?weekly\s+(?:on\s+)?/i,'');
+    if(def.id==='preferredWeekdays')text=text.replace(/^(?:i(?:'d| would) like (?:it|this) on|prefer(?:red|ably)?|favou?r|give)\s+/i,'')
+      .replace(/\s+(?:if possible|work best(?:,? but other days are (?:fine|okay|allowed))?|higher scheduling preference)$/i,'');
+    restrictionText=text;
+  }
   if(['allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays'].includes(def.id)){
     const token=def.id.endsWith('Weekdays')?`(?:${ASSISTANT_WEEKDAY_TOKEN})s?`:`(?:${assistantOrdinalSource()}|${assistantIntegerSource()})`;
     restrictionText=restrictionText.replace(new RegExp(`\\b(${token})\\s+or\\s+(?=(?:the\\s+)?${token}\\b)`,'gi'),'$1 and ');
     text=restrictionText;
   }
+  if(['allowedWeekdays','preferredWeekdays','appointmentWeekdays','frequency'].includes(def.id)&&assistantParseWeekdaySet(text))restrictionText='';
   if(['allowedWindow','preferredWindow','allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','frequency','dueDate','dueTime','places','weatherProfile'].includes(def.id)
     && /\b(?:no|not|never|don.t|except|without|or)\b/i.test(restrictionText))return {ok:false,error:'Please clarify the positive restriction or clear this setting.'};
   if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantFieldDialogue(text).text;
@@ -1021,9 +1071,9 @@ function assistantFieldNormalize(def,text,session){
   }
   if(def.id==='topics')value=assistantFieldStripPrefix(value,/^(?:it|as|to)\s+/i);
   if(def.id==='topics' && (!value || /\p{Extended_Pictographic}|\b(?:minutes?|hours?|priority|emoji|tag it)\b/iu.test(value)))return {ok:false,error:'Name the requested topics.'};
-  const booleans=['pinned','breakable','trackValue','hardDue','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
+  const booleans=['tapStartsSession','reminderDnd','pinned','breakable','trackValue','hardDue','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
   if(booleans.includes(def.id) && assistantParseBool(value)==null){
-    const polarity=value.replace(/\bno (?:shorter|less) than\b/gi,'at least')
+    const polarity=value.replace(def.id==='reminderDnd'?/\bdo not disturb\b/gi:/$^/g,'DND').replace(/\bno (?:shorter|less) than\b/gi,'at least')
       .replace(def.id==='trackValue'?/\bcheck(?:ed|ing)? (?:it|this|that) off\b/gi:/$^/g,'');
     const negative=/\b(?:no|not|never|don.t|disable|off|unpin|unpinned|unbreakable|uninterrupted|continuous|hide)\b/i.test(polarity);
     const positive=def.signal?.test(value)||session._fieldSemantic&&/\b(?:enable|include|record|capture|show|allow|keep|use)\b/i.test(value);
@@ -1234,7 +1284,7 @@ async function assistantFieldFallback(state,extract,opts){
   const pending=[...(state.coverageRequests||[])];
   for(const span of state.spans){
     const phrase=span.text;
-    if(/^(?:hi|hello|hey|thanks|thank you|please|okay|ok|um)[.!?]*$/i.test(phrase)
+    if(/^(?:hi|hello|hey|thanks|thank you|please|okay|ok|um|actually|instead)[.!?]*$/i.test(phrase)
       ||/^(?:I(?:'m| am) editing (?:this|the) item|everything else (?:should )?stay(?:s)? (?:as it is|the same)|(?:keep|leave) (?:everything|anything) else (?:unchanged|as is|alone))[.!?]*$/i.test(phrase))continue;
     if(!pending.some(row=>assistantFocusPhraseIn(row.phrase,phrase)))pending.push({phrase});
   }

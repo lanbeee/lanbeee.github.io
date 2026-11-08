@@ -252,6 +252,29 @@ and day-first dates. Explicit guard ids are retained so the same filter includes
 their contradictory-value and invalid-date checks. Positive cases verify the
 complete staged patch, absence of writes before approval, and saved values.
 
+`FIELD_CASE='^minimal-'` covers the controls exposed in minimal mode, including
+weekday ranges/exclusions, old-to-new recurrence/duration, day/hour resets,
+task dates/times, fixed-start clocks, type/build/limit/stop, appearance,
+tap-to-start, conditional weather/location settings and native reminders/DND.
+It includes multi-setting edits, a weekday correction, and invalid-set/type
+guards. The same asset variables select actual Needle inference.
+
+`assistant-minimal-edit-test.js` audits the visible editable inputs in routine,
+task, stop, weather and location layouts against the assistant field map. It
+then uses the actual 390×844 minimal detail search → Ask → review → Save → undo
+flow, checking preserved unrelated fields, another item, and saved weekday chips.
+It uses real inference when both pinned assets are supplied:
+
+```bash
+NEEDLE_MODEL_PATH=test-results/needle-live/needle3.cact \
+NEEDLE_WASM_PATH=test-results/needle-live/needle.wasm \
+node tests/assistant-minimal-edit-test.js
+```
+
+Results are `test-results/needle-minimal-ui-{live,scripted}.json`. Native
+permission/reconciliation tests validate the persistence boundary; browser tests
+do not establish physical Android delivery or Do Not Disturb behavior.
+
 `tests/assistant-monthly-create-test.js` covers the reported Family night
 dictation and variants with monthly weekday rules, solar/prayer offsets and
 independent session lengths. The ambiguous dictation must retain its known

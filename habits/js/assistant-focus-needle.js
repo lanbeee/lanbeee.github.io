@@ -30,7 +30,7 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   recurrence:[['timesPerPeriod','times'],['periodDays','period'],['repeatMode','mode'],['conditionTrigger','trigger'],['conditionRadiusM','radius']],
   dates:[['dueDate','due'],['dueTime','time'],['hardDue','hard'],['planByDate','planBy'],['earlyWindowDays','early'],['delayAllowanceDays','late']],
   schedule:[['allowedWeekdays','weekdays'],['allowedMonthDays','monthDays'],['allowedOrdinalWeekdays','ordinalWeekdays'],['allowedWindow','window'],['allowedTimeFixedStart','fixed'],['preferredWeekdays','preferredDays'],['preferredMonthDays','preferredMonthDays'],['preferredOrdinalWeekdays','preferredOrdinalWeekdays'],['preferredWindow','preferredWindow']],
-  effort:[['durationMinutes','duration'],['breakable','split'],['minChunkMinutes','chunk'],['minGapMinutes','gap'],['timerAutoStopMinutes','timer'],['autoMarkMinutes','auto'],['trackValue','value']],
+  effort:[['tapStartsSession','tap'],['durationMinutes','duration'],['breakable','split'],['minChunkMinutes','chunk'],['minGapMinutes','gap'],['timerAutoStopMinutes','timer'],['autoMarkMinutes','auto'],['trackValue','value']],
   places:[['places','places'],['anywhereAllowed','anywhere'],['locationPrefs','prefs']],
   weather:[['weatherRules','rules'],['showWeather','show'],['showWeatherAtLocation','atPlace'],['weatherLocationId','forecastPlace'],['weatherProfile','profile']],
   alternatives:[['scheduleOptions','options']],
@@ -38,7 +38,7 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   organization:[['topics','topics'],['pinned','pinned'],['snoozedUntil','snooze'],['sharedDisplay','display'],['links','links']],
   event:[['appointmentRepeat','repeat'],['appointmentStartDate','date'],['appointmentWeekdays','weekdays'],['appointmentUntil','until'],['appointmentStartMinute','time']],
   exception:[['exceptionTime','time'],['exceptionDuration','duration'],['exceptionEmoji','emoji'],['exceptionColor','color'],['exceptionCancelled','cancelled'],['exceptionReset','reset']],
-  reminders:[['reminderStart','start'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
+  reminders:[['reminderDnd','dnd'],['reminderStart','start'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
 };
 
 function assistantFocusPackTool(name, description, properties, required){

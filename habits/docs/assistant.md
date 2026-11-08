@@ -55,6 +55,23 @@ accept ordinary framing such as “the month's first Monday.” Named dates acce
 day-first order as well as month-first order. Contradictory policies and place
 exclusions that this editor cannot represent ask for clarification.
 
+Weekday edits validate the complete selected set: inclusive ranges such as
+Monday through Friday, ranges crossing Sunday, and exclusions such as all days
+except Friday. An unreadable or empty allowed set asks; it never becomes an
+unrestricted schedule. Explicit old-to-new recurrence and duration instructions
+read the new value. Weekday-only edits preserve the saved frequency. Exact-start
+clock instructions set both a habit's allowed start and fixed-start policy;
+task/event instructions use their existing start-time field. Routine-mode wording
+does not by itself request a different frequency. Condition triggers retain the
+weather/location operand, and named saved weather profiles remain separate from
+custom weather rules.
+
+The minimal-mode “start with a tap” control is editable as its own boolean.
+On Android, session Do Not Disturb is a separate per-item setting; enabling it
+requires existing DND access before any changes are saved. It preserves reminder
+delivery modes, global reminder enablement, and other items. It participates in
+the same review, Save and undo flow.
+
 Focused create and edit now use the same semantic-field pipeline: a baseline
 record plus validated field proposals. Create starts from form values and app
 defaults; Edit starts from the saved item. The field catalog reuses the detail

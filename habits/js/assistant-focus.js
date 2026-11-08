@@ -105,6 +105,7 @@ function assistantFocusBlank(session){
     minChunkMinutes:settings.defaultMinChunkMinutes || 15,
     minGapMinutes:0,
     timerAutoStopMinutes:null,
+    tapStartsSession:false,
     trackValue:false,
     priority:defaults.priority,
     locationIds:[],
@@ -393,7 +394,9 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:name};
   }
   if(fieldId === 'kind'){
-    const kind = /task/.test(text.toLowerCase()) ? 'task' : (/habit/.test(text.toLowerCase()) ? 'habit' : '');
+    const target=text.replace(/\s+instead of\b[\s\S]*$/i,'').replace(/^.*\b(?:to|into|as)\s+(?:a\s+)?(?=(?:habit|task)\b)/i,'');
+    const kinds=[...target.toLowerCase().matchAll(/\b(habit|task)\b/g)];
+    const kind=new Set(kinds.map(match=>match[1])).size===1?kinds[0][1]:'';
     if(!kind)return fail('Choose habit or task.');
     if(session && session.operation === 'create' && kind !== session.kind){
       return fail(`This add sheet is for a ${session.kind}. I won’t create a ${kind} instead.`);
@@ -459,7 +462,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     if(mins == null)return fail('Use a clock time such as 6pm or 18:00.');
     return {ok:true, op:'set', value:mins};
   }
-  if(fieldId === 'hardDue' || fieldId === 'breakable' || fieldId === 'trackValue' || fieldId === 'pinned' || fieldId === 'anywhereAllowed' || fieldId === 'showWeather' || fieldId === 'showWeatherAtLocation'){
+  if(fieldId === 'tapStartsSession' || fieldId === 'reminderDnd' || fieldId === 'hardDue' || fieldId === 'breakable' || fieldId === 'trackValue' || fieldId === 'pinned' || fieldId === 'anywhereAllowed' || fieldId === 'showWeather' || fieldId === 'showWeatherAtLocation'){
     const flag = typeof assistantParseBool === 'function' ? assistantParseBool(text) : null;
     if(flag == null)return fail('Say yes or no.');
     return {ok:true, op:'set', value:flag === true};
@@ -864,6 +867,7 @@ function assistantFocusWrite(record, change, session, scratch, data){
   else if(change.field === 'minGapMinutes')record.minGapMinutes = op === 'clear' ? 0 : value;
   else if(change.field === 'timerAutoStopMinutes')record.timerAutoStopMinutes = op === 'clear' ? null : value;
   else if(change.field === 'autoMarkMinutes')record.autoMarkMinutes = op === 'clear' ? null : value;
+  else if(change.field === 'tapStartsSession')record.tapStartsSession = value === true;
   else if(change.field === 'trackValue')record.trackValue = value === true;
   else if(change.field === 'places')record.locationIds = op === 'clear' ? [] : value.slice();
   else if(change.field === 'anywhereAllowed')record.anywhereAllowed = value === true;
@@ -1020,6 +1024,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
   if(fieldId === 'minGapMinutes')return record.minGapMinutes ? `${record.minGapMinutes} min` : 'no gap';
   if(fieldId === 'timerAutoStopMinutes')return record.timerAutoStopMinutes ? `${record.timerAutoStopMinutes} min` : 'off';
   if(fieldId === 'autoMarkMinutes')return record.autoMarkMinutes == null ? 'manual' : `${record.autoMarkMinutes} min after the start`;
+  if(fieldId === 'tapStartsSession')return record.tapStartsSession ? 'tap starts a session' : 'tap logs completion';
   if(fieldId === 'trackValue')return record.trackValue ? 'log a value' : 'off';
   if(fieldId === 'places')return record.locationIds && record.locationIds.length ? record.locationIds.join(', ') : 'no place';
   if(fieldId === 'anywhereAllowed')return record.anywhereAllowed === false ? 'only the saved places' : 'anywhere is allowed';
@@ -1064,6 +1069,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
     if(staged)choice = Object.assign({}, patch.reset && date ? owner : choice, patch.patch);
     const edge = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
     const lead = {reminderStartLead:'startLeadMinutes', reminderTravelLead:'travelLeadMinutes', reminderMissedLead:'missedLeadMinutes'};
+    if(fieldId === 'reminderDnd')return choice.dnd ? 'DND during session' : 'DND off';
     if(edge[fieldId])return {off:'off', notification:'notification', alarm:'ringing alarm'}[choice[edge[fieldId]] || 'off'];
     if(lead[fieldId])return `${choice[lead[fieldId]] ?? (fieldId === 'reminderMissedLead' ? 15 : 0)} min before`;
     if(fieldId === 'reminderReset')return staged ? 'use the series reminders' : (date && owner.dates && owner.dates[date] ? 'custom reminders for this date' : 'use the series reminders');
@@ -1415,7 +1421,7 @@ function assistantFocusDetailSelector(field, session){
     if(!window.TingsNative?.isNative)return null;
     const edges = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
     if(edges[field])return `#detail-native-reminders [data-reminder-edge="${edges[field]}"]`;
-    return ({reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderReset:'#detail-native-reminders'})[field] || null;
+    return ({reminderDnd:'#detail-native-reminders [aria-label="DND during session"]', reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderReset:'#detail-native-reminders'})[field] || null;
   }
   if(session.kind === 'event'){
     const event = {
@@ -1611,6 +1617,7 @@ function assistantFocusReminderPatch(session){
     if(edge[change.field])patch[edge[change.field]] = change.value;
     if(lead[change.field])patch[lead[change.field]] = change.value;
     if(change.field === 'reminderReset')reset = true;
+    if(change.field === 'reminderDnd')patch.dnd = change.value === true;
   });
   return {patch, reset};
 }
@@ -1618,6 +1625,11 @@ function assistantFocusReminderPatch(session){
 async function assistantFocusReminderPermission(patch){
   const api = window.TingsNative && window.TingsNative.notifications;
   if(!api)return {ok:false, error:'Phone reminders are available in the Android app. Nothing was saved.'};
+  if(Object.hasOwn(patch.patch||{},'dnd')){
+    const quiet=window.TingsNative?.quiet;
+    if(!quiet)return {ok:false,error:'Do Not Disturb is not available on this device. Nothing was saved.'};
+    if(patch.patch.dnd&&!(await quiet.status()).granted)return {ok:false,error:'Allow Do Not Disturb access in the phone settings first. Nothing was saved.'};
+  }
   const modes = Object.values(patch.patch || {});
   const needsDisplay = modes.some(mode => mode === 'notification' || mode === 'alarm');
   const needsExact = modes.includes('alarm') || patch.patch.missed && patch.patch.missed !== 'off';
@@ -1752,6 +1764,7 @@ function assistantFocusUndo(snapshot){
     localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY, JSON.stringify(restored));
   }
   if(typeof reconcileNativeReminders === 'function')void reconcileNativeReminders();
+  if(typeof reconcileNativeQuiet === 'function')void reconcileNativeQuiet();
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
   else if(typeof render === 'function')render();
   return {ok:true};
@@ -1764,6 +1777,10 @@ function assistantFocusPreviewReminders(session, hid){
   Object.entries(staged.patch).forEach(([key, value]) => {
     const edge = document.querySelector(`select[data-reminder-owner="${CSS.escape(owner)}"][data-reminder-edge="${CSS.escape(key)}"]`);
     if(edge)edge.value = value;
+    if(key==='dnd'){
+      const toggle=document.querySelector('#detail-native-reminders [aria-label="DND during session"]');
+      if(toggle)toggle.checked=value===true;
+    }
     if(key === 'travelLeadMinutes'){
       const lead = document.querySelector(`select[data-reminder-lead="${CSS.escape(owner)}"]`);
       if(lead)lead.value = String(value);
@@ -1903,6 +1920,7 @@ async function assistantFocusCommitNow(session, fingerprint){
       snapshot.remindersAfter = localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY);
       if(typeof reconcileNativeRemindersNow === 'function')await reconcileNativeRemindersNow();
       else if(typeof reconcileNativeReminders === 'function')await reconcileNativeReminders();
+      if(Object.hasOwn(reminderStaged.patch,'dnd')&&typeof reconcileNativeQuiet==='function')await reconcileNativeQuiet();
     }
     if(session.operation === 'edit')session.source = assistantFocusClone(saved);
     session.savedFingerprint = fingerprint;

@@ -437,17 +437,70 @@ function assistantLooksLikeWeekdaySchedule(text, days){
   return false;
 }
 
-function assistantParseWeekdaySchedule(text){
-  const s = assistantNormText(text);
-  if(!s)return null;
-  if(/\b(?:every\s+)?weekends?\b/.test(s) || /\bon the weekends?\b/.test(s))return [0, 6];
-  if((/\b(?:every\s+)?weekdays?\b/.test(s) || /\bon weekdays\b/.test(s)) && !/\bweekend/.test(s)){
-    return [1, 2, 3, 4, 5];
+// Return the requested side of an explicit old -> new edit. Keep the original
+// excerpt for grounding; only validators and field ownership read this target.
+function assistantEditTarget(text){
+  const s=String(text||'');
+  const change=/^(?:(?:(?:please|can you|could you)\s+)*(?:change|switch|move|update|set)\b[\s\S]*?\b)?from\s+(.+?)\s+to\s+(.+)$/i.exec(s);
+  if(change){
+    const old=assistantNormText(change[1]),next=change[2];
+    const recurrence=/^(?:daily|weekly|every day|every other day|weekdays?|weekends?)$/;
+    const duration=new RegExp(`^(?:${assistantDurationNumberSource()})\\s*(?:minutes?|mins?|hours?|hrs?)$`,'i');
+    if(recurrence.test(old)||duration.test(old))return next;
   }
-  const days = assistantCollectWeekdays(s);
-  if(!days.length)return null;
-  if(!assistantLooksLikeWeekdaySchedule(s, days))return null;
-  return days;
+  const daily=/^(?:(?:(?:please|can you|could you)\s+)*(?:change|switch|move)\s+(?:(?:this|the|my|a)\s+)?)?daily\s+(?:habit|item|task)\s+to\s+(.+)$/i.exec(s);
+  return daily?daily[1]:s;
+}
+
+// A bounded weekday-set grammar. Expand inclusive ranges (including a week
+// boundary) and subtract exclusions before returning any executable value.
+// Unknown or contradictory pieces invalidate the whole expression.
+function assistantParseWeekdaySet(text){
+  let s=assistantNormText(assistantEditTarget(text)).replace(/\bday['’]s\b/g,'days').replace(/[.!?]+$/,'').trim();
+  const day=`(?:${ASSISTANT_WEEKDAY_TOKEN})s?`;
+  const group=part=>{
+    let rest=part,days=[];
+    rest=rest.replace(new RegExp(`\\b(${day})\\s*(?:-|–|—|to|through|thru|until|till)\\s*(${day})\\b`,'g'),(_,a,b)=>{
+      const first=assistantWeekdayIndex(a),last=assistantWeekdayIndex(b);
+      for(let n=first;;n=(n+1)%7){days.push(n);if(n===last)break;}
+      return ' ';
+    });
+    rest=rest.replace(/\b(?:all|any|every|each) (?:days?|day of the week|days of the week)\b|\b(?:daily|everyday)\b/g,()=>{days.push(0,1,2,3,4,5,6);return ' ';});
+    rest=rest.replace(/\bweekdays?\b/g,()=>{days.push(1,2,3,4,5);return ' ';});
+    rest=rest.replace(/\bweekends?\b/g,()=>{days.push(0,6);return ' ';});
+    rest=rest.replace(new RegExp(`\\b(${day})\\b`,'g'),(_,token)=>{days.push(assistantWeekdayIndex(token));return ' ';});
+    // Only ordinary request framing may remain. In particular, don't discard
+    // not/except/next/ordinal words or numbers as if they were punctuation.
+    rest=rest.replace(/\b(?:please|only|on|the|and|or|to|from|every|each|allow|allowed|use|schedule|scheduled|repeat|repeats|run|runs|happen|happens|do|it|this|that|can|should|be|for|days|of|week|is|are|fine|okay|ok|make|set|change)\b/g,'').replace(/[\s,&/]+/g,'');
+    return days.length&&!rest?[...new Set(days)].sort((a,b)=>a-b):null;
+  };
+  // "Don't change weekdays" is preservation, not an exclusion.
+  if(/\b(?:clear|remove|reset|keep|unchanged|prefer|next|month)\b/.test(s))return null;
+  const negative=/^(?:(?:do not|don't|never)\s+(?:(?:schedule|plan|run|do|allow)\s+)?(?:(?:it|this|that)\s+)?(?:on\s+)?|(?:skip|avoid)\s+(?:on\s+)?)(.+)$/.exec(s);
+  let base,excluded;
+  if(negative){base=[0,1,2,3,4,5,6];excluded=group(negative[1]);if(!excluded)return null;}
+  else{
+    const parts=s.split(/\b(?:except(?: for)?|excluding|apart from|other than|but not|without)\b/);
+    if(parts.length>2)return null;
+    base=group(parts[0]);
+    if(!base)return null;
+    if(parts.length===2){excluded=group(parts[1]);if(!excluded)return null;}
+  }
+  const days=base.filter(day=>!excluded?.includes(day));
+  // [] means unrestricted elsewhere; an impossible set must never clear it.
+  return days.length?days:null;
+}
+
+function assistantParseWeekdaySchedule(text){
+  const s=assistantNormText(assistantEditTarget(text));
+  if(!new RegExp(`\\b(?:${ASSISTANT_WEEKDAY_TOKEN})s?\\b|\\bweek(?:days?|ends?)\\b`).test(s))return null;
+  let days=assistantParseWeekdaySet(s);
+  // Legacy general-chat callers pass a whole positive sentence. Their named
+  // weekdays remain readable; exclusions/ranges must pass the complete grammar.
+  if(!days&&!/\b(?:no|not|never|don't|except|excluding|apart|without|next|month|through|thru|until)\b/.test(s)){
+    days=/\bweekends?\b/.test(s)?[0,6]:/\bweekdays?\b/.test(s)?[1,2,3,4,5]:assistantCollectWeekdays(s);
+  }
+  return days?.length&&assistantLooksLikeWeekdaySchedule(s,days)?days:null;
 }
 
 function assistantNormalizeWeekdaysArg(value){
@@ -459,10 +512,7 @@ function assistantNormalizeWeekdaysArg(value){
   if(typeof value === 'string'){
     const s = assistantNormText(value);
     if(/^(any|all|none|everyday|every day|daily)$/.test(s))return [];
-    const scheduled = assistantParseWeekdaySchedule(s);
-    if(scheduled)return scheduled;
-    const days = assistantCollectWeekdays(s);
-    return days.length ? days : null;
+    return assistantParseWeekdaySet(s);
   }
   if(Array.isArray(value)){
     const days = [];
@@ -779,7 +829,8 @@ function assistantParseScheduleOptionText(value, catalog){
   const window = typeof assistantParseWindowFromText === 'function' ? assistantParseWindowFromText(windowText) : null;
   const times = assistantWindowToOptionTimes(window);
   if(!times)return null;
-  const weekdays = typeof assistantNormalizeWeekdaysArg === 'function' ? assistantNormalizeWeekdaysArg(s) : [];
+  const weekdayPart=s.match(new RegExp(`\\b(?:weekdays?|weekends?|(?:${ASSISTANT_WEEKDAY_TOKEN})s?)(?:\\s*(?:to|through|thru|[–—-]|,|and|or)\\s*(?:${ASSISTANT_WEEKDAY_TOKEN})s?)*`,'i'));
+  const weekdays=weekdayPart?assistantNormalizeWeekdaysArg(weekdayPart[0]):[];
   const anywhere = /\banywhere\b/.test(s);
   const pref = /\bavoid\b/.test(s) ? 'avoid'
     : (/\bhigh|prefer\b/.test(s) ? 'high'
@@ -797,7 +848,7 @@ function assistantParseScheduleOptionText(value, catalog){
 }
 
 function assistantParseRhythm(text){
-  const s = assistantNormText(text).replace(/\b(\d+)\s*x?\s*\/\s*(days?|weeks?|wk)\b/g,(_,n,unit)=>`${n} times per ${unit==='wk'?'week':unit}`);
+  const s = assistantNormText(assistantEditTarget(text)).replace(/\b(\d+)\s*x?\s*\/\s*(days?|weeks?|wk)\b/g,(_,n,unit)=>`${n} times per ${unit==='wk'?'week':unit}`);
   if(!s)return null;
   const count=`(?:${assistantIntegerSource()}|once|twice|thrice)`;
   const interval=`(?:${count}|${assistantOrdinalSource()}|other)`;
@@ -828,7 +879,7 @@ function assistantParseRhythm(text){
   let rest=s;
   for(const hit of hits.slice().sort((a,b)=>b.start-a.start))rest=rest.slice(0,hit.start)+' '.repeat(hit.end-hit.start)+rest.slice(hit.end);
   rest=rest.replace(new RegExp(`\\b(?:every|each)\\s+(?:${ASSISTANT_WEEKDAY_TOKEN}|weekends?|weekdays?)\\b`,'g'),'');
-  if(/\b(?:every|each|daily|weekly|once|twice|thrice|times?)\b/.test(rest))return null;
+  if(/\b(?:every|each|daily|weekly|once|twice|thrice|times?)\b/.test(rest)&&!assistantParseWeekdaySet(s))return null;
   let timesPerPeriod=hits[0]?.times??null;
   let periodDays=hits[0]?.days??null;
   const weekdays = assistantParseWeekdaySchedule(s);

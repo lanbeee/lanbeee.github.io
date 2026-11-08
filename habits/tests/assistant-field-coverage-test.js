@@ -5,6 +5,104 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
 const fs=require('fs');
 const day=s=>new Date(`${s}T00:00:00-05:00`).getTime();
 const cases=[
+  ...['Start with a tap','Enable tap to start','Start a session by tapping the item'].map((prompt,i)=>[
+    'tapStartsSession',prompt,true,{id:`minimal-tap-on-${i}`,selectAll:true}]),
+  ...['Turn off start with a tap','Disable tap to start',"Don't start a session by tapping"].map((prompt,i)=>[
+    'tapStartsSession',prompt,false,{id:`minimal-tap-off-${i}`,seed:{tapStartsSession:true},selectAll:true}]),
+  ...['Enable DND during this session','Turn on Do Not Disturb during the session','Silence my phone during this habit'].map((prompt,i)=>[
+    'reminderDnd',prompt,true,{id:`minimal-dnd-on-${i}`,native:true,selectAll:true}]),
+  ...['Disable DND during this session','Turn off Do Not Disturb during the session',"Don't silence my phone during this habit"].map((prompt,i)=>[
+    'reminderDnd',prompt,false,{id:`minimal-dnd-off-${i}`,native:true,reminderSeed:{dnd:true},selectAll:true}]),
+  ...['Only when conditions fit','Make this a when conditions fit habit','Use opportunity recurrence'].map((prompt,i)=>[
+    'repeatMode',prompt,'opportunity',{id:`minimal-conditions-mode-${i}`,selectAll:true}]),
+  ...['Use a regular rhythm','Switch back to routine','Use routine recurrence'].map((prompt,i)=>[
+    'repeatMode',prompt,'routine',{id:`minimal-routine-${i}`,seed:{repeatMode:'opportunity'},selectAll:true}]),
+  ...['Trigger this by the weather','Use weather as the trigger',"Only when the weather matches"].map((prompt,i)=>[
+    'conditionTrigger',prompt,'weather',{id:`minimal-weather-trigger-${i}`,seed:{repeatMode:'opportunity',conditionTrigger:'location'},selectAll:true}]),
+  ...['Trigger this when I am near a place','Use location as the trigger','Set the trigger to location'].map((prompt,i)=>[
+    'conditionTrigger',prompt,'location',{id:`minimal-place-trigger-${i}`,seed:{repeatMode:'opportunity'},selectAll:true}]),
+  ...['Set the proximity radius to 300 meters','Within 300 metres of the place','Use a 300 meter radius'].map((prompt,i)=>[
+    'conditionRadiusM',prompt,300,{id:`minimal-radius-${i}`,seed:{repeatMode:'opportunity',conditionTrigger:'location'},selectAll:true}]),
+  ...['Use the Dry weather profile','Apply Dry weather','Set the weather profile to Dry'].map((prompt,i)=>[
+    'weatherProfile',prompt,{mode:'profile',profileId:'dry'},{id:`minimal-weather-profile-${i}`,seed:{repeatMode:'opportunity'},selectAll:true}]),
+  ...['Only at Home','Set the place to Home','Use Home as the location'].map((prompt,i)=>[
+    'places',prompt,['home'],{id:`minimal-places-${i}`,seed:{repeatMode:'opportunity',conditionTrigger:'location'},selectAll:true}]),
+  ...['The start time should be exact, not flexible','Use a fixed start','Pin the start time'].map((prompt,i)=>[
+    'allowedTimeFixedStart',prompt,true,{id:`minimal-fixed-start-${i}`,seed:{allowedTimeStart:540,allowedTimeEnd:1020},record:{allowedTimeStart:540,allowedTimeEnd:null},selectAll:true}]),
+  ...['The start time should be flexible','Use a flexible start','The start should not be exact'].map((prompt,i)=>[
+    'allowedTimeFixedStart',prompt,false,{id:`minimal-flexible-start-${i}`,seed:{allowedTimeStart:540,allowedTimeFixedStart:true},selectAll:true}]),
+  ...[
+    ['reminderStart','Notify me when it starts','notification'],
+    ['reminderStart','Use a ringing alarm at the start','alarm'],
+    ['reminderStart','Turn off the start reminder','off'],
+    ['reminderEnd','Notify me when it ends','notification'],
+    ['reminderEnd','Use a ringing alarm at the end','alarm'],
+    ['reminderEnd','Turn off the end reminder','off'],
+    ['reminderTravelStart','Notify me when to leave','notification'],
+    ['reminderTravelEnd','Notify me on arrival','notification'],
+    ['reminderMissed','Warn me if I miss it','notification'],
+    ['reminderTravelLead','Give me a quarter hour warning before leaving',15],
+    ['reminderMissedLead','Give me 15 minutes of missed warning',15]
+  ].map(([field,prompt,value],i)=>[field,prompt,value,{id:`minimal-phone-reminder-${i}`,native:true,selectAll:true}]),
+  ['allowedWeekdays','Monday to Friday and make it 20 minutes',[1,2,3,4,5],{id:'minimal-compound-days-duration',extra:{durationMinutes:20},selectAll:true}],
+  ['allowedWeekdays','Actually, Monday through Thursday',[1,2,3,4],{id:'minimal-followup-days',historySteps:['All days except Friday'],selectAll:true}],
+  ...['Start exactly at 9am','Use a fixed start at 09:00','Start at 9am sharp'].map((prompt,i)=>[
+    'allowedWindow',prompt,null,{id:`minimal-fixed-clock-${i}`,extra:{allowedTimeFixedStart:true},record:{allowedTimeStart:540,allowedTimeEnd:null,allowedTimeFixedStart:true},selectAll:true}]),
+  ['dueTime','Start exactly at 9am',540,{id:'minimal-task-fixed-clock',kind:'task',selectAll:true}],
+  // Minimal-mode controls: daily fixtures and unfamiliar ordinary wording.
+  ...[
+    ['Change it from daily to Monday to Friday',[1,2,3,4,5]],
+    ["Change this daily habit to all day's except Friday",[0,1,2,3,4,6]],
+    ['Monday through Friday',[1,2,3,4,5]],
+    ['Mon-Fri',[1,2,3,4,5]],
+    ['Only on Monday–Friday',[1,2,3,4,5]],
+    ['Friday through Monday',[0,1,5,6]],
+    ['All days except Friday',[0,1,2,3,4,6]],
+    ['Any day apart from Fridays',[0,1,2,3,4,6]],
+    ['Weekdays except Wednesday',[1,2,4,5]],
+    ['Monday to Saturday excluding Tuesday and Thursday',[1,3,5,6]],
+    ['Weekends only',[0,6]],
+    ['Only Tuesdays and Thursdays',[2,4]],
+    ['Do not schedule it on Fridays',[0,1,2,3,4,6]],
+    ['Never on weekends',[1,2,3,4,5]],
+    ['Every day except Friday',[0,1,2,3,4,6],{extra:{timesPerPeriod:1,periodDays:1}}],
+    ['Every Monday to Friday',[1,2,3,4,5],{extra:{timesPerPeriod:5,periodDays:7}}]
+  ].map(([prompt,value,opts],i)=>['allowedWeekdays',prompt,value,{id:`minimal-days-${i}`,selectAll:true,seed:{target:1,rhythm:{timesPerPeriod:1,periodDays:1}},...opts}]),
+  ...[
+    ['Make it daily',1,1],['Do this every other day',1,2],['Twice a week',2,7],
+    ['Repeat once every two weeks',1,14],['Three times in seven days',3,7],['Change from daily to weekly',1,7]
+  ].map(([prompt,times,days],i)=>['frequency',prompt,times,{id:`minimal-frequency-${i}`,extra:{periodDays:days},selectAll:true}]),
+  ...['Make each session 20 minutes','It should take half an hour','Change the duration from 30 minutes to 45 minutes'].map((prompt,i)=>[
+    'durationMinutes',prompt,[20,30,45][i],{id:`minimal-duration-${i}`,selectAll:true}]),
+  ...[
+    ['Only between 9am and 5pm',{allowedTimeStart:540,allowedTimeEnd:1020}],
+    ['After 6pm',{allowedTimeStart:1080,allowedTimeEnd:null}],
+    ['Finish before 10pm',{allowedTimeStart:null,allowedTimeEnd:1320}],
+    ['From 10pm until 2am',{allowedTimeStart:1320,allowedTimeEnd:120}],
+    ['From sunrise to sunset',{allowedTimeStartAnchor:'sunrise',allowedTimeEndAnchor:'maghrib'}]
+  ].map(([prompt,record],i)=>['allowedWindow',prompt,null,{id:`minimal-hours-${i}`,record,selectAll:true}]),
+  ...['No time restrictions','Any time of day','Remove the allowed hours'].map((prompt,i)=>[
+    'allowedWindow',prompt,null,{id:`minimal-clear-hours-${i}`,op:'clear',seed:{allowedTimeStart:540,allowedTimeEnd:1020},record:{allowedTimeStart:null,allowedTimeEnd:null},selectAll:true}]),
+  ...['Any day of the week','Remove the day restrictions','Go back to all days'].map((prompt,i)=>[
+    'allowedWeekdays',prompt,null,{id:`minimal-clear-days-${i}`,op:'clear',seed:{allowedWeekdays:[1,3]},record:{allowedWeekdays:[]},selectAll:true}]),
+  ...['Make this a task','Convert this task to a habit'].map((prompt,i)=>[
+    'kind',prompt,i?'habit':'task',{id:`minimal-kind-${i}`,kind:i?'task':'habit',selectAll:true}]),
+  ...['Build this habit','I want to limit this habit','I want to stop this habit'].map((prompt,i)=>[
+    'habitKind',prompt,['keepup','reduce','zero'][i],{id:`minimal-habit-mode-${i}`,selectAll:true}]),
+  ...['Rename this to Evening Walk','Call it Evening Walk','The name should be Evening Walk'].map((prompt,i)=>[
+    'name',prompt,'Evening Walk',{id:`minimal-title-${i}`,selectAll:true}]),
+  ...['Use 🌿 as the icon','Change the emoji to 🌿','Set the icon to 🌿'].map((prompt,i)=>[
+    'emoji',prompt,'🌿',{id:`minimal-emoji-${i}`,selectAll:true}]),
+  ...['Make the background blue','Set the color to blue','Use blue for the background'].map((prompt,i)=>[
+    'emojiBgColor',prompt,'blue',{id:`minimal-color-${i}`,selectAll:true}]),
+  ...['Due tomorrow','Move the due date to November 9th','The deadline is 2026-11-09'].map((prompt,i)=>[
+    'dueDate',prompt,day(i?'2026-11-09':'2026-11-02'),{id:`minimal-due-${i}`,kind:'task',selectAll:true}]),
+  ...['Start at 9am','Set the start time to 3:30pm','Move the start time to 18:00'].map((prompt,i)=>[
+    'dueTime',prompt,[540,930,1080][i],{id:`minimal-task-clock-${i}`,kind:'task',selectAll:true}]),
+  ...['Clear the due date','Remove the deadline'].map((prompt,i)=>[
+    'dueDate',prompt,null,{id:`minimal-clear-due-${i}`,kind:'task',op:'clear',selectAll:true}]),
+  ...['Clear the start time','Remove the start time'].map((prompt,i)=>[
+    'dueTime',prompt,null,{id:`minimal-clear-clock-${i}`,kind:'task',op:'clear',selectAll:true}]),
   ['allowedWindow','from whichever is earlier: 7am or sunrise, until 9am',null,{id:'window-combined-earlier',record:{allowedTimeStart:420,allowedTimeStartCombine:'earlier',allowedTimeStartAnchor2:'sunrise',allowedTimeEnd:540}}],
   ['allowedWindow','6pm to 8pm',null,{id:'window-bare-clock-range',record:{allowedTimeStart:1080,allowedTimeEnd:1200}}],
   ['allowedWindow','18:00–20:00',null,{id:'window-24h-range',record:{allowedTimeStart:1080,allowedTimeEnd:1200}}],
@@ -358,6 +456,9 @@ const cases=[
 const guards=[
   {field:'hardDue',kind:'task',prompt:'Make the deadline strict and flexible',id:'everyday-deadline-conflict',selectAll:true},
   {field:'hardDue',kind:'task',prompt:'Do not make the deadline strict',id:'everyday-deadline-negation',selectAll:true},
+  ...["Don't convert this habit to a task",'Do not make this a habit or task'].map((prompt,i)=>({field:'kind',kind:'habit',prompt,id:`minimal-kind-guard-${i}`,selectAll:true})),
+  ...["Don't stop this habit",'Do not limit this habit'].map((prompt,i)=>({field:'habitKind',kind:'habit',prompt,id:`minimal-mode-guard-${i}`,selectAll:true})),
+  ...['All days except all days','Monday except Monday','Weekdays except Blursday','Monday to Blursday','Not only Monday','Clear weekdays except Monday'].map((prompt,i)=>({field:'allowedWeekdays',kind:'habit',prompt,id:`minimal-days-guard-${i}`,seed:{allowedWeekdays:[1,3]},selectAll:true})),
   {field:'anywhereAllowed',kind:'habit',prompt:'Allow anywhere and only at saved places',id:'everyday-anywhere-conflict',selectAll:true},
   {field:'anywhereAllowed',kind:'habit',prompt:'Allow anywhere except Home',id:'everyday-anywhere-exclusion',selectAll:true},
   {field:'dueDate',kind:'task',prompt:'Set due date to 31 November 2026',id:'everyday-invalid-day-first',selectAll:true},
@@ -433,8 +534,8 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         return {confidence:1,function_calls:[{name:spec.tool.name,arguments:args}]};
       }};
       window.coverageSeed=test=>{
-        window.TingsNative={isNative:Boolean(test.native),notifications:{permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})}};
-        window.reconcileNativeReminders=async()=>{};window.reconcileNativeRemindersNow=async()=>{};window.refreshOpenViews=()=>{};
+        window.TingsNative={isNative:Boolean(test.native),quiet:{status:async()=>({granted:true})},notifications:{permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})}};
+        window.reconcileNativeQuiet=async()=>{};window.reconcileNativeReminders=async()=>{};window.reconcileNativeRemindersNow=async()=>{};window.refreshOpenViews=()=>{};
         localStorage.removeItem(ASSISTANT_FOCUS_REMINDER_KEY);
         if(test.reminderSeed)localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY,JSON.stringify({version:4,enabled:true,items:{'item:target':test.reminderSeed}}));
         saveSortSettings({...loadSortSettings(),locations:[{id:'home',name:'Home',lat:40,lng:-74}],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
@@ -491,10 +592,10 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         const persisted=commit?.ok&&JSON.stringify(r)===JSON.stringify(expectedSaved)&&JSON.stringify(saved.logs)===JSON.stringify(JSON.parse(before)[0].logs)
           &&persistedKeys.every(key=>JSON.stringify(saved[key])===JSON.stringify(expectedSaved[key]));
         const occurrenceOK=test.scope!=='occurrence'||(JSON.stringify(saved?.appointment?.exceptions['2026-11-09']||null)===JSON.stringify(r.appointment.exceptions['2026-11-09']||null)&&saved?.durationMinutes===30&&saved?.appointment.startMinute===540);
-        const reminderKeys={reminderStart:'start',reminderEnd:'end',reminderTravelStart:'travelStart',reminderTravelEnd:'travelEnd',reminderMissed:'missed',reminderTravelLead:'travelLeadMinutes',reminderStartLead:'startLeadMinutes',reminderMissedLead:'missedLeadMinutes'};
+        const reminderKeys={reminderDnd:'dnd',reminderStart:'start',reminderEnd:'end',reminderTravelStart:'travelStart',reminderTravelEnd:'travelEnd',reminderMissed:'missed',reminderTravelLead:'travelLeadMinutes',reminderStartLead:'startLeadMinutes',reminderMissedLead:'missedLeadMinutes'};
         const reminders=JSON.parse(localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY)||'null')?.items?.['item:target'];
         const remindersOK=!test.native||(test.field==='reminderReset'
-          ?reminders&&Object.values(reminderKeys).every(key=>!Object.hasOwn(reminders,key))&&JSON.stringify(reminders.dates)===JSON.stringify(test.reminderSeed.dates)
+          ?reminders&&Object.values(reminderKeys).filter(key=>key!=='dnd').every(key=>!Object.hasOwn(reminders,key))&&JSON.stringify(reminders.dates)===JSON.stringify(test.reminderSeed.dates)
           :reminders?.[reminderKeys[test.field]]===test.value);
         return {matched,recordOK,advancedOK,extras,unchanged,ready,commit,persisted,occurrenceOK,reminders,remindersOK,clarification,history,changes:s.changes,unresolved:s.unresolved,pending:s.pendingFamilies,record:r,saved,trace:s.trace,jobs:s.jobs.map(j=>({id:j.id,status:j.status,spans:j.spans,error:j.error}))};
       },test);
