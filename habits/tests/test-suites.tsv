@@ -200,6 +200,8 @@ assistant-field-coverage-test.js	assistant	once
 assistant-monthly-create-test.js	assistant	once
 assistant-guide-test.js	assistant	once
 assistant-guide-recovery-test.js	assistant	once
+assistant-item-actions-test.js	assistant	once
+assistant-item-actions-live-test.js	assistant	once
 
 allowed-flexibility-boundaries-test.js	planner	once
 item-controls-recurrence-test.js	planner	once

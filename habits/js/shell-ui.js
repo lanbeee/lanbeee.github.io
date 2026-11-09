@@ -1397,7 +1397,8 @@ function showActionToast(text,action){
   const openBtn = $('action-open');
   const linkBtn = $('action-link');
   const planBtn = $('action-plan');
-  const link = actionToastLink(action);
+  const onlyUndo = Boolean(action.toastOnlyUndo);
+  const link = onlyUndo ? null : actionToastLink(action);
   if(linkBtn){
     linkBtn.textContent = actionToastLinkLabel(link);
     linkBtn.hidden = !link;
@@ -1405,13 +1406,13 @@ function showActionToast(text,action){
     linkBtn.setAttribute('aria-hidden',String(!link));
   }
   if(openBtn){
-    const showOpen = !link && canOpenFromAction(action);
+    const showOpen = !onlyUndo && !link && canOpenFromAction(action);
     openBtn.textContent = 'view item';
     openBtn.hidden = !showOpen;
     openBtn.setAttribute('aria-hidden',String(!showOpen));
   }
   if(planBtn){
-    const label = secondaryActionLabel(action);
+    const label = onlyUndo ? '' : secondaryActionLabel(action);
     planBtn.textContent = label;
     planBtn.hidden = !label;
     planBtn.setAttribute('aria-hidden',String(!label));
@@ -1420,7 +1421,7 @@ function showActionToast(text,action){
   if(snoozeUntilBtn){
     // Minimal mode has no snooze anywhere else, so it must not appear here.
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-    const showSnooze = !minimal && action.type === 'entry' && action.plan
+    const showSnooze = !onlyUndo && !minimal && action.type === 'entry' && action.plan
       && action.ts > Date.now() && load()[action.idx]?.type !== 'zero';
     snoozeUntilBtn.hidden = !showSnooze;
     snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));

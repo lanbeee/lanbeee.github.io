@@ -344,6 +344,7 @@ function assistantFocusUnresolve(session, item){
     family:item.family || '',
     question:item.question || 'I need a clearer value for that setting.',
     choices:item.choices || [],
+    phrase:item.phrase || '',
     blocking:item.blocking !== false
   });
   session.interpretationApproved = null;
@@ -697,6 +698,7 @@ function assistantFocusChoose(session, fieldId, value){
   const question = session.unresolved.find(item => item.field === fieldId);
   const choice = question && question.choices.find(row => (typeof row === 'string' ? row : row.id) === value);
   if(!choice)return {ok:false, error:'That choice is no longer available.'};
+  if(fieldId === 'guidance')return assistantFocusApplyGuidance(session, question, value);
   if(fieldId === 'weatherRules' && ['use-profile','use-rules'].includes(value)
     || fieldId === 'hardDue' && ['hard-deadline','allow-delay'].includes(value)){
     const drop = value === 'use-profile' ? 'weatherRules' : value === 'use-rules' ? 'weatherProfile'
@@ -727,6 +729,30 @@ function assistantFocusChoose(session, fieldId, value){
   }
   const result = assistantFocusCorrect(session, fieldId, value);
   return result;
+}
+
+function assistantFocusApplyGuidance(session, question, value){
+  const phrase = question.phrase || session.currentRequest || '';
+  session.unresolved = session.unresolved.filter(item => item !== question);
+  if(String(value).startsWith('action:')){
+    const built = typeof assistantFocusBuildAction === 'function'
+      ? assistantFocusBuildAction(session, value.slice(7), phrase) : null;
+    if(built){
+      session.itemActions = session.itemActions || [];
+      session.itemActions.push(built);
+    }
+    session.interpretationApproved = null;
+    session.savedFingerprint = '';
+    return {ok:true};
+  }
+  if(String(value).startsWith('field:')){
+    const fieldId = value.slice(6);
+    const dates = typeof assistantActionDatePhrases === 'function' ? assistantActionDatePhrases(phrase) : [];
+    const dateField = ['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(fieldId);
+    const raw = dateField && dates.length === 1 ? dates[0] : phrase;
+    return assistantFocusCorrect(session, fieldId, raw);
+  }
+  return {ok:false, error:'That choice is no longer available.'};
 }
 
 function assistantFocusClearEndpoint(record, prefix){
@@ -1496,6 +1522,36 @@ function assistantFocusActivityHtml(session, model){
   return '';
 }
 
+function assistantFocusActionHtml(session){
+  if(!session || session._focusInFlight)return '';
+  return (session.itemActions || []).map((action, index) => {
+    const note = `<p class="focus-note">${assistantFocusEscape(action.summary || '')}</p>`;
+    if(!action.ready)return note;
+    const label = assistantFocusEscape(action.label || 'do it');
+    return `${note}<div class="btn-row"><button type="button" class="btn primary" data-focus-choice="item-action" data-focus-value="${index}">${label}</button><button type="button" class="btn" data-focus-choice="item-action-skip" data-focus-value="${index}">never mind</button></div>`;
+  }).join('');
+}
+
+function assistantFocusCommitAction(session, index){
+  const actions = session && session.itemActions || [];
+  const action = actions[Number(index)];
+  if(!action || !action.ready)return {ok:false, error:'Nothing is waiting to confirm.'};
+  const result = action.pendingComplete && typeof assistantCommitComplete === 'function'
+    ? assistantCommitComplete(action.pendingComplete)
+    : action.pendingPlan && typeof assistantCommitPlan === 'function'
+      ? assistantCommitPlan(action.pendingPlan)
+      : {ok:false, error:'That action is unavailable.'};
+  if(!result.ok)return result;
+  actions.splice(Number(index), 1);
+  return result;
+}
+
+function assistantFocusSkipAction(session, index){
+  const actions = session && session.itemActions || [];
+  if(actions[Number(index)])actions.splice(Number(index), 1);
+  return {ok:true};
+}
+
 function assistantFocusReviewHtml(session){
   const model = assistantFocusReviewModel(session);
   const bits = assistantFocusReviewBits(session, model);
@@ -1507,6 +1563,7 @@ function assistantFocusReviewHtml(session){
     : '';
   const notes = model.notes.map(note => `<p class="focus-note">${assistantFocusEscape(note)}</p>`).join('');
   const pending = assistantFocusActivityHtml(session, model);
+  const itemActions = assistantFocusActionHtml(session);
   const question = model.question ? `<div class="focus-ask"><p>${assistantFocusEscape(model.question.question)}</p>${(model.question.choices || []).map(choice => {
     const id = typeof choice === 'string' ? choice : choice.id;
     const label = typeof choice === 'string' ? choice : choice.label;
@@ -1524,7 +1581,7 @@ function assistantFocusReviewHtml(session){
         <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
         <p class="assistant-preview-name">${assistantFocusFieldHtml('name', model.title, 'focus-name', session)}</p>
       </div>
-      ${essentials}${changes}${pending}${question}${notes}
+      ${essentials}${changes}${pending}${itemActions}${question}${notes}
       <p class="focus-status" data-focus-status role="status">${assistantFocusEscape(session.correctionError || '')}</p>
       ${actions}
     </div>`;

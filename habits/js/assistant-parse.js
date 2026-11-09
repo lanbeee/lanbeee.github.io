@@ -1318,11 +1318,16 @@ function assistantParseDue(value, now){
   if(!s)return null;
   s=s.replace(/^the\s+(?=day after tomorrow$)/,'');
   if(s==='the next day'||s==='next day')return assistantAddCalendarDays(base,1);
-  const relative=s.match(new RegExp(`^in\\s+(${assistantIntegerSource()})\\s+(days?|weeks?)$`,'i'));
-  if(relative){
-    const n=assistantParseExactCount(relative[1],0,365),days=n==null?null:n*(relative[2].startsWith('week')?7:1);
-    return days!=null&&days<=365?assistantAddCalendarDays(base,days):null;
-  }
+  const countAhead = (raw, unit, extra) => {
+    const n = raw === 'a' || raw === 'an' ? 1 : assistantParseExactCount(raw, 0, 366);
+    if(n == null)return null;
+    const days = n * (String(unit).startsWith('week') ? 7 : 1) + (extra || 0);
+    return days <= 366 ? assistantAddCalendarDays(base, days) : null;
+  };
+  const relative=s.match(new RegExp(`^in\\s+(a|an|${assistantIntegerSource()})\\s+(days?|weeks?)$`,'i'));
+  if(relative)return countAhead(relative[1], relative[2], 0);
+  const shifted=s.match(new RegExp(`^(?:in\\s+)?(a|an|${assistantIntegerSource()})\\s+(days?|weeks?)\\s+(from now|from today|from tomorrow|in the future|later|ahead|out|away)$`,'i'));
+  if(shifted)return countAhead(shifted[1], shifted[2], shifted[3] === 'from tomorrow' ? 1 : 0);
   if(s === 'today' || s === 'tonight' || s === 'this evening' || s === 'this afternoon' || s === 'this morning')return base;
   if(s === 'tomorrow' || s === 'tommorow' || s === 'tmrw')return assistantAddCalendarDays(base, 1);
   if(s === 'day after tomorrow' || s === 'day after tommorow' || s === 'day after tmrw')return assistantAddCalendarDays(base, 2);
@@ -1359,6 +1364,91 @@ function assistantParseDue(value, now){
     if(want != null)return assistantUpcomingWeekday(want, ts, false);
   }
   return null;
+}
+
+// The most recent weekday on or before today. skipToday forces the previous week
+// when today is that weekday, which is what "last Friday" means.
+function assistantRecentWeekday(want, now, skipToday){
+  const base = assistantDayBase(now);
+  const cur = new Date(base).getDay();
+  let delta = want - cur;
+  if(skipToday){
+    if(delta >= 0)delta -= 7;
+  }else if(delta > 0)delta -= 7;
+  return assistantAddCalendarDays(base, delta);
+}
+
+// Log dates are today or earlier. Plan dates are today or later. A bare weekday
+// looks backward for a log and forward for a plan. Unreadable text returns null.
+function assistantParseActionDate(value, now, mode){
+  const ts = now != null ? Number(now) : Date.now();
+  const base = assistantDayBase(ts);
+  const plan = mode === 'plan';
+  let s = assistantNormText(value).replace(/^(?:on|for)\s+/, '');
+  if(!s)return null;
+  const past = (days) => plan ? null : assistantAddCalendarDays(base, -days);
+  if(s === 'yesterday')return past(1);
+  if(s === 'last night')return past(new Date(ts).getHours() < 4 ? 0 : 1);
+  if(s === 'the day before yesterday' || s === 'day before yesterday')return past(2);
+  const ago = s.match(new RegExp(`^(a|an|${assistantIntegerSource()})\\s+days?\\s+ago$`, 'i'));
+  if(ago){
+    const n = ago[1] === 'a' || ago[1] === 'an' ? 1 : assistantParseExactCount(ago[1], 1, 366);
+    return n != null ? past(n) : null;
+  }
+  const lastDay = s.match(new RegExp(`^(?:last|this past|previous)\\s+(${ASSISTANT_WEEKDAY_TOKEN})$`, 'i'));
+  if(lastDay){
+    if(plan)return null;
+    const want = ASSISTANT_WEEKDAY_NAMES[lastDay[1]];
+    return want == null ? null : assistantRecentWeekday(want, ts, true);
+  }
+  if(!plan){
+    const bare = s.match(new RegExp(`^(?:this\\s+)?(${ASSISTANT_WEEKDAY_TOKEN})$`, 'i'));
+    if(bare){
+      const want = ASSISTANT_WEEKDAY_NAMES[bare[1]];
+      return want == null ? null : assistantRecentWeekday(want, ts, false);
+    }
+  }
+  const parsed = assistantParseDue(s, ts);
+  if(parsed == null)return null;
+  if(!plan && parsed > base)return null;
+  if(plan && parsed < base)return null;
+  return parsed;
+}
+
+function assistantActionDatePhrases(text){
+  const source = String(text || '');
+  const monthWords = Object.keys(ASSISTANT_MONTH_NAMES).join('|');
+  const re = new RegExp([
+    '(?:the\\s+)?day after (?:tomorrow|tommorow|tmrw)\\b',
+    `(?:in\\s+)?(?:a|an|${assistantIntegerSource()})\\s+(?:days?|weeks?)\\s+(?:from now|from today|from tomorrow|in the future|later|ahead|out|away)\\b`,
+    `in\\s+(?:a|an|${assistantIntegerSource()})\\s+(?:days?|weeks?)\\b`,
+    'the day before yesterday',
+    'day before yesterday',
+    'yesterday',
+    'last night',
+    'today',
+    'tonight',
+    'tomorrow',
+    'tommorow',
+    'tmrw',
+    `(?:last|this past|previous|next)\\s+(?:week|${ASSISTANT_WEEKDAY_TOKEN})`,
+    `(?:a|an|${assistantIntegerSource()})\\s+days?\\s+ago`,
+    '\\d{4}-\\d{2}-\\d{2}',
+    '\\d{1,2}[\\/\\-]\\d{1,2}(?:[\\/\\-]\\d{2,4})?',
+    `(?:${monthWords})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?(?:\\s*,?\\s+\\d{4})?`,
+    `\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?(?:${monthWords})(?:\\s+\\d{4})?`,
+    `(?:this\\s+)?(?:${ASSISTANT_WEEKDAY_TOKEN})`
+  ].join('|'), 'gi');
+  const matches = [...source.matchAll(re)].map(match => ({
+    text:match[0], start:match.index, end:match.index + match[0].length
+  }));
+  const kept = [];
+  matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  for(const match of matches){
+    if(kept.some(row => match.start < row.end && match.end > row.start))continue;
+    kept.push(match);
+  }
+  return kept.map(match => match.text);
 }
 
 function assistantLevenshtein(a, b){

@@ -128,8 +128,8 @@ const cases=[
   ['conditionRadiusM','Set radius to 300 meters',300,{seed:{repeatMode:'opportunity'}}],
   ['dueDate','Change plan by to 1/7/2027',day('2027-01-07'),{kind:'task',prelude:['Plan this for first week of 2027','Plan by'],record:{eventTime:day('2027-01-07')+9*3600000,hardDue:true}}],
   ['dueDate','Set due date to January 7, 2027',day('2027-01-07'),{kind:'task'}],
-  ...["Let's plan for tomorrow",'Plan this for tomorrow','Set due date to tomorrow','Move the due date to tonight'].map((prompt,index)=>
-    ['dueDate',prompt,index===3?new Date('2026-11-01T00:00:00-04:00').getTime():day('2026-11-02'),{id:`language-date-prefix-${index+1}`,kind:'task',seed:{hardDue:true},record:{name:'Apply premium',durationMinutes:30,hardDue:true,eventTime:new Date(`${index===3?'2026-11-01':'2026-11-02'}T09:00:00-05:00`).getTime()}}]),
+  ...["Let's plan for tomorrow",'Set due date to tomorrow','Move the due date to tonight'].map((prompt,index)=>
+    ['dueDate',prompt,index===2?new Date('2026-11-01T00:00:00-04:00').getTime():day('2026-11-02'),{id:`language-date-prefix-${index+1}`,kind:'task',seed:{hardDue:true},record:{name:'Apply premium',durationMinutes:30,hardDue:true,eventTime:new Date(`${index===2?'2026-11-01':'2026-11-02'}T09:00:00-05:00`).getTime()}}]),
   ['planByDate','Plan by tomorrow',day('2026-11-02'),{id:'language-date-prefix-habit'}],
   ['appointmentStartDate','Set date to tomorrow','2026-11-02',{id:'language-date-prefix-event',kind:'event'}],
   ['appointmentUntil','Repeat until tomorrow','2026-11-02',{id:'language-date-prefix-until',kind:'event'}],
@@ -238,7 +238,7 @@ const cases=[
   ['reminderTravelLead','Remind me half an hour before departure',30,{id:'language-reminder-fraction',native:true}],
   ['reminderStartLead','Remind me one hour before start',60,{id:'language-reminder-hour',native:true,kind:'event'}],
   ['reminderMissedLead','Set missed warning lead to a quarter hour',15,{id:'language-warning-fraction',native:true}],
-  ...["Let's do this tomorrow",'Tomorrow instead, please','Can we plan it for tomorrow?','Due tomorrow please','Tomorrow  instead'].map((prompt,index)=>
+  ...["Let's do this tomorrow",'Tomorrow instead, please','Can you set the due date to tomorrow','Due tomorrow please','Tomorrow  instead'].map((prompt,index)=>
     ['dueDate',prompt,day('2026-11-02'),{id:`basics-date-${index+1}`,kind:'task'}]),
   ['dueTime','Start at 6pm instead',1080,{id:'basics-clock-correction',kind:'task'}],
   ['dueTime',"Let's start at noon",720,{id:'basics-clock-noon',kind:'task'}],
@@ -256,7 +256,7 @@ const cases=[
   ['allowedWindow','Only before sunset, please',null,{id:'basics-window-polite',record:{allowedTimeEndAnchor:'maghrib'}}],
   ['allowedWeekdays','Weekdays only, please',[1,2,3,4,5],{id:'basics-weekdays-polite'}],
   ['emojiBgColor','Use a blue background please','blue',{id:'basics-color-polite'}],
-  ['dueDate','Actually Friday instead',day('2026-11-06'),{id:'basics-date-followup',kind:'task',historySteps:['Plan this for tomorrow']}],
+  ['dueDate','Actually Friday instead',day('2026-11-06'),{id:'basics-date-followup',kind:'task',historySteps:['Set due date to tomorrow']}],
   ['dueTime','Make that 10am',600,{id:'basics-clock-followup',kind:'task',historySteps:['Start at 9am']}],
   ['durationMinutes','45 minutes instead',45,{id:'basics-duration-followup',historySteps:['Make it an hour long']}],
   ['frequency','Actually make it three times per week',3,{id:'basics-frequency-followup',extra:{periodDays:7},historySteps:['Every other day']}],
@@ -268,8 +268,8 @@ const cases=[
   ['name','Call it Not at Night','Not at Night',{id:'basics-name-negated-daypart'}],
   ['name','Call it Read After Meeting','Read After Meeting',{id:'basics-name-order-words'}],
   ['topics','Tag it Instead',['Instead'],{id:'basics-topic-dialogue-word'}],
-  ['dueDate','Plan this for the day after tomorrow',day('2026-11-03'),{id:'basics-date-relative-day',kind:'task'}],
-  ['dueDate','Actually Friday instead, pin it',day('2026-11-06'),{id:'basics-date-followup-sibling',kind:'task',extra:{pinned:true},historySteps:['Plan this for tomorrow']}],
+  ['dueDate','Set the due date to the day after tomorrow',day('2026-11-03'),{id:'basics-date-relative-day',kind:'task'}],
+  ['dueDate','Actually Friday instead, pin it',day('2026-11-06'),{id:'basics-date-followup-sibling',kind:'task',extra:{pinned:true},historySteps:['Set due date to tomorrow']}],
   ['dueDate','Clear the due date',null,{id:'basics-clear-date',kind:'task',op:'clear',record:{dueDate:null,eventTime:null}}],
   ['dueTime','Clear the start time',null,{id:'basics-clear-clock',kind:'task',op:'clear',record:{eventTime:null}}],
   ['allowedWeekdays','Clear allowed weekdays',null,{id:'basics-clear-weekdays',op:'clear',seed:{allowedWeekdays:[1,2]},record:{allowedWeekdays:[]}}],
@@ -279,7 +279,7 @@ const cases=[
   ['weatherProfile','Clear weather profile',null,{id:'basics-clear-weather',op:'clear',seed:{weatherProfileMode:'profile',weatherProfileId:'dry'},record:{weatherProfileId:null,weatherProfileMode:'none'}}],
   ['links','Clear links',null,{id:'basics-clear-links',op:'clear',seed:{links:[{id:'guide',type:'url',label:'Guide',value:'https://example.com'}]},record:{links:[]}}],
   ['topics','Tag it Clear',['Clear'],{id:'basics-topic-clear-word'}],
-  ['pinned','Pin it instead',true,{id:'basics-explicit-setting-followup',kind:'task',extra:{dueDate:day('2026-11-02')},historySteps:['Plan this for tomorrow']}],
+  ['pinned','Pin it instead',true,{id:'basics-explicit-setting-followup',kind:'task',extra:{dueDate:day('2026-11-02')},historySteps:['Set due date to tomorrow']}],
   ['reminderStartLead','Set the start alert advance time to a quarter hour',15,{id:'basics-alert-advance-fraction',kind:'event',native:true,selectAll:true}],
   ['reminderStart','The start alert should ring','alarm',{id:'basics-alert-repeat',native:true,selectAll:true,historySteps:['The start alert should ring']}],
   ['reminderEnd','The end alert should ring','alarm',{id:'basics-alert-end-ring',native:true,selectAll:true}],

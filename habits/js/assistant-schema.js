@@ -267,14 +267,15 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   complete_item:{
-    description:'Log an existing item, or undo its latest completion from today. Tings previews before saving. Include minutes for a habit chunk, value for a tracked measurement, and note for optional log detail.',
+    description:'Log an existing item, or undo its latest completion from today or a named day. Tings previews before saving. Include minutes for a habit chunk, value for a tracked measurement, note for optional log detail, and date when the completion was on an earlier day.',
     parameters:{
       type:'object',
       required:[],
       properties:{
         name:{type:'string'},
         latest:{type:'boolean',description:'Undo the most recent completion today across all items; name may be omitted.'},
-        action:{type:['string','null'], enum:['log','undo_today',null], description:'log by default; undo_today means mark it not done / undo today’s latest completion'},
+        action:{type:['string','null'], enum:['log','undo_today','undo',null], description:'log by default; undo_today or undo removes the latest completion on date, or today when date is omitted'},
+        date:{type:['string','null'], description:'today, yesterday, last Friday, a weekday, or YYYY-MM-DD. Omit to log now or undo today.'},
         minutes:{type:['integer','string','null'], description:'The user\'s words or a minute count, such as "1.5 hours" or "20 minutes"'},
         value:{type:['number','string','null'], description:'optional numeric tracked value'},
         note:{type:['string','null'], description:'optional short note about this completion'}

@@ -322,7 +322,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     assert(continuedCreate===true,`a follow-up after creating an item edits that same saved identity and preserves later logs (${JSON.stringify(continuedCreate)})`);
     const referenceDecision=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();save([{...load()[0],type:'task'}]);const s=t.open('edit','task');
-      await assistantFocusTurn(s,'Plan this for tomorrow',t.options());
+      await assistantFocusTurn(s,'Set due date to tomorrow',t.options());
       const before=JSON.stringify(assistantFocusMaterialize(s));
       await assistantFocusTurn(s,'Actually Friday instead',t.options({extract:async spec=>spec.family==='reference'
         ?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{field:'Another setting'}}]}:t.reply(spec)}));

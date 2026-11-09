@@ -1055,6 +1055,7 @@ function assistantGuideHintText(session, active, revising){
   }
   if(revising)return 'Last change undone. Edit it and send.';
   if(session.continuationError)return 'Draft kept. Continue above, or fix the last request.';
+  if(session.unresolved?.some(item => item.field === 'guidance'))return 'Choose the field or action that matches.';
   if(session.unresolved?.length)return 'Pick the setting you meant, then add its value.';
   return '';
 }
@@ -1124,7 +1125,6 @@ function assistantRenderGuides(){
     else input.removeAttribute('aria-describedby');
   }
   const label=$('assistant-guides-label'),help=$('assistant-guide-hint');
-  if(label)label.textContent=active?'Change this setting':session.unresolved?.length?'Which setting':'Settings';
   if(help){
     help.hidden=!hintText;
     help.textContent=hintText;
@@ -1140,6 +1140,8 @@ function assistantRenderGuides(){
   if($('assistant-guide-clear'))$('assistant-guide-clear').disabled=Boolean(_assistantBusy);
   assistantRenderGuideBrowser();
   const suggestions = assistantGuideSuggestions(session, hint);
+  const choosing = suggestions.some(item => /^(?:action|field):/.test(item.id));
+  if(label)label.textContent=active?'Change this setting':choosing?'Which one':session.unresolved?.length?'Which setting':'Settings';
   const signature = `${suggestions.map(item => item.id).join(',')}|${active ? active.id : ''}|${_assistantBusy ? 1 : 0}`;
   row.hidden = suggestions.length === 0;
   if(row.dataset.guideSignature === signature)return;
@@ -1151,7 +1153,7 @@ function assistantRenderGuides(){
     button.className = 'assistant-guide';
     button.dataset.assistantGuide = item.id;
     button.textContent = item.label;
-    button.title = assistantGuideHelp(item.id).description;
+    button.title = /^(?:action|field):/.test(item.id) ? item.label : assistantGuideHelp(item.id).description;
     button.setAttribute('aria-pressed', active && active.id === item.id ? 'true' : 'false');
     button.disabled = Boolean(_assistantBusy);
     list.append(button);
@@ -1815,6 +1817,32 @@ async function assistantHandleFocusClick(target){
   if(choice){
     const which = choice.dataset.focusChoice;
     const value = choice.dataset.focusValue || '';
+    if(which === 'item-action' || which === 'item-action-skip'){
+      if(which === 'item-action-skip' && typeof assistantFocusSkipAction === 'function'){
+        assistantFocusSkipAction(session, value);
+        assistantShowFocusReview(session);
+        return true;
+      }
+      const result = typeof assistantFocusCommitAction === 'function'
+        ? assistantFocusCommitAction(session, value)
+        : {ok:false, error:'That action is unavailable.'};
+      if(!result.ok){
+        const status = choice.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
+        if(status)status.textContent = result.error || 'Nothing was saved.';
+        return true;
+      }
+      const text = result.action === 'remove'
+        ? `Removed the plan for ${result.name}. Undo is on the toast.`
+        : result.action === 'undo_today'
+          ? `Marked ${result.name} not done. Undo is on the toast.`
+          : result.action === 'log'
+            ? `Logged ${result.name}. Undo is on the toast.`
+            : `Planned ${result.name}. Undo is on the toast.`;
+      appendAssistantBubble('say', text);
+      assistantShowFocusReview(session);
+      if(typeof render === 'function')render();
+      return true;
+    }
     if(which === 'resume' && typeof assistantFocusTurn === 'function'){
       const turn = ++_assistantTurn;
       assistantRetireFocusControls();
@@ -1889,6 +1917,17 @@ function bindAssistantUi(){
     const button = e.target.closest('[data-assistant-guide]');
     if(!button || button.disabled)return;
     e.preventDefault();
+    const id = button.dataset.assistantGuide || '';
+    if(/^(?:action|field):/.test(id)){
+      const session = _assistantSession && _assistantSession.focus;
+      if(session && typeof assistantFocusChoose === 'function'){
+        assistantFocusChoose(session, 'guidance', id);
+        assistantShowFocusReview(session);
+        if(typeof render === 'function')render();
+        assistantRenderGuides();
+      }
+      return;
+    }
     assistantApplyGuide(button.dataset.guideLabel || button.textContent);
   });
   $('assistant-guide-more')?.addEventListener('click',()=>{

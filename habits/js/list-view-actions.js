@@ -793,6 +793,14 @@ function logTing(i,opts = {}){
     snoozedUntil,
     entry
   });
+  // Assistant confirms in chat. The toast that follows only offers undo.
+  if(opts.undoOnly){
+    delete action.toastAction;
+    delete action.toastActionLabel;
+    action.openAction = false;
+    action.undoLabel = 'undo';
+    action.toastOnlyUndo = true;
+  }
   if(!save(data))return false;
   onHabitCompletionSaved(h,i);
   // Toast shows minutes + one detail (note preferred over value) so it never

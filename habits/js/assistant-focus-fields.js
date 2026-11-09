@@ -226,6 +226,9 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['allowedWeekdays','preferredWeekdays','allowedMonthDays','preferredMonthDays'], when:new RegExp(`\\b${ASSISTANT_ORDINAL_WEEKDAY}`,'i')},
   {fields:['allowedMonthDays','preferredMonthDays'], when:/\b(?:due|deadline|start (?:date|day)|end date|finished by|series (?:should )?begin|(?:begin|start) (?:the )?(?:event )?series)\b/i, unless:/\b(?:each|every) month\b/i},
   {fields:['allowedWeekdays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:${ASSISTANT_WEEKDAY_TOKEN})\\b`,'i')},
+  // "Do this by Friday" and "due Friday" name one date. A weekday restriction
+  // still needs its own words, such as every or weekdays.
+  {fields:['allowedWeekdays','preferredWeekdays','appointmentWeekdays'], when:/\b(?:(?:do|finish(?:ed)?|plan(?:ned)?)(?:\s+(?:this|it|that))?\s+by|plan-by|(?:due|deadline)(?:\s+date)?)\b/i, unless:/\b(?:weekdays?|weekends?|every|each)\b/i},
   {fields:['frequency','allowedWeekdays','allowedWindow','allowedMonthDays','allowedOrdinalWeekdays'], when:/\bprefer/i, beforeCue:true},
   {fields:['allowedWindow','preferredWindow'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:morning|afternoon|evening|night|nighttime)\\b`,'i'), unless:/\b(?:before|after|between|from|only|in the)\b/i},
   {fields:['scheduleLinks'], when:new RegExp(`${ASSISTANT_FIELD_TEXT_INSTRUCTIONS.name.signal.source}.*\\b(?:before|after)\\b`,'i')},
@@ -767,13 +770,14 @@ async function assistantFieldDiscover(state, extract){
     const call=await assistantFocusModel(session,{family:'families',revision:state.revision,
       system:'Find requested setting groups. Copy exact words; do not summarize.',
       request:assistantFocusRequestLine('families',context),
-      tool:assistantFocusPackTool('families','Extract the families record.',{evidence:{type:'string',description:'family: exact words; family: exact words'},outside:{type:'string',description:'other action: exact words, or empty'}},['evidence'])},extract);
+      tool:assistantFocusPackTool('families','Extract the families record.',{evidence:{type:'string',description:'family: exact words; family: exact words'},outside:{type:'string',description:'log, undo, plan, or unplan, then a colon and the exact words. Empty for a setting, including plan by, a due date, and duration. Planning this for or on a named day is a plan.'}},['evidence'])},extract);
     assistantFocusEnsure(session,state.revision);
     if(call.raw._needleIssue)throw new Error(call.raw._needleIssue);
     const found=assistantFocusGroupsFromCall(session,call);
-    assistantFocusBlockOutside(session,found.outside);
+    assistantFocusBlockOutside(session,found.outside.filter(row=>!assistantFieldKeepOutside(state,row)));
     assistantFocusSplitEvidence(call.args.outside).forEach(row=>{
-      if(assistantFocusPhraseIn(state.request,row.phrase))assistantFocusBlockOutside(session,[{kind:ASSISTANT_FOCUS_OUTSIDE_ALIAS[row.label]||'question',phrase:row.phrase}]);
+      if(!assistantFocusPhraseIn(state.request,row.phrase) || assistantFieldKeepOutside(state,row))return;
+      assistantFocusBlockOutside(session,[{kind:ASSISTANT_FOCUS_OUTSIDE_ALIAS[row.label]||'question',phrase:row.phrase}]);
     });
     for(const row of found.families){
       const candidates=state.catalog.filter(d=>d.family===row.family && assistantFieldApplicable(d,session));
@@ -1064,9 +1068,13 @@ function assistantGuideBrowse(session,query){
 
 function assistantGuideSuggestions(session, text){
   if(!session)return [];
+  const hint=String(text || '').trim();
+  const guidance=(session.unresolved||[]).find(item=>item.field==='guidance'&&(item.choices||[]).length);
+  if(guidance && (!hint || hint===String(session.currentRequest||''))){
+    return guidance.choices.slice(0,4).map(choice=>({id:choice.id,label:choice.label}));
+  }
   const catalog=assistantGuideCatalog(session);
   const byId=new Map(catalog.map(def=>[def.id,def]));
-  const hint=String(text || '').trim();
   const ranked=catalog.map(def=>{
     if(!hint || !assistantFieldMentioned(def,hint) || !assistantFieldRelevant(def,hint))return null;
     const cue=assistantFieldCue(def,hint);
@@ -1145,13 +1153,443 @@ function assistantGuidePin(state){
   }
 }
 
+// Explicit log and one-day-plan wording. These nominate an action; they do not
+// supply a date or a length. "Plan by" stays the due date or habit do-by date.
+// "Plan this for", "plan this on", or "plan this in" a particular day is a one-day plan.
+const ASSISTANT_ACTION_PATTERNS = [
+  ['unplan', [
+    /\bunplan\b/i,
+    /\btake (?:it|this|that) off (?:of )?(?:(?:the|my|today'?s|tomorrow'?s)\s+)?(?:plan|agenda|schedule)\b/i,
+    /\b(?:remove|cancel|clear|drop) (?:the |that |today'?s |tomorrow'?s )?(?:one-day |day )?plan\b/i,
+    /\b(?:do not|don't|dont) plan (?:it|this|that)\b/i,
+    /\bdrop (?:it|this|that) from (?:the |my )?(?:plan|agenda|schedule)\b/i
+  ]],
+  ['undo', [
+    /\bundo\b/i,
+    /\bunlog\b/i,
+    /\bmark (?:it|this|that) not done\b/i,
+    /\b(?:didn't|did not|didnt) (?:actually )?(?:do|finish|complete) (?:it|this|that)\b/i,
+    /\blogged (?:it|this|that) by mistake\b/i,
+    /\b(?:log|completion) was a mistake\b/i,
+    /\b(?:remove|delete) (?:yesterday'?s|today'?s|the|that) (?:log|completion|check-?off)\b/i
+  ]],
+  ['log', [
+    /\b(?:forgot|forget|forgotten) to log\b/i,
+    /\bmissed logging\b/i,
+    /\b(?:didn't|did not|didnt|never) log\b/i,
+    /\bback-?date\b/i,
+    /\blog(?:ged|ging)? (?:it|this|that|yesterday|today|tonight|for|on|a completion|the completion)\b/i,
+    /\blog(?:ged)?\s+(?:\d+|a |an |one |two |three |four |five |half |quarter)/i,
+    /\bmark(?:ed)? (?:it|this|that|yesterday|today)?\s*(?:as\s+)?(?:done|complete|completed|finished)\b/i,
+    /\b(?:check|tick)(?:ed)? (?:it|this|that)?\s*off\b/i,
+    /\bi (?:already |just )?(?:did|finished|completed|logged) (?:it|this|that)\b/i,
+    /\b(?:did|finished|completed) (?:it|this|that) (?:yesterday|today|tonight|on|last)\b/i,
+    /\brecord (?:that i|a completion|it as done|this as done)\b/i,
+    /\bcount (?:it|this|that) as done\b/i,
+    /\bgot (?:it|this|that) done\b/i,
+    /\bknock(?:ed)? (?:it|this|that) out\b/i
+  ]],
+  ['plan', [
+    /\bschedule (?:it|this|that)\b/i,
+    /\b(?:add|put) (?:it|this|that) (?:on|to|onto) (?:the |my )?(?:plan|agenda|schedule)\b/i,
+    /\b(?:add|put) (?:it|this|that) (?:on|to|onto) (?:tomorrow|today|tonight)(?:'s)?(?: (?:plan|agenda|schedule))?\b/i,
+    /\bone-day plan\b|\bday plan\b/i,
+    /\bplan (?:it|this|that) on\b/i,
+    /\bplan\s+(?:this|it|that)\s+for\b/i,
+    /\badd (?:a |the )?plan\b/i,
+    /\bblock time\b/i,
+    /\bset aside time\b/i,
+    /\bpencil (?:it|this|that) in\b/i,
+    /\bbook (?:it|this|that)\b/i
+  ]]
+];
+
+function assistantActionConcreteDay(text, now){
+  if(typeof assistantActionDatePhrases !== 'function' || typeof assistantParseActionDate !== 'function')return false;
+  const clock = now != null ? Number(now) : Date.now();
+  return assistantActionDatePhrases(text).some(phrase => assistantParseActionDate(phrase, clock, 'plan') != null || assistantParseActionDate(phrase, clock, 'log') != null);
+}
+
+// "Plan this day after tomorrow" names a day but not whether it is a one-day
+// plan or a date to finish by. "Plan this for" and "plan this by" are already decided.
+function assistantAmbiguousPlanDay(text, now){
+  if(!/\bplan\s+(?:this|it|that)\b/i.test(text))return false;
+  if(assistantActionSettingClause(text) || assistantActionCue(text))return false;
+  const clock = now != null ? Number(now) : Date.now();
+  const dates = (typeof assistantActionDatePhrases === 'function' ? assistantActionDatePhrases(text) : [])
+    .filter(phrase => assistantParseActionDate(phrase, clock, 'plan') != null);
+  return dates.length === 1;
+}
+
+function assistantGuidanceChoices(session, phrase){
+  const text = String(phrase || '').trim();
+  const choices = [];
+  const add = (id, label) => {
+    if(!id || !label || choices.length >= 4 || choices.some(row => row.id === id))return;
+    choices.push({id, label});
+  };
+  if(!text || !session || session.operation !== 'edit')return choices;
+  const now = session.now || Date.now();
+  const record = typeof assistantFocusMaterialize === 'function' ? assistantFocusMaterialize(session) : null;
+  const state = typeof assistantFocusState === 'function' ? assistantFocusState(session, record) : null;
+  const cue = assistantActionCue(text);
+  const planDay = assistantAmbiguousPlanDay(text, now);
+  if(session.kind !== 'event' && (cue === 'plan' || planDay))add('action:plan', 'Plan it on that day');
+  if(session.kind !== 'event' && cue === 'unplan')add('action:unplan', 'Remove that plan');
+  if(cue === 'log')add('action:log', 'Log it');
+  if(cue === 'undo')add('action:undo', 'Undo the log');
+  const dateField = session.kind === 'task' ? 'dueDate' : session.kind === 'habit' ? 'planByDate' : 'appointmentStartDate';
+  if(planDay && state && typeof assistantFocusFieldApplies === 'function' && assistantFocusFieldApplies(dateField, state)){
+    const def = assistantFieldCatalog().find(row => row.id === dateField);
+    if(def)add('field:' + def.id, def.label);
+  }
+  for(const def of assistantFieldCatalog()){
+    if(!assistantFieldApplicable(def, session) || !state || !assistantFocusFieldApplies(def, state))continue;
+    if(!assistantFieldMentioned(def, text) || !assistantFieldRelevant(def, text))continue;
+    if(!assistantFieldNormalize(def, text, session).ok)continue;
+    add('field:' + def.id, def.label);
+  }
+  return choices;
+}
+
+function assistantFocusAskGuidance(session, phrase, fallback){
+  const choices = assistantGuidanceChoices(session, phrase);
+  if((session.unresolved || []).some(item => item.field === 'guidance' && item.phrase === phrase))return choices;
+  const question = choices.length > 1
+    ? `Which of these should “${phrase}” change?`
+    : fallback;
+  assistantFocusUnresolve(session, {
+    field:choices.length ? 'guidance' : 'request',
+    family:'request',
+    phrase,
+    question,
+    choices
+  });
+  return choices;
+}
+
+function assistantActionSettingClause(text){
+  if(/\b(?:plan|do|finish(?:ed)?)(?:\s+(?:this|it|that))?\s+by\b/i.test(text))return true;
+  const planOnDay = /\bplan\s+(?:this|it|that)\s+(?:for|on)\b/i.test(text) && assistantActionConcreteDay(text);
+  if(/\bplan(?:\s+(?:this|it|that))?\s+for\b/i.test(text) && !planOnDay && !/\b(?:a|the|one-day|day|my)\s+plan\s+for\b/i.test(text))return true;
+  if(/\b(?:due date|deadline|plan-by|do-by)\b/i.test(text))return true;
+  if(/\b(?:auto(?:matic)?(?:ally)?(?:\s+mark|\s+complete|\s+log)|auto[ -]?mark|manual completion|consider it done)\b/i.test(text))return true;
+  if(/\b(?:start with a tap|tap to start|tapping starts)\b/i.test(text))return true;
+  if(/\bundo\b/i.test(text) && /\b(?:duration|frequency|name|title|priority|window|weekday|reminder|colou?r|emoji|place|setting)\b/i.test(text))return true;
+  if(/\b(?:value tracking|track (?:a |the )?(?:value|number|measurement)|log (?:a |the )?(?:value|number|measurement) (?:when|each|every)|each time I (?:check|log|complete)|when I check it off)\b/i.test(text))return true;
+  return false;
+}
+
+function assistantActionCue(text){
+  if(assistantActionSettingClause(text))return null;
+  // "Plan this in five days" and "put this on November 20" name a day. "Plan
+  // this in the morning" and "put this on hold" do not, so they stay settings.
+  if(/\bplan\s+(?:this|it|that)\s+in\b/i.test(text) && assistantActionConcreteDay(text))return 'plan';
+  if(/\b(?:put|add)\s+(?:it|this|that)\s+(?:on|onto|for)\s+(?!hold\b)/i.test(text) && assistantActionConcreteDay(text))return 'plan';
+  for(const [kind, patterns] of ASSISTANT_ACTION_PATTERNS){
+    if(patterns.some(pattern => pattern.test(text)))return kind;
+  }
+  return null;
+}
+
+function assistantActionClauses(request){
+  const re = /;\s+|\n+|\s+(?:and|then)\s+/gi;
+  const bounds = [];
+  let start = 0;
+  for(const match of String(request || '').matchAll(re)){
+    const right = request.slice(match.index + match[0].length);
+    if(/^(?:(?:add|with|plus)\s+)?(?:a\s+)?(?:note|comment)\b/i.test(right))continue;
+    if(/^(?:with\s+)?(?:a\s+)?value\b/i.test(right))continue;
+    if(/^(?:for\s+)?(?:\d+(?:\.\d+)?|one|two|three|four|five|half|quarter|an?\s+hour)\b/i.test(right))continue;
+    if(/^(?:at\s+)?(?:\d|noon|midnight|half|quarter)\b/i.test(right))continue;
+    bounds.push([start, match.index]);
+    start = match.index + match[0].length;
+  }
+  bounds.push([start, request.length]);
+  return bounds.map(([from, to]) => {
+    while(from < to && /\s/.test(request[from]))from++;
+    while(to > from && /\s/.test(request[to - 1]))to--;
+    return {start:from, end:to, text:request.slice(from, to)};
+  }).filter(part => part.text);
+}
+
+function assistantActionRegions(request, session){
+  if(!session)return [];
+  const regions = [];
+  for(const clause of assistantActionClauses(request)){
+    if(assistantActionSettingClause(clause.text))continue;
+    const kind = assistantActionCue(clause.text);
+    if(!kind)continue;
+    if((kind === 'plan' || kind === 'unplan') && session.kind === 'event')continue;
+    regions.push({...clause, kind, explicit:true});
+  }
+  return regions;
+}
+
+function assistantFieldExcise(request, spans, regions){
+  const out = [];
+  const push = (start, end) => {
+    while(start < end && /\s/.test(request[start]))start++;
+    while(end > start && /\s/.test(request[end - 1]))end--;
+    if(end - start < 2)return;
+    out.push({start, end, text:request.slice(start, end)});
+  };
+  for(const span of spans || []){
+    const cuts = regions.filter(region => region.start < span.end && region.end > span.start)
+      .sort((a, b) => a.start - b.start);
+    if(!cuts.length){out.push(span); continue;}
+    let cursor = span.start;
+    for(const cut of cuts){
+      push(cursor, Math.min(cut.start, span.end));
+      cursor = Math.max(cursor, cut.end);
+    }
+    push(cursor, span.end);
+  }
+  return out;
+}
+
+function assistantFieldClaimActions(state){
+  const regions = assistantActionRegions(state.request, state.session);
+  // Create never logs or plans. Drop those sentences so they cannot become the
+  // new item's title, and do not offer a confirm button.
+  if(!state.session || state.session.operation !== 'edit'){
+    state.actionRegions = [];
+    if(!regions.length)return;
+    state.unavailableSpans = (state.unavailableSpans || []).concat(regions);
+    state.spans = assistantFieldExcise(state.request, state.spans, regions);
+    return;
+  }
+  state.actionRegions = regions;
+  if(!regions.length)return;
+  state.unavailableSpans = (state.unavailableSpans || []).concat(regions);
+  state.spans = assistantFieldExcise(state.request, state.spans, regions);
+}
+
+function assistantFieldClaimGuidance(state){
+  if(!state.session || state.session.operation !== 'edit')return;
+  const held = [];
+  for(const clause of assistantActionClauses(state.request)){
+    if(!assistantAmbiguousPlanDay(clause.text, state.session.now))continue;
+    const choices = assistantGuidanceChoices(state.session, clause.text);
+    if(!choices.length)continue;
+    assistantFocusAskGuidance(state.session, clause.text, `I still need to account for “${clause.text}”. Please clarify that setting.`);
+    held.push(clause);
+  }
+  if(!held.length)return;
+  state.unavailableSpans = (state.unavailableSpans || []).concat(held);
+  state.spans = assistantFieldExcise(state.request, state.spans, held);
+}
+
+function assistantFieldAdoptAction(state, kind, phrase, explicit){
+  const needle = String(phrase || '').trim().toLowerCase();
+  const start = needle ? state.request.toLowerCase().indexOf(needle) : -1;
+  if(start < 0)return;
+  const end = start + String(phrase).trim().length;
+  if((state.actionRegions || []).some(region => region.start < end && start < region.end))return;
+  if((kind === 'plan' || kind === 'unplan') && state.session.kind === 'event')return;
+  const region = {kind, start, end, text:state.request.slice(start, end), explicit:Boolean(explicit)};
+  state.actionRegions = state.actionRegions || [];
+  state.actionRegions.push(region);
+  state.unavailableSpans = state.unavailableSpans || [];
+  state.unavailableSpans.push(region);
+  (state.jobs || []).forEach(job => {
+    if(job.status !== 'queued' || !job.def)return;
+    const cue = assistantFieldCue(job.def, state.request);
+    if(cue && cue.index >= start && cue.index < end)job.status = 'superseded';
+  });
+}
+
+function assistantFieldKeepOutside(state, row){
+  const phrase = row && row.phrase || '';
+  if(!phrase || !assistantFocusPhraseIn(state.request, phrase))return false;
+  if(assistantActionSettingClause(phrase))return true;
+  if(!state.session || state.session.operation !== 'edit')return false;
+  const label = String(row.label || row.kind || '').toLowerCase().replace(/\s+/g, '');
+  const mapped = {log:'log', complete:'log', done:'log', undo:'undo', unlog:'undo', plan:'plan', schedule:'plan', planner:'plan', agenda:'plan', unplan:'unplan'}[label];
+  const cue = assistantActionCue(phrase);
+  const kind = cue || mapped;
+  if(!['log', 'undo', 'plan', 'unplan'].includes(kind))return false;
+  assistantFieldAdoptAction(state, kind, phrase, Boolean(cue));
+  return true;
+}
+
+function assistantFocusFound(session){
+  const data = typeof load === 'function' ? load() : [];
+  const index = data.findIndex(item => item && item.hid === session.targetId);
+  if(index < 0)return null;
+  const habit = data[index];
+  return {ok:true, index, hid:habit.hid, name:habit.name, habit};
+}
+
+function assistantActionMinutes(text){
+  const hits = typeof assistantDurationHits === 'function' ? assistantDurationHits(text) : [];
+  if(hits.length > 2)return {ok:false};
+  if(hits.length === 2){
+    const joined = assistantJoinedDuration(assistantNormalizeDurationText(text), hits);
+    if(joined !== hits[0].mins + hits[1].mins)return {ok:false};
+    return {ok:true, minutes:joined};
+  }
+  if(hits.length === 1)return {ok:true, minutes:hits[0].mins};
+  return {ok:true, minutes:null};
+}
+
+function assistantActionClocks(text){
+  const re = /\b(?:at\s+)?(?:noon|midnight|(?:half past|quarter (?:past|to)) [a-z]+|\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2})\b/gi;
+  const phrases = [...String(text).matchAll(re)].map(match => match[0].replace(/^at\s+/i, ''));
+  const times = [];
+  for(const phrase of phrases){
+    const mins = typeof assistantParseClock === 'function' ? assistantParseClock(phrase) : null;
+    if(mins == null)return {ok:false};
+    times.push({phrase, mins});
+  }
+  if(times.length > 1)return {ok:false};
+  return {ok:true, time:times[0] || null};
+}
+
+function assistantActionNote(text){
+  const quoted = String(text).match(/[“"]([^”"]+)[”"]/);
+  if(quoted)return quoted[1].trim().slice(0, typeof MAX_NOTE_CHARS === 'number' ? MAX_NOTE_CHARS : 200);
+  const note = String(text).match(/\b(?:note|saying|comment|because)\s*(?:that\s+|:\s*)?(.+)$/i);
+  if(!note)return '';
+  return note[1].trim().replace(/[.!?]+$/, '').slice(0, typeof MAX_NOTE_CHARS === 'number' ? MAX_NOTE_CHARS : 200);
+}
+
+function assistantActionValue(text){
+  const match = String(text).match(/\b(?:value|weight|reading)\s*(?:of\s*|:\s*)(-?\d+(?:\.\d+)?)\b/i);
+  return match ? {ok:true, value:Number(match[1])} : {ok:true, value:null};
+}
+
+function assistantActionPlace(text){
+  const saved = typeof normalizeLocationRegistry === 'function'
+    ? normalizeLocationRegistry(assistantFocusSettings().locations || [])
+    : (assistantFocusSettings().locations || []);
+  const hits = (saved || []).filter(place => {
+    const name = String(place && place.name || '').trim();
+    if(name.length < 2)return false;
+    if(/^(?:today|tonight|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(name))return false;
+    return new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text);
+  });
+  if(hits.length > 1)return {ok:false, choices:hits.map(place => place.name)};
+  return {ok:true, name:hits[0] ? hits[0].name : ''};
+}
+
+function assistantFocusBuildAction(session, kind, source){
+  const found = assistantFocusFound(session);
+  if(!found)return {ready:false, kind, phrase:source, summary:'That item is no longer on the list.'};
+  const now = session.now || Date.now();
+  const ask = question => {
+    assistantFocusUnresolve(session, {field:'item-action', family:'request', question});
+    return null;
+  };
+  if(/\b(?:a couple of|a few|several) days ago\b/i.test(source))return ask('Which day do you mean?');
+  const planning = kind === 'plan' || kind === 'unplan';
+  const dates = typeof assistantActionDatePhrases === 'function' ? assistantActionDatePhrases(source) : [];
+  const mode = planning ? 'plan' : 'log';
+  const opposite = planning ? 'log' : 'plan';
+  const parsedDates = dates.map(phrase => ({
+    phrase,
+    day:assistantParseActionDate(phrase, now, mode)
+  }));
+  // A date the other action would accept is a real day in the wrong direction.
+  // "log it tomorrow" and "plan it yesterday" ask; they do not pick a nearby day.
+  if(dates.some(phrase => assistantParseActionDate(phrase, now, mode) == null && assistantParseActionDate(phrase, now, opposite) != null)){
+    return ask(planning
+      ? 'Plans can only be added or removed for today or a future day.'
+      : 'Completions can only be logged for today or a past day.');
+  }
+  if(dates.length && parsedDates.some(row => row.day == null))return ask('Which day should I use?');
+  const distinct = [...new Set(parsedDates.filter(row => row.day != null).map(row => row.day))];
+  if(distinct.length > 1)return ask('Which day should I use?');
+  const minutes = assistantActionMinutes(source);
+  if(!minutes.ok)return ask('Which length should I log?');
+  const clocks = assistantActionClocks(source);
+  if(!clocks.ok)return ask('Which time should I use?');
+  const value = assistantActionValue(source);
+  const place = assistantActionPlace(source);
+  if(!place.ok)return ask(`Which place: ${(place.choices || []).join(', ')}?`);
+  if(planning){
+    if(found.habit && found.habit.type === 'zero'){
+      return {ready:false, kind, phrase:source, summary:'Stop habits cannot be planned; they only record lapses.'};
+    }
+    if(!distinct.length)return ask(kind === 'unplan' ? 'Which day’s plan should I remove?' : 'Which day should I plan?');
+    const key = typeof dateKey === 'function' ? dateKey(distinct[0]) : '';
+    const places = typeof normalizeLocationRegistry === 'function'
+      ? normalizeLocationRegistry(assistantFocusSettings().locations || [])
+      : (assistantFocusSettings().locations || []);
+    const preview = assistantPlanPreview(found, {
+      action:kind === 'unplan' ? 'remove' : 'add',
+      date:key,
+      time:clocks.time ? clocks.time.phrase : '',
+      place:place.name
+    }, {now, catalog:{places}});
+    if(!preview.ok)return {ready:false, kind, phrase:source, summary:preview.error || preview.ask || 'I couldn’t plan that.'};
+    if(preview.noChange)return {ready:false, kind, phrase:source, summary:preview.text};
+    return {ready:true, kind, phrase:source, summary:preview.summary, label:kind === 'unplan' ? 'remove plan' : 'plan it', pendingPlan:preview.pendingPlan};
+  }
+  const dayKey = distinct.length && typeof dateKey === 'function' ? dateKey(distinct[0]) : '';
+  const preview = assistantCompletePreview(found, {
+    action:kind === 'undo' ? 'undo_today' : 'log',
+    date:dayKey || undefined,
+    minutes:minutes.minutes,
+    value:value.value,
+    note:kind === 'log' ? assistantActionNote(source) : '',
+    timeMin:clocks.time ? clocks.time.mins : null,
+    now
+  });
+  if(!preview.ok)return {ready:false, kind, phrase:source, summary:preview.error || 'I couldn’t log that.'};
+  if(preview.noChange)return {ready:false, kind, phrase:source, summary:preview.text};
+  return {ready:true, kind, phrase:source, summary:preview.summary, label:kind === 'undo' ? 'mark not done' : 'log it', pendingComplete:preview.pendingComplete};
+}
+
+async function assistantFieldReadActions(state, extract){
+  const session = state.session;
+  session.itemActions = [];
+  for(const region of state.actionRegions || []){
+    const tool = assistantFocusPackTool('item_action', 'Copy this sentence when it logs, undoes a log, plans, or unplans this item. Empty when it changes a setting.', {
+      evidence:{type:'string', description:'The whole action sentence, or empty.', enum:[region.text, '']}
+    }, ['evidence']);
+    let call;
+    try{
+      call = await assistantFocusModel(session, {
+        family:'item-action', jobId:region.kind, revision:state.revision,
+        system:`${assistantFocusSystem(session)} Copy the action sentence exactly, or leave evidence empty when these words change a saved setting instead.`,
+        request:assistantFocusRequestLine('item_action', region.text), tool
+      }, extract);
+    }catch(error){
+      assistantFocusEnsure(session, state.revision);
+      if(error && error.name === 'AbortError')throw error;
+      assistantFocusUnresolve(session, {field:'item-action', family:'request', question:'I couldn’t read that log or plan. Please rephrase it.'});
+      continue;
+    }
+    if(call.raw && call.raw._needleIssue)throw new Error(call.raw._needleIssue);
+    const picked = String(call.args.evidence || '');
+    // An explicit cue sentence is already the user's instruction. Needle may
+    // quote all of it, a piece of it, or decline; a decline or a contained
+    // quote keeps that sentence so "20 minutes" is not dropped. A discovered
+    // paraphrase has to come back as that same sentence. Text Needle invents
+    // is never used.
+    const contained = !picked || assistantFocusPhraseIn(region.text, picked);
+    const quoted = picked && assistantFocusNorm(picked) === assistantFocusNorm(region.text);
+    const source = region.explicit && contained || quoted ? region.text : '';
+    if(!source){
+      assistantFocusUnresolve(session, {field:'item-action', family:'request', question:`I couldn’t confirm “${region.text}”. Please rephrase that log or plan.`});
+      continue;
+    }
+    const built = assistantFocusBuildAction(session, region.kind, source);
+    if(built)session.itemActions.push(built);
+  }
+}
+
 function assistantFieldPrepare(state){
   const session=state.session,request=state.request,priorFields=state.priorFields;
+  assistantFieldClaimActions(state);
+  assistantFieldClaimGuidance(state);
   // Events have no priority control. Ask about the named unsupported setting
   // before a generic router can reinterpret it as a date or title request.
   if(assistantFocusEffectiveKind(session)==='event'){
-    state.unavailableSpans=state.spans.filter(span=>ASSISTANT_FIELD_SIGNALS.priority.test(span.text)&&!assistantFieldLiteralOwner(span.text));
-    if(state.unavailableSpans.length)assistantFocusUnresolve(session,{field:'priority',family:'identity',question:'Priority is available for habits and tasks, but not events.'});
+    const priority=state.spans.filter(span=>ASSISTANT_FIELD_SIGNALS.priority.test(span.text)&&!assistantFieldLiteralOwner(span.text));
+    state.unavailableSpans=(state.unavailableSpans||[]).concat(priority);
+    if(priority.length)assistantFocusUnresolve(session,{field:'priority',family:'identity',question:'Priority is available for habits and tasks, but not events.'});
   }
   if(state.referenceUnresolved?.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should that correction change?'});
   assistantFieldCandidates(state);
@@ -1618,7 +2056,11 @@ async function assistantFieldFallback(state,extract,opts){
       family=families.includes(call.args.family)?call.args.family:null;
     }
     if(!family){
-      assistantFocusUnresolve(state.session,{field:'request',family:'request',question:`Which setting should change in “${row.phrase}”?`});
+      if(!(state.session.unresolved||[]).some(item=>item.field==='guidance'&&item.phrase===row.phrase)){
+        const choices=assistantGuidanceChoices(state.session,row.phrase);
+        if(choices.length)assistantFocusAskGuidance(state.session,row.phrase,`Which setting should change in “${row.phrase}”?`);
+        else assistantFocusUnresolve(state.session,{field:'request',family:'request',question:`Which setting should change in “${row.phrase}”?`});
+      }
       continue;
     }
     const nomination={family,phrase:row.phrase};
@@ -1701,7 +2143,8 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     const unfinished=(state?.jobs||[]).filter(j=>!j.id.startsWith('$')&&['queued','running','waiting','retryable_failed'].includes(j.status)).map(j=>({...j,status:'queued',result:null}));
     (state?.jobs||[]).filter(j=>j.status==='running').forEach(j=>{j.status='superseded';});
     session.requests.push(request);session.currentRequest=request;session.originalRequest=session.requests.join('\n');session.requestText=session.originalRequest;
-    session.unresolved=session.unresolved.filter(row=>row.field!=='request');
+    session.unresolved=session.unresolved.filter(row=>row.field!=='request'&&row.field!=='item-action');
+    session.itemActions=[];
     session.requestRevision=(session.requestRevision||0)+1;
     session._fieldKindChanging=ASSISTANT_FIELD_SIGNALS.kind.test(request);
     state={request,revision:session.requestRevision,catalog:assistantFieldCatalog(),spans:assistantFieldSpans(request),jobs:unfinished,priorFields,needsCandidates:true};
@@ -1740,9 +2183,10 @@ async function assistantFocusRunFieldTurn(session,text,opts){
           &&job.spans.some(span=>assistantFocusPhraseIn(row.phrase,span.context||span.text)||assistantFocusPhraseIn(span.context||span.text,row.phrase)));
         let nominee=nominees.length===1?nominees[0]:null;
         if(nominee?.id==='name'&&!ASSISTANT_FIELD_SIGNALS.name.test(assistantFieldClause(state,row.phrase)))nominee=null;
-        // An unfulfilled, singly nominated instruction asks about that field.
-        // Its question survives unrelated follow-ups and accepts a bare reply.
-        assistantFocusUnresolve(session,{field:nominee?.id==='frequency'?'timesPerPeriod':nominee?.id||'request',family:nominee?.family||'request',question:`I still need to account for “${row.phrase}”. Please clarify that setting.`});
+        if((session.unresolved||[]).some(item=>item.field==='guidance'&&item.phrase===row.phrase))continue;
+        const choices=assistantGuidanceChoices(session,row.phrase);
+        if(choices.length)assistantFocusAskGuidance(session,row.phrase,`I still need to account for “${row.phrase}”. Please clarify that setting.`);
+        else assistantFocusUnresolve(session,{field:nominee?.id==='frequency'?'timesPerPeriod':nominee?.id||'request',family:nominee?.family||'request',question:`I still need to account for “${row.phrase}”. Please clarify that setting.`});
       }
     }
     if(retryPending)session.continuationError='Your draft is kept. Continue to retry the unfinished settings.';
@@ -1754,8 +2198,10 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     for(const issue of assistantFocusDraftIssues(session)){
       if(!session.unresolved.some(row=>row.field===issue.field))assistantFocusUnresolve(session,issue);
     }
+    if((state.actionRegions||[]).length && !(session.itemActions||[]).length)await assistantFieldReadActions(state, extract);
+    const acted=(session.itemActions||[]).some(action=>action && (action.ready || action.summary));
     const handled=state.jobs.some(job=>job.request===state.request&&(job.status==='staged'&&job.proposal||job.preserved));
-    if(!handled&&!session.unresolved.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should change?'});
+    if(!handled&&!acted&&!session.unresolved.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should change?'});
   }catch(error){
     if(error.name==='AbortError'||session.requestRevision!==state.revision)return {type:'focus',cancelled:true,session};
     session.continuationError='Your draft is kept. Continue to retry the unfinished settings.';

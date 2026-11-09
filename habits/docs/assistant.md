@@ -9,7 +9,7 @@ For the subsequent single-action implementation and its measured limits, see
 
 Read this only when the task is the Tings assistant. For planner, home, settings, and habit work, leave this file and every `js/assistant-*.js` file closed. `js/assistant-tools.js` is about 5,300 lines and is not on that path.
 
-When Needle is the provider, the only entry is one saved item. The Add form takes a literal name and essential settings, saves them, then opens details. It has no assistant entry. The details search box finds settings as the user types; an explicit Ask Needle action sends that text to the existing focused edit chat. Enter opens the first matching setting, or Ask when no setting matches. Typing alone never invokes the model. Search and Ask are available in full and minimal mode. Manual edits must be saved or cancelled before entering chat. Edit with AI on a card and Change with AI in details also open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The chat opens on that item's Edit summary, and the working-on bar stays hidden so the name is not listed twice. Clearing the chat keeps the same item and shows that summary again. The product session edits the item the host already selected. Internal create adapters remain for regression coverage; they are not exposed on Add. Needle cannot switch items, add a second item, answer a general question, log a completion, or run a planner action. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
+When Needle is the provider, the only entry is one saved item. The Add form takes a literal name and essential settings, saves them, then opens details. It has no assistant entry. The details search box finds settings as the user types; an explicit Ask Needle action sends that text to the existing focused edit chat. Enter opens the first matching setting, or Ask when no setting matches. Typing alone never invokes the model. Search and Ask are available in full and minimal mode. Manual edits must be saved or cancelled before entering chat. Edit with AI on a card and Change with AI in details also open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The chat opens on that item's Edit summary, and the working-on bar stays hidden so the name is not listed twice. Clearing the chat keeps the same item and shows that summary again. The product session edits the item the host already selected. Internal create adapters remain for regression coverage; they are not exposed on Add. Needle cannot switch items, add a second item, or answer a general question. On that open item it can also log or undo a completion, including an earlier day, and add or remove a one-day plan. “Plan for” and “plan by” remain the due date or do-by date. Logging and planning confirm in the chat. The toast after that confirmation only offers undo. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
 
 Focused saves apply the staged fields to the current saved item. A concurrent
 change to a field in the preview requires another review; unrelated edits and
@@ -240,8 +240,15 @@ The subsequent extraction still requires original-source evidence and the same
 field validation. This reference read uses the shared worker pool and can be
 continued after interruption.
 
-Tasks interpret “plan by” as their due date, preserving the clock and deadline
-strictness. Habits retain their separate soft plan-by date. “Next week” uses the
+Tasks interpret “plan by”, “do this by”, “due”, and “deadline” as their due
+date, preserving the clock and deadline strictness. Habits retain their
+separate soft plan-by date. The same day phrases work for both: tomorrow, the
+day after tomorrow, next week, a weekday, a count of days ahead, or a calendar
+date. “Plan this for”, “plan this on”, or “plan this in” a particular day is a
+one-day plan, not that due date. “Plan this” plus a day, without for, on, in,
+or by, asks which was meant. The choices are the one-day plan and the due date
+or habit plan-by date, plus any other field or action those words can change.
+The same choices appear on the question and in the setting chips. “Next week” uses the
 existing seven-calendar-day convention; a week range such as “first week of
 2027” asks for an exact date. Naming the date setting without a value never
 clears its existing date.

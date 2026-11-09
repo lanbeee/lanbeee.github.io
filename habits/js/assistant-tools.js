@@ -1716,20 +1716,43 @@ function assistantValidateClassify(args){
   return {ok:true, intent, reason:String(args && args.reason || '')};
 }
 
+function assistantCompleteDay(opts, now){
+  const clock = now != null ? Number(now) : Date.now();
+  const todayBase = assistantDayBase(clock);
+  const todayKey = typeof dateKey === 'function' ? dateKey(todayBase) : '';
+  const raw = opts.date == null ? '' : String(opts.date).trim();
+  if(!raw)return {ok:true, dayBase:todayBase, key:todayKey, today:true};
+  const parsed = typeof assistantParseActionDate === 'function' ? assistantParseActionDate(raw, clock, 'log') : null;
+  if(parsed == null){
+    const future = typeof assistantParseDue === 'function' ? assistantParseDue(raw, clock) : null;
+    if(future != null && assistantDayBase(future) > todayBase){
+      return {ok:false, error:'Completions can only be logged for today or a past day.'};
+    }
+    return {ok:false, error:'date must be yesterday, a weekday, or YYYY-MM-DD'};
+  }
+  const key = typeof dateKey === 'function' ? dateKey(parsed) : '';
+  if(!key || key > todayKey)return {ok:false, error:'Completions can only be logged for today or a past day.'};
+  return {ok:true, dayBase:parsed, key, today:key === todayKey};
+}
+
 function assistantCompletePreview(found, options){
   const opts = typeof options === 'number' ? {minutes:options} : (options || {});
-  const action = assistantNormText(opts.action) === 'undo_today' ? 'undo_today' : 'log';
+  const undo = ['undo_today', 'undo'].includes(assistantNormText(opts.action));
+  const action = undo ? 'undo_today' : 'log';
   const minutes = opts.minutes != null ? assistantParseDuration(opts.minutes) : null;
   const valueNum = opts.value === null || opts.value === undefined || opts.value === '' ? null : Number(opts.value);
   const value = Number.isFinite(valueNum) ? valueNum : null;
   const note = String(opts.note || '').trim().slice(0, typeof MAX_NOTE_CHARS === 'number' ? MAX_NOTE_CHARS : 200);
   const logs = found.habit && typeof normalizeLogs === 'function' ? normalizeLogs(found.habit.logs) : [];
-  const todayKey = typeof dateKey === 'function' ? dateKey(Date.now()) : '';
-  const todayActual = logs.filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log))
-    && (!todayKey || (typeof dateKey === 'function' && dateKey(logTime(log)) === todayKey)));
+  const now = opts.now != null ? Number(opts.now) : Date.now();
+  const day = assistantCompleteDay(opts, now);
+  if(!day.ok)return {ok:false, error:day.error};
+  const dayActual = logs.filter(log => !(typeof isPlanLog === 'function' && isPlanLog(log))
+    && (!day.key || (typeof dateKey === 'function' && dateKey(logTime(log)) === day.key)));
   if(action === 'undo_today'){
-    const target = todayActual.slice().sort((a,b)=>logTime(b)-logTime(a))[0];
-    if(!target)return {ok:true, noChange:true, text:`${found.name} has no completion to undo today.`};
+    const target = dayActual.slice().sort((a,b)=>logTime(b)-logTime(a))[0];
+    const when = day.today ? 'today' : day.key;
+    if(!target)return {ok:true, noChange:true, text:`${found.name} has no completion to undo ${when}.`};
     return {
       ok:true,
       pendingComplete:{
@@ -1740,7 +1763,9 @@ function assistantCompletePreview(found, options){
         targetTs:typeof logTime === 'function' ? logTime(target) : Number(target && target.ts || target)
       },
       alreadyDone:false,
-      summary:`Mark ${found.name} not done by removing its latest completion from today?`
+      summary:day.today
+        ? `Mark ${found.name} not done by removing its latest completion from today?`
+        : `Mark ${found.name} not done by removing its latest completion from ${when}?`
     };
   }
   if(opts.minutes != null && opts.minutes !== '' && minutes == null){
@@ -1749,8 +1774,16 @@ function assistantCompletePreview(found, options){
   if(opts.value !== null && opts.value !== undefined && opts.value !== '' && value === null){
     return {ok:false, error:'value must be a number'};
   }
-  const done = found.habit && typeof completedToday === 'function' && completedToday(found.habit);
+  const done = day.today && found.habit && typeof completedToday === 'function' && completedToday(found.habit, now);
   const detail = [minutes && `${minutes}m`, value !== null && `value ${value}`, note && `“${note}”`].filter(Boolean).join(' · ');
+  let at = null;
+  if(!day.today){
+    const timeMin = opts.timeMin == null ? 12 * 60 : Number(opts.timeMin);
+    const stamp = new Date(day.dayBase);
+    at = new Date(stamp.getFullYear(), stamp.getMonth(), stamp.getDate(), Math.floor(timeMin / 60), timeMin % 60, 0, 0).getTime();
+    if(at > now)at = now;
+  }
+  const when = day.today ? '' : ` for ${day.key}`;
   return {
     ok:true,
     pendingComplete:{
@@ -1760,14 +1793,15 @@ function assistantCompletePreview(found, options){
       name:found.name,
       minutes:minutes && minutes > 0 ? minutes : null,
       value,
-      note:note || null
+      note:note || null,
+      at
     },
     // A chunk/value/note is an intentional additional entry even when the
     // rhythm has already met today's target.
     alreadyDone:Boolean(done && !detail),
     summary:done && !detail
       ? `${found.name} is already logged today.`
-      : `Log ${found.name}${detail ? ` · ${detail}` : ' as done'}?`
+      : `Log ${found.name}${detail ? ` · ${detail}` : ' as done'}${when}?`
   };
 }
 
@@ -5143,15 +5177,16 @@ function assistantCommitComplete(pending){
     if(typeof showActionToast === 'function'){
       showActionToast(`Marked ${habit.name} not done`,{
         type:'breakable-set',idx:index,logs:before,snoozedUntil:habit.snoozedUntil || null,
-        openAction:false,undoLabel:'restore'
+        openAction:false,undoLabel:'undo',toastOnlyUndo:true
       });
     }
     return {ok:true, index, name:habit.name, action:'undo_today', habit};
   }
-  const opts = {};
+  const opts = {undoOnly:true};
   if(pending.minutes)opts.minutes = pending.minutes;
   if(pending.value !== null && pending.value !== undefined)opts.value = pending.value;
   if(pending.note)opts.note = pending.note;
+  if(pending.at != null)opts.at = pending.at;
   if(typeof logTing === 'function'){
     const ok = logTing(index, opts);
     return ok ? {ok:true, index, name:data[index] && data[index].name, action:'log', habit:data[index]} : {ok:false, error:'could not log'};
@@ -5214,7 +5249,7 @@ function assistantCommitPlan(pending){
   if(typeof showActionToast === 'function'){
     showActionToast(`${verb} ${habit.name}`,{
       type:'breakable-set',idx:index,logs:before,snoozedUntil:habit.snoozedUntil || null,
-      openAction:false,undoLabel:'undo'
+      openAction:false,undoLabel:'undo',toastOnlyUndo:true
     });
   }
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
