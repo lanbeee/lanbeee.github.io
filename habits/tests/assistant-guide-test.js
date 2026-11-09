@@ -232,7 +232,7 @@ function assert(ok, message){
     const opening = await guides.allTextContents();
     assert(opening.join() === 'Frequency,Duration,Allowed weekdays', 'the opening chips are the habit defaults');
     await page.locator('#assistant-guide-more').click();
-    await page.locator('#assistant-guide-search').fill('best days');
+    await page.locator('#assistant-input').fill('best days');
     const browserChoice=page.locator('#assistant-guide-results [data-assistant-guide="preferredWeekdays"]');
     assert(await browserChoice.isVisible() && (await browserChoice.textContent()).includes('other allowed days'),
       'All settings finds a field by everyday language and explains it');
@@ -332,6 +332,95 @@ function assert(ok, message){
     await page.evaluate(() => clearAssistantChat());
     assert((await guides.count()) === 3 && await guides.first().isVisible(), 'clearing the chat keeps the setting choices');
 
+    const dockBottom = () => page.evaluate(() => {
+      const input = document.getElementById('assistant-input').getBoundingClientRect();
+      const send = document.getElementById('assistant-send').getBoundingClientRect();
+      return {input:input.bottom, send:send.bottom, height:input.height};
+    });
+    await page.locator('#assistant-input').fill('keep this');
+    const beforeSearch = await dockBottom();
+    await page.locator('#assistant-guide-more').click();
+    const opened = await page.evaluate(() => ({
+      browser:!document.getElementById('assistant-guide-browser').hidden,
+      sameBox:!document.getElementById('assistant-guide-search'),
+      value:document.getElementById('assistant-input').value,
+      label:document.getElementById('assistant-input').getAttribute('aria-label')
+    }));
+    const duringSearch = await dockBottom();
+    assert(opened.browser && opened.sameBox && opened.value === 'keep this' && opened.label === 'Find a setting or ask',
+      'find a setting uses the message box and keeps what was already written');
+    assert(Math.abs(duringSearch.input - beforeSearch.input) <= 2 && Math.abs(duringSearch.send - beforeSearch.send) <= 2
+      && duringSearch.height <= 46,
+      `the message box stays put when search opens (${JSON.stringify({beforeSearch, duringSearch})})`);
+    await page.locator('#assistant-input').fill('days');
+    const chosen = await page.evaluate(() => {
+      const input = document.getElementById('assistant-input');
+      const label = document.querySelector('#assistant-guide-results [data-assistant-guide]')?.dataset.guideLabel || '';
+      const before = window.__guideSent.length;
+      input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true}));
+      return {
+        label,
+        draft:assistantComposerDraft(),
+        sent:window.__guideSent.length - before,
+        browser:document.getElementById('assistant-guide-browser').hidden,
+        focused:document.activeElement === input
+      };
+    });
+    assert(chosen.browser && chosen.focused && chosen.sent === 0 && chosen.label && chosen.draft === `${chosen.label}: keep this`,
+      `Enter chooses the setting and keeps the message from before the search (${JSON.stringify(chosen)})`);
+    await page.locator('#assistant-mention-remove').click();
+    await page.locator('#assistant-input').fill('keep this');
+    await page.locator('#assistant-guide-more').click();
+    await page.locator('#assistant-input').fill('zzzz-not-a-setting');
+    await page.locator('#assistant-input').press('Enter');
+    const asked = await page.evaluate(() => ({
+      sent:window.__guideSent.at(-1),
+      browser:document.getElementById('assistant-guide-browser').hidden,
+      input:document.getElementById('assistant-input').value
+    }));
+    assert(asked.sent === 'zzzz-not-a-setting' && asked.browser && asked.input === '',
+      `Enter sends the question when no setting matches (${JSON.stringify(asked)})`);
+    await page.locator('#assistant-input').fill('restore me');
+    await page.locator('#assistant-guide-more').click();
+    await page.locator('#assistant-input').fill('days');
+    await page.locator('#assistant-guide-clear').click();
+    const cleared = await page.evaluate(() => document.querySelectorAll('#assistant-guide-results [data-assistant-guide]').length);
+    assert(cleared > 3 && await page.locator('#assistant-input').inputValue() === '',
+      'clearing the search shows every setting and leaves the box empty');
+    await page.locator('#assistant-input').press('Escape');
+    const restored = await page.evaluate(() => ({
+      value:document.getElementById('assistant-input').value,
+      browser:document.getElementById('assistant-guide-browser').hidden,
+      sheet:document.getElementById('assistant-sheet').classList.contains('open')
+    }));
+    assert(restored.value === 'restore me' && restored.browser && restored.sheet,
+      `Escape closes search, puts the message back, and leaves the assistant open (${JSON.stringify(restored)})`);
+    await page.locator('#assistant-guide-more').click();
+    await page.locator('#assistant-input').fill('weekdays');
+    await page.locator('#assistant-input').press('ArrowDown');
+    await page.keyboard.press('Enter');
+    const fromList = await page.evaluate(() => ({
+      mention:document.getElementById('assistant-mention-label').textContent,
+      value:document.getElementById('assistant-input').value,
+      sent:window.__guideSent.at(-1)
+    }));
+    assert(fromList.mention.length > 0 && fromList.value === 'restore me' && fromList.sent === 'zzzz-not-a-setting',
+      `arrowing into the list chooses that setting without sending (${JSON.stringify(fromList)})`);
+    await page.locator('#assistant-mention-remove').click();
+    const parkedBottom = await dockBottom();
+    await page.locator('#assistant-input').fill('ask from the button');
+    await page.locator('#assistant-guide-more').click();
+    await page.locator('#assistant-input').fill('days');
+    await page.locator('#assistant-send').click();
+    const sentVisible = await page.evaluate(() => ({
+      sent:window.__guideSent.at(-1),
+      browser:document.getElementById('assistant-guide-browser').hidden
+    }));
+    const sentBox = await dockBottom();
+    assert(sentVisible.sent === 'days' && sentVisible.browser
+      && Math.abs(sentBox.input - parkedBottom.input) <= 2,
+      `send asks with the text in the box and the box stays put (${JSON.stringify({sentVisible, parkedBottom, sentBox})})`);
+
     const fit = async width => {
       await page.setViewportSize({width, height:844});
       const box = await page.evaluate(() => {
@@ -356,22 +445,24 @@ function assert(ok, message){
     await fit(390);
     await fit(320);
     await page.setViewportSize({width:320,height:460});
+    const rested = await dockBottom();
     await page.locator('#assistant-guide-more').click();
-    await page.locator('#assistant-guide-search').fill('days');
+    await page.locator('#assistant-input').fill('days');
     const shortScreen=await page.evaluate(()=>{
       const input=document.getElementById('assistant-input').getBoundingClientRect();
       const send=document.getElementById('assistant-send').getBoundingClientRect();
-      const search=document.getElementById('assistant-guide-search').getBoundingClientRect();
       const result=document.querySelector('#assistant-guide-results .assistant-guide').getBoundingClientRect();
-      return {inputTop:input.top,inputBottom:input.bottom,sendBottom:send.bottom,searchTop:search.top,searchBottom:search.bottom,resultTop:result.top,resultBottom:result.bottom,height:innerHeight,width:document.documentElement.scrollWidth};
+      const toggle=document.getElementById('assistant-guide-more').getBoundingClientRect();
+      return {inputTop:input.top,inputBottom:input.bottom,sendBottom:send.bottom,toggleLeft:toggle.left,resultTop:result.top,resultBottom:result.bottom,resultHeight:result.height,height:innerHeight,width:document.documentElement.scrollWidth};
     });
     await page.screenshot({path:'/tmp/assistant-guides-short-phone.png'});
     assert(shortScreen.inputBottom<=shortScreen.height&&shortScreen.sendBottom<=shortScreen.height
-      &&shortScreen.searchTop>=0&&shortScreen.searchBottom<=shortScreen.height&&shortScreen.width<=320,
-      `the settings search, composer and next action fit a shortened phone viewport (${JSON.stringify(shortScreen)})`);
-    assert(shortScreen.resultTop>=shortScreen.searchBottom&&shortScreen.resultBottom<=shortScreen.inputTop,
-      'at least one complete setting result stays visible below the search on a short phone screen');
-    await page.locator('#assistant-guide-search').press('Escape');
+      &&shortScreen.toggleLeft>=0&&shortScreen.width<=320,
+      `the message box and send stay on a shortened phone viewport (${JSON.stringify(shortScreen)})`);
+    assert(shortScreen.resultHeight>=40&&shortScreen.resultBottom<=shortScreen.inputTop+1,
+      'at least one complete setting stays visible above the message box');
+    assert(Math.abs(shortScreen.inputBottom-rested.input)<=2, 'opening search on a short screen does not move the message box');
+    await page.locator('#assistant-input').press('Escape');
     await page.setViewportSize({width:1280, height:844});
     await page.waitForFunction(() => paneTierActive());
     await fit(1280);

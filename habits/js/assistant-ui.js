@@ -497,6 +497,7 @@ function assistantClearFocus(){
 }
 
 function clearAssistantChat(){
+  if(assistantGuideSearchOpen)assistantToggleGuideBrowser(false, {restore:false});
   const needleFocus = assistantNeedleFocusLock();
   _assistantTurn += 1;
   assistantAbortInFlight();
@@ -1060,13 +1061,62 @@ function assistantGuideHintText(session, active, revising){
   return '';
 }
 
-function assistantGuideSearchWrap(){
-  return $('assistant-guide-search')?.closest('.assistant-guide-search') || null;
+// Find a setting reuses the message box. The message at open is kept so a
+// search phrase does not become the setting's value, and closing puts it back.
+let assistantGuideSearchOpen = false;
+let assistantGuidePark = '';
+
+function assistantGuideBrowsing(){
+  return assistantGuideSearchOpen;
 }
 
-function assistantSyncGuideSearchClear(){
+function assistantGuideSearchQuery(){
+  return String($('assistant-input')?.value || '');
+}
+
+function assistantGuideResultLabel(button){
+  if(!button)return '';
+  return button.dataset.guideLabel || button.querySelector(':scope > span')?.textContent || button.textContent || '';
+}
+
+function assistantSyncGuideClear(){
   const clear = $('assistant-guide-clear');
-  if(clear)clear.hidden = !String($('assistant-guide-search')?.value || '').length;
+  if(!clear)return;
+  clear.hidden = !assistantGuideSearchOpen || !assistantGuideSearchQuery().length;
+  clear.disabled = Boolean(_assistantBusy);
+}
+
+function assistantGuideSearchStatus(rows){
+  const query = assistantGuideSearchQuery().trim();
+  const kept = assistantGuidePark.trim();
+  const edited = assistantComposerDraft() !== assistantGuidePark;
+  if(!query){
+    return kept && edited
+      ? 'Find a setting. Close to return to your message.'
+      : 'Find a setting, or send a question.';
+  }
+  if(!rows.length){
+    return kept && edited
+      ? 'No matching setting. Close to return to your message.'
+      : 'No matching setting. Send to ask.';
+  }
+  return kept && edited
+    ? `${rows.length} ${rows.length === 1 ? 'match' : 'matches'}. Enter chooses. Close puts your message back.`
+    : `${rows.length} ${rows.length === 1 ? 'match' : 'matches'}. Enter chooses one.`;
+}
+
+function assistantSyncSearchChrome(){
+  const button = $('assistant-guide-more');
+  const input = $('assistant-input');
+  if(button){
+    button.setAttribute('aria-expanded', String(assistantGuideSearchOpen));
+    button.setAttribute('aria-label', assistantGuideSearchOpen ? 'Close settings search' : 'Find a setting');
+  }
+  if(input && assistantGuideSearchOpen){
+    input.placeholder = 'Find a setting or ask';
+    input.setAttribute('aria-label', 'Find a setting or ask');
+  }
+  assistantSyncGuideClear();
 }
 
 let assistantGuideRenderTimer = 0;
@@ -1098,6 +1148,8 @@ function assistantRenderGuides(){
     delete row.dataset.guideSignature;
     delete row.dataset.guideSession;
     assistantToggleGuideBrowser(false);
+    if($('assistant-guide-more'))$('assistant-guide-more').hidden = true;
+    $('assistant-dock')?.classList.remove('is-searchable');
     if(assistantMentionName() && input){
       const draft = assistantComposerDraft().trim();
       input.value = draft.endsWith(':') ? draft.slice(0, -1).trim() : draft;
@@ -1105,6 +1157,8 @@ function assistantRenderGuides(){
     assistantSetMention('');
     if(input){
       input.placeholder = 'Remind me, paste a schedule, or change it';
+      input.setAttribute('aria-label', 'assistant message');
+      input.enterKeyHint = 'send';
       input.removeAttribute('aria-describedby');
     }
     return;
@@ -1113,16 +1167,20 @@ function assistantRenderGuides(){
   if(row.dataset.guideSession!==session.id){
     row.dataset.guideSession=session.id;
     delete row.dataset.guideRevising;
-    assistantToggleGuideBrowser(false);
-    if($('assistant-guide-search'))$('assistant-guide-search').value='';
+    assistantToggleGuideBrowser(false, {restore:false});
   }
   const hint = typed.trim() || String(session.currentRequest || (session.requests || []).at(-1) || '');
   const active = assistantGuideRead(typed, session, true);
   const hintText = assistantGuideHintText(session, active, row.dataset.guideRevising === 'true');
-  if(input){
+  if(input && !assistantGuideSearchOpen){
     input.placeholder = active ? (active.rest ? 'Edit this, then send' : 'Add details, or send') : ASSISTANT_GUIDE_PLACEHOLDER;
+    input.setAttribute('aria-label', 'assistant message');
+    input.enterKeyHint = 'send';
     if(hintText)input.setAttribute('aria-describedby', 'assistant-guide-hint');
     else input.removeAttribute('aria-describedby');
+  }else if(input && assistantGuideSearchOpen){
+    assistantSyncSearchChrome();
+    input.setAttribute('aria-describedby', 'assistant-guide-status');
   }
   const label=$('assistant-guides-label'),help=$('assistant-guide-hint');
   if(help){
@@ -1135,15 +1193,19 @@ function assistantRenderGuides(){
     revise.disabled=Boolean(_assistantBusy||typed.trim());
     revise.title=typed.trim()?'Clear the message first.':'Undo the last unsaved change and edit it.';
   }
-  if($('assistant-guide-more'))$('assistant-guide-more').disabled=Boolean(_assistantBusy);
-  if($('assistant-guide-search'))$('assistant-guide-search').disabled=Boolean(_assistantBusy);
-  if($('assistant-guide-clear'))$('assistant-guide-clear').disabled=Boolean(_assistantBusy);
+  const more=$('assistant-guide-more');
+  if(more){
+    more.hidden=false;
+    more.disabled=Boolean(_assistantBusy);
+  }
+  $('assistant-dock')?.classList.add('is-searchable');
+  assistantSyncGuideClear();
   assistantRenderGuideBrowser();
   const suggestions = assistantGuideSuggestions(session, hint);
   const choosing = suggestions.some(item => /^(?:action|field):/.test(item.id));
   if(label)label.textContent=active?'Change this setting':choosing?'Which one':session.unresolved?.length?'Which setting':'Settings';
   const signature = `${suggestions.map(item => item.id).join(',')}|${active ? active.id : ''}|${_assistantBusy ? 1 : 0}`;
-  row.hidden = suggestions.length === 0;
+  row.hidden = !assistantGuideSearchOpen && suggestions.length === 0;
   if(row.dataset.guideSignature === signature)return;
   row.dataset.guideSignature = signature;
   list.replaceChildren();
@@ -1160,32 +1222,43 @@ function assistantRenderGuides(){
   }
 }
 
-function assistantToggleGuideBrowser(open){
-  const browser=$('assistant-guide-browser'),button=$('assistant-guide-more'),guides=$('assistant-guides');
-  const search=assistantGuideSearchWrap();
-  if(browser)browser.hidden=!open;
-  if(search)search.hidden=!open;
-  if(guides)guides.classList.toggle('is-browsing', Boolean(open));
-  if(button){
-    button.setAttribute('aria-expanded',String(Boolean(open)));
-    button.setAttribute('aria-label', open?'Close settings':'All settings');
-    const label=button.querySelector('.assistant-guide-more-label');
-    if(label)label.textContent=open?'Close':'All settings';
+function assistantToggleGuideBrowser(open, opts){
+  const restore = !opts || opts.restore !== false;
+  const browser=$('assistant-guide-browser'),guides=$('assistant-guides');
+  if(open && !assistantGuideSearchOpen){
+    assistantGuidePark = assistantComposerDraft();
+    assistantGuideSearchOpen = true;
+    // The tag stays in the kept message. The box shows only the words used to look up a setting.
+    assistantSetMention('');
+  }else if(!open && assistantGuideSearchOpen){
+    const parked = assistantGuidePark;
+    assistantGuideSearchOpen = false;
+    assistantGuidePark = '';
+    if(restore)assistantPresentComposer(parked);
   }
-  if(!open){
-    if(guides)guides.scrollTop=0;
-    const input=$('assistant-guide-search');
-    if(input)input.value='';
-    assistantSyncGuideSearchClear();
+  if(browser)browser.hidden=!assistantGuideSearchOpen;
+  if(guides){
+    guides.classList.toggle('is-browsing', assistantGuideSearchOpen);
+    if(assistantGuideSearchOpen)guides.hidden=false;
+    else guides.scrollTop=0;
   }
+  assistantSyncSearchChrome();
+  const input=$('assistant-input');
+  if(input && !assistantGuideSearchOpen)input.enterKeyHint='send';
+  assistantResizeComposer();
 }
 
 function assistantRenderGuideBrowser(){
   const browser=$('assistant-guide-browser'),results=$('assistant-guide-results');
   const session=_assistantSession?.focus;
-  if(!browser||browser.hidden||!results||!session)return;
-  const rows=assistantGuideBrowse(session,$('assistant-guide-search')?.value);
-  const signature=`${session.id}|${rows.map(row=>row.id).join(',')}|${Boolean(_assistantBusy)}`;
+  if(!browser||browser.hidden||!results||!session||typeof assistantGuideBrowse!=='function')return;
+  const query=assistantGuideSearchQuery();
+  const rows=assistantGuideBrowse(session, query);
+  const status=$('assistant-guide-status');
+  if(status)status.textContent=assistantGuideSearchStatus(rows);
+  const input=$('assistant-input');
+  if(input)input.enterKeyHint=rows.length?'search':'send';
+  const signature=`${session.id}|${query}|${rows.map(row=>row.id).join(',')}|${assistantComposerDraft()!==assistantGuidePark?1:0}|${Boolean(_assistantBusy)}`;
   if(results.dataset.signature===signature)return;
   results.dataset.signature=signature;
   results.replaceChildren();
@@ -1207,8 +1280,9 @@ function assistantApplyGuide(label){
   const input = $('assistant-input');
   const session = _assistantSession && _assistantSession.focus;
   if(!input || input.disabled || _assistantBusy || !session || !assistantFocusAlive(session) || typeof assistantGuideCompose !== 'function')return;
-  assistantToggleGuideBrowser(false);
-  assistantPresentComposer(assistantGuideCompose(assistantComposerDraft(), label, session));
+  const base = assistantGuideSearchOpen ? assistantGuidePark : assistantComposerDraft();
+  assistantToggleGuideBrowser(false, {restore:false});
+  assistantPresentComposer(assistantGuideCompose(base, label, session));
   const end = input.value.length;
   input.focus({preventScroll:true});
   try{ input.setSelectionRange(end, end); }catch(_){}
@@ -1225,7 +1299,7 @@ function assistantResizeComposer(){
   if(!input)return;
   if(typeof ASSISTANT_INPUT_MAX === 'number')input.maxLength = ASSISTANT_INPUT_MAX;
   const guided = $('assistant-guides') && !$('assistant-guides').hidden;
-  const max = guided ? 88 : 160;
+  const max = assistantGuideSearchOpen ? 44 : guided ? 88 : 160;
   input.style.height = 'auto';
   input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), max)}px`;
 }
@@ -1379,6 +1453,7 @@ async function sendAssistantMessage(text, opts){
   const guideSession = _assistantSession && _assistantSession.focus;
   if(guideSession && typeof assistantGuideOutgoing === 'function')value = assistantGuideOutgoing(typed, guideSession);
   if(!value || _assistantBusy)return;
+  if(assistantGuideSearchOpen)assistantToggleGuideBrowser(false, {restore:false});
   if(!assistantNeedleCanSend()){
     assistantPresentComposer(text == null ? value : String(text));
     assistantResizeComposer();
@@ -1898,9 +1973,11 @@ function bindAssistantUi(){
   });
   $('assistant-send')?.addEventListener('click', () => sendAssistantMessage(assistantComposerDraft()));
   $('assistant-input')?.addEventListener('input', () => {
-    assistantAbsorbGuidePrefix();
+    if(!assistantGuideSearchOpen)assistantAbsorbGuidePrefix();
     assistantResizeComposer();
     assistantSyncSend();
+    assistantSyncGuideClear();
+    if(assistantGuideSearchOpen)assistantRenderGuideBrowser();
     assistantScheduleGuideRender();
   });
   $('assistant-mention-remove')?.addEventListener('pointerdown', e => e.preventDefault());
@@ -1932,39 +2009,53 @@ function bindAssistantUi(){
   });
   $('assistant-guide-more')?.addEventListener('click',()=>{
     if(_assistantBusy)return;
-    const open=$('assistant-guide-browser')?.hidden;
-    assistantToggleGuideBrowser(open);
-    if(open){
-      assistantRenderGuideBrowser();
-      $('assistant-guide-search')?.focus({preventScroll:true});
-      const guides=$('assistant-guides'),search=$('assistant-guide-search');
-      if(guides&&search)guides.scrollTop+=search.getBoundingClientRect().top-guides.getBoundingClientRect().top;
-    }else $('assistant-input')?.focus({preventScroll:true});
+    const opening=!assistantGuideSearchOpen;
+    assistantToggleGuideBrowser(opening);
+    if(opening)assistantRenderGuideBrowser();
+    assistantRenderGuides();
+    $('assistant-input')?.focus({preventScroll:true});
     if(typeof updateKeyboardLift==='function')updateKeyboardLift();
   });
-  $('assistant-guide-search')?.addEventListener('input',()=>{
-    assistantSyncGuideSearchClear();
-    assistantRenderGuideBrowser();
-  });
   $('assistant-guide-clear')?.addEventListener('click',()=>{
-    const input=$('assistant-guide-search');
-    if(!input || input.disabled)return;
+    const input=$('assistant-input');
+    if(!input || input.disabled || !assistantGuideSearchOpen)return;
     input.value='';
-    assistantSyncGuideSearchClear();
+    assistantResizeComposer();
+    assistantSyncSend();
+    assistantSyncGuideClear();
     assistantRenderGuideBrowser();
+    assistantScheduleGuideRender();
     input.focus({preventScroll:true});
   });
-  $('assistant-guide-search')?.addEventListener('keydown',e=>{
+  $('assistant-guide-results')?.addEventListener('keydown',e=>{
+    const buttons=[...$('assistant-guide-results').querySelectorAll('[data-assistant-guide]:not(:disabled)')];
     if(e.key==='Escape'){
-      e.preventDefault();assistantToggleGuideBrowser(false);$('assistant-input')?.focus({preventScroll:true});
+      e.preventDefault();
+      assistantToggleGuideBrowser(false);
+      assistantRenderGuides();
+      $('assistant-input')?.focus({preventScroll:true});
+      return;
     }
     if(e.key==='Enter'){
+      const current=e.target.closest('[data-assistant-guide]');
+      if(!current || current.disabled)return;
       e.preventDefault();
-      const first=$('assistant-guide-results')?.querySelector('[data-assistant-guide]:not(:disabled)');
-      if(first)assistantApplyGuide(first.dataset.guideLabel || first.querySelector('.focus-field-text')?.textContent || first.textContent);
+      assistantApplyGuide(assistantGuideResultLabel(current));
+      return;
     }
+    if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;
+    const index=buttons.indexOf(document.activeElement);
+    if(e.key==='ArrowUp' && index<=0){
+      e.preventDefault();
+      $('assistant-input')?.focus({preventScroll:true});
+      return;
+    }
+    const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:Math.max(0,Math.min(buttons.length-1,index+(e.key==='ArrowDown'?1:-1)));
+    e.preventDefault();
+    buttons[next]?.focus({preventScroll:true});
   });
   $('assistant-guide-revise')?.addEventListener('click',()=>{
+    if(assistantGuideSearchOpen)assistantToggleGuideBrowser(false);
     const input=$('assistant-input'),session=_assistantSession?.focus;
     if(_assistantBusy||assistantComposerDraft().trim()||!session||!assistantFocusAlive(session))return;
     const request=assistantGuideRevise(session);
@@ -1988,7 +2079,31 @@ function bindAssistantUi(){
         return;
       }
     }
+    if(e.key === 'Escape' && assistantGuideSearchOpen){
+      e.preventDefault();
+      assistantToggleGuideBrowser(false);
+      assistantRenderGuides();
+      return;
+    }
+    if(e.key === 'ArrowDown' && assistantGuideSearchOpen && !e.altKey && !e.metaKey && !e.ctrlKey){
+      const first = $('assistant-guide-results')?.querySelector('[data-assistant-guide]:not(:disabled)');
+      if(first){
+        e.preventDefault();
+        first.focus({preventScroll:true});
+      }
+      return;
+    }
+    if(e.key === 'Enter' && assistantGuideSearchOpen){
+      if(e.isComposing || e.keyCode === 229)return;
+      e.preventDefault();
+      if(e.shiftKey)return;
+      const first = $('assistant-guide-results')?.querySelector('[data-assistant-guide]:not(:disabled)');
+      if(first)assistantApplyGuide(assistantGuideResultLabel(first));
+      else sendAssistantMessage(assistantComposerDraft());
+      return;
+    }
     if(e.key === 'Enter' && !e.shiftKey){
+      if(e.isComposing || e.keyCode === 229)return;
       e.preventDefault();
       sendAssistantMessage(assistantComposerDraft());
     }

@@ -95,8 +95,11 @@ those earlier words belong to it, and otherwise asks for the value. Detail in
 the same message is the value, so the setting’s own label cannot widen it.
 Unanswered field questions take priority when the composer is empty. Choosing a
 setting shows one line: what it does, and an example. Examples are help text
-and never become executable input. **All settings** searches applicable item
-fields by their labels, aliases and explanations. Android reminders stay absent
+and never become executable input. **Find a setting** uses that same message
+box. The words already there narrow the list, and typing while it is open only
+filters; closing it puts the message back. Enter chooses a match, or sends the
+question when nothing matches. The send button always asks with the text in the
+box. Android reminders stay absent
 in the PWA. Choosing a result only fills the composer and returns focus to it.
 An explicitly selected field supplies the setting's meaning to Needle, while its
 value still requires exact model-selected evidence and validation. **Name** accepts

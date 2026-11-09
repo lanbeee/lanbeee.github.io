@@ -352,27 +352,26 @@
           <p class="sr-only" id="assistant-guides-label">Settings</p>
           <div class="assistant-guides-bar">
             <div class="assistant-guides-row" id="assistant-guides-row" role="group" aria-labelledby="assistant-guides-label"></div>
-            <div class="assistant-guide-search" hidden>
-              <svg class="assistant-guide-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg>
-              <input type="search" id="assistant-guide-search" placeholder="Find a setting" aria-label="Find an item setting" autocomplete="off" enterkeyhint="search" />
-              <button type="button" class="assistant-guide-search-clear" id="assistant-guide-clear" aria-label="clear setting search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
-            </div>
-            <button type="button" class="assistant-guide-more" id="assistant-guide-more" aria-expanded="false" aria-controls="assistant-guide-browser" aria-label="All settings"><i class="ti ti-search assistant-guide-more-icon" aria-hidden="true"></i><span class="assistant-guide-more-label">All settings</span></button>
           </div>
           <div class="assistant-guide-browser" id="assistant-guide-browser" hidden>
+            <p class="assistant-guide-status" id="assistant-guide-status" role="status"></p>
             <div class="assistant-guide-results" id="assistant-guide-results" role="group" aria-label="Item settings"></div>
           </div>
           <p class="assistant-guide-hint" id="assistant-guide-hint" hidden></p>
           <button type="button" class="assistant-guide-more assistant-guide-revise" id="assistant-guide-revise" hidden>Fix last request</button>
         </div>
-        <div class="assistant-field" id="assistant-field">
-          <span class="assistant-mention" id="assistant-mention" hidden>
-            <span class="assistant-mention-label" id="assistant-mention-label"></span>
-            <button type="button" class="assistant-mention-remove" id="assistant-mention-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
-          </span>
-          <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
+        <div class="assistant-dock" id="assistant-dock">
+          <button type="button" class="assistant-search-toggle" id="assistant-guide-more" hidden aria-expanded="false" aria-controls="assistant-guide-browser" aria-label="Find a setting"><i class="ti ti-search" data-guide-icon="search" aria-hidden="true"></i></button>
+          <div class="assistant-field" id="assistant-field">
+            <span class="assistant-mention" id="assistant-mention" hidden>
+              <span class="assistant-mention-label" id="assistant-mention-label"></span>
+              <button type="button" class="assistant-mention-remove" id="assistant-mention-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </span>
+            <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
+            <button type="button" class="assistant-field-clear" id="assistant-guide-clear" aria-label="clear setting search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          </div>
+          <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
         </div>
-        <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
       </div>
     </div>
   </div>

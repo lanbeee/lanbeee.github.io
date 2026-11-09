@@ -118,7 +118,7 @@ const cases=[
       const rewound=await page.evaluate(()=>_assistantSession.focus.changes.length===1&&_assistantSession.focus.changes[0].field==='pinned');
       if(!rewound)throw new Error('UI revise did not preserve only the prior pin edit');
       await page.locator('#assistant-guide-more').click();
-      await page.locator('#assistant-guide-search').fill(test.label);
+      await page.locator('#assistant-input').fill(test.label);
       const traceBefore=await page.evaluate(()=>_assistantSession.focus.trace.length);
       await page.locator(`#assistant-guide-results [data-guide-label="${test.label}"]`).click();
       const guided=await page.evaluate(()=>assistantComposerDraft());
