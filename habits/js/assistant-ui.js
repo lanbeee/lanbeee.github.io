@@ -1302,6 +1302,12 @@ function assistantResizeComposer(){
   const max = assistantGuideSearchOpen ? 44 : guided ? 88 : 160;
   input.style.height = 'auto';
   input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), max)}px`;
+  const dock = $('assistant-dock');
+  const sheet = dock?.closest('.assistant-sheet');
+  if(dock && sheet){
+    const block = `${Math.ceil(dock.getBoundingClientRect().height)}px`;
+    if(sheet.style.getPropertyValue('--assistant-dock-block') !== block)sheet.style.setProperty('--assistant-dock-block', block);
+  }
 }
 
 function assistantSyncSend(){

@@ -1,4 +1,4 @@
-const CACHE = 'tings-v791';
+const CACHE = 'tings-v792';
 const MAPS_CACHE = 'tings-maps-v3';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';

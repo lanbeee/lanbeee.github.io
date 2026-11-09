@@ -99,7 +99,8 @@ body[data-pane-count="3"] .assistant-sheet{
 }
 #assistant-focus-done[hidden]{display:none;}
 .assistant-thread{
-  flex:1 1 0;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;
+  flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:8px;
   padding:0 0 4px;scrollbar-width:none;
 }
 .assistant-thread::-webkit-scrollbar{display:none;}
@@ -425,6 +426,26 @@ body:not(.assistant-debug-on) .assistant-bubble-debug{display:none;}
 .assistant-dock{
   display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:6px;align-items:end;
   flex:0 0 auto;margin-top:auto;
+}
+/* Phone: the composer is pinned to the visible viewport, the same way the
+   detail search dock is. The sheet ends on that one edge, and only the
+   thread and the setting list scroll. */
+body[data-pane-count="1"] #assistant-sheet{
+  overflow:hidden;overscroll-behavior:none;
+}
+body[data-pane-count="1"] .assistant-sheet{
+  min-height:0;height:min(100%,var(--keyboard-viewport-bottom,100dvh));max-height:100%;
+  padding-bottom:0;overflow:hidden;overscroll-behavior:none;
+}
+body[data-pane-count="1"] .assistant-compose{
+  padding-bottom:calc(var(--assistant-dock-block, 52px) + var(--keyboard-dock-safe-bottom, max(0px, calc(var(--content-safe-bottom) - var(--keyboard-lift, 0px)))));
+}
+body[data-pane-count="1"] .assistant-dock{
+  position:absolute;z-index:5;margin:0;width:auto;bottom:auto;transition:none;
+  left:max(var(--assistant-gutter), calc((100% - min(100%, 480px)) / 2 + var(--assistant-gutter)));
+  right:max(var(--assistant-gutter), calc((100% - min(100%, 480px)) / 2 + var(--assistant-gutter)));
+  top:calc(min(100%, var(--keyboard-viewport-bottom, 100dvh)) - var(--keyboard-dock-safe-bottom, max(0px, calc(var(--content-safe-bottom) - var(--keyboard-lift, 0px)))));
+  transform:translateY(-100%);
 }
 .assistant-dock.is-searchable{grid-template-columns:44px minmax(0,1fr) 44px;}
 .assistant-dock.is-searchable .assistant-field{grid-column:2;}

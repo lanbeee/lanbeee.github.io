@@ -352,6 +352,36 @@ function assert(ok, message){
     assert(Math.abs(duringSearch.input - beforeSearch.input) <= 2 && Math.abs(duringSearch.send - beforeSearch.send) <= 2
       && duringSearch.height <= 46,
       `the message box stays put when search opens (${JSON.stringify({beforeSearch, duringSearch})})`);
+    const scrollLock = await page.evaluate(() => {
+      const sheet = document.querySelector('.assistant-sheet');
+      const input = document.getElementById('assistant-input');
+      const before = input.getBoundingClientRect().bottom;
+      sheet.scrollTop = 400;
+      document.documentElement.scrollTop = 400;
+      document.body.scrollTop = 400;
+      const after = input.getBoundingClientRect().bottom;
+      return {
+        moved:Math.abs(after - before),
+        sheetTop:sheet.scrollTop,
+        pageTop:document.documentElement.scrollTop || document.body.scrollTop,
+        overflow:getComputedStyle(sheet).overflowY
+      };
+    });
+    assert(scrollLock.moved <= 1 && scrollLock.sheetTop === 0 && scrollLock.pageTop === 0 && scrollLock.overflow === 'hidden',
+      `the page has nothing to scroll, so the message box stays put (${JSON.stringify(scrollLock)})`);
+    const keyboard = await page.evaluate(() => {
+      const root = document.documentElement;
+      root.style.setProperty('--keyboard-viewport-bottom', '520px');
+      root.style.setProperty('--keyboard-lift', '324px');
+      const input = document.getElementById('assistant-input').getBoundingClientRect();
+      const sheet = document.querySelector('.assistant-sheet').getBoundingClientRect();
+      const placed = {inputBottom:input.bottom, sheetBottom:sheet.bottom};
+      root.style.removeProperty('--keyboard-viewport-bottom');
+      root.style.removeProperty('--keyboard-lift');
+      return placed;
+    });
+    assert(Math.abs(keyboard.sheetBottom - 520) <= 2 && Math.abs(keyboard.inputBottom - keyboard.sheetBottom) <= 2,
+      `the message box stays on the visible edge when the keyboard opens (${JSON.stringify(keyboard)})`);
     await page.locator('#assistant-input').fill('days');
     const chosen = await page.evaluate(() => {
       const input = document.getElementById('assistant-input');
