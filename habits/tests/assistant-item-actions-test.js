@@ -22,13 +22,14 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const now=new Date('2026-11-08T15:00:00-05:00').getTime();
       window.actionTest={
         now,
-        seed(extra){
+        seed(extra, settings){
+          settings = settings || {};
           save([{
             hid:'walk',name:'Walk',type:'keepup',target:7,durationMinutes:30,priority:2,logs:[],topics:[],pinned:false,
             links:[{kind:'phone',value:'5551234567'}],
             ...extra
-          }]);
-          saveSortSettings({...loadSortSettings(),locations:[{id:'park',name:'Park',lat:40,lng:-74}]});
+          }, ...(settings.items || [])]);
+          saveSortSettings({...loadSortSettings(),locations:settings.locations || [{id:'park',name:'Park',lat:40,lng:-74}]});
         },
         open(extra){
           return assistantFocusOpen({operation:'edit',kind:'habit',targetId:'walk',now,...extra});
@@ -72,16 +73,18 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     });
     const turn=async(prompt,opts={})=>page.evaluate(async({prompt,opts})=>{
       actionTest.mode=opts.mode||'';
-      actionTest.seed(opts.seed||{});
+      actionTest.seed(opts.seed||{}, opts.settings||{});
       if(opts.logs){const data=load();data[0].logs=opts.logs;save(data);}
       const session=actionTest.open(opts.open||{});
+      if(opts.scope) assistantFocusSetScope(session, opts.scope, opts.date||'2026-11-09');
       const before=JSON.stringify(load());
       await assistantFocusTurn(session,prompt,actionTest.options());
       const html=assistantFocusReviewHtml(session);
       const action=(session.itemActions||[])[0]||null;
+      const shown=field=>['durationMinutes','allowedWeekdays','preferredWeekdays','places','appointmentStartDate','appointmentRepeat','conditionRadiusM','scheduleLinks','earlyWindowDays','delayAllowanceDays'].includes(field);
       return {
         beforeSame:before===JSON.stringify(load()),
-        changes:session.changes.map(change=>({field:change.field,key:change.value!=null&&['dueDate','planByDate'].includes(change.field)?dateKey(change.value):undefined,value:change.field==='durationMinutes'?change.value:undefined})),
+        changes:session.changes.map(change=>({field:change.field,op:change.op,key:change.value!=null&&['dueDate','planByDate'].includes(change.field)?dateKey(change.value):undefined,value:shown(change.field)?change.value:undefined})),
         questions:(session.unresolved||[]).map(row=>({field:row.field,question:row.question,choices:(row.choices||[]).map(choice=>choice.id||choice)})),
         guides:assistantGuideSuggestions(session,session.currentRequest).map(row=>row.id),
         action:action&&{kind:action.kind,ready:Boolean(action.ready),label:action.label||'',summary:action.summary||'',
@@ -112,21 +115,28 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     },{prompt,opts});
     const choose=async(prompt,choice,opts={})=>page.evaluate(async({prompt,choice,opts})=>{
       actionTest.mode='';
-      actionTest.seed(opts.seed||{});
+      actionTest.seed(opts.seed||{}, opts.settings||{});
       const session=actionTest.open(opts.open||{});
+      if(opts.scope) assistantFocusSetScope(session, opts.scope, opts.date||'2026-11-09');
       const before=JSON.stringify(load());
       await assistantFocusTurn(session,prompt,actionTest.options());
       const picked=assistantFocusChoose(session,'guidance',choice);
       const html=assistantFocusReviewHtml(session);
       const action=(session.itemActions||[])[0]||null;
+      const record=assistantFocusMaterialize(session);
+      const occurrence=record.appointment&&record.appointment.exceptions?record.appointment.exceptions[session.occurrenceDate]||null:null;
+      const shown=field=>['durationMinutes','allowedWeekdays','preferredWeekdays','places','appointmentStartDate','appointmentRepeat','conditionRadiusM','scheduleLinks','earlyWindowDays','delayAllowanceDays'].includes(field);
       return {
         beforeSame:before===JSON.stringify(load()),
         ok:Boolean(picked&&picked.ok),
         error:picked&&picked.error||'',
-        changes:session.changes.map(change=>({field:change.field,key:change.value!=null&&['dueDate','planByDate'].includes(change.field)?dateKey(change.value):undefined})),
+        changes:session.changes.map(change=>({field:change.field,op:change.op,key:change.value!=null&&['dueDate','planByDate'].includes(change.field)?dateKey(change.value):undefined,value:shown(change.field)?change.value:undefined})),
         questions:(session.unresolved||[]).map(row=>row.question),
-        action:action&&{kind:action.kind,ready:Boolean(action.ready),plan:action.pendingPlan?{key:action.pendingPlan.key,timeMin:action.pendingPlan.timeMin}:null,summary:action.summary||''},
-        button:html.includes('data-focus-choice="item-action"')
+        asked:(session.unresolved||[]).map(row=>row.field),
+        action:action&&{kind:action.kind,ready:Boolean(action.ready),plan:action.pendingPlan?{key:action.pendingPlan.key,timeMin:action.pendingPlan.timeMin}:null,
+          complete:action.pendingComplete?{day:action.pendingComplete.at?dateKey(action.pendingComplete.at):''}:null,summary:action.summary||''},
+        button:html.includes('data-focus-choice="item-action"'),
+        exception:occurrence
       };
     },{prompt,choice,opts});
 
@@ -317,6 +327,125 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     const missing=await turn('mark it not done');
     assert(missing.beforeSame&&missing.action&&missing.action.ready===false&&/no completion/.test(missing.action.summary)&&!missing.button,
       `undo with nothing logged explains that and does not write (${JSON.stringify(missing)})`);
+
+    const guidanceIds=row=>{
+      const question=(row.questions||[]).find(item=>item.field==='guidance')||{choices:[]};
+      return (question.choices||[]).join();
+    };
+    const places=[{id:'home',name:'Home',lat:40,lng:-74},{id:'work',name:'Work',lat:41,lng:-73}];
+    const eventSeed={appointment:{repeat:'weekly',startDate:'2026-11-02',startMinute:540,weekdays:[1],until:'',exceptions:{}}};
+    const framed=[
+      ['If possible, plan this for tomorrow','action:plan,field:planByDate',{}],
+      ['Ideally, plan this for tomorrow','action:plan,field:planByDate',{}],
+      ['I would rather plan this for tomorrow','action:plan,field:planByDate',{}],
+      ['If possible, plan this for tomorrow','action:plan,field:dueDate',{open:{kind:'task'},seed:{type:'task'}}]
+    ];
+    for(const [prompt,ids,opts] of framed){
+      const row=await turn(prompt,opts);
+      assert(row.beforeSame&&!row.action&&!row.changes.length&&guidanceIds(row)===ids&&row.guides.join()===ids,
+        `${prompt} asks instead of planning (${JSON.stringify(row)})`);
+    }
+    const framedPlan=await choose('If possible, plan this for tomorrow','action:plan');
+    assert(framedPlan.beforeSame&&framedPlan.ok&&framedPlan.action&&framedPlan.action.ready&&framedPlan.action.plan.key==='2026-11-09'&&!framedPlan.changes.length,
+      `choosing the framed plan uses tomorrow (${JSON.stringify(framedPlan)})`);
+    const framedDate=await choose('If possible, plan this for tomorrow','field:planByDate');
+    assert(framedDate.beforeSame&&framedDate.ok&&!framedDate.action&&framedDate.changes.length===1&&framedDate.changes[0].field==='planByDate'&&framedDate.changes[0].key==='2026-11-09',
+      `choosing the framed do-by date uses tomorrow (${JSON.stringify(framedDate)})`);
+    const counted=await turn('Count this as done');
+    assert(counted.beforeSame&&!counted.action&&!counted.changes.length&&guidanceIds(counted)==='action:log,field:autoMarkMinutes',
+      `count this as done asks for a log or automatic completion (${JSON.stringify(counted)})`);
+    const countedDay=await turn('Count this as done yesterday');
+    assert(countedDay.beforeSame&&!countedDay.action&&guidanceIds(countedDay)==='action:log,field:autoMarkMinutes',
+      `count this as done yesterday asks before logging (${JSON.stringify(countedDay)})`);
+    const countedLog=await choose('Count this as done yesterday','action:log');
+    assert(countedLog.ok&&countedLog.action&&countedLog.action.ready&&countedLog.action.complete&&countedLog.action.complete.day==='2026-11-07',
+      `choosing the log uses yesterday (${JSON.stringify(countedLog)})`);
+    const countedMark=await choose('Count this as done','field:autoMarkMinutes');
+    assert(!countedMark.action&&!countedMark.changes.length&&countedMark.asked.includes('autoMarkMinutes'),
+      `choosing automatic completion asks for a length (${JSON.stringify(countedMark)})`);
+    const early=await turn('Make the 25 minute session start early');
+    assert(early.beforeSame&&!early.changes.length&&guidanceIds(early)==='field:durationMinutes,field:earlyWindowDays',
+      `a session length beside early asks which one (${JSON.stringify(early)})`);
+    const earlyLength=await choose('Make the 25 minute session start early','field:durationMinutes');
+    assert(earlyLength.ok&&earlyLength.changes.length===1&&earlyLength.changes[0].value===25,
+      `choosing duration keeps 25 minutes (${JSON.stringify(earlyLength)})`);
+    const earlyAsk=await choose('Make the 25 minute session start early','field:earlyWindowDays');
+    assert(!earlyAsk.changes.length&&earlyAsk.asked.includes('earlyWindowDays'),
+      `choosing early allowance does not set the duration (${JSON.stringify(earlyAsk)})`);
+    const late=await turn('Make it 30 minutes so I am not late');
+    assert(late.beforeSame&&!late.changes.length&&guidanceIds(late)==='field:durationMinutes,field:delayAllowanceDays',
+      `a length beside late asks which one (${JSON.stringify(late)})`);
+    const eitherDays=await turn('Do it on either Monday or Wednesday');
+    assert(eitherDays.beforeSame&&!eitherDays.changes.length&&guidanceIds(eitherDays)==='field:allowedWeekdays,field:scheduleOptions',
+      `either weekday asks for days or alternatives (${JSON.stringify(eitherDays)})`);
+    const pickedDays=await choose('Do it on either Monday or Wednesday','field:allowedWeekdays');
+    assert(pickedDays.ok&&pickedDays.changes.length===1&&JSON.stringify(pickedDays.changes[0].value)==='[1,3]',
+      `choosing weekdays sets Monday and Wednesday (${JSON.stringify(pickedDays)})`);
+    const alternate=await turn('Do this on alternate Mondays');
+    assert(alternate.beforeSame&&!alternate.changes.length&&guidanceIds(alternate)==='field:allowedWeekdays,field:scheduleOptions',
+      `alternate Mondays asks instead of failing (${JSON.stringify(alternate)})`);
+    const eitherPlace=await turn('Do this at Home or at Work',{settings:{locations:places}});
+    assert(eitherPlace.beforeSame&&!eitherPlace.changes.length&&guidanceIds(eitherPlace)==='field:places,field:scheduleOptions',
+      `Home or Work asks for places or alternatives (${JSON.stringify(eitherPlace)})`);
+    const pickedPlaces=await choose('Do this at Home or at Work','field:places',{settings:{locations:places}});
+    assert(pickedPlaces.ok&&pickedPlaces.changes.length===1&&JSON.stringify([].concat(pickedPlaces.changes[0].value).sort())==='["home","work"]',
+      `choosing places assigns Home and Work (${JSON.stringify(pickedPlaces)})`);
+    const distance=await turn('Walk 30 minutes within 2 kilometers of Home',{settings:{locations:places}});
+    assert(distance.beforeSame&&!distance.changes.length&&guidanceIds(distance)==='field:durationMinutes,field:places',
+      `a walk near Home asks for the length or the place (${JSON.stringify(distance)})`);
+    const near=await turn('Only at Home within 300 meters',{seed:{repeatMode:'opportunity',conditionTrigger:'location'},settings:{locations:places}});
+    assert(near.beforeSame&&!near.changes.length&&guidanceIds(near)==='field:conditionRadiusM,field:places',
+      `Home within 300 meters asks for the place or the radius (${JSON.stringify(near)})`);
+    const moved=await turn('Move this date to November 20',{open:{kind:'event'},seed:eventSeed,scope:'series'});
+    assert(moved.beforeSame&&!moved.changes.length&&guidanceIds(moved)==='field:appointmentStartDate,field:appointmentStartMinute',
+      `moving this date asks for the date or the time (${JSON.stringify(moved)})`);
+    const movedDate=await choose('Move this date to November 20','field:appointmentStartDate',{open:{kind:'event'},seed:eventSeed,scope:'series'});
+    assert(movedDate.ok&&movedDate.changes.length===1&&movedDate.changes[0].value==='2026-11-20',
+      `choosing the start date uses November 20 (${JSON.stringify(movedDate)})`);
+    const movedTime=await choose('Move this date to November 20','field:appointmentStartMinute',{open:{kind:'event'},seed:eventSeed,scope:'series'});
+    assert(!movedTime.changes.some(change=>change.field==='appointmentStartDate')&&movedTime.asked.includes('appointmentStartMinute'),
+      `choosing the start time asks for a clock (${JSON.stringify(movedTime)})`);
+    const exceptionSeed={appointment:{repeat:'weekly',startDate:'2026-11-02',startMinute:540,weekdays:[1],until:'',exceptions:{'2026-11-09':{startMinute:660,durationMinutes:15,emoji:'🌙'}}}};
+    const reset=await turn('Move it back to the regular time',{open:{kind:'event'},seed:exceptionSeed,scope:'occurrence'});
+    assert(reset.beforeSame&&!reset.changes.length&&guidanceIds(reset)==='field:exceptionReset,field:exceptionTime',
+      `the regular time asks for a full reset or only the time (${JSON.stringify(reset)})`);
+    const resetAll=await choose('Move it back to the regular time','field:exceptionReset',{open:{kind:'event'},seed:exceptionSeed,scope:'occurrence'});
+    assert(resetAll.ok&&resetAll.exception==null,
+      `the full reset clears the occurrence (${JSON.stringify(resetAll)})`);
+    const resetTime=await choose('Move it back to the regular time','field:exceptionTime',{open:{kind:'event'},seed:exceptionSeed,scope:'occurrence'});
+    assert(resetTime.ok&&resetTime.exception&&resetTime.exception.startMinute==null&&resetTime.exception.emoji==='🌙'&&resetTime.exception.durationMinutes===15,
+      `only the usual time keeps the emoji and duration (${JSON.stringify(resetTime)})`);
+    const once=await turn('Make it a single occurrence',{open:{kind:'event'},seed:eventSeed,scope:'series'});
+    assert(once.beforeSame&&once.changes.length===1&&once.changes[0].field==='appointmentRepeat'&&once.changes[0].value==='once'&&!once.questions.some(row=>row.field==='guidance'),
+      `a single occurrence becomes once (${JSON.stringify(once)})`);
+    const onceSentence=await turn('It is a single occurrence rather than a recurring event now',{open:{kind:'event'},seed:eventSeed,scope:'series'});
+    assert(onceSentence.beforeSame&&onceSentence.changes.some(change=>change.field==='appointmentRepeat'&&change.value==='once')&&!onceSentence.questions.some(row=>row.field==='guidance'),
+      `the full single-occurrence sentence becomes once (${JSON.stringify(onceSentence)})`);
+    const meeting={hid:'meeting',name:'Meeting',type:'keepup',target:7,durationMinutes:30,logs:[]};
+    const beforeLink=await turn('It no longer has to follow Meeting',{seed:{scheduleLinks:[{anchorHid:'meeting',direction:'before'}]},settings:{items:[meeting]}});
+    assert(beforeLink.beforeSame&&!beforeLink.changes.some(change=>change.field==='scheduleLinks')&&beforeLink.questions.some(row=>/order/i.test(row.question)),
+      `a before-link is not reported as removed (${JSON.stringify(beforeLink)})`);
+    const afterLink=await turn('It no longer has to follow Meeting',{seed:{scheduleLinks:[{anchorHid:'meeting',direction:'after'}]},settings:{items:[meeting]}});
+    assert(afterLink.beforeSame&&afterLink.changes.some(change=>change.field==='scheduleLinks'&&change.op==='clear'),
+      `an after-link is removed (${JSON.stringify(afterLink)})`);
+
+    await page.evaluate(async()=>{
+      actionTest.mode='';
+      actionTest.seed();
+      const session=actionTest.open();
+      if(!_assistantSession)_assistantSession=assistantCreateSession();
+      _assistantSession.focus=session;
+      await assistantFocusTurn(session,'If possible, plan this for tomorrow',actionTest.options());
+      assistantShowFocusReview(session);
+      return openAssistantSheet({skipWelcome:true,focused:true});
+    });
+    await page.locator('[data-focus-value="action:plan"]').click();
+    const guided=await page.evaluate(()=>{
+      const action=(_assistantSession.focus.itemActions||[])[0]||null;
+      if(typeof closeAssistantSheet==='function')closeAssistantSheet();
+      return {ready:Boolean(action&&action.ready),key:action&&action.pendingPlan?action.pendingPlan.key:''};
+    });
+    assert(guided.ready&&guided.key==='2026-11-09', `the guidance button plans tomorrow (${JSON.stringify(guided)})`);
 
     await page.evaluate(()=>{
       actionTest.mode='';

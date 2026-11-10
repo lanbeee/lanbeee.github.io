@@ -245,7 +245,8 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['delayAllowanceDays'], when:/\bcannot slip\b/i},
   {fields:['appointmentRepeat'], require:/\b(?:weekly|once|every week|one[ -](?:time|off)|single (?:event|occurrence))\b/i},
   {fields:['allowedMonthDays','preferredMonthDays'], when:new RegExp(`\\b(?:every|each)\\s+(?:${assistantOrdinalSource()})\\s+(?:days?|weeks?)\\b`,'i'), unless:/\bmonth\b/i},
-  {fields:['durationMinutes','allowedWindow'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i},
+  {fields:['durationMinutes'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i, unless:/\b(?:minutes?|mins?|session|duration|long)\b/i},
+  {fields:['allowedWindow'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i},
   {fields:['places'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i},
   {fields:['conditionTrigger'], when:/\b(?:radius|meters?|metres?|trigger area)\b/i},
   {fields:['appointmentStartDate'], when:/\b(?:until|through|end date|last date for repeats|recurrence cutoff date)\b/i, unless:/\bstart(?:s|ing)?\b/i},
@@ -492,7 +493,10 @@ function assistantFieldRelevant(def, text){
   if(assistantFieldStartPolicy(text)!=null&&['dueTime','appointmentStartMinute','allowedWindow','preferredWindow','pinned'].includes(def.id))return false;
   if(['dueDate','appointmentStartDate','appointmentUntil'].includes(def.id)&&ASSISTANT_FIELD_SIGNALS.snoozedUntil.test(text))return false;
   if(def.id==='places'&&assistantFieldAnywherePolicy(text)!=null&&/\bsaved places\b/i.test(text))return false;
-  if(ASSISTANT_FIELD_SIGNALS.conditionRadiusM.test(text)&&['places','conditionTrigger','durationMinutes','allowedWindow'].includes(def.id))return false;
+  if(ASSISTANT_FIELD_SIGNALS.conditionRadiusM.test(text)&&['places','conditionTrigger','allowedWindow'].includes(def.id))return false;
+  // A session length next to a distance stays a duration. Guidance asks when a
+  // real radius or a saved place is the other reading.
+  if(def.id==='durationMinutes'&&ASSISTANT_FIELD_SIGNALS.conditionRadiusM.test(text)&&!/\b(?:minutes?|mins?|session|duration|long)\b/i.test(text))return false;
   if((ASSISTANT_FIELD_SIGNALS.earlyWindowDays.test(text)||ASSISTANT_FIELD_SIGNALS.delayAllowanceDays.test(text))&&def.id==='durationMinutes')return false;
   if(def.id==='exceptionReset'&&!assistantFieldOccurrenceReset(text))return false;
   if(assistantFieldOccurrenceReset(text)
@@ -665,7 +669,9 @@ function assistantFieldRemoveValue(def,text,session){
   if(def.id==='scheduleLinks'){
     const found=assistantMatchByName(load().filter(item=>item.hid!==session.targetId),operand);
     if(!found.ok)return fail();
-    const value=(baseline.scheduleLinks||[]).filter(link=>link.anchorHid!==found.item.hid||link.direction!=='after');
+    const before=baseline.scheduleLinks||[];
+    const value=before.filter(link=>link.anchorHid!==found.item.hid||link.direction!=='after');
+    if(value.length===before.length)return fail();
     return {ok:true,changes:[{field:def.id,op:value.length?'set':'clear',value:value.length?value:null}]};
   }
   if(def.id==='weatherProfile'){
@@ -863,6 +869,9 @@ async function assistantFieldScope(state,extract){
 function assistantFieldCandidates(state){
   const text=state.request;
   state.catalog.filter(d=>assistantFieldApplicable(d,state.session)).forEach(def=>{
+    // A session length on a routine habit is not a proximity radius.
+    if(def.id==='conditionRadiusM' && /\b(?:minutes?|mins?|session|duration|long)\b/i.test(text)
+      && !assistantFocusFieldApplies(def, assistantFocusState(state.session, assistantFocusMaterialize(state.session)))) return;
     if((assistantFieldMentioned(def,text)||state.spans.some(span=>assistantFieldMentioned(def,span.text)))
       &&assistantFieldSource(def,text,state.spans).some(s=>assistantFieldMentioned(def,s.context||s.text)))assistantFieldEnqueue(state,def.id,'explicit');
   });
@@ -1072,10 +1081,11 @@ function assistantGuideSpan(request, guide){
   return {start,end,text:request.slice(start,end)};
 }
 
+const ASSISTANT_GUIDE_LIMIT=6;
 const ASSISTANT_GUIDE_DEFAULTS={
-  habit:['frequency','durationMinutes','allowedWeekdays'],
-  task:['dueDate','durationMinutes','dueTime'],
-  event:['appointmentStartDate','appointmentStartMinute','appointmentRepeat']
+  habit:['frequency','durationMinutes','allowedWeekdays','allowedWindow','places','priority'],
+  task:['dueDate','durationMinutes','dueTime','hardDue','places','priority'],
+  event:['appointmentStartDate','appointmentStartMinute','appointmentRepeat','appointmentWeekdays','appointmentUntil','durationMinutes']
 };
 const ASSISTANT_GUIDE_NEAR={
   allowedWeekdays:['preferredWeekdays','allowedMonthDays'],
@@ -1203,7 +1213,7 @@ function assistantGuideSuggestions(session, text){
   const hint=String(text || '').trim();
   const guidance=(session.unresolved||[]).find(item=>item.field==='guidance'&&(item.choices||[]).length);
   if(guidance && (!hint || hint===String(session.currentRequest||''))){
-    return guidance.choices.slice(0,4).map(choice=>({id:choice.id,label:choice.label}));
+    return guidance.choices.slice(0,ASSISTANT_GUIDE_LIMIT).map(choice=>({id:choice.id,label:choice.label}));
   }
   const catalog=assistantGuideCatalog(session);
   const byId=new Map(catalog.map(def=>[def.id,def]));
@@ -1215,13 +1225,13 @@ function assistantGuideSuggestions(session, text){
   }).filter(Boolean).sort((a,b)=>b.score-a.score || a.def.label.localeCompare(b.def.label));
   const picked=[];
   const add=def=>{
-    if(!def || picked.length>=3 || picked.some(row=>row.id===def.id))return;
+    if(!def || picked.length>=ASSISTANT_GUIDE_LIMIT || picked.some(row=>row.id===def.id))return;
     picked.push({id:def.id,label:def.label});
   };
   const active=assistantGuideRead(hint,session,true);
   if(active)add(byId.get(active.id));
-  // Once the composer is empty, prioritize the questions blocking Save.
-  // An explicitly typed setting always remains first.
+  // Closest match on the left, then the question blocking Save, then nearby
+  // and more general settings. The row scrolls, so it can show six.
   if(!hint || hint===session.currentRequest)for(const issue of session.unresolved||[]){
     add(catalog.find(def=>def.id===issue.field||def.fields.includes(issue.field)));
   }
@@ -1353,11 +1363,139 @@ function assistantAmbiguousPlanDay(text, now){
   return dates.length === 1;
 }
 
+function assistantGuidanceDurationText(text){
+  return String(text || '')
+    .replace(/\s+\b(?:so|because)\b[\s\S]*$/i, '')
+    .replace(/\s+\b(?:start(?:ing)?|begin(?:ning)?)\s+early\b[\s\S]*$/i, '')
+    .replace(/\s+\b(?:in advance|ahead of time)\b[\s\S]*$/i, '')
+    .replace(/\s+\bwithin\b[\s\S]*$/i, '')
+    .trim();
+}
+
+function assistantGuidanceDurationReading(session, def, text){
+  if(assistantFieldNormalize(def, text, session).ok) return text;
+  const cut = assistantGuidanceDurationText(text);
+  if(cut && cut !== text && assistantFieldNormalize(def, cut, session).ok) return cut;
+  return '';
+}
+
+function assistantGuidancePlaceNamed(text){
+  return (assistantFocusSettings().locations || []).some(place => place && place.name && assistantFocusPhraseIn(text, place.name));
+}
+
+function assistantGuidanceHasClock(text){
+  return /\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight|half past|quarter (?:past|to))\b/i.test(text);
+}
+
+function assistantGuidanceHasTimeRange(text){
+  if(new RegExp(ASSISTANT_FIELD_RANGE, 'i').test(text)) return true;
+  const parsed = typeof assistantParseWindowRange === 'function' ? assistantParseWindowRange(text) : null;
+  return Boolean(parsed && parsed.start && parsed.end);
+}
+
+function assistantGuidanceUsualTime(text){
+  const value = String(text || '').trim();
+  return /\bback to the regular time\b/i.test(value) || /^reset this (?:date|occurrence) to the usual time$/i.test(value);
+}
+
+// Competing readings only. A clause the parser can already apply stays automatic.
+function assistantGuidanceRivals(session, phrase){
+  const text = String(phrase || '').trim();
+  const choices = [];
+  const add = (id, label) => {
+    if(!id || !label || choices.some(row => row.id === id)) return;
+    choices.push({id, label});
+  };
+  if(!text || !session || session.operation !== 'edit') return choices;
+  const record = typeof assistantFocusMaterialize === 'function' ? assistantFocusMaterialize(session) : null;
+  const state = typeof assistantFocusState === 'function' ? assistantFocusState(session, record) : null;
+  const offer = id => {
+    const def = assistantFieldCatalog().find(row => row.id === id);
+    if(!def || !assistantFieldApplicable(def, session) || !state || !assistantFocusFieldApplies(def, state)) return null;
+    return def;
+  };
+  const shown = assistantActionCue(text);
+  const hidden = assistantActionCue(text, true);
+  const counted = /\bcount (?:it|this|that) as done\b/i.test(text);
+  let kind = hidden && !shown && (assistantFieldPreference(text) || (hidden === 'log' && counted)) ? hidden : null;
+  if(kind === 'log'){
+    const auto = offer('autoMarkMinutes');
+    if(auto && assistantFieldNormalize(auto, text, session).ok) kind = null;
+  }
+  if(kind && !((kind === 'plan' || kind === 'unplan') && session.kind === 'event')){
+    const labels = {plan:'Plan it on that day', unplan:'Remove that plan', log:'Log it', undo:'Undo the log'};
+    add('action:' + kind, labels[kind]);
+    if(kind === 'plan' && assistantActionConcreteDay(text, session.now)){
+      const dateId = session.kind === 'task' ? 'dueDate' : session.kind === 'habit' ? 'planByDate' : null;
+      const dateDef = dateId && offer(dateId);
+      if(dateDef) add('field:' + dateDef.id, dateDef.label);
+    }
+    if(kind === 'log' && ASSISTANT_FIELD_SIGNALS.autoMarkMinutes.test(text)){
+      const auto = offer('autoMarkMinutes');
+      if(auto) add('field:' + auto.id, auto.label);
+    }
+  }
+  const duration = offer('durationMinutes');
+  const sessionLength = /\b(?:minutes?|mins?|session|duration|long)\b/i.test(text);
+  const earlySignal = ASSISTANT_FIELD_SIGNALS.earlyWindowDays.test(text);
+  const delaySignal = ASSISTANT_FIELD_SIGNALS.delayAllowanceDays.test(text);
+  const durationText = duration && sessionLength ? assistantGuidanceDurationReading(session, duration, text) : '';
+  if(durationText && (earlySignal || delaySignal)){
+    const earlyDef = earlySignal ? offer('earlyWindowDays') : null;
+    const delayDef = delaySignal ? offer('delayAllowanceDays') : null;
+    const earlyFails = earlyDef && !assistantFieldNormalize(earlyDef, text, session).ok;
+    const delayFails = delayDef && !assistantFieldNormalize(delayDef, text, session).ok;
+    if(earlyFails || delayFails){
+      add('field:durationMinutes', duration.label);
+      if(earlyFails) add('field:' + earlyDef.id, earlyDef.label);
+      if(delayFails) add('field:' + delayDef.id, delayDef.label);
+    }
+  }
+  if(ASSISTANT_FIELD_SIGNALS.conditionRadiusM.test(text)){
+    const radius = offer('conditionRadiusM');
+    const places = assistantGuidancePlaceNamed(text) ? offer('places') : null;
+    const radiusOk = radius && assistantFieldNormalize(radius, text, session).ok;
+    if(places && (durationText || radiusOk)){
+      if(durationText) add('field:durationMinutes', duration.label);
+      add('field:places', places.label);
+      if(radius) add('field:conditionRadiusM', radius.label);
+    }else if(durationText && radius){
+      add('field:durationMinutes', duration.label);
+      add('field:conditionRadiusM', radius.label);
+    }
+  }
+  if(ASSISTANT_FIELD_SIGNALS.scheduleOptions.test(text) && !assistantGuidanceHasTimeRange(text)){
+    const days = typeof assistantParseWeekdaySet === 'function' && assistantParseWeekdaySet(text);
+    const places = assistantGuidancePlaceNamed(text) ? offer('places') : null;
+    if(days || places){
+      const weekday = days ? offer(assistantFieldPreference(text) ? 'preferredWeekdays' : 'allowedWeekdays') : null;
+      const options = offer('scheduleOptions');
+      if(weekday) add('field:' + weekday.id, weekday.label);
+      if(places) add('field:places', places.label);
+      if(options && (weekday || places)) add('field:scheduleOptions', options.label);
+    }
+  }
+  if(/\bmove this date to\b/i.test(text) && assistantActionConcreteDay(text, session.now) && !assistantGuidanceHasClock(text)){
+    const date = offer('appointmentStartDate');
+    const time = offer('appointmentStartMinute');
+    if(date && time){
+      add('field:' + date.id, date.label);
+      add('field:' + time.id, time.label);
+    }
+  }
+  if(session.eventScope === 'occurrence' && assistantGuidanceUsualTime(text)){
+    const reset = offer('exceptionReset');
+    if(reset) add('field:exceptionReset', reset.label);
+    add('field:exceptionTime', 'Only the usual time');
+  }
+  return choices;
+}
+
 function assistantGuidanceChoices(session, phrase){
   const text = String(phrase || '').trim();
   const choices = [];
   const add = (id, label) => {
-    if(!id || !label || choices.length >= 4 || choices.some(row => row.id === id))return;
+    if(!id || !label || choices.length >= ASSISTANT_GUIDE_LIMIT || choices.some(row => row.id === id))return;
     choices.push({id, label});
   };
   if(!text || !session || session.operation !== 'edit')return choices;
@@ -1381,6 +1519,7 @@ function assistantGuidanceChoices(session, phrase){
     if(!assistantFieldNormalize(def, text, session).ok)continue;
     add('field:' + def.id, def.label);
   }
+  for(const choice of assistantGuidanceRivals(session, text)) add(choice.id, choice.label);
   return choices;
 }
 
@@ -1403,7 +1542,7 @@ function assistantFocusAskGuidance(session, phrase, fallback){
 function assistantActionSettingClause(text){
   if(assistantFieldPreference(text))return true;
   if(ASSISTANT_FIELD_SIGNALS.autoMarkMinutes.test(text)||ASSISTANT_FIELD_SIGNALS.tapStartsSession.test(text))return true;
-  if(ASSISTANT_FIELD_SIGNALS.trackValue.test(text)&&!/\b(?:with|a) value of\b/i.test(text))return true;
+  if(ASSISTANT_FIELD_SIGNALS.trackValue.test(text)&&!/\b(?:with|a) value of\b/i.test(text)&&!/\bwith (?:a |the )?note\b/i.test(text))return true;
   if((ASSISTANT_FIELD_SIGNALS.earlyWindowDays.test(text)||ASSISTANT_FIELD_SIGNALS.delayAllowanceDays.test(text))&&/\b(?:days?|weeks?|hours?)\b/i.test(text))return true;
   if(/\b(?:schedule|plan)\b/i.test(text)
     && (ASSISTANT_FIELD_SIGNALS.frequency.test(text)&&assistantParseRhythm(text)
@@ -1422,8 +1561,8 @@ function assistantActionSettingClause(text){
   return false;
 }
 
-function assistantActionCue(text){
-  if(assistantActionSettingClause(text))return null;
+function assistantActionCue(text, ignoreSettings){
+  if(!ignoreSettings && assistantActionSettingClause(text))return null;
   // "Plan this in five days" and "put this on November 20" name a day. "Plan
   // this in the morning" and "put this on hold" do not, so they stay settings.
   if(/\bplan\s+(?:this|it|that)\s+in\b/i.test(text) && assistantActionConcreteDay(text))return 'plan';
@@ -1511,9 +1650,11 @@ function assistantFieldClaimGuidance(state){
   if(!state.session || state.session.operation !== 'edit')return;
   const held = [];
   for(const clause of assistantActionClauses(state.request)){
-    if(!assistantAmbiguousPlanDay(clause.text, state.session.now))continue;
+    const ambiguous = assistantAmbiguousPlanDay(clause.text, state.session.now);
+    const rivals = assistantGuidanceRivals(state.session, clause.text);
+    if(!ambiguous && rivals.length < 2)continue;
     const choices = assistantGuidanceChoices(state.session, clause.text);
-    if(!choices.length)continue;
+    if(ambiguous ? !choices.length : choices.length < 2)continue;
     assistantFocusAskGuidance(state.session, clause.text, `I still need to account for “${clause.text}”. Please clarify that setting.`);
     held.push(clause);
   }
@@ -1839,7 +1980,7 @@ function assistantFieldNormalize(def,text,session){
   if(def.id==='habitKind'&&/\b(?:cut down|do less of)\b/i.test(text))text='limit';
   if(def.id==='kind')text=text.replace(/\brecurring\s+(?=habit\b)/i,'');
   if(def.id==='repeatMode')text=text.replace(/\bopportunistic\b/gi,'opportunity');
-  if(def.id==='appointmentRepeat')text=text.replace(/^it is a single occurrence rather than a recurring event now$/i,'once');
+  if(def.id==='appointmentRepeat')text=text.replace(/\bsingle occurrence\b/gi,'once');
   if(def.id==='conditionTrigger')text=text.replace(/\bwhere i am\b/gi,'location');
   const policy=def.id==='hardDue'?assistantFieldDeadlinePolicy(text):def.id==='anywhereAllowed'?assistantFieldAnywherePolicy(text):null;
   if(policy!=null)return policy==='conflict'?{ok:false,error:`Please clarify ${def.label.toLowerCase()}; the instruction contains conflicting choices.`}

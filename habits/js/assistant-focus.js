@@ -532,7 +532,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:until == null ? 'clear' : 'set', value:until};
   }
   if(fieldId === 'appointmentRepeat'){
-    const repeat = /week/.test(text.toLowerCase()) ? 'weekly' : (/once|one|single event/.test(text.toLowerCase()) ? 'once' : '');
+    const repeat = /week/.test(text.toLowerCase()) ? 'weekly' : (/once|\bone\b|single (?:event|occurrence)/.test(text.toLowerCase()) ? 'once' : '');
     if(!repeat)return fail('An event repeats once, or every week.');
     return {ok:true, op:'set', value:repeat};
   }
@@ -753,7 +753,33 @@ function assistantFocusApplyGuidance(session, question, value){
     const fieldId = value.slice(6);
     const dates = typeof assistantActionDatePhrases === 'function' ? assistantActionDatePhrases(phrase) : [];
     const dateField = ['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(fieldId);
-    const raw = dateField && dates.length === 1 ? dates[0] : phrase;
+    if(fieldId === 'exceptionTime'){
+      assistantFocusStage(session, {field:'exceptionTime', op:'clear', value:null, origin:'correction', source:'guidance'});
+      return {ok:true};
+    }
+    let raw = dateField && dates.length === 1 ? dates[0] : phrase;
+    if(dateField)return assistantFocusCorrect(session, fieldId, raw);
+    const def = typeof assistantFieldCatalog === 'function' ? assistantFieldCatalog().find(row => row.id === fieldId) : null;
+    if(fieldId === 'places'){
+      raw = raw.replace(/\bor\b/gi, 'and');
+      const names = (assistantFocusSettings().locations || []).map(place => place && place.name).filter(name => name && assistantFocusPhraseIn(raw, name));
+      if(names.length) raw = names.join(' and ');
+    }
+    if(fieldId === 'durationMinutes' && def && typeof assistantGuidanceDurationText === 'function'){
+      const cut = assistantGuidanceDurationText(phrase);
+      if(cut && cut !== phrase && !assistantFieldNormalize(def, phrase, session).ok && assistantFieldNormalize(def, cut, session).ok) raw = cut;
+    }
+    if(def && typeof assistantFieldNormalize === 'function'){
+      const parsed = assistantFieldNormalize(def, raw, session);
+      if(parsed.ok){
+        for(const change of parsed.changes || []){
+          assistantFocusStage(session, {field:change.field, op:change.op, value:change.value, origin:'correction', source:'guidance'});
+        }
+        return {ok:true};
+      }
+      assistantFocusUnresolve(session, {field:fieldId, family:def.family, question:parsed.error || `What value should I use for ${def.label.toLowerCase()}?`});
+      return {ok:false, error:parsed.error || ''};
+    }
     return assistantFocusCorrect(session, fieldId, raw);
   }
   return {ok:false, error:'That choice is no longer available.'};
@@ -937,7 +963,12 @@ function assistantFocusWrite(record, change, session, scratch, data){
     }
     const entry = assistantFocusExceptionEntry(record, key);
     if(!entry)return;
-    if(change.field === 'exceptionTime')entry.startMinute = value;
+    if(change.field === 'exceptionTime'){
+      if(op === 'clear'){
+        delete entry.startMinute;
+        if(!Object.keys(entry).length)delete record.appointment.exceptions[key];
+      }else entry.startMinute = value;
+    }
     else if(change.field === 'exceptionDuration')entry.durationMinutes = value;
     else if(change.field === 'exceptionEmoji'){
       if(op === 'clear')delete entry.emoji;

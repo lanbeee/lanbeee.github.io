@@ -61,13 +61,21 @@ function assert(ok, message){
         dnd:assistantGuideParse('Do Not Disturb during session', habitSession)
       };
     });
-    assert(logic.empty.join() === 'frequency,durationMinutes,allowedWeekdays', 'an empty habit draft suggests frequency, duration, and allowed weekdays');
-    assert(logic.weekdays[0] === 'allowedWeekdays' && logic.weekdays.includes('preferredWeekdays') && logic.weekdays.length === 3,
-      'a weekday sentence suggests allowed days, then the settings people mix up with it');
-    assert(logic.duration[0] === 'durationMinutes' && logic.duration.includes('frequency') && logic.duration.length === 3,
-      'a length suggests duration first, with nearby effort settings');
-    assert(logic.task.join() === 'Due date,Duration,Start time', 'a task suggests its own three settings');
-    assert(logic.event.join() === 'Start date,Start time,Repeats' && logic.eventPriority === false, 'an event suggests event settings and not priority');
+    assert(logic.empty.join() === 'frequency,durationMinutes,allowedWeekdays,allowedWindow,places,priority',
+      'an empty habit draft leads with frequency, duration, and weekdays, then hours, place, and priority');
+    assert(logic.weekdays[0] === 'allowedWeekdays' && logic.weekdays.indexOf('preferredWeekdays') === 1
+      && logic.weekdays.indexOf('frequency') > logic.weekdays.indexOf('preferredWeekdays')
+      && logic.weekdays.length > 3 && logic.weekdays.length <= 6,
+      `a weekday sentence leads with the named days, then nearby day settings, then more general ones (${logic.weekdays.join()})`);
+    assert(logic.duration[0] === 'durationMinutes' && logic.duration.indexOf('frequency') === 1
+      && logic.duration.indexOf('frequency') < logic.duration.indexOf('allowedWeekdays')
+      && logic.duration.length > 3 && logic.duration.length <= 6,
+      `a length leads with duration, then frequency, then more general settings (${logic.duration.join()})`);
+    assert(logic.task.join() === 'Due date,Duration,Start time,Hard deadline,Places,Priority',
+      'a task leads with its date, length, and time, then deadline, place, and priority');
+    assert(logic.event.slice(0, 3).join() === 'Start date,Start time,Repeats' && logic.eventPriority === false
+      && logic.event.indexOf('Repeat weekdays') > 2 && logic.event.length <= 6,
+      `an event leads with its date, time, and repeat, and does not offer priority (${logic.event.join()})`);
     assert(logic.composeEmpty === 'Duration' && logic.composeToggle === '' && logic.composeSwitch === 'Frequency',
       'a tap inserts a setting, the same tap removes it, and another tap replaces it');
     assert(logic.composePrefix === 'Allowed weekdays: Tuesday plus Thursday'
@@ -228,9 +236,16 @@ function assert(ok, message){
 
     const guides = page.locator('#assistant-guides-row .assistant-guide');
     await guides.first().waitFor({state:'visible'});
-    assert((await guides.count()) === 3, 'three settings are visible before the first message');
     const opening = await guides.allTextContents();
-    assert(opening.join() === 'Frequency,Duration,Allowed weekdays', 'the opening chips are the habit defaults');
+    const guideScroll = await page.evaluate(() => {
+      const row = document.getElementById('assistant-guides-row');
+      return {count:row.querySelectorAll('.assistant-guide').length, scroll:row.scrollWidth, client:row.clientWidth};
+    });
+    assert(guideScroll.count === 6 && guideScroll.scroll > guideScroll.client,
+      `six opening chips stay in one horizontal row (${JSON.stringify(guideScroll)})`);
+    assert(opening.slice(0, 3).join() === 'Frequency,Duration,Allowed weekdays'
+      && opening.join() === 'Frequency,Duration,Allowed weekdays,Allowed hours,Places,Priority',
+      'the opening chips put the most likely habit settings on the left');
     await page.locator('#assistant-guide-more').click();
     await page.locator('#assistant-input').fill('best days');
     const browserChoice=page.locator('#assistant-guide-results [data-assistant-guide="preferredWeekdays"]');
@@ -330,7 +345,7 @@ function assert(ok, message){
     await page.evaluate(() => assistantShowBusy(false));
 
     await page.evaluate(() => clearAssistantChat());
-    assert((await guides.count()) === 3 && await guides.first().isVisible(), 'clearing the chat keeps the setting choices');
+    assert((await guides.count()) === 6 && await guides.first().isVisible(), 'clearing the chat keeps the setting choices');
 
     const dockBottom = () => page.evaluate(() => {
       const input = document.getElementById('assistant-input').getBoundingClientRect();

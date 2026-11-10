@@ -471,7 +471,7 @@ function assistantParseWeekdaySet(text){
     rest=rest.replace(new RegExp(`\\b(${day})\\b`,'g'),(_,token)=>{days.push(assistantWeekdayIndex(token));return ' ';});
     // Only ordinary request framing may remain, including pronouns and "plus".
     // Negation, exceptions, ordinals and numbers still reject the phrase.
-    rest=rest.replace(/\b(?:please|only|on|the|and|or|to|from|every|each|allow|allowed|use|schedule|scheduled|repeat|repeats|run|runs|happen|happens|do|it|this|that|can|should|be|for|days|of|week|is|are|fine|okay|ok|make|set|change|plus|i(?:'m)?|my|me|we|our|you|your|preferred|preferably|available|both|just)\b/g,'').replace(/[\s,&/]+/g,'');
+    rest=rest.replace(/\b(?:please|only|on|the|and|or|either|alternate|to|from|every|each|allow|allowed|use|schedule|scheduled|repeat|repeats|run|runs|happen|happens|do|it|this|that|can|should|be|for|days|of|week|is|are|fine|okay|ok|make|set|change|plus|i(?:'m)?|my|me|we|our|you|your|preferred|preferably|available|both|just)\b/g,'').replace(/[\s,&/]+/g,'');
     return days.length&&!rest?[...new Set(days)].sort((a,b)=>a-b):null;
   };
   // "Don't change weekdays" is preservation, not an exclusion.
