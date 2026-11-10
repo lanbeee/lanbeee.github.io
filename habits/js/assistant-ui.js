@@ -1302,12 +1302,46 @@ function assistantResizeComposer(){
   const max = assistantGuideSearchOpen ? 44 : guided ? 88 : 160;
   input.style.height = 'auto';
   input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), max)}px`;
-  const dock = $('assistant-dock');
-  const sheet = dock?.closest('.assistant-sheet');
-  if(dock && sheet){
-    const block = `${Math.ceil(dock.getBoundingClientRect().height)}px`;
-    if(sheet.style.getPropertyValue('--assistant-dock-block') !== block)sheet.style.setProperty('--assistant-dock-block', block);
-  }
+}
+
+// iOS can still pan the document with overflow:hidden while the keyboard is
+// open. Only let a one-finger drag reach a scroller that can consume it; at
+// its edges (or on the header/gutters) stop it before it reaches the page.
+// Leave pinch zoom and the browser's edge navigation gestures available.
+function assistantBindScrollGuard(){
+  const wrap = $('assistant-sheet');
+  if(!wrap)return;
+  let touch = null;
+  wrap.addEventListener('touchstart', event => {
+    const point = event.touches.length === 1 ? event.touches[0] : null;
+    touch = point ? {id:point.identifier,x:point.clientX,y:point.clientY,
+      edge:point.clientX < 28 || point.clientX > innerWidth - 28} : null;
+  }, {passive:true});
+  wrap.addEventListener('touchmove', event => {
+    if(!touch || event.touches.length !== 1 || !wrap.classList.contains('open'))return;
+    const point = event.touches[0];
+    if(point.identifier !== touch.id)return;
+    const dx = point.clientX - touch.x, dy = point.clientY - touch.y;
+    touch.x = point.clientX;touch.y = point.clientY;
+    if(!dx && !dy)return;
+    const horizontal = Math.abs(dx) > Math.abs(dy);
+    // The OS owns a horizontal swipe from the bezel on iOS. Other hosts
+    // have the app's edge-back handler, which also needs these events.
+    if(horizontal && touch.edge)return;
+    for(let el = event.target instanceof Element ? event.target : null; el && el !== wrap; el = el.parentElement){
+      const style = getComputedStyle(el);
+      const overflow = horizontal ? style.overflowX : style.overflowY;
+      if(!/^(auto|scroll)$/.test(overflow))continue;
+      const position = horizontal ? el.scrollLeft : el.scrollTop;
+      const extent = horizontal ? el.scrollWidth - el.clientWidth : el.scrollHeight - el.clientHeight;
+      const delta = horizontal ? dx : dy;
+      if(extent > 1 && (delta < 0 ? position < extent - 1 : position > 1))return;
+    }
+    if(event.cancelable)event.preventDefault();
+  }, {passive:false});
+  const reset = () => {touch = null;};
+  wrap.addEventListener('touchend', reset, {passive:true});
+  wrap.addEventListener('touchcancel', reset, {passive:true});
 }
 
 function assistantSyncSend(){
@@ -2233,6 +2267,7 @@ document.addEventListener('click', event=>{
   if(event.target.closest('[data-needle-cancel]'))assistantNeedleCancelDownload();
   if(event.target.closest('[data-needle-remove]'))void assistantNeedleRemove().catch(err=>assistantNeedleState({phase:'error',error:err.message}));
 });
+assistantBindScrollGuard();
 assistantResizeComposer();
 assistantSyncSend();
 syncLocalAssistantControls();

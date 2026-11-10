@@ -464,6 +464,12 @@ function updateKeyboardLift(){
     ? Math.min(layoutHeight,window.visualViewport.height + window.visualViewport.offsetTop) : layoutHeight;
   const keyboard = Math.max(0,layoutHeight - visibleBottom);
   const style = document.documentElement.style;
+  // Safari can pan the visual viewport as well as shrink it for the IME.
+  // Keep the whole assistant in that visible rectangle, including its header.
+  if(assistantOpen && !paneTierActive()){
+    const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
+    style.setProperty('--assistant-viewport-top', `${top}px`);
+  }else style.removeProperty('--assistant-viewport-top');
   // SystemBars clears the bottom safe inset after the WebView resize. The
   // keyboard already covers it in that intervening frame, so omit it now.
   if(nativeResized){
@@ -1252,6 +1258,7 @@ function updateFullPageState(){
   syncBrowserBack();
   const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
+  document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
   if(modalOpen && !document.body.classList.contains('modal-open')){
     document.body.classList.add('modal-open');
