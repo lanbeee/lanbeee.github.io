@@ -67,7 +67,7 @@ const {chromium, BASE, waitForAssistant} = require('./helpers/planner-test-helpe
       check($('assistant-sheet').classList.contains('open'),'opens confirmation even with local model off');
       check(JSON.stringify(load())===before,'preview does not save');
       check(_assistantPendingDraft?.name==='External test task','uses existing draft validator');
-      check($('assistant-input').parentElement.hidden,'no nonfunctional local model composer');
+      check($('assistant-input').closest('.assistant-compose').hidden,'no nonfunctional local model composer');
       await commitAssistantDraft(false);
       check(load().some(h=>h.name==='External test task'),'normal confirmation saves');
       closeAssistantSheet();

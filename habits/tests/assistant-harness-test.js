@@ -28,7 +28,11 @@ async function launchBrowser(){
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(BASE, { waitUntil:'load' });
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('tings_coach_install_v2','done');
+    localStorage.setItem('tings_coach_essentials_v2','done');
+  });
   await page.reload({ waitUntil:'load' });
   await waitForAssistant(page);
 

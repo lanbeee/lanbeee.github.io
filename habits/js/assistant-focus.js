@@ -548,7 +548,11 @@ function assistantFocusNormalize(fieldId, raw, session){
   if(String(fieldId).startsWith('reminder') && fieldId !== 'reminderReset' && !/Lead/.test(fieldId)){
     const allOff=typeof assistantFieldAllRemindersOff==='function'&&assistantFieldAllRemindersOff(text);
     if(!allOff&&!/\bno reminders?\b/i.test(text)&&/\b(?:not|never|don.t|without)\b/i.test(text))return fail('Choose off, notification, or ringing alarm.');
-    const mode = /\bno reminders?\b/i.test(text)||allOff?'off':ASSISTANT_FOCUS_REMINDER_MODES.find(item => new RegExp(`\\b${item === 'notification' ? 'notif\\w*' : item}\\b`,'i').test(text))
+    const modeText=text.replace(/^.*\b(?:should be|change[^,;]*? to)\s+/i,'')
+      .replace(/^make\s+.+?\s+(?:an?\s+)?(?=ringing alarm\b)/i,'');
+    const choices=ASSISTANT_FOCUS_REMINDER_MODES.filter(item=>new RegExp(`\\b${item==='notification'?'notif\\w*':item}\\b`,'i').test(modeText));
+    if(choices.length>1)return fail('Choose one delivery mode: off, notification, or ringing alarm.');
+    const mode = /\bno reminders?\b/i.test(text)||allOff?'off':ASSISTANT_FOCUS_REMINDER_MODES.find(item => new RegExp(`\\b${item === 'notification' ? 'notif\\w*' : item}\\b`,'i').test(modeText))
       ||(/\bring(?:ing)?\b/i.test(text)?'alarm':null)
       || (/\b(?:remind|warn|alert|notify)\b/i.test(text)?'notification':null);
     if(!mode)return fail('Choose off, notification, or ringing alarm.');

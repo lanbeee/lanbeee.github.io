@@ -716,7 +716,7 @@ async function launchBrowser(){
     const durationFree = await assistantAnswerSchedule({query:'free', date:'tomorrow', minutes:90}, context);
     const derivedWindow = await assistantAnswerSchedule({query:'free', date:'tomorrow', start:'7pm', minutes:45}, context);
     const dayLabel = ASSISTANT_WEEKDAY_LABELS[new Date(base + 3 * dayMs).getDay()];
-    const rows = [{kind:'fill', i:0, h:{hid:'h9', name:'Morning stretch', type:'habit'}, start:now - 3600000, end:now - 1800000}];
+    const rows = [{kind:'fill', i:0, h:{hid:'h9', name:'Morning stretch', type:'habit'}, start:base + 8 * 3600000, end:base + 8.5 * 3600000}];
     const fakeDays = [];
     for(let k = 0; k < 7; k += 1){
       fakeDays.push({dayBase:base + k * dayMs, isToday:k === 0, timeline:k === 0 ? rows.slice() : []});
@@ -734,6 +734,7 @@ async function launchBrowser(){
     return {
       freest:freest.text, free:free.text, durationFree:durationFree.text, derivedWindow:derivedWindow.text,
       day:day.text, week:week.text,
+      expectedDayClock:assistantFriendlyClock((rows[0].start-dayStart(rows[0].start))/60000),
       expectedFreest:dayLabel
     };
   });
@@ -745,7 +746,7 @@ async function launchBrowser(){
     `duration-only availability checks a contiguous gap: ${scheduleHandlers.durationFree}`);
   assert(/7pm–7:45pm/.test(scheduleHandlers.derivedWindow) && /open/i.test(scheduleHandlers.derivedWindow),
     `start + duration derives a concrete window: ${scheduleHandlers.derivedWindow}`);
-  assert(/Morning stretch/.test(scheduleHandlers.day) && /\d{1,2}:\d{2}(?:am|pm)/i.test(scheduleHandlers.day),
+  assert(/Morning stretch/.test(scheduleHandlers.day) && scheduleHandlers.day.includes(scheduleHandlers.expectedDayClock),
     `day agenda lists rows with clocks: ${scheduleHandlers.day}`);
   assert(/Today/.test(scheduleHandlers.week) && /open/.test(scheduleHandlers.week),
     `week overview summarizes every day: ${scheduleHandlers.week}`);

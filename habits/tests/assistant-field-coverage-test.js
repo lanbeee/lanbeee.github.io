@@ -506,9 +506,49 @@ const cases=[
   ['appointmentWeekdays','Tuesday plus Thursday',[2,4],{id:'weekday-event-plus',kind:'event',selectAll:true}],
   ['reminderStart','Change start reminders to alarm mode','alarm',{id:'reminder-alarm-mode',native:true,selectAll:true}],
   ['tapStartsSession','Tapping this card should begin a session instead of checking it off',true,{id:'tap-instead-of-checkoff',selectAll:true}],
-  ['reminderDnd','Stop silencing my phone during this session',false,{id:'dnd-stop-silencing',native:true,reminderSeed:{dnd:true},record:{type:'keepup'},selectAll:true}]
+  ['reminderDnd','Stop silencing my phone during this session',false,{id:'dnd-stop-silencing',native:true,reminderSeed:{dnd:true},record:{type:'keepup'},selectAll:true}],
+  ...['Give the icon a purple background','The color behind the emoji should be purple','Use purple for the card color'].map((prompt,i)=>[
+    'emojiBgColor',prompt,'purple',{id:`readiness-color-${i}`,seed:{emoji:'🌳'},record:{emoji:'🌳',emojiBgColor:'purple'},selectAll:true}]),
+  ['emoji','Put 🌙 next to the name','🌙',{id:'readiness-emoji-preserves-name',record:{name:'Apply premium'},selectAll:true}],
+  ...['I would rather do this at Home','Home is my preferred place','Give Home a high location preference','Home works best for me'].map((prompt,i)=>[
+    'locationPrefs',prompt,{home:'high'},{id:`readiness-place-preference-${i}`,selectAll:true}]),
+  ...['This should have priority one','Set its priority level to 1','Change the importance level to high'].map((prompt,i)=>[
+    'priority',prompt,1,{id:`readiness-priority-${i}`,selectAll:true}]),
+  ['topics','Fitness should be its topic',['Fitness'],{id:'readiness-topic-suffix',selectAll:true}],
+  ['topics','Assign it to the Fitness category',['Fitness'],{id:'readiness-topic-assign',selectAll:true}],
+  ['topics','Label this item Fitness',['Fitness'],{id:'readiness-topic-label',selectAll:true}],
+  ['autoMarkMinutes','Count this as done once ten minutes are logged',10,{id:'readiness-auto-completion',record:{durationMinutes:30,type:'keepup'},selectAll:true}],
+  ['autoMarkMinutes','Automatic completion threshold: 5 logged minutes',5,{id:'readiness-auto-completion-logged',record:{durationMinutes:30},selectAll:true}],
+  ['autoMarkMinutes','Do not mark this done automatically anymore',null,{id:'readiness-auto-completion-clear',op:'clear',seed:{autoMarkMinutes:10},selectAll:true}],
+  ['timerAutoStopMinutes','Stop timing on its own after 0.5 hours',30,{id:'readiness-timer-preserves-kind',record:{durationMinutes:30,type:'keepup'},selectAll:true}],
+  ['tapStartsSession','Stop starting a session when I tap it',false,{id:'readiness-tap-off-preserves-kind',seed:{tapStartsSession:true},record:{type:'keepup'},selectAll:true}],
+  ['preferredWeekdays','Preferred days: Monday, Wednesday',[1,3],{id:'readiness-preferred-days-label',selectAll:true}],
+  ['preferredWeekdays','If possible choose Monday and Wednesday',[1,3],{id:'readiness-preferred-days-framing',selectAll:true}],
+  ['appointmentUntil','Run it until 12/01/2026','2026-12-01',{id:'readiness-series-until',kind:'event',selectAll:true}],
+  ['earlyWindowDays','Set early flexibility to 48 hours',2,{id:'readiness-early-hours',selectAll:true}],
+  ['delayAllowanceDays','Set the delay allowance to seventy-two hours',3,{id:'readiness-delay-hours',selectAll:true}],
+  ['reminderEnd','Use a notification for the finish reminder','notification',{id:'readiness-end-preserves-start',native:true,selectAll:true}],
+  ['exceptionReset','Restore the normal series settings for this date',true,{id:'readiness-occurrence-reset',kind:'event',scope:'occurrence',exception:{startMinute:660},selectAll:true}],
+  ['places','Remove Home from the assigned places',['work'],{id:'readiness-remove-one-place',locations:[{id:'home',name:'Home',lat:40,lng:-74},{id:'work',name:'Work',lat:41,lng:-73}],seed:{locationIds:['home','work']},record:{locationIds:['work']},selectAll:true}],
+  ['locationPrefs','Stop preferring Home without removing its place assignment',{work:'high'},{id:'readiness-remove-one-place-preference',locations:[{id:'home',name:'Home',lat:40,lng:-74},{id:'work',name:'Work',lat:41,lng:-73}],seed:{locationIds:['home','work'],locationPrefs:{home:'high',work:'high'}},record:{locationIds:['home','work'],locationPrefs:{work:'high'}},selectAll:true}],
+  ['allowedOrdinalWeekdays','Remove the first-Monday monthly restriction',monthRules([2],[2]),{id:'readiness-remove-one-monthly-rule',seed:{allowedOrdinalWeekdays:[...monthRules([1],[1]),...monthRules([2],[2])]},selectAll:true}],
+  ['allowedMonthDays','Restrict it to the first plus the fifteenth of the month',[1,15],{id:'readiness-complete-month-list',selectAll:true}],
+  ['preferredWindow','My preferred hours are seven through eight pm',null,{id:'readiness-preferred-spoken-range',record:{preferredTimeStart:1140,preferredTimeEnd:1200},selectAll:true}],
+  ['preferredWindow','Favour 7 to 8 pm without restricting other hours',null,{id:'readiness-preference-not-month-days',record:{preferredTimeStart:1140,preferredTimeEnd:1200,allowedMonthDays:[]},selectAll:true}],
+  ['preferredWeekdays',"I'm editing this item. If possible choose Monday and Wednesday. Everything else should stay as it is.",[1,3],{id:'readiness-context-source-ranking',selectAll:true}],
+  ['weatherRules','Set the minimum temperature to 80 C',null,{id:'readiness-weather-minimum',ruleMin:80,selectAll:true}],
+  ['weatherRules','It must not be warmer than eighty Celsius',null,{id:'readiness-weather-negated-explicit-unit',ruleMax:80,selectAll:true}],
+  ['weatherLocationId',"Show Home's weather forecast",'home',{id:'readiness-forecast-source-preserves-display',record:{showWeather:false,weatherLocationId:'home'},selectAll:true}],
+  ['weatherProfile',"Pick Dry for this item's weather profile",{mode:'profile',profileId:'dry'},{id:'readiness-profile-leading-name',selectAll:true}],
+  ['reminderEnd','Send a notification when the activity ends','notification',{id:'readiness-finish-reminder',native:true,selectAll:true}],
+  ['reminderTravelEnd','Make the arrival notification a ringing alarm','alarm',{id:'readiness-arrival-delivery-target',native:true,selectAll:true}],
+  ['appointmentStartMinute','Every occurrence should start at half past two in the afternoon',870,{id:'readiness-series-spoken-clock',kind:'event',selectAll:true}],
+  ['appointmentStartMinute','Use two thirty pm for the event start',870,{id:'readiness-series-clock-suffix',kind:'event',selectAll:true}],
+  ['durationMinutes','Use ninety minutes for this date, leaving the series duration alone',90,{id:'readiness-occurrence-duration-preserves-series',kind:'event',scope:'occurrence',selectAll:true}],
+  ['tapStartsSession','Tapping this should just mark it done, not start a session',false,{id:'readiness-tap-off-complete-evidence',seed:{tapStartsSession:true},selectAll:true}]
 ].map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
+  ...['Use purple or blue for the card color','The background should not be purple'].map((prompt,i)=>({field:'emojiBgColor',kind:'habit',prompt,id:`readiness-color-guard-${i}`,selectAll:true})),
   {field:'hardDue',kind:'task',prompt:'Make the deadline strict and flexible',id:'everyday-deadline-conflict',selectAll:true},
   {field:'hardDue',kind:'task',prompt:'Do not make the deadline strict',id:'everyday-deadline-negation',selectAll:true},
   ...["Don't convert this habit to a task",'Do not make this a habit or task'].map((prompt,i)=>({field:'kind',kind:'habit',prompt,id:`minimal-kind-guard-${i}`,selectAll:true})),
@@ -599,7 +639,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         window.reconcileNativeQuiet=async()=>{};window.reconcileNativeReminders=async()=>{};window.reconcileNativeRemindersNow=async()=>{};window.refreshOpenViews=()=>{};
         localStorage.removeItem(ASSISTANT_FOCUS_REMINDER_KEY);
         if(test.reminderSeed)localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY,JSON.stringify({version:4,enabled:true,items:{'item:target':test.reminderSeed}}));
-        saveSortSettings({...loadSortSettings(),locations:[{id:'home',name:'Home',lat:40,lng:-74}],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
+        saveSortSettings({...loadSortSettings(),locations:test.locations||[{id:'home',name:'Home',lat:40,lng:-74}],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
         const row={hid:'target',name:'Apply premium',type:test.kind==='task'?'task':'keepup',target:7,durationMinutes:30,logs:[{ts:1}],priority:2,earlyWindowDays:0,delayAllowanceDays:0,
           ...(test.kind==='task'?{dueDate:new Date('2026-10-17T00:00:00-04:00').getTime(),eventTime:new Date('2026-10-17T09:00:00-04:00').getTime()}:{}),
           ...(test.kind==='event'?{appointment:{repeat:'weekly',startDate:'2026-11-02',startMinute:540,weekdays:[1],until:'',exceptions:test.exception?{'2026-11-09':test.exception}:{}}}:{}),...test.seed};
@@ -638,6 +678,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         const recordOK=Object.entries(test.record||{}).every(([k,v])=>JSON.stringify(r[k]??null)===JSON.stringify(v));
         const advancedOK=(!test.rule||s.dependencies.weatherProfile?.rules?.some(rule=>rule.metric==='temperature_2m'&&rule.min===10))
           &&(test.ruleMin==null||s.dependencies.weatherProfile?.rules?.some(rule=>rule.metric==='temperature_2m'&&rule.min===test.ruleMin&&rule.hard===true))
+          &&(test.ruleMax==null||s.dependencies.weatherProfile?.rules?.some(rule=>rule.metric==='temperature_2m'&&rule.max===test.ruleMax&&rule.hard===true))
           &&(!test.optionClocks||r.scheduleOptions?.length===1&&r.scheduleOptions[0].start===1080&&r.scheduleOptions[0].end===1200&&r.scheduleOptions[0].weekdays.join()==='1')
           &&(!test.orderSameDay||r.scheduleLinks?.every(link=>link.requireSameDay===true))
           &&(!test.option||r.scheduleOptions?.some(o=>o.start===1080&&o.end===1200&&o.locationId==='home'&&o.weekdays.join()==='1'))

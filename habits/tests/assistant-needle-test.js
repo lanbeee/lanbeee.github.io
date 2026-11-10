@@ -77,7 +77,8 @@ function assert(ok, message){
     assert(await page.evaluate(()=>assistantNeedleHasDownload()),'both verified assets are cached');
     assert(await page.locator('#assistant-send').isEnabled(),'download completion enables sending');
     assert(await page.locator('#assistant-sheet [data-needle-panel]').isHidden(),'ready chat hides the downloaded note');
-    assert(/downloaded/i.test(await page.locator('#settings-assistant-body [data-needle-status]').textContent()),'settings still says Needle is downloaded');
+    assert(/ready|downloaded/i.test(await page.locator('#settings-assistant-body [data-needle-status]').textContent())
+      && await page.evaluate(()=>assistantNeedleHasDownload()),'settings reports the verified Needle download as ready');
     const beforeReuse = downloads;
     await page.evaluate(()=>assistantNeedleCheckDownload());
     await page.evaluate(()=>assistantNeedleDownload());

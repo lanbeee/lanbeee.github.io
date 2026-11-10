@@ -1122,7 +1122,7 @@ function assistantParseLinksArg(value){
 
 function assistantParseOrderModifiers(text){
   const s = assistantNormText(text);
-  const direct=/\b(?:right|direct(?:ly)?|immediately|straight)\b/.test(s);
+  const direct=/\b(?:right|direct(?:ly)?|immediately|straight|adjacent|no gap)\b/.test(s);
   return {
     adjacency:direct ? 'direct' : 'sometime',
     requireSameDay:direct || /\bsame day\b/.test(s)
@@ -2008,7 +2008,7 @@ function assistantParseWindowRange(text){
   const body=lead?text.slice(lead.index+lead[0].length):text;
   // One explicit meridiem can qualify both endpoints, including spoken hours.
   // Validate the complete pair; no fallback may discard an unreadable bound.
-  const shared=body.match(/^(\d{1,2}(?::\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:and|to)\s+(\d{1,2}(?::\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(am|pm|in the morning|in the afternoon|in the evening)$/);
+  const shared=body.match(/^(\d{1,2}(?::\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:and|to|through)\s+(\d{1,2}(?::\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(am|pm|in the morning|in the afternoon|in the evening)$/);
   if(shared)return assistantWindowFromClocks(assistantParseClock(`${shared[1]} ${shared[3]}`),assistantParseClock(`${shared[2]} ${shared[3]}`));
   // A create verb's "to" ("remind me to walk") is not a range separator.
   if(!lead&&!new RegExp(`^(?:(?:at|before|after|noon|midday|midnight)\\b|(?:${ASSISTANT_ANCHOR_WORD})\\b|(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\b|\\d)`).test(body))return undefined;

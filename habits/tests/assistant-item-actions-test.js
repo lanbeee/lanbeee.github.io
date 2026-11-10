@@ -9,6 +9,11 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     const page=await browser.newPage({serviceWorkers:'block',timezoneId:'America/New_York',viewport:{width:390,height:844}});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.addInitScript(()=>{
+      const OriginalDate=Date,now=new OriginalDate('2026-11-08T15:00:00-05:00').getTime();
+      window.Date=class extends OriginalDate{
+        constructor(...args){super(...(args.length?args:[now]));}
+        static now(){return now;}
+      };
       localStorage.setItem('tings_coach_install_v2','done');
       localStorage.setItem('tings_coach_essentials_v2','done');
     });
