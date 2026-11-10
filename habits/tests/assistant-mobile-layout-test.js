@@ -8,7 +8,7 @@ const {BASE, baseHabit, waitForAssistant} = require('./helpers/planner-test-help
   const engine = process.env.BROWSER || 'chromium';
   const browser = await playwright[engine].launch({headless:true});
   try{
-    const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,serviceWorkers:'block'});
+    const page = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,serviceWorkers:'block',userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1'});
     const errors = [];
     page.on('pageerror',error=>errors.push(error.message));
     await page.addInitScript(()=>{
@@ -49,6 +49,7 @@ const {BASE, baseHabit, waitForAssistant} = require('./helpers/planner-test-help
     });
     assert.ok(await page.evaluate(()=>homeScroll>300),'fixture opens from scrolled Home');
     assert.ok((await measure()).rootLocked,'root scrolling locks with the modal');
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.body).position),'fixed','iPhone keeps the background fixed while the keyboard is open');
 
     for(const [height,top] of [[844,0],[620,0],[440,80],[390,140],[540,30],[844,0]]){
       await page.evaluate(async({height,top})=>{
@@ -74,10 +75,10 @@ const {BASE, baseHabit, waitForAssistant} = require('./helpers/planner-test-help
     assert.ok(r.guides.bottom<=r.input.top,'growing composer reserves space above it');
     await page.locator('#assistant-guide-more').tap();
     await page.locator('#assistant-input').fill('');
-    await page.evaluate(()=>{visualViewport.height=310;visualViewport.offsetTop=110;updateKeyboardLift();});
+    await page.evaluate(()=>{visualViewport.height=310;visualViewport.offsetTop=110;updateKeyboardLift();$('assistant-guide-results').scrollTop=0;});
     r=await measure();
     const result=await page.locator('#assistant-guide-results .assistant-guide').first().boundingBox();
-    assert.ok(result.height>=40 && result.y+result.height<=r.input.top,'a complete search result survives a small keyboard viewport');
+    assert.ok(result.height>=40 && result.y+result.height<=r.input.top,'a complete search result survives a small keyboard viewport: '+JSON.stringify({result,r}));
     await page.screenshot({path:`test-results/assistant-mobile-${engine}.png`});
 
     // This also verifies that the guard permits real internal scrolling: a
@@ -85,12 +86,12 @@ const {BASE, baseHabit, waitForAssistant} = require('./helpers/planner-test-help
     const gestures=await page.evaluate(()=>{
       function drag(el,dx,dy,multi=false,startX=180){
         const p={identifier:7,target:el,clientX:startX,clientY:220};
-        const touch=(x,y)=>new Touch({...p,clientX:x,clientY:y});
-        el.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,touches:[touch(startX,220)],cancelable:true}));
-        const e=new TouchEvent('touchmove',{bubbles:true,cancelable:true,
-          touches:multi ? [touch(startX+dx,220+dy),new Touch({...p,identifier:8})] : [touch(startX+dx,220+dy)]});
+        const touch=(x,y)=>({...p,clientX:x,clientY:y});
+        const event=(type,touches)=>{const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'touches',{value:touches});return e;};
+        el.dispatchEvent(event('touchstart',[touch(startX,220)]));
+        const e=event('touchmove',multi ? [touch(startX+dx,220+dy),{...p,identifier:8}] : [touch(startX+dx,220+dy)]);
         el.dispatchEvent(e);
-        el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,touches:[]}));
+        el.dispatchEvent(event('touchend',[]));
         return e.defaultPrevented;
       }
       const list=$('assistant-guide-results');

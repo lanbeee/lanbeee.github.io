@@ -9,6 +9,25 @@ let _assistantTurn = 0;
 let _assistantExternalReview = false;
 let _assistantDebugRevealed = false;
 let _assistantTitleTaps = [];
+let _assistantIOSScroll = null;
+
+function assistantLockIOSPage(){
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(!ios || paneTierActive() || _assistantIOSScroll !== null)return;
+  _assistantIOSScroll = {x:window.scrollX,y:window.scrollY};
+  document.body.style.setProperty('--assistant-page-top', `${-_assistantIOSScroll.y}px`);
+  document.body.classList.add('assistant-ios-scroll-lock');
+}
+
+function assistantUnlockIOSPage(){
+  if(_assistantIOSScroll === null)return;
+  const scroll = _assistantIOSScroll;
+  _assistantIOSScroll = null;
+  document.body.classList.remove('assistant-ios-scroll-lock');
+  document.body.style.removeProperty('--assistant-page-top');
+  window.scrollTo({left:scroll.x,top:scroll.y,behavior:'instant'});
+}
 
 function assistantEnabled(){
   return Boolean(sortSettings && sortSettings.localAssistant);
@@ -216,6 +235,7 @@ function openAssistantSheet(opts){
   if(!_assistantSession)_assistantSession = assistantCreateSession();
   if(!(opts && opts.skipWelcome))renderAssistantThread();
   syncAssistantFocusBar();
+  assistantLockIOSPage();
   openSheet('assistant-sheet');
   syncAssistantNeedleControls();
   if(assistantSettings().provider === 'needle')void assistantNeedleCheckDownload();
@@ -236,6 +256,7 @@ function closeAssistantSheet(){
   assistantAbortInFlight();
   assistantShowBusy(false);
   closeSheet('assistant-sheet');
+  assistantUnlockIOSPage();
   if(window.tingsExternalAssistant)setTimeout(()=>window.tingsExternalAssistant.drain(),0);
 }
 

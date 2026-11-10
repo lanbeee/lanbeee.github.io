@@ -1,4 +1,7 @@
 .assistant-launch{display:none;}
+/* iOS can pan the document when the keyboard shrinks the visual viewport,
+   even with overflow hidden. Preserve the page's position while it is fixed. */
+body.assistant-ios-scroll-lock{position:fixed;top:var(--assistant-page-top);left:0;width:100%;}
 body.assistant-on .assistant-launch{display:flex;}
 body.assistant-on .assistant-launch[hidden]{display:none;}
 /* Phone home header: same 40px circle as the filter, not a larger teal glyph. */
@@ -330,10 +333,10 @@ body:not(.assistant-debug-on) .assistant-bubble-debug{display:none;}
   flex:0 1 auto;min-height:0;padding-top:4px;
 }
 .assistant-sheet:has(.assistant-guides.is-browsing) .assistant-thread{
-  flex:0 1 auto;max-height:min(28dvh,200px);overflow-y:auto;
+  flex:1 1 0;max-height:min(28dvh,200px);overflow-y:auto;
 }
 .assistant-compose:has(.assistant-guides.is-browsing){
-  flex:1 1 auto;min-height:0;
+  flex:8 1 0;min-height:0;
 }
 .assistant-guides{
   position:relative;align-self:stretch;
@@ -441,6 +444,9 @@ body[data-pane-count="1"] .assistant-sheet{
   padding-bottom:var(--keyboard-dock-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px) - var(--assistant-viewport-top,0px))));
   overflow:hidden;overscroll-behavior:none;
 }
+body[data-pane-count="1"] .assistant-needle-panel{
+  flex:0 1 auto;min-height:0;max-height:20%;overflow-y:auto;
+}
 .assistant-dock.is-searchable{grid-template-columns:44px minmax(0,1fr) 44px;}
 .assistant-dock.is-searchable .assistant-field{grid-column:2;}
 .assistant-dock.is-searchable #assistant-send{grid-column:3;}
@@ -461,7 +467,7 @@ body[data-pane-count="1"] .assistant-sheet{
 .assistant-mention-remove:focus-visible{outline:2px solid var(--teal-icon);outline-offset:1px;}
 .assistant-compose .assistant-field textarea{
   flex:1 1 0;width:0;min-width:0;min-height:44px;max-height:160px;resize:none;margin:0;
-  border:0;border-radius:16px;padding:10px 12px;line-height:1.35;background:transparent;
+  border:0;border-radius:16px;padding:10px 12px;font-size:16px;line-height:1.35;background:transparent;
 }
 .assistant-compose .assistant-field textarea:focus-visible{outline:none;box-shadow:none;}
 .assistant-compose:has(.assistant-guides:not([hidden]):not(.is-browsing)) .assistant-field textarea{max-height:88px;}
