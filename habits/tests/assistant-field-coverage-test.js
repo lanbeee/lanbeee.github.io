@@ -515,6 +515,23 @@ const cases=[
   ...['This should have priority one','Set its priority level to 1','Change the importance level to high'].map((prompt,i)=>[
     'priority',prompt,1,{id:`readiness-priority-${i}`,selectAll:true}]),
   ['topics','Fitness should be its topic',['Fitness'],{id:'readiness-topic-suffix',selectAll:true}],
+  ...['Hi, could you file this under Fitness please?','can u assign it to the Fitness category pls'].map((prompt,i)=>['topics',prompt,['Fitness'],{id:`release-topic-polite-${i}`,selectAll:true}]),
+  ['allowedMonthDays','can u schedule this on day one and day fifteen of each month pls',[1,15],{id:'release-monthdays-polite',selectAll:true}],
+  ['allowedOrdinalWeekdays','can u schedule it on Monday of the first week of each month pls',[{ordinal:1,weekday:1}],{id:'release-ordinal-polite',selectAll:true}],
+  ['preferredOrdinalWeekdays','can u prefer Tuesday in the second week of the month pls',[{ordinal:2,weekday:2}],{id:'release-preferred-ordinal-polite',selectAll:true}],
+  ['durationMinutes','Hi, could you block out three quarters of an hour for each session please?',45,{id:'release-duration-polite',selectAll:true}],
+  ...['Hi, could you add another possible slot: Monday from 6pm to 8pm please?',"I'm editing this item. An alternative is Mondays between 18:00 and 20:00. Everything else should stay as it is.",'Um, okay, Offer Monday 6 to 8 pm as a scheduling option. Thanks.','can u offer Monday 6 to 8 pm as a scheduling option pls'].map((prompt,i)=>['scheduleOptions',prompt,null,{id:`release-option-polite-${i}`,selectAll:true,optionClocks:true}]),
+  ...['For this one event, use a 4pm start','Um, okay, For this one event, use a 4pm start. Thanks.','can u for this one event, use a 4pm start pls'].map((prompt,i)=>['appointmentStartMinute',prompt,960,{id:`release-occurrence-polite-${i}`,kind:'event',scope:'occurrence',covers:['exceptionTime'],selectAll:true}]),
+  ['exceptionCancelled','Do not hold this occurrence; cancel it',true,{id:'release-cancel-occurrence',kind:'event',scope:'occurrence',selectAll:true}],
+  ['durationMinutes','Leave twenty minutes between sessions. Set the minimum chunk to a quarter hour and allow splitting. Make the total session length an hour and a half.',90,{id:'release-compound-effort',selectAll:true,extra:{breakable:true,minChunkMinutes:15,minGapMinutes:20},record:{durationMinutes:90,breakable:true,minChunkMinutes:15,minGapMinutes:20}}],
+  ['conditionTrigger','can u the trigger condition should be loction pls','location',{id:'release-typo-trigger',seed:{repeatMode:'opportunity'},selectAll:true}],
+  ['priority','can u this should have priorty one pls',1,{id:'release-typo-priority',selectAll:true}],
+  ['anywhereAllowed','can u permit doing it at any loction pls',true,{id:'release-typo-anywhere',selectAll:true}],
+  ['locationPrefs','can u give Home a high loction preference pls',{home:'high'},{id:'release-typo-place-preference',selectAll:true}],
+  ['autoMarkMinutes','can u ten logged mins should finish this item pls',10,{id:'release-auto-completion-mins',selectAll:true}],
+  ['reminderReset','can u restore the usual remidner configuration pls',true,{id:'release-typo-reminder-reset',native:true,selectAll:true,reminderSeed:{start:'alarm',dates:{'2026-11-09':{start:'off'}}}}],
+  ['tapStartsSession','can u make a tap open a sesion rather than log it as done pls',true,{id:'release-typo-tap-session',selectAll:true}],
+  ...['Tag it Please','Could you tag it Please','Please tag it "Fitness please"'].map((prompt,i)=>['topics',prompt,[i===2?'Fitness please':'Please'],{id:`release-topic-literal-${i}`,selectAll:true}]),
   ['topics','Assign it to the Fitness category',['Fitness'],{id:'readiness-topic-assign',selectAll:true}],
   ['topics','Label this item Fitness',['Fitness'],{id:'readiness-topic-label',selectAll:true}],
   ['autoMarkMinutes','Count this as done once ten minutes are logged',10,{id:'readiness-auto-completion',record:{durationMinutes:30,type:'keepup'},selectAll:true}],
@@ -526,6 +543,8 @@ const cases=[
   ['preferredWeekdays','If possible choose Monday and Wednesday',[1,3],{id:'readiness-preferred-days-framing',selectAll:true}],
   ['appointmentUntil','Run it until 12/01/2026','2026-12-01',{id:'readiness-series-until',kind:'event',selectAll:true}],
   ['earlyWindowDays','Set early flexibility to 48 hours',2,{id:'readiness-early-hours',selectAll:true}],
+  ['earlyWindowDays','It may be scheduled two days ahead of time',2,{id:'readiness-early-ahead',selectAll:true}],
+  ['reminderTravelLead','Set the leaving reminder fifteen minutes in advance',15,{id:'readiness-lead-without-duration-guidance',native:true,selectAll:true}],
   ['delayAllowanceDays','Set the delay allowance to seventy-two hours',3,{id:'readiness-delay-hours',selectAll:true}],
   ['reminderEnd','Use a notification for the finish reminder','notification',{id:'readiness-end-preserves-start',native:true,selectAll:true}],
   ['exceptionReset','Restore the normal series settings for this date',true,{id:'readiness-occurrence-reset',kind:'event',scope:'occurrence',exception:{startMinute:660},selectAll:true}],
@@ -546,8 +565,11 @@ const cases=[
   ['appointmentStartMinute','Use two thirty pm for the event start',870,{id:'readiness-series-clock-suffix',kind:'event',selectAll:true}],
   ['durationMinutes','Use ninety minutes for this date, leaving the series duration alone',90,{id:'readiness-occurrence-duration-preserves-series',kind:'event',scope:'occurrence',selectAll:true}],
   ['tapStartsSession','Tapping this should just mark it done, not start a session',false,{id:'readiness-tap-off-complete-evidence',seed:{tapStartsSession:true},selectAll:true}]
-].map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
+]
+// Renaming is outside the product's focused edit contract.
+.filter(([field])=>field!=='name').map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
+  ...['Rename this to Evening Walk','Name: Evening Walk','Call it Evening Walk','Change the title to Evening Walk'].map((prompt,i)=>({field:'request',kind:'habit',prompt,id:`release-rename-guard-${i}`,selectAll:true})),
   ...['Use purple or blue for the card color','The background should not be purple'].map((prompt,i)=>({field:'emojiBgColor',kind:'habit',prompt,id:`readiness-color-guard-${i}`,selectAll:true})),
   {field:'hardDue',kind:'task',prompt:'Make the deadline strict and flexible',id:'everyday-deadline-conflict',selectAll:true},
   {field:'hardDue',kind:'task',prompt:'Do not make the deadline strict',id:'everyday-deadline-negation',selectAll:true},
@@ -575,7 +597,7 @@ const guards=[
   {field:'frequency',kind:'habit',prompt:'Minus 2 times per week'},
   {field:'allowedWindow',kind:'habit',prompt:'Allowed time is 15 minutes after Sunset walk'},
   ...['after sunset to','after sunset until sometime','from sunset to 99pm'].map(prompt=>({field:'allowedWindow',kind:'habit',prompt,seed:{allowedTimeStartAnchor:'maghrib',allowedTimeStartOffsetMin:30,allowedTimeEndAnchor:'isha',allowedTimeEndOffsetMin:0}})),
-  {field:'name',kind:'habit',prompt:'Do not rename it Tomorrow'},
+  {field:'request',kind:'habit',prompt:'Do not rename it Tomorrow'},
   {field:'topics',kind:'habit',prompt:"Don't tag it Work"},
   ...['Not tomorrow instead','Tomorrow or Friday please','After tomorrow instead'].map(prompt=>({field:'dueDate',kind:'task',prompt})),
   ...['tomorrowland','tonightly','onward'].map(value=>({field:'dueDate',kind:'task',prompt:`Set due date to ${value}`})),
@@ -651,7 +673,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
     },live);
     const coverage=await page.evaluate(rows=>{
       const covered=new Set(rows.flatMap(r=>r.covers||[r.field]));
-      return ASSISTANT_FOCUS_FIELDS.filter(f=>!covered.has(f.id)).map(f=>f.id);
+      return ASSISTANT_FOCUS_FIELDS.filter(f=>f.id!=='name'&&!covered.has(f.id)).map(f=>f.id);
     },cases);
     assert(!coverage.length,`every registered field has a predefined language case (${coverage.join(', ')})`);
     const chosen=cases.filter(t=>!process.env.FIELD_CASE||new RegExp(process.env.FIELD_CASE).test(t.id));

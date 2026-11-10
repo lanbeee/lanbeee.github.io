@@ -6,6 +6,12 @@ const crypto=require('crypto');
 const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers');
 const NOW='2026-11-08T15:00:00-05:00';
 const cases=[
+  {id:'other-item-log',prompt:'Log Water yesterday',kind:'guard'},
+  {id:'other-item-edit',prompt:'Make Water 20 minutes',kind:'guard'},
+  {id:'future-log',prompt:'Log it tomorrow',kind:'guard'},
+  {id:'past-plan',prompt:'Plan it for yesterday',kind:'guard'},
+  {id:'future-clock-log',prompt:'Log it today at 4pm',kind:'guard'},
+  {id:'earlier-today',prompt:'Log it today at 9am',kind:'guard'},
   {id:'forgot-yesterday',prompt:'I forgot to log this yesterday',kind:'log',day:'2026-11-07'},
   {id:'mark-done',prompt:'mark it done',kind:'log',day:'today'},
   {id:'already-finished',prompt:'I already finished this',kind:'log',day:'today'},
@@ -43,10 +49,15 @@ const cases=[
     await page.route('https://huggingface.co/**',route=>route.fulfill({
       body:fs.readFileSync(route.request().url().endsWith('.wasm')?process.env.NEEDLE_WASM_PATH:process.env.NEEDLE_MODEL_PATH)
     }));
-    await page.addInitScript(()=>{
+    await page.addInitScript(now=>{
+      const OriginalDate=Date,stamp=new OriginalDate(now).getTime();
+      window.Date=class extends OriginalDate{
+        constructor(...args){super(...(args.length?args:[stamp]));}
+        static now(){return stamp;}
+      };
       localStorage.setItem('tings_coach_install_v2','done');
       localStorage.setItem('tings_coach_essentials_v2','done');
-    });
+    },NOW);
     await page.goto(BASE);await waitForAssistant(page);
     await page.evaluate(async()=>{
       patchLocalAssistant({localAssistant:true,localAssistantProvider:'needle'});
@@ -65,7 +76,7 @@ const cases=[
         save([{
           hid:'walk',name:'Walk',type:test.seedType||'keepup',target:7,durationMinutes:30,priority:2,logs:[],topics:[],pinned:false,
           links:[{kind:'phone',value:'5551234567'}]
-        }]);
+        },{hid:'water',name:'Water',type:'keepup',target:7,durationMinutes:10,logs:[]}]);
         if(test.logs){const data=load();data[0].logs=test.logs.map(name=>name==='tomorrow-plan'?{ts:stamps[name],plan:true}:stamps[name]);save(data);}
         const before=JSON.stringify(load());
         const session=assistantFocusOpen({operation:'edit',kind:test.openKind||'habit',targetId:'walk',now});
@@ -90,7 +101,7 @@ const cases=[
         }
         const todayKey=dateKey(Date.now());
         return {
-          unsaved,todayKey,
+          unsaved,todayKey,siblingUntouched:load()[1].logs.length===0&&load()[1].durationMinutes===10,
           changes:session.changes.map(change=>({field:change.field,value:change.field==='durationMinutes'?change.value:(change.value!=null&&['dueDate','planByDate'].includes(change.field)?dateKey(change.value):undefined)})),
           questions:session.unresolved.map(row=>({field:row.field,question:row.question})),
           action:action&&{kind:action.kind,ready:Boolean(action.ready),label:action.label||'',summary:action.summary||'',
@@ -102,14 +113,17 @@ const cases=[
         };
       },test);
       const wantDay=test.day==='today'?result.todayKey:test.day;
-      let ok=result.unsaved;
-      if(test.kind==='field'){
+      let ok=result.unsaved&&result.siblingUntouched;
+      if(test.kind==='guard'){
+        ok=ok&&!result.action&&!result.changes.length&&result.questions.length>0;
+      }else if(test.kind==='field'){
         ok=ok&&!result.action&&result.changes.length===1&&result.changes[0].field===test.field
           &&(test.value!=null?result.changes[0].value===test.value:result.changes[0].value===wantDay);
       }else{
         ok=ok&&result.action&&result.action.ready&&result.commit&&result.commit.ok&&result.onlyUndo;
         if(test.kind==='log'){
           ok=ok&&result.action.kind==='log'&&result.logs.length===1&&!result.logs[0].plan&&result.logs[0].key===wantDay
+            &&(test.hour==null||result.logs[0].hour===test.hour)
             &&(test.minutes==null||result.logs[0].minutes===test.minutes)
             &&(test.note==null||result.logs[0].note===test.note);
         }else if(test.kind==='undo'){

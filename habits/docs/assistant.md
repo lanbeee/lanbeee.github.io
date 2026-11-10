@@ -9,7 +9,7 @@ For the subsequent single-action implementation and its measured limits, see
 
 Read this only when the task is the Tings assistant. For planner, home, settings, and habit work, leave this file and every `js/assistant-*.js` file closed. `js/assistant-tools.js` is about 5,300 lines and is not on that path.
 
-When Needle is the provider, the only entry is one saved item. The Add form takes a literal name and essential settings, saves them, then opens details. It has no assistant entry. The details search box finds settings as the user types; an explicit Ask Needle action sends that text to the existing focused edit chat. Enter opens the first matching setting, or Ask when no setting matches. Typing alone never invokes the model. Search and Ask are available in full and minimal mode. Manual edits must be saved or cancelled before entering chat. Edit with AI on a card and Change with AI in details also open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The chat opens on that item's Edit summary, and the working-on bar stays hidden so the name is not listed twice. Clearing the chat keeps the same item and shows that summary again. The product session edits the item the host already selected. Internal create adapters remain for regression coverage; they are not exposed on Add. Needle cannot switch items, add a second item, or answer a general question. On that open item it can also log or undo a completion, including an earlier day, and add or remove a one-day plan. “Plan for” and “plan by” remain the due date or do-by date. Logging and planning confirm in the chat. The toast after that confirmation only offers undo. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
+When Needle is the provider, the only entry is one saved item. The Add form takes a literal name and essential settings, saves them, then opens details. It has no assistant entry. The details search box finds settings as the user types; an explicit Ask Needle action sends that text to the existing focused edit chat. Enter opens the first matching setting, or Ask when no setting matches. Typing alone never invokes the model. Search and Ask are available in full and minimal mode. Manual edits must be saved or cancelled before entering chat. Edit with AI on a card and Change with AI in details also open a focused session. The top-bar and bottom-bar chat buttons stay hidden. The chat opens on that item's Edit summary, and the working-on bar stays hidden so the name is not listed twice. Clearing the chat keeps the same item and shows that summary again. The product session edits the item the host already selected. Internal create adapters remain for regression coverage; they are not exposed on Add. Needle cannot rename items, switch items, add a second item, or answer a general question. Renaming remains in the detail editor. Requests explicitly targeting another saved item ask the user to open that item. On that open item it can also log or undo a completion, including an earlier day, and add or remove a one-day plan. “Plan for” and “plan by” remain the due date or do-by date. Logging and planning confirm in the chat. Confirmation checks the original item ID again; deleting or replacing the item invalidates the action, while list reordering preserves the correct target. Closed editors and requests still being read cannot confirm actions. The toast after that confirmation only offers undo. Several settings in one message are staged together. Words the model returns are kept only when they appear in the original request; the app's parsers then check rhythm, duration, dates, and windows. A copied snippet that belongs to a different setting is ignored. Save stays blocked while a requested field is missing, contradictory, or still being read. Save writes the summary; Edit opens those changes in the detail editor without saving. Ollama, LM Studio, and the external Android bridge still use the general assistant.
 
 Focused saves apply the staged fields to the current saved item. A concurrent
 change to a field in the preview requires another review; unrelated edits and
@@ -17,6 +17,11 @@ logs survive. Undo reverses this action’s item, topic, weather-profile, and
 reminder changes while preserving later edits and newly shared dependencies.
 An occurrence-scoped event edit writes time, duration, emoji, and color into
 that date’s exception. A new event starts with series scope.
+
+Completion actions record today or a past calendar day. Clock-specific log or
+undo requests ask for clarification because normal habit logs follow the item's
+eligibility window; the assistant must not promise an exact journal timestamp.
+One-day plans can include a clock time and apply only to today or a future day.
 
 The focused path keeps the latest message separate from its request history,
 so a follow-up can replace an earlier value. A completeness pass can recover
@@ -36,9 +41,9 @@ clause does not. Reminder warning/heads-up quantities belong to their lead-time
 field, including spoken and fractional values; they cannot edit session length.
 Unsupported lead times ask instead of selecting a supported value or another field.
 
-Title edits require an explicit naming instruction on the current turn,
-including replies to a title question. A routing question cannot grant permission
-to treat a later setting request as a title.
+The focused edit catalog excludes renaming. Extraction, manual corrections,
+summary navigation and Save cannot rename the open item. Internal create adapters
+still require a name; they have no user-facing assistant entry.
 Clear instructions retain their whole setting label, keeping monthly weekday
 rules, ordinary weekdays, place preferences and schedule links separate. Exact
 versus flexible start policies keep their negation together. Occurrence wording
@@ -86,7 +91,7 @@ alarm is a delivery mode, not Do Not Disturb. The setting preserves reminder
 delivery modes, global reminder enablement, and other items. It participates in
 the same review, Save and undo flow.
 
-The composer always offers three setting names for the open item. They follow
+The composer offers up to six setting names for the open item. They follow
 the draft, or the last request when the box is empty. Tapping a name places it
 as a tag in the message and does not send; tapping it again removes the tag and
 keeps anything typed beside it. The message can be sent as that setting alone,
@@ -102,9 +107,8 @@ question when nothing matches. The send button always asks with the text in the
 box. Android reminders stay absent
 in the PWA. Choosing a result only fills the composer and returns focus to it.
 An explicitly selected field supplies the setting's meaning to Needle, while its
-value still requires exact model-selected evidence and validation. **Name** accepts
-the literal new title, including titles such as “Every day,” without requiring
-another rename instruction or turning those words into recurrence.
+value still requires exact model-selected evidence and validation. Renaming is
+absent from the edit suggestions and setting search.
 
 **Fix last request** restores the draft from before the last unsaved request and
 puts that request back in the composer. Earlier edits, questions and dependencies

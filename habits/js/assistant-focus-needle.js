@@ -63,6 +63,8 @@ function assistantFocusArgs(raw){
 
 function assistantFocusSplitEvidence(text){
   return String(text || '').split(';').map(part => {
+    // A bare URL returned by discovery is evidence, not an action label.
+    if(/^\s*[a-z][a-z\d+.-]*:\/\//i.test(part))return null;
     const mark = part.indexOf(':');
     if(mark < 1)return null;
     return {label:part.slice(0, mark).trim().toLowerCase(), phrase:part.slice(mark + 1).trim()};

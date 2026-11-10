@@ -263,10 +263,11 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const t=fieldTest;t.seed();save([...load(),{hid:'meeting',name:'Meeting',type:'keepup',target:7,durationMinutes:30,logs:[]}]);
       const s=t.open(),before=JSON.stringify(load());
       await assistantFocusTurn(s,'Call it Yoga, after Meeting',t.options());
-      return assistantFocusMaterialize(s).name==='Yoga'&&!assistantFocusCanSave(s)
+      return assistantFocusMaterialize(s).name===s.source.name&&!assistantFocusCanSave(s)
+        &&s.unresolved.some(q=>q.field==='request')
         &&s.unresolved.some(q=>q.field==='scheduleLinks')&&before===JSON.stringify(load());
     });
-    assert(separateOrder,'a naming clause cannot silently hide a separate ordering instruction');
+    assert(separateOrder,'unsupported renaming preserves the name and cannot hide a separate ordering instruction');
     const clockBoundaries=await page.evaluate(async()=>{
       const t=fieldTest,results=[];
       for(const [kind,prompt,minute,duration] of [
@@ -602,11 +603,14 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         // Even a genuine title question cannot consume a later bare message.
         await assistantFocusTurn(renamed,'Rename it Evening Gym',t.options({extract:async spec=>spec.jobId==='name'
           ?{function_calls:[{name:spec.tool.name,arguments:{[Object.keys(spec.tool.parameters.properties)[0]]:''}}]}:t.reply(spec)}));
-        if(!renamed.unresolved.some(issue=>issue.field==='name'))return {error:'missing title clarification',questions:renamed.unresolved};
+        if(!renamed.unresolved.some(issue=>issue.field==='request'))return {error:'missing unsupported rename explanation',questions:renamed.unresolved};
         await assistantFocusTurn(renamed,'Evening Gym',t.options());
         if(assistantFocusMaterialize(renamed).name!=='Gym'||assistantFocusCanSave(renamed))return {error:'bare message became a title',changes:renamed.changes};
         await assistantFocusTurn(renamed,'Rename it Evening Gym',t.options());
-        if(assistantFocusMaterialize(renamed).name!=='Evening Gym'||!assistantFocusCanSave(renamed))return {error:'explicit title clarification failed',changes:renamed.changes,questions:renamed.unresolved};
+        if(assistantFocusMaterialize(renamed).name!=='Gym'||assistantFocusCanSave(renamed))return {error:'explicit rename was accepted',changes:renamed.changes,questions:renamed.unresolved};
+        if(assistantFocusNormalize('name','Evening Gym',renamed).ok)return {error:'manual rename correction was accepted'};
+        assistantFocusStage(renamed,{field:'name',value:'Evening Gym'});
+        if(assistantFocusMaterialize(renamed).name!=='Gym'||assistantFocusCanSave(renamed))return {error:'injected rename was accepted'};
         return true;
       }finally{window.TingsNative=oldNative;window.refreshOpenViews=oldRefresh;}
     });
@@ -629,15 +633,30 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     assert(quotedEvidence,'quoted/backslash/newline evidence uses a closed token menu and restores only exact selected sources');
     const malformed=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open();let attempts=0;
-      await assistantFocusTurn(s,'Rename it "Evening Stroll"',t.options({extract:async spec=>{
-        if(spec.jobId==='name'){attempts++;throw new Error('malformed function_calls JSON');}
+      await assistantFocusTurn(s,'Make it 40 minutes',t.options({extract:async spec=>{
+        if(spec.jobId==='durationMinutes'){attempts++;throw new Error('malformed function_calls JSON');}
         return t.reply(spec);
       }}));
-      const blocked=attempts===1&&!s.continuationError&&!s.pendingFamilies.length&&!assistantFocusCanSave(s)&&s.unresolved.some(q=>q.field==='name');
-      await assistantFocusTurn(s,'Rename it Evening Stroll',t.options());
-      return blocked&&assistantFocusCanSave(s)&&assistantFocusMaterialize(s).name==='Evening Stroll';
+      const blocked=attempts===1&&!s.continuationError&&!s.pendingFamilies.length&&!assistantFocusCanSave(s)&&s.unresolved.some(q=>q.field==='durationMinutes');
+      await assistantFocusTurn(s,'Make the duration 40 minutes',t.options());
+      return blocked&&assistantFocusCanSave(s)&&assistantFocusMaterialize(s).durationMinutes===40;
     });
     assert(malformed,'malformed extraction asks for new wording instead of looping Continue, and a rephrase recovers');
+    const boundedCoverage=await page.evaluate(async()=>{
+      const t=fieldTest;t.seed();const s=t.open();let reads=0,bounded=false;
+      await assistantFocusTurn(s,'Pin it; make it 30 minutes',t.options({extract:async spec=>{
+        if(spec.family==='completeness'){
+          reads++;
+          if(reads===1)throw new Error('tool call truncated: token budget exhausted');
+          const menu=spec.tool.parameters.properties.missing.enum;
+          bounded=Array.isArray(menu)&&menu.includes('')&&menu.some(value=>value.includes('Pin it'));
+        }
+        return t.reply(spec);
+      }}));
+      return reads===2&&bounded&&!s.continuationError&&assistantFocusCanSave(s)
+        &&assistantFocusMaterialize(s).pinned&&assistantFocusMaterialize(s).durationMinutes===30;
+    });
+    assert(boundedCoverage,'an exhausted completeness reply retries once with a closed evidence menu and retains the draft');
     assert(!errors.length,`scripted field jobs have no page errors (${errors.join('; ')})`);
     await page.close();
     if(process.env.NEEDLE_MODEL_PATH&&process.env.NEEDLE_WASM_PATH){

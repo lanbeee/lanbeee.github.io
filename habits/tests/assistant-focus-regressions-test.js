@@ -74,7 +74,7 @@ function assert(ok, message){
       // Print each live result as it finishes and retain the full model trace.
       page.on('console', message => {if(message.type() === 'log')console.log(`  ${mode}: ${message.text()}`);});
       const cases = [
-        ['every registered field has a working value normalizer', async()=>page.evaluate(()=>{
+        ['editable fields normalize and edit renaming is rejected', async()=>page.evaluate(()=>{
           const t=focusTest;t.seed();const s=t.open();
           const values={name:'Walk',kind:'task',habitKind:'limit',emoji:'🌟',emojiBgColor:'blue',priority:'3',
             timesPerPeriod:'3',periodDays:'7',repeatMode:'opportunity',conditionTrigger:'location',conditionRadiusM:'300',
@@ -92,6 +92,7 @@ function assert(ok, message){
             reminderTravelLead:'15',reminderStartLead:'15',reminderMissedLead:'15',reminderReset:'reset'};
           const failed=ASSISTANT_FOCUS_FIELDS.flatMap(field=>{
             const value=values[field.id], parsed=value && assistantFocusNormalize(field.id,value,s);
+            if(field.id==='name')return parsed && !parsed.ok ? [] : [{field:field.id,value,parsed}];
             return parsed && parsed.ok ? [] : [{field:field.id,value,parsed}];
           });
           if(failed.length)throw new Error(JSON.stringify(failed));

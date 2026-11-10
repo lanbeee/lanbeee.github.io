@@ -179,9 +179,9 @@ function assert(ok, message){
       return cases;
     });
     const byName = name => guided.find(row => row.name === name);
-    assert(byName('literal name').changes.length===1&&byName('literal name').changes[0].field==='name'
-      &&byName('literal name').changes[0].value==='Every day'&&byName('literal name').canSave,
-      `an explicit Name guide accepts a literal title without reinterpreting it as recurrence (${JSON.stringify(byName('literal name'))})`);
+    assert(!byName('literal name').changes.length&&!byName('literal name').canSave
+      &&byName('literal name').questions.some(q=>q.includes('detail editor')),
+      `a Name guide cannot rename or reinterpret the title as recurrence (${JSON.stringify(byName('literal name'))})`);
     assert(byName('literal kind').changes.some(change=>change.field==='kind'&&change.value==='task'),
       'an explicit Habit or task guide accepts the selected kind as its value');
     const week = byName('bare allowed');

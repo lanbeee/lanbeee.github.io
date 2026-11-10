@@ -51,11 +51,11 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
       await page.evaluate(minimal=>{closeAssistantSheet();setMinimalMode(minimal);openDetail(0);},minimal);
       const before=await page.evaluate(()=>load());
       const beforeReads=await reads();
-      await search('Make Read 30 minutes');
+      await search('Make Walk 30 minutes');
       assert.ok(await page.locator('#detail-search-ask').isVisible());
       if(minimal)await page.keyboard.press('Enter');
       else await page.locator('#detail-search-ask').click();
-      await page.waitForFunction(count=>entryReads.length>count && _assistantSession?.focus?.currentRequest==='Make Read 30 minutes' && !_assistantBusy && !detailAssistantOpening,beforeReads);
+      await page.waitForFunction(count=>entryReads.length>count && _assistantSession?.focus?.currentRequest==='Make Walk 30 minutes' && !_assistantBusy && !detailAssistantOpening,beforeReads);
       const staged=await page.evaluate(()=>({
         operation:_assistantSession.focus.operation,target:_assistantSession.focus.targetId,
         draft:assistantFocusMaterialize(_assistantSession.focus),entry:_assistantSession.entry,
@@ -64,7 +64,7 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
       assert.equal(staged.operation,'edit');assert.equal(staged.target,'walk');
       assert.equal(staged.entry,'detail');assert.equal(staged.draft.name,'Walk');
       assert.equal(staged.draft.durationMinutes,30,'focused instruction stages duration');
-      assert.ok(staged.thread.includes('Make Read 30 minutes'),'typed instruction appears in chat');
+      assert.ok(staged.thread.includes('Make Walk 30 minutes'),'typed instruction appears in chat');
       assert.equal(staged.query,'','sent search text clears');
       assert.deepEqual(await page.evaluate(()=>load()),before,'opening chat and staging never write');
       await page.locator('[data-focus-save]').click();

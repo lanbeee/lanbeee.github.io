@@ -143,6 +143,51 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     const yesterday=new Date('2026-11-07T12:00:00-05:00').getTime();
     const today=new Date('2026-11-08T15:00:00-05:00').getTime();
     const tomorrowPlan=new Date('2026-11-09T12:00:00-05:00').getTime();
+    const earlierToday=await turn('Log it today at 9am');
+    assert(earlierToday.beforeSame&&!earlierToday.actions&&earlierToday.questions.some(q=>/exact clock time/.test(q.question)),
+      'an exact log time asks instead of silently snapping it to a different time');
+    const futureTime=await turn('Log it today at 4pm');
+    assert(futureTime.beforeSame&&!futureTime.actions&&futureTime.questions.some(q=>/exact clock time/.test(q.question)),
+      'a completion cannot be logged for a future time today');
+    const exactUndo=await turn('Undo yesterday at 9am',{logs:[yesterday]});
+    assert(exactUndo.beforeSame&&!exactUndo.actions&&exactUndo.questions.length>0,
+      'undo at a specific time asks instead of deleting a different completion');
+    const sibling={hid:'water',name:'Water',type:'keepup',target:7,durationMinutes:10,logs:[]};
+    for(const prompt of ['Log Water yesterday','Plan Water for tomorrow','Make Water 20 minutes',
+      "Set Water's duration to 20 minutes",'For Water, make it 20 minutes',
+      'Make it 20 minutes and log Water yesterday','Water should be 20 minutes']){
+      const row=await turn(prompt,{settings:{items:[sibling]}});
+      assert(row.beforeSame&&!row.actions&&!row.changes.length&&row.questions.some(q=>q.field==='request'),
+        `a request for another item cannot change or log the open item: ${prompt}`);
+    }
+    const noteWithSibling=await turn('Log it yesterday with note: Water was great',{settings:{items:[sibling]}});
+    assert(noteWithSibling.beforeSame&&noteWithSibling.action?.ready&&noteWithSibling.action.complete.note==='Water was great',
+      'a sibling name inside a log note remains literal text');
+    for(const prompt of ['Log it yesterday','Plan it for tomorrow']){
+      for(const scenario of ['deleted','replaced','reordered','closed','reading','wrong-id']){
+        const row=await page.evaluate(async({prompt,scenario,sibling})=>{
+          actionTest.mode='';actionTest.seed({}, {items:[sibling]});
+          const s=actionTest.open();await assistantFocusTurn(s,prompt,actionTest.options());
+          const offered=Boolean(s.itemActions[0]?.ready);
+          if(scenario==='deleted')save(load().filter(item=>item.hid!=='walk'));
+          if(scenario==='replaced')save(load().map(item=>item.hid==='walk'?{...item,hid:'replacement'}:item));
+          if(scenario==='reordered')save(load().reverse());
+          if(scenario==='closed')assistantFocusInvalidate();
+          if(scenario==='reading')s._focusInFlight=true;
+          if(scenario==='wrong-id'){
+            const action=s.itemActions[0];(action.pendingComplete||action.pendingPlan).hid='water';
+          }
+          const before=JSON.stringify(load()),result=assistantFocusCommitAction(s,0);
+          return {offered,ok:result.ok,unchanged:before===JSON.stringify(load()),items:load()};
+        },{prompt,scenario,sibling});
+        const expected=scenario==='reordered';
+        assert(row.offered&&row.ok===expected&&row.unchanged===!expected
+          &&(!expected||(row.items.find(item=>item.hid==='walk').logs.length===1
+            &&row.items.find(item=>item.hid==='water').logs.length===0)),
+          `${prompt}: confirmation stays on the original ID when ${scenario} (${JSON.stringify(row)})`);
+      }
+    }
+    await page.evaluate(()=>hideActionToast());
     const logPrompts=[
       'I forgot to log this yesterday',
       'I didn\'t log it yesterday',

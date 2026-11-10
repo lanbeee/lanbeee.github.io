@@ -388,6 +388,7 @@ function assistantFocusNormalize(fieldId, raw, session){
   }
   const fail = (error) => ({ok:false, error});
   if(fieldId === 'name'){
+    if(session && session.operation==='edit')return fail('Rename the item in its detail editor.');
     const name = text.slice(0, typeof ASSISTANT_NAME_MAX === 'number' ? ASSISTANT_NAME_MAX : 60);
     if(assistantFocusNameRejected(name, session && (session.originalRequest || session.requestText))){
       return fail('That looks like the whole description. What should the item be called?');
@@ -848,7 +849,7 @@ function assistantFocusWrite(record, change, session, scratch, data){
   change = Object.assign({}, change, {field:assistantFocusScopedField(change.field, session)});
   const op = change.op;
   const value = change.value;
-  if(change.field === 'name')record.name = op === 'clear' ? '' : String(value || '').slice(0, 60);
+  if(change.field === 'name' && session.operation==='create')record.name = op === 'clear' ? '' : String(value || '').slice(0, 60);
   else if(change.field === 'kind'){
     if(value === 'task'){
       record.type = 'task';
@@ -1302,6 +1303,7 @@ function assistantFocusCanSave(session){
   if(session._focusInFlight)return false;
   if(session.unresolved.length || session.pendingFamilies.length || session.correctionError || session.continuationError)return false;
   if(session.operation === 'edit' && !session.changes.length)return false;
+  if(session.operation === 'edit' && session.changes.some(change=>change.field==='name'))return false;
   if(session.operation === 'create' && !session.changes.some(change => change.field === 'name' && change.op === 'set' && change.value))return false;
   if(assistantFocusDraftIssues(session).length)return false;
   if(session.kind === 'event' && session.eventScope == null)return false;
@@ -1476,7 +1478,7 @@ function assistantFocusWeatherRulesChip(profile){
 // grouped rhythm chips, event controls, and native-only reminders.
 function assistantFocusDetailSelector(field, session){
   if(field === 'planByDate')return null; // No editable detail control yet.
-  if(field === 'name' && session.eventScope === 'occurrence')return null;
+  if(field === 'name' && session.operation === 'edit')return null;
   if(field.startsWith('reminder')){
     if(!window.TingsNative?.isNative)return null;
     const edges = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
@@ -1568,13 +1570,21 @@ function assistantFocusActionHtml(session){
 }
 
 function assistantFocusCommitAction(session, index){
+  if(!assistantFocusAlive(session)||session.operation!=='edit')return {ok:false,error:'This item editor is no longer open.'};
+  if(session._focusInFlight)return {ok:false,error:'Wait until this request has finished.'};
   const actions = session && session.itemActions || [];
   const action = actions[Number(index)];
   if(!action || !action.ready)return {ok:false, error:'Nothing is waiting to confirm.'};
+  const pending=action.pendingComplete||action.pendingPlan;
+  const found=assistantFocusFound(session);
+  if(!found||!pending||pending.hid!==session.targetId)return {ok:false,error:'The original item is no longer available. Reopen it to try again.'};
+  // Generic action helpers may fall back to a name after list changes. Focused
+  // actions always resolve the original ID, including after reordering.
+  const scoped={...pending,index:found.index,name:found.name};
   const result = action.pendingComplete && typeof assistantCommitComplete === 'function'
-    ? assistantCommitComplete(action.pendingComplete)
+    ? assistantCommitComplete(scoped)
     : action.pendingPlan && typeof assistantCommitPlan === 'function'
-      ? assistantCommitPlan(action.pendingPlan)
+      ? assistantCommitPlan(scoped)
       : {ok:false, error:'That action is unavailable.'};
   if(!result.ok)return result;
   actions.splice(Number(index), 1);

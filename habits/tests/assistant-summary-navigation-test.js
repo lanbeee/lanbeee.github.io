@@ -63,12 +63,14 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
 
       await open('walk');
       await jump('rhythm','#detail-frequency-presets');
-      await open('walk',[['name','Evening walk']]);
+      await open('walk',[['durationMinutes',40]]);
       // Keyboard activation uses the same button path as a tap.
-      await page.locator('[data-focus-field="name"]').focus();
+      await page.locator('[data-focus-field="durationMinutes"]').focus();
       await page.keyboard.press('Enter');
-      await page.waitForFunction(()=>$('detail-habit-message').classList.contains('detail-search-hit'));
-      assert.equal(await page.locator('#detail-habit-message').inputValue(),'Evening walk');
+      await page.waitForFunction(()=>$('detail-duration').classList.contains('detail-search-hit'));
+      await page.locator('#detail-duration').blur();
+      assert.equal(await page.locator('#detail-duration').inputValue(),'40');
+      assert.equal(await page.locator('[data-focus-field="name"]').count(),0,'renaming is absent from the summary');
       assert.deepEqual(await page.evaluate(()=>load()),before);
     }
     await page.evaluate(()=>{restoreDetailTune();setMinimalMode(false);});
