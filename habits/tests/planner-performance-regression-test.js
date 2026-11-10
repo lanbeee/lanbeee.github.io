@@ -167,7 +167,9 @@ const EXPECTED_MODE = process.env.HABITS_PLANNER_MODE || (BASE.includes('planner
   // No same-day cache in this fixture: cold open must keep the skeleton while
   // the worker is held, not flash an unplanned basic list first.
   await page.waitForFunction(()=>window.__plannerWorkerProbe?.posts > 0,null,{timeout:5000});
-  await page.waitForSelector('#list .home-loading',{timeout:5000});
+  // The launch cover intentionally hides the underlying skeleton until the
+  // first usable agenda; check its presence rather than cover visibility.
+  await page.waitForSelector('#list .home-loading',{state:'attached',timeout:5000});
 
   const cold = await page.evaluate(async()=>{
     const frameStarted = performance.now();

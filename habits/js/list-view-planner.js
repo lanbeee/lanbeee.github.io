@@ -73,7 +73,6 @@ function homeListFingerprint(now = Date.now()){
 let _homeListFingerprint = '';
 let _homeCardFaceSignature = '';
 let _homeRenderedWeek = null;
-let _fastHomeRefreshToken = 0;
 let _optimizerHomeRequestKey = '';
 let _optimizerHomeRequestToken = 0;
 let _optimizerHomeRenderPromise = null;
@@ -527,15 +526,15 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
       priorPlacements:typeof agendaPriorPlacementsFromWeek === 'function'
         ? agendaPriorPlacementsFromWeek(baselineWeek || _homeRenderedWeek)
         : []
-    }).then(week=>{
+    }).then(async week=>{
       if(token !== _optimizerHomeRefinementToken)return;
-      _optimizerHomeRefinementKey = '';
-      _optimizerHomeRefinementPass += 1;
       if(Date.now() > deadline || homePlannerDirtyKey(load()) !== dirtyKey){
+        _optimizerHomeRefinementKey = '';
         syncHomePlannerStatusIndicators();
         return;
       }
       if(!week || !Array.isArray(week.days)){
+        _optimizerHomeRefinementKey = '';
         _optimizerHomeRefinementDoneKey = refinementKey;
         syncHomePlannerStatusIndicators();
         return;
@@ -546,11 +545,23 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
       const samePlan = homeAgendaPlanSignature(incumbent,liveData) === homeAgendaPlanSignature(week,liveData);
       if(samePlan)week = mergeHomeAgendaSamePlanProvenance(incumbent,week);
       const better = homeAgendaRefinementIsBetter(incumbent,week,liveData,sortSettings || settings);
+      if(better && !await bufferHomeAgendaPaint(()=>token === _optimizerHomeRefinementToken
+        && homePlannerDirtyKey(load()) === dirtyKey)){
+        if(token === _optimizerHomeRefinementToken){
+          _optimizerHomeRefinementKey = '';
+          finishHomeAgendaUpdate();
+          syncHomePlannerStatusIndicators();
+        }
+        return;
+      }
+      _optimizerHomeRefinementKey = '';
+      _optimizerHomeRefinementPass += 1;
       // Only absorb proofs from a week we actually keep. A rejected pass that
       // proved day 0 while heuristic-packing later days would otherwise freeze
       // the incumbent's day 0 and never apply the better packing.
       if(better || samePlan)absorbHomeAgendaProvenDayKeys(week);
       if(!better){
+        finishHomeAgendaUpdate();
         // A proof/status improvement with identical placements is still useful
         // audit/cache metadata, but it should not repaint the DOM.
         if(samePlan){
@@ -581,6 +592,7 @@ function scheduleHomeAgendaRefinement(data,settings,baselineWeek){
       syncHomePlannerStatusIndicators();
     }).catch(()=>{
       if(token !== _optimizerHomeRefinementToken)return;
+      finishHomeAgendaUpdate();
       _optimizerHomeRefinementKey = '';
       _optimizerHomeRefinementPass += 1;
       const passesLeft = _optimizerHomeRefinementPass < maxPasses;
@@ -651,10 +663,14 @@ function captureHomeReadingPosition(list){
   const top = Math.max(0,hostRect.top);
   const bottom = Math.min(window.innerHeight,hostRect.bottom);
   const candidates = Array.from(list.children);
-  const anchor = candidates.find(el=>{
+  const visible = el=>{
     const rect = el.getBoundingClientRect();
     return rect.bottom > top + 1 && rect.top < bottom;
-  });
+  };
+  // A sticky day heading stays at the same coordinate even when rows above
+  // the viewport disappear. Anchor the content being read before the heading.
+  const anchor = candidates.find(el=>!el.classList.contains('section-header') && visible(el))
+    || candidates.find(visible);
   if(!anchor)return {host,scrollTop,key:'',offset:0};
   return {
     host,
@@ -807,6 +823,100 @@ const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 // A usable unplanned list is better than making a slow phone look frozen.
 // The worker keeps running and replaces this fallback with the planned week.
 const HOME_COLD_BOOT_SKELETON_MAX_MS = 8 * 1000;
+const HOME_AGENDA_QUIET_MS = 600;
+const HOME_AGENDA_BUFFER_MS = 320;
+let _homeAgendaLastInteraction = -Infinity;
+const _homeAgendaPointers = new Set();
+let _homeAgendaUpdateStarted = null;
+
+// Observe gestures once at the document, leaving card activation to bindTap.
+// A worker result must never replace the target of a gesture or a focused field.
+document.addEventListener('pointerdown',event=>{
+  if(!event.isTrusted)return;
+  _homeAgendaPointers.add(event.pointerId);
+  _homeAgendaLastInteraction = performance.now();
+},{capture:true,passive:true});
+for(const name of ['pointerup','pointercancel']){
+  document.addEventListener(name,event=>{
+    if(!event.isTrusted)return;
+    _homeAgendaPointers.delete(event.pointerId);
+    _homeAgendaLastInteraction = performance.now();
+  },{capture:true,passive:true});
+}
+for(const name of ['scroll','input','keydown','focusout']){
+  document.addEventListener(name,()=>{_homeAgendaLastInteraction = performance.now();},{capture:true,passive:true});
+}
+window.addEventListener('blur',()=>{_homeAgendaPointers.clear();});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    _homeAgendaPointers.clear();
+    if(!_optimizerHomeRequestKey)finishHomeAgendaUpdate();
+  }
+});
+
+function homeAgendaInteractionActive(){
+  const focused = document.activeElement;
+  const sheet = focused?.closest('.sheet-wrap');
+  const editing = focused && (focused.matches('input,textarea,select') || focused.isContentEditable)
+    && !focused.closest('[inert]') && (!sheet || sheet.classList.contains('open'));
+  return document.hidden || _homeAgendaPointers.size > 0
+    || performance.now() - _homeAgendaLastInteraction < HOME_AGENDA_QUIET_MS
+    || Boolean(editing);
+}
+
+async function waitForHomeAgendaQuiet(isCurrent){
+  while(isCurrent()){
+    const buffering = _homeAgendaUpdateStarted != null
+      && performance.now() - _homeAgendaUpdateStarted < HOME_AGENDA_BUFFER_MS;
+    if(!buffering && !homeAgendaInteractionActive())return true;
+    await new Promise(resolve=>setTimeout(resolve,80));
+  }
+  return false;
+}
+
+async function bufferHomeAgendaPaint(isCurrent){
+  if(!await waitForHomeAgendaQuiet(isCurrent))return false;
+  if(_homeRenderedWeek && $('list')?.querySelector('.ting-card')){
+    beginHomeAgendaUpdate();
+    return waitForHomeAgendaQuiet(isCurrent);
+  }
+  return true;
+}
+
+function beginHomeAgendaUpdate(){
+  const list = $('list');
+  if(!list || list.classList.contains('is-agenda-updating'))return;
+  let status = $('home-agenda-update-status');
+  if(!status){
+    status = document.createElement('div');
+    status.id = 'home-agenda-update-status';
+    status.className = 'sr-only';
+    status.setAttribute('role','status');
+    status.setAttribute('aria-atomic','true');
+    list.before(status);
+  }
+  // Keep announcements outside the inert list so assistive technology can
+  // explain why its old controls are temporarily unavailable.
+  status.textContent = 'Updating agenda…';
+  _homeAgendaUpdateStarted = performance.now();
+  list.classList.add('is-agenda-updating');
+  list.setAttribute('aria-busy','true');
+  list.inert = true;
+}
+
+function finishHomeAgendaUpdate(){
+  const list = $('list');
+  if(_homeAgendaUpdateStarted != null){
+    const status = $('home-agenda-update-status');
+    if(status)status.textContent = 'Agenda ready.';
+  }
+  if(list){
+    list.classList.remove('is-agenda-updating');
+    list.removeAttribute('aria-busy');
+    list.inert = false;
+  }
+  _homeAgendaUpdateStarted = null;
+}
 
 // Older keys may contain a week solved by a previous Worker even when the page
 // scripts have updated. They are derived data only, so remove them eagerly.
@@ -889,6 +999,7 @@ function saveHomeAgendaCache(data,week){
 // even if travel-cache background writes changed the next optimizer key.
 function renderHomePresentationOnly(){
   if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
+  if(_homeAgendaUpdateStarted != null)return;
   if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     if(homeCardFaceChanged()){
       render();
@@ -1064,6 +1175,24 @@ function repaintMountedHomeForCardFace(week,opts){
 
 function queueOptimizedHomeRender(data,opts){
   plannerPerfMark('planner-queue-start');
+  // The covered DOM keeps its geometry, but planner/native consumers still
+  // need current identities immediately after a deletion, undo, or reorder.
+  if(_homeRenderedWeek){
+    const changedIdentity = _homeRenderedWeek.days?.some(day=>(day.timeline || []).some(row=>
+      row.i != null && row.h?.hid !== data[row.i]?.hid));
+    rehydrateAgendaWeekHabits(_homeRenderedWeek,data,{preserveHabitIds:true});
+    if((changedIdentity || homeCardFaceChanged(data)) && typeof syncAutoMarkChunkPlans === 'function'){
+      syncAutoMarkChunkPlans(data,_homeRenderedWeek);
+    }
+    const indices = new Map(data.map((h,i)=>[h.hid,i]));
+    document.querySelectorAll('#list .swipe-row[data-hid]').forEach(row=>{
+      const i = indices.get(row.dataset.hid);
+      if(i == null)return;
+      row.dataset.realIdx = String(i);
+      const card = row.querySelector('.ting-card');
+      if(card)card.dataset.real = String(i);
+    });
+  }
   const key = optimizerHomeStateKey(data);
   const dirtyKey = homePlannerDirtyKey(data);
   const exactMode = Boolean(sortSettings && sortSettings.agendaOptimizer);
@@ -1093,7 +1222,7 @@ function queueOptimizedHomeRender(data,opts){
     // Request de-dupe must not swallow a foreground presentation change made
     // while that solve is active. Repaint from the stable mounted plan; do not
     // start or publish another scheduling result.
-    if(!(opts && opts.__backgroundRefresh)
+    if(!$('list')?.classList.contains('is-agenda-updating') && !(opts && opts.__backgroundRefresh)
       && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
       if(homeCardFaceChanged(data))return repaintMountedHomeForCardFace(_homeRenderedWeek,opts);
       render({...opts,__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
@@ -1123,15 +1252,16 @@ function queueOptimizedHomeRender(data,opts){
     const cached = cachedHomeAgenda(data);
     if(cached){
       render({...opts,__fromOptimizer:true,__optimizedWeek:cached});
+      const needsReplan = homeAgendaTickPlan(cached,Date.now()).kind === 'imminent-solve';
       paintedFromCache = !(opts && opts.__skipFreshnessGate);
+      if(needsReplan || !paintedFromCache)beginHomeAgendaUpdate();
       // Seed day0Only without claiming the live minute key, so idle can still
       // refresh today when the clock has moved, while far days reuse this week.
       adoptHomeAgendaReadyState(cached,data,false);
     }else if(_homeRenderedWeek && $('list')?.querySelector('.ting-card')){
-      // A done/log/add render keeps this agenda mounted until the new solve
-      // lands, so placement does not flash through an unplanned list. Name,
-      // emoji, color, priority, and completion still redraw from that week now.
-      repaintMountedHomeForCardFace(_homeRenderedWeek,opts);
+      // Keep the old geometry under placeholders. Logging must not expose an
+      // intermediate residual agenda that moves again when the solve lands.
+      beginHomeAgendaUpdate();
     }else if(!$('list')?.querySelector('.home-loading')){
       // No compatible agenda exists to keep mounted. Stay in the intentional
       // boot animation until planning resolves instead of flashing an unordered
@@ -1142,6 +1272,7 @@ function queueOptimizedHomeRender(data,opts){
     _homeListFingerprint = homeListFingerprint();
     plannerPerfMark('planner-first-paint');
   }
+  if(opts && opts.__reopenRefresh && !paintedFromCache)beginHomeAgendaUpdate();
 
   // Compatible same-day cache: paint now and let idle keep/shift or day-0
   // reuse own any clock update so cold open does not pay a full-week GLPK.
@@ -1218,9 +1349,19 @@ function queueOptimizedHomeRender(data,opts){
       },HOME_COLD_BOOT_SKELETON_MAX_MS)
     : null;
   _optimizerHomeRenderError = null;
-  _optimizerHomeRenderPromise = optimizerBuild.then(week=>{
+  _optimizerHomeRenderPromise = optimizerBuild.then(async week=>{
     if(coldBootTimer != null)clearTimeout(coldBootTimer);
     if(token !== _optimizerHomeRequestToken)return;
+    if(!week || !Array.isArray(week.days)){
+      _optimizerHomeRequestKey = '';
+      finishHomeAgendaUpdate();
+      syncHomePlannerStatusIndicators();
+      return;
+    }
+    const currentData = load();
+    const changed = homeAgendaPlanSignature(_homeRenderedWeek,currentData) !== homeAgendaPlanSignature(week,currentData);
+    if((changed || homeCardFaceChanged(currentData) || _homeAgendaUpdateStarted != null)
+      && !await bufferHomeAgendaPaint(()=>token === _optimizerHomeRequestToken))return;
     _optimizerHomeRequestKey = '';
     syncHomePlannerStatusIndicators();
     const live = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : null);
@@ -1230,7 +1371,6 @@ function queueOptimizedHomeRender(data,opts){
       else render(opts);
       return;
     }
-    if(!week || !Array.isArray(week.days))return;
     const liveData = load();
     // Worker posts a lean week (no `h`). Re-attach before any consumer reads names.
     if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(week,liveData);
@@ -1238,7 +1378,7 @@ function queueOptimizedHomeRender(data,opts){
     // planned week can stay mounted; on a first-ever load, use that fallback
     // rather than leaving the user on the unplanned basic list.
     if(exactMode && !week.optimized){
-      if(!_homeRenderedWeek){
+      if(!_homeRenderedWeek || _homeAgendaUpdateStarted != null){
         render({...opts,__fromOptimizer:true,__optimizedWeek:week});
         // Rendering may persist automatic chunk plans and bump the planner
         // revision. Cache only after those writes so the record is not stale
@@ -1249,7 +1389,8 @@ function queueOptimizedHomeRender(data,opts){
       return;
     }
     _optimizerHomeReadyWeek = week;
-    if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
+    if(_homeAgendaUpdateStarted == null
+      && homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
       _homeRenderedWeek = week;
       if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
       // Same clocks can still be a new name, emoji, color, or log. Paint those
@@ -1287,6 +1428,10 @@ function queueOptimizedHomeRender(data,opts){
     // (If the skeleton behavior is disabled above, this guard never fires:
     // the deferAgenda paint has already replaced the skeleton.)
     if($('list')?.querySelector('.home-loading'))render({...opts,deferAgenda:true});
+    else if(_homeAgendaUpdateStarted != null && _homeRenderedWeek){
+      render({...opts,__fromOptimizer:true,__optimizedWeek:_homeRenderedWeek});
+    }
+    finishHomeAgendaUpdate();
   });
   return true;
 }
@@ -1415,6 +1560,7 @@ function homeAgendaTickPlan(week,now = Date.now()){
 
 function tickHomeAgendaWhileOpen(){
   if(!_homeRenderedWeek || !Array.isArray(_homeRenderedWeek.days))return false;
+  if(homeAgendaInteractionActive() || _homeAgendaUpdateStarted != null)return true;
   const forecastData=typeof load==='function' ? load() : [];
   const projected=typeof consumeAgendaDropForecast==='function'
     ? consumeAgendaDropForecast(_homeRenderedWeek,forecastData,homePlannerDirtyKey(forecastData)) : null;
@@ -1504,45 +1650,14 @@ function renderHomeIfChanged(force,opts = {}){
     // Claim this state before starting work so a travel burst or visibility
     // event cannot enqueue the same recalculation repeatedly.
     _homeListFingerprint = fp;
-    if(settings.agendaOptimizer && typeof buildWeekAgendaAsync === 'function'){
-      queueOptimizedHomeRender(data,{
-        __backgroundRefresh:true,
-        __forceReplan:Boolean(force),
-        __weatherChanged:Boolean(opts.__weatherChanged),
-        __locationChanged:Boolean(opts.locationChanged)
-      });
-      return true;
-    }
-    if(!settings.agendaOptimizer && typeof buildWeekAgendaOffMain === 'function'){
-      const token = ++_fastHomeRefreshToken;
-      const requestedFingerprint = fp;
-      const settingsSnapshot = {...settings};
-      void buildWeekAgendaOffMain(data,settingsSnapshot,7,'fast',{fastGraph:true}).then(week=>{
-        if(token !== _fastHomeRefreshToken || !week || !Array.isArray(week.days))return;
-        const liveData = load();
-        // A real edit/location update arrived while the worker was planning.
-        // Discard this stale result and let the latest state schedule its own.
-        if(requestedFingerprint !== homeListFingerprint()){
-          renderHomeIfChanged();
-          return;
-        }
-        if(homeAgendaPlanSignature(_homeRenderedWeek,liveData) === homeAgendaPlanSignature(week,liveData)){
-          _homeRenderedWeek = week;
-          if(typeof syncAutoMarkChunkPlans === 'function')syncAutoMarkChunkPlans(liveData,week);
-          repaintMountedHomeForCardFace(week,{__fromBackgroundRefresh:true});
-          _homeListFingerprint = homeListFingerprint();
-          return;
-        }
-        render({__fromBackgroundRefresh:true,__optimizedWeek:week});
-        _homeListFingerprint = homeListFingerprint();
-      }).catch(()=>{
-        if(token !== _fastHomeRefreshToken)return;
-        // Workers are widely available in the supported browsers. If creation
-        // is blocked, keep the current plan instead of freezing touch input
-        // with the old synchronous comparison path.
-      });
-      return true;
-    }
+    queueOptimizedHomeRender(data,{
+      __backgroundRefresh:true,
+      __forceReplan:Boolean(force),
+      __weatherChanged:Boolean(opts.__weatherChanged),
+      __locationChanged:Boolean(opts.locationChanged),
+      __reopenRefresh:Boolean(opts.__reopenRefresh)
+    });
+    return true;
   }
   const didRender = render();
   if(didRender !== false)_homeListFingerprint = homeListFingerprint();

@@ -206,7 +206,7 @@ function syncAddRhythmUi(){
   const count = times === 1 ? 'once' : `${times} times`;
   const period = days === 1 ? 'a day' : days === 7 ? 'a week' : `every ${days} days`;
   $('target-help').textContent = selectedType === 'zero' ? rhythmHelp('zero')
-    : optional ? 'No missed days when conditions don’t match.'
+    : optional ? 'Only shows as missed after appearing on your agenda.'
     : selectedType === 'reduce' ? `Keep it to ${count} ${period} or less.`
     : `Aim for ${count} ${period}.`;
   document.querySelectorAll('[data-add-rhythm]').forEach(button=>{
@@ -291,7 +291,7 @@ function syncDetailRepeatModeUi(type){
     const [presetTimes,presetDays] = button.dataset.detailRhythm.split(',').map(Number);
     button.setAttribute('aria-pressed',String(!optional && times === presetTimes && days === presetDays));
   });
-  if(optional)$('detail-target-help').textContent = 'No missed days when conditions don’t match.';
+  if(optional)$('detail-target-help').textContent = 'Only shows as missed after appearing on your agenda.';
   syncDetailConditionsLayout(optional);
 }
 $('detail-repeat-mode').addEventListener('change',()=>{

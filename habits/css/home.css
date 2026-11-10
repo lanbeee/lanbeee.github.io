@@ -2,14 +2,25 @@
 #list{display:flex;flex-direction:column;gap:10px;padding:16px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
 .home-loading{display:flex;flex-direction:column;gap:10px;padding-top:38px;pointer-events:none;}
 .home-loading span{
-  display:block;height:82px;border-radius:var(--radius);border:0.5px solid var(--border);
+  display:block;height:82px;border-radius:var(--card-radius,var(--radius));
+}
+.home-loading span,#list.is-agenda-updating > :not(.section-header)::after{
   background:linear-gradient(90deg,var(--bg2) 20%,var(--bg3) 45%,var(--bg2) 70%);
   background-size:220% 100%;animation:home-loading-shift 1.1s ease-in-out infinite;
 }
 .home-loading span:nth-child(2){opacity:0.78;animation-delay:90ms;}
 .home-loading span:nth-child(3){opacity:0.58;animation-delay:180ms;}
 @keyframes home-loading-shift{to{background-position:-120% 0;}}
-@media (prefers-reduced-motion:reduce){.home-loading span{animation:none;}}
+/* Preserve every row's height and the reading position during a foreground
+   replan. Covered controls cannot receive a tap meant for the previous plan. */
+#list.is-agenda-updating{pointer-events:none;}
+#list.is-agenda-updating > :not(.section-header),
+#list.is-agenda-updating > .section-header .day-header-context{visibility:hidden;}
+#list.is-agenda-updating > *:not(.section-header){position:relative;}
+#list.is-agenda-updating > :not(.section-header)::after{
+  content:'';position:absolute;inset:0;visibility:visible;border-radius:inherit;
+}
+@media (prefers-reduced-motion:reduce){.home-loading span,#list.is-agenda-updating > :not(.section-header)::after{animation:none;}}
 .home-boot-recovery{
   display:flex;flex-direction:column;align-items:flex-start;gap:8px;
   margin:38px 0 0;padding:18px;border:1px solid var(--border);

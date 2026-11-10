@@ -93,11 +93,12 @@ function seedScript(){
     const mounted = _homeRenderedWeek;
     _optimizerHomeReadyKey = '';
     buildWeekAgendaOffMain = async()=>mounted;
-    let ok, immediateBar;
+    let ok, coveredControls;
     try{
       ok = startHabitTimer(idx);
-      immediateBar = !!document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress]`);
+      coveredControls = document.getElementById('list').inert;
     }finally{buildWeekAgendaOffMain = planner;}
+    await waitForHomeAgendaRender();
     const deadline = performance.now() + 5000;
     while(!document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress]`)
       && performance.now() < deadline)await new Promise(resolve=>setTimeout(resolve,16));
@@ -112,7 +113,7 @@ function seedScript(){
       : false;
     return {
       ok,
-      immediateBar,
+      coveredControls,
       running: Boolean(habitTimer && habitTimer.idx === idx),
       habitHid:load()[idx]?.hid || null,
       doingHid: getDoingNow()?.hid || null,
@@ -127,7 +128,7 @@ function seedScript(){
   console.log(started);
   assert(started.ok && started.running, 'startHabitTimer starts global timer');
   assert(started.doingHid === started.habitHid, 'timer and doing-now share the same active habit');
-  assert(started.immediateBar, 'session controls repaint immediately while an unchanged plan is pending');
+  assert(started.coveredControls, 'session controls stay covered until the pending plan is ready');
   assert(started.bar, 'home card shows session progress bar while timer runs');
   assert(started.hasSessionClass && !started.hasBreakableClass, 'session cards use has-session-progress, not breakable grid');
   assert(!started.overlap, 'session bar does not overlap cue text');
@@ -181,11 +182,12 @@ function seedScript(){
   assert(!a4.zeroEligible && !a4.zeroStart && !a4.zeroSwipe, 'zero habit cannot start timer / no swipe');
 
   console.log('\n[A6] breakable crown card still shows timer bar while running');
-  const a6 = await page.evaluate(() => {
+  const a6 = await page.evaluate(async () => {
     if(habitTimer)clearHabitTimerSilent();
     const idx = load().findIndex(h => h.name === 'Breakable build');
     const ok = startHabitTimer(idx);
     if(typeof render === 'function')render();
+    await waitForHomeAgendaRender();
     const card = document.querySelector(`.ting-card[data-real="${idx}"]`);
     return {
       ok,
@@ -516,7 +518,7 @@ function seedScript(){
   assert(d4.sessionOpen && d4.stillSession && d4.stillIdx, 'session confirm not overwritten by value prompt');
 
   console.log('\n[E] discard restores auto bar on auto-mark task (no log)');
-  const discard = await page.evaluate(() => {
+  const discard = await page.evaluate(async () => {
     document.getElementById('value-log-cancel')?.click();
     if(habitTimer)clearHabitTimerSilent();
     const idx = load().findIndex(h => h.name === 'Auto task');
@@ -533,6 +535,7 @@ function seedScript(){
     const beforeLogs = normalizeLogs(load()[idx].logs).length;
     document.getElementById('value-log-cancel')?.click();
     const h = load()[idx];
+    await waitForHomeAgendaRender();
     const el = document.querySelector(`.ting-card[data-real="${idx}"] [data-session-progress]`);
     return {
       beforeLogs,

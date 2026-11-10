@@ -60,7 +60,8 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom
   margin:0;align-self:stretch;
 }
 #list{gap:10px;padding-top:12px;}
-.swipe-row{--card-radius:26px;--card-inset:12px;}
+.swipe-row,.home-loading{--card-radius:26px;}
+.swipe-row{--card-inset:12px;}
 .ting-name{font-weight:600;letter-spacing:-.02em;line-height:1.3;}
 .ting-cue{line-height:1.45;}
 .section-header{
@@ -136,7 +137,7 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail .detail-bottom
   .bottom-nav .nav-add:hover{background:var(--teal-bg);box-shadow:var(--accent-glow);}
 }
 /* Preserve compact-mode geometry and full-page sheet mechanics. */
-body.compact-mode .swipe-row{--card-radius:20px;}
+body.compact-mode :is(.swipe-row,.home-loading){--card-radius:20px;}
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto;}
   *,*::before,*::after{

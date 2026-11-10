@@ -986,7 +986,7 @@ function scheduleReopenRefresh(refreshAgenda = true){
       resumeLocationWatchIfOptedIn({fresh:true});
     }
     if(refreshAgenda){
-      if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true);
+      if(typeof renderHomeIfChanged === 'function')renderHomeIfChanged(true,{__reopenRefresh:true});
       else if(typeof render === 'function')render();
     }else if(typeof updateHomeSessionProgress === 'function'){
       updateHomeSessionProgress();

@@ -150,6 +150,8 @@ async function phoneQuickStart(browser,width,height,task,minimal = false){
   assert(await page.locator('#add-sheet .add-sheet[data-coach-space]').count() === 0,'leaving the form removes coach layout space');
   await primary(page,'eDetailEffort','eHomeCard');
   await primary(page,'eHomeCard','eLog');
+  await page.evaluate(()=>waitForHomeAgendaRender());
+  await page.waitForSelector('#tings-coach[data-coach-stage="eLog"][data-locked="true"]');
   await page.locator('[data-coach-later]').click();
   await primary(page,'eHomeGroups','eCalendar');
   await page.locator('#open-overview').click();
@@ -421,6 +423,8 @@ async function nativeKeyboardQuickStart(browser){
 
   await primary(page,'eDetailEffort','eHomeCard');
   await primary(page,'eHomeCard','eLog');
+  await page.evaluate(()=>waitForHomeAgendaRender());
+  await page.waitForSelector('#tings-coach[data-coach-stage="eLog"][data-locked="true"]');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','logging practice is a required action');
   await page.locator('[data-coach-later]').click();
   await stage(page,'eHomeGroups');

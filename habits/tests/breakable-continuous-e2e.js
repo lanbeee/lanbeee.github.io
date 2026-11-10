@@ -1575,6 +1575,7 @@ assert(weekChunk === 60,
     if(cool)cool.click();
   });
   await page.waitForTimeout(300);
+  await page.evaluate(()=>waitForHomeAgendaRender());
   const detailCardSlider = await page.evaluate(() => {
     const card = [...document.querySelectorAll('#list .ting-card')].find(el =>
       (el.textContent || '').includes('BreakableDetail'));

@@ -1287,16 +1287,8 @@ function quickLog(i,card){
       setTimeout(()=>card.classList.remove('logged'),380);
     }
     setTimeout(refreshOpenViews, 260);
-    // In week-on mode, render() keeps the mounted DOM while the planner
-    // re-solves, so the just-logged card's done-state and the today "missed"
-    // pill lag behind the log. Once the tap animation has played, repaint home
-    // from the mounted plan so they update without waiting for the background
-    // solve. No-op outside week mode (render() is already synchronous there).
-    setTimeout(()=>{
-      if(typeof renderHomePresentationOnly === 'function'){
-        renderHomePresentationOnly();
-      }
-    }, 400);
+    // The planner owns the next paint. A second timed repaint here can expose
+    // an intermediate order or rebuild cards just after the buffer clears.
   };
   const data = load();
   const h = data[i];

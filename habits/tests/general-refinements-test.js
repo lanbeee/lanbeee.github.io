@@ -70,7 +70,7 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   await page.waitForSelector('#list .ting-card');
   await page.waitForSelector('.blocked-card:not(.blocked-card-merge) span',{timeout:10000});
 
-  const cardFace = await page.evaluate(()=>{
+  const cardFace = await page.evaluate(async()=>{
     const row = document.querySelector('#list .swipe-row[data-hid]');
     if(!row)return {ok:false,reason:'no card'};
     const hid = row.dataset.hid;
@@ -93,6 +93,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     h.priority = h.priority === 0 ? 3 : 0;
     save(data);
     render();
+    const coveredRename = document.getElementById('list').inert;
+    await waitForHomeAgendaRender();
     const card = document.querySelector(`#list .swipe-row[data-hid="${hid}"]`);
     const pulse = card?.querySelector('.pulse-btn');
     const afterPriority = card?.querySelector('.ting-card')?.style.getPropertyValue('--card-priority') || '';
@@ -105,6 +107,8 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     const logged = typeof logTing === 'function' && logTing(idx,{feedback:false});
     if(typeof refreshOpenViews === 'function')refreshOpenViews();
     else render();
+    const coveredLog = document.getElementById('list').inert;
+    await waitForHomeAgendaRender();
     const afterLog = document.querySelector(`#list .swipe-row[data-hid="${hid}"]`);
     const again = load();
     const item = again.find(entry=>entry && entry.hid === hid);
@@ -117,22 +121,20 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       item.lastLog = original.lastLog;
       save(again);
     }
-    const week = _homeRenderedWeek;
-    if(week)render({__fromOptimizer:true,__optimizedWeek:week});
-    _optimizerHomeRequestToken += 1;
-    _optimizerHomeRequestKey = '';
+    render();
+    await waitForHomeAgendaRender();
     const restored = document.querySelector(`#list .swipe-row[data-hid="${hid}"] .ting-name`)?.textContent || '';
-    return {renamed,logged,gone:!afterLog,restored,originalName:original.name};
+    return {renamed,logged,coveredRename,coveredLog,gone:!afterLog,restored,originalName:original.name};
   });
-  check('home cards show a saved name, emoji, color, and priority without waiting for a replan',
-    cardFace.renamed
+  check('home cards show saved name, emoji, color, and priority after the loading buffer',
+    cardFace.coveredRename && cardFace.renamed
       && cardFace.renamed.name === 'Renamed right away'
       && cardFace.renamed.emoji === '🎯'
       && cardFace.renamed.color.includes('--teal-bg')
       && cardFace.renamed.priorityMoved,
     JSON.stringify(cardFace));
-  check('marking a home card done removes it before the planner finishes',
-    cardFace.logged === true && cardFace.gone === true && cardFace.restored === cardFace.originalName,
+  check('marking a home card done covers the intermediate plan and removes it when ready',
+    cardFace.coveredLog && cardFace.logged === true && cardFace.gone === true && cardFace.restored === cardFace.originalName,
     JSON.stringify(cardFace));
 
   const clockInputs = await page.evaluate(()=>({

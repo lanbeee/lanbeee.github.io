@@ -244,6 +244,7 @@ function plannerDayExpectation(data,day,rendered = false){
     (row.kind === 'fill' || row.kind === 'scheduled') && row.i != null && data[row.i]);
   return {
     hids:[...new Set(rows.map(row=>data[row.i].hid).filter(Boolean))],
+    renderedHids:rendered ? [...new Set(rows.map(row=>data[row.i].hid).filter(Boolean))] : [],
     occurrences:normalizeSuggestedOccurrences(rows.filter(row=>habitHasMultipleDailyOccurrences(data[row.i]))
       .map(row=>({hid:data[row.i].hid,occurrenceKey:row.occurrenceKey,
         scheduleOptionId:row.scheduleOptionId,start:row.start,end:row.end,dropAt:row.dropAt,rendered})))
@@ -359,6 +360,7 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     if(day === today && projectionByDay[day]){
       const prior = projectionByDay[day];
       projectionByDay[day] = {hids:[...new Set([...prior.hids,...entry.hids])],
+        renderedHids:entry.renderedHids,
         occurrences:normalizeSuggestedOccurrences([...prior.occurrences,...entry.occurrences])};
     }else{
       projectionByDay[day] = entry;
@@ -1506,6 +1508,7 @@ function render(opts){
     queueOptimizedHomeRender(data,o);
     return false;
   }
+  finishHomeAgendaUpdate();
   const readingPosition = o.preserveReadingPosition === false
     ? null
     : captureHomeReadingPosition(list);

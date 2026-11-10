@@ -849,7 +849,7 @@ function seedScript(){
     saveSortSettings({...loadSortSettings(), showWeekOnHome:true, agendaOptimizer:false,
       showDueTasksInAgenda:true, availabilityMinutes:[600,600,600,600,600,600,600], blockedTimes:[]});
     if(typeof render === 'function')render();
-    await new Promise(r=>setTimeout(r,200));
+    await waitForHomeAgendaRender();
     const row = [...document.querySelectorAll('.swipe-row[data-agenda-draggable="1"]')]
       .find(r=>r.querySelector('.breakable-crown'));
     if(!row)return {found:false};
@@ -1025,6 +1025,7 @@ function seedScript(){
 
   // Exercise the real phone event order, not just the ownership API:
   // CDP emits pointerdown before touchstart, then horizontal touch moves.
+  await page.evaluate(()=>waitForHomeAgendaRender());
   const swipePoint = await page.evaluate(() => {
     closeAllSwipes();
     const row = [...document.querySelectorAll('.swipe-row[data-agenda-draggable="1"]')]

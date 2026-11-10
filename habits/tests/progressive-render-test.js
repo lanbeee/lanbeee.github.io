@@ -198,9 +198,12 @@ function seedProgressiveHome(target){
 
   // Fast planner refresh: use the same stale fingerprint path with GLPK off.
   // The sync recalculation should also compare off-screen and preserve nodes.
-  const fastBefore = await page.evaluate(()=>{
+  await page.evaluate(()=>{
     sortSettings = {...sortSettings,agendaOptimizer:false};
     render();
+  });
+  await page.evaluate(()=>waitForHomeAgendaRender());
+  const fastBefore = await page.evaluate(()=>{
     window.__stableFastNode = document.querySelector('#list .swipe-row');
     const destructive = Number(window.__progressiveObs?.destructive || 0);
     _homeListFingerprint = 'stale-for-fast-refresh-test';

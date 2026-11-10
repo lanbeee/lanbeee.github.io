@@ -582,6 +582,10 @@ function normalizeSuggestedExpectations(raw){
     const hids = [...new Set(source.hids.filter(hid=>typeof hid === 'string' && hid))];
     out[day] = {
       hids,
+      renderedHids:[...new Set([
+        ...(Array.isArray(source.renderedHids) ? source.renderedHids : []),
+        ...(day === raw?.day ? Object.keys(raw.hids || {}) : [])
+      ])].filter(hid=>hids.includes(hid)),
       occurrences:normalizeSuggestedOccurrences(source.occurrences),
       fingerprint:typeof source.fingerprint === 'string' ? source.fingerprint : '',
       recordedAt:Number.isFinite(Number(source.recordedAt)) ? Number(source.recordedAt) : null
@@ -708,15 +712,17 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
     const clean = entry.hids.filter(hid=>validHids.has(hid));
     const occurrences = normalizeSuggestedOccurrences(normalizeSuggestedOccurrences(entry.occurrences)
       .filter(row=>validHids.has(row.hid)).map(row=>canonicalSuggestedOccurrence(row,data.find(h=>h.hid === row.hid),day)));
-    if(clean.length !== entry.hids.length || JSON.stringify(occurrences) !== JSON.stringify(entry.occurrences || [])){
-      snap.expectations[day] = {...entry,hids:clean,occurrences};
+    const renderedHids = (entry.renderedHids || []).filter(hid=>validHids.has(hid));
+    if(clean.length !== entry.hids.length || renderedHids.length !== (entry.renderedHids || []).length
+      || JSON.stringify(occurrences) !== JSON.stringify(entry.occurrences || [])){
+      snap.expectations[day] = {...entry,hids:clean,renderedHids,occurrences};
       changed = true;
     }
   }
   for(const hid of currentHids){
     if(!snap.hids[hid]){
       const h = data.find(item=>item && item.hid === hid);
-      snap.hids[hid] = {first:now,name:h ? h.name : ''};
+      snap.hids[hid] = {first:now,name:h ? h.name : '',lastLogAtFirst:h ? latestActualLog(h.logs) : null};
       changed = true;
     }
   }
@@ -729,6 +735,7 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
     const previous = snap.expectations[today];
     const next = {
       hids:[...currentExpected],
+      renderedHids:[...new Set([...(previous?.renderedHids || []),...currentHids.filter(hid=>validHids.has(hid))])],
       occurrences:snap.expectations[today]?.occurrences || [],
       fingerprint:previous?.fingerprint || fingerprint || '',
       recordedAt:previous?.recordedAt || now
@@ -744,6 +751,7 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
       if(!Array.isArray(hids) || day < today)continue;
       const clean = [...new Set(hids.filter(hid=>validHids.has(hid)))];
       const occurrences = normalizeSuggestedOccurrences(value?.occurrences).filter(row=>validHids.has(row.hid));
+      const renderedHids = (value?.renderedHids || []).filter(hid=>validHids.has(hid));
       if(day === today){
         const merged = new Set(snap.expectations[day]?.hids || []);
         clean.forEach(hid=>merged.add(hid));
@@ -753,7 +761,9 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
           const prior = rows.get(row.occurrenceKey);
           rows.set(row.occurrenceKey,{...row,rendered:Boolean(row.rendered || prior?.rendered)});
         }
-        const next = {hids:[...merged],occurrences:[...rows.values()],fingerprint:fingerprint || '',recordedAt:previous?.recordedAt || now};
+        const next = {hids:[...merged],
+          renderedHids:[...new Set([...(previous?.renderedHids || []),...renderedHids])],
+          occurrences:[...rows.values()],fingerprint:fingerprint || '',recordedAt:previous?.recordedAt || now};
         if(JSON.stringify(previous) !== JSON.stringify(next)){
           snap.expectations[day] = next;
           changed = true;
@@ -762,6 +772,7 @@ function recordTodaySuggested(data,currentHids,now = Date.now(),projectionHids =
         const previous = snap.expectations[day];
         const next = {
           hids:clean,
+          renderedHids,
           occurrences,
           fingerprint:fingerprint || '',
           recordedAt:previous?.fingerprint === (fingerprint || '')
@@ -922,8 +933,11 @@ function agendaCompletedOccurrenceKeys(h,rows,dayBase){
 function agendaRowsAfterCompletions(h,rows,dayBase){
   if(isLocalAppointment(h))return Array.isArray(rows) ? rows : [];
   const list = Array.isArray(rows) ? rows : [];
+  // There can be more optional windows than the requested daily quota. Once
+  // that quota is met, unused alternatives are neither work nor misses.
+  if(completedOnDay(h,dayBase))return [];
   if(!h || h.type === 'task' || h.breakable || !habitHasMultipleDailyOccurrences(h)){
-    return completedOnDay(h,dayBase) ? [] : list;
+    return list;
   }
   const matched = agendaCompletedOccurrenceKeys(h,list,dayBase);
   return list.filter(row=>!matched.has(row.occurrenceKey));

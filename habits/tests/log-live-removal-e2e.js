@@ -1,21 +1,19 @@
 /**
  * Logging a habit must remove it from today's agenda live — without a cold
- * restart. In week-on-home mode the home list repaints from a stale/cached
- * planner week while the worker re-solves asynchronously; that stale repaint
- * (renderHomePresentationOnly, fired by the pulse handler) must not keep a
- * just-logged — no-longer-due — card on screen.
+ * restart. While the worker re-solves, the old geometry stays covered by
+ * loading placeholders. The completed row leaves when the new plan is ready.
  *
  * This drives the REAL pulse button and asserts the card leaves today's
  * section on its own (no page.reload). The planner worker is stubbed so the
- * FIRST solve mounts quickly but every later re-solve stalls, isolating the
- * stale-repaint (the path a user sees between a tap and a slow GLPK re-solve).
+ * FIRST solve mounts quickly and later solves pause long enough to inspect
+ * the buffer between a tap and a slow GLPK re-solve.
  *
  *   HABITS_URL=http://127.0.0.1:4181/ node tests/log-live-removal-e2e.js
  */
 const { chromium } = require('playwright');
 
 const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
-const RESOLVE_DELAY_MS = 30000; // stall every re-solve after the first
+const RESOLVE_DELAY_MS = 1400;
 
 function assert(cond, msg){ if(!cond)throw new Error(msg); }
 function at(hour, minute = 0){ const d = new Date(); d.setHours(hour, minute, 0, 0); return d.getTime(); }
@@ -123,7 +121,7 @@ async function seedAndReload(page, { data, settings, clockTs }){
   const data = [
     // Non-breakable keepup, due today (last logged 3 days ago, every 2 days).
     // Placed in today's timeline; logging makes it completedOnDay so it must
-    // leave today's section at once.
+    // leave today's section once the buffered replan is ready.
     base({ name:'Read', type:'keepup', target:2, durationMinutes:30,
       lastLog:clockTs - 3 * DAY, logs:[clockTs - 3 * DAY], dueDate:null, priority:1 })
   ];
@@ -151,9 +149,11 @@ async function seedAndReload(page, { data, settings, clockTs }){
   }, before, { timeout:5000 });
   console.log('  ok: pulse persisted an actual log');
 
-  // The card must leave today's section on its own (no reload). The stale
-  // repaint fires ~400ms after the tap; the re-solve is stalled, so this
-  // measures exactly the repaint — the path the user sees right after logging.
+  await page.waitForFunction(()=>document.getElementById('list').inert,null,{timeout:2000});
+  assert(await page.evaluate(()=>document.getElementById('list').classList.contains('is-agenda-updating')),
+    'loading placeholders cover the old plan while the worker is paused');
+  // The card leaves on its own after the solve, without a reload or an
+  // intermediate residual plan that shifts again a moment later.
   const leftToday = await page.waitForFunction((name) => {
     const todayBase = dayStart(Date.now());
     const rows = document.querySelectorAll(`#list .swipe-row[data-day-base="${todayBase}"]`);

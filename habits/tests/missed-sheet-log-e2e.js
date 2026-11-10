@@ -149,6 +149,7 @@ async function freezeClock(page, clockTs){
 
   // The home pill must recount (Walk is now completedToday) without a reload.
   // Re-open the sheet if present; better, assert the pill text dropped / vanished.
+  await page.evaluate(()=>waitForHomeAgendaRender());
   const pill = await page.locator('.dropped-pill').count();
   assert(pill === 0, `missed pill gone after logging the only missed item (got count=${pill})`);
   console.log('  ok: missed pill recounted to empty');
