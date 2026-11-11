@@ -877,7 +877,7 @@ function visibleIndices(data,settingsOverride = null){
   return indices;
 }
 
-// ─── Search filtering ─── IMPURE: reads `searchQuery` and `homeTopicFilter`
+// ─── Search filtering ─── IMPURE: reads `searchQuery` and the home filter
 // globals from config.js. searchText() itself is pure and produces the
 // haystack; filtering happens here. In the RN port, pass these as args.
 // `locationRegistry` (optional) is a hoisted locationOptions() result —
@@ -937,14 +937,9 @@ function filteredVisibleIndices(data,baseIndices = null){
   // it share one sort pass instead of running three.
   const indices = baseIndices || visibleIndices(data);
   const query = searchQuery.trim().toLowerCase();
-  const topic = typeof homeTopicFilter !== 'undefined' ? homeTopicFilter : 'all';
-  const location = typeof homeLocationFilter !== 'undefined' ? homeLocationFilter : 'all';
   let base = indices;
-  if(topic && topic !== 'all' && typeof matchesHomeTopic === 'function'){
-    base = base.filter(i=>matchesHomeTopic(data[i],topic));
-  }
-  if(location && location !== 'all' && typeof matchesHomeLocation === 'function'){
-    base = base.filter(i=>matchesHomeLocation(data[i],location));
+  if(typeof matchesHomeFilters === 'function'){
+    base = base.filter(i=>matchesHomeFilters(data[i]));
   }
   if(!query)return base;
   // One registry for every haystack — searchText re-normalizes it per habit
@@ -961,8 +956,7 @@ function filteredVisibleIndices(data,baseIndices = null){
   const completedTasks = data
     .map((h,i)=>({h,i}))
     .filter(({h})=>h.type === 'task' && isTaskDone(h))
-    .filter(({h})=>!topic || topic === 'all' || typeof matchesHomeTopic !== 'function' || matchesHomeTopic(h,topic))
-    .filter(({h})=>!location || location === 'all' || typeof matchesHomeLocation !== 'function' || matchesHomeLocation(h,location))
+    .filter(({h})=>typeof matchesHomeFilters !== 'function' || matchesHomeFilters(h))
     .filter(({h})=>searchText(h,searchRegistry).includes(query))
     .sort(({h:a},{h:b})=>{
       const ra = searchRank(a,query);

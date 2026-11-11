@@ -356,8 +356,7 @@ $('bar-open-overview')?.addEventListener('click',()=>{
   closeSearch();
   overviewMonthOffset = 0;
   overviewRecentOffset = 0;
-  overviewTopicFilter = 'all';
-  overviewLocationFilter = 'all';
+  clearOverviewFilters();
   overviewRangeFilter = 'recent';
   overviewListPane = 'plan';
   renderOverview();

@@ -1550,22 +1550,18 @@ function render(opts){
     if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
     if(typeof queueNativeReminders === 'function')queueNativeReminders();
     const hasSearch = searchQuery.trim().length > 0;
-    const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
-    const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
+    const filterLabel = typeof describeActiveHomeFilters === 'function' ? describeActiveHomeFilters() : '';
     empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
     if(hasSearch){
       empty.innerHTML = 'no matches<br><span class="empty-sub">try a habit name, topic, or place</span>';
-    }else if(hasTopicFilter || hasLocationFilter){
-      const topicLabel = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
-      const loc = typeof locationById === 'function' ? locationById(homeLocationFilter) : null;
-      const locLabel = homeLocationFilter === '__none__' ? 'anywhere' : (loc ? loc.name : homeLocationFilter);
-      const label = hasTopicFilter && hasLocationFilter
-        ? `${topicLabel} · ${locLabel}`
-        : (hasTopicFilter ? topicLabel : locLabel);
-      empty.innerHTML = `no habits in ${escapeHtml(label)}<br><span class="empty-sub">tap a filter above to change it</span>`;
+    }else if(filterLabel){
+      empty.innerHTML = `nothing matches ${escapeHtml(filterLabel)}<br><span class="empty-sub">tap to clear filters</span>`;
       empty.onclick = ()=>{
-        homeTopicFilter = 'all';
-        homeLocationFilter = 'all';
+        if(typeof clearHomeFilters === 'function')clearHomeFilters();
+        else{
+          homeTopicFilter = 'all';
+          homeLocationFilter = 'all';
+        }
         render();
       };
     }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){

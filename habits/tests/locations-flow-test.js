@@ -167,7 +167,9 @@ async function openSettings(page){
   await page.locator('#home-tag-filter [data-open-home-filters]').click();
   await page.waitForSelector('#home-filter-sheet.open');
   const groupOrder = await page.locator('#home-filter-groups .home-filter-group-head span').allTextContents();
-  assert(groupOrder[0] === 'Place' && groupOrder[1] === 'Topic', 'places grouped before topics');
+  const placeAt = groupOrder.indexOf('Place');
+  const topicAt = groupOrder.indexOf('Topic');
+  assert(placeAt !== -1 && topicAt === placeAt + 1, 'places stay grouped immediately before topics (' + groupOrder.join(' > ') + ')');
   const filterCount = await page.locator('#home-filter-groups .home-filter-option.location').count();
   assert(filterCount >= 3, 'location filters present (got ' + filterCount + ')');
   // Filter to Gym.
@@ -189,8 +191,8 @@ async function openSettings(page){
   const activeTopicChip = await page.locator('#home-tag-filter [data-clear-home-topic]').count();
   assert(activeTopicChip === 1, 'selected topic is summarized on the home bar');
   await page.locator('#home-filter-reset').click();
-  const filtersReset = await page.evaluate(()=>homeLocationFilter === 'all' && homeTopicFilter === 'all');
-  assert(filtersReset, 'filter sheet reset clears place and topic');
+  const filtersReset = await page.evaluate(()=>[homeLocationFilter,homeTopicFilter,homeTypeFilter,homeWhenFilter,homePriorityFilter].every(value=>value==='all'));
+  assert(filtersReset, 'filter sheet reset clears every home filter');
   await page.locator('#home-filter-done').click();
 
   // Presence picker sets agenda anchor without filtering. Manual picks now
