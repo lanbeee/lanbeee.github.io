@@ -672,9 +672,21 @@ function captureHomeReadingPosition(list){
   const anchor = candidates.find(el=>!el.classList.contains('section-header') && visible(el))
     || candidates.find(visible);
   if(!anchor)return {host,scrollTop,key:'',offset:0};
+  // If the first visible item is the one just completed, retain the next
+  // visible survivor at its own offset instead of jumping to a day heading.
+  const alternatives = [];
+  for(let i = candidates.indexOf(anchor)+1;i < candidates.length && alternatives.length < 3;i++){
+    const el = candidates[i];
+    const rect = el.getBoundingClientRect();
+    if(rect.top >= bottom)break;
+    if(el.classList.contains('section-header') || rect.bottom <= top)continue;
+    alternatives.push({key:homeReadingElementKey(el),hid:el.dataset.hid,
+      dayBase:el.dataset.dayBase,offset:rect.top-top});
+  }
   return {
     host,
     scrollTop,
+    alternatives,
     key:homeReadingElementKey(anchor),
     hid:anchor.dataset && anchor.dataset.hid || '',
     dayKey:anchor.dataset && (anchor.dataset.capacityDay || (anchor.dataset.dayBase ? dateKey(Number(anchor.dataset.dayBase)) : '')) || '',
@@ -687,14 +699,24 @@ function captureHomeReadingPosition(list){
 // or losing tomorrow while still allowing rows to move when the plan changed.
 function restoreHomeReadingPosition(snapshot,list){
   if(!snapshot || !list)return;
-  const host = homeReadingScrollHost(list);
+  const host = snapshot.host?.isConnected ? snapshot.host : homeReadingScrollHost(list);
   const top = Math.max(0,host ? host.getBoundingClientRect().top : 0);
   const children = Array.from(list.children);
   let anchor = snapshot.key
     ? children.find(el=>homeReadingElementKey(el) === snapshot.key)
     : null;
   if(!anchor && snapshot.hid){
-    anchor = children.find(el=>el.dataset && el.dataset.hid === snapshot.hid);
+    anchor = children.find(el=>el.dataset && el.dataset.hid === snapshot.hid
+      && (!snapshot.dayKey || (el.dataset.dayBase && dateKey(Number(el.dataset.dayBase)) === snapshot.dayKey)));
+  }
+  let offset = snapshot.offset;
+  if(!anchor){
+    for(const alternative of snapshot.alternatives || []){
+      anchor = children.find(el=>homeReadingElementKey(el) === alternative.key)
+        || (alternative.hid && children.find(el=>el.dataset.hid === alternative.hid
+          && el.dataset.dayBase === alternative.dayBase));
+      if(anchor){offset = alternative.offset;break;}
+    }
   }
   if(!anchor && snapshot.dayKey){
     anchor = children.find(el=>el.dataset && (
@@ -703,7 +725,7 @@ function restoreHomeReadingPosition(snapshot,list){
     ));
   }
   if(anchor){
-    const delta = anchor.getBoundingClientRect().top - top - snapshot.offset;
+    const delta = anchor.getBoundingClientRect().top - top - offset;
     if(Math.abs(delta) > 0.5){
       if(host)host.scrollTop += delta;
       else window.scrollBy({top:delta,left:0,behavior:'instant'});
@@ -828,6 +850,177 @@ const HOME_AGENDA_BUFFER_MS = 320;
 let _homeAgendaLastInteraction = -Infinity;
 const _homeAgendaPointers = new Set();
 let _homeAgendaUpdateStarted = null;
+let _homeAgendaReveal = null;
+let _homeAgendaRevealPromise = Promise.resolve();
+
+// Use measured slots rather than a second card template: wrapped names,
+// compact cards, timers, crowns and context pills keep their actual positions.
+function buildHomeAgendaSkeletons(list){
+  const mounted = [];
+  for(const row of list.children){
+    if(row.matches('.section-header,.home-loading'))continue;
+    const bounds = row.getBoundingClientRect();
+    if(!bounds.width || !bounds.height)continue;
+    const face = document.createElement('div');
+    face.className = 'agenda-skeleton-face';
+    face.setAttribute('aria-hidden','true');
+    const card = row.querySelector('.ting-card');
+    const add = (el,kind)=>{
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      if(!rect.width || !rect.height || style.display === 'none' || style.visibility === 'hidden')return;
+      let rects = [rect];
+      if(kind === 'text'){
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        rects = [...range.getClientRects()].filter(r=>r.width && r.height
+          && r.top < rect.bottom && r.bottom > rect.top);
+      }
+      for(const slot of rects){
+        let width = Math.min(slot.width,rect.right-slot.left);
+        let height = Math.min(slot.height,rect.bottom-slot.top);
+        if(kind === 'icon')width = height = Math.min(width,height,44);
+        else height = Math.min(height,kind === 'progress' ? 5 : 9);
+        if(width < 2 || height < 2)continue;
+        const part = document.createElement('span');
+        part.className = 'agenda-skeleton-part';
+        part.dataset.part = kind;
+        part.style.cssText = `left:${slot.left-bounds.left+(kind === 'icon' ? (slot.width-width)/2 : 0)}px;`
+          + `top:${slot.top-bounds.top+(slot.height-height)/2}px;width:${width}px;height:${height}px;`;
+        if(kind === 'icon')part.style.borderRadius = '14px';
+        face.appendChild(part);
+      }
+    };
+    if(card){
+      card.querySelectorAll('.pulse-btn,.agenda-drag-handle,.card-action-btn').forEach(el=>add(el,'icon'));
+      card.querySelectorAll('.ting-name,.ting-cue,.context-pill,.breakable-progress-title,.breakable-progress-label,.session-progress-label')
+        .forEach(el=>add(el,'text'));
+      card.querySelectorAll('.breakable-status-bar,.breakable-crown,.breakable-scrub-hint,.ting-trail')
+        .forEach(el=>add(el,'progress'));
+    }else{
+      row.querySelectorAll('i,svg').forEach(el=>add(el,'icon'));
+      row.querySelectorAll('span').forEach(el=>{if(!el.children.length)add(el,'text');});
+    }
+    // Plain travel/free-time text has no nested slots to trace.
+    if(!face.children.length){
+      const part = document.createElement('span');
+      part.className = 'agenda-skeleton-part';
+      part.style.cssText = 'left:18%;right:18%;top:calc(50% - 3px);height:6px';
+      face.appendChild(part);
+    }
+    mounted.push([row,face]);
+  }
+  mounted.forEach(([row,face])=>row.appendChild(face));
+}
+
+function cancelHomeAgendaReveal(){
+  if(!_homeAgendaReveal)return;
+  const reveal = _homeAgendaReveal;
+  _homeAgendaReveal = null;
+  cancelAnimationFrame(reveal.frame);
+  clearTimeout(reveal.timer);
+  reveal.cover?.remove();
+  reveal.list.classList.remove('is-agenda-revealing');
+  reveal.list.inert = false;
+  reveal.list.removeAttribute('aria-busy');
+  for(const el of reveal.companions)el.inert = false;
+  const status = $('home-agenda-update-status');
+  if(status)status.textContent = 'Agenda ready.';
+  reveal.resolve();
+}
+
+// Carry decorative placeholders and day labels across the synchronous swap.
+// The clipped viewport layer cannot intercept gestures or escape its pane.
+function captureHomeAgendaSkeletonCover(list){
+  const pane = list.closest('.pane-list');
+  const paneRect = pane.getBoundingClientRect();
+  const top = Math.max(0,paneRect.top);
+  const bottom = Math.min(innerHeight,paneRect.bottom);
+  if(bottom <= top)return null;
+  const cover = document.createElement('div');
+  cover.className = 'home-agenda-transition';
+  cover.setAttribute('aria-hidden','true');
+  cover.inert = true;
+  cover.style.cssText = `left:${paneRect.left}px;top:${top}px;width:${paneRect.width}px;height:${bottom-top}px;`;
+  const content = document.createElement('div');
+  content.className = 'home-agenda-transition-content';
+  cover.appendChild(content);
+  const faces = list.querySelectorAll('.agenda-skeleton-face,.home-loading,.section-header');
+  for(const face of faces){
+    const rect = face.getBoundingClientRect();
+    if(rect.bottom <= top || rect.top >= bottom)continue;
+    const copy = face.cloneNode(true);
+    const style = getComputedStyle(face);
+    copy.style.cssText = `position:absolute;inset:auto;left:${rect.left-paneRect.left}px;top:${rect.top-top}px;`
+      + `width:${rect.width}px;height:${rect.height}px;border-radius:${style.borderRadius};`;
+    if(face.classList.contains('section-header')){
+      const label = face.querySelector('.section-header-label');
+      const labelRect = label?.getBoundingClientRect();
+      // Keep the old sticky heading's surface and label together. Avoid the
+      // section-header class so sticky-header observers ignore this copy.
+      copy.className = 'home-agenda-transition-heading';
+      copy.replaceChildren();
+      if(labelRect){
+        const text = label.cloneNode(true);
+        // Absolute positioning turns an inline label into a block, enabling
+        // ::first-letter where it did not apply on the original day label.
+        // Preserve its rendered casing rather than changing it for one fade.
+        if(getComputedStyle(label).display === 'inline')text.classList.add('is-inline-label');
+        text.style.cssText = `position:absolute;left:${labelRect.left-rect.left}px;top:${labelRect.top-rect.top}px;`
+          + `width:${labelRect.width}px;height:${labelRect.height}px;`;
+        copy.appendChild(text);
+      }
+      copy.style.cssText += `font:${style.font};color:${style.color};letter-spacing:${style.letterSpacing};`
+        + `text-transform:${style.textTransform};background:${style.backgroundColor};z-index:5;`;
+    }else if(_homeAgendaUpdateStarted != null){
+      copy.style.setProperty('--agenda-sheen-delay',`${_homeAgendaUpdateStarted-performance.now()}ms`);
+    }
+    content.appendChild(copy);
+  }
+  if(!content.children.length)return null;
+  pane.appendChild(cover);
+  return cover;
+}
+
+function revealHomeAgenda(list,cover){
+  cancelHomeAgendaReveal();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ready = ()=>{
+    list.inert = false;
+    list.removeAttribute('aria-busy');
+    const status = $('home-agenda-update-status');
+    if(status)status.textContent = 'Agenda ready.';
+  };
+  if(document.hidden || reduce){cover?.remove();ready();return;}
+  let resolve;
+  _homeAgendaRevealPromise = new Promise(done=>{resolve = done;});
+  const companions = [$('empty'),$('home-week-plan')].filter(Boolean);
+  const reveal = {list,cover,companions,resolve,frame:null,timer:null,started:false,
+    scrollY:window.scrollY,paneScroll:list.closest('.pane-list')?.scrollTop || 0};
+  _homeAgendaReveal = reveal;
+  list.inert = true;
+  for(const el of companions)el.inert = true;
+  list.setAttribute('aria-busy','true');
+  list.classList.add('is-agenda-revealing');
+  if(cover)void cover.offsetWidth;
+  // render() finishes mounting and restoring the reading position this turn.
+  // Let its first frame overlap the old skeleton instead of exposing a gap.
+  reveal.frame = requestAnimationFrame(()=>{
+    if(_homeAgendaReveal !== reveal)return;
+    // Ignore render()'s own reading-position correction; the snapshot already
+    // records the right viewport coordinates. Only follow subsequent scrolling.
+    reveal.scrollY = window.scrollY;
+    reveal.paneScroll = list.closest('.pane-list')?.scrollTop || 0;
+    reveal.started = true;
+    if(cover)cover.style.opacity = '0';
+    const duration = parseFloat(getComputedStyle(list).getPropertyValue('--dur-slow')) || 260;
+    reveal.timer = setTimeout(()=>{
+      if(_homeAgendaReveal !== reveal)return;
+      cancelHomeAgendaReveal();
+      ready();
+    },duration);
+  });
+}
 
 // Observe gestures once at the document, leaving card activation to bindTap.
 // A worker result must never replace the target of a gesture or a focused field.
@@ -844,12 +1037,27 @@ for(const name of ['pointerup','pointercancel']){
   },{capture:true,passive:true});
 }
 for(const name of ['scroll','input','keydown','focusout']){
-  document.addEventListener(name,()=>{_homeAgendaLastInteraction = performance.now();},{capture:true,passive:true});
+  document.addEventListener(name,event=>{
+    // Disabling stale controls can blur the tapped button. That is part of
+    // this update, rather than a new gesture that needs another quiet period.
+    if(name !== 'focusout' || !event.target.closest?.('[inert]')){
+      _homeAgendaLastInteraction = performance.now();
+    }
+    // The reveal never locks scrolling. Move the decorative snapshot with the
+    // page using one composited transform, rather than leaving it floating.
+    const reveal = _homeAgendaReveal;
+    if(name === 'scroll' && reveal?.started && reveal.cover){
+      const delta = reveal.scrollY-window.scrollY + reveal.paneScroll
+        - (reveal.list.closest('.pane-list')?.scrollTop || 0);
+      reveal.cover.firstElementChild.style.transform = `translateY(${delta}px)`;
+    }
+  },{capture:true,passive:true});
 }
 window.addEventListener('blur',()=>{_homeAgendaPointers.clear();});
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
     _homeAgendaPointers.clear();
+    cancelHomeAgendaReveal();
     if(!_optimizerHomeRequestKey)finishHomeAgendaUpdate();
   }
 });
@@ -859,8 +1067,12 @@ function homeAgendaInteractionActive(){
   const sheet = focused?.closest('.sheet-wrap');
   const editing = focused && (focused.matches('input,textarea,select') || focused.isContentEditable)
     && !focused.closest('[inert]') && (!sheet || sheet.classList.contains('open'));
-  return document.hidden || _homeAgendaPointers.size > 0
-    || performance.now() - _homeAgendaLastInteraction < HOME_AGENDA_QUIET_MS
+  // Once foreground controls are covered, the minimum skeleton duration
+  // already protects the initiating tap. Only newer input extends the wait.
+  const recentInput = performance.now() - _homeAgendaLastInteraction < HOME_AGENDA_QUIET_MS
+    && (_homeAgendaUpdateStarted == null || _homeAgendaLastInteraction > _homeAgendaUpdateStarted);
+  return document.hidden || Boolean(_homeAgendaReveal) || _homeAgendaPointers.size > 0
+    || recentInput
     || Boolean(editing);
 }
 
@@ -886,6 +1098,8 @@ async function bufferHomeAgendaPaint(isCurrent){
 function beginHomeAgendaUpdate(){
   const list = $('list');
   if(!list || list.classList.contains('is-agenda-updating'))return;
+  cancelHomeAgendaReveal();
+  buildHomeAgendaSkeletons(list);
   let status = $('home-agenda-update-status');
   if(!status){
     status = document.createElement('div');
@@ -899,6 +1113,8 @@ function beginHomeAgendaUpdate(){
   // explain why its old controls are temporarily unavailable.
   status.textContent = 'Updating agenda…';
   _homeAgendaUpdateStarted = performance.now();
+  // Establish the transparent overlay before starting its short crossfade.
+  void list.offsetWidth;
   list.classList.add('is-agenda-updating');
   list.setAttribute('aria-busy','true');
   list.inert = true;
@@ -906,14 +1122,13 @@ function beginHomeAgendaUpdate(){
 
 function finishHomeAgendaUpdate(){
   const list = $('list');
-  if(_homeAgendaUpdateStarted != null){
-    const status = $('home-agenda-update-status');
-    if(status)status.textContent = 'Agenda ready.';
-  }
+  const changing = _homeAgendaUpdateStarted != null || Boolean(list?.querySelector('.home-loading'));
+  const cover = changing && list ? captureHomeAgendaSkeletonCover(list) : null;
   if(list){
     list.classList.remove('is-agenda-updating');
-    list.removeAttribute('aria-busy');
-    list.inert = false;
+    list.querySelectorAll('.agenda-skeleton-face').forEach(face=>face.remove());
+    if(changing)revealHomeAgenda(list,cover);
+    else if(!_homeAgendaReveal){list.inert = false;list.removeAttribute('aria-busy');}
   }
   _homeAgendaUpdateStarted = null;
 }
@@ -1000,6 +1215,17 @@ function saveHomeAgendaCache(data,week){
 function renderHomePresentationOnly(){
   if(!sortSettings && typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
   if(_homeAgendaUpdateStarted != null)return;
+  if(_homeAgendaReveal){
+    // Coalesce view changes during the fade; do not lose a setting change
+    // merely because its first request arrived while controls were covered.
+    if(!_homeAgendaReveal.presentationQueued){
+      _homeAgendaReveal.presentationQueued = true;
+      _homeAgendaRevealPromise.then(()=>{
+        if(!_homeAgendaReveal)renderHomePresentationOnly();
+      });
+    }
+    return;
+  }
   if(_homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     if(homeCardFaceChanged()){
       render();
@@ -1440,7 +1666,7 @@ function queueOptimizedHomeRender(data,opts){
 // arriving during a manual refresh), without waiting for idle refinement.
 async function waitForHomeAgendaRender(){
   let pending;
-  do{pending=_optimizerHomeRenderPromise;await pending;}
+  do{pending=_optimizerHomeRenderPromise;await pending;await _homeAgendaRevealPromise;}
   while(pending!==_optimizerHomeRenderPromise);
   if(_optimizerHomeRenderError)throw _optimizerHomeRenderError;
 }

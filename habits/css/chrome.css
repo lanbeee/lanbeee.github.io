@@ -211,7 +211,7 @@ body[data-pane-count="3"] #app-bar[hidden]{
 .app-bar-search .search-clear i{font-size:18px;}
 
 .bottom-nav{
-  position:fixed;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
+  position:fixed;left:calc(50% - var(--nav-center-offset,0px));top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
   transform:translate(-50%,-100%);z-index:50;
   display:flex;align-items:center;gap:6px;
   width:max-content;max-width:calc(100vw - 24px);
@@ -222,8 +222,25 @@ body[data-pane-count="3"] #app-bar[hidden]{
   box-shadow:var(--floating-shadow);
   /* Keyboard geometry is already animated by the OS. A bottom transition
      restarts on every viewport step and leaves the field chasing the IME. */
-  transition:transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease;
+  transition:left var(--dur-med) var(--ease-snappy),transform var(--dur-med) var(--ease-tight),opacity var(--dur-med) ease;
   will-change:transform;
+}
+/* Completing the first task makes its history searchable. Grow that new
+   control to the right while Calendar and Add stay under the same fingers. */
+.bottom-nav:has(#open-overview:not(.is-hidden)):has(#open-search.is-hidden):not(.search-open){
+  --nav-center-offset:25px;
+}
+.bottom-nav:not(.search-open) :is(#open-search,#open-overview){
+  display:flex;flex-basis:44px;width:44px;min-width:0;overflow:hidden;
+  opacity:1;visibility:visible;
+  transition:flex-basis var(--dur-med) var(--ease-snappy),width var(--dur-med) var(--ease-snappy),
+    margin-left var(--dur-med) var(--ease-snappy),opacity var(--dur-med) ease,visibility var(--dur-med);
+}
+.bottom-nav:not(.search-open) :is(#open-search,#open-overview).is-hidden{
+  flex-basis:0;width:0;margin-left:-6px;opacity:0;visibility:hidden;pointer-events:none;
+}
+@media (prefers-reduced-motion:reduce){
+  .bottom-nav,.bottom-nav:not(.search-open) :is(#open-search,#open-overview){transition:none;}
 }
 body[data-pane-count="2"] .bottom-nav,
 body[data-pane-count="3"] .bottom-nav{

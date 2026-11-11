@@ -1286,9 +1286,10 @@ function quickLog(i,card){
       card.classList.add('logged');
       setTimeout(()=>card.classList.remove('logged'),380);
     }
-    setTimeout(refreshOpenViews, 260);
-    // The planner owns the next paint. A second timed repaint here can expose
-    // an intermediate order or rebuild cards just after the buffer clears.
+    // Start the solve and its gentle loading fade in the same turn as the
+    // saved-log feedback. A delayed refresh leaves stale controls tappable
+    // and adds waiting before the worker can even start.
+    refreshOpenViews();
   };
   const data = load();
   const h = data[i];

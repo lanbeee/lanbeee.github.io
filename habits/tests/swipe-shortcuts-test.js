@@ -29,6 +29,7 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
       baseHabit({hid:'swipe-zero',name:'Avoid',type:'zero',target:1,pinned:true})
     ]);
     await page.waitForSelector('#list .swipe-row[data-hid="swipe-main"] .swipe-actions-left .swipe-action');
+    await page.evaluate(()=>waitForHomeAgendaRender());
     // The assistant ships enabled; pin it off so the tray assertions below keep
     // the four-action layout. The shipped five-action tray is covered in the
     // assistant section.

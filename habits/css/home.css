@@ -2,25 +2,72 @@
 #list{display:flex;flex-direction:column;gap:10px;padding:16px 0 8px;transition:padding-top var(--dur-slow) var(--ease-snappy);}
 .home-loading{display:flex;flex-direction:column;gap:10px;padding-top:38px;pointer-events:none;}
 .home-loading span{
-  display:block;height:82px;border-radius:var(--card-radius,var(--radius));
+  display:block;position:relative;height:82px;border-radius:var(--card-radius,var(--radius));
+  background:var(--bg);
 }
-.home-loading span,#list.is-agenda-updating > :not(.section-header)::after{
-  background:linear-gradient(90deg,var(--bg2) 20%,var(--bg3) 45%,var(--bg2) 70%);
-  background-size:220% 100%;animation:home-loading-shift 1.1s ease-in-out infinite;
+.home-loading span::before{
+  content:'';position:absolute;left:12px;top:16px;width:50px;height:50px;
+  border-radius:14px;background:var(--bg3);opacity:.6;
 }
-.home-loading span:nth-child(2){opacity:0.78;animation-delay:90ms;}
-.home-loading span:nth-child(3){opacity:0.58;animation-delay:180ms;}
+.home-loading span::after{
+  content:'';position:absolute;left:78px;top:26px;width:46%;height:30px;opacity:.6;
+  background:linear-gradient(var(--bg3),var(--bg3)) left top / 100% 9px no-repeat,
+    linear-gradient(var(--bg3),var(--bg3)) left bottom / 65% 7px no-repeat;
+  border-radius:4px;
+}
 @keyframes home-loading-shift{to{background-position:-120% 0;}}
-/* Preserve every row's height and the reading position during a foreground
-   replan. Covered controls cannot receive a tap meant for the previous plan. */
-#list.is-agenda-updating{pointer-events:none;}
-#list.is-agenda-updating > :not(.section-header),
-#list.is-agenda-updating > .section-header .day-header-context{visibility:hidden;}
-#list.is-agenda-updating > *:not(.section-header){position:relative;}
-#list.is-agenda-updating > :not(.section-header)::after{
-  content:'';position:absolute;inset:0;visibility:visible;border-radius:inherit;
+/* Skeletons trace the mounted layout, preserving all card geometry. The
+   neutral surface and soft sheen are shared with the cold-open placeholders. */
+.agenda-skeleton-face{
+  position:absolute;inset:0;z-index:4;overflow:hidden;border-radius:inherit;
+  background:var(--bg);opacity:0;pointer-events:none;
+  transition:opacity var(--dur-med) var(--ease-snappy);
 }
-@media (prefers-reduced-motion:reduce){.home-loading span,#list.is-agenda-updating > :not(.section-header)::after{animation:none;}}
+.agenda-skeleton-part{
+  position:absolute;display:block;background:var(--bg3);opacity:.6;border-radius:999px;
+}
+.home-loading span{
+  background-image:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--bg2) 45%,transparent) 48%,transparent 66%);
+  background-size:220% 100%;animation:home-loading-shift 2.4s linear infinite;
+}
+.agenda-skeleton-face::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--bg2) 45%,transparent) 48%,transparent 66%);
+  animation:home-skeleton-sheen 2.4s linear infinite;
+  animation-delay:var(--agenda-sheen-delay,0ms);
+}
+@keyframes home-skeleton-sheen{from{transform:translateX(100%);}to{transform:translateX(-100%);}}
+#list.is-agenda-updating,#list.is-agenda-revealing{pointer-events:none;}
+#list > :not(.section-header,.home-loading){position:relative;}
+#list.is-agenda-updating .ting-card > *,
+#list.is-agenda-updating > .section-header .day-header-context,
+#list.is-agenda-updating > :not(.swipe-row,.section-header,.home-loading) > :not(.agenda-skeleton-face){
+  animation:home-agenda-conceal var(--dur-med) var(--ease-snappy) both;
+}
+#list.is-agenda-updating .agenda-skeleton-face{opacity:1;}
+.home-agenda-transition{
+  position:fixed;z-index:4;overflow:hidden;pointer-events:none;
+  transition:opacity var(--dur-slow) var(--ease-snappy);
+}
+.home-agenda-transition .agenda-skeleton-face{opacity:1;transition:none;}
+.home-agenda-transition-content{position:absolute;inset:0;}
+.home-agenda-transition-heading .is-inline-label::first-letter{text-transform:inherit;}
+.home-agenda-transition .home-loading{position:absolute;padding:0;margin:0;}
+#list.is-agenda-revealing > *,
+#list.is-agenda-revealing ~ :is(#empty,#home-week-plan){
+  animation:home-agenda-reveal var(--dur-slow) var(--ease-snappy) both;
+}
+@keyframes home-agenda-reveal{from{opacity:0;}to{opacity:1;}}
+@keyframes home-agenda-conceal{to{opacity:0;}}
+@media (prefers-reduced-motion:reduce){
+  .home-loading span,.agenda-skeleton-face::after{animation:none;}
+  .agenda-skeleton-face,.home-agenda-transition{transition:none;}
+  #list.is-agenda-updating .ting-card > *,
+  #list.is-agenda-updating > .section-header .day-header-context,
+  #list.is-agenda-updating > :not(.swipe-row,.section-header,.home-loading) > :not(.agenda-skeleton-face),
+  #list.is-agenda-revealing > *,
+  #list.is-agenda-revealing ~ :is(#empty,#home-week-plan){animation:none;}
+}
 .home-boot-recovery{
   display:flex;flex-direction:column;align-items:flex-start;gap:8px;
   margin:38px 0 0;padding:18px;border:1px solid var(--border);
