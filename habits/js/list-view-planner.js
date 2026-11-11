@@ -873,6 +873,11 @@ function buildHomeAgendaSkeletons(list){
       const rect = el.getBoundingClientRect();
       const style = getComputedStyle(el);
       if(!rect.width || !rect.height || style.display === 'none' || style.visibility === 'hidden')return;
+      // Invisible controls (such as the resting reorder grip) still have a
+      // measurable box. They should not become visible in the skeleton.
+      for(let node = el; node && node !== row; node = node.parentElement){
+        if(Number(getComputedStyle(node).opacity) === 0)return;
+      }
       let rects = [rect];
       if(kind === 'text'){
         const range = document.createRange();

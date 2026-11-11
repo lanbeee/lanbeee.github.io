@@ -52,6 +52,14 @@ const {chromium,BASE,baseHabit,plannerSettings} = require('./helpers/planner-tes
     await page.evaluate(()=>{
       const list = $('list');
       window.beforeBufferNode = list.querySelector('.swipe-row');
+      // A resting reorder grip occupies space even though it is transparent.
+      // Exercise it on every layout, including cards without a natural grip.
+      const card = window.beforeBufferNode.querySelector('.ting-card');
+      if(!card.querySelector('.agenda-drag-handle')){
+        const grip = document.createElement('button');
+        grip.className = 'agenda-drag-handle';
+        card.prepend(grip);
+      }
       window.beforeBufferHeight = list.getBoundingClientRect().height;
       window.beforeShell = (document.body.dataset.paneCount === '1'
         ? ['open-about','open-overview','open-add'] : ['open-about','bar-open-search']).map(id=>{
@@ -91,7 +99,12 @@ const {chromium,BASE,baseHabit,plannerSettings} = require('./helpers/planner-tes
       const face = row.querySelector('.agenda-skeleton-face');
       const rect = row.getBoundingClientRect();
       const shapes = [...face.querySelectorAll('.agenda-skeleton-part')];
+      const grip = row.querySelector('.agenda-drag-handle').getBoundingClientRect();
       return {icon:shapes.some(shape=>shape.dataset.part === 'icon'),
+        phantomGrip:shapes.some(shape=>{
+          const slot = shape.getBoundingClientRect();
+          return shape.dataset.part === 'icon' && slot.left < grip.right && slot.right > grip.left;
+        }),
         text:shapes.some(shape=>shape.dataset.part === 'text'),
         fits:shapes.every(shape=>{
           const slot = shape.getBoundingClientRect();
@@ -100,6 +113,7 @@ const {chromium,BASE,baseHabit,plannerSettings} = require('./helpers/planner-tes
         })};
     });
     assert(slots.icon && slots.text && slots.fits,'minimal placeholders trace real card slots without overflowing');
+    assert(!slots.phantomGrip,'the invisible reorder grip does not create a shape beside the emoji');
     assert(await page.locator('#list .section-header-label').first().isVisible(),
       'day headings remain visible so the loading state preserves orientation');
     assert(await page.evaluate(()=>$('home-agenda-update-status').textContent === 'Updating agenda…'
