@@ -647,6 +647,7 @@ function homeReadingElementKey(el){
   if(el.classList.contains('travel-card') || el.classList.contains('travel-text')){
     return `travel:${el.dataset.travelFrom || ''}:${el.dataset.travelTo || ''}:${el.dataset.agendaStart || ''}`;
   }
+  if(el.classList.contains('home-samples-link'))return 'samples';
   if(el.dataset && el.dataset.blockedGroup)return `blocked:${el.dataset.blockedGroup}`;
   return '';
 }

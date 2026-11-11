@@ -442,6 +442,43 @@ async function launchBrowser(){
   await page.locator('#empty').click();
   await page.waitForSelector('#sample-habits-sheet.open');
   assert(true, 'blank home tap opens sample habits');
+  assert(await page.locator('#list .home-samples-link').count() === 0, 'blank home has no samples card');
+
+  console.log('\n[I] Home samples card opens samples, not detail');
+  await page.evaluate(() => closeSheet('sample-habits-sheet'));
+  await page.evaluate(() => {
+    const h = sortSampleHabit('go for a walk','keepup',1,[],{
+      hid:'home-link-walk', emoji:'🚶', durationMinutes:20
+    });
+    save([h]);
+    render();
+  });
+  await page.waitForFunction(() => {
+    const list = document.getElementById('list');
+    if(!list || list.classList.contains('is-agenda-updating') || list.querySelector('.home-loading'))return false;
+    const link = list.querySelector('.home-samples-link');
+    return Boolean(link && list.lastElementChild === link && list.querySelector('.ting-card'));
+  }, null, {timeout:12000});
+  const placement = await page.evaluate(() => {
+    const list = document.getElementById('list');
+    const link = list.querySelector('.home-samples-link');
+    return {
+      ting: link.classList.contains('ting-card'),
+      swipe: Boolean(link.closest('.swipe-row')),
+      name: link.querySelector('b')?.textContent || '',
+      emptyHidden: getComputedStyle(document.getElementById('empty')).display === 'none'
+    };
+  });
+  assert(!placement.ting && !placement.swipe && placement.emptyHidden, 'samples card is a list footer, not a habit card');
+  assert(placement.name === 'samples', 'card is labeled samples');
+  await page.locator('#list .home-samples-link').click();
+  await page.waitForSelector('#sample-habits-sheet.open');
+  const opened = await page.evaluate(() => ({
+    samples: document.getElementById('sample-habits-sheet').classList.contains('open'),
+    detail: document.getElementById('detail-sheet').classList.contains('open')
+  }));
+  assert(opened.samples && !opened.detail, 'samples card opens the samples page, not detail');
+  await page.evaluate(() => closeSheet('sample-habits-sheet'));
 
   if(pageErrors.length){
     console.error('page errors:', pageErrors.join('\n'));

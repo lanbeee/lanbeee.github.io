@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://huggingface.co https://*.hf.co http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://docs.google.com https://huggingface.co https://*.hf.co http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -90,7 +90,7 @@
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>
-      <a class="icon-btn" id="bar-open-feedback" href="#" target="_blank" rel="noopener" hidden aria-label="send feedback, opens a Google Form"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></a>
+      <button type="button" class="icon-btn" id="bar-open-feedback" hidden aria-label="send feedback"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></button>
       <button class="icon-btn assistant-launch" id="bar-open-assistant" type="button" hidden aria-label="ask Tings">
         <i class="ti ti-message-circle" aria-hidden="true"></i>
       </button>
@@ -113,7 +113,7 @@
       </span>
     </button>
     <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
-    <a class="home-feedback" id="home-open-feedback" href="#" target="_blank" rel="noopener" hidden aria-label="send feedback, opens a Google Form"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></a>
+    <button type="button" class="home-feedback" id="home-open-feedback" hidden aria-label="send feedback"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></button>
     <button class="assistant-launch home-filter-trigger" id="open-assistant" type="button" hidden aria-label="ask Tings">
       <i class="ti ti-message-circle" aria-hidden="true"></i>
     </button>
@@ -915,13 +915,49 @@
           </div>
         </section>
         <div class="btn-row about-actions about-hub-foot">
-          <!-- real anchor + target=_blank so installed PWAs hand the form to the actual browser instead of keeping it in the standalone window -->
           <div class="about-feedback-row" id="about-feedback-row" hidden>
-            <a class="btn" id="open-feedback" href="#" target="_blank" rel="noopener" hidden><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg> send feedback</a>
+            <button type="button" class="btn" id="open-feedback" hidden><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg> send feedback</button>
             <span data-ui-leave="feedback"></span>
           </div>
           <button class="btn" id="open-privacy" type="button"><i class="ti ti-shield-lock" aria-hidden="true"></i> privacy</button>
           <button class="btn primary" id="about-close"><i class="ti ti-check" aria-hidden="true"></i> done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- feedback: filled in here, then posted to the Google Form -->
+  <div class="sheet-wrap" id="feedback-sheet">
+    <div class="sheet feedback-sheet" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+      <div class="feedback-head">
+        <div>
+          <span class="sheet-eyebrow">optional</span>
+          <p class="sheet-title" id="feedback-title">Feedback</p>
+          <p class="about-copy" id="feedback-lead">Filled in from this device. A note is optional.</p>
+        </div>
+        <button type="button" class="icon-btn" id="feedback-close" aria-label="close feedback"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="feedback-body">
+        <div class="feedback-known" id="feedback-known"></div>
+        <label class="feedback-field">
+          <span>Anything to add?</span>
+          <textarea id="feedback-note" rows="3" placeholder="Optional"></textarea>
+        </label>
+        <label class="feedback-field">
+          <span>Email if we may follow up</span>
+          <input id="feedback-email" type="text" inputmode="email" autocomplete="email" placeholder="Optional">
+        </label>
+        <details class="feedback-context" id="feedback-context-details">
+          <summary>Included with this send</summary>
+          <pre id="feedback-context"></pre>
+        </details>
+      </div>
+      <div class="feedback-actions">
+        <p class="field-hint" id="feedback-status" hidden></p>
+        <p class="feedback-send-note">Google receives this when you send.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="feedback-send">send</button>
+          <button type="button" class="btn" id="feedback-cancel">cancel</button>
         </div>
       </div>
     </div>
@@ -2140,6 +2176,7 @@
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/add-availability.js" defer></script>
 <script src="./js/main-input.js" defer></script>
+<script src="./js/feedback-form.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
 <script src="./js/display-mode.js" defer></script>
 <script src="./js/sw-register.js" defer></script>

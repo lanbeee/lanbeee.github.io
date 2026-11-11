@@ -772,6 +772,35 @@ html{overscroll-behavior-y:none;}
 }
 .empty-sub{color:var(--text3);font-size:13px;display:inline-block;max-width:320px;}
 #empty.is-action{cursor:pointer;}
+.home-samples-link{
+  appearance:none;-webkit-appearance:none;width:100%;margin:0;border:0;
+  border-radius:var(--card-radius,20px);background:var(--bg);color:var(--text);
+  font:inherit;text-align:left;cursor:pointer;
+  display:flex;align-items:center;gap:12px;
+  padding:var(--card-inset,10px) 14px var(--card-inset,10px) var(--card-inset,10px);
+  -webkit-tap-highlight-color:transparent;
+  user-select:none;-webkit-user-select:none;
+}
+.home-samples-link:active{transform:scale(0.985);}
+.home-samples-link:focus-visible{outline:2px solid var(--text2);outline-offset:2px;}
+@media (hover:hover){
+  .home-samples-link:hover{background:color-mix(in srgb,var(--bg3) 32%,var(--bg));}
+}
+.home-samples-mark{
+  flex:0 0 68px;width:68px;height:68px;
+  border-radius:calc(var(--card-radius,20px) - var(--card-inset,10px));
+  display:flex;align-items:center;justify-content:center;
+  background:var(--purple-bg);color:var(--purple-icon);
+}
+.home-samples-mark i{font-size:28px;}
+.home-samples-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.home-samples-copy b{
+  font-size:calc(15px * var(--font-scale));font-weight:650;letter-spacing:-0.012em;color:var(--text);
+}
+.home-samples-copy small{
+  color:var(--text2);font-size:calc(12px * var(--font-scale));font-weight:480;line-height:1.35;
+}
+.home-samples-chevron{flex:0 0 auto;color:var(--text3);font-size:18px;}
 .weather-pill{appearance:none;border:0;font:inherit;cursor:pointer;}
 /* Icon-only state chip in the meta pill stack: 'good' stays untinted so the
    amber/red/rain states read as the exception, not as noise. */

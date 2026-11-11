@@ -22,6 +22,8 @@ const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
 const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform';
 // Entry ids from the published form. Choice values must match its option text.
+// Leave rating, the day-plan questions, email, and "what's confusing" unset
+// unless the person typed them. `diagnostics` receives the full report.
 const FEEDBACK_FORM_ENTRIES = {
   tenure:'entry.457400724',
   uses:'entry.593100343',
@@ -30,7 +32,8 @@ const FEEDBACK_FORM_ENTRIES = {
   fixNext:'entry.1988333965',
   email:'entry.1260316969',
   plan:'entry.1530293007',
-  planDetail:'entry.247866906'
+  planDetail:'entry.247866906',
+  diagnostics:'entry.1567617731'
 };
 const FEEDBACK_TENURE_LOOKING = 'Just looking around';
 const FEEDBACK_TENURE_DAYS = 'A few days';
@@ -43,6 +46,9 @@ const FEEDBACK_USE_PLACES = 'Places and travel';
 const FEEDBACK_USE_PRAYER = 'Prayer-time windows';
 const FEEDBACK_USE_DISPLAY = 'Shared Display';
 const FEEDBACK_USE_SLEEP = 'Sleep and routine planning';
+const FEEDBACK_USE_NONE = 'None of these yet';
+// Stay under the size Google accepts for one answer, including the part label.
+const FEEDBACK_TEXT_BYTES = 20000;
 function feedbackFormUrl(fields){
   const url = new URL(FEEDBACK_FORM_URL);
   url.search = '';

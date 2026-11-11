@@ -1,8 +1,5 @@
-// Feedback stays on this device until the user opens the prefilled Google Form.
+// Feedback stays on this device until the user sends the form.
 // Never include the saved library, whole settings, or the model's context envelope.
-const ASSISTANT_FEEDBACK_ENTRY = 'entry.1563652333'; // What's confusing or in the way?
-const ASSISTANT_FEEDBACK_FIX = 'entry.1988333965'; // What should we fix next?
-const ASSISTANT_FEEDBACK_URL_MAX = 7500;
 
 function assistantFeedbackRedact(text){
   return String(text || '')
@@ -19,7 +16,7 @@ function assistantFeedbackReport(out, context = {}){
     ?? trace.find(row=>row.t === 'turn')?.text ?? '';
   const report = {
     report:'Tings assistant feedback',
-    version:1,
+    version:2,
     capturedAt:new Date().toISOString(),
     environment:{
       page:location.origin + location.pathname,
@@ -54,6 +51,28 @@ function assistantFeedbackReport(out, context = {}){
     },
     trace
   };
+  const focus = context.focus || (typeof _assistantSession !== 'undefined' && _assistantSession && _assistantSession.focus) || null;
+  if(focus)report.needle = assistantFeedbackFocusRecord(focus);
+  const transcript = assistantFeedbackTranscript();
+  const spoken = transcript.filter(turn => turn.role === 'user').map(turn => turn.text);
+  const extra = [];
+  const remember = text => {
+    const line = String(text || '');
+    if(!line.trim() || extra.includes(line) || spoken.some(row => row.includes(line)))return;
+    extra.push(line);
+  };
+  remember(request);
+  for(const line of (focus && focus.requests) || [])remember(line);
+  if(extra.length)transcript.unshift(...extra.map(text => ({role:'user', text})));
+  if(transcript.length)report.transcript = transcript;
+  if(typeof feedbackTenureChoice === 'function'){
+    const items = typeof load === 'function' ? load() : [];
+    const settings = typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+    report.known = {
+      tenure:feedbackTenureChoice(items),
+      uses:typeof feedbackUseChoices === 'function' ? feedbackUseChoices(items, settings) : []
+    };
+  }
   return assistantFeedbackRedact(JSON.stringify(report, null, 2));
 }
 
@@ -61,33 +80,6 @@ function assistantFeedbackExpectation(out){
   if(out && out.partial)return 'The assistant only finished part of my request. I expected it to: ';
   if(out && (out.type === 'error' || out.gaveUp))return 'The assistant failed on my last request. I expected it to: ';
   return 'The assistant reply was not what I wanted. I expected it to: ';
-}
-
-function assistantFeedbackPrefill(report, known, expectation){
-  const base = [...(known || [])];
-  if(expectation)base.push([ASSISTANT_FEEDBACK_FIX, expectation]);
-  const prefix = 'Assistant feedback — please describe what you expected here.\n\nDiagnostics:\n';
-  const setReport = text => feedbackFormUrl([...base, [ASSISTANT_FEEDBACK_ENTRY, prefix + text]]).href;
-  const full = setReport(report);
-  if(full.length <= ASSISTANT_FEEDBACK_URL_MAX)return {url:full,truncated:false};
-  // Google and browser URL limits vary. Keep both the context and final error;
-  // the complete report remains available to review and copy beside the link.
-  const marker = '\n\n[Report shortened to fit the form link. Copy all diagnostics in Tings and paste here for the full report.]\n\n';
-  let low=0, high=report.length;
-  while(low < high){
-    const length=Math.ceil((low+high)/2);
-    const sample=report.slice(0,Math.ceil(length/2)) + marker + report.slice(-Math.floor(length/2) || report.length);
-    if(setReport(sample).length <= ASSISTANT_FEEDBACK_URL_MAX)low=length;
-    else high=length-1;
-  }
-  return {url:setReport(report.slice(0,Math.ceil(low/2)) + marker + report.slice(-Math.floor(low/2) || report.length)),truncated:true};
-}
-
-function assistantFeedbackClip(value){
-  if(typeof assistantTraceClip === 'function')return assistantTraceClip(value, 500);
-  if(value == null)return value;
-  const text = typeof value === 'string' ? value : (()=>{ try{ return JSON.stringify(value); }catch(_){ return String(value); } })();
-  return text.length <= 500 ? value : `${text.slice(0, 500)}…`;
 }
 
 // The saved item stays out of the report. Needle's trace, the typed requests,
@@ -107,7 +99,7 @@ function assistantFeedbackFocusTrace(focus){
       t:'tool',
       name:row.family || row.jobId || 'focus',
       step:row.jobId || row.family || '',
-      args:assistantFeedbackClip({
+      args:{
         context:row.context || '',
         args:row.args,
         confidence:row.confidence,
@@ -116,20 +108,20 @@ function assistantFeedbackFocusTrace(focus){
         issue:row.issue || '',
         recoveredBudget:row.recoveredBudget,
         workerLane:row.workerLane
-      })
+      }
     });
-    if(problem)events.push({t:'error', step:row.family || 'focus', error:assistantFeedbackClip(problem)});
+    if(problem)events.push({t:'error', step:row.family || 'focus', error:problem});
     const thought = row.reasoning || row.content || '';
     if(thought)events.push({
       t:'model',
       step:row.family || 'focus',
       tools:(row.calls || []).map(name => ({name})),
-      thinking:assistantFeedbackClip(thought)
+      thinking:thought
     });
   });
   (focus.changes || []).forEach(change => {
     if(!change)return;
-    const value=assistantFeedbackClip(change.value);
+    const value=change.value;
     events.push({
       t:'result',
       name:change.field || 'change',
@@ -152,6 +144,68 @@ function assistantFeedbackFocusTrace(focus){
     llmCalls:Array.isArray(focus.timing && focus.timing.passes) ? focus.timing.passes.length : (focus.trace || []).length
   });
   return events;
+}
+
+function assistantFeedbackFocusRecord(focus){
+  if(!focus)return null;
+  const trace = [];
+  for(const row of focus.trace || []){
+    if(!row || typeof row !== 'object')continue;
+    const copy = {};
+    for(const key of Object.keys(row)){
+      if(key === 'source' || typeof row[key] === 'function')continue;
+      copy[key] = row[key];
+    }
+    trace.push(copy);
+  }
+  return {
+    operation:focus.operation || '',
+    kind:focus.kind || '',
+    entry:focus.entry || '',
+    requests:(focus.requests || []).filter(row => typeof row === 'string'),
+    currentRequest:typeof focus.currentRequest === 'string' ? focus.currentRequest : '',
+    changes:Array.isArray(focus.changes) ? focus.changes : [],
+    unresolved:(focus.unresolved || []).map(item => ({
+      question:item && item.question || '',
+      field:item && item.field || ''
+    })).filter(item => item.question || item.field),
+    continuationError:focus.continuationError || '',
+    correctionError:focus.correctionError || '',
+    pendingFamilies:Array.isArray(focus.pendingFamilies) ? focus.pendingFamilies : [],
+    timing:focus.timing || null,
+    trace
+  };
+}
+
+function assistantFeedbackTranscript(){
+  const thread = document.getElementById('assistant-thread');
+  if(!thread)return [];
+  const turns = [];
+  for(const bubble of thread.querySelectorAll('.assistant-bubble')){
+    if(bubble.classList.contains('assistant-bubble-debug'))continue;
+    const clone = bubble.cloneNode(true);
+    clone.querySelectorAll('.assistant-feedback').forEach(node => node.remove());
+    const text = (clone.innerText || '').replace(/[ \t]+\n/g, '\n').trim();
+    if(!text)continue;
+    turns.push({
+      role:bubble.classList.contains('assistant-bubble-user') ? 'user' : 'assistant',
+      text
+    });
+  }
+  return turns;
+}
+
+function assistantFeedbackOpenButton(report, expectation, className){
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className || 'btn';
+  button.dataset.feedbackOpen = 'true';
+  button.textContent = 'open feedback form';
+  button.addEventListener('click', () => {
+    if(typeof openFeedbackForm !== 'function')return;
+    openFeedbackForm({note:expectation || '', context:report, assistant:true});
+  });
+  return button;
 }
 
 function assistantFocusFeedbackSummary(focus){
@@ -186,7 +240,7 @@ function assistantFeedbackFromFocus(focus){
         contextLimit:0
       }
     },
-    context:{request, entry:focus && focus.entry || null}
+    context:{request, entry:focus && focus.entry || null, focus}
   };
 }
 
@@ -205,13 +259,12 @@ function assistantFeedbackDetails(out, context){
   const report = assistantFeedbackReport(out, context);
   const known = typeof feedbackKnownAnswers === 'function' ? feedbackKnownAnswers() : [];
   const expectation = assistantFeedbackExpectation(out);
-  const prefill = assistantFeedbackPrefill(report, known, expectation);
   const details = document.createElement('details');
   details.className = 'assistant-feedback';
   const summary = document.createElement('summary');
   summary.textContent = out.type === 'error' || out.gaveUp ? 'send feedback' : 'report a problem';
   const hint = document.createElement('p');
-  hint.textContent = 'The form is filled in where this device already knows the answer, including how long you have used Tings and which kinds of planning you use. The rating and email are left blank. This report goes in “What’s confusing or in the way?”, and a short note you can rewrite goes in “What should we fix next?”. The report can include what you typed. Review it, then change anything in the form before you send.';
+  hint.textContent = 'This chat is included in full. The form is already filled in. Add a note if you want, then send.';
   const filledText = typeof feedbackKnownSummary === 'function' ? feedbackKnownSummary(known) : '';
   const filled = document.createElement('p');
   if(filledText)filled.textContent = filledText;
@@ -223,25 +276,14 @@ function assistantFeedbackDetails(out, context){
   preview.append(label,log);
   const actions = document.createElement('div');
   actions.className = 'btn-row';
-  const link = document.createElement('a');
-  link.className = 'btn';
-  link.textContent = 'open feedback form';
-  link.href = prefill.url;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.className = 'btn';
+  copy.dataset.feedbackCopy = 'true';
   copy.textContent = 'copy all diagnostics';
   copy.addEventListener('click',()=>void assistantCopyText(report, 'diagnostics copied'));
-  actions.append(link,copy);
-  details.append(summary, hint, ...(filledText ? [filled] : []), preview);
-  if(prefill.truncated){
-    const note=document.createElement('p');
-    note.textContent='This report is too long for a form link. The form includes a shortened report. Copy all diagnostics and paste them into the form to include everything.';
-    details.append(note);
-  }
-  details.append(actions);
+  actions.append(assistantFeedbackOpenButton(report, expectation), copy);
+  details.append(summary, hint, ...(filledText ? [filled] : []), preview, actions);
   return details;
 }
 
@@ -250,7 +292,6 @@ function assistantFeedbackSheet(out, context){
   const report = assistantFeedbackReport(out, context);
   const known = typeof feedbackKnownAnswers === 'function' ? feedbackKnownAnswers() : [];
   const expectation = assistantFeedbackExpectation(out);
-  const prefill = assistantFeedbackPrefill(report, known, expectation);
   const card = document.createElement('div');
   card.className = 'assistant-feedback-card';
   const head = document.createElement('div');
@@ -268,25 +309,20 @@ function assistantFeedbackSheet(out, context){
   head.append(title, close);
   const lead = document.createElement('p');
   lead.className = 'assistant-feedback-lead';
-  lead.textContent = 'Opens the form with this turn filled in. Change anything before you send.';
+  lead.textContent = 'Opens a form filled in with this chat. A note is optional.';
   const filledText = typeof feedbackKnownSummary === 'function' ? feedbackKnownSummary(known) : '';
   const filled = document.createElement('p');
   filled.className = 'assistant-feedback-known';
   if(filledText)filled.textContent = filledText;
   const actions = document.createElement('div');
   actions.className = 'assistant-feedback-actions';
-  const link = document.createElement('a');
-  link.className = 'btn primary';
-  link.textContent = 'open feedback form';
-  link.href = prefill.url;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.className = 'btn';
+  copy.dataset.feedbackCopy = 'true';
   copy.textContent = 'copy';
   copy.addEventListener('click', () => void assistantCopyText(report, 'diagnostics copied'));
-  actions.append(link, copy);
+  actions.append(assistantFeedbackOpenButton(report, expectation, 'btn primary'), copy);
   const preview = document.createElement('details');
   preview.className = 'assistant-feedback-diagnostics';
   const label = document.createElement('summary');
@@ -295,12 +331,6 @@ function assistantFeedbackSheet(out, context){
   log.textContent = report;
   preview.append(label, log);
   card.append(head, lead, ...(filledText ? [filled] : []), actions, preview);
-  if(prefill.truncated){
-    const note = document.createElement('p');
-    note.className = 'assistant-feedback-note';
-    note.textContent = 'This report is too long for a form link. Copy diagnostics and paste them into the form.';
-    card.append(note);
-  }
   return card;
 }
 

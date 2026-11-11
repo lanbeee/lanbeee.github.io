@@ -204,22 +204,32 @@ function feedbackUseChoices(items, settings){
   if(feedbackHasSleepOrRoutine(items, settings))uses.push(FEEDBACK_USE_SLEEP);
   return uses;
 }
+function feedbackUseAnswerRows(items, settings){
+  const uses = feedbackUseChoices(items, settings);
+  if(uses.length)return uses.map(use => [FEEDBACK_FORM_ENTRIES.uses, use]);
+  return [
+    [FEEDBACK_FORM_ENTRIES.uses, '__other_option__'],
+    [`${FEEDBACK_FORM_ENTRIES.uses}.other_option_response`, FEEDBACK_USE_NONE]
+  ];
+}
 function feedbackKnownAnswers(items, settings){
   const library = items || (typeof load === 'function' ? load() : []);
   const prefs = settings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const fields = [];
   const tenure = feedbackTenureChoice(library);
   if(tenure)fields.push([FEEDBACK_FORM_ENTRIES.tenure, tenure]);
-  for(const use of feedbackUseChoices(library, prefs))fields.push([FEEDBACK_FORM_ENTRIES.uses, use]);
+  fields.push(...feedbackUseAnswerRows(library, prefs));
   return fields;
 }
 function feedbackKnownSummary(fields){
   const rows = fields || feedbackKnownAnswers();
   const tenure = (rows.find(pair => pair[0] === FEEDBACK_FORM_ENTRIES.tenure) || [])[1];
-  const uses = rows.filter(pair => pair[0] === FEEDBACK_FORM_ENTRIES.uses).map(pair => pair[1]);
+  const uses = rows.filter(pair => pair[0] === FEEDBACK_FORM_ENTRIES.uses && pair[1] !== '__other_option__').map(pair => pair[1]);
+  const other = (rows.find(pair => String(pair[0]).endsWith('.other_option_response')) || [])[1];
   const bits = [];
   if(tenure)bits.push(tenure);
   if(uses.length)bits.push(uses.join(', '));
+  else if(other)bits.push(other);
   if(!bits.length)return '';
   return `Filled in from this device: ${bits.join(' · ')}. You can change any answer before sending.`;
 }
@@ -230,7 +240,6 @@ function feedbackFormHref(extra){
 function syncFeedbackLink(){
   const row = $('about-feedback-row');
   const on = typeof feedbackFormConfigured === 'function' && feedbackFormConfigured();
-  const href = on ? feedbackFormHref() : '#';
   if(row){
     row.hidden = !on;
     row.setAttribute('aria-hidden', on ? 'false' : 'true');
@@ -239,7 +248,6 @@ function syncFeedbackLink(){
     if(!link)continue;
     link.hidden = !on;
     link.setAttribute('aria-hidden', on ? 'false' : 'true');
-    if(on)link.href = href;
   }
 }
 window.syncInstallGuideVisibility = syncInstallGuideVisibility;
@@ -354,9 +362,6 @@ $('open-docs')?.addEventListener('click',()=>{
   // an installed PWA — window.open would keep the docs in the standalone app).
   closeSheet('about-sheet');
   closeSheet('sample-habits-sheet');
-});
-$('open-feedback')?.addEventListener('click',()=>{
-  closeSheet('about-sheet');
 });
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});

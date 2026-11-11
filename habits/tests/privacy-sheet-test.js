@@ -55,8 +55,7 @@ async function launchBrowser(){
     const configured = typeof feedbackFormConfigured === 'function' && feedbackFormConfigured();
     return {
       exists: Boolean(link && row),
-      target: link?.getAttribute('target') || '',
-      rel: link?.getAttribute('rel') || '',
+      tag: link?.tagName || '',
       configured,
       rowHidden: Boolean(row?.hidden),
       href: link?.getAttribute('href') || '',
@@ -65,13 +64,42 @@ async function launchBrowser(){
     };
   });
   assert(feedback.exists, 'About has a send-feedback control');
-  assert(feedback.target === '_blank' && /noopener/.test(feedback.rel), 'Feedback opens in a real browser tab');
+  assert(feedback.tag === 'BUTTON' && !feedback.href, 'Feedback stays in Tings instead of opening a new tab');
   assert(feedback.leave && /Google Form/i.test(feedback.leaveAria), 'Feedback carries a leave-device mark naming Google Form');
   assert(feedback.rowHidden === !feedback.configured, 'Feedback row is visible only when a form URL is configured');
   if(feedback.configured){
-    const feedbackUrl = new URL(feedback.href);
-    assert(feedbackUrl.pathname.includes('/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform'), 'Configured feedback URL is the published Google Form');
-    assert(feedbackUrl.searchParams.get('entry.457400724') === 'Just looking around' && !feedbackUrl.searchParams.has('entry.593100343'), 'A fresh device prefills only that someone is just looking around');
+    const prepared = await page.evaluate(() => {
+      const parts = feedbackFormParts({context:feedbackDeviceReport(), note:'', email:''});
+      const rows = parts[0] || [];
+      const value = key => rows.filter(pair => pair[0] === key).map(pair => pair[1]);
+      return {
+        parts:parts.length,
+        tenure:value(FEEDBACK_FORM_ENTRIES.tenure),
+        uses:value(FEEDBACK_FORM_ENTRIES.uses),
+        other:value(FEEDBACK_FORM_ENTRIES.uses + '.other_option_response'),
+        plan:value(FEEDBACK_FORM_ENTRIES.planDetail),
+        note:value(FEEDBACK_FORM_ENTRIES.fixNext),
+        email:value(FEEDBACK_FORM_ENTRIES.email),
+        rating:value('entry.402961364')
+      };
+    });
+    assert(prepared.parts === 1 && prepared.tenure[0] === 'Just looking around'
+      && prepared.uses[0] === '__other_option__' && prepared.other[0] === 'None of these yet',
+      'A fresh device fills tenure and Other when no planning kind matches');
+    assert(!prepared.plan.length && !prepared.note.length && !prepared.email.length && !prepared.rating.length,
+      'Day-plan, note, and email stay empty until the person types');
+    await page.locator('#open-feedback').click();
+    await page.waitForSelector('#feedback-sheet.open');
+    const sheet = await page.evaluate(() => ({
+      noteRequired:document.getElementById('feedback-note')?.required || false,
+      emailRequired:document.getElementById('feedback-email')?.required || false,
+      sendDisabled:document.getElementById('feedback-send')?.disabled || false,
+      known:document.getElementById('feedback-known')?.textContent || ''
+    }));
+    assert(!sheet.noteRequired && !sheet.emailRequired && !sheet.sendDisabled && /Just looking around/.test(sheet.known),
+      'The form can be sent without typing');
+    await page.locator('#feedback-close').click();
+    await page.waitForFunction(() => !document.getElementById('feedback-sheet')?.classList.contains('open'));
     await page.locator('[data-ui-leave="feedback"] .leave-btn').click();
     const tipFit = await page.evaluate(() => {
       const tip = document.querySelector('[data-ui-leave="feedback"] .leave-tooltip');

@@ -317,31 +317,35 @@ Open the one file that owns the change. Grep the function and read that range.
 ## Feedback
 
 Failed replies offer **send feedback**; other replies offer **report a problem**.
-Ask Tings keeps **feedback** in the header. It opens a short card: the form
-link, a copy action, and collapsed diagnostics. It prefills the same form
-from the open Needle item: the typed requests, staged changes, and model
-trace. The saved item stays out of that report. **debug** stays hidden until
-the ask Tings title is tapped three times. That shows the header control,
-which opens a trace tray over the composer. Tap it again, or the tray’s close
-control, to dismiss the tray. The tray bar compacts the log in place.
-About → send feedback uses the same form. Both open it with answers already
-filled where this device can tell: how long Tings has been in use
-(`entry.457400724`) and which planning kinds are in use (`entry.593100343`,
-one value per checked option). The user can change every answer. The rating,
-email, what’s working, and the day-plan questions stay blank.
+Ask Tings keeps **feedback** in the header. It opens a short card: open the
+form, copy the report, and collapsed diagnostics. The form is filled in on
+this device. A note and an email are optional, and Send works with both empty.
+The saved item stays out of the report. **debug** stays hidden until the ask
+Tings title is tapped three times. That shows the header control, which opens
+a trace tray over the composer. Tap it again, or the tray’s close control, to
+dismiss the tray. The tray bar compacts the log in place.
 
-An assistant report also puts a short editable expectation in
-`entry.1988333965` and the diagnostic snapshot in `entry.1563652333`. That
-snapshot is the turn's request, response, retained trace, model and device
-details even when debug display is off. Partial Needle failures retain the
-traces of earlier parts. Saved libraries and server settings are excluded;
-recognizable credentials are redacted. Review and copy happen locally. Only
-the user's **open feedback form** link sends the prefill to Google.
+About, Home, and Ask Tings use the same form. It posts to the Google Form
+instead of opening it. How long Tings has been in use (`entry.457400724`) and
+which planning kinds are in use (`entry.593100343`, one value per checked
+option) are required and are sent whenever they can be told. An empty library
+sends “Just looking around.” Items with no date leave that radio blank. When
+no planning kind matches, the use answer is Other, “None of these yet.” The
+rating and both day-plan questions stay blank.
+An optional note goes in `entry.1988333965`.
 
-Keep those entry ids in `js/config.js` in sync if the form changes. Reports
-too long for the bounded URL use an explicitly shortened prefill, with the
-full local report available to copy and paste. Register new assistant slices
-in both the deferred loader and service-worker precache.
+An assistant report puts that note, when present, in `entry.1988333965` and
+the diagnostic snapshot in `entry.1567617731`. The snapshot is the visible
+chat, the turn’s request and response, the retained trace, and the Needle
+focus record: every typed request, staged change, and model trace row,
+including context, content, and reasoning. It is not shortened to fit a link.
+A report longer than one answer is posted as numbered parts that keep the
+whole text. Partial Needle failures retain the traces of earlier parts. Saved
+libraries and server settings are excluded; recognizable credentials are
+redacted. Review and copy happen locally. Only Send contacts Google.
+
+Keep those entry ids in `js/config.js` in sync if the form changes. Register
+new assistant slices in both the deferred loader and service-worker precache.
 
 ## Routing
 

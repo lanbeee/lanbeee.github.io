@@ -1492,6 +1492,23 @@ function packSwipeActions(parts){
     + more;
 }
 
+// RENDER: samples shortcut under a populated home list. It is not a habit, so
+// a tap opens the samples sheet instead of detail. Blank home keeps #empty.
+function appendHomeSamplesLink(list){
+  if(!list)return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'home-samples-link';
+  btn.setAttribute('aria-label','samples, add a habit or task');
+  btn.innerHTML = `<span class="home-samples-mark" aria-hidden="true"><i class="ti ti-sparkles"></i></span><span class="home-samples-copy"><b>samples</b><small>add a habit or task</small></span><i class="ti ti-chevron-right home-samples-chevron" aria-hidden="true"></i>`;
+  list.appendChild(btn);
+  if(typeof bindTap === 'function'){
+    bindTap(btn,()=>{
+      if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
+    });
+  }
+}
+
 function render(opts){
   const o = opts || {};
   const list = $('list');
@@ -2208,6 +2225,8 @@ function render(opts){
     }
   }
   } // end of the `else` (non-deferred) branch
+
+  appendHomeSamplesLink(list);
 
   // Fresh headers may already sit stuck at the viewport top (background
   // refresh mid-scroll) — set their tone before the next scroll tick.

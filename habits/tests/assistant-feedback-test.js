@@ -1,8 +1,9 @@
-// Feedback is opt-in, snapshots the failed turn, and prefills the real form's
-// free-text field without inventing survey answers or submitting anything.
+// Feedback is opt-in. The form is filled in, a note is optional, and Send posts
+// the whole report. Nothing is sent until the user taps send.
 const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers');
 let passed=0;
 function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log('  ok: '+message);}
+function decodeForm(body){return decodeURIComponent(String(body||'').replace(/\+/g,' '));}
 (async()=>{
   const browser=await chromium.launch({headless:true,channel:'chrome'});
   try{
@@ -11,7 +12,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     const errors=[],external=[];
     page.on('pageerror',error=>errors.push(String(error)));
     await context.route('https://docs.google.com/**',route=>{
-      external.push({url:route.request().url(),method:route.request().method()});
+      external.push({url:route.request().url(),method:route.request().method(),body:route.request().postData()||''});
       return route.fulfill({status:200,contentType:'text/html',body:'<p>Feedback form preview</p>'});
     });
     await page.addInitScript(()=>{
@@ -30,31 +31,35 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       });
       await handleAssistantOutcome(out,{request:'Add café ☕ & tea tomorrow'});
       const details=document.querySelector('.assistant-feedback');
-      const url=new URL(details.querySelector('a').href);
       const report=details.querySelector('pre').textContent;
-      const general=new URL(feedbackFormHref());
+      const rowsOf=parts=>parts[0]||[];
+      const value=(rows,key)=>rows.filter(pair=>pair[0]===key).map(pair=>pair[1]);
+      const assistantRows=rowsOf(feedbackFormParts({context:report, note:assistantFeedbackExpectation(out), email:''}));
+      const generalRows=rowsOf(feedbackFormParts({context:feedbackDeviceReport(), note:'', email:''}));
       window.feedbackSnapshot=report;
-      return {type:out.type,report,href:url.href,entry:url.searchParams.get(ASSISTANT_FEEDBACK_ENTRY),
-        keys:[...new Set(url.searchParams.keys())],
-        uses:url.searchParams.getAll(FEEDBACK_FORM_ENTRIES.uses),
-        tenure:url.searchParams.get(FEEDBACK_FORM_ENTRIES.tenure),
-        fix:url.searchParams.get(FEEDBACK_FORM_ENTRIES.fixNext),
-        rating:url.searchParams.get('entry.402961364'),
-        email:url.searchParams.get(FEEDBACK_FORM_ENTRIES.email),
-        plan:url.searchParams.get(FEEDBACK_FORM_ENTRIES.plan),
-        generalUses:general.searchParams.getAll(FEEDBACK_FORM_ENTRIES.uses),
-        generalConfusing:general.searchParams.get(FEEDBACK_FORM_ENTRIES.confusing),
+      return {type:out.type,report,
+        uses:value(assistantRows, FEEDBACK_FORM_ENTRIES.uses),
+        tenure:value(assistantRows, FEEDBACK_FORM_ENTRIES.tenure)[0]||'',
+        fix:value(assistantRows, FEEDBACK_FORM_ENTRIES.fixNext)[0]||'',
+        rating:value(assistantRows, 'entry.402961364')[0]||'',
+        email:value(assistantRows, FEEDBACK_FORM_ENTRIES.email)[0]||'',
+        plan:value(assistantRows, FEEDBACK_FORM_ENTRIES.plan)[0]||'',
+        planDetail:value(assistantRows, FEEDBACK_FORM_ENTRIES.planDetail)[0]||'',
+        generalUses:value(generalRows, FEEDBACK_FORM_ENTRIES.uses),
+        generalConfusing:value(generalRows, feedbackReportEntry())[0]||'',
+        generalFix:value(generalRows, FEEDBACK_FORM_ENTRIES.fixNext)[0]||'',
         filled:details.textContent,
         closed:!details.open,label:details.querySelector('summary').textContent,
-        target:details.querySelector('a').target,rel:details.querySelector('a').rel};
+        openLabel:details.querySelector('[data-feedback-open]').textContent};
     });
     assert(failed.type==='error' && failed.label==='send feedback','a model failure offers feedback with diagnostics off');
-    assert(failed.closed && external.length===0,'diagnostics stay local until the user chooses to open the form');
+    assert(failed.closed && external.length===0,'diagnostics stay local until the user chooses to send');
     assert(failed.uses.join('|')==='Tasks & Deadlines' && !failed.tenure
       && failed.fix==='The assistant failed on my last request. I expected it to: '
-      && failed.rating==null && failed.email==null && failed.plan==null,
-      'known planning kind and a rewriteable expectation are filled; rating, email, and tenure stay blank when unknown');
-    assert(failed.generalUses.join('|')==='Tasks & Deadlines' && failed.generalConfusing==null,
+      && !failed.rating && !failed.email && !failed.plan && !failed.planDetail,
+      'known planning kind and a rewriteable expectation are filled; rating, email, tenure, and the day-plan questions stay blank when unknown');
+    assert(failed.generalUses.join('|')==='Tasks & Deadlines' && !failed.generalFix
+      && failed.generalConfusing.includes('Tings feedback') && !failed.generalConfusing.includes('Add café'),
       'About feedback fills the same planning answers without the assistant report');
     assert(failed.filled.includes('Tasks & Deadlines') && !failed.filled.includes('UNRELATED PRIVATE HABIT'),
       'the chat shows the filled answers and not the item name');
@@ -63,13 +68,11 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       'report preserves the literal request, Unicode, provider and model');
     assert(report.trace.some(row=>row.t==='error' && row.error.includes('Runtime unavailable')),
       'report includes the actual runtime error and routing trace');
+    assert(report.transcript.some(turn=>turn.role==='user' && turn.text.includes('Add café')),
+      'the report keeps the visible chat, not only a shortened trace');
     assert(!failed.report.includes('UNRELATED PRIVATE HABIT') && !failed.report.includes('private-server'),
       'report excludes unrelated saved items and server configuration');
-    assert(failed.entry.endsWith(failed.report) && failed.href.includes('/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform'),
-      'the supplied form receives the complete report in its confusing-or-in-the-way field');
-    assert(failed.keys.join(',')==='usp,entry.593100343,entry.1988333965,entry.1563652333',
-      'the form link carries usage, the editable expectation, and diagnostics, and leaves the rating for the user');
-    assert(failed.target==='_blank' && failed.rel.includes('noreferrer'),'form opens separately without a referrer');
+    assert(failed.openLabel==='open feedback form','the card opens the in-app form');
     await page.locator('.assistant-feedback > summary').click();
     await page.locator('.assistant-feedback details > summary').click();
     const mobile=await page.evaluate(()=>({
@@ -78,12 +81,29 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     }));
     assert(mobile.scroll<=mobile.width && mobile.preview<=mobile.width,'expanded diagnostics fit a phone viewport');
     assert(external.length===0,'reviewing diagnostics does not contact Google');
-    const popupPromise=page.waitForEvent('popup');
-    await page.locator('.assistant-feedback a').click();
-    const popup=await popupPromise;await popup.waitForLoadState();
-    assert(external.length===1 && external[0].method==='GET' && external[0].url===failed.href,
-      'opening feedback navigates to a prefilled form without submitting it');
-    await popup.close();
+    await page.locator('.assistant-feedback [data-feedback-open]').click();
+    await page.waitForSelector('#feedback-sheet.open');
+    const ready=await page.evaluate(()=>({
+      note:document.getElementById('feedback-note').value,
+      noteRequired:document.getElementById('feedback-note').required,
+      emailRequired:document.getElementById('feedback-email').required,
+      sendDisabled:document.getElementById('feedback-send').disabled
+    }));
+    assert(!ready.noteRequired && !ready.emailRequired && !ready.sendDisabled
+      && ready.note==='The assistant failed on my last request. I expected it to: ',
+      'the form can be sent without typing, and the expectation stays editable');
+    assert(external.length===0,'opening the form does not contact Google');
+    await page.locator('#feedback-note').fill('');
+    await page.locator('#feedback-send').click();
+    await page.waitForFunction(()=>!document.getElementById('feedback-sheet').classList.contains('open'));
+    const posted=external.map(row=>decodeForm(row.body)).join('\n');
+    assert(external.length>=1 && external.every(row=>row.method==='POST' && row.url.includes('/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/formResponse')),
+      'sending posts the filled form');
+    assert(posted.includes('Runtime unavailable') && posted.includes('Add café')
+      && posted.includes('entry.1567617731') && !posted.includes('entry.1563652333')
+      && !posted.includes('entry.402961364') && !posted.includes('entry.247866906')
+      && !posted.includes('UNRELATED PRIVATE HABIT') && !posted.includes('private-server'),
+      'the post puts the full report in Diagnostics and leaves the rating, day-plan, and confusing questions unset');
     const followup=await page.evaluate(async()=>{
       await handleAssistantOutcome({type:'say',text:'A later answer',session:{requestText:'A different request',debug:[]}});
       const cards=[...document.querySelectorAll('.assistant-feedback')];
@@ -138,23 +158,34 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     await context.setOffline(false);
     const large=await page.evaluate(()=>{
       const text='Long request 🚀 & details?\n'.repeat(1200)+'FINAL RUNTIME ERROR';
-      const prefill=assistantFeedbackPrefill(text);
-      const body=new URL(prefill.url).searchParams.get(ASSISTANT_FEEDBACK_ENTRY);
-      return {truncated:prefill.truncated,length:prefill.url.length,limit:ASSISTANT_FEEDBACK_URL_MAX,
-        marker:body.includes('Report shortened'),tail:body.endsWith('FINAL RUNTIME ERROR'),head:body.includes('Long request')};
+      const parts=feedbackFormParts({context:text, note:'', email:''});
+      const joined=parts.map(rows=>{
+        const chunk=(rows.find(pair=>pair[0]===feedbackReportEntry())||[])[1]||'';
+        return chunk.replace(/^Part \d+ of \d+\n/,'');
+      }).join('');
+      const middle=text.slice(Math.floor(text.length/2), Math.floor(text.length/2)+24);
+      return {parts:parts.length, whole:joined===text, middle:joined.includes(middle),
+        tail:joined.endsWith('FINAL RUNTIME ERROR'), head:joined.startsWith('Long request'),
+        plan:parts.every(rows=>!rows.some(pair=>pair[0]===FEEDBACK_FORM_ENTRIES.planDetail))};
     });
-    assert(large.truncated && large.length<=large.limit && large.marker && large.head && large.tail,
-      'oversized Unicode reports fit the URL budget and explicitly retain context plus the final error');
+    assert(large.parts>1 && large.whole && large.middle && large.head && large.tail && large.plan,
+      'a long report is sent whole, including the middle, and the day-plan question stays blank');
     const copy=await page.evaluate(async()=>{
       let copied='';Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{copied=text;}}});
       const report='Full diagnostics '+ 'x'.repeat(20000);
       await handleAssistantOutcome({type:'error',text:report,session:{}});
       const cards=[...document.querySelectorAll('.assistant-feedback')],last=cards.at(-1);
-      last.querySelector('button').click();
+      last.querySelector('[data-feedback-copy]').click();
       await Promise.resolve();
-      return {copied,full:last.querySelector('pre').textContent,note:last.textContent.includes('too long for a form link')};
+      const full=last.querySelector('pre').textContent;
+      const parts=feedbackFormParts({context:full, note:'', email:''});
+      const joined=parts.map(rows=>{
+        const chunk=(rows.find(pair=>pair[0]===feedbackReportEntry())||[])[1]||'';
+        return chunk.replace(/^Part \d+ of \d+\n/,'');
+      }).join('');
+      return {copied, full, covered:joined===full, parts:parts.length, note:last.textContent.includes('too long for a form link')};
     });
-    assert(copy.copied===copy.full && copy.note,'long reports keep a complete local preview and copy action with a visible form-limit explanation');
+    assert(copy.copied===copy.full && !copy.note && copy.covered && copy.parts>1,'long reports stay complete locally and are sent whole, in parts when one answer is not enough');
     const redacted=await page.evaluate(()=>assistantFeedbackRedact(
       'https://name:secret@localhost/path?api_key=abc&next=yes Authorization: Bearer token-value password=hunter2'));
     assert(!/secret|abc|token-value|hunter2/.test(redacted),'diagnostics redact recognizable credentials');
@@ -204,25 +235,47 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     await page.locator('#assistant-feedback').click();
     const sheetFeedback = await page.evaluate(()=>{
       const panel = document.getElementById('assistant-feedback-panel');
-      const link = panel.querySelector('a');
-      const body = new URL(link.href).searchParams.get(ASSISTANT_FEEDBACK_ENTRY);
+      const open = panel.querySelector('[data-feedback-open]');
+      const body = panel.querySelector('pre').textContent;
+      open.click();
       return {
         open:!panel.hidden && Boolean(panel.querySelector('.assistant-feedback-card')),
         diagnosticsOpen:Boolean(panel.querySelector('details') && panel.querySelector('details').open),
-        label:link.textContent,
+        label:open.textContent,
         lead:panel.querySelector('.assistant-feedback-lead')?.textContent || '',
         body,
-        fix:new URL(link.href).searchParams.get(ASSISTANT_FEEDBACK_FIX)
+        fix:document.getElementById('feedback-note').value,
+        formOpen:document.getElementById('feedback-sheet').classList.contains('open')
       };
     });
-    assert(sheetFeedback.open && !sheetFeedback.diagnosticsOpen && sheetFeedback.label === 'open feedback form'
+    assert(sheetFeedback.open && sheetFeedback.formOpen && !sheetFeedback.diagnosticsOpen && sheetFeedback.label === 'open feedback form'
       && sheetFeedback.lead.length < 160
       && sheetFeedback.body.includes('make it weekly') && sheetFeedback.body.includes('recurrence')
       && sheetFeedback.body.includes('periodDays') && sheetFeedback.body.includes('weekly means seven days')
       && !sheetFeedback.body.includes(needleFeedback.secret) && !sheetFeedback.body.includes('keep this off the form'),
-      'Ask Tings feedback opens a short card and prefills the form without the saved item');
+      'Ask Tings feedback opens a short card and fills the form without the saved item');
     assert(sheetFeedback.fix === 'The assistant reply was not what I wanted. I expected it to: ',
       'a completed Needle turn still leaves the expectation note editable');
+    await page.locator('#feedback-close').click();
+    const fullNeedle=await page.evaluate(()=>{
+      const reasoning='NEEDLE-CONTEXT-START '+ 'q'.repeat(2500)+' NEEDLE-CONTEXT-END';
+      const report=assistantFeedbackReport({type:'focus', text:'ok', session:{debug:[]}}, {
+        request:'full needle',
+        focus:{
+          requests:['full needle'],
+          trace:[{family:'recurrence', reasoning, content:reasoning, context:'earlier user message 1: '+reasoning, args:{periodDays:7}}],
+          changes:[], unresolved:[], source:{name:'SECRET ITEM', notes:'keep this off the form'}
+        }
+      });
+      return {
+        start:report.includes('NEEDLE-CONTEXT-START'),
+        end:report.includes('NEEDLE-CONTEXT-END'),
+        count:(report.split('q').length-1)>=2500,
+        secret:report.includes('SECRET ITEM')||report.includes('keep this off the form')
+      };
+    });
+    assert(fullNeedle.start && fullNeedle.end && fullNeedle.count && !fullNeedle.secret,
+      'Needle context is kept in full and the saved item stays out');
     const structured=await page.evaluate(()=>{
       const value={start:{kind:'anchor',anchor:'maghrib',offsetMin:0},end:{kind:'anchor',anchor:'maghrib',offsetMin:120}};
       const trace=assistantFeedbackFocusTrace({changes:[{field:'allowedWindow',value,op:'set',uncertain:true}]});
