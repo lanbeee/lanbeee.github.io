@@ -248,6 +248,11 @@ const cases=[
   ['frequency',"I'd like this twice weekly",2,{id:'basics-frequency-weekly',extra:{periodDays:7}}],
   ['frequency','Can we do this every other day?',1,{id:'basics-frequency-question',extra:{periodDays:2}}],
   ['name','Call it Evening Walk','Evening Walk',{id:'basics-name-call'}],
+  ['name','Change the title to Evening Walk','Evening Walk',{id:'basics-name-change-title'}],
+  ['name','Set the title to Evening Walk','Evening Walk',{id:'basics-name-set-title'}],
+  ['name','The title should be Evening Walk','Evening Walk',{id:'basics-name-title-framing'}],
+  ['name','Change the title to To Live','To Live',{id:'basics-name-title-literal-to'}],
+  ['name','Rename it Meeting','Meeting',{id:'basics-name-sibling-value'}],
   ['name','Can you rename it to Fresh Start?','Fresh Start',{id:'basics-name-question'}],
   ['topics','Put this under Health',['Health'],{id:'basics-topic-natural'}],
   ['topics','Tag this Personal',['Personal'],{id:'basics-topic-pronoun'}],
@@ -566,10 +571,8 @@ const cases=[
   ['durationMinutes','Use ninety minutes for this date, leaving the series duration alone',90,{id:'readiness-occurrence-duration-preserves-series',kind:'event',scope:'occurrence',selectAll:true}],
   ['tapStartsSession','Tapping this should just mark it done, not start a session',false,{id:'readiness-tap-off-complete-evidence',seed:{tapStartsSession:true},selectAll:true}]
 ]
-// Renaming is outside the product's focused edit contract.
-.filter(([field])=>field!=='name').map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
+.map(([field,prompt,value,opts={}],index)=>({id:`${field}-${index+1}`,field,prompt,value,kind:'habit',...opts}));
 const guards=[
-  ...['Rename this to Evening Walk','Name: Evening Walk','Call it Evening Walk','Change the title to Evening Walk'].map((prompt,i)=>({field:'request',kind:'habit',prompt,id:`release-rename-guard-${i}`,selectAll:true})),
   ...['Use purple or blue for the card color','The background should not be purple'].map((prompt,i)=>({field:'emojiBgColor',kind:'habit',prompt,id:`readiness-color-guard-${i}`,selectAll:true})),
   {field:'hardDue',kind:'task',prompt:'Make the deadline strict and flexible',id:'everyday-deadline-conflict',selectAll:true},
   {field:'hardDue',kind:'task',prompt:'Do not make the deadline strict',id:'everyday-deadline-negation',selectAll:true},
@@ -597,7 +600,7 @@ const guards=[
   {field:'frequency',kind:'habit',prompt:'Minus 2 times per week'},
   {field:'allowedWindow',kind:'habit',prompt:'Allowed time is 15 minutes after Sunset walk'},
   ...['after sunset to','after sunset until sometime','from sunset to 99pm'].map(prompt=>({field:'allowedWindow',kind:'habit',prompt,seed:{allowedTimeStartAnchor:'maghrib',allowedTimeStartOffsetMin:30,allowedTimeEndAnchor:'isha',allowedTimeEndOffsetMin:0}})),
-  {field:'request',kind:'habit',prompt:'Do not rename it Tomorrow'},
+  {field:'name',kind:'habit',prompt:'Do not rename it Tomorrow'},
   {field:'topics',kind:'habit',prompt:"Don't tag it Work"},
   ...['Not tomorrow instead','Tomorrow or Friday please','After tomorrow instead'].map(prompt=>({field:'dueDate',kind:'task',prompt})),
   ...['tomorrowland','tonightly','onward'].map(value=>({field:'dueDate',kind:'task',prompt:`Set due date to ${value}`})),
@@ -673,7 +676,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
     },live);
     const coverage=await page.evaluate(rows=>{
       const covered=new Set(rows.flatMap(r=>r.covers||[r.field]));
-      return ASSISTANT_FOCUS_FIELDS.filter(f=>f.id!=='name'&&!covered.has(f.id)).map(f=>f.id);
+      return ASSISTANT_FOCUS_FIELDS.filter(f=>!covered.has(f.id)).map(f=>f.id);
     },cases);
     assert(!coverage.length,`every registered field has a predefined language case (${coverage.join(', ')})`);
     const chosen=cases.filter(t=>!process.env.FIELD_CASE||new RegExp(process.env.FIELD_CASE).test(t.id));

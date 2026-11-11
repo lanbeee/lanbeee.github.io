@@ -388,7 +388,8 @@ function assistantFocusNormalize(fieldId, raw, session){
   }
   const fail = (error) => ({ok:false, error});
   if(fieldId === 'name'){
-    if(session && session.operation==='edit')return fail('Rename the item in its detail editor.');
+    if(session && session.operation==='edit' && typeof assistantFieldExplicitRename==='function'
+      && !assistantFieldExplicitRename(session._fieldSource||session.currentRequest||''))return fail('Rename the item in its detail editor.');
     const name = text.slice(0, typeof ASSISTANT_NAME_MAX === 'number' ? ASSISTANT_NAME_MAX : 60);
     if(assistantFocusNameRejected(name, session && (session.originalRequest || session.requestText))){
       return fail('That looks like the whole description. What should the item be called?');
@@ -849,7 +850,7 @@ function assistantFocusWrite(record, change, session, scratch, data){
   change = Object.assign({}, change, {field:assistantFocusScopedField(change.field, session)});
   const op = change.op;
   const value = change.value;
-  if(change.field === 'name' && session.operation==='create')record.name = op === 'clear' ? '' : String(value || '').slice(0, 60);
+  if(change.field === 'name')record.name = op === 'clear' ? '' : String(value || '').slice(0, 60);
   else if(change.field === 'kind'){
     if(value === 'task'){
       record.type = 'task';
@@ -1303,7 +1304,6 @@ function assistantFocusCanSave(session){
   if(session._focusInFlight)return false;
   if(session.unresolved.length || session.pendingFamilies.length || session.correctionError || session.continuationError)return false;
   if(session.operation === 'edit' && !session.changes.length)return false;
-  if(session.operation === 'edit' && session.changes.some(change=>change.field==='name'))return false;
   if(session.operation === 'create' && !session.changes.some(change => change.field === 'name' && change.op === 'set' && change.value))return false;
   if(assistantFocusDraftIssues(session).length)return false;
   if(session.kind === 'event' && session.eventScope == null)return false;

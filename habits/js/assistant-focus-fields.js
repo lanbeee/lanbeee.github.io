@@ -16,7 +16,7 @@ const ASSISTANT_FIELD_SEARCH = {
 // aliases and embeddings supply additional candidates beyond these strong cues.
 const ASSISTANT_FIELD_TEXT_INSTRUCTIONS = {
   name:{signal:/\b(?:rename|named?|called|title|call (?:it|this|that))\b/i,
-    prefix:/^(?:(?:name|title)\s+(?:should be|is)|(?:rename|name)(?:\s+(?:it|this|that))?(?:\s+(?:to|as))?|call\s+(?:it|this|that)(?:\s+(?:to|as))?|called|named|title)\s*:?\s*/i},
+    prefix:/^(?:(?:name|title)\s+(?:should be|is)|(?:rename|name|title)(?:\s+(?:it|this|that))?(?:\s+(?:to|as))?|call\s+(?:it|this|that)(?:\s+(?:to|as))?|called|named)\s*:?\s*/i},
   topics:{signal:/\b(?:topics?|tags?|categor\w*|label (?:it|this|that)|assign\s+(?:it|this|that)\s+to|(?:put|file|group)\s+(?:it\s+|this\s+|that\s+)?(?:under|into|in))\b/i,
     prefix:/^(?:(?:(?:add|use|set|with)\s+)?(?:topics?|tags?|categor(?:y|ies))(?:\s+(?:it|this|that|as|to))?|(?:put|file|group|categorize|categorise)(?:\s+(?:it|this|that))?\s+(?:under|into|in)|assign\s+(?:it|this|that)\s+to(?:\s+the)?)\s*:?\s*/i}
 };
@@ -157,8 +157,16 @@ function assistantFieldCatalog(){
   });
 }
 
+// Edit renames only when this message asks. Otherwise the name stays out of
+// retrieval, routing, and suggestions, behind every other setting.
+function assistantFieldExplicitRename(text){
+  const value=String(text||'');
+  return /\b(?:rename|call (?:it|this|that)|(?:name|title)\s*(?::|=|to\b|is\b|should\b|with\b)|(?:change|set)\s+(?:the |its |this item's )?(?:name|title)|(?:name|title)\s+(?:it|this|that))\b/i.test(value)
+    || /^(?:name|title|named|called)\b/i.test(value.trim());
+}
+
 function assistantFieldApplicable(def, session){
-  if(def.id==='name' && session.operation==='edit')return false;
+  if(def.id==='name' && session.operation==='edit' && !assistantFieldExplicitRename(session.currentRequest||''))return false;
   // Prerequisites are checked when proposals merge, allowing the extraction to
   // run before a kind/mode/splitting change has been validated.
   const kind = assistantFocusEffectiveKind(session);
@@ -981,6 +989,9 @@ async function assistantFieldRetrieve(state, rank){
     assistantFocusEnsure(state.session,state.revision);
     state.session.trace.push({family:'retrieval',ranking:raw.rankings,workerLane:raw._workerLane});
     for(const list of raw.rankings || [])for(const row of list.slice(0,3)){
+      // An explicit rename is already queued from its wording. Embeddings must
+      // not spend a slot on the title during an edit.
+      if(row.id==='name' && state.session.operation==='edit')continue;
       if(Number.isFinite(row.score))assistantFieldEnqueue(state,row.id,'embedding');
     }
   }
@@ -1726,11 +1737,11 @@ function assistantFocusFound(session){
 function assistantFocusOtherTarget(session, request){
   if(session.operation!=='edit')return null;
   const current=assistantFocusFound(session);
-  const clauses=assistantFieldSpans(request).flatMap(span=>span.text.split(/\s+and\s+(?=(?:log|plan|schedule|mark|make|set|change|edit|update|switch|open)\b)/i));
+  const clauses=assistantFieldSpans(request).flatMap(span=>span.text.split(/\s+and\s+(?=(?:log|plan|schedule|mark|make|set|change|edit|update|switch|open|rename)\b)/i));
   for(const item of load()){
     if(!item?.name||item.hid===session.targetId||assistantFocusNorm(item.name)===assistantFocusNorm(current?.name))continue;
     const name=item.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    const subject=new RegExp(`^(?:(?:also|please)\\s+|(?:can|could|would)\\s+(?:you|u)\\s+)*(?:(?:log|unlog|plan|unplan|schedule|book|mark|make|set|change|edit|update|open)\\s+(?:the\\s+)?|switch\\s+to\\s+|for\\s+)["“]?${name}["”]?(?=$|[\\s,:;.!?]|['’]s\\b)`,'i');
+    const subject=new RegExp(`^(?:(?:also|please)\\s+|(?:can|could|would)\\s+(?:you|u)\\s+)*(?:(?:log|unlog|plan|unplan|schedule|book|mark|make|set|change|edit|update|open|rename)\\s+(?:the\\s+)?|switch\\s+to\\s+|for\\s+)["“]?${name}["”]?(?=$|[\\s,:;.!?]|['’]s\\b)`,'i');
     const possessive=new RegExp(`^["“]?${name}["”]?(?:['’]s\\s+(?:duration|priority|frequency|time|schedule)\\b|\\s+should\\s+be\\b)`,'i');
     if(clauses.some(clause=>subject.test(clause.trim())||possessive.test(clause.trim())))return item;
   }
@@ -1906,16 +1917,6 @@ async function assistantFieldReadActions(state, extract){
 
 function assistantFieldPrepare(state){
   const session=state.session,request=state.request,priorFields=state.priorFields;
-  if(session.operation==='edit'){
-    const renames=state.spans.filter(span=>assistantFieldNaming(span.text)
-      && ASSISTANT_FIELD_SIGNALS.name.test(span.text)
-      && (!assistantFieldLiteralOwner(span.text)||assistantFieldLiteralOwner(span.text).id==='name'));
-    if(renames.length){
-      state.unavailableSpans=(state.unavailableSpans||[]).concat(renames);
-      state.spans=assistantFieldExcise(request,state.spans,renames);
-      assistantFocusUnresolve(session,{field:'request',family:'request',question:'Rename the item in its detail editor. Needle can change its other settings, log a completion, or plan this item.'});
-    }
-  }
   assistantFieldClaimActions(state);
   assistantFieldClaimGuidance(state);
   // Events have no priority control. Ask about the named unsupported setting

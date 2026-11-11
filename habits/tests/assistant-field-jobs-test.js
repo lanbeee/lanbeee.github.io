@@ -263,11 +263,25 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const t=fieldTest;t.seed();save([...load(),{hid:'meeting',name:'Meeting',type:'keepup',target:7,durationMinutes:30,logs:[]}]);
       const s=t.open(),before=JSON.stringify(load());
       await assistantFocusTurn(s,'Call it Yoga, after Meeting',t.options());
-      return assistantFocusMaterialize(s).name===s.source.name&&!assistantFocusCanSave(s)
-        &&s.unresolved.some(q=>q.field==='request')
+      return assistantFocusMaterialize(s).name==='Yoga'&&!assistantFocusCanSave(s)
         &&s.unresolved.some(q=>q.field==='scheduleLinks')&&before===JSON.stringify(load());
     });
-    assert(separateOrder,'unsupported renaming preserves the name and cannot hide a separate ordering instruction');
+    assert(separateOrder,'a naming clause cannot silently hide a separate ordering instruction');
+    const otherRenameTarget=await page.evaluate(async()=>{
+      const t=fieldTest,results=[];
+      for(const prompt of ['Rename Meeting to Team Sync','Please rename "Meeting" to Team Sync',
+        'Can you rename Meeting to Team Sync?','Pin it and rename Meeting to Team Sync']){
+        t.seed();save([...load(),{hid:'meeting',name:'Meeting',type:'keepup',target:7,durationMinutes:30,logs:[]}]);
+        const s=t.open(),before=JSON.stringify(load());
+        await assistantFocusTurn(s,prompt,t.options());
+        const commit=await assistantFocusCommit(s);
+        results.push({prompt,ok:!s.changes.length&&!assistantFocusCanSave(s)&&!commit.ok
+          &&s.unresolved.some(q=>q.field==='request'&&q.question.includes('Open Meeting'))
+          &&assistantFocusMaterialize(s).name==='Gym'&&before===JSON.stringify(load()),questions:s.unresolved});
+      }
+      return results;
+    });
+    assert(otherRenameTarget.every(r=>r.ok),`an explicit sibling rename cannot stage or save changes to the open item (${JSON.stringify(otherRenameTarget)})`);
     const clockBoundaries=await page.evaluate(async()=>{
       const t=fieldTest,results=[];
       for(const [kind,prompt,minute,duration] of [
@@ -603,14 +617,11 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         // Even a genuine title question cannot consume a later bare message.
         await assistantFocusTurn(renamed,'Rename it Evening Gym',t.options({extract:async spec=>spec.jobId==='name'
           ?{function_calls:[{name:spec.tool.name,arguments:{[Object.keys(spec.tool.parameters.properties)[0]]:''}}]}:t.reply(spec)}));
-        if(!renamed.unresolved.some(issue=>issue.field==='request'))return {error:'missing unsupported rename explanation',questions:renamed.unresolved};
+        if(!renamed.unresolved.some(issue=>issue.field==='name'))return {error:'missing title clarification',questions:renamed.unresolved};
         await assistantFocusTurn(renamed,'Evening Gym',t.options());
         if(assistantFocusMaterialize(renamed).name!=='Gym'||assistantFocusCanSave(renamed))return {error:'bare message became a title',changes:renamed.changes};
         await assistantFocusTurn(renamed,'Rename it Evening Gym',t.options());
-        if(assistantFocusMaterialize(renamed).name!=='Gym'||assistantFocusCanSave(renamed))return {error:'explicit rename was accepted',changes:renamed.changes,questions:renamed.unresolved};
-        if(assistantFocusNormalize('name','Evening Gym',renamed).ok)return {error:'manual rename correction was accepted'};
-        assistantFocusStage(renamed,{field:'name',value:'Evening Gym'});
-        if(assistantFocusMaterialize(renamed).name!=='Gym'||assistantFocusCanSave(renamed))return {error:'injected rename was accepted'};
+        if(assistantFocusMaterialize(renamed).name!=='Evening Gym'||!assistantFocusCanSave(renamed))return {error:'explicit title clarification failed',changes:renamed.changes,questions:renamed.unresolved};
         return true;
       }finally{window.TingsNative=oldNative;window.refreshOpenViews=oldRefresh;}
     });
