@@ -2,7 +2,8 @@
 // Preferences are device-local and intentionally separate from clone settings.
 const NATIVE_REMINDERS_KEY = 'tings_native_reminders_v1';
 const NATIVE_REMINDER_DEFAULTS = {version:4,enabled:false,items:{}};
-const NATIVE_REMINDER_EDGES = [['start','start'],['end','end'],['travelStart','travel: departure'],['travelEnd','travel: arrival'],['missed','drop warning']];
+const NATIVE_REMINDER_EDGES = [['start','start'],['startSecond','second reminder'],['end','end'],['due','due date'],['travelStart','travel: departure'],['travelEnd','travel: arrival'],['missed','drop warning']];
+const NATIVE_EVENT_REMINDER_LEADS = [[0,'at the start'],[5,'5 min before'],[10,'10 min before'],[15,'15 min before'],[30,'30 min before'],[60,'1 hour before'],[120,'2 hours before'],[1440,'1 day before'],[2880,'2 days before']];
 function nativeBusyReminderKey(block,index){
   return block ? `busy:${block.reminderId || JSON.stringify([index,block.label,block.start,block.end,block.days])}` : '';
 }
@@ -130,7 +131,7 @@ function nativeSaveReminderPatch(prefs,owner,patch,dayKey){
 async function nativeResetReminderDate(owner,dayKey,{travelOnly=false}={}){
   const prefs=nativeReminderPreferences(),choice={...prefs.items[owner]},dates={...choice.dates};
   const patch={...dates[dayKey]};
-  for(const edge of travelOnly ? ['travelStart','travelEnd','travelLeadMinutes'] : ['start','end','startLeadMinutes','travelStart','travelEnd','travelLeadMinutes','missed','missedLeadMinutes'])delete patch[edge];
+  for(const edge of travelOnly ? ['travelStart','travelEnd','travelLeadMinutes'] : [...NATIVE_REMINDER_EDGES.map(([edge])=>edge),'startLeadMinutes','secondStartLeadMinutes','dueDaysBefore','dueMinute','travelLeadMinutes','missedLeadMinutes'])delete patch[edge];
   if(Object.keys(patch).length)dates[dayKey]=patch;else delete dates[dayKey];
   prefs.items[owner]={...choice,dates};localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
   nativeReminderLastSignature='';await reconcileNativeReminders();
@@ -138,18 +139,26 @@ async function nativeResetReminderDate(owner,dayKey,{travelOnly=false}={}){
 function nativeCardReminderControls(owner,name,dayKey,{travelOnly=false}={}){
   const host=document.createElement('details');host.className='utility-sheet-disclosure native-card-reminders';
   const summary=document.createElement('summary');
-  const title=document.createElement('span');title.textContent='phone reminders';
+  const title=document.createElement('span');title.textContent='reminders';
   const chevron=document.createElement('i');chevron.className='ti ti-chevron-down';chevron.setAttribute('aria-hidden','true');
   summary.append(title,chevron);host.append(summary);
   const content=document.createElement('div');content.className='utility-disclosure-body';host.append(content);
-  const label=document.createElement('label');label.className='planning-field';label.textContent='edit reminders for';
-  const scope=document.createElement('select');scope.className='mini-select';scope.dataset.reminderScope=owner;
-  scope.setAttribute('aria-label','edit reminders for');
+  const scope=document.createElement('select');scope.className='native-reminder-choice';scope.dataset.reminderScope=owner;
+  scope.tabIndex=-1;scope.setAttribute('aria-hidden','true');
   const dateLabel=new Date(`${dayKey}T12:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-  for(const [value,text] of [['date',`this date · ${dateLabel}`],['series','all dates']]){
+  const scopeRow=document.createElement('div');scopeRow.className='native-reminder-row';
+  const scopeSeg=document.createElement('div');scopeSeg.className='seg native-reminder-seg';scopeSeg.setAttribute('role','group');scopeSeg.setAttribute('aria-label','edit reminders for');
+  for(const [value,text] of [['date',dateLabel],['series','all dates']]){
     const option=document.createElement('option');option.value=value;option.textContent=text;scope.append(option);
+    const btn=document.createElement('button');btn.type='button';btn.className='seg-opt';btn.dataset.value=value;btn.textContent=text;
+    btn.addEventListener('click',()=>{if(scope.value===value)return;scope.value=value;scope.dispatchEvent(new Event('change'));});
+    scopeSeg.append(btn);
   }
-  label.append(scope);content.append(label);
+  scope.value='date';
+  const syncScope=()=>scopeSeg.querySelectorAll('.seg-opt').forEach(btn=>{
+    const on=btn.dataset.value===scope.value;btn.classList.toggle('on',on);btn.setAttribute('aria-pressed',String(on));
+  });
+  scopeRow.append(scopeSeg,scope);content.append(scopeRow);
   const body=document.createElement('div');content.append(body);
   const paint=()=>{
     body.replaceChildren(nativeItemReminderControls(owner,name,{compact:true,travelOnly,
@@ -163,7 +172,7 @@ function nativeCardReminderControls(owner,name,dayKey,{travelOnly=false}={}){
       }finally{reset.disabled=false;}
     });body.append(reset);
   };
-  scope.addEventListener('change',paint);paint();return host;
+  scope.addEventListener('change',()=>{syncScope();paint();});syncScope();paint();return host;
 }
 function renderNativeBlockEditorReminders(block,dayKey){
   document.getElementById('block-edit-reminders')?.remove();
@@ -183,28 +192,69 @@ function renderNativeTravelEditorReminders(destination,dayKey){
   const hint=document.createElement('p');hint.className='field-hint';hint.textContent=`Departure and arrival reminders for ${name}.`;controls.querySelector('.utility-disclosure-body').prepend(hint);
   document.querySelector('#travel-edit-sheet .utility-sheet-actions')?.before(controls);
 }
+function nativeReminderFace(edge,meeting){
+  if(meeting && edge==='start')return 'first reminder';
+  if(meeting && edge==='startSecond')return 'second reminder';
+  return {start:'when it starts',end:'when it ends',due:'on the due date',travelStart:'when you leave',travelEnd:'when you arrive',missed:'if it may not fit'}[edge] || edge;
+}
+function nativeSyncReminderControl(select){
+  const row=select?.closest?.('.native-reminder-row');if(!row)return;
+  const locked=select.dataset.reminderLocked==='true';
+  row.querySelectorAll('.native-reminder-seg .seg-opt').forEach(btn=>{
+    const on=btn.dataset.value===select.value;
+    btn.classList.toggle('on',on);btn.setAttribute('aria-pressed',String(on));btn.disabled=select.disabled || locked;
+  });
+  const timing=row.querySelector('.native-reminder-timing');
+  if(timing)timing.hidden=locked || !select.value || select.value==='off';
+  const more=select.closest('.native-reminder-more');
+  const summary=more?.querySelector(':scope > summary');
+  if(summary){
+    const on=[...more.querySelectorAll('select[data-reminder-edge]')].filter(el=>el.value && el.value!=='off').length;
+    summary.firstChild.textContent=on ? `other reminders · ${on} on` : 'other reminders';
+  }
+}
 function nativeItemReminderControls(owner,name,opts = {}){
   const box = document.createElement('div');
   box.className = 'habit-options-block' + (opts.compact ? ' native-busy-reminders' : '');
-  const heading = document.createElement('span');heading.className = 'settings-sublabel';heading.textContent = 'phone reminders';box.append(heading);
-  const grid = document.createElement('div');grid.className = 'planning-grid' + (opts.compact ? ' native-busy-reminder-grid' : '');
+  const heading = document.createElement('span');heading.className = 'settings-sublabel';heading.textContent = 'reminders';box.append(heading);
   const choices=()=>nativeReminderChoices(nativeReminderPreferences(),owner,opts.dayKey);
-  const optionalItem = opts.hideMissed ?? (owner.startsWith('item:')
-    && isOpportunityHabit(load().find(h=>`item:${h.hid}` === owner)));
-  for(const [edge,title] of NATIVE_REMINDER_EDGES){
+  const item=owner.startsWith('item:') ? load().find(h=>`item:${h.hid}`===owner) : null;
+  const meeting=!opts.travelOnly && (opts.meeting ?? isEventItem(item));
+  const dueTask=item?.type==='task' && !meeting;
+  const optionalItem = meeting || (opts.hideMissed ?? (owner.startsWith('item:')
+    && isOpportunityHabit(item)));
+  const rows=new Map();
+  const addTiming=(row,node)=>{
+    let timing=row.querySelector('.native-reminder-timing');
+    if(!timing){timing=document.createElement('div');timing.className='native-reminder-timing';row.append(timing);}
+    timing.append(node);return timing;
+  };
+  for(const [edge] of NATIVE_REMINDER_EDGES){
     if(opts.travelOnly && !edge.startsWith('travel'))continue;
-    if(opts.meeting && !['start','end'].includes(edge))continue;
+    if(meeting && !['start','startSecond','end'].includes(edge))continue;
+    if(edge==='startSecond' && !meeting)continue;
+    if(edge==='due' && !dueTask)continue;
     if(edge==='missed' && !owner.startsWith('item:'))continue;
     if(edge==='missed' && optionalItem)continue;
-    const label = document.createElement('label');label.className = 'planning-field';label.append(document.createTextNode(opts.meeting ? (edge==='start'?'when it starts':'when it ends') : title));
-    const select = document.createElement('select');select.className = 'mini-select';select.setAttribute('aria-label',`${name}: ${opts.meeting ? edge==='start'?'when it starts':'when it ends' : title} reminder`);
+    const face=nativeReminderFace(edge,meeting);
+    const row=document.createElement('div');row.className='native-reminder-row';
+    const title=document.createElement('span');title.className='native-reminder-name';title.textContent=face;
+    const seg=document.createElement('div');seg.className='seg native-reminder-seg';seg.setAttribute('role','group');seg.setAttribute('aria-label',`${name}: ${face}`);
+    const select = document.createElement('select');select.className='native-reminder-choice';select.tabIndex=-1;select.setAttribute('aria-hidden','true');
     select.dataset.reminderOwner = owner;select.dataset.reminderEdge = edge;
-    for(const [value,text] of [['off','off'],['notification','notification'],['alarm','ringing alarm']]){
+    for(const [value,text] of [['off','off'],['notification','notify'],['alarm','alarm']]){
       const option = document.createElement('option');option.value = value;option.textContent = text;select.append(option);
+      const btn=document.createElement('button');btn.type='button';btn.className='seg-opt';btn.dataset.value=value;btn.textContent=text;
+      btn.addEventListener('click',()=>{
+        if(select.disabled || select.value===value)return;
+        select.value=value;select.dispatchEvent(new Event('change'));
+      });
+      seg.append(btn);
     }
     select.value = choices()[edge] || 'off';
+    if(edge==='due' && !Number.isFinite(item.dueDate)){select.disabled=true;select.dataset.reminderLocked='true';}
     select.addEventListener('change',async ()=>{
-      select.disabled = true;
+      select.disabled = true;nativeSyncReminderControl(select);
       try{
         const mode = select.value;
         if(mode !== 'off'){
@@ -227,40 +277,73 @@ function nativeItemReminderControls(owner,name,opts = {}){
         nativeReminderLastSignature = '';await reconcileNativeReminders();
         showToast('reminder saved', 2800);
       }catch(error){select.value = choices()[edge] || 'off';showToast(error.message, 5000);}
-      finally{select.disabled = false;}
-    });label.append(select);grid.append(label);
+      finally{select.disabled = false;nativeSyncReminderControl(select);}
+    });
+    row.append(title,seg,select);rows.set(edge,row);
+    if(meeting && ['start','startSecond'].includes(edge)){
+      const timing=document.createElement('select');timing.setAttribute('aria-label',edge==='start'?'event reminder timing':'second event reminder timing');
+      const field=edge==='start'?'startLeadMinutes':'secondStartLeadMinutes';
+      for(const [minutes,text] of NATIVE_EVENT_REMINDER_LEADS){const option=document.createElement('option');option.value=String(minutes);option.textContent=text;timing.append(option);}
+      timing.value=String(nativeMeetingLeadMinutes(choices(),edge==='startSecond'));
+      timing.addEventListener('change',async()=>{
+        timing.disabled=true;
+        try{
+          nativeSaveReminderPatch(nativeReminderPreferences(),owner,{[field]:Number(timing.value)},opts.dayKey);
+          nativeReminderLastSignature='';await reconcileNativeReminders();showToast('reminder timing saved');
+        }finally{timing.disabled=false;}
+      });
+      const when=addTiming(row,timing);
+      const caption=document.createElement('span');caption.className='native-reminder-caption';caption.textContent='how early';
+      when.prepend(caption);
+    }
+    if(edge==='due'){
+      const when=document.createElement('div');when.className='native-reminder-when';
+      const day=document.createElement('select');day.setAttribute('aria-label',`${name}: due date reminder day`);
+      for(const [days,text] of [[0,'on the due date'],[1,'1 day before'],[2,'2 days before'],[7,'1 week before']]){
+        const option=document.createElement('option');option.value=String(days);option.textContent=text;day.append(option);
+      }
+      day.value=String(nativeDueReminderDays(choices()));day.disabled=!Number.isFinite(item.dueDate);
+      const time=document.createElement('input');time.type='time';time.className='plan-time-input';time.setAttribute('aria-label',`${name}: due date reminder time`);
+      time.value=minutesToTimeInput(nativeDueReminderMinute(choices()));time.required=true;time.disabled=day.disabled;
+      const saveTiming=async()=>{
+        if(!time.value || !time.validity.valid)return;
+        nativeSaveReminderPatch(nativeReminderPreferences(),owner,{dueDaysBefore:Number(day.value),dueMinute:timeInputToMinutes(time.value)},opts.dayKey);
+        nativeReminderLastSignature='';await reconcileNativeReminders();showToast('due date reminder timing saved');
+      };
+      day.addEventListener('change',saveTiming);time.addEventListener('change',saveTiming);
+      when.append(day,time);addTiming(row,when);
+      if(!Number.isFinite(item.dueDate)){
+        const note=document.createElement('p');note.className='field-hint native-reminder-note';note.textContent='Add a due date under Schedule.';
+        row.append(note);
+      }
+    }
   }
-  const leadLabel=document.createElement('label');leadLabel.className='planning-field';leadLabel.append(document.createTextNode('departure reminder'));
-  const lead=document.createElement('select');lead.className='mini-select';lead.dataset.reminderLead=owner;
-  lead.setAttribute('aria-label',`${name}: departure reminder lead time`);
-  for(const minutes of [0,5,10,15,30,60]){
-    const option=document.createElement('option');option.value=String(minutes);option.textContent=minutes ? `${minutes} min before travel` : 'when travel starts';lead.append(option);
+  const travel=rows.get('travelStart');
+  if(travel && !meeting){
+    const lead=document.createElement('select');lead.dataset.reminderLead=owner;
+    lead.setAttribute('aria-label',`${name}: departure reminder lead time`);
+    for(const minutes of [0,5,10,15,30,60]){
+      const option=document.createElement('option');option.value=String(minutes);option.textContent=minutes ? `${minutes} min before` : 'when you leave';lead.append(option);
+    }
+    lead.value=String(nativeReminderLeadMinutes(choices()));
+    lead.addEventListener('change',async()=>{
+      lead.disabled=true;
+      try{
+        const prefs=nativeReminderPreferences();nativeSaveReminderPatch(prefs,owner,{travelLeadMinutes:Number(lead.value)},opts.dayKey);
+        nativeReminderLastSignature='';await reconcileNativeReminders();
+        showToast('departure reminder timing saved');
+      }finally{lead.disabled=false;}
+    });
+    const when=addTiming(travel,lead);
+    const caption=document.createElement('span');caption.className='native-reminder-caption';caption.textContent='how early';
+    when.prepend(caption);
   }
-  lead.value=String(nativeReminderLeadMinutes(choices()));
-  lead.addEventListener('change',async()=>{
-    lead.disabled=true;
-    try{
-      const prefs=nativeReminderPreferences();nativeSaveReminderPatch(prefs,owner,{travelLeadMinutes:Number(lead.value)},opts.dayKey);
-      nativeReminderLastSignature='';await reconcileNativeReminders();
-      showToast('departure reminder timing saved');
-    }finally{lead.disabled=false;}
-  });leadLabel.append(lead);if(!opts.meeting)grid.append(leadLabel);
-  if(opts.meeting){
-    const label=document.createElement('label');label.className='planning-field';label.textContent='remind me';
-    const select=document.createElement('select');select.className='mini-select';select.setAttribute('aria-label','event reminder timing');
-    for(const n of [0,5,10,15,30,60]){const option=document.createElement('option');option.value=String(n);option.textContent=n ? `${n} min before` : 'at the start';select.append(option);}
-    select.value=String(nativeMeetingLeadMinutes(choices()));
-    select.addEventListener('change',async()=>{
-      nativeSaveReminderPatch(nativeReminderPreferences(),owner,{startLeadMinutes:Number(select.value)},opts.dayKey);
-      nativeReminderLastSignature='';await reconcileNativeReminders();showToast('reminder saved');
-    });label.append(select);grid.append(label);
-  }
-  if(owner.startsWith('item:') && !optionalItem && !opts.travelOnly){
-    const label=document.createElement('label');label.className='planning-field';label.append(document.createTextNode('drop warning timing'));
-    const select=document.createElement('select');select.className='mini-select';select.dataset.reminderMissedLead=owner;
+  const missed=rows.get('missed');
+  if(missed){
+    const select=document.createElement('select');select.dataset.reminderMissedLead=owner;
     select.setAttribute('aria-label',`${name}: drop warning lead time`);
     for(const minutes of [5,15]){
-      const option=document.createElement('option');option.value=String(minutes);option.textContent=`${minutes} min before drop`;select.append(option);
+      const option=document.createElement('option');option.value=String(minutes);option.textContent=`${minutes} min before`;select.append(option);
     }
     select.value=String(nativeReminderMissedLeadMinutes(choices()));
     select.addEventListener('change',async()=>{
@@ -269,10 +352,28 @@ function nativeItemReminderControls(owner,name,opts = {}){
         nativeSaveReminderPatch(nativeReminderPreferences(),owner,{missedLeadMinutes:Number(select.value)},opts.dayKey);
         nativeReminderLastSignature='';await reconcileNativeReminders();showToast('drop warning timing saved');
       }finally{select.disabled=false;}
-    });label.append(select);grid.append(label);
+    });
+    const when=addTiming(missed,select);
+    const caption=document.createElement('span');caption.className='native-reminder-caption';caption.textContent='how early';
+    when.prepend(caption);
   }
-  const hint = document.createElement('p');hint.className = 'field-hint';hint.textContent = opts.compact || optionalItem ? 'Reminders save immediately on this phone.' : 'Warns before the estimated last chance to fit this item, which can differ from its suggested start. Choose 5 or 15 minutes and notification or ringing alarm. Both use exact timing access. Sudden drops alert promptly. Saved on this phone.';
-  box.append(grid,hint);return box;
+  const list=document.createElement('div');list.className='native-reminder-list';
+  const primary=(opts.travelOnly ? ['travelStart','travelEnd'] : meeting ? ['start'] : dueTask ? ['due','start'] : owner.startsWith('busy:') ? ['start','end'] : ['start']).filter(edge=>rows.has(edge));
+  for(const edge of primary)list.append(rows.get(edge));
+  const extra=[...rows.keys()].filter(edge=>!primary.includes(edge));
+  if(extra.length){
+    const more=document.createElement('details');more.className='native-reminder-more';
+    const summary=document.createElement('summary');summary.append(document.createTextNode('other reminders'));
+    const mark=document.createElement('i');mark.className='ti ti-chevron-down';mark.setAttribute('aria-hidden','true');summary.append(mark);
+    more.append(summary);
+    for(const edge of extra)more.append(rows.get(edge));
+    more.open=extra.some(edge=>(choices()[edge] || 'off')!=='off');
+    list.append(more);
+  }
+  const hint = document.createElement('p');hint.className = 'field-hint native-reminder-note';hint.textContent = 'Saved on this phone.';
+  box.append(list,hint);
+  box.querySelectorAll('select[data-reminder-edge]').forEach(nativeSyncReminderControl);
+  return box;
 }
 function renderNativeDetailReminders(h){
   document.getElementById('detail-native-reminders')?.remove();
@@ -283,7 +384,7 @@ function renderNativeDetailReminders(h){
   if(host){
     const section = document.createElement('details');section.className = 'detail-disclosure';section.id = 'detail-native-reminders';
     section.open = nativeReminderAnyOn(`item:${h.hid}`);
-    const summary = document.createElement('summary');summary.textContent = 'phone notifications & alarms';
+    const summary = document.createElement('summary');summary.textContent = 'reminders';
     section.append(summary);
     if(window.TingsNative.quiet && !isEventItem(h))section.append(nativeDndControl(`item:${h.hid}`,'DND during session'));
     section.append(h.source==='device' && h.calendarSeriesId ? nativeCalendarReminderScope(h) : nativeItemReminderControls(`item:${h.hid}`,h.name,{hideMissed:isEventItem(h) || isOpportunityHabit(h),meeting:isEventItem(h)}));
@@ -333,7 +434,17 @@ function nativeClearItemReminders(owner){
   if(typeof render === 'function')render();
   showToast('phone reminders off for this item', 2800);
 }
-function nativeMeetingLeadMinutes(choices){const n=Number(choices?.startLeadMinutes);return [0,5,10,15,30,60].includes(n)?n:0;}
+function nativeMeetingLeadMinutes(choices,second=false){
+  const n=Number(choices?.[second?'secondStartLeadMinutes':'startLeadMinutes']);
+  return NATIVE_EVENT_REMINDER_LEADS.some(([minutes])=>minutes===n)?n:second?1440:0;
+}
+function nativeDueReminderDays(choices){const n=Number(choices?.dueDaysBefore);return [0,1,2,7].includes(n)?n:0;}
+function nativeDueReminderMinute(choices){const n=choices?.dueMinute;return Number.isInteger(n) && n>=0 && n<1440?n:540;}
+// Calendar-day offsets retain the local clock across daylight-saving changes.
+function nativeReminderBefore(at,minutes){
+  if(minutes<1440)return at-minutes*60000;
+  const date=new Date(at);date.setDate(date.getDate()-minutes/1440);return date.getTime();
+}
 function nativeReminderLeadMinutes(choices){
   const minutes=Number(choices?.travelLeadMinutes);
   return [0,5,10,15,30,60].includes(minutes) ? minutes : 0;
@@ -405,8 +516,27 @@ function nativeReminderOccurrence(row,data,day,dataById = null){
 function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previousWeek = null,warningNow = now){
   prefs=nativeCalendarReminderPreferences(prefs,data);
   const events = new Map();
-  if(!prefs.enabled || !week || !Array.isArray(week.days))return [];
+  if(!prefs.enabled)return [];
   const dataById=new Map(data.filter(h=>!isCalendarIgnored(h,settings)).map(h=>[h.hid,h]));
+  // A deadline belongs to the task, independently of its suggested work slots.
+  for(const h of dataById.values()){
+    if(h.type!=='task' || isEventItem(h) || isTaskDone(h) || !Number.isFinite(h.dueDate))continue;
+    const owner=`item:${h.hid}`,dayKey=dateKey(h.dueDate),choices=nativeReminderChoices(prefs,owner,dayKey);
+    if(!['notification','alarm'].includes(choices.due))continue;
+    const daysBefore=nativeDueReminderDays(choices),minute=nativeDueReminderMinute(choices);
+    const date=new Date(h.dueDate);date.setDate(date.getDate()-daysBefore);date.setHours(Math.floor(minute/60),minute%60,0,0);
+    const desiredAt=date.getTime();
+    // A newly enabled due-today alert still helps after its chosen clock. Older
+    // advance alerts and past deadlines do not produce a burst of catch-ups.
+    const at=daysBefore===0 && dateKey(now)===dayKey ? Math.max(desiredAt,now+2000) : desiredAt;
+    if(at<=now || at>now+7*86400000)continue;
+    const key=`${owner}:Due:${dayKey}`;
+    events.set(key,{key,at,agendaAt:desiredAt,owner,dayKey,title:h.name || 'Task',
+      body:`Due ${new Date(h.dueDate).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}`,
+      reminderEdge:'due',delivery:choices.due,upNext:false,notificationGroup:key,
+      expiresAt:Math.max(at,desiredAt)+15*60000});
+  }
+  if(!week || !Array.isArray(week.days))return [...events.values()].sort((a,b)=>a.at-b.at || a.key.localeCompare(b.key));
   const todayBase=dayStart(now),forecast=week.dropForecast;
   const planKey=agendaForecastPlanKey(week,data);
   const validForecast=Boolean(forecast?.futureWeek && forecast.revision===week.forecastRevision
@@ -511,22 +641,27 @@ function nativeReminderEvents(week,data,settings,prefs,now = Date.now(),previous
           events.set(key,event);
         }
       }
-      for(const edge of ['Start','End']){
-        const agendaAt=Number(row[edge.toLowerCase()]);
-        const lead=edge==='Start' ? (kind==='travel' ? nativeReminderLeadMinutes(choices) : isEventItem(h) ? nativeMeetingLeadMinutes(choices) : 0) : 0;
-        const desiredAt=agendaAt-lead*60000;
+      const edgeTimes=new Set();
+      for(const edge of isEventItem(h) ? ['Start','StartSecond','End'] : ['Start','End']){
+        const isStart=edge!=='End',reminderEdge=edge==='StartSecond'?'startSecond':kind==='travel'?'travel'+edge:edge.toLowerCase();
+        const agendaAt=Number(row[isStart?'start':'end']);
+        const lead=isStart ? (kind==='travel' ? nativeReminderLeadMinutes(choices) : isEventItem(h) ? nativeMeetingLeadMinutes(choices,edge==='StartSecond') : 0) : 0;
+        const desiredAt=nativeReminderBefore(agendaAt,lead);
         // Enabling a warning after its lead window starts still warns before
         // departure; native delivery remembers that occurrence after a replan.
-        const at=lead>0 && edge==='Start' && agendaAt>now ? Math.max(desiredAt,now+2000) : desiredAt;
-        const mode = choices[kind === 'travel' ? 'travel' + edge : edge.toLowerCase()] || 'off';
+        const at=lead>0 && isStart && agendaAt>now ? Math.max(desiredAt,now+2000) : desiredAt;
+        const mode = choices[reminderEdge] || 'off';
         if(!['notification','alarm'].includes(mode) || !Number.isFinite(at) || at <= now || at > now + 7*86400000)continue;
+        if(isStart && edgeTimes.has(at))continue;
+        if(isStart)edgeTimes.add(at);
         const key = `${owner}:${kind}:${identity}:${edge}`;
         const movableStart=edge==='Start' && (kind==='travel' ? !row.reminderFixedStart && destinationHabit && !(destinationHabit.type==='task' && !destinationHabit.breakable && Number.isFinite(destinationHabit.eventTime)) : h && !(h.type==='task' && !h.breakable && Number.isFinite(h.eventTime)) && row.hard!==true && row.kind!=='scheduled');
         const clock=new Date(agendaAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
         events.set(key,{key,at,agendaAt,title,owner,
           upNext:Boolean(movableStart),upNextBody:`Up next · ${clock}`,notificationGroup:`${owner}:${reminderDayKey}:${kind === 'travel' ? 'travel'+edge : edge.toLowerCase()}`,
-          expiresAt:edge==='Start' && kind!=='travel' ? Math.max(at,Number(row.end))+15*60000 : agendaAt+15*60000,
-          dayKey:reminderDayKey,...(completion ? {completion} : {}),reminderEdge:kind === 'travel' ? 'travel' + edge : edge.toLowerCase(),delivery:mode,body:`${kind === 'travel' ? edge==='Start' ? 'Leave' : 'Arrive' : edge==='Start' ? 'Start' : 'End'} · ${clock}`});
+          expiresAt:isStart && kind!=='travel' ? Math.max(at,Number(row.end))+15*60000 : agendaAt+15*60000,
+          dayKey:reminderDayKey,...(completion ? {completion} : {}),reminderEdge,delivery:mode,
+          body:isEventItem(h) && isStart && lead>0 ? `Starts · ${new Date(agendaAt).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})} · ${clock}` : `${kind === 'travel' ? isStart ? 'Leave' : 'Arrive' : isStart ? 'Start' : 'End'} · ${clock}`});
       }
     }
   }
@@ -906,13 +1041,13 @@ function nativeNotificationSoundControls(){
   if(!window.TingsNative?.isNative || !api)return null;
   const host=document.createElement('div');host.id='native-notification-sounds';
   const label=document.createElement('label');label.className='settings-sublabel';label.htmlFor='native-notification-sound';label.textContent='default notification sound';
-  const select=document.createElement('select');select.className='mini-select';select.id=label.htmlFor;select.disabled=true;
+  const select=document.createElement('select');select.id=label.htmlFor;select.disabled=true;
   const hint=document.createElement('p');hint.className='field-hint';
   hint.textContent='Calm is the default for habit, task, busy-time and travel notifications. The five prayer samples use Warm, even if renamed. Preview uses notification volume. Ringing alarms use your phone’s alarm tone.';
   const status=document.createElement('p');status.className='field-hint';status.setAttribute('role','status');
   const actions=document.createElement('div');actions.className='settings-actions';
-  const preview=document.createElement('button');preview.type='button';preview.className='mini-text-btn';preview.textContent='Preview';preview.disabled=true;
-  const stop=document.createElement('button');stop.type='button';stop.className='mini-text-btn';stop.textContent='Stop preview';
+  const preview=document.createElement('button');preview.type='button';preview.className='btn';preview.textContent='Preview';preview.disabled=true;
+  const stop=document.createElement('button');stop.type='button';stop.className='btn';stop.textContent='Stop preview';
   const phone=document.createElement('button');phone.type='button';phone.className='mini-text-btn';phone.textContent='Choose phone sound';
   const file=document.createElement('button');file.type='button';file.className='mini-text-btn';file.textContent='Choose audio file';
   const android=document.createElement('button');android.type='button';android.className='mini-text-btn';android.textContent='Android sound settings';
@@ -948,7 +1083,8 @@ function nativeNotificationSoundControls(){
   preview.addEventListener('click',async()=>{try{await api.preview();}catch(error){showToast(error.message);}});
   stop.addEventListener('click',()=>void api.stopPreview().catch(()=>{}));
   android.addEventListener('click',async()=>{try{await api.stopPreview();await api.openSettings();}catch(error){showToast(error.message);}});
-  actions.append(preview,stop,phone,file,android);host.append(label,select,actions,hint,status);
+  const primary=document.createElement('div');primary.className='native-sound-actions';
+  primary.append(preview,stop);actions.append(phone,file,android);host.append(label,select,primary,actions,hint,status);
   const resume=()=>{if(!document.hidden)void refresh();};
   document.addEventListener('visibilitychange',resume);
   document.getElementById('settings-reminders-head')?.addEventListener('click',()=>queueMicrotask(()=>void refresh()));
@@ -1051,7 +1187,6 @@ function initNativeReminders(){
       catch(error){showToast(error.message);}
     });help.append(hint);actions.append(fullScreen,alarmTest);
   }
-  toggle.after(status);
   if(window.TingsNative.background){
     const background=document.createElement('button');background.id='native-background-toggle';background.type='button';
     background.className='setting-toggle setting-switch compact-toggle';background.setAttribute('aria-pressed','false');
@@ -1088,7 +1223,7 @@ function initNativeReminders(){
     }));
   }
   if(window.TingsNative.quiet)panel.append(nativeCatchupControls());
-  panel.append(tools);
+  panel.append(status,tools);
   host.replaceChildren(panel);
   nativeEnsureBusyReminderIds();
   renderBlockedTimeControls();
@@ -1150,7 +1285,7 @@ function reconcileNativeQuiet(){
   return nativeQuietQueue.catch(error=>{console.warn('Quiet schedule reconciliation failed',error);});
 }
 function nativeDndControl(owner,name){
-  const label=document.createElement('label');label.className='planning-field';
+  const label=document.createElement('label');label.className='native-dnd-field';
   const input=document.createElement('input');input.type='checkbox';input.checked=nativeReminderPreferences().items?.[owner]?.dnd===true;
   input.setAttribute('aria-label',name);
   input.title='Needs Do Not Disturb access. Your other exceptions stay. Sessions still work without it.';
@@ -1174,9 +1309,11 @@ function nativeCatchupControls(){
   for(const kind of ['daily','weekly']){
     const weekly=kind==='weekly',rule=nativeCatchupRule(nativeReminderPreferences()[kind],weekly);
     const row=document.createElement('div');row.className='settings-control-block';
-    const label=document.createElement('label');label.className='planning-field';label.textContent=titles[kind];
-    const toggle=document.createElement('input');toggle.type='checkbox';toggle.checked=rule.enabled;toggle.setAttribute('aria-label',titles[kind]);label.append(toggle);row.append(label);
-    const fields=document.createElement('div');fields.className='planning-field';
+    const label=document.createElement('label');label.className='native-catchup-toggle';
+    const title=document.createElement('span');title.textContent=titles[kind];
+    const toggle=document.createElement('input');toggle.type='checkbox';toggle.checked=rule.enabled;toggle.setAttribute('aria-label',titles[kind]);
+    label.append(title,toggle);row.append(label);
+    const fields=document.createElement('div');fields.className='native-catchup-fields'+(weekly?' has-day':'');
     const time=document.createElement('input');time.type='time';time.value=minutesToTimeInput(rule.minute);time.setAttribute('aria-label',`${titles[kind]} time`);
     const day=document.createElement('select');day.className='mini-select';day.setAttribute('aria-label','Weekly review day');
     if(weekly){for(const [i,name] of ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].entries()){const option=document.createElement('option');option.value=String(i);option.textContent=name;day.append(option);}day.value=String(rule.day);fields.append(day);}

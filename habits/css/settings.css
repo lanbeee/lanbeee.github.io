@@ -122,22 +122,89 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .settings-sheet{
 }
 .settings-actions .mini-text-btn{min-height:44px;white-space:normal;line-height:1.35;}
 .native-background-row,.native-lock-screen-row{margin-top:16px;}
-#native-reminder-controls .settings-actions{flex-direction:column;align-items:stretch;gap:0;}
-#native-reminder-controls .settings-actions .mini-text-btn{text-align:left;}
+/* Phone reminder settings: one full-width control per row, with navigation
+   actions as a list instead of a stack of stretched pills. */
+#native-notification-sounds{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+#native-notification-sounds .settings-sublabel{margin:0;}
+#native-notification-sound{
+  max-width:none;width:100%;min-height:44px;box-sizing:border-box;
+  font-size:14px;font-weight:650;color:var(--text);
+}
+#native-notification-sounds .native-sound-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+#native-notification-sounds .native-sound-actions .btn{min-height:40px;padding:8px 10px;font-size:13px;}
+#native-notification-sounds .native-sound-actions .btn:disabled{opacity:0.45;}
+#native-notification-sounds .field-hint{margin:0;}
+#native-notification-sounds .settings-actions{border-top:0.5px solid var(--border);margin-top:2px;}
+#native-reminder-controls .settings-actions{
+  flex-direction:column;align-items:stretch;gap:0;
+}
+#native-reminder-controls .settings-actions .mini-text-btn{
+  width:100%;border:0;border-radius:0;background:transparent;box-shadow:none;
+  border-bottom:0.5px solid var(--border);text-align:left;padding:10px 2px;
+  min-height:44px;font-size:13.5px;font-weight:650;color:var(--text);
+}
+#native-reminder-controls .settings-actions .mini-text-btn:last-child{border-bottom:0;}
+#native-reminder-controls .settings-actions .mini-text-btn:active{background:var(--bg);}
+#native-reminder-controls .settings-actions .mini-text-btn:disabled{opacity:0.45;}
+#native-reminder-status{margin:12px 0 0;}
+#native-catchup-controls{
+  display:flex;flex-direction:column;gap:14px;margin-top:8px;padding-top:12px;
+  border-top:0.5px solid var(--border);
+}
+#native-catchup-controls .settings-control-block{display:flex;flex-direction:column;gap:8px;}
+#native-catchup-controls .native-catchup-toggle{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:44px;margin:0;color:var(--text);font-size:13px;font-weight:650;cursor:pointer;
+}
+#native-catchup-controls .native-catchup-toggle span{min-width:0;}
+#native-catchup-controls .native-catchup-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;}
+#native-catchup-controls .native-catchup-fields.has-day{grid-template-columns:minmax(0,1.15fr) minmax(128px,0.85fr);}
+#native-catchup-controls input[type="time"],
+#native-catchup-controls select{
+  box-sizing:border-box;width:100%;max-width:none;height:44px;min-height:44px;margin:0;
+  padding:0 12px;border-radius:var(--radius-sm);font-size:15px;font-weight:650;color:var(--text);
+}
+#native-catchup-controls .field-hint{margin:0;}
+.planning-grid.native-reminder-grid,
+.detail-sheet .detail-page .planning-grid.native-reminder-grid{
+  grid-template-columns:minmax(0,1fr);gap:10px;margin-bottom:8px;
+}
+.native-reminder-grid .mini-select,
+.native-reminder-grid .plan-time-input,
+#detail-native-reminders .planning-field .mini-select{
+  max-width:none;width:100%;min-height:44px;height:44px;box-sizing:border-box;
+  font-size:14px;font-weight:650;color:var(--text);
+}
+#detail-native-reminders .habit-options-block > .settings-sublabel{display:none;}
+.native-dnd-field{
+  display:grid;grid-template-columns:minmax(0,1fr) 22px;align-items:center;column-gap:12px;
+  min-height:48px;margin:2px 0 8px;color:var(--text);font-size:13px;font-weight:650;cursor:pointer;
+}
+.native-dnd-field small{
+  display:block;margin:2px 0 0;max-width:none;font-size:12px;font-weight:500;line-height:1.35;color:var(--text3);
+}
+@container settings-stack (max-width:300px){
+  #native-catchup-controls .native-catchup-fields.has-day{grid-template-columns:minmax(0,1fr);}
+}
 /* Keep native inputs and their keyboard behavior, with the app's own palette. */
-.settings-sheet input[type="checkbox"]{
+.settings-sheet input[type="checkbox"],
+.native-dnd-field input[type="checkbox"]{
   -webkit-appearance:none;appearance:none;display:inline-grid;place-content:center;
-  width:22px;height:22px;min-width:22px;flex:0 0 22px;margin:0;
+  width:22px;height:22px;min-width:22px;flex:0 0 22px;margin:0;justify-self:end;
   border:1px solid var(--border2);border-radius:7px;background:var(--bg);
   color:var(--bg);cursor:pointer;vertical-align:middle;
 }
-.settings-sheet input[type="checkbox"]::after{
+.settings-sheet input[type="checkbox"]::after,
+.native-dnd-field input[type="checkbox"]::after{
   content:"";width:5px;height:9px;border:solid currentColor;border-width:0 2px 2px 0;
   transform:translateY(-1px) rotate(45deg) scale(0);
 }
-.settings-sheet input[type="checkbox"]:checked{background:var(--text);border-color:var(--text);}
-.settings-sheet input[type="checkbox"]:checked::after{transform:translateY(-1px) rotate(45deg);}
-.settings-sheet input[type="checkbox"]:focus-visible{outline:2px solid var(--text);outline-offset:3px;}
+.settings-sheet input[type="checkbox"]:checked,
+.native-dnd-field input[type="checkbox"]:checked{background:var(--text);border-color:var(--text);}
+.settings-sheet input[type="checkbox"]:checked::after,
+.native-dnd-field input[type="checkbox"]:checked::after{transform:translateY(-1px) rotate(45deg);}
+.settings-sheet input[type="checkbox"]:focus-visible,
+.native-dnd-field input[type="checkbox"]:focus-visible{outline:2px solid var(--text);outline-offset:3px;}
 .settings-sheet .perday-closed{min-height:44px;gap:6px;cursor:pointer;}
 .settings-sheet select{min-height:40px;}
 .settings-sublabel{

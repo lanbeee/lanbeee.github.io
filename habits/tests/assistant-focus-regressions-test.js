@@ -88,7 +88,7 @@ function assert(ok, message){
             scheduleOptions:'Monday from 6pm to 8pm',scheduleLinks:'after Meeting',topics:'Fitness',pinned:'yes',snoozedUntil:'tomorrow',sharedDisplay:'view',links:'https://example.com',
             appointmentRepeat:'weekly',appointmentStartDate:'2026-11-09',appointmentWeekdays:'Monday',appointmentUntil:'2026-12-01',appointmentStartMinute:'9am',
             exceptionTime:'10am',exceptionDuration:'30 minutes',exceptionEmoji:'🌟',exceptionColor:'blue',exceptionCancelled:'cancel',exceptionReset:'reset',
-            reminderDnd:'yes',reminderStart:'alarm',reminderEnd:'off',reminderTravelStart:'notification',reminderTravelEnd:'off',reminderMissed:'notification',
+            reminderDue:'notification',reminderDueDays:'1',reminderDueTime:'9am',reminderSecond:'alarm',reminderSecondLead:'1440',reminderDnd:'yes',reminderStart:'alarm',reminderEnd:'off',reminderTravelStart:'notification',reminderTravelEnd:'off',reminderMissed:'notification',
             reminderTravelLead:'15',reminderStartLead:'15',reminderMissedLead:'15',reminderReset:'reset'};
           const failed=ASSISTANT_FOCUS_FIELDS.flatMap(field=>{
             const value=values[field.id], parsed=value && assistantFocusNormalize(field.id,value,s);

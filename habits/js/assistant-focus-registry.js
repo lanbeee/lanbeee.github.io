@@ -82,6 +82,11 @@ const ASSISTANT_FOCUS_FIELDS = [
 
   {id:'reminderDnd', label:'Do Not Disturb during session', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false, unless:'zero'},
   {id:'reminderStart', label:'Start reminder', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:false},
+  {id:'reminderSecond', label:'Second event reminder', family:'reminders', kinds:['event'], persist:'reminders', clear:false},
+  {id:'reminderSecondLead', label:'Second event lead', family:'reminders', kinds:['event'], persist:'reminders', clear:false},
+  {id:'reminderDue', label:'Due-date reminder', family:'reminders', kinds:['task'], persist:'reminders', clear:false},
+  {id:'reminderDueDays', label:'Due-date reminder day', family:'reminders', kinds:['task'], persist:'reminders', clear:false},
+  {id:'reminderDueTime', label:'Due-date reminder time', family:'reminders', kinds:['task'], persist:'reminders', clear:false},
   {id:'reminderEnd', label:'End reminder', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:false},
   {id:'reminderTravelStart', label:'Travel departure reminder', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false},
   {id:'reminderTravelEnd', label:'Travel arrival reminder', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false},

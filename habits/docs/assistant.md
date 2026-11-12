@@ -28,7 +28,7 @@ so a follow-up can replace an earlier value. A completeness pass can recover
 another field in a family already processed. A bounded model menu handles
 unlabeled groups; routing text cannot itself
 supply an executable value. Invalid or missing values stay unresolved. Clarification
-choices stage real values. Reminder previews show the actual mode and lead time.
+choices stage real values. Reminder previews show the actual mode and lead time. Task deadline reminders expose delivery mode, days before due (0, 1, 2, or 7), and local clock time. Events expose a second delivery mode and lead time; both event leads support the same minutes, hours, and calendar days as the manual controls. “Notify me 1 day before the due date at 9am” and “Set the first reminder to notification 1 hour before, and set the second reminder to alarm 1 day before” stage those settings together. Event date scope, reset, Edit, Save, and undo include the new fields. Unsupported offsets ask instead of rounding.
 Save writes the staged item. Edit opens the detail editor with those changes
 filled in and leaves them unsaved until the detail save.
 

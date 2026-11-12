@@ -192,6 +192,12 @@ const cases=[
   ['emojiBgColor','Set color to blue','blue',{kind:'event',scope:'occurrence',covers:['exceptionColor']}],
   ['exceptionCancelled','Cancel this occurrence',true,{kind:'event',scope:'occurrence'}],
   ['exceptionReset','Reset this occurrence',true,{kind:'event',scope:'occurrence',exception:{startMinute:660}}],
+  ['reminderDue','Set the due-date reminder to notification','notification',{id:'deadline-mode',native:true,kind:'task'}],
+  ['reminderDueDays','Remind me 1 day before the due date',1,{id:'deadline-day',native:true,kind:'task',extra:{reminderDue:'notification'}}],
+  ['reminderDueTime','Set the due-date reminder time to 9am',540,{id:'deadline-time',native:true,kind:'task'}],
+  ['reminderSecond','Set the second reminder to alarm','alarm',{id:'second-alert-mode',native:true,kind:'event'}],
+  ['reminderSecondLead','Set the second reminder to one day before',1440,{id:'second-alert-day',native:true,kind:'event'}],
+  ['reminderStartLead','Set the first event reminder to two hours before',120,{id:'first-alert-two-hours',native:true,kind:'event'}],
   ['reminderStart','Set start reminder to alarm','alarm',{native:true}],
   ['reminderEnd','Set end reminder to off','off',{native:true}],
   ['reminderTravelStart','Set travel start reminder to notification','notification',{native:true}],
@@ -620,7 +626,7 @@ const guards=[
   {field:'allowedOrdinalWeekdays',kind:'habit',prompt:'Only on the first weekday of every month',id:'calendar-guard-first-weekday',selectAll:true},
   {field:'allowedMonthDays',kind:'habit',prompt:'Only from the 5th to the 1st of the month',id:'calendar-guard-backwards',selectAll:true},
   {field:'earlyWindowDays',kind:'habit',prompt:'Allow a day and a half early'},
-  {field:'reminderStartLead',kind:'event',prompt:'Remind me two hours before start',native:true},
+  {field:'reminderStartLead',kind:'event',prompt:'Remind me three hours before start',native:true},
   {field:'conditionRadiusM',kind:'habit',prompt:'Set radius to 300 feet',seed:{repeatMode:'opportunity'}},
   {field:'durationMinutes',kind:'habit',prompt:'Make it -30 minutes long'},
   {field:'durationMinutes',kind:'habit',prompt:'Make it thirteen hours long'},
@@ -719,7 +725,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         const persisted=commit?.ok&&JSON.stringify(r)===JSON.stringify(expectedSaved)&&JSON.stringify(saved.logs)===JSON.stringify(JSON.parse(before)[0].logs)
           &&persistedKeys.every(key=>JSON.stringify(saved[key])===JSON.stringify(expectedSaved[key]));
         const occurrenceOK=test.scope!=='occurrence'||(JSON.stringify(saved?.appointment?.exceptions['2026-11-09']||null)===JSON.stringify(r.appointment.exceptions['2026-11-09']||null)&&saved?.durationMinutes===30&&saved?.appointment.startMinute===540);
-        const reminderKeys={reminderDnd:'dnd',reminderStart:'start',reminderEnd:'end',reminderTravelStart:'travelStart',reminderTravelEnd:'travelEnd',reminderMissed:'missed',reminderTravelLead:'travelLeadMinutes',reminderStartLead:'startLeadMinutes',reminderMissedLead:'missedLeadMinutes'};
+        const reminderKeys={reminderDue:'due',reminderDueDays:'dueDaysBefore',reminderDueTime:'dueMinute',reminderSecond:'startSecond',reminderSecondLead:'secondStartLeadMinutes',reminderDnd:'dnd',reminderStart:'start',reminderEnd:'end',reminderTravelStart:'travelStart',reminderTravelEnd:'travelEnd',reminderMissed:'missed',reminderTravelLead:'travelLeadMinutes',reminderStartLead:'startLeadMinutes',reminderMissedLead:'missedLeadMinutes'};
         const reminders=JSON.parse(localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY)||'null')?.items?.['item:target'];
         const remindersOK=!test.native||(test.field==='reminderReset'
           ?reminders&&Object.values(reminderKeys).filter(key=>key!=='dnd').every(key=>!Object.hasOwn(reminders,key))&&JSON.stringify(reminders.dates)===JSON.stringify(test.reminderSeed.dates)

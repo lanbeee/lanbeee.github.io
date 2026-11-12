@@ -38,7 +38,7 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   organization:[['topics','topics'],['pinned','pinned'],['snoozedUntil','snooze'],['sharedDisplay','display'],['links','links']],
   event:[['appointmentRepeat','repeat'],['appointmentStartDate','date'],['appointmentWeekdays','weekdays'],['appointmentUntil','until'],['appointmentStartMinute','time']],
   exception:[['exceptionTime','time'],['exceptionDuration','duration'],['exceptionEmoji','emoji'],['exceptionColor','color'],['exceptionCancelled','cancelled'],['exceptionReset','reset']],
-  reminders:[['reminderDnd','dnd'],['reminderStart','start'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
+  reminders:[['reminderDnd','dnd'],['reminderStart','start'],['reminderSecond','second'],['reminderSecondLead','secondLead'],['reminderDue','due'],['reminderDueDays','dueDays'],['reminderDueTime','dueTime'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
 };
 
 function assistantFocusPackTool(name, description, properties, required){
@@ -357,6 +357,8 @@ function assistantFocusReminderFieldGrounded(fieldId, phrase){
   if(fieldId === 'reminderTravelEnd')return /\b(?:arrival|arrive)\b/.test(text) || /\btravel\b/.test(text) && /\bend\b/.test(text);
   if(fieldId === 'reminderMissed' || fieldId === 'reminderMissedLead')return /\b(?:missed|drop|warning)\b/.test(text);
   if(fieldId === 'reminderTravelLead')return /\b(?:travel|depart(?:ure)?)\b/.test(text) && /\b(?:lead|before)\b/.test(text);
+  if(['reminderDue','reminderDueDays','reminderDueTime'].includes(fieldId))return /\b(?:due|deadline)\b/.test(text);
+  if(fieldId==='reminderSecond' || fieldId==='reminderSecondLead')return /\b(?:second|2nd|additional)\b/.test(text);
   if(fieldId === 'reminderStartLead')return /\b(?:lead|before)\b/.test(text) && !/\b(?:travel|depart(?:ure)?|missed|drop)\b/.test(text);
   if(fieldId === 'reminderReset')return /\b(?:usual|default|reset)\b/.test(text);
   if(fieldId === 'reminderEnd')return /\b(?:end|finish)\b/.test(text) && !/\btravel\b/.test(text);
