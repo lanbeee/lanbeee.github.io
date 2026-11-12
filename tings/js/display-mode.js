@@ -29,6 +29,13 @@ function noteReplicaPull(reason, details){
   if(typeof tingsShareLog === 'function') tingsShareLog(`replica.pull.${reason}`, _replicaLastPull);
 }
 
+// Pairing grants clone access before the first library has been installed.
+// Saves in that interval must already queue edits; waiting for replicaMode
+// lets the first poll erase imports made just after pairing.
+function replicaDeviceIsClone(enrolled){
+  return Boolean(enrolled && (enrolled.replicaMode || enrolled.syncMode) === 'clone');
+}
+
 function replicaEnrollmentActive(){
   const enrolled = replicaEnrollment();
   return Boolean(enrolled && enrolled.feedId && enrolled.deviceCredential && enrolled.contentKey);
@@ -144,7 +151,7 @@ function replicaActualLogs(habit){
 function replicaDeviceBlocksCompletion(hid){
   if(!replicaDisplayRequested()) return false;
   const enrolled = replicaEnrollment();
-  if(!enrolled || enrolled.replicaMode === 'clone') return false;
+  if(!enrolled || replicaDeviceIsClone(enrolled)) return false;
   const binding = enrolled.replicaRows && hid && enrolled.replicaRows[hid];
   return Boolean(binding && binding.access === 'view');
 }
@@ -279,8 +286,13 @@ function applyReplicaSnapshotReceipts(enrolled,replica){
   }
   const receipts = new Map((Array.isArray(replica && replica.definitionReceipts) ? replica.definitionReceipts : [])
     .filter(item=>item && item.operationId).map(item=>[item.operationId,item]));
+  const definitions=new Map((Array.isArray(replica?.items) ? replica.items : [])
+    .filter(item=>item?.habit?.hid).map(item=>[item.habit.hid,item.definitionHash || replicaHabitDefinitionHash(normalize([item.habit])[0])]));
   for(const [hid,pending] of Object.entries(pendingDefinitions)){
-    if(pending && receipts.has(pending.operationId)){
+    // Receipts are bounded. A large calendar import can outlive that receipt
+    // window; the matching published definition is durable acceptance too.
+    const published=pending?.action==='upsert' && definitions.has(hid) && definitions.get(hid)===pending.definitionHash;
+    if(pending && (receipts.has(pending.operationId) || published)){
       delete pendingDefinitions[hid];
       acknowledgedIds.add(pending.operationId);
     }
@@ -298,7 +310,7 @@ function replicaCompletionBinding(enrolled,hid){
   const existing = enrolled.replicaRows[hid];
   if(existing && existing.access === 'view') return existing;
   if(existing && /^[0-9a-f]{16}$/.test(String(existing.rowId || ''))) return existing;
-  if(enrolled.replicaMode !== 'clone') return existing || null;
+  if(!replicaDeviceIsClone(enrolled)) return existing || null;
   const pending = enrolled.replicaPendingDefinitions && enrolled.replicaPendingDefinitions[hid];
   const fromPending = String(pending && pending.rowId || '');
   const fromExisting = String(existing && existing.rowId || '');
@@ -375,7 +387,7 @@ function beforeReplicaDeviceDataSave(previous,next){
   if(!replicaDisplayRequested()) return next;
   const enrolled = replicaEnrollment();
   if(!enrolled || !enrolled.replicaRows) return next;
-  if(enrolled.replicaMode === 'clone') return stampReplicaCompletionIds(previous,next,enrolled);
+  if(replicaDeviceIsClone(enrolled)) return stampReplicaCompletionIds(previous,next,enrolled);
   const prior = new Map((Array.isArray(previous) ? previous : []).filter(h=>h && h.hid).map(h=>[h.hid,h]));
   const output = [];
   for(const candidate of (Array.isArray(next) ? next : [])){
@@ -419,7 +431,7 @@ function onReplicaDeviceDataSaved(previous,next){
   enrolled.replicaPendingDefinitions = pendingDefinitions;
   enrolled.replicaPendingCompletions = pendingCompletions;
   const nextById = new Map((Array.isArray(next) ? next : []).filter(h=>h && h.hid).map(h=>[h.hid,h]));
-  if(enrolled.replicaMode === 'clone'){
+  if(replicaDeviceIsClone(enrolled)){
     const previousById = new Map((Array.isArray(previous) ? previous : []).filter(h=>h && h.hid).map(h=>[h.hid,h]));
     for(const [hid,habit] of nextById){
       const prior = previousById.get(hid);
@@ -479,6 +491,36 @@ function onReplicaDeviceDataSaved(previous,next){
   void flushReplicaOutbox();
 }
 
+async function sendReplicaOperation(enrolled,op,revision){
+  const isDefinition = op.kind === 'definition';
+  const payload = isDefinition
+    ? {
+        schemaVersion:1,action:op.action,operationId:op.operationId,
+        rowId:op.rowId,hid:op.hid,habit:op.action === 'upsert' ? op.habit : undefined,
+        baseDefinitionHash:op.baseDefinitionHash || ''
+      }
+    : {
+        schemaVersion:1,action:'complete',operationId:op.operationId,rowId:op.rowId,
+        hid:op.hid,minutes:op.minutes || null,
+        occurrenceKey:op.occurrenceKey || '',
+        scheduleOptionId:op.scheduleOptionId || '',
+        scheduledDay:op.scheduledDay || '',
+        start:Number(op.start) || null,
+        completedAt:Number(op.completedAt) || Number(op.createdAt) || Date.now()
+      };
+  const encryptionKey = isDefinition ? enrolled.replicaKey : enrolled.contentKey;
+  const envelope = await shareEncrypt(encryptionKey,payload,{
+    schemaVersion:SHARE_SCHEMA_VERSION,
+    recordKind:isDefinition ? 'agenda_definition' : 'agenda_completion',
+    objectId:enrolled.feedId,revision,operationId:op.operationId,logId:op.rowId
+  });
+  await shareFetch(`/v1/agendas/${enrolled.feedId}/${isDefinition ? 'definitions' : 'completions'}`,{
+    method:'POST',credential:enrolled.deviceCredential,
+    body:isDefinition ? {definition:envelope} : {completion:envelope},
+    timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
+  });
+}
+
 async function flushReplicaOutbox(){
   if(_replicaFlushBusy || navigator.onLine === false) return;
   let enrolled = replicaEnrollment();
@@ -496,36 +538,14 @@ async function flushReplicaOutbox(){
       const currentBinding = enrolled.replicaRows && enrolled.replicaRows[op.hid];
       if(currentBinding && currentBinding.rowId) op.rowId = currentBinding.rowId;
       if(!Number.isInteger(revision) || revision < 1 || !/^[0-9a-f]{16}$/.test(String(op.rowId || ''))) break;
-      const isDefinition = op.kind === 'definition';
-      const payload = isDefinition
-        ? {
-            schemaVersion:1,action:op.action,operationId:op.operationId,
-            rowId:op.rowId,hid:op.hid,habit:op.action === 'upsert' ? op.habit : undefined,
-            baseDefinitionHash:op.baseDefinitionHash || ''
-          }
-        : {
-            schemaVersion:1,action:'complete',operationId:op.operationId,rowId:op.rowId,
-            hid:op.hid,minutes:op.minutes || null,
-            occurrenceKey:op.occurrenceKey || '',
-            scheduleOptionId:op.scheduleOptionId || '',
-            scheduledDay:op.scheduledDay || '',
-            start:Number(op.start) || null,
-            completedAt:Number(op.completedAt) || Number(op.createdAt) || Date.now()
-          };
-      const encryptionKey = isDefinition ? enrolled.replicaKey : enrolled.contentKey;
-      const envelope = await shareEncrypt(encryptionKey,payload,{
-        schemaVersion:SHARE_SCHEMA_VERSION,
-        recordKind:isDefinition ? 'agenda_definition' : 'agenda_completion',
-        objectId:enrolled.feedId,revision,operationId:op.operationId,logId:op.rowId
-      });
       try{
-        await shareFetch(`/v1/agendas/${enrolled.feedId}/${isDefinition ? 'definitions' : 'completions'}`,{
-          method:'POST',credential:enrolled.deviceCredential,
-          body:isDefinition ? {definition:envelope} : {completion:envelope},
-          timeoutMs:REPLICA_DISPLAY_TIMEOUT_MS
-        });
+        await sendReplicaOperation(enrolled,op,revision);
       }catch(error){
-        if(error && (error.status === 413 || error.status === 404 || error.status === 429)){
+        if(error && error.status === 429){
+          updateReplicaSyncStatus('changes queued · will retry');
+          break;
+        }
+        if(error && (error.status === 413 || error.status === 404)){
           skipped.add(op.operationId);
           updateReplicaSyncStatus('offline · changes queued');
           continue;
@@ -1115,7 +1135,7 @@ function replicaOwnOperationIds(enrolled){
   return ids;
 }
 
-async function applyReplicaLiveCompletions(enrolled,records){
+async function applyReplicaLiveCompletions(enrolled,records,opts = {}){
   if(!enrolled || !enrolled.contentKey) return false;
   const own = replicaOwnOperationIds(enrolled);
   const liveIds = Array.isArray(enrolled.replicaLiveOperationIds) ? enrolled.replicaLiveOperationIds.slice() : [];
@@ -1185,7 +1205,7 @@ async function applyReplicaLiveCompletions(enrolled,records){
     changed = true;
   }
   if(!changed){
-    await acknowledgeReplicaOperations(enrolled,acknowledged);
+    if(opts.acknowledge !== false)await acknowledgeReplicaOperations(enrolled,acknowledged);
     return false;
   }
   enrolled.replicaLiveOperationIds = [...new Set(liveIds)].filter(id=>/^[0-9a-f]{32}$/.test(id)).slice(-100);
@@ -1197,7 +1217,7 @@ async function applyReplicaLiveCompletions(enrolled,records){
     try{ refreshOpenViews(); }
     catch(_){ /* Local logs already saved; the next render still shows them. */ }
   }
-  await acknowledgeReplicaOperations(enrolled,acknowledged);
+  if(opts.acknowledge !== false)await acknowledgeReplicaOperations(enrolled,acknowledged);
   return true;
 }
 
@@ -1217,6 +1237,7 @@ async function acknowledgeReplicaOperations(enrolled,operationIds){
 }
 
 function mountReplicaDisplayMode(){
+  if(window.TingsNative?.isHeadless)return;
   const enrolled = replicaEnrollment();
   if(!replicaEnrollmentActive() && !replicaDisplayQueryRequested()) return;
   if(!enrolled || !enrolled.deviceCredential){

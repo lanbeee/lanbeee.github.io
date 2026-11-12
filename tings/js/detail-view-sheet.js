@@ -23,7 +23,7 @@ function paintDetailFields(h){
   if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
   $('detail-name').textContent = h.name;
   $('detail-sub').textContent = detailHeaderLine(h);
-  $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
+  $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${isEventItem(h)?' event-card':''}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
   $('detail-head-card').style.setProperty('--card-accent',accent);
   $('detail-head-card').style.setProperty('--card-priority',priorityColor(effectivePriority(h)));
   $('detail-about').textContent = aboutText(h);
@@ -37,6 +37,8 @@ function paintDetailFields(h){
   $('detail-condition-radius').value = opportunityRadius(h);
   if($('detail-times'))$('detail-times').value = rhythmParts(h.target || 7).times;
   $('detail-pinned').setAttribute('aria-pressed',h.pinned ? 'true' : 'false');
+  $('detail-tap-session').setAttribute('aria-pressed',h.tapStartsSession ? 'true' : 'false');
+  $('detail-tap-session').closest('label').hidden = isEventItem(h) || h.type === 'zero';
   if(typeof syncDetailSnoozeAction === 'function')syncDetailSnoozeAction(h);
   setDetailSharedDisplayMode(sharedDisplayModeForHabit(h));
   $('detail-duration').value = h.durationMinutes || DEFAULT_DURATION_MINUTES;
@@ -57,6 +59,8 @@ function paintDetailFields(h){
   if($('detail-show-weather'))$('detail-show-weather').setAttribute('aria-pressed',h.showWeather ? 'true' : 'false');
   if($('detail-show-weather-location'))$('detail-show-weather-location').setAttribute('aria-pressed',h.showWeatherAtLocation ? 'true' : 'false');
   if(typeof syncWeatherHabitLocationUi === 'function')syncWeatherHabitLocationUi();
+  $('detail-ignore-occurrence').hidden=!calendarIgnoreIdentity(h);
+  $('detail-ignore-series').hidden=!calendarIgnoreIdentity(h,'series');
   renderScheduleChips('detail',h);
   renderScheduleLinkEditors(h);
   renderHabitScheduleOptions(h);
@@ -132,8 +136,10 @@ function detailTuneSnapshot(h){
     links:normalizeLinks(h.links),
     allowedWeekdays:normalizeAllowedWeekdays(h.allowedWeekdays),
     allowedMonthDays:normalizeAllowedMonthDays(h.allowedMonthDays),
+    allowedOrdinalWeekdays:normalizeOrdinalWeekdays(h.allowedOrdinalWeekdays),
     preferredWeekdays:normalizeAllowedWeekdays(h.preferredWeekdays),
     preferredMonthDays:normalizeAllowedMonthDays(h.preferredMonthDays),
+    preferredOrdinalWeekdays:normalizeOrdinalWeekdays(h.preferredOrdinalWeekdays),
     allowedTimeStart:h.allowedTimeStart ?? null,
     allowedTimeEnd:h.allowedTimeEnd ?? null,
     allowedTimeFixedStart:h.allowedTimeFixedStart === true,
@@ -162,6 +168,7 @@ function detailTuneSnapshot(h){
     minChunkMinutes:h.minChunkMinutes || DEFAULT_MIN_CHUNK_MINUTES,
     minGapMinutes:clampMinGapMinutes(h.minGapMinutes),
     timerAutoStopMinutes:h.timerAutoStopMinutes ?? null,
+    tapStartsSession:Boolean(h.tapStartsSession),
     autoMarkMinutes:h.autoMarkMinutes ?? null,
     trackValue:Boolean(h.trackValue),
     earlyWindowDays:habitEarlyWindowDays(h),
@@ -187,6 +194,7 @@ function openDetail(i){
     detailVizMode = 'calendar';
   }
   detailIdx = i;
+  syncDetailSearchAssistant();
   detailUnsavedCreate = null;
   detailUnsavedReminders = null;
   paintDetailFields(h);
@@ -303,6 +311,13 @@ function openDetailUnsavedCreate(draft){
 function detailCommitUnsavedReminders(hid){
   const pending = detailUnsavedReminders;
   detailUnsavedReminders = null;
+  if(pending?.hid === hid && pending.duplicateChoices && typeof nativeReminderPreferences === 'function'){
+    const prefs = nativeReminderPreferences();
+    prefs.items[`item:${hid}`] = pending.duplicateChoices;
+    localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify(prefs));
+    if(typeof reconcileNativeReminders === 'function')void reconcileNativeReminders();
+    return;
+  }
   if(!pending || pending.hid !== hid || typeof assistantFocusWriteReminders !== 'function')return;
   assistantFocusWriteReminders(pending.session, hid);
 }

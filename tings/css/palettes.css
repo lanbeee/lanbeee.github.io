@@ -151,6 +151,9 @@
 :root[data-palette="default"] .topbar .home-filter-trigger{
   background:var(--teal-bg);color:var(--teal-text);
 }
+:root[data-palette="default"] .topbar .home-feedback{
+  background:var(--teal-bg);color:var(--teal-text);--feedback-mark-fill:var(--teal-bg);
+}
 :root[data-palette="default"] .topbar .home-filter-trigger > i{
   color:var(--teal-icon);
 }

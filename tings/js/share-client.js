@@ -1,9 +1,16 @@
 function shareWorkerBaseUrl(){
   if(typeof SHARE_WORKER_URL !== 'undefined' && SHARE_WORKER_URL) return SHARE_WORKER_URL;
-  const local = typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname);
+  const local = !globalThis.TingsNative?.isNative && !globalThis.Capacitor?.isNativePlatform?.() && typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname);
   return local
     ? 'https://habits-share-staging.contactnabilkhan.workers.dev'
     : 'https://habits-share.contactnabilkhan.workers.dev';
+}
+
+function sharePairingDirectoryUrl(){
+  // QR codes use the public owner origin even inside the Android WebView.
+  // Navigation and localStorage stay on the native installation's origin.
+  return globalThis.TingsNative?.isNative || globalThis.Capacitor?.isNativePlatform?.()
+    ? new URL('https://lanbeee.github.io/habits/') : shareAppDirectoryUrl();
 }
 
 function shareAppDirectoryUrl(){
@@ -33,7 +40,7 @@ function shareAgendaFeedPath(feedId, opts = {}){
 }
 
 function agendaPairingOwnerHref(pairing){
-  const url = shareAppDirectoryUrl();
+  const url = sharePairingDirectoryUrl();
   const params = new URLSearchParams({
     agendaPair:pairing.pairingId,
     x:pairing.displayPublicKey.x,
@@ -508,6 +515,18 @@ function tingsShareDump(){
 
 async function shareFetch(path, opts = {}){
   if(!shareConfigured()) throw new Error('share_unconfigured');
+  // Credentials and pairing bodies must never follow a redirect or a
+  // configurable URL onto another service, including an insecure endpoint.
+  const base = shareWorkerBaseUrl();
+  if(![
+    'https://habits-share.contactnabilkhan.workers.dev',
+    'https://habits-share-staging.contactnabilkhan.workers.dev'
+  ].includes(base)) throw new Error('share_untrusted_relay');
+  const url = new URL(String(path),base);
+  if(typeof path !== 'string' || !path.startsWith('/v1/')
+    || url.origin !== base || !url.pathname.startsWith('/v1/') || url.hash){
+    throw new Error('share_invalid_path');
+  }
   const headers = {};
   if(opts.body != null) headers['Content-Type'] = 'application/json';
   if(opts.credential) headers.Authorization = `Bearer ${opts.credential}`;
@@ -520,11 +539,15 @@ async function shareFetch(path, opts = {}){
   if(controller) setTimeout(()=>controller.abort(),opts.timeoutMs);
   let res;
   try{
-    res = await fetch(`${shareWorkerBaseUrl()}${path}`, {
+    res = await fetch(url.href, {
       method:opts.method || 'GET',
       headers,
       body:opts.body != null ? JSON.stringify(opts.body) : undefined,
       cache:'no-store',
+      credentials:'omit',
+      mode:'cors',
+      redirect:'error',
+      referrerPolicy:'no-referrer',
       signal:controller ? controller.signal : undefined
     });
   }catch(error){

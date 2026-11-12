@@ -395,6 +395,7 @@ function habitScheduleOptionRowHtml(option,index){
         ${WEEKDAY_LABELS.map((label,day)=>`<button type="button" class="schedule-chip${activeDays.has(day) ? ' on' : ''}" data-habit-option-day="${day}" aria-pressed="${activeDays.has(day)}">${label}</button>`).join('')}
       </div>
     </div>
+    ${ordinalWeekdayEditor(normalized.ordinalWeekdays)}
     <label class="habit-option-field habit-option-same-day-field" hidden>
       <span class="habit-option-field-label">when days overlap another option</span>
       <select class="habit-option-same-day" aria-label="same-day option behavior">
@@ -579,6 +580,7 @@ function readHabitScheduleOptionRow(row){
   return {
     id:row.dataset.habitOptionId || undefined,
     weekdays:normalizeAllowedWeekdays(selectedDays),
+    ordinalWeekdays:readOrdinalWeekdays(row.querySelector('.ordinal-editor')),
     ...readHabitScheduleOptionEndpoint(row.querySelector('.time-endpoint[data-field="start"]'),'start'),
     ...readHabitScheduleOptionEndpoint(row.querySelector('.time-endpoint[data-field="end"]'),'end'),
     locationId:cleanLocationId(row.querySelector('.habit-option-location')?.value) || null,

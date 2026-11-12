@@ -10,7 +10,10 @@ const PUSH_WORKER_URL = 'https://habits-push.YOUR-ACCOUNT.workers.dev';
 const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
 const SHARE_WORKER_PRODUCTION_URL = 'https://habits-share.contactnabilkhan.workers.dev';
 const SHARE_WORKER_STAGING_URL = 'https://habits-share-staging.contactnabilkhan.workers.dev';
-const SHARE_WORKER_URL = typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname)
+// Capacitor serves the installed app at https://localhost. It pairs with
+// the public PWA; only an ordinary local development server uses staging.
+const SHARE_WORKER_URL = !globalThis.TingsNative?.isNative && !globalThis.Capacitor?.isNativePlatform?.()
+  && typeof location !== 'undefined' && ['localhost','127.0.0.1'].includes(location.hostname)
   ? SHARE_WORKER_STAGING_URL
   : SHARE_WORKER_PRODUCTION_URL;
 const SHARE_STATE_KEY = 'tings_share_v1';
@@ -19,6 +22,8 @@ const AGENDA_SHARE_DAYS = 2;
 // Published Google Form (/viewform or forms.gle). The YOUR_ prefix hides the About button.
 const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdsyYNO66PKY-lVV1rWoXZM3oBLoVWA10cKtjUQ1_CTxiH_mA/viewform';
 // Entry ids from the published form. Choice values must match its option text.
+// Leave rating, the day-plan questions, email, and "what's confusing" unset
+// unless the person typed them. `diagnostics` receives the full report.
 const FEEDBACK_FORM_ENTRIES = {
   tenure:'entry.457400724',
   uses:'entry.593100343',
@@ -27,7 +32,8 @@ const FEEDBACK_FORM_ENTRIES = {
   fixNext:'entry.1988333965',
   email:'entry.1260316969',
   plan:'entry.1530293007',
-  planDetail:'entry.247866906'
+  planDetail:'entry.247866906',
+  diagnostics:'entry.1567617731'
 };
 const FEEDBACK_TENURE_LOOKING = 'Just looking around';
 const FEEDBACK_TENURE_DAYS = 'A few days';
@@ -40,6 +46,9 @@ const FEEDBACK_USE_PLACES = 'Places and travel';
 const FEEDBACK_USE_PRAYER = 'Prayer-time windows';
 const FEEDBACK_USE_DISPLAY = 'Shared Display';
 const FEEDBACK_USE_SLEEP = 'Sleep and routine planning';
+const FEEDBACK_USE_NONE = 'None of these yet';
+// Stay under the size Google accepts for one answer, including the part label.
+const FEEDBACK_TEXT_BYTES = 20000;
 function feedbackFormUrl(fields){
   const url = new URL(FEEDBACK_FORM_URL);
   url.search = '';
@@ -258,7 +267,6 @@ const DEFAULT_SORT_SETTINGS = {
     scarce:0.05,
     preference:1.5
   },
-  reachAssist:true,
   reminders:false,
   pushDetailed:false,
   defaultType:'keepup',
@@ -618,9 +626,15 @@ let overviewMonthOffset = 0;
 let overviewRecentOffset = 0;
 let overviewTopicFilter = 'all';
 let overviewLocationFilter = 'all';
+let overviewTypeFilter = 'all';
+let overviewWhenFilter = 'all';
+let overviewPriorityFilter = 'all';
 let overviewRangeFilter = 'recent';
 let homeTopicFilter = 'all';
 let homeLocationFilter = 'all';
+let homeTypeFilter = 'all';
+let homeWhenFilter = 'all';
+let homePriorityFilter = 'all';
 let dayLogsKey = null;
 let dayLogsStep = 'list'; // list | item | add | avail
 let dayLogsItemIndex = null;
@@ -644,15 +658,9 @@ let toastTimer = null;
 let actionToastTimer = null;
 let navSuppressTimer = null;
 let pendingAction = null;
-let reachTimer = null;
-let reachHoldTimer = null;
 let lastScrollY = 0;
 let headerHidden = false;
 let headerRevealPull = 0;
-let topTouchY = 0;
-let topTouchX = 0;
-let topTouchStartedAtTop = false;
-let reachArmed = false;
 let buttonPointer = null;
 let suppressNativeButton = null;
 let settingsPointer = null;

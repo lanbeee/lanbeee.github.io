@@ -41,7 +41,7 @@ function assistantFocusInvalidate(){
     _assistantSession.focus.interpretationApproved = null;
   }
   if(typeof document !== 'undefined'){
-    document.querySelectorAll('[data-focus-save],[data-focus-edit],[data-focus-choice]').forEach(el => {
+    document.querySelectorAll('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field]').forEach(el => {
       el.disabled = true;
     });
   }
@@ -105,6 +105,7 @@ function assistantFocusBlank(session){
     minChunkMinutes:settings.defaultMinChunkMinutes || 15,
     minGapMinutes:0,
     timerAutoStopMinutes:null,
+    tapStartsSession:false,
     trackValue:false,
     priority:defaults.priority,
     locationIds:[],
@@ -242,6 +243,32 @@ function assistantFocusCreateIssues(session){
   return issues;
 }
 
+function assistantFocusDraftIssues(session){
+  const issues=assistantFocusCreateIssues(session);
+  const record=assistantFocusMaterialize(session);
+  // A time without a date cannot be represented by eventTime. Do not show a
+  // successful clock proposal and then silently discard it during Save.
+  if(record.type==='task' && record.dueDate==null && session.changes.some(change=>change.field==='dueTime'&&change.op==='set')){
+    issues.push({field:'dueDate',family:'dates',question:'Which date should this start time apply to?'});
+  }
+  return issues;
+}
+
+function assistantFocusContinueSavedCreate(session){
+  if(session?.operation!=='create' || !session.savedResult)return;
+  // A follow-up belongs to the item just created. Rebase on its current saved
+  // record so later logs and unrelated edits survive, with the same identity.
+  const item=load().find(row=>row.hid===session.savedResult.hid);
+  const baseline=item || assistantFocusMaterialize(session);
+  session.operation='edit';
+  session.targetId=session.savedResult.hid;
+  session.source=assistantFocusClone(baseline);
+  session.changes=[];
+  session.dependencies={topics:[],weatherProfile:null};
+  session.watched=null;
+  session.savedFingerprint='';
+}
+
 function assistantFocusEffectiveKind(session){
   if(!session || session.kind === 'event')return session ? session.kind : 'habit';
   const change = session.changes.find(row => row.field === 'kind' && row.op === 'set');
@@ -317,6 +344,7 @@ function assistantFocusUnresolve(session, item){
     family:item.family || '',
     question:item.question || 'I need a clearer value for that setting.',
     choices:item.choices || [],
+    phrase:item.phrase || '',
     blocking:item.blocking !== false
   });
   session.interpretationApproved = null;
@@ -353,13 +381,15 @@ function assistantFocusNormalize(fieldId, raw, session){
   const field = assistantFocusField(fieldId);
   if(!field)return {ok:false, error:'That setting is not editable here.'};
   const text = raw == null ? '' : String(raw).trim();
-  const cleared = /^(clear|none|any|off|manual)$/i.test(text);
+  const cleared = !session?._fieldLiteral && /^(clear|none|any|off|manual)$/i.test(text);
   if(!text || (cleared && field.clear)){
     if(!field.clear)return {ok:false, error:`${field.label} needs a value.`};
     return {ok:true, op:'clear', value:null};
   }
   const fail = (error) => ({ok:false, error});
   if(fieldId === 'name'){
+    if(session && session.operation==='edit' && typeof assistantFieldExplicitRename==='function'
+      && !assistantFieldExplicitRename(session._fieldSource||session.currentRequest||''))return fail('Rename the item in its detail editor.');
     const name = text.slice(0, typeof ASSISTANT_NAME_MAX === 'number' ? ASSISTANT_NAME_MAX : 60);
     if(assistantFocusNameRejected(name, session && (session.originalRequest || session.requestText))){
       return fail('That looks like the whole description. What should the item be called?');
@@ -367,7 +397,9 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:name};
   }
   if(fieldId === 'kind'){
-    const kind = /task/.test(text.toLowerCase()) ? 'task' : (/habit/.test(text.toLowerCase()) ? 'habit' : '');
+    const target=text.replace(/\s+instead of\b[\s\S]*$/i,'').replace(/^.*\b(?:to|into|as)\s+(?:a\s+)?(?=(?:habit|task)\b)/i,'');
+    const kinds=[...target.toLowerCase().matchAll(/\b(habit|task)\b/g)];
+    const kind=new Set(kinds.map(match=>match[1])).size===1?kinds[0][1]:'';
     if(!kind)return fail('Choose habit or task.');
     if(session && session.operation === 'create' && kind !== session.kind){
       return fail(`This add sheet is for a ${session.kind}. I won’t create a ${kind} instead.`);
@@ -381,8 +413,9 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:habitKind};
   }
   if(fieldId === 'emoji' || fieldId === 'exceptionEmoji'){
-    const symbols = typeof markSegments === 'function' ? markSegments(text).filter(part => /\p{Extended_Pictographic}/u.test(part)) : [];
+    const symbols = typeof markSegments === 'function' ? markSegments(text).filter(part => /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\ufe0f?\u20e3/u.test(part)) : [];
     const mark = symbols.length ? symbols.slice(0,2).join('') : text;
+    if(!symbols.length&&!/\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\ufe0f?\u20e3/u.test(text))return fail('Choose an emoji, or remove it.');
     const emoji = typeof assistantParseEmoji === 'function' ? assistantParseEmoji(mark) : mark;
     return {ok:true, op:text.toLowerCase() === 'none' ? 'clear' : 'set', value:emoji || ''};
   }
@@ -407,7 +440,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:days};
   }
   if(fieldId === 'repeatMode'){
-    const mode = /opportunit|when conditions|when it fits/.test(text.toLowerCase()) ? 'opportunity' : (/routine|regular/.test(text.toLowerCase()) ? 'routine' : '');
+    const mode = /opportunit|when conditions|when it fits|when the chance/.test(text.toLowerCase()) ? 'opportunity' : (/routine|regular/.test(text.toLowerCase()) ? 'routine' : '');
     if(!mode)return fail('Choose a regular rhythm or only when conditions fit.');
     return {ok:true, op:'set', value:mode};
   }
@@ -432,7 +465,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     if(mins == null)return fail('Use a clock time such as 6pm or 18:00.');
     return {ok:true, op:'set', value:mins};
   }
-  if(fieldId === 'hardDue' || fieldId === 'breakable' || fieldId === 'trackValue' || fieldId === 'pinned' || fieldId === 'anywhereAllowed' || fieldId === 'showWeather' || fieldId === 'showWeatherAtLocation'){
+  if(fieldId === 'tapStartsSession' || fieldId === 'reminderDnd' || fieldId === 'hardDue' || fieldId === 'breakable' || fieldId === 'trackValue' || fieldId === 'pinned' || fieldId === 'anywhereAllowed' || fieldId === 'showWeather' || fieldId === 'showWeatherAtLocation'){
     const flag = typeof assistantParseBool === 'function' ? assistantParseBool(text) : null;
     if(flag == null)return fail('Say yes or no.');
     return {ok:true, op:'set', value:flag === true};
@@ -452,8 +485,13 @@ function assistantFocusNormalize(fieldId, raw, session){
     if(!days)return fail('Name the days of the month, or say any.');
     return {ok:true, op:days.length ? 'set' : 'clear', value:days};
   }
+  if(fieldId === 'allowedOrdinalWeekdays' || fieldId === 'preferredOrdinalWeekdays'){
+    const rules=assistantParseOrdinalWeekdays(text);
+    if(!rules)return fail('Which weekday and week of the month? For example, the last Friday of each month.');
+    return {ok:true,op:rules.length?'set':'clear',value:rules};
+  }
   if(fieldId === 'allowedWindow' || fieldId === 'preferredWindow'){
-    const window = typeof assistantParseWindowFromText === 'function' ? (assistantParseWindowFromText(text) || (/^\d/.test(text) ? assistantParseWindowFromText(`from ${text}`) : null)) : null;
+    const window = typeof assistantParseWindowFromText === 'function' ? (assistantParseWindowFromText(text,true) || (/^\d/.test(text) ? assistantParseWindowFromText(`from ${text}`,true) : null)) : null;
     if(!window)return fail('I couldn’t read that time window.');
     return {ok:true, op:'set', value:window};
   }
@@ -496,7 +534,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:until == null ? 'clear' : 'set', value:until};
   }
   if(fieldId === 'appointmentRepeat'){
-    const repeat = /week/.test(text.toLowerCase()) ? 'weekly' : (/once|one/.test(text.toLowerCase()) ? 'once' : '');
+    const repeat = /week/.test(text.toLowerCase()) ? 'weekly' : (/once|\bone\b|single (?:event|occurrence)/.test(text.toLowerCase()) ? 'once' : '');
     if(!repeat)return fail('An event repeats once, or every week.');
     return {ok:true, op:'set', value:repeat};
   }
@@ -510,7 +548,15 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:true};
   }
   if(String(fieldId).startsWith('reminder') && fieldId !== 'reminderReset' && !/Lead/.test(fieldId)){
-    const mode = ASSISTANT_FOCUS_REMINDER_MODES.find(item => text.toLowerCase().includes(item === 'notification' ? 'notif' : item));
+    const allOff=typeof assistantFieldAllRemindersOff==='function'&&assistantFieldAllRemindersOff(text);
+    if(!allOff&&!/\bno reminders?\b/i.test(text)&&/\b(?:not|never|don.t|without)\b/i.test(text))return fail('Choose off, notification, or ringing alarm.');
+    const modeText=text.replace(/^.*\b(?:should be|change[^,;]*? to)\s+/i,'')
+      .replace(/^make\s+.+?\s+(?:an?\s+)?(?=ringing alarm\b)/i,'');
+    const choices=ASSISTANT_FOCUS_REMINDER_MODES.filter(item=>new RegExp(`\\b${item==='notification'?'notif\\w*':item}\\b`,'i').test(modeText));
+    if(choices.length>1)return fail('Choose one delivery mode: off, notification, or ringing alarm.');
+    const mode = /\bno reminders?\b/i.test(text)||allOff?'off':ASSISTANT_FOCUS_REMINDER_MODES.find(item => new RegExp(`\\b${item === 'notification' ? 'notif\\w*' : item}\\b`,'i').test(modeText))
+      ||(/\bring(?:ing)?\b/i.test(text)?'alarm':null)
+      || (/\b(?:remind|warn|alert|notify)\b/i.test(text)?'notification':null);
     if(!mode)return fail('Choose off, notification, or ringing alarm.');
     return {ok:true, op:'set', value:mode};
   }
@@ -543,7 +589,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     return {ok:true, op:'set', value:fieldId === 'places' ? ids : ids[0]};
   }
   if(fieldId === 'topics'){
-    const topics = assistantParseTopicsArg(text);
+    const topics = assistantParseTopicsArg(session?._fieldLiteral ? text.split(',') : text);
     return topics && topics.length ? {ok:true, op:'set', value:topics} : fail('Name at least one topic.');
   }
   if(fieldId === 'links'){
@@ -593,7 +639,11 @@ function assistantFocusNormalize(fieldId, raw, session){
     const links = [];
     for(const link of parsed.links){
       const row = {...link, ...modifiers};
-      const found = assistantResolveOrderLink(row.name, data, row, [], null);
+      let found = assistantResolveOrderLink(row.name, data, row, [], null);
+      if(!found?.ok&&found?.error!=='AMBIGUOUS'){
+        const bare=row.name.replace(/\s+(?:workout|habit|task|event)$/i,'');
+        if(bare!==row.name)found=assistantResolveOrderLink(bare,data,row,[],null);
+      }
       if(!found || !found.ok)return fail(found && found.ask || 'Choose a saved item for the order.');
       links.push(found.link);
     }
@@ -618,6 +668,7 @@ function assistantFocusStageWeatherRules(session, rules){
 
 function assistantFocusCorrect(session, fieldId, raw){
   if(!session)return {ok:false, error:'Nothing is open to edit.'};
+  assistantFocusContinueSavedCreate(session);
   if(fieldId === 'occurrenceDate'){
     const set = assistantFocusSetScope(session, 'occurrence', raw);
     session.correctionError = set.ok ? '' : set.error;
@@ -653,6 +704,7 @@ function assistantFocusChoose(session, fieldId, value){
   const question = session.unresolved.find(item => item.field === fieldId);
   const choice = question && question.choices.find(row => (typeof row === 'string' ? row : row.id) === value);
   if(!choice)return {ok:false, error:'That choice is no longer available.'};
+  if(fieldId === 'guidance')return assistantFocusApplyGuidance(session, question, value);
   if(fieldId === 'weatherRules' && ['use-profile','use-rules'].includes(value)
     || fieldId === 'hardDue' && ['hard-deadline','allow-delay'].includes(value)){
     const drop = value === 'use-profile' ? 'weatherRules' : value === 'use-rules' ? 'weatherProfile'
@@ -683,6 +735,56 @@ function assistantFocusChoose(session, fieldId, value){
   }
   const result = assistantFocusCorrect(session, fieldId, value);
   return result;
+}
+
+function assistantFocusApplyGuidance(session, question, value){
+  const phrase = question.phrase || session.currentRequest || '';
+  session.unresolved = session.unresolved.filter(item => item !== question);
+  if(String(value).startsWith('action:')){
+    const built = typeof assistantFocusBuildAction === 'function'
+      ? assistantFocusBuildAction(session, value.slice(7), phrase) : null;
+    if(built){
+      session.itemActions = session.itemActions || [];
+      session.itemActions.push(built);
+    }
+    session.interpretationApproved = null;
+    session.savedFingerprint = '';
+    return {ok:true};
+  }
+  if(String(value).startsWith('field:')){
+    const fieldId = value.slice(6);
+    const dates = typeof assistantActionDatePhrases === 'function' ? assistantActionDatePhrases(phrase) : [];
+    const dateField = ['dueDate','planByDate','appointmentStartDate','appointmentUntil'].includes(fieldId);
+    if(fieldId === 'exceptionTime'){
+      assistantFocusStage(session, {field:'exceptionTime', op:'clear', value:null, origin:'correction', source:'guidance'});
+      return {ok:true};
+    }
+    let raw = dateField && dates.length === 1 ? dates[0] : phrase;
+    if(dateField)return assistantFocusCorrect(session, fieldId, raw);
+    const def = typeof assistantFieldCatalog === 'function' ? assistantFieldCatalog().find(row => row.id === fieldId) : null;
+    if(fieldId === 'places'){
+      raw = raw.replace(/\bor\b/gi, 'and');
+      const names = (assistantFocusSettings().locations || []).map(place => place && place.name).filter(name => name && assistantFocusPhraseIn(raw, name));
+      if(names.length) raw = names.join(' and ');
+    }
+    if(fieldId === 'durationMinutes' && def && typeof assistantGuidanceDurationText === 'function'){
+      const cut = assistantGuidanceDurationText(phrase);
+      if(cut && cut !== phrase && !assistantFieldNormalize(def, phrase, session).ok && assistantFieldNormalize(def, cut, session).ok) raw = cut;
+    }
+    if(def && typeof assistantFieldNormalize === 'function'){
+      const parsed = assistantFieldNormalize(def, raw, session);
+      if(parsed.ok){
+        for(const change of parsed.changes || []){
+          assistantFocusStage(session, {field:change.field, op:change.op, value:change.value, origin:'correction', source:'guidance'});
+        }
+        return {ok:true};
+      }
+      assistantFocusUnresolve(session, {field:fieldId, family:def.family, question:parsed.error || `What value should I use for ${def.label.toLowerCase()}?`});
+      return {ok:false, error:parsed.error || ''};
+    }
+    return assistantFocusCorrect(session, fieldId, raw);
+  }
+  return {ok:false, error:'That choice is no longer available.'};
 }
 
 function assistantFocusClearEndpoint(record, prefix){
@@ -803,6 +905,7 @@ function assistantFocusWrite(record, change, session, scratch, data){
   else if(change.field === 'allowedMonthDays')record.allowedMonthDays = op === 'clear' ? [] : value.slice();
   else if(change.field === 'preferredWeekdays')record.preferredWeekdays = op === 'clear' ? [] : value.slice();
   else if(change.field === 'preferredMonthDays')record.preferredMonthDays = op === 'clear' ? [] : value.slice();
+  else if(change.field === 'allowedOrdinalWeekdays' || change.field === 'preferredOrdinalWeekdays')record[change.field] = op === 'clear' ? [] : value.map(rule=>({...rule}));
   else if(change.field === 'allowedWindow'){
     if(op === 'clear')assistantFocusApplyWindow(record, null, 'allowed', data);
     else assistantFocusApplyWindow(record, value, 'allowed', data);
@@ -822,6 +925,7 @@ function assistantFocusWrite(record, change, session, scratch, data){
   else if(change.field === 'minGapMinutes')record.minGapMinutes = op === 'clear' ? 0 : value;
   else if(change.field === 'timerAutoStopMinutes')record.timerAutoStopMinutes = op === 'clear' ? null : value;
   else if(change.field === 'autoMarkMinutes')record.autoMarkMinutes = op === 'clear' ? null : value;
+  else if(change.field === 'tapStartsSession')record.tapStartsSession = value === true;
   else if(change.field === 'trackValue')record.trackValue = value === true;
   else if(change.field === 'places')record.locationIds = op === 'clear' ? [] : value.slice();
   else if(change.field === 'anywhereAllowed')record.anywhereAllowed = value === true;
@@ -861,7 +965,12 @@ function assistantFocusWrite(record, change, session, scratch, data){
     }
     const entry = assistantFocusExceptionEntry(record, key);
     if(!entry)return;
-    if(change.field === 'exceptionTime')entry.startMinute = value;
+    if(change.field === 'exceptionTime'){
+      if(op === 'clear'){
+        delete entry.startMinute;
+        if(!Object.keys(entry).length)delete record.appointment.exceptions[key];
+      }else entry.startMinute = value;
+    }
     else if(change.field === 'exceptionDuration')entry.durationMinutes = value;
     else if(change.field === 'exceptionEmoji'){
       if(op === 'clear')delete entry.emoji;
@@ -898,7 +1007,14 @@ function assistantFocusMaterialize(session, baseline){
   if(typeof primaryPreferredLocationId === 'function'){
     record.preferredLocationId = primaryPreferredLocationId(record.locationPrefs, record.locationIds);
   }
-  return record;
+  // Review and Save share the persistence normalizer: derived deadline flags,
+  // flexibility aliases, event projections and order-link defaults must agree.
+  // Include saved partners so normalization retains valid order references.
+  if(typeof normalize!=='function')return record;
+  const normalized=normalize([record,...data.filter(item=>item.hid!==record.hid)]);
+  // Switching weekly/one-off recurrence projects the record's type and date.
+  // Settle their derived flags too, before persistence normalizes it again.
+  return record.appointment?normalize(normalized)[0]:normalized[0];
 }
 
 function assistantFocusFormatWeekdays(days){
@@ -962,6 +1078,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
   if(fieldId === 'preferredWeekdays')return assistantFocusFormatWeekdays(record.preferredWeekdays);
   if(fieldId === 'allowedMonthDays')return record.allowedMonthDays && record.allowedMonthDays.length ? record.allowedMonthDays.join(', ') : 'any';
   if(fieldId === 'preferredMonthDays')return record.preferredMonthDays && record.preferredMonthDays.length ? record.preferredMonthDays.join(', ') : 'any';
+  if(fieldId === 'allowedOrdinalWeekdays' || fieldId === 'preferredOrdinalWeekdays')return ordinalWeekdaySummary(record[fieldId]) || 'any';
   if(fieldId === 'allowedWindow' || fieldId === 'allowedTimeFixedStart')return assistantFocusFormatWindow(record, 'allowed', data);
   if(fieldId === 'preferredWindow')return assistantFocusFormatWindow(record, 'preferred', data);
   if(fieldId === 'durationMinutes')return `${record.durationMinutes} min`;
@@ -970,6 +1087,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
   if(fieldId === 'minGapMinutes')return record.minGapMinutes ? `${record.minGapMinutes} min` : 'no gap';
   if(fieldId === 'timerAutoStopMinutes')return record.timerAutoStopMinutes ? `${record.timerAutoStopMinutes} min` : 'off';
   if(fieldId === 'autoMarkMinutes')return record.autoMarkMinutes == null ? 'manual' : `${record.autoMarkMinutes} min after the start`;
+  if(fieldId === 'tapStartsSession')return record.tapStartsSession ? 'tap starts a session' : 'tap logs completion';
   if(fieldId === 'trackValue')return record.trackValue ? 'log a value' : 'off';
   if(fieldId === 'places')return record.locationIds && record.locationIds.length ? record.locationIds.join(', ') : 'no place';
   if(fieldId === 'anywhereAllowed')return record.anywhereAllowed === false ? 'only the saved places' : 'anywhere is allowed';
@@ -1014,6 +1132,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
     if(staged)choice = Object.assign({}, patch.reset && date ? owner : choice, patch.patch);
     const edge = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
     const lead = {reminderStartLead:'startLeadMinutes', reminderTravelLead:'travelLeadMinutes', reminderMissedLead:'missedLeadMinutes'};
+    if(fieldId === 'reminderDnd')return choice.dnd ? 'DND during session' : 'DND off';
     if(edge[fieldId])return {off:'off', notification:'notification', alarm:'ringing alarm'}[choice[edge[fieldId]] || 'off'];
     if(lead[fieldId])return `${choice[lead[fieldId]] ?? (fieldId === 'reminderMissedLead' ? 15 : 0)} min before`;
     if(fieldId === 'reminderReset')return staged ? 'use the series reminders' : (date && owner.dates && owner.dates[date] ? 'custom reminders for this date' : 'use the series reminders');
@@ -1115,13 +1234,12 @@ function assistantFocusReviewModel(session){
     });
   });
   const notes = [];
-  if(session.operation === 'edit')notes.push('Settings outside this request stay as they are.');
-  else notes.push('Unmentioned settings use the add form, then the usual new-item defaults.');
-  if(after.appointment && session.eventScope === 'series' && Object.keys(after.appointment.exceptions || {}).length){
-    notes.push('Dates you already changed individually keep those changes.');
+  if(session.eventScope === 'occurrence'){
+    notes.push(session.occurrenceDate ? `This date only · ${session.occurrenceDate}` : 'This date only');
+  }else if(session.kind === 'event' && session.eventScope === 'series'){
+    const exceptions = after.appointment && Object.keys(after.appointment.exceptions || {}).length;
+    notes.push(exceptions ? 'Whole series. Other dates keep their own changes.' : 'Whole series.');
   }
-  if(session.eventScope === 'occurrence')notes.push(`This applies to ${session.occurrenceDate || 'one date'} only.`);
-  if(session.eventScope === 'series' && session.kind === 'event')notes.push('This applies to the whole series.');
   const profile = session.dependencies && session.dependencies.weatherProfile;
   const weatherRules = profile && Array.isArray(profile.rules) ? profile.rules.map(assistantFocusFormatRule) : [];
   session.needsInterpretation = session.changes.some(change => change.origin === 'extracted' && change.uncertain) || session.scopeSource === 'request' && session.changes.some(change => change.uncertain);
@@ -1187,7 +1305,7 @@ function assistantFocusCanSave(session){
   if(session.unresolved.length || session.pendingFamilies.length || session.correctionError || session.continuationError)return false;
   if(session.operation === 'edit' && !session.changes.length)return false;
   if(session.operation === 'create' && !session.changes.some(change => change.field === 'name' && change.op === 'set' && change.value))return false;
-  if(assistantFocusCreateIssues(session).length)return false;
+  if(assistantFocusDraftIssues(session).length)return false;
   if(session.kind === 'event' && session.eventScope == null)return false;
   return true;
 }
@@ -1356,10 +1474,47 @@ function assistantFocusWeatherRulesChip(profile){
   return {id:'weatherRules', text, origin:'changed'};
 }
 
-function assistantFocusChipHtml(chip){
+// Reuse the field catalog's detail targets, with explicit destinations for
+// grouped rhythm chips, event controls, and native-only reminders.
+function assistantFocusDetailSelector(field, session){
+  if(field === 'planByDate')return null; // No editable detail control yet.
+  if(field === 'name' && session.operation === 'edit')return null;
+  if(field.startsWith('reminder')){
+    if(!window.TingsNative?.isNative)return null;
+    const edges = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
+    if(edges[field])return `#detail-native-reminders [data-reminder-edge="${edges[field]}"]`;
+    return ({reminderDnd:'#detail-native-reminders [aria-label="DND during session"]', reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderReset:'#detail-native-reminders'})[field] || null;
+  }
+  if(session.kind === 'event'){
+    const event = {
+      durationMinutes:'detail-appt-duration', places:'detail-appt-place',
+      appointmentRepeat:'detail-appt-repeat', appointmentStartDate:'detail-appt-date',
+      appointmentStartMinute:'detail-appt-time', appointmentWeekdays:'detail-appt-weekly', appointmentUntil:'detail-appt-until',
+      exceptionTime:'detail-appt-time', exceptionDuration:'detail-appt-duration',
+      exceptionEmoji:'detail-emoji', exceptionColor:'detail-emoji-bg',
+      exceptionCancelled:'detail-appt-skip', exceptionReset:'detail-appt-reset'
+    };
+    if(event[field])return `#${event[field]}`;
+  }
+  const id = ({rhythm:'detail-frequency-presets', timesPerPeriod:'detail-times', periodDays:'detail-days',
+    conditionTrigger:'detail-condition-trigger', conditionRadiusM:'detail-condition-radius', hardDue:'detail-delay-allowance'})[field]
+    || (typeof ASSISTANT_FIELD_SEARCH !== 'undefined' && ASSISTANT_FIELD_SEARCH[field]);
+  return id ? `#${id}` : null;
+}
+
+function assistantFocusFieldHtml(field, text, className, session){
+  const value = `<span class="focus-field-text">${assistantFocusEscape(text)}</span>`;
+  if(!assistantFocusDetailSelector(field, session))return `<span class="${className}">${value}</span>`;
+  const label = assistantFocusField(field)?.label || (field === 'rhythm' ? 'How often' : field);
+  const disabled = session._focusInFlight || (session.operation === 'create' && !String(assistantFocusMaterialize(session).name || '').trim());
+  return `<button type="button" class="${className} focus-field" data-focus-field="${assistantFocusEscape(field)}" aria-label="${assistantFocusEscape(`Edit ${label} in details: ${text}`)}" title="${assistantFocusEscape(`Edit ${label} in details`)}" ${disabled ? 'disabled' : ''}>${value}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`;
+}
+
+function assistantFocusChipHtml(chip, session){
   const suffix = chip.origin === 'default' ? '<small>default</small>' : chip.origin === 'form' ? '<small>add form</small>' : '';
   const changed = chip.origin === 'changed' ? ' is-changed' : '';
-  return `<span class="assistant-chip${changed}">${assistantFocusEscape(chip.text)}${suffix}</span>`;
+  const html = assistantFocusFieldHtml(chip.id, chip.text, `assistant-chip${changed}`, session);
+  return suffix ? html.replace(/<\/(button|span)>$/, `${suffix}</$1>`) : html;
 }
 
 function assistantFocusWorkLabel(job){
@@ -1404,17 +1559,56 @@ function assistantFocusActivityHtml(session, model){
   return '';
 }
 
+function assistantFocusActionHtml(session){
+  if(!session || session._focusInFlight)return '';
+  return (session.itemActions || []).map((action, index) => {
+    const note = `<p class="focus-note">${assistantFocusEscape(action.summary || '')}</p>`;
+    if(!action.ready)return note;
+    const label = assistantFocusEscape(action.label || 'do it');
+    return `${note}<div class="btn-row"><button type="button" class="btn primary" data-focus-choice="item-action" data-focus-value="${index}">${label}</button><button type="button" class="btn" data-focus-choice="item-action-skip" data-focus-value="${index}">never mind</button></div>`;
+  }).join('');
+}
+
+function assistantFocusCommitAction(session, index){
+  if(!assistantFocusAlive(session)||session.operation!=='edit')return {ok:false,error:'This item editor is no longer open.'};
+  if(session._focusInFlight)return {ok:false,error:'Wait until this request has finished.'};
+  const actions = session && session.itemActions || [];
+  const action = actions[Number(index)];
+  if(!action || !action.ready)return {ok:false, error:'Nothing is waiting to confirm.'};
+  const pending=action.pendingComplete||action.pendingPlan;
+  const found=assistantFocusFound(session);
+  if(!found||!pending||pending.hid!==session.targetId)return {ok:false,error:'The original item is no longer available. Reopen it to try again.'};
+  // Generic action helpers may fall back to a name after list changes. Focused
+  // actions always resolve the original ID, including after reordering.
+  const scoped={...pending,index:found.index,name:found.name};
+  const result = action.pendingComplete && typeof assistantCommitComplete === 'function'
+    ? assistantCommitComplete(scoped)
+    : action.pendingPlan && typeof assistantCommitPlan === 'function'
+      ? assistantCommitPlan(scoped)
+      : {ok:false, error:'That action is unavailable.'};
+  if(!result.ok)return result;
+  actions.splice(Number(index), 1);
+  return result;
+}
+
+function assistantFocusSkipAction(session, index){
+  const actions = session && session.itemActions || [];
+  if(actions[Number(index)])actions.splice(Number(index), 1);
+  return {ok:true};
+}
+
 function assistantFocusReviewHtml(session){
   const model = assistantFocusReviewModel(session);
   const bits = assistantFocusReviewBits(session, model);
   const essentials = bits.essentials.length
-    ? `<div class="assistant-chip-row" aria-label="Essentials">${bits.essentials.map(assistantFocusChipHtml).join('')}</div>`
+    ? `<div class="assistant-chip-row" aria-label="Essentials">${bits.essentials.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
     : '';
   const changes = bits.changes.length
-    ? `<p class="focus-section">Changed</p><div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(assistantFocusChipHtml).join('')}</div>`
+    ? `<div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
     : '';
   const notes = model.notes.map(note => `<p class="focus-note">${assistantFocusEscape(note)}</p>`).join('');
   const pending = assistantFocusActivityHtml(session, model);
+  const itemActions = assistantFocusActionHtml(session);
   const question = model.question ? `<div class="focus-ask"><p>${assistantFocusEscape(model.question.question)}</p>${(model.question.choices || []).map(choice => {
     const id = typeof choice === 'string' ? choice : choice.id;
     const label = typeof choice === 'string' ? choice : choice.label;
@@ -1427,11 +1621,12 @@ function assistantFocusReviewHtml(session){
   // applies to the summary shown before the user has asked for anything.
   const readyForActions = !session._focusInFlight && (session.changes.length || session.unresolved.length);
   const actions = readyForActions ? `<div class="btn-row">${save}${edit}</div>` : '';
-  const scope = model.scope ? `<p class="focus-note">Scope: ${assistantFocusEscape(model.scope === 'occurrence' ? `this date ${model.occurrenceDate}` : 'all dates')}</p>` : '';
   return `<div class="focus-review" data-focus-review>
-      <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
-      <p class="assistant-preview-name">${assistantFocusEscape(model.title)}</p>
-      ${essentials}${changes}${pending}${question}${scope}${notes}
+      <div class="focus-review-head">
+        <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
+        <p class="assistant-preview-name">${assistantFocusFieldHtml('name', model.title, 'focus-name', session)}</p>
+      </div>
+      ${essentials}${changes}${pending}${itemActions}${question}${notes}
       <p class="focus-status" data-focus-status role="status">${assistantFocusEscape(session.correctionError || '')}</p>
       ${actions}
     </div>`;
@@ -1444,6 +1639,9 @@ function assistantFocusSettings(){
 function assistantFocusPreflight(session, record){
   const data = typeof load === 'function' ? load() : [];
   const settings = assistantFocusSettings();
+  if(session.operation === 'create' && data.some(item=>item.hid===record.hid)){
+    return {ok:false,error:'This item was already created. Review it as an edit before saving again.'};
+  }
   if(session.operation === 'create' && data.length >= (typeof MAX_TINGS === 'number' ? MAX_TINGS : 300)){
     return {ok:false, error:`${typeof MAX_TINGS === 'number' ? MAX_TINGS : 300} habits max`};
   }
@@ -1521,6 +1719,7 @@ function assistantFocusReminderPatch(session){
     if(edge[change.field])patch[edge[change.field]] = change.value;
     if(lead[change.field])patch[lead[change.field]] = change.value;
     if(change.field === 'reminderReset')reset = true;
+    if(change.field === 'reminderDnd')patch.dnd = change.value === true;
   });
   return {patch, reset};
 }
@@ -1528,6 +1727,11 @@ function assistantFocusReminderPatch(session){
 async function assistantFocusReminderPermission(patch){
   const api = window.TingsNative && window.TingsNative.notifications;
   if(!api)return {ok:false, error:'Phone reminders are available in the Android app. Nothing was saved.'};
+  if(Object.hasOwn(patch.patch||{},'dnd')){
+    const quiet=window.TingsNative?.quiet;
+    if(!quiet)return {ok:false,error:'Do Not Disturb is not available on this device. Nothing was saved.'};
+    if(patch.patch.dnd&&!(await quiet.status()).granted)return {ok:false,error:'Allow Do Not Disturb access in the phone settings first. Nothing was saved.'};
+  }
   const modes = Object.values(patch.patch || {});
   const needsDisplay = modes.some(mode => mode === 'notification' || mode === 'alarm');
   const needsExact = modes.includes('alarm') || patch.patch.missed && patch.patch.missed !== 'off';
@@ -1662,6 +1866,7 @@ function assistantFocusUndo(snapshot){
     localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY, JSON.stringify(restored));
   }
   if(typeof reconcileNativeReminders === 'function')void reconcileNativeReminders();
+  if(typeof reconcileNativeQuiet === 'function')void reconcileNativeQuiet();
   if(typeof refreshOpenViews === 'function')refreshOpenViews();
   else if(typeof render === 'function')render();
   return {ok:true};
@@ -1674,6 +1879,10 @@ function assistantFocusPreviewReminders(session, hid){
   Object.entries(staged.patch).forEach(([key, value]) => {
     const edge = document.querySelector(`select[data-reminder-owner="${CSS.escape(owner)}"][data-reminder-edge="${CSS.escape(key)}"]`);
     if(edge)edge.value = value;
+    if(key==='dnd'){
+      const toggle=document.querySelector('#detail-native-reminders [aria-label="DND during session"]');
+      if(toggle)toggle.checked=value===true;
+    }
     if(key === 'travelLeadMinutes'){
       const lead = document.querySelector(`select[data-reminder-lead="${CSS.escape(owner)}"]`);
       if(lead)lead.value = String(value);
@@ -1688,6 +1897,7 @@ function assistantFocusPreviewReminders(session, hid){
 
 function assistantFocusEditDraft(session){
   if(!session || session._focusInFlight)return {ok:false, error:'Still reading that request.'};
+  assistantFocusContinueSavedCreate(session);
   const record = assistantFocusMaterialize(session);
   const reminders = session.changes.some(change => String(change.field).startsWith('reminder'))
     ? {hid:record.hid, session:{changes:session.changes.slice(), eventScope:session.eventScope, occurrenceDate:session.occurrenceDate}}
@@ -1697,6 +1907,11 @@ function assistantFocusEditDraft(session){
     const index = data.findIndex(item => item && item.hid === session.targetId);
     if(index < 0 || typeof openDetailUnsaved !== 'function')return {ok:false, error:'That item is no longer on the list.'};
     if(!openDetailUnsaved(index, record))return {ok:false, error:'The detail editor is unavailable.'};
+    if(session.kind === 'event' && session.eventScope === 'occurrence' && $('detail-appt-scope')){
+      $('detail-appt-scope').value = 'date';
+      $('detail-appt-occurrence').value = session.occurrenceDate;
+      $('detail-appt-scope').dispatchEvent(new Event('change'));
+    }
     detailUnsavedReminders = reminders;
     assistantFocusPreviewReminders(session, record.hid || session.targetId);
     return {ok:true};
@@ -1807,6 +2022,7 @@ async function assistantFocusCommitNow(session, fingerprint){
       snapshot.remindersAfter = localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY);
       if(typeof reconcileNativeRemindersNow === 'function')await reconcileNativeRemindersNow();
       else if(typeof reconcileNativeReminders === 'function')await reconcileNativeReminders();
+      if(Object.hasOwn(reminderStaged.patch,'dnd')&&typeof reconcileNativeQuiet==='function')await reconcileNativeQuiet();
     }
     if(session.operation === 'edit')session.source = assistantFocusClone(saved);
     session.savedFingerprint = fingerprint;

@@ -19,13 +19,24 @@ function missedOccurrenceDayBase(day,now = Date.now()){
   return dayStart(now);
 }
 
-function missedOccurrenceResolved(h,expectedDayBase,now){
+function missedOccurrenceResolved(h,expectedDayBase,now,evidence = null){
   if(h.type === 'task')return isTaskDone(h);
   if(typeof completedOnDay === 'function' && completedOnDay(h,expectedDayBase))return true;
   if(typeof actualLogs !== 'function')return completedToday(h,now);
   // This is an actionable catch-up list, not permanent history: a later real
   // completion resolves earlier outstanding expectations for the same item.
-  return actualLogs(h.logs || []).some(ts=>ts >= expectedDayBase && ts <= now);
+  const logs = actualLogs(h.logs || []).filter(ts=>ts <= now);
+  if(logs.some(ts=>ts >= expectedDayBase))return true;
+  // A calendar correction can move the last completion back to yesterday
+  // and make a sparse rhythm no longer due. Its old catch-up row is resolved,
+  // rather than a new notification caused by entering the missing history.
+  const latest = logs[logs.length - 1];
+  const correctedHistory = evidence?.lastLogAtFirst === undefined
+    || latest > (evidence.lastLogAtFirst ?? -Infinity);
+  return correctedHistory && latest != null && !h.breakable && !isOpportunityHabit(h)
+    && !habitHasMultipleDailyOccurrences(h)
+    && typeof rhythmEligibleOnDay === 'function'
+    && !rhythmEligibleOnDay(h,latest,expectedDayBase,new Date(expectedDayBase).getDay());
 }
 
 function missedOpportunityPassedToday(h,dayBase,now){
@@ -47,9 +58,12 @@ function missedOpportunityPassedToday(h,dayBase,now){
 // dropped by replanning. This rejects the old broad "everything overdue"
 // sweep: an off-day or impossible item has no qualifying planner evidence.
 function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = null){
-  if(isLocalAppointment(h))return false;
-  if(isOpportunityHabit(h))return false;
   if(!h || !h.hid)return false;
+  if(isCalendarIgnored(h))return false;
+  if(isLocalAppointment(h))return false;
+  // Conditional items have no general overdue obligation. Only a row actually
+  // shown on the agenda can turn into a missed notification.
+  if(isOpportunityHabit(h) && !evidence?.rendered)return false;
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
   const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
   const todayBase = dayStart(now);
@@ -59,7 +73,7 @@ function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = nu
   if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
     && typeof isDateEligibleForHabit === 'function'
     && !isDateEligibleForHabit(h,expectedDayBase))return false;
-  if(missedOccurrenceResolved(h,expectedDayBase,now))return false;
+  if(missedOccurrenceResolved(h,expectedDayBase,now,evidence))return false;
   if(expectedDayBase === todayBase){
     // A row the user actually saw in today's agenda is a commitment, not just
     // a broad eligibility guess. If a later/cold optimization drops that row,
@@ -68,7 +82,7 @@ function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = nu
     // candidate as missed: only snap.hids contains previously rendered rows.
     if(!evidence?.renderedToday
       && !missedOpportunityPassedToday(h,expectedDayBase,now))return false;
-  }else if(occurrenceStillDoableToday(h,now)){
+  }else if(!isOpportunityHabit(h) && occurrenceStillDoableToday(h,now)){
     // Midnight is not an opportunity ending. Yesterday's dated row for a
     // daily that is still doable today is the same live occurrence rolling
     // forward, not a miss — otherwise 2am dumps every unfinished meal and
@@ -95,7 +109,9 @@ function collectMissedFromSnapshot(data,todayHids,snap,renderedProjection = {},n
     const h = data[idx];
     if(!h)return;
     const renderedToday = expectedDay === today && Boolean(snap.hids?.[hid]);
-    if(!isMissedOccurrence(h, null, now, expectedDay, {renderedToday}))return;
+    const rendered = renderedToday || Boolean(snap.expectations?.[expectedDay]?.renderedHids?.includes(hid));
+    const lastLogAtFirst = expectedDay === today ? snap.hids?.[hid]?.lastLogAtFirst : undefined;
+    if(!isMissedOccurrence(h, null, now, expectedDay, {renderedToday,rendered,lastLogAtFirst}))return;
     const prior = droppedMap.get(hid);
     if(prior && prior.expectedDay >= expectedDay)return;
     droppedMap.set(hid, {

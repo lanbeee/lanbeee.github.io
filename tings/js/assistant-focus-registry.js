@@ -31,10 +31,12 @@ const ASSISTANT_FOCUS_FIELDS = [
 
   {id:'allowedWeekdays', label:'Allowed weekdays', family:'schedule', kinds:['habit','task'], persist:'allowedWeekdays', clear:true},
   {id:'allowedMonthDays', label:'Allowed month days', family:'schedule', kinds:['habit','task'], persist:'allowedMonthDays', clear:true},
+  {id:'allowedOrdinalWeekdays', label:'Allowed monthly weekdays', family:'schedule', kinds:['habit','task'], persist:'allowedOrdinalWeekdays', clear:true},
   {id:'allowedWindow', label:'Allowed hours', family:'schedule', kinds:['habit','task'], persist:'allowedTimeStart', clear:true},
   {id:'allowedTimeFixedStart', label:'Fixed start', family:'schedule', kinds:['habit','task'], persist:'allowedTimeFixedStart', clear:false},
   {id:'preferredWeekdays', label:'Preferred weekdays', family:'schedule', kinds:['habit','task'], persist:'preferredWeekdays', clear:true},
   {id:'preferredMonthDays', label:'Preferred month days', family:'schedule', kinds:['habit','task'], persist:'preferredMonthDays', clear:true},
+  {id:'preferredOrdinalWeekdays', label:'Preferred monthly weekdays', family:'schedule', kinds:['habit','task'], persist:'preferredOrdinalWeekdays', clear:true},
   {id:'preferredWindow', label:'Preferred hours', family:'schedule', kinds:['habit','task'], persist:'preferredTimeStart', clear:true},
 
   {id:'durationMinutes', label:'Duration', family:'effort', kinds:['habit','task','event'], persist:'durationMinutes', clear:false, unless:'zero'},
@@ -43,6 +45,7 @@ const ASSISTANT_FOCUS_FIELDS = [
   {id:'minGapMinutes', label:'Minimum gap', family:'effort', kinds:['habit','task'], persist:'minGapMinutes', clear:true},
   {id:'timerAutoStopMinutes', label:'Timer target', family:'effort', kinds:['habit','task'], persist:'timerAutoStopMinutes', clear:true},
   {id:'autoMarkMinutes', label:'Automatic completion', family:'effort', kinds:['habit','task'], persist:'autoMarkMinutes', clear:true},
+  {id:'tapStartsSession', label:'Start with a tap', family:'effort', kinds:['habit','task'], persist:'tapStartsSession', clear:false, unless:'zero'},
   {id:'trackValue', label:'Value tracking', family:'effort', kinds:['habit','task'], persist:'trackValue', clear:false},
 
   {id:'places', label:'Places', family:'places', kinds:['habit','task','event'], persist:'locationIds', clear:true},
@@ -77,6 +80,7 @@ const ASSISTANT_FOCUS_FIELDS = [
   {id:'exceptionCancelled', label:'This date', family:'exception', kinds:['event'], persist:'appointment', clear:false, scope:'occurrence'},
   {id:'exceptionReset', label:'Use the usual values', family:'exception', kinds:['event'], persist:'appointment', clear:false, scope:'occurrence'},
 
+  {id:'reminderDnd', label:'Do Not Disturb during session', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false, unless:'zero'},
   {id:'reminderStart', label:'Start reminder', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:false},
   {id:'reminderEnd', label:'End reminder', family:'reminders', kinds:['habit','task','event'], persist:'reminders', clear:false},
   {id:'reminderTravelStart', label:'Travel departure reminder', family:'reminders', kinds:['habit','task'], persist:'reminders', clear:false},

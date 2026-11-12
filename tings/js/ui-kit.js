@@ -41,7 +41,7 @@ function uiLeaveBtnHtml({id, aria, body}){
 
 function uiFilterSheetHtml({wrapId, extraClass, titleId, title, summaryId, closeId, closeAria, groupsId, resetId, doneId}){
   const sheetCls = extraClass ? ` ${extraClass}` : '';
-  return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Choose a place or topic.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div><button type="button" class="filter-settings-link" data-filter-settings><i class="ti ti-settings" aria-hidden="true"></i><span>app settings</span></button></div></div>`;
+  return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Pick when it’s due, what it is, or where it belongs.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div><button type="button" class="filter-settings-link" data-filter-settings><i class="ti ti-settings" aria-hidden="true"></i><span>app settings</span></button></div></div>`;
 }
 
 // PURE: plain-language word for an offset direction. The button keeps
@@ -194,8 +194,7 @@ const UI_SETTING_TOGGLES = {
     {key:'showSnoozed', title:'show hidden habits', hint:'Show habits you’ve hidden, faded on home.'}
   ],
   cardsAfterTime:[
-    {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-full-only'},
-    {key:'reachAssist', title:'easier reach', hint:'Pull and hold at the top to bring the first items down.'}
+    {key:'showTrailOnCards', title:'show activity dots', hint:'Recent history and upcoming plans.', help:'Filled dots are logged days; hollow dots are plans. The rightmost dot is today. The left bar summarizes the previous week.', extraClass:'settings-full-only'}
   ],
   appearanceCards:[
     {key:'minimalShowAgendaTimeOnCards', title:'show the time', hint:'The scheduled time on each item.'},
@@ -260,10 +259,10 @@ const UI_PRIVACY_BLOCKS = [
     'Naming a pasted App Store link asks Apple’s public listing for that app’s name. It receives only the numeric id already inside the link, and only when you paste one. Offline, you simply type the name yourself.',
     'Relative times such as sunrise and sunset are calculated on this device from your city. Calendar PDF import and backup files stay here unless you share the file yourself.'
   ]},
-  {id:'privacy-feedback-body', label:'Send feedback', summary:'Optional. Opens a Google Form in your browser. Answers go to Google, not into Tings.', body:[
-    'The send-feedback button on About opens a Google Form in a new browser tab. Tings fills in how long this device has used Tings, and which kinds of planning are already in use, such as habits, tasks, places, prayer windows, or a shared display. It does not attach item names, notes, addresses, or logs. You can change every answer before sending. Tings does not receive the form.',
-    'Google receives the filled-in answers, including the ones in the link, and whatever you type. An assistant problem report can also include what you typed to the assistant. Leave out anything you do not want Google to have. You can close the form without sending it.',
-    'Look for the cloud-up mark on that button.'
+  {id:'privacy-feedback-body', label:'Send feedback', summary:'Optional. Filled in here, then sent to a Google Form. Answers go to Google, not into Tings.', body:[
+    'Send feedback opens a form in Tings. It fills in how long this device has used Tings, which kinds of planning are already in use, and, when you send from Ask Tings, that chat and its trace in full. A note and an email are optional. You can send without typing. Item names, notes, addresses, and logs stay here unless they were part of what you typed to Ask Tings.',
+    'Google receives the answers when you send, including the filled-in ones. Tings does not keep a copy and does not receive the form back. You can close the form without sending it.',
+    'About keeps the cloud-up mark beside that button.'
   ]}
 ];
 
@@ -293,8 +292,8 @@ const UI_LEAVE_HINTS = {
     body:'Forecast displays and weather guidance send your saved home-city coordinates to Open-Meteo, plus only far-away saved-place pins needed on the plan. Live GPS, item names, and logs stay here. Full story: About → privacy.'
   },
   feedback:{
-    aria:'this opens a Google Form off this device',
-    body:'Send feedback opens a Google Form with a few answers filled in from this device: how long you have used Tings, and which kinds of planning are in use. Item names, notes, addresses, and logs stay here. You can change every answer. Google receives the form, including the filled-in link. Full story: About → privacy.'
+    aria:'this sends feedback to a Google Form',
+    body:'Send feedback opens a form filled in from this device, including the full Ask Tings chat when you send from there. A note is optional. Sending posts it to a Google Form. Item names, notes, addresses, and logs stay here unless you typed them to Ask Tings. Full story: About → privacy.'
   }
 };
 

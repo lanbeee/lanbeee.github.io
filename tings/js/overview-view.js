@@ -43,9 +43,10 @@ function matchesOverviewLocation(h,id){
   return matchesLocationFilter(h,id);
 }
 
-// PURE: habit passes both overview filters
+// PURE: habit passes the calendar filters. Place and topic stay single-choice;
+// when, type, and priority use the same groups as home.
 function matchesOverviewFilters(h){
-  return matchesOverviewTopic(h,overviewTopicFilter) && matchesOverviewLocation(h,overviewLocationFilter);
+  return !isCalendarIgnored(h) && matchesFilterSelection(h, overviewFilterSelection());
 }
 
 // "When" pills for the calendar page. 'recent' is the default on open —
@@ -69,38 +70,32 @@ function renderOverviewFilters(data){
   const summary = $('calendar-filter-summary');
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-  let topicChoices = overviewTopicChoices(data);
-  let locChoices = overviewLocationChoices(data);
-  const hasTopics = !minimal && topicChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
-  const hasLocs = !minimal && locChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
-  if(hasTopics && !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
-  if(hasLocs && !locChoices.some(choice=>choice.key === overviewLocationFilter))overviewLocationFilter = 'all';
-  if(minimal || !hasTopics){
-    overviewTopicFilter = 'all';
-  }
-  if(minimal || !hasLocs){
-    overviewLocationFilter = 'all';
-  }
-  topicChoices = orderFilterChoices(topicChoices, overviewTopicFilter);
-  locChoices = orderFilterChoices(locChoices, overviewLocationFilter);
-
-  const activeLoc = hasLocs && overviewLocationFilter !== 'all'
-    ? locChoices.find(choice=>choice.key === overviewLocationFilter)
-    : null;
-  const activeTopic = hasTopics && overviewTopicFilter !== 'all'
-    ? topicChoices.find(choice=>choice.key === overviewTopicFilter)
-    : null;
-  const activeCount = Number(Boolean(activeLoc)) + Number(Boolean(activeTopic));
+  if(minimal)clearOverviewFilters();
+  let topicChoices = minimal ? [] : overviewTopicChoices(data);
+  let locChoices = minimal ? [] : overviewLocationChoices(data);
+  const hasTopics = topicChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
+  const hasLocs = locChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
+  if(!hasTopics || !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
+  if(!hasLocs || !locChoices.some(choice=>choice.key === overviewLocationFilter))overviewLocationFilter = 'all';
+  if(hasTopics)topicChoices = orderFilterChoices(topicChoices, overviewTopicFilter);
+  else topicChoices = [];
+  if(hasLocs)locChoices = orderFilterChoices(locChoices, overviewLocationFilter);
+  else locChoices = [];
+  const selection = overviewFilterSelection();
+  syncOverviewFilterSelection(selection);
+  const view = minimal ? {groupsHtml:'', chipsHtml:'', activeCount:0} : libraryFilterView({
+    prefix:'calendar-filter', attrPrefix:'overview', items:data, selection, topicChoices, locationChoices:locChoices
+  });
+  const activeCount = view.activeCount;
   const rangeHtml = OVERVIEW_RANGES.map(r=>`
     <button type="button" class="overview-range-option ${r.key === overviewRangeFilter ? 'on' : ''}" data-overview-range="${r.key}" aria-pressed="${r.key === overviewRangeFilter}">${escapeHtml(r.label)}</button>
   `).join('');
   wrap.hidden = false;
   wrap.innerHTML = `
     <div class="overview-range-seg" role="group" aria-label="calendar period">${rangeHtml}</div>
-    ${!minimal && (hasLocs || hasTopics) ? `<div class="overview-filter-summary-row">
+    ${!minimal && view.groupsHtml ? `<div class="overview-filter-summary-row">
       <div class="overview-active-filters" aria-label="active calendar filters">
-        ${activeLoc ? `<button type="button" class="home-active-filter location-filter" data-clear-overview-location="1" aria-label="clear place filter ${escapeHtml(activeLoc.label)}"><i class="ti ti-map-pin" aria-hidden="true"></i><span>${escapeHtml(activeLoc.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
-        ${activeTopic ? `<button type="button" class="home-active-filter topic-active" data-clear-overview-topic="1" aria-label="clear topic filter ${escapeHtml(activeTopic.label)}"><i class="ti ti-tag" aria-hidden="true"></i><span>${escapeHtml(activeTopic.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+        ${view.chipsHtml}
         ${!activeCount ? '<span>Showing every item</span>' : ''}
       </div>
       <button type="button" class="home-filter-trigger${activeCount ? ' has-active' : ''}" data-open-overview-filters="1" aria-label="open calendar filters${activeCount ? `, ${activeCount} active` : ''}">
@@ -110,33 +105,10 @@ function renderOverviewFilters(data){
 
   if(summary){
     summary.textContent = activeCount
-      ? `${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'} · the calendar updates immediately.`
-      : 'Narrow the calendar by one place, one topic, or both.';
+      ? `${activeCount} on · the calendar updates as you tap`
+      : 'Pick when it’s due, what it is, or where it belongs.';
   }
-  if(!groups)return;
-  const optionMarkup = (choice,kind)=>{
-    const on = kind === 'location' ? choice.key === overviewLocationFilter : choice.key === overviewTopicFilter;
-    const count = data.filter(h=>kind === 'location'
-      ? matchesOverviewLocation(h,choice.key)
-      : matchesOverviewTopic(h,choice.key)).length;
-    const icon = kind === 'location' ? 'ti-map-pin' : 'ti-tag';
-    const label = choice.key === 'all' ? (kind === 'location' ? 'All places' : 'All topics') : choice.label;
-    const attr = kind === 'location' ? 'data-overview-location' : 'data-overview-topic';
-    return `<button type="button" class="home-filter-option ${kind}${on ? ' on' : ''}" ${attr}="${escapeHtml(choice.key)}" aria-pressed="${on}">
-      <i class="ti ${icon} home-filter-option-icon" aria-hidden="true"></i>
-      <span><b>${escapeHtml(label)}</b><small>${count} ${count === 1 ? 'item' : 'items'}</small></span>
-      <i class="ti ti-check home-filter-check" aria-hidden="true"></i>
-    </button>`;
-  };
-  groups.innerHTML = `
-    ${hasLocs ? `<section class="home-filter-group" aria-labelledby="calendar-filter-places-label">
-      <div class="home-filter-group-head"><span id="calendar-filter-places-label">Place</span><small>${Math.max(0,locChoices.length - 1)} options</small></div>
-      <div class="home-filter-option-grid">${locChoices.map(choice=>optionMarkup(choice,'location')).join('')}</div>
-    </section>` : ''}
-    ${hasTopics ? `<section class="home-filter-group" aria-labelledby="calendar-filter-topics-label">
-      <div class="home-filter-group-head"><span id="calendar-filter-topics-label">Topic</span><small>${Math.max(0,topicChoices.length - 1)} options</small></div>
-      <div class="home-filter-option-grid">${topicChoices.map(choice=>optionMarkup(choice,'topic')).join('')}</div>
-    </section>` : ''}`;
+  if(groups)groups.innerHTML = view.groupsHtml;
 }
 
 // PURE: scheduled / due / plan-by markers for a habit (not yet in logs)
@@ -346,7 +318,7 @@ function weekAgendaByDay(week,data){
     const items = [];
     const seen = new Set();
     const pushHabit = (h,kind)=>{
-      if(!h || seen.has(h.hid || h.name))return;
+      if(!h || isCalendarIgnored(h) || seen.has(h.hid || h.name))return;
       seen.add(h.hid || h.name);
       items.push({name:h.name,type:h.type,tone:'agenda',planned:true,kind:kind || 'agenda'});
     };
@@ -377,7 +349,8 @@ function renderOverviewLists(data,countForHabit,scopeNote = ''){
     list.innerHTML = '';
     return;
   }
-  const rows = data.map((h,index)=>({h,index,count:countForHabit(h),c:habitColors(h)}))
+  const indices=new Map(load().map((h,index)=>[h.hid,index]));
+  const rows = data.map(h=>({h,index:indices.get(h.hid),count:countForHabit(h),c:habitColors(h)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,5);
 
   if(!rows.length){
@@ -708,7 +681,7 @@ function setOverviewMonthNav(showNav,label){
 
 // RENDER: orchestrates full overview sheet render
 function renderOverview(){
-  const allData = load();
+  const allData = load().filter(h=>!isCalendarIgnored(h));
   renderOverviewFilters(allData);
   const data = allData.filter(matchesOverviewFilters);
   if(overviewRangeFilter === 'recent')renderOverviewRecent(data);
@@ -817,6 +790,7 @@ function collectDayLogRows(key){
   const rows = [];
   const scoped = Number.isInteger(dayLogsScopeIndex);
   data.forEach((h,i)=>{
+    if(isCalendarIgnored(h))return;
     if(scoped){
       if(i !== dayLogsScopeIndex)return;
     }else if(!matchesOverviewFilters(h)){
@@ -912,7 +886,7 @@ function overviewDayAgendaTravelHtml(row){
 
 function overviewDayAgendaHabitHtml(row,data){
   const h = row.h || (row.i != null ? data[row.i] : null);
-  if(!h)return '';
+  if(!h || isCalendarIgnored(h))return '';
   const idx = row.i != null ? row.i : data.findIndex(item=>item === h || (item && h.hid && item.hid === h.hid));
   const c = habitColors(h);
   const meta = overviewIsMinimal() ? '' : [overviewDayAgendaClock(row.start),overviewDayAgendaDuration(row)].filter(Boolean).join(' · ');

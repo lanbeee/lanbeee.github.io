@@ -204,22 +204,32 @@ function feedbackUseChoices(items, settings){
   if(feedbackHasSleepOrRoutine(items, settings))uses.push(FEEDBACK_USE_SLEEP);
   return uses;
 }
+function feedbackUseAnswerRows(items, settings){
+  const uses = feedbackUseChoices(items, settings);
+  if(uses.length)return uses.map(use => [FEEDBACK_FORM_ENTRIES.uses, use]);
+  return [
+    [FEEDBACK_FORM_ENTRIES.uses, '__other_option__'],
+    [`${FEEDBACK_FORM_ENTRIES.uses}.other_option_response`, FEEDBACK_USE_NONE]
+  ];
+}
 function feedbackKnownAnswers(items, settings){
   const library = items || (typeof load === 'function' ? load() : []);
   const prefs = settings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
   const fields = [];
   const tenure = feedbackTenureChoice(library);
   if(tenure)fields.push([FEEDBACK_FORM_ENTRIES.tenure, tenure]);
-  for(const use of feedbackUseChoices(library, prefs))fields.push([FEEDBACK_FORM_ENTRIES.uses, use]);
+  fields.push(...feedbackUseAnswerRows(library, prefs));
   return fields;
 }
 function feedbackKnownSummary(fields){
   const rows = fields || feedbackKnownAnswers();
   const tenure = (rows.find(pair => pair[0] === FEEDBACK_FORM_ENTRIES.tenure) || [])[1];
-  const uses = rows.filter(pair => pair[0] === FEEDBACK_FORM_ENTRIES.uses).map(pair => pair[1]);
+  const uses = rows.filter(pair => pair[0] === FEEDBACK_FORM_ENTRIES.uses && pair[1] !== '__other_option__').map(pair => pair[1]);
+  const other = (rows.find(pair => String(pair[0]).endsWith('.other_option_response')) || [])[1];
   const bits = [];
   if(tenure)bits.push(tenure);
   if(uses.length)bits.push(uses.join(', '));
+  else if(other)bits.push(other);
   if(!bits.length)return '';
   return `Filled in from this device: ${bits.join(' · ')}. You can change any answer before sending.`;
 }
@@ -229,16 +239,15 @@ function feedbackFormHref(extra){
 }
 function syncFeedbackLink(){
   const row = $('about-feedback-row');
-  const link = $('open-feedback');
   const on = typeof feedbackFormConfigured === 'function' && feedbackFormConfigured();
   if(row){
     row.hidden = !on;
     row.setAttribute('aria-hidden', on ? 'false' : 'true');
   }
-  if(link){
+  for(const link of [$('open-feedback'), $('home-open-feedback'), $('bar-open-feedback')]){
+    if(!link)continue;
     link.hidden = !on;
     link.setAttribute('aria-hidden', on ? 'false' : 'true');
-    if(on)link.href = feedbackFormHref();
   }
 }
 window.syncInstallGuideVisibility = syncInstallGuideVisibility;
@@ -353,9 +362,6 @@ $('open-docs')?.addEventListener('click',()=>{
   // an installed PWA — window.open would keep the docs in the standalone app).
   closeSheet('about-sheet');
   closeSheet('sample-habits-sheet');
-});
-$('open-feedback')?.addEventListener('click',()=>{
-  closeSheet('about-sheet');
 });
 $('sample-habits-close')?.addEventListener('click',()=>closeSheet('sample-habits-sheet'));
 $('sample-habits-sheet')?.addEventListener('click',e=>{if(e.target === e.currentTarget)closeSheet('sample-habits-sheet');});
@@ -942,8 +948,7 @@ $('open-overview').addEventListener('click',()=>{
   closeSearch();
   overviewMonthOffset = 0;
   overviewRecentOffset = 0;
-  overviewTopicFilter = 'all';
-  overviewLocationFilter = 'all';
+  clearOverviewFilters();
   overviewRangeFilter = 'recent';
   overviewListPane = 'plan';
   renderOverview();
@@ -978,14 +983,13 @@ $('overview-filter')?.addEventListener('click',e=>{
     openSheet('calendar-filter-sheet');
     return;
   }
-  if(e.target.closest('[data-clear-overview-topic]')){
-    overviewTopicFilter = 'all';
-    dayLogsKey = null;
-    renderOverview();
-    return;
-  }
-  if(e.target.closest('[data-clear-overview-location]')){
-    overviewLocationFilter = 'all';
+  if(takeFilterClick(e, [
+    ['data-clear-overview-topic', ()=>{ overviewTopicFilter = 'all'; }],
+    ['data-clear-overview-location', ()=>{ overviewLocationFilter = 'all'; }],
+    ['data-clear-overview-type', ()=>{ overviewTypeFilter = 'all'; }],
+    ['data-clear-overview-when', ()=>{ overviewWhenFilter = 'all'; }],
+    ['data-clear-overview-priority', ()=>{ overviewPriorityFilter = 'all'; }]
+  ])){
     dayLogsKey = null;
     renderOverview();
     return;
@@ -1001,11 +1005,14 @@ $('overview-filter')?.addEventListener('click',e=>{
   }
 });
 $('calendar-filter-groups')?.addEventListener('click',e=>{
-  const topicBtn = e.target.closest('[data-overview-topic]');
-  const locBtn = e.target.closest('[data-overview-location]');
-  if(topicBtn)overviewTopicFilter = topicBtn.dataset.overviewTopic || 'all';
-  else if(locBtn)overviewLocationFilter = locBtn.dataset.overviewLocation || 'all';
-  else return;
+  const hit = takeFilterClick(e, [
+    ['data-overview-topic', value=>{ overviewTopicFilter = value; }],
+    ['data-overview-location', value=>{ overviewLocationFilter = value; }],
+    ['data-overview-type', value=>{ overviewTypeFilter = value; }],
+    ['data-overview-when', value=>{ overviewWhenFilter = value; }],
+    ['data-overview-priority', value=>{ overviewPriorityFilter = value; }]
+  ]);
+  if(!hit)return;
   dayLogsKey = null;
   renderOverview();
 });
@@ -1013,8 +1020,7 @@ const closeCalendarFilters = ()=>closeSheet('calendar-filter-sheet');
 $('calendar-filter-close')?.addEventListener('click',closeCalendarFilters);
 $('calendar-filter-done')?.addEventListener('click',closeCalendarFilters);
 $('calendar-filter-reset')?.addEventListener('click',()=>{
-  overviewTopicFilter = 'all';
-  overviewLocationFilter = 'all';
+  clearOverviewFilters();
   dayLogsKey = null;
   renderOverview();
 });
@@ -1061,33 +1067,28 @@ $('home-tag-filter')?.addEventListener('click',e=>{
     openPresencePicker();
     return;
   }
-  if(e.target.closest('[data-clear-home-topic]')){
-    homeTopicFilter = 'all';
+  if(takeFilterClick(e, [
+    ['data-clear-home-topic', ()=>{ homeTopicFilter = 'all'; }],
+    ['data-clear-home-location', ()=>{ homeLocationFilter = 'all'; }],
+    ['data-clear-home-type', ()=>{ homeTypeFilter = 'all'; }],
+    ['data-clear-home-when', ()=>{ homeWhenFilter = 'all'; }],
+    ['data-clear-home-priority', ()=>{ homePriorityFilter = 'all'; }]
+  ])){
     applyHomeFilterChange();
-    return;
-  }
-  if(e.target.closest('[data-clear-home-location]')){
-    homeLocationFilter = 'all';
-    applyHomeFilterChange();
-    return;
   }
 });
 $('home-filter-groups')?.addEventListener('click',e=>{
-  const topicBtn = e.target.closest('[data-home-topic]');
-  if(topicBtn){
-    homeTopicFilter = topicBtn.dataset.homeTopic || 'all';
-    applyHomeFilterChange();
-    return;
-  }
-  const locBtn = e.target.closest('[data-home-location]');
-  if(locBtn){
-    homeLocationFilter = locBtn.dataset.homeLocation || 'all';
-    applyHomeFilterChange();
-  }
+  const hit = takeFilterClick(e, [
+    ['data-home-topic', value=>{ homeTopicFilter = value; }],
+    ['data-home-location', value=>{ homeLocationFilter = value; }],
+    ['data-home-type', value=>{ homeTypeFilter = value; }],
+    ['data-home-when', value=>{ homeWhenFilter = value; }],
+    ['data-home-priority', value=>{ homePriorityFilter = value; }]
+  ]);
+  if(hit)applyHomeFilterChange();
 });
 $('home-filter-reset')?.addEventListener('click',()=>{
-  homeTopicFilter = 'all';
-  homeLocationFilter = 'all';
+  clearHomeFilters();
   applyHomeFilterChange();
 });
 $('home-filter-close')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));

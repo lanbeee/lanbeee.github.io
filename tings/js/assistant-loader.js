@@ -64,7 +64,7 @@
     if(open && typeof sortSettings !== 'undefined' && sortSettings.localAssistantProvider === 'needle'){
       event.preventDefault();
       event.stopImmediatePropagation();
-      if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+      if(typeof showToast === 'function')showToast('Open an item and ask for a change from its details.');
       return;
     }
     if(typeof window.openAssistantSheet === 'function')return;

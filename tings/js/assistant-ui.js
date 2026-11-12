@@ -9,6 +9,25 @@ let _assistantTurn = 0;
 let _assistantExternalReview = false;
 let _assistantDebugRevealed = false;
 let _assistantTitleTaps = [];
+let _assistantIOSScroll = null;
+
+function assistantLockIOSPage(){
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(!ios || paneTierActive() || _assistantIOSScroll !== null)return;
+  _assistantIOSScroll = {x:window.scrollX,y:window.scrollY};
+  document.body.style.setProperty('--assistant-page-top', `${-_assistantIOSScroll.y}px`);
+  document.body.classList.add('assistant-ios-scroll-lock');
+}
+
+function assistantUnlockIOSPage(){
+  if(_assistantIOSScroll === null)return;
+  const scroll = _assistantIOSScroll;
+  _assistantIOSScroll = null;
+  document.body.classList.remove('assistant-ios-scroll-lock');
+  document.body.style.removeProperty('--assistant-page-top');
+  window.scrollTo({left:scroll.x,top:scroll.y,behavior:'instant'});
+}
 
 function assistantEnabled(){
   return Boolean(sortSettings && sortSettings.localAssistant);
@@ -27,7 +46,10 @@ function syncAssistantChrome(){
   const on = assistantEnabled();
   document.body.classList.toggle('assistant-on', on);
   document.body.classList.toggle('assistant-debug-on', on && assistantDebugOn());
-  if(typeof syncAddNamePlaceholder === 'function')syncAddNamePlaceholder();
+  if(typeof syncDetailSearchAssistant === 'function'){
+    if($('detail-search-panel').hidden)syncDetailSearchAssistant();
+    else renderDetailSearch();
+  }
   const needle = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
   ['open-assistant','bar-open-assistant'].forEach(id => {
     const btn = $(id);
@@ -151,8 +173,8 @@ function syncAssistantNeedleControls(){
     panel.hidden = !selected || !assistantEnabled() || chatReady;
     const status = panel.querySelector('[data-needle-status]');
     if(status)status.textContent = state.error || (downloading ? `Downloading Needle 3… ${state.progress}%`
-      : downloaded ? 'Needle 3 is downloaded. Ready to use on this device, including offline.'
-      : 'Download Needle 3 once (36.3 MB). Runs on this device; your requests stay here.');
+      : downloaded ? 'Needle 3 is ready, including offline.'
+      : 'Needle 3 is 36.3 MB and stays on this device.');
     const progress = panel.querySelector('progress');
     if(progress){ progress.hidden = !downloading; progress.value = state.progress; }
     const download = panel.querySelector('[data-needle-download]');
@@ -202,17 +224,18 @@ function openAssistantSheet(opts){
     return false;
   }
   if(assistantSettings().provider === 'needle' && !external && !assistantNeedleFocused(opts)){
-    if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+    if(typeof showToast === 'function')showToast('Open an item and ask for a change from its details.');
     return false;
   }
   _assistantExternalReview = external;
   const eyebrow = document.querySelector('#assistant-sheet .sheet-eyebrow');
   if(eyebrow)eyebrow.textContent = external ? 'Android assistant' : 'on this device';
-  const composer = $('assistant-input')?.parentElement;
+  const composer = $('assistant-input')?.closest('.assistant-compose');
   if(composer)composer.hidden = external && !assistantEnabled();
   if(!_assistantSession)_assistantSession = assistantCreateSession();
   if(!(opts && opts.skipWelcome))renderAssistantThread();
   syncAssistantFocusBar();
+  assistantLockIOSPage();
   openSheet('assistant-sheet');
   syncAssistantNeedleControls();
   if(assistantSettings().provider === 'needle')void assistantNeedleCheckDownload();
@@ -233,6 +256,7 @@ function closeAssistantSheet(){
   assistantAbortInFlight();
   assistantShowBusy(false);
   closeSheet('assistant-sheet');
+  assistantUnlockIOSPage();
   if(window.tingsExternalAssistant)setTimeout(()=>window.tingsExternalAssistant.drain(),0);
 }
 
@@ -260,7 +284,7 @@ function assistantOpenForItem(hid, entry, extra){
   });
 }
 
-// Entry points (add sheet, detail page, home swipe) start a fresh conversation with the
+// Entry points (detail search, detail actions, home swipe) start a fresh conversation with the
 // intent or item already known, so the model skips classify and extracts
 // straight away. All other natural-language turns start with the model too.
 async function assistantOpenWithInstruction(text, opts){
@@ -290,7 +314,7 @@ async function assistantOpenWithInstruction(text, opts){
     } : null);
     _assistantSession.focus = spec ? assistantFocusOpen(spec) : null;
     if(!_assistantSession.focus){
-      if(typeof showToast === 'function')showToast('Edit one item from Add, a card, or its details.');
+      if(typeof showToast === 'function')showToast('Open an item and ask for a change from its details.');
       return false;
     }
   }
@@ -298,8 +322,7 @@ async function assistantOpenWithInstruction(text, opts){
   // stay on screen otherwise, and a tiny model will repeat them.
   const thread = assistantThreadEl();
   if(thread)thread.replaceChildren();
-  const input = $('assistant-input');
-  if(input)input.value = '';
+  assistantPresentComposer('');
   syncAssistantFocusBar();
   const opened = openAssistantSheet({skipWelcome:true, focused:Boolean(_assistantSession.focus)});
   if(opened === false)return false;
@@ -318,9 +341,6 @@ async function assistantOpenWithInstruction(text, opts){
   }
   const spoken = value;
   let modelText = String(opts.modelText || '').trim();
-  if(!modelText && opts.entry === 'add' && opts.intent && typeof addAssistantModelText === 'function'){
-    modelText = addAssistantModelText(spoken, opts.intent);
-  }
   if(!modelText || assistantSettings().provider === 'needle')modelText = spoken;
   await sendAssistantMessage(modelText, {
     startIntent:opts.intent,
@@ -332,7 +352,7 @@ async function assistantOpenWithInstruction(text, opts){
 }
 
 function assistantWelcomeHtml(){
-  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Needle edits one habit, task, or local event at a time. Start from Add, Edit with AI, or Change with AI. Nothing is saved until you confirm.</p></div>`;
+  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Needle edits one habit, task, or local event at a time. Open an item and use its search box or Edit with AI. Nothing is saved until you confirm.</p></div>`;
   return `<div class="assistant-bubble assistant-bubble-say"><p>Say it like a person. Nothing is saved until you confirm.</p>
       <div class="assistant-suggestions">
         <button type="button" class="assistant-suggest" data-assistant-suggest="Remind me to call mom">Remind me to call mom</button>
@@ -417,6 +437,7 @@ function assistantNeedleFocusReview(){
 }
 
 function syncAssistantFocusBar(){
+  assistantRenderGuides();
   const bar = $('assistant-focus');
   if(!bar)return;
   // The Edit/New summary already names the item. A second "working on" strip
@@ -497,6 +518,7 @@ function assistantClearFocus(){
 }
 
 function clearAssistantChat(){
+  if(assistantGuideSearchOpen)assistantToggleGuideBrowser(false, {restore:false});
   const needleFocus = assistantNeedleFocusLock();
   _assistantTurn += 1;
   assistantAbortInFlight();
@@ -511,11 +533,8 @@ function clearAssistantChat(){
     _assistantPendingDraft = needleFocus.draft;
     _assistantPendingDrafts = null;
   }
-  const input = $('assistant-input');
-  if(input){
-    input.value = '';
-    input.focus({preventScroll:true});
-  }
+  assistantPresentComposer('');
+  $('assistant-input')?.focus({preventScroll:true});
   const thread = assistantThreadEl();
   if(thread){
     thread.replaceChildren();
@@ -934,6 +953,8 @@ function appendAssistantBubble(kind, text, extra){
     div.innerHTML = `${think}<p>${escapeHtml(text)}</p>${choices ? `<div class="btn-row assistant-choices">${choices}</div>` : ''}`;
   }else if(kind === 'debug'){
     assistantFillDebugBubble(div, extra && extra.debug, extra);
+  }else if(kind === 'user'){
+    div.innerHTML = assistantUserMessageHtml(text);
   }else{
     div.innerHTML = `${think}<p>${escapeHtml(text)}</p>`;
   }
@@ -954,15 +975,394 @@ function renderAssistantThread(){
 }
 
 function assistantComposerValue(){
-  return String($('assistant-input')?.value || '').trim();
+  return String($('assistant-input')?.value || '').trim() || assistantMentionName();
+}
+
+function assistantMentionName(){
+  const mention = $('assistant-mention');
+  if(!mention || mention.hidden)return '';
+  return String($('assistant-mention-label')?.textContent || '').trim();
+}
+
+function assistantSetMention(label){
+  const mention = $('assistant-mention');
+  const text = $('assistant-mention-label');
+  const remove = $('assistant-mention-remove');
+  const field = $('assistant-field');
+  const name = String(label || '').trim();
+  if(text)text.textContent = name;
+  if(mention){
+    mention.hidden = !name;
+    if(name)mention.setAttribute('aria-label', name);
+    else mention.removeAttribute('aria-label');
+  }
+  if(field)field.classList.toggle('has-mention', Boolean(name));
+  if(remove){
+    remove.disabled = Boolean(_assistantBusy);
+    remove.setAttribute('aria-label', name ? `Remove ${name}` : 'Remove setting');
+  }
+}
+
+// A typed "Label: value" is the wire form. The label renders as a tag, and
+// only the value stays in the text box. Catalog matching is expensive, so a
+// value with no separator, or a separator head already known not to be a
+// setting, never enters it.
+let assistantGuidePrefixMiss = '';
+function assistantGuideSeparated(text, session){
+  const raw = String(text || '');
+  if(!session || typeof assistantGuideParse !== 'function' || typeof assistantGuidePattern !== 'function')return null;
+  const cut = raw.search(/[:\-–—]/);
+  if(cut < 0)return null;
+  const head = raw.slice(0, cut).trim().toLowerCase();
+  if(!head || head.length > 48 || head === assistantGuidePrefixMiss)return null;
+  const parsed = assistantGuideParse(raw, session);
+  if(!parsed || !new RegExp(`^\\s*${assistantGuidePattern(parsed.label)}\\s*[:\\-–—]\\s*`,'i').test(raw)){
+    assistantGuidePrefixMiss = head;
+    return null;
+  }
+  assistantGuidePrefixMiss = '';
+  return parsed;
+}
+
+function assistantComposerDraft(){
+  const rest = String($('assistant-input')?.value || '');
+  const session = _assistantSession && _assistantSession.focus;
+  if(assistantGuideSeparated(rest, session))return rest.trim();
+  const label = assistantMentionName();
+  if(!label)return rest;
+  const detail = rest.trim();
+  return detail ? `${label}: ${detail}` : `${label}: `;
+}
+
+function assistantAbsorbGuidePrefix(){
+  const input = $('assistant-input');
+  const session = _assistantSession && _assistantSession.focus;
+  if(!input || !session || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(session))return;
+  const parsed = assistantGuideSeparated(input.value, session);
+  if(!parsed)return;
+  assistantSetMention(parsed.label);
+  input.value = parsed.rest;
+}
+
+function assistantPresentComposer(text){
+  const input = $('assistant-input');
+  if(!input)return;
+  assistantSetMention('');
+  input.value = text == null ? '' : String(text);
+  assistantAbsorbGuidePrefix();
+  if(assistantMentionName())return;
+  const session = _assistantSession && _assistantSession.focus;
+  const parsed = session && typeof assistantGuideParse === 'function' ? assistantGuideParse(input.value, session) : null;
+  if(parsed && !parsed.rest && parsed.label.toLowerCase() === input.value.trim().toLowerCase()){
+    assistantSetMention(parsed.label);
+    input.value = '';
+  }
+}
+
+function assistantUserMessageHtml(text){
+  const session = _assistantSession && _assistantSession.focus;
+  const parsed = session && typeof assistantGuideParse === 'function' ? assistantGuideParse(text, session) : null;
+  if(!parsed)return `<p>${escapeHtml(text)}</p>`;
+  const tag = `<span class="assistant-mention assistant-mention-static"><span class="assistant-mention-label">${escapeHtml(parsed.label)}</span></span>`;
+  if(!parsed.rest)return `<p class="assistant-user-line">${tag}</p>`;
+  return `<p class="assistant-user-line">${tag} <span class="assistant-user-detail">${escapeHtml(parsed.rest)}</span></p>`;
+}
+
+const ASSISTANT_GUIDE_PLACEHOLDER = 'Describe the change';
+
+function assistantGuideHintText(session, active, revising){
+  if(active && typeof assistantGuideHelp === 'function'){
+    const detail = assistantGuideHelp(active.id);
+    return `${detail.description}${detail.example ? ` Example: ${detail.example}.` : ''}`;
+  }
+  if(revising)return 'Last change undone. Edit it and send.';
+  if(session.continuationError)return 'Draft kept. Continue above, or fix the last request.';
+  if(session.unresolved?.some(item => item.field === 'guidance'))return 'Choose the field or action that matches.';
+  if(session.unresolved?.length)return 'Pick the setting you meant, then add its value.';
+  return '';
+}
+
+// Find a setting reuses the message box. The message at open is kept so a
+// search phrase does not become the setting's value, and closing puts it back.
+let assistantGuideSearchOpen = false;
+let assistantGuidePark = '';
+
+function assistantGuideBrowsing(){
+  return assistantGuideSearchOpen;
+}
+
+function assistantGuideSearchQuery(){
+  return String($('assistant-input')?.value || '');
+}
+
+function assistantGuideResultLabel(button){
+  if(!button)return '';
+  return button.dataset.guideLabel || button.querySelector(':scope > span')?.textContent || button.textContent || '';
+}
+
+function assistantSyncGuideClear(){
+  const clear = $('assistant-guide-clear');
+  if(!clear)return;
+  clear.hidden = !assistantGuideSearchOpen || !assistantGuideSearchQuery().length;
+  clear.disabled = Boolean(_assistantBusy);
+}
+
+function assistantGuideSearchStatus(rows){
+  const query = assistantGuideSearchQuery().trim();
+  const kept = assistantGuidePark.trim();
+  const edited = assistantComposerDraft() !== assistantGuidePark;
+  if(!query){
+    return kept && edited
+      ? 'Find a setting. Close to return to your message.'
+      : 'Find a setting, or send a question.';
+  }
+  if(!rows.length){
+    return kept && edited
+      ? 'No matching setting. Close to return to your message.'
+      : 'No matching setting. Send to ask.';
+  }
+  return kept && edited
+    ? `${rows.length} ${rows.length === 1 ? 'match' : 'matches'}. Enter chooses. Close puts your message back.`
+    : `${rows.length} ${rows.length === 1 ? 'match' : 'matches'}. Enter chooses one.`;
+}
+
+function assistantSyncSearchChrome(){
+  const button = $('assistant-guide-more');
+  const input = $('assistant-input');
+  if(button){
+    button.setAttribute('aria-expanded', String(assistantGuideSearchOpen));
+    button.setAttribute('aria-label', assistantGuideSearchOpen ? 'Close settings search' : 'Find a setting');
+  }
+  if(input && assistantGuideSearchOpen){
+    input.placeholder = 'Find a setting or ask';
+    input.setAttribute('aria-label', 'Find a setting or ask');
+  }
+  assistantSyncGuideClear();
+}
+
+let assistantGuideRenderTimer = 0;
+function assistantScheduleGuideRender(){
+  clearTimeout(assistantGuideRenderTimer);
+  assistantGuideRenderTimer = setTimeout(() => {
+    assistantGuideRenderTimer = 0;
+    assistantRenderGuides();
+  }, 80);
+}
+
+function assistantRenderGuides(){
+  if(assistantGuideRenderTimer){
+    clearTimeout(assistantGuideRenderTimer);
+    assistantGuideRenderTimer = 0;
+  }
+  const row = $('assistant-guides');
+  const list = $('assistant-guides-row');
+  const input = $('assistant-input');
+  if(!row || !list)return;
+  const session = _assistantSession && _assistantSession.focus;
+  const alive = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle'
+    && session && typeof assistantFocusAlive === 'function' && assistantFocusAlive(session)
+    && !row.closest('.assistant-compose')?.hidden
+    && typeof assistantGuideSuggestions === 'function';
+  if(!alive){
+    row.hidden = true;
+    list.replaceChildren();
+    delete row.dataset.guideSignature;
+    delete row.dataset.guideSession;
+    assistantToggleGuideBrowser(false);
+    if($('assistant-guide-more'))$('assistant-guide-more').hidden = true;
+    $('assistant-dock')?.classList.remove('is-searchable');
+    if(assistantMentionName() && input){
+      const draft = assistantComposerDraft().trim();
+      input.value = draft.endsWith(':') ? draft.slice(0, -1).trim() : draft;
+    }
+    assistantSetMention('');
+    if(input){
+      input.placeholder = 'Remind me, paste a schedule, or change it';
+      input.setAttribute('aria-label', 'assistant message');
+      input.enterKeyHint = 'send';
+      input.removeAttribute('aria-describedby');
+    }
+    return;
+  }
+  const typed = assistantComposerDraft();
+  if(row.dataset.guideSession!==session.id){
+    row.dataset.guideSession=session.id;
+    delete row.dataset.guideRevising;
+    assistantToggleGuideBrowser(false, {restore:false});
+  }
+  const hint = typed.trim() || String(session.currentRequest || (session.requests || []).at(-1) || '');
+  const active = assistantGuideRead(typed, session, true);
+  const hintText = assistantGuideHintText(session, active, row.dataset.guideRevising === 'true');
+  if(input && !assistantGuideSearchOpen){
+    input.placeholder = active ? (active.rest ? 'Edit this, then send' : 'Add details, or send') : ASSISTANT_GUIDE_PLACEHOLDER;
+    input.setAttribute('aria-label', 'assistant message');
+    input.enterKeyHint = 'send';
+    if(hintText)input.setAttribute('aria-describedby', 'assistant-guide-hint');
+    else input.removeAttribute('aria-describedby');
+  }else if(input && assistantGuideSearchOpen){
+    assistantSyncSearchChrome();
+    input.setAttribute('aria-describedby', 'assistant-guide-status');
+  }
+  const label=$('assistant-guides-label'),help=$('assistant-guide-hint');
+  if(help){
+    help.hidden=!hintText;
+    help.textContent=hintText;
+  }
+  const revise=$('assistant-guide-revise');
+  if(revise){
+    revise.hidden=!assistantGuideCanRevise(session);
+    revise.disabled=Boolean(_assistantBusy||typed.trim());
+    revise.title=typed.trim()?'Clear the message first.':'Undo the last unsaved change and edit it.';
+  }
+  const more=$('assistant-guide-more');
+  if(more){
+    more.hidden=false;
+    more.disabled=Boolean(_assistantBusy);
+  }
+  $('assistant-dock')?.classList.add('is-searchable');
+  assistantSyncGuideClear();
+  assistantRenderGuideBrowser();
+  const suggestions = assistantGuideSuggestions(session, hint);
+  const choosing = suggestions.some(item => /^(?:action|field):/.test(item.id));
+  if(label)label.textContent=active?'Change this setting':choosing?'Which one':session.unresolved?.length?'Which setting':'Settings';
+  const signature = `${suggestions.map(item => item.id).join(',')}|${active ? active.id : ''}|${_assistantBusy ? 1 : 0}`;
+  row.hidden = !assistantGuideSearchOpen && suggestions.length === 0;
+  if(row.dataset.guideSignature === signature)return;
+  row.dataset.guideSignature = signature;
+  list.replaceChildren();
+  for(const item of suggestions){
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'assistant-guide';
+    button.dataset.assistantGuide = item.id;
+    button.textContent = item.label;
+    button.title = /^(?:action|field):/.test(item.id) ? item.label : assistantGuideHelp(item.id).description;
+    button.setAttribute('aria-pressed', active && active.id === item.id ? 'true' : 'false');
+    button.disabled = Boolean(_assistantBusy);
+    list.append(button);
+  }
+}
+
+function assistantToggleGuideBrowser(open, opts){
+  const restore = !opts || opts.restore !== false;
+  const browser=$('assistant-guide-browser'),guides=$('assistant-guides');
+  if(open && !assistantGuideSearchOpen){
+    assistantGuidePark = assistantComposerDraft();
+    assistantGuideSearchOpen = true;
+    // The tag stays in the kept message. The box shows only the words used to look up a setting.
+    assistantSetMention('');
+  }else if(!open && assistantGuideSearchOpen){
+    const parked = assistantGuidePark;
+    assistantGuideSearchOpen = false;
+    assistantGuidePark = '';
+    if(restore)assistantPresentComposer(parked);
+  }
+  if(browser)browser.hidden=!assistantGuideSearchOpen;
+  if(guides){
+    guides.classList.toggle('is-browsing', assistantGuideSearchOpen);
+    if(assistantGuideSearchOpen)guides.hidden=false;
+    else guides.scrollTop=0;
+  }
+  assistantSyncSearchChrome();
+  const input=$('assistant-input');
+  if(input && !assistantGuideSearchOpen)input.enterKeyHint='send';
+  assistantResizeComposer();
+}
+
+function assistantRenderGuideBrowser(){
+  const browser=$('assistant-guide-browser'),results=$('assistant-guide-results');
+  const session=_assistantSession?.focus;
+  if(!browser||browser.hidden||!results||!session||typeof assistantGuideBrowse!=='function')return;
+  const query=assistantGuideSearchQuery();
+  const rows=assistantGuideBrowse(session, query);
+  const status=$('assistant-guide-status');
+  if(status)status.textContent=assistantGuideSearchStatus(rows);
+  const input=$('assistant-input');
+  if(input)input.enterKeyHint=rows.length?'search':'send';
+  const signature=`${session.id}|${query}|${rows.map(row=>row.id).join(',')}|${assistantComposerDraft()!==assistantGuidePark?1:0}|${Boolean(_assistantBusy)}`;
+  if(results.dataset.signature===signature)return;
+  results.dataset.signature=signature;
+  results.replaceChildren();
+  for(const def of rows){
+    const button=document.createElement('button');button.type='button';button.className='assistant-guide';
+    button.dataset.assistantGuide=def.id;button.dataset.guideLabel=def.label;button.disabled=Boolean(_assistantBusy);
+    const title=document.createElement('span');title.textContent=def.label;
+    const detail=document.createElement('span');detail.className='assistant-guide-description';
+    detail.textContent=assistantGuideHelp(def.id).description;
+    button.append(title,detail);results.append(button);
+  }
+  if(!rows.length){
+    const empty=document.createElement('p');empty.className='assistant-guide-empty';
+    empty.textContent='No matching setting.';results.append(empty);
+  }
+}
+
+function assistantApplyGuide(label){
+  const input = $('assistant-input');
+  const session = _assistantSession && _assistantSession.focus;
+  if(!input || input.disabled || _assistantBusy || !session || !assistantFocusAlive(session) || typeof assistantGuideCompose !== 'function')return;
+  const base = assistantGuideSearchOpen ? assistantGuidePark : assistantComposerDraft();
+  assistantToggleGuideBrowser(false, {restore:false});
+  assistantPresentComposer(assistantGuideCompose(base, label, session));
+  const end = input.value.length;
+  input.focus({preventScroll:true});
+  try{ input.setSelectionRange(end, end); }catch(_){}
+  assistantResizeComposer();
+  assistantSyncSend();
+  assistantRenderGuides();
+  setTimeout(() => {
+    if(typeof updateKeyboardLift === 'function')updateKeyboardLift();
+  }, 260);
 }
 
 function assistantResizeComposer(){
   const input = $('assistant-input');
   if(!input)return;
   if(typeof ASSISTANT_INPUT_MAX === 'number')input.maxLength = ASSISTANT_INPUT_MAX;
+  const guided = $('assistant-guides') && !$('assistant-guides').hidden;
+  const max = assistantGuideSearchOpen ? 44 : guided ? 88 : 160;
   input.style.height = 'auto';
-  input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), 220)}px`;
+  input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), max)}px`;
+}
+
+// iOS can still pan the document with overflow:hidden while the keyboard is
+// open. Only let a one-finger drag reach a scroller that can consume it; at
+// its edges (or on the header/gutters) stop it before it reaches the page.
+// Leave pinch zoom and the browser's edge navigation gestures available.
+function assistantBindScrollGuard(){
+  const wrap = $('assistant-sheet');
+  if(!wrap)return;
+  let touch = null;
+  wrap.addEventListener('touchstart', event => {
+    const point = event.touches.length === 1 ? event.touches[0] : null;
+    touch = point ? {id:point.identifier,x:point.clientX,y:point.clientY,
+      edge:point.clientX < 28 || point.clientX > innerWidth - 28} : null;
+  }, {passive:true});
+  wrap.addEventListener('touchmove', event => {
+    if(!touch || event.touches.length !== 1 || !wrap.classList.contains('open'))return;
+    const point = event.touches[0];
+    if(point.identifier !== touch.id)return;
+    const dx = point.clientX - touch.x, dy = point.clientY - touch.y;
+    touch.x = point.clientX;touch.y = point.clientY;
+    if(!dx && !dy)return;
+    const horizontal = Math.abs(dx) > Math.abs(dy);
+    // The OS owns a horizontal swipe from the bezel on iOS. Other hosts
+    // have the app's edge-back handler, which also needs these events.
+    if(horizontal && touch.edge)return;
+    for(let el = event.target instanceof Element ? event.target : null; el && el !== wrap; el = el.parentElement){
+      const style = getComputedStyle(el);
+      const overflow = horizontal ? style.overflowX : style.overflowY;
+      if(!/^(auto|scroll)$/.test(overflow))continue;
+      const position = horizontal ? el.scrollLeft : el.scrollTop;
+      const extent = horizontal ? el.scrollWidth - el.clientWidth : el.scrollHeight - el.clientHeight;
+      const delta = horizontal ? dx : dy;
+      if(extent > 1 && (delta < 0 ? position < extent - 1 : position > 1))return;
+    }
+    if(event.cancelable)event.preventDefault();
+  }, {passive:false});
+  const reset = () => {touch = null;};
+  wrap.addEventListener('touchend', reset, {passive:true});
+  wrap.addEventListener('touchcancel', reset, {passive:true});
 }
 
 function assistantSyncSend(){
@@ -974,6 +1374,8 @@ function assistantShowBusy(on){
   _assistantBusy = on;
   const input = $('assistant-input');
   if(input)input.disabled = on;
+  const mentionRemove = $('assistant-mention-remove');
+  if(mentionRemove)mentionRemove.disabled = on;
   assistantSyncSend();
   syncAssistantNeedleControls();
   document.querySelectorAll('#assistant-thread .assistant-suggest').forEach(btn => {
@@ -982,6 +1384,7 @@ function assistantShowBusy(on){
   document.querySelectorAll('#assistant-thread [data-assistant-choice]').forEach(btn => {
     btn.disabled=on || btn.closest('.assistant-bubble') !== assistantThreadEl()?.lastElementChild;
   });
+  assistantRenderGuides();
   const wait = $('assistant-waiting');
   if(wait){
     wait.hidden = !on;
@@ -1106,11 +1509,14 @@ async function renderAssistantOutcome(out, feedbackContext){
 
 async function sendAssistantMessage(text, opts){
   opts = opts || {};
-  const value = String(text || '').trim();
+  const typed = String(text || '').trim();
+  let value = typed;
+  const guideSession = _assistantSession && _assistantSession.focus;
+  if(guideSession && typeof assistantGuideOutgoing === 'function')value = assistantGuideOutgoing(typed, guideSession);
   if(!value || _assistantBusy)return;
+  if(assistantGuideSearchOpen)assistantToggleGuideBrowser(false, {restore:false});
   if(!assistantNeedleCanSend()){
-    const input = $('assistant-input');
-    if(input)input.value = value;
+    assistantPresentComposer(text == null ? value : String(text));
     assistantResizeComposer();
     if(typeof showToast === 'function')showToast('Download Needle 3 to use the assistant');
     return;
@@ -1118,17 +1524,15 @@ async function sendAssistantMessage(text, opts){
   const turn = ++_assistantTurn;
   assistantThreadEl()?.querySelectorAll('.assistant-preview-actions button, [data-assistant-choice], [data-assistant-proposal], [data-assistant-action]').forEach(button=>{button.disabled=true;});
   appendAssistantBubble('user', opts.displayText || value);
-  const input = $('assistant-input');
-  if(input){
-    input.value = '';
-    assistantResizeComposer();
-    assistantSyncSend();
-  }
+  if($('assistant-guides'))delete $('assistant-guides').dataset.guideRevising;
+  assistantPresentComposer('');
+  assistantResizeComposer();
+  assistantSyncSend();
   assistantShowBusy(true);
   if(assistantSettings().provider === 'needle' && !opts.needleAction){
     const focus = _assistantSession && _assistantSession.focus;
     if(!focus || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(focus) || typeof assistantFocusTurn !== 'function'){
-      appendAssistantBubble('say', 'Needle changes one item at a time. Use Add, Edit with AI on a card, or Change with AI in details.');
+      appendAssistantBubble('say', 'Needle changes one item at a time. Open an item and use its search box or Edit with AI on a card.');
       assistantShowBusy(false);
       return;
     }
@@ -1450,8 +1854,9 @@ function assistantDiscardPending(){
   assistantClearFocus();
 }
 
-function assistantRetireFocusControls(){
-  assistantThreadEl()?.querySelectorAll('[data-focus-save],[data-focus-edit],[data-focus-choice]').forEach(button => {
+function assistantRetireFocusControls(keepFields = false){
+  const selector = '[data-focus-save],[data-focus-edit],[data-focus-choice]' + (keepFields ? '' : ',[data-focus-field]');
+  assistantThreadEl()?.querySelectorAll(selector).forEach(button => {
     button.disabled = true;
   });
 }
@@ -1476,7 +1881,7 @@ function assistantShowFocusReview(session, opts){
   assistantRetireFocusControls();
   const thread = assistantThreadEl();
   const bubble = thread?.querySelector('[data-focus-card]') || document.createElement('div');
-  bubble.className = 'assistant-bubble assistant-bubble-say';
+  bubble.className = 'assistant-bubble assistant-bubble-say assistant-bubble-review';
   bubble.dataset.focusCard = 'true';
   bubble.innerHTML = assistantFocusReviewHtml(session);
   if(opts && opts.live){
@@ -1495,6 +1900,25 @@ async function assistantHandleFocusClick(target){
   const session = _assistantSession && _assistantSession.focus;
   if(!session)return false;
   if(_assistantBusy || target.closest('button')?.disabled)return true;
+  const field = target.closest('[data-focus-field]');
+  if(field){
+    const selector = assistantFocusDetailSelector(field.dataset.focusField, session);
+    if(!selector || typeof assistantFocusEditDraft !== 'function')return true;
+    const result = assistantFocusEditDraft(session);
+    const status = field.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
+    if(!result?.ok){
+      if(status)status.textContent = result?.error || 'The detail editor is unavailable.';
+      return true;
+    }
+    closeAssistantSheet();
+    // Opening details can schedule its default page for the next frame. Jump
+    // after that, and use the live control (event editors rebuild their DOM).
+    requestAnimationFrame(() => {
+      const control = getSheetInner('detail-sheet')?.querySelector(selector);
+      if(control)revealDetailSearchEntry({target:control, label:assistantFocusField(field.dataset.focusField)?.label || '', revealHidden:true});
+    });
+    return true;
+  }
   const save = target.closest('[data-focus-save]');
   if(save){
     if(save.disabled || typeof assistantFocusCommit !== 'function')return true;
@@ -1503,7 +1927,8 @@ async function assistantHandleFocusClick(target){
     const status = save.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
     if(result && result.ok){
       if(status)status.textContent = 'Saved.';
-      assistantRetireFocusControls();
+      assistantRetireFocusControls(true);
+      assistantRenderGuides();
       if(session.operation === 'create' && session.entry === 'add' && typeof cancelAdd === 'function')cancelAdd();
       return true;
     }
@@ -1528,6 +1953,32 @@ async function assistantHandleFocusClick(target){
   if(choice){
     const which = choice.dataset.focusChoice;
     const value = choice.dataset.focusValue || '';
+    if(which === 'item-action' || which === 'item-action-skip'){
+      if(which === 'item-action-skip' && typeof assistantFocusSkipAction === 'function'){
+        assistantFocusSkipAction(session, value);
+        assistantShowFocusReview(session);
+        return true;
+      }
+      const result = typeof assistantFocusCommitAction === 'function'
+        ? assistantFocusCommitAction(session, value)
+        : {ok:false, error:'That action is unavailable.'};
+      if(!result.ok){
+        const status = choice.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
+        if(status)status.textContent = result.error || 'Nothing was saved.';
+        return true;
+      }
+      const text = result.action === 'remove'
+        ? `Removed the plan for ${result.name}. Undo is on the toast.`
+        : result.action === 'undo_today'
+          ? `Marked ${result.name} not done. Undo is on the toast.`
+          : result.action === 'log'
+            ? `Logged ${result.name}. Undo is on the toast.`
+            : `Planned ${result.name}. Undo is on the toast.`;
+      appendAssistantBubble('say', text);
+      assistantShowFocusReview(session);
+      if(typeof render === 'function')render();
+      return true;
+    }
     if(which === 'resume' && typeof assistantFocusTurn === 'function'){
       const turn = ++_assistantTurn;
       assistantRetireFocusControls();
@@ -1581,19 +2032,145 @@ function bindAssistantUi(){
   $('assistant-sheet')?.addEventListener('click', e => {
     if(e.target === e.currentTarget)closeAssistantSheet();
   });
-  $('assistant-send')?.addEventListener('click', () => sendAssistantMessage($('assistant-input')?.value));
+  $('assistant-send')?.addEventListener('click', () => sendAssistantMessage(assistantComposerDraft()));
   $('assistant-input')?.addEventListener('input', () => {
+    if(!assistantGuideSearchOpen)assistantAbsorbGuidePrefix();
     assistantResizeComposer();
     assistantSyncSend();
+    assistantSyncGuideClear();
+    if(assistantGuideSearchOpen)assistantRenderGuideBrowser();
+    assistantScheduleGuideRender();
+  });
+  $('assistant-mention-remove')?.addEventListener('pointerdown', e => e.preventDefault());
+  $('assistant-mention-remove')?.addEventListener('click', () => {
+    if(_assistantBusy)return;
+    assistantSetMention('');
+    const input = $('assistant-input');
+    input?.focus({preventScroll:true});
+    assistantResizeComposer();
+    assistantSyncSend();
+    assistantRenderGuides();
+  });
+  $('assistant-guides')?.addEventListener('click', e => {
+    const button = e.target.closest('[data-assistant-guide]');
+    if(!button || button.disabled)return;
+    e.preventDefault();
+    const id = button.dataset.assistantGuide || '';
+    if(/^(?:action|field):/.test(id)){
+      const session = _assistantSession && _assistantSession.focus;
+      if(session && typeof assistantFocusChoose === 'function'){
+        assistantFocusChoose(session, 'guidance', id);
+        assistantShowFocusReview(session);
+        if(typeof render === 'function')render();
+        assistantRenderGuides();
+      }
+      return;
+    }
+    assistantApplyGuide(button.dataset.guideLabel || button.textContent);
+  });
+  $('assistant-guide-more')?.addEventListener('click',()=>{
+    if(_assistantBusy)return;
+    const opening=!assistantGuideSearchOpen;
+    assistantToggleGuideBrowser(opening);
+    if(opening)assistantRenderGuideBrowser();
+    assistantRenderGuides();
+    $('assistant-input')?.focus({preventScroll:true});
+    if(typeof updateKeyboardLift==='function')updateKeyboardLift();
+  });
+  $('assistant-guide-clear')?.addEventListener('click',()=>{
+    const input=$('assistant-input');
+    if(!input || input.disabled || !assistantGuideSearchOpen)return;
+    input.value='';
+    assistantResizeComposer();
+    assistantSyncSend();
+    assistantSyncGuideClear();
+    assistantRenderGuideBrowser();
+    assistantScheduleGuideRender();
+    input.focus({preventScroll:true});
+  });
+  $('assistant-guide-results')?.addEventListener('keydown',e=>{
+    const buttons=[...$('assistant-guide-results').querySelectorAll('[data-assistant-guide]:not(:disabled)')];
+    if(e.key==='Escape'){
+      e.preventDefault();
+      assistantToggleGuideBrowser(false);
+      assistantRenderGuides();
+      $('assistant-input')?.focus({preventScroll:true});
+      return;
+    }
+    if(e.key==='Enter'){
+      const current=e.target.closest('[data-assistant-guide]');
+      if(!current || current.disabled)return;
+      e.preventDefault();
+      assistantApplyGuide(assistantGuideResultLabel(current));
+      return;
+    }
+    if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;
+    const index=buttons.indexOf(document.activeElement);
+    if(e.key==='ArrowUp' && index<=0){
+      e.preventDefault();
+      $('assistant-input')?.focus({preventScroll:true});
+      return;
+    }
+    const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:Math.max(0,Math.min(buttons.length-1,index+(e.key==='ArrowDown'?1:-1)));
+    e.preventDefault();
+    buttons[next]?.focus({preventScroll:true});
+  });
+  $('assistant-guide-revise')?.addEventListener('click',()=>{
+    if(assistantGuideSearchOpen)assistantToggleGuideBrowser(false);
+    const input=$('assistant-input'),session=_assistantSession?.focus;
+    if(_assistantBusy||assistantComposerDraft().trim()||!session||!assistantFocusAlive(session))return;
+    const request=assistantGuideRevise(session);
+    if(request==null||!input)return;
+    $('assistant-guides').dataset.guideRevising='true';
+    assistantPresentComposer(request);
+    assistantToggleGuideBrowser(false);
+    assistantShowFocusReview(session);
+    assistantResizeComposer();assistantSyncSend();assistantRenderGuides();
+    input.focus({preventScroll:true});
+    if(typeof updateKeyboardLift==='function')updateKeyboardLift();
   });
   $('assistant-input')?.addEventListener('keydown', e => {
-    if(e.key === 'Enter' && !e.shiftKey){
+    if(e.key === 'Backspace' && !e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey){
+      const input = e.currentTarget;
+      if(assistantMentionName() && input.selectionStart === 0 && input.selectionEnd === 0){
+        e.preventDefault();
+        assistantSetMention('');
+        assistantSyncSend();
+        assistantRenderGuides();
+        return;
+      }
+    }
+    if(e.key === 'Escape' && assistantGuideSearchOpen){
       e.preventDefault();
-      sendAssistantMessage($('assistant-input').value);
+      assistantToggleGuideBrowser(false);
+      assistantRenderGuides();
+      return;
+    }
+    if(e.key === 'ArrowDown' && assistantGuideSearchOpen && !e.altKey && !e.metaKey && !e.ctrlKey){
+      const first = $('assistant-guide-results')?.querySelector('[data-assistant-guide]:not(:disabled)');
+      if(first){
+        e.preventDefault();
+        first.focus({preventScroll:true});
+      }
+      return;
+    }
+    if(e.key === 'Enter' && assistantGuideSearchOpen){
+      if(e.isComposing || e.keyCode === 229)return;
+      e.preventDefault();
+      if(e.shiftKey)return;
+      const first = $('assistant-guide-results')?.querySelector('[data-assistant-guide]:not(:disabled)');
+      if(first)assistantApplyGuide(assistantGuideResultLabel(first));
+      else sendAssistantMessage(assistantComposerDraft());
+      return;
+    }
+    if(e.key === 'Enter' && !e.shiftKey){
+      if(e.isComposing || e.keyCode === 229)return;
+      e.preventDefault();
+      sendAssistantMessage(assistantComposerDraft());
     }
   });
   $('assistant-thread')?.addEventListener('click', e => {
-    if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice]')){
+    if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field]')){
       e.preventDefault();
       void assistantHandleFocusClick(e.target);
       return;
@@ -1711,6 +2288,7 @@ document.addEventListener('click', event=>{
   if(event.target.closest('[data-needle-cancel]'))assistantNeedleCancelDownload();
   if(event.target.closest('[data-needle-remove]'))void assistantNeedleRemove().catch(err=>assistantNeedleState({phase:'error',error:err.message}));
 });
+assistantBindScrollGuard();
 assistantResizeComposer();
 assistantSyncSend();
 syncLocalAssistantControls();

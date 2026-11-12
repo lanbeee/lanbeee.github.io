@@ -1097,6 +1097,7 @@ function daySeedLocationSet(day,settings,registry){
   }
   for(const block of normalizeBlockedTimes(settings.blockedTimes)){
     if(block.days.length && !block.days.includes(day.weekday))continue;
+    if(!matchesOrdinalWeekdays(block.ordinalWeekdays,day.dayBase))continue;
     if(block.locationId)set.add(block.locationId);
   }
   return set;

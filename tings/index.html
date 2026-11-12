@@ -1,15 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-launch-state="loading">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 <meta name="color-scheme" content="light dark" />
+<meta name="referrer" content="no-referrer" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Tings" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), microphone=()" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://huggingface.co https://*.hf.co http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js; style-src 'self' 'unsafe-inline' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css; font-src 'self' data: https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff2 https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.woff https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/fonts/tabler-icons.ttf; img-src 'self' data: blob: https://tile.openstreetmap.org https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://server.arcgisonline.com https://unpkg.com/leaflet@1.9.4/dist/images/ https://maps.googleapis.com https://maps.gstatic.com; connect-src 'self' blob: https://docs.google.com https://huggingface.co https://*.hf.co http://127.0.0.1:* http://localhost:* https://*.ts.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://habits-share.contactnabilkhan.workers.dev https://habits-share-staging.contactnabilkhan.workers.dev https://habits-push.YOUR-ACCOUNT.workers.dev https://itunes.apple.com https://router.project-osrm.org https://nominatim.openstreetmap.org https://photon.komoot.io https://maps.googleapis.com https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob: mediastream:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
 <script src="./js/agenda-display-boot.js"></script>
 <link rel="manifest" href="./manifest.json" />
 <title>Tings</title>
@@ -20,9 +21,18 @@
   @media (prefers-color-scheme:dark){html:not([data-theme="light"]){background:#171717;color-scheme:dark;}}
   html[data-theme="dark"]{background:#171717;color-scheme:dark;}
   html[data-theme="light"]{background:#f2f1ed;color-scheme:light;}
+  /* Critical launch surface: keep it independent of the app stylesheet stack. */
+  #launch-screen{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:#f2f1ed;color:#26383e;opacity:1;transition:opacity 180ms ease-out;}
+  #launch-screen svg{width:144px;height:144px;display:block;}
+  #launch-screen.is-leaving{opacity:0;pointer-events:none;}
+  html[data-launch-state="loading"]{overflow:hidden;}
+  html[data-launch-state="loading"] body > :not(#launch-screen){visibility:hidden;}
+  @media (prefers-color-scheme:dark){html:not([data-theme="light"]) #launch-screen{background:#171717;color:#ededed;}}
+  html[data-theme="dark"] #launch-screen{background:#171717;color:#ededed;}
+  @media (prefers-reduced-motion:reduce){#launch-screen{transition:none;}}
 </style>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css" integrity="sha256-hHEk1Ncpkc6A17dPzMrchF97uv2NrtO9j0IW6fIyaeY=" crossorigin="" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<link rel="stylesheet" href="./css/vendor/tabler-icons.min.css" />
+<link rel="stylesheet" href="./css/vendor/leaflet.css" />
 <!-- Formerly the single styles.css, split into byte-exact sequential slices.
      LOAD ORDER MATTERS: later files (esp. sweeps.css) deliberately override
      earlier rules by source order. Keep this list in this exact order. -->
@@ -49,10 +59,21 @@
 <link rel="stylesheet" href="./css/palettes.css" />
 <link rel="stylesheet" href="./css/calm.css" />
 <link rel="stylesheet" href="./css/display-mode.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="./lib/js/leaflet.js" defer></script>
 </head>
 <body>
-<div class="app">
+<div id="launch-screen" role="status" aria-label="Opening Tings">
+  <!-- Same return arrow and sun as the vector app icon; no raster enlargement. -->
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048" aria-hidden="true"><path id="return-arrow" fill-rule="nonzero" fill="currentColor" d="M 1000 392.586 C 996.975 392.790, 987.300 393.443, 978.500 394.039 C 785.160 407.122, 604.815 512.462, 497.470 675.008 C 361.914 880.274, 357.130 1143.895, 485.153 1353.719 C 620.406 1575.393, 880.442 1692.013, 1136 1645.607 C 1379.622 1601.368, 1572.775 1422.020, 1635.915 1181.420 L 1636.985 1177.340 1642.743 1179.070 C 1645.909 1180.021, 1650.975 1181.357, 1654 1182.040 C 1657.025 1182.722, 1662.875 1184.385, 1667 1185.736 C 1676.679 1188.905, 1692.101 1188.597, 1701.081 1185.054 C 1712.173 1180.678, 1721.790 1171.087, 1726.204 1160 C 1729.833 1150.885, 1729.466 1135.537, 1725.416 1127 C 1721.003 1117.700, 1646.585 988.715, 1641.380 981.344 C 1629.605 964.670, 1607.214 958.804, 1588.333 967.448 C 1577.749 972.294, 1444.694 1049.580, 1440.240 1053.470 C 1421.258 1070.046, 1420.642 1099.908, 1438.921 1117.344 C 1447.726 1125.742, 1454.159 1128.355, 1486 1136.466 C 1491.775 1137.937, 1496.884 1139.515, 1497.352 1139.973 C 1499.098 1141.676, 1485.875 1184.196, 1476.374 1207.434 C 1389.200 1420.642, 1167.188 1543.882, 940.500 1504.902 C 748.649 1471.913, 593.621 1325.855, 548.944 1136 C 539.515 1095.936, 536.596 1069.808, 536.542 1025 C 536.493 985.120, 538.366 963.976, 544.909 930.500 C 585.341 723.658, 755.287 565.136, 964 539.581 C 1109.140 521.810, 1250.845 568.288, 1358.865 669.094 C 1375.755 684.857, 1379.621 687.923, 1387.566 691.859 C 1408.519 702.239, 1431.467 702.246, 1452.394 691.879 C 1491.877 672.320, 1503.810 620.792, 1477.199 584.770 C 1471.070 576.472, 1440.866 548.525, 1419.500 531.379 C 1319.971 451.513, 1200.689 404.513, 1070.997 394.059 C 1057.616 392.981, 1009.114 391.975, 1000 392.586 Z M 1647.582 1190.808 1654.492 1192.884 C 1658.291 1194.025, 1664.370 1195.628, 1668.000 1196.448 C 1671.630 1197.266, 1678.650 1199.262, 1683.600 1200.883 C 1695.215 1204.686, 1713.721 1204.316, 1724.497 1200.065 C 1737.808 1194.814, 1749.348 1183.304, 1754.645 1170.000 C 1759.000 1159.062, 1758.559 1140.644, 1753.699 1130.400 C 1748.404 1119.240, 1659.102 964.458, 1652.856 955.613 C 1638.726 935.604, 1611.857 928.565, 1589.200 938.938 C 1576.499 944.753, 1416.833 1037.496, 1411.488 1042.164 C 1388.710 1062.055, 1387.970 1097.890, 1409.905 1118.813 C 1420.471 1128.890, 1428.191 1132.026, 1466.400 1141.759 C 1473.330 1143.524, 1479.461 1145.418, 1480.022 1145.968 Z"/>
+<path id="eight-point-star" transform="translate(1024 1024) scale(1.18) translate(-1024 -1024)" fill="#E4A11B" d="M1024 808L1087.27 871.265H1176.74V960.735L1240 1024L1176.74 1087.27V1176.74H1087.27L1024 1240L960.735 1176.74H871.265V1087.27L808 1024L871.265 960.735V871.265H960.735Z"/></svg>
+</div>
+<noscript><style>#launch-screen{display:none}html[data-launch-state] body > *{visibility:visible}</style><p>Tings needs JavaScript to open your agenda.</p></noscript>
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="icon-feedback" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2m-5.4 12L12 12.4 9.4 14l.7-3-2.3-2 3-.3L12 6l1.2 2.8 3 .3-2.3 2z"/>
+  </symbol>
+</svg>
+<div class="app" inert>
 
   <header class="app-bar" id="app-bar" aria-label="app actions" hidden>
         <button class="app-bar-logo" id="bar-open-about" aria-label="settings">
@@ -69,6 +90,7 @@
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>
+      <button type="button" class="icon-btn" id="bar-open-feedback" hidden aria-label="send feedback"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></button>
       <button class="icon-btn assistant-launch" id="bar-open-assistant" type="button" hidden aria-label="ask Tings">
         <i class="ti ti-message-circle" aria-hidden="true"></i>
       </button>
@@ -91,6 +113,7 @@
       </span>
     </button>
     <div id="home-tag-filter" class="home-filter-bar" aria-label="home filters"></div>
+    <button type="button" class="home-feedback" id="home-open-feedback" hidden aria-label="send feedback"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg></button>
     <button class="assistant-launch home-filter-trigger" id="open-assistant" type="button" hidden aria-label="ask Tings">
       <i class="ti ti-message-circle" aria-hidden="true"></i>
     </button>
@@ -129,20 +152,16 @@
         <p class="sheet-title" id="add-title">new habit</p>
       </div>
       <div class="seg add-kind-seg" id="type-seg" role="group" aria-label="What would you like to add?" aria-describedby="add-type-help">
-        <button type="button" class="seg-opt on" data-v="keepup" aria-pressed="true"><span>habit</span><small>something you repeat</small></button>
-        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task</span><small>a to-do to finish</small></button>
-        <button type="button" class="seg-opt" id="add-appointment-shortcut" data-v="event" aria-pressed="false"><span>event</span><small>at a set time</small></button>
+        <button type="button" class="seg-opt on" data-v="keepup" aria-pressed="true"><span>habit<i class="ti ti-rotate-clockwise" aria-hidden="true"></i></span><small>done regularly</small></button>
+        <button type="button" class="seg-opt" data-v="task" aria-pressed="false"><span>task<i class="ti ti-circle-number-1-filled" aria-hidden="true"></i></span><small>one-time</small></button>
+        <button type="button" class="seg-opt" id="add-appointment-shortcut" data-v="event" aria-pressed="false"><span>event<i class="ti ti-clock-hour-3" aria-hidden="true"></i></span><small>at a set time</small></button>
       </div>
       <p class="field-hint" id="add-type-help" hidden>Keep up a habit, finish a task, or reserve time for an event.</p>
       <label class="add-field-label" for="ting-message">What would you like to do?</label>
       <div class="name-icon-row">
-        <input type="text" id="ting-message" name="message" maxlength="240" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
+        <input type="text" id="ting-message" name="message" maxlength="60" placeholder="e.g. Read a book" autocomplete="new-password" aria-autocomplete="none" data-form-type="other" data-lpignore="true" autocapitalize="sentences" autocorrect="on" spellcheck="true" enterkeyhint="done" />
         <button type="button" class="ting-emoji-preview" id="ting-emoji-preview" aria-label="choose an icon (optional)" title="Choose an icon (optional)"></button>
-        <button type="button" class="ting-ask-ai" id="ting-ask-ai" aria-label="add this with the assistant" title="Add a new habit or task from what you typed" aria-describedby="add-ask-hint">
-          <i class="ti ti-sparkles" aria-hidden="true"></i>
-        </button>
       </div>
-      <p class="field-hint" id="add-ask-hint">Sparkles adds a new habit or task from what you type. Add saves a short name.</p>
       <div class="ting-emoji-edit" id="ting-emoji-edit" hidden>
         <div class="generic-emoji-wrap">
           <div class="emoji-picker-toolbar">
@@ -286,13 +305,13 @@
     <div class="sheet assistant-sheet" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
       <div class="assistant-head">
         <div class="assistant-head-copy">
-          <span class="sheet-eyebrow">on this device</span>
+          <span class="sheet-eyebrow sr-only">on this device</span>
           <p class="sheet-title" id="assistant-title">ask Tings</p>
         </div>
         <div class="assistant-head-actions">
-          <button type="button" class="btn" id="assistant-feedback" hidden aria-expanded="false" aria-controls="assistant-feedback-panel">feedback</button>
-          <button type="button" class="btn" id="assistant-debug-toggle" hidden aria-pressed="false" aria-expanded="false" aria-controls="assistant-debug-dock" aria-label="debug trace">debug</button>
-          <button type="button" class="btn" id="assistant-clear" aria-label="clear chat">clear chat</button>
+          <button type="button" class="btn" id="assistant-feedback" hidden aria-expanded="false" aria-controls="assistant-feedback-panel"><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg><span>feedback</span></button>
+          <button type="button" class="btn" id="assistant-debug-toggle" hidden aria-pressed="false" aria-expanded="false" aria-controls="assistant-debug-dock" aria-label="debug trace"><i class="ti ti-bug assistant-head-icon" aria-hidden="true"></i><span>debug</span></button>
+          <button type="button" class="btn" id="assistant-clear" aria-label="clear chat"><i class="ti ti-eraser assistant-head-icon" aria-hidden="true"></i><span>clear chat</span></button>
           <button type="button" class="icon-btn" id="assistant-close" aria-label="close assistant"><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -329,8 +348,30 @@
       </div>
       <div class="assistant-feedback-panel" id="assistant-feedback-panel" hidden></div>
       <div class="assistant-compose">
-        <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
-        <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
+        <div class="assistant-guides" id="assistant-guides" hidden>
+          <p class="sr-only" id="assistant-guides-label">Settings</p>
+          <div class="assistant-guides-bar">
+            <div class="assistant-guides-row" id="assistant-guides-row" role="group" aria-labelledby="assistant-guides-label"></div>
+          </div>
+          <div class="assistant-guide-browser" id="assistant-guide-browser" hidden>
+            <p class="assistant-guide-status" id="assistant-guide-status" role="status"></p>
+            <div class="assistant-guide-results" id="assistant-guide-results" role="group" aria-label="Item settings"></div>
+          </div>
+          <p class="assistant-guide-hint" id="assistant-guide-hint" hidden></p>
+          <button type="button" class="assistant-guide-more assistant-guide-revise" id="assistant-guide-revise" hidden>Fix last request</button>
+        </div>
+        <div class="assistant-dock" id="assistant-dock">
+          <button type="button" class="assistant-search-toggle" id="assistant-guide-more" hidden aria-expanded="false" aria-controls="assistant-guide-browser" aria-label="Find a setting"><i class="ti ti-search" data-guide-icon="search" aria-hidden="true"></i></button>
+          <div class="assistant-field" id="assistant-field">
+            <span class="assistant-mention" id="assistant-mention" hidden>
+              <span class="assistant-mention-label" id="assistant-mention-label"></span>
+              <button type="button" class="assistant-mention-remove" id="assistant-mention-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </span>
+            <textarea id="assistant-input" rows="1" maxlength="12000" placeholder="Remind me, paste a schedule, or change it" aria-label="assistant message" enterkeyhint="send"></textarea>
+            <button type="button" class="assistant-field-clear" id="assistant-guide-clear" aria-label="clear setting search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          </div>
+          <button class="btn primary" type="button" id="assistant-send" aria-label="send"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
+        </div>
       </div>
     </div>
   </div>
@@ -364,6 +405,11 @@
         <div class="detail-dots" role="tablist" aria-label="detail pages"></div>
       </div>
       <div id="detail-search-panel" class="detail-search-panel" hidden>
+        <button type="button" id="detail-search-ask" class="detail-search-assistant" hidden>
+          <i class="ti ti-sparkles" aria-hidden="true"></i>
+          <span><b id="detail-search-ask-label">Ask Needle</b><small>Review before saving</small></span>
+          <i class="ti ti-arrow-up-right" aria-hidden="true"></i>
+        </button>
         <p id="detail-search-status" class="field-hint" role="status" aria-live="polite"></p>
         <div id="detail-search-results" class="detail-search-results" aria-label="matching detail settings"></div>
       </div>
@@ -762,6 +808,10 @@
               <i class="ti ti-moon" aria-hidden="true"></i>
               <span><b>snooze</b><small>Hide for a few hours or days</small></span>
             </button>
+            <label class="setting-toggle habit-toggle"><span><b>start with a tap</b><small>Tap again to log it.</small></span><button class="setting-switch" id="detail-tap-session" type="button" aria-pressed="false"><span class="switch-ui" aria-hidden="true"></span></button></label>
+            <button class="habit-action" id="detail-ignore-occurrence" type="button" hidden><i class="ti ti-eye-off" aria-hidden="true"></i><span><b>ignore this date</b><small>Hidden in Tings</small></span></button>
+            <button class="habit-action" id="detail-ignore-series" type="button" hidden><i class="ti ti-eye-off" aria-hidden="true"></i><span><b>ignore all dates</b><small>Hidden in Tings</small></span></button>
+            <button class="habit-action" id="detail-duplicate" type="button"><i class="ti ti-copy" aria-hidden="true"></i><span><b>duplicate</b><small>Opens a copy to edit</small></span></button>
             <button class="habit-action danger" id="detail-delete" type="button">
               <i class="ti ti-trash" aria-hidden="true"></i>
               <span><b>remove</b><small>Undo appears after</small></span>
@@ -780,11 +830,11 @@
       </div>
       <div class="detail-bottom-bar sheet-search-dock" aria-label="detail actions">
         <div class="detail-actions" id="detail-cool-row">
-          <div class="detail-search-control detail-full-only">
+          <div class="detail-search-control">
             <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
             <div class="detail-search-field" hidden>
               <label class="sr-only" for="detail-search-input">Search within this item’s details</label>
-              <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="120" enterkeyhint="search" />
+              <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="12000" enterkeyhint="search" aria-describedby="detail-search-status" />
               <button type="button" id="detail-search-clear" class="sheet-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
           </div>
@@ -865,13 +915,49 @@
           </div>
         </section>
         <div class="btn-row about-actions about-hub-foot">
-          <!-- real anchor + target=_blank so installed PWAs hand the form to the actual browser instead of keeping it in the standalone window -->
           <div class="about-feedback-row" id="about-feedback-row" hidden>
-            <a class="btn" id="open-feedback" href="#" target="_blank" rel="noopener" hidden><i class="ti ti-message" aria-hidden="true"></i> send feedback</a>
+            <button type="button" class="btn" id="open-feedback" hidden><svg class="feedback-mark" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-feedback"/></svg> send feedback</button>
             <span data-ui-leave="feedback"></span>
           </div>
           <button class="btn" id="open-privacy" type="button"><i class="ti ti-shield-lock" aria-hidden="true"></i> privacy</button>
           <button class="btn primary" id="about-close"><i class="ti ti-check" aria-hidden="true"></i> done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- feedback: filled in here, then posted to the Google Form -->
+  <div class="sheet-wrap" id="feedback-sheet">
+    <div class="sheet feedback-sheet" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+      <div class="feedback-head">
+        <div>
+          <span class="sheet-eyebrow">optional</span>
+          <p class="sheet-title" id="feedback-title">Feedback</p>
+          <p class="about-copy" id="feedback-lead">Filled in from this device. A note is optional.</p>
+        </div>
+        <button type="button" class="icon-btn" id="feedback-close" aria-label="close feedback"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="feedback-body">
+        <div class="feedback-known" id="feedback-known"></div>
+        <label class="feedback-field">
+          <span>Anything to add?</span>
+          <textarea id="feedback-note" rows="3" placeholder="Optional"></textarea>
+        </label>
+        <label class="feedback-field">
+          <span>Email if we may follow up</span>
+          <input id="feedback-email" type="text" inputmode="email" autocomplete="email" placeholder="Optional">
+        </label>
+        <details class="feedback-context" id="feedback-context-details">
+          <summary>Included with this send</summary>
+          <pre id="feedback-context"></pre>
+        </details>
+      </div>
+      <div class="feedback-actions">
+        <p class="field-hint" id="feedback-status" hidden></p>
+        <p class="feedback-send-note">Google receives this when you send.</p>
+        <div class="btn-row">
+          <button type="button" class="btn primary" id="feedback-send">send</button>
+          <button type="button" class="btn" id="feedback-cancel">cancel</button>
         </div>
       </div>
     </div>
@@ -1065,6 +1151,7 @@
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
           <div class="settings-collapse-body" id="settings-calendar-body" hidden>
+            <button type="button" class="btn" id="refresh-agenda" data-refresh-agenda>Refresh</button>
             <div id="calendar-device-controls" hidden></div>
             <p class="field-hint">Import a Google, Apple or Outlook calendar export (.ics), or a calendar PDF. Choose the .ics file inside Google's export ZIP.</p>
             <p class="field-hint">ICS import dates (including recurring events). Times appear in this device's time zone. Imported copies stay on this device; re-import to add or update meetings.</p>
@@ -1305,7 +1392,8 @@
             <span data-ui-leave="agenda"></span>
           </div>
           <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Connect a full-app display and a glance display.</p>
+            <p class="field-hint">Connect a personal clone or a glance display.</p>
+            <p class="field-hint">To use this device as your personal clone, <a id="settings-agenda-join" href="./agenda-display.html">pair this device</a>. Scan its QR from your main device. Existing items here are replaced by the paired library; export a backup first if needed.</p>
             <div data-settings-help-title="pairing &amp; sync" data-settings-help-id="settings-sharing-help"><p class="field-hint">Pair at most two screens: one full-app display (personal clone or shared items) and one glance display. Personal clone copies every task and habit so either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages. Glance display shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower frame. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it. Approving a second screen does not sign the other out.</p></div>
             <div id="settings-agenda-empty">
               <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
@@ -2088,6 +2176,7 @@
 <script src="./js/main-boot.js" defer></script>
 <script src="./js/add-availability.js" defer></script>
 <script src="./js/main-input.js" defer></script>
+<script src="./js/feedback-form.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
 <script src="./js/display-mode.js" defer></script>
 <script src="./js/sw-register.js" defer></script>

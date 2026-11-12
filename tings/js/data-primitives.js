@@ -507,7 +507,7 @@ function normalizeBlockedTimes(value){
       : null;
     const dayOff = typeof normalizeAnchorDayOffset === 'function' ? normalizeAnchorDayOffset : (v => 0);
     return {
-      label,days,start,end,locationId,
+      label,days,start,end,locationId,ordinalWeekdays:normalizeOrdinalWeekdays(raw?.ordinalWeekdays),
       ...(typeof raw?.reminderId === 'string' && raw.reminderId ? {reminderId:raw.reminderId.slice(0,100)} : {}),
       startAnchor:safeStartAnchor,
       startOffsetMin:normalizePrayerOffset(raw?.startOffsetMin),
@@ -615,4 +615,35 @@ function opportunityTrigger(h){
 function opportunityRadius(h){
   const value = Number(h?.conditionRadiusM);
   return Number.isFinite(value) && value > 0 ? Math.max(1,Math.min(100000,value)) : 200;
+}
+
+// Ordinal weekdays use local dates; -1 means the last weekday in a month.
+function normalizeOrdinalWeekdays(value){
+  const seen=new Set();
+  return (Array.isArray(value)?value:[]).filter(r=>r && [-1,1,2,3,4,5].includes(Number(r.ordinal)) && Number.isInteger(Number(r.weekday)) && Number(r.weekday)>=0 && Number(r.weekday)<=6)
+    .map(r=>({ordinal:Number(r.ordinal),weekday:Number(r.weekday)})).filter(r=>{const k=`${r.ordinal}:${r.weekday}`;if(seen.has(k))return false;seen.add(k);return true;})
+    .sort((a,b)=>a.ordinal-b.ordinal || a.weekday-b.weekday);
+}
+function matchesOrdinalWeekdays(rules,ts=Date.now()){
+  const list=normalizeOrdinalWeekdays(rules);if(!list.length)return true;
+  const d=new Date(ts),day=d.getDate(),last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+  return list.some(r=>r.weekday===d.getDay() && (r.ordinal===-1 ? day+7>last : Math.floor((day-1)/7)+1===r.ordinal));
+}
+function ordinalWeekdaySummary(rules){
+  const name=n=>n===-1?'last':['','1st','2nd','3rd','4th','5th'][n];
+  return normalizeOrdinalWeekdays(rules).map(r=>`${name(r.ordinal)} ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][r.weekday]}`).join(', ');
+}
+
+function normalizeCalendarIgnores(value){
+  return (Array.isArray(value)?value:[]).filter(r=>r && ['occurrence','series'].includes(r.scope) && typeof r.id==='string' && r.id.length>0)
+    .map(r=>({scope:r.scope,id:r.id.slice(0,512),name:String(r.name || 'calendar item').slice(0,60)})).slice(0,10000);
+}
+function calendarIgnoreIdentity(h,scope='occurrence'){
+  if(!h?.source || !h.externalId)return '';
+  return scope==='series' ? (h.calendarSeriesId || '') : `${h.source}:${h.externalId}`;
+}
+function isCalendarIgnored(h,settings){
+  if(!h?.source || !h.externalId)return false;
+  const prefs=settings || (typeof sortSettings!=='undefined' ? sortSettings : null) || Storage.read('tings_app_settings_v2') || {};
+  return (prefs.calendarIgnores || []).some(r=>r.id===calendarIgnoreIdentity(h,r.scope));
 }

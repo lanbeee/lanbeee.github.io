@@ -243,6 +243,17 @@ body :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
   background:var(--glass-bg);box-shadow:var(--floating-shadow);
   -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
 }
+/* The right pane mounts detail in the page, outside a modal stacking context.
+   A 160 layer there paints over the assistant and other sheets. */
+body:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-detail,.pane-overview) > :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
+  z-index:1;
+}
+/* A centered modal only dims the columns. The item's search and close sit
+   at the bottom of the right pane, so they read as a second dialog control
+   beside the modal. Hide them until the modal closes. */
+body.modal-open:is([data-pane-count="2"],[data-pane-count="3"]) :is(.pane-detail,.pane-overview) > :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
+  visibility:hidden;
+}
 body :is(.detail-sheet,.settings-sheet) > .sheet-search-dock > :is(.detail-actions,.settings-actions){
   position:static;inset:auto;transform:none;min-width:0;width:100%;margin:0;padding:0;
   display:flex;align-items:center;gap:8px;
@@ -337,13 +348,20 @@ body .detail-search-field input{
 body:is([data-pane-count="2"],[data-pane-count="3"]) .pane-detail[data-active-sheet="detail-sheet"] > .detail-sheet{position:relative;height:calc(100% - var(--keyboard-lift,0px));max-height:100%;}
 body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap .detail-sheet{height:calc(100dvh - 48px - var(--keyboard-lift,0px));}
 .detail-head .ting-name{overflow-wrap:anywhere;}
-body .minimal-detail .detail-full-only{display:none !important;}
+body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none !important;}
 .detail-disclosure[data-detail-essential]{margin-top:0;border-top:0;}
 .detail-disclosure > summary{min-height:44px;cursor:pointer;}
 .detail-disclosure > summary:focus-visible,.detail-search-result:focus-visible{outline:2px solid var(--text);outline-offset:-2px;}
 .detail-search-panel{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding:4px 2px;}
 .detail-search-panel[hidden]{display:none;}
 .detail-search-results{overflow-y:auto;min-height:0;overscroll-behavior:contain;}
+.detail-search-assistant{display:flex;align-items:center;gap:10px;flex:0 0 auto;min-height:54px;padding:12px 10px;border:1px solid var(--border);border-radius:14px;background:var(--bg2);color:var(--text);font:inherit;text-align:left;cursor:pointer;}
+.detail-search-assistant[hidden]{display:none;}
+.detail-search-assistant > span{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0;overflow-wrap:anywhere;}
+.detail-search-assistant b{font-size:13px;font-weight:600;}
+.detail-search-assistant small{font-size:11px;color:var(--text2);}
+.detail-search-assistant:focus-visible{outline:2px solid var(--text);outline-offset:-2px;}
+.detail-search-assistant:disabled{opacity:.6;cursor:wait;}
 .detail-search-result{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;min-height:54px;padding:12px 10px;text-align:left;border:0;border-bottom:1px solid var(--border);background:var(--bg);color:var(--text);font:inherit;cursor:pointer;}
 .detail-search-result b{font-size:13px;font-weight:600;}
 .detail-search-result small{font-size:11px;color:var(--text2);}

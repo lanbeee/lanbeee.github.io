@@ -1,3 +1,5 @@
+// Shared default for calendar file previews and ICS recurrence expansion.
+const CALENDAR_IMPORT_DEFAULT_DAYS = 90;
 // Calendar import — PDF prints and ICS exports (see calendar-ics.js)
 // feeding the same timed-task pipeline that Microsoft/Google OAuth will reuse.
 //
@@ -280,6 +282,7 @@ function mapEventToTask(ev, source){
     topics:[],
     logs:[],
     externalId,
+    calendarSeriesId:ev.calendarSeriesId || null,
     source:src,
     ...(src === 'ics' ? {calendarStart:startMs,calendarEnd:endMs,calendarSubject:(ev.subject || 'untitled').slice(0,60)} : {}),
     importedAt:Date.now(),
@@ -332,7 +335,7 @@ function stripCalendarCreditLogs(habits, onlyHid){
 }
 
 function calendarImportedEvents(data){
-  return data.filter(h=>h?.externalId && ['pdf','ics','msgraph','gcal','device'].includes(h.source) && h.type === 'task' && Number.isFinite(h.eventTime))
+  return data.filter(h=>!isCalendarIgnored(h) && h?.externalId && ['pdf','ics','msgraph','gcal','device'].includes(h.source) && h.type === 'task' && Number.isFinite(h.eventTime))
     .map(h=>({start:h.eventTime,end:h.calendarEnd || h.eventTime + clampDuration(h.durationMinutes)*60000}));
 }
 function rebuildCalendarCredits(data,creditHabitId,options={}){
@@ -405,7 +408,7 @@ function applyCalendarImport(incoming, options = {}){
     // and priority remain editable without being reset by the next import.
     const importedFields = source === 'ics' ? Object.fromEntries([
       'name','eventTime','dueDate','autoMarkMinutes','durationMinutes','externalId',
-      'source','calendarStart','calendarEnd','calendarSubject','importedAt'
+      'source','calendarSeriesId','calendarStart','calendarEnd','calendarSubject','importedAt'
     ].map(key=>[key,mapped[key]])) : mapped;
     Object.assign(existing, importedFields, {hid:existing.hid, logs:keepLogs});
     existing.lastLog = latestActualLog(existing.logs);
@@ -592,4 +595,36 @@ async function parseCalendarPdfFile(file){
     throw new Error('No meetings found — use an Outlook/Teams agenda print or a Google Calendar schedule PDF');
   }
   return {events, text, format};
+}
+
+function setCalendarIgnored(h,scope){
+  const id=calendarIgnoreIdentity(h,scope);if(!id)return;
+  const settings=loadSortSettings(),entry={scope,id,name:h.name};
+  if((settings.calendarIgnores || []).some(r=>r.id===id && r.scope===scope))return;
+  saveSortSettings({...settings,calendarIgnores:[...(settings.calendarIgnores || []),entry]});sortSettings=loadSortSettings();
+  const data=load();rebuildCalendarCredits(data,sortSettings.calendarCreditHabitId);save(data);
+  closeSheet('detail-sheet');detailIdx=null;refreshOpenViews();
+  if(typeof queueNativeReminders==='function')queueNativeReminders();
+  showActionToast(scope==='series'?'All dates hidden':'This date hidden',{type:'calendar-ignore',entry,openAction:false});
+}
+function restoreCalendarIgnored(entry){
+  const settings=loadSortSettings();saveSortSettings({...settings,calendarIgnores:(settings.calendarIgnores || []).filter(r=>r.scope!==entry.scope || r.id!==entry.id)});sortSettings=loadSortSettings();
+  const data=load();rebuildCalendarCredits(data,sortSettings.calendarCreditHabitId);save(data);renderIgnoredCalendarItems();refreshOpenViews();
+  if(typeof queueNativeReminders==='function')queueNativeReminders();
+}
+function renderIgnoredCalendarItems(){
+  const host=$('settings-calendar-body');if(!host)return;
+  $('calendar-ignored-list')?.remove();
+  const entries=loadSortSettings().calendarIgnores || [];
+  if(!entries.length)return;
+  const section=document.createElement('div');section.id='calendar-ignored-list';
+  const title=document.createElement('p');title.className='settings-sublabel';title.textContent='Hidden from Tings';section.append(title);
+  for(const entry of entries){
+    const row=document.createElement('div');row.className='planning-field';
+    const label=document.createElement('span');label.textContent=`${entry.name} · ${entry.scope==='series'?'all dates':'this date'}`;
+    const restore=document.createElement('button');restore.type='button';restore.className='mini-text-btn';restore.textContent='Show';
+    restore.addEventListener('click',()=>restoreCalendarIgnored(entry));
+    row.append(label,restore);section.append(row);
+  }
+  host.append(section);
 }

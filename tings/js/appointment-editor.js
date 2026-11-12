@@ -1,14 +1,21 @@
 // Event controls over the existing item/agenda model.
 let addAppointmentMode=false;
 function appointmentFields(prefix,a={repeat:'once',startDate:todayIso(),weekdays:[new Date().getDay()],startMinute:540,until:''}){
-  return `<label class="planning-field">repeats<select id="${prefix}-repeat" class="settings-select"><option value="once"${a.repeat==='once'?' selected':''}>once</option><option value="weekly"${a.repeat==='weekly'?' selected':''}>every week</option></select></label>
+  return `<label class="planning-field">repeats<select id="${prefix}-repeat" class="settings-select"><option value="once"${a.repeat==='once'?' selected':''}>once</option><option value="weekly"${a.repeat==='weekly'?' selected':''}>every week</option><option value="monthly"${a.repeat==='monthly'?' selected':''}>every month</option></select></label>
+    <div id="${prefix}-monthly">${ordinalWeekdayEditor(a.ordinalWeekdays)}</div>
     <label class="planning-field">starts<input type="date" id="${prefix}-date" class="plan-date-input" value="${a.startDate}" required></label>
     <div id="${prefix}-weekly"><span class="settings-sublabel">on these days</span><div class="schedule-chip-row" role="group" aria-label="Repeat weekdays">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((name,d)=>`<button type="button" class="schedule-chip${a.weekdays.includes(d)?' on':''}" data-appointment-day="${d}" aria-pressed="${a.weekdays.includes(d)}">${name}</button>`).join('')}</div>
-    <label class="planning-field"><span>until <small>(optional)</small></span><input type="date" id="${prefix}-until" class="plan-date-input" value="${a.until}" min="${a.startDate}"></label></div>
+    <label class="planning-field">until<input type="date" id="${prefix}-until" class="plan-date-input" value="${a.until}" min="${a.startDate}"></label></div>
     <label class="planning-field">starts at<input type="time" id="${prefix}-time" class="plan-time-input" value="${minutesToTimeInput(a.startMinute)}" required></label>`;
 }
 function wireAppointmentFields(host,prefix){
-  const sync=()=>{$(`${prefix}-weekly`).hidden=$(`${prefix}-repeat`).value!=='weekly';};
+  const sync=()=>{
+    const repeat=$(`${prefix}-repeat`).value;
+    $(`${prefix}-weekly`).hidden=repeat==='once';
+    $(`${prefix}-monthly`).hidden=repeat!=='monthly';
+    $(`${prefix}-weekly`).querySelector('.settings-sublabel')?.toggleAttribute('hidden',repeat==='monthly');
+    $(`${prefix}-weekly`).querySelector('.schedule-chip-row')?.toggleAttribute('hidden',repeat==='monthly');
+  };
   host.addEventListener('click',e=>{const day=e.target.closest('[data-appointment-day]');if(day){const on=day.getAttribute('aria-pressed')!=='true';day.setAttribute('aria-pressed',String(on));day.classList.toggle('on',on);host.dispatchEvent(new Event('change',{bubbles:true}));}});
   $(`${prefix}-repeat`).addEventListener('change',sync);
   $(`${prefix}-date`).addEventListener('change',()=>{$(`${prefix}-until`).min=$(`${prefix}-date`).value;});
@@ -16,16 +23,17 @@ function wireAppointmentFields(host,prefix){
 }
 function readAppointmentFields(prefix,exceptions={}){
   return normalizeAppointment({repeat:$(`${prefix}-repeat`).value,startDate:$(`${prefix}-date`).value,
-    until:$(`${prefix}-repeat`).value==='weekly' ? $(`${prefix}-until`).value : '',
+    until:$(`${prefix}-repeat`).value!=='once' ? $(`${prefix}-until`).value : '',
     startMinute:timeInputToMinutes($(`${prefix}-time`).value),
-    weekdays:[...$(`${prefix}-weekly`).querySelectorAll('[aria-pressed="true"]')].map(el=>Number(el.dataset.appointmentDay)),exceptions});
+    ordinalWeekdays:readOrdinalWeekdays($(`${prefix}-monthly`)),
+    weekdays:[...$(`${prefix}-weekly`).querySelectorAll('[data-appointment-day][aria-pressed="true"]')].map(el=>Number(el.dataset.appointmentDay)),exceptions});
 }
 function validateAppointmentFields(prefix){
   const fields=[$(`${prefix}-date`),$(`${prefix}-time`)];
   if($(`${prefix}-repeat`).value==='weekly')fields.push($(`${prefix}-until`));
   for(const field of fields)if(!field.checkValidity()){field.reportValidity();return false;}
   if(prefix==='add-appt' && !$('ting-duration').checkValidity()){$('ting-duration').reportValidity();return false;}
-  if(!readAppointmentFields(prefix)){showToast('choose a date, time and at least one day');return false;}
+  if(!readAppointmentFields(prefix)){showToast('Choose a date, time, and when it repeats.');return false;}
   return true;
 }
 function resetAppointmentShortcut(){
@@ -80,7 +88,7 @@ function renderLocalAppointmentDetail(h){
   if(!isLocalAppointment(h))return;
   const host=document.createElement('div');host.id='detail-appointment-editor';host.className='appointment-editor';
   host.innerHTML=`
-    <label class="planning-field"${h.appointment.repeat==='once'?' hidden':''}>edit<select id="detail-appt-scope" class="settings-select"><option value="series">${h.appointment.repeat==='weekly'?'all dates':'this date'}</option>${h.appointment.repeat==='weekly'?'<option value="date">this date</option>':''}</select></label>
+    <label class="planning-field"${h.appointment.repeat==='once'?' hidden':''}>edit<select id="detail-appt-scope" class="settings-select"><option value="series">${h.appointment.repeat!=='once'?'all dates':'this date'}</option>${h.appointment.repeat!=='once'?'<option value="date">this date</option>':''}</select></label>
     <label class="planning-field" id="detail-appt-occurrence-row" hidden>date<input type="date" id="detail-appt-occurrence" class="plan-date-input" value="${nextAppointmentDate(h)}"></label>
     <div id="detail-appt-rule">${appointmentFields('detail-appt',h.appointment)}</div>
     <label class="planning-field">how long <span><input type="number" id="detail-appt-duration" class="mini-time-input" min="1" max="720" required value="${h.durationMinutes}"> min</span></label>
@@ -94,7 +102,8 @@ function renderLocalAppointmentDetail(h){
     const patch=one ? h.appointment.exceptions[key] || {} : {};
     $('detail-appt-occurrence-row').hidden=!one;
     for(const id of ['detail-appt-repeat','detail-appt-date'])$(id).closest('label').hidden=one;
-    $('detail-appt-weekly').hidden=one || $('detail-appt-repeat').value!=='weekly';
+    $('detail-appt-weekly').hidden=one || $('detail-appt-repeat').value==='once';
+    $('detail-appt-monthly').hidden=one || $('detail-appt-repeat').value!=='monthly';
     $('detail-appt-date-actions').hidden=!one;
     $('detail-appt-time').value=minutesToTimeInput(patch.startMinute ?? h.appointment.startMinute);
     $('detail-appt-duration').value=patch.durationMinutes ?? h.durationMinutes;
@@ -158,6 +167,8 @@ function saveLocalAppointmentDetail(data,h){
     const current=currentDetailTune();h.pinned=current.pinned;h.showOnSharedDisplay=current.showOnSharedDisplay;h.allowSharedDisplayCompletion=false;
   }
   if(detailUnsavedCreate === h && !data.includes(h)){
+    if(data.length>=MAX_TINGS){showToast(`${MAX_TINGS} habits max`);return;}
+    h.createdAt=Date.now();
     data.push(h);
     detailIdx = data.length - 1;
   }

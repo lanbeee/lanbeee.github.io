@@ -1862,6 +1862,7 @@ function blockLocationAtMinute(blocks,minute,weekday,dayBase){
   if(!Array.isArray(blocks))return null;
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
+    if(!matchesOrdinalWeekdays(block.ordinalWeekdays,dayBase))continue;
     if(!block.locationId)continue;
     const rawS = resolveBlockedTimeMinutes(block,'start',dayBase) ?? block.start;
     const rawE = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
@@ -1887,6 +1888,7 @@ function dayFirstOpenMinute(blocks,weekday,dayBase){
   const intervals = [];
   for(const block of blocks){
     if(block.days.length && !block.days.includes(weekday))continue;
+    if(!matchesOrdinalWeekdays(block.ordinalWeekdays,dayBase))continue;
     const rawS = resolveBlockedTimeMinutes(block,'start',dayBase) ?? block.start;
     const rawE = resolveBlockedTimeMinutes(block,'end',dayBase) ?? block.end;
     const {startMin:s, endMin:e} = typeof foldBlockedMinutes === 'function'
@@ -1969,6 +1971,7 @@ function agendaBlockedIntervalsUncached(todayKey,settings,start,end){
     ? normalizeBlockedTimeOverrides(settings.blockedTimeOverrides) : {};
   return normalizeBlockedTimes(settings.blockedTimes).flatMap((block,blockIndex)=>{
     if(block.days.length && !block.days.includes(day))return [];
+    if(!matchesOrdinalWeekdays(block.ordinalWeekdays,dayBase))return [];
     // Resolve dynamic start/end (prayer anchors only on blocked times).
     // Fold dayBase-relative values (negative / >1440 from offsets or +1d)
     // into overnight clock form so a sunrise−8h → sunrise block becomes

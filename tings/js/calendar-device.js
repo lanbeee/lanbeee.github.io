@@ -1,12 +1,24 @@
 // Android supplies complete, read-only snapshots. This merge also runs in the
 // background planner's private mirror; it never needs OAuth or a Tings server.
 const DEVICE_CALENDARS_KEY = 'tings_device_calendars_v1';
-function deviceCalendarPreferences(){
+function deviceCalendarPreferences({ensureSourceId=false}={}){
   try{
     const p = JSON.parse(localStorage.getItem(DEVICE_CALENDARS_KEY) || '{}');
-    return {enabled:p.enabled === true,calendarIds:Array.isArray(p.calendarIds)
+    // The provider's numeric ids are local to one Android installation.
+    // Keep this namespace with the local connection, never in clone settings.
+    if(ensureSourceId && p.enabled === true && !/^[0-9a-f]{16}$/.test(p.sourceId || '')){
+      p.sourceId=Array.from(crypto.getRandomValues(new Uint8Array(8)),b=>b.toString(16).padStart(2,'0')).join('');
+      localStorage.setItem(DEVICE_CALENDARS_KEY,JSON.stringify(p));
+    }
+    return {adoptLegacy:typeof replicaEnrollmentActive==='function' ? !replicaEnrollmentActive() : p.adoptLegacy !== false,sourceId:/^[0-9a-f]{16}$/.test(p.sourceId || '') ? p.sourceId : '',enabled:p.enabled === true,calendarIds:Array.isArray(p.calendarIds)
       ? [...new Set(p.calendarIds.filter(id=>typeof id === 'string' && /^\d{1,20}$/.test(id)))] : [],updatedAt:Number(p.updatedAt) || 0};
-  }catch{return {enabled:false,calendarIds:[],updatedAt:0};}
+  }catch{return {enabled:false,calendarIds:[],updatedAt:0,sourceId:'',adoptLegacy:false};}
+}
+function deviceCalendarHabitId(externalId,sourceId){
+  if(!sourceId)return externalId;
+  let a=2166136261,b=5381;
+  for(const c of externalId){a=Math.imul(a^c.charCodeAt(0),16777619);b=Math.imul(b,33)^c.charCodeAt(0);}
+  return `device:${sourceId}:${(a>>>0).toString(16).padStart(8,'0')}${(b>>>0).toString(16).padStart(8,'0')}`;
 }
 function isDeviceCalendarTask(h){return h?.source === 'device';}
 // Preferences are separate from provider-owned event fields and outlive the
@@ -78,7 +90,7 @@ function syncDeviceCalendarDetail(h){
   const synced=isDeviceCalendarTask(h),sheet=getSheetInner('detail-sheet');
   for(const nav of ['schedule','identity'])sheet.querySelector(`[data-detail-nav="${nav}"]`).inert=false;
   sheet.querySelector('[data-detail-nav="schedule"]').hidden=synced;
-  sheet.querySelector('[data-detail-nav="actions"]').hidden=synced && !window.TingsNative?.isNative;
+  sheet.querySelector('[data-detail-nav="actions"]').hidden=false;
   for(const id of ['detail-name','detail-habit-message'])$(id).disabled=synced;
   $('detail-delete').disabled=synced;$('detail-mark-edit-emoji').disabled=false;
   let hint=$('detail-device-calendar-hint');
@@ -94,9 +106,13 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
     || ids.length !== snapshot.calendarIds.length || ids.some(id=>!snapshot.calendarIds.includes(id))){
     throw new Error('Calendar refresh was incomplete. Existing meetings were kept.');
   }
+  const sourceId=options.sourceId ?? deviceCalendarPreferences().sourceId;
+  const adoptLegacy=options.adoptLegacy ?? deviceCalendarPreferences().adoptLegacy;
+  const owns=h=>isDeviceCalendarTask(h) && (!sourceId ? !h.calendarDeviceId
+    : h.calendarDeviceId===sourceId || (!h.calendarDeviceId && adoptLegacy));
   const now = options.now ?? Date.now(), selected = new Set(ids), seen = new Set(), imported = new Set();
   const before = JSON.stringify(data), next = data.map(h=>({...h,logs:[...(h.logs || [])]}));
-  const byExternal = new Map(next.filter(isDeviceCalendarTask).map(h=>[h.externalId,h]));
+  const byExternal = new Map(next.filter(owns).map(h=>[h.externalId,h]));
   let added=0,updated=0,removed=0;
   for(const ev of snapshot.events){
     if(!ev || typeof ev.id !== 'string' || !ev.id.startsWith('device:') || !selected.has(ev.calendarId)
@@ -108,7 +124,7 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
     if(ev.isAllDay && options.allDayMode !== 'tasks')continue;
     imported.add(ev.id);
     const mapped=mapEventToTask(ev,'device');
-    Object.assign(mapped,{calendarId:ev.calendarId,calendarStart:ev.start,calendarEnd:ev.end,
+    Object.assign(mapped,{calendarDeviceId:sourceId || null,calendarId:ev.calendarId,calendarStart:ev.start,calendarEnd:ev.end,
       calendarSeriesId:typeof ev.seriesId==='string' && ev.seriesId.startsWith(`device:${ev.calendarId}:`) ? ev.seriesId : null,
       links:typeof ev.joinUrl==='string' && /^https:\/\//i.test(ev.joinUrl) ? normalizeLinks([{kind:'link',value:ev.joinUrl}]) : [],
       showOnSharedDisplay:false,allowSharedDisplayCompletion:false});
@@ -116,7 +132,7 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
     const existing=byExternal.get(ev.id);
     if(!existing){
       // The foreground and private background mirror must produce the same id.
-      mapped.hid=ev.id;
+      mapped.hid=deviceCalendarHabitId(ev.id,sourceId);
       next.push(normalize([mapped])[0]);added++;
     }else{
       const moved=existing.calendarStart !== ev.start || existing.calendarEnd !== ev.end;
@@ -128,7 +144,7 @@ function reconcileDeviceCalendarSnapshot(data,snapshot,options={}){
     }
   }
   const kept=next.filter(h=>{
-    if(!isDeviceCalendarTask(h))return true;
+    if(!owns(h))return true;
     const start=h.calendarStart ?? h.eventTime ?? h.dueDate;
     const end=h.calendarEnd ?? (start + (h.durationMinutes || 30)*60000);
     // Keep completed history and its work credit as the rolling window advances.
@@ -172,7 +188,7 @@ function renderDeviceCalendarControls(){
               </div>
               <p class="field-hint" id="calendar-device-status" role="status" aria-live="polite"></p><p class="field-hint" id="calendar-device-changes"></p>`;
   host.hidden=false;
-  const prefs=deviceCalendarPreferences();
+  const prefs=deviceCalendarPreferences({ensureSourceId:true});
   document.getElementById('calendar-device-refresh').hidden=!prefs.enabled;
   document.getElementById('calendar-device-stop').hidden=!prefs.enabled;
   if(!deviceCalendarRefresh)deviceCalendarStatus(prefs.enabled
@@ -180,7 +196,7 @@ function renderDeviceCalendarControls(){
     : 'Choose which calendars to show in Tings.');
 }
 async function refreshDeviceCalendars(){
-  const api=window.TingsNative?.calendars,prefs=deviceCalendarPreferences();
+  const api=window.TingsNative?.calendars,prefs=deviceCalendarPreferences({ensureSourceId:true});
   if(!api || !prefs.enabled || !prefs.calendarIds.length)return;
   if(deviceCalendarRefresh){deviceCalendarRefreshAgain=true;return deviceCalendarRefresh;}
   const selection=JSON.stringify(prefs.calendarIds);
@@ -190,7 +206,7 @@ async function refreshDeviceCalendars(){
       const snapshot=await api.read(prefs.calendarIds);
       const current=deviceCalendarPreferences();
       if(!current.enabled || JSON.stringify(current.calendarIds)!==selection)return;
-      const result=applyDeviceCalendarSnapshot(snapshot,{calendarIds:prefs.calendarIds});
+      const result=applyDeviceCalendarSnapshot(snapshot,{calendarIds:prefs.calendarIds,sourceId:prefs.sourceId});
       localStorage.setItem(DEVICE_CALENDARS_KEY,JSON.stringify({...current,updatedAt:Date.now()}));
       if(result.changed){
         if(typeof sweepAutoDoneTasks==='function')sweepAutoDoneTasks();
@@ -200,11 +216,12 @@ async function refreshDeviceCalendars(){
       deviceCalendarStatus(`${prefs.calendarIds.length} calendar${prefs.calendarIds.length===1?'':'s'} · updated ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`);
       const changes=document.getElementById('calendar-device-changes');
       if(changes)changes.textContent=result.added || result.updated || result.removed ? `${result.added} new, ${result.updated} changed, ${result.removed} no longer on the calendar` : '';
-    }catch(error){deviceCalendarStatus(error.message || 'Calendar refresh failed. Existing meetings were kept.');}
+    }catch(error){deviceCalendarStatus(error.message || 'Calendar refresh failed. Existing meetings were kept.');return {error:error.message || 'Calendar refresh failed'};}
     finally{deviceCalendarRefresh=null;}
   })();
-  await deviceCalendarRefresh;
+  const refreshResult=await deviceCalendarRefresh;
   if(deviceCalendarRefreshAgain){deviceCalendarRefreshAgain=false;return refreshDeviceCalendars();}
+  return refreshResult;
 }
 async function chooseDeviceCalendars(){
   const api=window.TingsNative?.calendars;if(!api)return;
@@ -231,16 +248,17 @@ function initDeviceCalendars(){
   document.getElementById('calendar-device-save').addEventListener('click',()=>{
     const calendarIds=[...document.querySelectorAll('#calendar-device-list input:checked')].map(el=>el.value);
     if(!calendarIds.length){deviceCalendarStatus('Choose at least one calendar, or use stop sync.');return;}
-    localStorage.setItem(DEVICE_CALENDARS_KEY,JSON.stringify({enabled:true,calendarIds,updatedAt:0}));
+    localStorage.setItem(DEVICE_CALENDARS_KEY,JSON.stringify({...deviceCalendarPreferences(),enabled:true,calendarIds,updatedAt:0}));
     document.getElementById('calendar-device-picker').hidden=true;renderDeviceCalendarControls();void refreshDeviceCalendars();
   });
   document.getElementById('calendar-device-cancel').addEventListener('click',()=>{document.getElementById('calendar-device-picker').hidden=true;renderDeviceCalendarControls();});
   document.getElementById('calendar-device-refresh').addEventListener('click',()=>void refreshDeviceCalendars());
   document.getElementById('calendar-device-stop').addEventListener('click',()=>{
     if(!window.confirm('Stop phone calendar sync? Upcoming phone meetings leave Tings. Past meetings stay.'))return;
-    localStorage.removeItem(DEVICE_CALENDARS_KEY);
+    const prefs=deviceCalendarPreferences();
+    localStorage.setItem(DEVICE_CALENDARS_KEY,JSON.stringify({sourceId:prefs.sourceId,enabled:false,calendarIds:[],updatedAt:0}));
     const from=dayStart(Date.now()),to=new Date(new Date(from).setDate(new Date(from).getDate()+14)).getTime();
-    applyDeviceCalendarSnapshot({complete:true,calendarIds:[],events:[],from,to},{calendarIds:[]});
+    applyDeviceCalendarSnapshot({complete:true,calendarIds:[],events:[],from,to},{calendarIds:[],sourceId:prefs.sourceId});
     $('calendar-device-changes').textContent='';renderDeviceCalendarControls();if(typeof refreshOpenViews==='function')refreshOpenViews();
     if(typeof queueNativeBackgroundSnapshot==='function')queueNativeBackgroundSnapshot();
   });

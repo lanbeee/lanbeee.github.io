@@ -186,13 +186,14 @@ function cleanLocationPrefLevel(value){
 function habitSimpleAllowedDays(h){
   return {
     weekdays:normalizeAllowedWeekdays(h && h.allowedWeekdays),
-    monthDays:normalizeAllowedMonthDays(h && h.allowedMonthDays)
+    monthDays:normalizeAllowedMonthDays(h && h.allowedMonthDays),
+    ordinalWeekdays:normalizeOrdinalWeekdays(h && h.allowedOrdinalWeekdays)
   };
 }
 
 function hasSimpleAllowedDays(h){
   const schedule = habitSimpleAllowedDays(h);
-  return Boolean(schedule.weekdays.length || schedule.monthDays.length);
+  return Boolean(schedule.weekdays.length || schedule.monthDays.length || schedule.ordinalWeekdays.length);
 }
 
 function hasSimpleAllowedTimeWindow(h){
@@ -304,7 +305,7 @@ function normalizeHabitScheduleOptions(value,registry){
   if(!variants){variants=new Map();cache.set(value,variants);}
   const key = Array.isArray(registry) ? registry : null;
   if(!variants.has(key))variants.set(key,normalizeHabitScheduleOptionsUncached(value,registry));
-  return variants.get(key).map(option=>({...option,weekdays:option.weekdays.slice()}));
+  return variants.get(key).map(option=>({...option,weekdays:option.weekdays.slice(),ordinalWeekdays:option.ordinalWeekdays.map(rule=>({...rule}))}));
 }
 
 function normalizeHabitScheduleOptionsUncached(value,registry){
@@ -328,8 +329,8 @@ function normalizeHabitScheduleOptionsUncached(value,registry){
     const weatherProfileMode = normalizeWeatherProfileMode(raw.weatherProfileMode,raw.weatherProfileId);
     const weatherProfileId = weatherProfileMode === 'profile'
       ? cleanWeatherProfileRef(raw.weatherProfileId) || null : null;
-    const option = {weekdays,...startFields,...(endFields || {end:null}),...(fixedStart ? {fixedStart:true} : {}),locationId,weatherProfileMode,weatherProfileId};
-    const key = `${weekdays.join(',')}|${habitScheduleOptionTimeKey(option,'start')}|${fixedStart ? 'fixed-start' : habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}|${weatherProfileMode}|${weatherProfileId || ''}`;
+    const option = {weekdays,ordinalWeekdays:normalizeOrdinalWeekdays(raw.ordinalWeekdays),...startFields,...(endFields || {end:null}),...(fixedStart ? {fixedStart:true} : {}),locationId,weatherProfileMode,weatherProfileId};
+    const key = `${weekdays.join(',')}|${JSON.stringify(option.ordinalWeekdays)}|${habitScheduleOptionTimeKey(option,'start')}|${fixedStart ? 'fixed-start' : habitScheduleOptionTimeKey(option,'end')}|${locationId || ''}|${weatherProfileMode}|${weatherProfileId || ''}`;
     if(seen.has(key))continue;
     seen.add(key);
     const identified = {
@@ -396,6 +397,7 @@ function isDateEligibleForGeneralSchedule(h,ts = Date.now()){
   const d = new Date(ts);
   if(schedule.weekdays.length && !schedule.weekdays.includes(d.getDay()))return false;
   if(schedule.monthDays.length && !schedule.monthDays.includes(d.getDate()))return false;
+  if(!matchesOrdinalWeekdays(schedule.ordinalWeekdays,ts))return false;
   return true;
 }
 
@@ -465,6 +467,7 @@ function habitBoundToScheduleOption(h,option){
     scheduleOptions:[],
     allowedWeekdays:normalized.weekdays,
     allowedMonthDays:[],
+    allowedOrdinalWeekdays:normalized.ordinalWeekdays,
     locationIds:locationId ? [locationId] : [],
     anywhereAllowed:locationId == null,
     locationPrefs,
@@ -532,6 +535,7 @@ function habitScheduleOptionsForDay(h,dayBase,locationId = undefined){
   const weekday = new Date(dayBase).getDay();
   return options.filter(option=>{
     if(option.weekdays.length && !option.weekdays.includes(weekday))return false;
+    if(!matchesOrdinalWeekdays(option.ordinalWeekdays,dayBase))return false;
     return locationId === undefined || option.locationId === locationId;
   });
 }

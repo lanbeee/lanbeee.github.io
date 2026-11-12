@@ -362,8 +362,10 @@ function normalize(items){
       topics:normalizeTopics(raw.topics),
       allowedWeekdays:normalizeAllowedWeekdays(raw.allowedWeekdays),
       allowedMonthDays:normalizeAllowedMonthDays(raw.allowedMonthDays),
+      allowedOrdinalWeekdays:normalizeOrdinalWeekdays(raw.allowedOrdinalWeekdays),
       preferredWeekdays:normalizeAllowedWeekdays(raw.preferredWeekdays),
       preferredMonthDays:normalizeAllowedMonthDays(raw.preferredMonthDays),
+      preferredOrdinalWeekdays:normalizeOrdinalWeekdays(raw.preferredOrdinalWeekdays),
       allowedTimeStart:normalizeTimeMinutes(raw.allowedTimeStart),
       allowedTimeEnd:normalizeTimeMinutes(raw.allowedTimeEnd),
       allowedTimeFixedStart:raw.allowedTimeFixedStart === true,
@@ -400,6 +402,7 @@ function normalize(items){
       minChunkMinutes:clampMinChunk(raw.minChunkMinutes),
       minGapMinutes:clampMinGapMinutes(raw.minGapMinutes),
       timerAutoStopMinutes:normalizeTimerAutoStop(raw.timerAutoStopMinutes),
+      tapStartsSession:raw.tapStartsSession === true,
       trackValue:Boolean(raw.trackValue),
       priority:clampPriority(raw.priority),
       locationIds,
@@ -419,6 +422,7 @@ function normalize(items){
       showWeatherAtLocation:Boolean(raw.showWeatherAtLocation),
       scheduleOptions,
       links:normalizeLinks(Array.isArray(raw.links) && raw.links.length ? raw.links : legacyCallLinks(raw)),
+      calendarSeriesId:typeof raw.calendarSeriesId === 'string' ? raw.calendarSeriesId.slice(0,256) : null,
       externalId: typeof raw.externalId === 'string' ? raw.externalId.slice(0,256) || null : null,
       source: (raw.source === 'pdf' || raw.source === 'ics' || raw.source === 'msgraph' || raw.source === 'gcal' || raw.source === 'device') ? raw.source : null,
       ...(raw.source === 'ics' ? {
@@ -427,6 +431,7 @@ function normalize(items){
         calendarEnd:Number.isFinite(raw.calendarEnd) ? raw.calendarEnd : null
       } : {}),
       ...(raw.source === 'device' ? {
+        calendarDeviceId:typeof raw.calendarDeviceId==='string' && /^[0-9a-f]{16}$/.test(raw.calendarDeviceId) ? raw.calendarDeviceId : null,
         calendarSeriesId:typeof raw.calendarSeriesId === 'string' && /^device:\d+:\d+$/.test(raw.calendarSeriesId) ? raw.calendarSeriesId : null,
         calendarId:typeof raw.calendarId === 'string' ? raw.calendarId.slice(0,20) : null,
         calendarStart:Number.isFinite(raw.calendarStart) ? raw.calendarStart : null,
@@ -579,13 +584,13 @@ function appointmentDateKey(value){
   return Number.isFinite(d.getTime()) && dateKey(d.getTime())===value ? value : '';
 }
 function normalizeAppointment(raw){
-  if(!raw || !['once','weekly'].includes(raw.repeat))return null;
+  if(!raw || !['once','weekly','monthly'].includes(raw.repeat))return null;
   const startDate=appointmentDateKey(raw.startDate),until=appointmentDateKey(raw.until);
   const minute=Number(raw.startMinute);
   // Keep all seven explicit: ordinary habit windows collapse that to an empty
   // unrestricted set, but an appointment needs at least one selected day.
   const weekdays=[...new Set((Array.isArray(raw.weekdays)?raw.weekdays:[]).map(Number).filter(d=>Number.isInteger(d) && d>=0 && d<=6))].sort((a,b)=>a-b);
-  if(!startDate || (raw.until && !until) || raw.startMinute==='' || raw.startMinute==null || !Number.isInteger(minute) || minute<0 || minute>1439
+  if((raw.repeat==='monthly' && !normalizeOrdinalWeekdays(raw.ordinalWeekdays).length) || !startDate || (raw.until && !until) || raw.startMinute==='' || raw.startMinute==null || !Number.isInteger(minute) || minute<0 || minute>1439
     || (raw.repeat==='weekly' && !weekdays.length) || (until && until<startDate))return null;
   const exceptions={};
   for(const [key,patch] of Object.entries(raw.exceptions || {}).slice(0,1000)){
@@ -598,7 +603,7 @@ function normalizeAppointment(raw){
     if(typeof patch.emojiBgColor==='string')entry.emojiBgColor=normalizeEmojiBgColor(patch.emojiBgColor);
     if(Object.keys(entry).length)exceptions[key]=entry;
   }
-  return {repeat:raw.repeat,startDate,until:until || '',weekdays,startMinute:minute,exceptions};
+  return {ordinalWeekdays:normalizeOrdinalWeekdays(raw.ordinalWeekdays),repeat:raw.repeat,startDate,until:until || '',weekdays,startMinute:minute,exceptions};
 }
 function isLocalAppointment(h){return Boolean(h && h.appointment);}
 // UI identity: a timed calendar meeting is an event; a manually timed task
@@ -608,7 +613,7 @@ function isFixedAppointment(h){return isLocalAppointment(h) || isFixedTimedTask(
 function appointmentOccursOn(h,key){
   const a=h?.appointment;
   if(!a || key<a.startDate || (a.until && key>a.until))return false;
-  return a.repeat==='once' ? key===a.startDate : a.weekdays.includes(new Date(`${key}T12:00:00`).getDay());
+  return a.repeat==='once' ? key===a.startDate : a.repeat==='monthly' ? matchesOrdinalWeekdays(a.ordinalWeekdays,new Date(`${key}T12:00:00`).getTime()) : a.weekdays.includes(new Date(`${key}T12:00:00`).getDay());
 }
 function appointmentOccurrence(h,key){
   if(!appointmentOccursOn(h,key))return null;
@@ -625,7 +630,7 @@ function appointmentSummary(h){
   const a=h.appointment;
   if(!a)return '';
   const clock=new Date(`${a.startDate}T12:00:00`);clock.setHours(Math.floor(a.startMinute/60),a.startMinute%60);
-  const days=a.repeat==='once' ? clock.toLocaleDateString(undefined,{month:'short',day:'numeric'}) : `every ${a.weekdays.map(d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')}`;
+  const days=a.repeat==='once' ? clock.toLocaleDateString(undefined,{month:'short',day:'numeric'}) : a.repeat==='monthly' ? ordinalWeekdaySummary(a.ordinalWeekdays) : `every ${a.weekdays.map(d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')}`;
   const duration=h.durationMinutes<60 ? `${h.durationMinutes}m` : `${Math.round(h.durationMinutes/6)/10}h`;
   return `${days} · ${clock.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${duration}`;
 }

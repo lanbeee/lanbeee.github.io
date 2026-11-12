@@ -315,6 +315,7 @@ function syncSettingsControls(){
   if(resetConfirm)resetConfirm.hidden = true;
   updateSortSampleCount();
   renderTopicList();
+  renderIgnoredCalendarItems();
   renderBlockedTimeControls();
   renderLocationControls();
   if(typeof renderWeatherControls === 'function')renderWeatherControls();

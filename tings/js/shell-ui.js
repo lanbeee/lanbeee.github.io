@@ -1,4 +1,4 @@
-// Shared sheet controls, toast/undo UI, reach assist, and forgiving pointer handling.
+// Shared sheet controls, toast/undo UI, and forgiving pointer handling.
 
 // ---------------------------------------------------------------------------
 // FILE PURPOSE (React Native port reference):
@@ -441,7 +441,8 @@ function updateKeyboardLift(){
   const detailOpen = detailMounted || $('detail-sheet')?.classList.contains('open');
   const settingsOpen = $('settings-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
-  const needsLift = (addOpen || settingsOpen || ((!paneTierActive() || detailMounted)
+  const feedbackOpen = $('feedback-sheet')?.classList.contains('open');
+  const needsLift = (addOpen || settingsOpen || feedbackOpen || ((!paneTierActive() || detailMounted)
     && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
@@ -464,6 +465,12 @@ function updateKeyboardLift(){
     ? Math.min(layoutHeight,window.visualViewport.height + window.visualViewport.offsetTop) : layoutHeight;
   const keyboard = Math.max(0,layoutHeight - visibleBottom);
   const style = document.documentElement.style;
+  // Safari can pan the visual viewport as well as shrink it for the IME.
+  // Keep the whole assistant in that visible rectangle, including its header.
+  if(assistantOpen && !paneTierActive()){
+    const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
+    style.setProperty('--assistant-viewport-top', `${top}px`);
+  }else style.removeProperty('--assistant-viewport-top');
   // SystemBars clears the bottom safe inset after the WebView resize. The
   // keyboard already covers it in that intervening frame, so omit it now.
   if(nativeResized){
@@ -507,21 +514,21 @@ function keepFocusedInputVisible(){
   const active = document.activeElement;
   // These fields live in a dock which already follows the keyboard. Scrolling
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
-  if(!active || active.matches('#habit-search,#detail-search-input,#settings-search-input'))return;
+  if(!active || active.matches('#habit-search,#detail-search-input,#settings-search-input,#assistant-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body');
   if(!host)return;
   // Minimal detail sections share the pager's scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
   if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-pager');
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack'))return;
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
   const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
     && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01
     ? {offsetTop:0,height:document.documentElement.clientHeight} : window.visualViewport;
   const top = Math.max(bounds.top,viewport?.offsetTop || 0) + 8;
-  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet')?.querySelector('.sheet-search-dock,.add-actions');
+  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet,.feedback-sheet')?.querySelector('.sheet-search-dock,.add-actions,.feedback-actions');
   const footerTop = footer?.getClientRects().length ? footer.getBoundingClientRect().top : Infinity;
   const bottom = Math.min(bounds.bottom,footerTop,(viewport?.offsetTop || 0) + (viewport?.height || innerHeight)) - 8;
   if(rect.top >= top && rect.bottom <= bottom)return;
@@ -562,7 +569,7 @@ function ensureSheetExit(id){
     const row = button.parentElement;
     if(row.classList.contains('btn-row') && [...row.children].every(child=>child.classList.contains('sheet-exit-redundant')))row.hidden = true;
   });
-  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head');
+  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head,.feedback-head');
   if(head){
     head.classList.add('sheet-exit-head');
     return;
@@ -1146,11 +1153,31 @@ function openSheet(id,opts = {}){
     return;
   }
   $(id).classList.add('open');
+  // The desktop bar stays usable while a modal is open. A sheet opened from
+  // it has to paint above the one already on screen. Phone keeps the
+  // stylesheet order: detail must open behind the day sheet so that sheet
+  // can fade away and reveal it.
+  if(paneTierActive())raiseOpenSheet(id);
   // Recovered taps and synthesized clicks can land on the wrap that just
   // opened. Arm every sheet so the next card does not need a whitelist entry.
   armSheetBackdropGuard(id);
   updateFullPageState();
   updateKeyboardLift();
+}
+
+// The stylesheet stacking order is the resting order. A sheet opened while
+// another is already up takes the next layer, then gives it back on close.
+function raiseOpenSheet(id){
+  const el = $(id);
+  if(!el)return;
+  const own = parseInt(getComputedStyle(el).zIndex,10) || 0;
+  let max = own;
+  document.querySelectorAll('.sheet-wrap.open').forEach(wrap=>{
+    if(wrap === el)return;
+    const z = parseInt(getComputedStyle(wrap).zIndex,10);
+    if(Number.isFinite(z))max = Math.max(max,z);
+  });
+  if(max > own)el.style.zIndex = String(max + 1);
 }
 
 // HYBRID: ignore sheet-wrap backdrop clicks for a short window after open
@@ -1189,6 +1216,7 @@ function closeSheet(id){
     return;
   }
   $(id).classList.remove('open');
+  $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
   if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet')updateKeyboardLift();
@@ -1213,7 +1241,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -1229,8 +1257,9 @@ function shouldMountInPane(id) {
 // scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
   syncBrowserBack();
-  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
+  document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
   if(modalOpen && !document.body.classList.contains('modal-open')){
     document.body.classList.add('modal-open');
@@ -1376,7 +1405,8 @@ function showActionToast(text,action){
   const openBtn = $('action-open');
   const linkBtn = $('action-link');
   const planBtn = $('action-plan');
-  const link = actionToastLink(action);
+  const onlyUndo = Boolean(action.toastOnlyUndo);
+  const link = onlyUndo ? null : actionToastLink(action);
   if(linkBtn){
     linkBtn.textContent = actionToastLinkLabel(link);
     linkBtn.hidden = !link;
@@ -1384,13 +1414,13 @@ function showActionToast(text,action){
     linkBtn.setAttribute('aria-hidden',String(!link));
   }
   if(openBtn){
-    const showOpen = !link && canOpenFromAction(action);
+    const showOpen = !onlyUndo && !link && canOpenFromAction(action);
     openBtn.textContent = 'view item';
     openBtn.hidden = !showOpen;
     openBtn.setAttribute('aria-hidden',String(!showOpen));
   }
   if(planBtn){
-    const label = secondaryActionLabel(action);
+    const label = onlyUndo ? '' : secondaryActionLabel(action);
     planBtn.textContent = label;
     planBtn.hidden = !label;
     planBtn.setAttribute('aria-hidden',String(!label));
@@ -1399,7 +1429,7 @@ function showActionToast(text,action){
   if(snoozeUntilBtn){
     // Minimal mode has no snooze anywhere else, so it must not appear here.
     const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-    const showSnooze = !minimal && action.type === 'entry' && action.plan
+    const showSnooze = !onlyUndo && !minimal && action.type === 'entry' && action.plan
       && action.ts > Date.now() && load()[action.idx]?.type !== 'zero';
     snoozeUntilBtn.hidden = !showSnooze;
     snoozeUntilBtn.setAttribute('aria-hidden',String(!showSnooze));
@@ -1429,8 +1459,8 @@ function hideActionToast(){
 }
 
 // HYBRID: re-renders currently open views after data change
-function refreshOpenViews(){
-  render();
+function refreshOpenViews(opts){
+  render(opts);
   const detailOpen = $('detail-sheet').classList.contains('open') || (paneTierActive() && getPane()?.dataset.activeSheet === 'detail-sheet');
   if(detailIdx !== null && (detailOpen || paneTierActive())){
     // Nested settings and immediate actions must not overwrite a detail draft.
@@ -1447,27 +1477,6 @@ function suppressBottomNav(ms = 300){
   document.body.classList.add('nav-suppressed');
   clearTimeout(navSuppressTimer);
   navSuppressTimer = setTimeout(()=>document.body.classList.remove('nav-suppressed'),ms);
-}
-
-// HYBRID: shows reach-assist pad based on settings and scroll
-function showReachPad(){
-  if(!sortSettings.reachAssist)return;
-  if(document.querySelector('.sheet-wrap.open'))return;
-  if(window.scrollY > 4)return;
-  if(document.body.classList.contains('reach-pad'))return;
-  document.body.classList.add('reach-pad');
-  clearTimeout(reachTimer);
-  reachTimer = setTimeout(()=>{
-    document.body.classList.remove('reach-pad');
-    requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'auto'}));
-  },5200);
-}
-
-// HANDLER: cancels an in-progress reach hold gesture
-function cancelReachHold(){
-  clearTimeout(reachHoldTimer);
-  reachHoldTimer = null;
-  reachArmed = false;
 }
 
 // HYBRID: tracks "at top" state for the home feed. The header itself is
@@ -2028,7 +2037,10 @@ document.addEventListener('tierchange',()=>{
   }
   // Close any open full-page sheet or pane so we don't get stuck mid-transition.
   ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','home-filter-sheet','calendar-filter-sheet'].forEach(id=>{
-    if ($(id).classList.contains('open')) $(id).classList.remove('open');
+    if ($(id).classList.contains('open')){
+      $(id).classList.remove('open');
+      $(id).style.zIndex = '';
+    }
   });
   unmountPane();
   updateFullPageState();
@@ -2071,7 +2083,7 @@ document.addEventListener('keydown',e=>{
     plan.run();
     return;
   }
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -2100,6 +2112,7 @@ document.addEventListener('keydown',e=>{
     else if (id === 'free-time-sheet') closeSheet('free-time-sheet');
     else if (id === 'weather-context-sheet') closeSheet('weather-context-sheet');
     else if (id === 'assistant-sheet' && typeof closeAssistantSheet === 'function') closeAssistantSheet();
+    else if (id === 'feedback-sheet') closeSheet('feedback-sheet');
     return;
   }
   const pane = getPane();

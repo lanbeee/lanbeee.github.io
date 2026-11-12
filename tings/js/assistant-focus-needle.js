@@ -29,8 +29,8 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   identity:[['name','name'],['kind','kind'],['habitKind','habit'],['emoji','emoji'],['emojiBgColor','color'],['priority','priority']],
   recurrence:[['timesPerPeriod','times'],['periodDays','period'],['repeatMode','mode'],['conditionTrigger','trigger'],['conditionRadiusM','radius']],
   dates:[['dueDate','due'],['dueTime','time'],['hardDue','hard'],['planByDate','planBy'],['earlyWindowDays','early'],['delayAllowanceDays','late']],
-  schedule:[['allowedWeekdays','weekdays'],['allowedMonthDays','monthDays'],['allowedWindow','window'],['allowedTimeFixedStart','fixed'],['preferredWeekdays','preferredDays'],['preferredMonthDays','preferredMonthDays'],['preferredWindow','preferredWindow']],
-  effort:[['durationMinutes','duration'],['breakable','split'],['minChunkMinutes','chunk'],['minGapMinutes','gap'],['timerAutoStopMinutes','timer'],['autoMarkMinutes','auto'],['trackValue','value']],
+  schedule:[['allowedWeekdays','weekdays'],['allowedMonthDays','monthDays'],['allowedOrdinalWeekdays','ordinalWeekdays'],['allowedWindow','window'],['allowedTimeFixedStart','fixed'],['preferredWeekdays','preferredDays'],['preferredMonthDays','preferredMonthDays'],['preferredOrdinalWeekdays','preferredOrdinalWeekdays'],['preferredWindow','preferredWindow']],
+  effort:[['tapStartsSession','tap'],['durationMinutes','duration'],['breakable','split'],['minChunkMinutes','chunk'],['minGapMinutes','gap'],['timerAutoStopMinutes','timer'],['autoMarkMinutes','auto'],['trackValue','value']],
   places:[['places','places'],['anywhereAllowed','anywhere'],['locationPrefs','prefs']],
   weather:[['weatherRules','rules'],['showWeather','show'],['showWeatherAtLocation','atPlace'],['weatherLocationId','forecastPlace'],['weatherProfile','profile']],
   alternatives:[['scheduleOptions','options']],
@@ -38,7 +38,7 @@ const ASSISTANT_FOCUS_EXTRACT_FIELDS = {
   organization:[['topics','topics'],['pinned','pinned'],['snoozedUntil','snooze'],['sharedDisplay','display'],['links','links']],
   event:[['appointmentRepeat','repeat'],['appointmentStartDate','date'],['appointmentWeekdays','weekdays'],['appointmentUntil','until'],['appointmentStartMinute','time']],
   exception:[['exceptionTime','time'],['exceptionDuration','duration'],['exceptionEmoji','emoji'],['exceptionColor','color'],['exceptionCancelled','cancelled'],['exceptionReset','reset']],
-  reminders:[['reminderStart','start'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
+  reminders:[['reminderDnd','dnd'],['reminderStart','start'],['reminderEnd','end'],['reminderTravelStart','travelStart'],['reminderTravelEnd','travelEnd'],['reminderMissed','missed'],['reminderTravelLead','travelLead'],['reminderStartLead','startLead'],['reminderMissedLead','missedLead'],['reminderReset','reset']]
 };
 
 function assistantFocusPackTool(name, description, properties, required){
@@ -63,6 +63,8 @@ function assistantFocusArgs(raw){
 
 function assistantFocusSplitEvidence(text){
   return String(text || '').split(';').map(part => {
+    // A bare URL returned by discovery is evidence, not an action label.
+    if(/^\s*[a-z][a-z\d+.-]*:\/\//i.test(part))return null;
     const mark = part.indexOf(':');
     if(mark < 1)return null;
     return {label:part.slice(0, mark).trim().toLowerCase(), phrase:part.slice(mark + 1).trim()};
@@ -94,11 +96,28 @@ async function assistantFocusLiveExtract(spec){
   if(typeof assistantNeedleFocusRequest !== 'function'){
     throw new Error('Needle is not available on this page.');
   }
+  let tools=spec.tools||[spec.tool],request=spec.request;
+  const properties=Object.entries(tools.length===1&&tools[0]?.parameters?.properties||{});
+  const [key,property]=properties[0]||[];
+  let choices=null;
+  // The pinned native enum grammar can emit unescaped quotes/backslashes in
+  // string choices. Ask for a bounded evidence token instead, then restore
+  // only that exact original choice. Never repair or infer model prose.
+  if(properties.length===1&&property.enum?.some(value=>typeof value==='string'&&/["\\\u0000-\u001f]/.test(value))){
+    choices=new Map(property.enum.filter(value=>value!=='').map((value,index)=>[`evidence_${index+1}`,value]));
+    tools=[{...tools[0],parameters:{...tools[0].parameters,properties:{[key]:{...property,enum:[...choices.keys(),'']}}}}];
+    request+=`\nSelect the token for the exact evidence, or empty if unrelated:\n${[...choices].map(([token,value])=>`${token}: ${JSON.stringify(value)}`).join('\n')}`;
+  }
   const result = await assistantNeedleFocusRequest({
     system:spec.system,
-    request:spec.request,
-    tools:spec.tools || [spec.tool]
+    request,
+    tools
   });
+  if(choices)for(const call of [...(result.function_calls||[]),...(result.suppressed_calls||[])]){
+    if(call.name!==tools[0].name)continue;
+    const args=typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments||{};
+    call.arguments={...args,[key]:choices.get(args[key])||''};
+  }
   return result;
 }
 
@@ -302,6 +321,8 @@ function assistantFocusPreferField(fieldId, phrase){
   if(fieldId === 'preferredWindow' && !prefer)return null;
   if(fieldId === 'allowedMonthDays' && prefer)return 'preferredMonthDays';
   if(fieldId === 'preferredMonthDays' && !prefer)return null;
+  if(fieldId === 'allowedOrdinalWeekdays' && prefer)return 'preferredOrdinalWeekdays';
+  if(fieldId === 'preferredOrdinalWeekdays' && !prefer)return null;
   return fieldId;
 }
 
@@ -340,6 +361,7 @@ function assistantFocusReminderFieldGrounded(fieldId, phrase){
   if(fieldId === 'reminderReset')return /\b(?:usual|default|reset)\b/.test(text);
   if(fieldId === 'reminderEnd')return /\b(?:end|finish)\b/.test(text) && !/\btravel\b/.test(text);
   if(fieldId === 'reminderStart')return /\bstart\b/.test(text) && !/\b(?:travel|depart(?:ure)?)\b/.test(text);
+  if(fieldId === 'reminderDnd')return /\bdnd\b|\bdo not disturb\b|\bsilenc|\bmute/.test(text);
   return true;
 }
 
@@ -904,6 +926,7 @@ async function assistantFocusRunTurn(session, text, opts){
 
 function assistantFocusTurn(session, text, opts){
   if(session && session._focusInFlight && opts && opts.resume)return session._focusInFlight;
+  if(String(text||'').trim())assistantFocusContinueSavedCreate(session);
   // The runner reports progress before its first await. Mark the read in
   // progress first so that opening paint is the progress line, not Continue.
   if(session)session._focusInFlight = true;

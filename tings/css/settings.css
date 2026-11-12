@@ -106,6 +106,10 @@
 .settings-sheet.detail-search-open .detail-search-control{flex:1 1 auto;}
 /* Center desktop modals within the visible area too, not the area behind IME. */
 #settings-sheet{bottom:auto;height:min(100%,var(--keyboard-viewport-bottom,100dvh));}
+body:is([data-pane-count="2"],[data-pane-count="3"]) #settings-sheet{
+  top:var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height)));
+  height:calc(min(100dvh,var(--keyboard-viewport-bottom,100dvh)) - var(--desktop-chrome-top,calc(var(--content-safe-top) + var(--bar-height))));
+}
 body[data-pane-count="1"] .settings-sheet{
   height:min(100%,var(--keyboard-viewport-bottom,100dvh));min-height:0;max-height:100%;
   padding-bottom:0;
@@ -114,7 +118,7 @@ body[data-pane-count="1"] .settings-sheet > .settings-stack{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
 body:is([data-pane-count="2"],[data-pane-count="3"]) .settings-sheet{
-  height:calc(min(100dvh,var(--add-viewport-height,100dvh)) - 48px);
+  height:calc(min(100dvh,var(--add-viewport-height,100dvh)) - var(--desktop-chrome-top,0px) - 48px);
 }
 .settings-actions .mini-text-btn{min-height:44px;white-space:normal;line-height:1.35;}
 .native-background-row,.native-lock-screen-row{margin-top:16px;}

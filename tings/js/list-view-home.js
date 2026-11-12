@@ -455,6 +455,394 @@ function matchesHomeLocation(h,id){
   return matchesLocationFilter(h,id,{treatAnywhere:true});
 }
 
+// One choice per group. Groups combine. Tasks and events use the card's 7-day
+// "due in N days" horizon. Habit rhythm stops at 3 days, which is where the
+// card switches from "due in N days" to "on track" / "N days left".
+const FILTER_DATED_SOON_DAYS = 7;
+const FILTER_RHYTHM_SOON_DAYS = 3;
+const FILTER_WHEN_CHOICES = [
+  {key:'overdue', label:'Overdue', icon:'ti-alert-circle', title:'Past a due date, or a habit that is behind its rhythm'},
+  {key:'today', label:'Due today', icon:'ti-calendar-event', title:'Due or scheduled today'},
+  {key:'overdue7', label:'7+ days overdue', icon:'ti-alert-triangle', title:'Behind by 7 days or more'},
+  {key:'overdue30', label:'30+ days overdue', icon:'ti-calendar-exclamation', title:'Behind by 30 days or more'},
+  {key:'soon', label:'Coming up', icon:'ti-calendar-week', title:'Due in the next few days'},
+  {key:'later', label:'Not due yet', icon:'ti-calendar-off', title:'On track, someday, or no deadline'}
+];
+const FILTER_TYPE_CHOICES = [
+  {key:'habit', label:'Habit', icon:'ti-heart'},
+  {key:'limit', label:'Limit', icon:'ti-trending-down'},
+  {key:'stop', label:'Stop', icon:'ti-flame-off'},
+  {key:'task', label:'Task', icon:'ti-checkbox'},
+  {key:'event', label:'Event', icon:'ti-calendar-time'}
+];
+const FILTER_PRIORITY_CHOICES = [
+  {key:'important', label:'Important', icon:'ti-flag-filled', title:'Critical and high'},
+  {key:'normal', label:'Normal', icon:'ti-flag', title:'Normal priority'},
+  {key:'wait', label:'Can wait', icon:'ti-hourglass', title:'Flexible, low, and someday'}
+];
+const FILTER_WHEN_RANK = {overdue:0, today:1, soon:2, later:3};
+const FILTER_KIND_ICON = {
+  when:'ti-calendar', type:'ti-layout-grid', priority:'ti-flag', location:'ti-map-pin', topic:'ti-tag'
+};
+const FILTER_GROUP_LABEL_ID = {
+  when:'when', type:'type', priority:'priority', location:'places', topic:'topics'
+};
+
+function clearHomeFilters(){
+  homeTopicFilter = 'all';
+  homeLocationFilter = 'all';
+  homeTypeFilter = 'all';
+  homeWhenFilter = 'all';
+  homePriorityFilter = 'all';
+}
+
+function clearOverviewFilters(){
+  overviewTopicFilter = 'all';
+  overviewLocationFilter = 'all';
+  overviewTypeFilter = 'all';
+  overviewWhenFilter = 'all';
+  overviewPriorityFilter = 'all';
+}
+
+function settleFixedFilter(current, catalog){
+  if(!current || current === 'all')return 'all';
+  return catalog.some(row=>row.key === current) ? current : 'all';
+}
+
+function itemFilterKind(h){
+  if(!h)return 'habit';
+  if(typeof isEventItem === 'function' && isEventItem(h))return 'event';
+  if(h.type === 'task')return 'task';
+  if(h.type === 'reduce')return 'limit';
+  if(h.type === 'zero')return 'stop';
+  return 'habit';
+}
+
+function datedTiming(ts, soonDays){
+  const left = typeof daysUntil === 'function' ? daysUntil(ts) : null;
+  if(left == null)return {status:'later', days:0};
+  if(left < 0)return {status:'overdue', days:-left};
+  if(left === 0)return {status:'today', days:0};
+  if(left <= soonDays)return {status:'soon', days:0};
+  return {status:'later', days:0};
+}
+
+function datedFilterStatus(ts, soonDays){
+  return datedTiming(ts, soonDays).status;
+}
+
+function rhythmTiming(h){
+  if(!h || h.type !== 'keepup' || (typeof isOpportunityHabit === 'function' && isOpportunityHabit(h)))return null;
+  const age = typeof daysSince === 'function' ? daysSince(h.lastLog) : null;
+  if(age == null || age < 0)return null;
+  const target = cueDayBoundary(typeof effectiveTarget === 'function' ? effectiveTarget(h) : h.target);
+  const remaining = target - age;
+  if(remaining < 0)return {status:'overdue', days:-remaining};
+  if(remaining === 0)return {status:'today', days:0};
+  if(remaining <= FILTER_RHYTHM_SOON_DAYS)return {status:'soon', days:0};
+  return {status:'later', days:0};
+}
+
+function rhythmFilterStatus(h){
+  const timing = rhythmTiming(h);
+  return timing ? timing.status : null;
+}
+
+function planByTiming(h){
+  if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return null;
+  if(typeof isOpportunityHabit === 'function' && isOpportunityHabit(h))return null;
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy == null)return null;
+  return datedTiming(planBy, FILTER_DATED_SOON_DAYS);
+}
+
+function planByFilterStatus(h){
+  const timing = planByTiming(h);
+  return timing ? timing.status : null;
+}
+
+function eventTimingStatus(ts){
+  const status = datedFilterStatus(ts, FILTER_DATED_SOON_DAYS);
+  // A meeting that already happened is history. Unlike a task, it is not waiting to be caught up.
+  return status === 'overdue' ? 'later' : status;
+}
+
+function eventFilterStatus(h){
+  if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))return 'later';
+  if(typeof isLocalAppointment === 'function' && isLocalAppointment(h) && typeof appointmentOccurrence === 'function' && h.appointment){
+    if(h.appointment.repeat === 'once'){
+      const occ = appointmentOccurrence(h, h.appointment.startDate);
+      return occ ? eventTimingStatus(occ.start) : 'later';
+    }
+    const start = dayStart(Date.now());
+    for(let i = 0; i <= FILTER_DATED_SOON_DAYS; i++){
+      const occ = appointmentOccurrence(h, dateKey(offsetCalendarDay(start, i)));
+      if(!occ)continue;
+      if(i === 0 && occ.end <= Date.now())continue;
+      return i === 0 ? 'today' : 'soon';
+    }
+    return 'later';
+  }
+  if(h.eventTime == null)return 'later';
+  return eventTimingStatus(h.eventTime);
+}
+
+function earlierWhen(a, b){
+  if(!a)return b;
+  if(!b)return a;
+  return FILTER_WHEN_RANK[a] <= FILTER_WHEN_RANK[b] ? a : b;
+}
+
+// PURE: overdue / due today / coming up / not due yet. Mirrors card copy.
+function itemFilterStatus(h){
+  if(!h)return 'later';
+  if(typeof isEventItem === 'function' && isEventItem(h))return eventFilterStatus(h);
+  if(h.type === 'task'){
+    if(typeof isTaskDone === 'function' && isTaskDone(h))return 'later';
+    const when = typeof taskWhen === 'function' ? taskWhen(h) : (h.eventTime != null ? h.eventTime : h.dueDate);
+    if(when == null)return 'later';
+    return datedFilterStatus(when, FILTER_DATED_SOON_DAYS);
+  }
+  if(h.type === 'zero')return 'later';
+  if(h.type === 'reduce')return planByFilterStatus(h) || 'later';
+  return earlierWhen(rhythmFilterStatus(h), planByFilterStatus(h)) || 'later';
+}
+
+// Days behind the further of a habit rhythm and a plan-by date. Zero when the
+// item is not overdue. A week and a month are the longer Overdue choices.
+function itemOverdueDays(h){
+  if(!h || (typeof isEventItem === 'function' && isEventItem(h)))return 0;
+  if(h.type === 'task'){
+    if(typeof isTaskDone === 'function' && isTaskDone(h))return 0;
+    const when = typeof taskWhen === 'function' ? taskWhen(h) : (h.eventTime != null ? h.eventTime : h.dueDate);
+    return when == null ? 0 : datedTiming(when, FILTER_DATED_SOON_DAYS).days;
+  }
+  if(h.type === 'zero')return 0;
+  const plan = planByTiming(h);
+  if(h.type === 'reduce')return plan ? plan.days : 0;
+  const rhythm = rhythmTiming(h);
+  return Math.max(rhythm ? rhythm.days : 0, plan ? plan.days : 0);
+}
+
+function filterChoiceIsOverdue(key){
+  return key === 'overdue' || key === 'overdue7' || key === 'overdue30';
+}
+
+function itemFilterPriority(h){
+  const rank = typeof effectivePriority === 'function' ? effectivePriority(h) : 2;
+  if(rank <= 1)return 'important';
+  if(rank >= 3)return 'wait';
+  return 'normal';
+}
+
+function matchesTypeFilter(h, key){
+  if(!key || key === 'all')return true;
+  return itemFilterKind(h) === key;
+}
+
+function matchesWhenFilter(h, key){
+  if(!key || key === 'all')return true;
+  if(key === 'overdue7')return itemOverdueDays(h) >= 7;
+  if(key === 'overdue30')return itemOverdueDays(h) >= 30;
+  return itemFilterStatus(h) === key;
+}
+
+function matchesPriorityFilter(h, key){
+  if(!key || key === 'all')return true;
+  return itemFilterPriority(h) === key;
+}
+
+function matchesFilterSelection(h, sel){
+  if(!sel)return true;
+  const topic = sel.topic || 'all';
+  const location = sel.location || 'all';
+  const topicOk = sel.treatAnywhere ? matchesHomeTopic(h, topic) : matchesTopicFilter(h, topic);
+  const locationOk = sel.treatAnywhere ? matchesHomeLocation(h, location) : matchesLocationFilter(h, location);
+  return topicOk
+    && locationOk
+    && matchesTypeFilter(h, sel.type)
+    && matchesWhenFilter(h, sel.when)
+    && matchesPriorityFilter(h, sel.priority);
+}
+
+function homeFilterSelection(){
+  return {
+    topic: homeTopicFilter || 'all',
+    location: homeLocationFilter || 'all',
+    type: settleFixedFilter(homeTypeFilter, FILTER_TYPE_CHOICES),
+    when: settleFixedFilter(homeWhenFilter, FILTER_WHEN_CHOICES),
+    priority: settleFixedFilter(homePriorityFilter, FILTER_PRIORITY_CHOICES),
+    treatAnywhere: true
+  };
+}
+
+function overviewFilterSelection(){
+  return {
+    topic: overviewTopicFilter || 'all',
+    location: overviewLocationFilter || 'all',
+    type: settleFixedFilter(overviewTypeFilter, FILTER_TYPE_CHOICES),
+    when: settleFixedFilter(overviewWhenFilter, FILTER_WHEN_CHOICES),
+    priority: settleFixedFilter(overviewPriorityFilter, FILTER_PRIORITY_CHOICES),
+    treatAnywhere: false
+  };
+}
+
+function syncHomeFilterSelection(selection){
+  homeTypeFilter = selection.type;
+  homeWhenFilter = selection.when;
+  homePriorityFilter = selection.priority;
+}
+
+function syncOverviewFilterSelection(selection){
+  overviewTypeFilter = selection.type;
+  overviewWhenFilter = selection.when;
+  overviewPriorityFilter = selection.priority;
+}
+
+function matchesHomeFilters(h){
+  return matchesFilterSelection(h, homeFilterSelection());
+}
+
+function collectFilterPresence(items){
+  const types = new Set();
+  const whens = new Set();
+  const priorities = new Set();
+  let underWeek = false;
+  let weekOrMore = false;
+  let underMonth = false;
+  let monthOrMore = false;
+  (items || []).forEach(h=>{
+    if(!h)return;
+    types.add(itemFilterKind(h));
+    whens.add(itemFilterStatus(h));
+    const late = itemOverdueDays(h);
+    if(late >= 7)weekOrMore = true;
+    else underWeek = true;
+    if(late >= 30)monthOrMore = true;
+    else underMonth = true;
+    priorities.add(itemFilterPriority(h));
+  });
+  // A longer overdue range is its own choice only when it separates some items
+  // from the rest. Otherwise it would repeat Overdue.
+  if(weekOrMore && underWeek)whens.add('overdue7');
+  if(monthOrMore && underMonth)whens.add('overdue30');
+  return {types, whens, priorities};
+}
+
+function fixedFilterChoices(catalog, present, allLabel, selected){
+  const selectedRow = selected && selected !== 'all' ? catalog.find(row=>row.key === selected) : null;
+  if(present.size < 2 && !selectedRow)return [];
+  const rows = catalog.filter(row=>present.has(row.key) || row.key === selected);
+  if(!rows.length)return [];
+  return [{key:'all', label:allLabel}, ...rows];
+}
+
+function filterChoiceLabel(choice, kind){
+  if(choice.key === 'all' && kind === 'location')return 'All places';
+  if(choice.key === 'all' && kind === 'topic')return 'All topics';
+  return choice.label;
+}
+
+function filterOptionCount(items, selection, dimension, key){
+  const next = Object.assign({}, selection, {[dimension]: key});
+  return (items || []).filter(h=>matchesFilterSelection(h, next)).length;
+}
+
+function filterGroupHtml({prefix, attrPrefix, kind, title, hint, choices, selected, items, selection}){
+  if(!choices || choices.length < 2)return '';
+  const options = choices.map(choice=>{
+    const on = choice.key === selected;
+    const count = filterOptionCount(items, selection, kind, choice.key);
+    const icon = choice.key === 'all' ? (FILTER_KIND_ICON[kind] || 'ti-point') : (choice.icon || FILTER_KIND_ICON[kind] || 'ti-point');
+    const label = filterChoiceLabel(choice, kind);
+    const titleAttr = choice.title ? ` title="${escapeHtml(choice.title)}"` : '';
+    const extra = `${choice.key === 'all' ? ' is-all' : ''}${filterChoiceIsOverdue(choice.key) ? ' is-overdue' : ''}${choice.key === 'important' ? ' is-important' : ''}`;
+    return `<button type="button" class="home-filter-option ${kind}${extra}${on ? ' on' : ''}" data-${attrPrefix}-${kind}="${escapeHtml(choice.key)}" aria-pressed="${on}"${titleAttr}>
+      <i class="ti ${icon} home-filter-option-icon" aria-hidden="true"></i>
+      <span><b>${escapeHtml(label)}</b><small>${count} ${count === 1 ? 'item' : 'items'}</small></span>
+      <i class="ti ti-check home-filter-check" aria-hidden="true"></i>
+    </button>`;
+  }).join('');
+  const aside = hint || `${Math.max(0, choices.length - 1)} options`;
+  const labelId = `${prefix}-${FILTER_GROUP_LABEL_ID[kind] || kind}-label`;
+  return `<section class="home-filter-group" aria-labelledby="${labelId}">
+    <div class="home-filter-group-head"><span id="${labelId}">${escapeHtml(title)}</span><small>${escapeHtml(aside)}</small></div>
+    <div class="home-filter-option-grid">${options}</div>
+  </section>`;
+}
+
+function filterActiveChipHtml({chipClass, label, icon, clearAttr}){
+  return `<button type="button" class="home-active-filter ${chipClass}" ${clearAttr}="1" aria-label="clear ${escapeHtml(label)} filter"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>`;
+}
+
+function libraryFilterView({prefix, attrPrefix, items, selection, topicChoices, locationChoices}){
+  const presence = collectFilterPresence(items);
+  const whenChoices = fixedFilterChoices(FILTER_WHEN_CHOICES, presence.whens, 'Any time', selection.when);
+  const typeChoices = fixedFilterChoices(FILTER_TYPE_CHOICES, presence.types, 'All types', selection.type);
+  const priorityChoices = fixedFilterChoices(FILTER_PRIORITY_CHOICES, presence.priorities, 'Any priority', selection.priority);
+  const typeHint = typeChoices.filter(row=>row.key !== 'all').map(row=>row.label.toLowerCase()).join(', ');
+  const groups = [
+    {kind:'when', title:'When', hint:'overdue, a week, or a month', choices:whenChoices, chip:'when-filter', icon:'ti-alert-circle'},
+    {kind:'type', title:'Type', hint:typeHint, choices:typeChoices, chip:'type-filter', icon:'ti-heart'},
+    {kind:'priority', title:'Priority', hint:'critical and high are important', choices:priorityChoices, chip:'priority-filter', icon:'ti-flag'},
+    {kind:'location', title:'Place', hint:'', choices:locationChoices, chip:'location-filter', icon:'ti-map-pin'},
+    {kind:'topic', title:'Topic', hint:'', choices:topicChoices, chip:'topic-active', icon:'ti-tag'}
+  ];
+  const chips = [];
+  groups.forEach(group=>{
+    const selected = selection[group.kind];
+    if(!selected || selected === 'all')return;
+    const choice = (group.choices || []).find(row=>row.key === selected);
+    if(!choice)return;
+    const chipClass = group.kind === 'when' && filterChoiceIsOverdue(selected) ? 'when-filter is-overdue'
+      : group.kind === 'priority' && selected === 'important' ? 'priority-filter is-important'
+      : group.chip;
+    const icon = choice.icon || group.icon;
+    chips.push(filterActiveChipHtml({
+      chipClass,
+      label:filterChoiceLabel(choice, group.kind),
+      icon,
+      clearAttr:`data-clear-${attrPrefix}-${group.kind}`
+    }));
+  });
+  const groupsHtml = groups.map(group=>filterGroupHtml({
+    prefix, attrPrefix, kind:group.kind, title:group.title, hint:group.hint,
+    choices:group.choices, selected:selection[group.kind] || 'all', items, selection
+  })).join('');
+  return {groupsHtml, chipsHtml:chips.join(''), activeCount:chips.length};
+}
+
+function describeActiveHomeFilters(){
+  const parts = [];
+  const when = FILTER_WHEN_CHOICES.find(row=>row.key === homeWhenFilter);
+  if(when)parts.push(when.label);
+  const type = FILTER_TYPE_CHOICES.find(row=>row.key === homeTypeFilter);
+  if(type)parts.push(type.label);
+  const priority = FILTER_PRIORITY_CHOICES.find(row=>row.key === homePriorityFilter);
+  if(priority)parts.push(priority.label);
+  if(homeLocationFilter && homeLocationFilter !== 'all'){
+    if(homeLocationFilter === '__none__')parts.push('anywhere');
+    else{
+      const loc = typeof locationById === 'function' ? locationById(homeLocationFilter) : null;
+      parts.push(loc ? loc.name : homeLocationFilter);
+    }
+  }
+  if(homeTopicFilter && homeTopicFilter !== 'all')parts.push(homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter);
+  return parts.join(' · ');
+}
+
+function takeFilterClick(event, pairs){
+  const target = event && event.target;
+  if(!target || !target.closest)return false;
+  for(const [attr, apply] of pairs){
+    const btn = target.closest(`[${attr}]`);
+    if(!btn)continue;
+    apply(btn.getAttribute(attr) || 'all');
+    return true;
+  }
+  return false;
+}
+
 // HYBRID: compact home context bar + the full on-demand filter sheet. The bar
 // only exposes current presence and active filters, so a large topic/location
 // library never turns the top of Home into an endless horizontal chip rail.
@@ -482,20 +870,26 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   const hasTopics = usedTopicSet.size > 0;
   const hasLocs = usedLocSet.size > 0;
   const hasPresence = registry.length > 0 && hasLocs;
-  if(!hasTopics && !hasLocs && !hasPresence){
+  let topicChoices = hasTopics ? homeTopicChoices(data) : [];
+  let locChoices = hasLocs ? homeLocationChoices(data) : [];
+  // Reset stale place/topic filters so a deleted choice cannot hide everything.
+  if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
+  if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
+  if(hasTopics)topicChoices = orderFilterChoices(topicChoices, homeTopicFilter);
+  if(hasLocs)locChoices = orderFilterChoices(locChoices, homeLocationFilter);
+  const baseIndices = precomputedIndices || visibleIndices(data,sortSettings);
+  const items = baseIndices.map(i=>data[i]).filter(Boolean);
+  const selection = homeFilterSelection();
+  syncHomeFilterSelection(selection);
+  const view = libraryFilterView({
+    prefix:'home-filter', attrPrefix:'home', items, selection, topicChoices, locationChoices:locChoices
+  });
+  if(!view.groupsHtml && !hasPresence){
     wrap.innerHTML = '';
     wrap.hidden = true;
     if(groups)groups.innerHTML = '';
     return;
   }
-  let topicChoices = homeTopicChoices(data);
-  let locChoices = homeLocationChoices(data);
-  // Reset stale filters: if the dimension is unused (or the chosen key is no
-  // longer present), fall back to 'all' so we never silently hide everything.
-  if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
-  if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
-  topicChoices = orderFilterChoices(topicChoices, homeTopicFilter);
-  locChoices = orderFilterChoices(locChoices, homeLocationFilter);
   wrap.hidden = false;
   let statusHtml = '';
   if(hasPresence && typeof locationPresence === 'function'){
@@ -514,62 +908,26 @@ function renderHomeTagFilter(data,precomputedIndices = null){
       <i class="ti ti-chevron-down presence-chevron" aria-hidden="true"></i>
     </button>`;
   }
-  const activeLoc = hasLocs && homeLocationFilter !== 'all'
-    ? locChoices.find(choice=>choice.key === homeLocationFilter)
-    : null;
-  const activeTopic = hasTopics && homeTopicFilter !== 'all'
-    ? topicChoices.find(choice=>choice.key === homeTopicFilter)
-    : null;
-  const activeCount = Number(Boolean(activeLoc)) + Number(Boolean(activeTopic));
-  const activeHtml = `
+  const activeCount = view.activeCount;
+  wrap.innerHTML = `
     <div class="home-filter-active" aria-label="current place">
       ${statusHtml}
     </div>
     <div class="home-filter-selections" ${activeCount ? '' : 'hidden'} aria-label="selected filters">
-      ${activeLoc ? `<button type="button" class="home-active-filter location-filter" data-clear-home-location="1" aria-label="clear place filter ${escapeHtml(activeLoc.label)}"><i class="ti ti-map-pin" aria-hidden="true"></i><span>${escapeHtml(activeLoc.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
-      ${activeTopic ? `<button type="button" class="home-active-filter topic-active" data-clear-home-topic="1" aria-label="clear topic filter ${escapeHtml(activeTopic.label)}"><i class="ti ti-tag" aria-hidden="true"></i><span>${escapeHtml(activeTopic.label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>` : ''}
+      ${view.chipsHtml}
     </div>
     <button type="button" class="home-filter-trigger${activeCount ? ' has-active' : ''}" data-open-home-filters="1" aria-label="open filters${activeCount ? `, ${activeCount} active` : ''}">
       <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
       <span>Filters</span>
       ${activeCount ? `<b>${activeCount}</b>` : ''}
     </button>`;
-  wrap.innerHTML = activeHtml;
 
   if(summary){
     summary.textContent = activeCount
-      ? `${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'} · changes apply immediately`
-      : 'Narrow your agenda by one place, one topic, or both.';
+      ? `${activeCount} on · the list updates as you tap`
+      : 'Pick when it’s due, what it is, or where it belongs.';
   }
-  if(!groups)return;
-  const baseIndices = precomputedIndices || visibleIndices(data,sortSettings);
-  const optionMarkup = (choice,kind)=>{
-    const on = kind === 'location' ? choice.key === homeLocationFilter : choice.key === homeTopicFilter;
-    const count = choice.key === 'all'
-      ? baseIndices.length
-      : baseIndices.filter(i=>kind === 'location'
-        ? matchesHomeLocation(data[i],choice.key)
-        : matchesHomeTopic(data[i],choice.key)).length;
-    const icon = kind === 'location' ? 'ti-map-pin' : 'ti-tag';
-    const label = choice.key === 'all'
-      ? (kind === 'location' ? 'All places' : 'All topics')
-      : choice.label;
-    const attr = kind === 'location' ? 'data-home-location' : 'data-home-topic';
-    return `<button type="button" class="home-filter-option ${kind}${on ? ' on' : ''}" ${attr}="${escapeHtml(choice.key)}" aria-pressed="${on}">
-      <i class="ti ${icon} home-filter-option-icon" aria-hidden="true"></i>
-      <span><b>${escapeHtml(label)}</b><small>${count} ${count === 1 ? 'item' : 'items'}</small></span>
-      <i class="ti ti-check home-filter-check" aria-hidden="true"></i>
-    </button>`;
-  };
-  groups.innerHTML = `
-    ${hasLocs ? `<section class="home-filter-group" aria-labelledby="home-filter-places-label">
-      <div class="home-filter-group-head"><span id="home-filter-places-label">Place</span><small>${Math.max(0,locChoices.length - 1)} options</small></div>
-      <div class="home-filter-option-grid">${locChoices.map(choice=>optionMarkup(choice,'location')).join('')}</div>
-    </section>` : ''}
-    ${hasTopics ? `<section class="home-filter-group" aria-labelledby="home-filter-topics-label">
-      <div class="home-filter-group-head"><span id="home-filter-topics-label">Topic</span><small>${Math.max(0,topicChoices.length - 1)} options</small></div>
-      <div class="home-filter-option-grid">${topicChoices.map(choice=>optionMarkup(choice,'topic')).join('')}</div>
-    </section>` : ''}`;
+  if(groups)groups.innerHTML = view.groupsHtml;
 }
 
 // PURE: build weekday and month-day chips
@@ -669,6 +1027,12 @@ function renderScheduleChips(prefix,h = {}){
       const on = prefMonthDays.has(day);
       return `<button type="button" class="monthday-chip preferred ${on ? 'on' : ''}" data-monthday="${day}" aria-pressed="${on}">${day}</button>`;
     }).join('');
+  }
+  for(const kind of ['', 'preferred-']){
+    const id=`${prefix}-${kind}ordinal-rules`;
+    $(id)?.remove();
+    const wrap=$(`${prefix}-${kind}monthday-chips`);
+    if(wrap)wrap.parentElement.insertAdjacentHTML('afterend',ordinalWeekdayEditor(h[kind ? 'preferredOrdinalWeekdays' : 'allowedOrdinalWeekdays'],id));
   }
   if(prefix === 'detail'){
     collapseMonthDayDisclosures();
@@ -898,6 +1262,10 @@ function matchesHomeTopic(h,topic){
 let lastUnsearchedHomeCardCount = 0;
 
 function homeSearchAvailable(){
+  // The desktop bar always keeps search next to add. Phone search stays
+  // tucked away until there is a list worth filtering.
+  if(document.body.classList.contains('replica-display-mode'))return true;
+  if(typeof paneTierActive === 'function' && paneTierActive())return true;
   const data = load();
   return lastUnsearchedHomeCardCount >= 10
     || data.some(h=>h.type === 'task' && isTaskDone(h));
@@ -912,9 +1280,7 @@ function updateSortButton(settled = false){
   if(settled && !searchQuery.trim()){
     lastUnsearchedHomeCardCount = document.querySelectorAll('#list .ting-card').length;
   }
-  const hasSearchableArchive = data.some(h=>h.type === 'task' && isTaskDone(h));
-  const canSearch = lastUnsearchedHomeCardCount >= 10 || hasSearchableArchive
-    || document.body.classList.contains('replica-display-mode');
+  const canSearch = homeSearchAvailable();
   $('open-overview').classList.toggle('is-hidden',count < 1);
   $('open-overview').disabled = count < 1;
   $('open-search').classList.toggle('is-hidden',!canSearch);
@@ -2724,3 +3090,84 @@ let _droppedDayBaselineDay = null;
 // reads as attached to the viewport, not the page. Scroll events don't
 // bubble but they do capture, so one document-level capture listener covers
 // window and pane scrolling alike; rAF keeps the rect reads cheap.
+
+// One week row and one day row. A lit day is saved for the lit week.
+// The chips underneath are those saved pairs.
+function ordinalWeekdayEditor(rules=[],id=''){
+  const selected=normalizeOrdinalWeekdays(rules);
+  const armed=selected.length?selected[0].ordinal:null;
+  const weeks=[1,2,3,4,5,-1].map(n=>`<button type="button" class="schedule-chip${armed===n?' on':''}" data-ordinal-pick="${n}" aria-pressed="${armed===n}">${n===-1?'Last':['','1st','2nd','3rd','4th','5th'][n]}</button>`).join('');
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day,d)=>{
+    const on=armed!=null&&selected.some(r=>r.ordinal===armed&&r.weekday===d);
+    return `<button type="button" class="schedule-chip${on?' on':''}" data-ordinal-day="${d}" aria-pressed="${on}">${day}</button>`;
+  }).join('');
+  const chosen=selected.map(r=>{
+    const label=ordinalWeekdaySummary([r]);
+    return `<button type="button" class="ordinal-rule" data-ordinal="${r.ordinal}" data-ordinal-weekday="${r.weekday}" aria-label="Remove ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+  }).join('');
+  return `<details class="ordinal-editor"${id?` id="${id}"`:''}><summary>week of the month <small data-ordinal-summary>${escapeHtml(ordinalWeekdaySummary(selected)||'any week')}</small></summary><div class="ordinal-weeks" role="group" aria-label="Week">${weeks}</div><div class="schedule-chip-row ordinal-days" role="group" aria-label="Day">${days}</div><div class="ordinal-chosen"${selected.length?'':' hidden'}>${chosen}</div></details>`;
+}
+function readOrdinalWeekdays(host){return normalizeOrdinalWeekdays([...(host?.querySelectorAll('.ordinal-chosen [data-ordinal]')||[])].map(el=>({ordinal:Number(el.dataset.ordinal),weekday:Number(el.dataset.ordinalWeekday)})));}
+function showOrdinalWeekDays(editor,rules){
+  const armed=editor.querySelector('[data-ordinal-pick][aria-pressed="true"]');
+  const ordinal=armed?Number(armed.dataset.ordinalPick):null;
+  editor.querySelectorAll('[data-ordinal-day]').forEach(el=>{
+    const on=ordinal!=null&&rules.some(r=>r.ordinal===ordinal&&r.weekday===Number(el.dataset.ordinalDay));
+    el.classList.toggle('on',on);el.classList.remove('pending');el.setAttribute('aria-pressed',String(on));
+  });
+}
+function paintOrdinalWeekdays(editor,rules){
+  rules=normalizeOrdinalWeekdays(rules);
+  const chosen=editor.querySelector('.ordinal-chosen');
+  chosen.replaceChildren(...rules.map(r=>{
+    const label=ordinalWeekdaySummary([r]);
+    const button=document.createElement('button');
+    button.type='button';button.className='ordinal-rule';
+    button.dataset.ordinal=String(r.ordinal);button.dataset.ordinalWeekday=String(r.weekday);
+    button.setAttribute('aria-label',`Remove ${label}`);button.textContent=label;
+    return button;
+  }));
+  chosen.hidden=!rules.length;
+  editor.querySelector('[data-ordinal-summary]').textContent=ordinalWeekdaySummary(rules)||'any week';
+  showOrdinalWeekDays(editor,rules);
+  const busy=editor.closest('[data-blocked-row]');
+  if(busy)saveBlockedTimePatch(Number(busy.dataset.blockedRow),{ordinalWeekdays:rules});
+  else{editor.dispatchEvent(new Event('change',{bubbles:true}));if(editor.closest('#detail-sheet'))setDetailDirty(true);}
+}
+document.addEventListener('click',e=>{
+  const editor=e.target.closest&&e.target.closest('.ordinal-editor');if(!editor)return;
+  const pick=e.target.closest('[data-ordinal-pick]');
+  const day=e.target.closest('[data-ordinal-day]');
+  const rule=e.target.closest('.ordinal-rule');
+  if(!pick&&!day&&!rule)return;
+  if(rule){
+    paintOrdinalWeekdays(editor,readOrdinalWeekdays(editor).filter(r=>!(r.ordinal===Number(rule.dataset.ordinal)&&r.weekday===Number(rule.dataset.ordinalWeekday))));
+    return;
+  }
+  if(pick){
+    const ordinal=Number(pick.dataset.ordinalPick);
+    const pending=editor.querySelector('[data-ordinal-day].pending');
+    const arm=!(pick.getAttribute('aria-pressed')==='true'&&!pending);
+    editor.querySelectorAll('[data-ordinal-pick]').forEach(el=>{
+      const on=arm&&Number(el.dataset.ordinalPick)===ordinal;
+      el.classList.toggle('on',on);el.setAttribute('aria-pressed',String(on));
+    });
+    if(pending){
+      const weekday=Number(pending.dataset.ordinalDay);
+      const rules=readOrdinalWeekdays(editor);
+      if(!rules.some(r=>r.ordinal===ordinal&&r.weekday===weekday))rules.push({ordinal,weekday});
+      paintOrdinalWeekdays(editor,rules);
+    }else showOrdinalWeekDays(editor,readOrdinalWeekdays(editor));
+    return;
+  }
+  const armed=editor.querySelector('[data-ordinal-pick][aria-pressed="true"]');
+  if(!armed){
+    editor.querySelectorAll('[data-ordinal-day].pending').forEach(el=>el.classList.remove('pending'));
+    day.classList.add('pending');
+    return;
+  }
+  const ordinal=Number(armed.dataset.ordinalPick),weekday=Number(day.dataset.ordinalDay);
+  const rules=readOrdinalWeekdays(editor);
+  const exists=rules.some(r=>r.ordinal===ordinal&&r.weekday===weekday);
+  paintOrdinalWeekdays(editor,exists?rules.filter(r=>!(r.ordinal===ordinal&&r.weekday===weekday)):rules.concat([{ordinal,weekday}]));
+});

@@ -212,11 +212,12 @@ function missedPlannerFingerprint(data,settings){
     h.allowedTimeStart,h.allowedTimeEnd,h.allowedTimeStartAnchor,h.allowedTimeEndAnchor,
     h.allowedTimeFixedStart,
     h.allowedTimeStartOffsetMin,h.allowedTimeEndOffsetMin,
-    h.allowedWeekdays,h.allowedMonthDays,h.locationIds,h.anywhereAllowed,h.logs,
+    h.allowedWeekdays,h.allowedMonthDays,h.allowedOrdinalWeekdays,h.preferredOrdinalWeekdays,h.locationIds,h.anywhereAllowed,h.logs,
     h.scheduleLinks,h.scheduleOptions,h.weatherProfileMode,h.weatherProfileId,h.weatherLocationId
   ]);
   const plannerSettings = {
     blockedTimes:settings?.blockedTimes,
+    calendarIgnores:settings?.calendarIgnores,
     blockedTimeOverrides:settings?.blockedTimeOverrides,
     cancelledBlocks:settings?.cancelledBlocks,
     availabilityOverrides:settings?.availabilityOverrides,
@@ -243,6 +244,7 @@ function plannerDayExpectation(data,day,rendered = false){
     (row.kind === 'fill' || row.kind === 'scheduled') && row.i != null && data[row.i]);
   return {
     hids:[...new Set(rows.map(row=>data[row.i].hid).filter(Boolean))],
+    renderedHids:rendered ? [...new Set(rows.map(row=>data[row.i].hid).filter(Boolean))] : [],
     occurrences:normalizeSuggestedOccurrences(rows.filter(row=>habitHasMultipleDailyOccurrences(data[row.i]))
       .map(row=>({hid:data[row.i].hid,occurrenceKey:row.occurrenceKey,
         scheduleOptionId:row.scheduleOptionId,start:row.start,end:row.end,dropAt:row.dropAt,rendered})))
@@ -358,6 +360,7 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     if(day === today && projectionByDay[day]){
       const prior = projectionByDay[day];
       projectionByDay[day] = {hids:[...new Set([...prior.hids,...entry.hids])],
+        renderedHids:entry.renderedHids,
         occurrences:normalizeSuggestedOccurrences([...prior.occurrences,...entry.occurrences])};
     }else{
       projectionByDay[day] = entry;
@@ -1489,6 +1492,23 @@ function packSwipeActions(parts){
     + more;
 }
 
+// RENDER: samples shortcut under a populated home list. It is not a habit, so
+// a tap opens the samples sheet instead of detail. Blank home keeps #empty.
+function appendHomeSamplesLink(list){
+  if(!list)return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'home-samples-link';
+  btn.setAttribute('aria-label','samples, add a habit or task');
+  btn.innerHTML = `<span class="home-samples-mark" aria-hidden="true"><i class="ti ti-sparkles"></i></span><span class="home-samples-copy"><b>samples</b><small>add a habit or task</small></span><i class="ti ti-chevron-right home-samples-chevron" aria-hidden="true"></i>`;
+  list.appendChild(btn);
+  if(typeof bindTap === 'function'){
+    bindTap(btn,()=>{
+      if(typeof openSampleHabitsSheet === 'function')openSampleHabitsSheet();
+    });
+  }
+}
+
 function render(opts){
   const o = opts || {};
   const list = $('list');
@@ -1505,6 +1525,7 @@ function render(opts){
     queueOptimizedHomeRender(data,o);
     return false;
   }
+  finishHomeAgendaUpdate();
   const readingPosition = o.preserveReadingPosition === false
     ? null
     : captureHomeReadingPosition(list);
@@ -1529,22 +1550,18 @@ function render(opts){
     if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
     if(typeof queueNativeReminders === 'function')queueNativeReminders();
     const hasSearch = searchQuery.trim().length > 0;
-    const hasTopicFilter = homeTopicFilter && homeTopicFilter !== 'all';
-    const hasLocationFilter = homeLocationFilter && homeLocationFilter !== 'all';
+    const filterLabel = typeof describeActiveHomeFilters === 'function' ? describeActiveHomeFilters() : '';
     empty.classList.toggle('is-action',data.length > 0 && !sortSettings.showSnoozed && !hasSearch);
     if(hasSearch){
       empty.innerHTML = 'no matches<br><span class="empty-sub">try a habit name, topic, or place</span>';
-    }else if(hasTopicFilter || hasLocationFilter){
-      const topicLabel = homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter;
-      const loc = typeof locationById === 'function' ? locationById(homeLocationFilter) : null;
-      const locLabel = homeLocationFilter === '__none__' ? 'anywhere' : (loc ? loc.name : homeLocationFilter);
-      const label = hasTopicFilter && hasLocationFilter
-        ? `${topicLabel} · ${locLabel}`
-        : (hasTopicFilter ? topicLabel : locLabel);
-      empty.innerHTML = `no habits in ${escapeHtml(label)}<br><span class="empty-sub">tap a filter above to change it</span>`;
+    }else if(filterLabel){
+      empty.innerHTML = `nothing matches ${escapeHtml(filterLabel)}<br><span class="empty-sub">tap to clear filters</span>`;
       empty.onclick = ()=>{
-        homeTopicFilter = 'all';
-        homeLocationFilter = 'all';
+        if(typeof clearHomeFilters === 'function')clearHomeFilters();
+        else{
+          homeTopicFilter = 'all';
+          homeLocationFilter = 'all';
+        }
         render();
       };
     }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){
@@ -1571,6 +1588,7 @@ function render(opts){
     if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
     updateSortButton(true);
     restoreHomeReadingPosition(readingPosition,list);
+    if(typeof window.tingsFinishLaunch === 'function')window.tingsFinishLaunch();
     return;
   }
   empty.classList.remove('is-action');
@@ -1692,7 +1710,7 @@ function render(opts){
       : (showBreakableSlider
         ? `${cardBreakableSlider(h)}${sessionHtml}`
         : (sessionHtml || trail));
-    const isDoneTask = h.type === 'task' && isTaskDone(h);
+    const isDoneTask = !event && h.type === 'task' && isTaskDone(h);
     const canTimer = typeof habitTimerEligible === 'function'
       ? habitTimerEligible(h)
       : (h.type !== 'zero' && !(h.type === 'task' && isTaskDone(h)));
@@ -1778,10 +1796,10 @@ function render(opts){
           ${rightSwipeHtml}
         </div>
       </div>
-      <div class="ting-card ${cardScoreTone}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
+      <div class="ting-card ${cardScoreTone}${event?' event-card':''}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}${isDoneTask?' is-done':''}${isBreakable?' breakable-card':''}${hasSession?' session-card':''}${timerRunning?' timer-running':''}${minimal?' minimal-card':''}" data-real="${realIdx}" style="--card-accent:${accent};--card-priority:${priorityColor(effectivePriority(h))};">
         ${dragHandle}
-        <${event?'span':'button'} class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" ${event?'aria-hidden="true"':`data-pulse="${realIdx}" aria-label="${h.type === 'task' ? 'complete' : 'log'} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}"`} style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
-          ${iconHtml(h,c)}
+        <${event?'span':'button'} class="pulse-btn ${h.emoji ? 'emoji-pulse' : ''}${normalizeEmojiBgColor(h.emojiBgColor) ? ' has-emoji-bg' : ''}" ${event?'aria-hidden="true"':`data-pulse="${realIdx}" aria-label="${h.tapStartsSession ? (timerRunning ? 'stop session for' : 'start session for') : (h.type === 'task' ? 'complete' : 'log')} ${escapeHtml(h.name)}, priority P${effectivePriority(h)}" data-log-label="${h.type === 'task' ? 'done' : 'log'}"`} style="${typeof emojiBgInlineStyle === 'function' ? emojiBgInlineStyle(h,c.bg,c.icon) : `background:${c.bg};color:${c.icon};`}">
+          ${h.tapStartsSession && timerRunning ? '<i class="ti ti-player-stop" aria-hidden="true"></i>' : iconHtml(h,c)}
         </${event?'span':'button'}>
         <div class="ting-info${isBreakable ? ' has-breakable-progress' : ''}${hasSession ? ' has-session-progress' : ''}${minimal || visualHtml ? '' : ' no-trail'}">
           <div class="ting-main">
@@ -2204,6 +2222,8 @@ function render(opts){
   }
   } // end of the `else` (non-deferred) branch
 
+  appendHomeSamplesLink(list);
+
   // Fresh headers may already sit stuck at the viewport top (background
   // refresh mid-scroll) — set their tone before the next scroll tick.
   updateStuckSectionHeaders();
@@ -2295,6 +2315,7 @@ function render(opts){
   if(typeof rememberHomeCardFace === 'function')rememberHomeCardFace(data);
   updateSortButton(true);
   restoreHomeReadingPosition(readingPosition,list);
+  if(typeof window.tingsFinishLaunch === 'function')window.tingsFinishLaunch();
   return true;
 }
 

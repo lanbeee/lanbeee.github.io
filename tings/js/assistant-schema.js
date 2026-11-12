@@ -99,7 +99,7 @@ const ASSISTANT_DRAFT_ITEM_PROPERTIES = {
   timesPerPeriod:{type:['integer','string','null'], description:'5, or "five". Use with periodDays, or skip and set rhythm instead'},
   periodDays:{type:['integer','string','null'], description:'7 with timesPerPeriod 5 means five times a week; 8 with 3 means three times in eight days'},
   weekdays:{type:['array','string','null'], items:{type:'string'}, description:'Tuesday, "Tue, Wed, Fri", weekdays, weekends, or omit for any day'},
-  monthDays:{type:['array','string','null'], items:{type:'string'}, description:'"1, 15", "the 1st", or any'},
+  monthDays:{type:['array','string','null'], items:{type:'string'}, description:'"1, 15", "the 1st", "1st to 5th of every month", "first week of every month", or any'},
   preferredWeekdays:{type:['array','string','null'], items:{type:'string'}, description:'soft weekday preference, or none'},
   preferredMonthDays:{type:['array','string','null'], items:{type:'string'}, description:'soft month-day preference, or none'},
   windowText:{type:['string','null'], description:'allowed window as one string: "after sunset", "between 5pm and 7pm", "later of 6pm and sunset until isha", "from 15 minutes before sunrise to 2 hours after sunrise or 9am, whichever is earlier"'},
@@ -267,14 +267,15 @@ const ASSISTANT_TOOL_DEFS = {
     }
   },
   complete_item:{
-    description:'Log an existing item, or undo its latest completion from today. Tings previews before saving. Include minutes for a habit chunk, value for a tracked measurement, and note for optional log detail.',
+    description:'Log an existing item, or undo its latest completion from today or a named day. Tings previews before saving. Include minutes for a habit chunk, value for a tracked measurement, note for optional log detail, and date when the completion was on an earlier day.',
     parameters:{
       type:'object',
       required:[],
       properties:{
         name:{type:'string'},
         latest:{type:'boolean',description:'Undo the most recent completion today across all items; name may be omitted.'},
-        action:{type:['string','null'], enum:['log','undo_today',null], description:'log by default; undo_today means mark it not done / undo today’s latest completion'},
+        action:{type:['string','null'], enum:['log','undo_today','undo',null], description:'log by default; undo_today or undo removes the latest completion on date, or today when date is omitted'},
+        date:{type:['string','null'], description:'today, yesterday, last Friday, a weekday, or YYYY-MM-DD. Omit to log now or undo today.'},
         minutes:{type:['integer','string','null'], description:'The user\'s words or a minute count, such as "1.5 hours" or "20 minutes"'},
         value:{type:['number','string','null'], description:'optional numeric tracked value'},
         note:{type:['string','null'], description:'optional short note about this completion'}
