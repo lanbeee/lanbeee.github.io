@@ -6,7 +6,7 @@
 // is added only to that control.
 const SETTINGS_SEARCH_ALIASES = {
   'settings-weather-body':'forecast temperature rain snow wind humidity units celsius fahrenheit centigrade precipitation',
-  'settings-reminders-body':'notification alert notify push banner ping',
+  'settings-reminders-body':'notification alert notify push banner ping sound tone chime calm warm deep gentle audio',
   'settings-cleanup-body':'retention history delete purge logs',
   'settings-calendar-body':'meeting event pdf import ics ical outlook google apple',
   'settings-topics-body':'tag label category',

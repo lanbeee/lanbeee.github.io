@@ -901,6 +901,60 @@ async function confirmBackgroundLocationDisclosure(){
     showToast(error.message);
   }
 }
+function nativeNotificationSoundControls(){
+  const api=window.TingsNative?.sounds;
+  if(!window.TingsNative?.isNative || !api)return null;
+  const host=document.createElement('div');host.id='native-notification-sounds';
+  const label=document.createElement('label');label.className='settings-sublabel';label.htmlFor='native-notification-sound';label.textContent='default notification sound';
+  const select=document.createElement('select');select.className='mini-select';select.id=label.htmlFor;select.disabled=true;
+  const hint=document.createElement('p');hint.className='field-hint';
+  hint.textContent='Calm is the default for habit, task, busy-time and travel notifications. The five prayer samples use Warm, even if renamed. Preview uses notification volume. Ringing alarms use your phone’s alarm tone.';
+  const status=document.createElement('p');status.className='field-hint';status.setAttribute('role','status');
+  const actions=document.createElement('div');actions.className='settings-actions';
+  const preview=document.createElement('button');preview.type='button';preview.className='mini-text-btn';preview.textContent='Preview';preview.disabled=true;
+  const stop=document.createElement('button');stop.type='button';stop.className='mini-text-btn';stop.textContent='Stop preview';
+  const phone=document.createElement('button');phone.type='button';phone.className='mini-text-btn';phone.textContent='Choose phone sound';
+  const file=document.createElement('button');file.type='button';file.className='mini-text-btn';file.textContent='Choose audio file';
+  const android=document.createElement('button');android.type='button';android.className='mini-text-btn';android.textContent='Android sound settings';
+  let current='',busy=false;
+  function paint(state){
+    current=state.selected;
+    select.replaceChildren(...state.choices.map(choice=>{
+      const option=document.createElement('option');option.value=choice.id;
+      option.textContent=choice.name+(choice.description ? ` · ${choice.description}` : '');return option;
+    }));
+    select.value=current;select.disabled=busy;
+    preview.disabled=busy || state.silent;
+    status.textContent=`Current sound: ${state.effectiveName}.${state.enabled ? '' : ' Notifications are off in Android settings.'}`;
+  }
+  async function refresh(){
+    if(busy || !host.isConnected)return;
+    try{paint(await api.status());}
+    catch{select.disabled=true;preview.disabled=true;status.textContent='Notification sounds are unavailable. Update the Android app.';}
+  }
+  async function change(action){
+    if(busy)return;
+    busy=true;[select,preview,phone,file,android].forEach(control=>control.disabled=true);
+    try{await api.stopPreview();paint(await action());}
+    catch(error){select.value=current;showToast(error.message || 'Could not change notification sound.',5000);}
+    finally{
+      busy=false;[phone,file,android].forEach(control=>control.disabled=false);
+      await refresh();
+    }
+  }
+  select.addEventListener('change',()=>void change(()=>api.select(select.value)));
+  phone.addEventListener('click',()=>void change(()=>api.pick()));
+  file.addEventListener('click',()=>void change(()=>api.pickFile()));
+  preview.addEventListener('click',async()=>{try{await api.preview();}catch(error){showToast(error.message);}});
+  stop.addEventListener('click',()=>void api.stopPreview().catch(()=>{}));
+  android.addEventListener('click',async()=>{try{await api.stopPreview();await api.openSettings();}catch(error){showToast(error.message);}});
+  actions.append(preview,stop,phone,file,android);host.append(label,select,actions,hint,status);
+  const resume=()=>{if(!document.hidden)void refresh();};
+  document.addEventListener('visibilitychange',resume);
+  document.getElementById('settings-reminders-head')?.addEventListener('click',()=>queueMicrotask(()=>void refresh()));
+  queueMicrotask(()=>void refresh());
+  return host;
+}
 function initNativeReminders(){
   if(!window.TingsNative?.isNative)return;
   const host = document.getElementById('settings-reminders-body');
@@ -931,6 +985,7 @@ function initNativeReminders(){
   });toggle.append(input);
   toggle.insertAdjacentHTML('beforeend',uiSettingsHelpButtonHtml('native-reminders-help','phone reminders')+'<div class="settings-help-body" id="native-reminders-help" hidden><p>Choose reminders in each habit or task’s Actions tab, or under each busy time. New items start with reminders off. These choices stay on this phone.</p><p id="native-reminder-detail"></p></div>');
   panel.append(toggle);
+  const sounds=nativeNotificationSoundControls();if(sounds)panel.append(sounds);
   const help=toggle.querySelector('#native-reminders-help');
   if(window.TingsNative.lockScreen){
     const lock=document.createElement('button');lock.type='button';lock.id='native-lock-screen-toggle';

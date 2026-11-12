@@ -455,14 +455,17 @@ function matchesHomeLocation(h,id){
   return matchesLocationFilter(h,id,{treatAnywhere:true});
 }
 
-// One choice per group. Groups combine. Tasks and events use the card's 7-day
-// "due in N days" horizon. Habit rhythm stops at 3 days, which is where the
-// card switches from "due in N days" to "on track" / "N days left".
+// One choice per group. Groups combine. Day counts match the cards: 0 is today,
+// 1 is tomorrow. "Today or tomorrow" and "Next 7 days" use that count for a
+// task due date, an event, a plan-by date, and days left in a habit rhythm.
 const FILTER_DATED_SOON_DAYS = 7;
 const FILTER_RHYTHM_SOON_DAYS = 3;
+const FILTER_TODAY_OR_TOMORROW_DAYS = 1;
 const FILTER_WHEN_CHOICES = [
   {key:'overdue', label:'Overdue', icon:'ti-alert-circle', title:'Past a due date, or a habit that is behind its rhythm'},
   {key:'today', label:'Due today', icon:'ti-calendar-event', title:'Due or scheduled today'},
+  {key:'soon48', label:'Today or tomorrow', icon:'ti-calendar-time', title:'Due today or tomorrow'},
+  {key:'soon7', label:'Next 7 days', icon:'ti-calendar-stats', title:'Due within 7 days'},
   {key:'overdue7', label:'7+ days overdue', icon:'ti-alert-triangle', title:'Behind by 7 days or more'},
   {key:'overdue30', label:'30+ days overdue', icon:'ti-calendar-exclamation', title:'Behind by 30 days or more'},
   {key:'soon', label:'Coming up', icon:'ti-calendar-week', title:'Due in the next few days'},
@@ -561,30 +564,37 @@ function planByFilterStatus(h){
   return timing ? timing.status : null;
 }
 
-function eventTimingStatus(ts){
-  const status = datedFilterStatus(ts, FILTER_DATED_SOON_DAYS);
-  // A meeting that already happened is history. Unlike a task, it is not waiting to be caught up.
-  return status === 'overdue' ? 'later' : status;
-}
-
-function eventFilterStatus(h){
-  if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))return 'later';
+// Calendar days until the next occurrence. Null once it is in the past — a
+// meeting that already happened is history, unlike a task waiting to be caught
+// up — or when a repeat has nothing left inside the dated horizon.
+function eventLeadDays(h){
+  if(!h)return null;
+  if(h.type === 'task' && typeof isTaskDone === 'function' && isTaskDone(h))return null;
   if(typeof isLocalAppointment === 'function' && isLocalAppointment(h) && typeof appointmentOccurrence === 'function' && h.appointment){
     if(h.appointment.repeat === 'once'){
       const occ = appointmentOccurrence(h, h.appointment.startDate);
-      return occ ? eventTimingStatus(occ.start) : 'later';
+      if(!occ)return null;
+      const left = typeof daysUntil === 'function' ? daysUntil(occ.start) : null;
+      return left == null || left < 0 ? null : left;
     }
     const start = dayStart(Date.now());
     for(let i = 0; i <= FILTER_DATED_SOON_DAYS; i++){
       const occ = appointmentOccurrence(h, dateKey(offsetCalendarDay(start, i)));
       if(!occ)continue;
       if(i === 0 && occ.end <= Date.now())continue;
-      return i === 0 ? 'today' : 'soon';
+      return i;
     }
-    return 'later';
+    return null;
   }
-  if(h.eventTime == null)return 'later';
-  return eventTimingStatus(h.eventTime);
+  if(h.eventTime == null)return null;
+  const left = typeof daysUntil === 'function' ? daysUntil(h.eventTime) : null;
+  return left == null || left < 0 ? null : left;
+}
+
+function eventFilterStatus(h){
+  const lead = eventLeadDays(h);
+  if(lead == null || lead > FILTER_DATED_SOON_DAYS)return 'later';
+  return lead === 0 ? 'today' : 'soon';
 }
 
 function earlierWhen(a, b){
@@ -628,6 +638,55 @@ function filterChoiceIsOverdue(key){
   return key === 'overdue' || key === 'overdue7' || key === 'overdue30';
 }
 
+// Calendar days until this is due. 0 is today, 1 is tomorrow. Null when it is
+// overdue, someday, or has no due day. A habit uses the sooner of its rhythm
+// and its plan-by date.
+function rhythmRemainingDays(h){
+  if(!h || h.type !== 'keepup' || (typeof isOpportunityHabit === 'function' && isOpportunityHabit(h)))return null;
+  const age = typeof daysSince === 'function' ? daysSince(h.lastLog) : null;
+  if(age == null || age < 0)return null;
+  const target = cueDayBoundary(typeof effectiveTarget === 'function' ? effectiveTarget(h) : h.target);
+  return target - age;
+}
+
+function planByLeadDays(h){
+  if(!h || (h.type !== 'keepup' && h.type !== 'reduce'))return null;
+  if(typeof isOpportunityHabit === 'function' && isOpportunityHabit(h))return null;
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(planBy == null)return null;
+  return typeof daysUntil === 'function' ? daysUntil(planBy) : null;
+}
+
+function itemDueInDays(h){
+  if(!h)return null;
+  if(typeof isEventItem === 'function' && isEventItem(h))return eventLeadDays(h);
+  if(h.type === 'task'){
+    if(typeof isTaskDone === 'function' && isTaskDone(h))return null;
+    const when = typeof taskWhen === 'function' ? taskWhen(h) : (h.eventTime != null ? h.eventTime : h.dueDate);
+    if(when == null)return null;
+    const left = typeof daysUntil === 'function' ? daysUntil(when) : null;
+    return left == null || left < 0 ? null : left;
+  }
+  if(h.type === 'zero')return null;
+  if(h.type === 'reduce'){
+    const plan = planByLeadDays(h);
+    return plan == null || plan < 0 ? null : plan;
+  }
+  const rhythm = rhythmRemainingDays(h);
+  if(rhythm != null && rhythm < 0)return null;
+  const plan = planByLeadDays(h);
+  if(plan != null && plan < 0)return null;
+  const leads = [];
+  if(rhythm != null)leads.push(rhythm);
+  if(plan != null)leads.push(plan);
+  return leads.length ? Math.min(...leads) : null;
+}
+
+function matchesDueWithin(h, days){
+  const due = itemDueInDays(h);
+  return due != null && due <= days;
+}
+
 function itemFilterPriority(h){
   const rank = typeof effectivePriority === 'function' ? effectivePriority(h) : 2;
   if(rank <= 1)return 'important';
@@ -644,6 +703,8 @@ function matchesWhenFilter(h, key){
   if(!key || key === 'all')return true;
   if(key === 'overdue7')return itemOverdueDays(h) >= 7;
   if(key === 'overdue30')return itemOverdueDays(h) >= 30;
+  if(key === 'soon48')return matchesDueWithin(h, FILTER_TODAY_OR_TOMORROW_DAYS);
+  if(key === 'soon7')return matchesDueWithin(h, FILTER_DATED_SOON_DAYS);
   return itemFilterStatus(h) === key;
 }
 
@@ -711,6 +772,10 @@ function collectFilterPresence(items){
   let weekOrMore = false;
   let underMonth = false;
   let monthOrMore = false;
+  let within48 = false;
+  let beyond48 = false;
+  let within7 = false;
+  let beyond7 = false;
   (items || []).forEach(h=>{
     if(!h)return;
     types.add(itemFilterKind(h));
@@ -720,12 +785,19 @@ function collectFilterPresence(items){
     else underWeek = true;
     if(late >= 30)monthOrMore = true;
     else underMonth = true;
+    const due = itemDueInDays(h);
+    if(due != null && due <= FILTER_TODAY_OR_TOMORROW_DAYS)within48 = true;
+    else beyond48 = true;
+    if(due != null && due <= FILTER_DATED_SOON_DAYS)within7 = true;
+    else beyond7 = true;
     priorities.add(itemFilterPriority(h));
   });
-  // A longer overdue range is its own choice only when it separates some items
-  // from the rest. Otherwise it would repeat Overdue.
+  // A longer range is its own choice only when it separates some items from
+  // the rest. Otherwise it would repeat Overdue, or select everything.
   if(weekOrMore && underWeek)whens.add('overdue7');
   if(monthOrMore && underMonth)whens.add('overdue30');
+  if(within48 && beyond48)whens.add('soon48');
+  if(within7 && beyond7)whens.add('soon7');
   return {types, whens, priorities};
 }
 
@@ -782,7 +854,7 @@ function libraryFilterView({prefix, attrPrefix, items, selection, topicChoices, 
   const priorityChoices = fixedFilterChoices(FILTER_PRIORITY_CHOICES, presence.priorities, 'Any priority', selection.priority);
   const typeHint = typeChoices.filter(row=>row.key !== 'all').map(row=>row.label.toLowerCase()).join(', ');
   const groups = [
-    {kind:'when', title:'When', hint:'overdue, a week, or a month', choices:whenChoices, chip:'when-filter', icon:'ti-alert-circle'},
+    {kind:'when', title:'When', hint:'overdue, today or tomorrow, or a week', choices:whenChoices, chip:'when-filter', icon:'ti-alert-circle'},
     {kind:'type', title:'Type', hint:typeHint, choices:typeChoices, chip:'type-filter', icon:'ti-heart'},
     {kind:'priority', title:'Priority', hint:'critical and high are important', choices:priorityChoices, chip:'priority-filter', icon:'ti-flag'},
     {kind:'location', title:'Place', hint:'', choices:locationChoices, chip:'location-filter', icon:'ti-map-pin'},

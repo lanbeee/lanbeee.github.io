@@ -26,6 +26,8 @@ const {chromium} = require('playwright');
         {hid:'week-task', name:'Old bill', type:'task', dueDate:offsetCalendarDay(today, -10), eventTime:null, lastLog:null, logs:[], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:20},
         {hid:'month-task', name:'Ancient bill', type:'task', dueDate:offsetCalendarDay(today, -40), eventTime:null, lastLog:null, logs:[], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:20},
         {hid:'today-task', name:'Write note', type:'task', dueDate:today, eventTime:null, lastLog:null, logs:[], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:20},
+        {hid:'tomorrow-task', name:'Call bank', type:'task', dueDate:day(1), eventTime:null, lastLog:null, logs:[], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:20},
+        {hid:'two-day-task', name:'Renew license', type:'task', dueDate:day(2), eventTime:null, lastLog:null, logs:[], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:20},
         {hid:'soon-task', name:'Book flight', type:'task', dueDate:day(3), eventTime:null, lastLog:null, logs:[], priority:4, topics:[], locationIds:[], pinned:false, durationMinutes:20},
         {hid:'later-task', name:'Learn piano', type:'task', dueDate:day(20), eventTime:null, lastLog:null, logs:[], priority:5, topics:[], locationIds:[], pinned:false, durationMinutes:20},
         {hid:'someday', name:'Someday idea', type:'task', dueDate:null, eventTime:null, lastLog:null, logs:[], priority:5, topics:[], locationIds:[], pinned:false, durationMinutes:20},
@@ -33,6 +35,7 @@ const {chromium} = require('playwright');
         {hid:'habit-week', name:'Skip rope', type:'keepup', target:1, lastLog:offsetCalendarDay(today, -10), logs:[offsetCalendarDay(today, -10)], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:15},
         {hid:'habit-plan', name:'Plan garden', type:'keepup', target:7, lastLog:today, logs:[today], planByDate:offsetCalendarDay(today, -40), priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:20},
         {hid:'habit-today', name:'Vitamins', type:'keepup', target:1, lastLog:day(-1), logs:[day(-1)], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:10},
+        {hid:'habit-tomorrow', name:'Water plants', type:'keepup', target:2, lastLog:day(-1), logs:[day(-1)], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:10},
         {hid:'habit-ok', name:'Stretch', type:'keepup', target:7, lastLog:today, logs:[today], priority:1, topics:[], locationIds:[], pinned:true, durationMinutes:15},
         {hid:'limit-overdue', name:'Plan coffee', type:'reduce', target:1, planByDate:day(-2), lastLog:today, logs:[today], priority:2, topics:[], locationIds:[], pinned:false, durationMinutes:10},
         {hid:'stop', name:'Soda', type:'zero', lastLog:null, logs:[], priority:2, topics:[], locationIds:[], pinned:false},
@@ -46,11 +49,23 @@ const {chromium} = require('playwright');
       return {
         status:{
           pay:status('Pay bill'), old:status('Old bill'), ancient:status('Ancient bill'),
-          note:status('Write note'), flight:status('Book flight'),
+          note:status('Write note'), bank:status('Call bank'), license:status('Renew license'), flight:status('Book flight'),
           piano:status('Learn piano'), someday:status('Someday idea'), meditate:status('Meditate'),
           rope:status('Skip rope'), garden:status('Plan garden'),
-          vitamins:status('Vitamins'), stretch:status('Stretch'), coffee:status('Plan coffee'),
+          vitamins:status('Vitamins'), plants:status('Water plants'), stretch:status('Stretch'), coffee:status('Plan coffee'),
           soda:status('Soda'), standup:status('Standup')
+        },
+        due:{
+          note:itemDueInDays(byName('Write note')),
+          bank:itemDueInDays(byName('Call bank')),
+          license:itemDueInDays(byName('Renew license')),
+          flight:itemDueInDays(byName('Book flight')),
+          piano:itemDueInDays(byName('Learn piano')),
+          pay:itemDueInDays(byName('Pay bill')),
+          vitamins:itemDueInDays(byName('Vitamins')),
+          plants:itemDueInDays(byName('Water plants')),
+          stretch:itemDueInDays(byName('Stretch')),
+          standup:itemDueInDays(byName('Standup'))
         },
         days:{
           pay:itemOverdueDays(byName('Pay bill')),
@@ -77,10 +92,14 @@ const {chromium} = require('playwright');
       };
     });
     assert.deepEqual(classified.status, {
-      pay:'overdue', old:'overdue', ancient:'overdue', note:'today', flight:'soon', piano:'later', someday:'later',
-      meditate:'overdue', rope:'overdue', garden:'overdue', vitamins:'today', stretch:'later', coffee:'overdue',
+      pay:'overdue', old:'overdue', ancient:'overdue', note:'today', bank:'soon', license:'soon', flight:'soon', piano:'later', someday:'later',
+      meditate:'overdue', rope:'overdue', garden:'overdue', vitamins:'today', plants:'soon', stretch:'later', coffee:'overdue',
       soda:'later', standup:'today'
     }, JSON.stringify(classified));
+    assert.deepEqual(classified.due, {
+      note:0, bank:1, license:2, flight:3, piano:20, pay:null,
+      vitamins:0, plants:1, stretch:7, standup:0
+    });
     assert.equal(classified.days.pay, 1);
     assert.ok(classified.days.old >= 7 && classified.days.old < 30, `old ${classified.days.old}`);
     assert.ok(classified.days.ancient >= 30, `ancient ${classified.days.ancient}`);
@@ -106,7 +125,7 @@ const {chromium} = require('playwright');
     const groupOrder = await page.locator('#home-filter-groups .home-filter-group-head span').allTextContents();
     assert.deepEqual(groupOrder, ['When','Type','Priority','Place','Topic'], groupOrder.join(' > '));
     const whenLabels = await page.locator('#home-filter-groups [data-home-when] b').allTextContents();
-    assert.deepEqual(whenLabels, ['Any time','Overdue','Due today','7+ days overdue','30+ days overdue','Coming up','Not due yet']);
+    assert.deepEqual(whenLabels, ['Any time','Overdue','Due today','Today or tomorrow','Next 7 days','7+ days overdue','30+ days overdue','Coming up','Not due yet']);
     await page.locator('#home-filter-groups [data-home-when="overdue"]').click();
     assert.deepEqual(await names(), ['Ancient bill','Meditate','Old bill','Pay bill','Plan coffee','Plan garden','Skip rope']);
     const habitCount = (await page.locator('#home-filter-groups [data-home-type="habit"] small').textContent()).trim();
@@ -127,7 +146,13 @@ const {chromium} = require('playwright');
     assert.deepEqual(await page.evaluate(()=>[homeWhenFilter, homeTypeFilter, homePriorityFilter, homeLocationFilter, homeTopicFilter]),
       ['all','all','all','all','all']);
     await page.locator('#home-filter-groups [data-home-when="soon"]').click();
-    assert.deepEqual(await names(), ['Book flight']);
+    assert.deepEqual(await names(), ['Book flight','Call bank','Renew license','Water plants']);
+    await page.locator('#home-filter-groups [data-home-when="soon48"]').click();
+    assert.deepEqual(await names(), ['Call bank','Standup','Vitamins','Water plants','Write note']);
+    assert.equal((await page.locator('#home-tag-filter [data-clear-home-when] span').textContent()).trim(), 'Today or tomorrow');
+    await page.locator('#home-filter-groups [data-home-when="soon7"]').click();
+    assert.deepEqual(await names(), ['Book flight','Call bank','Renew license','Standup','Stretch','Vitamins','Water plants','Write note']);
+    assert.equal((await page.locator('#home-tag-filter [data-clear-home-when] span').textContent()).trim(), 'Next 7 days');
     await page.locator('#home-filter-groups [data-home-when="all"]').click();
     await page.locator('#home-filter-groups [data-home-priority="important"]').click();
     assert.deepEqual(await names(), ['Pay bill','Stretch']);
