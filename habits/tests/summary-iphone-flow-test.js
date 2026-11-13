@@ -26,6 +26,18 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       for(const key of ['tings_coach_install_v2','tings_coach_essentials_v2'])localStorage.setItem(key,'done');
       const viewport=new EventTarget();Object.assign(viewport,{width:375,height:812,offsetTop:0,offsetLeft:0,scale:1});
       Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
+      // Desktop WebKit cannot perform iOS's native focus pan. Check that a
+      // real tap is intercepted before that default action, and that keyboard
+      // focus presents an offscreen caret only during the focus calculation.
+      window.summaryFocusEvents=[];
+      document.addEventListener('focusin',event=>{
+        if(event.target.id==='detail-ask-input')summaryFocusEvents.push({
+          type:'focus',top:event.target.getBoundingClientRect().top});
+      });
+      document.addEventListener('touchend',event=>{
+        if(event.target.id==='detail-ask-input')summaryFocusEvents.push({
+          type:'tap',prevented:event.defaultPrevented,active:document.activeElement.id});
+      });
       document.addEventListener('DOMContentLoaded',()=>{
         document.documentElement.style.setProperty('--safe-area-inset-top','44px');
         document.documentElement.style.setProperty('--safe-area-inset-bottom','34px');
@@ -134,7 +146,36 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.locator('.detail-page-tab[aria-label="summary"]').tap();
       await page.waitForFunction(()=>detailSummaryOnScreen());
       const idleHeight=await page.locator('.detail-bottom-bar').evaluate(el=>el.getBoundingClientRect().height);
+      await page.evaluate(()=>{summaryFocusEvents=[];});
       await input.tap();
+      const focus=await page.evaluate(()=>summaryFocusEvents);
+      assert.ok(focus.some(event=>event.type==='tap' && event.prevented && event.active==='detail-ask-input'),
+        'first iPhone tap focuses inside the gesture and cancels Safari native scrolling');
+      assert.ok(focus.some(event=>event.type==='focus' && event.top<0),
+        'Safari focus calculation cannot center the bottom composer and pan the sheet');
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await input.evaluate(el=>getComputedStyle(el).transform),'none','textarea is restored before painting');
+      await input.tap();
+      assert.equal(await page.evaluate(()=>summaryFocusEvents.at(-1).prevented),false,
+        'tapping a focused composer retains native caret placement and text selection');
+      await input.blur();
+      const dragged=await input.evaluate(el=>{
+        const dispatch=(type,x,touches=true)=>{
+          const event=new Event(type,{bubbles:true,cancelable:true});
+          const touch={identifier:73,clientX:x,clientY:200};
+          Object.defineProperties(event,{touches:{value:touches?[touch]:[]},changedTouches:{value:[touch]}});
+          el.dispatchEvent(event);return event.defaultPrevented;
+        };
+        dispatch('touchstart',100);dispatch('touchmove',130);
+        return {prevented:dispatch('touchend',130,false),active:document.activeElement.id};
+      });
+      assert.equal(dragged.prevented,false,'a drag across the composer is not turned into a focus tap');
+      assert.notEqual(dragged.active,'detail-ask-input','dragging does not reopen the keyboard');
+      await page.evaluate(()=>{$('detail-ask-input').focus({preventScroll:true});});
+      assert.equal(await page.evaluate(()=>summaryFocusEvents.at(-1).top<0),true,
+        'programmatic focus from guides and keyboard navigation also suppresses native pan');
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await input.evaluate(el=>getComputedStyle(el).transform),'none','restored focus leaves no extra layer or transform');
       assert.equal(await page.locator('#detail-ask-guides').isVisible(),false,'empty focus shows no new suggestions layer');
       assert.equal(await page.locator('.detail-bottom-bar').evaluate(el=>el.getBoundingClientRect().height),idleHeight,'empty focus keeps the same composer height');
       await keyboard(true,32);await snapshot(`${mode}-02-keyboard`);

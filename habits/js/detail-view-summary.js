@@ -693,7 +693,54 @@ function syncDetailSummaryTyping(keyboardVisible){
 }
 // The dock follows viewport events. Focusing it must not start a delayed
 // conversation scroll partway through the OS keyboard animation.
+// iOS's native tap-to-focus centers even a fixed input before viewport events
+// arrive. A body lock cannot stop that visual pan. Own the initial tap, focus
+// synchronously inside the gesture, and keep only the textarea above the
+// viewport during Safari's focus calculation. Restore it before the next paint;
+// its in-flow composer and the rest of detail never move for this workaround.
+// Same approach as React Aria's mobile Safari focus guard:
+// https://github.com/adobe/react-spectrum/blob/@react-aria/overlays@3.24.0/packages/@react-aria/overlays/src/usePreventScroll.ts
+let detailSummaryFocusRestore = null;
+let detailSummaryFocusTouch = null;
+function detailSummaryGuardIOSFocus(){
+  return !paneTierActive() && (/iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+}
+function detailSummaryPrepareFocus(){
+  if(!detailSummaryGuardIOSFocus() || detailSummaryFocusRestore !== null)return;
+  const input = $('detail-ask-input');
+  const transform = input.style.transform;
+  input.style.transform = 'translateY(-200vh)';
+  detailSummaryFocusRestore = requestAnimationFrame(()=>{
+    input.style.transform = transform;
+    detailSummaryFocusRestore = null;
+  });
+}
+$('detail-ask-input').addEventListener('touchstart',event=>{
+  const touch = event.touches.length === 1 ? event.touches[0] : null;
+  detailSummaryFocusTouch = detailSummaryGuardIOSFocus() && touch
+    ? {id:touch.identifier,x:touch.clientX,y:touch.clientY} : null;
+},{passive:true});
+$('detail-ask-input').addEventListener('touchmove',event=>{
+  const touch = event.touches[0],start = detailSummaryFocusTouch;
+  if(!start || event.touches.length !== 1 || touch.identifier !== start.id
+    || Math.hypot(touch.clientX-start.x,touch.clientY-start.y) > 8)detailSummaryFocusTouch = null;
+},{passive:true});
+$('detail-ask-input').addEventListener('touchcancel',()=>{detailSummaryFocusTouch = null;},{passive:true});
+$('detail-ask-input').addEventListener('touchend',event=>{
+  const start = detailSummaryFocusTouch;
+  detailSummaryFocusTouch = null;
+  const input = event.currentTarget;
+  if(!start || event.touches.length || !event.cancelable || event.defaultPrevented
+    || !Array.from(event.changedTouches).some(touch=>touch.identifier === start.id)
+    || input.disabled || document.activeElement === input)return;
+  event.preventDefault();
+  detailSummaryPrepareFocus();
+  input.focus({preventScroll:true});
+},{passive:false});
 $('detail-ask-input').addEventListener('focus',()=>{
+  // Also cover focus restored by a guide, tag removal or hardware keyboard.
+  detailSummaryPrepareFocus();
   updateKeyboardLift();
 });
 $('detail-ask-input').addEventListener('blur',()=>{
