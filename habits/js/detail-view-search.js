@@ -11,8 +11,6 @@ function resetDetailDisclosures(h){
     el.open = el.dataset.detailEssential === 'true';
   });
   const configured = {
-    'detail-availability-disclosure':Boolean(h.allowedWeekdays?.length || h.allowedMonthDays?.length || h.allowedOrdinalWeekdays?.length || h.locationIds?.length || h.allowedTimeStart != null || h.allowedTimeEnd != null || h.allowedTimeStartAnchor || h.allowedTimeEndAnchor),
-    'detail-weather-disclosure':Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId),
     'detail-options-disclosure':Boolean(h.scheduleOptions?.length),
     'detail-order-disclosure':Boolean(h.scheduleLinks?.length),
     'detail-links-disclosure':Boolean(h.links?.length),
@@ -183,7 +181,7 @@ function detailSearchEntries(){
     for(let p=target.closest('details');p;p=p.parentElement.closest('details')){
       sections.unshift(p.querySelector(':scope > summary')?.textContent.trim());
     }
-    const path = [DETAIL_PAGE_NAV[page.dataset.detailNav]?.label,...sections].filter(Boolean).join(' › ');
+    const path = [detailPageLabel(page.dataset.detailNav),...sections].filter(Boolean).join(' › ');
     const labelN = detailSearchNormalize(label);
     if(!labelN)return;
     if(entries.some(e=>e.target === target))return;
@@ -395,7 +393,7 @@ function revealDetailSearchEntry(entry){
     for(let p=target.closest('.detail-full-only');p;p=p.parentElement.closest('.detail-full-only'))p.classList.add('detail-field-revealed');
   }
   const preferred = target.closest('#detail-schedule-preferred') || entry.label === 'Place preferences';
-  if(target.closest('[data-detail-nav="schedule"]'))setScheduleView(preferred ? 'preferred' : 'allowed');
+  if(target.closest('[data-detail-nav="availability"]'))setScheduleView(preferred ? 'preferred' : 'allowed');
   if(target.id === 'detail-viz-seg'){
     detailVizMode = 'gaps';syncDetailVizMode();
   }else if(target.closest('.detail-calendar-page')){

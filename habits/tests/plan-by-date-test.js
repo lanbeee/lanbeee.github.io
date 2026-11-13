@@ -413,6 +413,7 @@ function seedScript(){
   await page.evaluate(() => {
     const idx = load().findIndex(h => h.name === 'uihabit');
     openDetail(idx);
+    scrollDetailToNav('calendar','instant');
   });
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
   await page.waitForTimeout(150);

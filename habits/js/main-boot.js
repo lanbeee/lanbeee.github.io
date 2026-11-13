@@ -239,19 +239,32 @@ document.querySelector('[data-add-repeat="opportunity"]').addEventListener('clic
 });
 
 let detailConditionsHomes = null;
+let detailConditionsPanelHome = null;
 function syncDetailConditionsLayout(optional){
   const panel = $('detail-conditions');
   const places = document.querySelector('.detail-schedule-places');
   const weather = $('detail-weather-disclosure');
-  if(!detailConditionsHomes){
+  if(!detailConditionsPanelHome && panel){
+    detailConditionsPanelHome = {parent:panel.parentElement,next:panel.nextElementSibling};
+  }
+  if(!detailConditionsHomes && places && weather){
     detailConditionsHomes = [places,weather].map(node=>{
       const anchor = document.createComment('detail condition home');
       node.before(anchor);
       return {node,anchor,open:node.open};
     });
   }
+  // Conditional items keep the trigger with the repeat limit. Days and hours
+  // stay on their own tab, so neither tab is a stack of every schedule editor.
+  const rhythm = $('detail-rhythm-disclosure');
+  if(optional && rhythm && panel)rhythm.after(panel);
+  else if(panel && detailConditionsPanelHome?.parent){
+    const {parent,next} = detailConditionsPanelHome;
+    if(next && next.parentElement === parent)parent.insertBefore(panel,next);
+    else parent.appendChild(panel);
+  }
   panel.hidden = !optional;
-  for(const home of detailConditionsHomes){
+  for(const home of detailConditionsHomes || []){
     if(optional){
       if(home.node.parentElement !== panel){
         home.open = home.node.open;
@@ -266,6 +279,7 @@ function syncDetailConditionsLayout(optional){
   $('detail-weather-profile').previousElementSibling.textContent = optional ? 'Weather rules' : 'weather guidance';
   syncDetailSchedulePlacesUi();
   if(typeof syncWeatherGuidanceHints === 'function')syncWeatherGuidanceHints();
+  if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
 }
 
 function syncDetailRepeatModeUi(type){

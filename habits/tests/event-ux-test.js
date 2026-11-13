@@ -56,7 +56,7 @@ const assert=require('node:assert/strict');
     assert.equal(await page.locator('#add-event-help').isVisible(),false);
     await page.waitForTimeout(500);await page.screenshot({path:'test-results/event-creation.png'});
     await page.setViewportSize({width:1280,height:900});
-    await page.evaluate(()=>{closeSheet('add-sheet');openDetail(1);});
+    await page.evaluate(()=>{closeSheet('add-sheet');openDetail(1);scrollDetailToNav('identity','instant');});
     assert.equal(await page.locator('#detail-habit-message').isEnabled(),false,'phone title stays provider-owned');
     assert.equal(await page.locator('#detail-appearance-disclosure').isVisible(),true,'phone icon editor works in desktop pane');
     await page.evaluate(()=>openDetail(2));

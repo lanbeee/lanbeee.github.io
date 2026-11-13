@@ -1,11 +1,60 @@
+// Phone tab labels, including the Android app. Each name stays within 12
+// characters so the strip shows the whole word. Icons stay with the page.
+// The words follow the item: a habit's rhythm is not a task's due date.
 const DETAIL_PAGE_NAV = {
-  summary:{label:'summary',icon:'ti-list-details'},
-  calendar:{label:'history',icon:'ti-calendar-week'},
-  schedule:{label:'schedule',icon:'ti-calendar-time'},
-  effort:{label:'planning',icon:'ti-progress-check'},
-  identity:{label:'identity',icon:'ti-id'},
-  actions:{label:'actions',icon:'ti-dots'}
+  summary:{icon:'ti-list-details'},
+  calendar:{icon:'ti-calendar-week'},
+  schedule:{icon:'ti-calendar-time'},
+  availability:{icon:'ti-map-pin'},
+  weather:{icon:'ti-cloud'},
+  effort:{icon:'ti-progress-check'},
+  tracking:{icon:'ti-player-play'},
+  identity:{icon:'ti-id'},
+  actions:{icon:'ti-dots'}
 };
+
+// Kind comes from the open editor. Phone-calendar items are also events, so
+// that check wins. A string label is shared; a map names only the kinds whose
+// page contents actually differ.
+const DETAIL_PAGE_LABELS = {
+  summary:'summary',
+  calendar:{task:'progress', _:'history'},
+  schedule:{
+    routine:'how often',
+    limit:'at most',
+    opportunity:'conditions',
+    stop:'goal',
+    task:'due & start',
+    event:'date & time'
+  },
+  availability:{opportunity:'days & hours', _:'when & where'},
+  weather:'weather',
+  effort:'time & order',
+  tracking:'tracking',
+  identity:{calendar:'icon & color', event:'name & icon', _:'name & type'},
+  actions:'actions'
+};
+
+function detailNavKind(){
+  const root = $('detail-sheet');
+  const inner = typeof getSheetInner === 'function' ? getSheetInner('detail-sheet') : null;
+  const has = name => Boolean(root?.classList.contains(name) || inner?.classList.contains(name));
+  if(has('phone-calendar-detail'))return 'calendar';
+  if(has('event-detail') || has('local-appointment'))return 'event';
+  if(has('opportunity-mode'))return 'opportunity';
+  const type = typeof currentDetailTune === 'function' ? currentDetailTune().type : 'keepup';
+  if(type === 'task')return 'task';
+  if(type === 'zero')return 'stop';
+  if(type === 'reduce')return 'limit';
+  return 'routine';
+}
+
+function detailPageLabel(key, kind = detailNavKind()){
+  const spec = DETAIL_PAGE_LABELS[key];
+  if(typeof spec === 'string')return spec;
+  if(!spec)return key;
+  return spec[kind] || spec._ || key;
+}
 
 // Minimal mode keeps two tabs: Summary alone, then every remaining pane stacked
 // as one scrolling settings page.
@@ -22,7 +71,7 @@ let detailNavigationRevision = 0;
 // duration + due into schedule, and keep basic allowed weekdays and hours. What is
 // left is short enough to read as one scrolling settings page, so the pager
 // stacks vertically. Does not change saved habit fields.
-const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','effort'];
+const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','weather','effort','tracking'];
 let _minimalEffortHomes = null;
 function applyDetailMinimalMode(){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
@@ -30,7 +79,7 @@ function applyDetailMinimalMode(){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   const wasMinimal = Boolean(sheet?.classList.contains('minimal-detail'));
   // The body class flips before this runs; keep the explicit selected tab.
-  const fromNav = wasMinimal ? (detailMinimalView() === 'summary' ? 'summary' : 'schedule')
+  const fromNav = wasMinimal ? (detailMinimalView() === 'summary' ? 'summary' : 'availability')
     : getSheetInner('detail-sheet')?.dataset.fullNav;
   pager?.querySelectorAll('.detail-field-revealed').forEach(el=>el.classList.remove('detail-field-revealed'));
   if(sheet)sheet.classList.toggle('minimal-detail', minimal);
@@ -196,7 +245,7 @@ function bindDetailPagerTabs(dotsWrap,pager){
 function renderDetailMinimalTabs(dotsWrap){
   if(dotsWrap.dataset.pageSig !== 'minimal'){
     dotsWrap.dataset.pageSig = 'minimal';
-    dotsWrap.style.gridTemplateColumns = 'repeat(2,minmax(0,1fr))';
+    dotsWrap.classList.add('minimal-tabs');
     dotsWrap.innerHTML = Object.entries(DETAIL_MINIMAL_NAV).map(([view,item])=>
       `<button type="button" class="detail-page-tab" role="tab" data-detail-minimal="${view}" title="${item.label}" aria-label="${item.label}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`
     ).join('');
@@ -216,11 +265,27 @@ function showDetailMinimalTab(view){
 }
 
 // RENDER: syncs the compact pager navigation (skips hidden pages like order).
+// Weather is its own tab until a conditional habit parks that editor inside
+// its conditions page. Events, phone-calendar items, and minimal mode have no
+// weather page. The Android app uses this same markup; native reminders stay
+// on the schedule page.
+function syncWeatherDetailPage(){
+  const page = getSheetInner('detail-sheet')?.querySelector('.detail-page[data-detail-nav="weather"]');
+  const weather = $('detail-weather-disclosure');
+  if(!page || !weather)return;
+  const root = $('detail-sheet');
+  const inner = getSheetInner('detail-sheet');
+  const event = root?.classList.contains('event-detail') || inner?.classList.contains('event-detail');
+  const synced = root?.classList.contains('phone-calendar-detail') || inner?.classList.contains('phone-calendar-detail');
+  page.hidden = detailIsSingleView() || event || synced || !page.contains(weather);
+}
+
 function updateDetailPagerDots(){
   const inner = getSheetInner('detail-sheet');
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
+  syncWeatherDetailPage();
   dotsWrap.hidden = false;
   bindDetailPagerTabs(dotsWrap,pager);
   if(detailIsSingleView()){
@@ -233,14 +298,16 @@ function updateDetailPagerDots(){
     panel.id = panel.id || `detail-page-${i}`;
     panel.setAttribute('role','tabpanel');
   });
-  const signature = pages.map(p=>p.dataset.detailNav || p.id).join('|');
+  const kind = detailNavKind();
+  const signature = pages.map(p=>`${p.dataset.detailNav || p.id}:${detailPageLabel(p.dataset.detailNav, kind)}`).join('|');
   if(dotsWrap.dataset.pageSig !== signature){
     dotsWrap.dataset.pageSig = signature;
-    dotsWrap.style.gridTemplateColumns = `repeat(${Math.max(1,pages.length)},minmax(0,1fr))`;
+    dotsWrap.classList.remove('minimal-tabs');
     dotsWrap.innerHTML = pages.map((panel,i)=>{
       const key = panel.dataset.detailNav || `page-${i}`;
-      const item = DETAIL_PAGE_NAV[key] || {label:key,icon:'ti-circle'};
-      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="${panel.id}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
+      const item = DETAIL_PAGE_NAV[key] || {icon:'ti-circle'};
+      const label = detailPageLabel(key, kind);
+      return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}"${key === 'summary' ? ' data-detail-pinned="true"' : ''} title="${label}" aria-label="${label}" aria-controls="${panel.id}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${label}</span></button>`;
     }).join('');
   }
   const dots = [...dotsWrap.querySelectorAll('.detail-page-tab')];
@@ -254,6 +321,15 @@ function updateDetailPagerDots(){
     dot.setAttribute('aria-selected',on ? 'true' : 'false');
     dot.tabIndex = on ? 0 : -1;
   });
+  const active = dots.find(dot=>dot.classList.contains('on'));
+  if(active && !active.hasAttribute('data-detail-pinned') && dotsWrap.clientWidth){
+    // Keep the selected tab in the space beside the frozen Summary tab.
+    const pinned = dotsWrap.querySelector('[data-detail-pinned]');
+    const bar = dotsWrap.getBoundingClientRect(), tab = active.getBoundingClientRect();
+    const left = bar.left + (pinned ? pinned.offsetWidth + 2 : 0);
+    if(tab.left < left)dotsWrap.scrollLeft += tab.left - left;
+    else if(tab.right > bar.right)dotsWrap.scrollLeft += tab.right - bar.right;
+  }
   if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }
 

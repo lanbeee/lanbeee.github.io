@@ -129,7 +129,7 @@ function detailSummaryShowProposal(opts){
   card.innerHTML = assistantFocusReviewHtml(session,{
     embedded:true,
     canOpenNav:nav=>Boolean(detailSummaryNavPage(nav)),
-    navLabel:nav=>DETAIL_PAGE_NAV[nav]?.label || nav
+    navLabel:nav=>typeof detailPageLabel === 'function' ? detailPageLabel(nav) : nav
   });
   if(opts?.live)card.querySelectorAll('button').forEach(button=>{button.disabled = true;});
   thread.append(card);

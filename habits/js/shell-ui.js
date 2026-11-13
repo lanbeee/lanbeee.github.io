@@ -1326,7 +1326,7 @@ let detailScrollTouch = null;
 document.addEventListener('touchstart',event=>{
   const touch = event.touches.length === 1 ? event.touches[0] : null;
   detailScrollTouch = touch && !paneTierActive() && $('detail-sheet')?.classList.contains('open')
-    ? {id:touch.identifier,x:touch.clientX,y:touch.clientY} : null;
+    ? {id:touch.identifier,startX:touch.clientX,x:touch.clientX,y:touch.clientY} : null;
 },{capture:true,passive:true});
 function guardDetailTouchScroll(event){
   const previous = detailScrollTouch;
@@ -1336,7 +1336,7 @@ function guardDetailTouchScroll(event){
   if(touch.identifier !== previous.id)return;
   const dx = touch.clientX - previous.x,dy = touch.clientY - previous.y;
   if(Math.max(Math.abs(dx),Math.abs(dy)) < 8)return;
-  detailScrollTouch = {id:touch.identifier,x:touch.clientX,y:touch.clientY};
+  detailScrollTouch = {...previous,x:touch.clientX,y:touch.clientY};
   const target = event.target instanceof Element ? event.target : event.target.parentElement;
   const wrap = target?.closest('.sheet-wrap.open');
   // Nested pickers keep their own gestures; only detail and its background
@@ -1344,6 +1344,11 @@ function guardDetailTouchScroll(event){
   if(wrap && wrap.id !== 'detail-sheet')return;
   const horizontal = Math.abs(dx) > Math.abs(dy);
   if(horizontal && target?.closest('input[type="range"]'))return;
+  // iOS WebKit owns screen-edge navigation: a horizontal drag that starts at
+  // the extreme edge drives the owned snapshot transition, so a JS
+  // preventDefault here would fight it instead of containing the scroll.
+  if(horizontal && browserOwnsEdgeNavigation()
+    && (previous.startX <= EDGE_BACK_ZONE || previous.startX >= window.innerWidth - EDGE_BACK_ZONE))return;
   for(let node = wrap && target;node && node !== wrap;node = node.parentElement){
     const style = getComputedStyle(node);
     const overflow = horizontal ? style.overflowX : style.overflowY;

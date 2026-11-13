@@ -32,7 +32,10 @@ const {chromium}=require('./helpers/planner-test-helpers');
       rehydrateAgendaWeekHabits(week,data);
       // A boot render may queue beside this fixture's build. Foreground work
       // deliberately excludes forecasting; let that work drain before asking.
-      for(let attempt=0;_plannerWorkerRequests.size && attempt<500;attempt++){
+      // The boot render's reveal crossfade also gates the tick, so wait for a
+      // fully quiet home before simulating it.
+      for(let attempt=0;(_plannerWorkerRequests.size || _homeAgendaReveal
+        || _homeAgendaUpdateStarted != null || homeAgendaInteractionActive()) && attempt<500;attempt++){
         await new Promise(resolve=>setTimeout(resolve,10));
       }
       const plan=agendaForecastPlanKey(week,data),clock=Date.now();

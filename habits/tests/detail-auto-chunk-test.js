@@ -89,8 +89,8 @@ function ok(value,message){
   ok(await page.locator('#setting-default-early-window').count() === 1
     && await page.locator('#setting-default-delay-allowance').count() === 1,
   'settings exposes separate early and delay defaults');
-  ok(await page.locator('.detail-page-tab').count() === 6,'detail exposes six labeled page tabs');
-  ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'summary|history|schedule|planning|identity|actions','page tabs name every pane');
+  ok(await page.locator('.detail-page-tab').count() === 9,'detail exposes a labeled tab for each topic');
+  ok(await page.locator('.detail-page-tab').allTextContents().then(items=>items.join('|')) === 'summary|progress|due & start|when & where|weather|time & order|tracking|name & type|actions','page tabs name every pane');
   const compactShell = await page.evaluate(()=>{
     const head = document.querySelector('.detail-head').getBoundingClientRect();
     const pager = document.querySelector('.detail-pager').getBoundingClientRect();
@@ -137,7 +137,7 @@ function ok(value,message){
   ok((await page.locator('#detail-auto-mark-label').textContent()) === 'auto-log agenda chunks','breakable auto-mark is named as chunk logging');
   ok((await page.locator('#detail-auto-mark-summary').textContent()).includes('Manual taps count first'),'auto-log summary explains manual reconciliation');
 
-  await page.locator('.detail-page-tab[aria-label="schedule"]').click();
+  await page.locator('.detail-page-tab[aria-label="when & where"]').click();
   await page.waitForTimeout(300);
   const scheduleLayout = await page.evaluate(()=>{
     const row = document.querySelector('#detail-allowed-time-row');
@@ -152,11 +152,11 @@ function ok(value,message){
     };
   });
   ok(scheduleLayout.display === 'grid' && scheduleLayout.stacked,'start and end editors are clearly stacked');
-  ok(scheduleLayout.active === 'schedule','schedule tab shows its selected panel');
+  ok(scheduleLayout.active === 'when & where','schedule tab shows its selected panel');
   ok(await page.locator('#detail-allowed-time-row .time-expr2').count() === 2,'both comparisons retain their second expressions');
   ok(await page.locator('#detail-allowed-time-row .time-resolved').evaluateAll(nodes=>nodes.every(node=>node.textContent.trim().length > 0)),'dynamic endpoints show resolved results');
 
-  await page.evaluate(()=>scrollDetailToNav('effort'));
+  await page.evaluate(()=>{$('detail-flexibility-disclosure').open=true;scrollDetailToNav('schedule');});
   await page.waitForTimeout(150);
   await page.locator('#detail-early-window').fill('6');
   await page.locator('#detail-delay-allowance').fill('2');

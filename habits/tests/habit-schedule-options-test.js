@@ -370,13 +370,13 @@ function settings(locations,blockedTimes = []){
   });
   await page.reload({waitUntil:'networkidle'});
   await page.evaluate(()=>openDetail(0));
-  assert(await page.locator('[data-detail-nav="schedule"] #detail-place-chips').count() === 1,'place choices live in the schedule pane');
+  assert(await page.locator('[data-detail-nav="availability"] #detail-place-chips').count() === 1,'place choices live in the schedule pane');
   assert(await page.locator('[data-detail-nav="identity"] #detail-topic-chips').count() === 1,'topic choices live in the identity pane');
   await page.evaluate(()=>{scrollDetailToNav('identity');$('detail-priority-disclosure').open=true;});
   await page.waitForTimeout(250);
   await page.locator('#detail-topic-chips [data-topic="study"]').click();
   assert(await page.locator('#detail-topic-chips [data-topic="study"]').getAttribute('class').then(value=>value.includes('on')),'topic can be selected in Identity');
-  await page.evaluate(()=>scrollDetailToNav('schedule'));
+  await page.evaluate(()=>scrollDetailToNav('availability'));
   await page.waitForTimeout(250);
   await page.locator('[data-schedule-view="preferred"]').click();
   assert(await page.locator('#detail-places-label').textContent() === 'place preferences','preferred schedule view labels place rankings');

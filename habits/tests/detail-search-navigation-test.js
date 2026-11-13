@@ -43,8 +43,8 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     await page.waitForTimeout(250);
     await page.evaluate(()=>openDetail(0));
     assert.equal(await page.locator('#detail-duration-disclosure').getAttribute('open'),'');
-    assert.equal(await page.locator('#detail-logging-disclosure').getAttribute('open'),null);
-    assert.equal(await page.locator('#detail-availability-disclosure').getAttribute('open'),null);
+    assert.equal(await page.locator('#detail-logging-disclosure').getAttribute('open'),'');
+    assert.equal(await page.locator('#detail-availability-disclosure').getAttribute('open'),'');
     const search=async query=>{
       if(!await page.locator('#detail-search-panel').isVisible())await page.locator('#detail-search-toggle').click();
       await page.locator('#detail-search-input').fill(query);
@@ -53,6 +53,18 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     const choose=async(query,label)=>{await search(query);await result(label).first().click();await page.waitForTimeout(80);};
     const original=await page.evaluate(()=>JSON.stringify(load()));
     const tabs=page.locator('.detail-page-tab');
+    assert.deepEqual(await tabs.allTextContents(),['summary','history','how often','when & where','weather','time & order','tracking','name & type','actions'],'item editor keeps a tab for each topic');
+    const detailsPage=page.locator('[data-detail-nav="identity"]');
+    for(const id of ['detail-name-disclosure','detail-appearance-disclosure','detail-priority-disclosure','detail-links-disclosure']){
+      assert.equal(await detailsPage.locator('#'+id).count(),1,`${id} belongs to the Item details tab`);
+    }
+    await tabs.first().focus();await page.keyboard.press('End');
+    const lastVisible=await page.evaluate(()=>{
+      const bar=document.querySelector('.detail-dots'),tab=bar.querySelector('.detail-page-tab.on');
+      const b=bar.getBoundingClientRect(),t=tab.getBoundingClientRect();
+      return bar.scrollWidth>bar.clientWidth && bar.scrollLeft>0 && t.left>=b.left-1 && t.right<=b.right+1;
+    });
+    assert.ok(lastVisible,'keyboard navigation scrolls the selected tab into view');
     await tabs.nth(2).click();await page.waitForTimeout(350);
     await tabs.nth(2).focus();await page.keyboard.press('ArrowRight');
     assert.equal(await tabs.nth(3).getAttribute('aria-selected'),'true','arrow keys navigate labeled tabs');
@@ -65,7 +77,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.ok(footerBox.y>=pagerBox.y && footerBox.y+footerBox.height<=845,'the footer floats at the bottom of the sheet');
     assert.equal(await page.locator('.detail-bottom-bar').evaluate(el=>getComputedStyle(el).borderRadius),'28px','detail action bar uses the same round pill as Home');
     assert.ok(await tabs.nth(1).locator('span').isVisible(),'tab labels are visible on a phone');
-    const identityTab=page.locator('.detail-page-tab[aria-label="identity"]');
+    const identityTab=page.locator('.detail-page-tab[aria-label="name & type"]');
     await identityTab.click();
     await page.evaluate(()=>{
       const panel=getSheetInner('detail-sheet').querySelector('[data-detail-nav="identity"]');
@@ -246,7 +258,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     });await page.waitForTimeout(350);
     assert.ok((await page.locator('.detail-title-wrap').boundingBox()).width>100,'links cannot squeeze the name');
     const linkedClose=await page.locator('#detail-cool').boundingBox();assert.ok(linkedClose.y+linkedClose.height<=568);
-    assert.equal(await page.locator('.detail-page-nav .detail-page-tab').count(),6,'page navigation sits above the content');
+    assert.equal(await page.locator('.detail-page-nav .detail-page-tab').count(),9,'page navigation sits above the content');
     assert.equal(await page.locator('.detail-bottom-bar .detail-page-tab').count(),0,'footer is reserved for search and exit');
     await page.locator('#detail-cool').click();
     // Every layout keeps bottom dismissal visible after long scrolls.
@@ -372,7 +384,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
         }),`${id} receives taps at ${width}`);
       }
       assert.ok((await page.locator('.detail-head').boundingBox()).height<height/2,`clamped title leaves content visible at ${width}`);
-      for(const nav of ['calendar','schedule','effort','identity','actions']){
+      for(const nav of ['calendar','schedule','availability','effort','tracking','identity','actions']){
         await page.evaluate(nav=>{getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true);scrollDetailToNav(nav);},nav);
         await page.waitForTimeout(80);
         const overflow=await page.evaluate(nav=>{
@@ -401,7 +413,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     await page.evaluate(()=>{
       const data=load();
       data[0].links=[{kind:'url',value:'https://example.com',primary:true}];
-      save(data);openDetail(0);scrollDetailToNav('actions');
+      save(data);openDetail(0);scrollDetailToNav('identity');
       getSheetInner('detail-sheet').querySelectorAll('details').forEach(d=>d.open=true);
     });
     await page.waitForTimeout(80);

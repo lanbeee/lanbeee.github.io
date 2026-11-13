@@ -88,6 +88,11 @@ function localTodayKey(){
   }
 
   async function expandTodayBlockedGroup(){
+    // Boot can still be solving when the fixed post-reload wait ends, leaving
+    // Home empty; wait for today's blocked rows before interacting.
+    await page.waitForFunction(k=>Boolean(
+      document.querySelector(`.blocked-card[data-blocked-day="${k}"], .blocked-group[data-blocked-group^="${k}:"]`)
+    ),todayK,{timeout:10000}).catch(()=>{});
     // Only today's group is relevant. Expanding every day used a pre-collected
     // list of nth() locators; if the exact planner replaced Home mid-loop, the
     // final locator no longer existed and the test timed out despite correct
@@ -97,7 +102,12 @@ function localTodayKey(){
     ).first();
     if(await merge.count()){
       await merge.click();
-      await page.waitForTimeout(120);
+      // The re-render is deferred (reveal coalescing); wait for the expanded
+      // detail instead of a fixed timeout.
+      await page.waitForFunction(k=>Boolean(
+        document.querySelector(`.blocked-group[data-blocked-group^="${k}:"] .blocked-group-detail`)
+      ),todayK,{timeout:3000}).catch(()=>{});
+      await page.waitForTimeout(100);
     }
   }
 
@@ -107,8 +117,11 @@ function localTodayKey(){
       `.blocked-card[data-blocked-day="${todayK}"] .blocked-cancel-mark`
     ).first();
     if(!await x.count())throw new Error('no blocked-cancel-mark visible');
+    const handle = await x.elementHandle();
     await x.click();
-    await page.waitForTimeout(250);
+    // Cancellation re-renders the home list; the tapped mark is replaced.
+    await page.waitForFunction(el=>!el.isConnected,handle,{timeout:3000}).catch(()=>{});
+    await page.waitForTimeout(150);
   }
 
   async function clickUndo(){

@@ -109,8 +109,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     }
     await page.setViewportSize({width:390,height:844});
     await page.evaluate(()=>{document.body.style.fontSize='';setMinimalMode(false);scrollDetailToNav('schedule');});
-    // Regular mode restores its disclosure state; open it before editing.
-    await page.locator('#detail-availability-disclosure > summary').click();
+    // Regular mode restores the days editor. Keep it open before editing.
+    await page.evaluate(()=>{$('detail-availability-disclosure').open=true;scrollDetailToNav('availability','auto');});
     await page.locator('[data-schedule-view="preferred"]').click();
     const preferred = page.locator('#detail-preferred-time-row .time-endpoint').first();
     await preferred.locator('[data-time-mode="relative"]').click();

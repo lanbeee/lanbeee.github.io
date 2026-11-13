@@ -27,7 +27,7 @@ async function scrollDetailToSchedule(page, paneIndex = 1){
       target.querySelectorAll('details').forEach(d=>d.open=true);
       scrollDetailToNav(nav,'instant');
     }
-  }, paneIndex === 2 ? 'effort' : 'schedule');
+  }, paneIndex === 4 ? 'tracking' : paneIndex === 3 ? 'availability' : paneIndex === 2 ? 'effort' : 'schedule');
   await page.waitForTimeout(200);
 }
 
@@ -90,8 +90,8 @@ async function assertAttr(page, selector, attr, expected, msg){
     ['pinned','#detail-pinned']
   ].map(([key,selector]) => [key,document.querySelector(selector)?.closest('.detail-page')?.dataset.detailNav])));
   const expectedPaneMap = {
-    due:'schedule',earlyWindow:'effort',delayAllowance:'effort',duration:'effort',
-    links:'actions',identity:'identity',pinned:'actions'
+    due:'schedule',earlyWindow:'schedule',delayAllowance:'schedule',duration:'effort',
+    links:'identity',identity:'identity',pinned:'actions'
   };
   if(JSON.stringify(paneMap) !== JSON.stringify(expectedPaneMap)){
     throw new Error(`detail controls are on the wrong panes: ${JSON.stringify(paneMap)}`);
@@ -112,6 +112,7 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Test track-value toggle
   console.log('Testing track-value toggle...');
+  await scrollDetailToSchedule(page, 4);
   const trackValBtn = page.locator('#detail-track-value');
   await assertAttr(page, '#detail-track-value', 'aria-pressed', 'false', 'track-value default off');
   await trackValBtn.click();
@@ -119,6 +120,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   await assertAttr(page, '#detail-track-value', 'aria-pressed', 'true', 'track-value on');
   console.log('  OK');
 
+  await scrollDetailToSchedule(page, 2);
   // Test duration field
   console.log('Testing duration field...');
   const durationField = page.locator('#detail-duration');
@@ -132,9 +134,9 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(durationAfter !== '45') throw new Error(`duration should be 45, got ${durationAfter}`);
   console.log('  OK');
 
-  // Test independent scheduling-direction fields.
+  // Early and late days live with the repeat limit.
   console.log('Testing early/delay fields...');
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 1);
   const earlyField = page.locator('#detail-early-window');
   const delayField = page.locator('#detail-delay-allowance');
   const earlyVal = await earlyField.inputValue();
@@ -153,7 +155,7 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Session target on same row as start button
   console.log('Testing timer row layout...');
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 4);
   const timerRow = page.locator('#detail-timer-row');
   if(!(await timerRow.locator('#detail-timer-auto-stop').isVisible())) throw new Error('session target should be on timer row');
   console.log('  Timer row layout: OK');
@@ -276,13 +278,13 @@ async function assertAttr(page, selector, attr, expected, msg){
   // Tasks land on Schedule, where due/scheduled controls now live.
   await page.waitForTimeout(250);
   const taskDefaultPane = (await page.locator('.detail-page-tab.on').textContent()).trim();
-  if(taskDefaultPane !== 'schedule')throw new Error(`tasks should open on Schedule, got ${taskDefaultPane}`);
+  if(taskDefaultPane !== 'due & start')throw new Error(`tasks should open on Schedule, got ${taskDefaultPane}`);
   await scrollDetailToSchedule(page, 1);
   await page.waitForTimeout(200);
 
   // Due row should be visible for tasks
   if(!(await page.locator('#detail-due-row').isVisible())) throw new Error('due row should show for tasks');
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 4);
   const autoMarkField = page.locator('#detail-auto-mark');
   await autoMarkField.waitFor({ state:'visible' });
   await autoMarkField.fill('30');
@@ -303,7 +305,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   await openCardDetail(page,taskName);
   await scrollDetailToSchedule(page, 1);
   await page.locator('#detail-due-time').fill('');
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 1);
   await page.locator('#detail-delay-allowance').fill('0');
   await page.locator('#detail-delay-allowance').blur();
   await page.locator('#detail-save').click();
@@ -321,7 +323,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // SECTION 5: Schedule view seg + chips
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 5: Schedule seg + chips ---');
-  await scrollDetailToSchedule(page, 1);
+  await scrollDetailToSchedule(page, 3);
   await page.waitForTimeout(200);
   const prefSeg = page.locator('#detail-schedule-view-seg [data-schedule-view="preferred"]');
   if(await prefSeg.isVisible()){
@@ -358,7 +360,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   console.log('\n--- SECTION 6: Reopen build habit ---');
   // Reopen the build habit (task detail may have been saved and closed)
   await openCardDetail(page,runId);
-  await scrollDetailToSchedule(page, 2);
+  await scrollDetailToSchedule(page, 4);
   await page.waitForTimeout(200);
 
   // ═══════════════════════════════════════════════
@@ -446,7 +448,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   // SECTION 9: Time input fields
   // ═══════════════════════════════════════════════
   console.log('\n--- SECTION 9: Time window inputs ---');
-  await scrollDetailToSchedule(page, 1);
+  await scrollDetailToSchedule(page, 3);
   const timeStart = page.locator('#detail-time-start');
   const timeEnd = page.locator('#detail-time-end');
   await timeStart.fill('09:00');
@@ -472,7 +474,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   const preparedScroll = await page.evaluate(() => {
     const sheet = document.querySelector('#detail-sheet .detail-sheet');
     const pager = sheet?.querySelector('.detail-pager');
-    const schedule = pager?.querySelector('[data-detail-nav="schedule"]');
+    const schedule = pager?.querySelector('[data-detail-nav="availability"]');
     const effort = pager?.querySelector('[data-detail-nav="effort"]');
     if(!sheet || !pager || !schedule || !effort)return null;
     effort.scrollTop = 0;
@@ -485,7 +487,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   const paneScroll = await page.evaluate(() => {
     const sheet = document.querySelector('#detail-sheet .detail-sheet');
     const pager = sheet?.querySelector('.detail-pager');
-    const schedule = pager?.querySelector('[data-detail-nav="schedule"]');
+    const schedule = pager?.querySelector('[data-detail-nav="availability"]');
     const effort = pager?.querySelector('[data-detail-nav="effort"]');
     if(!sheet || !pager || !schedule || !effort)return null;
     const pagerBox = pager.getBoundingClientRect();
@@ -512,14 +514,14 @@ async function assertAttr(page, selector, attr, expected, msg){
   }
   console.log('  Schedule and Effort scroll independently: OK');
 
-  await scrollDetailToSchedule(page, 1);
-  const restoredScheduleTop=await page.locator('[data-detail-nav="schedule"]').evaluate(el=>el.scrollTop);
+  await scrollDetailToSchedule(page, 3);
+  const restoredScheduleTop=await page.locator('[data-detail-nav="availability"]').evaluate(el=>el.scrollTop);
   if(restoredScheduleTop !== preparedScroll.scheduleTop){
     throw new Error(`returning to Schedule should retain its scroll: ${restoredScheduleTop} !== ${preparedScroll.scheduleTop}`);
   }
   await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
-    const schedule = pager?.querySelector('[data-detail-nav="schedule"]');
+    const schedule = pager?.querySelector('[data-detail-nav="availability"]');
     if(schedule)schedule.scrollTop = 0;
   });
   await startEndpoint.locator('[data-time-mode="clock"]').click();

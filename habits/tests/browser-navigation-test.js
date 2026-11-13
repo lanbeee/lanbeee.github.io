@@ -188,18 +188,26 @@ const BASE = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
             const start=new Event('touchstart',{bubbles:true,cancelable:true});
             Object.assign(start,{touches:[touch],changedTouches:[touch]});
             target.dispatchEvent(start);
-            const moved={...touch,clientX:x===1 ? 210 : innerWidth-210};
-            const move=new Event('touchmove',{bubbles:true,cancelable:true});
-            Object.assign(move,{touches:[moved],changedTouches:[moved]});
-            target.dispatchEvent(move);
-            results.push({start:start.defaultPrevented,move:move.defaultPrevented,dragging:!!edgeBack,transform:target.style.transform});
+            // Every move must stay with WebKit after the finger leaves the
+            // edge zone, not just the first event in the gesture.
+            const moves=[40,80,120,210].map(distance=>{
+              const moved={...touch,clientX:x===1 ? x+distance : x-distance};
+              const move=new Event('touchmove',{bubbles:true,cancelable:true});
+              Object.assign(move,{touches:[moved],changedTouches:[moved]});
+              target.dispatchEvent(move);
+              return move.defaultPrevented;
+            });
+            results.push({start:start.defaultPrevented,moves,dragging:!!edgeBack,transform:target.style.transform});
+            const end=new Event('touchend',{bubbles:true});
+            Object.assign(end,{touches:[],changedTouches:[touch]});
+            target.dispatchEvent(end);
           }
           return {owns:browserOwnsEdgeNavigation(),results};
         });
         assert.equal(observed.owns,true);
         assert.deepEqual(observed.results,[
-          {start:false,move:false,dragging:false,transform:''},
-          {start:false,move:false,dragging:false,transform:''}
+          {start:false,moves:[false,false,false,false],dragging:false,transform:''},
+          {start:false,moves:[false,false,false,false],dragging:false,transform:''}
         ]);
         await back();await forward();
         assert.deepEqual(await stack(),['detail-sheet']);

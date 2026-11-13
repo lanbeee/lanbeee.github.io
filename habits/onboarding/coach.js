@@ -549,7 +549,7 @@
       aOpenTime:{title:'Use the room a day has left',copy:'The open-time count is your spare minutes. Tap it for the day’s busy and open blocks.',target:['.free-pill'],hint:'Tap the open time',locked:true,back:'aMissed'},
       aOpenStrip:{title:'Plan straight into a gap',copy:'This is the day’s clock. Tap an open stretch to plan something there; tap a busy block to change or cancel just that date. The cloud adds weather graphs you can overlay on the same hours, and the day strip reuses that time on another day.',target:['.free-time-sheet'],action:'Finish chapter',command:'chapterDone',back:'aOpenTime'},
 
-      aDetailRead:{title:'Open the Schedule page',copy:'Each Ting has pages for history, schedule, effort, identity, and actions. Schedule is where the planner learns when this item can happen.',target:['.detail-page-tab[aria-label="schedule"]'],hint:'Tap schedule',locked:true,back:'aIntro'},
+      aDetailRead:{title:'Open When & where',copy:'Each Ting has tabs for its schedule, weather, planning, tracking, and details. When & where tells the planner which days, times, and places work.',target:['.detail-page-tab[aria-label="when & where"]'],hint:'Tap when & where',locked:true,back:'aIntro'},
       aSchedule:{title:'General schedule · Allowed',copy:'This is the rule that applies everywhere by default. Allowed weekdays, month dates, hours, and places are hard limits the planner must obey. Tap a weekday to try one.',target:['#detail-weekday-chips'],hint:'Tap a day',locked:true,back:'aDetailRead'},
       aSchedulePreferences:{title:'General schedule · Preferred',copy:'Preferred days, dates, hours, and places steer the same general schedule when there is room. They express “best,” never “must.”',target:['#detail-schedule-view-seg [data-schedule-view="preferred"]'],hint:'Tap preferred',locked:true,back:'aSchedule'},
       aGeneralSchedule:{title:'General time & place',copy:'The general time window applies at every general place you select. Clock uses a time of day; Relative can follow daily times such as dawn, sunrise, or sunset. If one place needs different hours, that belongs in a specific option below.',target:['#detail-simple-allowed-fields','.detail-schedule-places'],action:'Next',next:'aScheduleOrder',back:'aSchedulePreferences'},
@@ -561,8 +561,8 @@
       aProgressHistory:{title:'See patterns, not just streaks',copy:'History shows a two-week activity and plan strip, full-history totals, pace, and recent gaps. Switch to Gaps to see the spacing between entries.',target:['[data-detail-viz="gaps"]'],hint:'Tap gaps',locked:true,back:'aIntro'},
       aHistoryPlans:{title:'A day can hold activity or intent',copy:'Tap a day here to log the past, plan the future, set or clear Plan by, move a plan, remove it, or change that date’s open time. The Activity button on a card is the compact log-and-plan list.',target:['[data-detail-nav="calendar"]'],action:'Next',next:'aEffort',back:'aProgressHistory'},
       aEffort:{title:'Tell the planner how much room it needs',copy:'Duration reserves one continuous block. Breakable allows several sessions, with the shortest-session field protecting useful chunk sizes.',target:['#detail-breakable','#detail-effort-duration-grid'],hint:'Try breakable',locked:true,back:'aHistoryPlans'},
-      aEffortTools:{title:'Log the work your way',copy:'Value tracking adds an optional number and note. Auto mark can credit scheduled time after it ends; Start session runs a manual timer with an optional target. Stop the timer when you want to log it.',target:['[data-detail-nav="effort"]'],action:'Next',next:'aIdentity',back:'aEffort'},
-      aIdentity:{title:'Say what kind of Ting it is',copy:'Change the name and emoji here. Habits can build, limit, or stop; tasks finish once. Priority decides what claims scarce time first, and topics power search and filters.',target:['#detail-emoji-preview','#detail-habit-message'],hint:'Tap the emoji',locked:true,back:'aEffortTools'},
+      aEffortTools:{title:'Log the work your way',copy:'Value tracking adds an optional number and note. Auto mark can credit scheduled time after it ends; Start session runs a manual timer with an optional target. Stop the timer when you want to log it.',target:['[data-detail-nav="tracking"]'],action:'Next',next:'aIdentity',back:'aEffort'},
+      aIdentity:{title:'Say what kind of Ting it is',copy:'Change the name and emoji here. Habits can build, limit, or stop; tasks finish once. Topics power search and filters; priority is in Time & order.',target:['#detail-emoji-preview','#detail-habit-message'],hint:'Tap the emoji',locked:true,back:'aEffortTools'},
       aLifecycle:{title:'Actions are the item’s toolbox',copy:'Add calls, links, or app shortcuts and use the link buttons to open them. Choose shared-display access, export dated tasks, share one encrypted item, snooze, or remove with Undo. Pin holds the item above automatic order — tap it to finish.',target:['#detail-pinned'],hint:'Tap pin',locked:true,back:'aIdentity'},
 
       aSearch:{title:'Search and filters',copy:'Search and topic or place filters change what you see — never what is due or planned.',target:['#open-search','#bar-open-search'],hint:'Tap search',locked:searchReady,back:'aIntro'},
@@ -578,7 +578,7 @@
       aBusy:{title:'Busy times create the real gaps',copy:'Block sleep, work, meals, school, and commutes. A block can repeat, change for one date, or follow daily times such as sunrise or sunset. Tings plans and inserts travel around what remains.',target:['#settings-blocked-head'],action:'Next',next:'aWeather',back:'aLocations'},
       aWeather:{title:'Create a reusable weather profile',copy:'A profile groups the weather rules for a kind of outdoor work. Create one now; you can keep up to four, such as Running, Gardening, or Air quality.',target:['#weather-profile-add'],hint:'Tap add profile',locked:true,back:'aBusy'},
       aWeatherRule:{title:'Preferences steer; hard limits reject',copy:'Choose temperature, rain chance or amount, snow, wind, daylight, UV, or air quality. Prefer lower or higher nudges the best time. Min and max set bounds; Hard rejects flexible times outside them. Missing forecast data never blocks a plan.',target:['.weather-profile-card .weather-rule'],action:'Attach to a Ting',next:'aWeatherAttach',back:'aWeather'},
-      aWeatherAttach:{title:'Attach the profile on Schedule',copy:'Profiles do nothing until a Ting uses one. Choose Outdoor here. Home-city weather is the default; a saved forecast place is only for work far from home.',target:['#detail-weather-profile'],hint:'Choose Outdoor',locked:true,back:'aWeatherRule'},
+      aWeatherAttach:{title:'Attach it on Weather',copy:'Profiles do nothing until a Ting uses one. On the Weather tab, choose Outdoor. Home-city weather is the default; a saved forecast place is only for work far from home.',target:['#detail-weather-profile'],hint:'Choose Outdoor',locked:true,back:'aWeatherRule'},
       aPrayer:{title:'Relative times follow your city',copy:'Set a city under Locations to use dawn, sunrise, noon, afternoon, sunset, and night. These daily events work in general windows, specific options, and dynamic busy times; they are calculated on your device.',target:['#settings-prayer-head'],action:'Finish chapter',command:'chapterDone',back:'aWeatherAttach'},
 
       aSettingsDisplay:{title:'Make Home comfortable to read',copy:'Home shows Today, Tomorrow, Coming up, and The rest. Fixed appointments, due tasks, plans, and ready habits enter the agenda automatically. The planner schedules the full week; open Calendar and tap a day to see its agenda. Minimal mode changes presentation only.',target:['[data-setting-toggle="minimalMode"]'],action:'Next',next:'aCards',back:'aIntro'},
@@ -803,13 +803,15 @@
     if(next === 'aGeneralSchedule'){
       document.querySelector('#detail-schedule-view-seg [data-schedule-view="allowed"]')?.click();
     }
-    if(next === 'aSchedule' || next === 'aSchedulePreferences' || next === 'aGeneralSchedule' || next === 'aTimesPlaces' || next === 'aOptionRow' || next === 'aTaskRules')showDetailPage('schedule');
+    if(next === 'aSchedule' || next === 'aSchedulePreferences' || next === 'aGeneralSchedule' || next === 'aTimesPlaces' || next === 'aOptionRow')showDetailPage('availability');
+    if(next === 'aTaskRules')showDetailPage('schedule');
     if(next === 'aTimesPlaces' || next === 'aOptionRow'){
       const optionsDisc = $('detail-options-disclosure');
       if(optionsDisc)optionsDisc.open = true;
     }
     if(next === 'aHistoryPlans')showDetailPage('calendar');
-    if(next === 'aEffort' || next === 'aEffortTools' || next === 'aScheduleOrder')showDetailPage('effort');
+    if(next === 'aEffort' || next === 'aScheduleOrder')showDetailPage('effort');
+    if(next === 'aEffortTools')showDetailPage('tracking');
     if(next === 'aIdentity')showDetailPage('identity');
     if(next === 'aLifecycle'){
       showDetailPage('actions');
@@ -826,7 +828,7 @@
         const idx = trackedIndex();
         if(idx >= 0 && typeof openDetail === 'function')openDetail(idx);
       }
-      showDetailPage('schedule');
+      showDetailPage('weather');
       const weatherDisc = $('detail-weather-disclosure');
       if(weatherDisc)weatherDisc.open = true;
       setTimeout(()=>{
@@ -1274,7 +1276,7 @@
     // Delays let the app finish its own reaction (sheet open, page scroll)
     // before the spotlight moves, so the next stage describes what is on
     // screen rather than what is still animating.
-    if(stage === 'aDetailRead' && event.target.closest('.detail-page-tab[aria-label="schedule"]')){
+    if(stage === 'aDetailRead' && event.target.closest('.detail-page-tab[aria-label="when & where"]')){
       setTimeout(()=>setStage('aSchedule'),360);
     }
     if(stage === 'aSchedule' && event.target.closest('#detail-weekday-chips .schedule-chip')){

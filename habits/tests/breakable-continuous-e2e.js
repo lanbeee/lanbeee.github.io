@@ -1524,7 +1524,7 @@ assert(weekChunk === 60,
   });
   await page.waitForSelector('#detail-sheet.open, body.pane-active');
 
-  await page.locator('.detail-page-tab[aria-label="planning"]').click();
+  await page.locator('.detail-page-tab[aria-label="time & order"]').click();
   await page.waitForTimeout(200);
 
   const breakableBtn = page.locator('#detail-breakable');
@@ -1544,7 +1544,7 @@ assert(weekChunk === 60,
     if(i >= 0)openDetail(i);
   });
   await page.waitForSelector('#detail-sheet.open, body.pane-active');
-  await page.locator('.detail-page-tab[aria-label="planning"]').click();
+  await page.locator('.detail-page-tab[aria-label="time & order"]').click();
   await page.waitForTimeout(200);
   const pressed = await page.locator('#detail-breakable').getAttribute('aria-pressed');
   const minChunk = await page.locator('#detail-min-chunk').inputValue();

@@ -66,7 +66,7 @@ function assert(cond, msg){
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
   await page.waitForTimeout(200);
 
-  await page.locator('.detail-page-tab[aria-label="schedule"]').click();
+  await page.locator('.detail-page-tab[aria-label="when & where"]').click();
   await page.waitForTimeout(200);
 
   // Switch to dynamic mode for allowed start
@@ -161,7 +161,7 @@ function assert(cond, msg){
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
   await page.waitForTimeout(300);
 
-  await page.locator('.detail-page-tab[aria-label="schedule"]').click();
+  await page.locator('.detail-page-tab[aria-label="when & where"]').click();
   await page.waitForTimeout(200);
 
   let state3 = await page.evaluate(() => {

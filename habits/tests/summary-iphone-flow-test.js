@@ -136,12 +136,12 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.locator('#detail-summary [data-summary-field="priority"]').tap();
       await page.waitForFunction(()=>$('detail-priority-seg').classList.contains('detail-search-hit'));
       await page.waitForTimeout(500);
-      assert.equal(await page.evaluate(()=>detailIsSingleView() ? detailMinimalView() : detailCurrentNav()),minimal?'settings':'identity','Priority pill stays on its setting');
+      assert.equal(await page.evaluate(()=>detailIsSingleView() ? detailMinimalView() : detailCurrentNav()),minimal?'settings':'effort','Priority pill stays on its setting');
       assert.equal(await page.locator('#detail-priority-seg').isVisible(),true,'Priority control is visible');
       if(!minimal){
         const panels=await page.evaluate(()=>[...document.querySelectorAll('.detail-pager > .detail-page')]
           .filter(panel=>panel.getClientRects().length).map(panel=>panel.dataset.detailNav));
-        assert.deepEqual(panels,['identity'],'direct tabs render only the selected panel');
+        assert.deepEqual(panels,['effort'],'direct tabs render only the selected panel');
         assert.equal(await page.locator('.detail-pager').evaluate(el=>getComputedStyle(el).scrollSnapType),'none',
           'tab selection does not depend on horizontal scroll snapping');
         await page.evaluate(()=>{
@@ -150,7 +150,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
           visualViewport.dispatchEvent(new Event('resize'));
         });
         await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-        assert.equal(await page.evaluate(()=>detailCurrentNav()),'identity','scroll and viewport events cannot change the selected tab');
+        assert.equal(await page.evaluate(()=>detailCurrentNav()),'effort','scroll and viewport events cannot change the selected tab');
       }
       await page.locator(`.detail-page-tab[aria-label="summary"]`).tap();
       await page.waitForFunction(()=>detailSummaryOnScreen());
@@ -182,7 +182,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
         await page.evaluate(()=>detailSearchHitTarget?.classList.remove('detail-search-hit'));
       }
       if(!minimal){
-        for(const label of ['history','schedule','planning','identity','actions']){
+        for(const label of ['history','how often','when & where','weather','time & order','tracking','name & type','actions']){
           await page.locator(`.detail-page-tab[aria-label="${label}"]`).tap();
           await page.waitForTimeout(400);
           assert.equal(await page.locator(`.detail-page-tab[aria-label="${label}"]`).getAttribute('aria-selected'),'true',`${label} stays selected after tapping from Summary`);
@@ -330,10 +330,10 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
         $('detail-summary').querySelector('[data-summary-field="priority"]').click();
         return {opened:position(),nextFrame:await nextFrame};
       });
-      assert.equal(afterSave.opened.nav,minimal?'settings':'identity','the post-save pill initially opens its setting');
+      assert.equal(afterSave.opened.nav,minimal?'settings':'effort','the post-save pill initially opens its setting');
       assert.deepEqual(afterSave.nextFrame,afterSave.opened,'the queued save restore cannot briefly return the pager to its old position');
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-      assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':'identity',
+      assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':'effort',
         'the delayed save refresh cannot return a newer pill navigation to Summary');
       assert.equal(await page.evaluate(()=>load()[0].durationMinutes),45,'the navigation race still saves the proposed value');
       await page.locator('#action-undo').first().tap();

@@ -143,10 +143,10 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
 
   // ── 3. Horizontal scroll on location row does NOT toggle chips ──
   console.log('\n--- 3. Horizontal scroll on location row ---');
-  await page.evaluate(() => scrollDetailToNav('schedule'));
+  await page.evaluate(() => scrollDetailToNav('availability'));
   await page.waitForTimeout(300);
   const placeWrap = page.locator('#detail-place-chips');
-  assert(await placeWrap.isVisible(), 'schedule place chips visible');
+  assert(await placeWrap.isVisible(), 'availability place chips visible');
   const locRow = page.locator('#detail-place-chips .tag-row-places');
   await locRow.scrollIntoViewIfNeeded();
   await page.waitForTimeout(100);

@@ -135,15 +135,15 @@ const assert=require('node:assert/strict');
       // UI exercises permission choices without scheduling real OS reminders.
       reconcileNativeReminders=async()=>{};
       TingsNative.notifications={permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})};
-      closeSheet('settings-sheet');openDetail(load().findIndex(isDeviceCalendarTask));scrollDetailToNav('actions');
+      closeSheet('settings-sheet');openDetail(load().findIndex(isDeviceCalendarTask));scrollDetailToNav('identity');
     });
     await page.evaluate(()=>scrollDetailToNav('identity','auto'));
     await page.getByLabel('event emoji, optional',{exact:true}).fill('🧑‍💻');
     assert.equal(await page.locator('#detail-save').isEnabled(),true,'phone icon changes use the normal Save action');
     await page.locator('#detail-save').click();
     assert.equal(await page.evaluate(()=>deviceCalendarStyles()['series:device:7:80'].emoji),'🧑‍💻');
-    await page.evaluate(()=>{openDetail(load().findIndex(isDeviceCalendarTask));scrollDetailToNav('actions','auto');});
-    await page.locator('#detail-native-reminders summary').click();
+    await page.evaluate(()=>{openDetail(load().findIndex(isDeviceCalendarTask));scrollDetailToNav('identity','auto');});
+    await page.locator('#detail-native-reminders > summary').click();
     await page.locator('#detail-native-reminders [data-reminder-edge="start"]').selectOption('alarm');
     await page.getByLabel('event reminder timing',{exact:true}).selectOption('10');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['calendar-series:device:7:80'].start),'alarm');

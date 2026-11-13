@@ -16,7 +16,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     const detailOpen=()=>page.evaluate(()=>$('detail-sheet').classList.contains('open') || getPane()?.dataset.activeSheet==='detail-sheet');
     const editName=async name=>{
       await page.locator('#detail-name').click();
-      await page.waitForFunction(()=>getSheetInner('detail-sheet').querySelector('.detail-page-tab.on')?.getAttribute('aria-label')==='identity' || detailIsSingleView() || paneTierActive());
+      await page.waitForFunction(()=>getSheetInner('detail-sheet').querySelector('.detail-page-tab.on')?.getAttribute('aria-label')==='name & type' || detailIsSingleView() || paneTierActive());
       await page.locator('#detail-habit-message').fill(name);
     };
     for(const width of [390,1440]){
@@ -31,7 +31,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       assert.equal(await page.locator('#detail-name').textContent(),'Saved walk');
       assert.equal(await page.evaluate(()=>load()[0].name),'Saved walk');
       assert.equal(await page.evaluate(()=>getSheetInner('detail-sheet').classList.contains('tune-dirty')),false,'save establishes a clean baseline');
-      if(width===390)assert.equal(await page.evaluate(()=>getSheetInner('detail-sheet').querySelector('.detail-page-tab.on').getAttribute('aria-label')),'identity','Save keeps the current section');
+      if(width===390)assert.equal(await page.evaluate(()=>getSheetInner('detail-sheet').querySelector('.detail-page-tab.on').getAttribute('aria-label')),'name & type','Save keeps the current section');
 
       await editName('Unstored change');
       await page.evaluate(()=>{window.editFlowSave=save;save=()=>false;});

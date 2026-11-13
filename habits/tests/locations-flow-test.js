@@ -252,7 +252,7 @@ async function openSettings(page){
   await page.evaluate(() => {
     const idx = load().findIndex(x => x.name === 'loc chip test habit');
     openDetail(idx);
-    scrollDetailToNav('schedule');
+    scrollDetailToNav('availability');
   });
   await page.waitForSelector('#detail-place-chips [data-location-id="sample-gym"]');
   const detailPref = async () => page.locator('#detail-place-chips [data-location-id="sample-gym"]').evaluate(el => ({
@@ -373,7 +373,9 @@ async function openSettings(page){
   console.log('editing card:', target);
   if(!target)console.log('  skip: no saved-place travel card rendered (low-capacity time of day)');
   if(target){
-    await page.locator('#list .travel-card:not(.is-from-current)').first().click();
+    // Click the exact measured pair: the home list re-renders on agenda ticks,
+    // so ".first()" can land on a different card between read and click.
+    await page.locator(`#list .travel-card[data-travel-from="${target.from}"][data-travel-to="${target.to}"]`).first().click();
     await page.waitForSelector('#travel-edit-sheet.open');
     await page.locator('#travel-edit-minutes').fill('42');
     await page.locator('#travel-edit-save').click();

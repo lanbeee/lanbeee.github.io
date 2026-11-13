@@ -66,7 +66,6 @@ function paintDetailFields(h){
   renderHabitScheduleOptions(h);
   // Expand configured options, but keep unused advanced fields quiet.
   $('detail-options-disclosure').open = Boolean(h.scheduleOptions?.length);
-  $('detail-weather-disclosure').open = Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId);
   renderTimeWindowInputs(h);
   // Older/imported timed tasks can carry the appointment clock without a
   // separate due date. Show that clock's date before gating the time field.

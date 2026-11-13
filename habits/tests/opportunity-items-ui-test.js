@@ -60,8 +60,12 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   assert(!/overdue|missed/i.test(await page.locator('#detail-sub').textContent()));
   assert(await page.locator('[data-detail-repeat]').isVisible(),'conditional mode is a frequency button');
   assert(await page.locator('#detail-place-chips').isVisible(),'places are primary condition controls');
-  const scheduleOrder=await page.evaluate(()=>({limit:$('detail-slider-row').getBoundingClientRect().top,conditions:$('detail-conditions').getBoundingClientRect().top,availability:$('detail-availability-disclosure').getBoundingClientRect().top}));
-  assert(scheduleOrder.limit<scheduleOrder.conditions && scheduleOrder.conditions<scheduleOrder.availability,'schedule follows repeat limit, conditions, then day/hour refinements');
+  const scheduleOrder=await page.evaluate(()=>({limit:$('detail-slider-row').getBoundingClientRect().top,conditions:$('detail-conditions').getBoundingClientRect().top,page:$('detail-conditions').closest('.detail-page')?.dataset.detailNav}));
+  assert(scheduleOrder.limit<scheduleOrder.conditions && scheduleOrder.page==='schedule','repeat limit and the condition trigger share the conditions tab');
+  await page.locator('.detail-page-tab[aria-label="days & hours"]').click();
+  assert(await page.locator('#detail-availability-disclosure').isVisible(),'days and hours stay on their own tab');
+  assert.equal(await page.locator('.detail-page-tab[aria-label="weather"]').count(),0,'a conditional item does not keep an empty Weather tab');
+  await page.locator('.detail-page-tab[aria-label="conditions"]').click();
   await page.locator('[data-detail-rhythm="3,7"]').click();
   assert(await page.evaluate(()=>currentDetailTune().repeatMode==='routine'));
   assert(!await page.locator('#detail-conditions').isVisible(),'routine mode restores folded condition fields');

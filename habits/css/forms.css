@@ -425,7 +425,7 @@ body.minimal-mode #pane-detail .minimal-detail.opportunity-mode #detail-weather-
 .appointment-editor input,.appointment-editor select { max-width:100%; }
 .appointment-editor .schedule-chip-row { flex-wrap:wrap; }
 .appointment-add #add-more-toggle,.appointment-add #add-more-options { display:none; }
-.local-appointment [data-detail-nav="schedule"] > :not(#detail-appointment-editor),
+.local-appointment [data-detail-nav="schedule"] > :not(#detail-appointment-editor):not(#detail-native-reminders),
 .local-appointment [data-detail-nav="effort"],
 .local-appointment #detail-type-seg,.local-appointment #detail-mode-seg,
 .local-appointment #detail-stats-disclosure,.local-appointment #detail-snooze { display:none!important; }

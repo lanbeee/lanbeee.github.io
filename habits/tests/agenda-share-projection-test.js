@@ -1639,8 +1639,12 @@ function assert(cond,msg){
   assert(ownerInlineScripts.length === 0,'owner index has no inline boot scripts');
   assert(ownerHtml.includes('<script src="./js/agenda-display-boot.js"></script>'),'owner page loads the frame-bust from the head');
   assert(!ownerScriptSrc.includes('https://unpkg.com ') && !ownerScriptSrc.includes('https://cdn.jsdelivr.net '),'owner CSP does not trust entire CDN script hosts');
-  assert(/tabler-icons\.min\.css" integrity="sha256-[A-Za-z0-9+/=]+" crossorigin=/.test(ownerHtml),'Tabler CSS is SRI-pinned');
-  assert(/leaflet\.js" integrity="sha256-/.test(ownerHtml),'Leaflet JS remains SRI-pinned');
+  // Third-party CSS/JS is vendored into the repo, so nothing cross-origin
+  // needs an integrity attribute; assert the self-hosted form instead.
+  assert(/<link rel="stylesheet" href="\.\/css\/vendor\/tabler-icons\.min\.css" \/>/.test(ownerHtml),'Tabler CSS is vendored from css/vendor');
+  assert(/<link rel="stylesheet" href="\.\/css\/vendor\/leaflet.css" \/>/.test(ownerHtml),'Leaflet CSS is vendored from css/vendor');
+  assert(/<script src="\.\/lib\/js\/leaflet\.js" defer><\/script>/.test(ownerHtml),'Leaflet JS is vendored from lib/js');
+  assert(fs.existsSync(path.join(__dirname,'../css/vendor/tabler-icons.min.css')) && fs.existsSync(path.join(__dirname,'../lib/js/leaflet.js')),'vendored third-party assets exist in the repo');
   const calendarImport = fs.readFileSync(path.join(__dirname,'../js/calendar-import.js'),'utf8');
   assert(/CALENDAR_PDF_JS_SRI = 'sha256-/.test(calendarImport),'pdf.js script is SRI-pinned');
   assert(/CALENDAR_PDF_WORKER_SRI = 'sha256-/.test(calendarImport),'pdf.js worker is SRI-pinned');

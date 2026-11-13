@@ -159,16 +159,15 @@ async function visibleFreePill(page, preferLower = false){
   });
   await page.waitForSelector('#detail-sheet.open', { timeout:5000 });
   await sleep(300);
-  // Land on the schedule pager page before probing weekday chips.
+  // Land on the availability pager page before probing weekday chips.
   await page.evaluate(() => {
-    if(typeof openDetailSchedule === 'function'){
-      const idx = Number(document.querySelector('.ting-card[data-real]')?.dataset.real);
-      if(Number.isFinite(idx))openDetailSchedule(idx);
+    if(typeof scrollDetailToNav === 'function'){
+      scrollDetailToNav('availability','instant');
       return;
     }
     const pager = document.querySelector('#detail-sheet .detail-pager');
-    const schedule = pager && pager.querySelector('.detail-page[data-detail-nav="schedule"]');
-    if(pager && schedule)pager.scrollLeft = schedule.offsetLeft;
+    const target = pager && pager.querySelector('.detail-page[data-detail-nav="availability"]');
+    if(pager && target)pager.scrollLeft = target.offsetLeft;
   });
   await sleep(400);
   // Availability starts collapsed for an unrestricted item. Open it before
@@ -177,7 +176,7 @@ async function visibleFreePill(page, preferLower = false){
     await page.locator('#detail-availability-disclosure > summary').click();
   }
   const chipInfo = await page.evaluate(() => {
-    const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]');
+    const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="availability"]');
     if(!pageEl)return null;
     const chip = pageEl.querySelector('#detail-weekday-chips button');
     if(!chip)return null;
@@ -189,12 +188,12 @@ async function visibleFreePill(page, preferLower = false){
       wasOn: chip.classList.contains('on')
     };
   });
-  assert(Boolean(chipInfo), 'found weekday chip button in detail schedule page');
+  assert(Boolean(chipInfo), 'found weekday chip button in detail availability page');
   if(chipInfo){
     // Guarantee overflow so the scroll-guard assertion is meaningful.
     if(!(chipInfo.scrollHeight > chipInfo.clientHeight)){
       await page.evaluate(() => {
-        const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]');
+        const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="availability"]');
         if(!pageEl)return;
         const pad = document.createElement('div');
         pad.dataset.scrollGuardPad = '1';
@@ -203,15 +202,15 @@ async function visibleFreePill(page, preferLower = false){
       });
     }
     const scrollable = await page.evaluate(() => {
-      const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]');
+      const pageEl = document.querySelector('#detail-sheet .detail-page[data-detail-nav="availability"]');
       return pageEl ? { scrollHeight:pageEl.scrollHeight, clientHeight:pageEl.clientHeight, scrollTop:pageEl.scrollTop } : null;
     });
     assert(scrollable && scrollable.scrollHeight > scrollable.clientHeight,
-      `schedule page is scrollable (${scrollable && scrollable.scrollHeight} > ${scrollable && scrollable.clientHeight})`);
+      `availability page is scrollable (${scrollable && scrollable.scrollHeight} > ${scrollable && scrollable.clientHeight})`);
     await sleep(250);
     await drag(client, chipInfo.x, chipInfo.y, 0, -160); // drag up → page scrolls down
-    const afterScroll = await page.evaluate(() => document.querySelector('#detail-sheet .detail-page[data-detail-nav="schedule"]').scrollTop);
-    assert(afterScroll !== (scrollable.scrollTop || 0), `schedule page scrolled (${scrollable.scrollTop || 0} -> ${afterScroll})`);
+    const afterScroll = await page.evaluate(() => document.querySelector('#detail-sheet .detail-page[data-detail-nav="availability"]').scrollTop);
+    assert(afterScroll !== (scrollable.scrollTop || 0), `availability page scrolled (${scrollable.scrollTop || 0} -> ${afterScroll})`);
     const chipNow = await page.evaluate(() => {
       const c = document.querySelector('#detail-weekday-chips button');
       return c ? c.classList.contains('on') : null;
@@ -220,12 +219,14 @@ async function visibleFreePill(page, preferLower = false){
     assert(await sheetCount(page, '#detail-sheet') === 1, 'detail sheet still open');
   }
 
-  // ── 3. Detail: pager swipe starting ON a chip button ──
-  console.log('\n[3] Detail pager swipe starting on a chip button');
+  // ── 3. Detail: horizontal swipe starting ON a chip button ──
+  // Pages switch by tab state now (no scrollable pager strip), so a swipe
+  // starting on a chip must neither toggle it nor change the active page.
+  console.log('\n[3] Detail horizontal swipe starting on a chip button');
   const swipeInfo = await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
-    const schedule = pager && pager.querySelector('.detail-page[data-detail-nav="schedule"]');
-    if(pager && schedule)pager.scrollLeft = schedule.offsetLeft;
+    const target = pager && pager.querySelector('.detail-page[data-detail-nav="availability"]');
+    if(pager && target)pager.scrollLeft = target.offsetLeft;
     const chip = document.querySelector('#detail-weekday-chips button');
     if(!chip || !pager)return null;
     chip.scrollIntoView({ block:'center', inline:'center', behavior:'instant' });
@@ -239,15 +240,15 @@ async function visibleFreePill(page, preferLower = false){
   });
   assert(Boolean(swipeInfo), 'chip ready for swipe');
   assert(swipeInfo.inView, `chip is inside the pager viewport (left=${Math.round(swipeInfo.x)}, pager visible)`);
-  await drag(client, swipeInfo.x, swipeInfo.y, -280, 0, 12, 12); // swipe left → next pager page
+  await drag(client, swipeInfo.x, swipeInfo.y, -280, 0, 12, 12); // swipe left across the chip
   const afterInfo = await page.evaluate(() => {
-    const pager = document.querySelector('#detail-sheet .detail-pager');
+    const inner = document.querySelector('#detail-sheet .detail-sheet');
     const c = document.querySelector('#detail-weekday-chips button');
-    return { scrollLeft: pager.scrollLeft, on: c.classList.contains('on') };
+    return { nav: inner?.dataset.fullNav, on: c.classList.contains('on') };
   });
-  assert(afterInfo.scrollLeft !== swipeInfo.before, `pager actually swiped (${swipeInfo.before} -> ${afterInfo.scrollLeft})`);
-  assert(afterInfo.on === swipeInfo.wasOn, 'weekday chip NOT toggled after pager swipe');
-  assert(await sheetCount(page, '#detail-sheet') === 1, 'detail sheet still open after pager swipe');
+  assert(afterInfo.nav === 'availability', `swipe does not switch detail pages (stays on ${afterInfo.nav})`);
+  assert(afterInfo.on === swipeInfo.wasOn, 'weekday chip NOT toggled after swipe');
+  assert(await sheetCount(page, '#detail-sheet') === 1, 'detail sheet still open after swipe');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   await browser.close();

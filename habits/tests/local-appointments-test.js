@@ -4,6 +4,9 @@ const assert=require('node:assert/strict');
  const browser=await chromium.launch({headless:true});
  try{
   const page=await browser.newPage({viewport:{width:412,height:915},timezoneId:'America/New_York'});
+  // The fixture dates are pinned to 2026-10-22; keep "today" inside the
+  // appointment series so date-scoped controls keep rendering.
+  await page.clock.setFixedTime(new Date('2026-10-22T08:00:00-04:00'));
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{
     // This fixture tests an existing user's controls, outside first-run onboarding.
@@ -72,6 +75,7 @@ const assert=require('node:assert/strict');
   }
   assert.equal(await page.locator('#detail-mark-log').isVisible(),false);
   assert.equal(await page.locator('#detail-snooze').isVisible(),false);
+  await page.evaluate(()=>scrollDetailToNav('schedule','instant'));
   await page.selectOption('#detail-appt-scope','date');await page.fill('#detail-appt-occurrence','2026-10-29');
   await page.fill('#detail-appt-time','11:00');await page.fill('#detail-appt-duration','45');
   await page.click('#detail-save');
@@ -126,20 +130,20 @@ const assert=require('node:assert/strict');
     window.TingsNative={isNative:true,notifications:{permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})}};
     reconcileNativeReminders=async()=>{};
     localStorage.setItem(NATIVE_REMINDERS_KEY,JSON.stringify({version:4,enabled:false,items:{}}));
-    openDetail(0);
+    openDetail(0);scrollDetailToNav('schedule','instant');
   });
   await page.selectOption('#detail-appt-scope','date');await page.fill('#detail-appt-occurrence','2026-10-29');
-  await page.evaluate(()=>{$('detail-native-reminders').open=true;scrollDetailToNav('actions','auto');});
-  await page.getByLabel('Class: when it starts reminder',{exact:true}).selectOption('alarm');
+  await page.evaluate(()=>{$('detail-native-reminders').open=true;scrollDetailToNav('schedule','auto');});
+  await page.getByRole('group',{name:'Class: first reminder',exact:true}).getByRole('button',{name:'alarm'}).click();
   await page.waitForFunction(()=>nativeReminderPreferences().items['item:class']?.dates?.['2026-10-29']?.start==='alarm');
   await page.getByLabel('event reminder timing',{exact:true}).selectOption('30');
   assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:class'].start),undefined,'one-date control does not enable series reminders');
   await page.getByRole('button',{name:'use the usual reminders for this date',exact:true}).click();
   assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:class'].dates['2026-10-29']),undefined,'reset restores timing as well as delivery inheritance');
   await page.fill('#detail-appt-occurrence','');
-  assert.equal(await page.getByLabel('Class: when it starts reminder',{exact:true}).count(),0,'empty occurrence date cannot edit series reminders');
+  assert.equal(await page.getByRole('group',{name:'Class: first reminder',exact:true}).count(),0,'empty occurrence date cannot edit series reminders');
   await page.setViewportSize({width:1280,height:900});
-  await page.evaluate(()=>{closeDetail();openDetail(0);});
+  await page.evaluate(()=>{closeDetail();openDetail(0);scrollDetailToNav('schedule','instant');});
   await page.waitForFunction(()=>getSheetInner('detail-sheet').classList.contains('local-appointment'));
   assert.equal(await page.locator('#detail-appt-time').isVisible(),true,'appointment editor works in the desktop side pane');
   await page.evaluate(()=>openDetail(2));

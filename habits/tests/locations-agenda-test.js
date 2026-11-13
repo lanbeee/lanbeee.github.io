@@ -318,19 +318,14 @@ function seedScript(extraHabits, extraSettings){
   assert(homeWeek.hasTomorrow, 'home list has a tomorrow section');
   assert(homeWeek.blockedCards > 0, 'blocked times render as home cards');
   // Consecutive blocked times collapse into one tappable group on home.
-  const blockedMerge = await page.evaluate(() => {
+  const homeState = await page.evaluate(() => {
     const list = document.getElementById('list');
     const groups = [...(list?.querySelectorAll('.blocked-group') || [])];
     const merges = [...(list?.querySelectorAll('.blocked-card-merge') || [])];
-    let expandedDetail = 0;
-    if (merges[0]) {
-      merges[0].click();
-      expandedDetail = list.querySelectorAll('.blocked-group.is-expanded .blocked-group-detail .blocked-card').length;
-    }
+    if (merges[0]) merges[0].click();
     return {
       groups: groups.length,
       merges: merges.length,
-      expandedDetail,
       stickyTop: (() => {
         const header = list?.querySelector('.section-header');
         if (!header) return null;
@@ -338,6 +333,16 @@ function seedScript(extraHabits, extraSettings){
       })()
     };
   });
+  // Expansion re-renders asynchronously (reveal coalescing), so wait for it.
+  await page.waitForFunction(
+    () => document.querySelector('.blocked-group.is-expanded .blocked-group-detail'),
+    null,
+    { timeout: 5000 }
+  ).catch(() => {});
+  const expandedDetail = await page.evaluate(
+    () => document.querySelectorAll('.blocked-group.is-expanded .blocked-group-detail .blocked-card').length
+  );
+  const blockedMerge = { ...homeState, expandedDetail };
   console.log(blockedMerge);
   if (blockedMerge.merges > 0) {
     assert(blockedMerge.expandedDetail > 1, 'expanded blocked group shows separate cards');

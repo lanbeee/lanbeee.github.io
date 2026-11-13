@@ -517,7 +517,7 @@ async function nativeKeyboardQuickStart(browser){
   await page.locator('[data-coach-chapter="schedule"]').click();
   await stage(page,'aDetailRead');
   assert(await page.locator('#detail-sheet.open').count() === 1,'starting the schedule chapter opens a real detail page');
-  await page.locator('.detail-page-tab[aria-label="schedule"]').click();
+  await page.locator('.detail-page-tab[aria-label="when & where"]').click();
   await stage(page,'aSchedule');
   assert(/general schedule/i.test(await page.locator('.tings-coach-title').textContent()),'the schedule starts by naming the general Allowed rule');
   await tapTarget(page,'#detail-weekday-chips .schedule-chip');
@@ -866,7 +866,7 @@ async function nativeKeyboardQuickStart(browser){
   assert(await desk.locator('#tings-coach[data-coach-stage="aDetailRead"]').count() === 1,'desktop schedule chapter survives the pane click-away');
   assert(await desk.evaluate(()=>document.getElementById('pane-detail').dataset.activeSheet === 'detail-sheet'),'desktop schedule chapter mounts the real detail pane');
   // The same hands-on schedule walk works on the desktop pane tier.
-  await desk.locator('.detail-page-tab[aria-label="schedule"]').click();
+  await desk.locator('.detail-page-tab[aria-label="when & where"]').click();
   await stage(desk,'aSchedule');
   await tapTarget(desk,'#detail-weekday-chips .schedule-chip');
   await stage(desk,'aSchedulePreferences');

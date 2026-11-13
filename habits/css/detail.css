@@ -216,18 +216,25 @@ body:not(.minimal-mode) .detail-sheet > .detail-pager > .detail-page:not(.is-act
   background:var(--bg2);border-radius:var(--radius-sm);
 }
 .detail-dots{
-  min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));
+  min-width:0;display:flex;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;
   align-items:stretch;gap:2px;margin:0;padding:0;
 }
+.detail-dots::-webkit-scrollbar{display:none;}
+.detail-dots.minimal-tabs .detail-page-tab{flex:1 0 0;}
 .detail-page-tab{
-  min-width:0;min-height:48px;padding:5px 1px;border:0;border-radius:12px;
-  background:transparent;color:var(--text3);font:inherit;font-size:calc(12px * var(--font-scale));font-weight:600;
+  flex:0 0 auto;min-width:66px;min-height:48px;padding:5px 4px;border:0;border-radius:12px;
+  background:transparent;color:var(--text3);font:inherit;font-size:calc(11px * var(--font-scale));font-weight:600;
   display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;
   cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
 }
 .detail-page-tab i{font-size:18px;line-height:1;}
 .detail-page-tab span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .detail-page-tab.on{background:var(--bg3);color:var(--text);}
+.detail-page-tab[data-detail-pinned]{
+  position:sticky;left:0;z-index:1;background:var(--bg2);
+  box-shadow:2px 0 0 var(--bg2);
+}
+.detail-page-tab[data-detail-pinned].on{background:var(--bg3);}
 .detail-page-tab:active{transform:scale(0.96);}
 .detail-page-nav:has(.detail-dots[hidden]){display:none;}
 /* Only the pager/search results scroll. Footer space belongs to the layout,

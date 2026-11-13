@@ -29,6 +29,29 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         await page.locator('#launch-screen').waitFor({state:'hidden'});
         await page.locator('#list .ting-name').filter({hasText:'Dhuhr'}).first().tap();
         await page.locator('#detail-summary [data-summary-field="allowedWindow"]').waitFor();
+        const summaryTab=page.locator('.detail-page-tab[aria-label="summary"]');
+        const summaryStart=await summaryTab.boundingBox();
+        await page.locator('.detail-dots').evaluate(bar=>{bar.scrollLeft=bar.scrollWidth;});
+        await idle();
+        const frozen=await summaryTab.evaluate(tab=>{
+          const rect=tab.getBoundingClientRect(),bar=tab.parentElement;
+          const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
+          return {x:rect.x,scrolled:bar.scrollLeft>0,clickable:tab.contains(hit)};
+        });
+        assert.ok(frozen.scrolled && frozen.clickable && Math.abs(frozen.x-summaryStart.x)<1,
+          `${name}: Summary stays fixed and tappable when the tab strip is scrolled to the end`);
+        await page.locator('.detail-page-tab[aria-label="actions"]').tap();
+        await page.keyboard.press('ArrowLeft');
+        await idle();
+        const besideSummary=await page.locator('.detail-page-tab.on').evaluate(tab=>{
+          const pinned=tab.parentElement.querySelector('[data-detail-pinned]');
+          const rect=tab.getBoundingClientRect(),bar=tab.parentElement.getBoundingClientRect();
+          return rect.left>=pinned.getBoundingClientRect().right && rect.right<=bar.right+1;
+        });
+        assert.ok(besideSummary,`${name}: keyboard navigation keeps the selected tab clear of Summary`);
+        await summaryTab.tap();
+        await idle();
+        assert.deepEqual(await visiblePanels(),['summary'],'the pinned Summary tab opens its panel');
         await page.evaluate(()=>{
           window.detailTabExpected='summary';window.detailTabFrameErrors=[];
           document.addEventListener('click',event=>{
@@ -98,7 +121,7 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
       await page.locator('#list .ting-name').filter({hasText:'Dhuhr'}).first().tap();
       await idle();
       assert.equal(await page.locator('.detail-page-nav').isVisible(),true,'short landscape keeps the only tab navigation available');
-      await page.locator('.detail-page-tab[aria-label="identity"]').tap();
+      await page.locator('.detail-page-tab[aria-label="name & type"]').tap();
       await idle();
       assert.deepEqual(await visiblePanels(),['identity']);
       await page.setViewportSize({width:812,height:280});
