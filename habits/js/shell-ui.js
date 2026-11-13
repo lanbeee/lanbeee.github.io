@@ -1268,6 +1268,12 @@ function updateFullPageState(){
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
+  if(!paneTierActive() && $('detail-sheet')?.classList.contains('open')){
+    document.addEventListener('touchmove',guardDetailTouchScroll,{capture:true,passive:false});
+  }else{
+    document.removeEventListener('touchmove',guardDetailTouchScroll,true);
+    detailScrollTouch = null;
+  }
   if(modalOpen && !document.body.classList.contains('modal-open')){
     document.body.classList.add('modal-open');
   }else if(!modalOpen && document.body.classList.contains('modal-open')){
@@ -1280,6 +1286,50 @@ function updateFullPageState(){
     document.body.classList.remove('modal-open');
   }
 }
+
+// iOS can still pan the document beneath a keyboard even with overflow:hidden.
+// Consume drags on the phone detail backdrop/chrome and at scroll boundaries;
+// leave its actual scrollable pages, textareas and horizontal controls usable.
+// Never fix the body: that would reset Home's scroll when opening/closing detail.
+let detailScrollTouch = null;
+document.addEventListener('touchstart',event=>{
+  const touch = event.touches.length === 1 ? event.touches[0] : null;
+  detailScrollTouch = touch && !paneTierActive() && $('detail-sheet')?.classList.contains('open')
+    ? {id:touch.identifier,x:touch.clientX,y:touch.clientY} : null;
+},{capture:true,passive:true});
+function guardDetailTouchScroll(event){
+  const previous = detailScrollTouch;
+  if(!previous || paneTierActive() || !$('detail-sheet')?.classList.contains('open')
+    || event.touches.length !== 1 || !event.cancelable || event.defaultPrevented)return;
+  const touch = event.touches[0];
+  if(touch.identifier !== previous.id)return;
+  const dx = touch.clientX - previous.x,dy = touch.clientY - previous.y;
+  if(Math.max(Math.abs(dx),Math.abs(dy)) < 8)return;
+  detailScrollTouch = {id:touch.identifier,x:touch.clientX,y:touch.clientY};
+  const target = event.target instanceof Element ? event.target : event.target.parentElement;
+  const wrap = target?.closest('.sheet-wrap.open');
+  // Nested pickers keep their own gestures; only detail and its background
+  // belong to this guard. Edge-back handlers can still claim horizontal drags.
+  if(wrap && wrap.id !== 'detail-sheet')return;
+  const horizontal = Math.abs(dx) > Math.abs(dy);
+  if(horizontal && target?.closest('input[type="range"]'))return;
+  for(let node = wrap && target;node && node !== wrap;node = node.parentElement){
+    const style = getComputedStyle(node);
+    const overflow = horizontal ? style.overflowX : style.overflowY;
+    if(!/^(auto|scroll)$/.test(overflow))continue;
+    const position = horizontal ? node.scrollLeft : node.scrollTop;
+    const extent = horizontal ? node.scrollWidth - node.clientWidth : node.scrollHeight - node.clientHeight;
+    const delta = horizontal ? dx : dy;
+    if(extent > 1 && (delta < 0 ? position < extent - 1 : position > 1))return;
+    // A contained scroller must not pass its boundary drag to the document
+    // (or to the horizontal pager around it).
+    if((horizontal ? style.overscrollBehaviorX : style.overscrollBehaviorY) !== 'auto')break;
+  }
+  event.preventDefault();
+}
+['touchend','touchcancel'].forEach(type=>document.addEventListener(type,()=>{
+  detailScrollTouch = null;
+},{capture:true,passive:true}));
 
 // RENDER: shows and auto-hides the toast message. Optional durationMs for
 // longer notices (e.g. monthly retention cleanup).

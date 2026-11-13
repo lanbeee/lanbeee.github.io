@@ -26,20 +26,80 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
         await page.goto(BASE);
         await waitForAssistant(page);
         await page.locator('#launch-screen').waitFor({state:'hidden'});
-        await page.evaluate(({item,mode})=>{
+        await page.evaluate(item=>{
+          save([item,...Array.from({length:18},(_,i)=>({...item,type:'zero',hid:`background-${i}`,name:`Background item ${i}`}))]);
+          render();
+        },baseHabit({hid:'keyboard-summary',name:'Gym workout',durationMinutes:60,allowedWeekdays:[1,3,5]}));
+        await page.waitForFunction(()=>document.querySelectorAll('#list .ting-card').length>=18);
+        await page.evaluate(mode=>{
           document.documentElement.style.setProperty('--safe-area-inset-bottom','34px');
           if(mode==='android-app')window.TingsNative={isNative:true,platform:'android'};
           assistantNeedleCanSend=()=>true;
-          save([item]);openDetail(0);scrollDetailToNav('summary','auto');
-        },{item:baseHabit({hid:'keyboard-summary',name:'Gym workout',durationMinutes:60,allowedWeekdays:[1,3,5]}),mode});
+          window.scrollTo({top:300,behavior:'instant'});
+          window.summaryHomeScroll=scrollY;
+          openDetail(0);scrollDetailToNav('summary','auto');
+          // Dispatch cancelable touch events to check scroll ownership in
+          // both engines, including Safari's document-pan escape path.
+          window.summaryTestDrag=(target,dx,dy)=>{
+            const start={identifier:91,clientX:180,clientY:220};
+            const finish={...start,clientX:start.clientX+dx,clientY:start.clientY+dy};
+            const dispatch=(type,touch)=>{
+              const event=new Event(type,{bubbles:true,cancelable:true});
+              Object.defineProperties(event,{touches:{value:type==='touchend'?[]:[touch]},changedTouches:{value:[touch]}});
+              target.dispatchEvent(event);
+              return event.defaultPrevented;
+            };
+            dispatch('touchstart',start);
+            const prevented=dispatch('touchmove',finish);
+            dispatch('touchend',finish);
+            return prevented;
+          };
+        },mode);
         await page.waitForFunction(()=>detailSummaryOnScreen());
         assert.equal(await page.locator('#detail-summary .settings-sublabel').count(),0,'Summary has no section headings');
         assert.equal(await page.locator('#detail-summary .assistant-chip-row').count(),1,'all settings share one wrapping row');
         assert.ok(await page.locator('#detail-summary [data-summary-field="durationMinutes"]').count());
         assert.ok(await page.locator('#detail-summary [data-summary-field="allowedWeekdays"]').count());
+        for(const width of [320,390]){
+          await page.setViewportSize({width,height:844});
+          assert.equal(await page.locator('#detail-summary > .focus-note').evaluate(el=>{
+            const range=document.createRange();range.selectNodeContents(el);
+            return range.getClientRects().length;
+          }),1,`Summary hint fits one line at ${width}px`);
+        }
 
         for(const minimal of [false,true]){
-          await page.evaluate(minimal=>{setMinimalMode(minimal);scrollDetailToNav('summary','auto');},minimal);
+          await page.evaluate(async minimal=>{
+            closeDetail();setMinimalMode(minimal);
+            await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+            // Open from a settled Home in each mode. Switching presentation
+            // inside a modal can legitimately reflow the covered list.
+            window.scrollTo({top:300,behavior:'instant'});
+            window.summaryHomeScroll=scrollY;
+            openDetail(0);scrollDetailToNav('summary','auto');
+          },minimal);
+          const gestures=await page.evaluate(()=>{
+            const thread=detailSummaryThread();
+            thread.replaceChildren(...Array.from({length:16},()=>{
+              const p=document.createElement('p');p.textContent='A previous change in this conversation.';return p;
+            }));
+            $('detail-summary-chat').hidden=false;
+            const page=getSheetInner('detail-sheet').querySelector('.detail-summary-page');
+            const scroller=detailIsSingleView()?page.closest('.detail-pager'):page;
+            const target=thread.firstElementChild;
+            scroller.scrollTop=100;
+            const reading=summaryTestDrag(target,0,-40);
+            scroller.scrollTop=0;
+            const top=summaryTestDrag(target,0,40);
+            scroller.scrollTop=scroller.scrollHeight;
+            const bottom=summaryTestDrag(target,0,-40);
+            scroller.scrollTop=100;
+            return {reading,top,bottom,background:summaryTestDrag(document.body,0,-40),
+              header:summaryTestDrag($('detail-head-card'),0,-40),
+              composer:summaryTestDrag($('detail-ask-input'),0,-40)};
+          });
+          assert.equal(gestures.reading,false,'conversation remains scrollable');
+          for(const name of ['top','bottom','background','header','composer'])assert.equal(gestures[name],true,`${name} cannot pan the document underneath detail`);
           await page.locator('#detail-ask-input').tap();
           await page.locator('#detail-ask-input').fill('Make this 40 minutes');
           const baseline=await page.evaluate(()=>{
@@ -104,6 +164,9 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
           const closingEmpty=await sample(530);
           assert.equal(closingEmpty.dock.height,empty.dock.height,'empty composer guides stay stable during keyboard dismissal');
           await sample(844);
+          assert.equal(await page.evaluate(()=>scrollY),await page.evaluate(()=>summaryHomeScroll),`${engine.name()} ${mode} minimal=${minimal}: keyboard and scroll gestures preserve Home position`);
+          await page.evaluate(()=>closeDetail());
+          assert.equal(await page.evaluate(()=>scrollY),await page.evaluate(()=>summaryHomeScroll),'closing detail restores the same Home position');
         }
         assert.deepEqual(errors,[]);
         await page.close();

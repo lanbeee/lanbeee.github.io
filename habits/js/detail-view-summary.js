@@ -59,11 +59,10 @@ function renderDetailSummaryOverview(){
   const summary = assistantFocusItemSummary(item);
   const row = (chips,label)=>`<div class="assistant-chip-row" role="group" aria-label="${label}">${chips.map(chip=>detailSummaryPill(chip,summary.session)).join('')}</div>`;
   const parts = [row([...summary.essentials,...summary.custom],'Item settings')];
-  const defaults = summary.custom.length ? '' : 'Everything else uses your defaults. ';
-  const hint = !detailSummaryAskReady() ? 'Tap a setting to open it.'
-    : detailSummaryCanSend() ? 'Tap a setting to open it, or describe a change below.'
-    : 'Tap a setting to open it. Download Needle 3 to describe changes in your own words.';
-  parts.push(`<p class="focus-note">${defaults}${hint}</p>`);
+  const hint = !detailSummaryAskReady() ? 'Tap a setting to edit.'
+    : detailSummaryCanSend() ? 'Tap a setting or describe a change.'
+    : 'Download Needle 3 to describe changes.';
+  parts.push(`<p class="focus-note">${hint}</p>`);
   host.innerHTML = parts.join('');
 }
 
@@ -305,7 +304,7 @@ function detailSummaryGuideHint(session,active,draft){
   if(session.continuationError)return 'Draft kept. Continue, or edit the last request.';
   if(session.unresolved?.some(item=>item.field === 'guidance'))return 'Choose the setting or action you meant.';
   if(detailSummaryNeedsPick(session))return 'Pick the setting you meant, then add its value.';
-  if(!draft.trim())return 'Tap one to start, or describe the change in your own words.';
+  if(!draft.trim())return 'Choose a setting or describe a change.';
   return '';
 }
 
