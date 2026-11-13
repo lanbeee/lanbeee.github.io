@@ -14,6 +14,10 @@ const DETAIL_MINIMAL_NAV = {
   settings:{label:'settings',icon:'ti-adjustments-horizontal'}
 };
 
+// A save may still have a next-frame scroll restore queued. New navigation
+// takes ownership of the pager, even before its scrolling has settled.
+let detailNavigationRevision = 0;
+
 // Visual-only: drop the merged calendar+stats pane and the effort pane, fold
 // duration + due into schedule, and keep basic allowed weekdays and hours. What is
 // left is short enough to read as one scrolling settings page, so the pager
@@ -150,6 +154,7 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
   if(!pager)return;
   const index = detailPageIndexByNav(navKey);
   if(index < 0)return;
+  detailNavigationRevision += 1;
   if(detailIsSingleView()){
     setDetailMinimalView(navKey === 'summary' ? 'summary' : 'settings');
     updateDetailPagerDots();
@@ -170,7 +175,7 @@ function bindDetailPagerTabs(dotsWrap,pager){
     if(tab.dataset.detailMinimal){showDetailMinimalTab(tab.dataset.detailMinimal);return;}
     const livePages = visibleDetailPages(pager);
     const index = Math.max(0,Math.min(livePages.length - 1,Number(tab.dataset.detailPage) || 0));
-    pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
+    scrollDetailToNav(livePages[index].dataset.detailNav,'smooth');
   });
   dotsWrap.addEventListener('keydown',event=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;

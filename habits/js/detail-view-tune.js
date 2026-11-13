@@ -219,7 +219,12 @@ function refreshDetailView(){
     updateDetailPagerDots();
   };
   restoreScroll();
-  requestAnimationFrame(restoreScroll);
+  const navigationRevision = detailNavigationRevision;
+  requestAnimationFrame(()=>{
+    // Keep the save's position through its own repaint, but let a subsequent
+    // pill or tab selection win instead of flashing the old page back in.
+    if(detailNavigationRevision === navigationRevision)restoreScroll();
+  });
 }
 
 function restoreDetailTune(){

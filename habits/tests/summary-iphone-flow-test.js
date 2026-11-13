@@ -46,7 +46,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
     await page.goto(BASE);await waitForAssistant(page);
     await page.locator('#launch-screen').waitFor({state:'hidden'});
     await page.evaluate(h=>{save([h,{...h,hid:'read',name:'Read'},
-      ...Array.from({length:18},(_,i)=>({...h,type:'zero',hid:`background-${i}`,name:`Background ${i}`}))]);render();},baseHabit({hid:'gym',name:'Gym workout',durationMinutes:60}));
+      ...Array.from({length:18},(_,i)=>({...h,type:'zero',hid:`background-${i}`,name:`Background ${i}`}))]);render();},baseHabit({hid:'gym',name:'Gym workout',durationMinutes:60,priority:1,allowedWeekdays:[1,3,5],allowedTimeStart:1020,allowedTimeEnd:1260,minGapMinutes:20}));
     await page.locator('#list .ting-name').filter({hasText:'Gym workout'}).first().tap();
     await page.waitForFunction(()=>detailSummaryOnScreen());
     assert.match(await page.locator('#detail-summary').innerText(),/Download Needle 3/);
@@ -133,6 +133,49 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       assert.equal(await page.evaluate(()=>getComputedStyle(document.body).position),'fixed','iPhone locks focus-driven page scroll');
       assert.equal(await page.locator('#detail-summary-feedback').isVisible(),false,'feedback stays out of an empty Summary');
       await snapshot(`${mode}-01-summary`);
+      await page.locator('#detail-summary [data-summary-field="priority"]').tap();
+      await page.waitForFunction(()=>$('detail-priority-seg').classList.contains('detail-search-hit'));
+      await page.waitForTimeout(500);
+      assert.equal(await page.evaluate(()=>detailIsSingleView() ? detailMinimalView() : detailCurrentNav()),minimal?'settings':'identity','Priority pill stays on its setting');
+      assert.equal(await page.locator('#detail-priority-seg').isVisible(),true,'Priority control is visible');
+      await page.locator(`.detail-page-tab[aria-label="summary"]`).tap();
+      await page.waitForFunction(()=>detailSummaryOnScreen());
+      // Every pill shares this navigation path. Exercise each one repeatedly,
+      // waiting through the delayed reveal and verifying the selected page.
+      const pills=await page.evaluate(()=>[...document.querySelectorAll('#detail-summary [data-summary-field]')].map(button=>{
+        const field=button.dataset.summaryField;
+        const selector=assistantFocusDetailSelector(field,assistantFocusSummarySession(detailSummaryRecord()));
+        const target=selector && document.querySelector(selector);
+        return {field,selector,nav:target?.closest('.detail-page')?.dataset.detailNav};
+      }));
+      await page.evaluate(()=>detailSearchHitTarget?.classList.remove('detail-search-hit'));
+      for(let attempt=0;attempt<3;attempt++)for(const pill of pills){
+        assert.ok(pill.nav,`${pill.field} has a destination`);
+        await page.locator(`#detail-summary [data-summary-field="${pill.field}"]`).tap();
+        await page.waitForFunction(()=>Boolean(document.querySelector('.detail-search-hit')));
+        await page.waitForTimeout(150);
+        assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':pill.nav,`${pill.field} stays on its destination on attempt ${attempt+1}`);
+        const revealed=await page.locator(pill.selector).evaluate(target=>{
+          const page=target.closest('.detail-page');
+          const host=detailIsSingleView()?page.closest('.detail-pager'):page;
+          const rect=target.getBoundingClientRect(),bounds=host.getBoundingClientRect();
+          return rect.left>=bounds.left-1 && rect.right<=bounds.right+1
+            && rect.bottom>bounds.top && rect.top<bounds.bottom;
+        });
+        assert.ok(revealed,`${pill.field} is inside the visible scroll viewport`);
+        await page.locator('.detail-page-tab[aria-label="summary"]').tap();
+        await page.waitForFunction(()=>detailSummaryOnScreen());
+        await page.evaluate(()=>detailSearchHitTarget?.classList.remove('detail-search-hit'));
+      }
+      if(!minimal){
+        for(const label of ['history','schedule','planning','identity','actions']){
+          await page.locator(`.detail-page-tab[aria-label="${label}"]`).tap();
+          await page.waitForTimeout(400);
+          assert.equal(await page.locator(`.detail-page-tab[aria-label="${label}"]`).getAttribute('aria-selected'),'true',`${label} stays selected after tapping from Summary`);
+          await page.locator('.detail-page-tab[aria-label="summary"]').tap();
+          await page.waitForFunction(()=>detailSummaryOnScreen());
+        }
+      }
       await page.locator('#detail-summary [data-summary-field="durationMinutes"]').tap();
       await page.waitForFunction(()=>$('detail-duration').classList.contains('detail-search-hit'));
       assert.notEqual(await page.evaluate(()=>document.activeElement.id),'detail-duration','overview pills reveal a field without opening its keyboard');
@@ -196,6 +239,16 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
         return {bottom:confirmation.bottom,top:$('action-toast').getBoundingClientRect().top,scroll:scroller.scrollTop,height:scroller.scrollHeight,client:scroller.clientHeight,padding:getComputedStyle(scroller).paddingBottom};
       });
       assert.ok(confirmationClear.bottom<=confirmationClear.top,`undo toast leaves the saved confirmation visible: ${JSON.stringify(confirmationClear)}`);
+      // Keep Undo available while the all-pill audit runs past its timeout.
+      await page.evaluate(()=>clearTimeout(actionToastTimer));
+      for(const pill of pills){
+        await page.locator(`#detail-summary [data-summary-field="${pill.field}"]`).tap();
+        await page.waitForTimeout(250);
+        assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':pill.nav,
+          `${pill.field} stays open after saving an assistant change`);
+        await page.locator('.detail-page-tab[aria-label="summary"]').tap();
+        await page.waitForFunction(()=>detailSummaryOnScreen());
+      }
       await page.locator('#action-undo').first().tap();
       await page.waitForFunction(()=>load()[0].durationMinutes===60);
       await page.evaluate(()=>hideActionToast());
@@ -246,6 +299,31 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.locator('#detail-close').tap();
       await page.evaluate(()=>scrollDetailToNav('summary','auto'));
       await snapshot(`${mode}-06-cancelled`);
+      await send('make it 45 minutes');
+      await input.blur();await keyboard(false);
+      // Save refreshes the mounted editor and queues a next-frame scroll
+      // restore. A newer pill navigation must win if it arrives before that
+      // frame. Keep both actions together to make the timing deterministic.
+      const afterSave=await page.evaluate(async()=>{
+        const saveButton=detailSummaryThread().querySelector('[data-detail-proposal]:not(.is-retired) [data-focus-save]');
+        await detailSummaryHandleProposal(saveButton);
+        const position=()=>({nav:detailIsSingleView()?detailMinimalView():detailCurrentNav(),
+          left:detailSummaryPager.scrollLeft,top:detailSummaryPager.scrollTop});
+        // Sample after the save's queued restore, before the field reveal.
+        // Otherwise scrollIntoView can mask the stale restore by navigating
+        // a second time in the same frame on desktop WebKit.
+        const nextFrame=new Promise(resolve=>requestAnimationFrame(()=>resolve(position())));
+        $('detail-summary').querySelector('[data-summary-field="priority"]').click();
+        return {opened:position(),nextFrame:await nextFrame};
+      });
+      assert.equal(afterSave.opened.nav,minimal?'settings':'identity','the post-save pill initially opens its setting');
+      assert.deepEqual(afterSave.nextFrame,afterSave.opened,'the queued save restore cannot briefly return the pager to its old position');
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':'identity',
+        'the delayed save refresh cannot return a newer pill navigation to Summary');
+      assert.equal(await page.evaluate(()=>load()[0].durationMinutes),45,'the navigation race still saves the proposed value');
+      await page.locator('#action-undo').first().tap();
+      await page.waitForFunction(()=>load()[0].durationMinutes===60);
       await page.evaluate(()=>closeDetail());
     }
     assert.deepEqual(errors,[]);
