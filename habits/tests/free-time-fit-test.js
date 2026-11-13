@@ -183,7 +183,14 @@ function assert(condition,message){
     day:document.querySelector('.free-panel')?.dataset.dayKey || ''
   }));
   assert(await page.locator('.free-day-switch').count() === 1,'open-time sheet includes a day switcher');
-  await page.locator('.free-day-step[aria-label="next day"]').click();
+  assert(await page.locator('#free-time-sheet .free-day-open').count() > 0,'open-time day chips show open hours');
+  assert(await page.locator('#free-time-sheet .free-day-wx').count() === 0,'open-time day chips leave the forecast off the strip');
+  const nextDay = await page.evaluate(()=>{
+    const chips=[...document.querySelectorAll('#free-time-sheet .free-day-chip')];
+    const idx=chips.findIndex(el=>el.classList.contains('on'));
+    return chips[idx+1]?.dataset.freeDay || '';
+  });
+  await page.locator(`#free-time-sheet .free-day-chip[data-free-day="${nextDay}"]`).click();
   await page.waitForFunction(prev=>document.querySelector('.free-panel')?.dataset.dayKey && document.querySelector('.free-panel')?.dataset.dayKey !== prev, timesBefore.day);
   await settled();
   const switched = await page.evaluate(()=>({

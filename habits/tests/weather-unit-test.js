@@ -917,6 +917,12 @@ function assert(value,message){
     sortSettings=loadSortSettings();
     openWeatherContextSheet(base,null,'');
     const switcher=Boolean(document.querySelector('#weather-context-content .free-day-switch'));
+    const selectedChip=document.querySelector('#weather-context-content .free-day-chip.on');
+    const chipSummary={
+      emoji:Boolean(selectedChip?.querySelector('.weather-condition-emoji')),
+      open:Boolean(selectedChip?.querySelector('.free-day-open')),
+      label:selectedChip?.getAttribute('aria-label') || ''
+    };
     const host=document.getElementById('weather-overlay-host');
     const defaultChart=Boolean(host?.querySelector('svg'));
     host.querySelector('[data-weather-overlay="precip"]').click();
@@ -933,10 +939,12 @@ function assert(value,message){
     const nextLabel=new Date(next).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
     document.getElementById('weather-metric-close').click();
     document.getElementById('weather-context-done').click();
-    return {switcher,defaultChart,pageOverlay,switched,nextKey,keptOverlay,sub,metricOverlay,nextLabel};
+    return {switcher,defaultChart,pageOverlay,switched,nextKey,keptOverlay,sub,metricOverlay,nextLabel,chipSummary};
   },seeded);
   assert(daySwitch.switcher && daySwitch.defaultChart,
     'the weather sheet includes a day switcher and starts with an hourly graph');
+  assert(daySwitch.chipSummary.emoji && !daySwitch.chipSummary.open && /today/i.test(daySwitch.chipSummary.label) && /feels like|precipitation|in /i.test(daySwitch.chipSummary.label) && !/open/i.test(daySwitch.chipSummary.label),
+    `the weather day chip carries the forecast without open hours ("${daySwitch.chipSummary.label}")`);
   assert(daySwitch.pageOverlay,'tapping rain overlays precipitation on the feels-like graph');
   assert(daySwitch.switched===daySwitch.nextKey && daySwitch.keptOverlay,
     'switching days keeps the same overlaid graphs on the new forecast');

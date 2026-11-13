@@ -1295,7 +1295,7 @@ function renderFreeWindowChecker(info,onRangeChange,view){
 function renderFreeDaySwitch(dayKey){
   const wrap = document.createElement('div');
   wrap.innerHTML = typeof plannerDaySwitchHtml === 'function'
-    ? plannerDaySwitchHtml(dayKey,'data-free-day','check the same time on another day')
+    ? plannerDaySwitchHtml(dayKey,'data-free-day','check the same time on another day','open')
     : '';
   const node = wrap.firstElementChild || wrap;
   node.className = node.className || 'free-day-switch';
@@ -1414,6 +1414,7 @@ function renderFreeTimeContent(info,dayLabel,view){
   if(title)title.textContent = `open time ${dayLabel}`;
   content.innerHTML = '';
   content.appendChild(renderFreePanel(info,view));
+  if(typeof plannerDaySwitchReveal === 'function')plannerDaySwitchReveal(content);
 }
 
 function openFreeTimeSheet(info,dayLabel,view){
