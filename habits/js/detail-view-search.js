@@ -62,10 +62,12 @@ const SEARCH_FIELD_WEIGHTS = {
   desc:{exact:12, prefix:10, plural:11, substring:8, fuzzy:7}
 };
 const SEARCH_FIELD_ORDER = ['label','alias','path','desc'];
-// Detail accepts mid-word substrings and fuzzies from five letters; settings
-// stays on whole words (prefix ≥5 letters, fuzzy ≥7, no substrings).
+// Detail accepts mid-word substrings and fuzzies from five letters. Settings
+// supports typeahead from three letters in names and curated aliases; shared
+// section paths and descriptions need five to avoid flooding sibling controls.
+// Shorter words still match exactly; settings fuzzies start at seven letters.
 const DETAIL_SEARCH_RULES = {prefixMin:1, substring:true, fuzzyMin:5};
-const SETTINGS_SEARCH_RULES = {prefixMin:5, substring:false, fuzzyMin:7};
+const SETTINGS_SEARCH_RULES = {prefixMin:3, contextPrefixMin:5, substring:false, fuzzyMin:7};
 
 // Where one query token best matched this entry: field + kind. Ranking and
 // highlighting both decide from this evidence, so they can never disagree.
@@ -77,10 +79,12 @@ function searchTokenEvidence(entry,token,rules){
     if(!text)continue;
     const words = text.split(' ');
     const weights = SEARCH_FIELD_WEIGHTS[field];
+    const prefixMin = (field === 'path' || field === 'desc')
+      ? (rules.contextPrefixMin ?? rules.prefixMin) : rules.prefixMin;
     let kind;
     if(words.some(word=>word === token))kind = 'exact';
     else if(words.some(word=>variants.some(v=>v !== token && word === v)))kind = 'plural';
-    else if(token.length >= rules.prefixMin && words.some(word=>word.startsWith(token)))kind = 'prefix';
+    else if(token.length >= prefixMin && words.some(word=>word.startsWith(token)))kind = 'prefix';
     else if(rules.substring && words.some(word=>word.includes(token)))kind = 'substring';
     else if(token.length >= rules.fuzzyMin && words.some(word=>searchEditWithin(word,token,1)))kind = 'fuzzy';
     if(kind && weights[kind] > bestWeight){best = {field,kind};bestWeight = weights[kind];}

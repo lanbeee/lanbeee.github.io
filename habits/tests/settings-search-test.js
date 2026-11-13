@@ -54,6 +54,55 @@ const {chromium} = require('playwright');
     assert.ok(address.every(label=>!label.includes('Photon')),address.join(', '));
     assert.deepEqual(await labelsFor('zzzz-not-a-setting'),[]);
 
+    // Typeahead is a general contract for names and curated synonyms, not a
+    // list of special-case abbreviations. Exercise the live catalog rather
+    // than teaching the index the queries from an individual bug report.
+    const prefixAudit = await page.evaluate(()=>{
+      const entries = settingsSearchEntries();
+      const failures = [];
+      let checked = 0;
+      for(const entry of entries){
+        for(const field of ['labelN','aliasN']){
+          for(const word of new Set(entry[field].split(' '))){
+            for(let length=3;length<word.length;length++){
+              const prefix = word.slice(0,length);
+              checked++;
+              const ranked = searchRankEntries(entries,[prefix],SETTINGS_SEARCH_RULES,true);
+              if(!ranked.some(row=>row.entry === entry))failures.push(`${entry.label}: ${field} ${prefix}`);
+            }
+          }
+        }
+      }
+      return {checked,failures};
+    });
+    assert.ok(prefixAudit.checked > 100,'typeahead covers the settings catalog');
+    assert.deepEqual(prefixAudit.failures,[],'every name and curated alias supports prefixes from three letters');
+    for(const [query,label] of [
+      ['rem','reminders'],['not','reminders'],['bac','export backup'],['fore','weather guidance'],
+      ['dar mod','appearance'],['default tra','default travel mode']
+    ]){
+      await expectHit(query,label);
+    }
+    const evidenceAudit = await page.evaluate(()=>{
+      const entry = {label:'Alpha',labelN:'alpha',aliasN:'bravo',pathN:'charlie',descN:'delta'};
+      const match = token=>searchTokenEvidence(entry,token,SETTINGS_SEARCH_RULES);
+      const entries = ['alphabet','alpha'].map(label=>({...entry,label,labelN:label,aliasN:'',pathN:'',descN:''}));
+      return {
+        short:[match('a'),match('al')],
+        direct:[match('alp'),match('bra')],
+        context:[match('cha'),match('del')],
+        longContext:[match('charl'),match('delta')],
+        infix:match('lph'),
+        ranking:searchRankEntries(entries,['alpha'],SETTINGS_SEARCH_RULES,true).map(row=>row.entry.label)
+      };
+    });
+    assert.deepEqual(evidenceAudit.short,[null,null],'one- and two-letter fragments need whole words');
+    assert.deepEqual(evidenceAudit.direct,[{field:'label',kind:'prefix'},{field:'alias',kind:'prefix'}]);
+    assert.deepEqual(evidenceAudit.context,[null,null],'short fragments do not match every child in a section');
+    assert.deepEqual(evidenceAudit.longContext,[{field:'path',kind:'prefix'},{field:'desc',kind:'exact'}]);
+    assert.equal(evidenceAudit.infix,null,'typeahead matches word starts, not arbitrary fragments');
+    assert.deepEqual(evidenceAudit.ranking,['alpha','alphabet'],'an exact destination leads its partial matches');
+
     // Ranked destinations: the narrowest matching control leads.
     const first = async query=>(await labelsFor(query))[0];
     assert.equal(await first('weather'),'weather guidance');
@@ -139,6 +188,16 @@ const {chromium} = require('playwright');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#settings-search-panel').isVisible(),false);
     assert.ok(await page.locator('#settings-sheet').evaluate(el=>el.classList.contains('open')),'Escape only dismisses search');
+
+    // Partial queries use the same highlights and navigation as complete words.
+    await page.locator('#settings-search-toggle').tap();
+    await page.locator('#settings-search-input').fill('rem');
+    const reminderResult = page.locator('#settings-search-results button').filter({has:page.locator('b',{hasText:/^reminders$/})});
+    assert.equal(await reminderResult.locator('b mark').textContent(),'reminders');
+    await reminderResult.tap();
+    assert.equal(await page.locator('#settings-reminders-head').getAttribute('aria-expanded'),'true');
+    assert.equal(await page.locator('#settings-search-panel').isVisible(),false);
+    assert.equal(await page.evaluate(()=>JSON.stringify(sortSettings)),savedSettings,'partial-query navigation never changes a setting');
 
     // Highlighting marks matched words only; alias-only hits stay unmarked.
     await page.locator('#settings-search-toggle').tap();
