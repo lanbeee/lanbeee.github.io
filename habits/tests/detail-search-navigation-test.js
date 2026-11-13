@@ -65,6 +65,8 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     assert.ok(footerBox.y>=pagerBox.y && footerBox.y+footerBox.height<=845,'the footer floats at the bottom of the sheet');
     assert.equal(await page.locator('.detail-bottom-bar').evaluate(el=>getComputedStyle(el).borderRadius),'28px','detail action bar uses the same round pill as Home');
     assert.ok(await tabs.nth(1).locator('span').isVisible(),'tab labels are visible on a phone');
+    const identityTab=page.locator('.detail-page-tab[aria-label="identity"]');
+    await identityTab.click();
     await page.evaluate(()=>{
       const panel=getSheetInner('detail-sheet').querySelector('[data-detail-nav="identity"]');
       panel.querySelectorAll('details').forEach(d=>d.open=true);panel.scrollTop=9999;
@@ -83,7 +85,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     const dock=await page.locator('.detail-bottom-bar').boundingBox();
     assert.ok(844-dock.y-dock.height<=12,'open search sinks to the bottom like Home');
     await page.locator('#detail-cool').click();
-    assert.equal(await tabs.nth(3).getAttribute('aria-selected'),'true','X returns to the same detail tab');
+    assert.equal(await identityTab.getAttribute('aria-selected'),'true','X returns to the same detail tab');
     assert.equal(await page.locator('[data-detail-nav="identity"]').evaluate(el=>el.scrollTop),returnScroll,'X restores the detail scroll position');
     assert.equal(await page.locator('#detail-search-input').isVisible(),false);
     await search('weather');await page.locator('#detail-cool').click();

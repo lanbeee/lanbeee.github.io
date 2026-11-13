@@ -138,6 +138,20 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.waitForTimeout(500);
       assert.equal(await page.evaluate(()=>detailIsSingleView() ? detailMinimalView() : detailCurrentNav()),minimal?'settings':'identity','Priority pill stays on its setting');
       assert.equal(await page.locator('#detail-priority-seg').isVisible(),true,'Priority control is visible');
+      if(!minimal){
+        const panels=await page.evaluate(()=>[...document.querySelectorAll('.detail-pager > .detail-page')]
+          .filter(panel=>panel.getClientRects().length).map(panel=>panel.dataset.detailNav));
+        assert.deepEqual(panels,['identity'],'direct tabs render only the selected panel');
+        assert.equal(await page.locator('.detail-pager').evaluate(el=>getComputedStyle(el).scrollSnapType),'none',
+          'tab selection does not depend on horizontal scroll snapping');
+        await page.evaluate(()=>{
+          detailSummaryPager.scrollTo({left:0,behavior:'instant'});
+          detailSummaryPager.dispatchEvent(new Event('scroll'));
+          visualViewport.dispatchEvent(new Event('resize'));
+        });
+        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+        assert.equal(await page.evaluate(()=>detailCurrentNav()),'identity','scroll and viewport events cannot change the selected tab');
+      }
       await page.locator(`.detail-page-tab[aria-label="summary"]`).tap();
       await page.waitForFunction(()=>detailSummaryOnScreen());
       // Every pill shares this navigation path. Exercise each one repeatedly,

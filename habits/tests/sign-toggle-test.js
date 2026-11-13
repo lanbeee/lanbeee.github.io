@@ -66,11 +66,7 @@ function assert(cond, msg){
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
   await page.waitForTimeout(200);
 
-  // Scroll schedule pane into view
-  await page.evaluate(() => {
-    const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager) pager.scrollTo({ left: pager.clientWidth * 2, behavior:'instant' });
-  });
+  await page.locator('.detail-page-tab[aria-label="schedule"]').click();
   await page.waitForTimeout(200);
 
   // Switch to dynamic mode for allowed start
@@ -165,10 +161,7 @@ function assert(cond, msg){
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
   await page.waitForTimeout(300);
 
-  await page.evaluate(() => {
-    const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager) pager.scrollTo({ left: pager.clientWidth * 2, behavior:'instant' });
-  });
+  await page.locator('.detail-page-tab[aria-label="schedule"]').click();
   await page.waitForTimeout(200);
 
   let state3 = await page.evaluate(() => {

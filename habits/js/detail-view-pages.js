@@ -29,7 +29,7 @@ function applyDetailMinimalMode(){
   const sheet = $('detail-sheet');
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   const wasMinimal = Boolean(sheet?.classList.contains('minimal-detail'));
-  // The body class flips before this runs, so the pager may already be vertical.
+  // The body class flips before this runs; keep the explicit selected tab.
   const fromNav = wasMinimal ? (detailMinimalView() === 'summary' ? 'summary' : 'schedule')
     : getSheetInner('detail-sheet')?.dataset.fullNav;
   pager?.querySelectorAll('.detail-field-revealed').forEach(el=>el.classList.remove('detail-field-revealed'));
@@ -54,9 +54,8 @@ function applyDetailMinimalMode(){
       scrollDetailToNav(fromNav,'auto');
     }else{
       const pages = visibleDetailPages(pager);
-      const width = Math.max(1,pager.clientWidth);
-      const idx = Math.round(pager.scrollLeft / width);
-      if(idx < 0 || idx >= pages.length)pager.scrollTo({left:0,behavior:'auto'});
+      const inner = getSheetInner('detail-sheet');
+      if(!pages.some(page=>page.dataset.detailNav === inner.dataset.fullNav))inner.dataset.fullNav = pages[0]?.dataset.detailNav || '';
     }
   }
 
@@ -133,14 +132,16 @@ function setDetailMinimalView(view){
 
 // The page the user is looking at. In minimal settings that is its first pane.
 function detailCurrentNav(){
-  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  const inner = getSheetInner('detail-sheet');
+  const pager = inner?.querySelector('.detail-pager');
   const pages = visibleDetailPages(pager);
   if(!pages.length)return null;
   if(detailIsSingleView()){
     return detailMinimalView() === 'summary' ? 'summary'
       : pages.find(page=>page.dataset.detailNav !== 'summary')?.dataset.detailNav || null;
   }
-  return pages[Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth))]?.dataset.detailNav || null;
+  return pages.find(page=>page.dataset.detailNav === inner.dataset.fullNav)?.dataset.detailNav
+    || pages[0].dataset.detailNav || null;
 }
 
 function detailPageIndexByNav(navKey){
@@ -162,7 +163,9 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
     if(page)pager.scrollTo({top:navKey === 'summary' ? 0 : page.offsetTop - pager.offsetTop,behavior});
     return;
   }
-  pager.scrollTo({left:pager.clientWidth * index,behavior});
+  // A tab is state, not a horizontal scroll position. iOS can re-snap a
+  // scrolling pager when its footer/viewport changes during field reveal.
+  getSheetInner('detail-sheet').dataset.fullNav = visibleDetailPages(pager)[index].dataset.detailNav;
   updateDetailPagerDots();
 }
 
@@ -218,11 +221,11 @@ function updateDetailPagerDots(){
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
-  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
   dotsWrap.hidden = false;
   bindDetailPagerTabs(dotsWrap,pager);
   if(detailIsSingleView()){
     renderDetailMinimalTabs(dotsWrap);
+    if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
     return;
   }
   const pages = visibleDetailPages(pager);
@@ -242,23 +245,25 @@ function updateDetailPagerDots(){
   }
   const dots = [...dotsWrap.querySelectorAll('.detail-page-tab')];
   if(!dots.length)return;
-  const page = Math.max(0,Math.min(dots.length - 1,Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth))));
-  inner.dataset.fullNav = pages[page]?.dataset.detailNav || '';
+  const nav = detailCurrentNav();
+  inner.dataset.fullNav = nav || '';
+  pages.forEach(panel=>panel.classList.toggle('is-active',panel.dataset.detailNav === nav));
   dots.forEach((dot,i)=>{
-    dot.classList.toggle('on',i === page);
-    dot.setAttribute('aria-selected',i === page ? 'true' : 'false');
-    dot.tabIndex = i === page ? 0 : -1;
+    const on = pages[i].dataset.detailNav === nav;
+    dot.classList.toggle('on',on);
+    dot.setAttribute('aria-selected',on ? 'true' : 'false');
+    dot.tabIndex = on ? 0 : -1;
   });
+  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }
 
 // RENDER: clears legacy tab chrome in pager
 function renderDetailTabs(){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if (!pager) return;
-  // No sidebar tabs in any tier — panes now look exactly like mobile-portrait.
+  // No legacy sidebar tabs; updateDetailPagerDots owns the selected panel.
   const existingTabs = pager.querySelector('.detail-tabs');
   if (existingTabs) existingTabs.remove();
-  [...pager.querySelectorAll('.detail-page')].forEach(p=>p.classList.remove('is-active'));
 }
 
 // PURE: computes month boundary dates and label

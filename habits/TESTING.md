@@ -283,6 +283,14 @@ enable real inference. Keyboard resize/pan events are simulated; this does not
 verify the physical iOS keyboard animation. Screenshots and the report are in
 `test-results/summary-iphonex/{live,scripted}/`.
 
+`detail-tab-state-test.js` checks direct detail tabs in WebKit and Chromium
+with the iPhone X touch profile. It opens from fresh documents through the
+normal lazy Summary load, taps every pill repeatedly, and samples every
+animation frame for a blank or wrong panel. It also checks that horizontal
+scroll attempts and viewport events cannot change the selected tab, and that
+short landscape layouts retain tab navigation. Detail tabs select one visible
+panel; they no longer use horizontal swipe or scroll-snap navigation.
+
 `tests/assistant-monthly-create-test.js` covers the reported Family night
 dictation and variants with monthly weekday rules, solar/prayer offsets and
 independent session lengths. The ambiguous dictation must retain its known

@@ -422,12 +422,19 @@ function revealDetailSearchEntry(entry){
   }
   for(let p=target.closest('details');p;p=p.parentElement.closest('details'))p.open = true;
   scrollDetailToNav(target.closest('.detail-page').dataset.detailNav,'auto');
+  const navigationRevision = detailNavigationRevision;
   requestAnimationFrame(()=>{
-    if(!target.isConnected || detailIdx === null)return;
+    if(!target.isConnected || detailIdx === null || navigationRevision !== detailNavigationRevision)return;
     // Conditional fields can change after rendering; land on their nearest
     // visible section without turning on or altering any saved settings.
     if(!target.getClientRects().length)target = original.closest('details')?.querySelector('summary') || target;
-    target.scrollIntoView({block:'center',inline:'nearest',behavior:'auto'});
+    // Reveal only inside the selected panel. Scrolling every ancestor can
+    // move the sheet/document while iOS is settling its viewport.
+    const page = target.closest('.detail-page');
+    const scroller = detailIsSingleView() ? page.closest('.detail-pager') : page;
+    const rect = target.getBoundingClientRect(),bounds = scroller.getBoundingClientRect();
+    scroller.scrollTo({top:scroller.scrollTop + rect.top - bounds.top
+      - Math.max(0,(scroller.clientHeight - rect.height) / 2),behavior:'instant'});
     clearTimeout(detailSearchHitTimer);
     detailSearchHitTarget?.classList.remove('detail-search-hit');
     detailSearchHitTarget = target;

@@ -155,8 +155,7 @@ body.minimal-mode .ting-card.minimal-card .card-actions,
 body.minimal-mode .ting-card.minimal-card .ting-visual > :not(.ting-trail) { display:none; }
 body.minimal-mode .ting-card.minimal-card::before { display:none; }
 body.minimal-mode #detail-sheet.minimal-detail .detail-full-only:not(.detail-field-revealed) { display:none !important; }
-/* What survives minimal mode fits in one scroll, so the horizontal snap pager
-   becomes a plain vertical stack and the tab strip disappears. */
+/* Minimal mode stacks the settings panels in one vertical scroll. */
 body.minimal-mode .detail-sheet > .detail-pager{
   flex-direction:column;scroll-snap-type:none;
   overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;

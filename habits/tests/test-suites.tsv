@@ -87,6 +87,7 @@ assistant-minimal-edit-test.js	assistant	once
 assistant-summary-navigation-test.js	assistant	once
 summary-edit-flow-test.js	assistant	once
 summary-iphone-flow-test.js	assistant	once
+detail-tab-state-test.js	ui	once
 assistant-harness-test.js	assistant	once
 assistant-batch-test.js	assistant	once
 assistant-apply-items-test.js	assistant	once

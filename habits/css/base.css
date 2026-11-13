@@ -221,7 +221,7 @@ body[data-pane-count="3"] .pane-overview .overview-actions{
   border:0;
 }
 /* Detail inside a pane looks and behaves exactly like the mobile-portrait
-   detail sheet: horizontal scroll-snap pager, dots indicator, sticky head,
+   detail sheet: direct tabs, one scrolling panel, sticky head,
    done button at the bottom. The base .detail-pager / .detail-page /
    .detail-head / .detail-dots rules apply unchanged. */
 .pane-detail .detail-actions,

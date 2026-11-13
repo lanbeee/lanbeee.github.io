@@ -1524,11 +1524,7 @@ assert(weekChunk === 60,
   });
   await page.waitForSelector('#detail-sheet.open, body.pane-active');
 
-  // Effort pane (duration / breakable) — pager index 3 in detail-schedule-test.
-  await page.evaluate(() => {
-    const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager)pager.scrollTo({ left:pager.clientWidth * 3, behavior:'instant' });
-  });
+  await page.locator('.detail-page-tab[aria-label="planning"]').click();
   await page.waitForTimeout(200);
 
   const breakableBtn = page.locator('#detail-breakable');
@@ -1548,10 +1544,7 @@ assert(weekChunk === 60,
     if(i >= 0)openDetail(i);
   });
   await page.waitForSelector('#detail-sheet.open, body.pane-active');
-  await page.evaluate(() => {
-    const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager)pager.scrollTo({ left:pager.clientWidth * 3, behavior:'instant' });
-  });
+  await page.locator('.detail-page-tab[aria-label="planning"]').click();
   await page.waitForTimeout(200);
   const pressed = await page.locator('#detail-breakable').getAttribute('aria-pressed');
   const minChunk = await page.locator('#detail-min-chunk').inputValue();

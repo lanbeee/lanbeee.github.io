@@ -269,15 +269,10 @@ function check(label, cond, extra){
   await page.locator('#detail-mark-edit-emoji').click();
   await page.waitForTimeout(400);
   const editorOpen = await page.evaluate(() => {
-    const pager = typeof getSheetInner === 'function'
-      ? getSheetInner('detail-sheet')?.querySelector('.detail-pager')
-      : document.querySelector('#detail-sheet .detail-pager');
-    const pages = pager ? [...pager.querySelectorAll('.detail-page')].filter(page => !page.hidden) : [];
-    const idx = pager ? Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth)) : -1;
     return {
       menuHidden: document.getElementById('detail-mark-menu').hidden,
       appearanceOpen: document.getElementById('detail-appearance-disclosure').open,
-      nav: pages[idx]?.dataset.detailNav || ''
+      nav: detailCurrentNav()
     };
   });
   check('edit emoji closes the menu and opens the emoji page', editorOpen.menuHidden && editorOpen.appearanceOpen && editorOpen.nav === 'identity', JSON.stringify(editorOpen));
@@ -296,14 +291,9 @@ function check(label, cond, extra){
   await page.locator('#detail-name').click();
   await page.waitForTimeout(400);
   const nameEditor = await page.evaluate(() => {
-    const pager = typeof getSheetInner === 'function'
-      ? getSheetInner('detail-sheet')?.querySelector('.detail-pager')
-      : document.querySelector('#detail-sheet .detail-pager');
-    const pages = pager ? [...pager.querySelectorAll('.detail-page')].filter(page => !page.hidden) : [];
-    const idx = pager ? Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth)) : -1;
     const field = document.getElementById('detail-habit-message');
     return {
-      nav: pages[idx]?.dataset.detailNav || '',
+      nav: detailCurrentNav(),
       nameOpen: document.getElementById('detail-name-disclosure').open,
       focused: document.activeElement === field
     };

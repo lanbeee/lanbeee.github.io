@@ -220,11 +220,8 @@ function openDetail(i){
     setDetailMinimalView('summary');
     if(pager){
       pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
-      // Every item lands on Summary; its pills lead to the other tabs.
-      requestAnimationFrame(()=>{
-        pager.scrollTo({left:0,top:0,behavior:'auto'});
-        updateDetailPagerDots();
-      });
+      // Select Summary directly; no delayed pager reset can race a pill tap.
+      scrollDetailToNav('summary','instant');
     }
   }
   renderDetailTabs();
@@ -288,10 +285,7 @@ function openDetailUnsavedCreate(draft){
   const pager = inner?.querySelector('.detail-pager');
   if(pager){
     pager.querySelectorAll('.detail-page').forEach(page => { page.scrollTop = 0; });
-    requestAnimationFrame(() => {
-      pager.scrollTo({left:0, top:0, behavior:'auto'});
-      updateDetailPagerDots();
-    });
+    scrollDetailToNav('summary','instant');
   }
   renderDetailTabs();
   updateDetailPagerDots();

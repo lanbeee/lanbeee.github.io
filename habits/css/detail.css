@@ -185,13 +185,13 @@
   border-radius:var(--radius);padding:var(--detail-pane-pad,12px);margin-bottom:12px;
 }
 .detail-pager{
-  display:flex;gap:0;overflow-x:auto;scroll-snap-type:x mandatory;
+  display:flex;flex-direction:column;gap:0;overflow:hidden;
   margin:0;padding:0;
-  scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
 }
 .detail-pager::-webkit-scrollbar{display:none;}
 .detail-page{
-  flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;
+  flex:1 1 auto;
   min-height:min(432px,calc(100dvh - 218px));margin-bottom:0;
   min-width:0;
 }
@@ -206,6 +206,9 @@
   scrollbar-width:none;
 }
 .detail-sheet > .detail-pager > .detail-page::-webkit-scrollbar{display:none;}
+/* Ordinary tabs mount one visible panel. No horizontal strip or snap state
+   can pull a pill navigation back to Summary after the viewport changes. */
+body:not(.minimal-mode) .detail-sheet > .detail-pager > .detail-page:not(.is-active){display:none;}
 /* Page navigation stays beside the content it switches. The footer uses
    the same rounded, floating controls and bottom position as Home search. */
 .detail-page-nav{
@@ -591,7 +594,6 @@ body .detail-search-field input:is(:focus,:focus-visible){outline:none;box-shado
 @container detail-shell (max-height:280px){
   .detail-page-tab span{display:none;}
   .detail-page-tab{min-height:44px;}
-  .detail-page-nav{display:none;}
   /* A very short desktop/landscape pane uses the same floating footer as
      phones, so Save/Cancel fits without removing the header. */
   body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-bottom-bar{

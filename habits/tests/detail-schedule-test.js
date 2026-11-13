@@ -25,7 +25,7 @@ async function scrollDetailToSchedule(page, paneIndex = 1){
     const target = pager?.querySelector(`.detail-page[data-detail-nav="${nav}"]`);
     if(target){
       target.querySelectorAll('details').forEach(d=>d.open=true);
-      pager.scrollTo({ left: target.offsetLeft, behavior: 'instant' });
+      scrollDetailToNav(nav,'instant');
     }
   }, paneIndex === 2 ? 'effort' : 'schedule');
   await page.waitForTimeout(200);
@@ -458,7 +458,7 @@ async function assertAttr(page, selector, attr, expected, msg){
 
   // Expanding two dynamic comparisons makes Schedule taller than a compact
   // phone viewport. Vertical position must belong to that pane, not the sheet,
-  // so swiping to Effort starts at Effort's top.
+  // so selecting Effort starts at Effort's top.
   console.log('\n--- SECTION 10: Independent pane scrolling ---');
   await page.setViewportSize({ width:390, height:667 });
   const startEndpoint = page.locator('.time-endpoint[data-field="allowedTimeStart"]');
@@ -478,7 +478,7 @@ async function assertAttr(page, selector, attr, expected, msg){
     effort.scrollTop = 0;
     schedule.scrollTop = schedule.scrollHeight;
     const scheduleTop = schedule.scrollTop;
-    pager.scrollTo({ left:effort.offsetLeft, behavior:'auto' });
+    scrollDetailToNav('effort','instant');
     return { scheduleTop };
   });
   await page.waitForTimeout(250);
@@ -493,7 +493,6 @@ async function assertAttr(page, selector, attr, expected, msg){
     return {
       sheetTop:sheet.scrollTop,
       sheetOverflow:getComputedStyle(sheet).overflowY,
-      scheduleTop:schedule.scrollTop,
       scheduleOverflow:getComputedStyle(schedule).overflowY,
       effortTop:effort.scrollTop,
       effortAligned:Math.abs(effortBox.top - pagerBox.top) <= 2
@@ -505,7 +504,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   if(!paneScroll || paneScroll.sheetTop !== 0 || paneScroll.sheetOverflow !== 'hidden'){
     throw new Error(`detail sheet must not own vertical scroll: ${JSON.stringify(paneScroll)}`);
   }
-  if(paneScroll.scheduleTop <= 0 || paneScroll.scheduleOverflow !== 'auto'){
+  if(paneScroll.scheduleOverflow !== 'auto'){
     throw new Error(`schedule pane should retain its own scroll: ${JSON.stringify(paneScroll)}`);
   }
   if(paneScroll.effortTop !== 0 || !paneScroll.effortAligned){
@@ -514,6 +513,10 @@ async function assertAttr(page, selector, attr, expected, msg){
   console.log('  Schedule and Effort scroll independently: OK');
 
   await scrollDetailToSchedule(page, 1);
+  const restoredScheduleTop=await page.locator('[data-detail-nav="schedule"]').evaluate(el=>el.scrollTop);
+  if(restoredScheduleTop !== preparedScroll.scheduleTop){
+    throw new Error(`returning to Schedule should retain its scroll: ${restoredScheduleTop} !== ${preparedScroll.scheduleTop}`);
+  }
   await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
     const schedule = pager?.querySelector('[data-detail-nav="schedule"]');

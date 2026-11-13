@@ -40,6 +40,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     openDetail(0);
   }, inTwoDays);
   await page.waitForSelector('#detail-sheet.open', { timeout:3000 });
+  await page.locator('.detail-page-tab[aria-label="history"]').click();
   await page.waitForTimeout(150);
 
   // ── Merged pane structure ────────────────────────────────────────────────
