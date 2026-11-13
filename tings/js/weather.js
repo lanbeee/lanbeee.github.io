@@ -2083,26 +2083,147 @@ function plannerDaySwitchChipCopy(key){
   return {weekday,date:String(d.getDate())};
 }
 
-function plannerDaySwitchHtml(dayKey,attrName,ariaLabel){
+// Weather is the seven-day forecast starting today, so those chips fill the
+// row. Open hours starts at today — past days are not offered — and runs two
+// weeks ahead, further if the day you opened is later than that.
+function plannerDaySwitchKeys(dayKey,fact){
+  const today=typeof dateKey==='function' ? dateKey(Date.now()) : dayKey;
+  if(fact==='weather'){
+    return Array.from({length:7},(_,i)=>plannerShiftDateKey(today,i));
+  }
+  const horizon=plannerShiftDateKey(today,13);
+  const end=dayKey>horizon ? dayKey : horizon;
+  const keys=[];
+  for(let key=today,guard=0;guard<90;guard+=1){
+    keys.push(key);
+    if(key>=end)break;
+    const next=plannerShiftDateKey(key,1);
+    if(!next || next===key)break;
+    key=next;
+  }
+  while(keys.length<7){
+    const next=plannerShiftDateKey(keys[keys.length-1],1);
+    if(!next || next===keys[keys.length-1])break;
+    keys.push(next);
+  }
+  return keys;
+}
+
+function plannerDaySwitchPlanDays(keys){
+  const byKey=new Map();
+  if(typeof agendaWeekCoveringDay!=='function' || typeof load!=='function' || typeof dayStart!=='function' || typeof dateKey!=='function')return byKey;
+  let data=[];
+  try{data=load()||[];}catch(_){return byKey;}
+  const seen=new Set();
+  for(const key of keys){
+    if(byKey.has(key))continue;
+    const base=dayStart(new Date(`${key}T12:00:00`).getTime());
+    if(!Number.isFinite(base))continue;
+    const week=agendaWeekCoveringDay(base,data);
+    if(!week || seen.has(week))continue;
+    seen.add(week);
+    for(const day of week.days||[]){
+      const dayKey=dateKey(day.dayBase);
+      if(dayKey)byKey.set(dayKey,day);
+    }
+  }
+  return byKey;
+}
+
+function plannerDaySwitchWeatherFact(key,day,settings,data){
+  if(typeof weatherDayPresentation!=='function')return null;
+  const presentation=weatherDayPresentation(key,day||null,settings,data);
+  if(!presentation)return null;
+  const summary=presentation.summary;
+  const temp=presentation.showTemperature ? weatherTemperatureRange(summary) : '';
+  const tone=summary?.condition?.tone || presentation.tone || presentation.status || '';
+  const wet=tone==='rain' || tone==='ice' || tone==='snow' || tone==='storm';
+  const chance=!temp && wet && summary?.precipitationChance!=null ? `${Math.round(summary.precipitationChance)}%` : '';
+  const extra=temp || chance;
+  const unit=temp && typeof weatherTempUnitWord==='function' ? weatherTempUnitWord() : '';
+  const detail=[
+    presentation.label || '',
+    temp ? `feels like ${temp}${unit ? ` ${unit}` : ''}` : '',
+    summary?.precipitationChance==null ? '' : `${Math.round(summary.precipitationChance)}% precipitation`
+  ].filter(Boolean).join(', ');
+  const emoji=presentation.emoji || summary?.condition?.emoji || '☁️';
+  return {
+    detail,
+    html:`<span class="free-day-wx${tone?` weather-tone-${escapeHtml(tone)}`:''}"><span class="weather-condition-emoji" aria-hidden="true">${escapeHtml(emoji)}</span>${extra?`<small>${escapeHtml(extra)}</small>`:''}</span>`
+  };
+}
+
+function plannerDaySwitchOpenFact(day,settings){
+  if(!day || typeof computeDayFreeGaps!=='function')return null;
+  const info=computeDayFreeGaps(day,settings);
+  if(info.windowStart==null)return null;
+  const minutes=Math.max(0,Math.round(Number(info.totalFreeMinutes)||0));
+  const label=typeof formatFreeDuration==='function'
+    ? formatFreeDuration(minutes)
+    : (minutes<60 ? `${minutes}m` : `${Math.round(minutes/60)}h`);
+  const tone=minutes>=120 ? 'open' : minutes<=30 ? 'tight' : 'mid';
+  return {
+    detail:`${label} open`,
+    html:`<small class="free-day-open tone-${tone}">${escapeHtml(label)}</small>`
+  };
+}
+
+function plannerDaySwitchHtml(dayKey,attrName,ariaLabel,fact){
   if(!dayKey || typeof dateKey!=='function' || typeof dayStart!=='function')return '';
   const selectedBase=dayStart(new Date(`${dayKey}T12:00:00`).getTime());
   if(!Number.isFinite(selectedBase))return '';
   const today=dateKey(Date.now());
-  const inPlannerWeek=dayKey>=today && dayKey<=plannerShiftDateKey(today,6);
-  const windowStart=inPlannerWeek ? today : plannerShiftDateKey(dayKey,-3);
-  const chips=[];
+  const showWeather=fact==='weather';
+  const showOpen=fact==='open';
+  const keys=plannerDaySwitchKeys(dayKey,fact);
+  const plans=showWeather || showOpen ? plannerDaySwitchPlanDays(keys) : new Map();
+  const settings=(typeof sortSettings!=='undefined' && sortSettings) || (typeof loadSortSettings==='function' ? loadSortSettings() : {});
+  let data=[];
+  try{data=showWeather && typeof load==='function' ? (load()||[]) : [];}catch(_){data=[];}
   const attr=attrName || 'data-day';
-  for(let i=0;i<7;i+=1){
-    const key=plannerShiftDateKey(windowStart,i);
+  const chips=keys.map(key=>{
     const on=key===dayKey;
     const copy=plannerDaySwitchChipCopy(key);
-    chips.push(`<button type="button" class="free-day-chip${on?' on':''}" ${attr}="${escapeHtml(key)}" aria-pressed="${on?'true':'false'}"${on?' aria-current="date"':''} aria-label="${escapeHtml(`${copy.weekday} ${copy.date}`)}"><span>${escapeHtml(copy.weekday)}</span><b>${escapeHtml(copy.date)}</b></button>`);
-  }
-  return `<div class="free-day-switch" aria-label="${escapeHtml(ariaLabel || 'choose another day')}">
-    <button type="button" class="free-day-step" ${attr}="${escapeHtml(plannerShiftDateKey(dayKey,-1))}" aria-label="previous day"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
-    <div class="free-day-chips" role="group">${chips.join('')}</div>
-    <button type="button" class="free-day-step" ${attr}="${escapeHtml(plannerShiftDateKey(dayKey,1))}" aria-label="next day"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+    const day=plans.get(key) || null;
+    const weather=showWeather ? plannerDaySwitchWeatherFact(key,day,settings,data) : null;
+    const open=showOpen ? plannerDaySwitchOpenFact(day,settings) : null;
+    const described=[`${copy.weekday} ${copy.date}`,weather?.detail || '',open?.detail || ''].filter(Boolean).join(', ');
+    const facts=[weather?.html || '',open?.html || ''].filter(Boolean).join('');
+    return `<button type="button" class="free-day-chip${on?' on':''}${facts?' has-facts':''}" ${attr}="${escapeHtml(key)}"${key===today?' data-switch-today="1"':''} aria-pressed="${on?'true':'false'}"${on?' aria-current="date"':''} aria-label="${escapeHtml(described)}"><span class="free-day-name">${escapeHtml(copy.weekday)}</span><b>${escapeHtml(copy.date)}</b>${facts}</button>`;
+  }).join('');
+  return `<div class="free-day-switch${showWeather?' is-fixed':''}" aria-label="${escapeHtml(ariaLabel || 'choose another day')}">
+    <div class="free-day-chips" role="group">${chips}</div>
   </div>`;
+}
+
+// Seven chips fill the scroller. When the chosen day is inside the planning
+// week, that week stays pinned to the left so tapping within it does not
+// slide the row. Otherwise the chosen day leads, unless it sits in the last
+// seven, which stay together.
+function plannerDaySwitchReveal(root){
+  const scroller=root?.classList?.contains('free-day-chips')
+    ? root
+    : root?.querySelector?.('.free-day-chips');
+  if(!scroller)return;
+  let tries=0;
+  const align=()=>{
+    if(!scroller.isConnected)return;
+    if(!scroller.clientWidth){
+      if(tries++<4)requestAnimationFrame(align);
+      return;
+    }
+    const chips=[...scroller.querySelectorAll('.free-day-chip')];
+    if(!chips.length)return;
+    const selected=chips.find(chip=>chip.classList.contains('on')) || chips[0];
+    const today=chips.find(chip=>chip.dataset.switchToday==='1');
+    const todayIdx=today ? chips.indexOf(today) : -1;
+    const selectedIdx=Math.max(0,chips.indexOf(selected));
+    let anchor=selected;
+    if(today && selectedIdx>=todayIdx && selectedIdx<todayIdx+7)anchor=today;
+    else if(selectedIdx>chips.length-7)anchor=chips[Math.max(0,chips.length-7)];
+    scroller.scrollLeft=Math.max(0,anchor.offsetLeft);
+  };
+  align();
 }
 
 function weatherDayContextFor(dayBase){
@@ -2328,13 +2449,14 @@ function renderWeatherContextSheet(model){
   const eyebrow=document.getElementById('weather-context-eyebrow');
   const icon=document.getElementById('weather-context-icon');
   const content=document.getElementById('weather-context-content');
-  const switchHtml=plannerDaySwitchHtml(dayKey,'data-weather-day','see this forecast on another day');
+  const switchHtml=plannerDaySwitchHtml(dayKey,'data-weather-day','see this forecast on another day','weather');
   if(eyebrow)eyebrow.textContent='forecast context';
   if(!summary){
     if(title)title.textContent='weather';
     if(sub)sub.textContent=`${date} · forecast unavailable`;
     if(icon)icon.innerHTML='<i class="ti ti-cloud-off" aria-hidden="true"></i>';
     if(content)content.innerHTML=`${switchHtml}<p class="weather-context-empty">No forecast is available for this day.</p>`;
+    if(content)plannerDaySwitchReveal(content);
     return true;
   }
   if(title)title.textContent=summary.condition.label;
@@ -2367,6 +2489,7 @@ function renderWeatherContextSheet(model){
       ${itemHtml?`<section class="weather-context-items"><p class="overview-section-title">weather-guided plan</p>${itemHtml}</section>`:'<p class="weather-context-empty">No weather-guided items are scheduled on this day.</p>'}`;
     weatherFillOverlayHost(model);
   }
+  if(content)plannerDaySwitchReveal(content);
   return true;
 }
 

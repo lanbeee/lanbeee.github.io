@@ -54,24 +54,46 @@
 .free-gap-row .free-panel-value{padding:5px 7px;border-radius:999px;background:var(--bg);color:var(--teal-text);font-size:11px;font-weight:750;}
 .free-panel-note{padding:2px 4px;color:var(--text3);font-size:10.5px;}
 .free-day-switch{
-  display:grid;grid-template-columns:36px minmax(0,1fr) 36px;align-items:center;gap:6px;
+  --free-day-gap:4px;
   padding:6px;border:0.5px solid var(--border);border-radius:16px;background:var(--bg2);
 }
-.free-day-step{
-  width:36px;height:36px;display:grid;place-items:center;padding:0;border:0;border-radius:10px;
-  background:var(--bg);color:var(--text2);font-size:16px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+.free-day-chips{
+  --free-day-gap:4px;
+  position:relative;display:flex;gap:var(--free-day-gap);min-width:0;
+  overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;
 }
-.free-day-step:active{background:var(--bg3);}
-.free-day-chips{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;min-width:0;}
+.free-day-chips::-webkit-scrollbar{display:none;}
+.free-day-switch.is-fixed .free-day-chips{
+  display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:hidden;scroll-snap-type:none;
+}
+.free-day-switch.is-fixed .free-day-chip{flex:none;width:auto;scroll-snap-align:none;}
 .free-day-chip{
-  min-width:0;min-height:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:1px;padding:4px 2px;border:0;border-radius:10px;background:transparent;color:var(--text2);
-  font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  flex:0 0 calc((100% - 6 * var(--free-day-gap)) / 7);
+  width:calc((100% - 6 * var(--free-day-gap)) / 7);
+  scroll-snap-align:start;scroll-snap-stop:normal;
+  min-width:0;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+  gap:1px;padding:5px 2px 4px;border:0;border-radius:10px;background:transparent;color:var(--text2);
+  font:inherit;cursor:pointer;overflow:hidden;-webkit-tap-highlight-color:transparent;
 }
-.free-day-chip span{max-width:100%;overflow:hidden;font-size:8px;font-weight:780;letter-spacing:.04em;text-transform:uppercase;text-overflow:ellipsis;white-space:nowrap;}
-.free-day-chip b{color:var(--text);font-size:12px;font-weight:750;font-variant-numeric:tabular-nums;}
+.free-day-name{max-width:100%;overflow:hidden;font-size:8px;font-weight:780;letter-spacing:.04em;text-transform:uppercase;text-overflow:ellipsis;white-space:nowrap;}
+.free-day-chip b{color:var(--text);font-size:13px;font-weight:750;line-height:1.1;font-variant-numeric:tabular-nums;}
+.free-day-wx{
+  max-width:100%;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
+  color:var(--text2);line-height:1;
+}
+.free-day-wx .weather-condition-emoji{flex:0 0 auto;font-size:13px;}
+.free-day-wx small{min-width:0;overflow:hidden;font-size:8px;font-weight:750;letter-spacing:0;text-transform:none;text-overflow:ellipsis;white-space:nowrap;}
+.free-day-wx.weather-tone-sun{color:var(--amber-icon);}
+.free-day-wx.weather-tone-rain{color:var(--blue-icon);}
+.free-day-wx.weather-tone-snow,.free-day-wx.weather-tone-ice{color:var(--purple-icon);}
+.free-day-wx.weather-tone-storm{color:var(--red-icon);}
+.free-day-open{max-width:100%;overflow:hidden;font-size:9px;font-weight:760;line-height:1.1;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.free-day-open.tone-open{color:var(--teal-text);}
+.free-day-open.tone-mid{color:var(--text2);}
+.free-day-open.tone-tight{color:var(--amber-text);}
 .free-day-chip.on{background:var(--text);color:var(--bg);}
-.free-day-chip.on b{color:var(--bg);}
+.free-day-chip.on b,.free-day-chip.on .free-day-open,.free-day-chip.on .free-day-wx{color:var(--bg);}
 .free-day-chip:active{transform:scale(.97);}
 .free-time-sheet{max-height:min(92dvh,820px);overflow-y:auto;overscroll-behavior:contain;}
 .free-weather-context{display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:15px;background:var(--bg2);}

@@ -4,6 +4,9 @@
 
 const ASSISTANT_FOCUS_REMINDER_KEY = 'tings_native_reminders_v1';
 const ASSISTANT_FOCUS_LEADS = [0, 5, 10, 15, 30, 60];
+const ASSISTANT_FOCUS_EVENT_LEADS = NATIVE_EVENT_REMINDER_LEADS.map(([minutes])=>minutes);
+const ASSISTANT_FOCUS_REMINDER_EDGES = {reminderStart:'start', reminderSecond:'startSecond', reminderDue:'due', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
+const ASSISTANT_FOCUS_REMINDER_TIMING = {reminderStartLead:'startLeadMinutes', reminderSecondLead:'secondStartLeadMinutes', reminderDueDays:'dueDaysBefore', reminderDueTime:'dueMinute', reminderTravelLead:'travelLeadMinutes', reminderMissedLead:'missedLeadMinutes'};
 const ASSISTANT_FOCUS_MISSED_LEADS = [5, 15];
 const ASSISTANT_FOCUS_REMINDER_MODES = ['off', 'notification', 'alarm'];
 let _assistantFocusEpoch = 1;
@@ -547,7 +550,16 @@ function assistantFocusNormalize(fieldId, raw, session){
   if(fieldId === 'exceptionReset' || fieldId === 'reminderReset'){
     return {ok:true, op:'set', value:true};
   }
-  if(String(fieldId).startsWith('reminder') && fieldId !== 'reminderReset' && !/Lead/.test(fieldId)){
+  if(fieldId === 'reminderDueDays'){
+    const days=Number(text);
+    if(![0,1,2,7].includes(days))return fail('Choose on the due date, 1 day, 2 days, or 1 week before.');
+    return {ok:true,op:'set',value:days};
+  }
+  if(fieldId === 'reminderDueTime'){
+    const minute=assistantParseClock(text);
+    return minute==null ? fail('Use a clock time such as 9am or 09:00.') : {ok:true,op:'set',value:minute};
+  }
+  if(ASSISTANT_FOCUS_REMINDER_EDGES[fieldId]){
     const allOff=typeof assistantFieldAllRemindersOff==='function'&&assistantFieldAllRemindersOff(text);
     if(!allOff&&!/\bno reminders?\b/i.test(text)&&/\b(?:not|never|don.t|without)\b/i.test(text))return fail('Choose off, notification, or ringing alarm.');
     const modeText=text.replace(/^.*\b(?:should be|change[^,;]*? to)\s+/i,'')
@@ -560,9 +572,9 @@ function assistantFocusNormalize(fieldId, raw, session){
     if(!mode)return fail('Choose off, notification, or ringing alarm.');
     return {ok:true, op:'set', value:mode};
   }
-  if(fieldId === 'reminderTravelLead' || fieldId === 'reminderStartLead' || fieldId === 'reminderMissedLead'){
+  if(fieldId === 'reminderTravelLead' || fieldId === 'reminderStartLead' || fieldId === 'reminderSecondLead' || fieldId === 'reminderMissedLead'){
     const mins = parseInt(text, 10);
-    const allowed = fieldId === 'reminderMissedLead' ? ASSISTANT_FOCUS_MISSED_LEADS : ASSISTANT_FOCUS_LEADS;
+    const allowed = fieldId === 'reminderMissedLead' ? ASSISTANT_FOCUS_MISSED_LEADS : ['reminderStartLead','reminderSecondLead'].includes(fieldId) ? ASSISTANT_FOCUS_EVENT_LEADS : ASSISTANT_FOCUS_LEADS;
     if(!allowed.includes(mins))return fail(`Use one of these lead times: ${allowed.join(', ')} minutes.`);
     return {ok:true, op:'set', value:mins};
   }
@@ -1130,10 +1142,16 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
     let choice = Object.assign({}, owner, date && owner.dates && owner.dates[date]);
     const patch = assistantFocusReminderPatch(session);
     if(staged)choice = Object.assign({}, patch.reset && date ? owner : choice, patch.patch);
-    const edge = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
-    const lead = {reminderStartLead:'startLeadMinutes', reminderTravelLead:'travelLeadMinutes', reminderMissedLead:'missedLeadMinutes'};
+    const edge = ASSISTANT_FOCUS_REMINDER_EDGES;
+    const lead = ASSISTANT_FOCUS_REMINDER_TIMING;
     if(fieldId === 'reminderDnd')return choice.dnd ? 'DND during session' : 'DND off';
     if(edge[fieldId])return {off:'off', notification:'notification', alarm:'ringing alarm'}[choice[edge[fieldId]] || 'off'];
+    if(fieldId==='reminderDueDays')return (choice.dueDaysBefore || 0)===0 ? 'on the due date' : `${choice.dueDaysBefore} day${choice.dueDaysBefore===1?'':'s'} before due`;
+    if(fieldId==='reminderDueTime')return assistantClockLabel(choice.dueMinute ?? 540);
+    if(fieldId==='reminderSecondLead' || fieldId==='reminderStartLead'){
+      const minutes=choice[lead[fieldId]] ?? (fieldId==='reminderSecondLead'?1440:0);
+      return NATIVE_EVENT_REMINDER_LEADS.find(([value])=>value===minutes)?.[1] || `${minutes} min before`;
+    }
     if(lead[fieldId])return `${choice[lead[fieldId]] ?? (fieldId === 'reminderMissedLead' ? 15 : 0)} min before`;
     if(fieldId === 'reminderReset')return staged ? 'use the series reminders' : (date && owner.dates && owner.dates[date] ? 'custom reminders for this date' : 'use the series reminders');
   }
@@ -1481,9 +1499,9 @@ function assistantFocusDetailSelector(field, session){
   if(field === 'name' && session.operation === 'edit')return null;
   if(field.startsWith('reminder')){
     if(!window.TingsNative?.isNative)return null;
-    const edges = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
+    const edges = ASSISTANT_FOCUS_REMINDER_EDGES;
     if(edges[field])return `#detail-native-reminders [data-reminder-edge="${edges[field]}"]`;
-    return ({reminderDnd:'#detail-native-reminders [aria-label="DND during session"]', reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderReset:'#detail-native-reminders'})[field] || null;
+    return ({reminderDnd:'#detail-native-reminders [aria-label="DND during session"]', reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderSecondLead:'#detail-native-reminders [aria-label="second event reminder timing"]', reminderDueDays:'#detail-native-reminders [aria-label$="due date reminder day"]', reminderDueTime:'#detail-native-reminders [aria-label$="due date reminder time"]', reminderReset:'#detail-native-reminders'})[field] || null;
   }
   if(session.kind === 'event'){
     const event = {
@@ -1702,6 +1720,10 @@ function assistantFocusPreflight(session, record){
     if(!(typeof window !== 'undefined' && window.TingsNative && window.TingsNative.isNative)){
       return {ok:false, error:'Phone reminders are available in the Android app. Nothing was saved, and the draft is still here.'};
     }
+    const due=assistantFocusReminderPatch(session).patch.due;
+    if(record.type==='task' && ['notification','alarm'].includes(due) && !Number.isFinite(record.dueDate)){
+      return {ok:false,error:'Set a due date for this task before enabling its due-date reminder. Nothing was saved.'};
+    }
   }
   if(!record.name || !String(record.name).trim())return {ok:false, error:'It still needs a name. Nothing was saved.'};
   if(assistantFocusNameRejected(record.name, session.originalRequest || session.requestText)){
@@ -1712,8 +1734,8 @@ function assistantFocusPreflight(session, record){
 
 function assistantFocusReminderPatch(session){
   const patch = {};
-  const lead = {reminderTravelLead:'travelLeadMinutes', reminderStartLead:'startLeadMinutes', reminderMissedLead:'missedLeadMinutes'};
-  const edge = {reminderStart:'start', reminderEnd:'end', reminderTravelStart:'travelStart', reminderTravelEnd:'travelEnd', reminderMissed:'missed'};
+  const lead = ASSISTANT_FOCUS_REMINDER_TIMING;
+  const edge = ASSISTANT_FOCUS_REMINDER_EDGES;
   let reset = false;
   session.changes.forEach(change => {
     if(edge[change.field])patch[edge[change.field]] = change.value;
@@ -1761,7 +1783,7 @@ function assistantFocusWriteReminders(session, hid){
   const owner = `item:${hid}`;
   const choice = Object.assign({}, prefs.items[owner]);
   const date = session.eventScope === 'occurrence' ? session.occurrenceDate : '';
-  const overrides = ['start','end','startLeadMinutes','travelStart','travelEnd','travelLeadMinutes','missed','missedLeadMinutes'];
+  const overrides = [...Object.values(ASSISTANT_FOCUS_REMINDER_EDGES),...Object.values(ASSISTANT_FOCUS_REMINDER_TIMING)];
   if(staged.reset && date){
     const dates = Object.assign({}, choice.dates);
     const entry = Object.assign({}, dates[date]);
@@ -1878,7 +1900,7 @@ function assistantFocusPreviewReminders(session, hid){
   const owner = `item:${hid}`;
   Object.entries(staged.patch).forEach(([key, value]) => {
     const edge = document.querySelector(`select[data-reminder-owner="${CSS.escape(owner)}"][data-reminder-edge="${CSS.escape(key)}"]`);
-    if(edge)edge.value = value;
+    if(edge){edge.value = value;if(typeof nativeSyncReminderControl==='function')nativeSyncReminderControl(edge);}
     if(key==='dnd'){
       const toggle=document.querySelector('#detail-native-reminders [aria-label="DND during session"]');
       if(toggle)toggle.checked=value===true;
@@ -1887,10 +1909,10 @@ function assistantFocusPreviewReminders(session, hid){
       const lead = document.querySelector(`select[data-reminder-lead="${CSS.escape(owner)}"]`);
       if(lead)lead.value = String(value);
     }
-    if(key === 'missedLeadMinutes' || key === 'startLeadMinutes'){
-      const lead = document.querySelector(`select[data-reminder-missed-lead="${CSS.escape(owner)}"]`)
-        || document.querySelector('[aria-label="event reminder timing"]');
-      if(lead)lead.value = String(value);
+    const timingSelector={missedLeadMinutes:'[data-reminder-missed-lead]',startLeadMinutes:'[aria-label="event reminder timing"]',secondStartLeadMinutes:'[aria-label="second event reminder timing"]',dueDaysBefore:'[aria-label$="due date reminder day"]',dueMinute:'[aria-label$="due date reminder time"]'}[key];
+    if(timingSelector){
+      const input=document.querySelector(`#detail-native-reminders ${timingSelector}`);
+      if(input)input.value=key==='dueMinute'?minutesToTimeInput(value):String(value);
     }
   });
 }

@@ -1,25 +1,53 @@
 // In-settings navigation only. Search never changes a saved setting.
 // Destinations are read from the live sheet, so hidden and platform-absent
-// controls stay out of the results.
-// Words a person might type instead of the label on screen.
-// A section key is added to that section's title. An id or toggle key
+// controls stay out of the results, and saved user content (place names,
+// addresses, topics, profiles, device names) is never indexed.
+// Words a person might type instead of the label on screen. A section key is
+// added to that section's title. An id, toggle key, or associated control id
 // is added only to that control.
 const SETTINGS_SEARCH_ALIASES = {
   'settings-weather-body':'forecast temperature rain snow wind humidity units celsius fahrenheit centigrade precipitation',
-  'settings-reminders-body':'notification alert notify push banner ping',
+  'weather-temp-unit-seg':'temperature unit celsius fahrenheit centigrade',
+  'weather-precip-unit-seg':'precipitation rain unit millimeter inches',
+  'weather-wind-unit-seg':'wind speed unit kilometers miles hours',
+  'settings-reminders-body':'notification alert notify push banner ping sound tone chime calm warm deep gentle audio',
+  soundEffects:'mute audio chime volume',
   'settings-cleanup-body':'retention history delete purge logs',
   'settings-calendar-body':'meeting event pdf import ics ical outlook google apple',
+  'calendar-ics-from':'ics import range start date',
+  'calendar-ics-to':'ics import range end date through',
+  'calendar-pdf-input':'pdf file choose import attachment',
+  'calendar-allday-mode':'allday all day overnight midnight multi day events',
+  'calendar-credit-habit':'credit meeting time toward habit work hours',
   'settings-topics-body':'tag label category',
   'settings-locations-body':'place address city gps map home travel',
+  'travel-mode-seg':'default transport commute drive walking bicycle transit mode',
+  'location-access-enable':'gps presence live location turn on enable',
+  'home-city-input':'home city town weather base set',
   'settings-blocked-body':'sleep meal lunch dinner commute blocked reserve unavailable',
   'settings-cards-body':'card pill list detail streak dot trail',
+  'card-detail-seg':'card detail level simple detailed custom',
+  'agenda-time-seg':'agenda clock time symbol hide show scheduled',
   'settings-defaults-body':'preset template',
+  'default-type-seg':'default new item kind build limit stop task',
+  'default-profile-seg':'defaults for habits tasks profile',
+  'default-priority-seg':'default importance urgent critical someday',
+  'setting-default-due':'due date default someday no date deadline',
+  'setting-default-completion':'completion automatic mark done duration minutes',
+  'setting-default-auto-mark':'auto mark after minutes completion',
+  'setting-default-breakable':'split chunks duration sessions',
+  'font-scale-seg':'font text size letters display scale',
+  'theme-mode-seg':'theme dark light system mode',
   'settings-appearance-body':'theme dark light night mode font text size palette color colour sound compact',
-  soundEffects:'mute audio chime volume',
+  'settings-replica-chrome':'display bar clock sync lock paired screen',
   'settings-agenda-body':'pair fridge tablet cast sync screen qr clone glance mirror',
   'settings-prayer-body':'prayer sunrise sunset dawn dusk salah namaz fajr',
+  'setting-prayer-method':'prayer calculation convention method university',
+  'prayer-madhab-seg':'asr school madhab hanafi shafi prayer standard later',
   'settings-advanced-body':'optimizer packing planner',
   'settings-assistant-body':'qwen ollama ai chatbot model',
+  'assistant-provider-seg':'assistant model source needle ollama lm studio server',
+  'assistant-reasoning-seg':'thinking reasoning depth full low off',
   'settings-android-assistant-body':'gemini google hey voice appfunctions shortcuts',
   minimalMode:'simple basic easy essentials',
   'backup-export':'download save json',
@@ -28,6 +56,43 @@ const SETTINGS_SEARCH_ALIASES = {
   'settings-clear-data':'wipe erase delete everything'
 };
 
+// A few headings are plain spans with no id and no associated control; these
+// synonyms key off the heading's normalized text instead.
+const SETTINGS_SEARCH_ALIAS_LABELS = {
+  'delete completed tasks after':'retention cleanup purge automatic completed tasks',
+  'habit history':'history logs entries keep retention trail',
+  'live location':'gps presence background location',
+  'city':'home city town weather base',
+  'default travel mode':'travel transport commute drive walking bicycle transit',
+  'item details':'card pill detail level',
+  'scheduled time on items':'agenda clock time card',
+  'start the add page with':'default new item kind',
+  'how often':'frequency default times period',
+  'importance':'priority urgent critical someday',
+  'duration':'length minutes default',
+  'can do early':'early window flexibility days before default',
+  'may run late':'delay allowance late flexibility default',
+  'shortest session':'minimum chunk split',
+  'allowed days':'weekdays days schedule default',
+  'allowed time':'time window hours start end default',
+  'allowed places':'places locations default',
+  'default topics':'topics tags default',
+  'color palette':'palette color colour swatch theme',
+  'font size':'font text letters display size',
+  'on each card':'card appearance minimal',
+  'feed title':'display feed name',
+  'sync style for the next display':'sync clone glance shared style',
+  'display reauthorization':'reauthorize qr expiry days scan',
+  'glance view compatibility':'glance scope compatibility hours activities',
+  'signed in displays':'paired devices displays list',
+  'pair a display':'pair qr scan display second screen',
+  'calculation method':'prayer calculation convention university',
+  'asr school madhab':'asr madhab hanafi shafi prayer school standard later'
+};
+
+// Rendered lists that hold the user's own data. Nothing inside is indexed.
+const SETTINGS_USER_CONTENT = '#location-list,#topic-list,#blocked-time-list,#weather-profile-list,#calendar-device-controls,#settings-agenda-devices,#weather-forecast-data,#calendar-pdf-preview,#default-places-chips,#default-topics-chips';
+
 function settingsSearchExtra(target){
   const head = target.closest?.('.settings-collapse-head');
   const keys = [target.id, target.dataset?.settingToggle];
@@ -35,22 +100,24 @@ function settingsSearchExtra(target){
   return keys.map(key=>key && SETTINGS_SEARCH_ALIASES[key]).filter(Boolean).join(' ');
 }
 
+// Associate aliases with the field heading, not every choice in its group:
+// searching "dark" must not make the "light" choice a match.
+function settingsControlAliases(target){
+  const label = target.matches?.('label[for]') ? target : target.querySelector?.('label[for]');
+  const ids = [label?.getAttribute('for')];
+  if(target.matches('.settings-sublabel,.settings-range')){
+    ids.push(target.querySelector('input,select')?.id);
+    const next = (target.closest('.settings-help') || target).nextElementSibling;
+    if(next?.matches('.seg'))ids.push(next.id);
+  }
+  return ids.map(id=>id && SETTINGS_SEARCH_ALIASES[id]).filter(Boolean).join(' ');
+}
+
 function settingsSearchLabel(el){
   if(!el)return '';
   const clone = el.cloneNode(true);
   clone.querySelectorAll('.leave-tooltip, .info-tooltip, .settings-help-body, .switch-ui').forEach(node=>node.remove());
   return settingsSearchText(clone.textContent);
-}
-
-function settingsSearchTokenMatch(text, token){
-  const words = text.split(' ').filter(Boolean);
-  const stems = [token];
-  if(token.length > 4 && token.endsWith('ies'))stems.push(token.slice(0,-3) + 'y');
-  else if(token.length > 4 && token.endsWith('s'))stems.push(token.slice(0,-1));
-  return stems.some(stem=>{
-    if(words.some(word=>word === stem || (stem.length >= 5 && word.startsWith(stem))))return true;
-    return stem.length >= 7 && words.some(word=>detailSearchTokenMatch(word, stem));
-  });
 }
 
 function settingsSearchText(value){
@@ -80,8 +147,10 @@ function settingsSearchEntries(){
   if(!stack)return [];
   const entries = [];
   const seen = new Set();
-  const add = (target,label,aliases = '')=>{
+  const add = (target,label,aliases = '',desc = '')=>{
     if(!settingsSearchIncluded(target) || seen.has(target))return;
+    // Saved user content stays out of the index entirely.
+    if(target.closest(SETTINGS_USER_CONTENT))return;
     const name = settingsSearchText(label);
     if(!name)return;
     seen.add(target);
@@ -90,8 +159,19 @@ function settingsSearchEntries(){
     const group = settingsSearchGroup(section);
     const head = target.closest('.settings-collapse-head');
     const path = head ? group : [group,sectionLabel].filter(Boolean).join(' › ');
-    const text = detailSearchNormalize(`${name} ${aliases} ${settingsSearchExtra(target)} ${path}`);
-    entries.push({target,label:name,path,text});
+    const synonyms = [
+      settingsSearchExtra(target),
+      settingsControlAliases(target),
+      SETTINGS_SEARCH_ALIAS_LABELS[detailSearchNormalize(name)]
+    ].filter(Boolean).join(' ');
+    const labelN = detailSearchNormalize(name);
+    entries.push({
+      target,label:name,path,labelN,
+      aliasN:detailSearchNormalize(`${aliases} ${synonyms}`),
+      pathN:detailSearchNormalize(path),
+      descN:detailSearchNormalize(desc),
+      order:entries.length
+    });
   };
   stack.querySelectorAll('.settings-block').forEach(section=>{
     const label = section.querySelector('.settings-label');
@@ -100,9 +180,13 @@ function settingsSearchEntries(){
   });
   stack.querySelectorAll('.settings-sublabel').forEach(el=>add(el,settingsSearchLabel(el)));
   stack.querySelectorAll('.setting-toggle').forEach(toggle=>{
-    add(toggle,toggle.querySelector('b')?.textContent,toggle.querySelector('small')?.textContent);
+    add(toggle,toggle.querySelector('b')?.textContent,'',toggle.querySelector('small')?.textContent);
   });
   stack.querySelectorAll('.btn, .seg-opt, .palette-option').forEach(button=>add(button,settingsSearchLabel(button)));
+  // Default-duration style ranges keep their caption in a bare span.
+  stack.querySelectorAll('.settings-range').forEach(row=>{
+    add(row,row.querySelector(':scope > span')?.textContent);
+  });
   return entries;
 }
 
@@ -113,27 +197,13 @@ function renderSettingsSearch(){
   if(!input || !results || !status)return;
   const query = detailSearchNormalize(input.value).slice(0,120);
   const tokens = query.split(' ').filter(Boolean);
-  const matches = settingsSearchEntries().filter(entry=>tokens.every(token=>settingsSearchTokenMatch(entry.text,token))).sort((a,b)=>{
-    const rank = entry=>detailSearchNormalize(entry.label) === query ? 0 : detailSearchNormalize(entry.label).startsWith(query) ? 1 : 2;
-    return rank(a) - rank(b) || a.label.localeCompare(b.label);
-  });
+  const ranked = searchRankEntries(settingsSearchEntries(),tokens,SETTINGS_SEARCH_RULES,true);
   results.replaceChildren();
-  matches.forEach(entry=>{
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'detail-search-result';
-    const label = document.createElement('b');
-    label.textContent = entry.label;
-    const path = document.createElement('small');
-    path.textContent = entry.path;
-    button.append(label,path);
-    button.addEventListener('click',()=>revealSettingsSearchEntry(entry));
-    results.append(button);
-  });
+  ranked.forEach(row=>results.append(searchResultButton(row,entry=>revealSettingsSearchEntry(entry))));
   status.textContent = !tokens.length
     ? 'Browse settings, or search by name.'
-    : matches.length
-      ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`
+    : ranked.length
+      ? `${ranked.length} ${ranked.length === 1 ? 'match' : 'matches'}`
       : 'No matching settings. Try “theme”, “backup”, “reminders”, or “places”.';
   $('settings-search-clear').hidden = !input.value;
 }
@@ -198,13 +268,18 @@ $('settings-search-toggle')?.addEventListener('click',()=>{
   setSettingsSearchOpen(true);
 });
 $('settings-search-dismiss')?.addEventListener('click',()=>setSettingsSearchOpen(false));
-$('settings-search-input')?.addEventListener('input',renderSettingsSearch);
+$('settings-search-input')?.addEventListener('input',event=>{
+  if(event.isComposing)return;
+  renderSettingsSearch();
+});
+$('settings-search-input')?.addEventListener('compositionend',renderSettingsSearch);
 $('settings-search-clear')?.addEventListener('click',()=>{
   $('settings-search-input').value = '';
   renderSettingsSearch();
   $('settings-search-input').focus({preventScroll:true});
 });
 $('settings-search-input')?.addEventListener('keydown',event=>{
+  if(event.isComposing)return;
   if(event.key === 'ArrowDown'){
     event.preventDefault();$('settings-search-results').querySelector('button')?.focus();
   }else if(event.key === 'Enter'){
@@ -219,7 +294,7 @@ $('settings-search-results')?.addEventListener('keydown',event=>{
   event.preventDefault();buttons[next]?.focus();
 });
 document.addEventListener('keydown',event=>{
-  if(event.key !== 'Escape' || $('settings-search-panel').hidden || !$('settings-sheet').classList.contains('open'))return;
+  if(event.key !== 'Escape' || $('settings-search-panel')?.hidden || !$('settings-sheet')?.classList.contains('open'))return;
   const tier = parseInt(getComputedStyle($('settings-sheet')).zIndex,10) || 0;
   if([...document.querySelectorAll('.sheet-wrap.open')].some(el=>el.id !== 'settings-sheet' && (parseInt(getComputedStyle(el).zIndex,10)||0)>tier))return;
   event.preventDefault();event.stopImmediatePropagation();setSettingsSearchOpen(false);

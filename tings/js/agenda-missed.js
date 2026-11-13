@@ -20,7 +20,17 @@ function missedOccurrenceDayBase(day,now = Date.now()){
 }
 
 function missedOccurrenceResolved(h,expectedDayBase,now,evidence = null){
-  if(h.type === 'task')return isTaskDone(h);
+  const plannedOnDay = typeof hasPlannedEntryForDay === 'function'
+    && hasPlannedEntryForDay(h,dateKey(expectedDayBase));
+  if(h.type === 'task'){
+    if(isTaskDone(h))return true;
+    // Editing a task's date to later (or someday) withdraws its old automatic
+    // due-today notification. An explicit plan for today is still a commitment.
+    const when = taskWhen(h);
+    return !plannedOnDay && (when == null || dayStart(when) > expectedDayBase);
+  }
+  const planBy = typeof habitPlanByDate === 'function' ? habitPlanByDate(h) : h.planByDate;
+  if(!plannedOnDay && planBy != null && dayStart(planBy) > expectedDayBase)return true;
   if(typeof completedOnDay === 'function' && completedOnDay(h,expectedDayBase))return true;
   if(typeof actualLogs !== 'function')return completedToday(h,now);
   // This is an actionable catch-up list, not permanent history: a later real
@@ -32,8 +42,8 @@ function missedOccurrenceResolved(h,expectedDayBase,now,evidence = null){
   // rather than a new notification caused by entering the missing history.
   const latest = logs[logs.length - 1];
   const correctedHistory = evidence?.lastLogAtFirst === undefined
-    || latest > (evidence.lastLogAtFirst ?? -Infinity);
-  return correctedHistory && latest != null && !h.breakable && !isOpportunityHabit(h)
+    || latest !== evidence.lastLogAtFirst;
+  return correctedHistory && latest != null && !isOpportunityHabit(h)
     && !habitHasMultipleDailyOccurrences(h)
     && typeof rhythmEligibleOnDay === 'function'
     && !rhythmEligibleOnDay(h,latest,expectedDayBase,new Date(expectedDayBase).getDay());
@@ -67,28 +77,21 @@ function isMissedOccurrence(h,_laterPlanned,now,expectedDay = null,evidence = nu
   if(h.snoozedUntil && now < h.snoozedUntil)return false;
   const expectedDayBase = missedOccurrenceDayBase(expectedDay,now);
   const todayBase = dayStart(now);
-  if(expectedDayBase > todayBase)return false;
-  if(expectedDayBase < todayBase && habitHasMultipleDailyOccurrences(h))return false;
+  // Missed is today's notification list. Retain older expectations as planner
+  // history, but never carry their unresolved notifications into another day.
+  if(expectedDayBase !== todayBase)return false;
   if(h.createdAt != null && Number(h.createdAt) >= expectedDayBase + 86400000)return false;
   if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
     && typeof isDateEligibleForHabit === 'function'
     && !isDateEligibleForHabit(h,expectedDayBase))return false;
   if(missedOccurrenceResolved(h,expectedDayBase,now,evidence))return false;
-  if(expectedDayBase === todayBase){
-    // A row the user actually saw in today's agenda is a commitment, not just
-    // a broad eligibility guess. If a later/cold optimization drops that row,
-    // preserve it as missed even when its raw clock window is still open. This
-    // is intentionally narrower than treating every full-day reconstruction
-    // candidate as missed: only snap.hids contains previously rendered rows.
-    if(!evidence?.renderedToday
-      && !missedOpportunityPassedToday(h,expectedDayBase,now))return false;
-  }else if(!isOpportunityHabit(h) && occurrenceStillDoableToday(h,now)){
-    // Midnight is not an opportunity ending. Yesterday's dated row for a
-    // daily that is still doable today is the same live occurrence rolling
-    // forward, not a miss — otherwise 2am dumps every unfinished meal and
-    // prayer into the pill before those windows have even opened.
-    return false;
-  }
+  // A row the user actually saw in today's agenda is a commitment, not just
+  // a broad eligibility guess. If a later/cold optimization drops that row,
+  // preserve it as missed even when its raw clock window is still open. This
+  // is intentionally narrower than treating every full-day reconstruction
+  // candidate as missed: only snap.hids contains previously rendered rows.
+  if(!evidence?.renderedToday
+    && !missedOpportunityPassedToday(h,expectedDayBase,now))return false;
   return true;
 }
 
@@ -121,12 +124,9 @@ function collectMissedFromSnapshot(data,todayHids,snap,renderedProjection = {},n
   };
 
   for(const [expectedDay, entry] of Object.entries(snap.expectations || {})){
-    if(expectedDay > today || !entry || !Array.isArray(entry.hids))continue;
+    if(expectedDay !== today || !entry || !Array.isArray(entry.hids))continue;
     const occurrenceHids = new Set((entry.occurrences || []).map(row=>row.hid));
     for(const hid of occurrenceHids){
-      // Daily sessions belong to their calendar day. Keep past expectations
-      // as history, but do not turn yesterday's sessions into today's misses.
-      if(expectedDay !== today)continue;
       const idx = data.findIndex(h=>h && h.hid === hid);
       const h = data[idx];
       if(!h || !habitHasMultipleDailyOccurrences(h)

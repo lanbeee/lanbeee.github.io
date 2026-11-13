@@ -100,7 +100,12 @@ const ASSISTANT_FIELD_SIGNALS = {
   exceptionTime:/\b(?:at|time|start)\b/i, exceptionDuration:/\b(?:minutes?|hours?|duration|long)\b/i,
   exceptionEmoji:/\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\ufe0f?\u20e3|\bemoji\b/iu, exceptionColor:/\bcolou?r\b/i,
   exceptionCancelled:/\b(?:cancel\w*|skip|restore|uncancel|do not hold (?:this|the) occurrence)\b/i, exceptionReset:/\b(?:reset|usual values|back to the regular|follow the series again|(?:custom |special )?(?:override|settings) for this|inherit the series|series (?:settings|defaults)|series settings for this)\b/i,
-  reminderStart:/\b(?:(?:start|beginning) (?:reminders?|alerts?|alarms?)|(?:remind|alarm|alert|notify)[^,;]*\b(?:start|begin)\w*|remind me(?! to\b)|no reminders|(?:use|with) (?:an? )?(?:alarm|notifications?))\b/i, reminderEnd:/\b(?:(?:end[ -]of[ -]session|completion[ -]time|end|finish) (?:reminders?|alerts?|alarms?)|(?:remind\w*|alarm|alert|notify|notifications?)[^,;]*\b(?:end|finish)\w*)\b/i,
+  reminderDue:/\b(?:due[ -]date|deadline) (?:reminders?|alerts?|notifications?|alarms?)\b|\b(?:remind|notify|alert|notification|alarm)\w*[^,;]*\b(?:due|deadline)\b/i,
+  reminderDueDays:/\b(?:due[ -]date|deadline) reminder day\b|\b(?:remind|notify|alert|notification|alarm)\w*[^,;]*\b(?:before|on) (?:the |its )?(?:due(?: date)?|deadline)\b/i,
+  reminderDueTime:/\b(?:due[ -]date|deadline) reminder (?:time|clock)\b|\b(?:remind|notify|alert|notification|alarm)\w*[^,;]*\b(?:due|deadline)\b[^,;]*\bat\b/i,
+  reminderSecond:/\b(?:second|2nd|additional) (?:event )?(?:reminder|alert|notification|alarm)\b/i,
+  reminderSecondLead:/\b(?:second|2nd|additional) (?:event )?(?:reminder|alert|notification|alarm)\b[^,;]*\b(?:before|lead|advance|early)\b/i,
+  reminderStart:/\b(?:(?:start|beginning|first(?: event)?) (?:reminders?|alerts?|alarms?)|(?:remind|alarm|alert|notify)[^,;]*\b(?:start|begin)\w*|remind me(?! to\b)|no reminders|(?:use|with) (?:an? )?(?:alarm|notifications?))\b/i, reminderEnd:/\b(?:(?:end[ -]of[ -]session|completion[ -]time|end|finish) (?:reminders?|alerts?|alarms?)|(?:remind\w*|alarm|alert|notify|notifications?)[^,;]*\b(?:end|finish)\w*)\b/i,
   reminderTravelStart:/\b(?:depart|travel[ -]start|leaving reminder)\w*\b|\b(?:remind|alert|notify|tell)[^,;]*\b(?:leave|leaving)\b/i, reminderTravelEnd:/\b(?:arriv|travel[ -]end)\w*\b/i,
   reminderMissed:/\b(?:drop warning|missed|cutoff)\b|\b(?:warn|notify)[^,;]*\b(?:fall behind|miss)\b/i, reminderTravelLead:/\b(?:depart|travel|leav)\w*[^,;]*\b(?:before|lead)\b|\b(?:remind|alarm|notif|alert|heads[ -]?up)\w*[^,;]*\bbefore (?:depart|travel|leav)\w*\b/i,
   reminderStartLead:/\b(?:remind|alarm|notif|alert)\w*[^,;]*\b(?:before|lead)\b/i, reminderMissedLead:/\b(?:drop|missed).{0,25}\b(?:before|lead)\b/i,
@@ -113,6 +118,11 @@ const ASSISTANT_FIELD_HINTS = {
   preferredMonthDays:'Preferred days of the month, including ranges, numbered weeks, halves and exclusions. Not a required restriction.',
   allowedOrdinalWeekdays:'Monthly weekday rule: an ordinal or week of the month plus the weekday, such as the last Friday, the first Monday through Friday, or Mondays in the first week. The last week is the final occurrence of each weekday. Exclude plain weekdays and plain dates.',
   preferredOrdinalWeekdays:'Preferred monthly weekday rule, including a week of the month. Not a required restriction.',
+  reminderDue:'Delivery mode for the task deadline alert: off, notification, or ringing alarm. Separate from its due date and start reminders.',
+  reminderDueDays:'Number of calendar days before the task deadline: 0, 1, 2, or 7. Exclude the clock time and the task due date.',
+  reminderDueTime:'Local clock time for the task deadline reminder, such as 9am. Exclude the task start time and the number of days before due.',
+  reminderSecond:'Delivery mode of the second event alert. Separate from the first/start reminder.',
+  reminderSecondLead:'How long before the event to send the second alert, including number and unit. Exclude first alert timing.',
   reminderTravelLead:'How long before departure to remind, including the number or fraction and its time unit.',
   reminderStartLead:'How long before the event start to remind, including the number or fraction and its time unit.',
   reminderMissedLead:'Missed warning lead time, including the number or fraction and its time unit.',
@@ -271,7 +281,7 @@ const ASSISTANT_FIELD_OWNERSHIP = [
   {fields:['allowedWindow','preferredWindow'], when:/\b(?:half past|quarter (?:past|to))\b/i, unless:/\b(?:between|from|until)\b/i},
   {fields:['pinned'], when:/\bpin (?:the )?start time\b/i},
   {fields:['allowedWindow','preferredWindow'], when:/\b(?:remind|alarm|notification)\b/i, beforeCue:true, unless:/\b(?:allowed|preferred)\s+(?:time|hours|window)\b/i},
-  {fields:['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'], require:/\b(?:off|notifications?|notify|alarm|alert|remind|reminders|warn)\b/i},
+  {fields:['reminderStart','reminderSecond','reminderDue','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'], require:/\b(?:off|notifications?|notify|alarm|alert|remind|reminders|warn)\b/i},
   {fields:['reminderStart','reminderEnd'], when:/\b(?:travel|depart|arrival|leav)\w*/i},
   {fields:['reminderStart'], when:/\bremind[^,;]*\b(?:end|finish)\w*\b/i, unless:/\bstart\b/i},
   {fields:['reminderStartLead'], when:/\b(?:travel|depart|leav|missed|drop)\w*/i},
@@ -291,6 +301,7 @@ const ASSISTANT_FIELD_READERS = {
   tapStartsSession:{retainPrefix:true}, reminderDnd:{retainPrefix:true},
   hardDue:{retainPrefix:true}, anywhereAllowed:{retainPrefix:true}, trackValue:{retainPrefix:true},
   showWeatherAtLocation:{retainPrefix:true}, weatherLocationId:{retainPrefix:true}, sharedDisplay:{retainPrefix:true},
+  reminderDue:{retainPrefix:true}, reminderDueDays:{retainPrefix:true}, reminderDueTime:{retainPrefix:true}, reminderSecond:{retainPrefix:true}, reminderSecondLead:{retainPrefix:true},
   reminderStart:{retainPrefix:true}, reminderEnd:{retainPrefix:true}, reminderTravelStart:{retainPrefix:true}, reminderTravelEnd:{retainPrefix:true}, reminderMissed:{retainPrefix:true},
   timerAutoStopMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes','autoMarkMinutes']},
   autoMarkMinutes:{retainPrefix:true, shares:['durationMinutes','breakable','minChunkMinutes','minGapMinutes']},
@@ -304,8 +315,14 @@ const ASSISTANT_FIELD_READERS = {
   appointmentRepeat:{shares:['frequency']},
 };
 
+function assistantFieldDeadlineReminder(text){
+  return /\b(?:due|deadline)\b/i.test(text) && /\b(?:remind\w*|notif\w*|alert\w*|alarm\w*)\b/i.test(text);
+}
+function assistantFieldSecondReminder(text){return /\b(?:second|2nd|additional) (?:event )?(?:reminder|alert|notification|alarm)\b/i.test(text);}
 function assistantFieldReminderLead(text){
   if((!/\b(?:lead|before(?:hand)?|ahead|early|earlier|advance)\b/i.test(text)&&!assistantDurationHits(text).length) || !/\b(?:remind\w*|alarm|notif\w*|alert|warn\w*|heads[ -]?up|depart\w*|travel|missed|drop.warning)\b/i.test(text))return null;
+  if(assistantFieldDeadlineReminder(text))return 'reminderDueDays';
+  if(assistantFieldSecondReminder(text))return 'reminderSecondLead';
   return /\b(?:depart|travel|leav)\w*\b/i.test(text)?'reminderTravelLead'
     :/\b(?:missed|drop.warning)\b/i.test(text)?'reminderMissedLead':'reminderStartLead';
 }
@@ -517,11 +534,17 @@ function assistantFieldRelevant(def, text){
   if(['dueDate','planByDate','delayAllowanceDays'].includes(def.id)&&assistantFieldDeadlinePolicy(text)!=null
     &&!new RegExp(`\\d|\\b(?:today|tomorrow|next|${ASSISTANT_WEEKDAY_TOKEN}|${Object.keys(ASSISTANT_MONTH_NAMES).join('|')})\\b`,'i').test(text))return false;
   if(def.id==='frequency'&&ASSISTANT_FIELD_SIGNALS.trackValue.test(text)&&/\b(?:each|every) (?:completion|check[ -]?in|log)\b/i.test(text))return false;
+  const deadlineReminder=assistantFieldDeadlineReminder(text),secondReminder=assistantFieldSecondReminder(text);
+  if(deadlineReminder && !['reminderDue','reminderDueDays','reminderDueTime','reminderReset'].includes(def.id))return false;
+  if(secondReminder && ['reminderStart','reminderStartLead','reminderEnd'].includes(def.id))return false;
+  if(def.id.startsWith('reminderDue') && !deadlineReminder && !assistantFieldAllRemindersOff(text))return false;
+  if(def.id.startsWith('reminderSecond') && !secondReminder && !assistantFieldAllRemindersOff(text))return false;
   const lead=assistantFieldReminderLead(text);
   if(lead && (ASSISTANT_FIELD_LENGTHS.has(def.id)||['allowedWindow','preferredWindow','dueTime','appointmentStartMinute','earlyWindowDays','breakable','trackValue'].includes(def.id)))return false;
   if(lead && /Lead$/.test(def.id) && def.id!==lead)return false;
-  if(lead && /^reminder/.test(def.id) && !/Lead$/.test(def.id) && def.id!=='reminderReset'
-    && !/\b(?:off|notifications?|alarm)\b/i.test(text))return false;
+  if(lead && Object.hasOwn(ASSISTANT_FOCUS_REMINDER_EDGES,def.id)
+    && !/\b(?:off|notifications?|alarm)\b/i.test(text)
+    && !(['reminderDue','reminderSecond'].includes(def.id)&&/\b(?:notify|remind|alert) me\b/i.test(text)))return false;
   const effort=assistantFieldEffortOwner(text);
   if(effort&&def.id==='durationMinutes')return false;
   if(effort&&['dueTime','appointmentStartMinute','exceptionTime'].includes(def.id))return false;
@@ -582,7 +605,7 @@ function assistantFieldCue(def,text,from=0){
   if(from===0&&def.id==='hardDue'&&assistantFieldDeadlinePolicy(text)!=null)return /^.*$/s.exec(text);
   if(from===0&&def.id==='allowedTimeFixedStart'&&assistantFieldStartPolicy(text)!=null)return /^.*$/s.exec(text);
   if(from===0&&assistantFieldReminderLead(text)===def.id)return /^.*$/s.exec(text);
-  if(from===0&&(assistantFieldClear(def,text)||assistantFieldAllRemindersOff(text)&&/^reminder(?:Start|End|TravelStart|TravelEnd|Missed)$/.test(def.id)))return /^.*$/s.exec(text);
+  if(from===0&&(assistantFieldClear(def,text)||assistantFieldAllRemindersOff(text)&&/^reminder(?:Start|Second|Due|End|TravelStart|TravelEnd|Missed)$/.test(def.id)))return /^.*$/s.exec(text);
   const preferred={preferredWeekdays:'allowedWeekdays',preferredMonthDays:'allowedMonthDays',preferredOrdinalWeekdays:'allowedOrdinalWeekdays',preferredWindow:'allowedWindow'}[def.id];
   if(from===0&&preferred&&assistantFieldPreference(text)&&ASSISTANT_FIELD_SIGNALS[preferred].test(text))return /^.*$/s.exec(text);
   if(from===0&&def.id==='preferredMonthDays'&&assistantFieldPreference(text)&&!ASSISTANT_FIELD_SIGNALS.allowedWindow.test(text)&&!/\b(?:hours?|am|pm)\b|:/i.test(text)
@@ -842,8 +865,9 @@ function assistantFieldEnqueue(state, id, reason, source){
   if(!def || !assistantFieldApplicable(def,state.session))return;
   // Changing a lead time on Edit preserves the existing delivery mode.
   // Create can explicitly request its first reminder without naming a mode.
-  if(state.session.operation==='edit'&&['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'].includes(id)
-    && /\b(?:before|lead)\b/i.test(state.request)&&!/\b(?:off|notifications?|alarm)\b/i.test(state.request))return;
+  if(state.session.operation==='edit'&&['reminderStart','reminderSecond','reminderDue','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed'].includes(id)
+    && /\b(?:before|lead)\b/i.test(state.request)&&!/\b(?:off|notifications?|alarm)\b/i.test(state.request)
+    && !(['reminderDue','reminderSecond'].includes(id)&&/\b(?:notify|remind|alert) me\b/i.test(state.request)))return;
   const prior=state.jobs.find(j=>j.id===id&&j.request!==state.request&&j.status==='queued');
   if(prior && !['explicit','coverage','semantic'].includes(reason))return prior;
   const existing=state.jobs.find(j=>j.id===id && j.revision===state.revision && j.request===state.request);
@@ -899,7 +923,7 @@ function assistantFieldCandidates(state){
   });
   // One request can switch every edge off without resetting inherited values.
   // Each edge still gets its own model-selected original-source evidence.
-  if(assistantFieldAllRemindersOff(text))for(const id of ['reminderStart','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed']){
+  if(assistantFieldAllRemindersOff(text))for(const id of ['reminderStart','reminderSecond','reminderDue','reminderEnd','reminderTravelStart','reminderTravelEnd','reminderMissed']){
     assistantFieldEnqueue(state,id,'explicit',[{start:0,end:text.length,text}]);
   }
   // Creation checks its essentials. Edit keeps its baseline; omitted essentials
@@ -1203,6 +1227,11 @@ const ASSISTANT_GUIDE_HELP={
   exceptionCancelled:['Skip or restore this occurrence of the event.','Skip this date'],
   exceptionReset:['Remove this date’s overrides and use the series settings.','Use the usual values for this date'],
   reminderDnd:['Silence the phone during this item’s session. Requires Android access.','Stop silencing my phone'],
+  reminderDue:['How to be reminded about this task’s deadline.','Set the due-date reminder to notification'],
+  reminderDueDays:['Which day to send the deadline alert.','Remind me 1 day before the due date'],
+  reminderDueTime:['Local clock time for the deadline alert.','Set the due-date reminder time to 9am'],
+  reminderSecond:['How to deliver a second event alert.','Set the second reminder to notification'],
+  reminderSecondLead:['How early to send the second event alert.','Set the second reminder to 1 day before'],
   reminderStart:['How to be reminded when this item starts.','Notify me at the start'],
   reminderEnd:['How to be reminded when this item ends.','Notify me at the end'],
   reminderTravelStart:['A reminder to leave for this item.','Notify me when it is time to leave'],
@@ -1997,7 +2026,8 @@ const ASSISTANT_FIELD_QUANTITIES = {
   earlyWindowDays:{min:0,max:60,label:'days',units:{day:1,days:1,week:7,weeks:7,hour:1/24,hours:1/24}},
   delayAllowanceDays:{min:0,max:60,label:'days',units:{day:1,days:1,week:7,weeks:7,hour:1/24,hours:1/24}},
   reminderTravelLead:{min:0,max:60,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60}},
-  reminderStartLead:{min:0,max:60,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60}},
+  reminderStartLead:{min:0,max:2880,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60,day:1440,days:1440}},
+  reminderSecondLead:{min:0,max:2880,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60,day:1440,days:1440}},
   reminderMissedLead:{min:0,max:60,label:'minutes',units:{minute:1,minutes:1,min:1,mins:1,hour:60,hours:60,hr:60,hrs:60}}
 };
 
@@ -2018,7 +2048,19 @@ function assistantFieldStripPrefix(text, pattern){
 function assistantFieldNormalize(def,text,session){
   if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantFieldDialogue(assistantEditTarget(text)).text;
   if(def.id==='scheduleOptions')text=assistantFieldDialogue(text).text;
+  if(['reminderDueDays','reminderDueTime'].includes(def.id) && /\b(?:not|never|don.t|without|or)\b/i.test(text))return {ok:false,error:'Choose one reminder day and clock time, or turn the due-date reminder off.'};
   if(['kind','habitKind'].includes(def.id)&&/\b(?:not|never|don.t|without|or)\b/i.test(text))return {ok:false,error:'Which item type should I use? Please state the type to change to.'};
+  if(def.id==='reminderDueTime'){
+    const clock=text.match(/\b(?:at|(?:time|clock)(?:\s+(?:to|is|at))?)\s*:?\s+(.+)$/i);
+    const value=assistantParseClock(clock?clock[1]:text);
+    return value==null ? {ok:false,error:'Choose one reminder clock time, such as 9am.'} : {ok:true,changes:[{field:def.id,op:'set',value}]};
+  }
+  if(def.id==='reminderDueDays'){
+    const dayText=text.replace(/\s+at\s+.+$/i,'');
+    const value=/\bon (?:the |its )?(?:due(?: date)?|deadline)\b/i.test(dayText) && !/\bbefore\b/i.test(dayText) ? 0
+      :assistantParseQuantity(dayText,{day:1,days:1,week:7,weeks:7},0,7);
+    return [0,1,2,7].includes(value) ? {ok:true,changes:[{field:def.id,op:'set',value}]} : {ok:false,error:'Choose on the due date, 1 day, 2 days, or 1 week before.'};
+  }
   const fixedClock=assistantFieldFixedClock(text);
   if(fixedClock!=null){
     if(def.id==='allowedTimeFixedStart')return {ok:true,changes:[{field:def.id,op:'set',value:true}]};
