@@ -24,12 +24,140 @@ function detailSearchNormalize(value){
   return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 }
 
+// ---- Shared search primitives (detail + settings) ----
+
+// Bounded Damerau-Levenshtein: insertion, deletion, substitution, and
+// adjacent transposition. Labels are short, so the small matrix is fine.
+function searchEditWithin(word,token,maxEdits){
+  if(word === token)return true;
+  if(Math.abs(word.length - token.length) > maxEdits)return false;
+  let prev = new Array(token.length + 1).fill(0).map((_,j)=>j);
+  let prev2 = null;
+  for(let i=1;i<=word.length;i++){
+    const cur = [i];
+    for(let j=1;j<=token.length;j++){
+      let d = Math.min(prev[j] + 1,cur[j-1] + 1,prev[j-1] + (word[i-1] === token[j-1] ? 0 : 1));
+      if(i > 1 && j > 1 && word[i-1] === token[j-2] && word[i-2] === token[j-1])d = Math.min(d,prev2[j-2] + 1);
+      cur.push(d);
+    }
+    prev2 = prev;prev = cur;
+  }
+  return prev[token.length] <= maxEdits;
+}
+
+// Conservative plural folding; the typed token always stays in the list.
+function detailSearchTokenVariants(token){
+  const stems = [token];
+  if(token.length > 4 && token.endsWith('ies'))stems.push(token.slice(0,-3) + 'y');
+  else if(token.length > 4 && token.endsWith('s'))stems.push(token.slice(0,-1));
+  return stems;
+}
+
+// Per-kind weights per field. An exact curated alias outranks a fuzzy label
+// coincidence; typo matches beat weak alias matches but never exact ones.
+const SEARCH_FIELD_WEIGHTS = {
+  label:{exact:100, prefix:80, plural:75, substring:60, fuzzy:38},
+  alias:{exact:44, prefix:34, plural:40, substring:28, fuzzy:24},
+  path:{exact:20, prefix:17, plural:19, substring:14, fuzzy:13},
+  desc:{exact:12, prefix:10, plural:11, substring:8, fuzzy:7}
+};
+const SEARCH_FIELD_ORDER = ['label','alias','path','desc'];
+// Detail accepts mid-word substrings and fuzzies from five letters; settings
+// stays on whole words (prefix ≥5 letters, fuzzy ≥7, no substrings).
+const DETAIL_SEARCH_RULES = {prefixMin:1, substring:true, fuzzyMin:5};
+const SETTINGS_SEARCH_RULES = {prefixMin:5, substring:false, fuzzyMin:7};
+
+// Where one query token best matched this entry: field + kind. Ranking and
+// highlighting both decide from this evidence, so they can never disagree.
+function searchTokenEvidence(entry,token,rules){
+  const variants = detailSearchTokenVariants(token);
+  let best = null,bestWeight = 0;
+  for(const field of SEARCH_FIELD_ORDER){
+    const text = entry[field + 'N'];
+    if(!text)continue;
+    const words = text.split(' ');
+    const weights = SEARCH_FIELD_WEIGHTS[field];
+    let kind;
+    if(words.some(word=>word === token))kind = 'exact';
+    else if(words.some(word=>variants.some(v=>v !== token && word === v)))kind = 'plural';
+    else if(token.length >= rules.prefixMin && words.some(word=>word.startsWith(token)))kind = 'prefix';
+    else if(rules.substring && words.some(word=>word.includes(token)))kind = 'substring';
+    else if(token.length >= rules.fuzzyMin && words.some(word=>searchEditWithin(word,token,1)))kind = 'fuzzy';
+    if(kind && weights[kind] > bestWeight){best = {field,kind};bestWeight = weights[kind];}
+  }
+  return best;
+}
+
+// Rank entries for a tokenized query. Every token must match. Whole-label
+// equality leads, then a label starting with the whole query, then summed
+// per-token evidence. Ties stay deterministic: label order when asked,
+// otherwise the order entries were discovered in.
+function searchRankEntries(entries,tokens,rules,labelTiebreak){
+  const query = tokens.join(' ');
+  tokens = [...new Set(tokens)];
+  const scored = entries.map((entry,order)=>{
+    let score = 0;
+    const evidence = {};
+    for(const token of tokens){
+      const hit = searchTokenEvidence(entry,token,rules);
+      evidence[token] = hit;
+      if(hit)score += SEARCH_FIELD_WEIGHTS[hit.field][hit.kind];
+    }
+    if(query && entry.labelN === query)score += 1000;
+    else if(query && entry.labelN.startsWith(query))score += 30;
+    return {entry,order,evidence,score};
+  }).filter(row=>tokens.every(token=>row.evidence[token]));
+  return scored.sort((a,b)=>b.score - a.score
+    || (labelTiebreak ? a.entry.label.localeCompare(b.entry.label) : 0)
+    || a.order - b.order);
+}
+
+// Wrap the original words a token matched in this displayed field. Comparison
+// is normalized; the original word node is kept, so accents and case survive.
+// Alias-only hits leave the visible text unmarked.
+function searchMarkedText(parent,text,evidence,field){
+  // Token boundaries mirror normalization, including punctuation inside a
+  // label ("time-window") while retaining combining accents in the word.
+  const pieces = String(text || '').split(/([\p{L}\p{N}\p{M}]+)/u);
+  for(const piece of pieces){
+    if(!piece)continue;
+    const word = detailSearchNormalize(piece);
+    const marked = Boolean(word) && Object.keys(evidence).some(token=>{
+      const hit = evidence[token];
+      if(!hit || hit.field !== field)return false;
+      if(hit.kind === 'exact')return word === token;
+      if(hit.kind === 'plural')return detailSearchTokenVariants(token).includes(word);
+      if(hit.kind === 'prefix')return word.startsWith(token);
+      if(hit.kind === 'substring')return word.includes(token);
+      return searchEditWithin(word,token,1);
+    });
+    if(marked){
+      const mark = document.createElement('mark');
+      mark.textContent = piece;
+      parent.append(mark);
+    }else parent.append(document.createTextNode(piece));
+  }
+}
+
+function searchResultButton(row,onPick){
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'detail-search-result';
+  const label = document.createElement('b');
+  searchMarkedText(label,row.entry.label,row.evidence,'label');
+  const path = document.createElement('small');
+  searchMarkedText(path,row.entry.path,row.evidence,'path');
+  button.append(label,path);
+  button.addEventListener('click',()=>onPick(row.entry));
+  return button;
+}
+
 function detailSearchEntries(){
   const inner = getSheetInner('detail-sheet');
   if(!inner)return [];
   const entries = [];
   const optional = $('detail-sheet').classList.contains('opportunity-mode');
-  const add = (target,label,aliases='')=>{
+  const add = (target,label,aliases='',desc='')=>{
     const page = target?.closest('.detail-page');
     if(!page || page.hidden || (target.disabled && target.id !== 'detail-due-time'))return;
     if(detailIsSingleView()){
@@ -51,8 +179,16 @@ function detailSearchEntries(){
       sections.unshift(p.querySelector(':scope > summary')?.textContent.trim());
     }
     const path = [DETAIL_PAGE_NAV[page.dataset.detailNav]?.label,...sections].filter(Boolean).join(' › ');
-    const text = detailSearchNormalize(`${label} ${aliases} ${path}`);
-    if(!entries.some(e=>e.target === target))entries.push({target,label,path,text});
+    const labelN = detailSearchNormalize(label);
+    if(!labelN)return;
+    if(entries.some(e=>e.target === target))return;
+    entries.push({
+      target,label,path,labelN,
+      aliasN:detailSearchNormalize(aliases),
+      pathN:detailSearchNormalize(path),
+      descN:detailSearchNormalize(desc),
+      order:entries.length
+    });
   };
   DETAIL_SEARCH_FIELDS.forEach(([id,label,aliases])=>{
     if(optional && id === 'detail-days'){
@@ -66,45 +202,55 @@ function detailSearchEntries(){
   inner.querySelectorAll('.detail-page details > summary').forEach(el=>add(el,el.textContent.trim()));
   // Include live option/link rows and every native reminder edge. Labels come
   // from the renderer, so added rows and changing item types cannot go stale.
-  inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row, #detail-native-reminders label').forEach(row=>{
+  // Only selected and displayed content is indexed: unselected options would
+  // flood results with unrelated habit and place names.
+  const rowSelectedText = row=>{
+    const parts = [];
+    row.querySelectorAll('.habit-option-field-label,.schedule-chip.on,.seg-opt.on').forEach(el=>{
+      if(!el.closest('[hidden]'))parts.push(el.textContent);
+    });
+    row.querySelectorAll('select').forEach(select=>{
+      if(select.closest('[hidden]'))return;
+      const selected = select.querySelector('option:checked');
+      if(selected)parts.push(selected.textContent);
+    });
+    row.querySelectorAll('input[type="text"],input:not([type]),input[type="url"],input[type="tel"]').forEach(input=>{
+      if(input.closest('[hidden]'))return;
+      if(input.value)parts.push(input.value);
+    });
+    return parts.join(' ');
+  };
+  // Reminder edges are div.native-reminder-row; the DND control is a label.
+  inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row, #detail-native-reminders label, #detail-native-reminders .native-reminder-row').forEach(row=>{
+    // Hidden template and editor rows stay out of the index; conditional
+    // catalog fields above deliberately remain searchable for their
+    // prerequisite guidance.
+    if(row.closest('[hidden]'))return;
     let label,aliases;
     if(row.closest('#detail-native-reminders')){
-      label = row.childNodes[0]?.textContent.trim();
+      const face = row.querySelector('.native-reminder-name')?.textContent || row.childNodes[0]?.textContent.trim();
       const edge = row.querySelector('select')?.dataset.reminderEdge;
+      // Reminder rows show a timing face (“when you leave”); the searchable
+      // name is the edge title (“travel: departure”) people actually type.
+      const edgeTitle = typeof NATIVE_REMINDER_EDGES !== 'undefined'
+        ? NATIVE_REMINDER_EDGES.find(([key])=>key === edge)?.[1] : '';
+      label = edgeTitle && edgeTitle !== face ? `${edgeTitle} (${face})` : (edgeTitle || face);
       aliases = 'phone reminder notification ringing alarm';
       if(edge === 'missed')aliases += ' before missed drop cutoff warning estimate';
       if(row.querySelector('[data-reminder-lead]'))aliases += ' travel departure lead time minutes';
     }else if(row.matches('.schedule-link-editor')){
       label = `Item order: ${row.querySelector('.schedule-link-habit option:checked')?.textContent || 'choose a partner'}`;
-      aliases = row.textContent;
+      aliases = rowSelectedText(row);
     }else if(row.matches('.habit-option-row')){
       label = `${row.querySelector('.habit-option-number')?.textContent || 'Option'}: ${row.querySelector('.habit-option-location option:checked')?.textContent || 'anywhere'}`;
-      aliases = row.textContent;
+      aliases = rowSelectedText(row);
     }else{
       label = row.querySelector('.link-app-name')?.value || row.querySelector('.link-value')?.value || 'Link or call';
-      aliases = row.textContent;
+      aliases = rowSelectedText(row);
     }
     add(row,label || 'Schedule option',aliases);
   });
   return entries;
-}
-
-// One missing, extra, or mistyped letter for long words; short queries stay
-// exact so searches like “P0” and “AI” do not flood the results.
-function detailSearchTokenMatch(text,token){
-  if(text.includes(token))return true;
-  if(token.length < 5)return false;
-  return text.split(' ').some(word=>{
-    if(Math.abs(word.length - token.length)>1)return false;
-    let i=0,j=0,edits=0;
-    while(i<word.length && j<token.length){
-      if(word[i] === token[j]){i++;j++;continue;}
-      if(++edits>1)return false;
-      if(word.length>=token.length)i++;
-      if(token.length>=word.length)j++;
-    }
-    return edits+(word.length-i)+(token.length-j)<=1;
-  });
 }
 
 function detailAssistantAvailable(){
@@ -170,27 +316,15 @@ async function openDetailAssistant(instruction = ''){
 function renderDetailSearch(){
   const query = detailSearchNormalize($('detail-search-input').value).slice(0,120);
   const tokens = query.split(' ').filter(Boolean);
-  const entries = detailSearchEntries();
-  const matches = entries.filter(e=>tokens.every(token=>detailSearchTokenMatch(e.text,token))).sort((a,b)=>{
-    const rank = e=>detailSearchNormalize(e.label) === query ? 0 : detailSearchNormalize(e.label).startsWith(query) ? 1 : 2;
-    return rank(a)-rank(b);
-  });
+  const ranked = searchRankEntries(detailSearchEntries(),tokens,DETAIL_SEARCH_RULES,false);
   const results = $('detail-search-results');
   results.replaceChildren();
-  matches.forEach(entry=>{
-    const button = document.createElement('button');
-    button.type = 'button';button.className = 'detail-search-result';
-    const label = document.createElement('b');label.textContent = entry.label;
-    const path = document.createElement('small');path.textContent = entry.path;
-    button.append(label,path);
-    button.addEventListener('click',()=>revealDetailSearchEntry(entry));
-    results.append(button);
-  });
+  ranked.forEach(row=>results.append(searchResultButton(row,entry=>revealDetailSearchEntry(entry))));
   syncDetailSearchAssistant();
   const assistant = detailAssistantAvailable();
   $('detail-search-status').textContent = !tokens.length
     ? (assistant ? 'Find a setting or describe a change.' : 'Browse settings, or search by name.')
-    : matches.length ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`
+    : ranked.length ? `${ranked.length} ${ranked.length === 1 ? 'match' : 'matches'}`
     : assistant ? ''
     : 'No matching settings. Try “duration”, “weather”, “reminder” or “days”.';
   $('detail-search-clear').hidden = !$('detail-search-input').value;
@@ -344,7 +478,11 @@ document.addEventListener('pointerdown',event=>{
 },true));
 document.addEventListener('focusin',syncDetailEditingChrome);
 document.addEventListener('focusout',()=>requestAnimationFrame(syncDetailEditingChrome));
-$('detail-search-input').addEventListener('input',renderDetailSearch);
+$('detail-search-input').addEventListener('input',event=>{
+  if(event.isComposing)return;
+  renderDetailSearch();
+});
+$('detail-search-input').addEventListener('compositionend',renderDetailSearch);
 $('detail-search-input').addEventListener('keydown',event=>{
   if(event.isComposing)return;
   const first = $('detail-search-results').querySelector('button')

@@ -124,6 +124,49 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     await page.keyboard.press('Enter');
     assert.ok(await page.locator('#detail-duration').isVisible());
     assert.equal(await page.evaluate(()=>JSON.stringify(load())),original,'search must not mutate data');
+    // Match quality table: substitution, transposition, accents, plurals.
+    for(const [query,label] of [
+      ['wether','Show weather'],['waether','Show weather'],['caléndar','Calendar history'],
+      ['medicines','Minimum gap between sessions'],['sessions','Minimum gap between sessions']
+    ]){
+      await search(query);
+      assert.ok(await result(label).count(),`${query} → ${label}`);
+    }
+    await search('weather');
+    assert.equal(await page.locator('#detail-search-results .detail-search-result').first().locator('b').textContent(),'Weather guidance','weather guidance leads weather results');
+    assert.ok(await page.locator('#detail-search-results mark').first().isVisible(),'matched words are marked');
+    // Dynamic rows index selected content only: an unselected partner option
+    // must not surface every order-link row.
+    await page.evaluate(()=>{
+      const items = load();
+      items.push({...items[0],hid:'search-unlinked',name:'Zzyxx Unlinked'});
+      items[0].scheduleLinks = [{anchorHid:'search-task',direction:'before',adjacency:'direct',requireSameDay:false}];
+      save(items);openDetail(0);
+    });
+    await search('Zzyxx Unlinked');
+    assert.equal(await page.locator('.detail-search-result').count(),0,'unselected partner options stay unindexed');
+    await search('Task');
+    assert.ok(await result('Item order: Task').count(),'selected partner surfaces the order row');
+    await search('Task gap');
+    assert.ok(await result('Item order: Task').count(),'selected partner can be combined with the row field label');
+    await page.evaluate(()=>document.querySelector('.schedule-link-adjacency').hidden=true);
+    await search('Task right');
+    assert.equal(await result('Item order: Task').count(),0,'hidden relationship choices stay unindexed');
+    await page.evaluate(()=>{
+      const items = load();
+      items.pop();delete items[0].scheduleLinks;
+      save(items);openDetail(0);
+    });
+    // IME composition renders only after completion.
+    await page.evaluate(()=>{
+      const input = $('detail-search-input');
+      input.value = 'zzzz-nothing';
+      input.dispatchEvent(new InputEvent('input',{data:input.value,isComposing:true}));
+    });
+    assert.ok((await page.locator('#detail-search-status').textContent()).includes('match'),'IME composition does not render mid-composition');
+    await page.evaluate(()=>$('detail-search-input').dispatchEvent(new Event('compositionend')));
+    assert.ok((await page.locator('#detail-search-status').textContent()).includes('No matching'),'completed composition renders');
+    await page.locator('#detail-search-clear').click();
     await search('weather');await page.keyboard.press('Escape');
     assert.equal(await page.locator('#detail-search-panel').isVisible(),false);
     assert.ok(await page.locator('#detail-cool').isVisible());

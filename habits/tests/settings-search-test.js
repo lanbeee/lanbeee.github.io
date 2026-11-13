@@ -12,6 +12,10 @@ const {chromium} = require('playwright');
     await page.addInitScript(()=>{
       localStorage.setItem('tings_coach_install_v2','done');
       localStorage.setItem('tings_coach_essentials_v2','done');
+      // Distinctive saved-place fixture: search must never surface user data.
+      localStorage.setItem('tings_app_settings_v2',JSON.stringify({locations:[
+        {id:'loc-zzyxx',name:'Zzyxx Fitness',address:'742 Evergreen Terrace',lat:31.52,lng:74.35}
+      ]}));
       const viewport = new EventTarget();
       Object.assign(viewport,{height:844,width:390,offsetTop:0,offsetLeft:0,scale:1});
       Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
@@ -49,6 +53,44 @@ const {chromium} = require('playwright');
     assert.ok(address.includes('locations'),address.join(', '));
     assert.ok(address.every(label=>!label.includes('Photon')),address.join(', '));
     assert.deepEqual(await labelsFor('zzzz-not-a-setting'),[]);
+
+    // Ranked destinations: the narrowest matching control leads.
+    const first = async query=>(await labelsFor(query))[0];
+    assert.equal(await first('weather'),'weather guidance');
+    assert.equal(await first('font'),'font size');
+    assert.equal(await first('duration'),'duration');
+    const dark = await labelsFor('dark');
+    assert.ok(dark.includes('theme'));
+    assert.ok(!dark.includes('light') && !dark.includes('system'),'group aliases never match contradictory choices');
+    assert.deepEqual(await labelsFor('urgent'),['importance'],'priority aliases describe the field, not every P0–P5 choice');
+    const needle = await labelsFor('needle');
+    assert.ok(needle.includes('model source'));
+    assert.ok(!needle.includes('auto server') && !needle.includes('LM Studio / API'),'provider aliases stay on their field');
+    // Associated-control aliases: sublabels bound with label[for], seg-group
+    // ids, and unassociated heading spans each resolve their own synonyms.
+    await expectHit('overnight','all-day events');
+    await expectHit('attachment','choose ICS or PDF');
+    await expectHit('commute','default travel mode');
+    // Typos (deletion, transposition), plurals, case, and accents.
+    await expectHit('remnders','reminders');
+    await expectHit('notificaiton','reminders');
+    await expectHit('reminders','reminders');
+    await expectHit('DARK MODE','appearance');
+    assert.deepEqual(await labelsFor('héllo'),[]);
+    // Saved places and addresses stay unindexed even when distinctive.
+    await page.evaluate(()=>renderLocationControls());
+    assert.equal(await page.locator('#location-list .location-name').inputValue(),'Zzyxx Fitness','privacy fixture is mounted before searching');
+    assert.deepEqual(await labelsFor('Zzyxx'),[]);
+    assert.deepEqual(await labelsFor('Evergreen'),[]);
+    assert.ok((await labelsFor('address')).every(label=>!label.includes('Zzyxx')));
+    assert.deepEqual(await labelsFor('<script>alert(1)</script>'),[]);
+    const browse = await labelsFor('');
+    assert.ok(browse.length > 40,'empty query retains all settings');
+    assert.deepEqual(browse,[...browse].sort((a,b)=>a.localeCompare(b)),'empty query preserves alphabetical browsing');
+    await labelsFor('day');
+    const dayResult = page.locator('#settings-search-results button').filter({has:page.locator('b',{hasText:'all-day events'})});
+    assert.equal(await dayResult.locator('b mark').textContent(),'day','punctuation uses the same word boundaries for matching and highlighting');
+    assert.equal(await dayResult.locator('b').textContent(),'all-day events','highlighting preserves the result name');
 
     await page.locator('#open-about').tap();
     await page.waitForFunction(()=>$('settings-sheet').classList.contains('open'));
@@ -97,6 +139,23 @@ const {chromium} = require('playwright');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#settings-search-panel').isVisible(),false);
     assert.ok(await page.locator('#settings-sheet').evaluate(el=>el.classList.contains('open')),'Escape only dismisses search');
+
+    // Highlighting marks matched words only; alias-only hits stay unmarked.
+    await page.locator('#settings-search-toggle').tap();
+    await page.locator('#settings-search-input').fill('weather');
+    assert.ok(await page.locator('#settings-search-results mark').first().isVisible(),'matched words are marked');
+    await page.locator('#settings-search-input').fill('qwen');
+    assert.equal(await page.locator('#settings-search-results mark').count(),0,'alias-only hits stay unmarked');
+    // IME composition renders only after completion.
+    await page.evaluate(()=>{
+      const input = $('settings-search-input');
+      input.value = 'zzzz-not-a-setting';
+      input.dispatchEvent(new InputEvent('input',{data:input.value,isComposing:true}));
+    });
+    assert.equal(await page.locator('#settings-search-status').textContent(),'1 match','IME composition does not render mid-composition');
+    await page.evaluate(()=>$('settings-search-input').dispatchEvent(new Event('compositionend')));
+    assert.ok((await page.locator('#settings-search-status').textContent()).includes('No matching settings'),'completed composition renders');
+    await page.locator('#settings-search-dismiss').tap();
 
     await page.locator('#settings-search-toggle').tap();
     await page.locator('#settings-search-input').fill('mute');

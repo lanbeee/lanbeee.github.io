@@ -365,6 +365,8 @@ body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none 
 .detail-search-result{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;min-height:54px;padding:12px 10px;text-align:left;border:0;border-bottom:1px solid var(--border);background:var(--bg);color:var(--text);font:inherit;cursor:pointer;}
 .detail-search-result b{font-size:13px;font-weight:600;}
 .detail-search-result small{font-size:11px;color:var(--text2);}
+/* Matched words inside results: quiet accent, readable in every theme. */
+.detail-search-result mark{background:transparent;color:inherit;font-weight:700;text-decoration:underline;text-decoration-color:var(--purple-icon);text-decoration-thickness:2px;text-underline-offset:2px;}
 .detail-search-open > .detail-pager{display:none;}
 .detail-search-open > .detail-page-nav{display:none;}
 body .detail-sheet.detail-field-editing > .detail-page-nav,
