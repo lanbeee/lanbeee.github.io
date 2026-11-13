@@ -413,18 +413,19 @@ function agendaPlacedHids(week, data){
   return placed;
 }
 
-function unplacedLinkReason(week, hid){
+function unplacedLinkReason(week, hid, dayBase){
   for(const day of week && week.days || []){
+    if(day.dayBase !== dayBase)continue;
     const hit = (day.linkOmissions || []).find(item=>item && item.subjectHid === hid && item.reason);
     if(hit)return hit.reason;
   }
   return '';
 }
 
-// Items the mounted week agenda never placed, excluding anything already on
-// the missed list. A row on any day counts as placed, including a short
-// breakable chunk and a later-day assignment. The today-header count stays
-// the visible missed rows; this list is sheet-only.
+// Today's eligible items the mounted agenda never placed, excluding anything
+// already on the missed list. A row on any day counts as placed, including a
+// short breakable chunk and a later-day assignment. Future-only obligations
+// do not belong in today's notifications. This list is sheet-only.
 function collectUnplacedAgendaItems(data, settings, missedRows, now = Date.now()){
   data = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
   settings = settings || (typeof sortSettings !== 'undefined' ? sortSettings : null) || {};
@@ -444,16 +445,12 @@ function collectUnplacedAgendaItems(data, settings, missedRows, now = Date.now()
       : (h.type === 'task' && h.eventTime !== null && !h.breakable))continue;
     const pinnedDay = typeof plannerPinnedDayBase === 'function'
       ? plannerPinnedDayBase(h, settings, todayBase) : null;
-    let eligible = false;
-    if(typeof weekFillEligibleOnDay === 'function'){
-      for(const day of week.days){
-        if(weekFillEligibleOnDay(h, settings, day.dayBase, day.weekday, pinnedDay)){
-          eligible = true;
-          break;
-        }
-      }
-    }
-    const reason = unplacedLinkReason(week, h.hid);
+    const plannedToday = typeof hasPlannedForDay === 'function' && hasPlannedForDay(h,todayBase);
+    const deadline = h.type === 'task' ? taskWhen(h) : habitPlanByDate(h);
+    if(!plannedToday && deadline != null && dayStart(deadline) > todayBase)continue;
+    const eligible = typeof weekFillEligibleOnDay === 'function'
+      && weekFillEligibleOnDay(h, settings, todayBase, new Date(todayBase).getDay(), pinnedDay);
+    const reason = unplacedLinkReason(week, h.hid, todayBase);
     if(!eligible && !reason)continue;
     items.push({
       hid:h.hid, name:h.name, emoji:h.emoji, idx:i, first:now,
@@ -2189,7 +2186,7 @@ function render(opts){
           _droppedDayBaselineDay = todayIso();
         }
         const _hasMissedEvidence = Object.entries(_snap.expectations || {})
-          .some(([day,entry])=>day <= todayIso() && entry && Array.isArray(entry.hids) && entry.hids.length);
+          .some(([day,entry])=>day === todayIso() && entry && Array.isArray(entry.hids) && entry.hids.length);
         const _hasExpiredDueCandidate = data.some(h=>h && h.hid
           && !completedToday(h) && todayCategory(h,sortSettings) === 1);
         const _hasClosedOpportunityCandidate = data.some(h=>h && h.hid

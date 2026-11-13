@@ -10,9 +10,9 @@
 //  12. Overdue weekly/task still missed when the planner catch-up-places them tomorrow.
 //  13. Morning-only window, first open after it closed → missed.
 //  14. Off-day/impossible overdue work is never swept into Missed.
-//  15. A dated planner expectation survives a skipped app day.
+//  15. A skipped app day stays in history, outside today's notifications.
 //  16. A row actually shown today remains missed if a cold solve drops it.
-//  17. Yesterday's dated row is not missed while today's window is still open.
+//  17. Yesterday's dated row never becomes today's missed notification.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/slipped-indicator-test.js
 //
@@ -582,8 +582,8 @@ function assert(cond,msg){
     await page.click('#slipped-close');
   }
 
-  // O. A skipped app day keeps its dated planner expectation
-  console.log('\n[O] Dated expectation survives a skipped app day');
+  // O. A skipped app day keeps its history without carrying a notification.
+  console.log('\n[O] Old expectations stay out of today’s notification sheet');
   await page.evaluate(() => {
     const now = Date.now();
     const dayMs = 86400000;
@@ -615,16 +615,9 @@ function assert(cond,msg){
   });
   await page.waitForTimeout(1000);
   pill = await page.$('.dropped-pill');
-  assert(Boolean(pill),'a planner row is not forgotten just because the app stayed closed the next day');
-  if(pill){
-    await pill.click();
-    await page.waitForTimeout(250);
-    const row = await page.locator('#slipped-sheet .dropped-item:has-text("Skipped-day plan")').count();
-    const tag = await page.locator('#slipped-sheet .dropped-item:has-text("Skipped-day plan") .dropped-tag').textContent();
-    assert(row === 1,'skipped-day expected item appears once');
-    assert(/yesterday/i.test(tag),'skipped-day miss keeps its dated label');
-    await page.click('#slipped-close');
-  }
+  assert(!pill,'yesterday’s off-day item produces neither a missed nor an unplaced notification');
+  assert(await page.evaluate(()=>Boolean(loadTodaySuggested().expectations[dateKey(Date.now()-86400000)])),
+    'yesterday’s planner expectation remains saved as history');
 
   // P. A previously rendered row is stronger evidence than an open clock
   // window. This is the cold-open case where the exact optimizer moves an item
@@ -675,11 +668,9 @@ function assert(cond,msg){
     await page.click('#slipped-close');
   }
 
-  // Q. Calendar midnight is not an opportunity ending. A yesterday-dated
-  // daily whose window is still open today must not dump into Missed — this
-  // is the 2am "18 missed" case. A morning window that has already closed
-  // today remains a real miss.
-  console.log('\n[Q] Yesterday expectation is not missed while still doable today');
+  // Q. Past notifications expire, even when the same window closes today.
+  // Today's independent expectation can still produce a morning miss.
+  console.log('\n[Q] Yesterday expectations expire; today’s misses still appear');
   const rolloverPolicy = await page.evaluate(() => {
     const tenAm = Date.now();
     const twoAm = dayStart(tenAm) + 2 * 3600000;
@@ -705,7 +696,7 @@ function assert(cond,msg){
   assert(!rolloverPolicy.dailyAtTwo, 'all-day daily is not missed at 2am just because yesterday ended');
   assert(!rolloverPolicy.morningAtTwo, 'morning window still ahead is not missed at 2am');
   assert(!rolloverPolicy.dailyAtTen, 'all-day daily is not missed at 10am while still doable today');
-  assert(rolloverPolicy.morningAtTen, 'closed morning window from yesterday remains missed at 10am');
+  assert(!rolloverPolicy.morningAtTen, 'yesterday’s morning notification stays expired after today’s window closes');
 
   await page.evaluate(() => {
     const now = Date.now();

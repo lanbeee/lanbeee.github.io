@@ -109,14 +109,30 @@ function assert(cond, msg){
       flexibilityDays:0, pinned:false, snoozedUntil:null, markDone:true, priority:2 },
     { hid:'snooze-1', name:'Parked', emoji:'🌙', type:'keepup', target:1, durationMinutes:30,
       lastLog:now - 2 * dayMs, logs:[now - 2 * dayMs], createdAt:now - 30 * dayMs,
-      flexibilityDays:0, pinned:false, snoozedUntil:now + 2 * dayMs, dueDate:null, priority:1 }
+      flexibilityDays:0, pinned:false, snoozedUntil:now + 2 * dayMs, dueDate:null, priority:1 },
+    { hid:'future-task', name:'Tomorrow report', type:'task', target:null, durationMinutes:720,
+      logs:[], lastLog:null, createdAt:now - 30 * dayMs, dueDate:now + dayMs, eventTime:null,
+      earlyWindowDays:1, delayAllowanceDays:0, pinned:false, markDone:true, priority:1 },
+    { hid:'future-habit', name:'Tomorrow rhythm', type:'keepup', target:7, durationMinutes:720,
+      logs:[now - 6 * dayMs], lastLog:now - 6 * dayMs, createdAt:now - 30 * dayMs,
+      flexibilityDays:0, pinned:false, dueDate:null, priority:1 },
+    { hid:'future-deadline', name:'Later deadline', type:'keepup', target:7, durationMinutes:720,
+      logs:[], lastLog:null, createdAt:now - 30 * dayMs, planByDate:now + 2 * dayMs,
+      flexibilityDays:0, pinned:false, dueDate:null, priority:1 },
+    { hid:'past-only', name:'Yesterday only', type:'keepup', target:1, durationMinutes:720,
+      logs:[], lastLog:null, createdAt:now - 30 * dayMs,
+      allowedWeekdays:[(clock.getDay()+6)%7],flexibilityDays:0,pinned:false,dueDate:null,priority:1 }
   ];
 
   async function paint(){
     await page.evaluate(({ habits, settings }) => {
       localStorage.setItem('tings_v2', JSON.stringify(habits));
       localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
-      localStorage.removeItem('tings_today_suggested_v1');
+      const yesterday = dateKey(Date.now()-86400000);
+      localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
+        day:yesterday,hids:{'past-only':{first:Date.now()-86400000}},
+        expectations:{[yesterday]:{hids:['past-only'],renderedHids:['past-only']}}
+      }));
       localStorage.removeItem('tings_missed_hidden_v1');
       if(typeof loadSortSettings === 'function')sortSettings = loadSortSettings();
       render({ __optimizedWeek:buildWeekAgenda(load(), sortSettings, 7) });
@@ -156,7 +172,15 @@ function assert(cond, msg){
 
   const listed = await page.evaluate(() => collectUnplacedAgendaItems(load(), sortSettings, collectDroppedItems(load(), sortSettings, [])).map(row => row.name));
   assert(listed.length === 1 && listed[0] === 'Ship report', `collector matches the sheet (got ${listed.join(', ')})`);
-  console.log('  ok: collector omits misses, placed work, someday tasks, and snoozes');
+  console.log('  ok: collector omits misses, placed work, future obligations, past notifications, someday tasks, and snoozes');
+
+  const futureLink = await page.evaluate(()=>{
+    const data=load();
+    _homeRenderedWeek.days[1].linkOmissions=[{subjectHid:'future-habit',reason:'Partner does not fit tomorrow'}];
+    return collectUnplacedAgendaItems(data,sortSettings,collectDroppedItems(data,sortSettings,[]))
+      .some(row=>row.hid==='future-habit');
+  });
+  assert(!futureLink,'a future link omission does not create a notification today');
 
   await page.locator('#slipped-close').click();
   await page.waitForSelector('#slipped-sheet:not(.open)', { timeout:3000 });
