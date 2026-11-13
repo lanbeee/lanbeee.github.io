@@ -459,20 +459,27 @@ body[data-pane-count="1"] .detail-sheet.detail-ask-on > .sheet-search-dock{width
 .detail-ask-tag{flex:0 1 auto;max-width:min(60%,13rem);height:26px;margin:0 0 9px 8px;padding:0 2px 0 8px;}
 .detail-ask:has(.detail-ask-tag:not([hidden])) .detail-ask-mark{display:none;}
 .detail-ask:has(.detail-ask-tag:not([hidden])) textarea{padding-left:6px;}
-body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing .detail-search-control,
-body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing #detail-cool{display:none;}
-body[data-pane-count="1"] .detail-sheet.detail-ask-on > .detail-pager > .detail-page.detail-summary-page{
-  padding-bottom:calc(150px + var(--detail-ask-guides-h,0px) + var(--nav-bottom) + var(--content-safe-bottom));
+/* Summary has one in-flow composer, rather than a floating second card over
+   the conversation. The pager gives it real space as the keyboard opens. */
+body[data-pane-count="1"] .detail-sheet.detail-ask-on{
+  padding-bottom:var(--detail-footer-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px))));
 }
-/* The undo toast sits above the dock; the latest message scrolls clear of it. */
-body[data-pane-count="1"]:has(#action-toast.show) .detail-sheet.detail-ask-on > .detail-pager > .detail-page.detail-summary-page{
-  padding-bottom:calc(290px + var(--detail-ask-guides-h,0px) + var(--nav-bottom) + var(--content-safe-bottom));
+body[data-pane-count="1"] .detail-sheet.detail-ask-on > .sheet-search-dock{
+  position:relative;inset:auto;transform:none;align-self:stretch;
+  width:100%;max-width:none;margin:6px 0 0;padding:6px 0;
+  border-radius:0;background:var(--bg);box-shadow:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;
 }
-/* Typing uses search's keyboard edge, and the tab strip yields its height. */
+body[data-pane-count="1"] .detail-sheet.detail-ask-on .detail-ask-guides{padding:0 0 6px;}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on .detail-ask-guides-label{
+  position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
+}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on > .detail-pager > .detail-page.detail-summary-page{padding-bottom:12px;}
+/* The undo toast sits above the composer; keep the confirmation clear. */
+body[data-pane-count="1"]:has(#action-toast.show) .detail-sheet.detail-ask-on > .detail-pager > .detail-page.detail-summary-page{padding-bottom:200px;}
+/* Reclaim the tab strip while typing, with the same composer width and
+   search/close controls before and after focus. */
 body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing{--nav-bottom:0px;}
-body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing > .sheet-search-dock{
-  top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--keyboard-dock-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
-}
 body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing > .detail-page-nav{display:none;}
 body .detail-sheet.detail-field-editing > .detail-page-nav,
 body .detail-sheet.detail-keyboard-open > .detail-page-nav,

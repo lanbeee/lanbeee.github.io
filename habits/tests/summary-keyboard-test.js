@@ -152,17 +152,17 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
           for(const height of [530,650,760,844]){
             const frame=await sample(height);
             assert.equal(frame.typing,height<844,'compact controls remain until keyboard finishes closing');
-            const clearance=height===844 ? 34+42 : 0;
+            const clearance=height===844 ? 34 : 0;
             assert.ok(Math.abs(frame.dock.bottom-(height-clearance))<=1,`closing dock stays at its keyboard/safe edge: ${JSON.stringify(frame.dock)}`);
           }
           await page.evaluate(()=>{detailSummaryScrollToEnd=summaryScrollToEnd;$('detail-ask-input').value='';syncDetailSummaryDock();});
-          // An empty field still shows guides. Blur must not collapse them
-          // halfway through the closing keyboard animation.
+          // Empty focus opens no extra guide layer, including on dismissal.
           await page.locator('#detail-ask-input').tap();
           const empty=await sample(530);
+          assert.equal(await page.locator('#detail-ask-guides').isVisible(),false,'empty focus does not open a suggestions card');
           await page.locator('#detail-ask-input').blur();
           const closingEmpty=await sample(530);
-          assert.equal(closingEmpty.dock.height,empty.dock.height,'empty composer guides stay stable during keyboard dismissal');
+          assert.equal(closingEmpty.dock.height,empty.dock.height,'empty composer stays stable during keyboard dismissal');
           await sample(844);
           assert.equal(await page.evaluate(()=>scrollY),await page.evaluate(()=>summaryHomeScroll),`${engine.name()} ${mode} minimal=${minimal}: keyboard and scroll gestures preserve Home position`);
           await page.evaluate(()=>closeDetail());

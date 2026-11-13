@@ -485,7 +485,14 @@ function updateKeyboardLift(){
     // first resized frame, before the queued viewport callback has run.
     const safeBottom = `max(0px,calc(100% - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
     if(style.getPropertyValue('--keyboard-dock-safe-bottom') !== safeBottom)style.setProperty('--keyboard-dock-safe-bottom',safeBottom);
-  }else style.removeProperty('--keyboard-dock-safe-bottom');
+    // In-flow padding percentages resolve against width, unlike the floating
+    // dock's top. Use viewport length for Summary's footer clearance instead.
+    const detailSafeBottom = `max(0px,calc(100dvh - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
+    if(style.getPropertyValue('--detail-footer-safe-bottom') !== detailSafeBottom)style.setProperty('--detail-footer-safe-bottom',detailSafeBottom);
+  }else{
+    style.removeProperty('--keyboard-dock-safe-bottom');
+    style.removeProperty('--detail-footer-safe-bottom');
+  }
   // Native layout already follows both keyboard directions. A pixel snapshot
   // would hold the old height for a frame as the keyboard closes.
   const bottom = nativeResized ? '100%' : `${visibleBottom}px`;

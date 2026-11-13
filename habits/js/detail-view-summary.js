@@ -75,16 +75,32 @@ function detailSummaryThread(){
   return $('detail-summary-thread');
 }
 
-function detailSummaryScrollToEnd(){
-  requestAnimationFrame(()=>{
-    const page = getSheetInner('detail-sheet')?.querySelector('.detail-summary-page');
-    if(!page)return;
-    if(detailIsSingleView()){
-      const pager = page.closest('.detail-pager');
-      pager.scrollTop = pager.scrollHeight;
-    }else page.scrollTop = page.scrollHeight;
-  });
+let detailSummaryFollowEnd = false;
+function detailSummaryKeepEnd(){
+  if(!detailSummaryFollowEnd || !detailSummaryOnScreen())return;
+  const page = getSheetInner('detail-sheet')?.querySelector('.detail-summary-page');
+  const scroller = detailIsSingleView() ? page?.closest('.detail-pager') : page;
+  if(scroller)scroller.scrollTo({top:scroller.scrollHeight,behavior:'instant'});
 }
+
+function detailSummaryScrollToEnd(){
+  detailSummaryFollowEnd = true;
+  requestAnimationFrame(detailSummaryKeepEnd);
+}
+
+// A response stays above the composer/toast through keyboard and footer
+// resizing. A reader's own scroll immediately takes ownership of the position.
+const detailSummaryPager = $('detail-summary').closest('.detail-pager');
+['touchstart','wheel'].forEach(type=>detailSummaryPager.addEventListener(type,()=>{
+  detailSummaryFollowEnd = false;
+},{passive:true}));
+detailSummaryPager.addEventListener('keydown',event=>{
+  if(['PageUp','PageDown','Home','End','ArrowUp','ArrowDown'].includes(event.key)
+    && !event.target.closest('input,textarea,[contenteditable="true"]'))detailSummaryFollowEnd = false;
+});
+const detailSummaryResizeObserver = new ResizeObserver(detailSummaryKeepEnd);
+detailSummaryResizeObserver.observe(detailSummaryPager);
+detailSummaryResizeObserver.observe($('detail-summary').closest('.detail-summary-page'));
 
 function detailSummaryBubble(kind,text){
   const thread = detailSummaryThread();
@@ -304,7 +320,6 @@ function detailSummaryGuideHint(session,active,draft){
   if(session.continuationError)return 'Draft kept. Continue, or edit the last request.';
   if(session.unresolved?.some(item=>item.field === 'guidance'))return 'Choose the setting or action you meant.';
   if(detailSummaryNeedsPick(session))return 'Pick the setting you meant, then add its value.';
-  if(!draft.trim())return 'Choose a setting or describe a change.';
   return '';
 }
 
@@ -322,7 +337,7 @@ function renderDetailSummaryGuides(){
   // Chips and help only while composing or when Needle needs a pick; an idle
   // tray keeps just Edit last request so it never covers the proposal.
   const noticeOnly = existing?.unresolved?.length && !detailSummaryNeedsPick(existing) && !draft.trim();
-  const guiding = base && !noticeOnly && Boolean(inner.classList.contains('detail-ask-typing') || draft.trim() || detailSummaryNeedsPick(existing) || detailSummaryRevising);
+  const guiding = base && !noticeOnly && Boolean(draft.trim() || detailSummaryNeedsPick(existing) || detailSummaryRevising);
   const session = guiding || canRevise ? detailSummaryEnsureSession() : null;
   if(!session){
     tray.hidden = true;
@@ -626,9 +641,9 @@ $('detail-ask-input').addEventListener('keydown',event=>{
   event.preventDefault();
   void detailSummarySend(detailSummaryDraft());
 });
-$('detail-ask-send').addEventListener('pointerdown',event=>event.preventDefault());
+$('detail-ask-send').addEventListener('pointerdown',event=>{if(event.pointerType !== 'touch')event.preventDefault();});
 $('detail-ask-send').addEventListener('click',()=>void detailSummarySend(detailSummaryDraft()));
-$('detail-ask-tag-remove').addEventListener('pointerdown',event=>event.preventDefault());
+$('detail-ask-tag-remove').addEventListener('pointerdown',event=>{if(event.pointerType !== 'touch')event.preventDefault();});
 $('detail-ask-tag-remove').addEventListener('click',()=>{
   detailSummarySetTag('');
   syncDetailSummaryDock();
@@ -636,7 +651,7 @@ $('detail-ask-tag-remove').addEventListener('click',()=>{
 });
 // Guide taps keep the keyboard up, so the tray stays put while choosing.
 $('detail-ask-guides').addEventListener('pointerdown',event=>{
-  if(event.target.closest('button'))event.preventDefault();
+  if(event.pointerType !== 'touch' && event.target.closest('button'))event.preventDefault();
 });
 $('detail-ask-guides').addEventListener('click',event=>{
   const guide = event.target.closest('[data-detail-guide]');

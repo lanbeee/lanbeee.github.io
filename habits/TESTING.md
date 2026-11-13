@@ -275,6 +275,14 @@ Results are `test-results/needle-minimal-ui-{live,scripted}.json`. Native
 permission/reconciliation tests validate the persistence boundary; browser tests
 do not establish physical Android delivery or Do Not Disturb behavior.
 
+`summary-iphone-flow-test.js` runs the Summary journey with WebKit's iPhone X
+profile (375×812, notch/home-indicator insets) and touch taps, including Send,
+Save/Undo, clarification chips, tag removal, retained drafts and Adjust/Cancel.
+It requires the Playwright WebKit browser. The same Needle asset variables
+enable real inference. Keyboard resize/pan events are simulated; this does not
+verify the physical iOS keyboard animation. Screenshots and the report are in
+`test-results/summary-iphonex/{live,scripted}/`.
+
 `tests/assistant-monthly-create-test.js` covers the reported Family night
 dictation and variants with monthly weekday rules, solar/prayer offsets and
 independent session lengths. The ambiguous dictation must retain its known
