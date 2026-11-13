@@ -161,6 +161,7 @@ async function stickyState(page, headerSel){
     logs:[now - dayMs * 3],
     lastLog:now - dayMs * 3,
     durationMinutes:20,
+    flexibilityDays:0,
     allowedTimeStart:0,
     allowedTimeEnd:1,
     createdAt:now - dayMs * 10
@@ -193,12 +194,13 @@ async function stickyState(page, headerSel){
     }catch{ /* ignore */ }
     localStorage.setItem('tings_v2', JSON.stringify(data));
     localStorage.setItem('tings_app_settings_v2', JSON.stringify(settings));
-    // Force a missed pill: yesterday projection included miss-seed, today does not.
-    const yesterday = new Date(now - dayMs).toISOString().slice(0, 10);
+    // Missed notifications need a dated commitment for today. Yesterday's
+    // expectations remain history and must not produce today's pill.
+    const today = new Date(now).toLocaleDateString('en-CA');
     localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
-      day: yesterday,
-      hids:{ 'miss-seed':{ first:now - dayMs, name:'Missed Seed' } },
-      projection:{ day:yesterday, hids:['miss-seed'], fingerprint:'tap-test' }
+      day:today,
+      hids:{ 'miss-seed':{ first:now - 3600000, name:'Missed Seed' } },
+      expectations:{[today]:{hids:['miss-seed'],renderedHids:['miss-seed']}}
     }));
   }, { data:seedData, settings:seedSettings, now, dayMs });
 
@@ -459,7 +461,8 @@ async function stickyState(page, headerSel){
 
   // ── F. Missed pill via drift ──
   console.log('\n[F] Missed pill drift tap');
-  // Force a missed pill the same way slipped-indicator-test does (day rollover).
+  // Seed a commitment shown today whose morning window has closed. This
+  // suite tests the real pill's touch path; rollover policy has its own suite.
   await page.evaluate(() => {
     const now = Date.now();
     const dayMs = 86400000;
@@ -471,6 +474,8 @@ async function stickyState(page, headerSel){
         emoji:'🎯',
         type:'keepup',
         target:1,
+        flexibilityDays:0,
+        durationMinutes:15,
         logs:[now - dayMs * 2],
         lastLog:now - dayMs * 2,
         createdAt:now - 30 * dayMs,
@@ -480,16 +485,15 @@ async function stickyState(page, headerSel){
       });
       localStorage.setItem('tings_v2', JSON.stringify(existing));
     }
-    const d = new Date(now - dayMs);
-    const yesterday = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const today = dateKey(now);
     localStorage.setItem('tings_today_suggested_v1', JSON.stringify({
-      day: yesterday,
-      hids:{ 'roll-y':{ first:now - dayMs, name:'Deep Work' } },
-      projection:{ day:'stale', hids:['roll-y'], fingerprint:'old' }
+      day:today,
+      hids:{ 'roll-y':{ first:now - 3600000, name:'Deep Work' } },
+      expectations:{[today]:{hids:['roll-y'],renderedHids:['roll-y']}}
     }));
     if(typeof _droppedDayBaselineDay !== 'undefined')_droppedDayBaselineDay = null;
     if(typeof _droppedDayBaseline !== 'undefined')_droppedDayBaseline = null;
-    render();
+    render({__optimizedWeek:buildWeekAgenda(load(),sortSettings,7)});
   });
   await page.waitForSelector('.dropped-pill', { timeout:5000 });
   await page.evaluate(() => {
@@ -506,6 +510,8 @@ async function stickyState(page, headerSel){
     return document.querySelector('#slipped-sheet.open') != null;
   });
   assert(binderOk, 'missed pill click binder opens slipped sheet');
+  assert(await page.locator('#slipped-sheet .dropped-item').filter({hasText:'Deep Work'}).count() > 0,
+    'missed sheet contains the dated commitment');
   await closeSlippedSheet(page);
 
   // A missed item belongs to today. Exercise the visible home state rather

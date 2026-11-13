@@ -5,6 +5,9 @@ const assert = require('node:assert/strict');
   try{
     const page = await browser.newPage({timezoneId:'America/New_York',viewport:{width:412,height:915}}),errors=[];
     page.on('pageerror',error=>errors.push(error.message));
+    // Keep the "one hour ago" completion inside today even when the suite
+    // runs just after midnight. Gesture timers still advance normally.
+    await page.clock.setSystemTime(new Date('2026-10-26T14:00:00Z'));
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'load'});
     const result = await page.evaluate(()=>{
       const RealDate=Date,now=new RealDate('2026-10-26T10:00:00').getTime();
@@ -84,7 +87,7 @@ const assert = require('node:assert/strict');
     assert.equal(missed.progress.missed,missed.homeVisible.length,'widget missed count matches Home');
     assert.equal(missed.progress.hidden,missed.homeHidden,'widget respects Home hidden items');
     assert.deepEqual(missed.progress.missedItems.map(row=>row.hid),missed.homeVisible);
-    assert.equal(missed.progress.missedItems[0].expectedDay,new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'}));
+    assert.equal(missed.progress.missedItems[0].expectedDay,'2026-10-26');
     assert(missed.unchanged,'missed projection writes no storage at all');assert(missed.expired,'the same hide expires at midnight');
     console.log('✓ Generic Progress: completed tasks, separate events, exact Home missed/hidden rows and no projection writes');
 
