@@ -317,6 +317,11 @@ Open the one file that owns the change. Grep the function and read that range.
 
 ## Feedback
 
+Summary keeps **feedback** beside **clear** in its existing Needle header,
+which stays visible while scrolling the conversation. It opens the same form
+directly, including only that Summary conversation and its focused diagnostics.
+Cancelling preserves the draft; saved replies can still be reported.
+
 Failed replies offer **send feedback**; other replies offer **report a problem**.
 Ask Tings keeps **feedback** in the header. It opens a short card: open the
 form, copy the report, and collapsed diagnostics. The form is filled in on

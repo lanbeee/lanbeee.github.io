@@ -137,6 +137,26 @@ const {BASE, baseHabit, waitForAssistant} = require('./helpers/planner-test-help
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('modal-open')),false);
     assert.equal(await page.evaluate(()=>scrollY),await page.evaluate(()=>homeScroll),'closing nested sheets restores original Home position');
+    const locks=await page.evaluate(()=>{
+      // Closing detail before an overlaid chat/picker must keep one owner of
+      // Home's saved position, instead of replacing it with the locked zero.
+      const home=scrollY;
+      openDetail(0);assistantOpenForItem('mobile-0','detail');openSnooze(0);
+      closeDetail();closeAssistantSheet();
+      const pickerLocked=document.body.classList.contains('detail-ios-scroll-lock');
+      closeSnoozeSheet();
+      const afterPicker=scrollY;
+      // The inverse path transfers ownership when detail opens from chat.
+      assistantOpenForItem('mobile-0','home');openDetail(0);closeAssistantSheet();
+      const detailLocked=document.body.classList.contains('detail-ios-scroll-lock')
+        && !document.body.classList.contains('assistant-ios-scroll-lock');
+      closeDetail();
+      return {home,pickerLocked,afterPicker,detailLocked,returned:scrollY,
+        released:!document.body.classList.contains('detail-ios-scroll-lock')};
+    });
+    assert.ok(locks.pickerLocked && locks.detailLocked && locks.released,JSON.stringify(locks));
+    assert.equal(locks.afterPicker,locks.home,'closing detail before a picker retains Home position');
+    assert.equal(locks.returned,locks.home,'chat-to-detail lock transfer retains Home position');
     assert.deepEqual(errors,[]);
     console.log(`PASS ${engine}: assistant viewport, safe areas, drafts, settings, touch boundaries, native resize and nested scroll restoration`);
   }finally{await browser.close();}

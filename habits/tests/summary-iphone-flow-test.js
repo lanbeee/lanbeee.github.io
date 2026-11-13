@@ -15,6 +15,11 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
   try{
     const page=await browser.newPage({...devices['iPhone X'],serviceWorkers:'block',timezoneId:'America/New_York'});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const feedbackPosts=[];
+    await page.route('https://docs.google.com/**',route=>{
+      feedbackPosts.push(route.request().postData() || '');
+      return route.fulfill({status:200,body:'test feedback received'});
+    });
     if(live)await page.route('https://huggingface.co/**',r=>r.fulfill({body:fs.readFileSync(r.request().url().endsWith('.wasm')?process.env.NEEDLE_WASM_PATH:process.env.NEEDLE_MODEL_PATH)}));
     await page.addInitScript(()=>{
       localStorage.setItem('tings_app_settings_v2',JSON.stringify({localAssistant:true,localAssistantProvider:'needle',minimalMode:false,agendaOptimizer:false,showWeekOnHome:false}));
@@ -28,7 +33,8 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
     });
     await page.goto(BASE);await waitForAssistant(page);
     await page.locator('#launch-screen').waitFor({state:'hidden'});
-    await page.evaluate(h=>{save([h,{...h,hid:'read',name:'Read'}]);render();},baseHabit({hid:'gym',name:'Gym workout',durationMinutes:60}));
+    await page.evaluate(h=>{save([h,{...h,hid:'read',name:'Read'},
+      ...Array.from({length:18},(_,i)=>({...h,type:'zero',hid:`background-${i}`,name:`Background ${i}`}))]);render();},baseHabit({hid:'gym',name:'Gym workout',durationMinutes:60}));
     await page.locator('#list .ting-name').filter({hasText:'Gym workout'}).first().tap();
     await page.waitForFunction(()=>detailSummaryOnScreen());
     assert.match(await page.locator('#detail-summary').innerText(),/Download Needle 3/);
@@ -51,9 +57,23 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
     const active='#detail-summary-thread [data-detail-proposal]:not(.is-retired)';
     const keyboard=async(open,offset=0)=>{
       for(const height of open?[700,600,477]:[600,700,812])await page.evaluate(async ({height,offset})=>{
-        visualViewport.height=height;visualViewport.offsetTop=height===812?0:offset;
-        visualViewport.dispatchEvent(new Event('resize'));visualViewport.dispatchEvent(new Event('scroll'));
-        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        // Sample each paint, not just the settled state. The cover must stay
+        // in place even when viewport pan/resize arrive on different frames.
+        const checkFrame=async()=>{
+          await new Promise(requestAnimationFrame);
+          const cover=$('detail-sheet');
+          if(!cover.classList.contains('open'))return;
+          if(cover.getBoundingClientRect().top!==0
+            || !document.elementFromPoint(20,20)?.closest('#detail-sheet,#feedback-sheet'))throw Error('Keyboard frame exposes Home');
+          window.scrollTo({top:220,behavior:'instant'});
+          if(scrollY!==0)throw Error('iPhone focus can still scroll the background document');
+        };
+        visualViewport.offsetTop=height===812?0:offset;
+        visualViewport.dispatchEvent(new Event('scroll'));
+        await checkFrame();
+        visualViewport.height=height;
+        visualViewport.dispatchEvent(new Event('resize'));
+        for(let frame=0;frame<3;frame++)await checkFrame();
       },{height,offset});
     };
     const snapshot=async name=>{
@@ -89,7 +109,17 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
     };
     for(const minimal of [false,true]){
       const mode=minimal?'minimal':'full';
-      await page.evaluate(minimal=>{hideActionToast();closeDetail();setMinimalMode(minimal);openDetail(0);detailSummaryReset(detailSummary.hid);},minimal);
+      const homeScroll=await page.evaluate(async minimal=>{
+        hideActionToast();closeDetail();setMinimalMode(minimal);
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        window.scrollTo({top:300,behavior:'instant'});
+        const scroll=scrollY;
+        openDetail(0);detailSummaryReset(detailSummary.hid);
+        return scroll;
+      },minimal);
+      assert.ok(homeScroll>200,'open Summary from a scrolled Home feed');
+      assert.equal(await page.evaluate(()=>getComputedStyle(document.body).position),'fixed','iPhone locks focus-driven page scroll');
+      assert.equal(await page.locator('#detail-summary-feedback').isVisible(),false,'feedback stays out of an empty Summary');
       await snapshot(`${mode}-01-summary`);
       await page.locator('#detail-summary [data-summary-field="durationMinutes"]').tap();
       await page.waitForFunction(()=>$('detail-duration').classList.contains('detail-search-hit'));
@@ -118,6 +148,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.locator(`${active} [data-focus-save]`).tap();await keyboard(false);
       await page.waitForFunction(()=>load()[0].durationMinutes===40);
       await snapshot(`${mode}-04-saved`);
+      assert.equal(await page.locator('#detail-summary-feedback').isEnabled(),true,'a saved reply can still be reported after its edit session ends');
       const confirmationClear=await page.evaluate(()=>{
         const confirmation=[...detailSummaryThread().children].at(-1).getBoundingClientRect();
         const scroller=detailIsSingleView()?document.querySelector('.detail-pager'):document.querySelector('.detail-summary-page');
@@ -129,6 +160,28 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.evaluate(()=>hideActionToast());
       await send('change it');
       assert.equal(await page.locator(`${active} [data-focus-save]`).count(),0,'vague requests do not save');
+      await input.fill('My next unsent request');
+      const feedbackBefore=await page.evaluate(()=>({items:JSON.stringify(load()),session:detailSummary.session.id,
+        reply:detailSummaryThread().innerText,head:document.querySelector('.detail-summary-chat-head').getBoundingClientRect().height}));
+      await page.evaluate(()=>{
+        // A separate chat's transcript must never leak into Summary feedback.
+        $('assistant-thread').textContent='UNRELATED PRIVATE CHAT';
+      });
+      await page.locator('#detail-summary-feedback').tap();await keyboard(false);
+      await page.waitForSelector('#feedback-sheet.open');
+      const feedback=JSON.parse(await page.locator('#feedback-context').textContent());
+      assert.ok(feedback.needle.requests.includes('change it'),'feedback includes the misunderstood request and Needle diagnostics');
+      assert.ok(feedback.transcript.some(turn=>turn.role==='assistant' && /setting|detail/i.test(turn.text)),'feedback includes the actual clarification shown in Summary');
+      assert.ok(!JSON.stringify(feedback).includes('UNRELATED PRIVATE CHAT'),'feedback uses only this Summary conversation');
+      assert.equal(await page.locator('#feedback-note').getAttribute('required'),null,'explaining what went wrong is optional');
+      assert.equal(await page.locator('#feedback-context-details').getAttribute('open'),null,'diagnostics stay collapsed');
+      assert.equal(feedbackPosts.length,0,'opening feedback sends nothing');
+      await page.screenshot({path:`${out}/${mode}-04b-feedback.png`,scale:'css'});
+      await page.locator('#feedback-cancel').tap();
+      assert.equal(await input.inputValue(),'My next unsent request','cancelling feedback retains the unsent message');
+      assert.equal(await page.evaluate(()=>JSON.stringify(load())),feedbackBefore.items,'feedback never changes the saved item');
+      assert.equal(await page.locator('.detail-summary-chat-head').evaluate(el=>el.getBoundingClientRect().height),feedbackBefore.head,'feedback adds no new header row');
+      await input.fill('');
       await page.locator('#detail-ask-guides-row [data-detail-guide="durationMinutes"]').tap();
       assert.equal(await page.locator('#detail-ask-tag').isVisible(),true,'touching a guide selects its setting');
       await page.locator('#detail-ask-tag-remove').tap();
@@ -139,6 +192,8 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await snapshot(`${mode}-05-clarified`);
       await page.locator('#detail-cool').tap();await keyboard(false);
       assert.equal(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),false,'Close remains available with the keyboard');
+      assert.equal(await page.evaluate(()=>scrollY),homeScroll,'closing Summary restores the original Home position');
+      assert.notEqual(await page.evaluate(()=>getComputedStyle(document.body).position),'fixed','closing releases the iPhone page lock');
       await page.locator('#list .ting-name').filter({hasText:'Gym workout'}).first().tap();
       assert.match(await page.locator(active).innerText(),/40 min/,'reopening keeps the unsaved proposal');
       await page.locator(`${active} [data-focus-edit]`).tap();

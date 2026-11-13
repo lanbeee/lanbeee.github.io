@@ -1266,9 +1266,29 @@ function shouldMountInPane(id) {
   return id === 'detail-sheet';
 }
 
+// iOS ignores overflow locking for the document pan used to reveal an input.
+// Freeze covered Home before focus can start, retaining its visual position.
+// The detail cover is opaque on its first frame; restore Home synchronously
+// on the final close so the browser cannot paint it at scrollY=0 in between.
+let detailIOSPageScroll = null;
+function syncDetailIOSPageLock(detailOpen,modalOpen){
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(ios && !paneTierActive() && detailOpen && detailIOSPageScroll === null
+    && !document.body.classList.contains('assistant-ios-scroll-lock')){
+    detailIOSPageScroll = {x:window.scrollX,y:window.scrollY};
+    document.body.style.setProperty('--detail-page-top',`${-detailIOSPageScroll.y}px`);
+    document.body.classList.add('detail-ios-scroll-lock');
+  }else if(detailIOSPageScroll !== null && (!modalOpen || paneTierActive())){
+    const scroll = detailIOSPageScroll;
+    detailIOSPageScroll = null;
+    document.body.classList.remove('detail-ios-scroll-lock');
+    document.body.style.removeProperty('--detail-page-top');
+    window.scrollTo({left:scroll.x,top:scroll.y,behavior:'instant'});
+  }
+}
+
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
-// Use overflow locking only — never position:fixed. Fixing the body forces
-// scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
   syncBrowserBack();
   const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
@@ -1292,12 +1312,16 @@ function updateFullPageState(){
     }
     document.body.classList.remove('modal-open');
   }
+  // Retain the lock through nested pickers, releasing it after overflow is
+  // unlocked so the original Home scroll can actually be restored.
+  syncDetailIOSPageLock($('detail-sheet')?.classList.contains('open'),modalOpen);
 }
 
 // iOS can still pan the document beneath a keyboard even with overflow:hidden.
 // Consume drags on the phone detail backdrop/chrome and at scroll boundaries;
 // leave its actual scrollable pages, textareas and horizontal controls usable.
-// Never fix the body: that would reset Home's scroll when opening/closing detail.
+// The iOS page lock also blocks focus-driven panning; this guard handles
+// boundary gestures on other browsers without disabling conversation scroll.
 let detailScrollTouch = null;
 document.addEventListener('touchstart',event=>{
   const touch = event.touches.length === 1 ? event.touches[0] : null;

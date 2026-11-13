@@ -276,11 +276,19 @@ body[data-pane-count="1"] .detail-sheet{
    block. Reveal detail in the same frame, fully opaque, so cards beneath
    that header cannot flash through a fading overlay. */
 body[data-pane-count="1"] #detail-sheet{
-  top:var(--detail-viewport-top,0px);bottom:auto;
-  height:min(100dvh,calc(var(--keyboard-viewport-bottom,100dvh) - var(--detail-viewport-top,0px)));
+  /* Keep the opaque cover independent of delayed iOS viewport events. Moving
+     this wrap exposes Home above it while the keyboard pans the viewport. */
+  inset:0;height:100%;
   overflow:hidden;overscroll-behavior:none;
   background:var(--bg);transition:none;
 }
+body[data-pane-count="1"] #detail-sheet > .detail-sheet{
+  position:relative;top:var(--detail-viewport-top,0px);
+  height:min(100%,calc(var(--keyboard-viewport-bottom,100dvh) - var(--detail-viewport-top,0px)));
+}
+/* overflow:hidden alone does not stop iOS's focus-driven document scroll.
+   Offset the covered Home page by its saved scroll position while locked. */
+body.detail-ios-scroll-lock{position:fixed;top:var(--detail-page-top);left:0;width:100%;}
 body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
   position:absolute;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
   transform:translate(-50%,-100%);margin:0;width:max-content;max-width:calc(100vw - 24px);
@@ -387,7 +395,13 @@ body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none 
 #detail-summary-setup[hidden],.detail-summary-chat[hidden]{display:none;}
 #detail-summary-setup .assistant-needle-panel{margin:0;max-height:none;overflow:visible;background:var(--bg);}
 .detail-summary-chat{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid var(--border);}
-.detail-summary-chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.detail-summary-chat-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  position:sticky;top:0;z-index:2;background:var(--bg2);
+}
+.detail-summary-chat-actions{display:flex;align-items:center;gap:6px;}
+.detail-summary-chat-actions .mini-text-btn{min-height:32px;}
+.detail-summary-chat-actions .mini-text-btn:disabled{opacity:.4;cursor:default;}
 .detail-summary-thread{display:flex;flex-direction:column;gap:8px;}
 .detail-summary-thread .assistant-bubble-say{background:var(--bg);}
 .detail-summary-thread .is-retired{opacity:.72;}

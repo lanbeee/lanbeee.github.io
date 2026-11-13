@@ -4,7 +4,7 @@
 // Nothing is written until the proposal's Save; Edit hands the staged values
 // to the detail editor unsaved.
 
-const detailSummary = {hid:null, session:null, busy:false, turn:0, occurrenceDate:''};
+const detailSummary = {hid:null, session:null, feedback:null, busy:false, turn:0, occurrenceDate:''};
 let detailSummaryLoadPending = false;
 let detailSummaryRevising = false;
 // Keep unsaved conversations during this visit, including when another item opens.
@@ -134,6 +134,7 @@ function detailSummaryShowProposal(opts){
   if(opts?.live)card.querySelectorAll('button').forEach(button=>{button.disabled = true;});
   thread.append(card);
   $('detail-summary-chat').hidden = false;
+  if(!opts?.live)detailSummary.feedback = session;
   if(!opts?.live)syncDetailSummaryDock();
   detailSummaryScrollToEnd();
 }
@@ -186,6 +187,7 @@ function detailSummaryReset(hid = null,preserve = false){
   }
   if(preserve && detailSummary.hid && (detailSummary.busy || detailSummaryHasWork() || detailSummaryDraft().trim())){
     detailSummaryDrafts.set(detailSummary.hid,{session:detailSummary.session,
+      feedback:detailSummary.feedback,
       nodes:[...detailSummaryThread().childNodes],draft:detailSummaryDraft(),
       occurrenceDate:detailSummary.occurrenceDate});
   }else if(!preserve && detailSummary.hid)detailSummaryDrafts.delete(detailSummary.hid);
@@ -193,6 +195,7 @@ function detailSummaryReset(hid = null,preserve = false){
   detailSummary.turn += 1;
   detailSummary.busy = false;
   detailSummary.session = null;
+  detailSummary.feedback = null;
   detailSummary.hid = hid;
   detailSummary.occurrenceDate = '';
   detailSummaryRevising = false;
@@ -213,6 +216,7 @@ function renderDetailSummary(){
     if(kept){
       detailSummaryDrafts.delete(hid);
       detailSummary.session = kept.session;
+      detailSummary.feedback = kept.feedback || kept.session;
       detailSummary.occurrenceDate = kept.occurrenceDate;
       if(kept.session){
         kept.session.epoch = assistantFocusOpen({operation:'edit',kind:kept.session.kind,targetId:hid}).epoch;
@@ -306,7 +310,22 @@ function syncDetailSummaryDock(){
   $('detail-ask-send').disabled = input.disabled || !canSend || !detailSummaryDraft().trim();
   if(!show && document.activeElement === input)input.blur();
   $('detail-summary-setup').hidden = !ready;
+  const feedback = $('detail-summary-feedback');
+  feedback.hidden = !detailSummary.feedback || typeof feedbackFormConfigured !== 'function' || !feedbackFormConfigured();
+  feedback.disabled = detailSummary.busy;
   renderDetailSummaryGuides();
+}
+
+function detailSummaryOpenFeedback(){
+  const focus = detailSummary.feedback;
+  if(!focus || detailSummary.busy || !feedbackFormConfigured())return;
+  const snap = assistantFeedbackFromFocus(focus);
+  const transcript = assistantFeedbackTranscript(detailSummaryThread());
+  snap.out.text = transcript.filter(turn=>turn.role === 'assistant').at(-1)?.text || snap.out.text;
+  // Use this item's visible conversation, never the separate chat page.
+  const report = assistantFeedbackReport(snap.out,{...snap.context,thread:detailSummaryThread()});
+  document.activeElement?.blur?.();
+  openFeedbackForm({note:assistantFeedbackExpectation(snap.out),context:report,assistant:true});
 }
 
 // Guides from the chat composer, shown while the user is composing or Needle
@@ -623,6 +642,7 @@ $('detail-summary-clear').addEventListener('click',()=>{
   syncDetailSummaryDock();
   if(!$('detail-ask').hidden)$('detail-ask-input').focus({preventScroll:true});
 });
+$('detail-summary-feedback').addEventListener('click',detailSummaryOpenFeedback);
 $('detail-ask-input').addEventListener('input',()=>{
   detailSummaryAbsorbTag();
   detailSummaryResizeComposer();

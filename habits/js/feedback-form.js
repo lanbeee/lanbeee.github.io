@@ -152,7 +152,7 @@ function openFeedbackForm(opts){
   const lead = $('feedback-lead');
   if(lead){
     lead.textContent = opts.assistant
-      ? 'Filled in from this device, with the Ask Tings chat included in full. A note is optional.'
+      ? 'Includes this conversation. Add a note if you like.'
       : 'Filled in from this device. A note is optional.';
   }
   if(typeof openSheet === 'function')openSheet('feedback-sheet');

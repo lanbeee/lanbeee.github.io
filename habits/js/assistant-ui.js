@@ -14,7 +14,9 @@ let _assistantIOSScroll = null;
 function assistantLockIOSPage(){
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if(!ios || paneTierActive() || _assistantIOSScroll !== null)return;
+  // Detail already owns the saved Home position when chat opens above it.
+  if(!ios || paneTierActive() || _assistantIOSScroll !== null
+    || document.body.classList.contains('detail-ios-scroll-lock'))return;
   _assistantIOSScroll = {x:window.scrollX,y:window.scrollY};
   document.body.style.setProperty('--assistant-page-top', `${-_assistantIOSScroll.y}px`);
   document.body.classList.add('assistant-ios-scroll-lock');
@@ -27,6 +29,8 @@ function assistantUnlockIOSPage(){
   document.body.classList.remove('assistant-ios-scroll-lock');
   document.body.style.removeProperty('--assistant-page-top');
   window.scrollTo({left:scroll.x,top:scroll.y,behavior:'instant'});
+  // A detail opened from chat takes ownership only after Home is restored.
+  updateFullPageState();
 }
 
 function assistantEnabled(){

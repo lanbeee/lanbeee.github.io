@@ -121,6 +121,10 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
               await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
               const inner=getSheetInner('detail-sheet');
               return {header:$('detail-head-card').getBoundingClientRect().toJSON(),
+                shell:$('detail-sheet').getBoundingClientRect().toJSON(),
+                // Viewport resize/pan notifications can lag the compositor.
+                // The opaque cover must never move away from Home, even then.
+                coversHome:Boolean(document.elementFromPoint(20,20)?.closest('#detail-sheet')),
                 dock:inner.querySelector('.sheet-search-dock').getBoundingClientRect().toJSON(),
                 input:$('detail-ask-input').getBoundingClientRect().toJSON(),
                 send:$('detail-ask-send').getBoundingClientRect().toJSON(),
@@ -131,6 +135,8 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
           for(const [height,offsetTop] of mode==='pwa' ? [[760,0],[650,38],[530,64],[480,96],[530,64]] : [[760,0],[650,0],[530,0],[480,0],[530,0]]){
             const frame=await sample(height,offsetTop);
             const context=`${engine.name()} ${mode} minimal=${minimal} at ${height}/${offsetTop}`;
+            assert.ok(frame.coversHome,`${context}: viewport panning never exposes Home above detail`);
+            assert.equal(frame.shell.top,0,`${context}: the opaque cover stays at the layout origin`);
             assert.ok(Math.abs(frame.header.top-offsetTop-baseline.top)<=1,`${context}: header stays at the visible top`);
             assert.equal(frame.header.height,baseline.height,`${context}: header retains its size`);
             assert.ok(Math.abs(frame.dock.bottom-(height+offsetTop))<=1,`${context}: dock meets keyboard once: ${JSON.stringify(frame.dock)}`);
