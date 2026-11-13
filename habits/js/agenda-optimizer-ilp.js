@@ -853,6 +853,24 @@ function listPlaceFitsOnDay(
       }
     }
     for(const slot of state.slots || []){
+      // A locationless meeting preserves the place reached by an earlier
+      // selected fill, but consumes the entire clock interval. Enumerate the
+      // post-reservation arrivals from those possible places too: the seed's
+      // short commute is not necessarily the commute of the selected route.
+      const arrivalAnchors = [];
+      if(slot.start > state.startClock && placeFill.locationId){
+        const anchorLoc = locationPresenceAt(state,slot.start,state.fills);
+        const travelMs = from=>Math.max(0,Number(travelEdgeBetweenIds(
+          from,placeFill.locationId,state.registry,state.mode,{allowNetwork:false}
+        ).seconds) || 0) * 1000;
+        const seedTravel = travelMs(anchorLoc);
+        const sources = new Set(dayCandidates.filter(c=>c && c.h && !c.h.breakable
+          && c.i !== placeFill.i).flatMap(c=>optimizerLocationVariants({h:c.h},state)));
+        for(const source of sources){
+          const extraTravel = travelMs(source) - seedTravel;
+          if(extraTravel > 0)arrivalAnchors.push(slot.start + extraTravel);
+        }
+      }
       // Fixed-location anchors create distinct route segments. A small
       // half-hour grid in each open segment gives GLPK enough chained starts
       // to put several flexible errands on the same side of the anchor. Keep
@@ -873,7 +891,7 @@ function listPlaceFitsOnDay(
           }
         }
       }
-      const anchors = [slot.start,state.startClock,...windowEdges,...routeAnchors]
+      const anchors = [slot.start,state.startClock,...windowEdges,...routeAnchors,...arrivalAnchors]
         .filter(ts=>Number.isFinite(ts) && ts < slot.end)
         .sort((a,b)=>a-b);
       for(const anchor of anchors){
@@ -1028,7 +1046,14 @@ function fitsExclusiveClash(a,b,state){
     early = b;
     late = a;
   }
-  const fromLoc = fitPresenceLocId(early);
+  // The later option was enumerated against the day seed, before earlier
+  // options were selected. Its actual inbound leg must leave after every hard
+  // reservation carved out before its open slot, even if a meeting has no
+  // location. A located reservation also replaces the earlier fill's place.
+  const departureFloor = Math.max(early.placeEnd,Number(late.slotStart) || 0);
+  const fromLoc = (departureFloor > early.placeEnd
+    ? locationPresenceAt(state,departureFloor,[{fit:early}]) : null)
+    || fitPresenceLocId(early);
   const toLoc = late.locId || null;
   if(!fromLoc || !toLoc || fromLoc === toLoc)return false;
   if(typeof travelEdgeBetweenIds !== 'function')return false;
@@ -1041,7 +1066,7 @@ function fitsExclusiveClash(a,b,state){
   );
   const travelMs = Math.max(0,Number(edge && edge.seconds) || 0) * 1000;
   if(travelMs <= 0)return false;
-  return early.placeEnd > late.placeStart - travelMs;
+  return departureFloor > late.placeStart - travelMs;
 }
 
 // Maximal interval cliques replace quadratic work-overlap pair rows. Ends
@@ -1527,26 +1552,47 @@ function solveDayPackingIlp(GLPK,state,dayCandidates,allCandidates,deferrable,so
     }
   }
   const seenPairs = new Set();
+  const appendTravelClash = (a,b)=>{
+    if(opts[a].c.i === opts[b].c.i)return;
+    // Positive work intervals are already covered by maximal cliques.
+    if(opts[a].fit.placeEnd > opts[a].fit.placeStart
+      && opts[b].fit.placeEnd > opts[b].fit.placeStart
+      && fitsOverlap(opts[a].fit,opts[b].fit))return;
+    const pairKey = a < b ? `${a}:${b}` : `${b}:${a}`;
+    if(seenPairs.has(pairKey))return;
+    seenPairs.add(pairKey);
+    if(!fitsExclusiveClash(opts[a].fit,opts[b].fit,state))return;
+    const [early,late] = opts[a].fit.placeStart <= opts[b].fit.placeStart
+      ? [opts[a],opts[b]] : [opts[b],opts[a]];
+    // Across a reservation, this is a conflict only if no selected intervening
+    // location establishes a compatible departure place. Pairwise exclusion
+    // alone would wrongly forbid A -> B -> meeting -> B because of A -> B.
+    const bridges = early.fit.placeEnd <= late.fit.slotStart
+      ? opts.filter(o=>o.c.i !== early.c.i && o.c.i !== late.c.i && o.fit.locId
+        && o.fit.placeStart >= early.fit.placeEnd && o.fit.placeEnd <= late.fit.placeStart
+        && !fitsExclusiveClash(o.fit,late.fit,state)) : [];
+    subjectTo.push({
+      name:`ov_${clash++}`,
+      vars:[{name:opts[a].varName,coef:1},{name:opts[b].varName,coef:1},
+        ...bridges.map(o=>({name:o.varName,coef:-1}))],
+      bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
+    });
+  };
   for(const idxs of bands.values()){
     for(let ai = 0;ai < idxs.length;ai += 1){
       for(let bi = ai + 1;bi < idxs.length;bi += 1){
         const a = idxs[ai];
         const b = idxs[bi];
-        if(opts[a].c.i === opts[b].c.i)continue;
-        // Positive work intervals are already covered by maximal cliques.
-        if(opts[a].fit.placeEnd > opts[a].fit.placeStart
-          && opts[b].fit.placeEnd > opts[b].fit.placeStart
-          && fitsOverlap(opts[a].fit,opts[b].fit))continue;
-        const pairKey = a < b ? `${a}:${b}` : `${b}:${a}`;
-        if(seenPairs.has(pairKey))continue;
-        seenPairs.add(pairKey);
-        if(!fitsExclusiveClash(opts[a].fit,opts[b].fit,state))continue;
-        subjectTo.push({
-          name:`ov_${clash++}`,
-          vars:[{name:opts[a].varName,coef:1},{name:opts[b].varName,coef:1}],
-          bnds:{type:GLPK.GLP_UP,ub:1,lb:0}
-        });
+        appendTravelClash(a,b);
       }
+    }
+  }
+  // A morning errand still determines the place after a much later
+  // locationless meeting. Such pairs need not share a coarse time band.
+  for(let a = 0;a < opts.length;a += 1){
+    for(let b = a + 1;b < opts.length;b += 1){
+      if(opts[a].fit.placeEnd <= opts[b].fit.slotStart
+        || opts[b].fit.placeEnd <= opts[a].fit.slotStart)appendTravelClash(a,b);
     }
   }
   // Temporary same-day order links: forbid successor options that start before

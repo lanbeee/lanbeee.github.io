@@ -692,7 +692,22 @@ function outboundLeaveByMs(state,fromLocId,afterTs,opts = {}){
     state.mode,
     {allowNetwork:opts.allowNetwork !== false}
   );
-  return next.start - (Number(edge.seconds) || 0) * 1000;
+  const leaveBy = next.start - (Number(edge.seconds) || 0) * 1000;
+  // An out-of-order insertion can change a later fill's commute. A
+  // locationless meeting between the two preserves our place, but it is still
+  // busy time: reject this insertion if the new outbound leg would run through
+  // that reservation. Otherwise reconciliation would paint travel over it.
+  if(leaveBy < next.start){
+    const busy = (state.rows || []).filter(row=>row.kind === 'scheduled');
+    if(state.dayBase != null && state.settings){
+      busy.push(...agendaBlockedIntervals(
+        dateKey(state.dayBase),state.settings,state.dayBase,state.dayBase + 86400000
+      ));
+    }
+    if(busy.some(row=>row.end > afterTs
+      && row.start < next.start && row.end > leaveBy))return Math.min(leaveBy,afterTs);
+  }
+  return leaveBy;
 }
 
 // PURE: choose a location id for a habit given the current anchor. Anywhere
