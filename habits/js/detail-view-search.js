@@ -1,5 +1,6 @@
 // Search navigates settings. Its explicit assistant action opens a focused edit
-// in chat; typing alone never changes a setting or invokes the model.
+// (the Summary tab for Needle); typing alone never changes a setting or invokes
+// the model.
 const DETAIL_SEARCH_FIELDS = ITEM_DETAIL_SEARCH_FIELDS;
 
 function resetDetailDisclosures(h){
@@ -275,7 +276,8 @@ function syncDetailSearchAssistant(){
 }
 
 let detailAssistantOpening = false;
-async function openDetailAssistant(instruction = ''){
+// Needle edits in the Summary tab; other providers keep the chat sheet.
+async function openDetailAssistant(instruction = '',opts = {}){
   if(detailAssistantOpening || !detailAssistantAvailable())return false;
   const inner = getSheetInner('detail-sheet');
   if(inner?.classList.contains('tune-dirty')){
@@ -297,8 +299,14 @@ async function openDetailAssistant(instruction = ''){
     const visible = $('detail-sheet').classList.contains('open') || getPane()?.dataset.activeSheet === 'detail-sheet';
     if(!detailAssistantAvailable() || load()[detailIdx]?.hid !== item.hid
       || !visible || inner?.classList.contains('tune-dirty'))return false;
+    if(sortSettings.localAssistantProvider === 'needle'){
+      setDetailSearchOpen(false,false);
+      $('detail-search-input').value = '';
+      syncDetailSearchAssistant();
+      return detailSummaryStart(instruction,opts);
+    }
     if(typeof assistantOpenForItem !== 'function')return false;
-    const opened = await assistantOpenForItem(item.hid,'detail',{occurrenceDate:''});
+    const opened = await assistantOpenForItem(item.hid,'detail',{occurrenceDate:opts.occurrenceDate || ''});
     if(opened){
       setDetailSearchOpen(false,false);
       $('detail-search-input').value = '';
@@ -343,9 +351,8 @@ function setDetailSearchOpen(open,focus = true){
   const wasOpen = inner.classList.contains('detail-search-open');
   if(open && !wasOpen){
     const pager = inner.querySelector('.detail-pager');
-    const index = Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth));
     const pages = visibleDetailPages(pager);
-    detailSearchReturnNav = pages[index]?.dataset.detailNav;
+    detailSearchReturnNav = detailCurrentNav();
     detailSearchReturnScroll = [pager,...pages].map(page=>({page,top:page.scrollTop}));
   }
   inner.classList.toggle('detail-search-open',open);
@@ -370,6 +377,7 @@ function setDetailSearchOpen(open,focus = true){
     $('detail-search-input').blur();
     $('detail-search-toggle').focus({preventScroll:true});
   }
+  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }
 
 let detailSearchHitTarget = null;
@@ -426,7 +434,7 @@ function revealDetailSearchEntry(entry){
     target.classList.add('detail-search-hit');
     detailSearchHitTimer = setTimeout(()=>target.classList.remove('detail-search-hit'),2400);
     const focus = target.matches('input,select,button,summary') ? target : target.querySelector('input,select,button,summary');
-    if(focus)focus.focus({preventScroll:true});
+    if(focus && entry.focus !== false)focus.focus({preventScroll:true});
     if(message)showToast(message,4500);
   });
 }

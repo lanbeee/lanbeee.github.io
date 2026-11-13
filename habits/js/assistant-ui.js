@@ -50,6 +50,7 @@ function syncAssistantChrome(){
     if($('detail-search-panel').hidden)syncDetailSearchAssistant();
     else renderDetailSearch();
   }
+  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
   const needle = typeof assistantSettings === 'function' && assistantSettings().provider === 'needle';
   ['open-assistant','bar-open-assistant'].forEach(id => {
     const btn = $(id);
@@ -169,7 +170,7 @@ function syncAssistantNeedleControls(){
   const downloading = state.phase === 'downloading';
   const downloaded = state.phase === 'downloaded';
   document.querySelectorAll('[data-needle-panel]').forEach(panel=>{
-    const chatReady = panel.closest('#assistant-sheet') && downloaded && !state.error;
+    const chatReady = panel.closest('#assistant-sheet,.detail-summary-page') && downloaded && !state.error;
     panel.hidden = !selected || !assistantEnabled() || chatReady;
     const status = panel.querySelector('[data-needle-status]');
     if(status)status.textContent = state.error || (downloading ? `Downloading Needle 3… ${state.progress}%`
@@ -1967,14 +1968,7 @@ async function assistantHandleFocusClick(target){
         if(status)status.textContent = result.error || 'Nothing was saved.';
         return true;
       }
-      const text = result.action === 'remove'
-        ? `Removed the plan for ${result.name}. Undo is on the toast.`
-        : result.action === 'undo_today'
-          ? `Marked ${result.name} not done. Undo is on the toast.`
-          : result.action === 'log'
-            ? `Logged ${result.name}. Undo is on the toast.`
-            : `Planned ${result.name}. Undo is on the toast.`;
-      appendAssistantBubble('say', text);
+      appendAssistantBubble('say', assistantFocusActionDoneText(result));
       assistantShowFocusReview(session);
       if(typeof render === 'function')render();
       return true;
@@ -1989,27 +1983,7 @@ async function assistantHandleFocusClick(target){
       }finally{ if(turn === _assistantTurn)assistantShowBusy(false); }
       return true;
     }
-    if((which === 'eventScope' || value === 'series' || value === 'occurrence') && typeof assistantFocusSetScope === 'function' && (value === 'series' || value === 'occurrence')){
-      assistantFocusSetScope(session, value, session.occurrenceDate);
-      assistantShowFocusReview(session);
-      return true;
-    }
-    if(value === 'series-place' && typeof assistantFocusSetScope === 'function'){
-      assistantFocusSetScope(session, 'series');
-      session.unresolved = session.unresolved.filter(item => item.field !== 'places');
-      assistantShowFocusReview(session);
-      return true;
-    }
-    if(value === 'skip-place'){
-      session.changes = session.changes.filter(change => change.field !== 'places');
-      session.unresolved = session.unresolved.filter(item => item.field !== 'places');
-      assistantShowFocusReview(session);
-      return true;
-    }
-    if(value && typeof assistantFocusChoose === 'function'){
-      assistantFocusChoose(session, which, value);
-      assistantShowFocusReview(session);
-    }
+    if(assistantFocusApplyChoice(session, which, value))assistantShowFocusReview(session);
     return true;
   }
   return false;

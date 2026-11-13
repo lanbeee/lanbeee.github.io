@@ -390,7 +390,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       const edit=t.open();
       await assistantFocusTurn(edit,'Pin it.',t.options());
       const editHtml=assistantFocusReviewHtml(edit);
-      const formNoise=/<small>add form<\/small>|<small>default<\/small>|Priority ·|Emoji ·|Shared display|Early allowance|Splitting ·|Minimum gap|Weather profile|Places ·/;
+      const formNoise=/<small>add form<\/small>|<small>default<\/small>|Priority ·|Emoji ·|Shared display|Early window|Splitting ·|Minimum gap|Weather profile|Places ·/;
       return {
         create:createHtml.includes('assistant-preview-name')&&createHtml.includes('assistant-chip')&&createHtml.includes('Walk')&&createHtml.includes('1× / 2d')&&createHtml.includes('Allowed hours')&&!createHtml.includes('Unmentioned settings')&&!formNoise.test(createHtml)&&!createHtml.includes('focus-rows')&&!createHtml.includes('focus-origin'),
         quiet:quietHtml.includes('Walk')&&!quietHtml.includes('assistant-chip')&&!formNoise.test(quietHtml)&&!quietHtml.includes('Unmentioned settings'),

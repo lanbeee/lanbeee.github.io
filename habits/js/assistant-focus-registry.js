@@ -26,8 +26,8 @@ const ASSISTANT_FOCUS_FIELDS = [
   {id:'dueTime', label:'Start time', family:'dates', kinds:['task'], persist:'eventTime', clear:true},
   {id:'hardDue', label:'Hard deadline', family:'dates', kinds:['task'], persist:'delayAllowanceDays', clear:false},
   {id:'planByDate', label:'Do-by date', family:'dates', kinds:['habit'], persist:'planByDate', clear:true, when:'routine'},
-  {id:'earlyWindowDays', label:'Early allowance', family:'dates', kinds:['habit','task'], persist:'earlyWindowDays', clear:false},
-  {id:'delayAllowanceDays', label:'Late allowance', family:'dates', kinds:['habit','task'], persist:'delayAllowanceDays', clear:false},
+  {id:'earlyWindowDays', label:'Early window', family:'dates', kinds:['habit','task'], persist:'earlyWindowDays', clear:false},
+  {id:'delayAllowanceDays', label:'Delay allowance', family:'dates', kinds:['habit','task'], persist:'delayAllowanceDays', clear:false},
 
   {id:'allowedWeekdays', label:'Allowed weekdays', family:'schedule', kinds:['habit','task'], persist:'allowedWeekdays', clear:true},
   {id:'allowedMonthDays', label:'Allowed month days', family:'schedule', kinds:['habit','task'], persist:'allowedMonthDays', clear:true},

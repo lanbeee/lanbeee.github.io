@@ -173,6 +173,7 @@ function setDetailDirty(force){
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
   $('detail-save').disabled = !dirty || (!isDeviceCalendarTask(h) && !syncDetailConditionHint());
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
+  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }
 
 // Editing is a layer inside detail; dismissing it leaves the card mounted.
@@ -601,6 +602,7 @@ function closeDetail(){
   inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open','tune-dirty');
   if($('detail-save'))$('detail-save').disabled = true;
   setDetailSearchOpen(false,false);
+  detailSummaryReset(null,true);
   detailIdx = null;
   detailUnsavedCreate = null;
   detailUnsavedReminders = null;

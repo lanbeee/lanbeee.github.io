@@ -1,4 +1,4 @@
-const CACHE = 'tings-v829';
+const CACHE = 'tings-v836';
 const MAPS_CACHE = 'tings-maps-v3';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -118,6 +118,7 @@ const PRECACHE = [
   './js/detail-view-pages.js',
   './js/item-field-catalog.js',
   './js/detail-view-search.js',
+  './js/detail-view-summary.js',
   './js/overview-view.js',
   './js/today-view-fits.js',
   './js/today-view-reservations.js',

@@ -1,4 +1,4 @@
-// Actual minimal detail -> Ask Needle -> review -> Save -> reload -> undo.
+// Actual minimal detail -> Ask Needle on Summary -> review -> Save -> reload -> undo.
 // Optional pinned assets use real inference; otherwise only evidence selection
 // is scripted. Synthetic fixtures never replace the user's saved library.
 const assert=require('node:assert/strict');
@@ -46,7 +46,7 @@ const cases=[
       saveSortSettings({...loadSortSettings(),locations:[{id:'home',name:'Home',lat:40,lng:-74}],weatherProfiles:[{id:'dry',name:'Dry',rules:[]}]});
       const rows=[];
       for(const [layout,extra] of [['habit',{}],['task',{type:'task',target:null}],['stop',{type:'zero'}],['weather',{repeatMode:'opportunity',conditionTrigger:'weather'}],['location',{repeatMode:'opportunity',conditionTrigger:'location',locationIds:['home']} ]]){
-        save([{...fixture,hid:'inventory',...extra}]);openDetail(0);
+        save([{...fixture,hid:'inventory',...extra}]);openDetail(0);showDetailMinimalTab('settings');
         document.querySelectorAll('#detail-sheet details').forEach(el=>{el.open=true;});
         const special={'detail-times':'timesPerPeriod','detail-days':'periodDays','detail-place-chips':'places'};
         const inputs=[...document.querySelectorAll('#detail-sheet .detail-pager input:not([type="search"]),#detail-sheet .detail-pager select,#detail-sheet .detail-pager .setting-switch')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden');
@@ -60,7 +60,6 @@ const cases=[
     assert.deepEqual(inventory.filter(row=>!row.field),[],'all editable inputs exposed in minimal mode have an assistant field');
     for(const [prompt,expected,kind] of cases){
       await page.evaluate(({fixture,kind})=>{
-        closeAssistantSheet();
         save([{...fixture,hid:'target',type:kind==='task'?'task':'keepup',target:kind==='task'?null:1,
           rhythm:kind==='task'?null:{timesPerPeriod:1,periodDays:1},
           dueDate:kind==='task'?new Date('2026-11-09T00:00:00-05:00').getTime():null,
@@ -72,8 +71,8 @@ const cases=[
       await page.locator('#detail-search-toggle').click();
       await page.locator('#detail-search-input').fill(prompt);
       await page.locator('#detail-search-ask').click();
-      await page.waitForFunction(prompt=>_assistantSession?.focus?.currentRequest===prompt&&!_assistantBusy&&!detailAssistantOpening,prompt,{timeout:120000});
-      const staged=await page.evaluate(()=>({record:assistantFocusMaterialize(_assistantSession.focus),questions:_assistantSession.focus.unresolved,trace:_assistantSession.focus.trace}));
+      await page.waitForFunction(prompt=>detailSummary.session?.currentRequest===prompt&&!detailSummary.busy&&!detailAssistantOpening,prompt,{timeout:120000});
+      const staged=await page.evaluate(()=>({record:assistantFocusMaterialize(detailSummary.session),questions:detailSummary.session.unresolved,trace:detailSummary.session.trace}));
       assert.deepEqual(await page.evaluate(()=>load()),before,'review does not write');
       assert.deepEqual(staged.questions,[],prompt);
       for(const [key,value] of Object.entries(expected)){
@@ -81,13 +80,13 @@ const cases=[
           const d=new Date(staged.record.eventTime);assert.equal(d.getHours()*60+d.getMinutes(),value,prompt);
         }else assert.deepEqual(staged.record[key],value,prompt);
       }
-      await page.locator('[data-focus-save]').click();
-      await page.waitForFunction(()=>Boolean(_assistantSession?.focus?.savedResult?.ok));
+      await page.locator('#detail-summary-thread [data-focus-save]').click();
+      await page.waitForFunction(()=>!detailSummary.session&&$('detail-summary-thread').textContent.includes('Saved.'));
       const after=await page.evaluate(()=>load());
       assert.deepEqual(after[1],before[1],'other item is untouched');
       const allowed=new Set([...Object.keys(expected).filter(key=>key!=='clock'),...(expected.clock!=null?['eventTime']:[]),...(expected.type?['target','rhythm','dueDate','eventTime','hardDue']:[])]);
       for(const key of Object.keys(before[0]))if(!allowed.has(key))assert.deepEqual(after[0][key],before[0][key],`${prompt}: preserves ${key}`);
-      await page.evaluate(()=>{closeAssistantSheet();openDetail(0);});
+      await page.evaluate(()=>{openDetail(0);showDetailMinimalTab('settings');});
       if(expected.allowedWeekdays){
         await page.locator('#detail-availability-disclosure > summary').click();
         assert.deepEqual(await page.evaluate(()=>selectedWeekdaysFrom('detail-weekday-chips')),expected.allowedWeekdays,'saved weekday chips reflect the request');

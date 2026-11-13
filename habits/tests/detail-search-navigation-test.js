@@ -244,7 +244,7 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     });await page.waitForTimeout(350);
     assert.ok((await page.locator('.detail-title-wrap').boundingBox()).width>100,'links cannot squeeze the name');
     const linkedClose=await page.locator('#detail-cool').boundingBox();assert.ok(linkedClose.y+linkedClose.height<=568);
-    assert.equal(await page.locator('.detail-page-nav .detail-page-tab').count(),5,'page navigation sits above the content');
+    assert.equal(await page.locator('.detail-page-nav .detail-page-tab').count(),6,'page navigation sits above the content');
     assert.equal(await page.locator('.detail-bottom-bar .detail-page-tab').count(),0,'footer is reserved for search and exit');
     await page.locator('#detail-cool').click();
     // Every layout keeps bottom dismissal visible after long scrolls.
@@ -339,10 +339,10 @@ const { baseHabit } = require('./helpers/planner-test-helpers');
     });
     await search('weather');
     assert.ok(await result('Weather guidance').count()>0,'minimal search keeps essential condition controls for opportunity habits');
-    await page.evaluate(()=>{save(searchRoutineBefore);delete window.searchRoutineBefore;openDetail(0);setDetailSearchOpen(false,false);});
+    await page.evaluate(()=>{save(searchRoutineBefore);delete window.searchRoutineBefore;openDetail(0);setDetailSearchOpen(false,false);showDetailMinimalTab('settings');});
     const minimalPad=await page.evaluate(()=>{
       const pages=[...getSheetInner('detail-sheet').querySelectorAll('.detail-pager > .detail-page')];
-      const visible=pages.filter(p=>!p.hidden);
+      const visible=pages.filter(p=>p.getClientRects().length);
       const pad=el=>parseFloat(getComputedStyle(el).paddingBottom) || 0;
       return {last:pad(visible.at(-1)),others:visible.slice(0,-1).map(pad)};
     });

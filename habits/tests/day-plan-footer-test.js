@@ -61,6 +61,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
       await page.reload({waitUntil:'networkidle'});
       await page.locator('.ting-card').filter({hasText:'Footer fixture'}).first().click();
       await page.locator('.detail-page-tab[aria-label="history"]').click();
+      await page.waitForFunction(()=>detailCurrentNav()==='calendar' && !isScrollGuarded($('detail-calendar')));
       await page.locator('#detail-calendar .cal-day.today').click();
       await page.locator('#day-logs-sheet.open').waitFor();
       assert.equal(await page.locator('#day-logs-done').isVisible(),false,'scoped item keeps only the header close control');

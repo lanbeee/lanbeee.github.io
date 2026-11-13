@@ -18,14 +18,16 @@ async function addTestHabit(page, name, type, opts = {}){
   await page.waitForSelector('#detail-sheet.open, #pane-detail .detail-sheet');
 }
 
+// 1 = schedule, 2 = planning (nav name effort). Pages are found by name so a new tab cannot shift them.
 async function scrollDetailToSchedule(page, paneIndex = 1){
-  await page.evaluate((idx) => {
+  await page.evaluate((nav) => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
-    if(pager){
-      pager.querySelectorAll('.detail-page')[idx]?.querySelectorAll('details').forEach(d=>d.open=true);
-      pager.scrollTo({ left: pager.clientWidth * idx, behavior: 'instant' });
+    const target = pager?.querySelector(`.detail-page[data-detail-nav="${nav}"]`);
+    if(target){
+      target.querySelectorAll('details').forEach(d=>d.open=true);
+      pager.scrollTo({ left: target.offsetLeft, behavior: 'instant' });
     }
-  }, paneIndex);
+  }, paneIndex === 2 ? 'effort' : 'schedule');
   await page.waitForTimeout(200);
 }
 
@@ -470,23 +472,21 @@ async function assertAttr(page, selector, attr, expected, msg){
   const preparedScroll = await page.evaluate(() => {
     const sheet = document.querySelector('#detail-sheet .detail-sheet');
     const pager = sheet?.querySelector('.detail-pager');
-    const pages = pager ? [...pager.querySelectorAll('.detail-page')] : [];
-    const schedule = pages[1];
-    const effort = pages[2];
+    const schedule = pager?.querySelector('[data-detail-nav="schedule"]');
+    const effort = pager?.querySelector('[data-detail-nav="effort"]');
     if(!sheet || !pager || !schedule || !effort)return null;
     effort.scrollTop = 0;
     schedule.scrollTop = schedule.scrollHeight;
     const scheduleTop = schedule.scrollTop;
-    pager.scrollTo({ left:pager.clientWidth * 2, behavior:'auto' });
+    pager.scrollTo({ left:effort.offsetLeft, behavior:'auto' });
     return { scheduleTop };
   });
   await page.waitForTimeout(250);
   const paneScroll = await page.evaluate(() => {
     const sheet = document.querySelector('#detail-sheet .detail-sheet');
     const pager = sheet?.querySelector('.detail-pager');
-    const pages = pager ? [...pager.querySelectorAll('.detail-page')] : [];
-    const schedule = pages[1];
-    const effort = pages[2];
+    const schedule = pager?.querySelector('[data-detail-nav="schedule"]');
+    const effort = pager?.querySelector('[data-detail-nav="effort"]');
     if(!sheet || !pager || !schedule || !effort)return null;
     const pagerBox = pager.getBoundingClientRect();
     const effortBox = effort.getBoundingClientRect();
@@ -516,7 +516,7 @@ async function assertAttr(page, selector, attr, expected, msg){
   await scrollDetailToSchedule(page, 1);
   await page.evaluate(() => {
     const pager = document.querySelector('#detail-sheet .detail-pager');
-    const schedule = pager?.querySelectorAll('.detail-page')[2];
+    const schedule = pager?.querySelector('[data-detail-nav="schedule"]');
     if(schedule)schedule.scrollTop = 0;
   });
   await startEndpoint.locator('[data-time-mode="clock"]').click();

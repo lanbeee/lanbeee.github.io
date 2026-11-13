@@ -2251,7 +2251,12 @@ function render(opts){
       const row = btn.closest('.swipe-row');
       const idx = +row.dataset.realIdx;
       closeAllSwipes();
-      if(btn.dataset.action === 'assistant' && typeof tingsLoadAssistant === 'function'){
+      if(btn.dataset.action === 'assistant' && sortSettings.localAssistantProvider === 'needle'){
+        const item = load()[idx];
+        const local = item && isLocalAppointment(item);
+        openDetail(idx);
+        void openDetailAssistant('',{occurrenceDate:local ? row.dataset.scheduledDay || '' : ''});
+      }else if(btn.dataset.action === 'assistant' && typeof tingsLoadAssistant === 'function'){
         const hid = row.dataset.hid;
         void tingsLoadAssistant().then(()=>{
           if(typeof assistantOpenForItem === 'function'){

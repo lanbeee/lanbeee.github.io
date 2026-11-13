@@ -58,11 +58,11 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
     };
   });
   console.log('structure:', structure);
-  if(structure.pageCount !== 5) throw new Error(`expected 5 visible detail pages, got ${structure.pageCount}`);
+  if(structure.pageCount !== 6) throw new Error(`expected 6 visible detail pages, got ${structure.pageCount}`);
   if(!structure.insightGone) throw new Error('insight page should be merged away');
   if(!structure.statsInside || !structure.graphInside || !structure.aboutInside) throw new Error('stats/graph/about must live in the merged calendar page');
   if(!structure.pickerGone) throw new Error('plan-by date picker should be gone from the calendar pane');
-  if(structure.tabs !== 'history|schedule|planning|identity|actions') throw new Error(`unexpected tab strip: ${structure.tabs}`);
+  if(structure.tabs !== 'summary|history|schedule|planning|identity|actions') throw new Error(`unexpected tab strip: ${structure.tabs}`);
 
   // ── Strip geometry + dots ────────────────────────────────────────────────
   const strip = await page.evaluate(({ threeDaysAgo, inTwoDays, tenDaysAgo }) => {

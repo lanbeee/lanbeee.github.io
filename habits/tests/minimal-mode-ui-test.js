@@ -17,6 +17,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       localStorage.setItem('tings_coach_essentials_v2','done');
     });
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'load'});
+    await page.locator('#launch-screen').waitFor({state:'hidden'});
     await page.evaluate(h=>{save([h]);openDetail(0);},baseHabit({
       hid:'minimal-fixture',name:'Reading',durationMinutes:30,
       allowedWeekdays:[1],allowedTimeStart:540,allowedTimeEnd:1020,
@@ -24,6 +25,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       priority:1,earlyWindowDays:2,delayAllowanceDays:1,
       links:[{kind:'web',value:'https://example.com'}]
     }));
+    assert.equal(await page.locator('.detail-page-tab.on').innerText(),'summary','minimal detail opens on Summary');
+    await page.locator('.detail-page-tab',{hasText:'settings'}).click();
     assert.equal(await page.locator('#detail-availability-disclosure').getAttribute('open'),null,'availability starts folded even with saved limits');
     assert.equal(await page.locator('#detail-weekday-chips').isVisible(),false);
     await page.locator('#detail-availability-disclosure > summary').click();

@@ -1,4 +1,4 @@
-// Shared detail search -> focused chat -> explicit save. Extraction is scripted;
+// Shared detail search -> Summary tab composer -> explicit save. Extraction is scripted;
 // the entry, field pipeline, preview and commit use production code.
 const assert = require('node:assert/strict');
 const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
@@ -48,29 +48,29 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
     for(const [width,minimal] of [[390,false],[1440,false],[390,true]]){
       await page.setViewportSize({width,height:844});
       await page.waitForFunction(width=>paneTierActive()===(width>1000),width);
-      await page.evaluate(minimal=>{closeAssistantSheet();setMinimalMode(minimal);openDetail(0);},minimal);
+      await page.evaluate(minimal=>{setMinimalMode(minimal);openDetail(0);},minimal);
       const before=await page.evaluate(()=>load());
       const beforeReads=await reads();
       await search('Make Walk 30 minutes');
       assert.ok(await page.locator('#detail-search-ask').isVisible());
       if(minimal)await page.keyboard.press('Enter');
       else await page.locator('#detail-search-ask').click();
-      await page.waitForFunction(count=>entryReads.length>count && _assistantSession?.focus?.currentRequest==='Make Walk 30 minutes' && !_assistantBusy && !detailAssistantOpening,beforeReads);
+      await page.waitForFunction(count=>entryReads.length>count && detailSummary.session?.currentRequest==='Make Walk 30 minutes' && !detailSummary.busy && !detailAssistantOpening,beforeReads);
       const staged=await page.evaluate(()=>({
-        operation:_assistantSession.focus.operation,target:_assistantSession.focus.targetId,
-        draft:assistantFocusMaterialize(_assistantSession.focus),entry:_assistantSession.entry,
-        thread:$('assistant-thread').textContent,query:$('detail-search-input').value
+        operation:detailSummary.session.operation,target:detailSummary.session.targetId,
+        draft:assistantFocusMaterialize(detailSummary.session),onSummary:detailSummaryOnScreen(),
+        thread:$('detail-summary-thread').textContent,query:$('detail-search-input').value
       }));
       assert.equal(staged.operation,'edit');assert.equal(staged.target,'walk');
-      assert.equal(staged.entry,'detail');assert.equal(staged.draft.name,'Walk');
+      assert.equal(staged.onSummary,true,'Ask lands on the Summary tab');assert.equal(staged.draft.name,'Walk');
       assert.equal(staged.draft.durationMinutes,30,'focused instruction stages duration');
-      assert.ok(staged.thread.includes('Make Walk 30 minutes'),'typed instruction appears in chat');
+      assert.ok(staged.thread.includes('Make Walk 30 minutes'),'typed instruction appears in the summary thread');
       assert.equal(staged.query,'','sent search text clears');
-      assert.deepEqual(await page.evaluate(()=>load()),before,'opening chat and staging never write');
-      await page.locator('[data-focus-save]').click();
+      assert.deepEqual(await page.evaluate(()=>load()),before,'opening the composer and staging never write');
+      await page.locator('#detail-summary-thread [data-focus-save]').click();
       await page.waitForFunction(()=>load()[0].durationMinutes===30);
       assert.deepEqual(await page.evaluate(()=>load()[1]),before[1],'other named item stays untouched');
-      await page.evaluate(()=>{closeAssistantSheet();const items=load();items[0].durationMinutes=20;save(items);openDetail(0);});
+      await page.evaluate(()=>{const items=load();items[0].durationMinutes=20;save(items);openDetail(0);});
     }
 
     await page.evaluate(()=>{
@@ -84,15 +84,14 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
       await page.evaluate(index=>openDetail(index),index);
       const count=await reads(),before=await page.evaluate(()=>load());
       await search('Make it 35 minutes');await page.locator('#detail-search-ask').click();
-      await page.waitForFunction(count=>entryReads.length>count && !_assistantBusy,count);
-      const focus=await page.evaluate(()=>({kind:_assistantSession.focus.kind,target:_assistantSession.focus.targetId,
-        duration:assistantFocusMaterialize(_assistantSession.focus).durationMinutes}));
+      await page.waitForFunction(count=>entryReads.length>count && !detailSummary.busy,count);
+      const focus=await page.evaluate(()=>({kind:detailSummary.session.kind,target:detailSummary.session.targetId,
+        duration:assistantFocusMaterialize(detailSummary.session).durationMinutes}));
       assert.deepEqual(focus,{kind,target:hid,duration:35},'task and local event use the same focused entry');
       assert.deepEqual(await page.evaluate(()=>load()),before,'dismissing task or event previews leaves them untouched');
-      await page.evaluate(()=>closeAssistantSheet());
     }
 
-    // Dirty fields must not silently fall out of the edit when entering chat.
+    // Dirty fields must not silently fall out of the edit when asking Needle.
     await page.evaluate(()=>{setMinimalMode(false);openDetail(0);scrollDetailToNav('identity');});
     await page.locator('#detail-habit-message').fill('Manual draft');
     const count=await reads();
@@ -120,7 +119,7 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
     await page.locator('#detail-search-clear').click();
     assert.equal(await page.locator('#detail-search-ask').isVisible(),false,'empty query has no Ask action');
 
-    // Without downloaded assets the instruction survives in the existing chat composer.
+    // Without downloaded assets the instruction waits in the Summary composer.
     await page.evaluate(()=>{
       assistantNeedleCanSend=()=>false;
       openDetail(0);
@@ -128,10 +127,10 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
     const longInstruction='Set duration to 35 minutes. '+ 'Keep the other settings unchanged. '.repeat(8);
     await search(longInstruction);await page.locator('#detail-search-ask').click();
     await page.waitForFunction(()=>!detailAssistantOpening);
-    assert.equal(await page.locator('#assistant-input').inputValue(),longInstruction.trim(),'full instruction survives setup without search truncation');
+    assert.equal(await page.locator('#detail-ask-input').inputValue(),longInstruction.trim(),'full instruction survives setup without search truncation');
     assert.equal(await reads(),count);
 
-    await page.evaluate(()=>{closeAssistantSheet();patchLocalAssistant({localAssistant:false});openDetail(0);});
+    await page.evaluate(()=>{patchLocalAssistant({localAssistant:false});openDetail(0);});
     await search('duration');
     assert.equal(await page.locator('#detail-search-ask').isVisible(),false,'assistant off preserves ordinary search');
     assert.ok(await page.locator('.detail-search-result').count());
@@ -141,6 +140,6 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
     });
     assert.equal(await page.locator('#detail-search-ask').isVisible(),false,'imported items stay outside focused editing');
     assert.deepEqual(errors,[]);
-    console.log('PASS shared search, focused chat, confirmation, mobile/desktop/minimal, unsaved edits, loading races, setup and off state');
+    console.log('PASS shared search, Summary composer, confirmation, mobile/desktop/minimal, unsaved edits, loading races, setup and off state');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

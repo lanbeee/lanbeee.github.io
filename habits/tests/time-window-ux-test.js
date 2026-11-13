@@ -21,7 +21,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
       geometry:{coordinates:[-74,40.7]},properties:{name:'Test city',countrycode:'US'}
     }]}}));
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'networkidle'});
-    await page.evaluate(h=>{save([h]);openDetail(0);},baseHabit({hid:'window-fixture',name:'Walk',durationMinutes:30}));
+    await page.evaluate(h=>{save([h]);openDetail(0);showDetailMinimalTab('settings');},baseHabit({hid:'window-fixture',name:'Walk',durationMinutes:30}));
     await page.locator('#detail-availability-disclosure > summary').click();
     const start = page.locator('#detail-allowed-time-row .time-endpoint').first();
     assert.ok(await page.locator('.schedule-time-lead').first().isVisible(),'minimal mode explains the boundaries');

@@ -116,7 +116,7 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   assert(!native.edges.includes('missed'),'optional rows carry no missed alarm');
   assert.equal(native.dropControl,false,'optional items hide the inapplicable drop alarm control');
   await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>openDetail(0));
-  await page.evaluate(()=>setMinimalMode(true));
+  await page.evaluate(()=>{setMinimalMode(true);showDetailMinimalTab('settings');});
   assert.equal(await page.locator('[data-detail-repeat]').isVisible(),false,'minimal detail hides when conditions fit');
   assert(await page.locator('#detail-weather-profile').isVisible(),'a saved conditional habit still shows weather in minimal detail');
   assert(await page.locator('#detail-place-chips').isVisible(),'a saved conditional habit still shows places in minimal detail');

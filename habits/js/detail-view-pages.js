@@ -1,4 +1,5 @@
 const DETAIL_PAGE_NAV = {
+  summary:{label:'summary',icon:'ti-list-details'},
   calendar:{label:'history',icon:'ti-calendar-week'},
   schedule:{label:'schedule',icon:'ti-calendar-time'},
   effort:{label:'planning',icon:'ti-progress-check'},
@@ -6,16 +7,27 @@ const DETAIL_PAGE_NAV = {
   actions:{label:'actions',icon:'ti-dots'}
 };
 
+// Minimal mode keeps two tabs: Summary alone, then every remaining pane stacked
+// as one scrolling settings page.
+const DETAIL_MINIMAL_NAV = {
+  summary:{label:'summary',icon:'ti-list-details'},
+  settings:{label:'settings',icon:'ti-adjustments-horizontal'}
+};
+
 // Visual-only: drop the merged calendar+stats pane and the effort pane, fold
 // duration + due into schedule, and keep basic allowed weekdays and hours. What is
-// left is short enough to read as one scrolling page, so the pager stacks
-// vertically and the tab strip goes away. Does not change saved habit fields.
+// left is short enough to read as one scrolling settings page, so the pager
+// stacks vertically. Does not change saved habit fields.
 const MINIMAL_HIDDEN_DETAIL_PAGES = ['calendar','effort'];
 let _minimalEffortHomes = null;
 function applyDetailMinimalMode(){
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   const sheet = $('detail-sheet');
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  const wasMinimal = Boolean(sheet?.classList.contains('minimal-detail'));
+  // The body class flips before this runs, so the pager may already be vertical.
+  const fromNav = wasMinimal ? (detailMinimalView() === 'summary' ? 'summary' : 'schedule')
+    : getSheetInner('detail-sheet')?.dataset.fullNav;
   pager?.querySelectorAll('.detail-field-revealed').forEach(el=>el.classList.remove('detail-field-revealed'));
   if(sheet)sheet.classList.toggle('minimal-detail', minimal);
   // A previously selected Preferred view must never hide the basic controls.
@@ -27,8 +39,16 @@ function applyDetailMinimalMode(){
       const page = pager.querySelector(`.detail-page[data-detail-nav="${nav}"]`);
       if(page)page.hidden = minimal;
     });
-    if(minimal)pager.scrollTo({left:0,behavior:'auto'});
-    else{
+    // Switching modes keeps the user on Summary or on the settings they were in.
+    if(minimal && !wasMinimal){
+      setDetailMinimalView(!fromNav || fromNav === 'summary' ? 'summary' : 'settings');
+      pager.scrollTo({left:0,top:0,behavior:'auto'});
+    }else if(minimal){
+      pager.scrollTo({left:0,behavior:'auto'});
+    }else if(wasMinimal){
+      pager.scrollTo({top:0,behavior:'auto'});
+      scrollDetailToNav(fromNav,'auto');
+    }else{
       const pages = visibleDetailPages(pager);
       const width = Math.max(1,pager.clientWidth);
       const idx = Math.round(pager.scrollLeft / width);
@@ -98,6 +118,27 @@ function visibleDetailPages(pager){
   return [...pager.querySelectorAll('.detail-page')].filter(page=>!page.hidden);
 }
 
+function detailMinimalView(){
+  return getSheetInner('detail-sheet')?.dataset.minimalView === 'settings' ? 'settings' : 'summary';
+}
+
+function setDetailMinimalView(view){
+  const inner = getSheetInner('detail-sheet');
+  if(inner)inner.dataset.minimalView = view === 'settings' ? 'settings' : 'summary';
+}
+
+// The page the user is looking at. In minimal settings that is its first pane.
+function detailCurrentNav(){
+  const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
+  const pages = visibleDetailPages(pager);
+  if(!pages.length)return null;
+  if(detailIsSingleView()){
+    return detailMinimalView() === 'summary' ? 'summary'
+      : pages.find(page=>page.dataset.detailNav !== 'summary')?.dataset.detailNav || null;
+  }
+  return pages[Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth))]?.dataset.detailNav || null;
+}
+
 function detailPageIndexByNav(navKey){
   const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
   if(!pager)return -1;
@@ -110,12 +151,60 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
   const index = detailPageIndexByNav(navKey);
   if(index < 0)return;
   if(detailIsSingleView()){
+    setDetailMinimalView(navKey === 'summary' ? 'summary' : 'settings');
+    updateDetailPagerDots();
     const page = visibleDetailPages(pager)[index];
-    if(page)pager.scrollTo({top:page.offsetTop - pager.offsetTop,behavior});
+    if(page)pager.scrollTo({top:navKey === 'summary' ? 0 : page.offsetTop - pager.offsetTop,behavior});
     return;
   }
   pager.scrollTo({left:pager.clientWidth * index,behavior});
   updateDetailPagerDots();
+}
+
+function bindDetailPagerTabs(dotsWrap,pager){
+  if(dotsWrap.dataset.bound === '1')return;
+  dotsWrap.dataset.bound = '1';
+  dotsWrap.addEventListener('click',event=>{
+    const tab = event.target.closest('.detail-page-tab');
+    if(!tab || !dotsWrap.contains(tab))return;
+    if(tab.dataset.detailMinimal){showDetailMinimalTab(tab.dataset.detailMinimal);return;}
+    const livePages = visibleDetailPages(pager);
+    const index = Math.max(0,Math.min(livePages.length - 1,Number(tab.dataset.detailPage) || 0));
+    pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
+  });
+  dotsWrap.addEventListener('keydown',event=>{
+    if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+    const tabs = [...dotsWrap.querySelectorAll('.detail-page-tab')];
+    const current = tabs.indexOf(event.target.closest('.detail-page-tab'));
+    if(current < 0)return;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    if(tabs[next].dataset.detailMinimal)showDetailMinimalTab(tabs[next].dataset.detailMinimal);
+    else scrollDetailToNav(visibleDetailPages(pager)[next].dataset.detailNav,'auto');
+    tabs[next].focus({preventScroll:true});
+  });
+}
+
+function renderDetailMinimalTabs(dotsWrap){
+  if(dotsWrap.dataset.pageSig !== 'minimal'){
+    dotsWrap.dataset.pageSig = 'minimal';
+    dotsWrap.style.gridTemplateColumns = 'repeat(2,minmax(0,1fr))';
+    dotsWrap.innerHTML = Object.entries(DETAIL_MINIMAL_NAV).map(([view,item])=>
+      `<button type="button" class="detail-page-tab" role="tab" data-detail-minimal="${view}" title="${item.label}" aria-label="${item.label}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`
+    ).join('');
+  }
+  const current = detailMinimalView();
+  dotsWrap.querySelectorAll('.detail-page-tab').forEach(tab=>{
+    const on = tab.dataset.detailMinimal === current;
+    tab.classList.toggle('on',on);
+    tab.setAttribute('aria-selected',on ? 'true' : 'false');
+    tab.tabIndex = on ? 0 : -1;
+  });
+}
+
+function showDetailMinimalTab(view){
+  scrollDetailToNav(view === 'summary' ? 'summary'
+    : visibleDetailPages(getSheetInner('detail-sheet')?.querySelector('.detail-pager')).find(page=>page.dataset.detailNav !== 'summary')?.dataset.detailNav,'auto');
 }
 
 // RENDER: syncs the compact pager navigation (skips hidden pages like order).
@@ -124,15 +213,13 @@ function updateDetailPagerDots(){
   const pager = inner?.querySelector('.detail-pager');
   const dotsWrap = inner?.querySelector('.detail-dots');
   if(!pager || !dotsWrap)return;
-  // One scrolling page has nothing to page between — the tab strip would just
-  // be three buttons that scroll a page the user can already see.
+  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
+  dotsWrap.hidden = false;
+  bindDetailPagerTabs(dotsWrap,pager);
   if(detailIsSingleView()){
-    dotsWrap.hidden = true;
-    dotsWrap.innerHTML = '';
-    delete dotsWrap.dataset.pageSig;
+    renderDetailMinimalTabs(dotsWrap);
     return;
   }
-  dotsWrap.hidden = false;
   const pages = visibleDetailPages(pager);
   pages.forEach((panel,i)=>{
     panel.id = panel.id || `detail-page-${i}`;
@@ -148,30 +235,10 @@ function updateDetailPagerDots(){
       return `<button type="button" class="detail-page-tab" role="tab" data-detail-page="${i}" title="${item.label}" aria-label="${item.label}" aria-controls="${panel.id}"><i class="ti ${item.icon}" aria-hidden="true"></i><span>${item.label}</span></button>`;
     }).join('');
   }
-  if(dotsWrap.dataset.bound !== '1'){
-    dotsWrap.dataset.bound = '1';
-    dotsWrap.addEventListener('click',event=>{
-      const tab = event.target.closest('.detail-page-tab');
-      if(!tab || !dotsWrap.contains(tab))return;
-      const livePages = visibleDetailPages(pager);
-      const index = Math.max(0,Math.min(livePages.length - 1,Number(tab.dataset.detailPage) || 0));
-      pager.scrollTo({left:pager.clientWidth * index,behavior:'smooth'});
-    });
-    dotsWrap.addEventListener('keydown',event=>{
-      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
-      const tabs = [...dotsWrap.querySelectorAll('.detail-page-tab')];
-      const current = tabs.indexOf(event.target.closest('.detail-page-tab'));
-      if(current < 0)return;
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-      event.preventDefault();
-      const panel = visibleDetailPages(pager)[next];
-      scrollDetailToNav(panel.dataset.detailNav,'auto');
-      tabs[next].focus({preventScroll:true});
-    });
-  }
   const dots = [...dotsWrap.querySelectorAll('.detail-page-tab')];
   if(!dots.length)return;
   const page = Math.max(0,Math.min(dots.length - 1,Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth))));
+  inner.dataset.fullNav = pages[page]?.dataset.detailNav || '';
   dots.forEach((dot,i)=>{
     dot.classList.toggle('on',i === page);
     dot.setAttribute('aria-selected',i === page ? 'true' : 'false');

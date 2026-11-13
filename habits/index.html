@@ -414,6 +414,26 @@
         <div id="detail-search-results" class="detail-search-results" aria-label="matching detail settings"></div>
       </div>
       <div class="detail-pager" aria-label="habit details">
+        <section class="detail-page detail-section tune-section detail-summary-page" data-detail-nav="summary">
+          <div class="detail-summary" id="detail-summary"></div>
+          <div id="detail-summary-setup" hidden>
+            <div class="assistant-needle-panel" data-needle-panel hidden>
+              <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
+              <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+              <div class="btn-row">
+                <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+                <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
+              </div>
+            </div>
+          </div>
+          <div class="detail-summary-chat" id="detail-summary-chat" hidden>
+            <div class="detail-summary-chat-head">
+              <span class="settings-sublabel">changes with Needle</span>
+              <button type="button" class="mini-text-btn" id="detail-summary-clear">clear</button>
+            </div>
+            <div class="detail-summary-thread" id="detail-summary-thread" aria-live="polite"></div>
+          </div>
+        </section>
         <section class="detail-page month-card detail-calendar-page" data-detail-nav="calendar">
           <details class="detail-disclosure" id="detail-history-disclosure" open data-detail-essential="true"><summary>calendar &amp; gap history</summary>
           <p class="detail-about" id="detail-about"></p>
@@ -829,6 +849,12 @@
           </section>
       </div>
       <div class="detail-bottom-bar sheet-search-dock" aria-label="detail actions">
+        <div class="detail-ask-guides" id="detail-ask-guides" hidden>
+          <p class="detail-ask-guides-label" id="detail-ask-guides-label">Settings you can change</p>
+          <div class="detail-ask-guides-row" id="detail-ask-guides-row" role="group" aria-labelledby="detail-ask-guides-label"></div>
+          <p class="detail-ask-hint" id="detail-ask-hint" hidden></p>
+          <button type="button" class="detail-ask-revise" id="detail-ask-revise" hidden><i class="ti ti-arrow-back-up" aria-hidden="true"></i>Edit last request</button>
+        </div>
         <div class="detail-actions" id="detail-cool-row">
           <div class="detail-search-control">
             <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
@@ -837,6 +863,16 @@
               <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="12000" enterkeyhint="search" aria-describedby="detail-search-status" />
               <button type="button" id="detail-search-clear" class="sheet-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
+          </div>
+          <div class="detail-ask" id="detail-ask" hidden>
+            <label class="sr-only" for="detail-ask-input">Describe a change for Needle</label>
+            <i class="ti ti-sparkles detail-ask-mark" aria-hidden="true"></i>
+            <span class="assistant-mention detail-ask-tag" id="detail-ask-tag" hidden>
+              <span class="assistant-mention-label" id="detail-ask-tag-label"></span>
+              <button type="button" class="assistant-mention-remove" id="detail-ask-tag-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </span>
+            <textarea id="detail-ask-input" rows="1" maxlength="12000" placeholder="Describe a change" autocomplete="off" enterkeyhint="send"></textarea>
+            <button type="button" id="detail-ask-send" class="detail-ask-send" aria-label="send to Needle" disabled><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
@@ -2144,6 +2180,7 @@
 <script src="./js/detail-view-pages.js" defer></script>
 <script src="./js/item-field-catalog.js" defer></script>
 <script src="./js/detail-view-search.js" defer></script>
+<script src="./js/detail-view-summary.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
 <script src="./js/today-view-fits.js" defer></script>
 <script src="./js/today-view-reservations.js" defer></script>
