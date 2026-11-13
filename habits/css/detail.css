@@ -275,7 +275,12 @@ body[data-pane-count="1"] .detail-sheet{
 /* Locking Home's document scroll changes its sticky header's containing
    block. Reveal detail in the same frame, fully opaque, so cards beneath
    that header cannot flash through a fading overlay. */
-body[data-pane-count="1"] #detail-sheet{background:var(--bg);transition:none;}
+body[data-pane-count="1"] #detail-sheet{
+  top:var(--detail-viewport-top,0px);bottom:auto;
+  height:min(100dvh,calc(var(--keyboard-viewport-bottom,100dvh) - var(--detail-viewport-top,0px)));
+  overflow:hidden;overscroll-behavior:none;
+  background:var(--bg);transition:none;
+}
 body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
   position:absolute;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
   transform:translate(-50%,-100%);margin:0;width:max-content;max-width:calc(100vw - 24px);
@@ -376,7 +381,6 @@ body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none 
 .detail-sheet .detail-page.detail-summary-page{display:flex;flex-direction:column;gap:12px;}
 .detail-summary-page > *{flex-shrink:0;}
 .detail-summary{display:flex;flex-direction:column;gap:6px;}
-.detail-summary > .settings-sublabel:not(:first-child){margin-top:8px;}
 .detail-summary .assistant-chip-row{margin:0;}
 .detail-summary .assistant-chip{font-size:12.5px;}
 .detail-summary > .focus-note{margin-top:6px;}

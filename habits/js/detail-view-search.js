@@ -479,6 +479,7 @@ function syncDetailEditingChrome(){
   // Only compact navigation for a detail field's own editing session.
   inner.classList.toggle('detail-keyboard-open',Boolean(keyboardVisible && (editing || closing) && !inner.classList.contains('detail-search-open')));
   inner.classList.toggle('detail-field-editing',Boolean((editing && virtualKeyboard) || closing));
+  if(typeof syncDetailSummaryTyping === 'function')syncDetailSummaryTyping(keyboardVisible);
 }
 document.addEventListener('pointerdown',event=>{
   detailEditingPointerDown = Boolean(event.target.closest('.detail-sheet'));

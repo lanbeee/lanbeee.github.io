@@ -58,9 +58,7 @@ function renderDetailSummaryOverview(){
   }
   const summary = assistantFocusItemSummary(item);
   const row = (chips,label)=>`<div class="assistant-chip-row" role="group" aria-label="${label}">${chips.map(chip=>detailSummaryPill(chip,summary.session)).join('')}</div>`;
-  const parts = [];
-  if(summary.essentials.length)parts.push('<span class="settings-sublabel">essentials</span>',row(summary.essentials,'Essentials'));
-  if(summary.custom.length)parts.push('<span class="settings-sublabel">set for this item</span>',row(summary.custom,'Set for this item'));
+  const parts = [row([...summary.essentials,...summary.custom],'Item settings')];
   const defaults = summary.custom.length ? '' : 'Everything else uses your defaults. ';
   const hint = !detailSummaryAskReady() ? 'Tap a setting to open it.'
     : detailSummaryCanSend() ? 'Tap a setting to open it, or describe a change below.'
@@ -325,7 +323,7 @@ function renderDetailSummaryGuides(){
   // Chips and help only while composing or when Needle needs a pick; an idle
   // tray keeps just Edit last request so it never covers the proposal.
   const noticeOnly = existing?.unresolved?.length && !detailSummaryNeedsPick(existing) && !draft.trim();
-  const guiding = base && !noticeOnly && Boolean(document.activeElement === input || draft.trim() || detailSummaryNeedsPick(existing) || detailSummaryRevising);
+  const guiding = base && !noticeOnly && Boolean(inner.classList.contains('detail-ask-typing') || draft.trim() || detailSummaryNeedsPick(existing) || detailSummaryRevising);
   const session = guiding || canRevise ? detailSummaryEnsureSession() : null;
   if(!session){
     tray.hidden = true;
@@ -646,21 +644,27 @@ $('detail-ask-guides').addEventListener('click',event=>{
   if(guide && !guide.disabled){detailSummaryApplyGuide(guide);return;}
   if(event.target.closest('#detail-ask-revise'))detailSummaryReviseLast();
 });
-// Typing lifts the dock to the keyboard edge, like search, and drops the tab
-// strip on phones so the latest proposal stays visible above it. The loupe and
-// close step aside while typing, so the field's width and line count change.
-$('detail-ask-input').addEventListener('focus',()=>{
-  getSheetInner('detail-sheet')?.classList.add('detail-ask-typing');
+// Keep compact chrome through the keyboard's closing animation. Restoring it
+// on blur would move the composer while the keyboard is still on screen.
+function syncDetailSummaryTyping(keyboardVisible){
+  const inner = getSheetInner('detail-sheet');
+  if(!inner)return;
+  const typing = inner.classList.contains('detail-ask-on')
+    && (document.activeElement === $('detail-ask-input')
+      || (inner.classList.contains('detail-ask-typing') && keyboardVisible));
+  if(inner.classList.contains('detail-ask-typing') === typing)return;
+  inner.classList.toggle('detail-ask-typing',typing);
   detailSummaryResizeComposer();
   renderDetailSummaryGuides();
+}
+// The dock follows viewport events. Focusing it must not start a delayed
+// conversation scroll partway through the OS keyboard animation.
+$('detail-ask-input').addEventListener('focus',()=>{
   updateKeyboardLift();
-  setTimeout(()=>{updateKeyboardLift();detailSummaryScrollToEnd();},260);
 });
 $('detail-ask-input').addEventListener('blur',()=>{
   requestAnimationFrame(()=>{
     if(document.activeElement === $('detail-ask-input'))return;
-    getSheetInner('detail-sheet')?.classList.remove('detail-ask-typing');
-    detailSummaryResizeComposer();
     renderDetailSummaryGuides();
     updateKeyboardLift();
   });

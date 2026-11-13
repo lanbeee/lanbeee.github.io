@@ -471,6 +471,13 @@ function updateKeyboardLift(){
     const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
     style.setProperty('--assistant-viewport-top', `${top}px`);
   }else style.removeProperty('--assistant-viewport-top');
+  // Detail's composer uses the same visible rectangle. Safari pans the
+  // viewport to reveal a focused dock; anchoring only its bottom loses the
+  // item header above the visible screen.
+  if(detailOpen && !paneTierActive()){
+    const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
+    style.setProperty('--detail-viewport-top',`${top}px`);
+  }else style.removeProperty('--detail-viewport-top');
   // SystemBars clears the bottom safe inset after the WebView resize. The
   // keyboard already covers it in that intervening frame, so omit it now.
   if(nativeResized){
@@ -514,7 +521,7 @@ function keepFocusedInputVisible(){
   const active = document.activeElement;
   // These fields live in a dock which already follows the keyboard. Scrolling
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
-  if(!active || active.matches('#habit-search,#detail-search-input,#settings-search-input,#assistant-input'))return;
+  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
   let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body');
   if(!host)return;
