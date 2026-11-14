@@ -64,6 +64,18 @@ const {BASE,baseHabit,waitForAssistant}=require('./helpers/planner-test-helpers'
           assert.equal(motion.nav,'schedule','ordinary tab taps select their destination');
           assert.ok(await page.locator('.detail-pager').evaluate(el=>Math.abs(el.scrollLeft-detailPageIndexByNav('schedule')*el.clientWidth)<1),'ordinary tab taps land at the native snap position');
         }
+        const returned=await page.evaluate(()=>{
+          scrollDetailToNav('summary','smooth');
+          const animation=detailDockMotion;
+          scrollDetailToNav('summary','smooth');
+          return {same:animation === detailDockMotion,state:animation.playState,
+            scales:animation.effect.getKeyframes().map(frame=>{
+              const matrix=new DOMMatrix(frame.transform);
+              return [matrix.a,matrix.d];
+            })};
+        });
+        assert.ok(returned.same && returned.state==='running','retapping Summary preserves its transition');
+        assert.ok(returned.scales.every(([x,y])=>x===1 && y===1),'returning composer never squeezes its text or icons');
         // Rapid selections finish on the last choice, at the selected native scroll position.
         await page.evaluate(minimal=>{
           if(minimal){showDetailMinimalTab('summary');showDetailMinimalTab('settings');showDetailMinimalTab('summary');}
@@ -99,6 +111,28 @@ const {BASE,baseHabit,waitForAssistant}=require('./helpers/planner-test-helpers'
         assert.equal(await page.evaluate(()=>$('detail-sheet').classList.contains('open')),false,'X with an empty box leaves details in one tap');
         assert.deepEqual(await page.evaluate(()=>load()),before,'navigation never saves');
       }
+      // iOS sometimes delivers a stale visual-viewport pan as Home locks on
+      // entry. Apply offsets only within a genuinely shortened viewport.
+      const pan=await page.evaluate(()=>{
+        const descriptor=Object.getOwnPropertyDescriptor(window,'visualViewport');
+        const viewport=new EventTarget();
+        Object.assign(viewport,{height:document.documentElement.clientHeight,offsetTop:380,scale:1});
+        Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
+        try{
+          openDetail(0);updateKeyboardLift();
+          const stale=document.documentElement.style.getPropertyValue('--detail-viewport-top');
+          viewport.height-=300;viewport.offsetTop=60;updateKeyboardLift();
+          const keyboard=document.documentElement.style.getPropertyValue('--detail-viewport-top');
+          viewport.height=document.documentElement.clientHeight;updateKeyboardLift();
+          const restored=document.documentElement.style.getPropertyValue('--detail-viewport-top');
+          return {stale,keyboard,restored};
+        }finally{
+          if(descriptor)Object.defineProperty(window,'visualViewport',descriptor);
+          else delete window.visualViewport;
+          closeDetail();updateKeyboardLift();
+        }
+      });
+      assert.deepEqual(pan,{stale:'0px',keyboard:'60px',restored:'0px'},'entry ignores stale pans and preserves real keyboard positioning');
       const closed=await page.evaluate(()=>{
         openDetail(0);assistantNeedleCanSend=()=>true;syncDetailSummaryDock();
         scrollDetailToNav('schedule','smooth');closeDetail();

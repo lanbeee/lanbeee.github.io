@@ -478,7 +478,11 @@ function updateKeyboardLift(){
   // viewport to reveal a focused dock; anchoring only its bottom loses the
   // item header above the visible screen.
   if(detailOpen && !paneTierActive()){
-    const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
+    // iOS can report a leftover pan while opening/locking the page, before
+    // its viewport scroll event catches up. A full-height viewport needs no
+    // offset; applying that stale pan pushes the header down for one frame.
+    const room = needsLift ? Math.max(0,layoutHeight - window.visualViewport.height) : 0;
+    const top = needsLift && !nativeResized ? Math.max(0,Math.min(window.visualViewport.offsetTop,room)) : 0;
     if(style.getPropertyValue('--detail-viewport-top') !== `${top}px`)style.setProperty('--detail-viewport-top',`${top}px`);
   }else if(style.getPropertyValue('--detail-viewport-top') !== '0px')style.setProperty('--detail-viewport-top','0px');
   // SystemBars clears the bottom safe inset after the WebView resize. The

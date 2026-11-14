@@ -74,25 +74,29 @@ function cancelDetailNavigationMotion(){
   detailDockMotion?.cancel();
 }
 
-// Morph the dock only on tab changes. Native scrolling owns panel movement;
+// Reveal the dock only on tab changes. Native scrolling owns panel movement;
 // keyboard/viewport updates never start or delay this transition.
 function animateDetailNavigation(previousNav,previousDock,behavior = 'smooth'){
+  // Retapping the selected tab must not cut an in-flight transition short.
+  if(previousNav === detailCurrentNav())return;
   cancelDetailNavigationMotion();
   const inner = getSheetInner('detail-sheet');
   if(!inner || behavior !== 'smooth' || matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   if(!$('detail-sheet').classList.contains('open') && !inner.closest('.pane-detail'))return;
-  if(previousNav === detailCurrentNav() || !previousDock?.width)return;
+  if(!previousDock?.width)return;
   const dock = inner.querySelector('.sheet-search-dock');
   const next = dock?.getBoundingClientRect();
   if(!next?.width || !next.height)return;
-  const dx = previousDock.x - next.x,dy = previousDock.y - next.y;
-  if(Math.abs(dx) + Math.abs(dy) + Math.abs(previousDock.width - next.width) + Math.abs(previousDock.height - next.height) < 1)return;
+  if(Math.abs(previousDock.width - next.width) + Math.abs(previousDock.height - next.height) < 1)return;
   const base = getComputedStyle(dock).transform;
   const transform = base === 'none' ? '' : base;
+  // The composer and compact bar have different positioning and widths.
+  // Scaling between their boxes squeezes the text/icons, especially on a
+  // quick reversal. Reveal the destination at its real size instead.
   detailDockMotion = dock.animate([
-    {transformOrigin:'0 0',transform:`translate(${dx}px,${dy}px) ${transform} scale(${previousDock.width / next.width},${previousDock.height / next.height})`},
-    {transformOrigin:'0 0',transform:base}
-  ],{duration:180,easing:'ease-out'});
+    {opacity:0.6,transform:`translateY(4px) ${transform}`},
+    {opacity:1,transform:base}
+  ],{duration:140,easing:'ease-out'});
 }
 
 // Visual-only: drop the merged calendar+stats pane and the effort pane, fold
