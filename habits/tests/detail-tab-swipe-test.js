@@ -29,6 +29,11 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
       };
       const panels=()=>page.evaluate(()=>[...document.querySelectorAll('.detail-pager > .detail-page')]
         .filter(panel=>panel.getClientRects().length).map(panel=>panel.dataset.detailNav));
+      const center=async selector=>{
+        const box=await page.locator(selector).boundingBox();
+        assert.ok(box,`${selector} is visible`);
+        return {x:box.x+box.width*.55,y:box.y+box.height/2};
+      };
       // Find an ordinary patch of panel background or text, excluding widgets.
       const point=()=>page.evaluate(()=>{
         const pager=getSheetInner('detail-sheet').querySelector('.detail-pager');
@@ -83,6 +88,35 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         await page.locator('#launch-screen').waitFor({state:'hidden'});
         await page.locator('#list .ting-name').filter({hasText:'Walk'}).first().tap();
         await page.locator('#detail-summary [data-summary-field]').first().waitFor();
+        // Reproduce swipes starting on the actual headings and labels, rather
+        // than searching only for a blank patch between controls.
+        await select('schedule');
+        const rhythmOpen=await page.locator('#detail-rhythm-disclosure').evaluate(el=>el.open);
+        await drag(-100,0,{from:await center('#detail-rhythm-disclosure > summary')});
+        assert.equal(await nav(),'availability','a section heading accepts a swipe');
+        assert.equal(await page.locator('#detail-rhythm-disclosure').evaluate(el=>el.open),rhythmOpen,'swiping a heading does not collapse it');
+        await select('schedule');
+        await page.locator('#detail-rhythm-disclosure > summary').tap();await idle();
+        assert.equal(await page.locator('#detail-rhythm-disclosure').evaluate(el=>el.open),!rhythmOpen,'a normal heading tap still toggles its section');
+        await page.locator('#detail-rhythm-disclosure > summary').tap();await idle();
+        assert.equal(await page.locator('#detail-rhythm-disclosure').evaluate(el=>el.open),rhythmOpen);
+        await select('effort');
+        await page.locator('#detail-planning-priority-disclosure > summary').scrollIntoViewIfNeeded();
+        const priorityOpen=await page.locator('#detail-planning-priority-disclosure').evaluate(el=>el.open);
+        await drag(-100,0,{from:await center('#detail-planning-priority-disclosure > summary')});
+        assert.equal(await nav(),'tracking','a collapsed section heading accepts a swipe');
+        assert.equal(await page.locator('#detail-planning-priority-disclosure').evaluate(el=>el.open),priorityOpen,'a heading swipe does not expand its section');
+        await select('summary');
+        await drag(-100,0,{from:await center('#detail-name')});
+        assert.equal(await nav(),'calendar','the item title accepts a swipe without opening the name editor');
+        await drag(100,0,{from:await center('#detail-sub')});
+        assert.equal(await nav(),'summary','the item header subtitle accepts a swipe');
+        await select('tracking');
+        const trackValue=await page.locator('#detail-track-value').getAttribute('aria-pressed');
+        await drag(100,0,{from:await center('#detail-logging-disclosure > label > span')});
+        assert.equal(await nav(),'effort','field label text accepts a swipe');
+        assert.equal(await page.locator('#detail-track-value').getAttribute('aria-pressed'),trackValue,'swiping label text does not toggle its control');
+        await select('summary');
         await page.evaluate(()=>{
           window.swipeFrameErrors=[];window.swipeExpected=detailCurrentNav();
           // Sample every frame after navigation has synchronously finished.
@@ -145,7 +179,7 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
       // Native vertical scroll, nested horizontal scrolling, and form controls.
       await page.locator('#list .ting-name').filter({hasText:'Walk'}).first().tap();
       await select('identity');
-      const nameBox=await page.locator('#detail-name').boundingBox();
+      const nameBox=await page.locator('#detail-habit-message').boundingBox();
       await drag(-100,0,{from:{x:nameBox.x+nameBox.width*.65,y:nameBox.y+nameBox.height/2}});
       assert.equal(await nav(),'identity','text input keeps its drag');
       await page.evaluate(()=>{

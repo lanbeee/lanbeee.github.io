@@ -223,19 +223,22 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
 function bindDetailPagerSwipes(pager){
   if(pager.dataset.swipeBound === '1')return;
   pager.dataset.swipeBound = '1';
+  const surface = pager.closest('.detail-sheet');
   let gesture = null;
   const selectionActive = ()=>Boolean(window.getSelection()?.toString());
-  const controls = 'input,textarea,select,button,a,label,summary,svg,canvas,'
+  // Headings, labels and the item title accept drags; their normal tap action
+  // remains intact. Actual editors, action buttons and drag controls own theirs.
+  const controls = 'input,textarea,select,button:not(#detail-name),a,svg,canvas,'
     + '[contenteditable]:not([contenteditable="false"]),[role="button"],[role="slider"],'
     + '[role="spinbutton"],[role="switch"],[role="checkbox"],[role="listbox"],[draggable="true"],[data-detail-no-swipe],.leaflet-container';
-  pager.addEventListener('touchstart',event=>{
+  surface.addEventListener('touchstart',event=>{
     gesture = null;
     if(event.defaultPrevented || event.touches.length !== 1 || selectionActive())return;
     const target = event.target instanceof Element ? event.target : event.target.parentElement;
-    if(!target?.closest('.detail-page') || target.closest(controls))return;
+    if(!target?.closest('.detail-page,.detail-head') || target.closest(controls))return;
     // Nested charts, calendar strips and other horizontal scrollers own their
     // entire gesture, including at an edge; never hand them off to tabs.
-    for(let node = target;node && node !== pager;node = node.parentElement){
+    for(let node = target;node && node !== surface;node = node.parentElement){
       if(node.scrollWidth > node.clientWidth + 1 && /^(auto|scroll)$/.test(getComputedStyle(node).overflowX))return;
     }
     const touch = event.touches[0];
@@ -244,7 +247,7 @@ function bindDetailPagerSwipes(pager){
     gesture = {id:touch.identifier,x:touch.clientX,y:touch.clientY,
       revision:detailNavigationRevision,nav:detailCurrentNav(),claimed:false};
   },{passive:true});
-  pager.addEventListener('touchmove',event=>{
+  surface.addEventListener('touchmove',event=>{
     if(!gesture)return;
     if(event.touches.length !== 1 || gesture.revision !== detailNavigationRevision){gesture = null;return;}
     const touch = event.touches[0];
@@ -261,7 +264,7 @@ function bindDetailPagerSwipes(pager){
     if(event.cancelable)event.preventDefault();
     else gesture = null;
   },{passive:false});
-  pager.addEventListener('touchend',event=>{
+  surface.addEventListener('touchend',event=>{
     const start = gesture;
     gesture = null;
     if(!start?.claimed || event.touches.length || start.revision !== detailNavigationRevision
@@ -281,7 +284,7 @@ function bindDetailPagerSwipes(pager){
     if(detailIsSingleView())showDetailMinimalTab(next);
     else scrollDetailToNav(next,'auto');
   },{passive:false});
-  pager.addEventListener('touchcancel',()=>{gesture = null;},{passive:true});
+  surface.addEventListener('touchcancel',()=>{gesture = null;},{passive:true});
 }
 
 function bindDetailPagerTabs(dotsWrap,pager){
