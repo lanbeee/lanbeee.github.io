@@ -347,6 +347,9 @@ function assistantFocusUnresolve(session, item){
     family:item.family || '',
     question:item.question || 'I need a clearer value for that setting.',
     choices:item.choices || [],
+    selection:item.selection || [],
+    placeOnly:Boolean(item.placeOnly),
+    placeFollowup:Boolean(item.placeFollowup),
     phrase:item.phrase || '',
     blocking:item.blocking !== false,
     // A notice explains a request this session cannot do; it never blocks Save.
@@ -382,6 +385,38 @@ function assistantFocusSetScope(session, scope, date){
   session.unresolved = session.unresolved.filter(row => row.field !== 'eventScope');
   session.interpretationApproved = null;
   return {ok:true};
+}
+
+// Resolve a complete catalog operand, never a substring of a longer name.
+// Whitespace differences are free; small spelling errors need one closest hit.
+function assistantFocusMatchCatalog(list, raw){
+  const key = value => String(value || '').normalize('NFKC').toLowerCase().trim()
+    .replace(/^["“']|["”'.!?]+$/g, '').replace(/[\s._-]+/g, '');
+  const want = key(raw);
+  if(!want)return {ok:false, error:'UNKNOWN', matches:[]};
+  const rows = list.map(item => ({item, name:key(item.name)}));
+  const exact = rows.filter(row => row.item.id === raw || row.name === want);
+  if(exact.length)return exact.length === 1 ? {ok:true, item:exact[0].item}
+    : {ok:false, error:'AMBIGUOUS', matches:exact.map(row => row.item)};
+  const prefix = String(raw || '').trim().toLowerCase();
+  const abbreviated = prefix.length >= 3 ? list.filter(item => String(item.name || '').toLowerCase().startsWith(`${prefix} `)) : [];
+  if(abbreviated.length)return abbreviated.length === 1 ? {ok:true, item:abbreviated[0]}
+    : {ok:false, error:'AMBIGUOUS', matches:abbreviated};
+  const limit = want.length >= 8 ? 2 : want.length >= 4 ? 1 : 0;
+  const ranked = limit && want.length <= 80 ? rows.map(({item,name}) => {
+    if(!name || Math.abs(name.length - want.length) > limit)return {item,distance:Infinity};
+    let distance = assistantLevenshtein(want, name);
+    // Adjacent transposition is one common typing error, including short names.
+    if(distance === 2 && name.length === want.length){
+      let i = 0; while(i < want.length && want[i] === name[i])i++;
+      if(want[i] === name[i+1] && want[i+1] === name[i] && want.slice(i+2) === name.slice(i+2))distance = 1;
+    }
+    return {item,distance};
+  }).filter(row => row.distance <= limit) : [];
+  const best = Math.min(...ranked.map(row => row.distance));
+  const matches = ranked.filter(row => row.distance === best).map(row => row.item);
+  return matches.length === 1 ? {ok:true, item:matches[0]}
+    : {ok:false, error:matches.length ? 'AMBIGUOUS' : 'UNKNOWN', matches};
 }
 
 function assistantFocusNormalize(fieldId, raw, session){
@@ -587,26 +622,38 @@ function assistantFocusNormalize(fieldId, raw, session){
   const matchPlace = name => {
     const exact = places.find(place => place.id === name);
     if(exact)return {ok:true, item:exact};
-    const found = assistantMatchByName(places, name);
-    if(found.ok || found.error === 'AMBIGUOUS')return found;
-    const matches = assistantMatchCatalogNames(places, name);
-    return matches.length === 1 ? {ok:true, item:matches[0]} : (matches.length ? {ok:false, error:'AMBIGUOUS', matches} : found);
+    return assistantFocusMatchCatalog(places, name);
   };
-  const unknown = (found, label) => ({ok:false, error:`Choose a saved ${label}.`,
-    choices:(found.matches || []).slice(0, 4).map(item => ({id:item.id, label:item.name}))});
+  const unknown = (found, label, name) => {
+    const quoted = String(name || '').trim().replace(/^["“']|["”'.!?]+$/g, '');
+    const error = !quoted ? `Choose a saved ${label}.`
+      : found.error === 'AMBIGUOUS' ? `More than one saved ${label} matches “${quoted}”. Which one?`
+      : `“${quoted}” isn’t a saved ${label}. Which one did you mean?`;
+    return {ok:false, error, choices:(found.matches || []).map(item => ({id:item.id, label:item.name}))};
+  };
   if(fieldId === 'places' || fieldId === 'weatherLocationId'){
-    const names = fieldId === 'places' ? text.split(/[,;]|\band\b/i).map(name => name.trim()).filter(Boolean) : [text];
-    const ids = [];
+    const whole = matchPlace(text);
+    const names = fieldId === 'places' && !whole.ok ? text.split(/[,;]|\band\b/i).map(name => name.trim()).filter(Boolean) : [text];
+    const ids = [], missing = [];
     for(const name of names){
-      const found = matchPlace(name);
-      if(!found.ok)return unknown(found, 'place');
-      ids.push(found.item.id);
+      const found = name === text ? whole : matchPlace(name);
+      if(!found.ok)missing.push({found, name});
+      else ids.push(found.item.id);
     }
+    if(missing.length)return {...unknown(missing[0].found, 'place', missing[0].name), selection:ids};
     return {ok:true, op:'set', value:fieldId === 'places' ? ids : ids[0]};
   }
   if(fieldId === 'topics'){
     const topics = assistantParseTopicsArg(session?._fieldLiteral ? text.split(',') : text);
-    return topics && topics.length ? {ok:true, op:'set', value:topics} : fail('Name at least one topic.');
+    if(!topics?.length)return fail('Name at least one topic.');
+    const catalog = (settings.topics || []).map(name => ({id:name, name}));
+    const values = [];
+    for(const topic of topics){
+      const found = assistantFocusMatchCatalog(catalog, topic);
+      if(found.error === 'AMBIGUOUS')return unknown(found, 'topic', topic);
+      values.push(found.ok ? found.item.name : topic);
+    }
+    return {ok:true, op:'set', value:[...new Set(values)]};
   }
   if(fieldId === 'links'){
     if(!/https?:\/\/|www\.|[a-z][a-z0-9+.-]*:|\b(?:call|whatsapp|facetime)\b|^\+?\d[\d\s().-]{3,}$/i.test(text))return fail('Use an explicit web, phone, or app link.');
@@ -620,7 +667,7 @@ function assistantFocusNormalize(fieldId, raw, session){
     const prefs = {};
     for(const row of rows){
       const found = matchPlace(row.name);
-      if(!found.ok)return unknown(found, 'place');
+      if(!found.ok)return unknown(found, 'place', row.name);
       prefs[found.item.id] = row.level;
     }
     return {ok:true, op:'set', value:prefs};
@@ -629,8 +676,8 @@ function assistantFocusNormalize(fieldId, raw, session){
     if(/^(inherit|use (?:the )?place.?s weather)$/i.test(text))return {ok:true, op:'set', value:{mode:'inherit', profileId:null}};
     const profiles = settings.weatherProfiles || [];
     const exact = profiles.find(profile => profile.id === text);
-    const found = exact ? {ok:true, item:exact} : assistantMatchByName(profiles, text);
-    if(!found.ok)return unknown(found, 'weather profile');
+    const found = exact ? {ok:true, item:exact} : assistantFocusMatchCatalog(profiles, text);
+    if(!found.ok)return unknown(found, 'weather profile', text);
     return {ok:true, op:'set', value:{mode:'profile', profileId:found.item.id}};
   }
   if(fieldId === 'weatherRules'){
@@ -682,6 +729,23 @@ function assistantFocusStageWeatherRules(session, rules){
   };
 }
 
+// Ask only after the requested places are resolved. An explicit policy or an
+// existing restriction already answers this; the question never runs inference.
+function assistantFocusAskAnywhere(session){
+  const places = session.changes.find(change => change.field === 'places');
+  const relevant = session.kind !== 'event' && places?.op === 'set' && places.value?.length;
+  if(!relevant){
+    session.unresolved = session.unresolved.filter(row => !row.placeFollowup);
+    return;
+  }
+  if((session.source || session.createBaseline)?.anywhereAllowed === false || session.changes.some(change => change.field === 'anywhereAllowed')
+    || session.jobs?.some(job => job.id === 'anywhereAllowed' && job.preserved)
+    || session.unresolved.some(row => row.field === 'places' || row.field === 'anywhereAllowed'))return;
+  assistantFocusUnresolve(session, {field:'anywhereAllowed', family:'places', placeFollowup:true,
+    question:'Allow this anywhere too?',
+    choices:[{id:'yes',label:'Yes, allow anywhere'}, {id:'no',label:'No, only at these places'}]});
+}
+
 function assistantFocusCorrect(session, fieldId, raw){
   if(!session)return {ok:false, error:'Nothing is open to edit.'};
   assistantFocusContinueSavedCreate(session);
@@ -693,7 +757,7 @@ function assistantFocusCorrect(session, fieldId, raw){
   const parsed = assistantFocusNormalize(fieldId, raw, session);
   if(!parsed.ok){
     session.correctionError = parsed.error;
-    if(parsed.choices && parsed.choices.length)assistantFocusUnresolve(session, {field:fieldId, family:(assistantFocusField(fieldId) || {}).family, question:parsed.error, choices:parsed.choices});
+    assistantFocusUnresolve(session, {field:fieldId, family:(assistantFocusField(fieldId) || {}).family, question:parsed.error, choices:parsed.choices, selection:parsed.selection});
     session.interpretationApproved = null;
     return parsed;
   }
@@ -713,13 +777,109 @@ function assistantFocusCorrect(session, fieldId, raw){
     origin:'correction',
     uncertain:false
   });
+  if(fieldId === 'places')assistantFocusAskAnywhere(session);
   return {ok:true, change:session.changes.find(row => row.field === fieldId)};
 }
 
-function assistantFocusChoose(session, fieldId, value){
+// Only a known unanswered field gets a value picker. These are local controls:
+// choosing a value stages it for review through the same confirmation flow.
+function assistantFocusQuestionPicker(session, question){
+  const field = assistantFocusField(question?.field);
+  if(!field || question.notice || !assistantFocusFieldApplies(field.id, assistantFocusState(session, assistantFocusMaterialize(session))))return null;
+  if(field.family === 'reminders' && !window.TingsNative?.isNative)return null;
+  if((question.choices || []).some(choice => ['series-place','skip-place'].includes(choice.id)))return null;
+  const settings = assistantFocusSettings();
+  let options, multiple = false;
+  if(['places','weatherLocationId'].includes(field.id)){
+    options = (settings.locations || []).map(row => ({id:row.id, label:row.name}));
+    multiple = field.id === 'places' && !session.placeResolution;
+  }else if(field.id === 'topics'){
+    options = (settings.topics || []).map(name => ({id:name, label:name})); multiple = true;
+  }else if(field.id === 'weatherProfile'){
+    options = (settings.weatherProfiles || []).map(row => ({id:row.id, label:row.name}));
+  }else if(!question.choices?.length){
+    const enums = {
+      priority:['0','1','2','3','4','5'], kind:['habit','task'], habitKind:['build','limit','stop'],
+      repeatMode:['routine','opportunity'], conditionTrigger:['weather','location'],
+      appointmentRepeat:['once','weekly'],
+      reminderDueDays:['0','1','2','7']
+    };
+    const booleans = ['tapStartsSession','reminderDnd','hardDue','breakable','trackValue','pinned','anywhereAllowed','showWeather','showWeatherAtLocation','allowedTimeFixedStart'];
+    let values = enums[field.id];
+    if(booleans.includes(field.id))values = ['yes','no'];
+    if(/^reminder(?:Start|Second|Due|End|TravelStart|TravelEnd|Missed)$/.test(field.id))values = ASSISTANT_FOCUS_REMINDER_MODES;
+    if(field.id === 'reminderMissedLead')values = ASSISTANT_FOCUS_MISSED_LEADS.map(String);
+    else if(['reminderStartLead','reminderSecondLead'].includes(field.id))values = ASSISTANT_FOCUS_EVENT_LEADS.map(String);
+    else if(field.id === 'reminderTravelLead')values = ASSISTANT_FOCUS_LEADS.map(String);
+    if(values)options = values.map(id => ({id, label:assistantFocusPickerLabel(field.id, id)}));
+  }
+  if(!options?.length)return null;
+  // Reuse the validators, including native-only field availability, when
+  // constructing finite menus. Catalog IDs are exact and never model evidence.
+  if(!multiple && !['weatherLocationId','weatherProfile','places'].includes(field.id))options = options.filter(option => assistantFocusNormalize(field.id, option.id, session).ok);
+  return options.length ? {field:field.id, label:field.label, multiple, options, selection:question.selection || []} : null;
+}
+
+function assistantFocusPickerLabel(fieldId, id){
+  if(fieldId === 'priority')return `P${id}`;
+  if(fieldId === 'reminderDueDays')return id === '0' ? 'On the due date' : `${id} day${id === '1' ? '' : 's'} before`;
+  if(fieldId.endsWith('Lead')){
+    const minutes = Number(id);
+    const label = NATIVE_EVENT_REMINDER_LEADS.find(([value]) => value === minutes)?.[1] || `${minutes} min before`;
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+  const named = {yes:'Yes', no:'No', habit:'Habit', task:'Task', build:'Build', limit:'Limit', stop:'Stop',
+    routine:'Regular rhythm', opportunity:'When conditions fit', weather:'Weather', location:'Near a place',
+    once:'Once', weekly:'Weekly', off:'Off', notification:'Notification', alarm:'Ringing alarm'};
+  return named[id] || id;
+}
+
+function assistantFocusPickCountLabel(count){
+  return count ? `Use ${count} selected` : 'Select at least one';
+}
+
+// Multi-select chips toggle in the DOM only; their values stage on the apply
+// tap. A single-select chip stages its value directly.
+function assistantFocusPickerClick(target){
+  const box = target.closest('[data-focus-picker]');
+  if(!box)return null;
+  const field = box.dataset.focusPicker;
+  const chip = target.closest('[data-focus-option]');
+  if(box.dataset.multiple !== 'true')return chip ? {field, values:[chip.dataset.focusOption]} : null;
+  const pressed = () => [...box.querySelectorAll('[data-focus-option][aria-pressed="true"]')];
+  if(chip){
+    chip.setAttribute('aria-pressed', String(chip.getAttribute('aria-pressed') !== 'true'));
+    const apply = box.querySelector('[data-focus-pick]');
+    const count = pressed().length;
+    if(apply){apply.disabled = !count; apply.textContent = assistantFocusPickCountLabel(count);}
+    return {field, values:null};
+  }
+  if(!target.closest('[data-focus-pick]'))return null;
+  return {field, values:pressed().map(row => row.dataset.focusOption)};
+}
+
+function assistantFocusPickValues(session, fieldId, values){
+  const question = session?.unresolved.find(row => row.field === fieldId);
+  if(!question || session._focusInFlight)return {ok:false, error:'That question is no longer available.'};
+  const picker = assistantFocusQuestionPicker(session, question);
+  const ids = [...new Set(values)];
+  if(!picker || !ids.length || (!picker.multiple && ids.length !== 1)
+    || ids.some(id => !picker.options.some(option => option.id === id)))return {ok:false, error:'Choose an available value.'};
+  if(!picker.multiple)return assistantFocusChoose(session, fieldId, ids[0], true);
+  if(fieldId === 'topics')session.dependencies.topics = [];
+  if(fieldId === 'places')session.placeResolution = null;
+  assistantFocusContinueSavedCreate(session);
+  assistantFocusStage(session, {field:fieldId, value:ids, origin:'correction', source:'choice'});
+  if(fieldId === 'places' && question.placeOnly)assistantFocusStage(session, {field:'anywhereAllowed', value:false, origin:'correction', source:'choice'});
+  if(fieldId === 'places')assistantFocusAskAnywhere(session);
+  session.correctionError = '';
+  return {ok:true};
+}
+
+function assistantFocusChoose(session, fieldId, value, fromPicker = false){
   const question = session.unresolved.find(item => item.field === fieldId);
   const choice = question && question.choices.find(row => (typeof row === 'string' ? row : row.id) === value);
-  if(!choice)return {ok:false, error:'That choice is no longer available.'};
+  if(!choice && !fromPicker)return {ok:false, error:'That choice is no longer available.'};
   if(fieldId === 'guidance')return assistantFocusApplyGuidance(session, question, value);
   if(fieldId === 'weatherRules' && ['use-profile','use-rules'].includes(value)
     || fieldId === 'hardDue' && ['hard-deadline','allow-delay'].includes(value)){
@@ -747,6 +907,7 @@ function assistantFocusChoose(session, fieldId, value){
     assistantFocusStage(session, {field:'places', value:[...new Set(pending.ids)], origin:'correction', source:'choice'});
     session.placeResolution = null;
     session.correctionError = '';
+    assistantFocusAskAnywhere(session);
     return {ok:true};
   }
   const result = assistantFocusCorrect(session, fieldId, value);
@@ -1107,7 +1268,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
   if(fieldId === 'autoMarkMinutes')return record.autoMarkMinutes == null ? 'manual' : `${record.autoMarkMinutes} min after the start`;
   if(fieldId === 'tapStartsSession')return record.tapStartsSession ? 'tap starts a session' : 'tap logs completion';
   if(fieldId === 'trackValue')return record.trackValue ? 'log a value' : 'off';
-  if(fieldId === 'places')return record.locationIds && record.locationIds.length ? record.locationIds.join(', ') : 'no place';
+  if(fieldId === 'places')return assistantFocusSummaryText(fieldId, record, session, lookups);
   if(fieldId === 'anywhereAllowed')return record.anywhereAllowed === false ? 'only the saved places' : 'anywhere is allowed';
   if(fieldId === 'locationPrefs')return Object.keys(record.locationPrefs || {}).length ? JSON.stringify(record.locationPrefs) : 'none';
   if(fieldId === 'weatherProfile' || fieldId === 'weatherRules'){
@@ -1117,7 +1278,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
   }
   if(fieldId === 'showWeather')return record.showWeather ? 'show the forecast' : 'hide the forecast';
   if(fieldId === 'showWeatherAtLocation')return record.showWeatherAtLocation ? 'forecast at the place' : 'forecast at home';
-  if(fieldId === 'weatherLocationId')return record.weatherLocationId || 'home city';
+  if(fieldId === 'weatherLocationId')return assistantFocusSummaryText(fieldId, record, session, lookups);
   if(fieldId === 'scheduleOptions')return (record.scheduleOptions || []).map(assistantFocusFormatOption).join('\n') || 'none';
   if(fieldId === 'scheduleLinks')return (record.scheduleLinks || []).map(link => `${link.direction} ${link.anchorHid} (${link.adjacency || 'sometime'}${link.requireSameDay ? ', same day' : ''})`).join('\n') || 'none';
   if(fieldId === 'topics')return (record.topics || []).join(', ') || 'none';
@@ -1812,6 +1973,25 @@ function assistantFocusEmbedKicker(session){
   return 'Nothing to change';
 }
 
+function assistantFocusPickerHtml(session, question){
+  const picker = assistantFocusQuestionPicker(session, question);
+  if(!picker)return '';
+  const esc = assistantFocusEscape;
+  // Closest catalog matches lead, so an ambiguous name is one tap away.
+  const near = new Set((question.choices || []).map(choice => typeof choice === 'string' ? choice : choice.id));
+  const ordered = [...picker.options.filter(option => near.has(option.id)), ...picker.options.filter(option => !near.has(option.id))];
+  const chips = ordered.map(option => {
+    const state = picker.multiple ? ` aria-pressed="${picker.selection.includes(option.id)}"` : '';
+    const check = picker.multiple ? '<i class="ti ti-check" aria-hidden="true"></i>' : '';
+    return `<button type="button" class="focus-pick-chip${near.has(option.id) ? ' is-near' : ''}" data-focus-option="${esc(option.id)}"${state}>${check}<span>${esc(option.label)}</span></button>`;
+  }).join('');
+  const count = picker.multiple ? picker.selection.filter(id => picker.options.some(option => option.id === id)).length : 0;
+  const apply = picker.multiple ? `<button type="button" class="btn" data-focus-pick ${count ? '' : 'disabled'}>${assistantFocusPickCountLabel(count)}</button>` : '';
+  const note = picker.field === 'topics' ? 'Tap saved topics, or type a new one below.'
+    : picker.multiple ? 'Tap every place that applies, or type below.' : 'Tap one, or type your answer below.';
+  return `<div class="focus-picker" data-focus-picker="${esc(picker.field)}" data-multiple="${picker.multiple}"><div class="focus-pick-chips" role="group" aria-label="${esc(picker.label)}">${chips}</div>${apply}<p class="focus-note">${note}</p></div>`;
+}
+
 function assistantFocusReviewHtml(session, opts){
   opts = opts || {};
   const model = assistantFocusReviewModel(session);
@@ -1832,12 +2012,13 @@ function assistantFocusReviewHtml(session, opts){
   const pending = assistantFocusActivityHtml(session, model);
   const itemActions = assistantFocusActionHtml(session, opts);
   const asked = model.question;
+  const picker = asked ? assistantFocusPickerHtml(session, asked) : '';
   // The host decides which destinations it can open, so the chat sheet keeps plain text.
   const openItem = opts.embedded && asked && asked.openItem
     ? `<button type="button" class="btn" data-focus-open-item="${assistantFocusEscape(asked.openItem.hid)}">open ${assistantFocusEscape(asked.openItem.name)}</button>` : '';
   const openNav = opts.embedded && asked && asked.openNav && typeof opts.canOpenNav === 'function' && opts.canOpenNav(asked.openNav)
     ? `<button type="button" class="btn" data-focus-open-nav="${assistantFocusEscape(asked.openNav)}">open ${assistantFocusEscape(opts.navLabel ? opts.navLabel(asked.openNav) : asked.openNav)}</button>` : '';
-  const question = asked ? `<div class="focus-ask"><p>${assistantFocusEscape(asked.question)}</p>${(asked.choices || []).map(choice => {
+  const question = asked ? `<div class="focus-ask"><p>${assistantFocusEscape(asked.question)}</p>${picker || (asked.choices || []).map(choice => {
     const id = typeof choice === 'string' ? choice : choice.id;
     const label = typeof choice === 'string' ? choice : choice.label;
     return `<button type="button" class="btn" data-focus-choice="${assistantFocusEscape(asked.field || 'choice')}" data-focus-value="${assistantFocusEscape(id)}">${assistantFocusEscape(label)}</button>`;
