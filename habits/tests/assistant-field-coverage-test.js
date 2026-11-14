@@ -28,7 +28,7 @@ const cases=[
   ...['Use the Dry weather profile','Apply Dry weather','Set the weather profile to Dry'].map((prompt,i)=>[
     'weatherProfile',prompt,{mode:'profile',profileId:'dry'},{id:`minimal-weather-profile-${i}`,seed:{repeatMode:'opportunity'},selectAll:true}]),
   ...['Only at Home','Set the place to Home','Use Home as the location'].map((prompt,i)=>[
-    'places',prompt,['home'],{id:`minimal-places-${i}`,seed:{repeatMode:'opportunity',conditionTrigger:'location'},selectAll:true}]),
+    'places',prompt,['home'],{id:`minimal-places-${i}`,seed:{repeatMode:'opportunity',conditionTrigger:'location'},...(i===0?{extra:{anywhereAllowed:false},record:{anywhereAllowed:false}}:{}),selectAll:true}]),
   ...['The start time should be exact, not flexible','Use a fixed start','Pin the start time'].map((prompt,i)=>[
     'allowedTimeFixedStart',prompt,true,{id:`minimal-fixed-start-${i}`,seed:{allowedTimeStart:540,allowedTimeEnd:1020},record:{allowedTimeStart:540,allowedTimeEnd:null},selectAll:true}]),
   ...['The start time should be flexible','Use a flexible start','The start should not be exact'].map((prompt,i)=>[
@@ -702,9 +702,15 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
           clarification.push({prompt,blocked:!assistantFocusCanSave(s),unchanged:JSON.stringify(assistantFocusMaterialize(s))===JSON.stringify(s.source),questions:assistantFocusClone(s.unresolved)});
         }
         await assistantFocusTurn(s,test.prompt,coverageOptions(test));
+        // Place assignments now ask about Anywhere after the requested edit.
+        // This catalog coverage keeps the current permission; dedicated picker
+        // tests exercise both answers and the blocked, unsaved intermediate state.
+        const placeFollowup=s.unresolved.some(row=>row.placeFollowup);
+        if(placeFollowup){assistantFocusChoose(s,'anywhereAllowed','yes');assistantFocusReviewModel(s);}
         const r=assistantFocusMaterialize(s),change=s.changes.find(c=>c.field===test.field);
         const expectedFields=Object.keys(test.extra||{}).concat(test.field==='frequency'?['timesPerPeriod']:test.field);
         const values={...test.extra,[test.field==='frequency'?'timesPerPeriod':test.field]:test.value};
+        if(placeFollowup){expectedFields.push('anywhereAllowed');values.anywhereAllowed=true;}
         const matched=Object.entries(values).every(([field,value])=>value===null?s.changes.some(c=>c.field===field&&(!test.op||c.op===test.op)):s.changes.some(c=>c.field===field&&JSON.stringify(c.value)===JSON.stringify(value)));
         const recordOK=Object.entries(test.record||{}).every(([k,v])=>JSON.stringify(r[k]??null)===JSON.stringify(v));
         const advancedOK=(!test.rule||s.dependencies.weatherProfile?.rules?.some(rule=>rule.metric==='temperature_2m'&&rule.min===10))

@@ -67,6 +67,9 @@ function assistantFocusSplitEvidence(text){
     if(/^\s*[a-z][a-z\d+.-]*:\/\//i.test(part))return null;
     const mark = part.indexOf(':');
     if(mark < 1)return null;
+    // Discovery can return a bare clock excerpt. Its colon separates hour
+    // and minute, not a routing label from an unsupported action.
+    if(/\d/.test(part[mark-1]) && /\d/.test(part[mark+1]||''))return null;
     return {label:part.slice(0, mark).trim().toLowerCase(), phrase:part.slice(mark + 1).trim()};
   }).filter(row => row && row.phrase);
 }

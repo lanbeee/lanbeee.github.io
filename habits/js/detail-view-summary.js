@@ -132,7 +132,7 @@ function detailSummaryShowProposal(opts){
     canOpenNav:nav=>Boolean(detailSummaryNavPage(nav)),
     navLabel:nav=>typeof detailPageLabel === 'function' ? detailPageLabel(nav) : nav
   });
-  if(opts?.live)card.querySelectorAll('button').forEach(button=>{button.disabled = true;});
+  if(opts?.live)card.querySelectorAll('button,input,select').forEach(control=>{control.disabled = true;});
   thread.append(card);
   $('detail-summary-chat').hidden = false;
   if(!opts?.live)detailSummary.feedback = session;
@@ -147,7 +147,7 @@ function detailSummaryRetireProposal(label){
   const heading = card.querySelector('.focus-kicker');
   if(heading && label)heading.textContent = label;
   card.querySelectorAll('.btn-row,[data-focus-drop]').forEach(row=>row.remove());
-  card.querySelectorAll('button').forEach(button=>{button.disabled = true;});
+  card.querySelectorAll('button,input,select').forEach(control=>{control.disabled = true;});
 }
 
 function detailSummaryHasWork(){
@@ -357,6 +357,7 @@ function detailSummaryGuideHint(session,active,draft){
   if(detailSummaryRevising)return 'Last request taken back. Edit it and send.';
   if(session.continuationError)return 'Draft kept. Continue, or edit the last request.';
   if(session.unresolved?.some(item=>item.field === 'guidance'))return 'Choose the setting or action you meant.';
+  if(session.unresolved?.some(item=>assistantFocusQuestionPicker(session,item)))return 'Choose a value above, or type your answer.';
   if(detailSummaryNeedsPick(session))return 'Pick the setting you meant, then add its value.';
   return '';
 }
@@ -529,6 +530,14 @@ async function detailSummaryHandleProposal(target){
     const line = button.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
     if(line)line.textContent = text;
   };
+  const picked = assistantFocusPickerClick(target);
+  if(picked){
+    if(!picked.values)return;
+    const result = assistantFocusPickValues(session,picked.field,picked.values);
+    if(result.ok)detailSummaryShowProposal();
+    else status(result.error);
+    return;
+  }
   const openItem = target.closest('[data-focus-open-item]');
   if(openItem){
     const index = load().findIndex(row=>row && row.hid === openItem.dataset.focusOpenItem);
@@ -552,6 +561,7 @@ async function detailSummaryHandleProposal(target){
     const fields = drop.dataset.focusDrop === 'rhythm' ? ['timesPerPeriod','periodDays','repeatMode'] : [drop.dataset.focusDrop];
     session.changes = session.changes.filter(change=>!fields.includes(change.field));
     session.unresolved = session.unresolved.filter(issue=>!fields.includes(issue.field));
+    if(fields.includes('places'))assistantFocusAskAnywhere(session);
     if(fields.includes('topics'))session.dependencies.topics = [];
     if(fields.includes('weatherRules'))session.dependencies.weatherProfile = null;
     session.savedFingerprint = '';session.interpretationApproved = null;
@@ -651,7 +661,7 @@ $('detail-summary').addEventListener('click',event=>{
   detailSummaryReveal(pill.dataset.summaryField,assistantFocusSummarySession(item),false);
 });
 detailSummaryThread().addEventListener('click',event=>{
-  if(!event.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field],[data-focus-open-item],[data-focus-open-nav],[data-focus-drop]'))return;
+  if(!event.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field],[data-focus-open-item],[data-focus-open-nav],[data-focus-drop],[data-focus-pick],[data-focus-option]'))return;
   event.preventDefault();
   void detailSummaryHandleProposal(event.target);
 });

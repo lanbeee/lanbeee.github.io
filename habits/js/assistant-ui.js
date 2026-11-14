@@ -1083,6 +1083,7 @@ function assistantGuideHintText(session, active, revising){
   if(revising)return 'Last change undone. Edit it and send.';
   if(session.continuationError)return 'Draft kept. Continue above, or fix the last request.';
   if(session.unresolved?.some(item => item.field === 'guidance'))return 'Choose the field or action that matches.';
+  if(session.unresolved?.some(item => assistantFocusQuestionPicker(session,item)))return 'Choose a value above, or type your answer.';
   if(session.unresolved?.length)return 'Pick the setting you meant, then add its value.';
   return '';
 }
@@ -1860,7 +1861,7 @@ function assistantDiscardPending(){
 }
 
 function assistantRetireFocusControls(keepFields = false){
-  const selector = '[data-focus-save],[data-focus-edit],[data-focus-choice]' + (keepFields ? '' : ',[data-focus-field]');
+  const selector = '[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-picker] button' + (keepFields ? '' : ',[data-focus-field]');
   assistantThreadEl()?.querySelectorAll(selector).forEach(button => {
     button.disabled = true;
   });
@@ -1891,7 +1892,7 @@ function assistantShowFocusReview(session, opts){
   bubble.innerHTML = assistantFocusReviewHtml(session);
   if(opts && opts.live){
     bubble.dataset.focusLive = 'true';
-    bubble.querySelectorAll('button,input').forEach(control => {control.disabled = true;});
+    bubble.querySelectorAll('button,input,select').forEach(control => {control.disabled = true;});
   }else delete bubble.dataset.focusLive;
   if(thread){
     thread.append(bubble);
@@ -1905,6 +1906,17 @@ async function assistantHandleFocusClick(target){
   const session = _assistantSession && _assistantSession.focus;
   if(!session)return false;
   if(_assistantBusy || target.closest('button')?.disabled)return true;
+  const picked = assistantFocusPickerClick(target);
+  if(picked){
+    if(!picked.values)return true;
+    const result = assistantFocusPickValues(session, picked.field, picked.values);
+    if(result.ok){assistantShowFocusReview(session);assistantRenderGuides();}
+    else {
+      const status = target.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
+      if(status)status.textContent = result.error;
+    }
+    return true;
+  }
   const field = target.closest('[data-focus-field]');
   if(field){
     const selector = assistantFocusDetailSelector(field.dataset.focusField, session);
@@ -2148,7 +2160,7 @@ function bindAssistantUi(){
     }
   });
   $('assistant-thread')?.addEventListener('click', e => {
-    if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field]')){
+    if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field],[data-focus-pick],[data-focus-option]')){
       e.preventDefault();
       void assistantHandleFocusClick(e.target);
       return;

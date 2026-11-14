@@ -37,7 +37,7 @@ const ASSISTANT_FIELD_ASSIGNMENTS = [...ASSISTANT_FOCUS_FIELDS.filter(field=>!['
 const ASSISTANT_FIELD_CLOCK_VALUE = /^(?:(?:at|start(?:s|ing)?(?: at)?|time)\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\d{1,2}:\d{2}\b|noon\b|midnight\b)/i;
 // Complete temporal expressions are shared boundary metadata. A window owns
 // both endpoints and every anchor offset; none of those quantities is effort.
-const ASSISTANT_FIELD_ENDPOINT = `(?:(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+)?(?:${ASSISTANT_ANCHOR_WORD}|midnight|\\d{1,2}(?::\\d{2}(?:\\s*[ap]m)?|\\s*[ap]m))`;
+const ASSISTANT_FIELD_ENDPOINT = `(?:(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+)?(?:${ASSISTANT_ANCHOR_WORD}|midnight|\\d{1,2}(?::\\d{2}(?:\\s*[ap]\\.?m\\.?)?|\\s*[ap]\\.?m\\.?))`;
 const ASSISTANT_FIELD_RANGE = `(?:${ASSISTANT_FIELD_ENDPOINT}(?:\\s*(?:plus|minus|[+−])\\s*(?:${assistantSpokenQuantitySource()}))?\\s*(?:to|until|till|through|[–-])\\s*${ASSISTANT_FIELD_ENDPOINT}|(?:\\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\s+(?:to|through)\\s+(?:\\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\s*(?:[ap]m|in the (?:morning|afternoon|evening)))`;
 const ASSISTANT_FIELD_OFFSET = `(?:(?:${assistantSpokenQuantitySource()})\\s+(?:before|after)\\s+(?:${ASSISTANT_ANCHOR_WORD})|(?:${ASSISTANT_ANCHOR_WORD})\\s*(?:plus|minus|[+−-])\\s*(?:${assistantSpokenQuantitySource()}))`;
 const ASSISTANT_FIELD_LENGTHS = new Set(['minChunkMinutes','minGapMinutes','durationMinutes','exceptionDuration','timerAutoStopMinutes','autoMarkMinutes']);
@@ -77,7 +77,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   timerAutoStopMinutes:/\b(?:timer|auto[ -]?stop|stop timing)\b/i,
   autoMarkMinutes:/\b(?:auto[ -]?(?:mark|complete|completion)|automatic completion|completion threshold|automatically (?:complete|mark)|(?:mark|log|complete)[^,;]*\bautomatically|consider it done|manual completion|count[^,;]*as done|tracked time[^,;]*tick it off|logged (?:minutes|mins)[^,;]*finish)\b/i,
   trackValue:/\b(?:track|log|record|recording|capture|enter|ask|enable)\b.{0,35}\b(?:value|number|numeric|weight|note|measurement|reading)\b|\bvalue tracking\b/i,
-  places:/\b(?:at (?:home|work)|place|location|venue)\b/i,
+  places:/\b(?:at (?:home|work)|places?|locations?|locaton|loction|venue|(?:done|happen|take place|do (?:it|this))\s+(?:at|in))\b/i,
   anywhereAllowed:/\b(?:anywhere|wherever|any (?:place|location|loction)|(?:no|regardless of) (?:place|location|geographic)|(?:not|doesn['’]t) require a (?:particular|specific) place|only (?:at|in) (?:the )?saved places)\b/i,
   locationPrefs:/\b(?:prefer\w*|avoid|favou?r\w*|would rather)\b.{0,40}\b(?:place|location|home|work|at|in)\b|\b(?:place|location|loction) preference\b|\bbest (?:place|location)\b/i,
   weatherProfile:/\b(?:weather profile|(?:use|apply|choose) .{0,20} (?:weather|profile))\b/i,
@@ -445,7 +445,9 @@ function assistantFieldAnywherePolicy(text){
   text=text.replace(/\bloction\b/gi,'location');
   const denial=/\b(?:not anywhere|(?:do not|don['’]t|never) allow[^,;]*\banywhere)\b/gi;
   const unrestricted=/\b(?:anywhere|wherever I am|any (?:place|location|loction)|no (?:place|location|geographic) restrictions?|regardless of location|(?:does not|doesn['’]t) require a (?:particular|specific) place)\b/i.test(text.replace(denial,''));
-  const restricted=new RegExp(denial.source,'i').test(text)||/\bonly (?:at|in) (?:the )?saved places\b/i.test(text);
+  const exclusive=/\bonly\s+(?:(?:be\s+)?(?:done|held)\s+)?(?:at|in)\s+\S|\b(?:at|in)\s+only\s+\S|\b(?:at|in)\s+.+?\s+only[.!?]*$|\bonly\s+(?:certain|specific|these|those)\s+(?:places?|locations?)\b/i.test(text)
+    && !/\b(?:not|isn['’]t|is not)\s+only\b|\b(?:prefer|ideally|if possible)\b/i.test(text);
+  const restricted=new RegExp(denial.source,'i').test(text)||exclusive;
   if(restricted&&unrestricted)return 'conflict';
   const polarity=text.replace(/\b(?:does not|doesn['’]t) require a (?:particular|specific) place\b|\bno (?:place|location|geographic) restrictions?\b|\bnot just at (?:a )?saved place\b/gi,'');
   if(unrestricted&&!restricted&&/\b(?:no|not|never|don.t|cannot|can.t|without|except|only)\b/i.test(polarity))return 'conflict';
@@ -2326,10 +2328,16 @@ function assistantFieldNormalize(def,text,session){
   // Convert only the model's quoted relative expression, using the baseline
   // duration supplied to this job; a relative edit never changes that baseline.
   if(def.id==='durationMinutes' && /^(?:twice as long|double (?:it|the duration))$/i.test(value))value=String((session._fieldBaseline||assistantFocusMaterialize(session)).durationMinutes*2);
-  if(['places','weatherLocationId'].includes(def.id))value=assistantFieldStripPrefix(value,/^(?:(?:restrict|limit)(?:\s+(?:it|this|that))?\s+to\s+(?:the\s+)?|(?:(?:use|add|set|at|in|place|location|venue)(?: (?:the|to))?\s+)+)/i).replace(/\s+(?:as )?(?:the )?(?:place|location)$/i,'').trim();
+  if(['places','weatherLocationId'].includes(def.id)){
+    value=value.replace(/^(?:(?:this|it)\s+(?:(?:will|should|must|can)\s+(?:only\s+)?be|is)\s+(?:only\s+)?(?:done|held)|(?:i\s+(?:will|can|must|have to)\s+(?:only\s+)?)?do\s+(?:it|this)|(?:this|it)\s+(?:will|should|must|can)\s+(?:happen|take place))\s+(?:only\s+)?(?:at|in)\s+/i,'');
+    value=value.replace(/^only\s+(?:(?:at|in)\s+)?/i,'').replace(/\s+only[.!?]*$/i,'');
+    // Preserve saved names that themselves begin with "Location" or "Place".
+    if(!assistantFocusMatchCatalog(assistantFocusSettings().locations||[],value).ok)value=assistantFieldStripPrefix(value,/^(?:(?:restrict|limit)(?:\s+(?:it|this|that))?\s+to\s+(?:the\s+)?|(?:(?:use|add|set|at|in|place|location|venue)(?: (?:the|to))?\s+)+)/i).replace(/\s+(?:as )?(?:the )?(?:place|location)$/i,'').trim();
+  }
   if(def.id==='weatherLocationId'&&/\b(?:show|display)\b[^,;]*\b(?:forecast|weather)\b[^,;]*\bplace\b/i.test(instructionSource))return {ok:false,error:'Should the forecast follow this item’s place, or use a separate weather location?'};
   if(def.id==='weatherProfile')value=assistantFieldStripPrefix(value,/^(?:(?:use|apply|pick|assign)\s+(?:the\s+)?|weather profile\s+|profile\s+)/i)
     .replace(/\s+for this item's weather profile$/i,'').replace(/\s+(?:weather profile|weather|profile)(?: to it)?$/i,'').trim();
+  if(def.id==='weatherProfile'&&!assistantFocusMatchCatalog(assistantFocusSettings().weatherProfiles||[],value).ok)value=assistantFieldStripPrefix(value,/^(?:(?:use|apply|pick|assign|set|change)\s+(?:the\s+)?)?(?:weather\s+)?profile\s+(?:(?:to|is|should be)\s+)?/i);
   if(def.id==='weatherLocationId'){
     value=assistantFieldStripPrefix(text,/^(?:(?:show|use|set)\s+(?:the\s+)?)?(?:weather\s+)?(?:forecast|weather)\s+(?:for|at|in)\s+/i);
     value=assistantFieldStripPrefix(value,/^use\s+(?:the\s+)?/i).replace(/\s+for\s+(?:the\s+)?(?:forecast|weather)$/i,'');
@@ -2375,6 +2383,12 @@ function assistantFieldNormalize(def,text,session){
     if(hits.length>1&&!joined)return {ok:false,error:'There is more than one length in that instruction.'};
   }
   const parsed=assistantFocusNormalize(def.id,value,{...session,_fieldLiteral:literal?.id===def.id&&ASSISTANT_FIELD_LITERAL_VALUES.has(def.id)});
+  if(def.id==='places'){
+    const policy=assistantFieldAnywherePolicy(instructionSource);
+    const placeOnly=session.kind!=='event' && (policy===false || policy==null && session.unresolved?.some(row=>row.field==='places'&&row.placeOnly));
+    if(!parsed.ok)return {...parsed,placeOnly};
+    if(placeOnly && parsed.op!=='clear')return {ok:true,changes:[{field:def.id,...parsed},{field:'anywhereAllowed',op:'set',value:false}]};
+  }
   const length=lengthField?assistantParseDuration(value):null;
   if(def.id==='autoMarkMinutes'&&parsed.ok&&parsed.op==='clear'&&!/\b(?:manual|off|none|clear|disable)\b/i.test(value))return {ok:false,error:'Specify a completion length, or choose manual completion.'};
   if(length!=null&&parsed.ok&&parsed.op==='set'&&parsed.value!==length)return {ok:false,error:`That length is outside the supported range for ${def.label.toLowerCase()}.`};
@@ -2471,7 +2485,7 @@ function assistantFieldMerge(state,row,result){
   if(result.status!=='extracted'){
     row.status=result.status;row.preserved=Boolean(result.preserved);
     if(row.preserved)session.unresolved=session.unresolved.filter(issue=>!row.def.fields.includes(issue.field)&&issue.field!==row.id);
-    if(result.status==='needs_input')assistantFocusUnresolve(session,{field:row.id==='frequency'?'timesPerPeriod':row.id,family:row.family,question:result.error,choices:result.choices||[]});
+    if(result.status==='needs_input')assistantFocusUnresolve(session,{field:row.id==='frequency'?'timesPerPeriod':row.id,family:row.family,question:result.error,choices:result.choices||[],selection:result.selection,placeOnly:result.placeOnly});
     return;
   }
   const dependencies=assistantFieldDependencies(row,state);
@@ -2774,6 +2788,7 @@ async function assistantFocusRunFieldTurn(session,text,opts){
         question:`The assistant can edit this item and log or plan it, but can’t answer questions. Open History to see your logs.`});
     }
     if(!handled&&!acted&&!session.unresolved.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should change?'});
+    assistantFocusAskAnywhere(session);
   }catch(error){
     if(error.name==='AbortError'||session.requestRevision!==state.revision)return {type:'focus',cancelled:true,session};
     session.continuationError='Your draft is kept. Continue to retry the unfinished settings.';

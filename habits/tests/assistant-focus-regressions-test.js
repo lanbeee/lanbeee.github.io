@@ -198,8 +198,11 @@ function assert(ok, message){
           if(!question || !question.choices.some(row=>row.id==='gym-west'))return false;
           _assistantSession = {focus:s};
           assistantShowFocusReview(s);
-          const choice=assistantThreadEl().querySelector('[data-focus-value="gym-west"]');
-          await assistantHandleFocusClick(choice);
+          const picker=assistantThreadEl().querySelector('[data-focus-picker="places"]');
+          const chips=[...picker.querySelectorAll('[data-focus-option]')].map(chip=>chip.dataset.focusOption);
+          if(chips.slice(0,2).sort().join()!=='gym-east,gym-west')return false;
+          await assistantHandleFocusClick(picker.querySelector('[data-focus-option="gym-west"]'));
+          if(s.unresolved.some(row=>row.placeFollowup))assistantFocusChoose(s,'anywhereAllowed','yes');
           await t.commit(s);
           return load()[0].locationIds.join()==='gym-west';
         })],

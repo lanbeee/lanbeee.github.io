@@ -2010,6 +2010,16 @@ function assistantWindowFromClocks(start, end){
 }
 
 function assistantParseWindowRange(text){
+  // Directional bounds form one window, including dotted clocks and anchors.
+  // Validate both complete operands before the one-sided readers can run.
+  const bounds=text.match(/^(after|before|no earlier than|no later than)\s+(.+?)\s+and\s+(after|before|no earlier than|no later than)(?:\s+(.*))?$/);
+  if(bounds){
+    const lower=direction=>direction==='after'||direction==='no earlier than';
+    if(lower(bounds[1])===lower(bounds[3]))return null;
+    const first=assistantParseEndpointPhrase(bounds[2]),second=assistantParseEndpointPhrase(bounds[4]||'');
+    if(!first||!second)return null;
+    return lower(bounds[1])?{start:first,end:second}:{start:second,end:first};
+  }
   const lead=/\b(?:from|between)\s+/.exec(text);
   const body=lead?text.slice(lead.index+lead[0].length):text;
   // One explicit meridiem can qualify both endpoints, including spoken hours.

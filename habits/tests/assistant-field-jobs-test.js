@@ -455,6 +455,55 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     });
     assert(preferences.r.allowedTimeStart===1080&&preferences.r.allowedTimeEnd===1260&&!preferences.r.allowedTimeEndAnchor&&preferences.r.preferredTimeEndAnchor==='maghrib'
       &&preferences.r.allowedWeekdays.join()==='1,2,3,4,5'&&preferences.r.preferredWeekdays.join()==='1,3'&&!preferences.unresolved.length,'hard restrictions and preferences retain separate weekdays and windows');
+    const pairedHours=await page.evaluate(async()=>{
+      const t=fieldTest,results=[];
+      const prompts=['I have to do it after 4:00 p.m. and before 6:00 p.m.','Allowed hours: After 4:00 p.m. and before 6:00 p.m.','Allowed hours: 4:00 p.m. to 6:00 p.m.','4:00 p.m. to 6:00 p.m.'];
+      for(const kind of ['habit','task'])for(const prompt of prompts){
+        t.seed();if(kind==='task')save([{...load()[0],type:'task'}]);
+        const before=JSON.stringify(load()),s=t.open('edit',kind),reads=[];
+        await assistantFocusTurn(s,prompt,t.options({extract:async spec=>{
+          if(spec.family==='families'&&prompt.startsWith('Allowed hours: After'))return {confidence:0.024,function_calls:[],suppressed_calls:[{name:spec.tool.name,arguments:{evidence:'Allowed hours',outside:'After 4:00 p.m.'}}]};
+          if(spec.jobId!=='allowedWindow')return t.reply(spec);
+          const [key,property]=Object.entries(spec.tool.parameters.properties)[0];reads.push(property.enum[0]);
+          return {confidence:0.0698,function_calls:[],suppressed_calls:[{name:spec.tool.name,arguments:{[key]:property.enum[0]}}]};
+        }}));
+        const r=assistantFocusMaterialize(s),unchanged=before===JSON.stringify(load());
+        const needsReview=s.changes[0]?.uncertain===true;
+        assistantFocusApprove(s);const ready=assistantFocusCanSave(s);
+        const committed=ready?await assistantFocusCommit(s):null;
+        const saved=load()[0],baseline=JSON.parse(before)[0];
+        results.push({kind,prompt,ok:unchanged&&needsReview&&ready&&committed?.ok&&reads.length===1
+          &&r.allowedTimeStart===960&&r.allowedTimeEnd===1080&&saved.allowedTimeStart===960&&saved.allowedTimeEnd===1080
+          &&s.changes.length===1&&s.changes[0].field==='allowedWindow'
+          &&['hid','name','type','durationMinutes','priority','logs','topics','pinned','breakable'].every(key=>JSON.stringify(saved[key])===JSON.stringify(baseline[key]))});
+      }
+      return results;
+    });
+    assert(pairedHours.every(r=>r.ok),`reported dotted-clock requests retain both allowed bounds, require review, and save only that setting (${JSON.stringify(pairedHours)})`);
+    const pairedHoursValidation=await page.evaluate(async()=>{
+      const t=fieldTest,results=[];
+      results.push(!assistantFocusSplitEvidence('After 4:00 p.m.').length
+        &&assistantFocusSplitEvidence('schedule: after 4:00 p.m. and before 6:00 p.m.')[0]?.phrase==='after 4:00 p.m. and before 6:00 p.m.');
+      for(const prompt of ['after 4pm and before 6pm','after 16:00 and before 18:00','before 6pm and after 4pm','no earlier than 4pm and no later than 6pm']){
+        const w=assistantParseWindowFromText(prompt,true);results.push(w?.start.minutes===960&&w?.end.minutes===1080);
+      }
+      const anchors=assistantParseWindowFromText('after sunrise and before sunset',true);
+      results.push(anchors?.start.kind==='anchor'&&anchors?.end.kind==='anchor');
+      for(const prompt of ['after 4pm and before 25:00','after 4pm and before','after 4pm and after 6pm']){
+        results.push(assistantParseWindowFromText(prompt,true)===null);
+        t.seed();const s=t.open();await assistantFocusTurn(s,prompt,t.options());
+        results.push(!s.changes.length&&!assistantFocusCanSave(s)&&s.unresolved.some(r=>r.field==='allowedWindow'));
+      }
+      for(const reply of ['', 'after 4:00 p.m.']){
+        t.seed();const s=t.open();await assistantFocusTurn(s,'after 4:00 p.m. and before 6:00 p.m.',t.options({extract:async spec=>spec.jobId==='allowedWindow'
+          ?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{window:reply}}]}:t.reply(spec)}));
+        results.push(!s.changes.length&&!assistantFocusCanSave(s));
+      }
+      t.seed();const s=t.open();await assistantFocusTurn(s,'Prefer after 4:00 p.m. and before 6:00 p.m.',t.options());
+      const r=assistantFocusMaterialize(s);results.push(r.preferredTimeStart===960&&r.preferredTimeEnd===1080&&s.changes.every(c=>c.field==='preferredWindow'));
+      return results;
+    });
+    assert(pairedHoursValidation.every(Boolean),'paired bounds validate clocks and anchors together; invalid endpoints, dropped bounds and declined evidence never stage a partial window');
     const trust=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open();
       await assistantFocusTurn(s,'Make it 30 minutes long, only before sunset.',t.options({extract:async spec=>spec.jobId==='durationMinutes'?{confidence:1,function_calls:[{name:spec.tool.name,arguments:{duration:''}}]}:t.reply(spec)}));
@@ -679,6 +728,10 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       await live.goto(BASE);await waitForAssistant(live);
       await live.evaluate(async()=>{patchLocalAssistant({localAssistant:true,localAssistantProvider:'needle'});await assistantNeedleDownload();});
       const cases=[
+        {id:'edit-after-before-dotted-clocks',operation:'edit',kind:'habit',prompt:'I have to do it after 4:00 p.m. and before 6:00 p.m.',expected:{name:'Gym',allowedTimeStart:960,allowedTimeEnd:1080}},
+        {id:'edit-labeled-after-before-dotted-clocks',operation:'edit',kind:'habit',prompt:'Allowed hours: After 4:00 p.m. and before 6:00 p.m.',expected:{name:'Gym',allowedTimeStart:960,allowedTimeEnd:1080}},
+        {id:'edit-task-after-before-dotted-clocks',operation:'edit',kind:'task',seed:{type:'task',target:null},prompt:'Allowed hours: After 4:00 p.m. and before 6:00 p.m.',expected:{name:'Gym',allowedTimeStart:960,allowedTimeEnd:1080}},
+        {id:'edit-task-labeled-dotted-clock-range',operation:'edit',kind:'task',seed:{type:'task',target:null},prompt:'Allowed hours: 4:00 p.m. to 6:00 p.m.',expected:{name:'Gym',allowedTimeStart:960,allowedTimeEnd:1080}},
         {id:'create-habit-nine-settings',operation:'create',kind:'habit',prompt:'Create a habit called Walk, every other day for 30 minutes, weekdays only before sunset. Set priority P1, pin it, use the 🚶 emoji and tag it Health.',expected:{name:'Walk',durationMinutes:30,allowedWeekdays:[1,2,3,4,5],allowedTimeEndAnchor:'maghrib',priority:1,pinned:true,emoji:'🚶',topics:['Health']},rhythm:[1,2]},
         {id:'create-ordinal-frequency',operation:'create',kind:'habit',prompt:'Create a habit called Walk, every third day for twenty-five minutes, only before sunset. Set priority P1 and pin it.',expected:{name:'Walk',durationMinutes:25,allowedTimeEndAnchor:'maghrib',priority:1,pinned:true},rhythm:[1,3]},
         {id:'create-count-and-week-period',operation:'create',kind:'habit',prompt:'Create a habit called Study, twice every three weeks for half an hour. Tag it Learning and use the 📚 emoji.',expected:{name:'Study',durationMinutes:30,topics:['Learning'],emoji:'📚'},rhythm:[2,21]},
@@ -694,7 +747,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         {id:'create-event',operation:'create',kind:'event',prompt:'Create an event called Dentist, on 2026-11-10 at 2pm, for 45 minutes. Use the 🦷 emoji, a blue color, and tag it Health.',expected:{name:'Dentist',durationMinutes:45,emoji:'🦷',emojiBgColor:'blue',topics:['Health']},appointment:{startDate:'2026-11-10',startMinute:840}},
         {id:'edit-duration-and-sunset',operation:'edit',kind:'habit',prompt:'Make it 30 minutes long, only before sunset',expected:{name:'Gym',durationMinutes:30,allowedTimeEndAnchor:'maghrib',priority:2,emoji:'🏋️',topics:['Original']}},
         {id:'edit-hard-and-preferred',operation:'edit',kind:'habit',prompt:'Three times a week for 30 minutes, weekdays only between 6pm and 9pm, preferably on Monday and Wednesday, preferably before sunset.',expected:{name:'Gym',durationMinutes:30,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1080,allowedTimeEnd:1260,allowedTimeEndAnchor:null,preferredWeekdays:[1,3],preferredTimeEndAnchor:'maghrib'},rhythm:[3,7]},
-        {id:'create-many-controls',operation:'create',kind:'habit',prompt:'Create a habit called Study, every day for 60 minutes, weekdays only between 7pm and 9pm, split into chunks of at least 15 minutes, with a gap of 30 minutes. Set priority P1, pin it, use the 📚 emoji, a purple color, tag it Learning, at Home, use weather profile Dry, add link https://example.com/study.',expected:{name:'Study',durationMinutes:60,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1140,allowedTimeEnd:1260,breakable:true,minChunkMinutes:15,minGapMinutes:30,priority:1,pinned:true,emoji:'📚',emojiBgColor:'purple',topics:['Learning'],locationIds:['home'],weatherProfileId:'dry'},rhythm:[1,1],link:'https://example.com/study'},
+        {id:'create-many-controls',operation:'create',kind:'habit',prompt:'Create a habit called Study, every day for 60 minutes, weekdays only between 7pm and 9pm, split into chunks of at least 15 minutes, with a gap of 30 minutes. Set priority P1, pin it, use the 📚 emoji, a purple color, tag it Learning, at Home, allow anywhere, use weather profile Dry, add link https://example.com/study.',expected:{name:'Study',durationMinutes:60,allowedWeekdays:[1,2,3,4,5],allowedTimeStart:1140,allowedTimeEnd:1260,breakable:true,minChunkMinutes:15,minGapMinutes:30,priority:1,pinned:true,emoji:'📚',emojiBgColor:'purple',topics:['Learning'],locationIds:['home'],anywhereAllowed:true,weatherProfileId:'dry'},rhythm:[1,1],link:'https://example.com/study'},
         {id:'edit-negation',operation:'edit',kind:'habit',prompt:'Do not pin it, do not split it, 30 minutes long.',expected:{name:'Gym',pinned:false,breakable:false,durationMinutes:30,priority:2,emoji:'🏋️',topics:['Original']}},
         {id:'create-name-only-defaults',operation:'create',kind:'habit',prompt:'Walk',expected:{name:'Walk',durationMinutes:35},rhythm:[1,2],settings:{defaultDurationMinutes:35,defaultTarget:2}},
         {id:'create-frequency-default-duration',operation:'create',kind:'habit',prompt:'Walk every other day before sunset',expected:{name:'Walk',durationMinutes:35,allowedTimeEndAnchor:'maghrib'},rhythm:[1,2]},

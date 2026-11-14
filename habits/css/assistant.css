@@ -176,6 +176,23 @@ body[data-pane-count="3"] .assistant-sheet{
 }
 .focus-ask{display:flex;flex-direction:column;align-items:stretch;gap:4px;}
 .focus-ask .btn{width:100%;height:auto;padding:8px 10px;white-space:normal;text-align:left;}
+.focus-picker{display:grid;gap:8px;min-width:0;}
+.focus-pick-chips{display:flex;flex-wrap:wrap;gap:6px;max-height:212px;overflow-y:auto;overscroll-behavior:contain;padding:2px;}
+.focus-pick-chip{
+  display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:40px;padding:0 14px;
+  border:1px solid var(--border);border-radius:999px;background:var(--bg);color:var(--text);
+  font:inherit;font-size:13.5px;font-weight:620;line-height:1.2;text-align:left;overflow-wrap:anywhere;
+  cursor:pointer;touch-action:manipulation;transition:background-color .12s,border-color .12s,color .12s;
+}
+.focus-pick-chip.is-near{border-color:var(--teal-icon);}
+.focus-pick-chip > i{display:none;font-size:14px;}
+.focus-pick-chip[aria-pressed="true"]{background:var(--teal-bg);border-color:var(--teal-icon);color:var(--teal-text);padding-left:10px;}
+.focus-pick-chip[aria-pressed="true"] > i{display:inline;}
+.focus-pick-chip:active:not(:disabled){filter:brightness(.92);}
+.focus-pick-chip:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
+.focus-pick-chip:disabled{cursor:default;opacity:.6;}
+.focus-picker .focus-note{margin:0;}
+.focus-ask .focus-picker .btn{min-height:44px;text-align:center;}
 .focus-status{margin:0;min-height:0;font-size:12px;color:var(--amber-text);}
 .focus-status:empty{display:none;}
 .assistant-preview-actions,.assistant-choices{margin-top:12px;flex-wrap:wrap;}
