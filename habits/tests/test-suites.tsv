@@ -5,6 +5,7 @@
 #   page-both     run on both pages (default/GLPK first, then Fast)
 #   default-only  GLPK page only; skipped by --mode fast
 assistant-needle-test.js	assistant	once
+assistant-latency-test.js	assistant	once
 assistant-focus-test.js	assistant	once
 assistant-feedback-test.js	assistant	once
 header-brand-test.js	ui	once

@@ -1957,6 +1957,51 @@ async function assistantFieldReadActions(state, extract){
   }
 }
 
+// These complete, bounded instructions need no open-ended field search. This
+// recognizes coverage only: the usual model still selects every value and the
+// usual validators, uncertainty review and Save boundary still apply. Anything
+// outside this small grammar (including an unaccounted word) keeps the full audit.
+function assistantFieldClosedInstructions(state){
+  const session=state.session;
+  if(session.operation!=='edit'||!['habit','task'].includes(session.kind)
+    ||session.requests.length!==1||state.priorFields.length||session.unresolved.length||session.changes.length
+    ||state.actionRegions?.length||state.unavailableSpans?.length||!state.spans.length)return null;
+  const quantity=assistantSpokenQuantitySource();
+  const duration=new RegExp(`^(?:(?:(?:make|set|change|use)\\s+)?(?:(?:each|every|the|its)\\s+)?(?:session(?:\\s+length)?|duration|length)(?:\\s+(?:to|of|is|should be))?\\s*:?\\s*)?${quantity}(?:\\s+(?:each|per session|long))?$`,'i');
+  const day=`(?:${ASSISTANT_WEEKDAY_TOKEN})s?`;
+  const weekdays=new RegExp(`^(?:(?:only|allowed|allow|on|use)\\s+)*(?:weekdays?|weekends?|${day}(?:\\s*(?:to|through|thru|and|plus|[-–—/&])\\s*${day})*)(?:\\s+only)?$`,'i');
+  const fields=[];let end=0;
+  for(const span of state.spans){
+    // Source segmentation must also account for every gap, not just the
+    // excerpts it retained. Conjunctions may join independent instructions.
+    if(span.start<end||!/^(?:\s|[,;.!]|\band\b)*$/i.test(state.request.slice(end,span.start)))return null;
+    end=span.end;
+    const text=assistantFieldDialogue(span.text).text;
+    const id=duration.test(text)?'durationMinutes'
+      :/^(?:(?:set|change|use)\s+)?(?:(?:the|its)\s+)?priority(?:\s+(?:to|is))?\s*:?\s*p?[0-5]$/i.test(text)?'priority'
+      :/^(?:pin|unpin)\s+(?:it|this|that)$/i.test(text)?'pinned'
+      :session.kind==='habit'&&weekdays.test(text)?'allowedWeekdays':null;
+    if(!id||fields.includes(id))return null;
+    fields.push(id);
+  }
+  if(!/^[\s.!]*$/.test(state.request.slice(end)))return null;
+  // Existing nominations must agree exactly. Prerequisites, unfinished work,
+  // and competing interpretations all retain discovery and completeness.
+  if(state.jobs.length!==fields.length||state.jobs.some(job=>!fields.includes(job.id)||!job.required||job.request!==state.request))return null;
+  return fields;
+}
+
+function assistantFieldQueueAudit(state){
+  state.jobs.unshift({id:'$discover',family:'families',status:'queued',attempts:0,revision:state.revision});
+  state.jobs.splice(2,0,{id:'$retrieve',family:'retrieval',status:'queued',attempts:0,revision:state.revision});
+}
+
+function assistantFieldClosedComplete(state){
+  return state.closedFields&&state.closedFields.every(id=>state.jobs.some(job=>job.id===id
+    &&job.status==='staged'&&job.proposal&&!job.proposal.suppressed))
+    &&!state.session.unresolved.length&&!state.session.continuationError;
+}
+
 function assistantFieldPrepare(state){
   const session=state.session,request=state.request,priorFields=state.priorFields;
   assistantFieldClaimActions(state);
@@ -1985,8 +2030,8 @@ function assistantFieldPrepare(state){
   const nameReply=session.operation==='create'||ASSISTANT_FIELD_SIGNALS.name.test(request);
   if(questionField&&(questionField.id!=='name'||nameReply))assistantFieldEnqueue(state,questionField.id,'explicit');
   assistantGuidePin(state);
-  state.jobs.unshift({id:'$discover',family:'families',status:'queued',attempts:0,revision:state.revision});
-  state.jobs.splice(2,0,{id:'$retrieve',family:'retrieval',status:'queued',attempts:0,revision:state.revision});
+  state.closedFields=assistantFieldClosedInstructions(state);
+  if(!state.closedFields)assistantFieldQueueAudit(state);
   state.needsCandidates=false;
 }
 
@@ -2388,7 +2433,9 @@ async function assistantFieldExtract(state,row,extract){
       // context so a literal title such as "Every day" stays a title.
       const parsed=assistantFieldNormalize(def,text,{...normalizeContext,_fieldSource:selectedEvidence});
       if(!parsed.ok)invalid.push(parsed);
-      if(parsed.ok)values.push({changes:parsed.changes,source:text,span:selected,instructionSpan:span,uncertain:call.confidence==null||call.confidence<0.7||Boolean(call.raw.suppressed_calls?.includes(result))});
+      if(parsed.ok)values.push({changes:parsed.changes,source:text,span:selected,instructionSpan:span,
+        uncertain:call.confidence==null||call.confidence<0.7||Boolean(call.raw.suppressed_calls?.includes(result)),
+        suppressed:Boolean(call.raw.suppressed_calls?.includes(result))});
     }
   }
   const unique=values.filter((v,i)=>!values.slice(0,i).some(other=>JSON.stringify(v.changes)===JSON.stringify(other.changes)));
@@ -2668,6 +2715,18 @@ async function assistantFocusRunFieldTurn(session,text,opts){
       assistantFieldPrepare(state);
     }
     await assistantFieldSchedule(state,extract,opts);
+    if(state.closedFields&&!state.closedChecked){
+      state.closedChecked=true;
+      if(assistantFieldClosedComplete(state)){
+        state.coverage=true;state.fallback=true;
+        session.trace.push({family:'coverage',method:'closed-instructions',fields:state.closedFields.slice()});
+      }else{
+        // A decline, suppressed call or validation failure is not proof of
+        // completion. Recover through the original search and audit path.
+        assistantFieldQueueAudit(state);
+        await assistantFieldSchedule(state,extract,opts);
+      }
+    }
     if(!state.coverage && !state.jobs.some(j=>j.status==='retryable_failed')){
       state.jobs.push({id:'$coverage',family:'completeness',status:'queued',attempts:0,revision:state.revision});state.coverage=true;
       await assistantFieldSchedule(state,extract,opts);

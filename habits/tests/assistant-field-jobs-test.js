@@ -78,7 +78,9 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     assert(semanticRouting.every(r=>r.ok),`unknown paraphrases use a bounded field menu, then independent original evidence; declined or invalid decisions block partial saves (${JSON.stringify(semanticRouting)})`);
     const retrievalWork=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open(),queries=[];
-      await assistantFocusTurn(s,'Pin it.',t.options({rank:async payload=>{queries.push(...payload.queries);return {rankings:[]};}}));
+      // Include background wording to exercise retrieval rather than the
+      // bounded-instruction shortcut covered by assistant-latency-test.
+      await assistantFocusTurn(s,'Pin it; keep everything else unchanged.',t.options({rank:async payload=>{queries.push(...payload.queries);return {rankings:[]};}}));
       return queries.length>0&&queries.length===new Set(queries).size&&assistantFocusCanSave(s);
     });
     assert(retrievalWork,'identical context and source excerpts are embedded only once per turn');
@@ -91,7 +93,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         ['Block out three quarters of an hour for each session','durationMinutes','effort']
       ]){
         t.seed();const s=t.open(),before=JSON.stringify(load());let routes=0;
-        await assistantFocusTurn(s,prompt,t.options({extract:async spec=>{
+        await assistantFocusTurn(s,`${prompt}; keep everything else unchanged`,t.options({extract:async spec=>{
           if(spec.family==='families')return {function_calls:[{arguments:{evidence:`${wrongFamily}: ${prompt}`}}]};
           if(spec.family==='completeness')return {function_calls:[{arguments:{missing:`${wrongFamily}: ${prompt}`}}]};
           if(spec.family==='field-routing'){routes++;return {function_calls:[{arguments:{field:'repeatMode'}}]};}
@@ -655,7 +657,7 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     assert(malformed,'malformed extraction asks for new wording instead of looping Continue, and a rephrase recovers');
     const boundedCoverage=await page.evaluate(async()=>{
       const t=fieldTest;t.seed();const s=t.open();let reads=0,bounded=false;
-      await assistantFocusTurn(s,'Pin it; make it 30 minutes',t.options({extract:async spec=>{
+      await assistantFocusTurn(s,'Pin it; make it 30 minutes; keep everything else unchanged',t.options({extract:async spec=>{
         if(spec.family==='completeness'){
           reads++;
           if(reads===1)throw new Error('tool call truncated: token budget exhausted');

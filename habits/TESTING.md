@@ -189,6 +189,31 @@ Full extracted arguments and model traces are saved to
 
 ## Semantic field extraction
 
+`tests/assistant-latency-test.js` checks that fully bounded everyday edits finish
+after their field reads, while extra clauses, conflicts, suppressed/declined
+evidence, failures and invalid values retain the full audit. Uncertain values
+keep interpretation review. The optional `NEEDLE_MODEL_PATH` and
+`NEEDLE_WASM_PATH` run uses the actual pinned model, verifies the shortcut is
+taken, checks every expected preview and persisted value, and writes
+`test-results/needle-latency-live.json`.
+Its timings describe the test machine, not physical Android performance.
+
+A desktop Chrome comparison on 2026-11-13 used the pinned WASM/model, three
+samples per request per path, and alternated the original full audit with the
+bounded path. Each sample restarted the workers with already downloaded assets.
+Medians were:
+
+| Request | Full audit | Bounded path |
+|---|---:|---:|
+| Make each session 20 minutes | 8.64 s | 0.96 s |
+| Monday to Friday and make it 20 minutes | 10.32 s | 1.05 s |
+| Set priority P1 and pin it | 9.55 s | 1.12 s |
+
+All 18 samples produced identical requested values and uncertainty flags, no
+extra changes or unresolved fields, and no writes before confirmation. Seven
+separate live cases also checked confirmed persistence. These are narrow
+regression measurements, not an overall accuracy score or a device benchmark.
+
 `tests/assistant-field-jobs-test.js` tests the production create/edit scheduler
 with deterministic model/rank adapters for failures and trust boundaries. It
 checks the three-job cap, one-tool schemas, separate duration/chunk/gap values,

@@ -196,6 +196,19 @@ dropping dialogue framing at their boundaries. Names and topics retain literal
 words such as “Tomorrow,” “Blue,” “Please,” and “Instead”; those words cannot
 nominate sibling settings inside an explicit naming or tagging instruction.
 Completed jobs update the editable preview while siblings run.
+
+For a fresh habit/task edit consisting entirely of bounded duration, allowed
+weekday, priority and pin instructions, the host can prove that every word has
+an owner before inference. Those fields still receive the same independent
+Needle evidence reads and validators. When every field stages successfully,
+discovery, embedding retrieval, completeness and fallback routing are omitted.
+Low confidence remains marked for interpretation review. Extra wording,
+conflicting instructions, history, pending questions, creation and event edits
+keep the full pipeline; a declined, suppressed, failed or invalid field read
+restores it. This is a narrow coverage shortcut, not a parser fallback for
+model-selected values. `tests/assistant-latency-test.js` covers the boundary
+and optionally replays the requests with the pinned model assets.
+
 Kind, habit mode and recurrence prerequisites merge in a fixed order; chunk size
 waits for splitting. The original text stays with each job. Follow-ups replace
 only the affected setting and preserve unrelated interrupted work; revision
