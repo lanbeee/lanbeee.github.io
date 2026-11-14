@@ -115,9 +115,25 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         // Minimal keeps the same native strip, with all settings in column two.
         await page.evaluate(()=>{setMinimalMode(true);openDetail(0);});
         await page.waitForTimeout(350);
+        assert.equal(await pager.evaluate(el=>getComputedStyle(el).overscrollBehaviorX),'none','minimal strip disables horizontal spring-back');
         for(let round=0;round<2;round++){
           await move(1,'schedule','.detail-summary-page');
           assert.equal(await page.evaluate(()=>detailMinimalView()),'settings');
+          assert.ok(await pager.evaluate(el=>Math.abs(el.scrollWidth-2*el.getBoundingClientRect().width)<1),'minimal strip ends exactly at Settings');
+          // A further outward gesture keeps the final column in place.
+          if(client){
+            const box=await pager.boundingBox(),x=box.x+box.width*.65,y=box.y+40;
+            await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+            for(let i=1;i<=10;i++){
+              await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-i*12,y,id:1}]});
+              assert.ok(await pager.evaluate(el=>Math.abs(el.scrollLeft-(el.scrollWidth-el.clientWidth))<1),'outward drag cannot overshoot Settings');
+            }
+            await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+          }else if(!phone){
+            const box=await pager.boundingBox();await page.mouse.move(box.x+box.width*.65,box.y+40);
+            await page.mouse.wheel(await pager.evaluate(el=>el.clientWidth),0);
+          }else await pager.evaluate(el=>el.scrollBy({left:el.clientWidth,behavior:'instant'}));
+          await settled('schedule');
           assert.ok(await page.locator('.detail-minimal-settings').evaluate(el=>el.scrollHeight>el.clientHeight),'settings scroll vertically');
           await move(-1,'summary','#detail-rhythm-disclosure > summary');
         }
@@ -126,6 +142,7 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         assert.ok(await page.locator('.detail-minimal-settings').evaluate(el=>el.scrollTop>0),'pill navigation reveals lower settings');
         await page.evaluate(()=>{setMinimalMode(false);scrollDetailToNav('summary');});
         await settled('summary');
+        assert.equal(await pager.evaluate(el=>getComputedStyle(el).overscrollBehaviorX),'contain','regular mode keeps its existing scroll behavior');
         assert.equal(await page.locator('.detail-minimal-settings').count(),0,'regular mode restores original panels');
         assert.deepEqual(errors,[]);
         console.log(`PASS ${name} ${phone?'phone':'desktop'}: native strip, repeated bidirectional scrolling, headings, pills, keyboard height, width changes and nested scrolling (${client?'native touch':phone?'scroll/layout':'native wheel'})`);
