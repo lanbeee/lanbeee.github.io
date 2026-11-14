@@ -308,19 +308,21 @@ enable real inference. Keyboard resize/pan events are simulated; this does not
 verify the physical iOS keyboard animation. Screenshots and the report are in
 `test-results/summary-iphonex/{live,scripted}/`.
 
-`detail-tab-state-test.js` checks direct detail tabs in WebKit and Chromium
+`detail-tab-state-test.js` checks pill navigation in WebKit and Chromium
 with the iPhone X touch profile. It opens from fresh documents through the
 normal lazy Summary load, taps every pill repeatedly, and samples every
-animation frame for a blank or wrong panel. It also checks that horizontal
-scroll attempts and viewport events cannot change the selected tab, and that
-short landscape layouts retain tab navigation. Detail tabs select one visible
-panel; scrolling never selects a tab. `detail-tab-swipe-test.js` checks deliberate
-left/right touch gestures that select the adjacent tab on release, including
-repeated swipes after cold opens, section headings, the item title/subtitle,
-field labels, retained heading tap actions, pill taps, cancellation, vertical scrolling,
-nested horizontal scrollers, controls, screen edges and minimal mode. Chromium
-uses native injected touch drags; WebKit uses DOM touch sequences because its
-Playwright touchscreen API only exposes taps. Neither restores scroll-snap.
+animation frame for a blank or wrong panel. Viewport events must preserve the
+explicit destination, including short landscape layouts. Ordinary detail tabs
+are equal-width panels in a native horizontal scroll strip; explicit tab/pill
+navigation lands immediately so field reveal cannot race a scroll animation.
+`detail-tab-swipe-test.js` checks the native strip on phone and desktop profiles,
+repeated bidirectional scrolling after cold opens, section headings and their
+tap actions, pills after scrolling, keyboard-height/width changes, and nested
+horizontal lists. Chromium uses actual injected touch drags and verifies that
+content moves before release. Desktop Chromium and WebKit use native wheel
+input. Mobile WebKit uses programmatic scroll/layout checks because Playwright
+does not expose native touch dragging there. Physical iPhone verification is
+still separate. Minimal mode retains its vertically stacked Settings page.
 
 `tests/assistant-monthly-create-test.js` covers the reported Family night
 dictation and variants with monthly weekday rules, solar/prayer offsets and

@@ -140,17 +140,13 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       assert.equal(await page.locator('#detail-priority-seg').isVisible(),true,'Priority control is visible');
       if(!minimal){
         const panels=await page.evaluate(()=>[...document.querySelectorAll('.detail-pager > .detail-page')]
-          .filter(panel=>panel.getClientRects().length).map(panel=>panel.dataset.detailNav));
-        assert.deepEqual(panels,['effort'],'direct tabs render only the selected panel');
-        assert.equal(await page.locator('.detail-pager').evaluate(el=>getComputedStyle(el).scrollSnapType),'none',
-          'tab selection does not depend on horizontal scroll snapping');
-        await page.evaluate(()=>{
-          detailSummaryPager.scrollTo({left:0,behavior:'instant'});
-          detailSummaryPager.dispatchEvent(new Event('scroll'));
-          visualViewport.dispatchEvent(new Event('resize'));
-        });
+          .filter(panel=>{const r=panel.getBoundingClientRect(),p=panel.parentElement.getBoundingClientRect();return r.width && r.right>p.left+1 && r.left<p.right-1;}).map(panel=>panel.dataset.detailNav));
+        assert.deepEqual(panels,['effort'],'the native pager lands exactly on the selected panel');
+        assert.equal(await page.locator('.detail-pager').evaluate(el=>getComputedStyle(el).scrollSnapType),'x mandatory',
+          'ordinary tabs use native horizontal scrolling');
+        await page.evaluate(()=>{visualViewport.dispatchEvent(new Event('resize'));});
         await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-        assert.equal(await page.evaluate(()=>detailCurrentNav()),'effort','scroll and viewport events cannot change the selected tab');
+        assert.equal(await page.evaluate(()=>detailCurrentNav()),'effort','viewport events cannot change the selected tab');
       }
       await page.locator(`.detail-page-tab[aria-label="summary"]`).tap();
       await page.waitForFunction(()=>detailSummaryOnScreen());

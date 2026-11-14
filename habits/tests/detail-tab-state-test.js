@@ -1,5 +1,5 @@
-// Cold-open and repeated Summary pill navigation must never depend on a
-// scroll-snap position. Use the real lazy Summary load and real touch taps.
+// Cold-open and repeated Summary pill navigation must never restore
+// an old scroll position. Use the real lazy Summary load and real touch taps.
 const assert=require('node:assert/strict');
 const {chromium,webkit,devices}=require('playwright');
 const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
@@ -19,11 +19,10 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         for(const key of ['tings_coach_install_v2','tings_coach_essentials_v2'])localStorage.setItem(key,'done');
       },item);
       const visiblePanels=()=>page.evaluate(()=>[...document.querySelectorAll('.detail-pager > .detail-page')]
-        .filter(panel=>panel.getClientRects().length).map(panel=>panel.dataset.detailNav));
-      const idle=()=>page.evaluate(async()=>{
-        await Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));
+        .filter(panel=>{const r=panel.getBoundingClientRect(),p=panel.parentElement.getBoundingClientRect();return r.width && r.right>p.left+1 && r.left<p.right-1;}).map(panel=>panel.dataset.detailNav));
+      const idle=async()=>{await page.waitForTimeout(180);return page.evaluate(async()=>{
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-      });
+      });};
       let taps=0;
       for(let cold=0;cold<2;cold++){
         // A new document and normal card tap, with no eager assistant load or
@@ -69,7 +68,7 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
           const sample=()=>{
             if($('detail-sheet').classList.contains('open') || getPane()?.dataset.activeSheet==='detail-sheet'){
               const panels=[...detailSummaryPager.querySelectorAll('.detail-page')]
-                .filter(panel=>panel.getClientRects().length).map(panel=>panel.dataset.detailNav);
+                .filter(panel=>{const r=panel.getBoundingClientRect(),p=panel.parentElement.getBoundingClientRect();return r.width && r.right>p.left+1 && r.left<p.right-1;}).map(panel=>panel.dataset.detailNav);
               if(panels.length!==1 || panels[0]!==detailTabExpected)detailTabFrameErrors.push({expected:detailTabExpected,panels});
             }
             requestAnimationFrame(sample);
@@ -95,20 +94,11 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
             return {left:rect.left>=host.left-1,right:rect.right<=host.right+1,vertical:rect.top<host.bottom && rect.bottom>host.top};
           });
           assert.ok(bounds.left && bounds.right && bounds.vertical,`${pill.field} is visible, rather than a blank panel`);
-          // Try horizontal scrolling before a viewport notification. Mobile
-          // WebKit has no Playwright wheel injection, so exercise attempted
-          // scrolling and scroll notification explicitly in that engine.
-          if(name==='chromium'){
-            await page.locator(pill.selector).hover();
-            await page.mouse.wheel(450,0);
-          }else await page.locator('.detail-pager').evaluate(el=>{
-            el.scrollBy({left:450,behavior:'instant'});
-            el.dispatchEvent(new Event('scroll'));
-          });
+          // Keyboard height and viewport notifications must preserve the
+          // explicit pill destination, without resetting to an old snap target.
           await page.evaluate(()=>{visualViewport.dispatchEvent(new Event('resize'));});
           await idle();
-          assert.deepEqual(await visiblePanels(),[pill.nav],`${pill.field} survives scrolling and viewport changes`);
-          assert.equal(await page.locator('.detail-pager').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
+          assert.deepEqual(await visiblePanels(),[pill.nav],`${pill.field} survives viewport changes`);
           await page.locator('.detail-page-tab[aria-label="summary"]').tap();
           await idle();
           assert.deepEqual(await visiblePanels(),['summary']);
@@ -136,7 +126,7 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
       assert.deepEqual(await visiblePanels(),['summary']);
       assert.deepEqual(await page.evaluate(()=>detailTabFrameErrors),[],`${name}: landscape frames keep the requested panel visible`);
       assert.deepEqual(errors,[]);
-      console.log(`PASS ${name}: ${taps} pill taps across two cold opens, first Allowed hours tap, repeated destinations, scroll/resize independence and landscape tabs`);
+      console.log(`PASS ${name}: ${taps} pill taps across two cold opens, first Allowed hours tap, repeated destinations, viewport stability and landscape tabs`);
     }finally{await browser.close();}
   }
 })().catch(error=>{console.error(error);process.exit(1);});

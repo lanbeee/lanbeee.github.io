@@ -163,6 +163,7 @@ body.minimal-mode .detail-sheet > .detail-pager{
 }
 body.minimal-mode .detail-sheet > .detail-pager > .detail-page{
   flex:0 0 auto;scroll-snap-align:none;
+  width:100%;min-width:0;
   height:auto;min-height:0;overflow:visible;
 }
 body.minimal-mode .detail-bottom-bar .detail-dots[hidden]{ display:none; }

@@ -256,15 +256,47 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
     animateDetailNavigation(previousNav,previousDock,behavior);
     return;
   }
-  // A tab is state, not a horizontal scroll position. iOS can re-snap a
-  // scrolling pager when its footer/viewport changes during field reveal.
+  // Explicit navigation lands synchronously. Field reveal/focus and a queued
+  // Save restore must never compete with an unfinished horizontal animation.
   getSheetInner('detail-sheet').dataset.fullNav = visibleDetailPages(pager)[index].dataset.detailNav;
+  pager.scrollTo({left:index * pager.clientWidth,behavior:'instant'});
   updateDetailPagerDots();
-  animateDetailNavigation(previousNav,previousDock,behavior);
 }
 
-// A swipe is another explicit tab action, never a scrolling page strip.
-// Only commit on release so viewport changes cannot re-snap the selection.
+// Ordinary pages use the browser's horizontal scrolling, on touchscreens and
+// trackpads alike. Only a width/page-set change realigns the selected tab;
+// height changes from the keyboard do not reset a native drag or its momentum.
+function bindDetailPagerScroll(pager){
+  if(pager.dataset.scrollBound === '1')return;
+  pager.dataset.scrollBound = '1';
+  let width = 0,pageSignature = '';
+  const align = ()=>{
+    if(detailIsSingleView())return false;
+    const pages = visibleDetailPages(pager);
+    const signature = pages.map(page=>page.dataset.detailNav).join('|');
+    if(!pager.clientWidth || (width === pager.clientWidth && signature === pageSignature))return false;
+    width = pager.clientWidth;
+    pageSignature = signature;
+    const index = Math.max(0,pages.findIndex(page=>page.dataset.detailNav === detailCurrentNav()));
+    pager.scrollTo({left:index * width,behavior:'instant'});
+    return true;
+  };
+  pager.addEventListener('scroll',()=>{
+    if(detailIsSingleView() || align() || !width)return;
+    const pages = visibleDetailPages(pager);
+    const index = Math.max(0,Math.min(pages.length - 1,Math.round(pager.scrollLeft / width)));
+    const nav = pages[index]?.dataset.detailNav;
+    if(!nav || nav === detailCurrentNav())return;
+    detailNavigationRevision += 1;
+    getSheetInner('detail-sheet').dataset.fullNav = nav;
+    updateDetailPagerDots();
+  },{passive:true});
+  new ResizeObserver(align).observe(pager);
+  new MutationObserver(align).observe(pager,{subtree:true,attributes:true,attributeFilter:['hidden']});
+}
+
+// Minimal mode keeps its vertically stacked Settings page. Its two logical
+// tabs still use a release gesture; ordinary mode has no gesture recognizer.
 function bindDetailPagerSwipes(pager){
   if(pager.dataset.swipeBound === '1')return;
   pager.dataset.swipeBound = '1';
@@ -278,6 +310,7 @@ function bindDetailPagerSwipes(pager){
     + '[role="spinbutton"],[role="switch"],[role="checkbox"],[role="listbox"],[draggable="true"],[data-detail-no-swipe],.leaflet-container';
   surface.addEventListener('touchstart',event=>{
     gesture = null;
+    if(!detailIsSingleView())return;
     if(event.defaultPrevented || event.touches.length !== 1 || selectionActive())return;
     const target = event.target instanceof Element ? event.target : event.target.parentElement;
     if(!target?.closest('.detail-page,.detail-head') || target.closest(controls))return;
@@ -333,6 +366,7 @@ function bindDetailPagerSwipes(pager){
 }
 
 function bindDetailPagerTabs(dotsWrap,pager){
+  bindDetailPagerScroll(pager);
   bindDetailPagerSwipes(pager);
   if(dotsWrap.dataset.bound === '1')return;
   dotsWrap.dataset.bound = '1';
