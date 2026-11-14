@@ -314,7 +314,12 @@ normal lazy Summary load, taps every pill repeatedly, and samples every
 animation frame for a blank or wrong panel. It also checks that horizontal
 scroll attempts and viewport events cannot change the selected tab, and that
 short landscape layouts retain tab navigation. Detail tabs select one visible
-panel; they no longer use horizontal swipe or scroll-snap navigation.
+panel; scrolling never selects a tab. `detail-tab-swipe-test.js` checks deliberate
+left/right touch gestures that select the adjacent tab on release, including
+repeated swipes after cold opens, pill taps, cancellation, vertical scrolling,
+nested horizontal scrollers, controls, screen edges and minimal mode. Chromium
+uses native injected touch drags; WebKit uses DOM touch sequences because its
+Playwright touchscreen API only exposes taps. Neither restores scroll-snap.
 
 `tests/assistant-monthly-create-test.js` covers the reported Family night
 dictation and variants with monthly weekday rules, solar/prayer offsets and
