@@ -652,6 +652,7 @@ function appBackPlan(){
       if($('detail-search-panel') && !$('detail-search-panel').hidden)return plan('detail-search', click($('detail-cool')));
       if(!$('detail-delete-confirm').hidden)return plan('detail-delete', click($('detail-delete-no')));
       if(detailEditActive())return plan('detail-edit', ()=>{restoreDetailTune();return true;});
+      if(getSheetInner('detail-sheet')?.classList.contains('detail-ask-on') && detailSummaryDraft())return plan('detail-draft', ()=>detailSummaryClearDraft());
       return plan('detail:' + $(id)?.dataset.backSequence, ()=>{dismissDetail();return true;}, edgeBackSurface(id));
     }
     if(id === 'day-logs-sheet' && visible($('day-logs-back')))return plan('day-logs-step', click($('day-logs-back')));
@@ -955,6 +956,7 @@ function edgeBackClaim(gesture){
   }
   gesture.claimed = true;
   gesture.surface = plan.surface;
+  sheetEnterMotions.get(plan.surface)?.cancel();
   if(!plan.surface)return;
   plan.surface.classList.add('edge-back-dragging');
   plan.surface.dataset.edgeBackDir = gesture.dir > 0 ? 'right' : 'left';
@@ -1144,7 +1146,16 @@ window.addEventListener('popstate',event=>{
 });
 
 // RENDER: opens a sheet or mounts it in the pane
+const sheetEnterMotions = new WeakMap();
+document.addEventListener('focusin',event=>{
+  // A focused editor must meet the keyboard immediately, even during entry.
+  if(event.target.matches('input,textarea,select,[contenteditable="true"]')){
+    sheetEnterMotions.get(event.target.closest('.sheet-wrap'))?.cancel();
+    if(event.target.closest('.detail-sheet') && typeof cancelDetailNavigationMotion === 'function')cancelDetailNavigationMotion();
+  }
+});
 function openSheet(id,opts = {}){
+  const wasOpen = $(id).classList.contains('open');
   if(edgeBack || edgeBackSettling)edgeBackAbort();
   registerBrowserPage(id,opts.reopen);
   $(id).dataset.backSequence = String(++sheetOpenSequence);
@@ -1177,6 +1188,18 @@ function openSheet(id,opts = {}){
   armSheetBackdropGuard(id);
   updateFullPageState();
   updateKeyboardLift();
+  // Only a fresh phone opening slides in. History traversal already has its
+  // own motion, and cancelling an edge gesture must never replay this entry.
+  // Guided tours keep their spotlight targets still while measuring them.
+  // Move the content inside the cover so Home's scroll lock cannot flash through.
+  if(!wasOpen && !paneTierActive() && !browserNavigationApplying && !window.TingsCoach?.state().active
+    && (id === 'add-sheet' || isFullPageSheet(id))
+    && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+    sheetEnterMotions.get($(id))?.cancel();
+    sheetEnterMotions.set($(id),getSheetInner(id).animate([
+      {transform:'translateX(100%)'},{transform:'translateX(0)'}
+    ],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'}));
+  }
 }
 
 // The stylesheet stacking order is the resting order. A sheet opened while
@@ -1218,6 +1241,8 @@ document.addEventListener('click',e=>{
 
 // RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
+  sheetEnterMotions.get($(id))?.cancel();
+  if(id === 'detail-sheet' && typeof cancelDetailNavigationMotion === 'function')cancelDetailNavigationMotion();
   rememberBrowserPageScroll();
   // If this sheet is currently mounted in the pane, unmount it instead.
   const pane = getPane();

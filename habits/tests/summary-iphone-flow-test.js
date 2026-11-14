@@ -202,6 +202,8 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.locator('#detail-duration').blur();await keyboard(false);
       await page.locator('.detail-page-tab[aria-label="summary"]').tap();
       await page.waitForFunction(()=>detailSummaryOnScreen());
+      await page.evaluate(()=>Promise.all(document.getAnimations()
+        .filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))));
       const idleHeight=await page.locator('.detail-bottom-bar').evaluate(el=>el.getBoundingClientRect().height);
       await page.evaluate(()=>{summaryFocusEvents=[];});
       await input.tap();

@@ -20,7 +20,10 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
       },item);
       const visiblePanels=()=>page.evaluate(()=>[...document.querySelectorAll('.detail-pager > .detail-page')]
         .filter(panel=>panel.getClientRects().length).map(panel=>panel.dataset.detailNav));
-      const idle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const idle=()=>page.evaluate(async()=>{
+        await Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      });
       let taps=0;
       for(let cold=0;cold<2;cold++){
         // A new document and normal card tap, with no eager assistant load or
@@ -30,6 +33,7 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         await page.locator('#list .ting-name').filter({hasText:'Dhuhr'}).first().tap();
         await page.locator('#detail-summary [data-summary-field="allowedWindow"]').waitFor();
         const summaryTab=page.locator('.detail-page-tab[aria-label="summary"]');
+        await idle();
         const summaryStart=await summaryTab.boundingBox();
         await page.locator('.detail-dots').evaluate(bar=>{bar.scrollLeft=bar.scrollWidth;});
         await idle();

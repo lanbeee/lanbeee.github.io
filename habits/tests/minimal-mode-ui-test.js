@@ -81,6 +81,8 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     assert.equal(await page.locator('#add-open-defaults').isVisible(),false);
     await page.locator('#ting-message').fill('Walk');
     await page.locator('#ting-duration').fill('25');
+    // Compare the settled draft after the existing name/emoji debounce.
+    await page.waitForFunction(()=>$('ting-emoji').value === '🚶');
     const draft = await page.evaluate(()=>readAddRecord());
     await page.locator('#add-regular-mode').click();
     assert.equal(await page.evaluate(()=>$('settings-sheet').classList.contains('open')),true,'Add also opens Settings');

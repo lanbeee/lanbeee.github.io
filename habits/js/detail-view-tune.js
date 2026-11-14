@@ -236,6 +236,7 @@ function dismissDetail(){
   if(!$('detail-search-panel').hidden)setDetailSearchOpen(false);
   else if(!$('detail-delete-confirm').hidden)$('detail-delete-confirm').hidden = true;
   else if(detailEditActive())restoreDetailTune();
+  else if(detailSummaryClearDraft())return;
   else closeDetail();
 }
 

@@ -296,6 +296,7 @@ function syncDetailSummaryDock(){
   const show = ready && detailSummaryOnScreen();
   inner.classList.toggle('detail-ask-on',show);
   ask.hidden = !show;
+  if(!inner.classList.contains('detail-search-open'))$('detail-cool').setAttribute('aria-label',show && detailSummaryDraft() ? 'clear change' : 'close details');
   ask.classList.toggle('is-busy',detailSummary.busy);
   const input = $('detail-ask-input');
   const dirty = inner.classList.contains('tune-dirty');
@@ -314,6 +315,17 @@ function syncDetailSummaryDock(){
   feedback.hidden = !detailSummary.feedback || typeof feedbackFormConfigured !== 'function' || !feedbackFormConfigured();
   feedback.disabled = detailSummary.busy;
   renderDetailSummaryGuides();
+}
+
+// X clears a message in progress. An empty composer leaves the normal
+// one-tap detail dismissal intact; prior conversation and proposals stay put.
+function detailSummaryClearDraft(){
+  const inner = getSheetInner('detail-sheet');
+  if(!inner?.classList.contains('detail-ask-on') || !detailSummaryDraft())return false;
+  $('detail-ask-input').blur();
+  detailSummaryComposer('');
+  $('detail-cool').focus({preventScroll:true});
+  return true;
 }
 
 function detailSummaryOpenFeedback(){

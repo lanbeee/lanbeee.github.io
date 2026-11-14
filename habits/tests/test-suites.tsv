@@ -90,6 +90,7 @@ summary-edit-flow-test.js	assistant	once
 summary-iphone-flow-test.js	assistant	once
 detail-tab-state-test.js	ui	once
 detail-tab-swipe-test.js	ui	once
+detail-ui-refinements-test.js	ui	once
 assistant-harness-test.js	assistant	once
 assistant-batch-test.js	assistant	once
 assistant-apply-items-test.js	assistant	once

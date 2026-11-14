@@ -18,7 +18,10 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         for(const key of ['tings_coach_install_v2','tings_coach_essentials_v2'])localStorage.setItem(key,'done');
       },baseHabit({hid:'swipe',name:'Walk',priority:0,durationMinutes:40,allowedWeekdays:[1,3,5]}));
       const client=name==='chromium'?await page.context().newCDPSession(page):null;
-      const idle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const idle=()=>page.evaluate(async()=>{
+        await Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      });
       const nav=()=>page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav());
       const select=async key=>{
         await page.evaluate(key=>{

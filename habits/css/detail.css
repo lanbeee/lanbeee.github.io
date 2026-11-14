@@ -486,6 +486,11 @@ body[data-pane-count="1"] .detail-sheet.detail-ask-on > .sheet-search-dock{width
 /* Summary has one in-flow composer, rather than a floating second card over
    the conversation. The pager gives it real space as the keyboard opens. */
 body[data-pane-count="1"] .detail-sheet.detail-ask-on{
+  /* Same resting clearance on every phone; larger home-indicator insets win.
+     While typing, the existing viewport rules own keyboard clearance. */
+  padding-bottom:max(16px,var(--detail-footer-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
+}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing{
   padding-bottom:var(--detail-footer-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px))));
 }
 body[data-pane-count="1"] .detail-sheet.detail-ask-on > .sheet-search-dock{

@@ -121,6 +121,8 @@ async function launchBrowser(){
   assert(header.sameRow && !header.orphaned, 'close control shares the title row, with no orphaned top bar');
   assert(header.addWidth < 80, 'add pills leave room for the sample description');
   await page.setViewportSize({width:320,height:568});
+  await page.evaluate(()=>Promise.all(document.getElementById('sample-habits-sheet').getAnimations({subtree:true})
+    .map(a=>a.finished.catch(()=>{}))));
   await page.evaluate(() => document.querySelector('.sample-habits-sheet').scrollTop = 400);
   const compactHeader = await page.evaluate(() => {
     const button = document.getElementById('sample-habits-close');

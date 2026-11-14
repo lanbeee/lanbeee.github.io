@@ -66,6 +66,46 @@ const DETAIL_MINIMAL_NAV = {
 // A save may still have a next-frame scroll restore queued. New navigation
 // takes ownership of the pager, even before its scrolling has settled.
 let detailNavigationRevision = 0;
+let detailPanelMotion = null;
+let detailDockMotion = null;
+
+function cancelDetailNavigationMotion(){
+  detailPanelMotion?.cancel();
+  detailDockMotion?.cancel();
+}
+
+// Animate only an explicit navigation action. Selection and layout commit
+// immediately; keyboard/viewport updates never start or delay a transition.
+function animateDetailNavigation(previousNav,previousDock,behavior = 'smooth'){
+  cancelDetailNavigationMotion();
+  const inner = getSheetInner('detail-sheet');
+  if(!inner || behavior !== 'smooth' || matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  if(!$('detail-sheet').classList.contains('open') && !inner.closest('.pane-detail'))return;
+  const nav = detailCurrentNav();
+  if(previousNav !== nav){
+    const pager = inner.querySelector('.detail-pager');
+    const pages = visibleDetailPages(pager);
+    const direction = pages.findIndex(page=>page.dataset.detailNav === nav)
+      >= pages.findIndex(page=>page.dataset.detailNav === previousNav) ? 1 : -1;
+    const panel = detailIsSingleView() ? pager : pages.find(page=>page.dataset.detailNav === nav);
+    detailPanelMotion = panel?.animate([
+      {transform:`translateX(${direction * 12}px)`,opacity:.92},
+      {transform:'translateX(0)',opacity:1}
+    ],{duration:180,easing:'ease-out'});
+  }
+  if(!previousDock?.width)return;
+  const dock = inner.querySelector('.sheet-search-dock');
+  const next = dock?.getBoundingClientRect();
+  if(!next?.width || !next.height)return;
+  const dx = previousDock.x - next.x,dy = previousDock.y - next.y;
+  if(Math.abs(dx) + Math.abs(dy) + Math.abs(previousDock.width - next.width) + Math.abs(previousDock.height - next.height) < 1)return;
+  const base = getComputedStyle(dock).transform;
+  const transform = base === 'none' ? '' : base;
+  detailDockMotion = dock.animate([
+    {transformOrigin:'0 0',transform:`translate(${dx}px,${dy}px) ${transform} scale(${previousDock.width / next.width},${previousDock.height / next.height})`},
+    {transformOrigin:'0 0',transform:base}
+  ],{duration:180,easing:'ease-out'});
+}
 
 // Visual-only: drop the merged calendar+stats pane and the effort pane, fold
 // duration + due into schedule, and keep basic allowed weekdays and hours. What is
@@ -204,18 +244,23 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
   if(!pager)return;
   const index = detailPageIndexByNav(navKey);
   if(index < 0)return;
+  const previousNav = detailCurrentNav();
+  const previousDock = behavior === 'smooth' && !matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? pager.parentElement.querySelector('.sheet-search-dock')?.getBoundingClientRect() : null;
   detailNavigationRevision += 1;
   if(detailIsSingleView()){
     setDetailMinimalView(navKey === 'summary' ? 'summary' : 'settings');
     updateDetailPagerDots();
     const page = visibleDetailPages(pager)[index];
     if(page)pager.scrollTo({top:navKey === 'summary' ? 0 : page.offsetTop - pager.offsetTop,behavior});
+    animateDetailNavigation(previousNav,previousDock,behavior);
     return;
   }
   // A tab is state, not a horizontal scroll position. iOS can re-snap a
   // scrolling pager when its footer/viewport changes during field reveal.
   getSheetInner('detail-sheet').dataset.fullNav = visibleDetailPages(pager)[index].dataset.detailNav;
   updateDetailPagerDots();
+  animateDetailNavigation(previousNav,previousDock,behavior);
 }
 
 // A swipe is another explicit tab action, never a scrolling page strip.
@@ -282,7 +327,7 @@ function bindDetailPagerSwipes(pager){
     const next = navs[index + (dx < 0 ? 1 : -1)];
     if(index < 0 || !next)return;
     if(detailIsSingleView())showDetailMinimalTab(next);
-    else scrollDetailToNav(next,'auto');
+    else scrollDetailToNav(next,'smooth');
   },{passive:false});
   surface.addEventListener('touchcancel',()=>{gesture = null;},{passive:true});
 }
@@ -307,7 +352,7 @@ function bindDetailPagerTabs(dotsWrap,pager){
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
     event.preventDefault();
     if(tabs[next].dataset.detailMinimal)showDetailMinimalTab(tabs[next].dataset.detailMinimal);
-    else scrollDetailToNav(visibleDetailPages(pager)[next].dataset.detailNav,'auto');
+    else scrollDetailToNav(visibleDetailPages(pager)[next].dataset.detailNav,'smooth');
     tabs[next].focus({preventScroll:true});
   });
 }
@@ -331,7 +376,7 @@ function renderDetailMinimalTabs(dotsWrap){
 
 function showDetailMinimalTab(view){
   scrollDetailToNav(view === 'summary' ? 'summary'
-    : visibleDetailPages(getSheetInner('detail-sheet')?.querySelector('.detail-pager')).find(page=>page.dataset.detailNav !== 'summary')?.dataset.detailNav,'auto');
+    : visibleDetailPages(getSheetInner('detail-sheet')?.querySelector('.detail-pager')).find(page=>page.dataset.detailNav !== 'summary')?.dataset.detailNav,'smooth');
 }
 
 // RENDER: syncs the compact pager navigation (skips hidden pages like order).
