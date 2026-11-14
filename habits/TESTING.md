@@ -194,7 +194,13 @@ Full extracted arguments and model traces are saved to
 “Change the location to home” failure, spelling and phrasing variants, unknown
 and tied names, Anywhere choices, topics, weather profiles, forecast locations,
 and a combined location/duration edit. It checks preserved unrelated data,
-names in previews, local choices, and bounded inference counts. Set both pinned
+names in previews, local choices, and bounded inference counts. Place-preference
+cases cover prioritizing, favoring, avoiding, unique typos, multiple places,
+preserved rankings, and combining a preference with another setting.
+`tests/assistant-value-picker-test.js` also exercises searchable large catalogs,
+selections retained across filters, preference dropdowns, and declined or
+qualified reads. Set `ASSISTANT_TEST_BROWSER=webkit` to exercise those controls
+in WebKit. Set both pinned
 Needle asset variables to test the actual runtime; without them, evidence
 selection is scripted. Reports and screenshots land in `test-results/`.
 

@@ -533,7 +533,7 @@ async function detailSummaryHandleProposal(target){
   const picked = assistantFocusPickerClick(target);
   if(picked){
     if(!picked.values)return;
-    const result = assistantFocusPickValues(session,picked.field,picked.values);
+    const result = assistantFocusPickValues(session,picked.field,picked.values,picked.preferenceLevel);
     if(result.ok)detailSummaryShowProposal();
     else status(result.error);
     return;
@@ -660,6 +660,7 @@ $('detail-summary').addEventListener('click',event=>{
   if(!pill || !item || typeof assistantFocusSummarySession !== 'function')return;
   detailSummaryReveal(pill.dataset.summaryField,assistantFocusSummarySession(item),false);
 });
+detailSummaryThread().addEventListener('input',event=>assistantFocusPickerFilter(event.target));
 detailSummaryThread().addEventListener('click',event=>{
   if(!event.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field],[data-focus-open-item],[data-focus-open-nav],[data-focus-drop],[data-focus-pick],[data-focus-option]'))return;
   event.preventDefault();

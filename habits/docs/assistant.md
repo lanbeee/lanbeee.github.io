@@ -38,6 +38,17 @@ use the bounded field-read path; declined or suppressed reads retain the full
 audit. Unknown and competing names still ask with the saved choices. Place
 previews display saved names rather than storage IDs.
 
+Place preferences share that bounded read path. “Prioritize home location,”
+“Favor Home,” and “Make Home the preferred location” resolve complete saved
+names, including unique small typing errors, without changing item priority or
+Anywhere. Updating one place’s ranking preserves other place preferences.
+Unknown places ask with saved choices and an explicit Prefer / Lower preference /
+Avoid selector. A requested preference level survives that question. Preference
+previews show readable names and rankings. Catalog pickers with more than eight
+choices have local search; filtering retains selections. Topics, places, forecast
+locations and weather profiles share the same picker controls. Filtering and
+choices do not invoke inference; writes still wait for Save.
+
 Reminder previews show the actual mode and lead time. Task deadline reminders expose delivery mode, days before due (0, 1, 2, or 7), and local clock time. Events expose a second delivery mode and lead time; both event leads support the same minutes, hours, and calendar days as the manual controls. “Notify me 1 day before the due date at 9am” and “Set the first reminder to notification 1 hour before, and set the second reminder to alarm 1 day before” stage those settings together. Event date scope, reset, Edit, Save, and undo include the new fields. Unsupported offsets ask instead of rounding.
 Save writes the staged item. Edit opens the detail editor with those changes
 filled in and leaves them unsaved until the detail save.

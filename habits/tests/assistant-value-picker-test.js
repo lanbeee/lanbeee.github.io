@@ -3,9 +3,12 @@ const {chromium, BASE, waitForAssistant}=require('./helpers/planner-test-helpers
 let passed=0;
 function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log(`  ok: ${message}`);}
 (async()=>{
-  let browser;try{browser=await chromium.launch({headless:true,channel:'chrome'});}catch(_){browser=await chromium.launch({headless:true});}
+  let browser;
+  if(process.env.ASSISTANT_TEST_BROWSER==='webkit')browser=await require('playwright').webkit.launch();
+  else try{browser=await chromium.launch({headless:true,channel:'chrome'});}catch(_){browser=await chromium.launch({headless:true});}
   try{
     const page=await browser.newPage({serviceWorkers:'block',viewport:{width:390,height:844}});
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.goto(BASE);await waitForAssistant(page);
     await page.evaluate(()=>{
       window.pickerTest={
@@ -93,24 +96,39 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     assert(declined,'a declined model read asks with saved choices and never supplies a parsed fallback');
     const assignmentGuards=await page.evaluate(async()=>{
       const results=[];
-      for(const mode of ['decline','suppressed','failure','extra-clause']){
+      for(const field of ['places','locationPrefs'])for(const mode of ['decline','suppressed','failure','extra-clause']){
         pickerTest.seed();const s=pickerTest.open(),before=JSON.stringify(load()),options=pickerTest.options(),read=options.extract;
-        await assistantFocusTurn(s,mode==='extra-clause'?'Change the location to Home unless I am travelling':'Change the location to Home',{
+        const request=field==='places'?'Change the location to Home':'Prioritize Home location';
+        await assistantFocusTurn(s,request+(mode==='extra-clause'?' unless I am travelling':''),{
           ...options,extract:async spec=>{
-            if(spec.jobId==='places'&&mode==='failure')throw new Error('Interrupted place read');
+            if(spec.jobId===field&&mode==='failure')throw new Error('Interrupted place read');
             const result=await read(spec);
-            if(spec.jobId==='places'&&mode==='decline')result.function_calls[0].arguments.places='';
-            if(spec.jobId==='places'&&mode==='suppressed'){result.suppressed_calls=result.function_calls;result.function_calls=[];}
+            if(spec.jobId===field&&mode==='decline')Object.keys(result.function_calls[0].arguments).forEach(key=>{result.function_calls[0].arguments[key]='';});
+            if(spec.jobId===field&&mode==='suppressed'){result.suppressed_calls=result.function_calls;result.function_calls=[];}
             return result;
           }
         });
-        results.push({mode,unchanged:before===JSON.stringify(load()),full:s.trace.some(row=>row.family==='families'),
+        results.push({field,mode,unchanged:before===JSON.stringify(load()),full:s.trace.some(row=>row.family==='families'),
           shortcut:s.trace.some(row=>row.method==='closed-instructions'),
           guarded:mode==='suppressed'?assistantFocusReviewModel(s).needsInterpretation:!s.changes.length&&!assistantFocusCanSave(s)});
       }
       return results;
     });
     assert(assignmentGuards.every(row=>row.unchanged&&row.full&&!row.shortcut&&row.guarded),`named assignments preserve declined, suppressed, failed and qualified reads (${JSON.stringify(assignmentGuards)})`);
+    const preferenceGuards=await page.evaluate(async()=>{
+      const runs=[];
+      for(const text of ['Do not prioritize Home location','Prioritize Home Annex location','Prefer Home or Work']){
+        pickerTest.seed();const s=pickerTest.open();await assistantFocusTurn(s,text,pickerTest.options());
+        runs.push(!s.changes.length&&!assistantFocusCanSave(s));
+      }
+      pickerTest.seed();const s=pickerTest.open(),settings=loadSortSettings();
+      saveSortSettings({...settings,locations:settings.locations.concat([{id:'high-park',name:'High Park',lat:40,lng:-74},{id:'sand',name:'Sand and Sea',lat:40,lng:-74}])});
+      const def=assistantFieldCatalog().find(d=>d.id==='locationPrefs');
+      const park=assistantFieldNormalize(def,'Prefer High Park',s),sand=assistantFieldNormalize(def,'Avoid Sand and Sea',s);
+      const unknown=assistantFieldNormalize(def,'Give Moonbase a low location preference',s);
+      return runs.every(Boolean)&&park.changes[0].value['high-park']==='high'&&sand.changes[0].value.sand==='avoid'&&!unknown.ok&&unknown.preferenceLevel==='little';
+    });
+    assert(preferenceGuards,'preferences respect negation, complete names, alternatives, meaningful name words and requested ranking');
     const ambiguous=await page.evaluate(async()=>{
       pickerTest.seed();const s=pickerTest.open();await assistantFocusTurn(s,'Only at Home and LocationC',pickerTest.options());
       const q=s.unresolved.find(row=>row.field==='places'),picker=assistantFocusQuestionPicker(s,q);
@@ -199,6 +217,59 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
     }),'the follow-up button keeps the requested place and stages its permission without inference or a write');
     await summary.locator('[data-focus-save]').click();
     assert(await page.evaluate(()=>load()[0].locationIds.join()==='a'&&!load()[0].anywhereAllowed),'the reviewed follow-up saves its place and Anywhere answer together');
+    // Large catalogs are searched locally; filtering must not drop selections.
+    await page.evaluate(()=>{
+      pickerTest.seed();hideActionToast();
+      const settings=loadSortSettings();
+      saveSortSettings({...settings,locations:settings.locations.concat(Array.from({length:24},(_,i)=>({id:`saved-${i}`,name:`Saved place ${i}`,lat:40,lng:-74}))),
+        topics:settings.topics.concat(Array.from({length:24},(_,i)=>`Topic ${i}`)),
+        weatherProfiles:Array.from({length:12},(_,i)=>({id:`profile-${i}`,name:`Profile ${i}`,rules:[]}))});
+      save([{...load()[0],locationPrefs:{home:'high'}}]);
+      openDetail(0);scrollDetailToNav('summary','auto');
+      const s=pickerTest.open();detailSummary.session=s;
+      assistantFocusUnresolve(s,{field:'locationPrefs',family:'places',question:'Which places should I avoid?',preferenceLevel:'avoid'});
+      detailSummaryShowProposal();window.summaryBefore=JSON.stringify(load());
+    });
+    const prefs=summary.locator('[data-focus-picker="locationPrefs"]');
+    const search=prefs.locator('[data-focus-filter]');
+    assert(await prefs.locator('[data-focus-option]').count()===30&&await prefs.locator('[data-focus-preference]').inputValue()==='avoid','place preferences have saved choices and retain the requested ranking');
+    await search.fill('Work');await prefs.locator('[data-focus-option="work"]').click();
+    await search.fill('Saved place 23');await prefs.locator('[data-focus-option="saved-23"]').click();
+    assert(await prefs.locator('[data-focus-option]:visible').count()===1&&await prefs.locator('[data-focus-pick]').textContent()==='Use 2 selected','search narrows a large catalog while retaining hidden selections');
+    await search.fill('no such place');
+    assert(await prefs.locator('[data-focus-empty]').isVisible(),'an empty search explains how to recover');
+    await search.fill('');
+    assert(await prefs.locator('[data-focus-option]:visible').count()===30,'clearing search restores every saved choice');
+    await prefs.locator('[data-focus-preference]').selectOption('little');
+    await prefs.locator('[data-focus-pick]').scrollIntoViewIfNeeded();
+    await page.screenshot({path:'test-results/assistant-preferences-search-mobile.png'});
+    await prefs.locator('[data-focus-pick]').click();
+    assert(await page.evaluate(()=>{
+      const s=detailSummary.session,r=assistantFocusMaterialize(s);
+      return JSON.stringify(r.locationPrefs)===JSON.stringify({home:'high',work:'little','saved-23':'little'})
+        &&r.anywhereAllowed&&assistantFocusCanSave(s)&&JSON.stringify(load())===summaryBefore&&!(s.trace||[]).length;
+    }),'preference choices preserve other rankings and Anywhere, use no inference, and wait for Save');
+    await summary.locator('[data-focus-save]').click();
+    assert(await page.evaluate(()=>load()[0].locationPrefs.work==='little'&&load()[0].locationPrefs.home==='high'),'Summary saves the chosen preference');
+    for(const field of ['topics','weatherLocationId']){
+      await page.evaluate(field=>{
+        assistantOpenForItem('target','detail');const s=_assistantSession.focus;
+        assistantFocusUnresolve(s,{field,question:'Choose a saved value'});assistantShowFocusReview(s);
+      },field);
+      const picker=page.locator(`#assistant-thread [data-focus-picker="${field}"]`);
+      await picker.locator('[data-focus-filter]').fill(field==='topics'?'Topic 17':'Saved place 23');
+      const visible=await picker.locator('[data-focus-option]:visible').count();
+      assert(visible===1,`${field}: saved choices share the searchable picker in the assistant sheet (${visible}; ${JSON.stringify(await picker.locator('[data-focus-option]').evaluateAll(chips=>chips.slice(-3).map(chip=>({text:chip.textContent,hidden:chip.hidden}))))})`);
+    }
+    await page.evaluate(()=>{
+      assistantOpenForItem('target','detail');const s=_assistantSession.focus;
+      assistantFocusUnresolve(s,{field:'weatherProfile',question:'Choose a profile'});assistantShowFocusReview(s);
+    });
+    const profiles=page.locator('#assistant-thread [data-focus-picker="weatherProfile"]');
+    assert(await profiles.locator('[data-focus-option]').count()===8&&await profiles.locator('[data-focus-filter]').count()===0,'the small weather profile catalog uses direct choices');
+    await profiles.locator('[data-focus-option="profile-7"]').click();
+    assert(await page.evaluate(()=>assistantFocusMaterialize(_assistantSession.focus).weatherProfileId==='profile-7'),'a profile choice stages its saved ID locally');
+    assert(!errors.length,`no browser errors (${errors.join('; ')})`);
     console.log(`\n${passed} passed`);
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

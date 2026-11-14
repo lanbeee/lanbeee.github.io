@@ -1861,7 +1861,7 @@ function assistantDiscardPending(){
 }
 
 function assistantRetireFocusControls(keepFields = false){
-  const selector = '[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-picker] button' + (keepFields ? '' : ',[data-focus-field]');
+  const selector = '[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-picker] button,[data-focus-picker] input,[data-focus-picker] select' + (keepFields ? '' : ',[data-focus-field]');
   assistantThreadEl()?.querySelectorAll(selector).forEach(button => {
     button.disabled = true;
   });
@@ -1909,7 +1909,7 @@ async function assistantHandleFocusClick(target){
   const picked = assistantFocusPickerClick(target);
   if(picked){
     if(!picked.values)return true;
-    const result = assistantFocusPickValues(session, picked.field, picked.values);
+    const result = assistantFocusPickValues(session, picked.field, picked.values, picked.preferenceLevel);
     if(result.ok){assistantShowFocusReview(session);assistantRenderGuides();}
     else {
       const status = target.closest('[data-focus-review]')?.querySelector('[data-focus-status]');
@@ -2159,6 +2159,7 @@ function bindAssistantUi(){
       sendAssistantMessage(assistantComposerDraft());
     }
   });
+  $('assistant-thread')?.addEventListener('input',e=>assistantFocusPickerFilter(e.target));
   $('assistant-thread')?.addEventListener('click', e => {
     if(e.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field],[data-focus-pick],[data-focus-option]')){
       e.preventDefault();

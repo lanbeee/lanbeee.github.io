@@ -6,6 +6,12 @@ const {chromium,BASE,baseHabit,waitForAssistant}=require('./helpers/planner-test
 const live=Boolean(process.env.NEEDLE_MODEL_PATH&&process.env.NEEDLE_WASM_PATH);
 const results=[];
 const cases=[
+  ...['Prioritize home location','Prioritise Home','Favor Home','Prefer Hmoe','Make Home the preferred location','Set the preferred location to Home'].map(prompt=>({prompt,preferences:true,expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'high'},preferredLocationId:'home'},bounded:true})),
+  {prompt:'Avoid Home',preferences:true,expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'avoid'}},bounded:true},
+  {prompt:'Deprioritize Home',preferences:true,expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'little'}},bounded:true},
+  {prompt:'Prefer Home and LocationA',preferences:true,expected:{locationIds:['work','home','a'],locationPrefs:{work:'little',home:'high',a:'high'},preferredLocationId:'home'},bounded:true},
+  {prompt:'Prioritize Home location and make it 20 minutes',preferences:true,expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'high'},preferredLocationId:'home',durationMinutes:20},bounded:true},
+  {prompt:'Avoid Home Annex location',preferences:true,pick:['home'],pickField:'locationPrefs',expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'avoid'}}},
   {prompt:'Change the location to home',kind:'task',expected:{locationIds:['home'],anywhereAllowed:false},anywhere:'no',bounded:true},
   {prompt:'Change the location to home',expected:{locationIds:['home'],anywhereAllowed:true},anywhere:'yes',bounded:true},
   {prompt:'Please update its location to Home',restricted:true,expected:{locationIds:['home']},bounded:true},
@@ -49,7 +55,7 @@ const cases=[
           {id:'home',name:'Home',lat:40,lng:-74},{id:'work',name:'Work',lat:41,lng:-74},
           {id:'a',name:'LocationA',lat:40,lng:-74},{id:'b',name:'LocationB',lat:41,lng:-74}
         ],topics:['Health','Work'],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
-        save([{...fixture,hid:'target',type:test.kind==='task'?'task':'keepup',anywhereAllowed:!test.restricted,locationIds:['work'],topics:['Work']},
+        save([{...fixture,hid:'target',type:test.kind==='task'?'task':'keepup',anywhereAllowed:!test.restricted,locationIds:['work'],locationPrefs:test.preferences?{work:'little'}:{},topics:['Work']},
           {...fixture,hid:'other',name:'Other item',durationMinutes:45}]);
         openDetail(0);
       },{fixture:baseHabit({name:'Reading',logs:[{ts:1}],priority:1,preferredWeekdays:[2],minGapMinutes:10}),test});
@@ -68,11 +74,13 @@ const cases=[
       assert.deepEqual(await page.evaluate(()=>load()),before,'reading must not write');
       const proposal=page.locator('[data-detail-proposal]:not(.is-retired)');
       if(test.pick){
+        const field=test.pickField||'places';
         assert.equal(initial.changes.length,0,'unknown names cannot silently pick Home');
-        assert(initial.questions.some(q=>q.field==='places'),'unknown or tied name asks for the place');
-        assert(!initial.questions.find(q=>q.field==='places').question.includes(test.prompt),'question refers to the unmatched name, not the whole instruction');
+        assert(initial.questions.some(q=>q.field===field),'unknown or tied name asks for the correct place setting');
+        assert(!initial.questions.find(q=>q.field===field).question.includes(test.prompt),'question refers to the unmatched name, not the whole instruction');
         assert(!initial.questions.some(q=>q.placeFollowup),'place selection precedes Anywhere');
-        assert.equal(await proposal.locator('[data-focus-picker="places"] [data-focus-option]').count(),4,'all saved places are selectable');
+        assert.equal(await proposal.locator(`[data-focus-picker="${field}"] [data-focus-option]`).count(),4,'all saved places are selectable');
+        if(field==='locationPrefs')assert.equal(await proposal.locator('[data-focus-preference]').inputValue(),'avoid','unknown place retains the requested preference');
         for(const id of test.pick)await proposal.locator(`[data-focus-option="${id}"]`).click();
         await proposal.locator('[data-focus-pick]').click();
       }

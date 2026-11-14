@@ -185,6 +185,9 @@ body[data-pane-count="3"] .assistant-sheet{
   cursor:pointer;touch-action:manipulation;transition:background-color .12s,border-color .12s,color .12s;
 }
 .focus-pick-chip.is-near{border-color:var(--teal-icon);}
+.focus-pick-chip[hidden]{display:none;}
+.focus-picker input,.focus-preference select{width:100%;min-height:44px;box-sizing:border-box;font:inherit;font-size:16px;}
+.focus-preference{display:grid;gap:4px;font-size:13px;}
 .focus-pick-chip > i{display:none;font-size:14px;}
 .focus-pick-chip[aria-pressed="true"]{background:var(--teal-bg);border-color:var(--teal-icon);color:var(--teal-text);padding-left:10px;}
 .focus-pick-chip[aria-pressed="true"] > i{display:inline;}
