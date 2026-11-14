@@ -26,7 +26,7 @@ const live = Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PA
       await page.waitForFunction(()=>detailSummaryOnScreen());
     };
     await open('gym');
-    assert.match(await page.locator('#detail-summary').innerText(),/Download Needle 3/);
+    assert.match(await page.locator('#detail-summary').innerText(),/Download the assistant/);
     if(live){await page.evaluate(()=>assistantNeedleDownload());await page.waitForFunction(()=>assistantNeedleCanSend());}
     else await page.evaluate(()=>{
       assistantNeedleCanSend=()=>true;

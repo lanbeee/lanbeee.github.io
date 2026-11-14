@@ -90,7 +90,7 @@ function expectedDueKey(token){
   });
   assert(!owner.replica && !owner.displayMode, 'no replica enrollment on a fresh local app');
   assert(owner.hidden === false && owner.bodyClass, 'chat button shows on the regular app');
-  assert(/Needle 3/i.test(owner.hint), 'settings copy names the local model');
+  assert(/on-device assistant/i.test(owner.hint), 'settings copy names the on-device assistant');
   assert(owner.guide && owner.guideSteps === 6 && owner.copyBtn, 'settings has a six-step reach guide with copy');
 
   console.log('\n[parse] utterance corpus (' + ASSISTANT_PARSE_CASES.length + ')');

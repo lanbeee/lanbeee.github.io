@@ -279,7 +279,7 @@ function syncDetailSearchAssistant(h){
   $('detail-search-input').setAttribute('aria-label',label);
   $('detail-search-toggle').querySelector('span').textContent = enabled ? 'find or change' : 'find in details';
   $('detail-search-ask').hidden = !enabled || !$('detail-search-input').value.trim();
-  $('detail-search-ask-label').textContent = sortSettings?.localAssistantProvider === 'needle' ? 'Ask Needle' : 'Ask assistant';
+  $('detail-search-ask-label').textContent = 'Ask assistant';
 }
 
 let detailAssistantOpening = false;

@@ -51,10 +51,10 @@ async function assistantNeedleCheckDownload(){
 }
 
 async function assistantNeedleVerify(asset, bytes){
-  if(bytes.byteLength !== asset.size)throw new Error('Needle download was incomplete. Try downloading again.');
+  if(bytes.byteLength !== asset.size)throw new Error('Assistant download was incomplete. Try downloading again.');
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   const sha = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2,'0')).join('');
-  if(sha !== asset.sha)throw new Error('Needle download could not be verified. Try downloading again.');
+  if(sha !== asset.sha)throw new Error('Assistant download could not be verified. Try downloading again.');
 }
 
 function assistantNeedleDownload(){
@@ -63,7 +63,7 @@ function assistantNeedleDownload(){
   _assistantNeedleDownloadAbort = controller;
   assistantNeedleState({phase:'downloading', progress:0, error:''});
   _assistantNeedleDownload = (async()=>{
-    if(!globalThis.caches || !crypto.subtle)throw new Error('Needle needs a secure page with device storage enabled.');
+    if(!globalThis.caches || !crypto.subtle)throw new Error('The assistant needs a secure page with device storage enabled.');
     const cache = await caches.open(ASSISTANT_NEEDLE_CACHE);
     const total = ASSISTANT_NEEDLE_ASSETS.reduce((n, a) => n + a.size, 0);
     let done = 0;
@@ -71,7 +71,7 @@ function assistantNeedleDownload(){
       const url = ASSISTANT_NEEDLE_BASE + asset.path;
       if(await cache.match(url)){ done += asset.size; continue; }
       const res = await fetch(url, {signal:controller.signal, credentials:'omit', cache:'no-store'});
-      if(!res.ok)throw new Error(`Needle download failed (${res.status}). Try again when online.`);
+      if(!res.ok)throw new Error(`Assistant download failed (${res.status}). Try again when online.`);
       const chunks = [];
       let size = 0;
       if(res.body){
@@ -81,7 +81,7 @@ function assistantNeedleDownload(){
             const {value, done:ended} = await reader.read();
             if(ended)break;
             size += value.byteLength;
-            if(size > asset.size)throw new Error('Needle download has an unexpected size.');
+            if(size > asset.size)throw new Error('Assistant download has an unexpected size.');
             chunks.push(value);
             assistantNeedleState({progress:Math.min(99, Math.round((done + size) / total * 100))});
           }
@@ -103,7 +103,7 @@ function assistantNeedleDownload(){
     const cancelled = err.name === 'AbortError';
     assistantNeedleState({phase:cancelled ? 'missing' : 'error', error:cancelled ? '' : (err.name === 'QuotaExceededError'
       ? 'Not enough device storage. Free some space and try again.'
-      : `Could not download Needle 3. ${err.message || 'Check your connection and try again.'}`)});
+      : `Could not download the assistant. ${err.message || 'Check your connection and try again.'}`)});
     return false;
   }).finally(()=>{
     _assistantNeedleDownload = null;
@@ -168,7 +168,7 @@ function assistantNeedleEnsureReady(){
   const generation = _assistantNeedleGeneration;
   const epoch = _assistantNeedlePrimaryEpoch;
   _assistantNeedleReady = (async()=>{
-    if(!(await assistantNeedleHasDownload()))throw new Error('Download Needle 3 first using the download button in the assistant or Settings.');
+    if(!(await assistantNeedleHasDownload()))throw new Error('Download the assistant first using the download button in Settings.');
     const cache = await caches.open(ASSISTANT_NEEDLE_CACHE);
     const buffers = [];
     for(const asset of ASSISTANT_NEEDLE_ASSETS){
@@ -244,11 +244,11 @@ function assistantNeedleEnsureLane(lane){
   if(lane.ready)return lane.ready;
   const epoch = lane.epoch, poolEpoch = _assistantNeedlePoolEpoch;
   lane.ready = (async()=>{
-    if(!await assistantNeedleHasDownload())throw new Error('Download Needle 3 first.');
+    if(!await assistantNeedleHasDownload())throw new Error('Download the assistant first.');
     const cache = await caches.open(ASSISTANT_NEEDLE_CACHE), buffers = [];
     for(const asset of ASSISTANT_NEEDLE_ASSETS){
       const response = await cache.match(ASSISTANT_NEEDLE_BASE + asset.path);
-      if(!response)throw new Error('Download Needle 3 first.');
+      if(!response)throw new Error('Download the assistant first.');
       const bytes = await response.arrayBuffer();
       await assistantNeedleVerify(asset, bytes);buffers.push(bytes);
     }
@@ -490,7 +490,7 @@ function assistantNeedleTurn(req){
       if(typeof parsed.request === 'string'){ envelope = parsed; break; }
     }catch(_){}
   }
-  if(!envelope)throw new Error('Needle could not read this request. Start a new chat and try again.');
+  if(!envelope)throw new Error('The assistant could not read this request. Start a new chat and try again.');
   const catalog = envelope.catalog || {};
   const draft=envelope.currentDraft;
   const recent=envelope.recent;
@@ -719,7 +719,7 @@ async function assistantNeedleComplete(req){
   const source = req.tools?.length ? req.tools : assistantOllamaTools(['draft_item','draft_setting','draft_batch','ask_user']);
   const tools = assistantNeedleEntryTools(assistantNeedleTools(source), turn.entryIntent, turn.selectedAction);
   let raw = await assistantNeedleRequest('complete', {...turn, tools});
-  if(raw.success === false || raw.type === 'error')throw new Error(raw.error || 'Needle could not complete this request.');
+  if(raw.success === false || raw.type === 'error')throw new Error(raw.error || 'The assistant could not complete this request.');
   raw=await assistantNeedleRepairBasicFields(raw,turn,tools);
   // Needle explicitly allows suppressed candidates to be offered for user
   // confirmation. Writes only stage previews on the first pass. Grounded

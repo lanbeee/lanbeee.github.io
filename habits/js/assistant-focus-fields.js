@@ -2771,7 +2771,7 @@ async function assistantFocusRunFieldTurn(session,text,opts){
     if(!handled&&!acted&&assistantFocusAsksQuestion(state.request)){
       session.unresolved=session.unresolved.filter(row=>row.field!=='request'&&!(row.phrase&&assistantFocusPhraseIn(state.request,row.phrase)));
       assistantFocusUnresolve(session,{field:'request',family:'request',notice:'question',openNav:'calendar',blocking:false,
-        question:`Needle can edit this item and log or plan it, but can’t answer questions. Open History to see your logs.`});
+        question:`The assistant can edit this item and log or plan it, but can’t answer questions. Open History to see your logs.`});
     }
     if(!handled&&!acted&&!session.unresolved.length)assistantFocusUnresolve(session,{field:'request',family:'request',question:'Which setting should change?'});
   }catch(error){

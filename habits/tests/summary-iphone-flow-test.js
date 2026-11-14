@@ -49,7 +49,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       ...Array.from({length:18},(_,i)=>({...h,type:'zero',hid:`background-${i}`,name:`Background ${i}`}))]);render();},baseHabit({hid:'gym',name:'Gym workout',durationMinutes:60,priority:1,allowedWeekdays:[1,3,5],allowedTimeStart:1020,allowedTimeEnd:1260,minGapMinutes:20}));
     await page.locator('#list .ting-name').filter({hasText:'Gym workout'}).first().tap();
     await page.waitForFunction(()=>detailSummaryOnScreen());
-    assert.match(await page.locator('#detail-summary').innerText(),/Download Needle 3/);
+    assert.match(await page.locator('#detail-summary').innerText(),/Download the assistant/);
     if(live){
       await page.locator('#detail-summary-setup [data-needle-download]').tap();
       await page.waitForFunction(()=>assistantNeedleCanSend(),null,{timeout:180000});

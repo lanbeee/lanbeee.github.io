@@ -164,7 +164,7 @@ function assert(ok, message){
       globalThis.Worker = class {
         constructor(){this.index = created++;}
         postMessage(data){queueMicrotask(()=>this.onmessage({data:{id:data.id,
-          ...(data.type==='load' && this.index ? {error:'Not enough memory to load Needle 3.'}
+          ...(data.type==='load' && this.index ? {error:'Not enough memory to load the assistant.'}
             : {result:data.type==='load' ? true : {nonce:data.nonce}})}}));}
         terminate(){}
       };

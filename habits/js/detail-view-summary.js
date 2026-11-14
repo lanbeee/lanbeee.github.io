@@ -62,7 +62,7 @@ function renderDetailSummaryOverview(held = null,items = null){
   const parts = [row([...summary.essentials,...summary.custom],'Item settings')];
   const hint = !detailSummaryAskReady() ? 'Tap a setting to edit.'
     : detailSummaryCanSend() ? 'Tap a setting or describe a change.'
-    : 'Download Needle 3 to describe changes.';
+    : 'Download the assistant to describe changes.';
   parts.push(`<p class="focus-note">${hint}</p>`);
   host.innerHTML = parts.join('');
 }
@@ -309,9 +309,9 @@ function syncDetailSummaryDock(){
   const dirty = inner.classList.contains('tune-dirty');
   const canSend = detailSummaryCanSend();
   input.disabled = detailSummary.busy || dirty;
-  input.placeholder = detailSummary.busy ? 'Needle is reading…'
+  input.placeholder = detailSummary.busy ? 'Assistant is reading…'
     : dirty ? 'Save or cancel first'
-    : !canSend ? 'Download Needle 3 first'
+    : !canSend ? 'Download the assistant first'
     : detailSummaryTagName() ? 'Type the new value'
     : 'Describe a change';
   $('detail-ask-tag-remove').disabled = input.disabled;
@@ -479,7 +479,7 @@ async function detailSummaryRead(session,text,opts){
   }catch(error){
     if(turn !== detailSummary.turn || error?.name === 'AbortError')return;
     detailSummaryShowProposal();
-    detailSummaryBubble('say',error?.message || 'Needle could not read that.');
+    detailSummaryBubble('say',error?.message || 'The assistant could not read that.');
   }finally{
     if(turn === detailSummary.turn)detailSummarySetBusy(false);
   }
@@ -494,7 +494,7 @@ async function detailSummarySend(text){
   }
   if(!detailSummaryCanSend()){
     detailSummaryComposer(value);
-    showToast('Download Needle 3 to ask for changes');
+    showToast('Download the assistant to ask for changes');
     return false;
   }
   const session = detailSummaryEnsureSession();

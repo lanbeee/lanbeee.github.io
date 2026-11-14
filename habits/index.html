@@ -325,9 +325,9 @@
       </div>
       <div class="assistant-needle-panel" data-needle-panel hidden>
         <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
-        <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+        <progress max="100" value="0" aria-label="assistant download" hidden></progress>
         <div class="btn-row">
-          <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+          <button type="button" class="btn primary" data-needle-download>download assistant</button>
           <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
         </div>
       </div>
@@ -407,7 +407,7 @@
       <div id="detail-search-panel" class="detail-search-panel" hidden>
         <button type="button" id="detail-search-ask" class="detail-search-assistant" hidden>
           <i class="ti ti-sparkles" aria-hidden="true"></i>
-          <span><b id="detail-search-ask-label">Ask Needle</b><small>Review before saving</small></span>
+          <span><b id="detail-search-ask-label">Ask assistant</b><small>Review before saving</small></span>
           <i class="ti ti-arrow-up-right" aria-hidden="true"></i>
         </button>
         <p id="detail-search-status" class="field-hint" role="status" aria-live="polite"></p>
@@ -419,16 +419,16 @@
           <div id="detail-summary-setup" hidden>
             <div class="assistant-needle-panel" data-needle-panel hidden>
               <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
-              <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+              <progress max="100" value="0" aria-label="assistant download" hidden></progress>
               <div class="btn-row">
-                <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+                <button type="button" class="btn primary" data-needle-download>download assistant</button>
                 <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
               </div>
             </div>
           </div>
           <div class="detail-summary-chat" id="detail-summary-chat" hidden>
             <div class="detail-summary-chat-head">
-              <span class="settings-sublabel">Needle</span>
+              <span class="settings-sublabel">assistant</span>
               <div class="detail-summary-chat-actions">
                 <button type="button" class="mini-text-btn" id="detail-summary-feedback" hidden aria-label="Send feedback about this conversation">feedback</button>
                 <button type="button" class="mini-text-btn" id="detail-summary-clear">clear</button>
@@ -875,14 +875,14 @@
             </div>
           </div>
           <div class="detail-ask" id="detail-ask" hidden>
-            <label class="sr-only" for="detail-ask-input">Describe a change for Needle</label>
+            <label class="sr-only" for="detail-ask-input">Describe a change for the assistant</label>
             <i class="ti ti-sparkles detail-ask-mark" aria-hidden="true"></i>
             <span class="assistant-mention detail-ask-tag" id="detail-ask-tag" hidden>
               <span class="assistant-mention-label" id="detail-ask-tag-label"></span>
               <button type="button" class="assistant-mention-remove" id="detail-ask-tag-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
             </span>
             <textarea id="detail-ask-input" rows="1" maxlength="12000" placeholder="Describe a change" autocomplete="off" enterkeyhint="send"></textarea>
-            <button type="button" id="detail-ask-send" class="detail-ask-send" aria-label="send to Needle" disabled><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
+            <button type="button" id="detail-ask-send" class="detail-ask-send" aria-label="send to assistant" disabled><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
@@ -1543,12 +1543,12 @@
               <button class="setting-toggle setting-switch" type="button" id="setting-local-assistant" aria-pressed="false">
                 <span>
                   <b>use Tings Assistant</b>
-                  <small>Use Needle 3 on this device to chat and review changes.</small>
+                  <small>Use the on-device assistant to chat and review changes.</small>
                 </span>
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
               <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-local-assistant-help" aria-label="about the local assistant" aria-expanded="false" aria-controls="settings-local-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Download Needle 3 once to use the assistant on this device, including offline. No account or server is needed. Downloads start only when you choose download. Your requests stay on this device and changes wait for your confirmation. Off by default. You can also use your existing Ollama or LM Studio server.</p><p>Every request is interpreted by the local model. Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
+              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Download the assistant once to use it on this device, including offline. No account or server is needed. Downloads start only when you choose download. Your requests stay on this device and changes wait for your confirmation. Off by default. You can also use your existing Ollama or LM Studio server.</p><p>Every request is interpreted by the local model, Needle 3 (Apache License 2.0). Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
             </div>
             <details class="settings-disclosure" id="assistant-setup-guide">
               <summary>setup instructions</summary>
@@ -1572,20 +1572,20 @@
             <div id="assistant-setup-fields" hidden>
               <span class="settings-sublabel">model source</span>
               <div class="seg compact-seg" id="assistant-provider-seg" role="group" aria-label="assistant model source">
-                <button type="button" class="seg-opt on" data-assistant-provider="needle">Needle 3</button>
+                <button type="button" class="seg-opt on" data-assistant-provider="needle">assistant</button>
                 <button type="button" class="seg-opt" data-assistant-provider="auto">auto server</button>
                 <button type="button" class="seg-opt" data-assistant-provider="ollama">Ollama</button>
                 <button type="button" class="seg-opt" data-assistant-provider="lmstudio">LM Studio / API</button>
               </div>
               <div class="assistant-needle-panel" data-needle-panel hidden>
                 <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
-                <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+                <progress max="100" value="0" aria-label="assistant download" hidden></progress>
                 <div class="btn-row" style="flex-wrap:wrap">
-                  <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+                  <button type="button" class="btn primary" data-needle-download>download assistant</button>
                   <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
                   <button type="button" class="btn" data-needle-remove hidden>remove download</button>
                 </div>
-                <p class="field-hint">Saved in this browser or app. If device storage is cleared, you can download again. Needle works best with short requests; complex requests may need a larger model.</p>
+                <p class="field-hint">Saved in this browser or app. If device storage is cleared, you can download again. The assistant works best with short requests; complex requests may need a larger model.</p>
               </div>
               <div id="assistant-server-fields" hidden>
               <div data-settings-help-title="address" data-settings-help-for="assistant-url" data-settings-help-id="settings-assistant-address-help">
