@@ -467,17 +467,20 @@ function updateKeyboardLift(){
   const style = document.documentElement.style;
   // Safari can pan the visual viewport as well as shrink it for the IME.
   // Keep the whole assistant in that visible rectangle, including its header.
+  // These root-level custom properties inherit into every element, so each
+  // set/remove invalidates style document-wide. Rest them at the CSS fallback
+  // value (0px) behind guarded writes so repeated sheet opens stay clean.
   if(assistantOpen && !paneTierActive()){
     const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
-    style.setProperty('--assistant-viewport-top', `${top}px`);
-  }else style.removeProperty('--assistant-viewport-top');
+    if(style.getPropertyValue('--assistant-viewport-top') !== `${top}px`)style.setProperty('--assistant-viewport-top', `${top}px`);
+  }else if(style.getPropertyValue('--assistant-viewport-top') !== '0px')style.setProperty('--assistant-viewport-top','0px');
   // Detail's composer uses the same visible rectangle. Safari pans the
   // viewport to reveal a focused dock; anchoring only its bottom loses the
   // item header above the visible screen.
   if(detailOpen && !paneTierActive()){
     const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
-    style.setProperty('--detail-viewport-top',`${top}px`);
-  }else style.removeProperty('--detail-viewport-top');
+    if(style.getPropertyValue('--detail-viewport-top') !== `${top}px`)style.setProperty('--detail-viewport-top',`${top}px`);
+  }else if(style.getPropertyValue('--detail-viewport-top') !== '0px')style.setProperty('--detail-viewport-top','0px');
   // SystemBars clears the bottom safe inset after the WebView resize. The
   // keyboard already covers it in that intervening frame, so omit it now.
   if(nativeResized){

@@ -171,9 +171,11 @@ function detailTuneChanged(current, original){
   return Object.keys(current).some(key => detailTuneValue(current[key]) !== detailTuneValue(original[key]));
 }
 
-function setDetailDirty(force){
+function setDetailDirty(force,h){
   const sheet = getSheetInner('detail-sheet');
-  const h=detailIdx==null ? detailUnsavedCreate : load()[detailIdx],local=isLocalAppointment(h);
+  // Paint passes already hold the opened record; only late handlers pay a read.
+  h = h || (detailIdx==null ? detailUnsavedCreate : load()[detailIdx]);
+  const local=isLocalAppointment(h);
   if(isDeviceCalendarTask(h)){force=deviceCalendarDetailDirty(h);}
   const dirty = force ?? (detailUnsavedCreate || local ? true : (detailTuneOriginal && detailTuneChanged(currentDetailTune(), detailTuneOriginal)));
   sheet.classList.toggle('tune-dirty',Boolean(dirty));

@@ -90,6 +90,14 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         await page.goto(BASE);
         await page.locator('#launch-screen').waitFor({state:'hidden'});
         await page.locator('#list .ting-name').filter({hasText:'Walk'}).first().tap();
+        // A tap landing inside a boot-time list re-render hits a detached
+        // card and is swallowed; the card opens detail on a real tap.
+        try{
+          await page.locator('#detail-sheet.open').waitFor({timeout:3000});
+        }catch(e){
+          await page.locator('#list .ting-name').filter({hasText:'Walk'}).first().tap();
+          await page.locator('#detail-sheet.open').waitFor({timeout:10000});
+        }
         await page.locator('#detail-summary [data-summary-field]').first().waitFor();
         // Reproduce swipes starting on the actual headings and labels, rather
         // than searching only for a blank patch between controls.

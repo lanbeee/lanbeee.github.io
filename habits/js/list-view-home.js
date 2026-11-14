@@ -195,9 +195,26 @@ function addTagSearch(row,kind,containerId,value = '',expanded = false){
 }
 
 // Location pref cycle: off → on → little → high → avoid → off
+// Detail paints ask for the same chip rows several times per open (schedule
+// places, conditions, minimal layout). A matching signature skips the DOM
+// rebuild and its forced scroll reads for unchanged inputs; the previous
+// render already left exactly that markup in place.
+const renderTagChipsSigs = new WeakMap();
 function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],preferredLocId = null,locationPrefs = null,anywhereAllowed = null){
   const wrap = $(containerId);
   if(!wrap)return;
+  const signature = JSON.stringify([
+    selectedTopics,selectedLocIds,preferredLocId,locationPrefs,anywhereAllowed,
+    wrap.dataset.anywhereAllowed,wrap.dataset.locationChoiceMode,wrap.dataset.tagContent,
+    selectedType,$('ting-repeat-mode')?.value || '',
+    // The condition trigger rewrites chips after render (ranking marks, the
+    // anywhere chip), so its state is part of the visible result.
+    String(isLocationConditionControl(wrap)),
+    topicOptions().join('\u0002'),
+    locationOptions().map(loc=>`${loc.id}\u0001${loc.name}`).join('\u0002')
+  ]);
+  if(renderTagChipsSigs.get(wrap) === signature)return;
+  renderTagChipsSigs.set(wrap,signature);
   const placeQuery = wrap.querySelector('.tag-row-places .tag-search')?.value || '';
   const topicQuery = wrap.querySelector('.tag-row-topics .tag-search')?.value || '';
   const placesExpanded = wrap.querySelector('.tag-row-places')?.classList.contains('is-expanded') || false;
@@ -311,8 +328,10 @@ function renderTagChips(containerId,selectedTopics = [],selectedLocIds = [],pref
   if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip(containerId);
   filterTagChoices(locRow);
   filterTagChoices(topicRow);
-  if(!placesExpanded)locRow.scrollLeft = placeScroll;
-  if(!topicsExpanded)topicRow.scrollLeft = topicScroll;
+  // Fresh rows already rest at 0; only a kept scroll position needs writing
+  // (each scrollLeft write forces a layout pass).
+  if(!placesExpanded && placeScroll)locRow.scrollLeft = placeScroll;
+  if(!topicsExpanded && topicScroll)topicRow.scrollLeft = topicScroll;
   if(restoreSearch)wrap.querySelector(`${restoreSearch} .tag-search`)?.focus({preventScroll:true});
 }
 
@@ -1256,6 +1275,9 @@ function toggleTopicChip(e){
   if(!btn)return;
   btn.classList.toggle('on');
   btn.setAttribute('aria-pressed',String(btn.classList.contains('on')));
+  // This edit changes the DOM directly. A later Cancel or item open must
+  // repaint saved selections even when its render inputs match the cache.
+  renderTagChipsSigs.delete(btn.closest('.topic-chip-row'));
   const row = btn.closest('.tag-row');
   if(row)filterTagChoices(row);
   if(btn.closest('#detail-topic-chips'))setDetailDirty();

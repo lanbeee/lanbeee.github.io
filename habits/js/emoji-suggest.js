@@ -1008,7 +1008,9 @@ function setupDetailMarkMenu(){
       const el = document.getElementById('detail-emoji');
       _detailEmojiAtOpen = el ? el.value.trim() : '';
       const picker = _emojiPickers.get('detail-emoji');
-      if(picker){picker.search.value = '';refreshEmojiPicker(picker);}
+      // Rebuilding the grid on every item switch costs layout passes for a
+      // picker that is usually folded away; opening it refreshes anyway.
+      if(picker && $('detail-appearance-disclosure')?.open){picker.search.value = '';refreshEmojiPicker(picker);}
       updateEmojiPreview();
       const mark = document.getElementById('detail-mark');
       const h = typeof load === 'function' ? load()[i] : null;

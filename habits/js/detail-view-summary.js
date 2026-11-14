@@ -39,10 +39,10 @@ function detailSummaryPill(chip,session){
   return `<button type="button" class="assistant-chip focus-field" data-summary-field="${escapeHtml(chip.id)}" aria-label="${escapeHtml(`Open ${label || 'setting'}: ${value}`)}">${body}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`;
 }
 
-function renderDetailSummaryOverview(){
+function renderDetailSummaryOverview(held = null,items = null){
   const host = $('detail-summary');
   if(!host)return;
-  const item = detailSummaryRecord();
+  const item = held || detailSummaryRecord();
   if(!item){host.replaceChildren();return;}
   if(typeof assistantFocusItemSummary !== 'function'){
     host.innerHTML = '<p class="focus-note">Loading summary…</p>';
@@ -56,7 +56,8 @@ function renderDetailSummaryOverview(){
     }
     return;
   }
-  const summary = assistantFocusItemSummary(item);
+  // The paint's saved list feeds name lookups without another load().
+  const summary = assistantFocusItemSummary(item,items ? {items} : null);
   const row = (chips,label)=>`<div class="assistant-chip-row" role="group" aria-label="${label}">${chips.map(chip=>detailSummaryPill(chip,summary.session)).join('')}</div>`;
   const parts = [row([...summary.essentials,...summary.custom],'Item settings')];
   const hint = !detailSummaryAskReady() ? 'Tap a setting to edit.'
@@ -202,13 +203,19 @@ function detailSummaryReset(hid = null,preserve = false){
   detailSummaryThread()?.replaceChildren();
   if($('detail-summary-chat'))$('detail-summary-chat').hidden = true;
   const input = $('detail-ask-input');
-  if(input){input.value = '';detailSummarySetTag('');detailSummaryResizeComposer();}
+  if(input){
+    const hadDraft = input.value || detailSummaryTagName();
+    input.value = '';detailSummarySetTag('');
+    // An already-empty composer keeps its resting height; re-measuring it
+    // costs a sheet layout pass on every item switch.
+    if(hadDraft || !input.style.height)detailSummaryResizeComposer();
+  }
 }
 
 // Called on every detail paint. A new item starts over; the same item keeps
 // its conversation, and an idle session rebuilds from the saved record.
-function renderDetailSummary(){
-  const item = detailSummaryRecord();
+function renderDetailSummary(held = null,items = null){
+  const item = held || detailSummaryRecord();
   const hid = item?.hid || null;
   if(detailIdx === null || hid !== detailSummary.hid){
     detailSummaryReset(hid,true);
@@ -229,7 +236,7 @@ function renderDetailSummary(){
     }
   }
   else if(detailSummary.session && !detailSummary.busy && !detailSummaryHasWork())detailSummary.session = null;
-  renderDetailSummaryOverview();
+  renderDetailSummaryOverview(item,items);
   syncDetailSummaryDock();
 }
 

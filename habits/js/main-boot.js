@@ -698,7 +698,9 @@ function syncRhythm(prefix,value){
   field.value = days;
   if(timesField)timesField.value = times;
   if(prefix === 'ting')syncAddRhythmUi();
-  if(prefix === 'detail')syncDetailRepeatModeUi(currentDetailTune().type);
+  // Only the selected kind feeds the repeat-mode UI; the full draft read can
+  // stay out of every detail paint.
+  if(prefix === 'detail')syncDetailRepeatModeUi(detailTuneType());
   const label = $(`${prefix}-days-label`);
   if(label)label.textContent = formatRhythmLabel(targetFromRhythmParts(times,days));
   const crown = $(`${prefix}-days-slider`);

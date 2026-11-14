@@ -131,7 +131,9 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
   }, { morning: at(0, 0), scheduledTs: at(10, 45) });
   await page.reload({ waitUntil: 'networkidle' });
 
-  // (A) Issue 2 — exactly one scheduled pill on the timed-task card.
+  // (A) Issue 2 — exactly one scheduled pill on the timed-task card. The pill
+  // lands with the agenda render pass, which can finish after networkidle.
+  await page.waitForSelector('.ting-card:has-text("Timed task 1045") .context-pill.scheduled', { timeout: 10000 }).catch(() => {});
   const timedPills = await page.locator('.ting-card:has-text("Timed task 1045") .context-pill.scheduled').count();
   if (timedPills !== 1) throw new Error(`timed task card should show 1 scheduled pill, saw ${timedPills}`);
   const timedPillText = await page.locator('.ting-card:has-text("Timed task 1045") .context-pill.scheduled').first().textContent();

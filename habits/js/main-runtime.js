@@ -152,7 +152,7 @@ function habitTimerEligible(h){
 }
 
 // RENDER: detail Effort timer button + countdown from habitTimer
-function syncDetailTimerUi(){
+function syncDetailTimerUi(hArg){
   const btn = $('detail-timer-toggle');
   const display = $('detail-timer-display');
   if(!btn && !display)return;
@@ -165,7 +165,7 @@ function syncDetailTimerUi(){
     if(display)display.hidden = false;
     return;
   }
-  const h = detailIdx != null && typeof load === 'function' ? load()[detailIdx] : null;
+  const h = hArg || (detailIdx != null && typeof load === 'function' ? load()[detailIdx] : null);
   const eligible = habitTimerEligible(h);
   if(btn){
     btn.textContent = 'start session';
