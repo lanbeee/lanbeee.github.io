@@ -53,7 +53,7 @@ function assistantFeedbackReport(out, context = {}){
   };
   const focus = context.focus || (typeof _assistantSession !== 'undefined' && _assistantSession && _assistantSession.focus) || null;
   if(focus)report.needle = assistantFeedbackFocusRecord(focus);
-  const transcript = assistantFeedbackTranscript();
+  const transcript = assistantFeedbackTranscript(context.thread);
   const spoken = transcript.filter(turn => turn.role === 'user').map(turn => turn.text);
   const extra = [];
   const remember = text => {
@@ -177,8 +177,7 @@ function assistantFeedbackFocusRecord(focus){
   };
 }
 
-function assistantFeedbackTranscript(){
-  const thread = document.getElementById('assistant-thread');
+function assistantFeedbackTranscript(thread = document.getElementById('assistant-thread')){
   if(!thread)return [];
   const turns = [];
   for(const bubble of thread.querySelectorAll('.assistant-bubble')){

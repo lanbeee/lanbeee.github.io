@@ -1,5 +1,6 @@
 // Search navigates settings. Its explicit assistant action opens a focused edit
-// in chat; typing alone never changes a setting or invokes the model.
+// (the Summary tab for Needle); typing alone never changes a setting or invokes
+// the model.
 const DETAIL_SEARCH_FIELDS = ITEM_DETAIL_SEARCH_FIELDS;
 
 function resetDetailDisclosures(h){
@@ -10,8 +11,6 @@ function resetDetailDisclosures(h){
     el.open = el.dataset.detailEssential === 'true';
   });
   const configured = {
-    'detail-availability-disclosure':Boolean(h.allowedWeekdays?.length || h.allowedMonthDays?.length || h.allowedOrdinalWeekdays?.length || h.locationIds?.length || h.allowedTimeStart != null || h.allowedTimeEnd != null || h.allowedTimeStartAnchor || h.allowedTimeEndAnchor),
-    'detail-weather-disclosure':Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId),
     'detail-options-disclosure':Boolean(h.scheduleOptions?.length),
     'detail-order-disclosure':Boolean(h.scheduleLinks?.length),
     'detail-links-disclosure':Boolean(h.links?.length),
@@ -182,7 +181,7 @@ function detailSearchEntries(){
     for(let p=target.closest('details');p;p=p.parentElement.closest('details')){
       sections.unshift(p.querySelector(':scope > summary')?.textContent.trim());
     }
-    const path = [DETAIL_PAGE_NAV[page.dataset.detailNav]?.label,...sections].filter(Boolean).join(' › ');
+    const path = [detailPageLabel(page.dataset.detailNav),...sections].filter(Boolean).join(' › ');
     const labelN = detailSearchNormalize(label);
     if(!labelN)return;
     if(entries.some(e=>e.target === target))return;
@@ -275,7 +274,8 @@ function syncDetailSearchAssistant(){
 }
 
 let detailAssistantOpening = false;
-async function openDetailAssistant(instruction = ''){
+// Needle edits in the Summary tab; other providers keep the chat sheet.
+async function openDetailAssistant(instruction = '',opts = {}){
   if(detailAssistantOpening || !detailAssistantAvailable())return false;
   const inner = getSheetInner('detail-sheet');
   if(inner?.classList.contains('tune-dirty')){
@@ -297,8 +297,14 @@ async function openDetailAssistant(instruction = ''){
     const visible = $('detail-sheet').classList.contains('open') || getPane()?.dataset.activeSheet === 'detail-sheet';
     if(!detailAssistantAvailable() || load()[detailIdx]?.hid !== item.hid
       || !visible || inner?.classList.contains('tune-dirty'))return false;
+    if(sortSettings.localAssistantProvider === 'needle'){
+      setDetailSearchOpen(false,false);
+      $('detail-search-input').value = '';
+      syncDetailSearchAssistant();
+      return detailSummaryStart(instruction,opts);
+    }
     if(typeof assistantOpenForItem !== 'function')return false;
-    const opened = await assistantOpenForItem(item.hid,'detail',{occurrenceDate:''});
+    const opened = await assistantOpenForItem(item.hid,'detail',{occurrenceDate:opts.occurrenceDate || ''});
     if(opened){
       setDetailSearchOpen(false,false);
       $('detail-search-input').value = '';
@@ -343,9 +349,8 @@ function setDetailSearchOpen(open,focus = true){
   const wasOpen = inner.classList.contains('detail-search-open');
   if(open && !wasOpen){
     const pager = inner.querySelector('.detail-pager');
-    const index = Math.round(pager.scrollLeft / Math.max(1,pager.clientWidth));
     const pages = visibleDetailPages(pager);
-    detailSearchReturnNav = pages[index]?.dataset.detailNav;
+    detailSearchReturnNav = detailCurrentNav();
     detailSearchReturnScroll = [pager,...pages].map(page=>({page,top:page.scrollTop}));
   }
   inner.classList.toggle('detail-search-open',open);
@@ -370,6 +375,7 @@ function setDetailSearchOpen(open,focus = true){
     $('detail-search-input').blur();
     $('detail-search-toggle').focus({preventScroll:true});
   }
+  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }
 
 let detailSearchHitTarget = null;
@@ -387,7 +393,7 @@ function revealDetailSearchEntry(entry){
     for(let p=target.closest('.detail-full-only');p;p=p.parentElement.closest('.detail-full-only'))p.classList.add('detail-field-revealed');
   }
   const preferred = target.closest('#detail-schedule-preferred') || entry.label === 'Place preferences';
-  if(target.closest('[data-detail-nav="schedule"]'))setScheduleView(preferred ? 'preferred' : 'allowed');
+  if(target.closest('[data-detail-nav="availability"]'))setScheduleView(preferred ? 'preferred' : 'allowed');
   if(target.id === 'detail-viz-seg'){
     detailVizMode = 'gaps';syncDetailVizMode();
   }else if(target.closest('.detail-calendar-page')){
@@ -414,19 +420,26 @@ function revealDetailSearchEntry(entry){
   }
   for(let p=target.closest('details');p;p=p.parentElement.closest('details'))p.open = true;
   scrollDetailToNav(target.closest('.detail-page').dataset.detailNav,'auto');
+  const navigationRevision = detailNavigationRevision;
   requestAnimationFrame(()=>{
-    if(!target.isConnected || detailIdx === null)return;
+    if(!target.isConnected || detailIdx === null || navigationRevision !== detailNavigationRevision)return;
     // Conditional fields can change after rendering; land on their nearest
     // visible section without turning on or altering any saved settings.
     if(!target.getClientRects().length)target = original.closest('details')?.querySelector('summary') || target;
-    target.scrollIntoView({block:'center',inline:'nearest',behavior:'auto'});
+    // Reveal only inside the selected panel. Scrolling every ancestor can
+    // move the sheet/document while iOS is settling its viewport.
+    const page = target.closest('.detail-page');
+    const scroller = detailIsSingleView() ? page.closest('.detail-pager') : page;
+    const rect = target.getBoundingClientRect(),bounds = scroller.getBoundingClientRect();
+    scroller.scrollTo({top:scroller.scrollTop + rect.top - bounds.top
+      - Math.max(0,(scroller.clientHeight - rect.height) / 2),behavior:'instant'});
     clearTimeout(detailSearchHitTimer);
     detailSearchHitTarget?.classList.remove('detail-search-hit');
     detailSearchHitTarget = target;
     target.classList.add('detail-search-hit');
     detailSearchHitTimer = setTimeout(()=>target.classList.remove('detail-search-hit'),2400);
     const focus = target.matches('input,select,button,summary') ? target : target.querySelector('input,select,button,summary');
-    if(focus)focus.focus({preventScroll:true});
+    if(focus && entry.focus !== false)focus.focus({preventScroll:true});
     if(message)showToast(message,4500);
   });
 }
@@ -471,6 +484,7 @@ function syncDetailEditingChrome(){
   // Only compact navigation for a detail field's own editing session.
   inner.classList.toggle('detail-keyboard-open',Boolean(keyboardVisible && (editing || closing) && !inner.classList.contains('detail-search-open')));
   inner.classList.toggle('detail-field-editing',Boolean((editing && virtualKeyboard) || closing));
+  if(typeof syncDetailSummaryTyping === 'function')syncDetailSummaryTyping(keyboardVisible);
 }
 document.addEventListener('pointerdown',event=>{
   detailEditingPointerDown = Boolean(event.target.closest('.detail-sheet'));

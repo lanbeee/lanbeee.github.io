@@ -1065,6 +1065,12 @@ function assistantParseSnoozeUntil(value, now){
   if(/\buntil (?:the )?end of (?:the )?day\b|\beod\b/.test(s)){
     return assistantAddCalendarDays(assistantDayBase(ts), 1);
   }
+  const weekWords = {a:1, an:1, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8};
+  const weeks = s.match(/\b(\d+|a|an|one|two|three|four|five|six|seven|eight)\s*weeks?\b/);
+  if(weeks){
+    const n = Math.min(8, Number(weekWords[weeks[1]] ?? weeks[1]));
+    if(n > 0)return ts + n * 7 * 86400000;
+  }
   const hits = assistantDurationHits(s);
   const fractional = /^\d+\.\d+$/.test(s);
   if(hits.length || fractional){

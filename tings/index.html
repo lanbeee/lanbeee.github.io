@@ -414,6 +414,29 @@
         <div id="detail-search-results" class="detail-search-results" aria-label="matching detail settings"></div>
       </div>
       <div class="detail-pager" aria-label="habit details">
+        <section class="detail-page detail-section tune-section detail-summary-page" data-detail-nav="summary">
+          <div class="detail-summary" id="detail-summary"></div>
+          <div id="detail-summary-setup" hidden>
+            <div class="assistant-needle-panel" data-needle-panel hidden>
+              <p class="field-hint" data-needle-status role="status" aria-live="polite"></p>
+              <progress max="100" value="0" aria-label="Needle 3 download" hidden></progress>
+              <div class="btn-row">
+                <button type="button" class="btn primary" data-needle-download>download Needle 3</button>
+                <button type="button" class="btn" data-needle-cancel hidden>cancel download</button>
+              </div>
+            </div>
+          </div>
+          <div class="detail-summary-chat" id="detail-summary-chat" hidden>
+            <div class="detail-summary-chat-head">
+              <span class="settings-sublabel">Needle</span>
+              <div class="detail-summary-chat-actions">
+                <button type="button" class="mini-text-btn" id="detail-summary-feedback" hidden aria-label="Send feedback about this conversation">feedback</button>
+                <button type="button" class="mini-text-btn" id="detail-summary-clear">clear</button>
+              </div>
+            </div>
+            <div class="detail-summary-thread" id="detail-summary-thread" aria-live="polite"></div>
+          </div>
+        </section>
         <section class="detail-page month-card detail-calendar-page" data-detail-nav="calendar">
           <details class="detail-disclosure" id="detail-history-disclosure" open data-detail-essential="true"><summary>calendar &amp; gap history</summary>
           <p class="detail-about" id="detail-about"></p>
@@ -487,6 +510,28 @@
           <div class="planning-grid detail-minimal-effort" id="detail-minimal-effort" hidden></div>
 
           </details>
+          <details class="detail-disclosure detail-full-only" id="detail-flexibility-disclosure"><summary>early &amp; late days</summary>
+          <div class="planning-grid detail-full-only detail-schedule-flexibility">
+            <div class="planning-field">
+              <span class="flexibility-label">early window <button type="button" class="info-btn" data-tip="detail-early-window-help" aria-label="about the early window"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-early-window-help" role="tooltip" hidden>How many days early the planner may bring this forward. This never permits postponing it.</div></span>
+              <label class="range-value" aria-label="early window in days">
+                <input type="text" id="detail-early-window" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
+            <div class="planning-field">
+              <span class="flexibility-label">delay allowance <button type="button" class="info-btn" data-tip="detail-delay-allowance-help" aria-label="about the delay allowance"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <div class="info-tooltip" id="detail-delay-allowance-help" role="tooltip" hidden>How many days after the due or rhythm day this may remain on time. Zero means it must use its due day when it fits.</div></span>
+              <label class="range-value" aria-label="delay allowance in days">
+                <input type="text" id="detail-delay-allowance" inputmode="numeric" maxlength="2" value="0" />
+                <span>d</span>
+              </label>
+            </div>
+          </div>
+          </details>
+        </section>
+        <section class="detail-page detail-section tune-section" data-detail-nav="availability">
           <section id="detail-conditions" class="detail-conditions" aria-label="Conditions" hidden>
         <label class="settings-sublabel" for="detail-condition-trigger">Plan this when</label>
         <select class="mini-select" id="detail-condition-trigger"><option value="weather">the weather matches</option><option value="location">I’m near a place</option></select>
@@ -496,7 +541,7 @@
         </div>
             <p class="field-hint" id="detail-condition-hint" hidden></p>
           </section>
-          <details class="detail-disclosure" id="detail-availability-disclosure"><summary>days, hours &amp; places</summary>
+          <details class="detail-disclosure" id="detail-availability-disclosure" open data-detail-essential="true"><summary>days, hours &amp; places</summary>
           <div class="seg schedule-seg detail-full-only" id="detail-schedule-view-seg">
             <button class="seg-opt on" data-schedule-view="allowed" aria-label="allowed — hard limits">allowed</button>
             <button class="seg-opt" data-schedule-view="preferred" aria-label="preferred — soft preference">preferred</button>
@@ -553,7 +598,23 @@
             <div class="topic-chip-row" id="detail-place-chips" data-tag-content="places"></div>
           </div>
           </details>
-          <details class="detail-disclosure detail-full-only weather-habit-field" id="detail-weather-disclosure">
+          <details class="detail-disclosure detail-full-only" id="detail-options-disclosure">
+            <summary>specific times &amp; places</summary>
+          <div class="habit-options-block detail-full-only" id="detail-habit-options">
+            <div class="habit-options-heading">
+              <span class="settings-sublabel">specific times, places &amp; weather
+                <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Add a row for a specific day, time, place, or weather rule. Fixed start uses the item's duration; a time window allows any start that fits. Row preferences and weather override the defaults.</span>
+              </span>
+            </div>
+            <p class="field-hint" id="detail-habit-options-hint">Optional. Add a row for a specific time or place.</p>
+            <div class="habit-option-list" id="detail-habit-option-list"></div>
+            <button type="button" class="mini-text-btn habit-option-add" id="detail-habit-option-add">add option</button>
+          </div>
+          </details>
+        </section>
+        <section class="detail-page detail-section tune-section" data-detail-nav="weather">
+          <details class="detail-disclosure detail-full-only weather-habit-field" id="detail-weather-disclosure" open data-detail-essential="true">
             <summary>weather &amp; forecast</summary>
             <label class="settings-sublabel" for="detail-weather-profile">weather guidance</label>
             <select id="detail-weather-profile" class="settings-select" aria-describedby="detail-weather-guidance-hint"><option value="">use the place’s weather</option><option value="__none__">ignore weather rules</option></select>
@@ -576,28 +637,13 @@
               </button>
             </label>
             <p class="field-hint" id="detail-show-weather-location-hint" hidden>Off uses your city’s weather.</p>
-
             <button type="button" class="mini-text-btn time-set-city" id="detail-weather-city" hidden>set your city</button>
             <p class="field-hint" id="detail-weather-venue-hint">If you choose a place, Tings checks the weather there.</p>
-          </details>
-          <details class="detail-disclosure detail-full-only" id="detail-options-disclosure">
-            <summary>specific times &amp; places</summary>
-          <div class="habit-options-block detail-full-only" id="detail-habit-options">
-            <div class="habit-options-heading">
-              <span class="settings-sublabel">specific times, places &amp; weather
-                <button type="button" class="info-btn" data-tip="detail-habit-options-help" aria-label="about time and place options"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-options-help" role="tooltip" hidden>Add a row for a specific day, time, place, or weather rule. Fixed start uses the item's duration; a time window allows any start that fits. Row preferences and weather override the defaults.</span>
-              </span>
-            </div>
-            <p class="field-hint" id="detail-habit-options-hint">Optional. Add a row for a specific time or place.</p>
-            <div class="habit-option-list" id="detail-habit-option-list"></div>
-            <button type="button" class="mini-text-btn habit-option-add" id="detail-habit-option-add">add option</button>
-          </div>
           </details>
         </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="effort">
           <details class="detail-disclosure" id="detail-duration-disclosure" open data-detail-essential="true"><summary>duration &amp; chunks</summary>
-          <p class="field-hint">Duration, flexibility and how this fits around other items.</p>
+          <p class="field-hint">How long this takes, and whether it can split into sessions.</p>
           <div class="planning-grid planning-grid-single" id="detail-effort-duration-grid">
             <div class="planning-field" id="detail-duration-field">
               <span>duration</span>
@@ -634,7 +680,28 @@
             </div>
           </div>
           </details>
-          <details class="detail-disclosure" id="detail-logging-disclosure"><summary>logging &amp; sessions</summary>
+          <details class="detail-disclosure detail-full-only" id="detail-planning-priority-disclosure"><summary>priority</summary>
+          <div class="priority-field detail-full-only">
+            <span class="priority-label">priority <button type="button" class="info-btn" data-tip="detail-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="info-tooltip" id="detail-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
+            <div class="seg priority-seg" id="detail-priority-seg" data-ui-priority="detail"></div>
+          </div>
+          </details>
+          <details class="detail-disclosure detail-full-only" id="detail-order-disclosure"><summary>before &amp; after items</summary>
+          <div class="schedule-order-block detail-full-only" id="detail-schedule-order">
+            <div class="schedule-order-heading">
+              <span class="settings-sublabel schedule-order-label">item order
+                <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about item order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>Link this item before or after any number of others. Links are OR’d: plan with whichever partner lands that day. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. “Must do on days with” pulls this item onto a partner’s day when flexibility allows (shown with the early indicator); other days stay unconstrained.</span>
+              </span>
+              <button type="button" class="mini-text-btn schedule-link-add" id="detail-schedule-link-add">add link</button>
+            </div>
+            <div id="detail-schedule-link-list" class="schedule-link-list"></div>
+          </div>
+        </details>
+          </section>
+        <section class="detail-page detail-section tune-section" data-detail-nav="tracking">
+          <details class="detail-disclosure" id="detail-logging-disclosure" open data-detail-essential="true"><summary>logging &amp; sessions</summary>
           <label class="setting-toggle compact-toggle detail-full-only">
             <span>log a value or note (e.g. weight)</span>
             <button class="setting-switch" id="detail-track-value" type="button" aria-pressed="false">
@@ -662,39 +729,7 @@
             </label>
           </div>
           </details>
-          <details class="detail-disclosure detail-full-only" id="detail-flexibility-disclosure"><summary>early &amp; late days</summary>
-          <div class="planning-grid detail-full-only detail-schedule-flexibility">
-            <div class="planning-field">
-              <span class="flexibility-label">early window <button type="button" class="info-btn" data-tip="detail-early-window-help" aria-label="about the early window"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <div class="info-tooltip" id="detail-early-window-help" role="tooltip" hidden>How many days early the planner may bring this forward. This never permits postponing it.</div></span>
-              <label class="range-value" aria-label="early window in days">
-                <input type="text" id="detail-early-window" inputmode="numeric" maxlength="2" value="0" />
-                <span>d</span>
-              </label>
-            </div>
-            <div class="planning-field">
-              <span class="flexibility-label">delay allowance <button type="button" class="info-btn" data-tip="detail-delay-allowance-help" aria-label="about the delay allowance"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <div class="info-tooltip" id="detail-delay-allowance-help" role="tooltip" hidden>How many days after the due or rhythm day this may remain on time. Zero means it must use its due day when it fits.</div></span>
-              <label class="range-value" aria-label="delay allowance in days">
-                <input type="text" id="detail-delay-allowance" inputmode="numeric" maxlength="2" value="0" />
-                <span>d</span>
-              </label>
-            </div>
-          </div>
-          </details>
-          <details class="detail-disclosure detail-full-only" id="detail-order-disclosure"><summary>before &amp; after items</summary>
-          <div class="schedule-order-block detail-full-only" id="detail-schedule-order">
-            <div class="schedule-order-heading">
-              <span class="settings-sublabel schedule-order-label">item order
-                <button type="button" class="info-btn" data-tip="detail-habit-order-help" aria-label="about item order"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-                <span class="info-tooltip" id="detail-habit-order-help" role="tooltip" hidden>Link this item before or after any number of others. Links are OR’d: plan with whichever partner lands that day. “Right before/after” keeps other movable cards out of the middle; required travel and fixed events can still sit between their times. “Must do on days with” pulls this item onto a partner’s day when flexibility allows (shown with the early indicator); other days stay unconstrained.</span>
-              </span>
-              <button type="button" class="mini-text-btn schedule-link-add" id="detail-schedule-link-add">add link</button>
-            </div>
-            <div id="detail-schedule-link-list" class="schedule-link-list"></div>
-          </div>
-        </details>
-          </section>
+        </section>
         <section class="detail-page detail-section tune-section" data-detail-nav="identity">
           <details class="detail-disclosure" id="detail-name-disclosure" open data-detail-essential="true"><summary>name &amp; type</summary>
           <div class="name-icon-row">
@@ -728,24 +763,10 @@
             <div class="emoji-bg-swatches" id="detail-emoji-bg" role="group" aria-label="emoji background color"></div>
           </div>
           </details>
-          <details class="detail-disclosure detail-full-only" id="detail-priority-disclosure"><summary>priority &amp; topics</summary>
-          <div class="priority-field detail-full-only">
-            <span class="priority-label">priority <button type="button" class="info-btn" data-tip="detail-priority-help" aria-label="about priority"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="info-tooltip" id="detail-priority-help" role="tooltip" hidden>P0 (critical) claims today's time first; P5 (someday) is dropped first when the day overflows.</div></span>
-            <div class="seg priority-seg" id="detail-priority-seg" data-ui-priority="detail"></div>
-          </div>
+          <details class="detail-disclosure detail-full-only" id="detail-priority-disclosure"><summary>topics</summary>
           <span class="settings-sublabel detail-full-only" id="detail-topics-label">topics</span>
           <div class="topic-chip-row detail-full-only" id="detail-topic-chips" data-tag-content="topics"></div>
         </details>
-          </section>
-        <section class="detail-page detail-section tune-section detail-actions-page" data-detail-nav="actions">
-          <div id="detail-order-block" class="detail-order-block" hidden>
-            <div class="detail-order-head">
-              <span class="settings-sublabel">order links</span>
-              <button type="button" class="mini-text-btn" id="detail-order-clear-all" data-order-clear-hid="" hidden>clear</button>
-            </div>
-            <div id="detail-order-list" class="detail-order-list"></div>
-          </div>
           <details class="detail-disclosure detail-full-only" id="detail-links-disclosure"><summary>apps, links &amp; calls</summary>
           <div class="link-field" id="detail-link-field">
             <div class="link-field-head">
@@ -773,6 +794,15 @@
             <p class="field-hint" id="detail-link-hint"></p>
           </div>
           </details>
+        </section>
+        <section class="detail-page detail-section tune-section detail-actions-page" data-detail-nav="actions">
+          <div id="detail-order-block" class="detail-order-block" hidden>
+            <div class="detail-order-head">
+              <span class="settings-sublabel">order links</span>
+              <button type="button" class="mini-text-btn" id="detail-order-clear-all" data-order-clear-hid="" hidden>clear</button>
+            </div>
+            <div id="detail-order-list" class="detail-order-list"></div>
+          </div>
           <details class="detail-disclosure" id="detail-actions-disclosure" open data-detail-essential="true"><summary>item actions</summary>
           <div class="habit-actions">
             <div class="detail-shared-display-control detail-full-only">
@@ -829,6 +859,12 @@
           </section>
       </div>
       <div class="detail-bottom-bar sheet-search-dock" aria-label="detail actions">
+        <div class="detail-ask-guides" id="detail-ask-guides" hidden>
+          <p class="detail-ask-guides-label" id="detail-ask-guides-label">Settings you can change</p>
+          <div class="detail-ask-guides-row" id="detail-ask-guides-row" role="group" aria-labelledby="detail-ask-guides-label"></div>
+          <p class="detail-ask-hint" id="detail-ask-hint" hidden></p>
+          <button type="button" class="detail-ask-revise" id="detail-ask-revise" hidden><i class="ti ti-arrow-back-up" aria-hidden="true"></i>Edit last request</button>
+        </div>
         <div class="detail-actions" id="detail-cool-row">
           <div class="detail-search-control">
             <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
@@ -837,6 +873,16 @@
               <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="12000" enterkeyhint="search" aria-describedby="detail-search-status" />
               <button type="button" id="detail-search-clear" class="sheet-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
+          </div>
+          <div class="detail-ask" id="detail-ask" hidden>
+            <label class="sr-only" for="detail-ask-input">Describe a change for Needle</label>
+            <i class="ti ti-sparkles detail-ask-mark" aria-hidden="true"></i>
+            <span class="assistant-mention detail-ask-tag" id="detail-ask-tag" hidden>
+              <span class="assistant-mention-label" id="detail-ask-tag-label"></span>
+              <button type="button" class="assistant-mention-remove" id="detail-ask-tag-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </span>
+            <textarea id="detail-ask-input" rows="1" maxlength="12000" placeholder="Describe a change" autocomplete="off" enterkeyhint="send"></textarea>
+            <button type="button" id="detail-ask-send" class="detail-ask-send" aria-label="send to Needle" disabled><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
@@ -2144,6 +2190,7 @@
 <script src="./js/detail-view-pages.js" defer></script>
 <script src="./js/item-field-catalog.js" defer></script>
 <script src="./js/detail-view-search.js" defer></script>
+<script src="./js/detail-view-summary.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
 <script src="./js/today-view-fits.js" defer></script>
 <script src="./js/today-view-reservations.js" defer></script>

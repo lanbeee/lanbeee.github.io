@@ -83,7 +83,8 @@ function renderLocalAppointmentDetail(h){
   $('detail-appointment-editor')?.remove();
   $('detail-habit-message').disabled=false;
   for(const id of ['detail-link-field','detail-topic-chips','detail-shared-display','detail-pinned'])$(id).inert=false;
-  for(const nav of ['calendar','effort'])sheet.querySelector(`[data-detail-nav="${nav}"]`).hidden=isEventItem(h) || isMinimalMode();
+  for(const nav of ['calendar','effort','tracking'])sheet.querySelector(`[data-detail-nav="${nav}"]`).hidden=isEventItem(h) || isMinimalMode();
+  sheet.querySelector('[data-detail-nav="availability"]').hidden=isEventItem(h);
   updateDetailPagerDots();
   if(!isLocalAppointment(h))return;
   const host=document.createElement('div');host.id='detail-appointment-editor';host.className='appointment-editor';
@@ -182,7 +183,8 @@ function saveLocalAppointmentDetail(data,h){
 function renderEventDetailUi(h){
   const event=isEventItem(h),synced=isDeviceCalendarTask(h),sheet=getSheetInner('detail-sheet');
   for(const el of [sheet,$('detail-sheet')]){el.classList.toggle('event-detail',event);el.classList.toggle('phone-calendar-detail',synced);}
-  for(const nav of ['calendar','effort'])sheet.querySelector(`[data-detail-nav="${nav}"]`).hidden=event || isMinimalMode();
+  for(const nav of ['calendar','effort','tracking'])sheet.querySelector(`[data-detail-nav="${nav}"]`).hidden=event || isMinimalMode();
+  sheet.querySelector('[data-detail-nav="availability"]').hidden=event;
   $('detail-mark').setAttribute('aria-label',event ? `edit icon for ${h.name}` : `add entry for ${h.name}`);
   $('detail-mark-log').hidden=event;
   const completion=$('detail-shared-display').querySelector('[data-shared-display-mode="complete"]');
@@ -190,7 +192,7 @@ function renderEventDetailUi(h){
   if(event && sharedDisplayModeForHabit(h)==='complete')setDetailSharedDisplayMode('view');
   $('detail-delete-question').textContent=`Remove this ${event?'event':h.type==='task'?'task':'habit'}?`;
   $('detail-name-disclosure').querySelector('summary').textContent=event?'name':'name & type';
-  $('detail-priority-disclosure').querySelector('summary').textContent=event?'topics':'priority & topics';
+  $('detail-priority-disclosure').querySelector('summary').textContent='topics';
   $('detail-emoji').setAttribute('aria-label',event?'event emoji, optional':'habit emoji, optional');
   updateDetailPagerDots();
 }

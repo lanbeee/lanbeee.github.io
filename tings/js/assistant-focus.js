@@ -348,7 +348,11 @@ function assistantFocusUnresolve(session, item){
     question:item.question || 'I need a clearer value for that setting.',
     choices:item.choices || [],
     phrase:item.phrase || '',
-    blocking:item.blocking !== false
+    blocking:item.blocking !== false,
+    // A notice explains a request this session cannot do; it never blocks Save.
+    notice:item.notice || '',
+    openItem:item.openItem || null,
+    openNav:item.openNav || ''
   });
   session.interpretationApproved = null;
   session.savedFingerprint = '';
@@ -1061,9 +1065,11 @@ function assistantFocusFormatWindow(record, role, data){
   return `${assistantFocusFormatEndpoint(start, data)} to ${assistantFocusFormatEndpoint(end, data)}`;
 }
 
-function assistantFocusFormatValue(fieldId, record, session, staged){
+function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {}){
   fieldId = assistantFocusScopedField(fieldId, session);
-  const data = typeof load === 'function' ? load() : [];
+  // Most labels use only the record. Resolve saved-item names only for windows
+  // that can refer to another item, sharing that read within a summary render.
+  const data = () => lookups.items ||= (typeof load === 'function' ? load() : []);
   if(!record)return '—';
   if(fieldId === 'name')return record.name || '—';
   if(fieldId === 'kind')return record.appointment ? 'event' : (record.type === 'task' ? 'task' : 'habit');
@@ -1091,8 +1097,8 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
   if(fieldId === 'allowedMonthDays')return record.allowedMonthDays && record.allowedMonthDays.length ? record.allowedMonthDays.join(', ') : 'any';
   if(fieldId === 'preferredMonthDays')return record.preferredMonthDays && record.preferredMonthDays.length ? record.preferredMonthDays.join(', ') : 'any';
   if(fieldId === 'allowedOrdinalWeekdays' || fieldId === 'preferredOrdinalWeekdays')return ordinalWeekdaySummary(record[fieldId]) || 'any';
-  if(fieldId === 'allowedWindow' || fieldId === 'allowedTimeFixedStart')return assistantFocusFormatWindow(record, 'allowed', data);
-  if(fieldId === 'preferredWindow')return assistantFocusFormatWindow(record, 'preferred', data);
+  if(fieldId === 'allowedWindow' || fieldId === 'allowedTimeFixedStart')return assistantFocusFormatWindow(record, 'allowed', data());
+  if(fieldId === 'preferredWindow')return assistantFocusFormatWindow(record, 'preferred', data());
   if(fieldId === 'durationMinutes')return `${record.durationMinutes} min`;
   if(fieldId === 'breakable')return record.breakable ? 'split into sessions' : 'one session';
   if(fieldId === 'minChunkMinutes')return `${record.minChunkMinutes} min`;
@@ -1116,8 +1122,8 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
   if(fieldId === 'scheduleLinks')return (record.scheduleLinks || []).map(link => `${link.direction} ${link.anchorHid} (${link.adjacency || 'sometime'}${link.requireSameDay ? ', same day' : ''})`).join('\n') || 'none';
   if(fieldId === 'topics')return (record.topics || []).join(', ') || 'none';
   if(fieldId === 'pinned')return record.pinned ? 'pinned' : 'not pinned';
-  if(fieldId === 'snoozedUntil')return record.snoozedUntil ? new Date(record.snoozedUntil).toLocaleString() : 'not snoozed';
-  if(fieldId === 'sharedDisplay')return record.showOnSharedDisplay === false ? 'hidden' : (record.allowSharedDisplayCompletion === false ? 'view only' : 'mark done');
+  if(fieldId === 'snoozedUntil')return record.snoozedUntil ? new Date(record.snoozedUntil).toLocaleString(undefined, {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'not snoozed';
+  if(fieldId === 'sharedDisplay')return record.showOnSharedDisplay === false ? 'hidden' : (record.appointment || record.allowSharedDisplayCompletion === false ? 'view only' : 'mark done');
   if(fieldId === 'links')return (record.links || []).map(link => `${link.kind}: ${link.value}`).join('\n') || 'none';
   if(fieldId === 'appointmentRepeat')return record.appointment ? record.appointment.repeat : '—';
   if(fieldId === 'appointmentStartDate')return record.appointment ? record.appointment.startDate : '—';
@@ -1273,7 +1279,7 @@ function assistantFocusReviewModel(session){
     topics:session.dependencies.topics.slice(),
     weatherProfile:profile ? {name:profile.name, mode:profile.mode, rules:weatherRules} : null,
     pending:session.pendingFamilies.slice(),
-    question:session.unresolved[0] || null,
+    question:session.unresolved.find(row=>!row.notice) || session.unresolved[0] || null,
     canSave:assistantFocusCanSave(session),
     needsInterpretation:session.needsInterpretation && session.interpretationApproved !== assistantFocusFingerprint(session)
   };
@@ -1320,7 +1326,7 @@ function assistantFocusFingerprint(session){
 function assistantFocusCanSave(session){
   if(!assistantFocusAlive(session))return false;
   if(session._focusInFlight)return false;
-  if(session.unresolved.length || session.pendingFamilies.length || session.correctionError || session.continuationError)return false;
+  if(session.unresolved.some(row => !row.notice) || session.pendingFamilies.length || session.correctionError || session.continuationError)return false;
   if(session.operation === 'edit' && !session.changes.length)return false;
   if(session.operation === 'create' && !session.changes.some(change => change.field === 'name' && change.op === 'set' && change.value))return false;
   if(assistantFocusDraftIssues(session).length)return false;
@@ -1577,10 +1583,23 @@ function assistantFocusActivityHtml(session, model){
   return '';
 }
 
-function assistantFocusActionHtml(session){
+// Reads "2026-11-12" as "Thu, Nov 12" (with the year only when it differs).
+function assistantFocusFriendlyDates(text){
+  return String(text ?? '').replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (match, y, m, d) => {
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    if(Number.isNaN(date.getTime()))return match;
+    const opts = {weekday:'short', month:'short', day:'numeric'};
+    if(date.getFullYear() !== new Date().getFullYear())opts.year = 'numeric';
+    return date.toLocaleDateString(undefined, opts);
+  });
+}
+
+function assistantFocusActionHtml(session, opts){
   if(!session || session._focusInFlight)return '';
+  const embedded = Boolean(opts && opts.embedded);
   return (session.itemActions || []).map((action, index) => {
-    const note = `<p class="focus-note">${assistantFocusEscape(action.summary || '')}</p>`;
+    const summary = embedded ? assistantFocusFriendlyDates(action.summary || '') : action.summary || '';
+    const note = `<p class="focus-note">${assistantFocusEscape(summary)}</p>`;
     if(!action.ready)return note;
     const label = assistantFocusEscape(action.label || 'do it');
     return `${note}<div class="btn-row"><button type="button" class="btn primary" data-focus-choice="item-action" data-focus-value="${index}">${label}</button><button type="button" class="btn" data-focus-choice="item-action-skip" data-focus-value="${index}">never mind</button></div>`;
@@ -1615,36 +1634,236 @@ function assistantFocusSkipAction(session, index){
   return {ok:true};
 }
 
-function assistantFocusReviewHtml(session){
+function assistantFocusActionDoneText(result){
+  return result.action === 'remove'
+    ? `Removed the plan for ${result.name}. Undo is on the toast.`
+    : result.action === 'undo_today'
+      ? `Marked ${result.name} not done. Undo is on the toast.`
+      : result.action === 'log'
+        ? `Logged ${result.name}. Undo is on the toast.`
+        : `Planned ${result.name}. Undo is on the toast.`;
+}
+
+// A reply to a review question or scope choice. Returns whether it staged anything.
+function assistantFocusApplyChoice(session, which, value){
+  if((which === 'eventScope' || value === 'series' || value === 'occurrence') && (value === 'series' || value === 'occurrence')){
+    assistantFocusSetScope(session, value, session.occurrenceDate);
+    return true;
+  }
+  if(value === 'series-place'){
+    assistantFocusSetScope(session, 'series');
+    session.unresolved = session.unresolved.filter(item => item.field !== 'places');
+    return true;
+  }
+  if(value === 'skip-place'){
+    session.changes = session.changes.filter(change => change.field !== 'places');
+    session.unresolved = session.unresolved.filter(item => item.field !== 'places');
+    return true;
+  }
+  if(!value)return false;
+  assistantFocusChoose(session, which, value);
+  return true;
+}
+
+// The detail Summary tab lists a saved item without a model call. These fields
+// are the item header, folded into one essential, or only meaningful with
+// their parent reminder edge.
+const ASSISTANT_FOCUS_SUMMARY_SKIP = new Set([
+  'name','kind','emoji','emojiBgColor','timesPerPeriod','periodDays','repeatMode',
+  'allowedTimeFixedStart','weatherRules','durationMinutes','dueDate',
+  'appointmentRepeat','appointmentStartDate','appointmentStartMinute',
+  'reminderReset','reminderSecondLead','reminderStartLead','reminderDueDays',
+  'reminderDueTime','reminderTravelLead','reminderMissedLead'
+]);
+
+function assistantFocusSummarySession(item){
+  const kind = assistantFocusKindOf(item);
+  return {
+    operation:'edit', kind, targetId:item.hid, draftId:item.hid, source:item,
+    changes:[], unresolved:[], pendingFamilies:[], formKeys:[],
+    dependencies:{topics:[], weatherProfile:null}, eventScope:null, occurrenceDate:''
+  };
+}
+
+function assistantFocusSummaryText(fieldId, record, session, lookups = {}){
+  const place = id => {
+    const places = lookups.places ||= (typeof locationOptions === 'function' ? locationOptions() : []);
+    return (places.find(loc => loc.id === id) || {}).name || 'a saved place';
+  };
+  const day = ms => new Date(ms).toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
+  const itemName = hid => {
+    const items = lookups.items ||= (typeof load === 'function' ? load() : []);
+    return (items.find(row => row && row.hid === hid) || {}).name || 'another item';
+  };
+  const count = (n, one, many) => n ? `${n} ${n === 1 ? one : many}` : 'none';
+  if(fieldId === 'places')return (record.locationIds || []).map(place).join(', ') || 'no place';
+  if(fieldId === 'locationPrefs'){
+    const verb = {high:'prefer', little:'slightly prefer', avoid:'avoid'};
+    return Object.entries(record.locationPrefs || {}).map(([id, level]) => `${verb[level] || level} ${place(id)}`).join(', ') || 'none';
+  }
+  if(fieldId === 'weatherLocationId')return record.weatherLocationId ? place(record.weatherLocationId) : 'home city';
+  if(fieldId === 'weatherProfile' && record.weatherProfileMode === 'profile')return assistantFocusProfileName(record.weatherProfileId) || 'a saved profile';
+  if(fieldId === 'scheduleLinks')return (record.scheduleLinks || []).map(link => `${link.direction} ${itemName(link.anchorHid)}`).join(', ') || 'none';
+  if(fieldId === 'scheduleOptions')return count((record.scheduleOptions || []).length, 'alternative', 'alternatives');
+  if(fieldId === 'links')return count((record.links || []).length, 'link', 'links');
+  if(fieldId === 'dueDate')return record.dueDate ? day(record.dueDate) : 'not set';
+  if(fieldId === 'planByDate')return record.planByDate ? day(record.planByDate) : 'none';
+  if(fieldId === 'snoozedUntil')return record.snoozedUntil && record.snoozedUntil > Date.now() ? `until ${day(record.snoozedUntil)}` : 'not snoozed';
+  if(fieldId === 'earlyWindowDays' || fieldId === 'delayAllowanceDays'){
+    const n = Number(record[fieldId]) || 0;
+    return n ? `${n} ${n === 1 ? 'day' : 'days'} ${fieldId === 'earlyWindowDays' ? 'early' : 'late'}` : 'none';
+  }
+  if(fieldId === 'appointmentStartDate'){
+    const iso = record.appointment && record.appointment.startDate;
+    return iso ? day(new Date(`${iso}T12:00:00`).getTime()) : 'not set';
+  }
+  if(fieldId === 'appointmentRepeat')return record.appointment && record.appointment.repeat === 'weekly' ? 'weekly' : 'one time';
+  if(fieldId === 'allowedWeekdays' || fieldId === 'preferredWeekdays' || fieldId === 'appointmentWeekdays'){
+    const days = fieldId === 'appointmentWeekdays' ? record.appointment && record.appointment.weekdays : record[fieldId];
+    return (typeof assistantWeekdaySummary === 'function' && assistantWeekdaySummary(days)) || assistantFocusFormatWeekdays(days);
+  }
+  return assistantFocusFormatValue(fieldId, record, session, false, lookups);
+}
+
+// Essentials always, then each setting that differs from this kind's new-item
+// defaults. Reminders compare against off; they live outside the item record.
+function assistantFocusItemSummary(item){
+  if(!item)return null;
+  const session = assistantFocusSummarySession(item);
+  const kind = session.kind;
+  const settings = assistantFocusSettings();
+  let defaults = assistantFocusBlank({kind, draftId:item.hid, now:Date.now(), formKeys:[]});
+  if(typeof normalize === 'function'){
+    try{ defaults = normalize([Object.assign({}, defaults, {name:item.name || 'item'})])[0] || defaults; }catch(_){}
+  }
+  const state = assistantFocusState(session, item);
+  // These lookups live for this synchronous render only, so edits and later
+  // openings always see fresh items and places without a persistent cache.
+  const lookups = {};
+  const text = id => assistantFocusSummaryText(id, item, session, lookups);
+  const essentials = [];
+  const custom = [];
+  const add = (list, id, label, value) => {
+    const clean = String(value || '').trim();
+    if(clean && clean !== '—')list.push({id, label, text:clean});
+  };
+  if(kind === 'habit' && item.type !== 'zero')add(essentials, 'rhythm', 'How often', assistantFocusRhythmText(item));
+  if(kind === 'task')add(essentials, 'dueDate', 'Due date', text('dueDate'));
+  if(kind === 'event'){
+    add(essentials, 'appointmentRepeat', 'Repeats', text('appointmentRepeat'));
+    add(essentials, 'appointmentStartDate', 'Start date', text('appointmentStartDate'));
+    add(essentials, 'appointmentStartMinute', 'Start time', text('appointmentStartMinute'));
+  }
+  if(assistantFocusFieldApplies('durationMinutes', state))add(essentials, 'durationMinutes', 'Duration', text('durationMinutes'));
+  const autoMarkFollowsDuration = typeof newItemDefaults === 'function'
+    && newItemDefaults(settings, item.type === 'task' ? 'task' : 'keepup').autoMarkMode === 'duration'
+    && item.autoMarkMinutes === item.durationMinutes;
+  const native = Boolean(typeof window !== 'undefined' && window.TingsNative && window.TingsNative.isNative);
+  ASSISTANT_FOCUS_FIELDS.forEach(field => {
+    if(ASSISTANT_FOCUS_SUMMARY_SKIP.has(field.id) || field.scope === 'occurrence')return;
+    if(!assistantFocusFieldApplies(field, state))return;
+    if(field.id === 'anywhereAllowed' && !(item.locationIds || []).length)return;
+    if(field.id === 'autoMarkMinutes' && autoMarkFollowsDuration)return;
+    if(kind === 'event' && field.id === 'appointmentWeekdays' && text('appointmentRepeat') !== 'weekly')return;
+    if(field.family === 'reminders'){
+      if(!native)return;
+      const value = text(field.id);
+      if(value !== 'off' && value !== 'DND off')add(custom, field.id, field.label, value);
+      return;
+    }
+    const value = text(field.id);
+    if(kind === 'event' && field.family === 'event'){
+      if(value && value !== 'none' && value !== 'any day')add(custom, field.id, field.label, value);
+      return;
+    }
+    if(value === assistantFocusSummaryText(field.id, defaults, session, lookups))return;
+    add(custom, field.id, field.label, value);
+  });
+  return {session, essentials, custom};
+}
+
+// Embedded beside the item's own summary: unchanged essentials would repeat
+// it, so keep only what changes, each named, with readable dates.
+function assistantFocusEmbedBits(session, bits){
+  const named = chip => {
+    const text = assistantFocusFriendlyDates(chip.text);
+    const label = chip.id === 'rhythm' ? 'How often' : (assistantFocusField(chip.id) || {}).label || '';
+    const bare = !label || text.includes(' · ') || text.toLowerCase().startsWith(label.toLowerCase());
+    return {...chip, text:bare ? text : `${label} · ${text}`};
+  };
+  bits.essentials = bits.essentials.filter(chip => chip.origin === 'changed').map(named);
+  bits.changes = bits.changes.map(named);
+  const rename = session.operation === 'edit' && session.changes.find(change => change.field === 'name' && change.value);
+  if(rename){
+    const before = String(session.source && session.source.name || '').trim();
+    const after = String(rename.value).trim();
+    if(after && after !== before)bits.changes.unshift({id:'name', text:`Name · ${before ? `${before} → ` : ''}${after}`, origin:'changed'});
+  }
+}
+
+function assistantFocusEmbedKicker(session){
+  if(session._focusInFlight)return 'Reading';
+  if(session.changes.length)return 'Proposed change';
+  if((session.itemActions || []).some(action => action.ready))return 'Confirm';
+  const first = session.unresolved[0];
+  if(first && first.notice)return first.notice === 'other' ? 'Different item' : 'Question';
+  if(first)return 'One more detail';
+  return 'Nothing to change';
+}
+
+function assistantFocusReviewHtml(session, opts){
+  opts = opts || {};
   const model = assistantFocusReviewModel(session);
   const bits = assistantFocusReviewBits(session, model);
+  if(opts.embedded)assistantFocusEmbedBits(session, bits);
+  const chipHtml = chip => {
+    const html = assistantFocusChipHtml(chip,session);
+    return opts.embedded && chip.origin === 'changed'
+      ? `<span class="focus-change">${html}<button type="button" class="focus-change-remove" data-focus-drop="${assistantFocusEscape(chip.id)}" aria-label="Remove ${assistantFocusEscape(assistantFocusField(chip.id)?.label || 'frequency')} change" ${session._focusInFlight ? 'disabled' : ''}><i class="ti ti-x" aria-hidden="true"></i></button></span>` : html;
+  };
   const essentials = bits.essentials.length
-    ? `<div class="assistant-chip-row" aria-label="Essentials">${bits.essentials.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
+    ? `<div class="assistant-chip-row" aria-label="Essentials">${bits.essentials.map(chipHtml).join('')}</div>`
     : '';
   const changes = bits.changes.length
-    ? `<div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(chip => assistantFocusChipHtml(chip, session)).join('')}</div>`
+    ? `<div class="assistant-chip-row" aria-label="Changed">${bits.changes.map(chipHtml).join('')}</div>`
     : '';
-  const notes = model.notes.map(note => `<p class="focus-note">${assistantFocusEscape(note)}</p>`).join('');
+  const notes = model.notes.map(note => `<p class="focus-note">${assistantFocusEscape(opts.embedded ? assistantFocusFriendlyDates(note) : note)}</p>`).join('');
   const pending = assistantFocusActivityHtml(session, model);
-  const itemActions = assistantFocusActionHtml(session);
-  const question = model.question ? `<div class="focus-ask"><p>${assistantFocusEscape(model.question.question)}</p>${(model.question.choices || []).map(choice => {
+  const itemActions = assistantFocusActionHtml(session, opts);
+  const asked = model.question;
+  // The host decides which destinations it can open, so the chat sheet keeps plain text.
+  const openItem = opts.embedded && asked && asked.openItem
+    ? `<button type="button" class="btn" data-focus-open-item="${assistantFocusEscape(asked.openItem.hid)}">open ${assistantFocusEscape(asked.openItem.name)}</button>` : '';
+  const openNav = opts.embedded && asked && asked.openNav && typeof opts.canOpenNav === 'function' && opts.canOpenNav(asked.openNav)
+    ? `<button type="button" class="btn" data-focus-open-nav="${assistantFocusEscape(asked.openNav)}">open ${assistantFocusEscape(opts.navLabel ? opts.navLabel(asked.openNav) : asked.openNav)}</button>` : '';
+  const question = asked ? `<div class="focus-ask"><p>${assistantFocusEscape(asked.question)}</p>${(asked.choices || []).map(choice => {
     const id = typeof choice === 'string' ? choice : choice.id;
     const label = typeof choice === 'string' ? choice : choice.label;
-    return `<button type="button" class="btn" data-focus-choice="${assistantFocusEscape(model.question.field || 'choice')}" data-focus-value="${assistantFocusEscape(id)}">${assistantFocusEscape(label)}</button>`;
-  }).join('')}</div>` : '';
+    return `<button type="button" class="btn" data-focus-choice="${assistantFocusEscape(asked.field || 'choice')}" data-focus-value="${assistantFocusEscape(id)}">${assistantFocusEscape(label)}</button>`;
+  }).join('')}${openItem}${openNav}</div>` : '';
   const save = `<button type="button" class="btn primary" data-focus-save ${model.canSave ? '' : 'disabled'}>save</button>`;
   const editing = !session._focusInFlight && (session.operation === 'edit' || String(model.title || '').trim());
-  const edit = `<button type="button" class="btn" data-focus-edit ${editing ? '' : 'disabled'}>edit</button>`;
+  const edit = `<button type="button" class="btn" data-focus-edit ${editing ? '' : 'disabled'}>${opts.embedded ? 'adjust in editor' : 'edit'}</button>`;
   // Save writes a staged change. Edit opens those staged changes. Neither
   // applies to the summary shown before the user has asked for anything.
-  const readyForActions = !session._focusInFlight && (session.changes.length || session.unresolved.length);
+  // Embedded cards offer Save and Edit only once something is staged; a
+  // question or notice alone has nothing for either button to act on.
+  const readyForActions = !session._focusInFlight && (opts.embedded
+    ? session.changes.length
+    : session.changes.length || session.unresolved.length);
   const actions = readyForActions ? `<div class="btn-row">${save}${edit}</div>` : '';
-  return `<div class="focus-review" data-focus-review>
-      <div class="focus-review-head">
+  const empty = opts.embedded && !session._focusInFlight && !session.changes.length && !session.unresolved.length
+    && !(session.itemActions || []).length && !pending
+    ? '<p class="focus-note">Nothing to change yet. Name the setting and the new value, like “make it 30 minutes”.</p>' : '';
+  const head = opts.embedded
+    ? `<div class="focus-review-head"><p class="focus-kicker">${assistantFocusEmbedKicker(session)}</p></div>`
+    : `<div class="focus-review-head">
         <p class="focus-kicker">${assistantFocusEscape(model.operation === 'create' ? 'New' : 'Edit')} ${assistantFocusEscape(model.kind)}</p>
         <p class="assistant-preview-name">${assistantFocusFieldHtml('name', model.title, 'focus-name', session)}</p>
-      </div>
-      ${essentials}${changes}${pending}${itemActions}${question}${notes}
+      </div>`;
+  return `<div class="focus-review" data-focus-review>
+      ${head}
+      ${essentials}${changes}${pending}${itemActions}${question}${notes}${empty}
       <p class="focus-status" data-focus-status role="status">${assistantFocusEscape(session.correctionError || '')}</p>
       ${actions}
     </div>`;

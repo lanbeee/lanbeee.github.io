@@ -90,7 +90,8 @@ function syncDeviceCalendarDetail(h){
   const synced=isDeviceCalendarTask(h),sheet=getSheetInner('detail-sheet');
   for(const nav of ['schedule','identity'])sheet.querySelector(`[data-detail-nav="${nav}"]`).inert=false;
   sheet.querySelector('[data-detail-nav="schedule"]').hidden=synced;
-  sheet.querySelector('[data-detail-nav="actions"]').hidden=false;
+  sheet.querySelector('[data-detail-nav="identity"]').hidden=false;
+  sheet.querySelector('[data-detail-nav="availability"]').hidden=synced || isEventItem(h);
   for(const id of ['detail-name','detail-habit-message'])$(id).disabled=synced;
   $('detail-delete').disabled=synced;$('detail-mark-edit-emoji').disabled=false;
   let hint=$('detail-device-calendar-hint');

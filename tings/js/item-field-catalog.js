@@ -47,7 +47,7 @@ const ITEM_DETAIL_SEARCH_FIELDS = [
   ['detail-share-item','Share item','invite sharing'],
   ['detail-ask-ai','Change with AI','assistant edit artificial intelligence'],
   ['detail-tap-session','Start with a tap','tap starts session timer tap to start tapping'],
-  ['detail-snooze','Snooze or show','hide unhide hidden hours days'],
+  ['detail-snooze','Snooze or show','hide unhide hidden pause hours days weeks'],
   ['detail-delete','Remove item','delete undo'],
   ['detail-calendar','Calendar history','activity log plan day date entries'],
   ['detail-viz-seg','Gap history','graph chart intervals'],

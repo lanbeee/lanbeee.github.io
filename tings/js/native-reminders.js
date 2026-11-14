@@ -380,7 +380,7 @@ function renderNativeDetailReminders(h){
   // Draft choices are staged until the item is saved.
   if(typeof detailUnsavedCreate !== 'undefined' && detailUnsavedCreate === h)return;
   if(!window.TingsNative?.isNative || h.type === 'zero')return;
-  const host = document.querySelector('[data-detail-nav="actions"]');
+  const host = document.querySelector(`[data-detail-nav="${h.source === 'device' ? 'identity' : 'schedule'}"]`);
   if(host){
     const section = document.createElement('details');section.className = 'detail-disclosure';section.id = 'detail-native-reminders';
     section.open = nativeReminderAnyOn(`item:${h.hid}`);
@@ -388,9 +388,7 @@ function renderNativeDetailReminders(h){
     section.append(summary);
     if(window.TingsNative.quiet && !isEventItem(h))section.append(nativeDndControl(`item:${h.hid}`,'DND during session'));
     section.append(h.source==='device' && h.calendarSeriesId ? nativeCalendarReminderScope(h) : nativeItemReminderControls(`item:${h.hid}`,h.name,{hideMissed:isEventItem(h) || isOpportunityHabit(h),meeting:isEventItem(h)}));
-    // Detail pages no longer carry a section-label header (the page nav names
-    // the section), so lead the actions page with the controls instead.
-    host.prepend(section);
+    host.append(section);
   }
 }
 function renderNativeBusyReminders(wrap,blocks){

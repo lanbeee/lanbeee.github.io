@@ -185,13 +185,13 @@
   border-radius:var(--radius);padding:var(--detail-pane-pad,12px);margin-bottom:12px;
 }
 .detail-pager{
-  display:flex;gap:0;overflow-x:auto;scroll-snap-type:x mandatory;
+  display:flex;flex-direction:column;gap:0;overflow:hidden;
   margin:0;padding:0;
-  scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
 }
 .detail-pager::-webkit-scrollbar{display:none;}
 .detail-page{
-  flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;
+  flex:1 1 auto;
   min-height:min(432px,calc(100dvh - 218px));margin-bottom:0;
   min-width:0;
 }
@@ -206,6 +206,9 @@
   scrollbar-width:none;
 }
 .detail-sheet > .detail-pager > .detail-page::-webkit-scrollbar{display:none;}
+/* Ordinary tabs mount one visible panel. No horizontal strip or snap state
+   can pull a pill navigation back to Summary after the viewport changes. */
+body:not(.minimal-mode) .detail-sheet > .detail-pager > .detail-page:not(.is-active){display:none;}
 /* Page navigation stays beside the content it switches. The footer uses
    the same rounded, floating controls and bottom position as Home search. */
 .detail-page-nav{
@@ -213,18 +216,25 @@
   background:var(--bg2);border-radius:var(--radius-sm);
 }
 .detail-dots{
-  min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));
+  min-width:0;display:flex;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;
   align-items:stretch;gap:2px;margin:0;padding:0;
 }
+.detail-dots::-webkit-scrollbar{display:none;}
+.detail-dots.minimal-tabs .detail-page-tab{flex:1 0 0;}
 .detail-page-tab{
-  min-width:0;min-height:48px;padding:5px 2px;border:0;border-radius:12px;
-  background:transparent;color:var(--text3);font:inherit;font-size:calc(12px * var(--font-scale));font-weight:600;
+  flex:0 0 auto;min-width:66px;min-height:48px;padding:5px 4px;border:0;border-radius:12px;
+  background:transparent;color:var(--text3);font:inherit;font-size:calc(11px * var(--font-scale));font-weight:600;
   display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;
   cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
 }
 .detail-page-tab i{font-size:18px;line-height:1;}
 .detail-page-tab span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .detail-page-tab.on{background:var(--bg3);color:var(--text);}
+.detail-page-tab[data-detail-pinned]{
+  position:sticky;left:0;z-index:1;background:var(--bg2);
+  box-shadow:2px 0 0 var(--bg2);
+}
+.detail-page-tab[data-detail-pinned].on{background:var(--bg3);}
 .detail-page-tab:active{transform:scale(0.96);}
 .detail-page-nav:has(.detail-dots[hidden]){display:none;}
 /* Only the pager/search results scroll. Footer space belongs to the layout,
@@ -275,7 +285,20 @@ body[data-pane-count="1"] .detail-sheet{
 /* Locking Home's document scroll changes its sticky header's containing
    block. Reveal detail in the same frame, fully opaque, so cards beneath
    that header cannot flash through a fading overlay. */
-body[data-pane-count="1"] #detail-sheet{background:var(--bg);transition:none;}
+body[data-pane-count="1"] #detail-sheet{
+  /* Keep the opaque cover independent of delayed iOS viewport events. Moving
+     this wrap exposes Home above it while the keyboard pans the viewport. */
+  inset:0;height:100%;
+  overflow:hidden;overscroll-behavior:none;
+  background:var(--bg);transition:none;
+}
+body[data-pane-count="1"] #detail-sheet > .detail-sheet{
+  position:relative;top:var(--detail-viewport-top,0px);
+  height:min(100%,calc(var(--keyboard-viewport-bottom,100dvh) - var(--detail-viewport-top,0px)));
+}
+/* overflow:hidden alone does not stop iOS's focus-driven document scroll.
+   Offset the covered Home page by its saved scroll position while locked. */
+body.detail-ios-scroll-lock{position:fixed;top:var(--detail-page-top);left:0;width:100%;}
 body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .sheet-search-dock{
   position:absolute;left:50%;top:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--nav-bottom) - var(--keyboard-dock-safe-bottom,var(--content-safe-bottom)));bottom:auto;
   transform:translate(-50%,-100%);margin:0;width:max-content;max-width:calc(100vw - 24px);
@@ -302,9 +325,12 @@ body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
 body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
   padding-bottom:0;
 }
-body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page:last-child{
+body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > :is(.detail-page:last-child,.detail-summary-page){
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
+/* Minimal mode's two tabs: Summary alone, or the stacked settings panes. */
+body.minimal-mode .detail-sheet:not([data-minimal-view="settings"]) > .detail-pager > .detail-page:not(.detail-summary-page),
+body.minimal-mode .detail-sheet[data-minimal-view="settings"] > .detail-pager > .detail-summary-page{display:none;}
 body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .detail-search-panel .detail-search-results{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
@@ -369,6 +395,121 @@ body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none 
 .detail-search-result mark{background:transparent;color:inherit;font-weight:700;text-decoration:underline;text-decoration-color:var(--purple-icon);text-decoration-thickness:2px;text-underline-offset:2px;}
 .detail-search-open > .detail-pager{display:none;}
 .detail-search-open > .detail-page-nav{display:none;}
+/* Summary pane: saved settings as pills, then this item's Needle conversation. */
+.detail-sheet .detail-page.detail-summary-page{display:flex;flex-direction:column;gap:12px;}
+.detail-summary-page > *{flex-shrink:0;}
+.detail-summary{display:flex;flex-direction:column;gap:6px;}
+.detail-summary .assistant-chip-row{margin:0;}
+.detail-summary .assistant-chip{font-size:12.5px;}
+.detail-summary > .focus-note{margin-top:6px;}
+#detail-summary-setup[hidden],.detail-summary-chat[hidden]{display:none;}
+#detail-summary-setup .assistant-needle-panel{margin:0;max-height:none;overflow:visible;background:var(--bg);}
+.detail-summary-chat{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid var(--border);}
+.detail-summary-chat-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  position:sticky;top:0;z-index:2;background:var(--bg2);
+}
+.detail-summary-chat-actions{display:flex;align-items:center;gap:6px;}
+.detail-summary-chat-actions .mini-text-btn{min-height:32px;}
+.detail-summary-chat-actions .mini-text-btn:disabled{opacity:.4;cursor:default;}
+.detail-summary-thread{display:flex;flex-direction:column;gap:8px;}
+.detail-summary-thread .assistant-bubble-say{background:var(--bg);}
+.detail-summary-thread .is-retired{opacity:.72;}
+.detail-summary-thread .focus-review .btn:disabled{opacity:.4;cursor:default;}
+.focus-change{display:inline-flex;align-items:stretch;max-width:100%;gap:2px;}
+.focus-change > .assistant-chip{min-width:0;}
+.focus-change-remove{flex-shrink:0;min-width:32px;border:0;border-radius:12px;background:var(--bg3);color:var(--text2);cursor:pointer;}
+.focus-change-remove:disabled{opacity:.4;cursor:default;}
+.focus-change-remove:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
+.detail-summary-thread .focus-ask{display:flex;flex-wrap:wrap;gap:6px;}
+.detail-summary-thread .focus-ask > p{flex-basis:100%;margin:0 0 2px;}
+/* On Summary the dock is Needle's composer; search shrinks to a bare loupe
+   beside it. Rows align to the bottom so a growing message rises upward
+   while the loupe, send, and close stay on the line the thumb is on. */
+.detail-ask{
+  display:flex;align-items:flex-end;flex:1 1 auto;min-width:0;padding:0 4px 0 0;
+  border-radius:22px;background:var(--field-bg);transition:box-shadow .15s ease;
+}
+.detail-ask[hidden]{display:none;}
+.detail-ask:focus-within{box-shadow:inset 0 0 0 1.5px var(--teal-icon);}
+.detail-ask-mark{
+  flex:0 0 38px;height:44px;display:flex;align-items:center;justify-content:center;
+  padding-left:4px;font-size:18px;color:var(--teal-icon);
+}
+.detail-ask.is-busy .detail-ask-mark{animation:detail-ask-pulse 1.1s ease-in-out infinite;}
+@keyframes detail-ask-pulse{50%{opacity:.35;transform:scale(.88);}}
+body .detail-ask textarea{
+  flex:1 1 auto;min-width:0;height:44px;max-height:124px;margin:0;padding:12px 8px 12px 0;
+  border:0;border-radius:0;background:transparent;color:var(--text);
+  font:inherit;font-size:16px;line-height:20px;resize:none;overflow-y:auto;
+  -webkit-appearance:none;appearance:none;
+}
+body .detail-ask textarea:is(:focus,:focus-visible){outline:none;box-shadow:none;}
+.detail-ask textarea::placeholder{color:var(--text3);opacity:1;}
+.detail-ask textarea:disabled{-webkit-text-fill-color:var(--text3);}
+.detail-ask-send{
+  flex:0 0 36px;width:36px;height:36px;margin:4px 0;display:flex;align-items:center;justify-content:center;
+  padding:0;border:0;border-radius:50%;background:var(--teal-text);color:var(--teal-bg);
+  cursor:pointer;touch-action:manipulation;
+}
+.detail-ask-send i{font-size:18px;}
+.detail-ask-send:disabled{display:none;}
+.detail-ask-send:active{transform:scale(.92);}
+.detail-ask-send:focus-visible{outline:2px solid var(--text2);outline-offset:2px;}
+.detail-ask-on > .sheet-search-dock{width:100%;}
+body .detail-sheet.detail-ask-on > .sheet-search-dock > .detail-actions{align-items:flex-end;}
+body .detail-ask-on .detail-search-control{flex:0 0 auto;background:transparent;}
+.detail-ask-on .sheet-search-toggle{flex:0 0 44px;width:44px;padding:0;}
+.detail-ask-on .sheet-search-toggle span{display:none;}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on > .sheet-search-dock{width:calc(100vw - 24px);max-width:456px;}
+/* Composer guides sit inside the dock, above the field they write into. */
+.detail-ask-guides{display:flex;flex-direction:column;gap:6px;min-width:0;padding:4px 6px 10px;}
+.detail-ask-guides[hidden],.detail-ask-guides-label[hidden],.detail-ask-guides-row[hidden],.detail-ask-hint[hidden],.detail-ask-revise[hidden]{display:none;}
+.detail-ask-guides-label{margin:0;color:var(--text2);font-size:12px;font-weight:650;line-height:1.2;}
+.detail-ask-guides-row{
+  display:flex;flex-wrap:nowrap;gap:6px;min-width:0;margin-inline:-6px;padding-inline:6px;
+  overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
+}
+.detail-ask-guides-row::-webkit-scrollbar{display:none;}
+.detail-ask-guides .assistant-guide{min-height:34px;}
+.detail-ask-hint{margin:0;color:var(--text2);font-size:12.5px;line-height:1.35;overflow-wrap:anywhere;}
+.detail-ask-revise{
+  align-self:flex-start;display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:0;border:0;
+  background:transparent;color:var(--teal-text);font:inherit;font-size:13px;font-weight:650;cursor:pointer;
+}
+.detail-ask-revise:disabled{opacity:.4;cursor:default;}
+.detail-ask-revise:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
+.detail-sheet > .sheet-search-dock:has(.detail-ask-guides:not([hidden])){border-radius:24px;}
+.detail-ask-tag{flex:0 1 auto;max-width:min(60%,13rem);height:26px;margin:0 0 9px 8px;padding:0 2px 0 8px;}
+.detail-ask:has(.detail-ask-tag:not([hidden])) .detail-ask-mark{display:none;}
+.detail-ask:has(.detail-ask-tag:not([hidden])) textarea{padding-left:6px;}
+/* Summary has one in-flow composer, rather than a floating second card over
+   the conversation. The pager gives it real space as the keyboard opens. */
+body[data-pane-count="1"] .detail-sheet.detail-ask-on{
+  /* Same resting clearance on every phone; larger home-indicator insets win.
+     While typing, the existing viewport rules own keyboard clearance. */
+  padding-bottom:max(16px,var(--detail-footer-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
+}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing{
+  padding-bottom:var(--detail-footer-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px))));
+}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on > .sheet-search-dock{
+  position:relative;inset:auto;transform:none;align-self:stretch;
+  width:100%;max-width:none;margin:6px 0 0;padding:6px 0;
+  border-radius:0;background:var(--bg);box-shadow:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on .detail-ask-guides{padding:0 0 6px;}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on .detail-ask-guides-label{
+  position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
+}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on > .detail-pager > .detail-page.detail-summary-page{padding-bottom:12px;}
+/* The undo toast sits above the composer; keep the confirmation clear. */
+body[data-pane-count="1"]:has(#action-toast.show) .detail-sheet.detail-ask-on > .detail-pager > .detail-page.detail-summary-page{padding-bottom:200px;}
+/* Reclaim the tab strip while typing, with the same composer width and
+   search/close controls before and after focus. */
+body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing{--nav-bottom:0px;}
+body[data-pane-count="1"] .detail-sheet.detail-ask-on.detail-ask-typing > .detail-page-nav{display:none;}
 body .detail-sheet.detail-field-editing > .detail-page-nav,
 body .detail-sheet.detail-keyboard-open > .detail-page-nav,
 body .detail-sheet.detail-field-editing > .detail-bottom-bar{display:none;}
@@ -465,7 +606,6 @@ body .detail-search-field input:is(:focus,:focus-visible){outline:none;box-shado
 @container detail-shell (max-height:280px){
   .detail-page-tab span{display:none;}
   .detail-page-tab{min-height:44px;}
-  .detail-page-nav{display:none;}
   /* A very short desktop/landscape pane uses the same floating footer as
      phones, so Save/Cancel fits without removing the header. */
   body:is([data-pane-count="2"],[data-pane-count="3"]) .detail-sheet > .detail-bottom-bar{

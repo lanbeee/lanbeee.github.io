@@ -41,9 +41,6 @@ $('detail-viz-seg')?.addEventListener('click',e=>{
   detailVizMode = btn.dataset.detailViz === 'gaps' ? 'gaps' : 'calendar';
   syncDetailVizMode();
 });
-getSheetInner('detail-sheet')?.querySelector('.detail-pager')?.addEventListener('scroll',()=>{
-  requestAnimationFrame(updateDetailPagerDots);
-},{passive:true});
 
 function bindCollapseAccordion(rootSelector, exclusive){
   const root = document.querySelector(rootSelector);

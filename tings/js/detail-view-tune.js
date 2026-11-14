@@ -30,7 +30,8 @@ function combineFieldsFromEndpoint(inputId, prefix){
   };
 }
 
-function currentDetailTune(){
+// Tab labels need only the selected kind, not the full draft or saved list.
+function detailTuneType(){
   const mainType = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
   let type;
   if(mainType === 'task'){
@@ -39,6 +40,11 @@ function currentDetailTune(){
     const mode = document.querySelector('#detail-mode-seg .seg-opt.on')?.dataset.mode || 'build';
     type = modeToType(mode);
   }
+  return type;
+}
+
+function currentDetailTune(){
+  const type = detailTuneType();
   const locationIds = selectedLocationIdsFrom('detail-place-chips');
   const locationPrefs = selectedLocationPrefsFrom('detail-place-chips');
   const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
@@ -173,6 +179,7 @@ function setDetailDirty(force){
   sheet.classList.toggle('tune-dirty',Boolean(dirty));
   $('detail-save').disabled = !dirty || (!isDeviceCalendarTask(h) && !syncDetailConditionHint());
   if(dirty && typeof setDetailSearchOpen === 'function')setDetailSearchOpen(false,false);
+  if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }
 
 // Editing is a layer inside detail; dismissing it leaves the card mounted.
@@ -218,7 +225,12 @@ function refreshDetailView(){
     updateDetailPagerDots();
   };
   restoreScroll();
-  requestAnimationFrame(restoreScroll);
+  const navigationRevision = detailNavigationRevision;
+  requestAnimationFrame(()=>{
+    // Keep the save's position through its own repaint, but let a subsequent
+    // pill or tab selection win instead of flashing the old page back in.
+    if(detailNavigationRevision === navigationRevision)restoreScroll();
+  });
 }
 
 function restoreDetailTune(){
@@ -230,6 +242,7 @@ function dismissDetail(){
   if(!$('detail-search-panel').hidden)setDetailSearchOpen(false);
   else if(!$('detail-delete-confirm').hidden)$('detail-delete-confirm').hidden = true;
   else if(detailEditActive())restoreDetailTune();
+  else if(detailSummaryClearDraft())return;
   else closeDetail();
 }
 
@@ -541,7 +554,8 @@ function openDetailLink(index){
   const link = links[index];
   if(!link){
     showToast('add a number or link first');
-    scrollDetailToNav('actions');
+    scrollDetailToNav('identity');
+    $('detail-links-disclosure').open = true;
     return;
   }
   openHabitLink(link);
@@ -601,6 +615,7 @@ function closeDetail(){
   inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open','tune-dirty');
   if($('detail-save'))$('detail-save').disabled = true;
   setDetailSearchOpen(false,false);
+  detailSummaryReset(null,true);
   detailIdx = null;
   detailUnsavedCreate = null;
   detailUnsavedReminders = null;

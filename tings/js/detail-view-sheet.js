@@ -1,9 +1,9 @@
 // Habit detail sheet, per-habit calendar, stats, graph, and schedule editor.
 //
-// This file renders the habit detail sheet: the per-habit calendar (the
-// default first pane for habits — tasks default to the schedule pane
-// instead, see openDetail()), the score ring, stats, the gap graph, and the
-// schedule editor (weekday / monthday / time-window). Functions are tagged
+// This file renders the habit detail sheet: the per-habit calendar, the
+// score ring, stats, the gap graph, and the schedule editor (weekday /
+// monthday / time-window). Every item opens on the Summary pane
+// (detail-view-summary.js). Functions are tagged
 // by role to guide the React Native port:
 //   - RENDER  -> become React functional components (return JSX).
 //   - HANDLER -> become onPress / onChange callbacks.
@@ -66,7 +66,6 @@ function paintDetailFields(h){
   renderHabitScheduleOptions(h);
   // Expand configured options, but keep unused advanced fields quiet.
   $('detail-options-disclosure').open = Boolean(h.scheduleOptions?.length);
-  $('detail-weather-disclosure').open = Boolean(h.showWeather || h.weatherProfileId || h.weatherProfileMode === 'none' || h.weatherLocationId);
   renderTimeWindowInputs(h);
   // Older/imported timed tasks can carry the appointment clock without a
   // separate due date. Show that clock's date before gating the time field.
@@ -205,6 +204,7 @@ function openDetail(i){
   if(changedHabit)resetDetailDisclosures(h);
   paintDetailChrome(h);
   setDetailDirty(false);
+  renderDetailSummary();
   if(changedHabit){
     $('detail-search-input').value = '';
     setDetailSearchOpen(false,false);
@@ -216,24 +216,11 @@ function openDetail(i){
     const inner = getSheetInner('detail-sheet');
     const pager = inner?.querySelector('.detail-pager');
     if(inner)inner.scrollTop = 0;
+    setDetailMinimalView('summary');
     if(pager){
       pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
-      // Order links → actions first so unlink is immediate.
-      // Tasks land on Schedule, where their due date and placement controls live;
-      // recurring habits land on Calendar so their history is visible first.
-      const hasOrder = typeof habitHasOrderConstraints === 'function'
-        && habitHasOrderConstraints(h.hid);
-      const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-      requestAnimationFrame(()=>{
-        if(hasOrder)scrollDetailToNav('actions','auto');
-        else if(minimal)pager.scrollTo({top:0,behavior:'auto'});
-        else if(isDeviceCalendarTask(h))scrollDetailToNav('identity','auto');
-        else if(h.type === 'task' || isLocalAppointment(h))scrollDetailToNav('schedule','auto');
-        else{
-          pager.scrollTo({left:0,behavior:'auto'});
-          updateDetailPagerDots();
-        }
-      });
+      // Select Summary directly; no delayed pager reset can race a pill tap.
+      scrollDetailToNav('summary','instant');
     }
   }
   renderDetailTabs();
@@ -290,18 +277,14 @@ function openDetailUnsavedCreate(draft){
   paintDetailChrome(draft);
   detailTuneOriginal = null;
   setDetailDirty(true);
+  renderDetailSummary();
   openSheet('detail-sheet');
   if(inner)inner.scrollTop = 0;
+  setDetailMinimalView('summary');
   const pager = inner?.querySelector('.detail-pager');
   if(pager){
     pager.querySelectorAll('.detail-page').forEach(page => { page.scrollTop = 0; });
-    requestAnimationFrame(() => {
-      if(draft.type === 'task' || (typeof isLocalAppointment === 'function' && isLocalAppointment(draft)))scrollDetailToNav('schedule','auto');
-      else{
-        pager.scrollTo({left:0, behavior:'auto'});
-        updateDetailPagerDots();
-      }
-    });
+    scrollDetailToNav('summary','instant');
   }
   renderDetailTabs();
   updateDetailPagerDots();
@@ -322,16 +305,11 @@ function detailCommitUnsavedReminders(hid){
   assistantFocusWriteReminders(pending.session, hid);
 }
 
-// HYBRID: opens detail then scrolls to calendar (now the default first pane —
-// this is kept for callers that need to jump here even when the sheet is
-// already open on a different pane for the same habit).
+// HYBRID: opens detail then scrolls to the calendar history pane.
 function openDetailCalendar(i){
   openDetail(i);
   requestAnimationFrame(()=>{
-    const pager = getSheetInner('detail-sheet')?.querySelector('.detail-pager');
-    if(!pager)return;
-    pager.scrollTo({left:0,behavior:'auto'});
-    updateDetailPagerDots();
+    scrollDetailToNav('calendar','auto');
   });
 }
 

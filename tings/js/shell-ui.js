@@ -471,6 +471,13 @@ function updateKeyboardLift(){
     const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
     style.setProperty('--assistant-viewport-top', `${top}px`);
   }else style.removeProperty('--assistant-viewport-top');
+  // Detail's composer uses the same visible rectangle. Safari pans the
+  // viewport to reveal a focused dock; anchoring only its bottom loses the
+  // item header above the visible screen.
+  if(detailOpen && !paneTierActive()){
+    const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
+    style.setProperty('--detail-viewport-top',`${top}px`);
+  }else style.removeProperty('--detail-viewport-top');
   // SystemBars clears the bottom safe inset after the WebView resize. The
   // keyboard already covers it in that intervening frame, so omit it now.
   if(nativeResized){
@@ -478,7 +485,14 @@ function updateKeyboardLift(){
     // first resized frame, before the queued viewport callback has run.
     const safeBottom = `max(0px,calc(100% - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
     if(style.getPropertyValue('--keyboard-dock-safe-bottom') !== safeBottom)style.setProperty('--keyboard-dock-safe-bottom',safeBottom);
-  }else style.removeProperty('--keyboard-dock-safe-bottom');
+    // In-flow padding percentages resolve against width, unlike the floating
+    // dock's top. Use viewport length for Summary's footer clearance instead.
+    const detailSafeBottom = `max(0px,calc(100dvh - ${nativeKeyboardRestHeight}px + ${nativeKeyboardRestSafeBottom}px))`;
+    if(style.getPropertyValue('--detail-footer-safe-bottom') !== detailSafeBottom)style.setProperty('--detail-footer-safe-bottom',detailSafeBottom);
+  }else{
+    style.removeProperty('--keyboard-dock-safe-bottom');
+    style.removeProperty('--detail-footer-safe-bottom');
+  }
   // Native layout already follows both keyboard directions. A pixel snapshot
   // would hold the old height for a frame as the keyboard closes.
   const bottom = nativeResized ? '100%' : `${visibleBottom}px`;
@@ -514,7 +528,7 @@ function keepFocusedInputVisible(){
   const active = document.activeElement;
   // These fields live in a dock which already follows the keyboard. Scrolling
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
-  if(!active || active.matches('#habit-search,#detail-search-input,#settings-search-input,#assistant-input'))return;
+  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
   let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body');
   if(!host)return;
@@ -638,6 +652,7 @@ function appBackPlan(){
       if($('detail-search-panel') && !$('detail-search-panel').hidden)return plan('detail-search', click($('detail-cool')));
       if(!$('detail-delete-confirm').hidden)return plan('detail-delete', click($('detail-delete-no')));
       if(detailEditActive())return plan('detail-edit', ()=>{restoreDetailTune();return true;});
+      if(getSheetInner('detail-sheet')?.classList.contains('detail-ask-on') && detailSummaryDraft())return plan('detail-draft', ()=>detailSummaryClearDraft());
       return plan('detail:' + $(id)?.dataset.backSequence, ()=>{dismissDetail();return true;}, edgeBackSurface(id));
     }
     if(id === 'day-logs-sheet' && visible($('day-logs-back')))return plan('day-logs-step', click($('day-logs-back')));
@@ -941,6 +956,7 @@ function edgeBackClaim(gesture){
   }
   gesture.claimed = true;
   gesture.surface = plan.surface;
+  sheetEnterMotions.get(plan.surface)?.cancel();
   if(!plan.surface)return;
   plan.surface.classList.add('edge-back-dragging');
   plan.surface.dataset.edgeBackDir = gesture.dir > 0 ? 'right' : 'left';
@@ -1130,7 +1146,16 @@ window.addEventListener('popstate',event=>{
 });
 
 // RENDER: opens a sheet or mounts it in the pane
+const sheetEnterMotions = new WeakMap();
+document.addEventListener('focusin',event=>{
+  // A focused editor must meet the keyboard immediately, even during entry.
+  if(event.target.matches('input,textarea,select,[contenteditable="true"]')){
+    sheetEnterMotions.get(event.target.closest('.sheet-wrap'))?.cancel();
+    if(event.target.closest('.detail-sheet') && typeof cancelDetailNavigationMotion === 'function')cancelDetailNavigationMotion();
+  }
+});
 function openSheet(id,opts = {}){
+  const wasOpen = $(id).classList.contains('open');
   if(edgeBack || edgeBackSettling)edgeBackAbort();
   registerBrowserPage(id,opts.reopen);
   $(id).dataset.backSequence = String(++sheetOpenSequence);
@@ -1163,6 +1188,18 @@ function openSheet(id,opts = {}){
   armSheetBackdropGuard(id);
   updateFullPageState();
   updateKeyboardLift();
+  // Only a fresh phone opening slides in. History traversal already has its
+  // own motion, and cancelling an edge gesture must never replay this entry.
+  // Guided tours keep their spotlight targets still while measuring them.
+  // Move the content inside the cover so Home's scroll lock cannot flash through.
+  if(!wasOpen && !paneTierActive() && !browserNavigationApplying && !window.TingsCoach?.state().active
+    && (id === 'add-sheet' || isFullPageSheet(id))
+    && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+    sheetEnterMotions.get($(id))?.cancel();
+    sheetEnterMotions.set($(id),getSheetInner(id).animate([
+      {transform:'translateX(100%)'},{transform:'translateX(0)'}
+    ],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'}));
+  }
 }
 
 // The stylesheet stacking order is the resting order. A sheet opened while
@@ -1204,6 +1241,8 @@ document.addEventListener('click',e=>{
 
 // RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
+  sheetEnterMotions.get($(id))?.cancel();
+  if(id === 'detail-sheet' && typeof cancelDetailNavigationMotion === 'function')cancelDetailNavigationMotion();
   rememberBrowserPageScroll();
   // If this sheet is currently mounted in the pane, unmount it instead.
   const pane = getPane();
@@ -1252,15 +1291,41 @@ function shouldMountInPane(id) {
   return id === 'detail-sheet';
 }
 
+// iOS ignores overflow locking for the document pan used to reveal an input.
+// Freeze covered Home before focus can start, retaining its visual position.
+// The detail cover is opaque on its first frame; restore Home synchronously
+// on the final close so the browser cannot paint it at scrollY=0 in between.
+let detailIOSPageScroll = null;
+function syncDetailIOSPageLock(detailOpen,modalOpen){
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(ios && !paneTierActive() && detailOpen && detailIOSPageScroll === null
+    && !document.body.classList.contains('assistant-ios-scroll-lock')){
+    detailIOSPageScroll = {x:window.scrollX,y:window.scrollY};
+    document.body.style.setProperty('--detail-page-top',`${-detailIOSPageScroll.y}px`);
+    document.body.classList.add('detail-ios-scroll-lock');
+  }else if(detailIOSPageScroll !== null && (!modalOpen || paneTierActive())){
+    const scroll = detailIOSPageScroll;
+    detailIOSPageScroll = null;
+    document.body.classList.remove('detail-ios-scroll-lock');
+    document.body.style.removeProperty('--detail-page-top');
+    window.scrollTo({left:scroll.x,top:scroll.y,behavior:'instant'});
+  }
+}
+
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
-// Use overflow locking only — never position:fixed. Fixing the body forces
-// scrollY to 0, so unlocking always flashes a jump even when we restore.
 function updateFullPageState(){
   syncBrowserBack();
   const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
+  if(!paneTierActive() && $('detail-sheet')?.classList.contains('open')){
+    document.addEventListener('touchmove',guardDetailTouchScroll,{capture:true,passive:false});
+  }else{
+    document.removeEventListener('touchmove',guardDetailTouchScroll,true);
+    detailScrollTouch = null;
+  }
   if(modalOpen && !document.body.classList.contains('modal-open')){
     document.body.classList.add('modal-open');
   }else if(!modalOpen && document.body.classList.contains('modal-open')){
@@ -1272,7 +1337,60 @@ function updateFullPageState(){
     }
     document.body.classList.remove('modal-open');
   }
+  // Retain the lock through nested pickers, releasing it after overflow is
+  // unlocked so the original Home scroll can actually be restored.
+  syncDetailIOSPageLock($('detail-sheet')?.classList.contains('open'),modalOpen);
 }
+
+// iOS can still pan the document beneath a keyboard even with overflow:hidden.
+// Consume drags on the phone detail backdrop/chrome and at scroll boundaries;
+// leave its actual scrollable pages, textareas and horizontal controls usable.
+// The iOS page lock also blocks focus-driven panning; this guard handles
+// boundary gestures on other browsers without disabling conversation scroll.
+let detailScrollTouch = null;
+document.addEventListener('touchstart',event=>{
+  const touch = event.touches.length === 1 ? event.touches[0] : null;
+  detailScrollTouch = touch && !paneTierActive() && $('detail-sheet')?.classList.contains('open')
+    ? {id:touch.identifier,startX:touch.clientX,x:touch.clientX,y:touch.clientY} : null;
+},{capture:true,passive:true});
+function guardDetailTouchScroll(event){
+  const previous = detailScrollTouch;
+  if(!previous || paneTierActive() || !$('detail-sheet')?.classList.contains('open')
+    || event.touches.length !== 1 || !event.cancelable || event.defaultPrevented)return;
+  const touch = event.touches[0];
+  if(touch.identifier !== previous.id)return;
+  const dx = touch.clientX - previous.x,dy = touch.clientY - previous.y;
+  if(Math.max(Math.abs(dx),Math.abs(dy)) < 8)return;
+  detailScrollTouch = {...previous,x:touch.clientX,y:touch.clientY};
+  const target = event.target instanceof Element ? event.target : event.target.parentElement;
+  const wrap = target?.closest('.sheet-wrap.open');
+  // Nested pickers keep their own gestures; only detail and its background
+  // belong to this guard. Edge-back handlers can still claim horizontal drags.
+  if(wrap && wrap.id !== 'detail-sheet')return;
+  const horizontal = Math.abs(dx) > Math.abs(dy);
+  if(horizontal && target?.closest('input[type="range"]'))return;
+  // iOS WebKit owns screen-edge navigation: a horizontal drag that starts at
+  // the extreme edge drives the owned snapshot transition, so a JS
+  // preventDefault here would fight it instead of containing the scroll.
+  if(horizontal && browserOwnsEdgeNavigation()
+    && (previous.startX <= EDGE_BACK_ZONE || previous.startX >= window.innerWidth - EDGE_BACK_ZONE))return;
+  for(let node = wrap && target;node && node !== wrap;node = node.parentElement){
+    const style = getComputedStyle(node);
+    const overflow = horizontal ? style.overflowX : style.overflowY;
+    if(!/^(auto|scroll)$/.test(overflow))continue;
+    const position = horizontal ? node.scrollLeft : node.scrollTop;
+    const extent = horizontal ? node.scrollWidth - node.clientWidth : node.scrollHeight - node.clientHeight;
+    const delta = horizontal ? dx : dy;
+    if(extent > 1 && (delta < 0 ? position < extent - 1 : position > 1))return;
+    // A contained scroller must not pass its boundary drag to the document
+    // (or to the horizontal pager around it).
+    if((horizontal ? style.overscrollBehaviorX : style.overscrollBehaviorY) !== 'auto')break;
+  }
+  event.preventDefault();
+}
+['touchend','touchcancel'].forEach(type=>document.addEventListener(type,()=>{
+  detailScrollTouch = null;
+},{capture:true,passive:true}));
 
 // RENDER: shows and auto-hides the toast message. Optional durationMs for
 // longer notices (e.g. monthly retention cleanup).

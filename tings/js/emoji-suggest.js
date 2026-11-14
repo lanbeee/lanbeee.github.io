@@ -911,7 +911,8 @@ function openDetailEmojiEditor(opts){
   cancelDetailEditorFocus();
   setDetailMarkMenuOpen(false);
   if(opts?.scroll !== false && typeof scrollDetailToNav === 'function'){
-    scrollDetailToNav('identity', 'smooth');
+    // The editor owns the following focus/reveal; keep its geometry settled.
+    scrollDetailToNav('identity', 'auto');
   }
   const disclosure = document.getElementById('detail-appearance-disclosure');
   if(disclosure)disclosure.open = true;
@@ -925,7 +926,7 @@ function openDetailNameEditor(opts){
   cancelDetailEditorFocus();
   setDetailMarkMenuOpen(false);
   if(opts?.scroll !== false && typeof scrollDetailToNav === 'function'){
-    scrollDetailToNav('identity', 'smooth');
+    scrollDetailToNav('identity', 'auto');
   }
   const disclosure = document.getElementById('detail-name-disclosure');
   if(disclosure)disclosure.open = true;
