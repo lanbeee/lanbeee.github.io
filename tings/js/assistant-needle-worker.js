@@ -25,7 +25,7 @@ function needleBasicTools(data){
   });
 }
 
-function needleError(){ return engine.ccall('needle_last_error','string',[],[]) || 'Needle runtime failed.'; }
+function needleError(){ return engine.ccall('needle_last_error','string',[],[]) || 'Assistant runtime failed.'; }
 function needleInit(system, tools){
   const nativeTools = tools.map(({name,description,parameters})=>({name,description,parameters}));
   engine._needle_reset();
@@ -42,7 +42,7 @@ function needleComplete(text){
   const result = JSON.parse(engine.UTF8ToString(output));
   // Native failures can arrive as JSON as well as a negative return code.
   // Both must use the same recovery/clarification path below.
-  if(result.success === false || result.type === 'error')throw new Error(result.error || 'Needle could not complete this request.');
+  if(result.success === false || result.type === 'error')throw new Error(result.error || 'The assistant could not complete this request.');
   result._promptTokens = usedTokens + Math.ceil(text.length / 2);
   usedTokens = result._promptTokens + 768;
   return result;
@@ -54,7 +54,7 @@ function needleEmbedding(text){
   const n = engine.ccall('needle_embed','number',types,[text,0,0,0,0]);
   if(n <= 0)throw new Error(needleError());
   const ptr = engine._malloc(n * 4);
-  if(!ptr)throw new Error('Not enough memory for Needle.');
+  if(!ptr)throw new Error('Not enough memory for the assistant.');
   try{
     if(engine.ccall('needle_embed','number',types,[text,0,0,ptr,n]) < 0)throw new Error(needleError());
     const vector = Array.from(new Float32Array(engine.HEAPU8.buffer,ptr,n));
@@ -214,19 +214,19 @@ self.onmessage = event=>{
         engine = await createNeedle({wasmBinary:new Uint8Array(data.wasm), print:()=>{}, printErr:()=>{}});
         const bytes = new Uint8Array(data.model);
         const ptr = engine._malloc(bytes.length);
-        if(!ptr)throw new Error('Not enough memory to load Needle 3.');
+        if(!ptr)throw new Error('Not enough memory to load the assistant.');
         try{
           engine.HEAPU8.set(bytes,ptr);
           if(engine._needle_load(ptr,BigInt(bytes.length)) < 0)throw new Error(needleError());
         }finally{ engine._free(ptr); }
         output = engine._malloc(OUTPUT_CAPACITY);
-        if(!output)throw new Error('Not enough memory to run Needle 3.');
+        if(!output)throw new Error('Not enough memory to run the assistant.');
         self.postMessage({id:data.id,result:true});
       }else if(data.type === 'split'){
-        if(!engine)throw new Error('Needle is not loaded.');
+        if(!engine)throw new Error('The assistant is not loaded.');
         self.postMessage({id:data.id,result:needleSplit(data.request)});
       }else if(data.type === 'extract'){
-        if(!engine)throw new Error('Needle is not loaded.');
+        if(!engine)throw new Error('The assistant is not loaded.');
         // A separate one-field record cannot execute an action. The host
         // validates its value before merging it into the original candidate.
         active=null;
@@ -235,7 +235,7 @@ self.onmessage = event=>{
             ...(data.values?.length ? {enum:data.values} : {})}},required:[data.field]}}]);
         self.postMessage({id:data.id,result:needleComplete(`Extract the ${data.field} record from this text: ${data.request}`)});
       }else if(data.type === 'rankFields'){
-        if(!engine)throw new Error('Needle is not loaded.');
+        if(!engine)throw new Error('The assistant is not loaded.');
         active=null;
         const fields=Array.isArray(data.fields) ? data.fields.slice(0,80) : [];
         const queries=Array.isArray(data.queries) ? data.queries.slice(0,13) : [];
@@ -246,7 +246,7 @@ self.onmessage = event=>{
         });
         self.postMessage({id:data.id,result:{rankings}});
       }else if(data.type === 'focus'){
-        if(!engine)throw new Error('Needle is not loaded.');
+        if(!engine)throw new Error('The assistant is not loaded.');
         // A bounded routing menu or extraction schema, then a reset. The host checks the
         // original request. This pass cannot call the general tool catalog.
         active=null;
@@ -257,7 +257,7 @@ self.onmessage = event=>{
         result._inference = {startedAt, endedAt:Date.now(), heapBytes:engine.HEAPU8.byteLength};
         self.postMessage({id:data.id,result});
       }else if(data.type === 'complete'){
-        if(!engine)throw new Error('Needle is not loaded.');
+        if(!engine)throw new Error('The assistant is not loaded.');
         self.postMessage({id:data.id,result:needleRun(data)});
       }
     }catch(err){

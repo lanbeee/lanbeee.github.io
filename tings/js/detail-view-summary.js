@@ -39,10 +39,10 @@ function detailSummaryPill(chip,session){
   return `<button type="button" class="assistant-chip focus-field" data-summary-field="${escapeHtml(chip.id)}" aria-label="${escapeHtml(`Open ${label || 'setting'}: ${value}`)}">${body}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`;
 }
 
-function renderDetailSummaryOverview(){
+function renderDetailSummaryOverview(held = null,items = null){
   const host = $('detail-summary');
   if(!host)return;
-  const item = detailSummaryRecord();
+  const item = held || detailSummaryRecord();
   if(!item){host.replaceChildren();return;}
   if(typeof assistantFocusItemSummary !== 'function'){
     host.innerHTML = '<p class="focus-note">Loading summary…</p>';
@@ -56,18 +56,19 @@ function renderDetailSummaryOverview(){
     }
     return;
   }
-  const summary = assistantFocusItemSummary(item);
+  // The paint's saved list feeds name lookups without another load().
+  const summary = assistantFocusItemSummary(item,items ? {items} : null);
   const row = (chips,label)=>`<div class="assistant-chip-row" role="group" aria-label="${label}">${chips.map(chip=>detailSummaryPill(chip,summary.session)).join('')}</div>`;
   const parts = [row([...summary.essentials,...summary.custom],'Item settings')];
   const hint = !detailSummaryAskReady() ? 'Tap a setting to edit.'
     : detailSummaryCanSend() ? 'Tap a setting or describe a change.'
-    : 'Download Needle 3 to describe changes.';
+    : 'Download the assistant to describe changes.';
   parts.push(`<p class="focus-note">${hint}</p>`);
   host.innerHTML = parts.join('');
 }
 
 function detailSummaryNavPage(nav){
-  return [...(getSheetInner('detail-sheet')?.querySelectorAll('.detail-pager > .detail-page') || [])]
+  return [...(getSheetInner('detail-sheet')?.querySelectorAll('.detail-pager .detail-page') || [])]
     .find(page=>page.dataset.detailNav === nav);
 }
 
@@ -79,7 +80,7 @@ let detailSummaryFollowEnd = false;
 function detailSummaryKeepEnd(){
   if(!detailSummaryFollowEnd || !detailSummaryOnScreen())return;
   const page = getSheetInner('detail-sheet')?.querySelector('.detail-summary-page');
-  const scroller = detailIsSingleView() ? page?.closest('.detail-pager') : page;
+  const scroller = page;
   if(scroller)scroller.scrollTo({top:scroller.scrollHeight,behavior:'instant'});
 }
 
@@ -202,13 +203,19 @@ function detailSummaryReset(hid = null,preserve = false){
   detailSummaryThread()?.replaceChildren();
   if($('detail-summary-chat'))$('detail-summary-chat').hidden = true;
   const input = $('detail-ask-input');
-  if(input){input.value = '';detailSummarySetTag('');detailSummaryResizeComposer();}
+  if(input){
+    const hadDraft = input.value || detailSummaryTagName();
+    input.value = '';detailSummarySetTag('');
+    // An already-empty composer keeps its resting height; re-measuring it
+    // costs a sheet layout pass on every item switch.
+    if(hadDraft || !input.style.height)detailSummaryResizeComposer();
+  }
 }
 
 // Called on every detail paint. A new item starts over; the same item keeps
 // its conversation, and an idle session rebuilds from the saved record.
-function renderDetailSummary(){
-  const item = detailSummaryRecord();
+function renderDetailSummary(held = null,items = null){
+  const item = held || detailSummaryRecord();
   const hid = item?.hid || null;
   if(detailIdx === null || hid !== detailSummary.hid){
     detailSummaryReset(hid,true);
@@ -229,7 +236,7 @@ function renderDetailSummary(){
     }
   }
   else if(detailSummary.session && !detailSummary.busy && !detailSummaryHasWork())detailSummary.session = null;
-  renderDetailSummaryOverview();
+  renderDetailSummaryOverview(item,items);
   syncDetailSummaryDock();
 }
 
@@ -302,9 +309,9 @@ function syncDetailSummaryDock(){
   const dirty = inner.classList.contains('tune-dirty');
   const canSend = detailSummaryCanSend();
   input.disabled = detailSummary.busy || dirty;
-  input.placeholder = detailSummary.busy ? 'Needle is reading…'
+  input.placeholder = detailSummary.busy ? 'Assistant is reading…'
     : dirty ? 'Save or cancel first'
-    : !canSend ? 'Download Needle 3 first'
+    : !canSend ? 'Download the assistant first'
     : detailSummaryTagName() ? 'Type the new value'
     : 'Describe a change';
   $('detail-ask-tag-remove').disabled = input.disabled;
@@ -416,7 +423,7 @@ function detailSummaryGuidesHeight(inner,height){
   const before = parseFloat(inner.style.getPropertyValue('--detail-ask-guides-h')) || 0;
   if(before === height)return;
   const page = inner.querySelector('.detail-summary-page');
-  const scroller = detailIsSingleView() ? page?.closest('.detail-pager') : page;
+  const scroller = page;
   const atEnd = scroller && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
   inner.style.setProperty('--detail-ask-guides-h',`${height}px`);
   if(atEnd && height > before)scroller.scrollTop = scroller.scrollHeight;
@@ -472,7 +479,7 @@ async function detailSummaryRead(session,text,opts){
   }catch(error){
     if(turn !== detailSummary.turn || error?.name === 'AbortError')return;
     detailSummaryShowProposal();
-    detailSummaryBubble('say',error?.message || 'Needle could not read that.');
+    detailSummaryBubble('say',error?.message || 'The assistant could not read that.');
   }finally{
     if(turn === detailSummary.turn)detailSummarySetBusy(false);
   }
@@ -487,7 +494,7 @@ async function detailSummarySend(text){
   }
   if(!detailSummaryCanSend()){
     detailSummaryComposer(value);
-    showToast('Download Needle 3 to ask for changes');
+    showToast('Download the assistant to ask for changes');
     return false;
   }
   const session = detailSummaryEnsureSession();

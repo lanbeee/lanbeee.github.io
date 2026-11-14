@@ -78,12 +78,12 @@ function paintDetailFields(h){
   setDetailPriorityUi(effectivePriority(h));
 }
 
-function paintDetailChrome(h){
+function paintDetailChrome(h,items = null){
   const days = daysSince(h.lastLog);
   const c = habitColors(h,days);
   syncRhythm('detail',h.target || 7);
   syncBreakableUi();
-  if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi();
+  if(typeof syncDetailTimerUi === 'function')syncDetailTimerUi(h);
   $('detail-mark').style.cssText = '';
   const markStyle = typeof emojiBgInlineStyle === 'function'
     ? emojiBgInlineStyle(h,c.bg,c.icon)
@@ -96,7 +96,7 @@ function paintDetailChrome(h){
   $('detail-mark').innerHTML = iconHtml(h,c);
   renderStats(h);
   renderGraph(h);
-  renderCalendar(h);
+  renderCalendar(h,items);
   syncDetailVizMode();
   renderDetailOrderPage(h);
   applyDetailMinimalMode();
@@ -181,7 +181,10 @@ function detailTuneSnapshot(h){
 
 // HYBRID: opens sheet, syncs DOM and detail state
 function openDetail(i){
-  const h = load()[i];
+  // One saved-list read feeds the whole paint; detail readers below take it
+  // instead of each paying another load().
+  const items = load();
+  const h = items[i];
   if(!h)return;
   const inner = getSheetInner('detail-sheet');
   if(inner?.contains(document.activeElement))document.activeElement.blur();
@@ -193,7 +196,7 @@ function openDetail(i){
     detailVizMode = 'calendar';
   }
   detailIdx = i;
-  syncDetailSearchAssistant();
+  syncDetailSearchAssistant(h);
   detailUnsavedCreate = null;
   detailUnsavedReminders = null;
   paintDetailFields(h);
@@ -202,9 +205,9 @@ function openDetail(i){
   // disclosures open (device personalization reveals the emoji editor), and a
   // later reset would close them again and hide their controls.
   if(changedHabit)resetDetailDisclosures(h);
-  paintDetailChrome(h);
-  setDetailDirty(false);
-  renderDetailSummary();
+  paintDetailChrome(h,items);
+  setDetailDirty(false,h);
+  renderDetailSummary(h,items);
   if(changedHabit){
     $('detail-search-input').value = '';
     setDetailSearchOpen(false,false);
@@ -218,7 +221,7 @@ function openDetail(i){
     if(inner)inner.scrollTop = 0;
     setDetailMinimalView('summary');
     if(pager){
-      pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
+      pager.querySelectorAll('.detail-page,.detail-minimal-settings').forEach(page=>{ page.scrollTop = 0; });
       // Select Summary directly; no delayed pager reset can race a pill tap.
       scrollDetailToNav('summary','instant');
     }
@@ -283,7 +286,7 @@ function openDetailUnsavedCreate(draft){
   setDetailMinimalView('summary');
   const pager = inner?.querySelector('.detail-pager');
   if(pager){
-    pager.querySelectorAll('.detail-page').forEach(page => { page.scrollTop = 0; });
+    pager.querySelectorAll('.detail-page,.detail-minimal-settings').forEach(page => { page.scrollTop = 0; });
     scrollDetailToNav('summary','instant');
   }
   renderDetailTabs();

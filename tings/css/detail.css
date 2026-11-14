@@ -185,7 +185,8 @@
   border-radius:var(--radius);padding:var(--detail-pane-pad,12px);margin-bottom:12px;
 }
 .detail-pager{
-  display:flex;flex-direction:column;gap:0;overflow:hidden;
+  display:flex;flex-direction:row;gap:0;overflow-x:auto;overflow-y:hidden;
+  scroll-snap-type:x mandatory;overflow-anchor:none;
   margin:0;padding:0;
   scrollbar-width:none;
 }
@@ -201,14 +202,15 @@
   overflow-y:hidden;overscroll-behavior-x:contain;
 }
 .detail-sheet > .detail-pager > .detail-page{
+  flex:0 0 100%;width:100%;min-width:100%;box-sizing:border-box;
+  scroll-snap-align:start;scroll-snap-stop:always;
   height:100%;min-height:0;overflow-x:hidden;overflow-y:auto;
   overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
   scrollbar-width:none;
 }
 .detail-sheet > .detail-pager > .detail-page::-webkit-scrollbar{display:none;}
-/* Ordinary tabs mount one visible panel. No horizontal strip or snap state
-   can pull a pill navigation back to Summary after the viewport changes. */
-body:not(.minimal-mode) .detail-sheet > .detail-pager > .detail-page:not(.is-active){display:none;}
+/* Keep every ordinary panel at exactly the viewport width. Keyboard height,
+   disclosures and footer changes must not move a horizontal snap position. */
 /* Page navigation stays beside the content it switches. The footer uses
    the same rounded, floating controls and bottom position as Home search. */
 .detail-page-nav{
@@ -320,17 +322,6 @@ body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet).detail-search-open 
 body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
-/* Stacked minimal pages share one scroll. Keep footer clearance on the last
-   section only so earlier cards don't carry a blank band. */
-body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
-  padding-bottom:0;
-}
-body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > :is(.detail-page:last-child,.detail-summary-page){
-  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
-}
-/* Minimal mode's two tabs: Summary alone, or the stacked settings panes. */
-body.minimal-mode .detail-sheet:not([data-minimal-view="settings"]) > .detail-pager > .detail-page:not(.detail-summary-page),
-body.minimal-mode .detail-sheet[data-minimal-view="settings"] > .detail-pager > .detail-summary-page{display:none;}
 body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .detail-search-panel .detail-search-results{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }

@@ -467,17 +467,24 @@ function updateKeyboardLift(){
   const style = document.documentElement.style;
   // Safari can pan the visual viewport as well as shrink it for the IME.
   // Keep the whole assistant in that visible rectangle, including its header.
+  // These root-level custom properties inherit into every element, so each
+  // set/remove invalidates style document-wide. Rest them at the CSS fallback
+  // value (0px) behind guarded writes so repeated sheet opens stay clean.
   if(assistantOpen && !paneTierActive()){
     const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
-    style.setProperty('--assistant-viewport-top', `${top}px`);
-  }else style.removeProperty('--assistant-viewport-top');
+    if(style.getPropertyValue('--assistant-viewport-top') !== `${top}px`)style.setProperty('--assistant-viewport-top', `${top}px`);
+  }else if(style.getPropertyValue('--assistant-viewport-top') !== '0px')style.setProperty('--assistant-viewport-top','0px');
   // Detail's composer uses the same visible rectangle. Safari pans the
   // viewport to reveal a focused dock; anchoring only its bottom loses the
   // item header above the visible screen.
   if(detailOpen && !paneTierActive()){
-    const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
-    style.setProperty('--detail-viewport-top',`${top}px`);
-  }else style.removeProperty('--detail-viewport-top');
+    // iOS can report a leftover pan while opening/locking the page, before
+    // its viewport scroll event catches up. A full-height viewport needs no
+    // offset; applying that stale pan pushes the header down for one frame.
+    const room = needsLift ? Math.max(0,layoutHeight - window.visualViewport.height) : 0;
+    const top = needsLift && !nativeResized ? Math.max(0,Math.min(window.visualViewport.offsetTop,room)) : 0;
+    if(style.getPropertyValue('--detail-viewport-top') !== `${top}px`)style.setProperty('--detail-viewport-top',`${top}px`);
+  }else if(style.getPropertyValue('--detail-viewport-top') !== '0px')style.setProperty('--detail-viewport-top','0px');
   // SystemBars clears the bottom safe inset after the WebView resize. The
   // keyboard already covers it in that intervening frame, so omit it now.
   if(nativeResized){
@@ -532,9 +539,9 @@ function keepFocusedInputVisible(){
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
   let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body');
   if(!host)return;
-  // Minimal detail sections share the pager's scroll, rather than scrolling
+  // Minimal detail sections share the Settings scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
-  if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-pager');
+  if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-minimal-settings') || host;
   if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
@@ -1880,7 +1887,7 @@ document.addEventListener('pointerdown',e=>{
       if(pager.scrollWidth > pager.clientWidth + 1){
         scrollers.push([pager,pager.scrollTop,pager.scrollLeft]);
       }
-      for(const page of pager.querySelectorAll('.detail-page')){
+      for(const page of pager.querySelectorAll('.detail-page,.detail-minimal-settings')){
         if(!page.hidden && page.scrollHeight > page.clientHeight + 1){
           scrollers.push([page,page.scrollTop,page.scrollLeft]);
         }

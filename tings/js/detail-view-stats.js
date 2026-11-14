@@ -319,9 +319,9 @@ function detailStripWindow(){
 // PURE: this habit's agenda placements by day from the cached week (today →
 // +6), so the strip can dot days the planner placed this habit on. Shifted
 // windows fall outside the week cache and simply get no agenda dots.
-function detailAgendaByDay(h){
+function detailAgendaByDay(h,items = null){
   if(typeof weekAgendaByDay !== 'function' || typeof cachedOverviewWeek !== 'function')return new Map();
-  const data = typeof load === 'function' ? load() : [];
+  const data = items || (typeof load === 'function' ? load() : []);
   const all = weekAgendaByDay(cachedOverviewWeek(data),data);
   const mine = new Map();
   all.forEach((items,key)=>{
@@ -353,9 +353,9 @@ function syncDetailVizMode(){
 
 // RENDER: per-habit 14-day strip (same cells, dots, and agenda markers as the
 // overview calendar). Tapping a day keeps opening the scoped day-logs sheet.
-function renderCalendar(h){
+function renderCalendar(h,items = null){
   const {start,days,end} = detailStripWindow();
-  const agendaByDay = detailAgendaByDay(h);
+  const agendaByDay = detailAgendaByDay(h,items);
   const eligibleKeys = new Set();
   if(typeof hasDaySchedule === 'function' && hasDaySchedule(h)
     && typeof isDateEligibleForHabit === 'function'){

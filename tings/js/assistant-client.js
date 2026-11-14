@@ -5,9 +5,17 @@ let _assistantAbort = null;
 let _assistantModelsCache = {at:0, origin:'', models:[]};
 let _assistantContextCache = {};
 
+// Detail dock syncs read this several times per paint; each loadSortSettings
+// pass re-reads and renormalizes storage. The live global is the same source
+// saveSortSettings publishes, so cache on the fields this snapshot reads.
+let _assistantSettingsCache = null;
 function assistantSettings(){
-  const s = typeof loadSortSettings === 'function' ? loadSortSettings() : (sortSettings || {});
-  return {
+  const s = (typeof sortSettings !== 'undefined' && sortSettings)
+    ? sortSettings
+    : (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
+  const sig = `${s.localAssistant}|${s.localAssistantDebug}|${s.localAssistantModelOnly}|${s.localAssistantProvider}|${s.localAssistantUrl}|${s.localAssistantModel}|${s.localAssistantReasoning}`;
+  if(_assistantSettingsCache && _assistantSettingsCache.sig === sig)return _assistantSettingsCache.val;
+  const val = {
     on:Boolean(s.localAssistant),
     debug:Boolean(s.localAssistantDebug),
     modelOnly:Boolean(s.localAssistantModelOnly),
@@ -16,6 +24,8 @@ function assistantSettings(){
     model:normalizeLocalAssistantModel(s.localAssistantModel),
     reasoning:normalizeLocalAssistantReasoning(s.localAssistantReasoning)
   };
+  _assistantSettingsCache = {sig,val};
+  return val;
 }
 
 // GLM speaks the OpenAI protocol but takes thinking depth as reasoning_effort,

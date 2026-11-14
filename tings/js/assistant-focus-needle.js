@@ -94,7 +94,7 @@ function assistantFocusSystem(session){
 
 async function assistantFocusLiveExtract(spec){
   if(typeof assistantNeedleFocusRequest !== 'function'){
-    throw new Error('Needle is not available on this page.');
+    throw new Error('The assistant is not available on this page.');
   }
   let tools=spec.tools||[spec.tool],request=spec.request;
   const properties=Object.entries(tools.length===1&&tools[0]?.parameters?.properties||{});
@@ -861,7 +861,7 @@ function assistantFocusFinishScope(session){
 
 async function assistantFocusRunTurn(session, text, opts){
   opts = opts || {};
-  if(!session)throw new Error('Open one item before asking Needle.');
+  if(!session)throw new Error('Open one item before asking the assistant.');
   const extract = opts.extract || assistantFocusLiveExtract;
   if(!opts.resume){
     const spoken = String(text || '').trim();

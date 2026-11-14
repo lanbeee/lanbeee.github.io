@@ -147,7 +147,7 @@ function syncAssistantOriginHelp(){
 
 function assistantEnabledStatusText(){
   if(assistantSettings().provider === 'needle')return assistantNeedleState().phase === 'downloaded'
-    ? 'On. Needle 3 is ready on this device.' : 'On. Download Needle 3 once to use the assistant on this device.';
+    ? 'On. The assistant is ready on this device.' : 'On. Download the assistant once to use it on this device.';
   const origin = typeof assistantPublicPageOrigin === 'function' ? assistantPublicPageOrigin() : '';
   if(origin)return 'On. If list models fails, follow the steps under local assistant.';
   return 'On. Keep Ollama running on this computer.';
@@ -177,13 +177,13 @@ function syncAssistantNeedleControls(){
     const chatReady = panel.closest('#assistant-sheet,.detail-summary-page') && downloaded && !state.error;
     panel.hidden = !selected || !assistantEnabled() || chatReady;
     const status = panel.querySelector('[data-needle-status]');
-    if(status)status.textContent = state.error || (downloading ? `Downloading Needle 3… ${state.progress}%`
-      : downloaded ? 'Needle 3 is ready, including offline.'
-      : 'Needle 3 is 36.3 MB and stays on this device.');
+    if(status)status.textContent = state.error || (downloading ? `Downloading assistant… ${state.progress}%`
+      : downloaded ? 'The assistant is ready, including offline.'
+      : 'The assistant is 36.3 MB and stays on this device.');
     const progress = panel.querySelector('progress');
     if(progress){ progress.hidden = !downloading; progress.value = state.progress; }
     const download = panel.querySelector('[data-needle-download]');
-    if(download){ download.hidden = downloaded || downloading; download.textContent = state.phase === 'error' ? 'retry download' : 'download Needle 3'; }
+    if(download){ download.hidden = downloaded || downloading; download.textContent = state.phase === 'error' ? 'retry download' : 'download assistant'; }
     const cancel = panel.querySelector('[data-needle-cancel]');
     if(cancel)cancel.hidden = !downloading;
     const remove = panel.querySelector('[data-needle-remove]');
@@ -357,7 +357,7 @@ async function assistantOpenWithInstruction(text, opts){
 }
 
 function assistantWelcomeHtml(){
-  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>Needle edits one habit, task, or local event at a time. Open an item and use its search box or Edit with AI. Nothing is saved until you confirm.</p></div>`;
+  if(assistantSettings().provider === 'needle')return `<div class="assistant-bubble assistant-bubble-say"><p>The assistant edits one habit, task, or local event at a time. Open an item and use its search box or Edit with AI. Nothing is saved until you confirm.</p></div>`;
   return `<div class="assistant-bubble assistant-bubble-say"><p>Say it like a person. Nothing is saved until you confirm.</p>
       <div class="assistant-suggestions">
         <button type="button" class="assistant-suggest" data-assistant-suggest="Remind me to call mom">Remind me to call mom</button>
@@ -1523,7 +1523,7 @@ async function sendAssistantMessage(text, opts){
   if(!assistantNeedleCanSend()){
     assistantPresentComposer(text == null ? value : String(text));
     assistantResizeComposer();
-    if(typeof showToast === 'function')showToast('Download Needle 3 to use the assistant');
+    if(typeof showToast === 'function')showToast('Download the assistant first');
     return;
   }
   const turn = ++_assistantTurn;
@@ -1537,7 +1537,7 @@ async function sendAssistantMessage(text, opts){
   if(assistantSettings().provider === 'needle' && !opts.needleAction){
     const focus = _assistantSession && _assistantSession.focus;
     if(!focus || typeof assistantFocusAlive !== 'function' || !assistantFocusAlive(focus) || typeof assistantFocusTurn !== 'function'){
-      appendAssistantBubble('say', 'Needle changes one item at a time. Open an item and use its search box or Edit with AI on a card.');
+      appendAssistantBubble('say', 'The assistant changes one item at a time. Open an item and use its search box or Edit with AI on a card.');
       assistantShowBusy(false);
       return;
     }
@@ -1555,7 +1555,7 @@ async function sendAssistantMessage(text, opts){
         focus.trace = focus.trace || [];
         focus.trace.push({family:'turn', error:String(err && (err.stack || err.message) || err)});
       }
-      appendAssistantBubble('say', err && err.message ? err.message : 'Needle could not read that.');
+      appendAssistantBubble('say', err && err.message ? err.message : 'The assistant could not read that.');
       assistantPresentDebug();
       assistantRefreshFeedbackPanel();
     }finally{
@@ -2247,7 +2247,7 @@ function bindAssistantUi(){
   $('assistant-test')?.addEventListener('click', async () => {
     if(!commitAssistantUrlFromInput())return;
     if(!assistantEnabled())patchLocalAssistant({localAssistant:true});
-    assistantSetStatus(assistantSettings().provider === 'needle' ? 'testing Needle 3 on this device…' : 'testing model (thinking + tool call)…');
+    assistantSetStatus(assistantSettings().provider === 'needle' ? 'testing the assistant on this device…' : 'testing model (thinking + tool call)…');
     try{
       const result = await assistantTestConnection();
       assistantSetStatus(result.ok

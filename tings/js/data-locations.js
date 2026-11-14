@@ -708,8 +708,15 @@ function compareLocationNames(a,b){
     sensitivity:'base',numeric:true
   }) || String(a?.id || '').localeCompare(String(b?.id || ''));
 }
+// Pure of the input array, and asked for on every chip render and picker:
+// normalize and sort once per registry; saveSortSettings replaces the array
+// wholesale, so identity tracks every change without a persistent content cache.
+let _locDisplayCache = {src:null,out:null};
 function locationsForDisplay(value){
-  return normalizeLocationRegistry(value).slice().sort(compareLocationNames);
+  if(Array.isArray(value) && _locDisplayCache.src === value)return _locDisplayCache.out;
+  const out = normalizeLocationRegistry(value).slice().sort(compareLocationNames);
+  _locDisplayCache = {src:Array.isArray(value) ? value : null,out};
+  return out;
 }
 // PURE: coerce the cached travel map. Drops edges with bad numbers, stale
 // fetchedAt (older than 2× TTL), or malformed keys; re-keys each edge with the

@@ -1727,7 +1727,8 @@ function assistantFocusSummaryText(fieldId, record, session, lookups = {}){
 
 // Essentials always, then each setting that differs from this kind's new-item
 // defaults. Reminders compare against off; they live outside the item record.
-function assistantFocusItemSummary(item){
+// `seedLookups` optionally carries {items} the caller already loaded.
+function assistantFocusItemSummary(item,seedLookups = null){
   if(!item)return null;
   const session = assistantFocusSummarySession(item);
   const kind = session.kind;
@@ -1739,7 +1740,7 @@ function assistantFocusItemSummary(item){
   const state = assistantFocusState(session, item);
   // These lookups live for this synchronous render only, so edits and later
   // openings always see fresh items and places without a persistent cache.
-  const lookups = {};
+  const lookups = seedLookups ? {...seedLookups} : {};
   const text = id => assistantFocusSummaryText(id, item, session, lookups);
   const essentials = [];
   const custom = [];

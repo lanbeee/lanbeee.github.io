@@ -256,21 +256,30 @@ function detailSearchEntries(){
   return entries;
 }
 
-function detailAssistantAvailable(){
-  const item = detailIdx === null ? null : load()[detailIdx];
-  if(!sortSettings?.localAssistant || !item)return false;
-  return sortSettings.localAssistantProvider !== 'needle'
-    || !['device','pdf','ics','gcal','msgraph'].includes(item.source);
+// Dock syncs and search labels ask this several times per detail paint, each
+// read costing a full saved-list load. The answer only changes with the open
+// item, a save, or the two assistant settings, so cache on those. `held` is
+// the record the paint already loaded.
+let _detailAssistantCheck = null;
+function detailAssistantAvailable(held){
+  const sig = `${detailIdx}|${plannerDataRevision()}|${sortSettings?.localAssistant ? 1 : 0}|${sortSettings?.localAssistantProvider}`;
+  if(_detailAssistantCheck && _detailAssistantCheck.sig === sig)return _detailAssistantCheck.ok;
+  const item = detailIdx === null ? null : (held || load()[detailIdx]);
+  const ok = Boolean(sortSettings?.localAssistant && item
+    && (sortSettings.localAssistantProvider !== 'needle'
+      || !['device','pdf','ics','gcal','msgraph'].includes(item.source)));
+  _detailAssistantCheck = {sig,ok};
+  return ok;
 }
 
-function syncDetailSearchAssistant(){
-  const enabled = detailAssistantAvailable();
+function syncDetailSearchAssistant(h){
+  const enabled = detailAssistantAvailable(h);
   const label = enabled ? 'Find or change a setting' : 'Find a setting';
   $('detail-search-input').placeholder = label;
   $('detail-search-input').setAttribute('aria-label',label);
   $('detail-search-toggle').querySelector('span').textContent = enabled ? 'find or change' : 'find in details';
   $('detail-search-ask').hidden = !enabled || !$('detail-search-input').value.trim();
-  $('detail-search-ask-label').textContent = sortSettings?.localAssistantProvider === 'needle' ? 'Ask Needle' : 'Ask assistant';
+  $('detail-search-ask-label').textContent = 'Ask assistant';
 }
 
 let detailAssistantOpening = false;
@@ -351,7 +360,7 @@ function setDetailSearchOpen(open,focus = true){
     const pager = inner.querySelector('.detail-pager');
     const pages = visibleDetailPages(pager);
     detailSearchReturnNav = detailCurrentNav();
-    detailSearchReturnScroll = [pager,...pages].map(page=>({page,top:page.scrollTop}));
+    detailSearchReturnScroll = [pager,...inner.querySelectorAll('.detail-minimal-settings'),...pages].map(page=>({page,top:page.scrollTop}));
   }
   inner.classList.toggle('detail-search-open',open);
   $('detail-search-panel').hidden = !open;
@@ -429,7 +438,7 @@ function revealDetailSearchEntry(entry){
     // Reveal only inside the selected panel. Scrolling every ancestor can
     // move the sheet/document while iOS is settling its viewport.
     const page = target.closest('.detail-page');
-    const scroller = detailIsSingleView() ? page.closest('.detail-pager') : page;
+    const scroller = detailIsSingleView() ? page.closest('.detail-minimal-settings') || page : page;
     const rect = target.getBoundingClientRect(),bounds = scroller.getBoundingClientRect();
     scroller.scrollTo({top:scroller.scrollTop + rect.top - bounds.top
       - Math.max(0,(scroller.clientHeight - rect.height) / 2),behavior:'instant'});
@@ -453,7 +462,13 @@ function syncDetailEditingChrome(){
   const inner = getSheetInner('detail-sheet');
   if(!inner)return;
   const active = document.activeElement;
-  const keyboardSpace = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--keyboard-lift')) || 0;
+  // updateKeyboardLift always writes this custom property inline before calling;
+  // reading the inline style skips the whole-document computed-style pass that
+  // a getComputedStyle read would force on a freshly repainted detail sheet.
+  // The stylesheet default is 0px (tokens.css), so an unset inline value reads
+  // the same through either path.
+  const keyboardSpace = parseFloat(document.documentElement.style.getPropertyValue('--keyboard-lift')
+    || getComputedStyle(document.documentElement).getPropertyValue('--keyboard-lift')) || 0;
   const virtualKeyboard = window.TingsNative?.isNative
     || matchMedia('(any-pointer:coarse)').matches
     || matchMedia('(pointer:coarse)').matches
