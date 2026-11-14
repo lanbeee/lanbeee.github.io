@@ -1268,7 +1268,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
   if(fieldId === 'autoMarkMinutes')return record.autoMarkMinutes == null ? 'manual' : `${record.autoMarkMinutes} min after the start`;
   if(fieldId === 'tapStartsSession')return record.tapStartsSession ? 'tap starts a session' : 'tap logs completion';
   if(fieldId === 'trackValue')return record.trackValue ? 'log a value' : 'off';
-  if(fieldId === 'places')return record.locationIds && record.locationIds.length ? record.locationIds.join(', ') : 'no place';
+  if(fieldId === 'places')return assistantFocusSummaryText(fieldId, record, session, lookups);
   if(fieldId === 'anywhereAllowed')return record.anywhereAllowed === false ? 'only the saved places' : 'anywhere is allowed';
   if(fieldId === 'locationPrefs')return Object.keys(record.locationPrefs || {}).length ? JSON.stringify(record.locationPrefs) : 'none';
   if(fieldId === 'weatherProfile' || fieldId === 'weatherRules'){
@@ -1278,7 +1278,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
   }
   if(fieldId === 'showWeather')return record.showWeather ? 'show the forecast' : 'hide the forecast';
   if(fieldId === 'showWeatherAtLocation')return record.showWeatherAtLocation ? 'forecast at the place' : 'forecast at home';
-  if(fieldId === 'weatherLocationId')return record.weatherLocationId || 'home city';
+  if(fieldId === 'weatherLocationId')return assistantFocusSummaryText(fieldId, record, session, lookups);
   if(fieldId === 'scheduleOptions')return (record.scheduleOptions || []).map(assistantFocusFormatOption).join('\n') || 'none';
   if(fieldId === 'scheduleLinks')return (record.scheduleLinks || []).map(link => `${link.direction} ${link.anchorHid} (${link.adjacency || 'sometime'}${link.requireSameDay ? ', same day' : ''})`).join('\n') || 'none';
   if(fieldId === 'topics')return (record.topics || []).join(', ') || 'none';

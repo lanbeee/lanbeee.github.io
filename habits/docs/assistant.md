@@ -30,6 +30,14 @@ unlabeled groups; routing text cannot itself
 supply an executable value. Invalid or missing values stay unresolved. Clarification
 choices stage real values. Known field questions offer saved-place, topic and weather-profile pickers, or finite choices such as priority and yes/no. Places and topics support multiple selections; complete saved catalogs remain available. Choices validate locally and stage for Save without inference. Typing and new topics remain available. Complete catalog names tolerate spacing and small spelling errors when there is one closest match; tied matches ask. An explicit “only at” place instruction also disables Anywhere, including when the place is chosen from a clarification. After a plain place assignment, an unresolved Anywhere permission asks “Allow this anywhere too?” with direct Yes/No buttons. The place is already staged; the answer stays local and Save waits for that choice. Explicit policies and existing place restrictions avoid the follow-up.
 
+Named setting assignments retain the model-selected evidence, then remove the
+instruction around the complete name: “Change the location to home” resolves
+the saved Home place. This also applies to topic, weather-profile and forecast
+location assignments. Complete assignments to a uniquely matched saved name
+use the bounded field-read path; declined or suppressed reads retain the full
+audit. Unknown and competing names still ask with the saved choices. Place
+previews display saved names rather than storage IDs.
+
 Reminder previews show the actual mode and lead time. Task deadline reminders expose delivery mode, days before due (0, 1, 2, or 7), and local clock time. Events expose a second delivery mode and lead time; both event leads support the same minutes, hours, and calendar days as the manual controls. “Notify me 1 day before the due date at 9am” and “Set the first reminder to notification 1 hour before, and set the second reminder to alarm 1 day before” stage those settings together. Event date scope, reset, Edit, Save, and undo include the new fields. Unsupported offsets ask instead of rounding.
 Save writes the staged item. Edit opens the detail editor with those changes
 filled in and leaves them unsaved until the detail save.

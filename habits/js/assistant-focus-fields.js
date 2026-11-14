@@ -84,7 +84,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   weatherRules:/\b(?:temperature|precipitation|rain|wind|gust|humidity|uv|feels like|dry weather|celsius|fahrenheit|(?:warmer|colder|hotter|cooler) than)\b/i,
   showWeather:/\b(?:show|hide|display|include|see|put|want|turn on|turn off)\b.{0,35}\b(?:weather|forecast)\b/i,
   showWeatherAtLocation:/\b(?:weather|forecast)\b.{0,40}\b(?:(?:the|this|item.?s|activity|assigned|item) (?:place|location)|wherever this item takes place)\b|\b(?:item.?s|item) (?:place|location)\b[^,;]*\b(?:weather|forecast)\b/i,
-  weatherLocationId:/\b(?:weather\s+)?(?:forecast|weather)\s+(?:at|in|for|should come from|source location)\b|\b(?:use|choose)\b[^,;]*\b(?:for (?:the )?(?:forecast|weather)|as the forecast location)\b|['’]s weather forecast\b/i,
+  weatherLocationId:/\b(?:weather\s+)?(?:forecast|weather)\s+(?:at|in|for|should come from|source location)\b|\b(?:weather|forecast)(?:\s+source)?\s+(?:place|location)\b|\b(?:use|choose)\b[^,;]*\b(?:for (?:the )?(?:forecast|weather)|as the forecast location)\b|['’]s weather forecast\b/i,
   scheduleOptions:/\b(?:alternat(?:ive(?:s|ly)?|e)|options?|either|another possible slot)\b|\bor\b.{0,40}\b(?:at|before|after|from)\b/i,
   scheduleLinks:/\b(?:right|directly|immediately|straight) (?:before|after|follow)\b|\b(?:order|adjacen|partner|same day|preceding item)\w*\b/i,
   topics:ASSISTANT_FIELD_TEXT_INSTRUCTIONS.topics.signal,
@@ -1972,17 +1972,25 @@ function assistantFieldClosedInstructions(state){
   const duration=new RegExp(`^(?:(?:(?:make|set|change|use)\\s+)?(?:(?:each|every|the|its)\\s+)?(?:session(?:\\s+length)?|duration|length)(?:\\s+(?:to|of|is|should be))?\\s*:?\\s*)?${quantity}(?:\\s+(?:each|per session|long))?$`,'i');
   const day=`(?:${ASSISTANT_WEEKDAY_TOKEN})s?`;
   const weekdays=new RegExp(`^(?:(?:only|allowed|allow|on|use)\\s+)*(?:weekdays?|weekends?|${day}(?:\\s*(?:to|through|thru|and|plus|[-–—/&])\\s*${day})*)(?:\\s+only)?$`,'i');
-  const fields=[];let end=0;
+  const settings=assistantFocusSettings(),fields=[];let end=0;
   for(const span of state.spans){
     // Source segmentation must also account for every gap, not just the
     // excerpts it retained. Conjunctions may join independent instructions.
     if(span.start<end||!/^(?:\s|[,;.!]|\band\b)*$/i.test(state.request.slice(end,span.start)))return null;
     end=span.end;
     const text=assistantFieldDialogue(span.text).text;
+    const named=['places','topics','weatherProfile','weatherLocationId'].find(id=>{
+      const operand=assistantFieldNamedOperand(id,text);
+      const catalog=id==='topics'?(settings.topics||[]).map(name=>({id:name,name}))
+        :id==='weatherProfile'?settings.weatherProfiles:settings.locations;
+      const def=state.catalog.find(def=>def.id===id);
+      return def&&operand&&!text.includes('?')&&assistantFocusMatchCatalog(catalog||[],operand).ok
+        &&assistantFieldNormalize(def,text,session).ok;
+    });
     const id=duration.test(text)?'durationMinutes'
       :/^(?:(?:set|change|use)\s+)?(?:(?:the|its)\s+)?priority(?:\s+(?:to|is))?\s*:?\s*p?[0-5]$/i.test(text)?'priority'
       :/^(?:pin|unpin)\s+(?:it|this|that)$/i.test(text)?'pinned'
-      :session.kind==='habit'&&weekdays.test(text)?'allowedWeekdays':null;
+      :session.kind==='habit'&&weekdays.test(text)?'allowedWeekdays':named;
     if(!id||fields.includes(id))return null;
     fields.push(id);
   }
@@ -2103,6 +2111,20 @@ function assistantFieldStripPrefix(text, pattern){
   // or "it" must not consume the beginning of the model-selected value.
   // Backtracking leaves a connector intact unless it ends at a token boundary.
   return text.replace(new RegExp(`(?:${pattern.source})(?:(?<=[\\s:])|(?=$|\\s|:))`,pattern.flags),'').trim();
+}
+
+// A model may quote the complete instruction for a named setting. Remove only
+// an anchored assignment to that setting, keeping the entire operand (including
+// unknown names and extra clauses) for validation. Never search for a saved name
+// inside arbitrary prose: "Home Annex" must not silently become "Home".
+function assistantFieldNamedOperand(id,text){
+  const label={places:'places?|locations?|locaton|loction|venue',topics:'topics?|tags?|categor(?:y|ies)',
+    weatherProfile:'(?:weather\\s+)?profile',weatherLocationId:'(?:weather|forecast)(?:\\s+source)?\\s+(?:place|location)'}[id];
+  if(!label)return null;
+  const source=assistantFieldDialogue(text).text;
+  const owner="(?:(?:the|its|my|this item's|this habit's|this task's)\\s+)?";
+  const match=source.match(new RegExp(`^(?:(?:change|set|update|switch|move)\\s+)?${owner}(?:${label})\\s*(?::|=|\\b(?:to|as|is|should be)\\b)\\s*(.+)$`,'i'));
+  return match?match[1].trim():null;
 }
 
 function assistantFieldNormalize(def,text,session){
@@ -2303,6 +2325,7 @@ function assistantFieldNormalize(def,text,session){
     if(colors.length===1&&!rest)value=colors[0][0].toLowerCase();
   }
   if(def.id==='topics'){
+    text=assistantFieldNamedOperand(def.id,text)??text;
     text=text.replace(/^(.+?)\s+should be (?:its|the|this item's)\s+(?:topic|tag)$/i,'$1')
       .replace(/^(?:assign|add)\s+(?:it|this|that)\s+to\s+(?:the\s+)?(.+?)\s+(?:topic|category)$/i,'$1')
       .replace(/^label\s+(?:it|this|that)(?:\s+item)?\s+/i,'');
@@ -2329,6 +2352,7 @@ function assistantFieldNormalize(def,text,session){
   // duration supplied to this job; a relative edit never changes that baseline.
   if(def.id==='durationMinutes' && /^(?:twice as long|double (?:it|the duration))$/i.test(value))value=String((session._fieldBaseline||assistantFocusMaterialize(session)).durationMinutes*2);
   if(['places','weatherLocationId'].includes(def.id)){
+    if(!assistantFocusMatchCatalog(assistantFocusSettings().locations||[],value).ok)value=assistantFieldNamedOperand(def.id,value)??value;
     value=value.replace(/^(?:(?:this|it)\s+(?:(?:will|should|must|can)\s+(?:only\s+)?be|is)\s+(?:only\s+)?(?:done|held)|(?:i\s+(?:will|can|must|have to)\s+(?:only\s+)?)?do\s+(?:it|this)|(?:this|it)\s+(?:will|should|must|can)\s+(?:happen|take place))\s+(?:only\s+)?(?:at|in)\s+/i,'');
     value=value.replace(/^only\s+(?:(?:at|in)\s+)?/i,'').replace(/\s+only[.!?]*$/i,'');
     // Preserve saved names that themselves begin with "Location" or "Place".
@@ -2338,6 +2362,7 @@ function assistantFieldNormalize(def,text,session){
   if(def.id==='weatherProfile')value=assistantFieldStripPrefix(value,/^(?:(?:use|apply|pick|assign)\s+(?:the\s+)?|weather profile\s+|profile\s+)/i)
     .replace(/\s+for this item's weather profile$/i,'').replace(/\s+(?:weather profile|weather|profile)(?: to it)?$/i,'').trim();
   if(def.id==='weatherProfile'&&!assistantFocusMatchCatalog(assistantFocusSettings().weatherProfiles||[],value).ok)value=assistantFieldStripPrefix(value,/^(?:(?:use|apply|pick|assign|set|change)\s+(?:the\s+)?)?(?:weather\s+)?profile\s+(?:(?:to|is|should be)\s+)?/i);
+  if(def.id==='weatherProfile'&&!assistantFocusMatchCatalog(assistantFocusSettings().weatherProfiles||[],value).ok)value=assistantFieldNamedOperand(def.id,text)??value;
   if(def.id==='weatherLocationId'){
     value=assistantFieldStripPrefix(text,/^(?:(?:show|use|set)\s+(?:the\s+)?)?(?:weather\s+)?(?:forecast|weather)\s+(?:for|at|in)\s+/i);
     value=assistantFieldStripPrefix(value,/^use\s+(?:the\s+)?/i).replace(/\s+for\s+(?:the\s+)?(?:forecast|weather)$/i,'');
@@ -2345,6 +2370,7 @@ function assistantFieldNormalize(def,text,session){
       .replace(/^choose\s+(.+?)\s+as the forecast location$/i,'$1')
       .replace(/^show\s+(.+?)['’]s weather forecast$/i,'$1')
       .replace(/^set the weather source location to\s+/i,'');
+    if(!assistantFocusMatchCatalog(assistantFocusSettings().locations||[],value).ok)value=assistantFieldNamedOperand(def.id,text)??value;
   }
   if(def.id==='locationPrefs'){
     if(/\b(?:not|never|don.t|without|except|or)\b/i.test(value))return {ok:false,error:'Specify the place preference to use, or clear it.'};

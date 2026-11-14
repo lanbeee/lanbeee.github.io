@@ -189,6 +189,15 @@ Full extracted arguments and model traces are saved to
 
 ## Semantic field extraction
 
+`tests/assistant-saved-values-flow-test.js` replays saved-name edits through the
+411×826 detail search → Ask → Summary → Save → undo flow. It covers the reported
+“Change the location to home” failure, spelling and phrasing variants, unknown
+and tied names, Anywhere choices, topics, weather profiles, forecast locations,
+and a combined location/duration edit. It checks preserved unrelated data,
+names in previews, local choices, and bounded inference counts. Set both pinned
+Needle asset variables to test the actual runtime; without them, evidence
+selection is scripted. Reports and screenshots land in `test-results/`.
+
 `tests/assistant-latency-test.js` checks that fully bounded everyday edits finish
 after their field reads, while extra clauses, conflicts, suppressed/declined
 evidence, failures and invalid values retain the full audit. Uncertain values

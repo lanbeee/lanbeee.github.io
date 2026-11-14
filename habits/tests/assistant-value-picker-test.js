@@ -91,6 +91,26 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
       return !s.changes.length&&!assistantFocusCanSave(s)&&assistantFocusReviewHtml(s).includes('data-focus-picker="places"');
     });
     assert(declined,'a declined model read asks with saved choices and never supplies a parsed fallback');
+    const assignmentGuards=await page.evaluate(async()=>{
+      const results=[];
+      for(const mode of ['decline','suppressed','failure','extra-clause']){
+        pickerTest.seed();const s=pickerTest.open(),before=JSON.stringify(load()),options=pickerTest.options(),read=options.extract;
+        await assistantFocusTurn(s,mode==='extra-clause'?'Change the location to Home unless I am travelling':'Change the location to Home',{
+          ...options,extract:async spec=>{
+            if(spec.jobId==='places'&&mode==='failure')throw new Error('Interrupted place read');
+            const result=await read(spec);
+            if(spec.jobId==='places'&&mode==='decline')result.function_calls[0].arguments.places='';
+            if(spec.jobId==='places'&&mode==='suppressed'){result.suppressed_calls=result.function_calls;result.function_calls=[];}
+            return result;
+          }
+        });
+        results.push({mode,unchanged:before===JSON.stringify(load()),full:s.trace.some(row=>row.family==='families'),
+          shortcut:s.trace.some(row=>row.method==='closed-instructions'),
+          guarded:mode==='suppressed'?assistantFocusReviewModel(s).needsInterpretation:!s.changes.length&&!assistantFocusCanSave(s)});
+      }
+      return results;
+    });
+    assert(assignmentGuards.every(row=>row.unchanged&&row.full&&!row.shortcut&&row.guarded),`named assignments preserve declined, suppressed, failed and qualified reads (${JSON.stringify(assignmentGuards)})`);
     const ambiguous=await page.evaluate(async()=>{
       pickerTest.seed();const s=pickerTest.open();await assistantFocusTurn(s,'Only at Home and LocationC',pickerTest.options());
       const q=s.unresolved.find(row=>row.field==='places'),picker=assistantFocusQuestionPicker(s,q);
