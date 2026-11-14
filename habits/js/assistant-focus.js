@@ -1065,9 +1065,11 @@ function assistantFocusFormatWindow(record, role, data){
   return `${assistantFocusFormatEndpoint(start, data)} to ${assistantFocusFormatEndpoint(end, data)}`;
 }
 
-function assistantFocusFormatValue(fieldId, record, session, staged){
+function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {}){
   fieldId = assistantFocusScopedField(fieldId, session);
-  const data = typeof load === 'function' ? load() : [];
+  // Most labels use only the record. Resolve saved-item names only for windows
+  // that can refer to another item, sharing that read within a summary render.
+  const data = () => lookups.items ||= (typeof load === 'function' ? load() : []);
   if(!record)return '—';
   if(fieldId === 'name')return record.name || '—';
   if(fieldId === 'kind')return record.appointment ? 'event' : (record.type === 'task' ? 'task' : 'habit');
@@ -1095,8 +1097,8 @@ function assistantFocusFormatValue(fieldId, record, session, staged){
   if(fieldId === 'allowedMonthDays')return record.allowedMonthDays && record.allowedMonthDays.length ? record.allowedMonthDays.join(', ') : 'any';
   if(fieldId === 'preferredMonthDays')return record.preferredMonthDays && record.preferredMonthDays.length ? record.preferredMonthDays.join(', ') : 'any';
   if(fieldId === 'allowedOrdinalWeekdays' || fieldId === 'preferredOrdinalWeekdays')return ordinalWeekdaySummary(record[fieldId]) || 'any';
-  if(fieldId === 'allowedWindow' || fieldId === 'allowedTimeFixedStart')return assistantFocusFormatWindow(record, 'allowed', data);
-  if(fieldId === 'preferredWindow')return assistantFocusFormatWindow(record, 'preferred', data);
+  if(fieldId === 'allowedWindow' || fieldId === 'allowedTimeFixedStart')return assistantFocusFormatWindow(record, 'allowed', data());
+  if(fieldId === 'preferredWindow')return assistantFocusFormatWindow(record, 'preferred', data());
   if(fieldId === 'durationMinutes')return `${record.durationMinutes} min`;
   if(fieldId === 'breakable')return record.breakable ? 'split into sessions' : 'one session';
   if(fieldId === 'minChunkMinutes')return `${record.minChunkMinutes} min`;
@@ -1683,12 +1685,16 @@ function assistantFocusSummarySession(item){
   };
 }
 
-function assistantFocusSummaryText(fieldId, record, session){
-  const places = typeof locationOptions === 'function' ? locationOptions() : [];
-  const place = id => (places.find(loc => loc.id === id) || {}).name || 'a saved place';
+function assistantFocusSummaryText(fieldId, record, session, lookups = {}){
+  const place = id => {
+    const places = lookups.places ||= (typeof locationOptions === 'function' ? locationOptions() : []);
+    return (places.find(loc => loc.id === id) || {}).name || 'a saved place';
+  };
   const day = ms => new Date(ms).toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
-  const items = typeof load === 'function' ? load() : [];
-  const itemName = hid => (items.find(row => row && row.hid === hid) || {}).name || 'another item';
+  const itemName = hid => {
+    const items = lookups.items ||= (typeof load === 'function' ? load() : []);
+    return (items.find(row => row && row.hid === hid) || {}).name || 'another item';
+  };
   const count = (n, one, many) => n ? `${n} ${n === 1 ? one : many}` : 'none';
   if(fieldId === 'places')return (record.locationIds || []).map(place).join(', ') || 'no place';
   if(fieldId === 'locationPrefs'){
@@ -1716,7 +1722,7 @@ function assistantFocusSummaryText(fieldId, record, session){
     const days = fieldId === 'appointmentWeekdays' ? record.appointment && record.appointment.weekdays : record[fieldId];
     return (typeof assistantWeekdaySummary === 'function' && assistantWeekdaySummary(days)) || assistantFocusFormatWeekdays(days);
   }
-  return assistantFocusFormatValue(fieldId, record, session);
+  return assistantFocusFormatValue(fieldId, record, session, false, lookups);
 }
 
 // Essentials always, then each setting that differs from this kind's new-item
@@ -1731,7 +1737,10 @@ function assistantFocusItemSummary(item){
     try{ defaults = normalize([Object.assign({}, defaults, {name:item.name || 'item'})])[0] || defaults; }catch(_){}
   }
   const state = assistantFocusState(session, item);
-  const text = id => assistantFocusSummaryText(id, item, session);
+  // These lookups live for this synchronous render only, so edits and later
+  // openings always see fresh items and places without a persistent cache.
+  const lookups = {};
+  const text = id => assistantFocusSummaryText(id, item, session, lookups);
   const essentials = [];
   const custom = [];
   const add = (list, id, label, value) => {
@@ -1767,7 +1776,7 @@ function assistantFocusItemSummary(item){
       if(value && value !== 'none' && value !== 'any day')add(custom, field.id, field.label, value);
       return;
     }
-    if(value === assistantFocusSummaryText(field.id, defaults, session))return;
+    if(value === assistantFocusSummaryText(field.id, defaults, session, lookups))return;
     add(custom, field.id, field.label, value);
   });
   return {session, essentials, custom};

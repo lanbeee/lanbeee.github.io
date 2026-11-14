@@ -223,3 +223,4 @@ home-refresh-integration-test.js	integrations	page-both
 assistant-mobile-layout-test.js	assistant	once
 native-deadline-alerts-test.js	ui	once
 assistant-reminder-options-test.js	assistant	once
+detail-open-efficiency-test.js	ui	once

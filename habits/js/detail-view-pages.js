@@ -42,7 +42,7 @@ function detailNavKind(){
   if(has('phone-calendar-detail'))return 'calendar';
   if(has('event-detail') || has('local-appointment'))return 'event';
   if(has('opportunity-mode'))return 'opportunity';
-  const type = typeof currentDetailTune === 'function' ? currentDetailTune().type : 'keepup';
+  const type = typeof detailTuneType === 'function' ? detailTuneType() : 'keepup';
   if(type === 'task')return 'task';
   if(type === 'zero')return 'stop';
   if(type === 'reduce')return 'limit';

@@ -30,7 +30,8 @@ function combineFieldsFromEndpoint(inputId, prefix){
   };
 }
 
-function currentDetailTune(){
+// Tab labels need only the selected kind, not the full draft or saved list.
+function detailTuneType(){
   const mainType = document.querySelector('#detail-type-seg .seg-opt.on')?.dataset.detailType || 'keepup';
   let type;
   if(mainType === 'task'){
@@ -39,6 +40,11 @@ function currentDetailTune(){
     const mode = document.querySelector('#detail-mode-seg .seg-opt.on')?.dataset.mode || 'build';
     type = modeToType(mode);
   }
+  return type;
+}
+
+function currentDetailTune(){
+  const type = detailTuneType();
   const locationIds = selectedLocationIdsFrom('detail-place-chips');
   const locationPrefs = selectedLocationPrefsFrom('detail-place-chips');
   const subjectHid = detailIdx != null ? cleanHabitId(load()[detailIdx]?.hid) : '';
