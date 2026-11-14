@@ -95,7 +95,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
         const dock=inner.querySelector('.sheet-search-dock').getBoundingClientRect();
         const head=$('detail-head-card').getBoundingClientRect();
         const page=inner.querySelector('.detail-summary-page');
-        const scroller=detailIsSingleView()?page.closest('.detail-pager'):page;
+        const scroller=page.closest('.detail-minimal-settings') || page;
         const text=scroller.getBoundingClientRect();
         return {visibleTop:visualViewport.offsetTop,visibleHeight:visualViewport.height,
           headerTop:head.top,headerBottom:head.bottom,composerTop:dock.top,composerBottom:dock.bottom,
@@ -108,7 +108,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       assert.ok(geometry.contentBottom<=geometry.composerTop+1,'content has real space above the composer');
       assert.ok(geometry.composerTop>=geometry.headerBottom,'composer never overlaps the item header');
       assert.ok(geometry.composerBottom<=geometry.visibleTop+geometry.visibleHeight+1,'composer stays above the keyboard');
-      await page.screenshot({path:`${out}/${name}.png`,scale:'css',clip:{x:0,y:geometry.visibleTop,width:375,height:geometry.visibleHeight}});
+      if(!process.env.SKIP_UI_SCREENSHOTS)await page.screenshot({path:`${out}/${name}.png`,scale:'css',clip:{x:0,y:geometry.visibleTop,width:375,height:geometry.visibleHeight}});
       report.steps.push({name,...geometry});
     };
     const send=async text=>{
@@ -167,7 +167,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
         assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':pill.nav,`${pill.field} stays on its destination on attempt ${attempt+1}`);
         const revealed=await page.locator(pill.selector).evaluate(target=>{
           const page=target.closest('.detail-page');
-          const host=detailIsSingleView()?page.closest('.detail-pager'):page;
+          const host=page.closest('.detail-minimal-settings') || page;
           const rect=target.getBoundingClientRect(),bounds=host.getBoundingClientRect();
           return rect.left>=bounds.left-1 && rect.right<=bounds.right+1
             && rect.bottom>bounds.top && rect.top<bounds.bottom;
@@ -247,7 +247,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       assert.equal(await page.locator('#detail-summary-feedback').isEnabled(),true,'a saved reply can still be reported after its edit session ends');
       const confirmationClear=await page.evaluate(()=>{
         const confirmation=[...detailSummaryThread().children].at(-1).getBoundingClientRect();
-        const scroller=detailIsSingleView()?document.querySelector('.detail-pager'):document.querySelector('.detail-summary-page');
+        const scroller=document.querySelector('.detail-summary-page');
         return {bottom:confirmation.bottom,top:$('action-toast').getBoundingClientRect().top,scroll:scroller.scrollTop,height:scroller.scrollHeight,client:scroller.clientHeight,padding:getComputedStyle(scroller).paddingBottom};
       });
       assert.ok(confirmationClear.bottom<=confirmationClear.top,`undo toast leaves the saved confirmation visible: ${JSON.stringify(confirmationClear)}`);
@@ -282,7 +282,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       assert.equal(await page.locator('#feedback-note').getAttribute('required'),null,'explaining what went wrong is optional');
       assert.equal(await page.locator('#feedback-context-details').getAttribute('open'),null,'diagnostics stay collapsed');
       assert.equal(feedbackPosts.length,0,'opening feedback sends nothing');
-      await page.screenshot({path:`${out}/${mode}-04b-feedback.png`,scale:'css'});
+      if(!process.env.SKIP_UI_SCREENSHOTS)await page.screenshot({path:`${out}/${mode}-04b-feedback.png`,scale:'css'});
       await page.locator('#feedback-cancel').tap();
       assert.equal(await input.inputValue(),'My next unsent request','cancelling feedback retains the unsent message');
       assert.equal(await page.evaluate(()=>JSON.stringify(load())),feedbackBefore.items,'feedback never changes the saved item');

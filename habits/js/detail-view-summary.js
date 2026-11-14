@@ -68,7 +68,7 @@ function renderDetailSummaryOverview(held = null,items = null){
 }
 
 function detailSummaryNavPage(nav){
-  return [...(getSheetInner('detail-sheet')?.querySelectorAll('.detail-pager > .detail-page') || [])]
+  return [...(getSheetInner('detail-sheet')?.querySelectorAll('.detail-pager .detail-page') || [])]
     .find(page=>page.dataset.detailNav === nav);
 }
 
@@ -80,7 +80,7 @@ let detailSummaryFollowEnd = false;
 function detailSummaryKeepEnd(){
   if(!detailSummaryFollowEnd || !detailSummaryOnScreen())return;
   const page = getSheetInner('detail-sheet')?.querySelector('.detail-summary-page');
-  const scroller = detailIsSingleView() ? page?.closest('.detail-pager') : page;
+  const scroller = page;
   if(scroller)scroller.scrollTo({top:scroller.scrollHeight,behavior:'instant'});
 }
 
@@ -423,7 +423,7 @@ function detailSummaryGuidesHeight(inner,height){
   const before = parseFloat(inner.style.getPropertyValue('--detail-ask-guides-h')) || 0;
   if(before === height)return;
   const page = inner.querySelector('.detail-summary-page');
-  const scroller = detailIsSingleView() ? page?.closest('.detail-pager') : page;
+  const scroller = page;
   const atEnd = scroller && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
   inner.style.setProperty('--detail-ask-guides-h',`${height}px`);
   if(atEnd && height > before)scroller.scrollTop = scroller.scrollHeight;

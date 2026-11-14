@@ -25,9 +25,8 @@ const {BASE,baseHabit,waitForAssistant}=require('./helpers/planner-test-helpers'
       },{item:baseHabit({hid:'motion',name:'Walk',durationMinutes:20}),safeBottom});
       await page.goto(BASE);await waitForAssistant(page);
       await page.locator('#launch-screen').waitFor({state:'hidden'});
-      const settle=()=>page.evaluate(async()=>{
-        await Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));
-      });
+      const settle=()=>page.waitForFunction(()=>[sheetEnterMotions.get($('detail-sheet')),detailPanelMotion,detailDockMotion]
+        .every(motion=>!motion || motion.playState !== 'running'),null,{timeout:5000});
       const input=page.locator('#detail-ask-input');
       const close=page.locator('#detail-cool');
       const before=await page.evaluate(()=>load());
@@ -38,7 +37,7 @@ const {BASE,baseHabit,waitForAssistant}=require('./helpers/planner-test-helpers'
         await settle();
         const gap=await page.evaluate(()=>innerHeight-getSheetInner('detail-sheet').querySelector('.sheet-search-dock').getBoundingClientRect().bottom);
         assert.ok(Math.abs(gap-Math.max(16,safeBottom))<1,`${name}: consistent resting clearance (${gap})`);
-        await page.screenshot({path:`test-results/detail-refinements/${name}-${minimal?'minimal':'full'}.png`});
+        if(!process.env.SKIP_UI_SCREENSHOTS)await page.screenshot({path:`test-results/detail-refinements/${name}-${minimal?'minimal':'full'}.png`});
         await input.fill('Make each session 30 minutes');
         await page.evaluate(()=>{detailSummaryBubble('say','Kept conversation');detailSummarySetTag('Duration');syncDetailSummaryDock();});
         const draft=await page.evaluate(()=>detailSummaryDraft());
@@ -60,16 +59,19 @@ const {BASE,baseHabit,waitForAssistant}=require('./helpers/planner-test-helpers'
           if(minimal)showDetailMinimalTab('settings');else scrollDetailToNav('schedule','smooth');
           return {panel:detailPanelMotion?.playState,dock:detailDockMotion?.playState,nav:detailCurrentNav()};
         },minimal);
-        assert.equal(motion.panel,'running','tab content transitions');
-        assert.equal(motion.dock,'running','composer changes into the action bar');
-        // Rapid selections finish on the last choice, with one visible panel.
+        assert.equal(motion.dock,'running','composer changes into the action bar in both modes');
+        if(!minimal){
+          assert.equal(motion.nav,'schedule','ordinary tab taps select their destination');
+          assert.ok(await page.locator('.detail-pager').evaluate(el=>Math.abs(el.scrollLeft-detailPageIndexByNav('schedule')*el.clientWidth)<1),'ordinary tab taps land at the native snap position');
+        }
+        // Rapid selections finish on the last choice, at the selected native scroll position.
         await page.evaluate(minimal=>{
           if(minimal){showDetailMinimalTab('summary');showDetailMinimalTab('settings');showDetailMinimalTab('summary');}
           else{scrollDetailToNav('identity','smooth');scrollDetailToNav('summary','smooth');}
         },minimal);
         await settle();
         assert.equal(await page.evaluate(()=>detailCurrentNav()),'summary');
-        assert.equal(await page.locator('.detail-pager > .detail-page:visible').count(),1);
+        assert.ok(await page.locator('.detail-pager').evaluate(el=>Math.abs(el.scrollLeft)<1),'rapid tab selections finish on Summary in the horizontal strip');
         // Typing owns the final geometry, even if a tab change just started.
         const focused=await page.evaluate(()=>{
           const settings=visibleDetailPages(getSheetInner('detail-sheet').querySelector('.detail-pager'))

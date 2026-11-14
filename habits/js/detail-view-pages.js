@@ -74,26 +74,14 @@ function cancelDetailNavigationMotion(){
   detailDockMotion?.cancel();
 }
 
-// Animate only an explicit navigation action. Selection and layout commit
-// immediately; keyboard/viewport updates never start or delay a transition.
+// Morph the dock only on tab changes. Native scrolling owns panel movement;
+// keyboard/viewport updates never start or delay this transition.
 function animateDetailNavigation(previousNav,previousDock,behavior = 'smooth'){
   cancelDetailNavigationMotion();
   const inner = getSheetInner('detail-sheet');
   if(!inner || behavior !== 'smooth' || matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   if(!$('detail-sheet').classList.contains('open') && !inner.closest('.pane-detail'))return;
-  const nav = detailCurrentNav();
-  if(previousNav !== nav){
-    const pager = inner.querySelector('.detail-pager');
-    const pages = visibleDetailPages(pager);
-    const direction = pages.findIndex(page=>page.dataset.detailNav === nav)
-      >= pages.findIndex(page=>page.dataset.detailNav === previousNav) ? 1 : -1;
-    const panel = detailIsSingleView() ? pager : pages.find(page=>page.dataset.detailNav === nav);
-    detailPanelMotion = panel?.animate([
-      {transform:`translateX(${direction * 12}px)`,opacity:.92},
-      {transform:'translateX(0)',opacity:1}
-    ],{duration:180,easing:'ease-out'});
-  }
-  if(!previousDock?.width)return;
+  if(previousNav === detailCurrentNav() || !previousDock?.width)return;
   const dock = inner.querySelector('.sheet-search-dock');
   const next = dock?.getBoundingClientRect();
   if(!next?.width || !next.height)return;
@@ -128,16 +116,24 @@ function applyDetailMinimalMode(){
   const availabilityTitle = $('detail-availability-disclosure')?.querySelector('summary');
   if(availabilityTitle)availabilityTitle.textContent = sheet?.classList.contains('opportunity-mode') ? 'days & hours' : minimal ? 'allowed days & hours' : 'days, hours & places';
   if(pager){
+    let settings = pager.querySelector('.detail-minimal-settings');
+    if(minimal && !settings){
+      settings = document.createElement('div');
+      settings.className = 'detail-minimal-settings';
+      const pages = [...pager.children].filter(page=>page.matches('.detail-page:not(.detail-summary-page)'));
+      pager.append(settings);
+      settings.append(...pages);
+    }else if(!minimal && settings){
+      settings.replaceWith(...settings.children);
+    }
     MINIMAL_HIDDEN_DETAIL_PAGES.forEach(nav=>{
       const page = pager.querySelector(`.detail-page[data-detail-nav="${nav}"]`);
       if(page)page.hidden = minimal;
     });
     // Switching modes keeps the user on Summary or on the settings they were in.
-    if(minimal && !wasMinimal){
-      setDetailMinimalView(!fromNav || fromNav === 'summary' ? 'summary' : 'settings');
-      pager.scrollTo({left:0,top:0,behavior:'auto'});
-    }else if(minimal){
-      pager.scrollTo({left:0,behavior:'auto'});
+    if(minimal){
+      if(!wasMinimal)setDetailMinimalView(!fromNav || fromNav === 'summary' ? 'summary' : 'settings');
+      pager.scrollTo({left:detailMinimalView() === 'settings' ? pager.clientWidth : 0,top:0,behavior:'instant'});
     }else if(wasMinimal){
       pager.scrollTo({top:0,behavior:'auto'});
       scrollDetailToNav(fromNav,'auto');
@@ -200,7 +196,7 @@ function applyDetailMinimalMode(){
   if(typeof updateDetailPagerDots === 'function')updateDetailPagerDots();
 }
 
-// PURE: minimal mode stacks every remaining pane into one scrolling page.
+// PURE: minimal mode combines the settings sections into one logical tab.
 function detailIsSingleView(){
   return typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
 }
@@ -252,7 +248,9 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
     setDetailMinimalView(navKey === 'summary' ? 'summary' : 'settings');
     updateDetailPagerDots();
     const page = visibleDetailPages(pager)[index];
-    if(page)pager.scrollTo({top:navKey === 'summary' ? 0 : page.offsetTop - pager.offsetTop,behavior});
+    pager.scrollTo({left:navKey === 'summary' ? 0 : pager.clientWidth,behavior:'instant'});
+    const settings = pager.querySelector('.detail-minimal-settings');
+    if(settings && page && navKey !== 'summary')settings.scrollTo({top:page.getBoundingClientRect().top - settings.getBoundingClientRect().top + settings.scrollTop,behavior:'instant'});
     animateDetailNavigation(previousNav,previousDock,behavior);
     return;
   }
@@ -261,9 +259,10 @@ function scrollDetailToNav(navKey,behavior = 'auto'){
   getSheetInner('detail-sheet').dataset.fullNav = visibleDetailPages(pager)[index].dataset.detailNav;
   pager.scrollTo({left:index * pager.clientWidth,behavior:'instant'});
   updateDetailPagerDots();
+  animateDetailNavigation(previousNav,previousDock,behavior);
 }
 
-// Ordinary pages use the browser's horizontal scrolling, on touchscreens and
+// Both modes use the browser's horizontal scrolling, on touchscreens and
 // trackpads alike. Only a width/page-set change realigns the selected tab;
 // height changes from the keyboard do not reset a native drag or its momentum.
 function bindDetailPagerScroll(pager){
@@ -271,103 +270,45 @@ function bindDetailPagerScroll(pager){
   pager.dataset.scrollBound = '1';
   let width = 0,pageSignature = '';
   const align = ()=>{
-    if(detailIsSingleView())return false;
-    const pages = visibleDetailPages(pager);
+    const pages = detailIsSingleView() ? [...pager.children] : visibleDetailPages(pager);
     const signature = pages.map(page=>page.dataset.detailNav).join('|');
     if(!pager.clientWidth || (width === pager.clientWidth && signature === pageSignature))return false;
     width = pager.clientWidth;
     pageSignature = signature;
-    const index = Math.max(0,pages.findIndex(page=>page.dataset.detailNav === detailCurrentNav()));
+    const index = detailIsSingleView() ? Number(detailMinimalView() === 'settings') : Math.max(0,pages.findIndex(page=>page.dataset.detailNav === detailCurrentNav()));
     pager.scrollTo({left:index * width,behavior:'instant'});
     return true;
   };
   pager.addEventListener('scroll',()=>{
-    if(detailIsSingleView() || align() || !width)return;
+    if(align() || !width)return;
+    if(detailIsSingleView()){
+      const view = pager.scrollLeft >= width / 2 ? 'settings' : 'summary';
+      if(view === detailMinimalView())return;
+      const previousNav = detailCurrentNav();
+      const previousDock = pager.parentElement.querySelector('.sheet-search-dock')?.getBoundingClientRect();
+      detailNavigationRevision += 1;
+      setDetailMinimalView(view);
+      updateDetailPagerDots();
+      animateDetailNavigation(previousNav,previousDock);
+      return;
+    }
     const pages = visibleDetailPages(pager);
     const index = Math.max(0,Math.min(pages.length - 1,Math.round(pager.scrollLeft / width)));
     const nav = pages[index]?.dataset.detailNav;
     if(!nav || nav === detailCurrentNav())return;
+    const previousNav = detailCurrentNav();
+    const previousDock = pager.parentElement.querySelector('.sheet-search-dock')?.getBoundingClientRect();
     detailNavigationRevision += 1;
     getSheetInner('detail-sheet').dataset.fullNav = nav;
     updateDetailPagerDots();
+    animateDetailNavigation(previousNav,previousDock);
   },{passive:true});
   new ResizeObserver(align).observe(pager);
   new MutationObserver(align).observe(pager,{subtree:true,attributes:true,attributeFilter:['hidden']});
 }
 
-// Minimal mode keeps its vertically stacked Settings page. Its two logical
-// tabs still use a release gesture; ordinary mode has no gesture recognizer.
-function bindDetailPagerSwipes(pager){
-  if(pager.dataset.swipeBound === '1')return;
-  pager.dataset.swipeBound = '1';
-  const surface = pager.closest('.detail-sheet');
-  let gesture = null;
-  const selectionActive = ()=>Boolean(window.getSelection()?.toString());
-  // Headings, labels and the item title accept drags; their normal tap action
-  // remains intact. Actual editors, action buttons and drag controls own theirs.
-  const controls = 'input,textarea,select,button:not(#detail-name),a,svg,canvas,'
-    + '[contenteditable]:not([contenteditable="false"]),[role="button"],[role="slider"],'
-    + '[role="spinbutton"],[role="switch"],[role="checkbox"],[role="listbox"],[draggable="true"],[data-detail-no-swipe],.leaflet-container';
-  surface.addEventListener('touchstart',event=>{
-    gesture = null;
-    if(!detailIsSingleView())return;
-    if(event.defaultPrevented || event.touches.length !== 1 || selectionActive())return;
-    const target = event.target instanceof Element ? event.target : event.target.parentElement;
-    if(!target?.closest('.detail-page,.detail-head') || target.closest(controls))return;
-    // Nested charts, calendar strips and other horizontal scrollers own their
-    // entire gesture, including at an edge; never hand them off to tabs.
-    for(let node = target;node && node !== surface;node = node.parentElement){
-      if(node.scrollWidth > node.clientWidth + 1 && /^(auto|scroll)$/.test(getComputedStyle(node).overflowX))return;
-    }
-    const touch = event.touches[0];
-    // Leave screen-edge back/forward to iOS and the app shell.
-    if(touch.clientX <= 28 || touch.clientX >= window.innerWidth - 28)return;
-    gesture = {id:touch.identifier,x:touch.clientX,y:touch.clientY,
-      revision:detailNavigationRevision,nav:detailCurrentNav(),claimed:false};
-  },{passive:true});
-  surface.addEventListener('touchmove',event=>{
-    if(!gesture)return;
-    if(event.touches.length !== 1 || gesture.revision !== detailNavigationRevision){gesture = null;return;}
-    const touch = event.touches[0];
-    if(touch.identifier !== gesture.id){gesture = null;return;}
-    const dx = Math.abs(touch.clientX - gesture.x),dy = Math.abs(touch.clientY - gesture.y);
-    if(!gesture.claimed){
-      // Once a drag goes vertically, it stays a vertical scroll even if the
-      // finger later curves sideways. Small movements remain normal taps.
-      if(dy >= 10 && dx <= dy * 1.5){gesture = null;return;}
-      if(dx < 10 || dx <= dy * 1.5)return;
-      if(!event.cancelable){gesture = null;return;}
-      gesture.claimed = true;
-    }
-    if(event.cancelable)event.preventDefault();
-    else gesture = null;
-  },{passive:false});
-  surface.addEventListener('touchend',event=>{
-    const start = gesture;
-    gesture = null;
-    if(!start?.claimed || event.touches.length || start.revision !== detailNavigationRevision
-      || start.nav !== detailCurrentNav() || selectionActive())return;
-    const touch = [...event.changedTouches].find(touch=>touch.identifier === start.id);
-    if(!touch)return;
-    // Claiming a drag also suppresses its synthetic click on the new panel.
-    if(event.cancelable)event.preventDefault();
-    const dx = touch.clientX - start.x,dy = Math.abs(touch.clientY - start.y);
-    if(Math.abs(dx) < Math.max(48,Math.min(80,pager.clientWidth * .18)) || Math.abs(dx) <= dy * 1.5)return;
-    const navs = detailIsSingleView() ? Object.keys(DETAIL_MINIMAL_NAV)
-      : visibleDetailPages(pager).map(page=>page.dataset.detailNav);
-    const current = detailIsSingleView() ? detailMinimalView() : start.nav;
-    const index = navs.indexOf(current);
-    const next = navs[index + (dx < 0 ? 1 : -1)];
-    if(index < 0 || !next)return;
-    if(detailIsSingleView())showDetailMinimalTab(next);
-    else scrollDetailToNav(next,'smooth');
-  },{passive:false});
-  surface.addEventListener('touchcancel',()=>{gesture = null;},{passive:true});
-}
-
 function bindDetailPagerTabs(dotsWrap,pager){
   bindDetailPagerScroll(pager);
-  bindDetailPagerSwipes(pager);
   if(dotsWrap.dataset.bound === '1')return;
   dotsWrap.dataset.bound = '1';
   dotsWrap.addEventListener('click',event=>{

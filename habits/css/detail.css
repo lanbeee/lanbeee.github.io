@@ -322,17 +322,6 @@ body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet).detail-search-open 
 body[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
-/* Stacked minimal pages share one scroll. Keep footer clearance on the last
-   section only so earlier cards don't carry a blank band. */
-body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > .detail-page{
-  padding-bottom:0;
-}
-body.minimal-mode[data-pane-count="1"] .detail-sheet > .detail-pager > :is(.detail-page:last-child,.detail-summary-page){
-  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
-}
-/* Minimal mode's two tabs: Summary alone, or the stacked settings panes. */
-body.minimal-mode .detail-sheet:not([data-minimal-view="settings"]) > .detail-pager > .detail-page:not(.detail-summary-page),
-body.minimal-mode .detail-sheet[data-minimal-view="settings"] > .detail-pager > .detail-summary-page{display:none;}
 body[data-pane-count="1"] :is(.detail-sheet,.settings-sheet) > .detail-search-panel .detail-search-results{
   padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }

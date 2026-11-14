@@ -535,9 +535,9 @@ function keepFocusedInputVisible(){
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
   let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body');
   if(!host)return;
-  // Minimal detail sections share the pager's scroll, rather than scrolling
+  // Minimal detail sections share the Settings scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
-  if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-pager');
+  if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-minimal-settings') || host;
   if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
@@ -1883,7 +1883,7 @@ document.addEventListener('pointerdown',e=>{
       if(pager.scrollWidth > pager.clientWidth + 1){
         scrollers.push([pager,pager.scrollTop,pager.scrollLeft]);
       }
-      for(const page of pager.querySelectorAll('.detail-page')){
+      for(const page of pager.querySelectorAll('.detail-page,.detail-minimal-settings')){
         if(!page.hidden && page.scrollHeight > page.clientHeight + 1){
           scrollers.push([page,page.scrollTop,page.scrollLeft]);
         }

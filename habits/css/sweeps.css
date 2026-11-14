@@ -259,7 +259,6 @@ body.minimal-mode #detail-minimal-effort{
 }
 body.minimal-mode #detail-minimal-effort > *{margin:0;}
 /* Stacked pages read as separate sections — a small gap between the cards. */
-body.minimal-mode .detail-sheet > .detail-pager{gap:12px;}
 body.minimal-mode .detail-sheet > .detail-pager > .detail-page{margin-bottom:0;}
 /* Header gets a touch more separation from the now-stacked content. */
 body.minimal-mode .detail-sheet .detail-head{margin:0 0 12px;}

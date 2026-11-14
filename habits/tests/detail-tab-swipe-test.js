@@ -24,7 +24,7 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
         const settled=async key=>{
           await page.waitForFunction(key=>{
             const pager=getSheetInner('detail-sheet').querySelector('.detail-pager');
-            const i=detailPageIndexByNav(key);
+            const i=detailIsSingleView() ? Number(key !== 'summary') : detailPageIndexByNav(key);
             return detailCurrentNav()===key && Math.abs(pager.scrollLeft-i*pager.clientWidth)<1;
           },key,{timeout:5000}).catch(async error=>{
             console.error(await pager.evaluate(el=>({nav:detailCurrentNav(),left:el.scrollLeft,width:el.clientWidth,
@@ -112,6 +112,21 @@ const {BASE,baseHabit}=require('./helpers/planner-test-helpers');
           await page.locator('#native-list-fixture').evaluate(el=>el.remove());
           await page.evaluate(()=>closeDetail());
         }
+        // Minimal keeps the same native strip, with all settings in column two.
+        await page.evaluate(()=>{setMinimalMode(true);openDetail(0);});
+        await page.waitForTimeout(350);
+        for(let round=0;round<2;round++){
+          await move(1,'schedule','.detail-summary-page');
+          assert.equal(await page.evaluate(()=>detailMinimalView()),'settings');
+          assert.ok(await page.locator('.detail-minimal-settings').evaluate(el=>el.scrollHeight>el.clientHeight),'settings scroll vertically');
+          await move(-1,'summary','#detail-rhythm-disclosure > summary');
+        }
+        await page.evaluate(()=>scrollDetailToNav('identity','smooth'));
+        await page.waitForTimeout(250);
+        assert.ok(await page.locator('.detail-minimal-settings').evaluate(el=>el.scrollTop>0),'pill navigation reveals lower settings');
+        await page.evaluate(()=>{setMinimalMode(false);scrollDetailToNav('summary');});
+        await settled('summary');
+        assert.equal(await page.locator('.detail-minimal-settings').count(),0,'regular mode restores original panels');
         assert.deepEqual(errors,[]);
         console.log(`PASS ${name} ${phone?'phone':'desktop'}: native strip, repeated bidirectional scrolling, headings, pills, keyboard height, width changes and nested scrolling (${client?'native touch':phone?'scroll/layout':'native wheel'})`);
         await page.close();

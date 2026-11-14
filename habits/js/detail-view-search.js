@@ -360,7 +360,7 @@ function setDetailSearchOpen(open,focus = true){
     const pager = inner.querySelector('.detail-pager');
     const pages = visibleDetailPages(pager);
     detailSearchReturnNav = detailCurrentNav();
-    detailSearchReturnScroll = [pager,...pages].map(page=>({page,top:page.scrollTop}));
+    detailSearchReturnScroll = [pager,...inner.querySelectorAll('.detail-minimal-settings'),...pages].map(page=>({page,top:page.scrollTop}));
   }
   inner.classList.toggle('detail-search-open',open);
   $('detail-search-panel').hidden = !open;
@@ -438,7 +438,7 @@ function revealDetailSearchEntry(entry){
     // Reveal only inside the selected panel. Scrolling every ancestor can
     // move the sheet/document while iOS is settling its viewport.
     const page = target.closest('.detail-page');
-    const scroller = detailIsSingleView() ? page.closest('.detail-pager') : page;
+    const scroller = detailIsSingleView() ? page.closest('.detail-minimal-settings') || page : page;
     const rect = target.getBoundingClientRect(),bounds = scroller.getBoundingClientRect();
     scroller.scrollTo({top:scroller.scrollTop + rect.top - bounds.top
       - Math.max(0,(scroller.clientHeight - rect.height) / 2),behavior:'instant'});

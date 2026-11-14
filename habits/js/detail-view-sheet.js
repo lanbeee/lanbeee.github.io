@@ -221,7 +221,7 @@ function openDetail(i){
     if(inner)inner.scrollTop = 0;
     setDetailMinimalView('summary');
     if(pager){
-      pager.querySelectorAll('.detail-page').forEach(page=>{ page.scrollTop = 0; });
+      pager.querySelectorAll('.detail-page,.detail-minimal-settings').forEach(page=>{ page.scrollTop = 0; });
       // Select Summary directly; no delayed pager reset can race a pill tap.
       scrollDetailToNav('summary','instant');
     }
@@ -286,7 +286,7 @@ function openDetailUnsavedCreate(draft){
   setDetailMinimalView('summary');
   const pager = inner?.querySelector('.detail-pager');
   if(pager){
-    pager.querySelectorAll('.detail-page').forEach(page => { page.scrollTop = 0; });
+    pager.querySelectorAll('.detail-page,.detail-minimal-settings').forEach(page => { page.scrollTop = 0; });
     scrollDetailToNav('summary','instant');
   }
   renderDetailTabs();

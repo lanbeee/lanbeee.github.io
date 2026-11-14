@@ -155,16 +155,20 @@ body.minimal-mode .ting-card.minimal-card .card-actions,
 body.minimal-mode .ting-card.minimal-card .ting-visual > :not(.ting-trail) { display:none; }
 body.minimal-mode .ting-card.minimal-card::before { display:none; }
 body.minimal-mode #detail-sheet.minimal-detail .detail-full-only:not(.detail-field-revealed) { display:none !important; }
-/* Minimal mode stacks the settings panels in one vertical scroll. */
-body.minimal-mode .detail-sheet > .detail-pager{
-  flex-direction:column;scroll-snap-type:none;
-  overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;
-  -webkit-overflow-scrolling:touch;
+/* Two native horizontal pages; Settings retains its own vertical scroll. */
+body.minimal-mode .detail-sheet > .detail-pager{gap:0;}
+.detail-minimal-settings{
+  flex:0 0 100%;width:100%;min-width:100%;height:100%;min-height:0;
+  box-sizing:border-box;overflow-x:hidden;overflow-y:auto;
+  scroll-snap-align:start;scroll-snap-stop:always;overscroll-behavior-y:contain;
+  scrollbar-width:none;
 }
-body.minimal-mode .detail-sheet > .detail-pager > .detail-page{
-  flex:0 0 auto;scroll-snap-align:none;
-  width:100%;min-width:0;
-  height:auto;min-height:0;overflow:visible;
+.detail-minimal-settings::-webkit-scrollbar{display:none;}
+.detail-minimal-settings > .detail-page{
+  width:100%;min-width:0;height:auto;min-height:0;overflow:visible;margin-bottom:12px;
+}
+body[data-pane-count="1"] .detail-minimal-settings{
+  padding-bottom:calc(80px + var(--nav-bottom) + var(--content-safe-bottom));
 }
 body.minimal-mode .detail-bottom-bar .detail-dots[hidden]{ display:none; }
 body.minimal-mode .detail-bottom-bar .detail-actions{ flex:1 1 auto;width:auto; }
