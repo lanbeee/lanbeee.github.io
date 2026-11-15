@@ -79,7 +79,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   trackValue:/\b(?:track|log|record|recording|capture|enter|ask|enable)\b.{0,35}\b(?:value|number|numeric|weight|note|measurement|reading)\b|\bvalue tracking\b/i,
   places:/\b(?:at (?:home|work)|places?|locations?|locaton|loction|venue|(?:done|happen|take place|do (?:it|this))\s+(?:at|in))\b/i,
   anywhereAllowed:/\b(?:anywhere|wherever|any (?:place|location|loction)|(?:no|regardless of) (?:place|location|geographic)|(?:not|doesn['’]t) require a (?:particular|specific) place|only (?:at|in) (?:the )?saved places)\b/i,
-  locationPrefs:/\b(?:prefer\w*|avoid|favou?r\w*|would rather)\b.{0,40}\b(?:place|location|home|work|at|in)\b|\b(?:place|location|loction) preference\b|\bbest (?:place|location)\b/i,
+  locationPrefs:/\b(?:prefer\w*|avoid|favou?r\w*|(?:de)?prioriti[sz]e|would rather)\b.{0,40}\b(?:place|location|home|work|at|in)\b|\b(?:place|location|loction) preference\b|\bbest (?:place|location)\b/i,
   weatherProfile:/\b(?:weather profile|(?:use|apply|choose) .{0,20} (?:weather|profile))\b/i,
   weatherRules:/\b(?:temperature|precipitation|rain|wind|gust|humidity|uv|feels like|dry weather|celsius|fahrenheit|(?:warmer|colder|hotter|cooler) than)\b/i,
   showWeather:/\b(?:show|hide|display|include|see|put|want|turn on|turn off)\b.{0,35}\b(?:weather|forecast)\b/i,
@@ -158,7 +158,7 @@ function assistantFieldCatalog(){
     // preference must introduce them; an item's title is not its location.
     const names=(assistantFocusSettings().locations||[]).map(place=>String(place.name||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).filter(Boolean);
     if(names.length&&['places','locationPrefs'].includes(f.id)){
-      const qualifier=f.id==='places'?'(?:at|in|near)':'(?:prefer\\w*|avoid|favou?r\\w*)';
+      const qualifier=f.id==='places'?'(?:at|in|near)':'(?:prefer\\w*|avoid|favou?r\\w*|(?:de)?prioriti[sz]e)';
       signal=new RegExp(`(?:${signal.source})|\\b${qualifier}\\s+(?:the\\s+)?(?:${names.join('|')})(?=\\s|[.,;!?]|$)${f.id==='locationPrefs'?`|\\b(?:${names.join('|')})\\s+works? best\\b`:''}`,'i');
     }
     return {...f,key:f.id==='frequency'?'frequency':pair?.[1] || f.id,
@@ -214,7 +214,7 @@ function assistantFieldSpans(request){
     }else if(!spans.some(s=>s.start===start&&s.end===end))spans.push({start,end,text:request.slice(start,end)});};
   let start=0;
   // Keep URLs, decimals and clocks intact. Every piece retains source offsets.
-  for(const match of request.matchAll(/[,;\n]+|[.!?](?=\s|$)|\s+and\s+(?=(?:tag|use|pin|set|show|hide|add|make|rename|remind|alert|notify|warn|ring|prefer\w*)\b)/gi)){
+  for(const match of request.matchAll(/[,;\n]+|[.!?](?=\s|$)|\s+and\s+(?=(?:tag|use|pin|set|show|hide|add|include|remove|drop|make|rename|remind|alert|notify|warn|ring|prefer\w*)\b)/gi)){
     if(/\band\b/i.test(match[0])&&ASSISTANT_FIELD_SIGNALS.reminderReset.test(request.slice(start,match.index))&&/^use defaults\b/i.test(request.slice(match.index+match[0].length)))continue;
     if(match[0]==='.'&&/\b(?:jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|[ap]\.m)$/i.test(request.slice(start,match.index)))continue;
     // A comma before an explicit year belongs to its date, not a new setting.
@@ -469,6 +469,8 @@ function assistantFieldRelevant(def, text){
   const target=assistantEditTarget(text);
   if(target!==text&&!def.signal?.test(target)&&!assistantFieldClear(def,target))return false;
   text=target;
+  const collectionOwner=['places','topics'].find(id=>assistantFieldCollectionOperand(id,text));
+  if(collectionOwner)return collectionOwner===def.id;
   const removalOwner=['places','locationPrefs','preferredMonthDays','allowedOrdinalWeekdays','preferredOrdinalWeekdays','scheduleLinks','weatherProfile'].find(id=>assistantFieldRemovalOperand(id,text));
   if(removalOwner)return removalOwner===def.id;
   // A setting noun is not permission to change that setting. In particular,
@@ -595,6 +597,8 @@ function assistantFieldMentioned(def,text){
 
 function assistantFieldCue(def,text,from=0){
   if(from===0){
+    if(assistantFieldCollectionOperand(def.id,text))return /^.*$/s.exec(text);
+    if(def.id==='locationPrefs'&&assistantFieldPlacePreference(text))return /^.*$/s.exec(text);
     if(def.id==='breakable'){
       const explicit=/\b(?:split(?:ting|table)?|unbreakable|breakable|continuous|uninterrupted|several sittings|separate pieces)\b/i.exec(text);
       if(explicit)return explicit;
@@ -673,9 +677,10 @@ function assistantFieldHabitMode(text){
 }
 
 function assistantFieldPlacePreference(text){
-  if(!assistantFieldPreference(text)&&!/\bavoid\b/i.test(text))return false;
+  if(!assistantFieldPreference(text)&&!/\b(?:avoid|(?:de)?prioriti[sz]e)\b/i.test(text))return false;
   return /\b(?:places?|locations?)\b/i.test(text)
-    || (assistantFocusSettings().locations||[]).some(place=>assistantFocusPhraseIn(text,place.name));
+    || (assistantFocusSettings().locations||[]).some(place=>assistantFocusPhraseIn(text,place.name))
+    || Boolean(assistantFieldPlacePreferenceOperand(text)?.rows.every(row=>assistantFocusMatchCatalog(assistantFocusSettings().locations||[],row.name).ok));
 }
 
 function assistantFieldForecastPlace(text){
@@ -694,6 +699,8 @@ function assistantFieldOccurrenceReset(text){
 // only that value from the current draft; clearing one place or calendar rule
 // must not clear its siblings.
 function assistantFieldRemovalOperand(id,text){
+  const edit=assistantFieldCollectionOperand(id,text);
+  if(edit?.op==='remove')return edit.operand;
   const patterns={
     places:/^(?:remove|drop)\s+(.+?)\s+from (?:the )?(?:assigned |allowed )?(?:places|locations)$/i,
     locationPrefs:/^stop preferring\s+(.+?)\s+without removing its place assignment$/i,
@@ -705,6 +712,49 @@ function assistantFieldRemovalOperand(id,text){
   };
   const operand=patterns[id]?.exec(assistantFieldDialogue(text).text)?.[1]||'';
   return id==='preferredMonthDays'&&!/\bmonth\b/i.test(operand)?'':operand;
+}
+
+// List edits keep their verb until after Needle selects the complete evidence.
+// Match the whole saved name before stripping a field noun: a saved place may
+// itself be called "Home Location". Unknown operands remain intact and ask.
+function assistantFieldCollectionOperand(id,text){
+  if(!['places','topics'].includes(id))return null;
+  const source=assistantFieldDialogue(text).text;
+  const match=source.match(/^(add|include|remove|drop)\s+(.+)$/i);
+  if(!match)return null;
+  if(assistantFieldClearOwners(source).length)return null;
+  const op=/^(?:remove|drop)$/i.test(match[1])?'remove':'add';
+  const label=id==='places'?'places?|locations?|locaton|loction':'topics?|tags?|categor(?:y|ies)';
+  const settings=assistantFocusSettings();
+  const catalog=id==='places'?(settings.locations||[]):(settings.topics||[]).map(name=>({id:name,name}));
+  let operand=match[2].trim();
+  const labeled=new RegExp(`^(?:the\\s+)?(?:${label})\\s+|\\s+(?:${label})$`,'i').test(operand);
+  if(!assistantFocusMatchCatalog(catalog,operand).ok){
+    operand=operand.replace(new RegExp(`\\s+(?:from|to) (?:the )?(?:assigned |allowed )?(?:${label})$`,'i'),'');
+    if(!assistantFocusMatchCatalog(catalog,operand).ok)operand=operand
+      .replace(new RegExp(`^(?:the\\s+)?(?:${label})\\s+`,'i'),'')
+      .replace(new RegExp(`\\s+(?:${label})$`,'i'),'').trim();
+  }
+  // Bare saved place names are enough; topics need their noun to avoid
+  // interpreting "Add Home" as both a topic and a place.
+  if(!operand||!labeled&&(id==='topics'||!assistantFocusMatchCatalog(catalog,operand).ok))return null;
+  return {op,operand};
+}
+
+function assistantFieldCollectionValue(def,text,session){
+  const edit=assistantFieldCollectionOperand(def.id,text);
+  if(!edit)return null;
+  const baseline=session._fieldBaseline||assistantFocusMaterialize(session);
+  const before=(baseline[def.id==='places'?'locationIds':'topics']||[]).slice();
+  const parsed=assistantFocusNormalize(def.id,edit.operand,session);
+  // A removal cannot create a new topic through the free-text topic normalizer.
+  const unknownTopic=def.id==='topics'&&edit.op==='remove'&&parsed.ok
+    &&parsed.value.some(value=>!before.includes(value));
+  if(!parsed.ok||unknownTopic)return {...parsed,ok:false,collectionEdit:edit,
+    error:`I couldn’t match “${edit.operand}” in the ${edit.op} instruction. Choose the final ${def.label.toLowerCase()} for this item.`,selection:before};
+  const delta={...edit,ids:parsed.value};
+  const value=edit.op==='add'?[...new Set(before.concat(delta.ids))]:before.filter(id=>!delta.ids.includes(id));
+  return {ok:true,collectionEdit:delta,changes:[{field:def.id,op:value.length?'set':'clear',value:value.length?value:null}]};
 }
 
 function assistantFieldRemoveValue(def,text,session){
@@ -899,7 +949,7 @@ function assistantFieldEnqueue(state, id, reason, source){
   if(id==='appointmentRepeat'&&state.session.operation==='edit'&&baseline.appointment?.repeat==='weekly'
     &&new RegExp(`\\bweekly (?:on (?:${ASSISTANT_WEEKDAY_TOKEN})s?\\b|event days\\b)`,'i').test(state.request))return;
   const row={id,family:def.family,def,request:state.request,spans,revision:state.revision,status:'queued',attempts:0,
-    required:['explicit','coverage','reference'].includes(reason),reason,baseline:{durationMinutes:baseline.durationMinutes}};
+    required:['explicit','coverage','reference'].includes(reason),reason,baseline:{durationMinutes:baseline.durationMinutes,locationPrefs:{...baseline.locationPrefs},locationIds:[...(baseline.locationIds||[])],topics:[...(baseline.topics||[])]}};
   row.contextValues=def.fields.map(id=>`${assistantFocusField(id)?.label||id}: ${assistantFocusFormatValue(id,baseline,state.session)}`).join('; ');
   // Replace only work for this setting; unrelated interrupted fields keep their
   // frozen text. Completed draft values remain until a valid replacement lands.
@@ -1972,14 +2022,19 @@ function assistantFieldClosedInstructions(state){
   const duration=new RegExp(`^(?:(?:(?:make|set|change|use)\\s+)?(?:(?:each|every|the|its)\\s+)?(?:session(?:\\s+length)?|duration|length)(?:\\s+(?:to|of|is|should be))?\\s*:?\\s*)?${quantity}(?:\\s+(?:each|per session|long))?$`,'i');
   const day=`(?:${ASSISTANT_WEEKDAY_TOKEN})s?`;
   const weekdays=new RegExp(`^(?:(?:only|allowed|allow|on|use)\\s+)*(?:weekdays?|weekends?|${day}(?:\\s*(?:to|through|thru|and|plus|[-–—/&])\\s*${day})*)(?:\\s+only)?$`,'i');
-  const settings=assistantFocusSettings(),fields=[];let end=0;
+  const settings=assistantFocusSettings(),fields=[],collections=new Set();let end=0;
   for(const span of state.spans){
     // Source segmentation must also account for every gap, not just the
     // excerpts it retained. Conjunctions may join independent instructions.
     if(span.start<end||!/^(?:\s|[,;.!]|\band\b)*$/i.test(state.request.slice(end,span.start)))return null;
     end=span.end;
     const text=assistantFieldDialogue(span.text).text;
-    const named=['places','topics','weatherProfile','weatherLocationId'].find(id=>{
+    const collection=!text.includes('?')&&['places','topics'].find(id=>assistantFieldCollectionOperand(id,text)
+      &&assistantFieldCollectionValue(state.catalog.find(def=>def.id===id),text,session)?.ok);
+    const preference=assistantFieldPlacePreferenceOperand(text);
+    const named=preference&&!text.includes('?')&&preference.rows.every(row=>assistantFocusMatchCatalog(settings.locations||[],row.name).ok)
+      &&assistantFieldNormalize(state.catalog.find(def=>def.id==='locationPrefs'),text,session).ok?'locationPrefs'
+      :['places','topics','weatherProfile','weatherLocationId'].find(id=>{
       const operand=assistantFieldNamedOperand(id,text);
       const catalog=id==='topics'?(settings.topics||[]).map(name=>({id:name,name}))
         :id==='weatherProfile'?settings.weatherProfiles:settings.locations;
@@ -1990,9 +2045,10 @@ function assistantFieldClosedInstructions(state){
     const id=duration.test(text)?'durationMinutes'
       :/^(?:(?:set|change|use)\s+)?(?:(?:the|its)\s+)?priority(?:\s+(?:to|is))?\s*:?\s*p?[0-5]$/i.test(text)?'priority'
       :/^(?:pin|unpin)\s+(?:it|this|that)$/i.test(text)?'pinned'
-      :session.kind==='habit'&&weekdays.test(text)?'allowedWeekdays':named;
-    if(!id||fields.includes(id))return null;
-    fields.push(id);
+      :session.kind==='habit'&&weekdays.test(text)?'allowedWeekdays':collection||named;
+    if(!id||fields.includes(id)&&(!collection||!collections.has(id)))return null;
+    if(collection)collections.add(id);
+    if(!fields.includes(id))fields.push(id);
   }
   if(!/^[\s.!]*$/.test(state.request.slice(end)))return null;
   // Existing nominations must agree exactly. Prerequisites, unfinished work,
@@ -2127,6 +2183,24 @@ function assistantFieldNamedOperand(id,text){
   return match?match[1].trim():null;
 }
 
+// A preference is distinct from assigning a place or changing item priority.
+// Keep the full operand for catalog matching, including unknown or longer names.
+function assistantFieldPlacePreferenceOperand(text){
+  const source=assistantFieldDialogue(text).text;
+  const reverse=source.match(/^(?:make|use|set)\s+(.+?)\s+(?:as\s+)?(?:the|my)\s+(preferred|favou?rite)\s+(?:place|location)$/i);
+  const label=source.match(/^(?:(?:set|change)\s+)?(?:the|my)\s+(preferred|favou?rite)\s+(?:place|location)\s+(?:to|is|should be)\s+(.+)$/i);
+  const match=source.match(/^(prefer|prioriti[sz]e|favou?r|avoid|deprioriti[sz]e)\s+(?:(?:doing (?:it|this)\s+)?(?:at|in)\s+)?(.+)$/i)
+    || (reverse&&[reverse[0],reverse[2],reverse[1]]) || label
+    || source.match(/^(?:set|change)\s+(?:the\s+)?(?:place|location)\s+preference\s+to\s+(prefer|avoid|high|low|little)\s+(.+)$/i);
+  if(!match)return null;
+  const level=/^avoid$/i.test(match[1])?'avoid':/^(?:low|little|deprioriti[sz]e)$/i.test(match[1])?'little':'high';
+  const catalog=assistantFocusSettings().locations||[];
+  let operand=match[2].trim();
+  if(!assistantFocusMatchCatalog(catalog,operand).ok)operand=operand.replace(/\s+(?:(?:as\s+)?(?:the\s+)?(?:place|location)|if possible)$/i,'').replace(/^the\s+/i,'').trim();
+  const names=assistantFocusMatchCatalog(catalog,operand).ok?[operand]:operand.split(/[,;]|\band\b/i).map(name=>name.trim());
+  return {level,rows:names.map(name=>({name,level}))};
+}
+
 function assistantFieldNormalize(def,text,session){
   if(!ASSISTANT_FIELD_LITERAL_VALUES.has(def.id))text=assistantFieldDialogue(assistantEditTarget(text)).text;
   if(def.id==='scheduleOptions')text=assistantFieldDialogue(text).text;
@@ -2151,6 +2225,8 @@ function assistantFieldNormalize(def,text,session){
   }
   const instructionSource=session?._fieldSource||text,literal=assistantFieldLiteralOwner(instructionSource);
   if(literal?.id===def.id && /\b(?:do not|don.t|never)\s*$/i.test(instructionSource.slice(0,literal.instructionStart)))return {ok:false,error:`Should I keep ${def.label.toLowerCase()} unchanged, or change it?`};
+  const collection=assistantFieldCollectionValue(def,text,session);
+  if(collection)return collection;
   const removal=assistantFieldRemoveValue(def,text,session);
   if(removal)return removal;
   if(assistantFieldClear(def,text))return {ok:true,changes:[{field:def.id,op:'clear',value:null}]};
@@ -2374,6 +2450,11 @@ function assistantFieldNormalize(def,text,session){
   }
   if(def.id==='locationPrefs'){
     if(/\b(?:not|never|don.t|without|except|or)\b/i.test(value))return {ok:false,error:'Specify the place preference to use, or clear it.'};
+    const preference=assistantFieldPlacePreferenceOperand(value);
+    if(preference){
+      const parsed=assistantFocusNormalize(def.id,preference.rows,session);
+      return parsed.ok?{ok:true,changes:[{field:def.id,...parsed}],preferencePatch:parsed.preferencePatch}:{...parsed,preferenceLevel:preference.level};
+    }
     value=assistantFieldDialogue(value).text.replace(/^i would rather (?:do (?:this|it) )?(?:at|in)\s+/i,'prefer ')
       .replace(/^(.+?)\s+is my preferred (?:place|location)$/i,'prefer $1')
       .replace(/^give\s+(.+?)\s+a\s+(high|low|little)\s+(?:place|location|loction) preference$/i,'$2 $1')
@@ -2418,7 +2499,7 @@ function assistantFieldNormalize(def,text,session){
   const length=lengthField?assistantParseDuration(value):null;
   if(def.id==='autoMarkMinutes'&&parsed.ok&&parsed.op==='clear'&&!/\b(?:manual|off|none|clear|disable)\b/i.test(value))return {ok:false,error:'Specify a completion length, or choose manual completion.'};
   if(length!=null&&parsed.ok&&parsed.op==='set'&&parsed.value!==length)return {ok:false,error:`That length is outside the supported range for ${def.label.toLowerCase()}.`};
-  return parsed.ok ? {ok:true,changes:[{field:def.id,...parsed}]} : parsed;
+  return parsed.ok ? {ok:true,changes:[{field:def.id,...parsed}],preferencePatch:parsed.preferencePatch} : parsed;
 }
 
 async function assistantFieldExtract(state,row,extract){
@@ -2473,10 +2554,28 @@ async function assistantFieldExtract(state,row,extract){
       // context so a literal title such as "Every day" stays a title.
       const parsed=assistantFieldNormalize(def,text,{...normalizeContext,_fieldSource:selectedEvidence});
       if(!parsed.ok)invalid.push(parsed);
-      if(parsed.ok)values.push({changes:parsed.changes,source:text,span:selected,instructionSpan:span,
+      if(parsed.ok)values.push({changes:parsed.changes,collectionEdit:parsed.collectionEdit,preferencePatch:parsed.preferencePatch,source:text,span:selected,instructionSpan:span,
         uncertain:call.confidence==null||call.confidence<0.7||Boolean(call.raw.suppressed_calls?.includes(result)),
         suppressed:Boolean(call.raw.suppressed_calls?.includes(result))});
     }
+  }
+  // Several add/remove clauses are one ordered list edit, not competing full
+  // assignments. Every operand must have its own accepted model evidence.
+  if(['places','topics'].includes(def.id)&&row.spans.some(span=>assistantFieldCollectionOperand(def.id,span.text))){
+    const before=(row.baseline[def.id==='places'?'locationIds':'topics']||[]).slice();
+    let combined=before;
+    for(const span of row.spans){
+      const value=values.find(value=>value.instructionSpan===span);
+      if(!value?.collectionEdit)continue;
+      const edit=value.collectionEdit;
+      combined=edit.op==='add'?[...new Set(combined.concat(edit.ids))]:combined.filter(id=>!edit.ids.includes(id));
+    }
+    if(invalid.length)return {status:'needs_input',...invalid[0],selection:combined};
+    if(values.length!==row.spans.length)return {status:'needs_input',error:`I couldn’t confirm every list change. Choose the final ${def.label.toLowerCase()} for this item.`,selection:combined};
+    if(values.every(value=>value.collectionEdit))return {status:'extracted',...values[0],
+      source:values.map(value=>value.source).join('; '),
+      uncertain:values.some(value=>value.uncertain),suppressed:values.some(value=>value.suppressed),
+      changes:[{field:def.id,op:combined.length?'set':'clear',value:combined.length?combined:null}]};
   }
   const unique=values.filter((v,i)=>!values.slice(0,i).some(other=>JSON.stringify(v.changes)===JSON.stringify(other.changes)));
   // One readable excerpt must not hide another unreadable instruction for
@@ -2511,7 +2610,7 @@ function assistantFieldMerge(state,row,result){
   if(result.status!=='extracted'){
     row.status=result.status;row.preserved=Boolean(result.preserved);
     if(row.preserved)session.unresolved=session.unresolved.filter(issue=>!row.def.fields.includes(issue.field)&&issue.field!==row.id);
-    if(result.status==='needs_input')assistantFocusUnresolve(session,{field:row.id==='frequency'?'timesPerPeriod':row.id,family:row.family,question:result.error,choices:result.choices||[],selection:result.selection,placeOnly:result.placeOnly});
+    if(result.status==='needs_input')assistantFocusUnresolve(session,{field:row.id==='frequency'?'timesPerPeriod':row.id,family:row.family,question:result.error,choices:result.choices||[],selection:result.selection,placeOnly:result.placeOnly,preferenceLevel:result.preferenceLevel});
     return;
   }
   const dependencies=assistantFieldDependencies(row,state);
@@ -2521,6 +2620,9 @@ function assistantFieldMerge(state,row,result){
   if(!applicable && !row.required){row.status='not_mentioned';return;}
   if(!applicable){row.status='needs_input';assistantFocusUnresolve(session,{field:row.id,family:row.family,question:`${row.def.label} doesn’t apply to this item’s current settings.`});return;}
   for(const change of result.changes){
+    // Sibling place edits may have removed an old ranking since this job's
+    // snapshot. Merge only explicitly requested preferences into the live draft.
+    if(change.field==='locationPrefs'&&result.preferencePatch)change.value={...assistantFocusMaterialize(session).locationPrefs,...result.preferencePatch};
     if(change.field==='weatherRules')assistantFocusStageWeatherRules(session,change.value);
     if(change.field==='topics'){
       const known=new Set((assistantFocusSettings().topics||[]).map(t=>t.toLowerCase()));

@@ -45,9 +45,11 @@ function blockedEndpointHtml(block, i, field){
   );
   const dayOn = normalizeAnchorDayOffset(block[field + 'DayOffset']) === 1;
   const day2On = normalizeAnchorDayOffset(block[field + 'DayOffset2']) === 1;
-  const resolved = isDyn ? blockedResolvedLabel(block, field) : '';
   const hasCoords = block.locationId || (Number.isFinite(sortSettings.homeCityLat) && Number.isFinite(sortSettings.homeCityLng));
   const resolvedMin = isDyn && hasCoords ? resolveBlockedTimeMinutes(block,field,dayStart(Date.now())) : null;
+  // A resolved clock folds into the anchor option itself; the preview line
+  // keeps only status text ("—", "choose a place or set your city first").
+  const resolved = isDyn && resolvedMin == null ? blockedResolvedLabel(block, field) : '';
   const aria = escapeHtml(block.label) + ' ' + field;
   const attr = suffix=>` data-blocked-${field}-${suffix}="${i}"`;
   return `<div class="time-endpoint blocked-endpoint${isDyn ? ' is-dynamic' : ''}" data-endpoint-label="${field === 'start' ? 'from' : 'until'}" data-blocked-field="${field}" data-blocked-index="${i}">
@@ -103,6 +105,11 @@ function renderBlockedTimeControls(){
   wrap.querySelectorAll('.blocked-endpoint').forEach(endpoint=>{
     const key = `${endpoint.dataset.blockedIndex}:${endpoint.dataset.blockedField}`;
     if(disclosureState.has(key))endpoint.querySelector('.time-advanced').open = disclosureState.get(key);
+    const block = blocks[Number(endpoint.dataset.blockedIndex)];
+    const min = block && typeof resolveBlockedTimeMinutes === 'function'
+      ? resolveBlockedTimeMinutes(block,endpoint.dataset.blockedField,dayStart(Date.now())) : null;
+    syncAnchorOptionTimeLabel(endpoint.querySelector('.time-anchor'),min,
+      min == null ? '' : timeResolvedDayLabel(min));
     syncTimeRuleSummary(endpoint);
   });
   if(typeof renderNativeBusyReminders === 'function')renderNativeBusyReminders(wrap,blocks);

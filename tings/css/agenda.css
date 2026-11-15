@@ -169,6 +169,27 @@
 .order-link-row-label b{color:var(--text);font-weight:600;}
 .order-link-sheet .seg,
 .doing-now-link-row .seg{display:grid;grid-template-columns:repeat(3,1fr);}
+.order-link-sheet .seg.order-link-repeat{grid-template-columns:repeat(2,1fr);margin-bottom:14px;}
 .order-link-sheet .seg-opt,
 .doing-now-link-row .seg-opt{padding:8px 4px;font-size:12px;}
+/* Recurring-only constraints ("every time"): hidden for one-day orders. */
+.order-link-daily{
+  display:none;flex-direction:column;gap:10px;
+  margin-top:4px;padding-top:10px;border-top:0.5px solid var(--border);
+}
+.order-link-sheet.is-daily .order-link-daily{display:flex;}
+.order-link-row.is-off .order-link-daily{display:none;}
+.order-link-same-day-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  font-size:12px;color:var(--text2);
+}
+.order-link-same-day-row .setting-switch{flex:0 0 auto;}
+.order-link-same-day-row .setting-switch .switch-ui{width:40px;height:24px;flex-basis:40px;}
+.order-link-same-day-row .setting-switch .switch-ui::after{width:18px;height:18px;}
+.order-link-same-day-row .setting-switch[aria-pressed="true"] .switch-ui::after{transform:translateX(16px);}
+.order-link-gap-field{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--text3);
+}
+.order-link-gap-field .mini-time-input{width:52px;height:32px;min-height:32px;}
 

@@ -234,16 +234,35 @@ function cancelDoingNowSheet(){
   if(typeof closeSheet === 'function')closeSheet('doing-now-sheet');
 }
 
-function buildOrderLinkRow(kind,otherHabit,defaultAdj){
+function buildOrderLinkRow(kind,otherHabit,defaultAdj,existingLink){
   const isBelow = kind === 'after';
   const direction = isBelow ? 'below' : 'above';
   const directLabel = isBelow ? 'right below' : 'right above';
+  const name = shortHabitName(otherHabit);
+  // An existing recurring relationship prefills its own strength and extras,
+  // so the sheet edits the pair instead of guessing its current state.
+  const adj = existingLink && defaultAdj === 'sometime' ? existingLink.adjacency : defaultAdj;
+  const sameDay = Boolean(existingLink && existingLink.requireSameDay);
+  const gap = existingLink ? clampMinGapMinutes(existingLink.minGapMinutes) : 0;
   return `<div class="order-link-row" data-link-kind="${kind}">
     <div class="order-link-row-label"><span>Place ${direction}</span> ${habitLabelHtml(otherHabit)}</div>
-    <div class="seg order-link-adj" role="group" aria-label="place ${direction} ${escapeHtml(shortHabitName(otherHabit))}">
-      <button type="button" class="seg-opt${defaultAdj === 'off' ? ' on' : ''}" data-adj="off">off</button>
-      <button type="button" class="seg-opt${defaultAdj === 'sometime' ? ' on' : ''}" data-adj="sometime">${direction}</button>
-      <button type="button" class="seg-opt${defaultAdj === 'direct' ? ' on' : ''}" data-adj="direct">${directLabel}</button>
+    <div class="seg order-link-adj" role="group" aria-label="place ${direction} ${escapeHtml(name)}">
+      <button type="button" class="seg-opt${adj === 'off' ? ' on' : ''}" data-adj="off">off</button>
+      <button type="button" class="seg-opt${adj === 'sometime' ? ' on' : ''}" data-adj="sometime">${direction}</button>
+      <button type="button" class="seg-opt${adj === 'direct' ? ' on' : ''}" data-adj="direct">${directLabel}</button>
+    </div>
+    <div class="order-link-daily">
+      <div class="order-link-same-day-row">
+        <span class="order-link-same-day-label">Must do on days with ${escapeHtml(name)}</span>
+        <button type="button" class="setting-switch order-link-same-day" aria-pressed="${sameDay ? 'true' : 'false'}" aria-label="Must do on days with ${escapeHtml(name)}: ${sameDay ? 'on' : 'off'}">
+          <span class="switch-ui" aria-hidden="true"></span>
+        </button>
+      </div>
+      <label class="order-link-gap-field">
+        <span>min gap</span>
+        <input type="text" class="mini-time-input order-link-gap-input" inputmode="numeric" maxlength="3" placeholder="0" value="${gap || ''}" aria-label="minimum minutes between these habits" />
+        <span>min</span>
+      </label>
     </div>
   </div>`;
 }
@@ -256,15 +275,22 @@ function openOrderLinkSheet(draft){
   const rows = $('order-link-rows');
   const clearBtn = $('order-link-clear');
   if(title)title.textContent = 'Keep this position?';
-  if(sub)sub.textContent = `Choose above or below for ${formatOrderDayLabel(draft.dayBase)}. Clears when done.`;
+  if(sub)sub.textContent = `Choose above or below for ${formatOrderDayLabel(draft.dayBase)}. "Every time" repeats until removed.`;
   if(summary)summary.innerHTML = habitLabelHtml(draft.h);
+  const repeatSeg = $('order-link-repeat');
+  if(repeatSeg)repeatSeg.querySelectorAll('.seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.repeat === 'today'));
+  document.querySelector('#order-link-sheet .order-link-sheet')?.classList.remove('is-daily');
 
   const parts = [];
+  const existingLinks = typeof normalizeScheduleLinks === 'function'
+    ? normalizeScheduleLinks(draft.h.scheduleLinks,draft.h.hid) : [];
   if(draft.before){
-    parts.push(buildOrderLinkRow('after',draft.before.h,draft.defaults.after || 'sometime'));
+    parts.push(buildOrderLinkRow('after',draft.before.h,draft.defaults.after || 'sometime',
+      existingLinks.find(link=>link.anchorHid === draft.before.h.hid)));
   }
   if(draft.after){
-    parts.push(buildOrderLinkRow('before',draft.after.h,draft.defaults.before || 'sometime'));
+    parts.push(buildOrderLinkRow('before',draft.after.h,draft.defaults.before || 'sometime',
+      existingLinks.find(link=>link.anchorHid === draft.after.h.hid)));
   }
   if(rows)rows.innerHTML = parts.join('') || '<p class="sheet-sub">Nothing nearby to link.</p>';
 
@@ -279,6 +305,9 @@ function openOrderLinkSheet(draft){
       const opt = e.target.closest('[data-adj]');
       if(!opt)return;
       seg.querySelectorAll('.seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
+      // An "off" row creates no link, so its recurring constraints are moot.
+      const row = seg.closest('.order-link-row');
+      if(row)row.classList.toggle('is-off',opt.dataset.adj === 'off');
     });
   });
 
@@ -291,31 +320,58 @@ function readOrderLinkChoices(){
   const draft = _orderLinkDraft;
   if(!draft)return [];
   const edges = [];
-  const afterSeg = document.querySelector('.order-link-row[data-link-kind="after"] .seg-opt.on');
-  const beforeSeg = document.querySelector('.order-link-row[data-link-kind="before"] .seg-opt.on');
-  const afterAdj = afterSeg ? afterSeg.dataset.adj : 'off';
-  const beforeAdj = beforeSeg ? beforeSeg.dataset.adj : 'off';
-  if(draft.before && afterAdj && afterAdj !== 'off'){
-    edges.push({
-      beforeHid:draft.before.h.hid,
-      afterHid:draft.h.hid,
-      adjacency:afterAdj === 'direct' ? 'direct' : 'sometime'
-    });
+  const readRow = kind=>{
+    const row = document.querySelector(`.order-link-row[data-link-kind="${kind}"]`);
+    const seg = row ? row.querySelector('.seg-opt.on') : null;
+    const sw = row ? row.querySelector('.order-link-same-day') : null;
+    const gap = row ? row.querySelector('.order-link-gap-input') : null;
+    return {
+      adjacency:seg ? seg.dataset.adj : 'off',
+      requireSameDay:sw ? sw.getAttribute('aria-pressed') === 'true' : false,
+      minGapMinutes:clampMinGapMinutes(gap ? Number(gap.value) || 0 : 0)
+    };
+  };
+  if(draft.before){
+    const row = readRow('after');
+    if(row.adjacency && row.adjacency !== 'off'){
+      edges.push({
+        beforeHid:draft.before.h.hid,
+        afterHid:draft.h.hid,
+        adjacency:row.adjacency === 'direct' ? 'direct' : 'sometime',
+        requireSameDay:row.requireSameDay,
+        minGapMinutes:row.minGapMinutes
+      });
+    }
   }
-  if(draft.after && beforeAdj && beforeAdj !== 'off'){
-    edges.push({
-      beforeHid:draft.h.hid,
-      afterHid:draft.after.h.hid,
-      adjacency:beforeAdj === 'direct' ? 'direct' : 'sometime'
-    });
+  if(draft.after){
+    const row = readRow('before');
+    if(row.adjacency && row.adjacency !== 'off'){
+      edges.push({
+        beforeHid:draft.h.hid,
+        afterHid:draft.after.h.hid,
+        adjacency:row.adjacency === 'direct' ? 'direct' : 'sometime',
+        requireSameDay:row.requireSameDay,
+        minGapMinutes:row.minGapMinutes
+      });
+    }
   }
   return edges;
+}
+
+function readOrderLinkRepeatMode(){
+  const seg = $('order-link-repeat');
+  const on = seg ? seg.querySelector('.seg-opt.on') : null;
+  return on && on.dataset.repeat === 'daily' ? 'daily' : 'today';
 }
 
 function saveOrderLinkSheet(){
   const draft = _orderLinkDraft;
   if(!draft || !draft.h){ cancelOrderLinkSheet(); return; }
   const edges = readOrderLinkChoices();
+  if(readOrderLinkRepeatMode() === 'daily'){
+    saveOrderLinkSheetRecurring(draft,edges);
+    return;
+  }
   const conflict = typeof temporaryOrderConflict === 'function'
     ? temporaryOrderConflict(draft.dayBase,edges) : null;
   if(conflict){
@@ -333,6 +389,59 @@ function saveOrderLinkSheet(){
   _orderLinkDraft = null;
   if(typeof showToast === 'function'){
     showToast(edges.length ? 'order saved' : 'order cleared');
+  }
+  if(typeof render === 'function')render();
+  else if(typeof refreshOpenViews === 'function')refreshOpenViews();
+}
+
+// Daily mode: the sheet writes recurring Schedule links on the dragged habit
+// instead of one-day edges. Rows left off remove that neighbor's link, so the
+// sheet fully manages the shown pair. The day store is cleared because a
+// recurring link supersedes today's temporary edge.
+function saveOrderLinkSheetRecurring(draft,edges){
+  const data = typeof load === 'function' ? load() : [];
+  const h = data.find(item=>item && item.hid === draft.h.hid);
+  if(!h){
+    if(typeof showToast === 'function')showToast('habit no longer exists');
+    return;
+  }
+  const shownNeighbors = [draft.before && draft.before.h.hid,draft.after && draft.after.h.hid]
+    .filter(Boolean);
+  const existing = typeof normalizeScheduleLinks === 'function'
+    ? normalizeScheduleLinks(h.scheduleLinks,h.hid)
+    : (Array.isArray(h.scheduleLinks) ? h.scheduleLinks.slice() : []);
+  // Drop links to every shown neighbor, then re-add the chosen ones.
+  const links = existing.filter(link=>link && !shownNeighbors.includes(link.anchorHid));
+  for(const edge of edges){
+    const isAfter = edge.afterHid === h.hid;
+    const anchorHid = isAfter ? edge.beforeHid : edge.afterHid;
+    if(!anchorHid || anchorHid === h.hid)continue;
+    links.push({
+      anchorHid,
+      direction:isAfter ? 'after' : 'before',
+      adjacency:edge.adjacency,
+      requireSameDay:edge.requireSameDay === true,
+      minGapMinutes:clampMinGapMinutes(edge.minGapMinutes)
+    });
+  }
+  h.scheduleLinks = typeof normalizeScheduleLinks === 'function'
+    ? normalizeScheduleLinks(links,h.hid)
+    : links;
+  if(typeof validateScheduleLinkGraph === 'function'){
+    const validation = validateScheduleLinkGraph(data);
+    if(!validation.ok){
+      showToast(validation.message);
+      return;
+    }
+  }
+  if(typeof save !== 'function' || !save(data))return;
+  if(typeof clearOrderConstraintsForDay === 'function'){
+    clearOrderConstraintsForDay(draft.dayBase,h.hid);
+  }
+  closeSheet('order-link-sheet');
+  _orderLinkDraft = null;
+  if(typeof showToast === 'function'){
+    showToast(edges.length ? 'recurring order saved' : 'recurring order cleared');
   }
   if(typeof render === 'function')render();
   else if(typeof refreshOpenViews === 'function')refreshOpenViews();
@@ -732,9 +841,47 @@ function wireAgendaOrderSheets(){
   $('order-link-cancel')?.addEventListener('click',cancelOrderLinkSheet);
   $('order-link-save')?.addEventListener('click',saveOrderLinkSheet);
   $('order-link-clear')?.addEventListener('click',clearOrderLinkSheet);
+  $('order-link-repeat')?.addEventListener('click',e=>{
+    const opt = e.target.closest('[data-repeat]');
+    if(!opt)return;
+    opt.parentElement.querySelectorAll('.seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
+    // "Every time" reveals the recurring constraints per row.
+    document.querySelector('#order-link-sheet .order-link-sheet')
+      ?.classList.toggle('is-daily',opt.dataset.repeat === 'daily');
+  });
+  $('order-link-rows')?.addEventListener('click',e=>{
+    const sw = e.target.closest('.order-link-same-day');
+    if(!sw)return;
+    const on = sw.getAttribute('aria-pressed') === 'true';
+    sw.setAttribute('aria-pressed',on ? 'false' : 'true');
+    sw.setAttribute('aria-label',sw.getAttribute('aria-label').replace(/: (on|off)$/,on ? ': off' : ': on'));
+  });
   $('doing-now-cancel')?.addEventListener('click',cancelDoingNowSheet);
   $('doing-now-confirm')?.addEventListener('click',confirmDoingNow);
   document.addEventListener('click',e=>{
+    const unlinkRecurring = e.target.closest('[data-order-unlink-recurring]');
+    if(unlinkRecurring){
+      e.preventDefault();
+      e.stopPropagation();
+      const anchorHid = unlinkRecurring.dataset.orderUnlinkRecurring;
+      const hid = unlinkRecurring.dataset.orderUnlinkRecurringHid;
+      if(anchorHid && hid && typeof save === 'function' && typeof load === 'function'){
+        const data = load();
+        const h = data.find(item=>item && item.hid === hid);
+        if(h && typeof normalizeScheduleLinks === 'function'){
+          h.scheduleLinks = normalizeScheduleLinks(
+            (Array.isArray(h.scheduleLinks) ? h.scheduleLinks : []).filter(link=>
+              link && link.anchorHid !== anchorHid),hid);
+          if(save(data)){
+            if(typeof showToast === 'function')showToast('recurring link removed');
+            if(typeof renderDetailOrderPage === 'function')renderDetailOrderPage();
+            if(typeof render === 'function')render();
+            else if(typeof refreshOpenViews === 'function')refreshOpenViews();
+          }
+        }
+      }
+      return;
+    }
     const unlink = e.target.closest('[data-order-unlink]');
     if(unlink){
       e.preventDefault();

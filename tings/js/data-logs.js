@@ -219,8 +219,11 @@ function intervalValues(h,limit = null){
   return limit ? intervals.slice(-limit) : intervals;
 }
 
-function intervalToneSummary(h){
-  const intervals = intervalValues(h,14);
+// `precomputed` optionally carries gap intervals already derived from a
+// render's own logs scan (parity with intervalValues' semantics is the
+// caller's duty; the detail summary test pins it). Existing callers unchanged.
+function intervalToneSummary(h,precomputed = null){
+  const intervals = precomputed || intervalValues(h,14);
   if(!intervals.length)return {hit:0,warn:0,miss:0,label:'no gap history'};
   const counts = intervals.reduce((acc,days)=>{
     const cls = intervalTone(h,days) || 'miss';

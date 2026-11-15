@@ -321,6 +321,7 @@ function assistantFocusWriteOrder(field){
 
 function assistantFocusStage(session, change){
   if(!session || !change || !change.field)return null;
+  const previousPrefs=change.field==='places'?assistantFocusMaterialize(session).locationPrefs:null;
   const next = {
     op:change.op || 'set',
     field:change.field,
@@ -336,6 +337,12 @@ function assistantFocusStage(session, change){
   session.unresolved = session.unresolved.filter(row => row.field !== next.field);
   session.interpretationApproved = null;
   session.savedFingerprint = '';
+  if(previousPrefs){
+    const allowed=new Set(next.op==='clear'?[]:next.value||[]);
+    const prefs=Object.fromEntries(Object.entries(previousPrefs).filter(([id])=>allowed.has(id)));
+    if(Object.keys(prefs).length!==Object.keys(previousPrefs).length)assistantFocusStage(session,
+      {...next,field:'locationPrefs',op:Object.keys(prefs).length?'set':'clear',value:Object.keys(prefs).length?prefs:null});
+  }
   return next;
 }
 
@@ -348,6 +355,7 @@ function assistantFocusUnresolve(session, item){
     question:item.question || 'I need a clearer value for that setting.',
     choices:item.choices || [],
     selection:item.selection || [],
+    preferenceLevel:item.preferenceLevel || '',
     placeOnly:Boolean(item.placeOnly),
     placeFollowup:Boolean(item.placeFollowup),
     phrase:item.phrase || '',
@@ -662,15 +670,21 @@ function assistantFocusNormalize(fieldId, raw, session){
     return links && links.length ? {ok:true, op:'set', value:links} : fail('Use a valid web, phone, or app link.');
   }
   if(fieldId === 'locationPrefs'){
-    const rows = assistantParsePlacePrefsText(text.replace(/\s+as (?:the |a )?(?:place|location)\s*$/i, ''));
+    const whole = matchPlace(text);
+    const rows = Array.isArray(raw) ? raw : whole.ok ? [{name:text,level:'high'}]
+      : assistantParsePlacePrefsText(text.replace(/\s+as (?:the |a )?(?:place|location)\s*$/i, ''));
     if(!rows)return fail('Use prefer or avoid followed by a saved place.');
-    const prefs = {};
+    const prefs = {...(session?._fieldBaseline?.locationPrefs || (session && assistantFocusMaterialize(session).locationPrefs))};
+    const resolved = [], missing = [], preferencePatch = {};
     for(const row of rows){
+      if(!row.name || !['high','little','avoid'].includes(row.level))return fail('Choose a saved place and its preference.');
       const found = matchPlace(row.name);
-      if(!found.ok)return unknown(found, 'place', row.name);
-      prefs[found.item.id] = row.level;
+      if(!found.ok)missing.push({found,name:row.name});
+      else {prefs[found.item.id] = row.level;preferencePatch[found.item.id] = row.level;resolved.push(found.item.id);}
     }
-    return {ok:true, op:'set', value:prefs};
+    if(missing.length)return {...unknown(missing[0].found,'place',missing[0].name),selection:resolved,
+      preferenceLevel:rows.every(row=>row.level===rows[0].level)?rows[0].level:''};
+    return {ok:true, op:'set', value:prefs, preferencePatch};
   }
   if(fieldId === 'weatherProfile'){
     if(/^(inherit|use (?:the )?place.?s weather)$/i.test(text))return {ok:true, op:'set', value:{mode:'inherit', profileId:null}};
@@ -757,7 +771,7 @@ function assistantFocusCorrect(session, fieldId, raw){
   const parsed = assistantFocusNormalize(fieldId, raw, session);
   if(!parsed.ok){
     session.correctionError = parsed.error;
-    assistantFocusUnresolve(session, {field:fieldId, family:(assistantFocusField(fieldId) || {}).family, question:parsed.error, choices:parsed.choices, selection:parsed.selection});
+    assistantFocusUnresolve(session, {field:fieldId, family:(assistantFocusField(fieldId) || {}).family, question:parsed.error, choices:parsed.choices, selection:parsed.selection,preferenceLevel:parsed.preferenceLevel});
     session.interpretationApproved = null;
     return parsed;
   }
@@ -790,9 +804,9 @@ function assistantFocusQuestionPicker(session, question){
   if((question.choices || []).some(choice => ['series-place','skip-place'].includes(choice.id)))return null;
   const settings = assistantFocusSettings();
   let options, multiple = false;
-  if(['places','weatherLocationId'].includes(field.id)){
+  if(['places','locationPrefs','weatherLocationId'].includes(field.id)){
     options = (settings.locations || []).map(row => ({id:row.id, label:row.name}));
-    multiple = field.id === 'places' && !session.placeResolution;
+    multiple = field.id === 'locationPrefs' || field.id === 'places' && !session.placeResolution;
   }else if(field.id === 'topics'){
     options = (settings.topics || []).map(name => ({id:name, label:name})); multiple = true;
   }else if(field.id === 'weatherProfile'){
@@ -855,10 +869,24 @@ function assistantFocusPickerClick(target){
     return {field, values:null};
   }
   if(!target.closest('[data-focus-pick]'))return null;
-  return {field, values:pressed().map(row => row.dataset.focusOption)};
+  return {field, values:pressed().map(row => row.dataset.focusOption),preferenceLevel:box.querySelector('[data-focus-preference]')?.value};
 }
 
-function assistantFocusPickValues(session, fieldId, values){
+// Filter catalog controls in place so hidden selected values stay selected.
+function assistantFocusPickerFilter(target){
+  if(!target.matches('[data-focus-filter]'))return;
+  const box=target.closest('[data-focus-picker]');
+  const query=assistantFocusNorm(target.value);
+  let visible=0;
+  box.querySelectorAll('[data-focus-option]').forEach(chip=>{
+    chip.hidden=!assistantFocusNorm(chip.textContent).includes(query);
+    if(!chip.hidden)visible++;
+  });
+  const empty=box.querySelector('[data-focus-empty]');
+  if(empty)empty.hidden=visible>0;
+}
+
+function assistantFocusPickValues(session, fieldId, values, preferenceLevel){
   const question = session?.unresolved.find(row => row.field === fieldId);
   if(!question || session._focusInFlight)return {ok:false, error:'That question is no longer available.'};
   const picker = assistantFocusQuestionPicker(session, question);
@@ -866,6 +894,16 @@ function assistantFocusPickValues(session, fieldId, values){
   if(!picker || !ids.length || (!picker.multiple && ids.length !== 1)
     || ids.some(id => !picker.options.some(option => option.id === id)))return {ok:false, error:'Choose an available value.'};
   if(!picker.multiple)return assistantFocusChoose(session, fieldId, ids[0], true);
+  if(fieldId === 'locationPrefs'){
+    const level=preferenceLevel || question.preferenceLevel || 'high';
+    if(!['high','little','avoid'].includes(level))return {ok:false,error:'Choose a preference.'};
+    const prefs={...assistantFocusMaterialize(session).locationPrefs};
+    ids.forEach(id=>{prefs[id]=level;});
+    assistantFocusContinueSavedCreate(session);
+    assistantFocusStage(session,{field:fieldId,value:prefs,origin:'correction',source:'choice'});
+    session.correctionError='';
+    return {ok:true};
+  }
   if(fieldId === 'topics')session.dependencies.topics = [];
   if(fieldId === 'places')session.placeResolution = null;
   assistantFocusContinueSavedCreate(session);
@@ -1270,7 +1308,7 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
   if(fieldId === 'trackValue')return record.trackValue ? 'log a value' : 'off';
   if(fieldId === 'places')return assistantFocusSummaryText(fieldId, record, session, lookups);
   if(fieldId === 'anywhereAllowed')return record.anywhereAllowed === false ? 'only the saved places' : 'anywhere is allowed';
-  if(fieldId === 'locationPrefs')return Object.keys(record.locationPrefs || {}).length ? JSON.stringify(record.locationPrefs) : 'none';
+  if(fieldId === 'locationPrefs')return assistantFocusSummaryText(fieldId, record, session, lookups);
   if(fieldId === 'weatherProfile' || fieldId === 'weatherRules'){
     if(record.weatherProfileMode === 'none')return 'ignore weather rules';
     if(record.weatherProfileMode !== 'profile')return 'use the place’s weather';
@@ -1987,9 +2025,12 @@ function assistantFocusPickerHtml(session, question){
   }).join('');
   const count = picker.multiple ? picker.selection.filter(id => picker.options.some(option => option.id === id)).length : 0;
   const apply = picker.multiple ? `<button type="button" class="btn" data-focus-pick ${count ? '' : 'disabled'}>${assistantFocusPickCountLabel(count)}</button>` : '';
+  const filter=picker.options.length>8?`<input type="search" data-focus-filter aria-label="Search ${esc(picker.label.toLowerCase())}" placeholder="Search ${esc(picker.label.toLowerCase())}" autocomplete="off"><p class="focus-note" data-focus-empty role="status" hidden>No matches. Try another name.</p>`:'';
+  const preference=picker.field==='locationPrefs'?`<label class="focus-preference">Preference<select data-focus-preference>${[['high','Prefer'],['little','Lower preference'],['avoid','Avoid']].map(([value,label])=>`<option value="${value}" ${value===(question.preferenceLevel||'high')?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
   const note = picker.field === 'topics' ? 'Tap saved topics, or type a new one below.'
+    : picker.field === 'locationPrefs' ? 'Choose places and how to rank them. Other preferences stay as they are.'
     : picker.multiple ? 'Tap every place that applies, or type below.' : 'Tap one, or type your answer below.';
-  return `<div class="focus-picker" data-focus-picker="${esc(picker.field)}" data-multiple="${picker.multiple}"><div class="focus-pick-chips" role="group" aria-label="${esc(picker.label)}">${chips}</div>${apply}<p class="focus-note">${note}</p></div>`;
+  return `<div class="focus-picker" data-focus-picker="${esc(picker.field)}" data-multiple="${picker.multiple}">${filter}<div class="focus-pick-chips" role="group" aria-label="${esc(picker.label)}">${chips}</div>${preference}${apply}<p class="focus-note">${note}</p></div>`;
 }
 
 function assistantFocusReviewHtml(session, opts){

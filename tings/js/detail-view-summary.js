@@ -33,10 +33,536 @@ function detailSummaryOnScreen(){
 function detailSummaryPill(chip,session){
   const label = String(chip.label || '');
   const value = String(chip.text || '');
-  const text = !label || value.toLowerCase().includes(label.toLowerCase()) ? value : `${label} · ${value}`;
+  // Compact rows show the value; the group label gives it context and the
+  // accessible name keeps "Label: value". Only bare words that would read
+  // ambiguous alone ("on") bring the label back visually.
+  const ambiguous = /^(?:on|off|yes|no|none|enabled|disabled)$/i.test(value.trim());
+  const text = !value ? (label || 'setting') : ambiguous && label ? `${label} · ${value}` : value;
   const body = `<span class="focus-field-text">${escapeHtml(text)}</span>`;
   if(!assistantFocusDetailSelector(chip.id,session))return `<span class="assistant-chip">${body}</span>`;
   return `<button type="button" class="assistant-chip focus-field" data-summary-field="${escapeHtml(chip.id)}" aria-label="${escapeHtml(`Open ${label || 'setting'}: ${value}`)}">${body}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`;
+}
+
+// ── Summary overview sections ─────────────────────────────────────────────
+// Recent activity and grouped settings. The item's state lives in the header
+// subtitle (the canonical cardCue); this tab carries history and settings.
+// Everything is built from one synchronous snapshot: a single walk over the
+// item's already-normalized logs (no storage reads, no re-normalization, no
+// extra sorts) plus the settings and location references captured once.
+// Dynamic time endpoints resolve through the shared prayer-time helpers with
+// this render's dataset threaded in, and every visual keeps the pill it
+// replaces informed: same editor destination, same information, or the pill
+// stays.
+
+// Field ids a section visual replaces. A visual that cannot render keeps its
+// pill — the fallback is unconditional (see detailSummaryGroups).
+const DETAIL_SUMMARY_VISUAL_FIELDS = ['allowedWeekdays','allowedWindow','preferredWindow','scheduleOptions','places','anywhereAllowed','locationPrefs'];
+
+function detailSummarySettingsRef(){
+  if(typeof sortSettings !== 'undefined' && sortSettings)return sortSettings;
+  return typeof loadSortSettings === 'function' ? loadSortSettings() : {};
+}
+
+function detailSummaryKind(item){
+  if(typeof isLocalAppointment === 'function' && isLocalAppointment(item))return 'appointment';
+  if(typeof isEventItem === 'function' && isEventItem(item))return 'event';
+  if(item.type === 'task')return 'task';
+  if(typeof isOpportunityHabit === 'function' && isOpportunityHabit(item))return 'opportunity';
+  return item.type === 'reduce' || item.type === 'zero' ? item.type : 'keepup';
+}
+
+function detailSummaryPlaceName(id,registry){
+  if(typeof locationById !== 'function')return 'a saved place';
+  const loc = locationById(id,registry);
+  return (loc && loc.name) || 'a saved place';
+}
+
+function detailSummaryFacts(item,items){
+  const now = Date.now();
+  const dayBase = dayStart(now);
+  const settings = detailSummarySettingsRef();
+  const registry = Array.isArray(settings.locations) ? settings.locations : null;
+  // One walk over raw logs, splitting plans from actual entries with the same
+  // semantics actualLogs()/plannedLogs() derive from normalizeLogs: plan
+  // objects, future plain-number entries, and future object plans are plans;
+  // actual entries are everything else at or before now.
+  const logs = Array.isArray(item.logs) ? item.logs : [];
+  const actual = [];
+  const plans = [];
+  for(let i = 0;i < logs.length;i++){
+    const log = logs[i];
+    const ts = logTime(log);
+    if(!ts)continue;
+    if(isPlanLog(log) || (typeof log !== 'object' && ts > now)){
+      plans.push({ts,timed:planTimed(log)});
+      continue;
+    }
+    if(ts <= now)actual.push(ts);
+  }
+  // Stored logs are ascending; defend legacy order without re-sorting happily
+  // sorted data (the parity test pins this against actualLogs()).
+  let ascending = true;
+  for(let i = 1;i < actual.length;i++){
+    if(actual[i] < actual[i - 1]){ascending = false;break;}
+  }
+  if(!ascending)actual.sort((a,b)=>a - b);
+  const plansToday = [];
+  const timedPlansToday = [];
+  const todayKey = dateKey(now);
+  for(const plan of plans){
+    if(dateKey(plan.ts) !== todayKey)continue;
+    plansToday.push(plan);
+    if(plan.timed)timedPlansToday.push(plan.ts);
+  }
+  timedPlansToday.sort((a,b)=>a - b);
+  // Gap intervals with intervalValues() semantics (consecutive day diffs plus
+  // the trailing open gap), consumed by the interval-tone caption.
+  const intervals = [];
+  for(let i = 1;i < actual.length;i++){
+    intervals.push(Math.max(1,Math.round((actual[i] - actual[i - 1]) / 86400000)));
+  }
+  if(actual.length)intervals.push(Math.max(1,daysSince(actual[actual.length - 1]) || 1));
+  return {
+    now,dayBase,todayKey,kind:detailSummaryKind(item),registry,settings,
+    placeName:id=>detailSummaryPlaceName(id,registry),
+    actual,plans,plansToday,timedPlansToday,
+    lastActualTs:actual.length ? actual[actual.length - 1] : null,
+    activity:detailSummaryActivityBuckets(item,dayBase,actual,plans),
+    intervals
+  };
+}
+
+// One activity bucket per rhythm period, derived from the habit's own saved
+// fields — target is the rhythm in days (fractional: 3.5 = 2×/7d; opportunity
+// habits use their minimum day gap). Daily-ish rhythms read as days, x-times-
+// per-week as weeks, month-day/ordinal schedules as months, and longer
+// rhythms as windows of the habit's own period. Nothing is invented here: the
+// same target the planner and cue use picks the bucket size.
+function detailSummaryCadence(item){
+  const monthDays = typeof normalizeAllowedMonthDays === 'function'
+    ? normalizeAllowedMonthDays(item.allowedMonthDays) : [];
+  const ordinals = typeof normalizeOrdinalWeekdays === 'function'
+    ? normalizeOrdinalWeekdays(item.allowedOrdinalWeekdays) : [];
+  if(monthDays.length || ordinals.length)return {mode:'month',gap:0};
+  const schedule = typeof scheduledDays === 'function' ? scheduledDays(item) : null;
+  const days = schedule ? schedule.weekdays : (normalizeAllowedWeekdays(item.allowedWeekdays) || []);
+  const subset = days.length >= 1 && days.length < 7;
+  const gap = typeof isOpportunityHabit === 'function' && isOpportunityHabit(item)
+    ? (typeof opportunityGapDays === 'function' ? opportunityGapDays(item) : 1)
+    : (Number(item.target) > 0 ? Number(item.target) : 7);
+  if(!subset && gap <= 2)return {mode:'day',gap};
+  if(gap <= 7)return {mode:'week',gap};
+  return {mode:'period',gap};
+}
+
+// Expected entries per bucket — used only to scale dot intensity (never to
+// grade). Follows the saved rhythm: sessions per day, per week (capped by
+// eligible weekdays), or one per period/month.
+function detailSummaryBucketExpect(item,cadence){
+  if(cadence.mode === 'day')return Math.max(0.5,1 / cadence.gap);
+  if(cadence.mode === 'week'){
+    const schedule = typeof scheduledDays === 'function' ? scheduledDays(item) : null;
+    const days = schedule ? schedule.weekdays : (normalizeAllowedWeekdays(item.allowedWeekdays) || []);
+    const eligible = days.length >= 1 && days.length < 7 ? days.length : 7;
+    return Math.max(0.5,Math.min(eligible,7 / cadence.gap));
+  }
+  if(cadence.mode === 'period')return 1;
+  const monthDays = typeof normalizeAllowedMonthDays === 'function'
+    ? normalizeAllowedMonthDays(item.allowedMonthDays) : [];
+  const ordinals = typeof normalizeOrdinalWeekdays === 'function'
+    ? normalizeOrdinalWeekdays(item.allowedOrdinalWeekdays) : [];
+  return Math.max(1,monthDays.length + ordinals.length
+    || Math.round(30.44 / Math.max(1,cadence.gap)));
+}
+
+// Eight stable buckets ending with the current (partial) one. Calendar-date
+// arithmetic (Date components, not ms subtraction) keeps boundaries honest
+// across DST and month lengths; positions before the item existed — or before
+// its first entry when createdAt is missing — stay unavailable so empty
+// buckets never read as missed commitments.
+function detailSummaryActivityBuckets(item,dayBase,actual,plans){
+  const cadence = detailSummaryCadence(item);
+  const buckets = [];
+  const today = new Date(dayBase);
+  if(cadence.mode === 'month'){
+    for(let i = 7;i >= 0;i--){
+      buckets.push({startMs:new Date(today.getFullYear(),today.getMonth() - i,1).getTime(),
+        endMs:new Date(today.getFullYear(),today.getMonth() - i + 1,1).getTime(),
+        current:i === 0,actualCount:0,planCount:0,available:true});
+    }
+  }else if(cadence.mode === 'week'){
+    const anchorDay = today.getDate() - today.getDay();
+    for(let i = 7;i >= 0;i--){
+      buckets.push({startMs:new Date(today.getFullYear(),today.getMonth(),anchorDay - i * 7).getTime(),
+        endMs:new Date(today.getFullYear(),today.getMonth(),anchorDay - (i - 1) * 7).getTime(),
+        current:i === 0,actualCount:0,planCount:0,available:true});
+    }
+  }else if(cadence.mode === 'period'){
+    const span = Math.max(1,Math.round(cadence.gap));
+    for(let i = 7;i >= 0;i--){
+      buckets.push({startMs:new Date(today.getFullYear(),today.getMonth(),today.getDate() + 1 - (i + 1) * span).getTime(),
+        endMs:new Date(today.getFullYear(),today.getMonth(),today.getDate() + 1 - i * span).getTime(),
+        current:i === 0,actualCount:0,planCount:0,available:true});
+    }
+  }else{
+    for(let i = 7;i >= 0;i--){
+      buckets.push({startMs:new Date(today.getFullYear(),today.getMonth(),today.getDate() - i).getTime(),
+        endMs:new Date(today.getFullYear(),today.getMonth(),today.getDate() - i + 1).getTime(),
+        current:i === 0,actualCount:0,planCount:0,available:true});
+    }
+  }
+  for(const ts of actual){
+    for(const bucket of buckets){
+      if(ts >= bucket.startMs && ts < bucket.endMs){bucket.actualCount += 1;break;}
+    }
+  }
+  for(const plan of plans){
+    for(const bucket of buckets){
+      if(plan.ts >= bucket.startMs && plan.ts < bucket.endMs){bucket.planCount += 1;break;}
+    }
+  }
+  const firstEntry = actual.length ? actual[0] : (plans.length ? plans[0].ts : null);
+  let created = item.createdAt ? dayStart(item.createdAt) : null;
+  if(created == null)created = firstEntry;
+  if(created != null){
+    for(const bucket of buckets){
+      if(bucket.endMs <= created)bucket.available = false;
+    }
+  }
+  return {cadence,buckets};
+}
+
+function detailSummaryDayLabel(ts){
+  return new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+}
+
+function detailSummaryClock(ts){
+  return new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+
+// Visible caption for the preview's time span. Period rhythms speak in the
+// habit's own unit ("every 20 days"); the rest use plain counts.
+function detailSummaryActivitySpan(cadence){
+  if(cadence.mode === 'day')return 'last 8 days';
+  if(cadence.mode === 'week')return 'last 8 weeks';
+  if(cadence.mode === 'month')return 'last 8 months';
+  return `every ${Math.max(1,Math.round(cadence.gap))} days`;
+}
+
+// Neutral density preview — counts entries, never grades them. Plans stay
+// distinct from actual entries and never count as activity. The bucket size
+// follows the habit's rhythm (see detailSummaryCadence) so the caption and
+// the dots say the same thing.
+function detailSummaryActivityRow(item,facts){
+  if(facts.kind === 'task' || facts.kind === 'event' || facts.kind === 'appointment' || facts.kind === 'zero')return '';
+  if(!facts.actual.length && !facts.plans.length)return '';
+  const {cadence,buckets} = facts.activity;
+  const expect = detailSummaryBucketExpect(item,cadence);
+  const cells = buckets.map(bucket=>{
+    if(!bucket.available)return '<span class="detail-activity-dot unavailable" aria-hidden="true"></span>';
+    const ratio = bucket.actualCount / expect;
+    const intensity = bucket.actualCount >= 1 ? (ratio >= 0.9 ? 'high' : ratio >= 0.45 ? 'mid' : 'low') : 'empty';
+    const planned = !bucket.actualCount && bucket.planCount ? ' planned' : '';
+    return `<span class="detail-activity-dot ${intensity}${planned}${bucket.current ? ' current' : ''}" aria-hidden="true"></span>`;
+  }).join('');
+  let gapCaption = null;
+  if((facts.kind === 'keepup' || facts.kind === 'reduce') && typeof intervalToneSummary === 'function'){
+    const summary = intervalToneSummary(item,facts.intervals.slice(-14));
+    if(summary && summary.label && summary.label !== 'no gap history')gapCaption = summary.label;
+  }
+  const span = detailSummaryActivitySpan(cadence);
+  const period = Math.max(1,Math.round(cadence.gap));
+  const first = buckets[0];
+  const last = buckets[buckets.length - 1];
+  const range = `${detailSummaryDayLabel(first.startMs)} – ${detailSummaryDayLabel(last.endMs - 1)}`;
+  const bucketFacts = buckets.map(bucket=>{
+    if(!bucket.available)return '';
+    const count = `${bucket.actualCount} ${bucket.actualCount === 1 ? 'entry' : 'entries'}`;
+    const sofar = bucket.current ? ' so far' : '';
+    if(cadence.mode === 'day')return `${detailSummaryDayLabel(bucket.startMs)}: ${count}${sofar}.`;
+    if(cadence.mode === 'week')return `Week of ${detailSummaryDayLabel(bucket.startMs)}: ${count}${sofar}.`;
+    if(cadence.mode === 'month'){
+      return `${new Date(bucket.startMs).toLocaleDateString(undefined,{month:'long',year:'numeric'})}: ${count}${sofar}.`;
+    }
+    return `${period} days from ${detailSummaryDayLabel(bucket.startMs)}: ${count}${sofar}.`;
+  }).filter(Boolean).join(' ');
+  const opening = cadence.mode === 'period'
+    ? `Recent activity, 8 windows of ${period} days each`
+    : `Recent activity, ${span}`;
+  const aria = `${opening} ${range}. ${bucketFacts}`
+    + `${gapCaption ? ` Recent gaps: ${gapCaption}, judged against the current rhythm settings.` : ''} Opens ${typeof detailPageLabel === 'function' ? detailPageLabel('calendar') : 'history'}.`;
+  return `<div class="detail-group"><span class="detail-group-label" aria-hidden="true">Activity</span>
+    <button type="button" class="detail-activity" data-summary-history aria-label="${escapeHtml(aria)}">
+      <span class="detail-activity-dots" aria-hidden="true">${cells}</span>
+      <span class="detail-activity-caption" aria-hidden="true">${escapeHtml(`${span}${gapCaption ? ` · ${gapCaption}` : ''}`)}</span>
+    </button>
+  </div>`;
+}
+
+// Consecutive days collapse into ranges ("sun–thu"), singles stay ("sat").
+function detailSummaryWeekdayRangeText(days){
+  const sorted = [...days].sort((a,b)=>a - b);
+  const parts = [];
+  let runStart = null;
+  for(let i = 0;i <= sorted.length;i++){
+    const day = i < sorted.length ? sorted[i] : null;
+    if(runStart === null){runStart = day;continue;}
+    if(day !== sorted[i - 1] + 1){
+      parts.push(runStart === sorted[i - 1]
+        ? WEEKDAY_LABELS[runStart]
+        : `${WEEKDAY_LABELS[runStart]}–${WEEKDAY_LABELS[sorted[i - 1]]}`);
+      runStart = day;
+    }
+  }
+  return parts.join(' & ');
+}
+
+function detailSummaryWeekStrip(item,facts){
+  // The general weekday mask only — option rows show their own days, and the
+  // all-seven default collapses to [] (nothing to teach). Compact range text
+  // keeps the Schedule row one line tall; the accessible name carries the
+  // full day names.
+  if(typeof normalizeAllowedWeekdays !== 'function')return null;
+  const days = normalizeAllowedWeekdays(item.allowedWeekdays) || [];
+  if(!days.length || days.length === 7)return null;
+  const fullNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const text = detailSummaryWeekdayRangeText(days);
+  const label = `Allowed days: ${days.map(d=>fullNames[d]).join(', ')}`;
+  return `<button type="button" class="assistant-chip detail-week-text" data-summary-field="allowedWeekdays" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span class="focus-field-text">${escapeHtml(text)}</span></button>`;
+}
+
+// Resolved minutes → day-bounded intervals via the canonical helper (equal
+// endpoints read as the full day, overnight windows split at midnight).
+function detailSummaryResolvedWindows(item,startField,endField,fixedStart,dayBase,items){
+  const rawStart = resolveHabitTimeField(item,startField,dayBase,null,items);
+  if(rawStart == null)return null;
+  const rawEnd = fixedStart
+    ? rawStart + clampDuration(item.durationMinutes)
+    : resolveHabitTimeField(item,endField,dayBase,null,items);
+  if(rawEnd == null)return null;
+  return {rawStart,rawEnd,windows:fillClockWindowOnDay(rawStart,rawEnd,dayBase)};
+}
+
+function detailSummaryWindowRule(item,field,fixedStart,items){
+  if(fixedStart)return '';
+  return typeof habitEndpointLabel === 'function' ? habitEndpointLabel(item,field,items) : '';
+}
+
+// Resolved minutes only label the strip when they land inside the calendar
+// day; anything outside (next-day expressions, deep negative offsets) keeps
+// the pill's rule text instead of a misleading clamped clock.
+function detailSummaryInDayMinutes(minute){
+  return minute != null && minute >= 0 && minute <= 1440;
+}
+
+function detailSummaryWindowStrip(item,facts,items,session){
+  if(typeof fillClockWindowOnDay !== 'function' || typeof resolveHabitTimeField !== 'function')return null;
+  const general = typeof hasGeneralAllowedSchedule !== 'function' || hasGeneralAllowedSchedule(item,facts.registry);
+  const hasAllowed = general && typeof hasSimpleAllowedTimeWindow === 'function' && hasSimpleAllowedTimeWindow(item);
+  const hasPreferred = typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(item);
+  if(!hasAllowed && !hasPreferred)return null;
+  // Allowed geometry comes from the canonical planner helper: fixed starts,
+  // blocked-time folding, equal-endpoint full days, and overnight splits all
+  // follow fillSimpleDayWindows exactly. Raw endpoint clocks label the bands.
+  const fixedStart = item.allowedTimeFixedStart === true;
+  let allowed = null;
+  if(hasAllowed){
+    const wins = fillSimpleDayWindows(item,facts.dayBase,null,items);
+    if(Array.isArray(wins) && wins.length)allowed = {wins};
+  }
+  let allowedClocks = null;
+  if(allowed){
+    const rawStart = resolveHabitTimeField(item,'allowedTimeStart',facts.dayBase,null,items);
+    const rawEnd = fixedStart
+      ? (rawStart == null ? null : rawStart + clampDuration(item.durationMinutes))
+      : resolveHabitTimeField(item,'allowedTimeEnd',facts.dayBase,null,items);
+    if(detailSummaryInDayMinutes(rawStart) && detailSummaryInDayMinutes(rawEnd))allowedClocks = {rawStart,rawEnd};
+    else allowed = null; // outside the day: retain the pill's rule text
+  }
+  const preferred = hasPreferred
+    ? detailSummaryResolvedWindows(item,'preferredTimeStart','preferredTimeEnd',false,facts.dayBase,items)
+    : null;
+  if(preferred && (!detailSummaryInDayMinutes(preferred.rawStart) || !detailSummaryInDayMinutes(preferred.rawEnd)))preferred = null;
+  const fullDay = wins=>wins.length === 1 && wins[0].start === facts.dayBase && wins[0].end - wins[0].start >= 24 * 3600000;
+  if(allowed && fullDay(allowed.wins) && !preferred)return null; // nothing to draw
+  const replaces = [];
+  if(allowed)replaces.push('allowedWindow');
+  if(preferred)replaces.push('preferredWindow');
+  if(!replaces.length)return null;
+  const pct = minutes=>Math.max(0,Math.min(100,(minutes / 1440) * 100));
+  const bands = [];
+  for(const win of (allowed ? allowed.wins : [])){
+    const startMin = (win.start - facts.dayBase) / 60000;
+    const widthMin = (win.end - win.start) / 60000;
+    bands.push(`<span class="detail-track-allowed" style="left:${pct(startMin).toFixed(2)}%;width:${pct(widthMin).toFixed(2)}%" aria-hidden="true"></span>`);
+  }
+  for(const win of (preferred ? preferred.windows : [])){
+    const startMin = (win.start - facts.dayBase) / 60000;
+    const widthMin = (win.end - win.start) / 60000;
+    bands.push(`<span class="detail-track-preferred" style="left:${pct(startMin).toFixed(2)}%;width:${pct(widthMin).toFixed(2)}%" aria-hidden="true"></span>`);
+  }
+  // Only real timed plans draw a block; untimed plans stay in the status facts.
+  for(const ts of facts.timedPlansToday){
+    const startMin = (ts - facts.dayBase) / 60000;
+    if(startMin < 0 || startMin >= 1440)continue;
+    const widthMin = Math.max(8,clampDuration(item.durationMinutes) || 15);
+    bands.push(`<span class="detail-track-plan" style="left:${pct(startMin).toFixed(2)}%;width:${pct(Math.min(widthMin,1440 - startMin)).toFixed(2)}%" aria-hidden="true"></span>`);
+  }
+  const lines = [];
+  if(allowed && allowedClocks){
+    const startRule = detailSummaryWindowRule(item,'allowedTimeStart',fixedStart,items);
+    const endRule = detailSummaryWindowRule(item,'allowedTimeEnd',fixedStart,items);
+    lines.push(`<span class="detail-window-line"><i class="detail-swatch allowed" aria-hidden="true"></i>${fixedStart ? 'fixed start' : 'allowed'} ${escapeHtml(formatTimeShort(allowedClocks.rawStart))}–${escapeHtml(formatTimeShort(allowedClocks.rawEnd))}${startRule ? ` <span class="detail-window-rule">· ${escapeHtml(startRule)}${endRule ? ` → ${escapeHtml(endRule)}` : ''}</span>` : ''}</span>`);
+  }
+  if(preferred){
+    const startRule = detailSummaryWindowRule(item,'preferredTimeStart',false,items);
+    const endRule = detailSummaryWindowRule(item,'preferredTimeEnd',false,items);
+    lines.push(`<span class="detail-window-line"><i class="detail-swatch preferred" aria-hidden="true"></i>preferred ${escapeHtml(formatTimeShort(preferred.rawStart))}–${escapeHtml(formatTimeShort(preferred.rawEnd))}${startRule ? ` <span class="detail-window-rule">· ${escapeHtml(startRule)}${endRule ? ` → ${escapeHtml(endRule)}` : ''}</span>` : ''}</span>`);
+  }
+  if(facts.timedPlansToday.length){
+    const next = facts.timedPlansToday.find(ts=>ts >= facts.now) ?? facts.timedPlansToday[0];
+    lines.push(`<span class="detail-window-line"><i class="detail-swatch plan" aria-hidden="true"></i>planned ${escapeHtml(detailSummaryClock(next))}${facts.timedPlansToday.length > 1 ? ` +${facts.timedPlansToday.length - 1} more` : ''}</span>`);
+  }
+  const ariaBits = [];
+  if(allowed && allowedClocks)ariaBits.push(`Allowed today ${formatTimeShort(allowedClocks.rawStart)} to ${formatTimeShort(allowedClocks.rawEnd)}${fixedStart ? ', fixed start' : ''}`);
+  else if(allowed)ariaBits.push('Allowed window open today');
+  if(preferred)ariaBits.push(`Preferred today ${formatTimeShort(preferred.rawStart)} to ${formatTimeShort(preferred.rawEnd)}`);
+  if(facts.timedPlansToday.length)ariaBits.push(`planned today ${detailSummaryClock(facts.timedPlansToday[0])}`);
+  const field = allowed ? 'allowedWindow' : 'preferredWindow';
+  return {html:`<button type="button" class="detail-window" data-summary-field="${field}" aria-label="${escapeHtml(`${ariaBits.join('. ')}. Opens the time window editor.`)}" title="${escapeHtml(ariaBits.join('. '))}">
+    <span class="detail-track" aria-hidden="true">${bands.join('')}</span>
+    <span class="detail-window-caption" aria-hidden="true">${lines.join('')}</span>
+  </button>`,replaces};
+}
+
+// One row per option: days → time → place stay together. Dynamic endpoints
+// resolve for today on the projected fields (which never carry habit anchors).
+function detailSummaryOptionRows(item,facts,items,session){
+  if(typeof normalizeHabitScheduleOptions !== 'function' || typeof habitScheduleOptionAllowedTimeFields !== 'function')return [];
+  const options = normalizeHabitScheduleOptions(item.scheduleOptions,facts.registry);
+  if(!options.length)return [];
+  const prefSymbols = {high:'●●',little:'●',avoid:'⊘'};
+  const prefWords = {high:'preferred',little:'slightly preferred',avoid:'marked avoid (still allowed)'};
+  return options.map(option=>{
+    const proj = habitScheduleOptionAllowedTimeFields(option);
+    const daysText = option.weekdays.length ? option.weekdays.map(d=>WEEKDAY_LABELS[d]).join(', ') : 'every day';
+    const placeName = option.locationId ? facts.placeName(option.locationId) : 'anywhere';
+    const pref = option.pref ? prefSymbols[option.pref] || '' : '';
+    const prefText = option.pref ? `, ${prefWords[option.pref] || option.pref}` : '';
+    let timeText;
+    if(proj.allowedTimeFixedStart === true){
+      const startMin = resolveHabitTimeField(proj,'allowedTimeStart',facts.dayBase,null,items);
+      timeText = startMin == null ? 'fixed start'
+        : `fixed ${formatTimeShort(startMin)} · ${typeof compactHomeDuration === 'function' ? compactHomeDuration(item.durationMinutes) : `${item.durationMinutes}m`}`;
+    }else{
+      const startMin = resolveHabitTimeField(proj,'allowedTimeStart',facts.dayBase,null,items);
+      const endMin = resolveHabitTimeField(proj,'allowedTimeEnd',facts.dayBase,null,items);
+      const startRule = typeof habitEndpointLabel === 'function' ? habitEndpointLabel(proj,'allowedTimeStart',items) : '';
+      const endRule = typeof habitEndpointLabel === 'function' ? habitEndpointLabel(proj,'allowedTimeEnd',items) : '';
+      const inDay = v=>v != null && v >= 0 && v <= 1440;
+      const clocks = inDay(startMin) && inDay(endMin)
+        ? `${formatTimeShort(startMin)}–${formatTimeShort(endMin)}`
+        : '';
+      const span = clocks || [startRule,endRule].filter(Boolean).join('–') || 'time not set';
+      timeText = `${span}${clocks && startRule ? ` (${escapeHtml(startRule)})` : ''}`;
+    }
+    const label = `${daysText}, ${timeText}, ${placeName}${prefText}. Opens the schedule alternatives editor.`;
+    return `<button type="button" class="detail-option-row" data-summary-field="scheduleOptions" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+      <span class="detail-option-days" aria-hidden="true">${escapeHtml(daysText)}</span>
+      <span class="detail-option-time" aria-hidden="true">${timeText}${pref ? ` <i class="detail-pref ${escapeHtml(option.pref)}" aria-hidden="true">${pref}</i>` : ''}</span>
+      <span class="detail-option-place" aria-hidden="true">${escapeHtml(placeName)}</span>
+    </button>`;
+  });
+}
+
+function detailSummaryPlaceChips(item,facts,session){
+  if(typeof habitDisplayLocationIds !== 'function')return null;
+  const ids = habitDisplayLocationIds(item,facts.registry);
+  const anywhere = typeof habitDisplayAnywhereAllowed === 'function' && habitDisplayAnywhereAllowed(item,facts.registry);
+  // "Anywhere" with no places is the saved default, not a setting — mirrors
+  // the assistant summary, which skips the anywhere chip without places.
+  const optionsAnywhere = anywhere && typeof hasHabitScheduleOptions === 'function' && hasHabitScheduleOptions(item);
+  if(!ids.length && !optionsAnywhere)return null;
+  const prefs = typeof normalizeLocationPrefs === 'function'
+    ? normalizeLocationPrefs(item.locationPrefs,ids,item.preferredLocationId) : {};
+  const prefDots = {high:'●●',little:'●',avoid:'⊘'};
+  const prefWords = {high:'preferred',little:'slightly preferred',avoid:'marked avoid (still allowed)'};
+  const canOpen = id => typeof assistantFocusDetailSelector === 'function' && assistantFocusDetailSelector(id,session);
+  const chips = ids.map(id=>{
+    const name = facts.placeName(id);
+    const level = prefs[id];
+    const dots = level && prefDots[level] ? `<i class="detail-pref ${escapeHtml(level)}" aria-hidden="true">${prefDots[level]}</i>` : '';
+    const levelText = level && prefWords[level] ? `: ${prefWords[level]}` : '';
+    const body = `<span class="focus-field-text">${escapeHtml(name)}</span>${dots}`;
+    return canOpen('places')
+      ? `<button type="button" class="assistant-chip focus-field detail-place-chip" data-summary-field="places" aria-label="${escapeHtml(`${name}${levelText}`)}">${body}</button>`
+      : `<span class="assistant-chip detail-place-chip">${body}</span>`;
+  });
+  if(ids.length || optionsAnywhere){
+    // Same information and editor route as the old anywhere pill; text states
+    // the saved meaning ("only the saved places" when anywhere is off).
+    const text = anywhere ? 'or anywhere' : 'only the saved places';
+    const body = `<span class="focus-field-text">${escapeHtml(text)}</span>`;
+    chips.push(canOpen('anywhereAllowed')
+      ? `<button type="button" class="assistant-chip focus-field" data-summary-field="anywhereAllowed" aria-label="${escapeHtml(`${text}: open the setting`)}">${body}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`
+      : `<span class="assistant-chip">${body}</span>`);
+  }
+  // Preference dots ride on the place chips themselves; the places editor
+  // (one tap on any place chip) owns the ranking, so no separate pill.
+  return chips.length ? chips.join('') : null;
+}
+
+// Stable group order; unknown or future families land in More so no field can
+// disappear through a missed route.
+function detailSummarySectionFor(chip,kind){
+  const id = chip.id;
+  if(DETAIL_SUMMARY_VISUAL_FIELDS.includes(id))return id === 'allowedWeekdays' ? 'schedule' : 'window';
+  const family = (typeof assistantFocusField === 'function' ? (assistantFocusField(id) || {}).family : '') || '';
+  if(kind === 'appointment' || kind === 'event'){
+    if(family === 'event')return 'event';
+  }
+  if(id === 'rhythm' || id === 'durationMinutes' || id === 'priority')return 'schedule';
+  if(family === 'recurrence' || family === 'dates' || family === 'schedule' || family === 'effort')return 'schedule';
+  if(family === 'weather')return 'weather';
+  if(family === 'order' || family === 'alternatives')return 'planning';
+  return 'more';
+}
+
+function detailSummaryGroups(item,summary,facts,items){
+  const session = summary.session;
+  const weekStrip = detailSummaryWeekStrip(item,facts);
+  const windowStrip = detailSummaryWindowStrip(item,facts,items,session);
+  const optionRows = detailSummaryOptionRows(item,facts,items,session);
+  const placeChips = detailSummaryPlaceChips(item,facts,session);
+  const dropped = new Set();
+  if(weekStrip)dropped.add('allowedWeekdays');
+  if(windowStrip)windowStrip.replaces.forEach(id=>dropped.add(id));
+  if(optionRows.length)dropped.add('scheduleOptions');
+  if(placeChips)['places','anywhereAllowed','locationPrefs'].forEach(id=>dropped.add(id));
+  const buckets = {schedule:[],window:[],places:[],weather:[],planning:[],event:[],more:[]};
+  for(const chip of [...summary.essentials,...summary.custom]){
+    if(dropped.has(chip.id))continue;
+    const key = detailSummarySectionFor(chip,facts.kind);
+    (buckets[key] || buckets.more).push(detailSummaryPill(chip,session));
+  }
+  const pillRow = (chips,label)=>`<div class="assistant-chip-row" role="group" aria-label="${escapeHtml(label)}">${chips.join('')}</div>`;
+  const groups = [];
+  if(weekStrip)buckets.schedule.push(weekStrip); // the weekday range sits in the Schedule row
+  if(buckets.schedule.length)groups.push({label:'Schedule',body:pillRow(buckets.schedule,'Schedule settings')});
+  const windowBody = [
+    windowStrip ? windowStrip.html : '',
+    optionRows.length ? `<div class="detail-option-rows" role="group" aria-label="Schedule alternatives">${optionRows.join('')}</div>` : '',
+    buckets.window.length ? pillRow(buckets.window,'When and where settings') : ''
+  ].filter(Boolean).join('');
+  if(windowBody)groups.push({label:'When & where',body:windowBody});
+  const placesBody = placeChips
+    ? (buckets.places.length ? pillRow(buckets.places,'Place settings') : '') + `<div class="assistant-chip-row" role="group" aria-label="Places">${placeChips}</div>`
+    : buckets.places.length ? pillRow(buckets.places,'Places') : '';
+  if(placesBody)groups.push({label:'Places',body:placesBody});
+  for(const [key,label] of [['weather','Weather'],['planning','Planning'],['event','Event'],['more','More']]){
+    if(buckets[key].length)groups.push({label,body:pillRow(buckets[key],label)});
+  }
+  return groups;
 }
 
 function renderDetailSummaryOverview(held = null,items = null){
@@ -58,13 +584,25 @@ function renderDetailSummaryOverview(held = null,items = null){
   }
   // The paint's saved list feeds name lookups without another load().
   const summary = assistantFocusItemSummary(item,items ? {items} : null);
-  const row = (chips,label)=>`<div class="assistant-chip-row" role="group" aria-label="${label}">${chips.map(chip=>detailSummaryPill(chip,summary.session)).join('')}</div>`;
-  const parts = [row([...summary.essentials,...summary.custom],'Item settings')];
+  const facts = detailSummaryFacts(item,items);
+  const parts = [];
+  const activity = detailSummaryActivityRow(item,facts);
+  if(activity)parts.push(activity);
+  for(const group of detailSummaryGroups(item,summary,facts,items)){
+    parts.push(detailSummaryGroupRow(group.label,group.body));
+  }
   const hint = !detailSummaryAskReady() ? 'Tap a setting to edit.'
     : detailSummaryCanSend() ? 'Tap a setting or describe a change.'
     : 'Download the assistant to describe changes.';
   parts.push(`<p class="focus-note">${hint}</p>`);
   host.innerHTML = parts.join('');
+}
+
+// Group rows read "label  content" on one grid — the label column replaces
+// the old full-width kicker lines. Bodies carry their own group labels for
+// assistive tech, so the visual label stays presentational.
+function detailSummaryGroupRow(label,body){
+  return `<div class="detail-group"><span class="detail-group-label" aria-hidden="true">${escapeHtml(label)}</span><div class="detail-group-body">${body}</div></div>`;
 }
 
 function detailSummaryNavPage(nav){
@@ -533,7 +1071,7 @@ async function detailSummaryHandleProposal(target){
   const picked = assistantFocusPickerClick(target);
   if(picked){
     if(!picked.values)return;
-    const result = assistantFocusPickValues(session,picked.field,picked.values);
+    const result = assistantFocusPickValues(session,picked.field,picked.values,picked.preferenceLevel);
     if(result.ok)detailSummaryShowProposal();
     else status(result.error);
     return;
@@ -657,9 +1195,17 @@ function detailSummaryStart(instruction = '',opts = {}){
 $('detail-summary').addEventListener('click',event=>{
   const pill = event.target.closest('[data-summary-field]');
   const item = detailSummaryRecord();
-  if(!pill || !item || typeof assistantFocusSummarySession !== 'function')return;
+  if(!item)return;
+  if(!pill){
+    if(event.target.closest('[data-summary-history]') && typeof scrollDetailToNav === 'function'){
+      scrollDetailToNav('calendar','smooth');
+    }
+    return;
+  }
+  if(typeof assistantFocusSummarySession !== 'function')return;
   detailSummaryReveal(pill.dataset.summaryField,assistantFocusSummarySession(item),false);
 });
+detailSummaryThread().addEventListener('input',event=>assistantFocusPickerFilter(event.target));
 detailSummaryThread().addEventListener('click',event=>{
   if(!event.target.closest('[data-focus-save],[data-focus-edit],[data-focus-choice],[data-focus-field],[data-focus-open-item],[data-focus-open-nav],[data-focus-drop],[data-focus-pick],[data-focus-option]'))return;
   event.preventDefault();

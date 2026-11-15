@@ -317,9 +317,12 @@ function fillClockWindowOnDay(startMin,endMin,dayBase){
   ].filter(win=>win.end > win.start);
 }
 
-function fillSimpleDayWindows(h,dayBase,contextLocId){
-  const rawStart = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
-  const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId);
+// `data` optionally carries an already-loaded dataset so read-only callers
+// (detail summary) resolve habit anchors without another load(); the planner
+// callers below omit it and read storage exactly as before.
+function fillSimpleDayWindows(h,dayBase,contextLocId,data){
+  const rawStart = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId,data);
+  const rawEnd = resolveHabitTimeField(h,'allowedTimeEnd',dayBase,contextLocId,data);
   if(rawStart == null || rawEnd == null)return hasSimpleAllowedTimeWindow(h) ? [] : null;
   if(h.allowedTimeFixedStart === true){
     return [{start:dayBase + rawStart * 60000,end:dayBase + rawEnd * 60000}];

@@ -237,7 +237,7 @@ function combineResolvedMinutes(a, b, combine){
 // secondary) for a habit endpoint. `suffix` is '' for primary or '2' for the
 // optional second expression used by later/earlier-of. `contextLocId` is the
 // running agenda anchor used to resolve "anywhere" habits (see habitPrayerLocation).
-function resolveHabitExprMinutes(h, fieldName, suffix, dayBase, contextLocId){
+function resolveHabitExprMinutes(h, fieldName, suffix, dayBase, contextLocId, data){
   const anchor = cleanAnchor(h[fieldName + 'Anchor' + suffix]);
   if(!anchor)return null;
   // Fixed clock is secondary-only (later/earlier-of B row).
@@ -260,7 +260,8 @@ function resolveHabitExprMinutes(h, fieldName, suffix, dayBase, contextLocId){
       h[fieldName + 'AnchorHabitId' + suffix],
       offset,
       role,
-      dayBase
+      dayBase,
+      data
     );
   }
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
@@ -288,10 +289,10 @@ function resolveHabitExprMinutes(h, fieldName, suffix, dayBase, contextLocId){
 // `contextLocId` optionally carries the running agenda anchor so "anywhere"
 // habits with prayer anchors resolve against the last location before the
 // task. Non-agenda callers omit it and get the lastKnown/registry fallback.
-function resolveHabitTimeField(h, fieldName, dayBase, contextLocId){
+function resolveHabitTimeField(h, fieldName, dayBase, contextLocId, data){
   if(!h)return null;
   if(fieldName === 'allowedTimeEnd' && h.allowedTimeFixedStart === true){
-    const start = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId);
+    const start = resolveHabitTimeField(h,'allowedTimeStart',dayBase,contextLocId,data);
     return start == null ? null : start + clampDuration(h.durationMinutes);
   }
   const anchor = cleanAnchor(h[fieldName + 'Anchor']);
@@ -304,10 +305,10 @@ function resolveHabitTimeField(h, fieldName, dayBase, contextLocId){
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
   }
-  const primary = resolveHabitExprMinutes(h, fieldName, '', dayBase, contextLocId);
+  const primary = resolveHabitExprMinutes(h, fieldName, '', dayBase, contextLocId, data);
   const combine = cleanTimeCombine(h[fieldName + 'Combine']);
   if(!combine || !cleanAnchor(h[fieldName + 'Anchor2']))return primary;
-  const secondary = resolveHabitExprMinutes(h, fieldName, '2', dayBase, contextLocId);
+  const secondary = resolveHabitExprMinutes(h, fieldName, '2', dayBase, contextLocId, data);
   return combineResolvedMinutes(primary, secondary, combine);
 }
 
@@ -351,13 +352,14 @@ function fixedClockLabel(minutes){
   return typeof formatTimeShort === 'function' ? formatTimeShort(n) : String(n);
 }
 
-// PURE: label for a (possibly combined) habit endpoint.
-function habitEndpointLabel(h, fieldName){
+// PURE: label for a (possibly combined) habit endpoint. `data` optionally
+// carries an already-loaded dataset; omitting it reads storage as before.
+function habitEndpointLabel(h, fieldName, data){
   if(!h)return '';
-  const data = typeof load === 'function' ? load() : [];
+  const dataset = data || (typeof load === 'function' ? load() : []);
   const a1 = cleanAnchor(h[fieldName + 'Anchor']);
   if(!a1)return '';
-  const name1 = a1 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId'], data) || {}).name : null;
+  const name1 = a1 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId'], dataset) || {}).name : null;
   const primary = prayerAnchorLabel(a1, h[fieldName + 'OffsetMin'], name1, h[fieldName + 'DayOffset']);
   const combine = cleanTimeCombine(h[fieldName + 'Combine']);
   const a2 = cleanAnchor(h[fieldName + 'Anchor2']);
@@ -367,7 +369,7 @@ function habitEndpointLabel(h, fieldName){
     : prayerAnchorLabel(
       a2,
       h[fieldName + 'OffsetMin2'],
-      a2 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId2'], data) || {}).name : null,
+      a2 === 'habit' ? (findHabitByHid(h[fieldName + 'AnchorHabitId2'], dataset) || {}).name : null,
       h[fieldName + 'DayOffset2']
     );
   const word = combine === 'earlier' ? 'earlier of' : 'later of';
@@ -442,9 +444,12 @@ function findHabitByHid(hid, data){
 //
 // `fieldRole` is 'start' or 'end' — only the start anchor consumes; the end
 // anchor is a plain closing event.
-function resolveHabitAnchorMinutes(h, anchorHabitId, offsetMin, fieldRole, dayBase){
-  const data = typeof load === 'function' ? load() : [];
-  const anchor = findHabitByHid(anchorHabitId, data);
+// `data` optionally carries an already-loaded dataset so read-only callers
+// (detail summary, cards) can resolve without another load(); every existing
+// caller keeps its behavior by omitting it.
+function resolveHabitAnchorMinutes(h, anchorHabitId, offsetMin, fieldRole, dayBase, data){
+  const dataset = data || (typeof load === 'function' ? load() : []);
+  const anchor = findHabitByHid(anchorHabitId, dataset);
   if(!anchor)return null;
   const anchorLastLog = anchor.lastLog != null ? anchor.lastLog : latestActualLog(anchor.logs);
   if(anchorLastLog == null)return null; // anchor has never fired

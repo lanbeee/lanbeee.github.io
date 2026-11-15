@@ -1211,6 +1211,10 @@ function renderBlockEditDynamicControls(){
   host.innerHTML = `<span class="field-label utility-field-label">recurring rule</span><div class="blocked-time-hours time-endpoints">${blockedEndpointHtml(block,blockEditContext.blockIndex,'start')}<span class="time-sep">to</span>${blockedEndpointHtml(block,blockEditContext.blockIndex,'end')}</div><p class="field-hint">Saved only when you choose update recurring. “Save this date” keeps this rule and changes just this occurrence.</p>`;
   host.querySelectorAll('.blocked-endpoint').forEach(endpoint=>{
     if(disclosureState.has(endpoint.dataset.blockedField))endpoint.querySelector('.time-advanced').open = disclosureState.get(endpoint.dataset.blockedField);
+    const min = block && typeof resolveBlockedTimeMinutes === 'function'
+      ? resolveBlockedTimeMinutes(block,endpoint.dataset.blockedField,dayStart(Date.now())) : null;
+    syncAnchorOptionTimeLabel(endpoint.querySelector('.time-anchor'),min,
+      min == null ? '' : timeResolvedDayLabel(min));
     syncTimeRuleSummary(endpoint);
   });
 }

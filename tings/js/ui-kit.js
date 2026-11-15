@@ -90,7 +90,7 @@ function uiTimeExprHtml(prefix, second, {options = '', offset = 0, fixedValue = 
   const anchorAria = second ? `${prefix} second anchor` : `${prefix} anchor`;
   const clock = second ? `<input type="time" class="time-input time-fixed2" step="300"${attr('fixed2')} value="${fixedValue}"${isFixed ? '' : ' hidden'} aria-label="${prefix} clock time" />` : '';
   const hide = isFixed ? ' hidden' : '';
-  return `<label class="time-event-label">${second ? 'second time' : 'based on'}<select class="${anchorCls} mini-select"${attr(second ? 'anchor2' : 'anchor')} aria-label="${anchorAria}">${options}</select></label>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><span class="time-adjust-label"${hide}>adjust by</span><input type="number" class="${offsetCls} mini-time-input"${attr(second ? 'offset2' : 'offset')} inputmode="numeric" min="0" max="720" placeholder="0" value="${Math.abs(offset) || ''}" aria-label="${offsetAria}"${hide} /><button type="button" class="time-offset-sign-btn" data-sign="${offset < 0 ? '-' : '+'}" aria-label="${offset < 0 ? 'minutes before' : 'minutes after'}" title="Switch between before and after"${hide}>${timeOffsetSignWord(offset < 0 ? '-' : '+')}</button><span class="time-offset-unit"${hide}>min</span>${second ? uiTimeDayHtml(prefix,true,{on:dayOn,attrs:attr('day2'),hidden:isFixed}) : ''}`;
+  return `<label class="time-event-label">${second ? 'compare with' : 'based on'}<select class="${anchorCls} mini-select"${attr(second ? 'anchor2' : 'anchor')} aria-label="${anchorAria}">${options}</select></label>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><span class="time-adjust-label"${hide}>adjust by</span><input type="number" class="${offsetCls} mini-time-input"${attr(second ? 'offset2' : 'offset')} inputmode="numeric" min="0" max="720" placeholder="0" value="${Math.abs(offset) || ''}" aria-label="${offsetAria}"${hide} /><button type="button" class="time-offset-sign-btn" data-sign="${offset < 0 ? '-' : '+'}" aria-label="${offset < 0 ? 'minutes before' : 'minutes after'}" title="Switch between before and after"${hide}>${timeOffsetSignWord(offset < 0 ? '-' : '+')}</button><span class="time-offset-unit"${hide}>min</span>${second ? uiTimeDayHtml(prefix,true,{on:dayOn,attrs:attr('day2'),hidden:isFixed}) : ''}`;
 }
 
 function uiTimeCombineOptions(combine = ''){
@@ -104,12 +104,50 @@ function timeResolvedDayLabel(minutes){
 
 // The same progressive editor serves item hours, preferences, place options,
 // and busy times. Disclosure state is UI only; collapsed rules still apply.
+// The rule preview leads with the resolved clock; the composed rule text only
+// appears when it adds information beyond the visible controls, and the whole
+// pill collapses when there is nothing to show.
 function uiTimeDynamicHtml(prefix, {expr = uiTimeExprHtml(prefix,false), expr2 = uiTimeExprHtml(prefix,true), day = uiTimeDayHtml(prefix,false), combine = '', combineAttrs = '', resolved = '', resolvedDay = '', needsCity = false, open = false} = {}){
-  return `<p class="time-relative-hint">Follows this event as its time changes each day.</p><div class="time-expr">${expr}</div><div class="time-rule-preview" aria-live="polite"><span class="time-rule-summary"></span><span class="time-resolved" data-day-label="${resolvedDay}">${resolved}</span><button type="button" class="mini-text-btn time-set-city"${needsCity ? '' : ' hidden'}>set home city</button></div><details class="time-advanced"${open ? ' open' : ''}><summary>More options</summary><div class="time-advanced-body"><p class="field-hint">For overnight windows, use the event on the following day.</p>${day}<label class="time-compare-label">compare two times<select class="time-combine mini-select"${combineAttrs} aria-label="${prefix} combine">${uiTimeCombineOptions(combine)}</select></label><div class="time-expr time-expr2"${combine ? '' : ' hidden'}>${expr2}</div><p class="field-hint time-comparison-hint"${combine ? '' : ' hidden'}>This boundary uses whichever time is ${combine === 'earlier' ? 'earlier' : 'later'}.</p></div></details>`;
+  return `<div class="time-expr">${expr}</div><div class="time-rule-preview" aria-live="polite" hidden><span class="time-resolved" data-day-label="${resolvedDay}">${resolved}</span><span class="time-rule-summary"></span><button type="button" class="mini-text-btn time-set-city"${needsCity ? '' : ' hidden'}>set home city</button></div><details class="time-advanced"${open ? ' open' : ''}><summary>More options</summary><div class="time-advanced-body"><p class="field-hint">For overnight windows, use the event on the following day.</p>${day}<label class="time-compare-label">compare two times<select class="time-combine mini-select"${combineAttrs} aria-label="${prefix} combine">${uiTimeCombineOptions(combine)}</select></label><div class="time-expr time-expr2"${combine ? '' : ' hidden'}>${expr2}</div><p class="field-hint time-comparison-hint"${combine ? '' : ' hidden'}>This boundary uses whichever time is ${combine === 'earlier' ? 'earlier' : 'later'}.</p></div></details>`;
+}
+
+// RENDER: collapse the rule-preview pill when nothing in it is showing —
+// no resolved clock, no composed rule, no city prompt.
+function syncTimeRulePreviewVisibility(endpoint){
+  const preview = endpoint?.querySelector('.time-rule-preview');
+  if(!preview)return;
+  const hasText = sel=>{
+    const node = preview.querySelector(sel);
+    return Boolean(node && node.textContent.trim());
+  };
+  const city = preview.querySelector('.time-set-city');
+  preview.hidden = !hasText('.time-resolved') && !hasText('.time-rule-summary')
+    && !(city && !city.hidden);
+}
+
+// RENDER: fold today's resolved clock into the selected anchor option so the
+// dropdown itself carries the time ("Afternoon · 2:16 pm") instead of a
+// separate preview line. Tagged options are restored to their clean label on
+// the next sync, so renames and re-population never stack suffixes.
+function syncAnchorOptionTimeLabel(select,minutes,dayLabel = ''){
+  if(!select)return;
+  select.querySelectorAll('option[data-time-tag]').forEach(opt=>{
+    opt.textContent = opt.textContent.replace(/\s·\s.*$/,'');
+    opt.removeAttribute('data-time-tag');
+  });
+  const opt = minutes == null ? null : select.selectedOptions[0];
+  if(!opt || !opt.value || opt.value === 'fixed')return;
+  const time = formatTimeShort(((minutes % 1440) + 1440) % 1440);
+  const day = dayLabel === 'tomorrow: ' ? 'tomorrow ' : dayLabel === 'yesterday: ' ? 'yesterday ' : '';
+  opt.textContent = `${opt.textContent} · ${day}${time}`;
+  opt.setAttribute('data-time-tag','1');
 }
 
 // RENDER: translate the current controls into a readable rule, independent of
-// today's clock preview (which may need a city before it can resolve).
+// today's clock preview (which may need a city before it can resolve). A plain
+// anchor needs no echo — the dropdown names the event and the adjust row
+// states any offset — so the summary only fills in when something is hidden
+// or composed: a next-day shift, a compare-two-times rule, a habit completion.
 function syncTimeRuleSummary(endpoint){
   const node = endpoint?.querySelector('.time-rule-summary');
   if(!node)return;
@@ -120,7 +158,7 @@ function syncTimeRuleSummary(endpoint){
       const min = timeInputToMinutes(endpoint.querySelector('.time-fixed2')?.value);
       return min == null ? 'choose a clock time' : formatTimeShort(min);
     }
-    let event = select.selectedOptions[0]?.textContent || '';
+    let event = (select.selectedOptions[0]?.textContent || '').replace(/\s·\s.*$/,'');
     if(select.value === 'habit'){
       const habit = endpoint.querySelector(second ? '.time-habit2' : '.time-habit');
       event = habit?.value ? `${habit.selectedOptions[0].textContent} completion` : 'habit completion';
@@ -132,12 +170,22 @@ function syncTimeRuleSummary(endpoint){
     return offset ? `${Math.abs(offset)} min ${offset < 0 ? 'before' : 'after'} ${event}` : event;
   };
   const combine = endpoint.querySelector('.time-combine')?.value;
-  node.textContent = combine ? `${combine === 'later' ? 'Later' : 'Earlier'} of ${expression(false)} and ${expression(true)}` : expression(false);
+  if(combine){
+    // A full sentence: a new user should be able to read the whole rule
+    // without decoding a formula.
+    node.textContent = `uses the ${combine} of: ${expression(false)} and ${expression(true)}`;
+  }else{
+    const select = endpoint.querySelector('.time-anchor');
+    const anchor = select ? select.value : '';
+    const nextDay = endpoint.querySelector('.time-day-next')?.getAttribute('aria-pressed') === 'true';
+    node.textContent = anchor === 'habit' || nextDay ? expression(false) : '';
+  }
   const hint = endpoint.querySelector('.time-comparison-hint');
   if(hint){
     hint.hidden = !combine;
     hint.textContent = `This boundary uses whichever time is ${combine === 'earlier' ? 'earlier' : 'later'}.`;
   }
+  syncTimeRulePreviewVisibility(endpoint);
 }
 
 function uiTimeEndpointHtml({field, inputId, prefix, endpointLabel, fixedClass = ''}){

@@ -37,7 +37,7 @@ function renderDetailOrderPage(h = null){
     return `<div class="detail-order-row">
       ${mark}
         <span class="detail-order-meta">recurring · ${escapeHtml(label)}${link.requireSameDay ? ` · must do with ${escapeHtml(other && other.name || 'the other habit')} when flex allows` : ''}</span>
-      <span class="detail-order-edit-note">Schedule</span>
+      <button type="button" class="mini-text-btn detail-order-unlink" data-order-unlink-recurring="${escapeHtml(link.anchorHid)}" data-order-unlink-recurring-hid="${escapeHtml(habit.hid)}">unlink</button>
     </div>`;
   }).join('');
   const byDay = new Map();
@@ -73,31 +73,39 @@ function renderDetailOrderPage(h = null){
   }).join('');
 }
 
-// PURE: builds header subtitle from habit state
-function detailHeaderLine(h){
+// PURE: builds header subtitle from habit state — the factual cue ("when due
+// next") plus, when the last entry is not today, "when last done": the two
+// facts the old summary strip carried. The summary tab's grouped rows carry
+// the settings (rhythm, duration, schedule, window); repeating them here made
+// the header read twice. `statusOut`, when given, still receives the cardCue
+// result computed along the way so a caller can reuse the walk.
+function detailHeaderLine(h,statusOut){
   if(isLocalAppointment(h))return appointmentSummary(h);
   if(isEventItem(h))return `${scheduledWhenLabel(h.eventTime)} · ${compactHomeDuration(h.durationMinutes)}`;
-  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(h.type === 'task'){
-    const parts = [];
-    if(h.eventTime !== null)parts.push(scheduledWhenLabel(h.eventTime));
-    else parts.push(cardCue(h));
-    if(!minimal && h.durationMinutes)parts.push(`${h.durationMinutes}m`);
-    if(!minimal && hasDaySchedule(h)){
-      const next = nextEligibleShort(h);
-      if(next)parts.push(next);
-    }
-    return parts.filter(Boolean).join(' · ');
+    if(h.eventTime !== null)return scheduledWhenLabel(h.eventTime);
+    const cue = cardCue(h);
+    if(statusOut)statusOut.cue = cue;
+    return cue;
   }
-  const parts = [cardCue(h)];
-  if(minimal)return parts.filter(Boolean).join(' · ');
-  if(h.durationMinutes)parts.push(`${h.durationMinutes}m`);
-  if(hasDaySchedule(h)){
-    const next = nextEligibleShort(h);
-    if(next)parts.push(next);
+  const cue = cardCue(h);
+  if(statusOut)statusOut.cue = cue;
+  // A "done/clean today" cue already names today's entry; later cues gain the
+  // last-entry fact. Date math only — no extra logs walk.
+  const days = daysSince(h.lastLog);
+  if(days != null && days >= 1){
+    const verb = h.type === 'reduce' || h.type === 'zero' ? 'last entry' : 'last done';
+    return `${cue} · ${verb} ${detailLastDoneLabel(h.lastLog,days)}`;
   }
-  if(hasTimeWindow(h))parts.push(timeWindowSummary(h));
-  return parts.filter(Boolean).join(' · ');
+  return cue;
+}
+
+// PURE: compact "when" for the last entry — named weekday inside the week,
+// short date beyond it.
+function detailLastDoneLabel(ts,days){
+  if(days === 1)return 'yesterday';
+  if(days <= 6)return new Date(ts).toLocaleDateString(undefined,{weekday:'long'});
+  return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 }
 
 // PURE: format a scheduled time as a friendly label
@@ -842,10 +850,21 @@ function renderTimeEndpoint(endpoint, field, h){
 // Falls back to a muted "—" when there's no location on the habit (the save
 // path will block, but the preview explains why). For 'habit' anchors, shows
 // contextual hints: "pick a habit", "never logged", "done · waiting".
+// The fill takes early returns freely; the preview's empty-state visibility
+// is decided once the fill is done.
 function updateTimeResolved(endpoint, field, h){
+  const resolved = updateTimeResolvedFill(endpoint, field, h);
+  // A plain resolved clock lives in the anchor option itself
+  // ("Afternoon · 2:16 pm"); the preview line keeps only status and rules.
+  syncAnchorOptionTimeLabel(endpoint.querySelector('.time-anchor'),
+    resolved ? resolved.min : null, resolved ? resolved.dayLabel : '');
+  syncTimeRulePreviewVisibility(endpoint);
+}
+
+function updateTimeResolvedFill(endpoint, field, h){
   syncTimeRuleSummary(endpoint);
   const node = endpoint && endpoint.querySelector('.time-resolved');
-  if(!node)return;
+  if(!node)return null;
   node.dataset.dayLabel = '';
   const city = endpoint.querySelector('.time-set-city');
   if(city)city.hidden = true;
@@ -870,8 +889,8 @@ function updateTimeResolved(endpoint, field, h){
       return;
     }
     node.dataset.dayLabel = timeResolvedDayLabel(min);
-    node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
-    return;
+    node.textContent = '';
+    return { min, dayLabel:node.dataset.dayLabel };
   }
   // Prayer anchor — needs a location.
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
@@ -879,15 +898,16 @@ function updateTimeResolved(endpoint, field, h){
   if(!loc){
     node.textContent = 'Set your home city to calculate this time.';
     if(city)city.hidden = false;
-    return;
+    return null;
   }
   const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
   if(min == null){
     node.textContent = '—';
-    return;
+    return null;
   }
   node.dataset.dayLabel = timeResolvedDayLabel(min);
-  node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
+  node.textContent = '';
+  return { min, dayLabel:node.dataset.dayLabel };
 }
 // RENDER: toggles time-clear button visibility. A clear is offered whenever
 // any of the four endpoints has a value (fixed or dynamic). The "blank = any

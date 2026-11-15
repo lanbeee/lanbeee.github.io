@@ -1598,7 +1598,9 @@ function buildCue(h,days,target){
     const overdue = Math.abs(remaining);
     if(overdue === 1)return '1 day overdue';
     if(overdue <= 7)return `${overdue} days overdue`;
-    return `${Math.round(overdue / 7)} weeks overdue`;
+    // Weeks can round to one (e.g. 9 days) — singular must not be missed.
+    const weeks = Math.round(overdue / 7);
+    return weeks === 1 ? '1 week overdue' : `${weeks} weeks overdue`;
   }
   if(remaining === 0)return 'Due today';
   if(remaining === 1)return 'Due tomorrow';
