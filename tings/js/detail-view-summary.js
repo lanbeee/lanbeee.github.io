@@ -236,8 +236,31 @@ function detailSummaryDayLabel(ts){
   return new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
 }
 
-function detailSummaryClock(ts){
-  return new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+// Summary time text trims noise: anything within ten minutes of an hour reads
+// as that hour (12:01pm → 12pm, 12:55pm → 1pm); other times stay exact.
+function detailSummaryTimeLabel(minute){
+  const m = Math.round(minute);
+  const hour = Math.floor(m / 60);
+  const rem = m % 60;
+  if(rem <= 10)return detailSummaryHourLabel(hour);
+  if(rem >= 50)return detailSummaryHourLabel(hour + 1);
+  return formatTimeShort(m);
+}
+// Whole hours only, wrapping midnight (24:00 reads 12am, not formatTimeShort's 12pm).
+function detailSummaryHourLabel(hour){
+  return formatTimeShort((((hour % 24) + 24) % 24) * 60);
+}
+
+// Rule text compressed for the strip caption so each band stays on one line:
+// "solar noon" reads "noon", "night midpoint" reads "midnight", and a repeated
+// end anchor is elided ("noon → noon +2h" becomes "noon → +2h"). The editor
+// keeps the full wording; this is the compact legend for the resolved clocks.
+function detailSummaryCompactRule(startRule,endRule){
+  const short = rule => rule ? rule.replace(/solar noon/g,'noon').replace(/night midpoint/g,'midnight') : '';
+  const s = short(startRule);
+  const e = short(endRule);
+  if(s && e && e.startsWith(s + ' '))return `${s} → ${e.slice(s.length + 1)}`;
+  return [s,e].filter(Boolean).join(' → ');
 }
 
 // Visible caption for the preview's time span. Period rhythms speak in the
@@ -355,12 +378,90 @@ function detailSummaryInDayMinutes(minute){
   return minute != null && minute >= 0 && minute <= 1440;
 }
 
+// Sleep-like night blocks, detected structurally rather than by label: any
+// recurring busy block of four hours or more that reaches the deep-night core
+// (11pm–5am). Its waking complement is the daytime context the window strip
+// cares about, so the track crops to it instead of spending its width on
+// empty night hours. A short evening block never qualifies — it has to hold
+// four hours that include real night.
+// One computation per settings snapshot and day: blocked-time resolution runs
+// prayer-anchor math, and the summary sheet can re-render often.
+let _detailSummaryWakingCache = null;
+function detailSummaryWakingIntervals(facts){
+  if(_detailSummaryWakingCache && _detailSummaryWakingCache.dayBase === facts.dayBase
+    && _detailSummaryWakingCache.settings === facts.settings)return _detailSummaryWakingCache.value;
+  let value = null;
+  if(typeof agendaBlockedIntervals === 'function' && typeof mergeMinuteIntervals === 'function'){
+    const settings = facts.settings;
+    if(settings && Array.isArray(settings.blockedTimes) && settings.blockedTimes.length){
+      const rows = agendaBlockedIntervals(facts.todayKey,settings,facts.dayBase,facts.dayBase + 24 * 3600000);
+      const seen = new Map();
+      for(const row of rows){
+        // Overnight blocks arrive as two day-pieces sharing one signature; the
+        // wrap-encoded block bounds ride on every piece.
+        if(!seen.has(row.blockSignature))seen.set(row.blockSignature,{s:row.effectiveBlockStartMin,e:row.effectiveBlockEndMin});
+      }
+      const busy = [];
+      for(const {s,e} of seen.values()){
+        if(s === e)continue; // 24h coverage: nothing waking left to crop toward
+        const wrap = e < s;
+        const duration = wrap ? 1440 - s + e : e - s;
+        if(duration < 4 * 60)continue;
+        // Deep-night core [23:00,5:00): wraps cross it by construction; a
+        // same-day block reaches it only by starting before 5am or ending after 11pm.
+        if(!(wrap || s < 300 || e > 1380))continue;
+        busy.push(...(wrap ? [{start:s,end:1440},{start:0,end:e}] : [{start:s,end:e}]));
+      }
+      if(busy.length){
+        const merged = mergeMinuteIntervals(busy);
+        const waking = [];
+        let cursor = 0;
+        for(const win of merged){
+          if(win.start > cursor)waking.push({start:cursor,end:win.start});
+          cursor = Math.max(cursor,win.end);
+          if(cursor >= 1440)break;
+        }
+        if(cursor < 1440)waking.push({start:cursor,end:1440});
+        if(waking.length)value = waking;
+      }
+    }
+  }
+  _detailSummaryWakingCache = {dayBase:facts.dayBase,settings:facts.settings,value};
+  return value;
+}
+
+// Location-derived feasibility: a habit with no time fields of its own still
+// inherits every allowed place's open hours — the planner can only place it
+// inside those. The union over the allowed places is the effective window;
+// anywhere-allowed habits and 24h-or-closed unions carry no constraint worth
+// a diagram. Only places actually open today lend their names to the caption.
+function detailSummaryLocationWindows(item,facts){
+  if(typeof resolveLocationWindow !== 'function' || typeof unwrapMinuteWindow !== 'function' || typeof mergeMinuteIntervals !== 'function')return null;
+  if(facts.kind === 'appointment' || facts.kind === 'event')return null;
+  if(typeof habitDisplayAnywhereAllowed !== 'function' || habitDisplayAnywhereAllowed(item,facts.registry))return null;
+  const ids = typeof habitDisplayLocationIds === 'function' ? habitDisplayLocationIds(item,facts.registry) : [];
+  if(!ids.length || !Array.isArray(facts.registry))return null;
+  const weekday = new Date(facts.dayBase).getDay();
+  const intervals = [];
+  const names = [];
+  for(const id of ids){
+    const loc = facts.registry.find(l => l.id === id);
+    if(!loc)continue;
+    const win = resolveLocationWindow(loc,weekday);
+    if(!win)continue; // closed today: no window, no name
+    intervals.push(...unwrapMinuteWindow(win));
+    names.push(facts.placeName(id));
+  }
+  const merged = mergeMinuteIntervals(intervals);
+  if(merged.length === 1 && merged[0].start === 0 && merged[0].end >= 1440)return null;
+  return merged.length ? {wins:merged,names} : null;
+}
+
 function detailSummaryWindowStrip(item,facts,items,session){
   if(typeof fillClockWindowOnDay !== 'function' || typeof resolveHabitTimeField !== 'function')return null;
   const general = typeof hasGeneralAllowedSchedule !== 'function' || hasGeneralAllowedSchedule(item,facts.registry);
   const hasAllowed = general && typeof hasSimpleAllowedTimeWindow === 'function' && hasSimpleAllowedTimeWindow(item);
   const hasPreferred = typeof hasPreferredTimeWindow === 'function' && hasPreferredTimeWindow(item);
-  if(!hasAllowed && !hasPreferred)return null;
   // Allowed geometry comes from the canonical planner helper: fixed starts,
   // blocked-time folding, equal-endpoint full days, and overnight splits all
   // follow fillSimpleDayWindows exactly. Raw endpoint clocks label the bands.
@@ -385,52 +486,106 @@ function detailSummaryWindowStrip(item,facts,items,session){
   if(preferred && (!detailSummaryInDayMinutes(preferred.rawStart) || !detailSummaryInDayMinutes(preferred.rawEnd)))preferred = null;
   const fullDay = wins=>wins.length === 1 && wins[0].start === facts.dayBase && wins[0].end - wins[0].start >= 24 * 3600000;
   if(allowed && fullDay(allowed.wins) && !preferred)return null; // nothing to draw
+  // No time fields of the item's own: the allowed places still impose one.
+  // The strip draws that effective window instead of staying silent.
+  const locationWins = allowed || preferred ? null : detailSummaryLocationWindows(item,facts);
   const replaces = [];
-  if(allowed)replaces.push('allowedWindow');
+  if(allowed || locationWins)replaces.push('allowedWindow');
   if(preferred)replaces.push('preferredWindow');
   if(!replaces.length)return null;
-  const pct = minutes=>Math.max(0,Math.min(100,(minutes / 1440) * 100));
-  const bands = [];
-  for(const win of (allowed ? allowed.wins : [])){
-    const startMin = (win.start - facts.dayBase) / 60000;
-    const widthMin = (win.end - win.start) / 60000;
-    bands.push(`<span class="detail-track-allowed" style="left:${pct(startMin).toFixed(2)}%;width:${pct(widthMin).toFixed(2)}%" aria-hidden="true"></span>`);
-  }
-  for(const win of (preferred ? preferred.windows : [])){
-    const startMin = (win.start - facts.dayBase) / 60000;
-    const widthMin = (win.end - win.start) / 60000;
-    bands.push(`<span class="detail-track-preferred" style="left:${pct(startMin).toFixed(2)}%;width:${pct(widthMin).toFixed(2)}%" aria-hidden="true"></span>`);
-  }
-  // Only real timed plans draw a block; untimed plans stay in the status facts.
+  // Everything drawn, in day minutes. The view crops to the waking day
+  // (sleep-like night blocks removed) but always expands back out to cover
+  // any band that reaches past it, so no drawn window is ever clipped.
+  const spans = [];
+  for(const win of (allowed ? allowed.wins : []))spans.push({start:(win.start - facts.dayBase) / 60000,end:(win.end - facts.dayBase) / 60000,kind:'allowed'});
+  for(const win of (locationWins ? locationWins.wins : []))spans.push({start:win.start,end:win.end,kind:'allowed'});
+  for(const win of (preferred ? preferred.windows : []))spans.push({start:(win.start - facts.dayBase) / 60000,end:(win.end - facts.dayBase) / 60000,kind:'preferred'});
   for(const ts of facts.timedPlansToday){
     const startMin = (ts - facts.dayBase) / 60000;
     if(startMin < 0 || startMin >= 1440)continue;
     const widthMin = Math.max(8,clampDuration(item.durationMinutes) || 15);
-    bands.push(`<span class="detail-track-plan" style="left:${pct(startMin).toFixed(2)}%;width:${pct(Math.min(widthMin,1440 - startMin)).toFixed(2)}%" aria-hidden="true"></span>`);
+    spans.push({start:startMin,end:Math.min(startMin + widthMin,1440),kind:'plan'});
   }
+  if(!spans.length)return null;
+  const waking = detailSummaryWakingIntervals(facts);
+  let viewStart = 0,viewEnd = 1440;
+  if(waking){
+    const contentStart = spans.reduce((min,s)=>Math.min(min,s.start),1440);
+    const contentEnd = spans.reduce((max,s)=>Math.max(max,s.end),0);
+    const pick = waking.find(w => w.start <= contentStart && contentEnd <= w.end)
+      || waking.find(w => w.end > contentStart && w.start < contentEnd)
+      || waking.reduce((best,w)=> w.end - w.start > best.end - best.start ? w : best,waking[0]);
+    viewStart = Math.min(pick.start,contentStart);
+    viewEnd = Math.max(pick.end,contentEnd);
+  }
+  const viewSpan = Math.max(1,viewEnd - viewStart);
+  const posPct = minutes=>Math.max(0,Math.min(100,((minutes - viewStart) / viewSpan) * 100));
+  const widthPct = width=>Math.max(0,Math.min(100,(width / viewSpan) * 100));
+  const bands = [];
+  for(const span of spans){
+    const left = Math.max(span.start,viewStart);
+    const right = Math.min(span.end,viewEnd);
+    if(right <= left)continue;
+    const cls = span.kind === 'preferred' ? 'detail-track-preferred' : span.kind === 'plan' ? 'detail-track-plan' : 'detail-track-allowed';
+    bands.push(`<span class="${cls}" style="left:${posPct(left).toFixed(2)}%;width:${widthPct(right - left).toFixed(2)}%" aria-hidden="true"></span>`);
+  }
+  // Hour marks keep the cropped scale readable; past eight hours of view the
+  // step widens so the marks never crowd.
+  const tickStep = viewSpan <= 8 * 60 ? 60 : 120;
+  const ticks = [];
+  for(let m = (Math.floor(viewStart / tickStep) + 1) * tickStep;m < viewEnd;m += tickStep){
+    ticks.push(`<span class="detail-track-tick" style="left:${posPct(m).toFixed(2)}%" aria-hidden="true"></span>`);
+  }
+  // Scale ends sit on the hour they fall in: 6:38am reads "6am", 11:09pm reads
+  // "11pm", so the day edges land on whole hours instead of raw minutes.
+  const scaleLabel = minutes=>detailSummaryHourLabel(Math.floor(minutes / 60));
   const lines = [];
+  if(locationWins){
+    const names = locationWins.names.filter(Boolean);
+    const where = names.length === 1 ? `at ${names[0]}`
+      : names.length === 2 ? `at ${names[0]} · ${names[1]}`
+      : 'at saved places';
+    const first = locationWins.wins[0];
+    const last = locationWins.wins[locationWins.wins.length - 1];
+    lines.push(`<span class="detail-window-line"><i class="detail-swatch allowed" aria-hidden="true"></i>${escapeHtml(where)} ${escapeHtml(detailSummaryTimeLabel(first.start))}–${escapeHtml(detailSummaryTimeLabel(last.end))}</span>`);
+  }
   if(allowed && allowedClocks){
-    const startRule = detailSummaryWindowRule(item,'allowedTimeStart',fixedStart,items);
-    const endRule = detailSummaryWindowRule(item,'allowedTimeEnd',fixedStart,items);
-    lines.push(`<span class="detail-window-line"><i class="detail-swatch allowed" aria-hidden="true"></i>${fixedStart ? 'fixed start' : 'allowed'} ${escapeHtml(formatTimeShort(allowedClocks.rawStart))}–${escapeHtml(formatTimeShort(allowedClocks.rawEnd))}${startRule ? ` <span class="detail-window-rule">· ${escapeHtml(startRule)}${endRule ? ` → ${escapeHtml(endRule)}` : ''}</span>` : ''}</span>`);
+    const rule = detailSummaryCompactRule(
+      detailSummaryWindowRule(item,'allowedTimeStart',fixedStart,items),
+      detailSummaryWindowRule(item,'allowedTimeEnd',fixedStart,items));
+    lines.push(`<span class="detail-window-line"><i class="detail-swatch allowed" aria-hidden="true"></i>${fixedStart ? 'fixed start' : 'allowed'} ${escapeHtml(detailSummaryTimeLabel(allowedClocks.rawStart))}–${escapeHtml(detailSummaryTimeLabel(allowedClocks.rawEnd))}${rule ? ` <span class="detail-window-rule">· ${escapeHtml(rule)}</span>` : ''}</span>`);
   }
   if(preferred){
-    const startRule = detailSummaryWindowRule(item,'preferredTimeStart',false,items);
-    const endRule = detailSummaryWindowRule(item,'preferredTimeEnd',false,items);
-    lines.push(`<span class="detail-window-line"><i class="detail-swatch preferred" aria-hidden="true"></i>preferred ${escapeHtml(formatTimeShort(preferred.rawStart))}–${escapeHtml(formatTimeShort(preferred.rawEnd))}${startRule ? ` <span class="detail-window-rule">· ${escapeHtml(startRule)}${endRule ? ` → ${escapeHtml(endRule)}` : ''}</span>` : ''}</span>`);
+    const rule = detailSummaryCompactRule(
+      detailSummaryWindowRule(item,'preferredTimeStart',false,items),
+      detailSummaryWindowRule(item,'preferredTimeEnd',false,items));
+    lines.push(`<span class="detail-window-line"><i class="detail-swatch preferred" aria-hidden="true"></i>preferred ${escapeHtml(detailSummaryTimeLabel(preferred.rawStart))}–${escapeHtml(detailSummaryTimeLabel(preferred.rawEnd))}${rule ? ` <span class="detail-window-rule">· ${escapeHtml(rule)}</span>` : ''}</span>`);
   }
   if(facts.timedPlansToday.length){
     const next = facts.timedPlansToday.find(ts=>ts >= facts.now) ?? facts.timedPlansToday[0];
-    lines.push(`<span class="detail-window-line"><i class="detail-swatch plan" aria-hidden="true"></i>planned ${escapeHtml(detailSummaryClock(next))}${facts.timedPlansToday.length > 1 ? ` +${facts.timedPlansToday.length - 1} more` : ''}</span>`);
+    const planMin = (next - facts.dayBase) / 60000;
+    lines.push(`<span class="detail-window-line"><i class="detail-swatch plan" aria-hidden="true"></i>planned ${escapeHtml(detailSummaryTimeLabel(planMin))}${facts.timedPlansToday.length > 1 ? ` +${facts.timedPlansToday.length - 1} more` : ''}</span>`);
   }
   const ariaBits = [];
-  if(allowed && allowedClocks)ariaBits.push(`Allowed today ${formatTimeShort(allowedClocks.rawStart)} to ${formatTimeShort(allowedClocks.rawEnd)}${fixedStart ? ', fixed start' : ''}`);
+  if(locationWins){
+    const first = locationWins.wins[0];
+    const last = locationWins.wins[locationWins.wins.length - 1];
+    const names = locationWins.names.filter(Boolean);
+    const where = names.length === 1 ? `at ${names[0]}`
+      : names.length === 2 ? `at ${names[0]} · ${names[1]}`
+      : 'at saved places';
+    ariaBits.push(`Possible ${where} ${detailSummaryTimeLabel(first.start)} to ${detailSummaryTimeLabel(last.end)}`);
+  }
+  if(allowed && allowedClocks)ariaBits.push(`Allowed today ${detailSummaryTimeLabel(allowedClocks.rawStart)} to ${detailSummaryTimeLabel(allowedClocks.rawEnd)}${fixedStart ? ', fixed start' : ''}`);
   else if(allowed)ariaBits.push('Allowed window open today');
-  if(preferred)ariaBits.push(`Preferred today ${formatTimeShort(preferred.rawStart)} to ${formatTimeShort(preferred.rawEnd)}`);
-  if(facts.timedPlansToday.length)ariaBits.push(`planned today ${detailSummaryClock(facts.timedPlansToday[0])}`);
-  const field = allowed ? 'allowedWindow' : 'preferredWindow';
-  return {html:`<button type="button" class="detail-window" data-summary-field="${field}" aria-label="${escapeHtml(`${ariaBits.join('. ')}. Opens the time window editor.`)}" title="${escapeHtml(ariaBits.join('. '))}">
-    <span class="detail-track" aria-hidden="true">${bands.join('')}</span>
+  if(preferred)ariaBits.push(`Preferred today ${detailSummaryTimeLabel(preferred.rawStart)} to ${detailSummaryTimeLabel(preferred.rawEnd)}`);
+  if(facts.timedPlansToday.length)ariaBits.push(`planned today ${detailSummaryTimeLabel((facts.timedPlansToday[0] - facts.dayBase) / 60000)}`);
+  if(waking && (viewStart > 0 || viewEnd < 1440))ariaBits.push(`Timeline ${scaleLabel(viewStart)} to ${scaleLabel(viewEnd)}`);
+  const field = locationWins ? 'places' : allowed ? 'allowedWindow' : 'preferredWindow';
+  const openText = locationWins ? 'Opens the places editor.' : 'Opens the time window editor.';
+  return {html:`<button type="button" class="detail-window" data-summary-field="${field}" aria-label="${escapeHtml(`${ariaBits.join('. ')}. ${openText}`)}" title="${escapeHtml(ariaBits.join('. '))}">
+    <span class="detail-track" aria-hidden="true">${bands.join('')}${ticks.join('')}</span>
+    <span class="detail-track-scale" aria-hidden="true"><span>${escapeHtml(scaleLabel(viewStart))}</span><span>${escapeHtml(scaleLabel(viewEnd))}</span></span>
     <span class="detail-window-caption" aria-hidden="true">${lines.join('')}</span>
   </button>`,replaces};
 }

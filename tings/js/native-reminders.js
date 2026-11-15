@@ -806,12 +806,25 @@ async function refreshNativeBackgroundStatus(force=false){
   const toggle=document.getElementById('native-background-toggle');
   toggle?.setAttribute('aria-pressed',String(state.enabled));
   const detail=document.getElementById('native-background-detail');
+  // iOS has no closed-app refresh yet; the saved agenda is re-published each
+  // time the app opens. Android keeps its worker cadence.
+  const refreshCadence=window.TingsNative.platform === 'ios'
+    ? ' Closed-app refresh is not available on iOS yet; reminders follow the agenda saved when Tings was last opened.'
+    : ' About 15 minutes with drop reminders enabled; 30 minutes otherwise. Android may delay it.';
+  const refreshPlace=window.TingsNative.platform === 'ios' ? '' : (state.background ? ' Background location is allowed.' : ' Uses the last saved place. Allow background location to detect movement.');
+  // iOS has no DND control API; drop warnings use time-sensitive delivery
+  // and the app reports honestly when the user turned that off.
+  const focusNote=window.TingsNative.platform === 'ios' && state.timeSensitiveSetting === 'disabled'
+    ? ' Time-sensitive alerts are off in iOS Settings → Notifications → Tings, so Focus can hide drop warnings.'
+    : '';
   if(detail)detail.textContent=state.enabled
-    ? `Closed refresh: about 15 minutes with drop reminders enabled; 30 minutes otherwise. Android may delay it.${state.background ? ' Background location is allowed.' : ' Uses the last saved place. Allow background location to detect movement.'}${state.plannedAt ? ` Last background update: ${new Date(state.plannedAt).toLocaleString()}.` : ''}${state.dropEstimated ? ` ${state.dropEstimated} estimated drop warnings.` : ''}${state.dropConfirmed ? ` ${state.dropConfirmed} confirmed drop warnings.` : ''}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' Exact timing access is off: ringing drops cannot fire and drop notifications may arrive late.' : ''}${state.error ? ` ${state.error}` : ''}`
+    ? `Closed refresh:${refreshCadence}${refreshPlace}${focusNote}${state.plannedAt ? ` Last background update: ${new Date(state.plannedAt).toLocaleString()}.` : ''}${state.dropEstimated ? ` ${state.dropEstimated} estimated drop warnings.` : ''}${state.dropConfirmed ? ` ${state.dropConfirmed} confirmed drop warnings.` : ''}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' Exact timing access is off: ringing drops cannot fire and drop notifications may arrive late.' : ''}${state.error ? ` ${state.error}` : ''}`
     : 'Background planning is off. The phone follows its last saved agenda.';
   if(detail && state.completionSyncEnabled)detail.textContent+=` Paired-device sync checks about every 15 minutes, independently of background planning. Android may delay it.${state.completionSyncAt ? ` Last paired-device sync: ${new Date(state.completionSyncAt).toLocaleString()}.` : ' Waiting for the first background sync.'}${state.completionSyncError ? ` ${state.completionSyncError}` : ''}`;
   if(node)node.textContent=state.error ? `Refresh needs attention: ${state.error}` : state.enabled
-    ? `Updates about every 15–30 min · ${state.background ? 'background location allowed' : 'uses saved place'}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' · allow exact timing for drop alerts' : ''}`
+    ? (window.TingsNative.platform === 'ios'
+      ? `Reminders follow the last saved agenda${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' · allow exact timing for drop alerts' : ''}`
+      : `Updates about every 15–30 min · ${state.background ? 'background location allowed' : 'uses saved place'}${state.exact===false && state.dropEstimated+state.dropConfirmed>0 ? ' · allow exact timing for drop alerts' : ''}`)
     : 'Off · reminders use the last saved agenda.';
   const fix=state.location;
   if(!sortSettings.pinnedLocationId && fix && Number.isFinite(fix.lat) && Number.isFinite(fix.lng) && Date.now()-fix.at<=10*60000 && fix.at>nativeBackgroundLastApplied){
@@ -1063,7 +1076,7 @@ function nativeNotificationSoundControls(){
   async function refresh(){
     if(busy || !host.isConnected)return;
     try{paint(await api.status());}
-    catch{select.disabled=true;preview.disabled=true;status.textContent='Notification sounds are unavailable. Update the Android app.';}
+    catch{select.disabled=true;preview.disabled=true;status.textContent='Notification sounds are unavailable. Update the app.';}
   }
   async function change(action){
     if(busy)return;
@@ -1082,7 +1095,14 @@ function nativeNotificationSoundControls(){
   stop.addEventListener('click',()=>void api.stopPreview().catch(()=>{}));
   android.addEventListener('click',async()=>{try{await api.stopPreview();await api.openSettings();}catch(error){showToast(error.message);}});
   const primary=document.createElement('div');primary.className='native-sound-actions';
-  primary.append(preview,stop);actions.append(phone,file,android);host.append(label,select,primary,actions,hint,status);
+  primary.append(preview,stop);
+  // Platform-aware buttons: iOS ships only the bundled choices + preview,
+  // so the phone/file pickers and the Android settings shortcut stay hidden
+  // when the facade omits those methods.
+  if(typeof api.pick==='function')actions.append(phone);
+  if(typeof api.pickFile==='function')actions.append(file);
+  if(typeof api.openSettings==='function')actions.append(android);
+  host.append(label,select,primary,actions,hint,status);
   const resume=()=>{if(!document.hidden)void refresh();};
   document.addEventListener('visibilitychange',resume);
   document.getElementById('settings-reminders-head')?.addEventListener('click',()=>queueMicrotask(()=>void refresh()));
@@ -1117,7 +1137,7 @@ function initNativeReminders(){
       showToast(enabled ? 'phone reminders on' : 'phone reminders off');
     }catch(error){showToast(error.message,5000);}finally{input.disabled = false;}
   });toggle.append(input);
-  toggle.insertAdjacentHTML('beforeend',uiSettingsHelpButtonHtml('native-reminders-help','phone reminders')+'<div class="settings-help-body" id="native-reminders-help" hidden><p>Choose reminders in each habit or task’s Actions tab, or under each busy time. New items start with reminders off. These choices stay on this phone.</p><p id="native-reminder-detail"></p></div>');
+  toggle.insertAdjacentHTML('beforeend',uiSettingsHelpButtonHtml('native-reminders-help','phone reminders')+'<div class="settings-help-body" id="native-reminders-help" hidden><p>Choose reminders in each habit or task’s schedule settings — events: date & time, phone-calendar items: name & type — or under each busy time. New items start with reminders off. These choices stay on this phone.</p><p id="native-reminder-detail"></p></div>');
   panel.append(toggle);
   const sounds=nativeNotificationSoundControls();if(sounds)panel.append(sounds);
   const help=toggle.querySelector('#native-reminders-help');
