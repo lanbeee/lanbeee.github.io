@@ -207,8 +207,11 @@ async function runSuite(engine,label,profile){
       assert.ok(views['Gym'].bands.length === 1,'one allowed band');
       assert.ok(views['Gym'].prefBands.length === 1,'one preferred band');
       const [,left,width] = views['Gym'].bands[0].match(/left:([\d.]+)%;width:([\d.]+)%/);
-      assert.ok(Math.abs(+left - 75) < 0.1,`allowed starts at 18:00 (75% of day), got ${left}`);
-      assert.ok(Math.abs(+width - 8.33) < 0.1,`allowed spans 2h (8.33%), got ${width}`);
+      // The track crops to the waking day — the default sleep block (23:00–05:00,
+      // detected structurally as a ≥4h block wrapping midnight) leaves 05:00–23:00
+      // — so 18:00 sits at (1080−300)/1080 = 72.22% and spans 11.11% of the view.
+      assert.ok(Math.abs(+left - 72.22) < 0.1,`allowed starts at 18:00 (72.22% of waking view), got ${left}`);
+      assert.ok(Math.abs(+width - 11.11) < 0.1,`allowed spans 2h (11.11% of waking view), got ${width}`);
       assert.match(views['Gym'].windowText,/allowed/);
       assert.match(views['Gym'].windowText,/preferred/,'caption names both bands');
     });
