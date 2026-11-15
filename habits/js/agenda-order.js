@@ -256,8 +256,10 @@ function openOrderLinkSheet(draft){
   const rows = $('order-link-rows');
   const clearBtn = $('order-link-clear');
   if(title)title.textContent = 'Keep this position?';
-  if(sub)sub.textContent = `Choose above or below for ${formatOrderDayLabel(draft.dayBase)}. Clears when done.`;
+  if(sub)sub.textContent = `Choose above or below for ${formatOrderDayLabel(draft.dayBase)}. "Every day" repeats until removed.`;
   if(summary)summary.innerHTML = habitLabelHtml(draft.h);
+  const repeatSeg = $('order-link-repeat');
+  if(repeatSeg)repeatSeg.querySelectorAll('.seg-opt').forEach(o=>o.classList.toggle('on',o.dataset.repeat === 'today'));
 
   const parts = [];
   if(draft.before){
@@ -312,10 +314,20 @@ function readOrderLinkChoices(){
   return edges;
 }
 
+function readOrderLinkRepeatMode(){
+  const seg = $('order-link-repeat');
+  const on = seg ? seg.querySelector('.seg-opt.on') : null;
+  return on && on.dataset.repeat === 'daily' ? 'daily' : 'today';
+}
+
 function saveOrderLinkSheet(){
   const draft = _orderLinkDraft;
   if(!draft || !draft.h){ cancelOrderLinkSheet(); return; }
   const edges = readOrderLinkChoices();
+  if(readOrderLinkRepeatMode() === 'daily'){
+    saveOrderLinkSheetRecurring(draft,edges);
+    return;
+  }
   const conflict = typeof temporaryOrderConflict === 'function'
     ? temporaryOrderConflict(draft.dayBase,edges) : null;
   if(conflict){
@@ -333,6 +345,59 @@ function saveOrderLinkSheet(){
   _orderLinkDraft = null;
   if(typeof showToast === 'function'){
     showToast(edges.length ? 'order saved' : 'order cleared');
+  }
+  if(typeof render === 'function')render();
+  else if(typeof refreshOpenViews === 'function')refreshOpenViews();
+}
+
+// Daily mode: the sheet writes recurring Schedule links on the dragged habit
+// instead of one-day edges. Rows left off remove that neighbor's link, so the
+// sheet fully manages the shown pair. The day store is cleared because a
+// recurring link supersedes today's temporary edge.
+function saveOrderLinkSheetRecurring(draft,edges){
+  const data = typeof load === 'function' ? load() : [];
+  const h = data.find(item=>item && item.hid === draft.h.hid);
+  if(!h){
+    if(typeof showToast === 'function')showToast('habit no longer exists');
+    return;
+  }
+  const shownNeighbors = [draft.before && draft.before.h.hid,draft.after && draft.after.h.hid]
+    .filter(Boolean);
+  const existing = typeof normalizeScheduleLinks === 'function'
+    ? normalizeScheduleLinks(h.scheduleLinks,h.hid)
+    : (Array.isArray(h.scheduleLinks) ? h.scheduleLinks.slice() : []);
+  // Drop links to every shown neighbor, then re-add the chosen ones.
+  const links = existing.filter(link=>link && !shownNeighbors.includes(link.anchorHid));
+  for(const edge of edges){
+    const isAfter = edge.afterHid === h.hid;
+    const anchorHid = isAfter ? edge.beforeHid : edge.afterHid;
+    if(!anchorHid || anchorHid === h.hid)continue;
+    links.push({
+      anchorHid,
+      direction:isAfter ? 'after' : 'before',
+      adjacency:edge.adjacency,
+      requireSameDay:false,
+      minGapMinutes:0
+    });
+  }
+  h.scheduleLinks = typeof normalizeScheduleLinks === 'function'
+    ? normalizeScheduleLinks(links,h.hid)
+    : links;
+  if(typeof validateScheduleLinkGraph === 'function'){
+    const validation = validateScheduleLinkGraph(data);
+    if(!validation.ok){
+      showToast(validation.message);
+      return;
+    }
+  }
+  if(typeof save !== 'function' || !save(data))return;
+  if(typeof clearOrderConstraintsForDay === 'function'){
+    clearOrderConstraintsForDay(draft.dayBase,h.hid);
+  }
+  closeSheet('order-link-sheet');
+  _orderLinkDraft = null;
+  if(typeof showToast === 'function'){
+    showToast(edges.length ? 'recurring order saved' : 'recurring order cleared');
   }
   if(typeof render === 'function')render();
   else if(typeof refreshOpenViews === 'function')refreshOpenViews();
@@ -732,9 +797,37 @@ function wireAgendaOrderSheets(){
   $('order-link-cancel')?.addEventListener('click',cancelOrderLinkSheet);
   $('order-link-save')?.addEventListener('click',saveOrderLinkSheet);
   $('order-link-clear')?.addEventListener('click',clearOrderLinkSheet);
+  $('order-link-repeat')?.addEventListener('click',e=>{
+    const opt = e.target.closest('[data-repeat]');
+    if(!opt)return;
+    opt.parentElement.querySelectorAll('.seg-opt').forEach(o=>o.classList.toggle('on',o === opt));
+  });
   $('doing-now-cancel')?.addEventListener('click',cancelDoingNowSheet);
   $('doing-now-confirm')?.addEventListener('click',confirmDoingNow);
   document.addEventListener('click',e=>{
+    const unlinkRecurring = e.target.closest('[data-order-unlink-recurring]');
+    if(unlinkRecurring){
+      e.preventDefault();
+      e.stopPropagation();
+      const anchorHid = unlinkRecurring.dataset.orderUnlinkRecurring;
+      const hid = unlinkRecurring.dataset.orderUnlinkRecurringHid;
+      if(anchorHid && hid && typeof save === 'function' && typeof load === 'function'){
+        const data = load();
+        const h = data.find(item=>item && item.hid === hid);
+        if(h && typeof normalizeScheduleLinks === 'function'){
+          h.scheduleLinks = normalizeScheduleLinks(
+            (Array.isArray(h.scheduleLinks) ? h.scheduleLinks : []).filter(link=>
+              link && link.anchorHid !== anchorHid),hid);
+          if(save(data)){
+            if(typeof showToast === 'function')showToast('recurring link removed');
+            if(typeof renderDetailOrderPage === 'function')renderDetailOrderPage();
+            if(typeof render === 'function')render();
+            else if(typeof refreshOpenViews === 'function')refreshOpenViews();
+          }
+        }
+      }
+      return;
+    }
     const unlink = e.target.closest('[data-order-unlink]');
     if(unlink){
       e.preventDefault();

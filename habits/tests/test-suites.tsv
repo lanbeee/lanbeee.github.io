@@ -14,6 +14,7 @@ tag-selection-test.js	ui	once
 contextual-toast-test.js	ui	once
 agenda-optimizer-test.js	planner	default-only
 agenda-order-constraints-test.js	planner	once
+order-recurring-home-test.js	planner	once
 agenda-scenarios.js	planner	once
 agenda-settings-defaults-test.js	planner	once
 agenda-share-projection-test.js	data	once

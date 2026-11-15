@@ -37,7 +37,7 @@ function renderDetailOrderPage(h = null){
     return `<div class="detail-order-row">
       ${mark}
         <span class="detail-order-meta">recurring · ${escapeHtml(label)}${link.requireSameDay ? ` · must do with ${escapeHtml(other && other.name || 'the other habit')} when flex allows` : ''}</span>
-      <span class="detail-order-edit-note">Schedule</span>
+      <button type="button" class="mini-text-btn detail-order-unlink" data-order-unlink-recurring="${escapeHtml(link.anchorHid)}" data-order-unlink-recurring-hid="${escapeHtml(habit.hid)}">unlink</button>
     </div>`;
   }).join('');
   const byDay = new Map();
@@ -850,7 +850,14 @@ function renderTimeEndpoint(endpoint, field, h){
 // Falls back to a muted "—" when there's no location on the habit (the save
 // path will block, but the preview explains why). For 'habit' anchors, shows
 // contextual hints: "pick a habit", "never logged", "done · waiting".
+// The fill takes early returns freely; the preview's empty-state visibility
+// is decided once the fill is done.
 function updateTimeResolved(endpoint, field, h){
+  updateTimeResolvedFill(endpoint, field, h);
+  syncTimeRulePreviewVisibility(endpoint);
+}
+
+function updateTimeResolvedFill(endpoint, field, h){
   syncTimeRuleSummary(endpoint);
   const node = endpoint && endpoint.querySelector('.time-resolved');
   if(!node)return;

@@ -134,7 +134,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     });
     const busy = page.locator('.blocked-endpoint[data-blocked-field="start"]').first();
     assert.equal(await busy.locator('.time-anchor').locator('option').first().textContent(),'— choose an event —');
-    assert.match(await busy.locator('.time-rule-summary').innerText(),/^Night$/);
+    assert.equal(await busy.locator('.time-rule-summary').textContent(),'','plain busy-time anchor shows no echo of the dropdown');
     await busy.locator('.time-advanced > summary').click();
     await busy.locator('.time-anchor').selectOption('sunrise');
     assert.notEqual(await busy.locator('.time-advanced').getAttribute('open'),null,'busy-time changes keep disclosure open');

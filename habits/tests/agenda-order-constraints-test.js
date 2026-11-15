@@ -776,7 +776,7 @@ function seedScript(){
   assert(ui.handleCount >= 1 && ui.dayRowCount >= 1, 'draggable fill rows include hidden grip handles');
   assert(ui.sheetOpen && ui.rows === 2, 'order sheet opens with after + before rows');
   assert(ui.title === 'Keep this position?', 'sheet title confirms the dropped position');
-  assert(/above or below/.test(ui.sub) && /Clears when done/.test(ui.sub), 'sheet sub explains directional choices');
+  assert(/above or below/.test(ui.sub) && /Every day/.test(ui.sub), 'sheet sub explains directional choices');
   assert(/🧠/.test(ui.summaryHtml) && /✉️/.test(ui.rowHtml) && /🚶/.test(ui.rowHtml), 'sheet shows emojis');
   assert(/Place below/.test(ui.rowHtml) && /Place above/.test(ui.rowHtml),
     'neighbor rows say whether the habit goes below or above');

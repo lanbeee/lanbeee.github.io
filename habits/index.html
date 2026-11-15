@@ -587,7 +587,7 @@
                 <span class="settings-sublabel compact-label">best time</span>
                 <button type="button" class="mini-text-btn schedule-time-clear" id="detail-preferred-time-clear" hidden>clear</button>
               </div>
-              <p class="field-hint schedule-time-lead">Soft hours the planner aims for when there's room.</p>
+              <p class="field-hint schedule-time-lead">Soft hours the planner aims for when there's room. Use relative for times such as dawn, sunrise, or sunset.</p>
               <div class="time-endpoints detail-time-endpoints" id="detail-preferred-time-row" data-field-prefix="preferred"></div>
               <p class="field-hint time-empty-hint" id="detail-preferred-time-empty-hint">Leave blank for any time of day.</p>
             </div>
@@ -1870,6 +1870,10 @@
       <p class="sheet-sub" id="order-link-sub">Just for today. Clears when done.</p>
       <p class="order-link-summary" id="order-link-summary"></p>
       <div class="order-link-rows" id="order-link-rows"></div>
+      <div class="seg order-link-repeat" id="order-link-repeat" role="group" aria-label="how long this order lasts">
+        <button type="button" class="seg-opt on" data-repeat="today">just today</button>
+        <button type="button" class="seg-opt" data-repeat="daily">every day</button>
+      </div>
       <div class="btn-row">
         <button class="btn" type="button" id="order-link-cancel">cancel</button>
         <button class="btn" type="button" id="order-link-clear" hidden>clear</button>
