@@ -321,6 +321,7 @@ function assistantFocusWriteOrder(field){
 
 function assistantFocusStage(session, change){
   if(!session || !change || !change.field)return null;
+  const previousPrefs=change.field==='places'?assistantFocusMaterialize(session).locationPrefs:null;
   const next = {
     op:change.op || 'set',
     field:change.field,
@@ -336,6 +337,12 @@ function assistantFocusStage(session, change){
   session.unresolved = session.unresolved.filter(row => row.field !== next.field);
   session.interpretationApproved = null;
   session.savedFingerprint = '';
+  if(previousPrefs){
+    const allowed=new Set(next.op==='clear'?[]:next.value||[]);
+    const prefs=Object.fromEntries(Object.entries(previousPrefs).filter(([id])=>allowed.has(id)));
+    if(Object.keys(prefs).length!==Object.keys(previousPrefs).length)assistantFocusStage(session,
+      {...next,field:'locationPrefs',op:Object.keys(prefs).length?'set':'clear',value:Object.keys(prefs).length?prefs:null});
+  }
   return next;
 }
 
@@ -668,16 +675,16 @@ function assistantFocusNormalize(fieldId, raw, session){
       : assistantParsePlacePrefsText(text.replace(/\s+as (?:the |a )?(?:place|location)\s*$/i, ''));
     if(!rows)return fail('Use prefer or avoid followed by a saved place.');
     const prefs = {...(session?._fieldBaseline?.locationPrefs || (session && assistantFocusMaterialize(session).locationPrefs))};
-    const resolved = [], missing = [];
+    const resolved = [], missing = [], preferencePatch = {};
     for(const row of rows){
       if(!row.name || !['high','little','avoid'].includes(row.level))return fail('Choose a saved place and its preference.');
       const found = matchPlace(row.name);
       if(!found.ok)missing.push({found,name:row.name});
-      else {prefs[found.item.id] = row.level;resolved.push(found.item.id);}
+      else {prefs[found.item.id] = row.level;preferencePatch[found.item.id] = row.level;resolved.push(found.item.id);}
     }
     if(missing.length)return {...unknown(missing[0].found,'place',missing[0].name),selection:resolved,
       preferenceLevel:rows.every(row=>row.level===rows[0].level)?rows[0].level:''};
-    return {ok:true, op:'set', value:prefs};
+    return {ok:true, op:'set', value:prefs, preferencePatch};
   }
   if(fieldId === 'weatherProfile'){
     if(/^(inherit|use (?:the )?place.?s weather)$/i.test(text))return {ok:true, op:'set', value:{mode:'inherit', profileId:null}};

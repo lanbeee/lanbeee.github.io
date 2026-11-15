@@ -197,6 +197,11 @@ and a combined location/duration edit. It checks preserved unrelated data,
 names in previews, local choices, and bounded inference counts. Place-preference
 cases cover prioritizing, favoring, avoiding, unique typos, multiple places,
 preserved rankings, and combining a preference with another setting.
+List edits cover remove/add in either order, preserved partners, spelling errors,
+removed rankings, an empty result, topic additions/removals, and an unknown
+operand resolved through the final-list picker. Picker regressions also check
+removing a preference staged in an earlier turn, declining just one clause, and
+place/preference workers completing in either order.
 `tests/assistant-value-picker-test.js` also exercises searchable large catalogs,
 selections retained across filters, preference dropdowns, and declined or
 qualified reads. Set `ASSISTANT_TEST_BROWSER=webkit` to exercise those controls

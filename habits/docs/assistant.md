@@ -49,6 +49,16 @@ choices have local search; filtering retains selections. Topics, places, forecas
 locations and weather profiles share the same picker controls. Filtering and
 choices do not invoke inference; writes still wait for Save.
 
+Explicit add/remove instructions edit the current place or topic list. Several
+clauses apply in order after Needle selects each complete clause; adding Home
+keeps other places, while removing Noor also removes its ranking. An unanswered
+or invalid clause blocks the whole list edit. Unknown operands offer the saved
+catalog with the confirmed result selected and ask for the final list. Complete
+saved-name list edits use one model read per clause and skip open-ended discovery.
+Place changes prune obsolete rankings from both saved and staged preferences.
+Sibling preference reads merge only the named rankings, so an older worker
+snapshot cannot restore a removed place.
+
 Reminder previews show the actual mode and lead time. Task deadline reminders expose delivery mode, days before due (0, 1, 2, or 7), and local clock time. Events expose a second delivery mode and lead time; both event leads support the same minutes, hours, and calendar days as the manual controls. “Notify me 1 day before the due date at 9am” and “Set the first reminder to notification 1 hour before, and set the second reminder to alarm 1 day before” stage those settings together. Event date scope, reset, Edit, Save, and undo include the new fields. Unsupported offsets ask instead of rounding.
 Save writes the staged item. Edit opens the detail editor with those changes
 filled in and leaves them unsaved until the detail save.

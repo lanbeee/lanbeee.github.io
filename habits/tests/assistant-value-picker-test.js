@@ -30,6 +30,39 @@ function assert(ok,message){if(!ok)throw new Error(message);passed++;console.log
         }};}
       };
     });
+    const listEdits=await page.evaluate(async()=>{
+      pickerTest.seed();save([{...load()[0],locationIds:['home','work'],locationPrefs:{home:'high',work:'little'},anywhereAllowed:false}]);
+      const s=pickerTest.open(),before=JSON.stringify(load());
+      await assistantFocusTurn(s,'Prefer Park',pickerTest.options());
+      await assistantFocusTurn(s,'Remove Park location and add Gym location',pickerTest.options());
+      const draft=assistantFocusMaterialize(s);
+      const preserved=draft.locationIds.join()==='home,work,gym'&&draft.locationPrefs.home==='high'&&draft.locationPrefs.work==='little'&&!draft.locationPrefs.park;
+      const ready=assistantFocusCanSave(s),unchanged=JSON.stringify(load())===before;
+      const committed=await assistantFocusCommit(s);
+      const saved=load()[0];
+      pickerTest.seed();const missing=pickerTest.open(),options=pickerTest.options();
+      const extract=options.extract;
+      options.extract=spec=>spec.jobId==='places'&&spec.request.includes('add Work')
+        ?Promise.resolve({confidence:1,function_calls:[{name:spec.tool.name,arguments:{places:''}}]}):extract(spec);
+      await assistantFocusTurn(missing,'Remove Home location and add Work location',options);
+      const blocked=!assistantFocusCanSave(missing)&&missing.unresolved.some(q=>q.field==='places')&&!missing.changes.some(c=>c.field==='places');
+      pickerTest.seed();const unknown=pickerTest.open();
+      await assistantFocusTurn(unknown,'Remove Moonbase location and add Work location',pickerTest.options());
+      const question=unknown.unresolved.find(q=>q.field==='places');
+      const choice=assistantFocusPickValues(unknown,'places',['home','work']);
+      let concurrent=true;
+      for(const delayed of ['places','locationPrefs']){
+        pickerTest.seed();save([{...load()[0],locationIds:['home','work'],locationPrefs:{home:'high'},anywhereAllowed:false}]);
+        const mixed=pickerTest.open(),options=pickerTest.options(),extract=options.extract;
+        options.extract=async spec=>{if(spec.jobId===delayed)await new Promise(resolve=>setTimeout(resolve,30));return extract(spec);};
+        await assistantFocusTurn(mixed,'Remove Home location and prefer Work location',options);
+        const record=assistantFocusMaterialize(mixed);
+        concurrent&&=assistantFocusCanSave(mixed)&&record.locationIds.join()==='work'&&record.locationPrefs.work==='high'&&!record.locationPrefs.home;
+      }
+      return {preserved,ready,unchanged,saved:committed.ok&&saved.locationIds.join()==='home,work,gym'&&!saved.locationPrefs.park,
+        blocked,concurrent,unknown:question?.question.includes('Moonbase')&&question.selection.join()==='home,work'&&choice.ok};
+    });
+    for(const [key,value] of Object.entries(listEdits))assert(value,`list edit: ${key}`);
     const matching=await page.evaluate(()=>{
       pickerTest.seed();const s=pickerTest.open(),def=assistantFieldCatalog().find(f=>f.id==='places');
       const parse=text=>assistantFieldNormalize(def,text,s);

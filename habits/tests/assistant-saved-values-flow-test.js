@@ -6,6 +6,27 @@ const {chromium,BASE,baseHabit,waitForAssistant}=require('./helpers/planner-test
 const live=Boolean(process.env.NEEDLE_MODEL_PATH&&process.env.NEEDLE_WASM_PATH);
 const results=[];
 const cases=[
+  {prompt:'Remove Home location and prefer Work location',initialPlaces:['home','work'],initialPrefs:{home:'high'},restricted:true,
+    expected:{locationIds:['work'],locationPrefs:{work:'high'},preferredLocationId:'work'},bounded:true,modelCalls:2},
+  {prompt:'Remove Noor location and add home location',initialPlaces:['noor','work'],initialPrefs:{noor:'high',work:'little'},restricted:true,
+    expected:{locationIds:['work','home'],locationPrefs:{work:'little'},preferredLocationId:'work'},bounded:true,modelCalls:2},
+  {prompt:'Add home location and remove Noor location',initialPlaces:['noor','work'],initialPrefs:{noor:'high',work:'little'},restricted:true,
+    expected:{locationIds:['work','home'],locationPrefs:{work:'little'},preferredLocationId:'work'},bounded:true,modelCalls:2},
+  {prompt:'Remove Noor location',initialPlaces:['noor','work'],initialPrefs:{noor:'high'},restricted:true,
+    expected:{locationIds:['work'],locationPrefs:{},preferredLocationId:null},bounded:true},
+  {prompt:'Remove Noor location',initialPlaces:['noor'],initialPrefs:{noor:'high'},
+    expected:{locationIds:[],locationPrefs:{},preferredLocationId:null},bounded:true},
+  {prompt:'Add Home location',restricted:true,expected:{locationIds:['work','home']},bounded:true},
+  {prompt:'Remove Wrok and add Home',restricted:true,expected:{locationIds:['home']},bounded:true,modelCalls:2},
+  {prompt:'Remove Work location and add Home location and make it 20 minutes',initialPlaces:['work','a'],restricted:true,
+    expected:{locationIds:['a','home'],durationMinutes:20},bounded:true,modelCalls:3},
+  {prompt:'Remove Work topic and add Health topic',expected:{topics:['Health']},bounded:true,modelCalls:2},
+  {prompt:'Add Health topic',expected:{topics:['Work','Health']},bounded:true},
+  {prompt:'Remove Work topic',expected:{topics:[]},bounded:true},
+  {prompt:'Remove Noor location and add home location',initialPlaces:['noor'],initialPrefs:{noor:'high'},anywhere:'yes',
+    expected:{locationIds:['home'],locationPrefs:{},preferredLocationId:null,anywhereAllowed:true},bounded:true,modelCalls:2},
+  {prompt:'Remove Noor location and add Home Annex location',initialPlaces:['noor','work'],initialPrefs:{noor:'high',work:'little'},restricted:true,
+    pick:['home'],selection:['work'],expected:{locationIds:['home','work'],locationPrefs:{work:'little'},preferredLocationId:'work'}},
   ...['Prioritize home location','Prioritise Home','Favor Home','Prefer Hmoe','Make Home the preferred location','Set the preferred location to Home'].map(prompt=>({prompt,preferences:true,expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'high'},preferredLocationId:'home'},bounded:true})),
   {prompt:'Avoid Home',preferences:true,expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'avoid'}},bounded:true},
   {prompt:'Deprioritize Home',preferences:true,expected:{locationIds:['work','home'],locationPrefs:{work:'little',home:'little'}},bounded:true},
@@ -53,9 +74,9 @@ const cases=[
       await page.evaluate(({fixture,test})=>{
         saveSortSettings({...loadSortSettings(),locations:[
           {id:'home',name:'Home',lat:40,lng:-74},{id:'work',name:'Work',lat:41,lng:-74},
-          {id:'a',name:'LocationA',lat:40,lng:-74},{id:'b',name:'LocationB',lat:41,lng:-74}
+          {id:'a',name:'LocationA',lat:40,lng:-74},{id:'b',name:'LocationB',lat:41,lng:-74},{id:'noor',name:'Noor',lat:40,lng:-74}
         ],topics:['Health','Work'],weatherProfiles:[{id:'dry',name:'Dry',rules:[{metric:'precipitation',max:1}]}]});
-        save([{...fixture,hid:'target',type:test.kind==='task'?'task':'keepup',anywhereAllowed:!test.restricted,locationIds:['work'],locationPrefs:test.preferences?{work:'little'}:{},topics:['Work']},
+        save([{...fixture,hid:'target',type:test.kind==='task'?'task':'keepup',anywhereAllowed:!test.restricted,locationIds:test.initialPlaces||['work'],locationPrefs:test.initialPrefs||(test.preferences?{work:'little'}:{}),topics:['Work']},
           {...fixture,hid:'other',name:'Other item',durationMinutes:45}]);
         openDetail(0);
       },{fixture:baseHabit({name:'Reading',logs:[{ts:1}],priority:1,preferredWeekdays:[2],minGapMinutes:10}),test});
@@ -79,7 +100,8 @@ const cases=[
         assert(initial.questions.some(q=>q.field===field),'unknown or tied name asks for the correct place setting');
         assert(!initial.questions.find(q=>q.field===field).question.includes(test.prompt),'question refers to the unmatched name, not the whole instruction');
         assert(!initial.questions.some(q=>q.placeFollowup),'place selection precedes Anywhere');
-        assert.equal(await proposal.locator(`[data-focus-picker="${field}"] [data-focus-option]`).count(),4,'all saved places are selectable');
+        assert.equal(await proposal.locator(`[data-focus-picker="${field}"] [data-focus-option]`).count(),5,'all saved places are selectable');
+        if(test.selection)assert.deepEqual(initial.questions.find(q=>q.field===field).selection,test.selection,'list questions retain the confirmed changes in the proposed final selection');
         if(field==='locationPrefs')assert.equal(await proposal.locator('[data-focus-preference]').inputValue(),'avoid','unknown place retains the requested preference');
         for(const id of test.pick)await proposal.locator(`[data-focus-option="${id}"]`).click();
         await proposal.locator('[data-focus-pick]').click();
@@ -98,7 +120,7 @@ const cases=[
       assert.equal(staged.calls,initial.calls,'picking places and answering Anywhere require no inference');
       if(test.bounded){
         assert(initial.trace.some(row=>row.method==='closed-instructions'),'complete named assignments skip discovery and retrieval');
-        if(live)assert.equal(initial.calls,test.expected.durationMinutes?2:1,'one model call per requested field');
+        if(live)assert.equal(initial.calls,test.modelCalls||(test.expected.durationMinutes?2:1),'one model read per requested clause');
       }
       assert.deepEqual(await page.evaluate(()=>load()),before,'choices must not write');
       await page.screenshot({path:`test-results/saved-values-${live?'live':'host'}-${results.length}.png`});
