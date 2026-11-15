@@ -1893,12 +1893,12 @@ $('detail-save').addEventListener('click',()=>{
   }
   // Block: fixed secondary without a clock time.
   if(habitAnchorFields.some(f => h[f + 'Anchor2'] === 'fixed' && h[f + 'FixedMin2'] == null)){
-    showToast('pick a clock time for later/earlier of');
+    showToast('pick a clock time to compare with');
     return;
   }
   // Block: later/earlier-of without a second anchor.
   if(habitAnchorFields.some(f => cleanTimeCombine(current[f + 'Combine']) && !h[f + 'Anchor2'])){
-    showToast('pick a second time for later/earlier of');
+    showToast('pick a time to compare with');
     return;
   }
   // Block: dynamic prayer anchors need coords to resolve against. Prefer the

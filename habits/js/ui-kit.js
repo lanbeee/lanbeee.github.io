@@ -90,7 +90,7 @@ function uiTimeExprHtml(prefix, second, {options = '', offset = 0, fixedValue = 
   const anchorAria = second ? `${prefix} second anchor` : `${prefix} anchor`;
   const clock = second ? `<input type="time" class="time-input time-fixed2" step="300"${attr('fixed2')} value="${fixedValue}"${isFixed ? '' : ' hidden'} aria-label="${prefix} clock time" />` : '';
   const hide = isFixed ? ' hidden' : '';
-  return `<label class="time-event-label">${second ? 'second time' : 'based on'}<select class="${anchorCls} mini-select"${attr(second ? 'anchor2' : 'anchor')} aria-label="${anchorAria}">${options}</select></label>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><span class="time-adjust-label"${hide}>adjust by</span><input type="number" class="${offsetCls} mini-time-input"${attr(second ? 'offset2' : 'offset')} inputmode="numeric" min="0" max="720" placeholder="0" value="${Math.abs(offset) || ''}" aria-label="${offsetAria}"${hide} /><button type="button" class="time-offset-sign-btn" data-sign="${offset < 0 ? '-' : '+'}" aria-label="${offset < 0 ? 'minutes before' : 'minutes after'}" title="Switch between before and after"${hide}>${timeOffsetSignWord(offset < 0 ? '-' : '+')}</button><span class="time-offset-unit"${hide}>min</span>${second ? uiTimeDayHtml(prefix,true,{on:dayOn,attrs:attr('day2'),hidden:isFixed}) : ''}`;
+  return `<label class="time-event-label">${second ? 'compare with' : 'based on'}<select class="${anchorCls} mini-select"${attr(second ? 'anchor2' : 'anchor')} aria-label="${anchorAria}">${options}</select></label>${clock}<span class="${habitWrap}" hidden><select class="${habitCls} mini-select" aria-label="${habitAria}"></select></span><span class="time-adjust-label"${hide}>adjust by</span><input type="number" class="${offsetCls} mini-time-input"${attr(second ? 'offset2' : 'offset')} inputmode="numeric" min="0" max="720" placeholder="0" value="${Math.abs(offset) || ''}" aria-label="${offsetAria}"${hide} /><button type="button" class="time-offset-sign-btn" data-sign="${offset < 0 ? '-' : '+'}" aria-label="${offset < 0 ? 'minutes before' : 'minutes after'}" title="Switch between before and after"${hide}>${timeOffsetSignWord(offset < 0 ? '-' : '+')}</button><span class="time-offset-unit"${hide}>min</span>${second ? uiTimeDayHtml(prefix,true,{on:dayOn,attrs:attr('day2'),hidden:isFixed}) : ''}`;
 }
 
 function uiTimeCombineOptions(combine = ''){
@@ -125,11 +125,29 @@ function syncTimeRulePreviewVisibility(endpoint){
     && !(city && !city.hidden);
 }
 
+// RENDER: fold today's resolved clock into the selected anchor option so the
+// dropdown itself carries the time ("Afternoon · 2:16 pm") instead of a
+// separate preview line. Tagged options are restored to their clean label on
+// the next sync, so renames and re-population never stack suffixes.
+function syncAnchorOptionTimeLabel(select,minutes,dayLabel = ''){
+  if(!select)return;
+  select.querySelectorAll('option[data-time-tag]').forEach(opt=>{
+    opt.textContent = opt.textContent.replace(/\s·\s.*$/,'');
+    opt.removeAttribute('data-time-tag');
+  });
+  const opt = minutes == null ? null : select.selectedOptions[0];
+  if(!opt || !opt.value || opt.value === 'fixed')return;
+  const time = formatTimeShort(((minutes % 1440) + 1440) % 1440);
+  const day = dayLabel === 'tomorrow: ' ? 'tomorrow ' : dayLabel === 'yesterday: ' ? 'yesterday ' : '';
+  opt.textContent = `${opt.textContent} · ${day}${time}`;
+  opt.setAttribute('data-time-tag','1');
+}
+
 // RENDER: translate the current controls into a readable rule, independent of
 // today's clock preview (which may need a city before it can resolve). A plain
-// anchor needs no echo — the dropdown already names it — so the summary only
-// fills in once the rule composes an offset, a next-day shift, a comparison,
-// or a habit completion.
+// anchor needs no echo — the dropdown names the event and the adjust row
+// states any offset — so the summary only fills in when something is hidden
+// or composed: a next-day shift, a compare-two-times rule, a habit completion.
 function syncTimeRuleSummary(endpoint){
   const node = endpoint?.querySelector('.time-rule-summary');
   if(!node)return;
@@ -140,7 +158,7 @@ function syncTimeRuleSummary(endpoint){
       const min = timeInputToMinutes(endpoint.querySelector('.time-fixed2')?.value);
       return min == null ? 'choose a clock time' : formatTimeShort(min);
     }
-    let event = select.selectedOptions[0]?.textContent || '';
+    let event = (select.selectedOptions[0]?.textContent || '').replace(/\s·\s.*$/,'');
     if(select.value === 'habit'){
       const habit = endpoint.querySelector(second ? '.time-habit2' : '.time-habit');
       event = habit?.value ? `${habit.selectedOptions[0].textContent} completion` : 'habit completion';
@@ -153,13 +171,14 @@ function syncTimeRuleSummary(endpoint){
   };
   const combine = endpoint.querySelector('.time-combine')?.value;
   if(combine){
-    node.textContent = `${combine === 'later' ? 'Later' : 'Earlier'} of ${expression(false)} and ${expression(true)}`;
+    // A full sentence: a new user should be able to read the whole rule
+    // without decoding a formula.
+    node.textContent = `uses the ${combine} of: ${expression(false)} and ${expression(true)}`;
   }else{
     const select = endpoint.querySelector('.time-anchor');
     const anchor = select ? select.value : '';
-    const offset = normalizePrayerOffset(readSignedOffset(endpoint.querySelector('.time-offset')));
     const nextDay = endpoint.querySelector('.time-day-next')?.getAttribute('aria-pressed') === 'true';
-    node.textContent = anchor === 'habit' || offset || nextDay ? expression(false) : '';
+    node.textContent = anchor === 'habit' || nextDay ? expression(false) : '';
   }
   const hint = endpoint.querySelector('.time-comparison-hint');
   if(hint){

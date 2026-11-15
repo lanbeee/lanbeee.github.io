@@ -249,6 +249,58 @@ function seedScript(){
   assert(unlink.dayEdges === 0,'inline unlink leaves the day store alone');
 
   // ════════════════════════════════════════════════════════════════════════
+  // G. "Every time" reveals recurring constraints; they persist with the link
+  // ════════════════════════════════════════════════════════════════════════
+  console.log('\n[G] every-time constraints — must-do switch + min gap');
+  const extras = await page.evaluate(()=>{
+    const sheet = document.querySelector('#order-link-sheet .order-link-sheet');
+    const data = load();
+    openOrderLinkSheet({
+      h:data.find(item=>item.hid === 'ord-alpha'),
+      dayBase:dayStart(Date.now()),
+      before:{ h:data.find(item=>item.hid === 'ord-beta') },
+      after:null,
+      defaults:{ after:'sometime', before:'off' },
+      editMode:false
+    });
+    const dailyHidden = getComputedStyle(sheet.querySelector('.order-link-daily')).display === 'none';
+    document.querySelector('#order-link-repeat [data-repeat="daily"]').click();
+    const dailyVisible = getComputedStyle(sheet.querySelector('.order-link-daily')).display !== 'none';
+    document.querySelector('.order-link-row[data-link-kind="after"] [data-adj="sometime"]').click();
+    document.querySelector('.order-link-row[data-link-kind="after"] .order-link-same-day').click();
+    const gapInput = document.querySelector('.order-link-row[data-link-kind="after"] .order-link-gap-input');
+    gapInput.value = '5';
+    saveOrderLinkSheet();
+    const link = (load().find(item=>item.hid === 'ord-alpha').scheduleLinks || [])[0] || {};
+    return { dailyHidden,dailyVisible,requireSameDay:link.requireSameDay === true,minGapMinutes:link.minGapMinutes };
+  });
+  assert(extras.dailyHidden,'daily-only constraints hidden for "just today"');
+  assert(extras.dailyVisible,'daily-only constraints appear for "every time"');
+  assert(extras.requireSameDay && extras.minGapMinutes === 5,'must-do switch and min gap persist with the recurring link');
+
+  const prefill = await page.evaluate(()=>{
+    const data = load();
+    openOrderLinkSheet({
+      h:data.find(item=>item.hid === 'ord-alpha'),
+      dayBase:dayStart(Date.now()),
+      before:{ h:data.find(item=>item.hid === 'ord-beta') },
+      after:null,
+      defaults:{ after:'sometime', before:'off' },
+      editMode:false
+    });
+    const row = document.querySelector('.order-link-row[data-link-kind="after"]');
+    const out = {
+      adj:row.querySelector('.seg-opt.on').dataset.adj,
+      sameDay:row.querySelector('.order-link-same-day').getAttribute('aria-pressed'),
+      gap:row.querySelector('.order-link-gap-input').value
+    };
+    cancelOrderLinkSheet();
+    return out;
+  });
+  assert(prefill.adj === 'sometime' && prefill.sameDay === 'true' && prefill.gap === '5',
+    'reopening the sheet prefills the saved recurring constraints');
+
+  // ════════════════════════════════════════════════════════════════════════
   // E. Planner parity: recurring link orders the pair on BOTH engines
   // ════════════════════════════════════════════════════════════════════════
   console.log('\n[E] placement parity — recurring link (fast + GLPK)');
@@ -330,29 +382,47 @@ function seedScript(){
     out.plainAnchorHidden = previewEl.hidden === true && q('.time-rule-summary').textContent === '';
     q('.time-offset').value = '30';
     syncTimeRuleSummary(wrap);
-    out.offsetText = q('.time-rule-summary').textContent;
-    out.offsetVisible = previewEl.hidden === false;
+    out.offsetEchoFree = q('.time-rule-summary').textContent === '';
     q('.time-resolved').textContent = '12:01 pm';
     syncTimeRulePreviewVisibility(wrap);
+    out.resolvedVisible = previewEl.hidden === false;
     out.resolvedFirst = previewEl.firstElementChild.classList.contains('time-resolved')
       && q('.time-rule-summary').previousElementSibling === q('.time-resolved');
     q('.time-combine').value = 'later';
     syncTimeRuleSummary(wrap);
-    out.combineText = q('.time-rule-summary').textContent.slice(0,8);
+    out.combineText = q('.time-rule-summary').textContent;
     q('.time-combine').value = '';
+    q('.time-offset').value = '';
+    syncTimeRuleSummary(wrap);
+    out.plainAgain = q('.time-rule-summary').textContent === '';
+    q('.time-day-next').setAttribute('aria-pressed','true');
+    syncTimeRuleSummary(wrap);
+    out.nextDayText = q('.time-rule-summary').textContent;
+    q('.time-day-next').setAttribute('aria-pressed','false');
+    // Real pages inject the legacy habit option (ensureLegacyHabitAnchorOption).
+    q('.time-anchor').insertAdjacentHTML('beforeend','<option value="habit">after completion…</option>');
     q('.time-anchor').value = 'habit';
     syncTimeRuleSummary(wrap);
     out.habitText = q('.time-rule-summary').textContent;
+    q('.time-anchor').value = 'dhuhr';
+    syncAnchorOptionTimeLabel(q('.time-anchor'),726,'today: ');
+    out.optionTime = q('.time-anchor').selectedOptions[0].textContent;
+    syncAnchorOptionTimeLabel(q('.time-anchor'),null,'');
+    out.optionRestored = q('.time-anchor').selectedOptions[0].textContent;
     wrap.remove();
     return out;
   });
   assert(preview.initialHidden,'preview pill starts collapsed');
   assert(preview.plainAnchorHidden,'plain anchor with no offset shows no dropdown echo');
-  assert(preview.offsetText === '30 min after Solar noon','offset composes the rule text');
-  assert(preview.offsetVisible,'offset makes the preview visible');
+  assert(preview.offsetEchoFree,'offset shows no echo — the adjust row states it');
+  assert(preview.resolvedVisible,'resolved clock makes the preview visible');
   assert(preview.resolvedFirst,'resolved clock leads the preview line');
-  assert(preview.combineText === 'Later of','compare-two-times keeps the composed rule');
+  assert(preview.plainAgain,'summary stays empty once the offset is cleared');
+  assert(preview.nextDayText === "next day's Solar noon",'next-day shift composes the rule text');
+  assert(/^uses the later of: /.test(preview.combineText),'compare-two-times reads as a sentence rule');
   assert(preview.habitText.length > 0,'habit anchor keeps its completion rule');
+  assert(preview.optionTime === 'Solar noon · 12:06pm','resolved clock folds into the dropdown option');
+  assert(preview.optionRestored === 'Solar noon','option restores its clean label on the next sync');
 
   assert(pageErrors.length === 0,'no page errors (' + pageErrors.slice(0,3).join(' | ') + ')');
 

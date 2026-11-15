@@ -853,14 +853,18 @@ function renderTimeEndpoint(endpoint, field, h){
 // The fill takes early returns freely; the preview's empty-state visibility
 // is decided once the fill is done.
 function updateTimeResolved(endpoint, field, h){
-  updateTimeResolvedFill(endpoint, field, h);
+  const resolved = updateTimeResolvedFill(endpoint, field, h);
+  // A plain resolved clock lives in the anchor option itself
+  // ("Afternoon · 2:16 pm"); the preview line keeps only status and rules.
+  syncAnchorOptionTimeLabel(endpoint.querySelector('.time-anchor'),
+    resolved ? resolved.min : null, resolved ? resolved.dayLabel : '');
   syncTimeRulePreviewVisibility(endpoint);
 }
 
 function updateTimeResolvedFill(endpoint, field, h){
   syncTimeRuleSummary(endpoint);
   const node = endpoint && endpoint.querySelector('.time-resolved');
-  if(!node)return;
+  if(!node)return null;
   node.dataset.dayLabel = '';
   const city = endpoint.querySelector('.time-set-city');
   if(city)city.hidden = true;
@@ -885,8 +889,8 @@ function updateTimeResolvedFill(endpoint, field, h){
       return;
     }
     node.dataset.dayLabel = timeResolvedDayLabel(min);
-    node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
-    return;
+    node.textContent = '';
+    return { min, dayLabel:node.dataset.dayLabel };
   }
   // Prayer anchor — needs a location.
   const settings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : {});
@@ -894,15 +898,16 @@ function updateTimeResolvedFill(endpoint, field, h){
   if(!loc){
     node.textContent = 'Set your home city to calculate this time.';
     if(city)city.hidden = false;
-    return;
+    return null;
   }
   const min = resolveHabitTimeField(h, field, dayStart(Date.now()));
   if(min == null){
     node.textContent = '—';
-    return;
+    return null;
   }
   node.dataset.dayLabel = timeResolvedDayLabel(min);
-  node.textContent = formatTimeShort(((min % 1440) + 1440) % 1440);
+  node.textContent = '';
+  return { min, dayLabel:node.dataset.dayLabel };
 }
 // RENDER: toggles time-clear button visibility. A clear is offered whenever
 // any of the four endpoints has a value (fixed or dynamic). The "blank = any

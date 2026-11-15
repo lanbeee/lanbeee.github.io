@@ -154,7 +154,7 @@ function ok(value,message){
   ok(scheduleLayout.display === 'grid' && scheduleLayout.stacked,'start and end editors are clearly stacked');
   ok(scheduleLayout.active === 'when & where','schedule tab shows its selected panel');
   ok(await page.locator('#detail-allowed-time-row .time-expr2').count() === 2,'both comparisons retain their second expressions');
-  ok(await page.locator('#detail-allowed-time-row .time-resolved').evaluateAll(nodes=>nodes.every(node=>node.textContent.trim().length > 0)),'dynamic endpoints show resolved results');
+  ok(await page.locator('#detail-allowed-time-row .time-anchor').evaluateAll(selects=>selects.every(sel=>sel.selectedOptions[0] && sel.selectedOptions[0].textContent.includes(' · '))),'resolved clocks fold into the anchor dropdowns');
 
   await page.evaluate(()=>{$('detail-flexibility-disclosure').open=true;scrollDetailToNav('schedule');});
   await page.waitForTimeout(150);

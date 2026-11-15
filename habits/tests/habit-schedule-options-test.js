@@ -423,7 +423,7 @@ function settings(locations,blockedTimes = []){
   assert(await page.locator('#detail-place-chips [data-anywhere]').isVisible(),'anywhere control stays available with specific rows');
   assert(await page.locator('.habit-option-pref').nth(1).getAttribute('data-pref') === 'high','option preference can be set on the row');
   assert(await dynamicRow.locator('.time-endpoint.is-dynamic').count() === 2,'specific row supports dynamic start and end editors');
-  assert((await dynamicRow.locator('.time-resolved').first().textContent()).trim().length > 0,'dynamic specific row shows a resolved-time preview');
+  assert((await dynamicRow.locator('.time-anchor').first().evaluate(sel=>sel.selectedOptions[0] && sel.selectedOptions[0].textContent.includes(' · '))),'dynamic specific row folds the resolved time into its anchor dropdown');
   const dynamicLayout = await dynamicRow.evaluate(row=>({
     clientWidth:row.clientWidth,
     scrollWidth:row.scrollWidth,
