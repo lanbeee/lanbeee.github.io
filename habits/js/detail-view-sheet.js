@@ -22,6 +22,8 @@ function paintDetailFields(h){
   const accent = visualClassColor(cardScoreTone);
   if(typeof renderNativeDetailReminders === 'function')renderNativeDetailReminders(h);
   $('detail-name').textContent = h.name;
+  // The header subtitle is the item's state (the canonical cardCue); the
+  // summary tab shows history and settings, so nothing repeats.
   $('detail-sub').textContent = detailHeaderLine(h);
   $('detail-head-card').className = `detail-head ting-card ${cardScoreTone}${isEventItem(h)?' event-card':''}${h.snoozedUntil&&Date.now()<h.snoozedUntil?' snoozed':''}`;
   $('detail-head-card').style.setProperty('--card-accent',accent);
