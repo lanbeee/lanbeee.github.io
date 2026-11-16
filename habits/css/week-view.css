@@ -18,7 +18,7 @@
   border-radius:0;min-height:100dvh;max-height:100dvh;
   max-width:480px;
   /* The week sheet covers the bottom nav, so the grid can use that space. */
-  --wv-gutter:40px;
+  --wv-gutter:24px;
   --wv-col-gap:3px;
   --wv-hour-h:80px;
   padding:10px 12px calc(8px + var(--content-safe-bottom));
@@ -35,7 +35,7 @@ body[data-pane-count="3"] .week-view-sheet{
   width:min(1400px,100%);max-width:none;
   height:100%;min-height:0;max-height:none;
   border-radius:20px;
-  --wv-gutter:44px;
+  --wv-gutter:24px;
   --wv-col-gap:4px;
   --wv-hour-h:64px;
   padding:18px 22px 18px;
@@ -47,7 +47,7 @@ body[data-pane-count="3"] .week-view-sheet{
   padding-bottom:10px;flex:0 0 auto;
 }
 .wv-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
-.wv-title .wv-title-label{font-size:17px;line-height:1.2;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wv-title .wv-title-label{font-size:17px;line-height:1.2;color:var(--text);white-space:nowrap;}
 .wv-title small{font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .wv-nav{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
 .wv-nav .mini-nav:disabled,
@@ -128,8 +128,10 @@ body[data-pane-count="3"] .week-view-sheet{
 }
 .wv-body.is-loading{opacity:0.55;transition:opacity var(--dur-med) ease;}
 .wv-scroller{
-  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;border-top:1px solid var(--border);
+  container-type:inline-size;touch-action:pan-x pan-y;
+  scroll-snap-type:x mandatory;scroll-padding-left:var(--wv-gutter,13px);
 }
 .wv-grid{position:relative;height:calc(1440 * var(--wv-hour-h) / 60 + 28px);}
 .wv-gutter{
@@ -137,22 +139,23 @@ body[data-pane-count="3"] .week-view-sheet{
   z-index:3;background:var(--bg);pointer-events:none;
 }
 .wv-hour{
-  position:absolute;right:6px;transform:translateY(-7px);
-  font-size:11px;font-weight:600;color:var(--text3);line-height:1;white-space:nowrap;
+  position:absolute;right:0;transform:translateY(-50%);
+  font-size:10px;font-weight:600;color:var(--text3);line-height:1;white-space:nowrap;
+  letter-spacing:-0.06em;
 }
 .wv-nowtag{
-  position:absolute;right:3px;transform:translateY(-50%);
-  z-index:2;font-size:9px;font-weight:700;line-height:1.2;letter-spacing:-0.02em;
+  position:absolute;left:0;transform:translateY(-50%);
+  z-index:2;font-size:8px;font-weight:700;line-height:1;letter-spacing:-0.05em;
   color:var(--red-text);background:var(--bg);
   box-shadow:0 0 0 1px var(--red-icon);
-  border-radius:5px;padding:1px 3px;white-space:nowrap;
+  border-radius:3px;padding:0 1px;white-space:nowrap;
 }
 .wv-cols{
   display:grid;grid-template-columns:repeat(var(--wv-days,1),minmax(0,1fr));
   gap:0 var(--wv-col-gap,4px);height:calc(1440 * var(--wv-hour-h) / 60);
   margin-left:var(--wv-gutter,48px);position:relative;
 }
-.wv-col{position:relative;min-width:0;border-radius:12px;}
+.wv-col{position:relative;min-width:0;border-radius:12px;scroll-snap-align:start;}
 .wv-col.is-today{background:color-mix(in srgb,var(--teal-bg) 46%,transparent);}
 .wv-col.is-selected:not(.is-today){background:color-mix(in srgb,var(--bg3) 72%,transparent);}
 .wv-line{
@@ -583,7 +586,6 @@ body[data-pane-count="3"] .week-view-sheet{
 .wv-col{border-right:1px solid var(--border);border-radius:0;}
 .wv-col.is-today{background:color-mix(in srgb,var(--teal-bg) 20%,transparent);}
 .wv-col.is-selected:not(.is-today){background:color-mix(in srgb,var(--bg3) 32%,transparent);}
-.wv-scale-note{flex:0 0 auto;color:var(--text3);font-size:11px;padding:0 0 8px var(--wv-gutter);}
 .is-aligned-grid .wv-gutter .wv-hour{transform:translateY(-50%);}
 .is-aligned-grid .wv-list{--wv-rail:0px;}
 .is-aligned-grid .wv-list .wv-event{border-radius:7px;padding:6px 8px;justify-content:flex-start;gap:4px;}
@@ -605,7 +607,7 @@ body[data-pane-count="3"] .week-view-sheet{
 .wv-toolbar button:focus-visible,.wv-toolbar select:focus-visible,.wv-options button:focus-visible,.wv-options select:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
 body:has(#week-sheet.open) #add-sheet{z-index:115;}
 @media (max-width:599px){
-  .week-view-sheet{padding-top:calc(12px + var(--content-safe-top));--wv-gutter:38px;--wv-col-gap:2px;}
+  .week-view-sheet{padding-top:calc(12px + var(--content-safe-top));--wv-gutter:24px;--wv-col-gap:2px;}
   .wv-title .wv-title-label{font-size:20px;}
   .wv-toolbar{gap:6px;flex-wrap:wrap;}
   .wv-toolbar .wv-nav{margin-right:auto;}
@@ -626,11 +628,9 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
   .wv-body.is-multi .wv-event-line{display:block;}
   .wv-body.is-multi .wv-event-title{display:block;}
   .wv-body.is-multi .wv-event-time{font-size:10px;}
-  .wv-body.is-multi .wv-hour{font-size:10px;}
   .wv-body.is-multi .wv-busy-label{font-size:11px!important;}
   .wv-body.is-multi .wv-busy{padding:4px 5px;}
   .wv-body.is-multi .wv-busy-label i{display:none;}
-  .wv-scale-note{font-size:10px;padding-left:2px;}
 }
 @media (max-width:359px){
   .wv-toolbar .wv-view-switch{order:2;margin-right:auto;}
@@ -657,7 +657,6 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
 .wv-day-head{flex-direction:row;justify-content:center;flex-wrap:wrap;}
 .wv-day-head .wv-load{flex-basis:100%;text-align:center;}
 .wv-day-head b{font-size:21px;}
-.wv-scale-note{font-size:10px;padding-bottom:5px;}
 .wv-daybar{padding-top:0;padding-bottom:5px;}
 .wv-daybar-text small{font-size:11px;}
 .wv-head .wv-create{min-height:34px;}
@@ -679,7 +678,6 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
   .wv-toolbar .wv-nav button{min-height:36px;height:36px;}
   .wv-toolbar select{min-height:36px;}
   .wv-view-switch button{min-height:30px;}
-  .wv-scale-note{font-size:10px;line-height:1.25;}
 }
 /* Empty painting layers must not block the busy/travel controls below them. */
 .wv-layer{pointer-events:none;}
@@ -707,8 +705,158 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
 body[data-pane-count="2"] #week-sheet,body[data-pane-count="3"] #week-sheet{padding:16px;}
 body[data-pane-count="2"] .week-view-sheet,body[data-pane-count="3"] .week-view-sheet{width:100%;}
 
-.wv-title-label{display:block;max-width:100%;padding:0;border:0;background:none;text-align:left;font-family:inherit;cursor:pointer;}
-.wv-title-label:disabled{opacity:1;cursor:default;}
+.wv-title-label{display:flex;align-items:center;gap:2px;max-width:100%;min-width:0;padding:0;border:0;background:none;text-align:left;font-family:inherit;cursor:pointer;}
+.wv-title-label span{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.wv-title-label .ti{flex:0 0 auto;font-size:16px;color:var(--text3);transition:transform var(--dur-fast) ease;}
+.wv-title-label[aria-expanded="true"] .ti{transform:rotate(180deg);}
 .wv-title-label:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
 .wv-head .wv-switch{flex:0 0 34px;width:34px;height:34px;min-height:34px;}
 @media (max-width:360px){.wv-title .wv-title-label{font-size:16px;}}
+
+/* Horizontal day board. Sticky is constrained to an element's box, so the
+   gutter and the date header are children of the full-width board rather
+   than cells in a narrow grid column. */
+.wv-board{position:relative;min-height:min-content;}
+.wv-board-head{
+  position:sticky;top:0;z-index:7;display:flex;align-items:stretch;
+  background:var(--bg);
+}
+.wv-corner{
+  position:sticky;left:0;z-index:8;flex:0 0 var(--wv-gutter);width:var(--wv-gutter);
+  background:var(--bg);
+}
+.wv-board-head-main{flex:1 0 auto;min-width:0;}
+.wv-board > .wv-gutter{
+  float:left;width:var(--wv-gutter);height:auto;position:sticky;left:0;z-index:4;
+}
+.wv-board > .wv-cols{margin-left:var(--wv-gutter);}
+.wv-board .wv-days-head{padding:0 0 4px;}
+.wv-board .wv-marker-grid{margin-left:0;}
+.wv-board .wv-day-head{min-height:42px;}
+
+/* Month dropped down from the date title. */
+.wv-month{
+  position:absolute;top:60px;left:12px;z-index:70;
+  width:min(340px,calc(100% - 24px));max-height:calc(100% - 80px);overflow:auto;
+  display:flex;flex-direction:column;gap:8px;padding:12px;box-sizing:border-box;
+  border:1px solid var(--border);border-radius:16px;background:var(--bg);
+  box-shadow:0 12px 36px #00000030,0 2px 6px #00000012;
+}
+.wv-month[hidden]{display:none;}
+.wv-month-nav{display:flex;align-items:center;gap:6px;}
+.wv-month-nav span{flex:1;min-width:0;font-size:14px;font-weight:650;color:var(--text);}
+.wv-month-nav .mini-nav{width:32px;height:32px;border-radius:10px;}
+.wv-month-nav .mini-text-btn{border:1px solid var(--border);border-radius:10px;padding:0 10px;min-height:32px;}
+.wv-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;}
+.wv-cal-head,.wv-cal-day{
+  min-width:0;height:34px;display:flex;align-items:center;justify-content:center;
+  border:0;border-radius:8px;background:transparent;font:inherit;font-size:12px;color:var(--text3);
+}
+.wv-cal-day{flex-direction:column;gap:1px;background:var(--bg);color:var(--text2);cursor:pointer;}
+.wv-cal-day b{font-size:13px;font-weight:600;line-height:1;}
+.wv-cal-day i{width:4px;height:4px;border-radius:50%;background:var(--teal-icon);}
+.wv-cal-day.has-entry{background:color-mix(in srgb,var(--teal-bg) 55%,var(--bg));color:var(--text);}
+.wv-cal-day.is-dense{background:color-mix(in srgb,var(--amber-bg) 60%,var(--bg));}
+.wv-cal-day.is-today b{color:var(--teal-text);}
+.wv-cal-day.is-selected{background:var(--text);color:var(--bg);}
+.wv-cal-day.is-selected i{background:var(--bg);}
+.wv-cal-day.is-selected.is-today b{color:var(--bg);}
+.wv-cal-day:focus-visible{outline:2px solid var(--teal-icon);outline-offset:1px;}
+.wv-month-note{padding-top:6px;border-top:1px solid var(--border);margin:0;font-size:11px;line-height:1.35;color:var(--text3);}
+
+/* One, two, and three agenda days use the flat list: emoji, a quiet card,
+   and one short fact under the date. Seven days stay compact. */
+.wv-body.is-flat .wv-day-head{
+  flex-direction:column;align-items:center;justify-content:center;
+  gap:1px;min-height:48px;padding:3px 2px;
+}
+.wv-body.is-flat .wv-day-head .wv-load{
+  display:block;flex-basis:auto;max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:10px;font-weight:600;letter-spacing:0;color:var(--text3);
+}
+.week-view-sheet:has(.wv-body.is-flat) .wv-days-head .wv-load{display:block;}
+.wv-body.is-flat .wv-list .wv-event{
+  flex-direction:row;align-items:stretch;gap:0;
+  padding:0;border-radius:10px;
+  border:1px solid color-mix(in srgb,var(--text) 8%,transparent);
+  box-shadow:none;background:var(--wv-token-bg,var(--slate-bg));
+}
+.wv-body.is-flat .wv-event-fill{display:none;}
+.wv-body.is-flat .wv-event-mark,
+.wv-body.is-flat .wv-event-emoji{
+  display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;align-self:center;
+  width:28px;height:32px;margin:0 0 0 3px;
+  border:0;border-radius:6px;padding:0;
+  background:transparent;
+  font-size:16px;line-height:1;cursor:pointer;
+}
+.wv-body.is-flat .wv-event-main{
+  flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;
+  margin:0;padding:6px 8px 6px 6px;border:0;background:transparent;color:inherit;
+  font:inherit;text-align:left;cursor:pointer;
+}
+.wv-body.is-flat .wv-event-line{display:flex;align-items:center;gap:6px;}
+.wv-body.is-flat .wv-event-title{display:flex;font-size:14px;line-height:1.2;align-items:center;}
+.wv-body.is-flat .wv-event-name{white-space:nowrap;display:block;}
+.wv-body.is-flat .wv-event-clock{display:none;}
+.wv-body.is-flat .wv-event-main:not(:has(.wv-event-meta)) .wv-event-clock{display:inline;}
+.wv-body.is-flat .wv-event-dur{display:inline;}
+.wv-body.is-flat .wv-list .wv-event-meta{display:block;font-size:11px;}
+.wv-body.is-flat[data-days="2"] .wv-event-main,
+.wv-body.is-flat[data-days="3"] .wv-event-main{
+  align-items:flex-start;justify-content:center;padding:2px 5px 2px 3px;gap:0;
+}
+.wv-body.is-flat[data-days="2"] .wv-event-name,
+.wv-body.is-flat[data-days="3"] .wv-event-name{
+  flex:0 1 auto;min-width:0;width:100%;
+  font-size:12px;line-height:1.2;
+  white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;
+  -webkit-line-clamp:2;line-clamp:2;overflow:hidden;
+}
+.wv-body.is-flat .wv-event.is-brief .wv-event-name{-webkit-line-clamp:1;line-clamp:1;}
+.wv-body.is-flat .wv-event.is-narrow .wv-event-mark,
+.wv-body.is-flat .wv-event.is-narrow .wv-event-emoji{width:16px;height:16px;margin-left:3px;font-size:13px;}
+.wv-body.is-flat[data-days="2"] .wv-event-clock,
+.wv-body.is-flat[data-days="3"] .wv-event-clock{
+  display:block;flex:0 0 auto;font-size:11px;font-weight:600;line-height:1.15;opacity:0.8;
+}
+.wv-body.is-flat[data-days="2"] .wv-event-dur,
+.wv-body.is-flat[data-days="3"] .wv-event-dur,
+.wv-body.is-flat[data-days="2"] .wv-event-meta,
+.wv-body.is-flat[data-days="3"] .wv-event-meta{display:none;}
+.wv-body.is-flat[data-days="2"] .wv-busy-label span,
+.wv-body.is-flat[data-days="3"] .wv-busy-label span,
+.wv-body.is-flat[data-days="2"] .wv-travel span,
+.wv-body.is-flat[data-days="3"] .wv-travel span{
+  white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;
+  -webkit-line-clamp:2;line-clamp:2;overflow:hidden;
+}
+.wv-body.is-flat .wv-marker-cell{max-height:none;overflow:visible;}
+.wv-body.is-flat .wv-marker-chip{max-width:100%;}
+.wv-body.is-flat .wv-marker-chip span{min-width:0;}
+.wv-body.is-flat[data-days="2"] .wv-marker-chip b,
+.wv-body.is-flat[data-days="3"] .wv-marker-chip b{display:none;}
+.week-view-sheet:has(.wv-body.is-flat) .wv-days-head .wv-day-head{
+  flex-direction:column;align-items:flex-start;justify-content:center;
+  min-height:0;padding:4px 6px 5px;gap:0;
+}
+.week-view-sheet:has(.wv-body.is-flat) .wv-day-head .wv-load{
+  display:block;flex-basis:auto;max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.wv-body.is-flat .wv-event-mark:focus-visible,
+.wv-body.is-flat .wv-event-main:focus-visible{outline:2px solid var(--teal-icon);outline-offset:1px;}
+
+@media (hover:hover){
+  .wv-cal-day:hover{outline:1px solid var(--teal-icon);outline-offset:-1px;}
+  .wv-event-mark:hover{background:color-mix(in srgb,var(--wv-token-icon) 15%,transparent);}
+}
+@media (min-width:600px){.wv-month{top:68px;left:22px;}}
+@media (min-width:600px){
+  .wv-body.is-flat[data-days="2"] .wv-event-name,
+  .wv-body.is-flat[data-days="3"] .wv-event-name{font-size:14px;line-height:1.1;}
+  .wv-body.is-flat[data-days="2"] .wv-event-clock,
+  .wv-body.is-flat[data-days="3"] .wv-event-clock{font-size:12px;}
+}

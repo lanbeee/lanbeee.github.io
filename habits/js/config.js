@@ -649,8 +649,9 @@ let _overviewWeekSnapshotKey = '';
 let _overviewWeekFillToken = 0;
 let _overviewWeekFillInflightKey = '';
 let _overviewWeekFillCoverDays = 0;
-// Week calendar view (overview-week.js): 0 = planner week (today → +6),
-// 7 = preview (+7 → +13 of a 14-day projection). daySel is a local date key.
+// Week calendar view (overview-week.js): offset of the leftmost visible day
+// from today. 0 = today. 7+ is still inside the 14-day plan (preview).
+// daySel is a local date key.
 let weekViewOffset = 0;
 let weekViewDaySel = null;
 let weekViewGen = 0;

@@ -42,7 +42,7 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
   await c.send('Input.dispatchTouchEvent', {
     type:'touchStart',
     touchPoints:[{ x:x1, y:y1, radiusX:10, radiusY:10, force:0.5, id:0 }],
-    modifiers:0, timestamp:Date.now()
+    modifiers:0, timestamp:Date.now()/1000
   });
   await new Promise(r => setTimeout(r, 20));
   for(let i = 1;i <= steps;i++){
@@ -50,14 +50,14 @@ async function cdpSwipe(c, x1, y1, x2, y2, steps = 10){
     await c.send('Input.dispatchTouchEvent', {
       type:'touchMove',
       touchPoints:[{ x:x1 + (x2 - x1) * t, y:y1 + (y2 - y1) * t, radiusX:10, radiusY:10, force:0.5, id:0 }],
-      modifiers:0, timestamp:Date.now()
+      modifiers:0, timestamp:Date.now()/1000
     });
     await new Promise(r => setTimeout(r, 20));
   }
   await c.send('Input.dispatchTouchEvent', {
     type:'touchEnd',
-    touchPoints:[{ x:x2, y:y2, id:0 }],
-    modifiers:0, timestamp:Date.now()
+    touchPoints:[],
+    modifiers:0, timestamp:Date.now()/1000
   });
 }
 
@@ -104,12 +104,37 @@ async function openWeekView(page){
     assert(await page.evaluate(()=>document.activeElement.id === 'week-view-close'),'dialog receives focus');
 
     await page.selectOption('#week-view-days','3');
-    assert(await page.locator('#week-view-body .wv-col').count() === 3,'three equal-width days in agenda');
-    assert(await page.locator('#week-view-markers .wv-day-head').count() === 3,'only the three visible dates get headers');
+    assert(await page.locator('.wv-scale-note').count() === 0,'the shared-scale note is gone');
+    assert(await page.locator('#week-view-prev,#week-view-next').count() === 0,'day arrows are gone');
+    const strip = await page.evaluate(()=>{
+      const scroller = document.querySelector('#week-view-body .wv-scroller');
+      const cols = [...document.querySelectorAll('#week-view-body .wv-col')];
+      const box = scroller.getBoundingClientRect();
+      const gutterBox = document.querySelector('#week-view-body .wv-gutter')?.getBoundingClientRect();
+      const gutter = gutterBox?.width || 0;
+      const labelsFit = [...document.querySelectorAll('#week-view-body .wv-hour')].every(el=>{
+        const box = el.getBoundingClientRect();
+        return box.width > 0 && box.left >= gutterBox.left - 1 && box.right <= gutterBox.right + 1;
+      });
+      const visible = cols.filter(col=>{
+        const r = col.getBoundingClientRect();
+        return Math.min(r.right,box.right) - Math.max(r.left,box.left) > r.width * 0.6;
+      }).length;
+      const widths = cols.map(el=>el.clientWidth);
+      return {total:cols.length,heads:document.querySelectorAll('#week-view-body .wv-day-head').length,visible,equal:Math.max(...widths)-Math.min(...widths) <= 1,gutter,labelsFit};
+    });
+    assert(strip.total >= 14,'the strip continues past the first screen');
+    assert(strip.heads === strip.total,'every day in the strip has a header');
+    assert(strip.visible === 3,'three days fit on screen');
+    assert(strip.equal,'days receive equal width');
+    assert(strip.gutter > 0 && strip.gutter <= 28,'the time gutter stays narrow and readable');
+    assert(strip.labelsFit,'hour labels stay inside the gutter');
+    assert(await page.locator('#week-view-body .wv-event-mark').count() > 0,'one to three day cards keep an emoji');
+    const summaries = (await page.locator('#week-view-body .wv-load').allTextContents()).map(text=>text.trim()).filter(Boolean);
+    assert(summaries.length > 0 && summaries.every(text=>text.length <= 32),'day headers show a short summary');
+    await page.screenshot({path:`test-results/calendar-refined-${width}.png`,animations:'disabled'});
     assert(await page.locator('#week-view-label').evaluate(el=>el.scrollWidth <= el.clientWidth + 1),'three-day date range fits beside controls');
-    const widths = await page.locator('#week-view-body .wv-col').evaluateAll(els=>els.map(el=>el.clientWidth));
-    assert(Math.max(...widths)-Math.min(...widths) <= 1,'days receive equal width');
-    const tappedDay = await page.locator('[data-wv-dayhead]').nth(1).getAttribute('data-wv-dayhead');
+    const tappedDay = await page.locator('#week-view-body [data-wv-dayhead]').nth(1).getAttribute('data-wv-dayhead');
     await page.locator('[data-wv-dayhead]').nth(1).click();
     await page.waitForSelector('#day-logs-sheet.open');
     assert(await page.evaluate(()=>dayLogsKey) === tappedDay,'date header opens the day menu for that date');
@@ -152,21 +177,60 @@ async function openWeekView(page){
     });
     assert(alignment,'the same time aligns across visible agenda days');
 
-    const firstRange = await page.textContent('#week-view-label');
-    await page.click('#week-view-next');
-    assert(await page.textContent('#week-view-label') !== firstRange,'next advances the visible days');
+    const firstRange = (await page.textContent('#week-view-label')).trim();
+    await page.evaluate(()=>{
+      const scroller = document.querySelector('#week-view-body .wv-scroller');
+      scroller.scrollLeft = scroller.scrollWidth;
+    });
+    await page.waitForFunction(prev=>document.querySelector('#week-view-label').textContent.trim() !== prev,firstRange);
+    assert(true,'horizontal scroll moves through later days');
+    await page.evaluate(()=>{
+      const scroller = document.querySelector('#week-view-body .wv-scroller');
+      scroller.scrollLeft = weekViewColumnStep(scroller) * 1.45;
+    });
+    await page.waitForFunction(()=>{
+      const scroller = document.querySelector('#week-view-body .wv-scroller');
+      const step = weekViewColumnStep(scroller);
+      return Math.abs(scroller.scrollLeft - Math.round(scroller.scrollLeft / step) * step) < 2;
+    });
+    assert(true,'horizontal scroll settles on a day');
     await page.click('#week-view-today');
     assert(await page.evaluate(()=>weekViewDaySel === dateKey(Date.now()) && weekViewOffset === 0),'Today returns to today');
     await page.selectOption('#week-view-days','1');
     await page.click('#week-view-label');
+    assert(await page.locator('#week-view-month:not([hidden])').count() === 1,'date title drops down a month');
+    await page.click('#week-view-label');
+    assert(await page.locator('#week-view-month').isHidden(),'tapping the date title again closes the month');
+    await page.click('#week-view-label');
+    const pickerDay = await page.evaluate(()=>document.activeElement.dataset.wvMonthDay);
+    const pickerBodyHeight = await page.locator('#week-view-body').evaluate(el=>el.clientHeight);
+    await page.keyboard.press('ArrowRight');
+    assert(await page.evaluate(key=>document.activeElement.dataset.wvMonthDay === dateKey(offsetCalendarDay(new Date(`${key}T12:00:00`).getTime(),1)),pickerDay),'arrow keys navigate dates inside the month picker');
+    await page.keyboard.press('Escape');
+    assert(await page.locator('#week-view-month').isHidden() && await page.locator('#week-sheet').evaluate(el=>el.classList.contains('open')),'Escape closes the date picker before the calendar');
+    assert(await page.evaluate(()=>document.activeElement.id === 'week-view-label'),'closing the picker restores title focus');
+    assert(await page.locator('#week-view-body').evaluate(el=>el.clientHeight) === pickerBodyHeight,'the month picker overlays the calendar without squeezing it');
+    const singleDay = await page.locator('#week-view-body [data-wv-dayhead]').first().getAttribute('data-wv-dayhead');
+    await page.locator('#week-view-body [data-wv-dayhead]').first().click();
     await page.waitForSelector('#day-logs-sheet.open');
-    assert(await page.evaluate(()=>dayLogsKey === weekViewDaySel),'single-day title opens the same day menu');
+    assert(await page.evaluate(()=>dayLogsKey === weekViewDaySel),'date header opens the same day menu');
+    assert(singleDay === await page.evaluate(()=>weekViewDaySel),'the open day is the one in the header');
     await page.click('#day-logs-close');
     await page.waitForSelector('#day-logs-sheet:not(.open)');
     await page.selectOption('#week-view-days','3');
 
     await page.click('#week-view-mode');
-    assert(await page.locator('#week-view-body .wv-col').count() === 3,'three-day grid keeps the selected width');
+    const gridFit = await page.evaluate(()=>{
+      const scroller = document.querySelector('#week-view-body .wv-scroller');
+      const cols = [...document.querySelectorAll('#week-view-body .wv-col')];
+      const box = scroller.getBoundingClientRect();
+      const visible = cols.filter(col=>{
+        const r = col.getBoundingClientRect();
+        return Math.min(r.right,box.right) - Math.max(r.left,box.left) > r.width * 0.6;
+      }).length;
+      return visible;
+    });
+    assert(gridFit === 3,'three-day grid keeps the selected width');
     assert(await page.locator('#week-view-body .wv-hour').count() === 24,'grid uses a proportional clock');
     await page.click('#week-view-display-options');
     assert(await page.locator('#week-view-zoom').isVisible(),'grid zoom is available in display options');
@@ -175,6 +239,23 @@ async function openWeekView(page){
     assert(await page.evaluate(()=>weekViewHourPx()) < zoomBefore,'zoom out compresses the grid');
     await page.click('#week-view-zoom-in');
     assert(await page.evaluate(()=>weekViewHourPx()) === zoomBefore,'zoom in restores a taller grid');
+    const clockPosition = await page.evaluate(()=>{
+      let scroller = document.querySelector('#week-view-body .wv-scroller');
+      scroller.scrollTop = 600;
+      const minute = weekViewViewportMinute(scroller);
+      weekViewChangeZoom(-1);
+      scroller = document.querySelector('#week-view-body .wv-scroller');
+      const zoomError = Math.abs(weekViewViewportMinute(scroller) - minute);
+      weekViewSetMode('list');
+      scroller = document.querySelector('#week-view-body .wv-scroller');
+      const listMinute = weekViewViewportMinute(scroller);
+      weekViewSetMode('grid');
+      scroller = document.querySelector('#week-view-body .wv-scroller');
+      const modeError = Math.abs(weekViewViewportMinute(scroller) - listMinute);
+      return {zoomError,modeError};
+    });
+    assert(clockPosition.zoomError < 1,'zoom preserves the clock beneath the sticky header');
+    assert(clockPosition.modeError < 1,'switching layouts preserves the visible clock');
     const saved = await page.evaluate(()=>localStorage.getItem('tings_v2'));
     for(const color of ['priority','type','location','when','topic']){
       await page.selectOption('#week-view-color',color);
@@ -273,9 +354,18 @@ async function openWeekView(page){
     if(width === 390){
       const client = await page.context().newCDPSession(page);
       const before = await page.evaluate(()=>weekViewDaySel);
+      await page.evaluate(()=>{
+        const scroller = document.querySelector('#week-view-body .wv-scroller');
+        scroller.scrollLeft += weekViewColumnStep(scroller);
+      });
+      await page.waitForFunction(day=>weekViewDaySel !== day,before);
+      assert(await page.evaluate(()=>weekViewDaySel) !== before,'horizontal scroll moves to the next day');
+      const beforeTouch = await page.evaluate(()=>weekViewDaySel);
+      // A late worker reply must not replace the scroller during a gesture.
+      await page.evaluate(()=>setTimeout(weekViewRequestRefresh,80));
       await cdpSwipe(client,300,400,60,400);
       await page.waitForTimeout(500);
-      assert(await page.evaluate(()=>weekViewDaySel) !== before,'horizontal swipe moves to the next day');
+      assert(await page.evaluate(()=>weekViewDaySel) !== beforeTouch,'a real touch swipe survives a background calendar refresh');
       const after = await page.evaluate(()=>weekViewDaySel);
       await cdpSwipe(client,200,600,200,350);
       await page.waitForTimeout(500);
@@ -283,6 +373,25 @@ async function openWeekView(page){
       assert(await page.locator('#add-sheet.open').count() === 0,'scroll/swipe never creates a draft');
     }
     await page.selectOption('#week-view-days',width > 600 ? '7' : '3');
+    if(width === 390){
+      const marked = await page.evaluate(()=>{
+        const buttons = [...document.querySelectorAll('#week-view-body .wv-event-mark')];
+        const btn = buttons.find(el=>{
+          const ev = _weekViewCtx.get(el.dataset.wvDone);
+          return ev && ev.h && ev.h.type === 'task';
+        }) || buttons[0];
+        const ev = btn && _weekViewCtx.get(btn.dataset.wvDone);
+        return {id:btn ? btn.dataset.wvDone : '',hid:ev ? ev.hid : ''};
+      });
+      assert(Boolean(marked.id),'a completable item offers its emoji');
+      await page.locator(`#week-view-body .wv-event-mark[data-wv-done="${marked.id}"]`).click();
+      await page.waitForFunction(hid=>{
+        const item = load().find(h=>h && h.hid === hid);
+        return Boolean(item && item.lastLog != null);
+      },marked.hid);
+      await page.waitForFunction(id=>!document.querySelector(`#week-view-body [data-wv-done="${id}"]`),marked.id);
+      assert(await page.locator('#week-view-body .wv-gutter .wv-hour').count() > 0,'marking done redraws the compressed clock');
+    }
     if(width === 390){
       await page.evaluate(()=>{
         window._savedWeekPreviewAvailable = weekPreviewWorkerAvailable;
@@ -301,6 +410,52 @@ async function openWeekView(page){
     }
     await page.evaluate(()=>weekViewSetOffset(7));
     assert(/Preview/.test(await page.textContent('#week-view-sub')),'future placements are labeled Preview');
+    if(width === 390){
+      const later = await page.evaluate(()=>dateKey(offsetCalendarDay(Date.now(),8)));
+      await page.waitForFunction(key=>{
+        const col = document.querySelector(`[data-wv-daycol="${key}"]`);
+        return Boolean(col && col.querySelector('[data-wv-busy],[data-wv-event]'));
+      },later);
+      assert(true,'a day past this week still shows plans or busy time');
+      await page.click('#week-view-label');
+      const far = await page.evaluate(()=>{
+        _weekViewMonthOffset = 2;
+        weekViewRenderMonth();
+        return document.querySelector('#week-view-month [data-wv-month-day]')?.dataset.wvMonthDay || '';
+      });
+      await page.locator(`#week-view-month [data-wv-month-day="${far}"]`).click();
+      await page.waitForFunction(key=>weekViewDaySel === key,far);
+      assert(/Rough picture/.test(await page.textContent('#week-view-sub')),'a day outside the plan is marked as a rough picture');
+      assert(await page.locator(`[data-wv-daycol="${far}"] [data-wv-busy]`).count() > 0,'a far day still shows busy time');
+      const navigation = await page.evaluate(()=>{
+        const last = dateKey(offsetCalendarDay(Date.now(),13));
+        weekViewGoToday();
+        weekViewGoToDay(last);
+        const exact = weekViewDaySel === last;
+        const past = dateKey(offsetCalendarDay(Date.now(),-730));
+        weekViewGoToDay(past);
+        return {exact,past:weekViewDaySel === past,columns:document.querySelectorAll('#week-view-body .wv-col').length};
+      });
+      assert(navigation.exact,'choosing the final planned day lands on that exact date');
+      assert(navigation.past && navigation.columns === 14,'browsing a past year keeps a bounded strip of days');
+      const appointments = await page.evaluate(()=>{
+        const base = offsetCalendarDay(Date.now(),21);
+        const key = dateKey(base),nextKey = dateKey(offsetCalendarDay(base,1)),cancelKey = dateKey(offsetCalendarDay(base,7));
+        const data = normalize([{
+          hid:'rough-recurring',name:'Night class',type:'keepup',durationMinutes:120,emoji:'📚',logs:[],
+          appointment:{repeat:'weekly',startDate:key,startMinute:1410,weekdays:[new Date(base).getDay()],until:'',exceptions:{[key]:{emoji:'🌙'},[cancelKey]:{cancelled:true}}}
+        }]);
+        const source = weekViewRoughSource(base,data);
+        const rows = weekCalendarRows(source,data,sortSettings,weekViewTopicTokenMap(sortSettings),new Set(data.map(h=>h.hid)));
+        const next = weekViewRoughSource(offsetCalendarDay(base,1),data);
+        const tail = weekCalendarRows(next,data,sortSettings,weekViewTopicTokenMap(sortSettings),new Set(data.map(h=>h.hid)));
+        const cancelled = weekViewRoughSource(offsetCalendarDay(base,7),data);
+        return {recurs:rows.events.length === 1,patch:rows.events[0]?.emoji === '🌙',overnight:tail.events[0]?.topMin === 0 && tail.events[0]?.botMin === 90,identity:source.timeline[0]?.occurrenceKey === next.timeline[0]?.occurrenceKey,cancelled:!cancelled.timeline.length};
+      });
+      assert(appointments.recurs && appointments.patch,'far-future recurring appointments keep their occurrence edits');
+      assert(appointments.overnight && appointments.identity,'overnight appointments continue on the next day with the same identity');
+      assert(appointments.cancelled,'cancelled recurring appointments stay absent');
+    }
     await page.click('#week-view-today');
     if(width === 390){
       const selected = await page.evaluate(()=>{
@@ -320,7 +475,17 @@ async function openWeekView(page){
       await page.evaluate(()=>openWeekView());
       await page.setViewportSize({width:1440,height:900});
       await page.waitForFunction(()=>_weekViewLayout === 'desktop');
-      assert(await page.locator('#week-view-body .wv-col').count() === 7,'resize observation still works after reopening');
+      const resized = await page.evaluate(()=>{
+        const scroller = document.querySelector('#week-view-body .wv-scroller');
+        const cols = [...document.querySelectorAll('#week-view-body .wv-col')];
+        const box = scroller.getBoundingClientRect();
+        const visible = cols.filter(col=>{
+          const r = col.getBoundingClientRect();
+          return Math.min(r.right,box.right) - Math.max(r.left,box.left) > r.width * 0.6;
+        }).length;
+        return visible === 7 && cols.length >= 14;
+      });
+      assert(resized,'resize observation still fits a week and keeps the later days');
       await page.setViewportSize({width:390,height:844});
       await page.waitForFunction(()=>_weekViewLayout === 'phone');
       assert(await page.inputValue('#week-view-days') === '3','resizing back restores the phone day count');

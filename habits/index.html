@@ -940,7 +940,7 @@
     <div class="sheet week-view-sheet" role="dialog" aria-modal="true" aria-label="week agenda">
       <div class="wv-head">
         <div class="wv-title">
-          <button type="button" id="week-view-label" class="wv-title-label"></button>
+          <button type="button" id="week-view-label" class="wv-title-label" aria-expanded="false" aria-controls="week-view-month"><span id="week-view-label-text"></span><i class="ti ti-chevron-down" aria-hidden="true"></i></button>
           <small id="week-view-sub"></small>
         </div>
         <button type="button" class="icon-btn wv-switch" id="week-view-overview" aria-label="open calendar overview" title="Calendar overview"><i class="ti ti-calendar-month" aria-hidden="true"></i></button>
@@ -948,11 +948,19 @@
         <button type="button" class="mini-text-btn wv-create" id="week-view-create" aria-label="add a task"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
         <button type="button" class="icon-btn" id="week-view-close" aria-label="close week view"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
+      <div class="wv-month" id="week-view-month" role="group" aria-label="choose a date" hidden>
+        <div class="wv-month-nav">
+          <button type="button" class="mini-nav" id="week-view-month-prev" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+          <span id="week-view-month-label" aria-live="polite"></span>
+          <button type="button" class="mini-text-btn" id="week-view-month-today">Today</button>
+          <button type="button" class="mini-nav" id="week-view-month-next" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        </div>
+        <div class="wv-month-grid" id="week-view-month-grid"></div>
+        <p class="wv-month-note" id="week-view-month-note"></p>
+      </div>
       <div class="wv-toolbar">
         <div class="wv-nav" role="group" aria-label="calendar navigation">
           <button type="button" class="mini-text-btn" id="week-view-today">Today</button>
-          <button type="button" class="mini-nav" id="week-view-prev" aria-label="back to this week"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
-          <button type="button" class="mini-nav" id="week-view-next" aria-label="preview next week"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
         </div>
         <div class="wv-view-switch" role="group" aria-label="calendar view">
           <button type="button" id="week-view-list" data-wv-mode="list" aria-pressed="true">Agenda</button>
