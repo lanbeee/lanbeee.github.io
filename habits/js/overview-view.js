@@ -1120,7 +1120,7 @@ function renderDayLogsListStep(key){
   const pastDay = key < todayIso();
   const showAgenda = dayLogsCanPlan(key);
   if(showAgenda)ensureOverviewWeekForDay(key);
-  const agendaHtml = showAgenda ? overviewDayAgendaSectionHtml(key,data) : '';
+  const agendaHtml = showAgenda && $('day-logs-sheet').dataset.hideAgenda !== '1' ? overviewDayAgendaSectionHtml(key,data) : '';
   const week = showAgenda ? weekForOverviewDay(data,key) : null;
   const weatherDay=showAgenda ? week?.days?.find(day=>dateKey(day.dayBase)===key) || null : null;
   const weatherHtml=showAgenda && typeof weatherDayPresentation==='function'
@@ -1135,7 +1135,7 @@ function renderDayLogsListStep(key){
   const plannedHtml = plannedInner ? dayLogSectionHtml('Planned','planned',plannedInner) : '';
   const activityHtml = activityInner ? dayLogSectionHtml('Activity','activity',activityInner) : '';
   const hasJournal = Boolean(plannedInner || activityInner);
-  const hasAgendaRows = Boolean(showAgenda && !/nothing placed|fitting this day/.test(agendaHtml || ''));
+  const hasAgendaRows = Boolean(agendaHtml && !/nothing placed|fitting this day/.test(agendaHtml));
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   $('day-logs-sub').textContent = (hasJournal || hasAgendaRows)
     ? 'tap an item for actions'

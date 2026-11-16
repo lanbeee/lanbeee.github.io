@@ -365,17 +365,7 @@ $('bar-open-add')?.addEventListener('click',()=>{
   openSheet('add-sheet');
   $('ting-message').focus({preventScroll:true});
 });
-$('bar-open-overview')?.addEventListener('click',()=>{
-  if(!load().length)return;
-  closeSearch();
-  overviewMonthOffset = 0;
-  overviewRecentOffset = 0;
-  clearOverviewFilters();
-  overviewRangeFilter = 'recent';
-  overviewListPane = 'plan';
-  renderOverview();
-  openSheet('overview-sheet');
-});
+$('bar-open-overview')?.addEventListener('click',()=>openRememberedCalendar());
 $('bar-open-about')?.addEventListener('click',()=>{
   if(typeof openSettingsSheet === 'function')openSettingsSheet();
 });

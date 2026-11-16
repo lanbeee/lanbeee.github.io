@@ -615,3 +615,10 @@ input[type="time"].time-step-picker-target{
 }
 
 /* Open-time and missed-item menus */
+
+/* Calendar view switch sits with page actions, separate from date navigation. */
+.overview-head-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.overview-week-switch{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:40px;padding:0 10px;border:1px solid var(--border);border-radius:11px;background:var(--bg2);color:var(--text);font:inherit;font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer;}
+.overview-week-switch i{font-size:17px;}
+.overview-week-switch:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
+@media (max-width:360px){.overview-week-switch{padding-inline:7px;font-size:11px;}.overview-page-head{gap:6px;}}

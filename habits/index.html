@@ -43,6 +43,7 @@
 <link rel="stylesheet" href="./css/sheets.css" />
 <link rel="stylesheet" href="./css/detail.css" />
 <link rel="stylesheet" href="./css/stats-calendar.css" />
+<link rel="stylesheet" href="./css/week-view.css" />
 <link rel="stylesheet" href="./css/forms.css" />
 <link rel="stylesheet" href="./css/planning.css" />
 <link rel="stylesheet" href="./css/locations.css" />
@@ -899,9 +900,12 @@
           <p class="sheet-title">Calendar</p>
           <p class="overview-page-sub">See what is planned, what needs attention, and where there is room.</p>
         </div>
+        <div class="overview-head-actions">
+        <button class="overview-week-switch" id="open-week-view" type="button" aria-label="open the week view"><i class="ti ti-calendar-week" aria-hidden="true"></i><span>Week view</span></button>
         <button type="button" class="icon-btn overview-page-close" id="overview-head-close" aria-label="close calendar">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
+        </div>
       </div>
       <div class="overview-toolbar" id="overview-filter" aria-label="calendar view and filters"></div>
       <div class="overview-insight" id="overview-insight" hidden></div>
@@ -914,7 +918,7 @@
             <div class="month-nav">
             <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
             <span class="trend-copy" id="overview-calendar-label"></span>
-            <button class="mini-text-btn overview-today-btn" id="overview-today" type="button">today</button>
+            <button class="mini-text-btn" id="overview-today" type="button">today</button>
             <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
             </div>
           </div>
@@ -928,6 +932,45 @@
       <div class="btn-row overview-actions">
         <button class="btn primary" id="overview-close">done</button>
       </div>
+    </div>
+  </div>
+
+  <!-- week sheet: readable elastic week, with an opt-in time grid -->
+  <div class="sheet-wrap" id="week-sheet">
+    <div class="sheet week-view-sheet" role="dialog" aria-modal="true" aria-label="week agenda">
+      <div class="wv-head">
+        <div class="wv-title">
+          <button type="button" id="week-view-label" class="wv-title-label"></button>
+          <small id="week-view-sub"></small>
+        </div>
+        <button type="button" class="icon-btn wv-switch" id="week-view-overview" aria-label="open calendar overview" title="Calendar overview"><i class="ti ti-calendar-month" aria-hidden="true"></i></button>
+        <button type="button" class="icon-btn wv-display-options" id="week-view-display-options" aria-label="display options: colors and zoom" aria-expanded="false" aria-controls="week-view-options"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
+        <button type="button" class="mini-text-btn wv-create" id="week-view-create" aria-label="add a task"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
+        <button type="button" class="icon-btn" id="week-view-close" aria-label="close week view"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="wv-toolbar">
+        <div class="wv-nav" role="group" aria-label="calendar navigation">
+          <button type="button" class="mini-text-btn" id="week-view-today">Today</button>
+          <button type="button" class="mini-nav" id="week-view-prev" aria-label="back to this week"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+          <button type="button" class="mini-nav" id="week-view-next" aria-label="preview next week"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        </div>
+        <div class="wv-view-switch" role="group" aria-label="calendar view">
+          <button type="button" id="week-view-list" data-wv-mode="list" aria-pressed="true">Agenda</button>
+          <button type="button" id="week-view-mode" data-wv-mode="grid" aria-pressed="false">Grid</button>
+        </div>
+        <label class="wv-select-label"><span class="sr-only">Days visible</span><select id="week-view-days" aria-label="days visible"></select></label>
+      </div>
+      <div class="wv-options" id="week-view-options" hidden>
+        <label class="wv-color-label">Color by <select id="week-view-color" aria-label="color by"><option value="topic">Topic</option><option value="location">Location</option><option value="type">Type</option><option value="when">When due</option><option value="priority">Priority</option></select></label>
+        <button type="button" class="mini-text-btn" id="week-view-filters"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> Filters</button>
+        <div class="wv-zoom" id="week-view-zoom" role="group" aria-label="grid zoom" hidden>
+          <button type="button" id="week-view-zoom-out" aria-label="zoom out"><i class="ti ti-minus" aria-hidden="true"></i></button><output id="week-view-zoom-label" aria-live="polite"></output><button type="button" id="week-view-zoom-in" aria-label="zoom in"><i class="ti ti-plus" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div class="wv-legend" id="week-view-legend" hidden></div>
+      <div class="wv-markers" id="week-view-markers"></div>
+      <div class="wv-status" id="week-view-status" role="status" aria-live="polite"></div>
+      <div class="wv-body" id="week-view-body"></div>
     </div>
   </div>
 
@@ -2196,6 +2239,7 @@
 <script src="./js/detail-view-search.js" defer></script>
 <script src="./js/detail-view-summary.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
+<script src="./js/overview-week.js" defer></script>
 <script src="./js/today-view-fits.js" defer></script>
 <script src="./js/today-view-reservations.js" defer></script>
 <script src="./js/agenda-fast-graph.js" defer></script>

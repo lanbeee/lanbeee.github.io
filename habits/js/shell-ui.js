@@ -590,7 +590,7 @@ function ensureSheetExit(id){
     const row = button.parentElement;
     if(row.classList.contains('btn-row') && [...row.children].every(child=>child.classList.contains('sheet-exit-redundant')))row.hidden = true;
   });
-  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head,.feedback-head');
+  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head,.feedback-head,.wv-head');
   if(head){
     head.classList.add('sheet-exit-head');
     return;
@@ -1184,6 +1184,9 @@ function openSheet(id,opts = {}){
     mountInPane(id);
     return;
   }
+  // Detail may already live in a desktop pane when a calendar modal opens.
+  // Reparent that same surface before showing its modal drill-down.
+  if(id === 'detail-sheet' && !shouldMountInPane(id) && getPane()?.dataset.activeSheet === id)unmountPane();
   $(id).classList.add('open');
   // The desktop bar stays usable while a modal is open. A sheet opened from
   // it has to paint above the one already on screen. Phone keeps the
@@ -1248,6 +1251,7 @@ document.addEventListener('click',e=>{
 
 // RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
+  if(id === 'day-logs-sheet')delete $(id).dataset.hideAgenda;
   sheetEnterMotions.get($(id))?.cancel();
   if(id === 'detail-sheet' && typeof cancelDetailNavigationMotion === 'function')cancelDetailNavigationMotion();
   rememberBrowserPageScroll();
@@ -1287,7 +1291,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -1295,7 +1299,8 @@ function shouldMountInPane(id) {
   // Only the detail sheet is mounted into a pane. The overview lives in its
   // own permanent .pane-overview slot on wide tiers; about/settings stay as
   // centered modals.
-  return id === 'detail-sheet';
+  // A calendar drill-down must cover its modal rather than mount behind it.
+  return id === 'detail-sheet' && !$('week-sheet')?.classList.contains('open');
 }
 
 // iOS ignores overflow locking for the document pan used to reveal an input.
@@ -1323,7 +1328,7 @@ function syncDetailIOSPageLock(detailOpen,modalOpen){
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
 function updateFullPageState(){
   syncBrowserBack();
-  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
@@ -1594,6 +1599,7 @@ function refreshOpenViews(opts){
   }
   if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
+  if(typeof weekSheetOpen === 'function' && weekSheetOpen())renderWeekView();
   if(typeof checkReminders === 'function')checkReminders();
 }
 
@@ -2203,12 +2209,12 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape' || e.defaultPrevented) return;
   const plan = appBackPlan();
-  if(plan?.signature.startsWith('detail')){
+  if(plan && (plan.signature.startsWith('detail') || /^sheet:(block-edit-sheet|travel-edit-sheet):/.test(plan.signature))){
     e.preventDefault();
     plan.run();
     return;
   }
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -2223,6 +2229,7 @@ document.addEventListener('keydown',e=>{
     const id = top.id;
     if (id === 'add-sheet' && typeof cancelAdd === 'function') cancelAdd();
     else if (id === 'overview-sheet') closeSheet('overview-sheet');
+    else if (id === 'week-sheet') closeSheet('week-sheet');
     else if (id === 'settings-sheet') closeSettingsSheet();
     else if (id === 'about-sheet') closeSheet('about-sheet');
     else if (id === 'privacy-sheet') closeSheet('privacy-sheet');

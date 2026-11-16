@@ -940,8 +940,13 @@ $('settings-clear-data-yes')?.addEventListener('click',()=>{
   if(typeof clearAllLocalTingsData === 'function') clearAllLocalTingsData();
 });
 
-$('open-overview').addEventListener('click',()=>{
-  if(!load().length)return;
+const CALENDAR_VIEW_KEY = 'tings_calendar_view_v1';
+function rememberCalendarView(view){
+  try{localStorage.setItem(CALENDAR_VIEW_KEY,view);}catch(_err){}
+}
+function openCalendarOverview(){
+  rememberCalendarView('overview');
+  if($('week-sheet')?.classList.contains('open'))closeSheet('week-sheet');
   closeSearch();
   overviewMonthOffset = 0;
   overviewRecentOffset = 0;
@@ -950,7 +955,14 @@ $('open-overview').addEventListener('click',()=>{
   overviewListPane = 'plan';
   renderOverview();
   openSheet('overview-sheet');
-});
+}
+function openRememberedCalendar(){
+  let view = 'overview';
+  try{view = localStorage.getItem(CALENDAR_VIEW_KEY) || view;}catch(_err){}
+  if(view === 'week' && typeof openWeekView === 'function')openWeekView();
+  else openCalendarOverview();
+}
+$('open-overview').addEventListener('click',openRememberedCalendar);
 bindOverviewScrollGuards();
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-head-close')?.addEventListener('click',()=>closeSheet('overview-sheet'));
@@ -973,6 +985,12 @@ $('overview-today')?.addEventListener('click',()=>{
   overviewRecentOffset = 0;
   dayLogsKey = null;
   renderOverview();
+});
+// Week grid over the planner week (overview-week.js). Available from both the
+// phone sheet and the desktop pane since the button lives in the month nav.
+$('open-week-view')?.addEventListener('click',()=>{
+  if(isScrollGuarded($('open-week-view')))return;
+  if(typeof openWeekView === 'function')openWeekView();
 });
 $('overview-filter')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
