@@ -74,6 +74,8 @@ function refreshAddAvailability(){
   if(typeof syncOpportunityAnywhereChip === 'function')syncOpportunityAnywhereChip('ting-tag-chips');
   $('add-condition-hint').hidden = !optional || (hasTrigger && !needsCity);
   $('do-save').disabled = optional && !hasTrigger;
+  // Batch queueing enforces the same trigger rule as the single-item save.
+  if($('do-batch-next'))$('do-batch-next').disabled = optional && !hasTrigger;
   const plannerKey = homePlannerDirtyKey([]);
   const signature = addRoomSignature(record,plannerKey);
   if(signature !== _addRoomSignature){

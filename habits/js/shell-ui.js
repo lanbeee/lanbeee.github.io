@@ -442,7 +442,8 @@ function updateKeyboardLift(){
   const settingsOpen = $('settings-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   const feedbackOpen = $('feedback-sheet')?.classList.contains('open');
-  const needsLift = (addOpen || settingsOpen || feedbackOpen || ((!paneTierActive() || detailMounted)
+  const bulkEditOpen = $('bulk-edit-sheet')?.classList.contains('open');
+  const needsLift = (addOpen || settingsOpen || feedbackOpen || bulkEditOpen || ((!paneTierActive() || detailMounted)
     && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
@@ -537,7 +538,7 @@ function keepFocusedInputVisible(){
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
   if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll');
   if(!host)return;
   // Minimal detail sections share the Settings scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
@@ -549,7 +550,7 @@ function keepFocusedInputVisible(){
     && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01
     ? {offsetTop:0,height:document.documentElement.clientHeight} : window.visualViewport;
   const top = Math.max(bounds.top,viewport?.offsetTop || 0) + 8;
-  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet,.feedback-sheet')?.querySelector('.sheet-search-dock,.add-actions,.feedback-actions');
+  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet,.feedback-sheet,.bulk-edit-sheet,.bulk-batch-sheet')?.querySelector('.sheet-search-dock,.add-actions,.feedback-actions,.bulk-edit-actions,.bulk-batch-actions');
   const footerTop = footer?.getClientRects().length ? footer.getBoundingClientRect().top : Infinity;
   const bottom = Math.min(bounds.bottom,footerTop,(viewport?.offsetTop || 0) + (viewport?.height || innerHeight)) - 8;
   if(rect.top >= top && rect.bottom <= bottom)return;
@@ -2214,7 +2215,7 @@ document.addEventListener('keydown',e=>{
     plan.run();
     return;
   }
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet','bulk-batch-sheet','bulk-edit-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -2245,6 +2246,8 @@ document.addEventListener('keydown',e=>{
     else if (id === 'weather-context-sheet') closeSheet('weather-context-sheet');
     else if (id === 'assistant-sheet' && typeof closeAssistantSheet === 'function') closeAssistantSheet();
     else if (id === 'feedback-sheet') closeSheet('feedback-sheet');
+    else if (id === 'bulk-batch-sheet') closeSheet('bulk-batch-sheet');
+    else if (id === 'bulk-edit-sheet' && typeof closeBulkEditSheet === 'function') closeBulkEditSheet();
     return;
   }
   const pane = getPane();

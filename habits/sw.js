@@ -1,4 +1,4 @@
-const CACHE = 'tings-v933';
+const CACHE = 'tings-v934';
 const MAPS_CACHE = 'tings-maps-v3';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -63,6 +63,7 @@ const PRECACHE = [
   './css/controls.css',
   './css/settings.css',
   './css/filters.css',
+  './css/bulk-items.css',
   './css/actions.css',
   './css/overlays.css',
   './css/assistant.css',
@@ -178,6 +179,9 @@ const PRECACHE = [
   './js/main-input.js',
   './js/feedback-form.js',
   './js/main-runtime.js',
+  './js/item-mutations.js',
+  './js/bulk-add.js',
+  './js/bulk-edit.js',
   './js/sw-register.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

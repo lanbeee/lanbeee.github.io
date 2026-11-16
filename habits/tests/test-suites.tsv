@@ -232,3 +232,7 @@ detail-summary-strip-test.js	ui	once
 week-projection-test.js	planner	page-both
 week-view-layout-test.js	ui	once
 overview-week-view-test.js	ui	once
+
+bulk-add-test.js	ui	once
+bulk-edit-test.js	ui	once
+bulk-edit-planner-test.js	planner	page-both

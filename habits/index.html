@@ -50,6 +50,7 @@
 <link rel="stylesheet" href="./css/controls.css" />
 <link rel="stylesheet" href="./css/settings.css" />
 <link rel="stylesheet" href="./css/filters.css" />
+<link rel="stylesheet" href="./css/bulk-items.css" />
 <link rel="stylesheet" href="./css/actions.css" />
 <link rel="stylesheet" href="./css/overlays.css" />
 <link rel="stylesheet" href="./css/assistant.css" />
@@ -293,9 +294,22 @@
       </div>
       <button type="button" class="minimal-mode-note" id="add-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
       <p class="field-hint add-next-step">You can adjust days, hours and other details after adding.</p>
+      <div class="reset-confirm" id="add-batch-confirm" hidden>
+        <p id="add-batch-confirm-label">Discard queued items?</p>
+        <div class="btn-row">
+          <button class="btn primary" id="add-batch-confirm-no" type="button">keep editing</button>
+          <button class="btn" id="add-batch-confirm-yes" type="button">discard</button>
+        </div>
+      </div>
+      </div>
+      <div class="add-batch-bar" id="add-batch-bar" hidden>
+        <button type="button" class="bulk-batch-chip" id="add-batch-status" hidden>0 items in batch · review</button>
+        <p class="field-hint" id="add-batch-hint" hidden>Settings carry forward to the next item.</p>
       </div>
       <div class="btn-row add-actions">
+        <button class="btn" id="add-batch-entry" type="button">add several</button>
         <button class="btn primary" id="do-save">add habit</button>
+        <button class="btn primary" id="do-batch-next" type="button">add &amp; next</button>
         <button class="btn" id="do-cancel">cancel</button>
       </div>
     </div>
@@ -2140,6 +2154,88 @@
     </div>
   </div>
 
+  <!-- bulk add: review queued items before one save -->
+  <div class="sheet-wrap" id="bulk-batch-sheet">
+    <div class="sheet bulk-batch-sheet" role="dialog" aria-modal="true" aria-labelledby="bulk-batch-title">
+      <div class="home-filter-sheet-head">
+        <div>
+          <p class="sheet-title" id="bulk-batch-title">review batch</p>
+          <p class="about-copy">Nothing is saved until you add the batch.</p>
+        </div>
+        <button type="button" class="icon-btn bulk-batch-close" id="bulk-batch-close" aria-label="back to the add form"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="bulk-batch-scroll">
+        <div class="reset-confirm" id="bulk-batch-offer" hidden>
+          <p id="bulk-batch-offer-name">This item is not in the batch yet.</p>
+          <div class="btn-row">
+            <button type="button" class="btn primary" id="bulk-batch-offer-add">add to batch</button>
+            <button type="button" class="btn" id="bulk-batch-offer-skip">leave it out</button>
+          </div>
+        </div>
+        <ul class="bulk-batch-rows" id="bulk-batch-rows"></ul>
+        <p class="field-hint bulk-batch-error" id="bulk-batch-error" role="alert" hidden></p>
+      </div>
+      <div class="btn-row bulk-batch-actions">
+        <button type="button" class="btn" id="bulk-batch-back">keep editing</button>
+        <button type="button" class="btn primary" id="bulk-batch-add">Add items</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- bulk edit: pick items, choose changes, review, apply -->
+  <div class="sheet-wrap" id="bulk-edit-sheet">
+    <div class="sheet bulk-edit-sheet" role="dialog" aria-modal="true" aria-labelledby="bulk-edit-title">
+      <div class="home-filter-sheet-head">
+        <div class="bulk-edit-head-nav">
+          <button type="button" class="icon-btn bulk-edit-back" id="bulk-edit-back" aria-label="back" hidden><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+          <p class="sheet-title" id="bulk-edit-title">bulk edit</p>
+        </div>
+        <button type="button" class="icon-btn bulk-edit-close" id="bulk-edit-close" aria-label="close bulk edit"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="bulk-edit-scroll">
+        <div class="reset-confirm" id="bulk-edit-confirm" hidden>
+          <p id="bulk-edit-confirm-label">Discard this bulk edit?</p>
+          <div class="btn-row">
+            <button type="button" class="btn primary" id="bulk-edit-confirm-no">keep editing</button>
+            <button type="button" class="btn" id="bulk-edit-confirm-yes">discard</button>
+          </div>
+        </div>
+        <div id="bulk-edit-pick">
+          <input type="search" id="bulk-search" class="bulk-search-input" placeholder="Search items" aria-label="Search items" autocomplete="off" />
+          <div id="bulk-filter-groups" class="bulk-filter-groups"></div>
+          <div class="bulk-visibility-row">
+            <button type="button" class="setting-toggle compact-toggle" id="bulk-show-snoozed" aria-pressed="false"><span>show snoozed</span><span class="switch-ui" aria-hidden="true"></span></button>
+            <button type="button" class="setting-toggle compact-toggle" id="bulk-show-completed" aria-pressed="false"><span>show completed</span><span class="switch-ui" aria-hidden="true"></span></button>
+          </div>
+          <p class="bulk-count-row"><strong id="bulk-count">0 selected</strong> <span class="field-hint" id="bulk-outside-count" hidden></span></p>
+          <ul class="bulk-rows" id="bulk-rows"></ul>
+          <p class="field-hint" id="bulk-empty" hidden>Nothing matches these filters.</p>
+          <div class="btn-row bulk-select-row">
+            <button type="button" class="mini-text-btn" id="bulk-select-all">Select all results (0)</button>
+            <button type="button" class="mini-text-btn" id="bulk-clear-selection">Clear selection</button>
+          </div>
+        </div>
+        <div id="bulk-edit-change" hidden>
+          <input type="search" id="bulk-settings-search" class="bulk-search-input" placeholder="Search settings" aria-label="Search settings" autocomplete="off" />
+          <div id="bulk-edit-rows"></div>
+        </div>
+        <div id="bulk-edit-review" hidden>
+          <p class="bulk-review-summary" id="bulk-review-summary">0 selected · 0 will change</p>
+          <ul class="bulk-review-lines" id="bulk-review-lines"></ul>
+          <div class="bulk-review-items" id="bulk-review-items"></div>
+          <ul class="bulk-review-problems" id="bulk-review-problems" role="alert" hidden></ul>
+          <p class="field-hint bulk-review-notice" id="bulk-review-notice" hidden></p>
+          <button type="button" class="btn" id="bulk-review-confirm" hidden>checked — ready to apply</button>
+        </div>
+      </div>
+      <div class="btn-row bulk-edit-actions" id="bulk-edit-actions">
+        <button type="button" class="btn primary" id="bulk-edit-continue">Edit 0 items</button>
+        <button type="button" class="btn primary" id="bulk-review-continue" hidden>review changes</button>
+        <button type="button" class="btn primary" id="bulk-apply" hidden>Apply</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <div class="agenda-pair-approval agenda-pair-scanner" id="agenda-pair-scanner" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-scanner-title" hidden>
@@ -2277,6 +2373,9 @@
 <script src="./js/main-input.js" defer></script>
 <script src="./js/feedback-form.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
+<script src="./js/item-mutations.js" defer></script>
+<script src="./js/bulk-add.js" defer></script>
+<script src="./js/bulk-edit.js" defer></script>
 <script src="./js/display-mode.js" defer></script>
 <script src="./js/sw-register.js" defer></script>
 <!-- The experimental assistant loads after the core controller has rendered. -->

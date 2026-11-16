@@ -1074,6 +1074,11 @@ function applyHomeFilterChange(){
 }
 
 $('home-tag-filter')?.addEventListener('click',e=>{
+  if(e.target.closest('[data-open-bulk-edit]')){
+    // Reduced bar (minimal mode, or no filter dimensions): no Home filters to copy.
+    if(typeof openBulkEditPicker === 'function')openBulkEditPicker(false);
+    return;
+  }
   if(e.target.closest('[data-open-home-filters]')){
     openSheet('home-filter-sheet');
     return;
@@ -1110,6 +1115,13 @@ $('home-filter-close')?.addEventListener('click',()=>closeSheet('home-filter-she
 $('home-filter-done')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));
 $('home-filter-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeSheet('home-filter-sheet');
+});
+// Bulk edit opens from the filters sheet, seeding the picker with the filters
+// Home is showing. Picker filters live separately from Home's afterwards.
+$('home-filter-sheet')?.addEventListener('click',e=>{
+  if(!e.target.closest('[data-open-bulk-edit]'))return;
+  closeSheet('home-filter-sheet');
+  if(typeof openBulkEditPicker === 'function')openBulkEditPicker(true);
 });
 document.querySelectorAll('[data-filter-settings]').forEach(button=>{
   button.addEventListener('click',()=>{

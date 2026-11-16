@@ -939,6 +939,21 @@ function takeFilterClick(event, pairs){
 // library never turns the top of Home into an endless horizontal chip rail.
 // `precomputedIndices` (optional): render() shares its visibleIndices() pass —
 // the option counts don't depend on the search query, so don't re-sort for them.
+// Reduced filter bar: no dimensions to filter by (or minimal mode), but bulk
+// edit must stay reachable in both.
+function homeBulkEditBarHtml(){
+  return `<button type="button" class="home-filter-trigger bulk-edit-trigger" data-open-bulk-edit="1" aria-label="bulk edit items">
+    <i class="ti ti-checks" aria-hidden="true"></i>
+    <span>Bulk edit</span>
+  </button>`;
+}
+
+function renderHomeTagFilterEmpty(wrap,groups){
+  wrap.innerHTML = '';
+  wrap.hidden = true;
+  if(groups)groups.innerHTML = '';
+}
+
 function renderHomeTagFilter(data,precomputedIndices = null){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
@@ -946,8 +961,12 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   const summary = $('home-filter-summary');
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(minimal){
-    wrap.innerHTML = '';
-    wrap.hidden = true;
+    if(!data.length){
+      renderHomeTagFilterEmpty(wrap,groups);
+      return;
+    }
+    wrap.innerHTML = homeBulkEditBarHtml();
+    wrap.hidden = false;
     if(groups)groups.innerHTML = '';
     return;
   }
@@ -976,8 +995,12 @@ function renderHomeTagFilter(data,precomputedIndices = null){
     prefix:'home-filter', attrPrefix:'home', items, selection, topicChoices, locationChoices:locChoices
   });
   if(!view.groupsHtml && !hasPresence){
-    wrap.innerHTML = '';
-    wrap.hidden = true;
+    if(!items.length){
+      renderHomeTagFilterEmpty(wrap,groups);
+      return;
+    }
+    wrap.innerHTML = homeBulkEditBarHtml();
+    wrap.hidden = false;
     if(groups)groups.innerHTML = '';
     return;
   }

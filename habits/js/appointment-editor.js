@@ -132,6 +132,8 @@ function renderLocalAppointmentDetail(h){
   host.addEventListener('input',()=>setDetailDirty(true));host.addEventListener('change',()=>setDetailDirty(true));
   const changeException=reset=>{
     const key=$('detail-appt-occurrence').value;
+    // Occurrence patches need the saved record; queued drafts edit the series only.
+    if(detailIdx === null){showToast('save the event first');return;}
     if(!appointmentOccursOn(h,key)){showToast('choose a date in this schedule');return;}
     const data=load(),item=data[detailIdx],patch={...item.appointment.exceptions[key]};
     if(reset){for(const field of ['startMinute','durationMinutes','emoji','emojiBgColor'])delete patch[field];}
