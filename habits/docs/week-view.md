@@ -16,8 +16,9 @@ Date jumps place the chosen day at the left edge, including the end of the
 planning horizon. Jumps into past years keep a bounded fourteen-day strip.
 Today returns to
 the current day and scrolls to the current time. Left and right keys move one
-day. Vertical gestures scroll the clock without creating anything and never
-slide the strip sideways. When a horizontal drag settles, the strip eases onto
+day. A touch drag locks to one axis: it either pans the day strip or scrolls
+the clock, never both, so a diagonal swipe cannot slide the days while
+scrolling time. When a horizontal drag settles, the strip eases onto
 the nearest day, and only then do the date title and the highlighted day
 header move. Background
 preview updates wait for touch and momentum scrolling to settle before replacing

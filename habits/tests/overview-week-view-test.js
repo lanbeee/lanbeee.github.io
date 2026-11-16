@@ -245,8 +245,9 @@ async function openWeekView(page){
     await page.click('#week-view-zoom-in');
     assert(await page.evaluate(()=>weekViewHourPx()) === zoomBefore,'zoom in restores a taller grid');
     const clockPosition = await page.evaluate(()=>{
+      const y = document.querySelector('#week-view-body .wv-yscroll');
+      y.scrollTop = 600;
       let scroller = document.querySelector('#week-view-body .wv-scroller');
-      scroller.scrollTop = 600;
       const minute = weekViewViewportMinute(scroller);
       weekViewChangeZoom(-1);
       scroller = document.querySelector('#week-view-body .wv-scroller');
@@ -298,8 +299,8 @@ async function openWeekView(page){
 
     // Empty grid space stages a date/time; only Save can create an item.
     const target = await page.evaluate(()=>{
-      const scroller = document.querySelector('#week-view-body .wv-scroller');
-      scroller.scrollTop = 17 * weekViewHourPx();
+      const y = document.querySelector('#week-view-body .wv-yscroll');
+      y.scrollTop = 17 * weekViewHourPx();
       const column = document.querySelector('[data-wv-daycol]');
       const rect = column.getBoundingClientRect();
       return {x:rect.left + rect.width/2,y:rect.top + 18 * weekViewHourPx(),day:column.dataset.wvDaycol};
@@ -371,10 +372,72 @@ async function openWeekView(page){
       await cdpSwipe(client,300,400,60,400);
       await page.waitForTimeout(500);
       assert(await page.evaluate(()=>weekViewDaySel) !== beforeTouch,'a real touch swipe survives a background calendar refresh');
+      // Let the horizontal fling finish settling before capturing the
+      // baseline — a touch that lands mid-fling stops it, and the strip then
+      // rightly settles onto a whole day on release.
+      await page.waitForFunction(()=>{
+        const scroller = document.querySelector('#week-view-body .wv-scroller');
+        const s = weekViewColumnStep(scroller);
+        return Math.abs(scroller.scrollLeft - Math.round(scroller.scrollLeft / s) * s) < 2;
+      },{timeout:5000});
+      await page.waitForTimeout(300);
       const after = await page.evaluate(()=>weekViewDaySel);
       await cdpSwipe(client,200,600,200,350);
       await page.waitForTimeout(500);
       assert(await page.evaluate(()=>weekViewDaySel) === after,'vertical scrolling keeps the selected day');
+      // Diagonal gestures commit to one axis — the strip and the clock never
+      // move together: not from mid-clock, during momentum, nor at an edge.
+      const readScroll = () => page.evaluate(()=>({
+        sl:document.querySelector('#week-view-body .wv-scroller').scrollLeft,
+        st:document.querySelector('#week-view-body .wv-yscroll').scrollTop
+      }));
+      await page.evaluate(()=>{
+        const scroller = document.querySelector('#week-view-body .wv-scroller');
+        const y = document.querySelector('#week-view-body .wv-yscroll');
+        scroller.scrollLeft = weekViewColumnStep(scroller) * 2;
+        y.scrollTop = Math.round((y.scrollHeight - y.clientHeight) / 2);
+      });
+      await page.waitForTimeout(400);
+      const vDiagBefore = await readScroll();
+      await cdpSwipe(client,250,650,180,380);
+      await page.waitForTimeout(700);
+      const vDiagAfter = await readScroll();
+      assert(vDiagAfter.st - vDiagBefore.st > 40 && Math.abs(vDiagAfter.sl - vDiagBefore.sl) < 2,'a vertical-dominant diagonal moves only the clock');
+      const xDiagBefore = await readScroll();
+      const step = await page.evaluate(()=>weekViewColumnStep(document.querySelector('#week-view-body .wv-scroller')));
+      await cdpSwipe(client,300,500,60,440);
+      await page.waitForTimeout(700);
+      const xDiagAfter = await readScroll();
+      assert(xDiagAfter.sl - xDiagBefore.sl > step * 0.4 && Math.abs(xDiagAfter.st - xDiagBefore.st) < 2,'a horizontal-dominant diagonal moves only the day strip');
+      // A diagonal that lands mid-fling must not corrupt the interrupted
+      // strip: touching stops the fling, the clock moves, and the strip still
+      // settles onto a whole day.
+      await page.evaluate(()=>{
+        const y = document.querySelector('#week-view-body .wv-yscroll');
+        y.scrollTop = Math.round((y.scrollHeight - y.clientHeight) / 2);
+      });
+      const flingFrom = await readScroll();
+      await cdpSwipe(client,300,500,120,500);
+      await page.waitForTimeout(80);
+      await cdpSwipe(client,250,650,200,400);
+      await page.waitForTimeout(1400);
+      const flingAfter = await page.evaluate(()=>{
+        const scroller = document.querySelector('#week-view-body .wv-scroller');
+        const s = weekViewColumnStep(scroller);
+        return { sl:scroller.scrollLeft, aligned:Math.abs(scroller.scrollLeft - Math.round(scroller.scrollLeft / s) * s) < 2 };
+      });
+      assert(flingAfter.aligned && Math.abs(flingAfter.sl - flingFrom.sl) > 1,'a diagonal during momentum still settles the strip on a whole day');
+      // At a clock edge nothing leaks sideways.
+      const edgeBefore = await page.evaluate(()=>{
+        const y = document.querySelector('#week-view-body .wv-yscroll');
+        y.scrollTop = 0;
+        return document.querySelector('#week-view-body .wv-scroller').scrollLeft;
+      });
+      await page.waitForTimeout(300);
+      await cdpSwipe(client,200,300,260,640);
+      await page.waitForTimeout(700);
+      const edgeAfter = await readScroll();
+      assert(edgeAfter.sl === edgeBefore && edgeAfter.st === 0,'a diagonal at the clock edge never slides the strip');
       assert(await page.locator('#add-sheet.open').count() === 0,'scroll/swipe never creates a draft');
     }
     await page.click('#week-view-display-options');

@@ -225,21 +225,6 @@ function weekViewSpanPhrase(mins){
   return rem ? `${h}h ${rem}m` : `${h}h`;
 }
 
-function weekViewHoursLabel(mins){
-  const m = Math.max(0,mins);
-  if(m <= 0)return '0h';
-  const h = m / 60;
-  if(h < 10)return `${h.toFixed(1)}h`;
-  return `${Math.round(h)}h`;
-}
-
-function weekViewLoadLabel(mins){
-  const h = Math.max(0,mins) / 60;
-  const rounded = Math.round(h * 10) / 10;
-  if(rounded <= 0)return '0h';
-  return Number.isInteger(rounded) ? `${rounded}h` : `${rounded.toFixed(1)}h`;
-}
-
 function weekViewFreePhrase(mins){
   const m = Math.max(0,Math.round(mins));
   if(m < 60)return `${m} min free`;
@@ -255,13 +240,6 @@ function weekViewRailClock(min){
   const hour = hour24 % 12 || 12;
   const suffix = hour24 < 12 ? 'a' : 'p';
   return minute ? `${hour}:${String(minute).padStart(2,'0')}${suffix}` : `${hour}${suffix}`;
-}
-
-function weekViewMinuteLabel(min){
-  const whole = Math.max(0,Math.round(min));
-  const hour = Math.floor(whole / 60) % 24;
-  const minute = whole % 60;
-  return new Date(2026,0,1,hour,minute).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
 }
 
 function weekViewPlaceName(locationId,settings){
@@ -964,21 +942,62 @@ function weekViewSizeBoard(scroller){
   if(!board || !scroller.clientWidth)return;
   const visible = Number(board.dataset.visible) || 1;
   const span = Number(board.dataset.span) || visible;
-  const gutter = scroller.querySelector('.wv-gutter');
+  const gutter = scroller.parentElement && scroller.parentElement.querySelector('.wv-rail .wv-gutter');
   const gutterW = gutter ? gutter.getBoundingClientRect().width : 13;
   const gap = parseFloat(getComputedStyle(board).getPropertyValue('--wv-col-gap')) || 0;
   const area = Math.max(1,scroller.clientWidth - gutterW);
   const col = Math.max(1,(area - gap * Math.max(0,visible - 1)) / visible);
   const template = `repeat(${span},${col}px)`;
-  board.style.width = `${gutterW + col * span + gap * Math.max(0,span - 1)}px`;
+  const width = gutterW + col * span + gap * Math.max(0,span - 1);
+  board.style.width = `${width}px`;
+  const yscroll = scroller.querySelector('.wv-yscroll');
+  if(yscroll)yscroll.style.width = `${width}px`;
   board.querySelectorAll('.wv-cols,.wv-days-head,.wv-marker-grid').forEach(el=>{
     el.style.gridTemplateColumns = template;
   });
+  weekViewSyncRail();
 }
 
 function weekViewCancelAlign(){
   _weekViewAlignToken += 1;
   _weekViewAligning = false;
+  _weekViewAlignTarget = null;
+}
+
+// The ease just finished (or was replaced); the strip sits on its day now.
+function weekViewAlignLanded(){
+  _weekViewAligning = false;
+  _weekViewAlignTarget = null;
+}
+
+function weekViewYScroller(scroller){
+  return scroller ? scroller.querySelector('.wv-yscroll') : null;
+}
+
+// The hour rail and the head corner are painted outside the scrollers, so
+// they follow the clock's vertical scroll with one composited transform.
+// Runs rAF-batched; safe to call from every scroll and scroll write.
+function weekViewSyncRail(){
+  if(_weekViewRailRaf)return;
+  _weekViewRailRaf = requestAnimationFrame(()=>{
+    _weekViewRailRaf = 0;
+    const host = document.querySelector('#week-view-body .wv-clock');
+    if(!host)return;
+    const y = host.querySelector('.wv-yscroll');
+    const rail = host.querySelector('.wv-rail');
+    const track = host.querySelector('.wv-rail .wv-gutter');
+    const cover = host.querySelector('.wv-corner-cover');
+    const headH = host.querySelector('.wv-board-head')?.offsetHeight || 0;
+    if(rail)rail.style.top = `${headH}px`;
+    if(cover)cover.style.height = `${headH}px`;
+    // The now tag overhangs the gutter onto the clock, so it rides in its own
+    // unclipped layer next to the clipped hour labels.
+    const nowrail = host.querySelector('.wv-nowrail');
+    const nowtrack = host.querySelector('.wv-nowtrack');
+    if(nowrail){nowrail.style.top = `${headH}px`;}
+    if(y && nowtrack)nowtrack.style.transform = `translateY(${-y.scrollTop}px)`;
+    if(y && track)track.style.transform = `translateY(${-y.scrollTop}px)`;
+  });
 }
 
 // Selection used to repaint on every scroll frame, which dragged the day
@@ -997,7 +1016,15 @@ function weekViewOnScrollSettled(scroller){
   clearTimeout(_weekViewSettleTimer);
   _weekViewSettleTimer = null;
   if(!scroller || !scroller.isConnected)return;
+  // A finger pausing mid-gesture stops the scroll events without ending the
+  // touch, so a settle fired now would yank the strip sideways under the
+  // finger. Defer it to touch end instead.
+  if(_weekViewTouchActive){_weekViewSettlePending = true;return;}
+  _weekViewSettlePending = false;
   weekViewAlignDays(scroller);
+  // Paint from where the strip is heading: mid-ease the live offset still
+  // reads the old day, and waiting for the ease to land would drag the title
+  // behind a continuing fling.
   weekViewPaintSelection();
 }
 
@@ -1026,16 +1053,20 @@ function weekViewAlignDays(scroller){
   }
   const token = ++_weekViewAlignToken;
   _weekViewAligning = true;
+  _weekViewAlignTarget = target;
   const start = scroller.scrollLeft;
   const t0 = performance.now();
   let written = start;
   const tick = now=>{
     if(token !== _weekViewAlignToken || !scroller.isConnected){
-      if(token === _weekViewAlignToken)_weekViewAligning = false;
+      if(token === _weekViewAlignToken)weekViewAlignLanded();
       return;
     }
     if(Math.abs(scroller.scrollLeft - written) > 2){
+      // Something else moved the strip mid-ease; restart from where it is.
+      // The deferred paint stays armed and runs when the restart lands.
       _weekViewAligning = false;
+      _weekViewAlignTarget = null;
       weekViewAlignDays(scroller);
       return;
     }
@@ -1043,7 +1074,7 @@ function weekViewAlignDays(scroller){
     written = start + delta * (1 - Math.pow(1 - p,3));
     scroller.scrollLeft = written;
     if(p < 1)requestAnimationFrame(tick);
-    else _weekViewAligning = false;
+    else weekViewAlignLanded();
   };
   requestAnimationFrame(tick);
 }
@@ -1058,17 +1089,20 @@ function weekViewScrollToDay(scroller,key){
 // Measure the clock below the sticky date/marker header, so changing the
 // layout or zoom keeps the same time in the middle of the usable viewport.
 function weekViewViewportMinute(scroller){
+  const y = weekViewYScroller(scroller) || scroller;
   const head = scroller.querySelector('.wv-board-head')?.offsetHeight || 0;
-  const y = scroller.scrollTop + (scroller.clientHeight - head) / 2;
+  const mid = y.scrollTop + (y.clientHeight - head) / 2;
   return scroller.closest('.wv-body').classList.contains('is-list') && _weekViewSharedAxis
-    ? _weekViewSharedAxis.yToTime(y) : y * 60 / _weekViewZoom;
+    ? _weekViewSharedAxis.yToTime(mid) : mid * 60 / _weekViewZoom;
 }
 
 function weekViewRestoreMinute(scroller,minute){
+  const y = weekViewYScroller(scroller) || scroller;
   const head = scroller.querySelector('.wv-board-head')?.offsetHeight || 0;
-  const y = _weekViewMode === 'list' && _weekViewSharedAxis
+  const py = _weekViewMode === 'list' && _weekViewSharedAxis
     ? _weekViewSharedAxis.timeToY(minute) : minute * _weekViewZoom / 60;
-  scroller.scrollTop = Math.max(0,y - (scroller.clientHeight - head) / 2);
+  y.scrollTop = Math.max(0,py - (y.clientHeight - head) / 2);
+  weekViewSyncRail();
 }
 
 // PURE: "Nov 15 – 21"
@@ -1196,12 +1230,6 @@ const _weekViewCache = new Map();        // cacheKey → week
 const _weekViewPending = new Map();      // cacheKey → Promise
 const WEEK_VIEW_CACHE_MAX = 4;
 
-function weekViewEffectiveMode(){
-  const s = sortSettings || {};
-  return Boolean(s.agendaOptimizer) && !(typeof agendaPlannerForcedFast === 'function' && agendaPlannerForcedFast())
-    ? 'exact' : 'fast';
-}
-
 function weekViewCacheKey(startKey,mode,dirtyKey){
   return `${startKey}|${mode}|${dirtyKey}`;
 }
@@ -1319,12 +1347,16 @@ let _weekViewScrollTop = 0;
 let _weekViewScrollToKey = '';
 let _weekViewAlignToken = 0;
 let _weekViewAligning = false;
+let _weekViewAlignTarget = null;
 let _weekViewSettleTimer = null;
+let _weekViewSettlePending = false;
+let _weekViewRailRaf = 0;
 let _weekViewStrip = [];
 let _weekViewRowsByDay = new Map();
 let _weekHorizonSeq = 0;
 let _weekViewTouchActive = false;
 let _weekViewScrollAt = 0;
+let _weekViewScrollAxis = '';        // 'x' (day strip) or 'y' (clock), last scrolled
 let _weekViewRefreshTimer = null;
 const WEEK_VIEW_PREFS_KEY = 'tings_week_view_v1';
 
@@ -1474,14 +1506,10 @@ function weekViewTravelHtml(tr){
   return `<button type="button" class="wv-travel ${density}" data-wv-travel="${escapeHtml(tr.id)}" style="${weekViewBandStyle(tr.topMin,tr.botMin)}left:4px;width:calc(100% - 8px);" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="ti ti-route" aria-hidden="true"></i><span>${tr.mins}m</span></button>`;
 }
 
-function weekViewGutterHtml(hourStep,nowMin){
+function weekViewGutterHtml(hourStep){
   const cells = [];
   for(let h = 0;h < 24;h += hourStep){
-    const label = weekViewRailClock(h * 60);
-    cells.push(`<span class="wv-hour" style="top:calc(${h * 60} * var(--wv-hour-h) / 60);">${escapeHtml(label)}</span>`);
-  }
-  if(nowMin != null){
-    cells.push(`<span class="wv-nowtag" data-wv-nowtag style="top:calc(${nowMin} * var(--wv-hour-h) / 60);">${escapeHtml(weekViewRailClock(nowMin))}</span>`);
+    cells.push(`<span class="wv-hour" style="top:calc(${h * 60} * var(--wv-hour-h) / 60);">${escapeHtml(weekViewRailClock(h * 60))}</span>`);
   }
   return cells.join('');
 }
@@ -1525,24 +1553,6 @@ function weekViewStatusLabel(status){
   if(status === 'tight')return 'Tight';
   if(status === 'light')return 'Light';
   return '';
-}
-
-function weekViewDayMeta(layout){
-  if(!layout || layout.empty)return 'Nothing planned';
-  const parts = [`${weekViewHoursLabel(layout.plannedMin)} planned`];
-  const labeled = (layout.chains || []).filter(chain=>chain.label);
-  if(labeled.length === 1)parts.push(labeled[0].label);
-  else if(labeled.length > 1)parts.push(`${labeled.length} nonstop runs`);
-  if(layout.freeMin >= 5)parts.push(weekViewFreePhrase(layout.freeMin));
-  else if((layout.blockCount || 0) >= 2)parts.push('no gap');
-  return parts.join(' · ');
-}
-
-function weekViewDaybarHtml(day,layout){
-  const flag = layout && !layout.empty ? weekViewStatusLabel(layout.status) : '';
-  return `<div class="wv-daybar"><div class="wv-daybar-text"><small>${escapeHtml(weekViewDayMeta(layout))}</small></div>`
-    + (flag ? `<span class="wv-flag is-${layout.status}">${escapeHtml(flag)}</span>` : '')
-    + `</div>`;
 }
 
 function weekViewHeadSummary(layout,wide){
@@ -1600,28 +1610,8 @@ function weekViewLegendHtml(data,visibleHids,topicMap){
   return [...groups.values()].map(group=>`<span class="wv-legend-chip"><i style="${weekViewTokenVars(group.token)}" aria-hidden="true"></i>${escapeHtml(group.label)}</span>`).join('');
 }
 
-function weekViewIndexRows(rows){
-  const map = new Map();
-  if(!rows)return map;
-  (rows.events || []).forEach(ev=>map.set(ev.id,ev));
-  (rows.busy || []).forEach(block=>map.set(block.id,block));
-  (rows.travel || []).forEach(leg=>map.set(leg.id,leg));
-  return map;
-}
-
 function weekViewDurCompact(mins){
   return weekViewSpanPhrase(mins);
-}
-
-function weekViewTravelText(leg,tier,depart,leaveNow){
-  if(leaveNow)return 'Leave now';
-  const leave = weekViewTimeLabel(leg.start);
-  const mins = leg.mins || 1;
-  if(depart)return `Leave by ${leave} · ${mins} min`;
-  if(tier === 'short')return `${mins} min · leave ${leave}`;
-  const route = `${leg.fromName || 'here'} → ${leg.toName || 'there'}`;
-  if(tier === 'mid')return `${mins} min · ${route} · leave ${leave}`;
-  return `${route} · ${weekViewDurCompact(mins)}`;
 }
 
 function weekViewHabitMeta(ev){
@@ -1675,94 +1665,6 @@ function weekViewListHabitHtml(ev,box,rail){
   return `<div class="wv-event${statusCls}${full}${mark ? ' has-mark' : ''}" style="${style}">`
     + `${box.marks || ''}<span class="wv-event-fill" aria-hidden="true"></span>${mark}`
     + `<button type="button" class="wv-event-main" data-wv-event="${escapeHtml(ev.id)}" data-wv-hid="${escapeHtml(ev.hid || '')}" aria-label="${escapeHtml(`${when}, ${ev.title}`)}">${body}</button>`
-    + `</div>`;
-}
-
-function weekViewListBusyHtml(block,box,rail){
-  _weekViewCtx.set(block.id,block);
-  const when = `${weekViewTimeLabel(block.start)} – ${weekViewTimeLabel(block.end)}`;
-  return `<button type="button" class="wv-busy" data-wv-busy="${escapeHtml(block.id)}" style="${weekViewListPos(box,rail)}" aria-label="${escapeHtml(`busy, ${block.label}, ${when}`)}">`
-    + `<span class="wv-busy-label"><i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(block.label)} · ${escapeHtml(weekViewMinuteLabel(box.startMin))}–${escapeHtml(weekViewMinuteLabel(box.endMin))}</span></span>`
-    + `</button>`;
-}
-
-function weekViewListTravelHtml(leg,box,rail,nowMin,depart){
-  _weekViewCtx.set(leg.id,leg);
-  const leaveNow = nowMin != null && box.nextStart != null && nowMin >= box.startMin && nowMin < box.nextStart;
-  const text = weekViewTravelText(leg,box.tier,depart && !leaveNow,leaveNow);
-  const cls = `wv-travel is-${box.tier || 'short'}${leaveNow ? ' is-leave-now' : ''}${depart && !leaveNow ? ' is-depart' : ''}`;
-  return `<button type="button" class="${cls}" data-wv-travel="${escapeHtml(leg.id)}" style="${weekViewListPos(box,rail)}" aria-label="${escapeHtml(text)}"><i class="ti ti-route" aria-hidden="true"></i><span>${escapeHtml(text)}</span></button>`;
-}
-
-function weekViewListPieceHtml(box,byId,rail,nowMin,state){
-  if(box.type === 'gap'){
-    if(!box.label)return '';
-    const toggle = box.kind === 'collapsed' || box.kind === 'open';
-    const mark = box.kind === 'collapsed' ? ' ▾' : box.kind === 'open' ? ' ▴' : '';
-    const cls = `wv-gap is-${box.kind}${toggle ? ' is-toggle' : ''}`;
-    const style = weekViewListPos(box,rail);
-    if(!toggle)return `<div class="${cls}" style="${style}"><span>${escapeHtml(box.label)}</span></div>`;
-    const expanded = box.kind === 'open' ? 'true' : 'false';
-    return `<button type="button" class="${cls}" data-wv-gap="${escapeHtml(box.id)}" aria-expanded="${expanded}" style="${style}"><span>${escapeHtml(box.label + mark)}</span></button>`;
-  }
-  if(box.type === 'conflict'){
-    const kids = (box.children || []).map(child=>{
-      const rel = Object.assign({},child,{y:child.y - box.y,nested:true});
-      return weekViewListPieceHtml(rel,byId,false,nowMin,state);
-    }).join('');
-    const label = `Overlap · ${weekViewMinuteLabel(box.startMin)}–${weekViewMinuteLabel(box.endMin)}`;
-    return `<div class="wv-conflict" style="${weekViewListPos(box,rail)}"><p class="wv-conflict-label">${escapeHtml(label)}</p>${kids}</div>`;
-  }
-  const src = byId.get(box.id);
-  if(!src)return '';
-  if(box.type === 'busy')return weekViewListBusyHtml(src,box,rail);
-  if(box.type === 'travel'){
-    const depart = !state.sawTravel;
-    state.sawTravel = true;
-    return weekViewListTravelHtml(src,box,rail,nowMin,depart);
-  }
-  return weekViewListHabitHtml(src,box,rail);
-}
-
-function weekViewListHtml(layout,rows,opts){
-  const rail = !opts || opts.rail !== false;
-  const compact = Boolean(opts && opts.compact);
-  const dayKey = opts && opts.dayKey || '';
-  const showNow = Boolean(opts && opts.showNow);
-  const byId = weekViewIndexRows(rows);
-  const nowMin = showNow ? weekViewMinuteOfDay(Date.now()) : null;
-  if(!layout || layout.empty){
-    return `<div class="wv-list is-empty${compact ? ' is-compact' : ''}" data-wv-day="${escapeHtml(dayKey)}">`
-      + `<div class="wv-empty"><p>Nothing planned</p><span>Free day</span>`
-      + (compact ? '' : `<button type="button" class="wv-empty-add" data-wv-add="${escapeHtml(dayKey)}">Add a task</button>`)
-      + `</div></div>`;
-  }
-  const state = {sawTravel:false};
-  const pieces = layout.items.map(item=>weekViewListPieceHtml(item,byId,rail,nowMin,state)).join('');
-  const times = rail ? layout.items.map(item=>{
-    if(item.type === 'gap' || item.type === 'travel')return '';
-    if(item.type === 'conflict'){
-      return (item.children || []).filter(child=>child.type !== 'travel').map(child=>{
-        return `<span class="wv-time" style="top:${Math.round(child.y)}px">${escapeHtml(weekViewRailClock(child.startMin))}</span>`;
-      }).join('');
-    }
-    return `<span class="wv-time" style="top:${Math.round(item.y)}px">${escapeHtml(weekViewRailClock(item.startMin))}</span>`;
-  }).join('') : '';
-  const ticks = rail ? layout.items.filter(item=>item.type === 'gap' && item.ticks && item.ticks.length).map(item=>{
-    return item.ticks.map(tick=>`<span class="wv-tick" style="top:${tick.y}px">${escapeHtml(tick.label)}</span>`).join('');
-  }).join('') : '';
-  const chains = compact ? '' : (layout.chains || []).filter(chain=>chain.h > 8).map(chain=>{
-    const title = chain.label ? ` title="${escapeHtml(chain.label)}"` : '';
-    return `<div class="wv-chain" style="top:${Math.round(chain.y)}px;height:${Math.round(chain.h)}px"${title}></div>`;
-  }).join('');
-  let now = '';
-  if(showNow && typeof layout.timeToY === 'function'){
-    const y = Math.max(0,Math.min(layout.height - 2,layout.timeToY(nowMin)));
-    const key = opts.nowKey || 'detail';
-    now = `<div class="wv-nowline" data-wv-elastic-now="${escapeHtml(key)}" style="top:${Math.round(y)}px"><i></i><span>now</span></div>`;
-  }
-  return `<div class="wv-list${compact ? ' is-compact' : ''}" data-wv-day="${escapeHtml(dayKey)}" style="height:${Math.round(layout.height)}px">`
-    + chains + times + ticks + pieces + now
     + `</div>`;
 }
 
@@ -1840,11 +1742,12 @@ function weekViewFocusMinute(day,rows){
   return 8 * 60;
 }
 
-function weekViewVisibleDays(days,scroller){
+function weekViewVisibleDays(days,scroller,slOverride){
   const count = Number(scroller && scroller.dataset.visible) || 1;
   const step = scroller ? weekViewColumnStep(scroller) : 1;
   const maxStart = Math.max(0,days.length - count);
-  const start = Math.max(0,Math.min(maxStart,Math.round(((scroller && scroller.scrollLeft) || 0) / Math.max(1,step))));
+  const sl = slOverride != null ? slOverride : (scroller && scroller.scrollLeft) || 0;
+  const start = Math.max(0,Math.min(maxStart,Math.round(sl / Math.max(1,step))));
   return days.slice(start,start + count);
 }
 
@@ -1852,7 +1755,7 @@ function weekViewPaintSelection(){
   const days = _weekViewStrip;
   const scroller = document.querySelector('#week-view-body .wv-scroller');
   if(!days.length || !scroller)return;
-  const visible = weekViewVisibleDays(days,scroller);
+  const visible = weekViewVisibleDays(days,scroller,_weekViewAligning ? _weekViewAlignTarget : null);
   const selected = visible[0];
   if(!selected)return;
   const changed = weekViewDaySel !== selected.dayKey;
@@ -1886,14 +1789,22 @@ function weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,vis
   const markers = dayCells.some(cell=>cell.rows.markers.length)
     ? `<div class="wv-marker-grid" style="--wv-days:${days.length};grid-template-columns:${columns}">${weekViewMarkersRowHtml(dayCells)}</div>`
     : '';
+  const nowMin = days.some(day=>day.dayKey === todayKey) ? weekViewMinuteOfDay(Date.now()) : null;
   const gutter = listMode
     ? axis.ticks.map(tick=>`<span class="wv-hour" style="top:${tick.y}px">${escapeHtml(tick.label)}</span>`).join('')
-    : weekViewGutterHtml(1,days.some(day=>day.dayKey === todayKey) ? weekViewMinuteOfDay(Date.now()) : null);
+    : weekViewGutterHtml(1);
+  const nowtag = nowMin == null ? ''
+    : `<span class="wv-nowtag" data-wv-nowtag style="top:calc(${nowMin} * var(--wv-hour-h) / 60);">${escapeHtml(weekViewRailClock(nowMin))}</span>`;
   const cols = listMode
     ? days.map(day=>weekViewAlignedColumnHtml(day,rowsByDay.get(day.dayKey),axis,todayKey,visibleCount)).join('')
     : days.map(day=>weekViewDayColHtml(day,rowsByDay.get(day.dayKey),todayKey,weekViewDaySel,true)).join('');
   const trackHeight = listMode ? `${axis.height}px` : 'calc(1440 * var(--wv-hour-h) / 60)';
-  return `<div class="wv-scroller wv-detail-scroll" data-visible="${visibleCount}"><div class="wv-board${listMode && !flat ? ' is-aligned-grid' : ''}${flat ? ' is-flat' : ''}" data-visible="${visibleCount}" data-span="${days.length}"><div class="wv-board-head"><div class="wv-corner" aria-hidden="true"></div><div class="wv-board-head-main">${head}${markers}</div></div><div class="wv-gutter" style="height:${trackHeight}">${gutter}</div><div class="wv-cols" style="height:${trackHeight};grid-template-columns:${columns}">${cols}</div></div></div>`;
+  // Axis-locked scrolling: the outer scroller pans the day strip (x only) and
+  // the inner one scrolls the clock (y only), so the browser locks every
+  // touch drag to one axis instead of sliding both. The hour rail and the
+  // head corner are painted from outside the scrollers — sticky-left cannot
+  // pin inside the inner scroller — and follow the clock via weekViewSyncRail.
+  return `<div class="wv-clock"><div class="wv-scroller" data-visible="${visibleCount}"><div class="wv-yscroll"><div class="wv-board${listMode && !flat ? ' is-aligned-grid' : ''}${flat ? ' is-flat' : ''}" data-visible="${visibleCount}" data-span="${days.length}"><div class="wv-board-head"><div class="wv-corner" aria-hidden="true"></div><div class="wv-board-head-main">${head}${markers}</div></div><div class="wv-cols" style="height:${trackHeight};grid-template-columns:${columns}">${cols}</div></div></div></div><div class="wv-rail" aria-hidden="true"><div class="wv-gutter" style="height:${trackHeight}">${gutter}</div></div><div class="wv-nowrail" aria-hidden="true"><div class="wv-nowtrack" style="height:${trackHeight}">${nowtag}</div></div><div class="wv-corner-cover" aria-hidden="true"></div></div>`;
 }
 
 function renderWeekView(){
@@ -1906,7 +1817,10 @@ function renderWeekView(){
   const prior = body.querySelector('.wv-scroller');
   const priorMinute = prior && !_weekViewScrollReset ? weekViewViewportMinute(prior) : null;
   if(prior && !_weekViewScrollReset){
-    _weekViewScrollLeft = prior.scrollLeft;
+    // Mid-settle the strip is between days; restore the settle target so a
+    // re-render cannot park it on a cut column.
+    _weekViewScrollLeft = (_weekViewAligning && _weekViewAlignTarget != null)
+      ? _weekViewAlignTarget : prior.scrollLeft;
     _weekViewScrollTop = prior.scrollTop;
   }
   const data = typeof load === 'function' ? load() : [];
@@ -2022,12 +1936,16 @@ function renderWeekView(){
   body.innerHTML = weekViewBoardHtml(days,rowsByDay,layoutByDay,todayKey,listMode,axis,visibleCount)
     + weekViewUnplacedHtml(rowsByDay.get(selectedDay.dayKey),selectedDay.dayKey);
   body.setAttribute('aria-busy',String(loading));
+  // The old scroller is gone: an ease aimed at it must not steer selection
+  // painting on the new board.
+  weekViewCancelAlign();
   renderWeekViewStatus(loading);
   body.classList.toggle('is-loading',loading && !_weekViewError);
 
   const scroller = body.querySelector('.wv-scroller');
   if(scroller){
     weekViewSizeBoard(scroller);
+    const y = weekViewYScroller(scroller);
     if(_weekViewScrollToKey){
       weekViewScrollToDay(scroller,_weekViewScrollToKey);
       _weekViewScrollToKey = '';
@@ -2036,11 +1954,14 @@ function renderWeekView(){
     }else scroller.scrollLeft = _weekViewScrollLeft;
     if(_weekViewScrollReset){
       const minute = weekViewFocusMinute(selectedDay,rowsByDay.get(selectedDay.dayKey));
-      if(listMode && axis)scroller.scrollTop = Math.max(0,axis.timeToY(minute) - 72);
+      if(listMode && axis && y)y.scrollTop = Math.max(0,axis.timeToY(minute) - 72);
       else weekViewScrollSeed(scroller,rowsByDay.get(selectedDay.dayKey),selectedDay.dayKey);
     }else if(Number.isFinite(priorMinute)){
       weekViewRestoreMinute(scroller,priorMinute);
-    }else scroller.scrollTop = _weekViewScrollTop;
+    }else if(y){
+      y.scrollTop = _weekViewScrollTop;
+      weekViewSyncRail();
+    }
     weekViewPaintSelection();
   }
   if(focusAttr){
@@ -2052,18 +1973,8 @@ function renderWeekView(){
   weekViewRenderMonth();
 }
 
-function weekViewElasticScroll(scroller,layout,dayKey){
-  if(!scroller)return;
-  const todayKey = dateKey(Date.now());
-  let y = 0;
-  if(layout && dayKey === todayKey && typeof layout.timeToY === 'function'){
-    y = layout.timeToY(weekViewMinuteOfDay(Date.now())) - 72;
-  }
-  const max = Math.max(0,scroller.scrollHeight - scroller.clientHeight);
-  scroller.scrollTop = Math.max(0,Math.min(y,max));
-}
-
 function weekViewScrollSeed(scroller,rows,dayKey){
+  const y = weekViewYScroller(scroller) || scroller;
   const todayKey = dateKey(Date.now());
   const nowMin = weekViewMinuteOfDay(Date.now());
   let targetMin;
@@ -2072,8 +1983,9 @@ function weekViewScrollSeed(scroller,rows,dayKey){
     targetMin = Math.max(0,Math.min(...rows.events.map(ev=>ev.topMin)) - 60);
   }else targetMin = 8 * 60;
   const hourPx = weekViewHourPx();
-  const max = Math.max(0,24 * hourPx - scroller.clientHeight + 40);
-  scroller.scrollTop = Math.min(targetMin * hourPx / 60,max);
+  const max = Math.max(0,24 * hourPx - y.clientHeight + 40);
+  y.scrollTop = Math.min(targetMin * hourPx / 60,max);
+  weekViewSyncRail();
 }
 
 function updateWeekViewNowLine(){
@@ -2462,12 +2374,22 @@ function bindWeekView(){
     weekViewRenderMonth();
   });
   body.addEventListener('scroll',event=>{
-    if(!event.target.classList || !event.target.classList.contains('wv-scroller'))return;
+    const cls = event.target.classList;
+    if(!cls || (!cls.contains('wv-scroller') && !cls.contains('wv-yscroll')))return;
     _weekViewScrollAt = Date.now();
-    weekViewQueueSettle(event.target);
+    // The strip and the clock scroll on separate axes now: only the strip
+    // settles onto a day; the clock just keeps the hour rail in step.
+    if(cls.contains('wv-scroller')){
+      _weekViewScrollAxis = 'x';
+      weekViewQueueSettle(event.target);
+    }else{
+      _weekViewScrollAxis = 'y';
+      weekViewSyncRail();
+    }
   },{passive:true,capture:true});
   body.addEventListener('scrollend',event=>{
-    if(!event.target.classList || !event.target.classList.contains('wv-scroller'))return;
+    const cls = event.target.classList;
+    if(!cls || !cls.contains('wv-scroller'))return;
     weekViewOnScrollSettled(event.target);
   },{capture:true});
   body.addEventListener('pointerdown',event=>{
@@ -2476,10 +2398,13 @@ function bindWeekView(){
   body.addEventListener('touchstart',()=>{_weekViewTouchActive = true;},{capture:true,passive:true});
   const endTouch = event=>{
     _weekViewTouchActive = event.touches.length > 0;
-    // A tap that stopped a fling interrupts scrolling without a scrollend,
-    // so give the strip one more chance to settle on a day.
-    if(!_weekViewTouchActive && Date.now() - _weekViewScrollAt < 400){
-      weekViewQueueSettle(document.querySelector('#week-view-body .wv-scroller'));
+    // Only a horizontal gesture asks the strip to settle on a day — a
+    // vertical fling must never pull it. A settle deferred because a finger
+    // paused mid-gesture still runs here, and while a fling keeps scrolling
+    // every frame re-arms the debounce, so release never snaps it early.
+    if(!_weekViewTouchActive && (_weekViewSettlePending
+      || (_weekViewScrollAxis === 'x' && Date.now() - _weekViewScrollAt < 400))){
+      weekViewOnScrollSettled(document.querySelector('#week-view-body .wv-scroller'));
     }
   };
   window.addEventListener('touchend',endTouch,{capture:true,passive:true});
@@ -2609,10 +2534,12 @@ function bindWeekView(){
       }
       const scroller = body.querySelector('.wv-scroller');
       if(!scroller)return;
-      const top = scroller.scrollTop;
+      const y = weekViewYScroller(scroller);
+      const top = y ? y.scrollTop : 0;
       weekViewSizeBoard(scroller);
       weekViewScrollToDay(scroller,weekViewDaySel);
-      scroller.scrollTop = top;
+      if(y)y.scrollTop = top;
+      weekViewSyncRail();
     });
     _weekViewResize.observe(sheetInner);
   }
