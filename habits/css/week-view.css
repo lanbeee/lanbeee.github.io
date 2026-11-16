@@ -17,8 +17,9 @@
   display:flex;flex-direction:column;overflow:hidden;position:relative;
   border-radius:0;min-height:100dvh;max-height:100dvh;
   max-width:480px;
-  /* The week sheet covers the bottom nav, so the grid can use that space. */
-  --wv-gutter:24px;
+  /* The week sheet covers the bottom nav, so the grid can use that space.
+     The gutter hugs the 10px hour labels ("10p" ≈ 17px wide). */
+  --wv-gutter:18px;
   --wv-col-gap:3px;
   --wv-hour-h:80px;
   padding:10px 12px calc(8px + var(--content-safe-bottom));
@@ -35,7 +36,7 @@ body[data-pane-count="3"] .week-view-sheet{
   width:min(1400px,100%);max-width:none;
   height:100%;min-height:0;max-height:none;
   border-radius:20px;
-  --wv-gutter:24px;
+  --wv-gutter:18px;
   --wv-col-gap:4px;
   --wv-hour-h:64px;
   padding:18px 22px 18px;
@@ -48,10 +49,18 @@ body[data-pane-count="3"] .week-view-sheet{
 }
 .wv-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
 .wv-title .wv-title-label{font-size:17px;line-height:1.2;color:var(--text);white-space:nowrap;}
-.wv-title small{font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.wv-nav{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
-.wv-nav .mini-nav:disabled,
-.wv-nav .mini-text-btn:disabled{opacity:0.35;pointer-events:none;}
+.wv-title small{font-size:11px;line-height:1.3;color:var(--text3);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;}
+/* Today as a mini calendar-icon button: accent strip, weekday, date. */
+.wv-today-cal{
+  flex:0 0 34px;width:34px;height:34px;min-height:34px;position:relative;overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  padding:0 0 2px;border:none;border-radius:9px;background:var(--bg3);cursor:pointer;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.wv-today-cal::before{content:'';position:absolute;top:0;left:0;right:0;height:6px;background:var(--teal-icon);}
+.wv-today-cal-dow{margin-top:7px;font-size:6.5px;font-weight:700;line-height:1;letter-spacing:0.6px;text-transform:uppercase;color:var(--teal-text);}
+.wv-today-cal-day{font-size:15px;font-weight:650;line-height:1.1;color:var(--text);font-variant-numeric:tabular-nums;}
+.wv-today-cal:focus-visible{outline:2px solid var(--teal-icon);outline-offset:1px;}
 
 /* ── Legend / status ──────────────────────────────────────────────────── */
 .wv-legend{
@@ -131,7 +140,11 @@ body[data-pane-count="3"] .week-view-sheet{
   flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;border-top:1px solid var(--border);
   container-type:inline-size;touch-action:pan-x pan-y;
-  scroll-snap-type:x mandatory;scroll-padding-left:var(--wv-gutter,13px);
+  /* Proximity, not mandatory: a mandatory x snap re-aims the strip after
+     every scroll — including vertical ones — so the clock would slide
+     sideways when a vertical fling ends. The day alignment itself is
+     applied once the strip settles (weekViewOnScrollSettled). */
+  scroll-snap-type:x proximity;scroll-padding-left:var(--wv-gutter,13px);
 }
 .wv-grid{position:relative;height:calc(1440 * var(--wv-hour-h) / 60 + 28px);}
 .wv-gutter{
@@ -139,9 +152,9 @@ body[data-pane-count="3"] .week-view-sheet{
   z-index:3;background:var(--bg);pointer-events:none;
 }
 .wv-hour{
-  position:absolute;right:0;transform:translateY(-50%);
+  position:absolute;right:2.5px;transform:translateY(-50%);
   font-size:10px;font-weight:600;color:var(--text3);line-height:1;white-space:nowrap;
-  letter-spacing:-0.06em;
+  letter-spacing:-0.1em;
 }
 .wv-nowtag{
   position:absolute;left:0;transform:translateY(-50%);
@@ -170,9 +183,21 @@ body[data-pane-count="3"] .week-view-sheet{
    the events use, so a blocked hour still reads when the day is full. */
 .wv-busy{
   position:absolute;border-radius:8px;overflow:hidden;cursor:pointer;
+  /* isolation keeps the negative-z hour marks inside the block's own layer. */
+  isolation:isolate;
   background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--slate-bg) 78%,var(--bg)),color-mix(in srgb,var(--slate-bg) 78%,var(--bg)) 6px,color-mix(in srgb,var(--slate-icon) 18%,transparent) 6px,color-mix(in srgb,var(--slate-icon) 18%,transparent) 10px);
   box-shadow:inset 3px 0 0 color-mix(in srgb,var(--slate-icon) 70%,transparent);
   -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+/* Hour marks inside grid cards: above the card's background, below its text
+   and emoji — quiet enough not to add noise, and never a strikethrough. */
+.wv-ev-hour{
+  position:absolute;left:0;right:0;height:1px;z-index:-1;pointer-events:none;
+  background:color-mix(in srgb,var(--wv-token-text,var(--slate-text)) 22%,transparent);
+}
+/* Agenda columns pack cards on the elastic clock; keep their marks fainter. */
+.wv-col.is-aligned .wv-ev-hour{
+  background:color-mix(in srgb,var(--wv-token-text,var(--slate-text)) 14%,transparent);
 }
 .wv-busy-label{
   position:absolute;left:6px;top:2px;max-width:calc(100% - 12px);
@@ -359,7 +384,6 @@ body[data-pane-count="3"] .week-view-sheet{
 }
 
 /* ── Elastic list (default) ───────────────────────────────────────────── */
-#week-view-mode{font-size:12px;min-height:32px;}
 .wv-daybar{
   display:flex;align-items:center;gap:8px;
   padding:2px 2px 8px;flex:0 0 auto;min-width:0;
@@ -424,6 +448,8 @@ body[data-pane-count="3"] .week-view-sheet{
   display:flex;flex-direction:column;justify-content:center;gap:2px;
   padding:8px 10px 8px 14px;border-radius:10px;text-align:left;
   border:1px solid color-mix(in srgb,var(--text) 8%,transparent);
+  /* List cards have no hour lines behind them; keep them solid. */
+  background:var(--wv-token-bg,var(--slate-bg));
   box-shadow:none;overflow:hidden;
 }
 .wv-list .wv-event-fill{
@@ -550,21 +576,15 @@ body[data-pane-count="3"] .week-view-sheet{
 /* Calendar controls keep a complete date range visible on small phones. */
 .wv-head{gap:12px;padding-bottom:12px;}
 .wv-title .wv-title-label{font-size:22px;font-weight:650;letter-spacing:-0.5px;}
-.wv-title small{font-size:12px;margin-top:3px;}
+.wv-title small{font-size:11px;margin-top:3px;}
 .wv-head #week-view-close{flex:0 0 40px;width:40px;height:40px;min-height:40px;border-radius:50%;}
-.wv-toolbar{display:flex;align-items:center;gap:10px;flex:0 0 auto;padding:0 0 12px;}
-.wv-nav{gap:2px;}
-.wv-toolbar button,.wv-toolbar select{min-height:40px;}
-.wv-nav .mini-nav{width:36px;height:40px;border-radius:10px;}
-.wv-nav #week-view-today{border:1px solid var(--border);border-radius:10px;padding:0 12px;margin-right:6px;color:var(--text);font-size:12px;}
 .wv-view-switch{display:flex;padding:3px;gap:2px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;}
 .wv-view-switch button{border:0;background:transparent;color:var(--text3);border-radius:8px;padding:0 14px;font:inherit;font-size:12px;cursor:pointer;min-height:34px;}
 .wv-view-switch button[aria-pressed="true"]{background:var(--bg);color:var(--text);box-shadow:0 1px 3px #00000012;}
 .wv-select-label{display:flex;min-width:0;}
-.wv-toolbar select,.wv-color-label select{border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);padding:6px 8px;font:inherit;font-size:12px;cursor:pointer;}
-.wv-toolbar .wv-create{margin-left:auto;display:flex;align-items:center;gap:5px;background:var(--teal-bg);color:var(--teal-text);border-radius:12px;padding:0 14px;font-weight:600;font-size:12px;}
+.wv-select-label select,.wv-color-label select{border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);padding:6px 8px;font:inherit;font-size:12px;min-height:34px;cursor:pointer;}
 .wv-create i{font-size:18px;}
-.wv-options{display:flex;align-items:center;gap:10px;padding-bottom:10px;flex:0 0 auto;min-height:42px;}
+.wv-options{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;padding-bottom:10px;flex:0 0 auto;min-height:42px;}
 .wv-color-label{display:flex;align-items:center;gap:6px;color:var(--text3);font-size:12px;white-space:nowrap;}
 .wv-color-label select{padding:5px 7px;min-height:34px;max-width:110px;}
 #week-view-filters{min-height:34px;font-size:12px;white-space:nowrap;}
@@ -604,16 +624,16 @@ body[data-pane-count="3"] .week-view-sheet{
 .is-aligned-grid .wv-list .wv-nowline::before{left:0;background:var(--red-icon);}
 .is-aligned-grid .wv-list .wv-nowline i{left:-3px;background:var(--red-icon);}
 .wv-event:hover{filter:brightness(0.97);}
-.wv-toolbar button:focus-visible,.wv-toolbar select:focus-visible,.wv-options button:focus-visible,.wv-options select:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
+.wv-options button:focus-visible,.wv-options select:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
 body:has(#week-sheet.open) #add-sheet{z-index:115;}
 @media (max-width:599px){
-  .week-view-sheet{padding-top:calc(12px + var(--content-safe-top));--wv-gutter:24px;--wv-col-gap:2px;}
+  .week-view-sheet{padding-top:calc(12px + var(--content-safe-top));--wv-gutter:18px;--wv-col-gap:2px;}
+  /* Pull the calendar board toward the screen edges: the hour rail sits ~4px
+     from the edge while the header and options keep a comfortable inset. */
+  .wv-scroller{margin-left:-8px;margin-right:-8px;}
   .wv-title .wv-title-label{font-size:20px;}
-  .wv-toolbar{gap:6px;flex-wrap:wrap;}
-  .wv-toolbar .wv-nav{margin-right:auto;}
   .wv-view-switch button{padding-inline:10px;}
-  .wv-toolbar .wv-create{padding:0 10px;margin-left:0;}
-  .wv-options{gap:4px;}
+  .wv-options{gap:4px 8px;}
   .wv-color-label{gap:4px;font-size:11px;}
   .wv-color-label select{max-width:93px;font-size:11px;}
   #week-view-filters{font-size:11px;padding-inline:6px;}
@@ -633,12 +653,14 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
   .wv-body.is-multi .wv-busy-label i{display:none;}
 }
 @media (max-width:359px){
-  .wv-toolbar .wv-view-switch{order:2;margin-right:auto;}
-  .wv-toolbar .wv-create{order:3;}
-  .wv-toolbar .wv-select-label{margin-left:auto;}
+  .wv-head{gap:4px;}
+  .wv-today-cal{flex-basis:30px;width:30px;height:30px;min-height:30px;}
+  .wv-today-cal::before{height:5px;}
+  .wv-today-cal-dow{margin-top:6px;font-size:6px;}
+  .wv-today-cal-day{font-size:13px;}
 }
 .wv-head .wv-create{display:flex;align-items:center;gap:4px;min-height:38px;padding:0 12px;border-radius:12px;background:var(--teal-bg);color:var(--teal-text);font-size:12px;font-weight:600;}
-@media (max-width:359px){.wv-options{flex-wrap:wrap;}.wv-zoom{margin-left:auto;}}
+@media (max-width:359px){.wv-zoom{margin-left:auto;}}
 @media (max-width:599px){
   .week-view-sheet:has(.wv-body.is-multi) .wv-days-head .wv-day-head{flex-direction:row;justify-content:center;min-height:42px;gap:5px;}
   .week-view-sheet:has(.wv-body.is-multi) .wv-days-head .wv-load{display:none;}
@@ -649,7 +671,6 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
 .wv-head{padding-bottom:6px;gap:6px;min-height:40px;}
 .wv-head .wv-display-options{flex:0 0 34px;width:34px;height:34px;border-radius:10px;}
 .wv-head #week-view-close{flex-basis:34px;width:34px;height:34px;min-height:34px;}
-.wv-toolbar{padding-bottom:8px;}
 .wv-options[hidden],.wv-legend[hidden]{display:none;}
 .wv-options{border-top:1px solid var(--border);padding-top:6px;padding-bottom:6px;}
 .wv-legend{padding-bottom:6px;}
@@ -667,17 +688,7 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
   .wv-head .wv-create span{display:none;}
   .wv-head .wv-create i{font-size:19px;}
   .wv-head .wv-display-options{margin-left:auto;}
-  .wv-toolbar{gap:5px;flex-wrap:nowrap;}
-  .wv-toolbar .wv-nav{margin-right:auto;}
   .wv-view-switch button{padding-inline:9px;}
-  .wv-toolbar .wv-view-switch{order:0;margin:0;}
-  .wv-toolbar .wv-select-label{margin-left:0;}
-  .wv-toolbar select{padding-inline:5px;}
-  .wv-nav #week-view-today{padding-inline:8px;margin-right:2px;}
-  .wv-nav .mini-nav{width:30px;}
-  .wv-toolbar .wv-nav button{min-height:36px;height:36px;}
-  .wv-toolbar select{min-height:36px;}
-  .wv-view-switch button{min-height:30px;}
 }
 /* Empty painting layers must not block the busy/travel controls below them. */
 .wv-layer{pointer-events:none;}
@@ -685,19 +696,12 @@ body:has(#week-sheet.open) #add-sheet{z-index:115;}
 .wv-marker-cell{max-height:54px;overflow:auto;}
 .wv-unplaced{max-height:80px;}
 .wv-head .icon-btn{color:var(--text2);background:transparent;}
-.wv-nav .mini-nav{color:var(--text2);background:var(--bg3);}
 @media (min-width:1100px){
   .week-view-sheet .wv-head{min-height:44px;padding-bottom:8px;}
   .week-view-sheet .wv-title{max-width:230px;margin-right:auto;}
-  .week-view-sheet .wv-toolbar{position:absolute;top:18px;left:270px;right:225px;padding:0;}
 }
-@media (min-width:1100px){.week-view-sheet .wv-toolbar{z-index:66;}}
 @media (max-width:359px){
-  .wv-toolbar .wv-select-label{flex:0 0 70px;}
-  .wv-toolbar select{width:70px;}
   .wv-view-switch button{font-size:11px;padding-inline:7px;}
-  .wv-nav #week-view-today{width:46px;padding-inline:0;}
-  .wv-nav .mini-nav{width:28px;}
 }
 /* Calendar comparisons can use the available width, including tablets and
    wide monitors, instead of inheriting a single-column reading width. */

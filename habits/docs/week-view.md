@@ -16,7 +16,10 @@ Date jumps place the chosen day at the left edge, including the end of the
 planning horizon. Jumps into past years keep a bounded fourteen-day strip.
 Today returns to
 the current day and scrolls to the current time. Left and right keys move one
-day. Vertical gestures scroll the clock without creating anything. Background
+day. Vertical gestures scroll the clock without creating anything and never
+slide the strip sideways. When a horizontal drag settles, the strip eases onto
+the nearest day, and only then do the date title and the highlighted day
+header move. Background
 preview updates wait for touch and momentum scrolling to settle before replacing
 the board, so a late worker reply cannot interrupt a swipe.
 
@@ -32,9 +35,13 @@ On two or three days the name sits above the start time, and the time stays
 even on a short block. Each day header adds one
 short summary. A single day can also show free time, or that the day is tight.
 A seven-day week stays compact.
-Grid uses a proportional 24-hour clock and starts at 150% zoom. Display options
-include zoom in/out; changing zoom or switching layouts keeps the time at the
+Grid uses a proportional 24-hour clock and starts at 150% zoom. The Agenda/Grid
+switch, the day count, color, filters, and grid zoom all live in the display
+options panel; changing zoom or switching layouts keeps the time at the
 center of the usable viewport stable, accounting for the sticky date header.
+Grid and agenda blocks carry faint hour marks inside them, so a long block
+still shows where its hours fall; the marks sit behind text and emoji, so
+nothing is struck through.
 At the start or end of the clock, normal scroll limits still apply.
 
 The date title opens a floating month picker without reducing schedule space.
@@ -65,7 +72,8 @@ Filters remain shared with the calendar overview. Busy time remains visible.
 | Date header | Open day details and actions without repeating the agenda shown in the calendar. |
 | Empty space in Grid or a multi-day Agenda | Stage a new task at that date and time, rounded to the nearest 15 minutes. Save remains explicit and opens the new task’s schedule, following the existing add flow. |
 | Add | Stage a new task on the selected day, with its start time left open. |
-| Display options | Reveal color, filter, and grid zoom controls without using schedule space while closed. |
+| Display options | Reveal the Agenda/Grid switch, day count, color, filter, and grid zoom controls without using schedule space while closed. |
+| Today (mini calendar in the header) | Return to the current day and scroll to the current time. The button always shows today's date. |
 
 Closing an editor returns to the same calendar, date selection, scroll position,
 and tapped control where it still exists. Escape/Back closes the top editor

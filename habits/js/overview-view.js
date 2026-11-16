@@ -1136,13 +1136,17 @@ function renderDayLogsListStep(key){
   const activityHtml = activityInner ? dayLogSectionHtml('Activity','activity',activityInner) : '';
   const hasJournal = Boolean(plannedInner || activityInner);
   const hasAgendaRows = Boolean(agendaHtml && !/nothing placed|fitting this day/.test(agendaHtml));
+  // Opened from the week calendar: the agenda is deliberately hidden there
+  // because the calendar behind already shows it. Silence instead of claiming
+  // "this day is open" — the visible plan disproves it.
+  const agendaHidden = $('day-logs-sheet').dataset.hideAgenda === '1';
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   $('day-logs-sub').textContent = (hasJournal || hasAgendaRows)
     ? 'tap an item for actions'
-    : (pastDay ? 'Nothing logged yet' : 'Nothing planned or completed yet');
+    : (agendaHidden ? '' : (pastDay ? 'Nothing logged yet' : 'Nothing planned or completed yet'));
 
   const sections = `${weatherHtml}${agendaHtml}${plannedHtml}${activityHtml}`;
-  const listHtml = sections || `<div class="day-empty-state">
+  const listHtml = sections || (agendaHidden ? '' : `<div class="day-empty-state">
     <span class="day-empty-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
     <b>This day is open</b>
     <small>${dayLogsCanPlan(key)
@@ -1150,7 +1154,7 @@ function renderDayLogsListStep(key){
         ? 'Add a plan, check a time, log something you did, or change how much time this day has.'
         : 'Add a plan, or check whether a time can be made open.')
       : 'Log a missed day, check a time, or change how much time this day had.'}</small>
-  </div>`;
+  </div>`);
   $('day-logs-body').innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
       ${dayLogsCanPlan(key) ? `<button type="button" class="day-quick-action primary" id="day-logs-plan">

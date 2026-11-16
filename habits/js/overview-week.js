@@ -589,6 +589,14 @@ function weekViewSharedTimeAxis(dayRows){
   return {height:positions[positions.length-1]+12,timeToY,yToTime,ticks};
 }
 
+// Same idea as weekViewCardHourMarks for the elastic agenda clock: the shared
+// axis compresses quiet hours, so mark positions come from its hour ticks.
+function weekViewAxisHourMarks(axis,top,height){
+  if(!axis || !Array.isArray(axis.ticks))return '';
+  return axis.ticks.map(tick=>tick.y > top + 1 && tick.y < top + height - 1
+    ? `<i class="wv-ev-hour" style="top:${tick.y - top}px"></i>` : '').join('');
+}
+
 function weekViewAlignedColumnHtml(day,rows,axis,todayKey,visibleCount){
   const wide = (visibleCount || 1) <= 1;
   const flat = (visibleCount || 1) <= 3;
@@ -601,7 +609,8 @@ function weekViewAlignedColumnHtml(day,rows,axis,todayKey,visibleCount){
       showMeta:wide && height >= 48,
       showDur:wide && height >= 36,
       showClock:!wide && height >= 28,
-      wide,flat,narrow:shared,brief:height < 40
+      wide,flat,narrow:shared,brief:height < 40,
+      marks:weekViewAxisHourMarks(axis,axis.timeToY(ev.topMin),height)
     };
     const html = weekViewListHabitHtml(ev,box,false);
     const lanes = ev.lanes || 1;
@@ -609,7 +618,9 @@ function weekViewAlignedColumnHtml(day,rows,axis,todayKey,visibleCount){
   }).join('');
   const busy = rows.busy.map(block=>{
     _weekViewCtx.set(block.id,block);
-    return `<button type="button" class="wv-busy" data-wv-busy="${escapeHtml(block.id)}" style="${pos(block)}left:2px;right:2px;" aria-label="${escapeHtml(`busy, ${block.label}, ${weekViewTimeLabel(block.start)} – ${weekViewTimeLabel(block.end)}`)}"><span class="wv-busy-label"><i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(block.label)}</span></span></button>`;
+    const blockTop = axis.timeToY(block.topMin);
+    const blockH = Math.max(2,axis.timeToY(block.botMin)-blockTop-4);
+    return `<button type="button" class="wv-busy" data-wv-busy="${escapeHtml(block.id)}" style="${pos(block)}left:2px;right:2px;" aria-label="${escapeHtml(`busy, ${block.label}, ${weekViewTimeLabel(block.start)} – ${weekViewTimeLabel(block.end)}`)}">${weekViewAxisHourMarks(axis,blockTop,blockH)}<span class="wv-busy-label"><i class="ti ti-lock" aria-hidden="true"></i><span>${escapeHtml(block.label)}</span></span></button>`;
   }).join('');
   const travel = rows.travel.map(leg=>{
     _weekViewCtx.set(leg.id,leg);
@@ -970,6 +981,32 @@ function weekViewCancelAlign(){
   _weekViewAligning = false;
 }
 
+// Selection used to repaint on every scroll frame, which dragged the day
+// highlight and title across headers mid-swipe. Both wait for the strip to
+// settle instead; the debounce covers engines without the scrollend event.
+function weekViewQueueSettle(scroller){
+  clearTimeout(_weekViewSettleTimer);
+  if(!scroller || !scroller.isConnected)return;
+  _weekViewSettleTimer = setTimeout(()=>{
+    _weekViewSettleTimer = null;
+    weekViewOnScrollSettled(document.querySelector('#week-view-body .wv-scroller'));
+  },150);
+}
+
+function weekViewOnScrollSettled(scroller){
+  clearTimeout(_weekViewSettleTimer);
+  _weekViewSettleTimer = null;
+  if(!scroller || !scroller.isConnected)return;
+  weekViewAlignDays(scroller);
+  weekViewPaintSelection();
+}
+
+function weekViewCancelScroll(){
+  clearTimeout(_weekViewSettleTimer);
+  _weekViewSettleTimer = null;
+  weekViewCancelAlign();
+}
+
 // A free horizontal drag may stop mid-column. Once it settles, ease to the
 // nearest day so a column is not left cut off. The native snap does this for
 // a finger drag; this covers a stop that is still between days.
@@ -1256,7 +1293,6 @@ let _weekViewTodayKey = '';
 let _weekViewLayout = 'phone';
 let _weekViewBound = false;
 let _weekViewTimer = null;
-let _weekViewSwipeAt = 0;
 let _weekViewScrollReset = true;
 let _weekViewResize = null;
 let _weekViewError = '';
@@ -1283,6 +1319,7 @@ let _weekViewScrollTop = 0;
 let _weekViewScrollToKey = '';
 let _weekViewAlignToken = 0;
 let _weekViewAligning = false;
+let _weekViewSettleTimer = null;
 let _weekViewStrip = [];
 let _weekViewRowsByDay = new Map();
 let _weekHorizonSeq = 0;
@@ -1394,6 +1431,17 @@ function weekViewCompactTime(ts){
   return weekViewRailClock(weekViewMinuteOfDay(ts));
 }
 
+// Faint hour marks inside a grid card, so a long block still shows where its
+// hours fall. They paint between the card's background and its text (see
+// .wv-ev-hour), so words and emoji are never struck through.
+function weekViewCardHourMarks(topMin,botMin){
+  const marks = [];
+  for(let h = Math.floor(topMin / 60) + 1;h * 60 < botMin;h++){
+    marks.push(`<i class="wv-ev-hour" style="top:calc(${h * 60 - topMin} * var(--wv-hour-h) / 60);"></i>`);
+  }
+  return marks.join('');
+}
+
 function weekViewEventHtml(ev){
   const visBot = ev.visBotMin == null ? ev.botMin : ev.visBotMin;
   const density = weekViewDensityClass(ev.topMin,visBot);
@@ -1403,6 +1451,7 @@ function weekViewEventHtml(ev){
   const label = `${when}, ${ev.title}`;
   _weekViewCtx.set(ev.id,ev);
   return `<button type="button" class="wv-event ${density}${narrow}${statusCls}" data-wv-event="${escapeHtml(ev.id)}" data-wv-hid="${escapeHtml(ev.hid || '')}" style="${weekViewTokenVars(ev.token)}${weekViewLaneStyle(ev)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(`${when} · ${ev.title}`)}">`
+    + weekViewCardHourMarks(ev.topMin,visBot)
     + `<span class="wv-event-title">${ev.emoji ? `<span class="wv-event-emoji">${escapeHtml(ev.emoji)}</span>` : ''}<span class="wv-event-name">${escapeHtml(ev.title)}</span></span>`
     + `<span class="wv-event-time"><span class="wv-event-time-full">${escapeHtml(weekViewEventTimeText(ev))}</span><span class="wv-event-time-short">${escapeHtml(weekViewCompactTime(ev.start))}</span></span>`
     + (ev.status === 'active' ? '<span class="wv-event-flag">now</span>' : '')
@@ -1415,7 +1464,7 @@ function weekViewBusyHtml(b){
   const label = `${b.label}, ${when}`;
   const density = weekViewDensityClass(b.topMin,b.botMin);
   const text = density === 'is-tall' || density === 'is-regular' ? `${b.label} · ${weekViewTimeLabel(b.start)}` : b.label;
-  return `<div class="wv-busy ${density}" data-wv-busy="${escapeHtml(b.id)}" role="button" tabindex="0" aria-label="${escapeHtml(`busy, ${label}`)}" title="${escapeHtml(label)}" style="${weekViewBandStyle(b.topMin,b.botMin)}left:1px;width:calc(100% - 2px);"><span class="wv-busy-label">${escapeHtml(text)}</span></div>`;
+  return `<div class="wv-busy ${density}" data-wv-busy="${escapeHtml(b.id)}" role="button" tabindex="0" aria-label="${escapeHtml(`busy, ${label}`)}" title="${escapeHtml(label)}" style="${weekViewBandStyle(b.topMin,b.botMin)}left:1px;width:calc(100% - 2px);">${weekViewCardHourMarks(b.topMin,b.botMin)}<span class="wv-busy-label">${escapeHtml(text)}</span></div>`;
 }
 
 function weekViewTravelHtml(tr){
@@ -1612,19 +1661,19 @@ function weekViewListHabitHtml(ev,box,rail){
       : (ev.emoji ? `<span class="wv-event-emoji" aria-hidden="true">${escapeHtml(ev.emoji)}</span>` : '');
     const clock = box.showClock ? `<span class="wv-event-clock">${escapeHtml(weekViewCompactTime(ev.start))}</span>` : '';
     return `<div class="wv-event${statusCls}${full}${fit}${mark ? ' has-mark' : ''}" style="${style}">`
-      + `<span class="wv-event-fill" aria-hidden="true"></span>${mark}`
+      + `${box.marks || ''}<span class="wv-event-fill" aria-hidden="true"></span>${mark}`
       + `<button type="button" class="wv-event-main" data-wv-event="${escapeHtml(ev.id)}" data-wv-hid="${escapeHtml(ev.hid || '')}" aria-label="${escapeHtml(`${when}, ${ev.title}`)}"><span class="wv-event-name">${escapeHtml(ev.title)}</span>${clock}</button>`
       + `</div>`;
   }
   if(!box.flat){
     return `<button type="button" class="wv-event${statusCls}${full}" data-wv-event="${escapeHtml(ev.id)}" data-wv-hid="${escapeHtml(ev.hid || '')}" style="${style}" aria-label="${escapeHtml(`${when}, ${ev.title}`)}">`
-      + `<span class="wv-event-fill" aria-hidden="true"></span>${body}</button>`;
+      + `${box.marks || ''}<span class="wv-event-fill" aria-hidden="true"></span>${body}</button>`;
   }
   const mark = weekViewCanMarkDone(ev)
     ? `<button type="button" class="wv-event-mark" data-wv-done="${escapeHtml(ev.id)}" aria-label="${escapeHtml(ev.emoji ? `Mark ${ev.title} done` : `Mark ${ev.title} done`)}">${ev.emoji ? escapeHtml(ev.emoji) : '<i class="ti ti-check" aria-hidden="true"></i>'}</button>`
     : (ev.emoji ? `<span class="wv-event-emoji" aria-hidden="true">${escapeHtml(ev.emoji)}</span>` : '');
   return `<div class="wv-event${statusCls}${full}${mark ? ' has-mark' : ''}" style="${style}">`
-    + `<span class="wv-event-fill" aria-hidden="true"></span>${mark}`
+    + `${box.marks || ''}<span class="wv-event-fill" aria-hidden="true"></span>${mark}`
     + `<button type="button" class="wv-event-main" data-wv-event="${escapeHtml(ev.id)}" data-wv-hid="${escapeHtml(ev.hid || '')}" aria-label="${escapeHtml(`${when}, ${ev.title}`)}">${body}</button>`
     + `</div>`;
 }
@@ -1718,6 +1767,7 @@ function weekViewListHtml(layout,rows,opts){
 }
 
 function weekViewSyncModeButton(){
+  weekViewPaintTodayButton();
   document.querySelectorAll('[data-wv-mode]').forEach(button=>{
     button.setAttribute('aria-pressed',String(button.dataset.wvMode === _weekViewMode));
   });
@@ -1740,6 +1790,19 @@ function weekViewSyncModeButton(){
   $('week-view-zoom-out').disabled = _weekViewZoom === WEEK_VIEW_ZOOM_STEPS[0];
   $('week-view-zoom-in').disabled = _weekViewZoom === WEEK_VIEW_ZOOM_STEPS[WEEK_VIEW_ZOOM_STEPS.length-1];
   $('week-view-filters').classList.toggle('has-active',weekViewFiltersActive());
+}
+
+// The header's mini-calendar button always shows the real current date, so it
+// stays honest across midnight (the day-change tick repaints the header).
+function weekViewPaintTodayButton(){
+  const button = $('week-view-today');
+  if(!button)return;
+  const now = new Date();
+  const dow = button.querySelector('.wv-today-cal-dow');
+  const day = button.querySelector('.wv-today-cal-day');
+  if(dow)dow.textContent = now.toLocaleDateString(undefined,{weekday:'short'});
+  if(day)day.textContent = String(now.getDate());
+  button.setAttribute('aria-label',`jump to today, ${now.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}`);
 }
 
 function renderWeekViewHeader(label,sub){
@@ -2111,7 +2174,6 @@ function weekViewChangeZoom(direction){
 }
 
 function weekViewActivate(event){
-  if(Date.now() - _weekViewSwipeAt < 450)return; // swipe's trailing tap
   const target = event && event.target;
   if(!target || !target.closest)return;
   if(target.closest('#week-view-label')){weekViewToggleMonth();return;}
@@ -2209,14 +2271,6 @@ function weekViewActivate(event){
   }
 }
 
-function weekViewShiftDay(dir){
-  const days = _weekViewStrip.length ? _weekViewStrip : weekViewStripDays();
-  const idx = Math.max(0,days.findIndex(d=>d.dayKey === weekViewDaySel));
-  const next = days[idx + dir];
-  if(!next)return;
-  weekViewGoToDay(next.dayKey);
-}
-
 function weekViewNudge(dir){
   const scroller = document.querySelector('#week-view-body .wv-scroller');
   if(!scroller)return;
@@ -2311,36 +2365,6 @@ function weekViewHasCoveringSheet(){
   });
 }
 
-function weekViewBindSwipe(){
-  // Delegated on the persistent body container — the scroller element is
-  // recreated on every render.
-  const bodyEl = $('week-view-body');
-  if(!bodyEl)return;
-  let startX = 0,startY = 0,intent = null;
-  bodyEl.addEventListener('touchstart',e=>{
-    if(Date.now() - _weekViewSwipeAt < 450){intent = null;return;}
-    if(e.touches.length !== 1){intent = null;return;}
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    intent = null;
-  },{passive:true});
-  bodyEl.addEventListener('touchmove',e=>{
-    if(intent != null || !e.touches.length)return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    // Horizontal intent only, so vertical scrolling and edge-back survive.
-    if(Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5)intent = dx > 0 ? -1 : 1;
-    else if(Math.abs(dy) > 48)intent = 0;
-  },{passive:true});
-  bodyEl.addEventListener('touchend',()=>{
-    if(intent && _weekViewLayout === 'phone'){
-      _weekViewSwipeAt = Date.now(); // suppress the swipe's trailing tap
-      weekViewShiftDay(intent);
-    }
-    intent = null;
-  },{passive:true});
-}
-
 function weekViewRetry(){
   _weekViewError = '';
   weekViewGen += 1;
@@ -2378,7 +2402,7 @@ function weekViewSuspend(){
 }
 
 function weekViewCleanup(){
-  weekViewCancelAlign();
+  weekViewCancelScroll();
   weekViewSuspend();
   _weekViewCache.clear();
   _weekViewCtx = new Map();
@@ -2440,17 +2464,24 @@ function bindWeekView(){
   body.addEventListener('scroll',event=>{
     if(!event.target.classList || !event.target.classList.contains('wv-scroller'))return;
     _weekViewScrollAt = Date.now();
-    weekViewPaintSelection();
+    weekViewQueueSettle(event.target);
   },{passive:true,capture:true});
   body.addEventListener('scrollend',event=>{
     if(!event.target.classList || !event.target.classList.contains('wv-scroller'))return;
-    weekViewAlignDays(event.target);
+    weekViewOnScrollSettled(event.target);
   },{capture:true});
   body.addEventListener('pointerdown',event=>{
-    if(event.target.closest && event.target.closest('.wv-scroller'))weekViewCancelAlign();
+    if(event.target.closest && event.target.closest('.wv-scroller'))weekViewCancelScroll();
   },{capture:true});
   body.addEventListener('touchstart',()=>{_weekViewTouchActive = true;},{capture:true,passive:true});
-  const endTouch = event=>{_weekViewTouchActive = event.touches.length > 0;};
+  const endTouch = event=>{
+    _weekViewTouchActive = event.touches.length > 0;
+    // A tap that stopped a fling interrupts scrolling without a scrollend,
+    // so give the strip one more chance to settle on a day.
+    if(!_weekViewTouchActive && Date.now() - _weekViewScrollAt < 400){
+      weekViewQueueSettle(document.querySelector('#week-view-body .wv-scroller'));
+    }
+  };
   window.addEventListener('touchend',endTouch,{capture:true,passive:true});
   window.addEventListener('touchcancel',endTouch,{capture:true,passive:true});
 

@@ -611,8 +611,11 @@ $('day-logs-sheet').addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('#day-logs-home')){
+    // Home means leaving every calendar surface — the day sheet, the week
+    // calendar when it opened from there, and the overview.
     closeDayLogsSheet({refreshOverview:false});
     closeSheet('overview-sheet');
+    closeSheet('week-sheet');
     return;
   }
 
