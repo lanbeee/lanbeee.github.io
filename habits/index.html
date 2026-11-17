@@ -89,6 +89,16 @@
       </button>
     </div>
     <div class="app-bar-actions">
+      <button type="button" class="topic-filter presence-filter app-bar-place" id="app-bar-place" aria-label="change today’s starting place" hidden>
+        <span class="presence-icon"><i class="ti ti-current-location" aria-hidden="true"></i><i class="presence-signal" aria-hidden="true"></i></span>
+        <span class="presence-copy"><small>Current Place</small><b id="app-bar-place-name">set place</b></span>
+        <i class="ti ti-chevron-down presence-chevron" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="home-filter-trigger app-bar-filters" id="app-bar-filters" aria-label="open filters" hidden>
+        <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
+        <span>Filters</span>
+        <b hidden>0</b>
+      </button>
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>

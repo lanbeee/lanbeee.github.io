@@ -81,6 +81,10 @@
 }
 .home-filter-sheet-head .sheet-title{font-size:22px;font-weight:740;letter-spacing:-0.025em;margin-bottom:5px;}
 .home-filter-sheet-head .about-copy{margin:0;max-width:320px;}
+/* Bulk edit + app settings share one centered row instead of stacking. */
+.filter-links-row{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:18px;
+}
 .filter-settings-link{
   align-self:center;flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;
   min-height:44px;padding:0 8px;border:0;background:none;

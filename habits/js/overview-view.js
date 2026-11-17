@@ -75,8 +75,8 @@ function renderOverviewFilters(data){
   let locChoices = minimal ? [] : overviewLocationChoices(data);
   const hasTopics = topicChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
   const hasLocs = locChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
-  if(!hasTopics || !topicChoices.some(choice=>choice.key === overviewTopicFilter))overviewTopicFilter = 'all';
-  if(!hasLocs || !locChoices.some(choice=>choice.key === overviewLocationFilter))overviewLocationFilter = 'all';
+  if(!hasTopics || !topicChoices.some(choice=>choice.key === overviewTopicFilter))setSharedFilter('topic','all');
+  if(!hasLocs || !locChoices.some(choice=>choice.key === overviewLocationFilter))setSharedFilter('location','all');
   if(hasTopics)topicChoices = orderFilterChoices(topicChoices, overviewTopicFilter);
   else topicChoices = [];
   if(hasLocs)locChoices = orderFilterChoices(locChoices, overviewLocationFilter);

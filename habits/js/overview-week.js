@@ -2499,16 +2499,13 @@ function bindWeekView(){
       weekViewSavePreferences();
       renderWeekView();
     }else if(filter){
-      const selection = overviewFilterSelection();
       for(const kind of ['topic','location','type','when','priority']){
         const value = filter.getAttribute(`data-wvfilter-${kind}`);
-        if(value !== null)selection[kind] = value;
+        if(value !== null)setSharedFilter(kind,value);
       }
-      overviewTopicFilter = selection.topic;
-      overviewLocationFilter = selection.location;
-      syncOverviewFilterSelection(selection);
       dayLogsKey = null;
       renderWeekView();
+      syncSharedFilterSurfaces('both');
     }else return;
     weekViewSetOptionsOpen(false);
   });
@@ -2519,9 +2516,10 @@ function bindWeekView(){
     weekViewOpenAdd(weekViewDaySel);
   });
   $('week-view-filters-reset').addEventListener('click',()=>{
-    clearOverviewFilters();
+    clearSharedFilters();
     dayLogsKey = null;
     renderWeekView();
+    syncSharedFilterSurfaces('both');
     weekViewSetOptionsOpen(false);
   });
   // Return from every editor to this same day, scroll position and control.

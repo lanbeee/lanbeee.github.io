@@ -366,6 +366,11 @@ $('bar-open-add')?.addEventListener('click',()=>{
   $('ting-message').focus({preventScroll:true});
 });
 $('bar-open-overview')?.addEventListener('click',()=>openRememberedCalendar());
+// Wide-layout chrome: current place and the shared filters live in the app-bar.
+$('app-bar-place')?.addEventListener('click',()=>{
+  if(typeof openPresencePicker === 'function')openPresencePicker();
+});
+$('app-bar-filters')?.addEventListener('click',()=>openSheet('home-filter-sheet'));
 $('bar-open-about')?.addEventListener('click',()=>{
   if(typeof openSettingsSheet === 'function')openSettingsSheet();
 });

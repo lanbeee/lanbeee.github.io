@@ -954,7 +954,8 @@ function openCalendarOverview(options = {}){
   closeSearch();
   overviewMonthOffset = (selected.getFullYear() - now.getFullYear()) * 12 + selected.getMonth() - now.getMonth();
   overviewRecentOffset = 0;
-  if(!options.preserveFilters)clearOverviewFilters();
+  // Shared filters: opening the calendar keeps the selection — it is the same
+  // state Home is showing. Resetting happens through the reset controls.
   overviewRangeFilter = month ? 'month' : 'recent';
   overviewListPane = 'plan';
   renderOverview();
@@ -1003,14 +1004,15 @@ $('overview-filter')?.addEventListener('click',e=>{
     return;
   }
   if(takeFilterClick(e, [
-    ['data-clear-overview-topic', ()=>{ overviewTopicFilter = 'all'; }],
-    ['data-clear-overview-location', ()=>{ overviewLocationFilter = 'all'; }],
-    ['data-clear-overview-type', ()=>{ overviewTypeFilter = 'all'; }],
-    ['data-clear-overview-when', ()=>{ overviewWhenFilter = 'all'; }],
-    ['data-clear-overview-priority', ()=>{ overviewPriorityFilter = 'all'; }]
+    ['data-clear-overview-topic', ()=>{ setSharedFilter('topic','all'); }],
+    ['data-clear-overview-location', ()=>{ setSharedFilter('location','all'); }],
+    ['data-clear-overview-type', ()=>{ setSharedFilter('type','all'); }],
+    ['data-clear-overview-when', ()=>{ setSharedFilter('when','all'); }],
+    ['data-clear-overview-priority', ()=>{ setSharedFilter('priority','all'); }]
   ])){
     dayLogsKey = null;
     renderOverview();
+    syncSharedFilterSurfaces('calendar');
     return;
   }
   const rangeBtn = e.target.closest('[data-overview-range]');
@@ -1025,23 +1027,25 @@ $('overview-filter')?.addEventListener('click',e=>{
 });
 $('calendar-filter-groups')?.addEventListener('click',e=>{
   const hit = takeFilterClick(e, [
-    ['data-overview-topic', value=>{ overviewTopicFilter = value; }],
-    ['data-overview-location', value=>{ overviewLocationFilter = value; }],
-    ['data-overview-type', value=>{ overviewTypeFilter = value; }],
-    ['data-overview-when', value=>{ overviewWhenFilter = value; }],
-    ['data-overview-priority', value=>{ overviewPriorityFilter = value; }]
+    ['data-overview-topic', value=>{ setSharedFilter('topic',value); }],
+    ['data-overview-location', value=>{ setSharedFilter('location',value); }],
+    ['data-overview-type', value=>{ setSharedFilter('type',value); }],
+    ['data-overview-when', value=>{ setSharedFilter('when',value); }],
+    ['data-overview-priority', value=>{ setSharedFilter('priority',value); }]
   ]);
   if(!hit)return;
   dayLogsKey = null;
   renderOverview();
+  syncSharedFilterSurfaces('calendar');
 });
 const closeCalendarFilters = ()=>closeSheet('calendar-filter-sheet');
 $('calendar-filter-close')?.addEventListener('click',closeCalendarFilters);
 $('calendar-filter-done')?.addEventListener('click',closeCalendarFilters);
 $('calendar-filter-reset')?.addEventListener('click',()=>{
-  clearOverviewFilters();
+  clearSharedFilters();
   dayLogsKey = null;
   renderOverview();
+  syncSharedFilterSurfaces('calendar');
 });
 $('calendar-filter-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeCalendarFilters();
@@ -1075,6 +1079,7 @@ function applyHomeFilterChange(){
   // planner defers the full list render to its worker-backed path.
   if(typeof renderHomeTagFilter === 'function')renderHomeTagFilter(load());
   render();
+  if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
 }
 
 $('home-tag-filter')?.addEventListener('click',e=>{
@@ -1092,28 +1097,33 @@ $('home-tag-filter')?.addEventListener('click',e=>{
     return;
   }
   if(takeFilterClick(e, [
-    ['data-clear-home-topic', ()=>{ homeTopicFilter = 'all'; }],
-    ['data-clear-home-location', ()=>{ homeLocationFilter = 'all'; }],
-    ['data-clear-home-type', ()=>{ homeTypeFilter = 'all'; }],
-    ['data-clear-home-when', ()=>{ homeWhenFilter = 'all'; }],
-    ['data-clear-home-priority', ()=>{ homePriorityFilter = 'all'; }]
+    ['data-clear-home-topic', ()=>{ setSharedFilter('topic','all'); }],
+    ['data-clear-home-location', ()=>{ setSharedFilter('location','all'); }],
+    ['data-clear-home-type', ()=>{ setSharedFilter('type','all'); }],
+    ['data-clear-home-when', ()=>{ setSharedFilter('when','all'); }],
+    ['data-clear-home-priority', ()=>{ setSharedFilter('priority','all'); }]
   ])){
     applyHomeFilterChange();
+    syncSharedFilterSurfaces('home');
   }
 });
 $('home-filter-groups')?.addEventListener('click',e=>{
   const hit = takeFilterClick(e, [
-    ['data-home-topic', value=>{ homeTopicFilter = value; }],
-    ['data-home-location', value=>{ homeLocationFilter = value; }],
-    ['data-home-type', value=>{ homeTypeFilter = value; }],
-    ['data-home-when', value=>{ homeWhenFilter = value; }],
-    ['data-home-priority', value=>{ homePriorityFilter = value; }]
+    ['data-home-topic', value=>{ setSharedFilter('topic',value); }],
+    ['data-home-location', value=>{ setSharedFilter('location',value); }],
+    ['data-home-type', value=>{ setSharedFilter('type',value); }],
+    ['data-home-when', value=>{ setSharedFilter('when',value); }],
+    ['data-home-priority', value=>{ setSharedFilter('priority',value); }]
   ]);
-  if(hit)applyHomeFilterChange();
+  if(hit){
+    applyHomeFilterChange();
+    syncSharedFilterSurfaces('home');
+  }
 });
 $('home-filter-reset')?.addEventListener('click',()=>{
-  clearHomeFilters();
+  clearSharedFilters();
   applyHomeFilterChange();
+  syncSharedFilterSurfaces('home');
 });
 $('home-filter-close')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));
 $('home-filter-done')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));

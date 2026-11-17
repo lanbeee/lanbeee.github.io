@@ -1746,6 +1746,7 @@ function render(opts){
   const visible = visibleIndices(data);
   const indices = filteredVisibleIndices(data,visible);
   renderHomeTagFilter(data,visible);
+  if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
   if(!indices.length){
     empty.style.display = 'block';
     if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
@@ -1758,12 +1759,14 @@ function render(opts){
     }else if(filterLabel){
       empty.innerHTML = `nothing matches ${escapeHtml(filterLabel)}<br><span class="empty-sub">tap to clear filters</span>`;
       empty.onclick = ()=>{
-        if(typeof clearHomeFilters === 'function')clearHomeFilters();
+        if(typeof clearSharedFilters === 'function')clearSharedFilters();
+        else if(typeof clearHomeFilters === 'function')clearHomeFilters();
         else{
           homeTopicFilter = 'all';
           homeLocationFilter = 'all';
         }
         render();
+        if(typeof syncSharedFilterSurfaces === 'function')syncSharedFilterSurfaces('home');
       };
     }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){
       empty.innerHTML = 'hidden for now<br><span class="empty-sub">tap to show</span>';
