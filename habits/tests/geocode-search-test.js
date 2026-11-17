@@ -8,6 +8,7 @@ const baseUrl = process.env.HABITS_URL || 'http://127.0.0.1:4181/';
 const HOME = {lat:31.52, lng:74.35};
 const SAVED = {lat:25.04, lng:67.08};
 const GPS = {lat:40.7589, lng:-73.9851};
+const AMHERST = {lat:42.979824, lng:-78.799538};
 
 let pass = 0, fail = 0;
 function assert(cond, msg){
@@ -122,10 +123,12 @@ async function runSearch(page){
   assert(photonParams.get('q') === 'Central Library', 'place-name query is not rewritten with the city');
   assert(Math.abs(Number(photonParams.get('lat')) - HOME.lat) < 0.001, 'Photon bias latitude is the home city');
   assert(Math.abs(Number(photonParams.get('lon')) - HOME.lng) < 0.001, 'Photon bias longitude is the home city');
-  assert(photonParams.get('zoom') === '11', 'Photon bias uses city-scale zoom');
+  assert(photonParams.get('zoom') === '14', 'Photon bias uses street-level zoom');
+  assert(photonParams.get('location_bias_scale') === '0.5', 'Photon bias is strengthened for near searches');
   assert(!photonNear.includes('40.7359') && !photonNear.includes('40.7589') && !photonNear.includes('25.04'), 'near-home request skips the New York pin, GPS, and saved place');
   assert(!nominatimNear.includes('40.7589') && !nominatimNear.includes('25.04'), 'Nominatim viewbox skips GPS and the saved place');
-  assert(nominatimParams.get('bounded') === '0', 'near home boosts the area without hard-filtering it');
+  assert(nominatimParams.get('bounded') === '1', 'near home hard-bounds the area (no worldwide noise)');
+  assert(nominatimParams.get('extratags') === '1', 'Nominatim results carry extra tags (venue type, opening hours)');
   assert(!nominatimParams.has('city'), 'a place name does not send a structured city');
   const firstName = await page.locator('#picker-results .location-result b').first().innerText();
   assert(/Central Library/i.test(firstName), 'a result is shown');
@@ -151,7 +154,6 @@ async function runSearch(page){
 
   console.log('\n[D] a street query includes the city on the first request');
   await page.evaluate(() => {
-    window.__geocodeUrls = [];
     window.__mockRoutes['photon.komoot.io'] = {json:{type:'FeatureCollection', features:[
       {type:'Feature', geometry:{type:'Point', coordinates:[74.33, 31.55]}, properties:{name:'12 Mall Road', street:'Mall Road', housenumber:'12', city:'Lahore', country:'Pakistan', type:'house'}}
     ]}};
@@ -161,6 +163,9 @@ async function runSearch(page){
   });
   await page.locator('#picker-scope-near').click();
   await page.locator('#picker-search').fill('12 Mall Road');
+  // Let the as-you-type suggestion pass drain before the measured full search.
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { window.__geocodeUrls = []; });
   await runSearch(page);
   const streetUrls = await page.evaluate(() => window.__geocodeUrls.slice());
   const streetPhoton = paramsOf(streetUrls.find(url => url.includes('photon.komoot.io')));
@@ -175,7 +180,7 @@ async function runSearch(page){
   await page.evaluate(home => { window.__geocodeUrls = []; pickerMap.setView([home.lat, home.lng], 15, {animate:false}); }, HOME);
   await page.locator('#picker-scope-map').click();
   const mapHint = await page.locator('#picker-scope-hint').innerText();
-  assert(/map below/i.test(mapHint), 'This map explains that it uses the map on screen');
+  assert(/inside the map/i.test(mapHint), 'This map explains that it uses the map on screen');
   await page.locator('#picker-search').fill('12 Mall Road');
   await runSearch(page);
   const mapUrls = await page.evaluate(() => window.__geocodeUrls.slice());
@@ -227,6 +232,46 @@ async function runSearch(page){
     return {name:hits[0] && hits[0].name, lat:hits[0] && hits[0].lat, count:hits.length};
   }, HOME);
   assert(ranked.count >= 1 && Math.abs(ranked.lat - (HOME.lat + 0.01)) < 0.001, 'the nearer Nominatim hit ranks first (' + JSON.stringify(ranked) + ')');
+
+  console.log('\n[I] a category query sends OSM tag filters to Photon');
+  await page.evaluate(() => { window.__geocodeUrls = []; });
+  await page.locator('#picker-scope-near').click();
+  await page.locator('#picker-search').fill('gym');
+  await runSearch(page);
+  const gymUrls = await page.evaluate(() => window.__geocodeUrls.slice());
+  const gymPhoton = paramsOf(gymUrls.find(url => url.includes('photon.komoot.io')));
+  const gymTags = gymPhoton.getAll('osm_tag');
+  assert(gymTags.includes('leisure:fitness_centre') && gymTags.includes('leisure:sports_centre'),
+    'gym query filters Photon to fitness venues (' + JSON.stringify(gymTags) + ')');
+  assert(gymPhoton.get('q') === 'gym', 'the typed word stays the query');
+  const gymNominatim = paramsOf(gymUrls.find(url => url.includes('nominatim.openstreetmap.org')));
+  assert(gymNominatim.get('bounded') === '1', 'a category search stays bounded to the near area');
+
+  console.log('\n[J] ranking: a nearby partial match beats a far exact name');
+  const rankPick = await page.evaluate(async home => {
+    // Amherst, NY — the real-world case that motivated the ranking fix.
+    sortSettings.homeCityLat = home.lat;
+    sortSettings.homeCityLng = home.lng;
+    sortSettings.homeCityName = 'Amherst, United States';
+    // What the providers actually returned for "library" near Amherst NY:
+    // Photon carried the real library 1.6 km away plus three buildings named
+    // exactly "Library" 75-190 km out; Nominatim added worldwide noise.
+    window.__mockRoutes = {
+      'photon.komoot.io': {json:{type:'FeatureCollection', features:[
+        {type:'Feature', geometry:{type:'Point', coordinates:[-77.6167, 42.9097]}, properties:{name:'Library', city:'Lima', state:'New York', country:'United States', osm_value:'house', osm_key:'amenity'}},
+        {type:'Feature', geometry:{type:'Point', coordinates:[-80.1473, 41.7205]}, properties:{name:'Library', city:'Saegertown', state:'Pennsylvania', country:'United States', osm_value:'house', osm_key:'amenity'}},
+        {type:'Feature', geometry:{type:'Point', coordinates:[-78.7798, 42.9678]}, properties:{name:'Library Learning Center', city:'Amherst', state:'New York', country:'United States', osm_value:'house', osm_key:'amenity'}},
+        {type:'Feature', geometry:{type:'Point', coordinates:[-78.7861, 43.0003]}, properties:{name:'Lockwood Memorial Library', city:'Amherst', state:'New York', country:'United States', osm_value:'library', osm_key:'amenity'}}
+      ]}},
+      'nominatim.openstreetmap.org': {json:[]}
+    };
+    const hits = await geocodeSearch('library', {limit:6});
+    return hits.map(h => h.name);
+  }, AMHERST);
+  assert(rankPick[0] === 'Library Learning Center' || rankPick[0] === 'Lockwood Memorial Library',
+    'the nearest library ranks first (' + JSON.stringify(rankPick) + ')');
+  assert(!rankPick.slice(0, 2).includes('Library'),
+    'a bare "Library" house 75 km out does not lead the page (' + JSON.stringify(rankPick) + ')');
 
   console.log('\n[H] both providers failing is unavailable, not no matches');
   await page.evaluate(() => {

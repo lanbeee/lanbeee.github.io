@@ -334,8 +334,7 @@ async function openSettings(page){
   await page.waitForTimeout(200);
   const afterPan = await page.evaluate(() => ({
     lat:Number(document.querySelector('#picker-lat')?.value),
-    lng:Number(document.querySelector('#picker-lng')?.value),
-    marker:pickerMarker ? pickerMarker.getLatLng() : null
+    lng:Number(document.querySelector('#picker-lng')?.value)
   }));
   console.log({ beforeDrop, afterPan });
   assert(Math.abs(afterPan.lat - 41.8781) < 0.002, 'pan moveend snaps pin lat');

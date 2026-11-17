@@ -241,3 +241,4 @@ bulk-edit-test.js	ui	once
 bulk-edit-fields-test.js	ui	once
 bulk-edit-planner-test.js	planner	page-both
 planner-projection-offmain-test.js	planner	once
+place-details-test.js	integrations	once

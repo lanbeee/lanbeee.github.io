@@ -2020,55 +2020,63 @@
     </div>
   </div>
 
-  <!-- location map picker -->
-  <div class="sheet-wrap" id="location-picker-sheet">
+  <!-- location map picker (map-first: search + controls float on the map) -->
+  <div class="sheet-wrap" id="location-picker-sheet" inert>
     <div class="sheet location-picker-sheet" role="dialog" aria-modal="true" aria-labelledby="location-picker-title">
-      <div class="page-head">
-        <div>
-          <p class="sheet-title" id="location-picker-title">add place</p>
-          <p class="about-copy">Search for a place, pick a result, then nudge the center pin if the door is a little off. <span data-ui-leave="map"></span></p>
+      <div class="picker-content" id="picker-content">
+        <div class="picker-map-wrap">
+          <div id="picker-map" class="picker-map" role="application" aria-label="map pin"></div>
+          <div class="picker-map-crosshair" aria-hidden="true">
+            <span class="picker-map-pin"></span>
+          </div>
+          <div class="picker-search-float">
+            <div class="picker-search-row">
+              <button class="picker-fab" type="button" id="picker-search-back" aria-label="back to map"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+              <i class="ti ti-search picker-search-icon" aria-hidden="true"></i>
+              <input type="search" id="picker-search" aria-controls="picker-results" aria-label="search for a place or address" maxlength="120" placeholder="Search places" autocomplete="off" enterkeyhint="search" />
+              <button class="btn primary" type="button" id="picker-search-btn">search</button>
+            </div>
+            <div class="seg picker-search-scope" role="group" aria-label="where to search">
+              <button type="button" class="seg-opt on" id="picker-scope-near" data-picker-scope="near" aria-pressed="true">Near home</button>
+              <button type="button" class="seg-opt" id="picker-scope-map" data-picker-scope="map" aria-pressed="false">This map</button>
+              <button type="button" class="seg-opt" id="picker-scope-any" data-picker-scope="any" aria-pressed="false">Anywhere</button>
+            </div>
+            <div class="picker-search-context">
+              <p class="field-hint" id="picker-scope-hint"></p>
+              <span data-ui-leave="geocode"></span>
+            </div>
+            <div class="location-results picker-results-float" id="picker-results" role="region" aria-label="location search results" aria-live="polite" hidden></div>
+          </div>
+          <div class="seg-control picker-layer-control" role="group" aria-label="map view">
+            <button type="button" class="seg-opt on" id="picker-layer-street" data-picker-layer="street" aria-pressed="true"><i class="ti ti-map-2" aria-hidden="true"></i><span>Map</span></button>
+            <button type="button" class="seg-opt" id="picker-layer-satellite" data-picker-layer="satellite" aria-pressed="false"><i class="ti ti-world" aria-hidden="true"></i><span>Satellite</span></button>
+          </div>
+          <div class="picker-map-fabs">
+            <button type="button" class="picker-fab" id="picker-zoom-in" aria-label="zoom in"><i class="ti ti-plus" aria-hidden="true"></i></button>
+            <button type="button" class="picker-fab" id="picker-zoom-out" aria-label="zoom out"><i class="ti ti-minus" aria-hidden="true"></i></button>
+            <button type="button" class="picker-fab picker-fab-gps" id="picker-gps" aria-label="move pin to my location"><i class="ti ti-current-location" aria-hidden="true"></i></button>
+          </div>
+        </div>
+        <div class="picker-card">
+          <div class="picker-card-head">
+            <p class="sheet-title" id="location-picker-title">add place</p>
+            <span data-ui-leave="map"></span>
+            <button class="icon-btn" type="button" id="picker-open-maps" aria-label="open this place in the maps app"><i class="ti ti-external-link" aria-hidden="true"></i></button>
+          </div>
+          <label class="field-label" for="picker-name">place name</label>
+          <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />
+          <div class="picker-place-facts" id="picker-place-facts" hidden></div>
+          <p class="picker-selected-address" id="picker-address-hint" aria-live="polite"></p>
+          <details class="picker-coords-details">
+            <summary>Coordinates</summary>
+            <div class="picker-coords-row">
+              <input type="text" id="picker-lat" autocomplete="off" inputmode="decimal" placeholder="lat" aria-label="latitude" />
+              <input type="text" id="picker-lng" autocomplete="off" inputmode="decimal" placeholder="lng" aria-label="longitude" />
+              <button class="btn" type="button" id="picker-apply-coords">apply</button>
+            </div>
+          </details>
         </div>
       </div>
-      <label class="field-label" for="picker-search">find a place or address <span data-ui-leave="geocode"></span></label>
-      <div class="picker-search-row">
-        <input type="search" id="picker-search" maxlength="120" placeholder="e.g. Central Library" autocomplete="street-address" enterkeyhint="search" />
-        <button class="btn primary" type="button" id="picker-search-btn">search</button>
-      </div>
-      <div class="seg picker-search-scope" role="group" aria-label="where to search">
-        <button type="button" class="seg-opt on" id="picker-scope-near" data-picker-scope="near" aria-pressed="true">Near home</button>
-        <button type="button" class="seg-opt" id="picker-scope-map" data-picker-scope="map" aria-pressed="false">This map</button>
-        <button type="button" class="seg-opt" id="picker-scope-any" data-picker-scope="any" aria-pressed="false">Anywhere</button>
-      </div>
-      <p class="field-hint picker-scope-hint" id="picker-scope-hint">Near your city. A well-known place farther away can still show up.</p>
-      <div class="location-results" id="picker-results" role="region" aria-label="location search results" aria-live="polite" hidden></div>
-      <label class="field-label" for="picker-name">place name</label>
-      <input type="text" id="picker-name" maxlength="48" placeholder="e.g. Gym" autocomplete="off" />
-      <p class="picker-selected-address" id="picker-address-hint" aria-live="polite"></p>
-      <div class="picker-map-wrap">
-        <div id="picker-map" class="picker-map" role="application" aria-label="map pin"></div>
-        <div class="picker-map-crosshair" aria-hidden="true">
-          <span class="picker-map-crosshair-ring"></span>
-          <span class="picker-map-crosshair-dot"></span>
-        </div>
-      </div>
-      <div class="picker-map-actions">
-        <div class="seg-control picker-layer-control" role="group" aria-label="map view">
-          <button type="button" class="seg-opt on" id="picker-layer-street" data-picker-layer="street" aria-pressed="true">Street</button>
-          <button type="button" class="seg-opt" id="picker-layer-satellite" data-picker-layer="satellite" aria-pressed="false">Satellite</button>
-        </div>
-        <button type="button" class="btn" id="picker-gps">
-          <i class="ti ti-current-location" aria-hidden="true"></i>
-          My location
-        </button>
-      </div>
-      <details class="picker-coords-details">
-        <summary>enter coordinates</summary>
-        <div class="picker-coords-row">
-          <input type="text" id="picker-lat" inputmode="decimal" placeholder="lat" aria-label="latitude" />
-          <input type="text" id="picker-lng" inputmode="decimal" placeholder="lng" aria-label="longitude" />
-          <button class="btn" type="button" id="picker-apply-coords">apply</button>
-        </div>
-      </details>
       <div class="btn-row location-picker-actions">
         <button class="btn primary" type="button" id="picker-save">add place</button>
         <button class="btn" type="button" id="picker-cancel">cancel</button>

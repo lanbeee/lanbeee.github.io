@@ -401,14 +401,19 @@ async function geocodeSearch(query, opts = {}){
   }
   const scope = opts.scope === 'map' || opts.scope === 'anywhere' ? opts.scope : 'near';
   const ask = Math.min(10, Math.max(limit, 8));
+  // Typeahead (as-you-type suggestions) runs Photon alone: it is fast and
+  // cheap, and the explicit search button/Enter still runs the full
+  // dual-provider pass with dedupe and ranking.
   const first = await geocodeCollect(q, {
-    scope, bounds:opts.bounds || null, layers:opts.layers || null, focus:opts.focus || null, ask, widen:false
+    scope, bounds:opts.bounds || null, layers:opts.layers || null, focus:opts.focus || null, ask,
+    widen:false,
+    photonOnly:opts.photonOnly === true
   });
   if(first.ranked.length)return packGeocode(first.ranked, 'ok', first.rankFocus, limit);
   // A street with no nearby hit gets one worldwide retry. Place names stay on
   // the biased pass. This map and Anywhere do not widen: an empty area stays empty.
   const streetNear = scope === 'near' && geocodeQueryLooksLikeStreet(q) && !geocodeQueryHasLocality(q);
-  if(streetNear && first.responded){
+  if(streetNear && first.responded && opts.photonOnly !== true){
     const wider = await geocodeCollect(q, {scope:'anywhere', bounds:null, layers:null, ask, widen:true});
     if(wider.ranked.length){
       const packed = packGeocode(wider.ranked, 'ok', first.rankFocus, limit);
@@ -470,6 +475,63 @@ function geocodeQueryHasLocality(query){
   return /,/.test(String(query || ''));
 }
 
+// Category searches ("gym", "library", "coffee") are a different question from
+// name searches: the user wants the nearest venue of a kind, not venues whose
+// name happens to contain the word. Photon supports OSM tag filters, which
+// upgrade the candidate pool — a name search for "gym" never surfaces
+// "Planet Fitness", but an amenity-filtered search does. Plain Photon text
+// search stays as the fallback when a filtered request comes back empty.
+const PLACE_CATEGORY_LEXICON = [
+  {re:/^(gyms?|fitness|workout)$/, tags:['leisure:fitness_centre','leisure:sports_centre']},
+  {re:/^(librar(y|ies))$/, tags:['amenity:library']},
+  {re:/^(cafes?|coffee|coffeeshop|starbucks|espresso)$/, tags:['amenity:cafe']},
+  {re:/^(restaurants?|dinner|lunch|eat|food)$/, tags:['amenity:restaurant','amenity:fast_food']},
+  {re:/^(pizza|burgers?|fastfood|takeaway|takeout)$/, tags:['amenity:fast_food','amenity:restaurant']},
+  {re:/^(mosques?|masjid(s)?)$/, tags:['amenity:place_of_worship']},
+  {re:/^(church(es)?)$/, tags:['amenity:place_of_worship']},
+  {re:/^(grocer(y|ies)|groceries|supermarkets?|superstore)$/, tags:['shop:supermarket','shop:grocery']},
+  {re:/^(pharmac(y|ies)|drugstore|drugstores|chemist)$/, tags:['amenity:pharmacy']},
+  {re:/^(hospitals?|emergency)$/, tags:['amenity:hospital','amenity:clinic','amenity:doctors']},
+  {re:/^(clinic(s)?|doctors?|dentists?)$/, tags:['amenity:doctors','amenity:clinic','amenity:dentist']},
+  {re:/^(banks?|atms?)$/, tags:['amenity:bank','amenity:atm']},
+  {re:/^(gas|gasstation|fuel|petrol)$/, tags:['amenity:fuel']},
+  {re:/^(parks?|playground|playgrounds)$/, tags:['leisure:park','leisure:playground']},
+  {re:/^(schools?|academy)$/, tags:['amenity:school']},
+  {re:/^(universit(y|ies)|colleges?)$/, tags:['amenity:university','amenity:college']},
+  {re:/^(malls?|shopping|plaza|market)$/, tags:['shop:mall','shop:supermarket']},
+  {re:/^(museums?|galleries?)$/, tags:['tourism:museum','tourism:gallery']},
+  {re:/^(cinemas?|movies?|theat(er|re)?)$/, tags:['amenity:cinema','amenity:theatre']},
+  {re:/^(bars?|pubs?)$/, tags:['amenity:bar','amenity:pub']},
+  {re:/^(hotels?|motels?|inn)$/, tags:['tourism:hotel','tourism:motel']},
+  {re:/^(baker(y|ies))$/, tags:['shop:bakery']},
+  {re:/^(barbers?|salon|salons|haircut|hairsalon|hairdresser)$/, tags:['shop:hairdresser','shop:beauty']},
+  {re:/^(laundr(y|omat)|dryclean(ing|ers)?)$/, tags:['shop:laundry','shop:dry_cleaning']},
+  {re:/^(airports?)$/, tags:['aeroway:aerodrome']},
+  {re:/^(stations?|trainstation|subway|metro)$/, tags:['railway:station','amenity:bus_station']},
+  {re:/^(zoos?)$/, tags:['tourism:zoo']},
+  {re:/^(hardware|home ?depot|lowes)$/, tags:['shop:do_it_yourself','shop:hardware']},
+  {re:/^(clothes|clothing|shoes)$/, tags:['shop:clothes','shop:shoes']},
+  {re:/^(books|bookstore|bookshop)$/, tags:['shop:books']},
+  {re:/^(post ?office)$/, tags:['amenity:post_office']},
+  {re:/^(police)$/, tags:['amenity:police']},
+  {re:/^(fire ?station)$/, tags:['amenity:fire_station']}
+];
+
+// PURE: category OSM tag filters for a query, or null. Only short queries can
+// be categories — "gym near me" counts, "gym on Main Street" does not.
+// Matching ignores separators, so "coffee shop" hits the coffeeshop pattern.
+function geocodeOsmTagsForQuery(query){
+  const text = geocodeFold(query).replace(/\s+near me$/,'').trim();
+  if(!text || text.length > 16)return null;
+  const words = text.split(' ');
+  if(words.length > 2)return null;
+  const compact = text.replace(/[\s_-]+/g,'');
+  for(const entry of PLACE_CATEGORY_LEXICON){
+    if(entry.re.test(compact))return entry.tags;
+  }
+  return null;
+}
+
 function viewboxAround(lat, lng, km){
   const dLat = km / 111;
   const cos = Math.cos(Number(lat) * Math.PI / 180);
@@ -496,7 +558,15 @@ function geocodeFold(value){
   return String(value || '').toLocaleLowerCase().replace(/\s+/g,' ').trim();
 }
 
-function geocodeHitScore(query, hit, focus){
+// PURE: score one candidate for the ranked results page. Text match strength
+// is the same everywhere; distance weighting depends on the search scope.
+//   near — distance dominates. A perfect name match 100 km out is not the
+//          place the user meant (searching "library" used to rank three
+//          buildings named exactly "Library" 97-186 km away above the real
+//          library 1.6 km away). Google ranks nearest-good first, so do we.
+//   map  — bounds already hard-filter; keep the old soft centre penalty.
+//   anywhere — focus is null; text alone.
+function geocodeHitScore(query, hit, focus, opts = {}){
   const q = geocodeFold(query);
   const name = geocodeFold(hit.name);
   const address = geocodeFold(hit.address);
@@ -513,25 +583,44 @@ function geocodeHitScore(query, hit, focus){
     }
   }
   if(/^\d/.test(q) && /house|building|residential|street|road|address/.test(String(hit.layer || '')))score += 12;
-  if(focus && Number.isFinite(focus.lat) && Number.isFinite(focus.lng)){
-    const metres = haversineMetres(focus.lat, focus.lng, hit.lat, hit.lng);
+  const metres = (focus && Number.isFinite(focus.lat) && Number.isFinite(focus.lng))
+    ? haversineMetres(focus.lat, focus.lng, hit.lat, hit.lng)
+    : null;
+  if(metres != null && opts.scope === 'near'){
+    if(metres <= 1500)score += 30;
+    else if(metres <= 5000)score += 24;
+    else if(metres <= 15000)score += 15;
+    else if(metres <= 30000)score += 5;
+    else if(metres <= 60000)score -= 15;
+    else if(metres <= 150000)score -= 40;
+    else score -= 60;
+    // OSM buildings that merely carry the query as a name ("Library" the
+    // house) drown real venues for category searches. Demote them unless the
+    // whole name matched exactly nearby — that is an address the user wants.
+    if(!opts.streetQuery && hit.layer === 'house' && name !== q)score -= 25;
+  }else if(metres != null){
     if(metres <= 30000)score -= metres / 4000;
     else score -= 8 + Math.min(36, (metres - 30000) / 80000);
   }
   return score;
 }
 
-function rankGeocodeHits(query, hits, focus){
-  const scored = hits.map((hit, index) => ({hit, index, score:geocodeHitScore(query, hit, focus)}));
+function rankGeocodeHits(query, hits, focus, opts = {}){
+  const scored = hits.map((hit, index) => ({hit, index, score:geocodeHitScore(query, hit, focus, opts)}));
   scored.sort((a, b) => b.score - a.score || a.index - b.index);
   const kept = [];
   for(const row of scored){
     const hit = row.hit;
-    const addressKey = geocodeFold(hit.address);
+    // Two rows are the same place when they sit within a few hundred metres —
+    // same name (a venue's node and its way), or same address text. Address
+    // equality alone once merged two different venues that only shared a
+    // city-level address, hiding the nearer library behind the farther one.
     const duplicate = kept.some(existing => {
-      const existingKey = geocodeFold(existing.address);
-      return (addressKey && addressKey === existingKey)
-        || haversineMetres(existing.lat, existing.lng, hit.lat, hit.lng) < 80;
+      const metres = haversineMetres(existing.lat, existing.lng, hit.lat, hit.lng);
+      if(metres >= 400)return false;
+      if(geocodeFold(existing.name) === geocodeFold(hit.name))return true;
+      const addressKey = geocodeFold(hit.address);
+      return Boolean(addressKey) && addressKey === geocodeFold(existing.address);
     });
     if(!duplicate)kept.push(hit);
   }
@@ -560,11 +649,14 @@ async function geocodeCollect(query, opts){
   const parts = homeCitySearchParts();
   const appendCity = scope === 'near' && !opts.widen && geocodeQueryLooksLikeStreet(query) && !geocodeQueryHasLocality(query) && !!parts.city;
   const streetLayers = scope !== 'anywhere' && !opts.widen && !opts.layers && geocodeQueryLooksLikeStreet(query);
+  const categoryTags = scope !== 'map' && !opts.widen ? geocodeOsmTagsForQuery(query) : null;
   const context = {
     bias:hardBounds ? null : bias,
     bounds:hardBounds || (bias ? viewboxAround(bias.lat, bias.lng, 40) : null),
     hardBounds:!!hardBounds,
+    boundedNear:scope === 'near',
     layers:opts.layers || (streetLayers ? ['house','street'] : null),
+    osmTags:categoryTags,
     lang:geocodeLang(),
     structured:!!appendCity,
     street:query,
@@ -572,15 +664,24 @@ async function geocodeCollect(query, opts){
     country:appendCity ? parts.country : ''
   };
   const photonQuery = appendCity ? `${query}, ${parts.label}` : query;
-  const [photon, nominatim] = await Promise.all([
-    geocodeSearchPhoton(photonQuery, opts.ask, context),
-    geocodeSearchNominatim(query, opts.ask, context)
-  ]);
-  let hits = photon.hits.concat(nominatim.hits);
+  const photon = await geocodeSearchPhoton(photonQuery, opts.ask, context);
+  let photonHits = photon.hits;
+  // A category filter can be stricter than OSM's naming — if the filtered
+  // request found nothing but the provider answered, retry the plain text
+  // query so a missing tag never blanks the results.
+  if(categoryTags && !photonHits.length && photon.ok){
+    const retry = await geocodeSearchPhoton(photonQuery, opts.ask, {...context, osmTags:null});
+    if(retry.ok)photonHits = retry.hits;
+  }
+  const nominatim = opts.photonOnly ? {ok:false, hits:[]} : await geocodeSearchNominatim(query, opts.ask, context);
+  let hits = photonHits.concat(nominatim.hits);
   if(hardBounds)hits = hits.filter(hit => hitInsideBounds(hit, hardBounds));
   const rankFocus = hardBounds ? boundsCenter(hardBounds) : bias;
   return {
-    ranked:rankGeocodeHits(query, hits, rankFocus),
+    ranked:rankGeocodeHits(query, hits, rankFocus, {
+      scope,
+      streetQuery:geocodeQueryLooksLikeStreet(query)
+    }),
     responded:!!(photon.ok || nominatim.ok),
     rankFocus
   };
@@ -620,7 +721,30 @@ function normalizeGeocodeHit(name,address,lat,lng,extra){
   if(/^[A-Z]{2}$/.test(code))hit.countryCode = code;
   const layer = String(extra && extra.layer || '').trim().toLowerCase();
   if(layer)hit.layer = layer;
+  // OSM identity + venue type + opening hours, when the provider carries
+  // them. A search pick can then resolve the place's tags in one /lookup call
+  // instead of guessing from a reverse geocode that may snap to its car park.
+  const osmType = String(extra && extra.osmType || '').trim().toLowerCase();
+  const osmId = Number(extra && extra.osmId);
+  if(/^[nwr]$/.test(osmType) && Number.isFinite(osmId) && osmId > 0){
+    hit.osmType = osmType;
+    hit.osmId = osmId;
+  }
+  const placeType = normalizePlaceType(extra && extra.placeType);
+  if(placeType)hit.placeType = placeType;
+  const hours = String(extra && extra.openingHours || '').trim();
+  if(hours)hit.openingHours = hours.slice(0,160);
   return hit;
+}
+
+// PURE: map a Nominatim category/type pair onto the venue slug we store.
+// Roads, buildings, and car parks are not venue types — a reverse geocode or
+// a street hit that snaps to one must not auto-fill the place type.
+const NON_VENUE_OSM_TYPES = /^(\d{4}|aeroway|allotments|amenity|apartments|area|barrier|bicycle|boundary|building|bus_stop|construction|craft|detached|drive_through|driveway|emergency|footway|fuel|healthcare|highway|historic|house|houseboat|landuse|layby|leisure|man_made|military|natural|nearest|office|parking|parking_entrance|parking_space|path|pedestrian|place|plaza|railway|residential|retail|road|roof|service|site|street|surface|terrace|tourism|track|trunk|unclassified|utility|waterway|yes)$/;
+function osmVenuePlaceType(category,type){
+  const t = normalizePlaceType(type);
+  if(!t || NON_VENUE_OSM_TYPES.test(t))return '';
+  return t;
 }
 
 function geocodeParamCoord(value){
@@ -638,11 +762,17 @@ function photonSearchUrl(query, limit, context){
   }else if(context && context.bias){
     params.set('lat', geocodeParamCoord(context.bias.lat));
     params.set('lon', geocodeParamCoord(context.bias.lng));
-    params.set('zoom', '11');
-    params.set('location_bias_scale', '0.25');
+    // Street-level bias for "near" searches (city-scale zoom 11 with a soft
+    // 0.25 scale let three far-away "Library" buildings outrank the real
+    // library 1.6 km away).
+    params.set('zoom', '14');
+    params.set('location_bias_scale', '0.5');
   }
   for(const layer of (context && context.layers) || []){
     if(layer)params.append('layer', layer);
+  }
+  for(const tag of (context && context.osmTags) || []){
+    if(tag)params.append('osm_tag', tag);
   }
   return `${PHOTON_BASE}/api/?${params}`;
 }
@@ -652,6 +782,7 @@ function nominatimSearchUrl(query, limit, context){
   params.set('format', 'json');
   params.set('limit', String(limit));
   params.set('addressdetails', '1');
+  params.set('extratags', '1');
   params.set('dedupe', '1');
   params.set('accept-language', (context && context.lang) || 'en');
   if(context && context.structured){
@@ -664,7 +795,11 @@ function nominatimSearchUrl(query, limit, context){
   if(context && context.bounds){
     const box = context.bounds;
     params.set('viewbox', [box.minLng, box.maxLat, box.maxLng, box.minLat].map(geocodeParamCoord).join(','));
-    params.set('bounded', context.hardBounds ? '1' : '0');
+    // Near-home is a hard area now. bounded=0 made "library" near home return
+    // worldwide noise (Chicago, Turkmenistan, India) that then competed in
+    // ranking; the well-known-far-place escape hatch stays with Photon, which
+    // keeps its soft bias.
+    params.set('bounded', (context.hardBounds || context.boundedNear) ? '1' : '0');
   }
   return `${NOMINATIM_BASE}/search?${params}`;
 }
@@ -698,7 +833,10 @@ async function geocodeSearchPhoton(query, limit, context){
         const name = props.name || streetLine || (address.split(',')[0] || 'Place');
         return normalizeGeocodeHit(name, address || name, lat, lng, {
           countryCode:props.countrycode,
-          layer:props.type || props.osm_value || ''
+          layer:props.type || props.osm_value || '',
+          osmType:props.osm_type,
+          osmId:props.osm_id,
+          placeType:osmVenuePlaceType(props.osm_key || '', props.osm_value || '')
         });
       }).filter(Boolean)
     };
@@ -719,9 +857,14 @@ async function geocodeSearchNominatim(query, limit, context){
         const comma = display.indexOf(',');
         const name = (comma >= 0 ? display.slice(0, comma) : display).trim();
         const addr = r.address || {};
+        const extras = r.extratags || {};
         return normalizeGeocodeHit(name, display, r.lat, r.lon, {
           countryCode:addr.country_code,
-          layer:r.type || r.addresstype || ''
+          layer:r.type || r.addresstype || '',
+          osmType:r.osm_type,
+          osmId:r.osm_id,
+          placeType:osmVenuePlaceType(r.category || '', r.type || r.addresstype || ''),
+          openingHours:extras.opening_hours
         });
       }).filter(Boolean)
     };
@@ -770,6 +913,141 @@ async function reverseGeocodeNominatim(lat,lng){
   }catch{
     return null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PLACE DETAILS — venue type + opening hours for a picked place.
+//
+// OSM publishes both (tags like amenity=fitness_centre and
+// opening_hours=Mo-Fr 06:00-23:00). The path depends on how the place was
+// chosen:
+//   • a search hit from Photon/Nominatim carries osm_type/osm_id → Nominatim
+//     /lookup returns that exact object's tags in one request;
+//   • a dropped pin has no id → a reverse geocode, trusted only when it lands
+//     on a venue (it snaps to the car park or the road for most pins).
+// Everything is best-effort and user-editable: a missing tag just means no
+// auto-fill.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ASYNC: look up the selected OSM feature by ID. Reverse geocoding can
+// return a neighbouring venue and its hours, so do not use it for details.
+async function lookupOsmPlaceDetails(hit){
+  if(!/^[nwr]$/i.test(hit.osmType) || !/^\d+$/.test(hit.osmId))return null;
+  const url = `${NOMINATIM_BASE}/lookup?osm_ids=${encodeURIComponent(hit.osmType.toUpperCase() + hit.osmId)}&format=json&extratags=1&accept-language=${geocodeLang()}`;
+  try{
+    const json = await fetchJsonWithTimeout(url);
+    const row = Array.isArray(json) && json[0];
+    if(!row)return null;
+    return {
+      placeType:hit.placeType || osmVenuePlaceType(row.category || '', row.type || ''),
+      openingHours:String(row.extratags?.opening_hours || '').trim()
+    };
+  }catch{
+    return null;
+  }
+}
+
+// The planner supports one continuous window per day. Parse weekly rules
+// that fit that model, including weekday lists and explicitly closed days.
+function parseOsmOpeningHours(value){
+  const raw = String(value || '').trim();
+  const invalid = {ok:false};
+  if(raw === '24/7')return {ok:true,hoursByDay:null,closedDays:[],defaultStart:0,defaultEnd:1439};
+  const weekdays = ['su','mo','tu','we','th','fr','sa'];
+  const dayPattern = /^(su|mo|tu|we|th|fr|sa)(?:-(su|mo|tu|we|th|fr|sa))?$/;
+  const hoursByDay = {};
+  const time = token=>{
+    const [hour,minute] = token.split(':').map(Number);
+    if(minute > 59 || hour > 24 || (hour === 24 && minute !== 0))return NaN;
+    return hour * 60 + minute;
+  };
+  for(const rule of raw.toLowerCase().split(';')){
+    const match = /^([a-z,-]+)\s+(closed|off|(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2}))$/.exec(rule.trim());
+    if(!match)return invalid;
+    const [,dayList,,startToken,endToken] = match;
+    let hours = null;
+    if(startToken){
+      const start = time(startToken);
+      const end = time(endToken);
+      if(!(start < end))return invalid;
+      hours = {start,end:Math.min(end,1439)};
+      if(hours.start === hours.end)return invalid;
+    }
+    for(const part of dayList.split(',')){
+      const day = dayPattern.exec(part);
+      if(!day)return invalid;
+      const from = weekdays.indexOf(day[1]);
+      const through = weekdays.indexOf(day[2] || day[1]);
+      for(let d = from;;d = (d + 1) % 7){
+        if(Object.hasOwn(hoursByDay,d))return invalid;
+        hoursByDay[d] = hours;
+        if(d === through)break;
+      }
+    }
+  }
+  const open = Object.values(hoursByDay).filter(Boolean);
+  if(!open.length)return invalid;
+  const closedDays = [];
+  for(let d = 0; d < 7; d++){
+    if(!hoursByDay[d]){
+      hoursByDay[d] = null;
+      closedDays.push(d);
+    }
+  }
+  return {
+    ok:true,hoursByDay,closedDays,
+    defaultStart:Math.min(...open.map(hours=>hours.start)),
+    defaultEnd:Math.max(...open.map(hours=>hours.end))
+  };
+}
+
+// PURE: a starter emoji for a venue type. The settings row keeps whatever the
+// user picks; this only fills the blank.
+const PLACE_TYPE_EMOJI = {
+  fitness_centre:'🏋️', sports_centre:'🏋️', gym:'🏋️',
+  supermarket:'🛒', grocery:'🛒', convenience:'🛒', greengrocer:'🧺',
+  mosque:'🕌', place_of_worship:'🛐', church:'⛪', synagogue:'🕍', temple:'🛕',
+  cafe:'☕', coffee:'☕', library:'📚', books:'📖',
+  restaurant:'🍽️', fast_food:'🍔', ice_cream:'🍦', deli:'🥪', bakery:'🥐',
+  pharmacy:'💊', hospital:'🏥', clinic:'🩺', doctors:'🩺', dentist:'🦷',
+  bank:'🏦', atm:'🏧', fuel:'⛽', parking:'🅿️',
+  park:'🌳', playground:'🛝', garden:'🌷', nature_reserve:'🌲',
+  school:'🏫', kindergarten:'🧸', university:'🎓', college:'🎓',
+  museum:'🏛️', gallery:'🖼️', cinema:'🎬', theatre:'🎭',
+  bar:'🍺', pub:'🍺', hotel:'🏨', motel:'🏨', guest_house:'🛏️',
+  hairdresser:'💇', beauty:'💅', laundry:'🧺', dry_cleaning:'🧺',
+  post_office:'📮', police:'🚓', fire_station:'🚒', townhall:'🏛️',
+  aerodrome:'✈️', station:'🚉', bus_station:'🚌', bus_stop:'🚌',
+  zoo:'🦁', mall:'🛍️', clothes:'👗', shoes:'👟', jewelry:'💎',
+  do_it_yourself:'🔨', hardware:'🔨', car_repair:'🔧', car:'🚗',
+  veterinary:'🐾', pet:'🐾', stadium:'🏟️', sports_hall:'🏸',
+  community_centre:'🏠', events_venue:'🎪', nightclub:'🪩', karaoke:'🎤',
+  massage:'💆', tattoo:'🖋️', optician:'👓', florist:'💐', gift:'🎁',
+  phone:'📱', electronics:'💻', computer:'💻', mobile_phone:'📱',
+  copyshop:'🖨️', travel_agent:'🧳', chalet:'🏔️', attraction:'🎡'
+};
+
+function emojiForPlaceType(placeType){
+  const key = normalizePlaceType(placeType);
+  return Object.hasOwn(PLACE_TYPE_EMOJI,key) ? PLACE_TYPE_EMOJI[key] : '';
+}
+
+// PURE: human label for a venue type slug. "fitness_centre" reads badly; the
+// chips and summaries say "gym".
+const PLACE_TYPE_LABELS = {
+  fitness_centre:'gym', sports_centre:'sports centre', place_of_worship:'place of worship',
+  fast_food:'fast food', do_it_yourself:'hardware', dry_cleaning:'dry cleaning',
+  bus_station:'bus station', bus_stop:'bus stop', aerodrome:'airport',
+  ice_cream:'ice cream', mobile_phone:'phone store', events_venue:'event space',
+  community_centre:'community hall', veterinary:'vet', car_repair:'car repair',
+  townhall:'town hall', fire_station:'fire station', post_office:'post office'
+};
+
+function placeTypeLabel(placeType){
+  const key = normalizePlaceType(placeType);
+  if(!key)return '';
+  if(Object.hasOwn(PLACE_TYPE_LABELS,key))return PLACE_TYPE_LABELS[key];
+  return key.replace(/_/g,' ');
 }
 
 // PURE: build a "City, Country" label from structured geocoder address fields.
