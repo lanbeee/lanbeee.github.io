@@ -931,11 +931,16 @@ function weekViewSubtitle(days){
   return '';
 }
 
-function weekViewColumnStep(scroller){
-  const cols = scroller.querySelectorAll('.wv-col');
-  if(cols.length >= 2)return cols[1].getBoundingClientRect().left - cols[0].getBoundingClientRect().left;
-  return cols[0] ? cols[0].getBoundingClientRect().width : 1;
+function weekViewCancelAlign(){
+  _weekViewAlignToken += 1;
+  _weekViewAligning = false;
+  _weekViewAlignTarget = null;
 }
+
+// The measured day-column pitch, cached by weekViewSizeBoard so scroll math
+// (settle, align, nudge) never forces a layout read after the board's style
+// writes. `board` guards staleness: a re-render builds a fresh board.
+let _weekViewColStep = null;
 
 function weekViewSizeBoard(scroller){
   const board = scroller && scroller.querySelector('.wv-board');
@@ -949,19 +954,26 @@ function weekViewSizeBoard(scroller){
   const col = Math.max(1,(area - gap * Math.max(0,visible - 1)) / visible);
   const template = `repeat(${span},${col}px)`;
   const width = gutterW + col * span + gap * Math.max(0,span - 1);
-  board.style.width = `${width}px`;
+  const widthPx = `${width}px`;
+  // Writes only when a value actually changed: this runs on every resize
+  // tick, and redundant style writes force a full board recalc each time.
+  if(board.style.width !== widthPx)board.style.width = widthPx;
   const yscroll = scroller.querySelector('.wv-yscroll');
-  if(yscroll)yscroll.style.width = `${width}px`;
+  if(yscroll && yscroll.style.width !== widthPx)yscroll.style.width = widthPx;
   board.querySelectorAll('.wv-cols,.wv-days-head,.wv-marker-grid').forEach(el=>{
-    el.style.gridTemplateColumns = template;
+    if(el.style.gridTemplateColumns !== template)el.style.gridTemplateColumns = template;
   });
+  _weekViewColStep = {board,step:col + gap};
   weekViewSyncRail();
 }
 
-function weekViewCancelAlign(){
-  _weekViewAlignToken += 1;
-  _weekViewAligning = false;
-  _weekViewAlignTarget = null;
+function weekViewColumnStep(scroller){
+  if(_weekViewColStep && _weekViewColStep.board && _weekViewColStep.board.isConnected){
+    return _weekViewColStep.step;
+  }
+  const cols = scroller.querySelectorAll('.wv-col');
+  if(cols.length >= 2)return cols[1].getBoundingClientRect().left - cols[0].getBoundingClientRect().left;
+  return cols[0] ? cols[0].getBoundingClientRect().width : 1;
 }
 
 // The ease just finished (or was replaced); the strip sits on its day now.
@@ -1119,8 +1131,20 @@ function weekViewMarkerLabel(kind){
   return 'Due';
 }
 
+// One Intl format per wall-clock minute, not per event: a 14-day board asks
+// for the same clock hundreds of times per render, and toLocaleTimeString
+// construction dominated the open cost on phone-class CPUs.
+const _weekViewTimeLabels = new Map();
 function weekViewTimeLabel(ts){
-  return new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+  const d = new Date(ts);
+  const key = d.getHours() * 60 + d.getMinutes();
+  let label = _weekViewTimeLabels.get(key);
+  if(label === undefined){
+    label = d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    if(_weekViewTimeLabels.size >= 1440)_weekViewTimeLabels.clear();
+    _weekViewTimeLabels.set(key,label);
+  }
+  return label;
 }
 
 // PURE: inline custom properties resolving a color token to its theme vars.

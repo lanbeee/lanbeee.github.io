@@ -81,6 +81,23 @@ function stripWeekHabitRefs(week){
 
 async function runPlannerMessage(message){
   const id = message.id;
+  // A caller can pin the solve to the page's clock (the missed-item projection
+  // must match the main-thread build exactly, and test pages freeze Date).
+  // The worker realm has its own Date, so restore it no matter how the build
+  // ends. The message queue serializes runs, so the swap cannot leak.
+  let restoreClock = null;
+  if(Number.isFinite(message.nowTs)){
+    const RealDate = Date;
+    const frozen = message.nowTs;
+    const FrozenDate = class extends RealDate {
+      constructor(...args){ super(...(args.length ? args : [frozen])); }
+      static now(){ return frozen; }
+    };
+    FrozenDate.parse = RealDate.parse;
+    FrozenDate.UTC = RealDate.UTC;
+    globalThis.Date = FrozenDate;
+    restoreClock = () => { globalThis.Date = RealDate; };
+  }
   try{
     if(message.warm){
       if(!_workerGlpkWarmed && typeof ensureGlpk === 'function'){
@@ -152,13 +169,20 @@ async function runPlannerMessage(message){
     }
     const week = message.mode === 'exact' && typeof buildWeekAgendaAsync === 'function'
       ? await buildWeekAgendaAsync(data,sortSettings,count,buildOpts)
-      : buildWeekAgenda(data,sortSettings,count,{...buildOpts,fastGraph:true});
+      : message.greedy
+        // Missed-item projection: the exact opts of the main-thread
+        // computePlannerExpectationMap build, run off-main. Identical inputs
+        // produce the identical plan (greedy, no fast-graph search).
+        ? buildWeekAgenda(data,sortSettings,count,{fullToday:true,fastGraph:false,skipDropAnnotation:true})
+        : buildWeekAgenda(data,sortSettings,count,{...buildOpts,fastGraph:true});
     self.postMessage({id,week:stripWeekHabitRefs(week)});
   }catch(error){
     self.postMessage({
       id,
       error:error && error.message ? error.message : String(error)
     });
+  }finally{
+    if(restoreClock)restoreClock();
   }
 }
 

@@ -222,7 +222,12 @@ const {chromium,BASE,FAST_ONLY,baseHabit,openEveningSettings,glpkAvailable} = re
     window.testClock = dayStart(now)+16*3600000;
     // Only the UI adapter is replaced: both real engines were tested above.
     // Browser workers cannot inherit addInitScript's frozen Date.
-    buildWeekAgendaOffMain = async(data,settings,numDays,opts)=>buildWeekAgenda(data,settings,numDays,opts);
+    // The greedy flag is the missed-item projection request; mirror the real
+    // signature (mode + opts) and the worker's exact build opts so recorded
+    // expectations match the sync path.
+    buildWeekAgendaOffMain = async(data,settings,numDays,mode,opts)=> (opts && opts.greedy)
+      ? buildWeekAgenda(data,settings,numDays,{fullToday:true,fastGraph:false,skipDropAnnotation:true})
+      : buildWeekAgenda(data,settings,numDays,opts);
     sortSettings = settings;
     localStorage.setItem('tings_v2',JSON.stringify(normalize([habit])));
     localStorage.removeItem(TODAY_SUGGESTED_KEY);

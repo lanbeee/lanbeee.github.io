@@ -65,7 +65,12 @@ async function freezeClock(page, clockTs){
                   try{
                     if(typeof buildWeekAgenda !== 'function')throw new Error('buildWeekAgenda unavailable');
                     const settings = { ...(message.settings || {}), agendaOptimizer:false };
-                    week = buildWeekAgenda(message.data, settings, message.numDays || 7, {});
+                    // The greedy flag is the missed-item projection request; it
+                    // must mirror the real worker's exact build opts so the
+                    // recorded expectations match the main-thread build.
+                    week = message.greedy
+                      ? buildWeekAgenda(message.data, settings, message.numDays || 7, {fullToday:true,fastGraph:false,skipDropAnnotation:true})
+                      : buildWeekAgenda(message.data, settings, message.numDays || 7, {});
                     if(message.mode === 'exact')week.optimized = true;
                   }catch(err){ error = String(err && err.message ? err.message : err); }
                   fire('message', error ? { id, error } : { id, week });
