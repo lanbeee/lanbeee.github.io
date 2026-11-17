@@ -34,6 +34,8 @@ meeting-travel-conflict-test.js	planner	once
 calendar-overview-test.js	integrations	once
 calendar-pdf-import-test.js	integrations	once
 calendar-ics-import-test.js	integrations	once
+calendar-duplicate-review-test.js	integrations	once
+calendar-roundtrip-regression-test.js	integrations	once
 calendar-device-sync-test.js	integrations	once
 calendar-clone-sync-test.js	integrations	once
 native-clone-pairing-test.js	integrations	once

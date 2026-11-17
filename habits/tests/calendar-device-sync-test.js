@@ -164,7 +164,12 @@ const assert=require('node:assert/strict');
       await page.evaluate(()=>scrollDetailToNav('actions','auto'));
       assert.equal(await page.locator('#detail-ignore-occurrence').isVisible(),true,'ignore date is reachable');
       assert.equal(await page.locator('#detail-ignore-series').isVisible(),true,'ignore series is reachable');
-      assert.equal(await page.locator('#detail-delete').isVisible(),false,'source deletion stays unavailable');
+      assert.equal(await page.locator('#detail-delete').isVisible(),true,'remove offers a reversible hide in Tings');
+      await page.locator('#detail-delete').click();
+      await page.locator('#detail-delete-yes').click();
+      assert.equal(await page.evaluate(()=>isCalendarIgnored(load().find(isDeviceCalendarTask))),true,'remove hides the phone event');
+      await page.locator('#action-undo').click();
+      await page.evaluate(()=>{openDetail(load().findIndex(isDeviceCalendarTask));scrollDetailToNav('actions','auto');});
       await page.locator('#detail-ignore-occurrence').click();
       assert.equal(await page.evaluate(()=>{
         const h=load().find(isDeviceCalendarTask);

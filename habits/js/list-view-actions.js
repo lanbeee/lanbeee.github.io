@@ -1133,6 +1133,9 @@ function executeUndo(){
   if(pendingAction.type === 'delete'){
     const {idx,habit} = pendingAction;
     data.splice(Math.min(idx,data.length),0,habit);
+    if(habit.externalId && typeof rebuildCalendarCredits === 'function'){
+      rebuildCalendarCredits(data,loadSortSettings().calendarCreditHabitId,{preserveBefore:dayStart(Date.now())});
+    }
   }
   if(pendingAction.type === 'delete-many'){
     const items = (pendingAction.items || []).slice().sort((a,b) => a.idx - b.idx);

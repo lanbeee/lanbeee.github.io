@@ -192,7 +192,7 @@ function renderEventDetailUi(h){
   const completion=$('detail-shared-display').querySelector('[data-shared-display-mode="complete"]');
   completion.hidden=event;completion.disabled=event;
   if(event && sharedDisplayModeForHabit(h)==='complete')setDetailSharedDisplayMode('view');
-  $('detail-delete-question').textContent=`Remove this ${event?'event':h.type==='task'?'task':'habit'}?`;
+  $('detail-delete-question').textContent=synced ? 'Hide this event in Tings? You can restore it in calendar settings.' : `Remove this ${event?'event':h.type==='task'?'task':'habit'}?`;
   $('detail-name-disclosure').querySelector('summary').textContent=event?'name':'name & type';
   $('detail-priority-disclosure').querySelector('summary').textContent='topics';
   $('detail-emoji').setAttribute('aria-label',event?'event emoji, optional':'habit emoji, optional');

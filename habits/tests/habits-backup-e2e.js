@@ -157,17 +157,16 @@ function assert(cond, msg){
   const stillSafe = await page.evaluate(()=> JSON.parse(localStorage.getItem('tings_v2')));
   assert(stillSafe.length === 1 && stillSafe[0].name === 'keep-me', 'invalid file left data untouched');
 
-  // ── 10. an oversized backup is trimmed to MAX_TINGS (300) ──
+  // ── 10. calendar imports can make a backup larger than MAX_TINGS ──
   const oversized = await page.evaluate(()=>{
-    const MAX = 300;
     const habits = Array.from({length:400},(_,i)=>({name:`h${i}`,type:'keepup'}));
     const r = restoreBackup({habits});
     const stored = JSON.parse(localStorage.getItem('tings_v2'));
     return { ok:r.ok, count:r.count, stored:stored.length, first:stored[0].name, last:stored[stored.length-1].name };
   });
-  assert(oversized.ok && oversized.count === 300, 'restoreBackup reports count 300 for an oversized backup');
-  assert(oversized.stored === 300, 'restoreBackup trims stored habits to MAX_TINGS');
-  assert(oversized.first === 'h0' && oversized.last === 'h299', 'restoreBackup keeps the first 300 in order');
+  assert(oversized.ok && oversized.count === 400, 'restoreBackup reports every restored item');
+  assert(oversized.stored === 400, 'restoreBackup retains all items');
+  assert(oversized.first === 'h0' && oversized.last === 'h399', 'restoreBackup preserves item order');
 
   // ── 11. settings travel with the backup and are applied on restore ──
   const rt = await page.evaluate(()=>{

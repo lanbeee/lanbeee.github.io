@@ -2034,6 +2034,8 @@ $('detail-delete-no').addEventListener('click',()=>{
 $('detail-delete-yes').addEventListener('click',()=>{
   if(detailIdx === null)return;
   const idx = detailIdx;
+  const item = load()[idx];
+  if(isDeviceCalendarTask(item)){setCalendarIgnored(item,'occurrence');return;}
   closeDetail();
   doNuke(idx);
 });

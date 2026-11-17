@@ -432,8 +432,8 @@ function normalize(items){
       } : {}),
       ...(raw.source === 'device' ? {
         calendarDeviceId:typeof raw.calendarDeviceId==='string' && /^[0-9a-f]{16}$/.test(raw.calendarDeviceId) ? raw.calendarDeviceId : null,
-        calendarSeriesId:typeof raw.calendarSeriesId === 'string' && /^device:\d+:\d+$/.test(raw.calendarSeriesId) ? raw.calendarSeriesId : null,
-        calendarId:typeof raw.calendarId === 'string' ? raw.calendarId.slice(0,20) : null,
+        calendarSeriesId:typeof raw.calendarSeriesId === 'string' && raw.calendarSeriesId.startsWith('device:') ? raw.calendarSeriesId.slice(0,256) : null,
+        calendarId:typeof raw.calendarId === 'string' ? raw.calendarId.slice(0,256) : null,
         calendarStart:Number.isFinite(raw.calendarStart) ? raw.calendarStart : null,
         calendarEnd:Number.isFinite(raw.calendarEnd) ? raw.calendarEnd : null
       } : {}),

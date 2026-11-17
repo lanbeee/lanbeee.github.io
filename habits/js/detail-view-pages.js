@@ -468,7 +468,7 @@ function icsEscape(s){
 // tasks become timed VEVENTs; due-date tasks become all-day VEVENTs so the system
 // calendar fires a real alert — the bridge to native notifications on iOS.
 function icsForHabit(h){
-  const uid = `tings-${h.type}-${h.eventTime || h.dueDate || Date.now()}-${Date.now()}@local`;
+  const uid = `tings-${encodeURIComponent(h.hid)}@local`;
   const stamp = icsDateTime(Date.now());
   const summary = icsEscape(h.name || '');
   const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tings//Habits//EN','BEGIN:VEVENT',`UID:${uid}`,`DTSTAMP:${stamp}`];

@@ -417,6 +417,9 @@ function doNuke(i, opts){
     }
   }
   data.splice(i,1);
+  if(removed.externalId && typeof rebuildCalendarCredits === 'function'){
+    rebuildCalendarCredits(data,loadSortSettings().calendarCreditHabitId,{preserveBefore:dayStart(Date.now())});
+  }
   if(typeof pruneOrderConstraintsForHabit === 'function'){
     pruneOrderConstraintsForHabit(removed,[],Date.now());
   }

@@ -213,6 +213,7 @@ function onCalendarPdfSelectNone(){
 }
 
 function renderCalendarImportControls(){
+  if(typeof renderCalendarDuplicateReview === 'function')renderCalendarDuplicateReview();
   // Keep a user's chosen range while settings re-render.
   try{calendarIcsDateRange();}catch(_){}
   const select = $('calendar-credit-habit');
@@ -329,11 +330,16 @@ function confirmCalendarPdfImport(){
     calendarAllDayMode:allDayMode
   });
   sortSettings = loadSortSettings();
-  const result = applyCalendarImport(selected, {
+  let result;
+  try{result = applyCalendarImport(selected, {
     source:selected[0].source || 'pdf',
     creditHabitId,
     allDayMode
-  });
+  });}catch(error){
+    const status = $('calendar-pdf-status');
+    if(status)status.textContent = error.message || 'Could not save calendar import.';
+    return;
+  }
   clearCalendarPdfPreview({keepStatus:true});
   if(typeof sweepAutoDoneTasks === 'function')sweepAutoDoneTasks();
   renderCalendarImportControls();
