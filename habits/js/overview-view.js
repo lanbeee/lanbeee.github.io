@@ -28,7 +28,7 @@ function habitTypeLabel(type){
 }
 
 function overviewTopicChoices(data){
-  return topicFilterChoices(data);
+  return data.some(h=>normalizeTopics(h.topics).length) ? homeTopicChoices(data) : [];
 }
 
 function matchesOverviewTopic(h,topic){
@@ -36,7 +36,17 @@ function matchesOverviewTopic(h,topic){
 }
 
 function overviewLocationChoices(data){
-  return locationFilterChoices(data);
+  const choices = homeLocationChoices(data);
+  return choices.some(choice=>choice.key !== 'all' && choice.key !== '__none__') ? choices : [];
+}
+
+function settleCalendarFilterChoices(library){
+  if(overviewTopicFilter !== 'all' && !overviewTopicChoices(library).some(choice=>choice.key === overviewTopicFilter)){
+    setSharedFilter('topic','all');
+  }
+  if(overviewLocationFilter !== 'all' && !overviewLocationChoices(library).some(choice=>choice.key === overviewLocationFilter)){
+    setSharedFilter('location','all');
+  }
 }
 
 function matchesOverviewLocation(h,id){
@@ -63,24 +73,17 @@ const OVERVIEW_RANGES = [
 // HYBRID: compact view switcher + active filter summary. The full place/topic
 // library lives in a dedicated sheet so the calendar header never becomes a
 // long horizontal rail.
-function renderOverviewFilters(data){
+function renderOverviewFilters(data,library){
   const wrap = $('overview-filter');
   if(!wrap)return;
   const groups = $('calendar-filter-groups');
   const summary = $('calendar-filter-summary');
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
-  if(minimal)clearOverviewFilters();
-  let topicChoices = minimal ? [] : overviewTopicChoices(data);
-  let locChoices = minimal ? [] : overviewLocationChoices(data);
-  const hasTopics = topicChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
-  const hasLocs = locChoices.some(choice=>choice.key !== 'all' && choice.key !== '__none__');
-  if(!hasTopics || !topicChoices.some(choice=>choice.key === overviewTopicFilter))setSharedFilter('topic','all');
-  if(!hasLocs || !locChoices.some(choice=>choice.key === overviewLocationFilter))setSharedFilter('location','all');
-  if(hasTopics)topicChoices = orderFilterChoices(topicChoices, overviewTopicFilter);
-  else topicChoices = [];
-  if(hasLocs)locChoices = orderFilterChoices(locChoices, overviewLocationFilter);
-  else locChoices = [];
+  // The shared selection can refer to items excluded from the calendar.
+  // Keep those choices available while computing counts from calendar items.
+  const topicChoices = minimal ? [] : orderFilterChoices(overviewTopicChoices(library), overviewTopicFilter);
+  const locChoices = minimal ? [] : orderFilterChoices(overviewLocationChoices(library), overviewLocationFilter);
   const selection = overviewFilterSelection();
   syncOverviewFilterSelection(selection);
   const view = minimal ? {groupsHtml:'', chipsHtml:'', activeCount:0} : libraryFilterView({
@@ -681,8 +684,10 @@ function setOverviewMonthNav(showNav,label){
 
 // RENDER: orchestrates full overview sheet render
 function renderOverview(){
-  const allData = load().filter(h=>!isCalendarIgnored(h));
-  renderOverviewFilters(allData);
+  const library = load();
+  settleCalendarFilterChoices(library);
+  const allData = library.filter(h=>!isCalendarIgnored(h));
+  renderOverviewFilters(allData,library);
   const data = allData.filter(matchesOverviewFilters);
   if(overviewRangeFilter === 'recent')renderOverviewRecent(data);
   else renderOverviewMonth(data,overviewRangeFilter === 'all');

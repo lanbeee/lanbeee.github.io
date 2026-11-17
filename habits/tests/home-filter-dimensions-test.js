@@ -188,6 +188,27 @@ const {chromium} = require('playwright');
     await page.locator('#calendar-filter-reset').click();
     assert.deepEqual(await page.evaluate(()=>[overviewWhenFilter, overviewTypeFilter, overviewPriorityFilter, overviewLocationFilter, overviewTopicFilter]),
       ['all','all','all','all','all']);
+    await page.evaluate(()=>{
+      sortSettings.calendarIgnores = [{scope:'item',id:'item:overdue-task'}];
+      renderOverview();
+    });
+    const place = page.locator('#calendar-filter-groups [data-overview-location="desk"]');
+    await place.click();
+    assert.equal(await place.getAttribute('aria-pressed'),'true','a place still applies if its only item is hidden from the calendar');
+    assert.match(await place.innerText(),/0 items/);
+    assert.deepEqual(await page.evaluate(()=>[homeLocationFilter,overviewLocationFilter]),['desk','desk']);
+    assert.deepEqual(await names(),[],'the calendar leaves the Home results filtered');
+    await page.evaluate(()=>{
+      save(load().filter(h=>h.hid !== 'overdue-task'));
+      renderOverview();
+    });
+    assert.deepEqual(await page.evaluate(()=>[homeLocationFilter,overviewLocationFilter]),['all','all'],'removing the final item at a place clears its filter');
+    await page.locator('#calendar-filter-groups [data-overview-type="task"]').click();
+    await page.locator('#calendar-filter-done').click();
+    await page.locator('#overview-head-close').click();
+    await page.evaluate(()=>setMinimalMode(true));
+    assert.deepEqual(await page.evaluate(()=>[homeTypeFilter,overviewTypeFilter]),['all','all']);
+    assert.ok((await names()).length > 1,'enabling Minimal Mode clears filters before hiding their controls');
     assert.deepEqual(errors, []);
     console.log('PASS home filter when, type, and priority');
   }finally{

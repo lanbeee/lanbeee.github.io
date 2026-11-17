@@ -14,8 +14,9 @@ const playwright = require('playwright');
   page.on('pageerror',error=>errors.push(error.message));
   try{
     await page.addInitScript(()=>{
+      localStorage.setItem('tings_app_settings_v2',JSON.stringify({locations:[{id:'desk',name:'Desk',lat:40,lng:-73}]}));
       localStorage.setItem('tings_v2',JSON.stringify([{
-        hid:'desk-lamp',name:'Desk lamp',type:'keepup',target:1,logs:[],priority:2
+        hid:'desk-lamp',name:'Desk lamp',type:'keepup',target:1,logs:[],priority:2,locationIds:['desk']
       }]));
     });
     await page.goto(process.env.HABITS_URL || 'http://127.0.0.1:4181/',{waitUntil:'load'});
@@ -41,6 +42,14 @@ const playwright = require('playwright');
     await page.evaluate(()=>document.getElementById('app-bar').setAttribute('hidden',''));
     const forced = await page.locator('#bar-open-add').boundingBox();
     assert.ok(forced && forced.width >= 24,'a leftover hidden attribute cannot remove the desktop bar');
+
+    await page.locator('#app-bar-place').click();
+    await page.waitForSelector('#presence-picker-sheet.open');
+    await page.keyboard.press('Escape');
+    await page.locator('#presence-picker-sheet.open').waitFor({state:'detached'});
+    await page.locator('#app-bar-filters').click();
+    await page.waitForSelector('#home-filter-sheet.open');
+    await page.locator('#home-filter-done').click();
 
     await page.locator('#bar-open-search').click();
     await page.waitForSelector('#app-bar-search.is-open');

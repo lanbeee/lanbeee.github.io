@@ -34,34 +34,21 @@ const {chromium, runPlannerPair, baseHabit, openEveningSettings, minutesOnDay, p
     const readBefore = minutesOnDay(before.fast,0,'Read');
     assert.ok(readBefore > 0,'Read scheduled before the edit');
 
-    // Bulk mutation layer: replace the allowed window and preferred weekdays.
-    const edited = await page.evaluate(({data,now})=>{
-      const opDesc = bulkOpById('allowedTime');
-      const opDesc2 = bulkOpById('preferredWeekdays');
-      const records = bulkClone(data);
-      for(const record of records){
-        const probe = bulkClone(record);
-        opDesc.apply(probe,'window',{start:'18:30',end:'21:30'},[]);
-        opDesc2.apply(probe,'replace',[1,2,3,4,5],[]);
-        record.allowedTimeStart = probe.allowedTimeStart;
-        record.allowedTimeEnd = probe.allowedTimeEnd;
-        record.allowedTimeFixedStart = probe.allowedTimeFixedStart;
-        record.allowedTimeStartAnchor = probe.allowedTimeStartAnchor;
-        record.allowedTimeStartOffsetMin = probe.allowedTimeStartOffsetMin;
-        record.allowedTimeStartCombine = probe.allowedTimeStartCombine;
-        record.allowedTimeStartAnchor2 = probe.allowedTimeStartAnchor2;
-        record.allowedTimeStartFixedMin2 = probe.allowedTimeStartFixedMin2;
-        record.allowedTimeStartDayOffset = probe.allowedTimeStartDayOffset;
-        record.allowedTimeEndAnchor = probe.allowedTimeEndAnchor;
-        record.allowedTimeEndOffsetMin = probe.allowedTimeEndOffsetMin;
-        record.allowedTimeEndCombine = probe.allowedTimeEndCombine;
-        record.allowedTimeEndAnchor2 = probe.allowedTimeEndAnchor2;
-        record.allowedTimeEndFixedMin2 = probe.allowedTimeEndFixedMin2;
-        record.allowedTimeEndDayOffset = probe.allowedTimeEndDayOffset;
-        record.preferredWeekdays = probe.preferredWeekdays;
-      }
-      return records;
-    },{data:base,now});
+    // Feed the same normalized projection reviewed and saved by Bulk Edit
+    // to both planners, including a previously anchored record.
+    const edited = await page.evaluate(records=>{
+      records[1].allowedTimeStartAnchor = 'sunrise';
+      records[1].allowedTimeStartOffsetMin = 30;
+      if(!save(records))throw new Error('Could not save the bulk edit fixtures');
+      bulkSelected = new Set(records.map(h=>h.hid));
+      bulkPending = [
+        {id:'allowedTime',op:'window',value:{start:'18:30',end:'21:30'}},
+        {id:'preferredWeekdays',op:'replace',value:[1,2,3,4,5]}
+      ];
+      const review = bulkComputeReview();
+      if(review.errors.length || review.changing !== 2)throw new Error(JSON.stringify(review.errors));
+      return review.next;
+    },base);
     // The window family must be fully consistent after the bulk write.
     for(const record of edited){
       assert.equal(record.allowedTimeStart,1110,'bulk window start is 18:30');

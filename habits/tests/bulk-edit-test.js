@@ -190,16 +190,16 @@ const {chromium,webkit} = require('playwright');
       return document.querySelector('[data-bulk-op-row="priority"] .bulk-op-context').textContent;
     });
     assert.ok(priorityContext.includes('now:'),'common value shown as context only');
-    // Repeat rhythm applies to habits; tasks would be excluded.
+    // Opportunity mode applies to build habits.
     await openGroup('Repeat and dates');
     await page.locator('[data-bulk-op="repeatMode"]').selectOption('opportunity');
     await page.waitForTimeout(120);
     const appliesLine = await page.locator('[data-bulk-applies="repeatMode"]').textContent();
-    assert.ok(appliesLine.includes('2 of 2'),'applicability counts habits');
+    assert.ok(appliesLine.includes('1 of 2'),'applicability counts build habits');
     await page.locator('#bulk-review-continue').click();
     await page.waitForTimeout(200);
-    const summaryLines = await page.locator('#bulk-review-lines').textContent();
-    assert.ok(summaryLines.includes('2 items'),'review lists the change with a count');
+    assert.match(await page.locator('#bulk-review-problems').textContent(),/needs a place or weather guidance/);
+    assert.equal(await page.locator('#bulk-apply').isDisabled(),true,'an opportunity edit needs a trigger');
     await page.locator('#bulk-edit-back').click();
     await page.waitForTimeout(150);
 
@@ -266,12 +266,14 @@ const {chromium,webkit} = require('playwright');
     await page.waitForTimeout(200);
     await page.locator('[data-bulk-op="priority"]').selectOption('set');
     await page.waitForTimeout(100);
-    await page.locator('[data-bulk-field="priority"]').selectOption('1');
+    await page.locator('[data-bulk-field="priority"]').selectOption('0');
     await page.waitForTimeout(100);
     await page.locator('#bulk-review-continue').click();
     await page.waitForTimeout(200);
+    assert.match(await page.locator('#bulk-review-lines').innerText(),/Priority → P0/);
     await page.locator('#bulk-apply').click();
     await page.waitForTimeout(250);
+    assert.equal(await page.evaluate(()=>load().find(h=>h.name==='Read').priority),0,'P0 is saved as zero');
     await page.evaluate(()=>{
       const data = load();
       const read = data.find(h=>h.name==='Read');

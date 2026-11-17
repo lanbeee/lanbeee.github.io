@@ -1744,8 +1744,8 @@ function render(opts){
   // One shared sort pass: empty-state logic, the filter sheet counts, and the
   // match list all consume the same visibleIndices(data) order.
   const visible = visibleIndices(data);
-  const indices = filteredVisibleIndices(data,visible);
   renderHomeTagFilter(data,visible);
+  const indices = filteredVisibleIndices(data,visible);
   if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
   if(!indices.length){
     empty.style.display = 'block';

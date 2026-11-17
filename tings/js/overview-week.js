@@ -1371,6 +1371,7 @@ let _weekViewReturnFocus = null;
 let _weekViewOpener = null;
 let _weekViewWindowStart = 0;
 let _weekViewOptionsOpen = false;
+let _weekViewOptionsOpener = null;
 let _weekViewFiltersHtml = '';
 let _weekViewAnchor = 0;
 let _weekViewSpan = WEEK_VIEW_HORIZON;
@@ -1444,11 +1445,6 @@ function weekViewVisibleHids(data){
     if(h && h.hid && typeof matchesOverviewFilters === 'function' && matchesOverviewFilters(h))set.add(h.hid);
   });
   return set;
-}
-
-function weekViewFiltersActive(){
-  return overviewTopicFilter !== 'all' || overviewLocationFilter !== 'all'
-    || overviewTypeFilter !== 'all' || overviewWhenFilter !== 'all' || overviewPriorityFilter !== 'all';
 }
 
 // Pixel height of a minute span at the current layout's hour scale.
@@ -1706,14 +1702,27 @@ function weekViewSyncModeButton(){
   $('week-view-zoom-label').textContent = `${Math.round(_weekViewZoom / 96 * 100)}%`;
   $('week-view-zoom-out').disabled = _weekViewZoom === WEEK_VIEW_ZOOM_STEPS[0];
   $('week-view-zoom-in').disabled = _weekViewZoom === WEEK_VIEW_ZOOM_STEPS[WEEK_VIEW_ZOOM_STEPS.length-1];
-  $('week-view-filters-reset').disabled = !weekViewFiltersActive();
+  const minimal = isMinimalMode();
+  const selection = overviewFilterSelection();
+  const activeCount = ['topic','location','type','when','priority'].filter(kind=>selection[kind] !== 'all').length;
+  const filters = $('week-view-filters');
+  filters.hidden = minimal;
+  filters.classList.toggle('has-active',activeCount > 0);
+  filters.setAttribute('aria-expanded',String(_weekViewOptionsOpen));
+  filters.setAttribute('aria-label',activeCount ? `Filters, ${activeCount} active` : 'Filters');
+  const badge = filters.querySelector('b');
+  badge.hidden = !activeCount;
+  badge.textContent = String(activeCount);
+  $('week-view-filter-section').hidden = minimal;
+  $('week-view-filters-reset').disabled = !activeCount;
 }
 
 // Opening a menu must not rebuild the clock or replace a native scroller.
 // The panel overlays the calendar; each choice applies immediately.
-function weekViewSetOptionsOpen(open,restoreFocus = true){
+function weekViewSetOptionsOpen(open,restoreFocus = true,opener = $('week-view-display-options')){
   _weekViewOptionsOpen = open;
   if(open){
+    _weekViewOptionsOpener = opener;
     _weekViewMonthOpen = false;
     weekViewRenderMonth();
     weekViewRenderOptionsContent();
@@ -1726,8 +1735,14 @@ function weekViewSetOptionsOpen(open,restoreFocus = true){
   });
   if(open){
     panel.scrollTop = 0;
-    $('week-view-options-close').focus({preventScroll:true});
-  }else if(restoreFocus)$('week-view-display-options').focus({preventScroll:true});
+    if(opener.id === 'week-view-filters'){
+      $('week-view-filter-section').scrollIntoView({block:'start'});
+      $('week-view-filter-title').focus({preventScroll:true});
+    }else $('week-view-options-close').focus({preventScroll:true});
+  }else{
+    if(restoreFocus)_weekViewOptionsOpener?.focus({preventScroll:true});
+    _weekViewOptionsOpener = null;
+  }
 }
 
 function weekViewRenderOptionsContent(data = load()){
@@ -1738,7 +1753,7 @@ function weekViewRenderOptionsContent(data = load()){
   const minimal = typeof isMinimalMode === 'function' && isMinimalMode();
   const groups = $('week-view-filter-groups');
   const html = minimal ? '' : libraryFilterView({
-    prefix:'week-view-filter',attrPrefix:'wvfilter',items:data,
+    prefix:'week-view-filter',attrPrefix:'wvfilter',items:data.filter(h=>!isCalendarIgnored(h)),
     selection:overviewFilterSelection(),
     topicChoices:overviewTopicChoices(data),locationChoices:overviewLocationChoices(data)
   }).groupsHtml;
@@ -1747,7 +1762,7 @@ function weekViewRenderOptionsContent(data = load()){
     groups.innerHTML = html;
     _weekViewFiltersHtml = html;
   }
-  $('week-view-filters-reset').parentElement.hidden = !html;
+  $('week-view-filter-empty').hidden = Boolean(html);
 }
 
 // The header's mini-calendar button always shows the real current date, so it
@@ -1785,9 +1800,7 @@ function renderWeekViewStatus(loading){
     status.innerHTML = `The full plan couldn’t be loaded. <button type="button" class="mini-text-btn" data-wv-retry="1">Try again</button>`;
     return;
   }
-  status.textContent = loading
-    ? 'Planning the next days…'
-    : (weekViewFiltersActive() ? 'Filters on · busy time shown' : '');
+  status.textContent = loading ? 'Planning the next days…' : '';
 }
 
 function weekViewFocusMinute(day,rows){
@@ -1877,6 +1890,7 @@ function renderWeekView(){
   }
   const data = typeof load === 'function' ? load() : [];
   const settings = sortSettings || loadSortSettings();
+  settleCalendarFilterChoices(data);
   const dirtyKey = homePlannerDirtyKey(data);
   const revisionChanged = Boolean(_weekViewDirtyKey) && dirtyKey !== _weekViewDirtyKey;
   _weekViewDirtyKey = dirtyKey;
@@ -2420,7 +2434,7 @@ function bindWeekView(){
   // The sheet container is the persistent surface — chips, day heads, the
   // marker strip, and the grid are re-rendered inside it on every pass.
   const sheetInner = sheet.querySelector('.week-view-sheet');
-  bindTap(sheetInner,weekViewActivate,{ignoreSelector:'#week-view-options,#week-view-options-backdrop,#week-view-create,#week-view-display-options,#week-view-overview,.wv-nav,#week-view-close,.wv-gutter,.wv-hour'});
+  bindTap(sheetInner,weekViewActivate,{ignoreSelector:'#week-view-options,#week-view-options-backdrop,#week-view-create,#week-view-display-options,#week-view-filters,#week-view-overview,.wv-nav,#week-view-close,.wv-gutter,.wv-hour'});
   sheetInner.addEventListener('click',event=>{
     if(!_weekViewMonthOpen || event.target.closest('#week-view-month,#week-view-label'))return;
     _weekViewMonthOpen = false;
@@ -2467,11 +2481,11 @@ function bindWeekView(){
     if(e.target === e.currentTarget && !sheetBackdropArmed('week-sheet'))closeSheet('week-sheet');
   });
   $('week-view-close')?.addEventListener('click',()=>closeSheet('week-sheet'));
-  const openMonth = ()=>openCalendarOverview({range:'month',dayKey:weekViewDaySel,preserveFilters:true});
+  const openMonth = ()=>openCalendarOverview({range:'month',dayKey:weekViewDaySel});
   $('week-view-overview')?.addEventListener('click',openMonth);
   $('week-view-today')?.addEventListener('click',()=>weekViewGoToday());
-  $('week-view-display-options').addEventListener('click',()=>{
-    weekViewSetOptionsOpen(!_weekViewOptionsOpen);
+  ['week-view-display-options','week-view-filters'].forEach(id=>{
+    $(id).addEventListener('click',event=>weekViewSetOptionsOpen(true,true,event.currentTarget));
   });
   $('week-view-options-close').addEventListener('click',()=>weekViewSetOptionsOpen(false));
   $('week-view-options-backdrop').addEventListener('click',()=>weekViewSetOptionsOpen(false));

@@ -60,6 +60,7 @@ free-time-indicator-test.js	ui	once
 general-refinements-test.js	ui	once
 home-agenda-identity-test.js	planner	once
 habit-schedule-options-test.js	planner	once
+alternative-time-place-context-test.js	planner	once
 fixed-start-test.js	planner	once
 home-agenda-tick-test.js	planner	once
 habits-agenda-e2e.js	planner	once
@@ -237,5 +238,6 @@ overview-week-view-test.js	ui	once
 
 bulk-add-test.js	ui	once
 bulk-edit-test.js	ui	once
+bulk-edit-fields-test.js	ui	once
 bulk-edit-planner-test.js	planner	page-both
 planner-projection-offmain-test.js	planner	once

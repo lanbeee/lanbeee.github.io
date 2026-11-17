@@ -108,10 +108,15 @@ function isSortSettingKey(key){
 function setMinimalMode(enabled){
   enabled = Boolean(enabled);
   if(enabled === isMinimalMode())return;
+  if(enabled){
+    clearSharedFilters();
+    dayLogsKey = null;
+  }
   updateSortSetting({minimalMode:enabled},{renderNow:false});
   if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
   else render();
-  if(typeof renderOverview === 'function' && $('overview-sheet')?.classList.contains('open'))renderOverview();
+  if(paneTierActive() || $('overview-sheet')?.classList.contains('open'))renderOverview();
+  if(weekSheetOpen())renderWeekView();
   if(!enabled && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 }
 

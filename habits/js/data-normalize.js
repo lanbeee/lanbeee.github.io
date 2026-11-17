@@ -321,6 +321,7 @@ function normalize(items){
     const scheduleOptions = optionLocationState.options;
     const locationIds = normalizeLocationIds(raw.locationIds);
     const anywhereAllowed = raw.anywhereAllowed == null ? locationIds.length === 0 : Boolean(raw.anywhereAllowed);
+    const importedAt = Number(raw.importedAt);
     const prefIds = typeof habitPrefLocationIds === 'function'
       ? habitPrefLocationIds({locationIds,scheduleOptions})
       : locationIds;
@@ -437,7 +438,7 @@ function normalize(items){
         calendarStart:Number.isFinite(raw.calendarStart) ? raw.calendarStart : null,
         calendarEnd:Number.isFinite(raw.calendarEnd) ? raw.calendarEnd : null
       } : {}),
-      importedAt: Number.isFinite(Number(raw.importedAt)) ? Number(raw.importedAt) : null
+      importedAt:Number.isFinite(importedAt) && importedAt > 0 ? importedAt : null
     };
     // Appointment recurrence is a calendar rule, not a flexible habit cadence.
     if(h.appointment){

@@ -8,7 +8,6 @@ let bulkSelected = new Set(); // hids — stable identities, not indexes
 let bulkFilters = {search:'',type:'all',topic:'all',location:'all',priority:'all',snoozed:false,completed:false};
 let bulkPending = []; // [{id, op, value}] — op 'keep' is never applied
 let bulkReview = null; // computed review {perItem, opLines, errors, warnings, changing}
-let bulkSignatures = null; // per-hid field snapshot taken at review time
 let bulkReviewConfirmed = false; // re-inspection gate after staleness
 let bulkStaleNotice = false;
 let bulkSettingsQuery = '';
@@ -17,31 +16,6 @@ const BULK_PRIORITY_WORDS = ['critical','high','normal','flexible','low','someda
 
 function bulkPriorityWord(priority){
   return BULK_PRIORITY_WORDS[clampPriority(priority)] || 'normal';
-}
-
-// Calendar imports own their mapped fields: a re-import rewrites them, so
-// bulk edits there would be silently lost. Personalization (icon, topics,
-// places, snooze…) stays available. Device items are handled at the picker.
-function bulkImportOwnedFields(record){
-  if(!record || !record.source || record.source === 'device')return new Set();
-  // ICS re-import owns title/time/effort; other providers re-map the task core.
-  return new Set(['name','eventTime','dueDate','autoMarkMinutes','durationMinutes','breakable','priority']);
-}
-
-const bulkImportOwnedCache = {};
-function bulkOpImportOwned(opId){
-  if(!(opId in bulkImportOwnedCache)){
-    const opDesc = bulkOpById(opId);
-    const touched = opDesc ? bulkOpTouchedFields(opDesc) : [];
-    bulkImportOwnedCache[opId] = touched;
-  }
-  return bulkImportOwnedCache[opId];
-}
-
-function bulkOpBlocked(record,opDesc){
-  const owned = bulkImportOwnedFields(record);
-  if(owned.size && bulkOpImportOwned(opDesc.id).some(field=>owned.has(field)))return 'owned by the calendar import';
-  return '';
 }
 
 function bulkSelectedRecords(data){
@@ -59,7 +33,6 @@ function openBulkEditPicker(copyHome){
   bulkSelected = new Set();
   bulkPending = [];
   bulkReview = null;
-  bulkSignatures = null;
   bulkReviewConfirmed = false;
   bulkStaleNotice = false;
   bulkSettingsQuery = '';
@@ -98,7 +71,6 @@ function closeBulkEditSheet(){
   bulkSelected = new Set();
   bulkPending = [];
   bulkReview = null;
-  bulkSignatures = null;
   bulkSettingsQuery = '';
 }
 
@@ -292,23 +264,25 @@ function bulkDefaultValue(opDesc,op,records){
   switch(opDesc.valueKind){
     case 'topics':case 'places':case 'monthdays':case 'ordinal':return [];
     case 'number':return bulkDefaultNumber(opDesc);
+    case 'priority':return DEFAULT_PRIORITY;
     case 'date':{
       const common = records.map(h=>h.dueDate).filter(v=>v != null);
-      if(common.length && new Set(common.map(v=>new Date(v).toDateString())).size === 1)return new Date(common[0]).toISOString().slice(0,10);
+      if(common.length && new Set(common.map(dateKey)).size === 1)return dateKey(common[0]);
       return '';
       }
     case 'time':{
-      const minutes = records.map(h=>h.eventTime).filter(v=>v != null).map(v=>Math.round((v - dayStart(v)) / 60000));
-      if(minutes.length && new Set(minutes).size === 1)return minutesToTimeInput(minutes[0]);
+      const clocks = records.map(h=>h.eventTime).filter(v=>v != null).map(bulkTaskClock);
+      if(clocks.length && new Set(clocks).size === 1)return clocks[0];
       return '';
       }
     case 'window':return {start:'08:00',end:'12:00'};
     case 'weekdays':{
-      const first = records.find(h=>Array.isArray(h.allowedWeekdays));
-      return first ? first.allowedWeekdays.slice() : [];
+      const first = records.find(h=>Array.isArray(h[opDesc.id]));
+      return first ? first[opDesc.id].slice() : [];
       }
     case 'rhythm':{
       const first = records.find(h=>h.type === 'keepup' || h.type === 'reduce');
+      if(first && isOpportunityHabit(first))return {times:1,days:opportunityGapDays(first)};
       const parts = first ? rhythmParts(first.target) : {times:1,days:7};
       return {times:parts.times,days:parts.days};
       }
@@ -339,14 +313,12 @@ function bulkValueControlHtml(opDesc,pending,data){
   switch(kind){
     case 'none':return '';
     case 'number':
-      return `<label class="range-value"><input type="number" data-bulk-field="${id}" data-bulk-kind="number" min="${opDesc.numberMin ?? 0}" max="${opDesc.numberMax ?? 720}" inputmode="numeric" value="${value == null ? '' : escapeHtml(String(value))}" /><span>min</span></label>`;
+      return `<label class="range-value"><input type="number" data-bulk-field="${id}" data-bulk-kind="number" min="${opDesc.numberMin ?? 0}" max="${opDesc.numberMax ?? 720}" inputmode="numeric" value="${value == null ? '' : escapeHtml(String(value))}" /><span>${opDesc.numberUnit || 'min'}</span></label>`;
     case 'priority':
-      return `<select class="mini-select" data-bulk-field="${id}" data-bulk-kind="priority">${PRIORITY_LABELS.map((label,p)=>`<option value="${p}"${Number(value) === p ? ' selected' : ''}>${label} · ${bulkPriorityWord(p)}</option>`).join('')}</select>`;
+      return `<select class="mini-select" data-bulk-field="${id}" data-bulk-kind="priority">${PRIORITY_LABELS.map((label,p)=>`<option value="${p}"${clampPriority(value) === p ? ' selected' : ''}>${label} · ${bulkPriorityWord(p)}</option>`).join('')}</select>`;
     case 'topics':{
-      const records = bulkSelectedRecords(data);
-      const known = new Set();
+      const known = new Set([...topicOptions(), ...(value || [])]);
       for(const h of data)for(const topic of h.topics || [])known.add(topic);
-      for(const h of records)for(const topic of h.topics || [])known.add(topic);
       const choices = [...known].sort((a,b)=>a.localeCompare(b)).map(topic=>[topic,topic]);
       return `<div class="bulk-chip-wrap" data-bulk-kind="topics" data-bulk-field="${id}"><div class="topic-chip-row">${bulkChipRow(id,choices,value,'data-bulk-value')}</div>
         <div class="bulk-topic-add"><input type="text" maxlength="32" placeholder="new topic" aria-label="new topic name" data-bulk-new-topic="${id}" /><button type="button" class="mini-text-btn" data-bulk-add-topic="${id}">add</button></div></div>`;
@@ -411,7 +383,17 @@ function bulkValueControlHtml(opDesc,pending,data){
 
 function bulkAppliesLine(opDesc,pending,records,data){
   if(pending.op === 'keep')return '';
-  const {ok,excluded} = bulkApplicability(opDesc,records,data);
+  const prerequisiteId = {eventTime:'dueDate',placePref:'places'}[pending.id];
+  const prerequisite = bulkPending.find(part=>part.id === prerequisiteId && part.op !== 'keep');
+  const candidates = prerequisite ? records.map(record=>{
+    const desc = bulkOpById(prerequisite.id);
+    if(bulkOpUnavailable(record,desc,data,prerequisite.value)
+      || desc.plan(record,prerequisite.op,prerequisite.value,data).error)return record;
+    const probe = bulkClone(record);
+    desc.apply(probe,prerequisite.op,prerequisite.value,data);
+    return probe;
+  }) : records;
+  const {ok,excluded} = bulkApplicability(opDesc,candidates,data,pending.value);
   const bits = [`Applies to ${ok} of ${records.length}`];
   for(const [reason,count] of Object.entries(excluded))bits.push(`${reason}: ${count}`);
   return bits.join(' · ');
@@ -423,6 +405,7 @@ function renderBulkEditStep(){
   const data = load();
   const records = bulkSelectedRecords(data);
   if(!records.length){host.innerHTML = '';return;}
+  const expanded = new Set([...host.querySelectorAll('details.bulk-group[open] > summary')].map(el=>el.textContent));
   const query = bulkSettingsQuery.trim().toLowerCase();
   const groups = bulkGroupOrder();
   const commonOps = BULK_FIELD_OPS.filter(op=>op.common);
@@ -449,7 +432,7 @@ function renderBulkEditStep(){
   for(const group of groups){
     const ops = BULK_FIELD_OPS.filter(op=>op.group === group && !op.common);
     if(!ops.some(matchesQuery))continue;
-    parts.push(section(group,ops,query !== ''));
+    parts.push(section(group,ops,query !== '' || expanded.has(group)));
   }
   host.innerHTML = parts.join('') || '<p class="field-hint">No settings match.</p>';
   syncBulkReviewAction();
@@ -473,15 +456,17 @@ function syncBulkReviewAction(){
 
 function bulkRefreshApplies(id){
   syncBulkReviewAction();
-  const opDesc = bulkOpById(id);
-  if(!opDesc)return;
-  const pending = bulkPending.find(p=>p.id === id);
-  const line = $('bulk-edit-rows')?.querySelector(`[data-bulk-applies="${id}"]`);
-  if(!line)return;
   const data = load();
-  const text = bulkAppliesLine(opDesc,pending || {id,op:'keep',value:null},bulkSelectedRecords(data),data);
-  line.hidden = !text;
-  line.textContent = text;
+  const records = bulkSelectedRecords(data);
+  const dependentId = {dueDate:'eventTime',places:'placePref'}[id];
+  for(const pending of bulkPending){
+    if(pending.id !== id && pending.id !== dependentId)continue;
+    const line = $('bulk-edit-rows').querySelector(`[data-bulk-applies="${pending.id}"]`);
+    if(!line)continue;
+    const text = bulkAppliesLine(bulkOpById(pending.id),pending,records,data);
+    line.hidden = !text;
+    line.textContent = text;
+  }
 }
 
 function bulkReadControlValue(opDesc,host){
@@ -493,7 +478,7 @@ function bulkReadControlValue(opDesc,host){
       return raw === '' || raw == null ? null : Number(raw);
       }
     case 'priority':
-      return Number(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="priority"]`)?.value || 2);
+      return clampPriority(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="priority"]`)?.value);
     case 'topics':
       return [...host.querySelectorAll(`[data-bulk-chip="${opDesc.id}"][aria-pressed="true"]`)].map(el=>el.dataset.bulkValue);
     case 'places':
@@ -511,12 +496,12 @@ function bulkReadControlValue(opDesc,host){
       return [...host.querySelectorAll(`[data-bulk-weekday="${opDesc.id}"][aria-pressed="true"]`)].map(el=>Number(el.dataset.bulkValue));
     case 'monthdays':
       return (host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="monthdays"]`)?.value || '')
-        .split(',').map(part=>Number(part.trim())).filter(n=>Number.isFinite(n) && n >= 1 && n <= 31);
+        .split(',').map(part=>Number(part.trim())).filter(n=>Number.isInteger(n) && n >= 1 && n <= 31);
     case 'ordinal':return pending?.value || [];
     case 'rhythm':
       return {
-        times:Number(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-rhythm-part="times"]`)?.value || 1),
-        days:Number(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-rhythm-part="days"]`)?.value || 7)
+        times:Number(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-rhythm-part="times"]`)?.value),
+        days:Number(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-rhythm-part="days"]`)?.value)
       };
     case 'emoji':
       return host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="emoji"]`)?.value || '';
@@ -542,62 +527,88 @@ function bulkReadControlValue(opDesc,host){
 // ─────────────────────────────────────────────────────────────────────────
 // Step 3: review.
 // ─────────────────────────────────────────────────────────────────────────
-function bulkComputeReview(){
-  const data = load();
-  const records = data.filter(h=>bulkSelected.has(h.hid));
-  const active = bulkPending.filter(p=>p.op !== 'keep' && bulkOpById(p.id));
+function bulkComputeReview(data = load()){
+  const records = bulkSelectedRecords(data);
+  // Apply prerequisites before settings that depend on them, regardless of
+  // the order in which the user picked the operations.
+  const repeatOps = ['repeatMode','rhythm'];
+  const order = BULK_FIELD_OPS.map(desc=>desc.id).filter(id=>!repeatOps.includes(id)).concat(repeatOps);
+  const active = order.map(id=>bulkPending.find(pending=>pending.id === id)).filter(pending=>pending && pending.op !== 'keep');
+  const stats = new Map(active.map(pending=>[pending.id,{applied:0,unchanged:0,excluded:{},label:bulkOpById(pending.id).label}]));
+  const projected = new Map();
   const perItem = [];
-  const opCounts = new Map(); // op id -> applied count
-  const opUnchanged = new Map(); // op id -> applicable but same value
+  const errors = [];
+  const warnings = [];
   for(const record of records){
+    const probe = bulkClone(record);
     const changes = [];
     for(const pending of active){
-      const opDesc = bulkOpById(pending.id);
-      if(!opDesc.applies(record,data))continue;
-      const probe = bulkClone(record);
-      opDesc.apply(probe,pending.op,pending.value,data);
-      if(bulkRecordDiffers(record,probe)){
-        changes.push({id:pending.id,label:opDesc.label,before:opDesc.current(record),after:opDesc.current(probe)});
-        opCounts.set(pending.id,(opCounts.get(pending.id) || 0) + 1);
-      }else{
-        opUnchanged.set(pending.id,(opUnchanged.get(pending.id) || 0) + 1);
+      const desc = bulkOpById(pending.id);
+      const stat = stats.get(pending.id);
+      const blocked = bulkOpUnavailable(probe,desc,data,pending.value);
+      if(blocked){
+        stat.excluded[blocked] = (stat.excluded[blocked] || 0) + 1;
+        continue;
       }
+      const {error,warnings:opWarnings = []} = desc.plan(probe,pending.op,pending.value,data);
+      if(error){
+        errors.push({name:record.name,message:`${desc.label}: ${error}`});
+        continue;
+      }
+      const before = desc.current(record);
+      const label = desc.changeLabel?.(probe,pending.op,pending.value) || desc.label;
+      const previous = {...probe};
+      const touched = desc.apply(probe,pending.op,pending.value,data);
+      if(!touched.some(field=>!bulkSameValue(previous[field],probe[field]))){
+        stat.unchanged += 1;
+        continue;
+      }
+      for(const warning of opWarnings)warnings.push({name:record.name,message:`${desc.label}: ${warning}`});
+      stat.applied += 1;
+      stat.label = label;
+      changes.push({id:pending.id,label:desc.label,before});
     }
-    if(changes.length)perItem.push({hid:record.hid,name:record.name,changes});
+    if(isOpportunityHabit(probe) && changes.some(change=>['places','weatherProfile','weatherLocation'].includes(change.id))){
+      const trigger = bulkOpportunityTrigger(probe);
+      if(trigger)probe.conditionTrigger = trigger;
+      else errors.push({name:record.name,message:'When conditions fit needs a place or weather guidance as its trigger'});
+    }
+    if(changes.length){
+      projected.set(record.hid,probe);
+      perItem.push({hid:record.hid,name:record.name,changes});
+    }
   }
-  const opLines = [];
-  for(const pending of active){
-    const opDesc = bulkOpById(pending.id);
-    const applied = opCounts.get(pending.id) || 0;
-    const unchanged = opUnchanged.get(pending.id) || 0;
-    // Describe with the first item that actually changes, falling back to a
-    // generic label when nothing changes.
-    const first = perItem.find(item=>item.changes.some(change=>change.id === pending.id));
-    let label = opDesc.label;
-    if(first){
-      const probeRecord = records.find(h=>h.hid === first.hid);
-      label = opDesc.changeLabel ? opDesc.changeLabel(probeRecord,pending.op,pending.value) : opDesc.label;
-    }
+  // Use the same normalization that save() uses. Undo needs the exact stored
+  // values, including dependent fields such as an item's preferred place.
+  const next = projected.size ? normalize(data.map(h=>projected.get(h.hid) || h)) : data;
+  const undoEntries = [];
+  data.forEach((record,index)=>{
+    if(!projected.has(record.hid))return;
+    const after = next[index];
+    const changes = Object.keys(record).filter(field=>!bulkSameValue(record[field],after[field]))
+      .map(field=>({field,before:record[field],after:after[field]}));
+    if(changes.length)undoEntries.push({hid:record.hid,changes});
+  });
+  const changedIds = new Set(undoEntries.map(entry=>entry.hid));
+  const savedById = new Map(next.filter(h=>changedIds.has(h.hid)).map(h=>[h.hid,h]));
+  const opLines = active.map(pending=>{
+    const {applied,unchanged,excluded,label} = stats.get(pending.id);
     let line = `${label}: ${applied} item${applied === 1 ? '' : 's'}`;
-    if(unchanged)line += `; ${unchanged} already ${pending.op === 'add' ? 'has it' : 'unchanged'}`;
-    const excludedCounts = {};
-    for(const record of records){
-      if(opDesc.applies(record,data))continue;
-      const reason = bulkOpBlocked(record,opDesc) || (opDesc.blockedReason ? opDesc.blockedReason(record) : 'unavailable');
-      excludedCounts[reason] = (excludedCounts[reason] || 0) + 1;
-    }
-    for(const [reason,count] of Object.entries(excludedCounts))line += `; ${count} ${reason}`;
-    opLines.push(line);
+    if(unchanged)line += `; ${unchanged} ${pending.op === 'add' ? 'already has it' : 'unchanged'}`;
+    for(const [reason,count] of Object.entries(excluded))line += `; ${count} ${reason}`;
+    return line;
+  });
+  const changedItems = perItem.filter(item=>changedIds.has(item.hid));
+  for(const item of changedItems){
+    for(const change of item.changes)change.after = bulkOpById(change.id).current(savedById.get(item.hid));
   }
-  const plan = perItem.map(item=>({hid:item.hid,changes:active.filter(pending=>item.changes.some(change=>change.id === pending.id)).map(pending=>({id:pending.id,op:pending.op,value:pending.value}))}));
-  const {errors,warnings} = bulkValidatePlan(records,plan,data);
-  return {perItem,opLines,errors,warnings,changing:perItem.length,selected:records.length,active};
+  return {perItem:changedItems,opLines,errors,warnings,
+    changing:undoEntries.length,selected:records.length,next,undoEntries};
 }
 
-function renderBulkReview(){
+function renderBulkReview(review = bulkComputeReview()){
   const host = $('bulk-edit-review');
   if(!host)return;
-  const review = bulkComputeReview();
   bulkReview = review;
   const summary = $('bulk-review-summary');
   if(summary)summary.textContent = `${review.selected} selected · ${review.changing} will change`;
@@ -634,70 +645,41 @@ function renderBulkReview(){
   }
 }
 
-function refreshBulkReviewAfterStaleness(){
-  bulkSignatures = null;
-  bulkStaleNotice = true;
-  bulkReviewConfirmed = false;
-  renderBulkReview();
-}
-
 function bulkBeginReview(){
-  const data = load();
-  const records = data.filter(h=>bulkSelected.has(h.hid));
-  const active = bulkPending.filter(p=>p.op !== 'keep' && bulkOpById(p.id));
-  const plan = bulkBuildPlan(records,active,data);
-  bulkSignatures = bulkPlanSignature(records,plan,data);
+  setBulkStep('review');
+  for(const pending of bulkPending){
+    if(pending.op === 'keep')continue;
+    const host = $('bulk-edit-rows').querySelector(`[data-bulk-op-row="${pending.id}"]`);
+    if(host)pending.value = bulkReadControlValue(bulkOpById(pending.id),host);
+  }
   bulkStaleNotice = false;
   bulkReviewConfirmed = true;
-  setBulkStep('review');
   renderBulkReview();
 }
 
 function bulkApplyChanges(){
-  if(!bulkReview)bulkBeginReview();
+  if(bulkStep !== 'review' || !bulkReview || !bulkReviewConfirmed || bulkReview.errors.length || !bulkReview.changing)return;
   const data = load();
-  const records = data.filter(h=>bulkSelected.has(h.hid));
-  if(!records.length)return;
-  const active = bulkPending.filter(p=>p.op !== 'keep' && bulkOpById(p.id));
-  if(!active.length)return;
-  // Re-read happened above; if anything under review moved, force a fresh look.
-  if(bulkSignatures && !bulkSignatureMatches(records,bulkSignatures)){
-    refreshBulkReviewAfterStaleness();
+  const review = bulkComputeReview(data);
+  if(review.selected !== bulkReview.selected || !bulkSameValue(review.undoEntries,bulkReview.undoEntries)
+    || !bulkSameValue(review.errors,bulkReview.errors) || !bulkSameValue(review.warnings,bulkReview.warnings)){
+    bulkStaleNotice = true;
+    bulkReviewConfirmed = false;
+    renderBulkReview(review);
     return;
   }
-  // Cancel scheduled pushes for tasks whose timing is about to change; the
-  // regular reminder pass reschedules from saved data after the render.
-  for(const record of records){
-    if(record.type !== 'task')continue;
-    if(typeof cancelPush !== 'function' || typeof reminderSignature !== 'function')continue;
-    const touchesTiming = active.some(pending=>{
-      const opDesc = bulkOpById(pending.id);
-      if(!opDesc || !opDesc.applies(record,data))return false;
-      const fields = bulkOpImportOwned(opDesc.id);
-      return fields.some(field=>['dueDate','eventTime','delayAllowanceDays','snoozedUntil'].includes(field));
-    });
-    if(touchesTiming)cancelPush(reminderSignature(record));
-  }
-  const undoEntries = [];
-  for(const record of records){
-    for(const pending of active){
-      const opDesc = bulkOpById(pending.id);
-      if(!opDesc.applies(record,data))continue;
-      const entry = bulkApplyChange(record,opDesc,pending.op,pending.value,data);
-      if(entry)undoEntries.push(entry);
-    }
-  }
-  if(!undoEntries.length){
-    refreshBulkReviewAfterStaleness();
-    return;
-  }
-  if(!save(data)){
-    // Records were mutated in the working copy only; a retry reloads fresh.
+  if(!save(review.next)){
     showToast('could not save — try again');
     return;
   }
-  const usesWeather = records.some(h=>h.weatherProfileMode !== 'none' || h.showWeather);
-  showActionToast(`Updated ${records.length} item${records.length === 1 ? '' : 's'}`,{type:'bulk-edit',changes:undoEntries,openAction:false,undoLabel:'undo'});
+  // The normal reminder pass reschedules from the newly saved data.
+  for(const entry of review.undoEntries){
+    if(!entry.changes.some(({field})=>['dueDate','eventTime','delayAllowanceDays','snoozedUntil'].includes(field)))continue;
+    const before = data.find(h=>h.hid === entry.hid);
+    if(before?.type === 'task' && typeof cancelPush === 'function' && typeof reminderSignature === 'function')cancelPush(reminderSignature(before));
+  }
+  const usesWeather = review.next.some(h=>bulkSelected.has(h.hid) && (h.weatherProfileMode !== 'none' || h.showWeather));
+  showActionToast(`Updated ${review.changing} item${review.changing === 1 ? '' : 's'}`,{type:'bulk-edit',changes:review.undoEntries,openAction:false,undoLabel:'undo'});
   // Work is committed — close without the discard guard.
   bulkSelected = new Set();
   bulkPending = [];
@@ -798,6 +780,13 @@ $('bulk-review-continue')?.addEventListener('click',()=>{
   if(!bulkSelected.size)return;
   bulkBeginReview();
 });
+$('bulk-edit-rows')?.addEventListener('input',e=>{
+  const field = e.target.closest('input[data-bulk-field]');
+  if(!field)return;
+  const id = field.dataset.bulkField;
+  const opDesc = bulkOpById(id);
+  if(opDesc)bulkPendingFor(id).value = bulkReadControlValue(opDesc,field.closest('.bulk-op-row'));
+});
 $('bulk-edit-rows')?.addEventListener('change',e=>{
   const opSelect = e.target.closest('[data-bulk-op]');
   if(opSelect){
@@ -857,7 +846,7 @@ $('bulk-edit-rows')?.addEventListener('click',e=>{
   if(addTopic){
     const id = addTopic.dataset.bulkAddTopic;
     const input = addTopic.closest('.bulk-op-row')?.querySelector('[data-bulk-new-topic]');
-    const topic = bulkCleanTopic(input?.value);
+    const topic = cleanTopic(input?.value);
     if(!topic || !input)return;
     const opDesc = bulkOpById(id);
     const pending = bulkPendingFor(id);
@@ -885,5 +874,5 @@ $('bulk-edit-rows')?.addEventListener('click',e=>{
 $('bulk-apply')?.addEventListener('click',bulkApplyChanges);
 $('bulk-review-confirm')?.addEventListener('click',()=>{
   bulkReviewConfirmed = true;
-  renderBulkReview();
+  renderBulkReview(bulkReview);
 });

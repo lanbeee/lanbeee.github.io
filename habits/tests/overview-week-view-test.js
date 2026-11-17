@@ -113,6 +113,23 @@ async function chooseOption(page,selector){
     assert(!fit.overflow && !fit.truncated,'controls and complete date title fit');
     assert(fit.body / fit.sheet > 0.7,'schedule gets over 70% of the sheet');
     assert(await page.evaluate(()=>document.activeElement.id === 'week-view-close'),'dialog receives focus');
+    const filtersButton = page.locator('#week-view-filters');
+    assert(await filtersButton.isVisible(),'Filters is visible on the week view');
+    await filtersButton.click();
+    assert(await page.evaluate(()=>{
+      const title = document.querySelector('#week-view-filter-title');
+      const header = document.querySelector('.wv-options-head').getBoundingClientRect();
+      const panel = document.querySelector('#week-view-options').getBoundingClientRect();
+      const box = title.getBoundingClientRect();
+      return document.activeElement === title && box.top >= header.bottom && box.bottom <= panel.bottom;
+    }),'Filters opens the drawer at the visible filter controls');
+    await page.locator('[data-wvfilter-type="task"]').click();
+    assert(await page.evaluate(()=>homeTypeFilter === 'task' && overviewTypeFilter === 'task'),'week filters apply to Home and calendar');
+    assert(await filtersButton.getAttribute('aria-label') === 'Filters, 1 active','week filter shortcut shows the active count');
+    assert(await page.evaluate(()=>document.activeElement.id === 'week-view-filters'),'closing the drawer restores focus to Filters');
+    await filtersButton.click();
+    await page.locator('#week-view-filters-reset').click();
+    assert(await page.evaluate(()=>homeTypeFilter === 'all' && overviewTypeFilter === 'all'),'week reset clears the shared selection');
     if(width >= 1100){
       assert(await page.locator('.week-view-sheet').evaluate(el=>{
         const r = el.getBoundingClientRect();
@@ -371,18 +388,25 @@ async function chooseOption(page,selector){
     }
 
     // Empty grid space stages a date/time; only Save can create an item.
-    const target = await page.evaluate(()=>{
-      const y = document.querySelector('#week-view-body .wv-yscroll');
-      y.scrollTop = 17 * weekViewHourPx();
-      const column = document.querySelector('[data-wv-daycol]');
-      const rect = column.getBoundingClientRect();
-      return {x:rect.left + rect.width/2,y:rect.top + 18 * weekViewHourPx(),day:column.dataset.wvDaycol};
-    });
+    await page.evaluate(()=>{document.querySelector('#week-view-body .wv-yscroll').scrollTop = 17 * weekViewHourPx();});
     await page.waitForTimeout(400);
+    const target = await page.evaluate(()=>{
+      const column = document.querySelector(`[data-wv-daycol="${weekViewDaySel}"]`);
+      const rect = column.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      for(let minute = 18 * 60;minute < 22 * 60;minute += 15){
+        const y = rect.top + minute * weekViewHourPx() / 60;
+        const hit = document.elementFromPoint(x,y);
+        if(hit?.closest('[data-wv-daycol]') !== column || hit.closest('.wv-event,[data-wv-busy],[data-wv-travel]'))continue;
+        const time = `${Math.floor(minute / 60)}:${String(minute % 60).padStart(2,'0')}`;
+        return {x,y,day:column.dataset.wvDaycol,time};
+      }
+      throw new Error('No empty evening grid slot is visible');
+    });
     await page.mouse.click(target.x,target.y);
     await page.waitForSelector('#add-sheet.open');
     const draft = await page.evaluate(()=>({type:selectedType,date:document.querySelector('#ting-due-date').value,time:document.querySelector('#ting-due-time').value,top:document.elementFromPoint(innerWidth/2,innerHeight/2)?.closest('.sheet-wrap')?.id}));
-    assert(draft.type === 'task' && draft.date === target.day && draft.time === '18:00','empty grid tap stages a task at the tapped date and time');
+    assert(draft.type === 'task' && draft.date === target.day && draft.time === target.time,'empty grid tap stages a task at the tapped date and time');
     assert(draft.top === 'add-sheet','new-task editor paints above the calendar');
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);

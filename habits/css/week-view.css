@@ -81,12 +81,14 @@ body[data-pane-count="3"] .week-view-sheet{
   background:var(--wv-token-bg,var(--slate-bg));
   border-left:2px solid var(--wv-token-icon,var(--slate-icon));
 }
-.wv-status{
-  font-size:12px;color:var(--text3);
-  padding:0 2px 6px;flex:0 0 auto;
-}
+.wv-tools{display:flex;align-items:center;gap:10px;flex:0 0 auto;}
+.wv-tools:not(:has(.wv-filter-trigger[hidden])){padding-bottom:6px;}
+.wv-filter-trigger{min-height:36px;height:auto;}
+.wv-filter-trigger[hidden],.wv-filter-trigger b[hidden]{display:none;}
+.wv-filter-trigger:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
+.wv-status{font-size:12px;color:var(--text3);}
 .wv-status:empty{display:none;}
-.wv-status:not(:empty){display:flex;align-items:center;gap:10px;}
+.wv-status:not(:empty){display:flex;align-items:center;gap:10px;padding:0 2px;}
 
 /* ── Phone date chips ─────────────────────────────────────────────────── */
 .wv-load{font-style:normal;font-size:11px;font-weight:600;line-height:1;color:var(--text3);}
@@ -804,7 +806,7 @@ body[data-pane-count="2"] .week-view-sheet,body[data-pane-count="3"] .week-view-
 .wv-options .wv-zoom button{width:44px;height:44px;}
 .wv-options .wv-zoom output{min-width:52px;font-size:13px;}
 .wv-options-filter-head{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);padding-top:16px;}
-.wv-options-filter-head[hidden]{display:none;}
+#week-view-filter-section{scroll-margin-top:64px;}
 .wv-options-filter-head button{min-height:36px;font-size:12px;}
 .wv-options-filter-head button:disabled{opacity:0.4;}
 #week-view-filter-groups{display:flex;flex-direction:column;gap:20px;}

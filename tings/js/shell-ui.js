@@ -2219,7 +2219,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape' || e.defaultPrevented) return;
   const plan = appBackPlan();
-  if(plan && (plan.signature.startsWith('detail') || /^sheet:(block-edit-sheet|travel-edit-sheet):/.test(plan.signature))){
+  if(plan && (plan.signature.startsWith('detail') || /^sheet:(block-edit-sheet|travel-edit-sheet|presence-picker-sheet):/.test(plan.signature))){
     e.preventDefault();
     plan.run();
     return;

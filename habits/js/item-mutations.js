@@ -6,8 +6,8 @@
 // Representation rules: an operation is {id, op, value}. op === 'keep' means
 // unchanged and is never applied. null / false / [] can all be intentional
 // values, so nothing here decides "should I apply this" by truthiness — only
-// the explicit op key matters. apply() returns the list of record fields it
-// wrote so guarded undo can restore exactly those fields.
+// the explicit op key matters. apply() replaces the values it changes and returns the names of those
+// fields so a preview can compare them without cloning unrelated fields.
 
 function bulkClone(value){
   if(typeof structuredClone === 'function')return structuredClone(value);
@@ -18,19 +18,52 @@ function bulkSameValue(a,b){
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
+// Calendar imports own their mapped fields: a re-import rewrites them, so
+// bulk edits there would be silently lost. Personalization (icon, topics,
+// places, snooze…) stays available. Device items are handled at the picker.
+function bulkImportOwnedFields(record){
+  if(!record || !record.source || record.source === 'device')return new Set();
+  const fields = new Set(['name','eventTime','dueDate','autoMarkMinutes','durationMinutes']);
+  if(record.source !== 'ics'){
+    fields.add('breakable');
+    fields.add('priority');
+  }
+  return fields;
+}
+
+const bulkImportOwnedCache = {};
+function bulkOpImportOwned(opId){
+  if(!(opId in bulkImportOwnedCache)){
+    const opDesc = bulkOpById(opId);
+    const touched = opDesc ? bulkOpTouchedFields(opDesc) : [];
+    bulkImportOwnedCache[opId] = touched;
+  }
+  return bulkImportOwnedCache[opId];
+}
+
+function bulkOpBlocked(record,opDesc){
+  if(isDeviceCalendarTask(record))return 'managed by your phone calendar';
+  const owned = bulkImportOwnedFields(record);
+  if(owned.size && bulkOpImportOwned(opDesc.id).some(field=>owned.has(field)))return 'owned by the calendar import';
+  return '';
+}
+
 // How many of the selected items an operation can touch, with reasons for the
 // rest. data is the full saved list; records are the selected raw records.
-function bulkApplicability(opDesc,records,data){
+function bulkApplicability(opDesc,records,data,value){
   let ok = 0;
   const excluded = {};
   for(const record of records){
-    if(opDesc.applies(record,data))ok += 1;
-    else{
-      const reason = opDesc.blockedReason ? opDesc.blockedReason(record) : 'not available for this item';
-      excluded[reason] = (excluded[reason] || 0) + 1;
-    }
+    const reason = bulkOpUnavailable(record,opDesc,data,value);
+    if(reason)excluded[reason] = (excluded[reason] || 0) + 1;
+    else ok += 1;
   }
   return {ok,excluded};
+}
+
+function bulkOpUnavailable(record,desc,data,value){
+  return bulkOpBlocked(record,desc)
+    || (!desc.applies(record,data,value) ? desc.blockedReason?.(record,value) || 'not available for this item' : '');
 }
 
 // Local calendar appointments carry their own rule object; normalize() forces
@@ -46,23 +79,24 @@ const BULK_WINDOW_FIELDS = ['allowedTimeStart','allowedTimeEnd','preferredTimeSt
 // the whole anchor/offset/combine family for that endpoint — leaving any of
 // them behind would keep the old anchor in charge after save().
 function bulkWriteTimeEndpoint(record,prefix,fixedStart,endMinutes){
-  const fields = [prefix];
-  record[prefix + 'Anchor'] = null;
-  record[prefix + 'OffsetMin'] = 0;
-  record[prefix + 'AnchorHabitId'] = null;
-  record[prefix + 'Combine'] = null;
-  record[prefix + 'Anchor2'] = null;
-  record[prefix + 'OffsetMin2'] = 0;
-  record[prefix + 'AnchorHabitId2'] = null;
-  record[prefix + 'FixedMin2'] = null;
-  record[prefix + 'DayOffset'] = 0;
-  record[prefix + 'DayOffset2'] = 0;
+  const patch = {
+    [prefix]:endMinutes,
+    [prefix + 'Anchor']:null,
+    [prefix + 'OffsetMin']:0,
+    [prefix + 'AnchorHabitId']:null,
+    [prefix + 'Combine']:null,
+    [prefix + 'Anchor2']:null,
+    [prefix + 'OffsetMin2']:0,
+    [prefix + 'AnchorHabitId2']:null,
+    [prefix + 'FixedMin2']:null,
+    [prefix + 'DayOffset']:0,
+    [prefix + 'DayOffset2']:0
+  };
   if(prefix === 'allowedTimeStart' && typeof fixedStart === 'boolean'){
-    record.allowedTimeFixedStart = fixedStart;
-    fields.push('allowedTimeFixedStart');
+    patch.allowedTimeFixedStart = fixedStart;
   }
-  record[prefix] = endMinutes;
-  return fields;
+  Object.assign(record,patch);
+  return Object.keys(patch);
 }
 
 function bulkClearTimeEndpoint(record,prefix){
@@ -87,29 +121,23 @@ function bulkKeepSet(extra){
   return [BULK_KEEP,{key:'set',label:'Set'},...bulkExtraOps(extra)];
 }
 
-const BULK_TOPIC_LIMIT = 24;
-
-function bulkCleanTopic(value){
-  return String(value || '').trim().slice(0,32);
-}
-
 // Preserve unrelated topics: add/remove reconcile around the existing list.
 function bulkApplyTopics(record,op,value){
-  const current = Array.isArray(record.topics) ? record.topics.map(bulkCleanTopic).filter(Boolean) : [];
+  const current = Array.isArray(record.topics) ? record.topics.map(cleanTopic).filter(Boolean) : [];
   let next = current;
   if(op === 'add'){
-    const add = (Array.isArray(value) ? value : [value]).map(bulkCleanTopic).filter(Boolean);
+    const add = (Array.isArray(value) ? value : [value]).map(cleanTopic).filter(Boolean);
     next = current.slice();
     for(const topic of add)if(!next.some(t=>t.toLowerCase() === topic.toLowerCase()))next.push(topic);
   }else if(op === 'remove'){
-    const drop = new Set((Array.isArray(value) ? value : [value]).map(v=>bulkCleanTopic(v).toLowerCase()).filter(Boolean));
+    const drop = new Set((Array.isArray(value) ? value : [value]).map(v=>cleanTopic(v).toLowerCase()).filter(Boolean));
     next = current.filter(topic=>!drop.has(topic.toLowerCase()));
   }else if(op === 'replace'){
-    next = (Array.isArray(value) ? value : []).map(bulkCleanTopic).filter(Boolean).slice(0,BULK_TOPIC_LIMIT);
+    next = Array.isArray(value) ? value : [];
   }else if(op === 'clear'){
     next = [];
   }
-  record.topics = next;
+  record.topics = normalizeTopics(next);
   return ['topics'];
 }
 
@@ -126,6 +154,7 @@ function bulkApplyPlaces(record,op,value){
     const add = (Array.isArray(value) ? value : [value]).map(bulkCleanPlaceId).filter(Boolean);
     next = current.slice();
     for(const id of add)if(!next.includes(id))next.push(id);
+    record.locationIds = next;
     return ['locationIds'];
   }
   if(op === 'remove'){
@@ -142,9 +171,13 @@ function bulkApplyPlaces(record,op,value){
     next = [];
     record.anywhereAllowed = true;
     record.locationPrefs = {};
+    record.preferredLocationId = null;
   }
   record.locationIds = next;
-  return ['locationIds','anywhereAllowed','locationPrefs'];
+  const allowed = habitPrefLocationIds(record);
+  record.locationPrefs = normalizeLocationPrefs(record.locationPrefs,allowed);
+  record.preferredLocationId = primaryPreferredLocationId(record.locationPrefs,allowed);
+  return ['locationIds','anywhereAllowed','locationPrefs','preferredLocationId'];
 }
 
 function bulkWeekdayLabel(days){
@@ -153,19 +186,17 @@ function bulkWeekdayLabel(days){
 }
 
 function bulkApplyWeekdays(record,field,op,value){
-  if(op === 'clear')record[field] = [];
-  else record[field] = [...new Set((Array.isArray(value) ? value : []).map(Number).filter(day=>day >= 0 && day <= 6))].sort((a,b)=>a-b);
+  record[field] = op === 'clear' ? [] : normalizeAllowedWeekdays(value);
   return [field];
 }
 
 function bulkMonthDayLabel(days){
   if(!Array.isArray(days) || !days.length)return 'any date';
-  return days.map(day=>day === 31 ? '31st' : day + 'th').join(', ');
+  return days.join(', ');
 }
 
 function bulkApplyMonthDays(record,field,op,value){
-  if(op === 'clear')record[field] = [];
-  else record[field] = [...new Set((Array.isArray(value) ? value : []).map(Number).filter(day=>day >= 1 && day <= 31))].sort((a,b)=>a-b);
+  record[field] = op === 'clear' ? [] : normalizeAllowedMonthDays(value);
   return [field];
 }
 
@@ -176,10 +207,7 @@ function bulkOrdinalLabel(rules){
 }
 
 function bulkApplyOrdinals(record,field,op,value){
-  if(op === 'clear')record[field] = [];
-  else record[field] = (Array.isArray(value) ? value : [])
-    .map(rule=>({ordinal:Number(rule && rule.ordinal),weekday:Number(rule && rule.weekday)}))
-    .filter(rule=>[1,2,3,4,5,-1].includes(rule.ordinal) && rule.weekday >= 0 && rule.weekday <= 6);
+  record[field] = op === 'clear' ? [] : normalizeOrdinalWeekdays(value);
   return [field];
 }
 
@@ -230,12 +258,32 @@ function bulkRhythmLabel(record){
   return `${parts.times}× every ${parts.days} days`;
 }
 
+function bulkOpportunityTrigger(record){
+  const hasPlace = habitPrefLocationIds(record).length > 0;
+  const hasWeather = weatherHabitHasActiveGuidance(record,sortSettings || loadSortSettings());
+  const current = opportunityTrigger(record);
+  if((current === 'location' && hasPlace) || (current === 'weather' && hasWeather))return current;
+  return hasPlace ? 'location' : hasWeather ? 'weather' : null;
+}
+
 function bulkDueLabel(record){
   if(record.type !== 'task')return '';
   if(record.dueDate == null)return 'no date';
   const when = new Date(record.dueDate);
   const date = when.toLocaleDateString(undefined,{month:'short',day:'numeric'});
-  return record.eventTime != null ? `${date} ${minutesToTimeInput(record.eventTime)}` : date;
+  return record.eventTime != null ? `${date} ${bulkTaskClock(record.eventTime)}` : date;
+}
+
+function bulkTaskClock(timestamp){
+  const local = new Date(timestamp);
+  return minutesToTimeInput(local.getHours() * 60 + local.getMinutes());
+}
+
+function bulkTaskTime(day,clock){
+  const local = new Date(day);
+  const minutes = timeInputToMinutes(clock);
+  local.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return local.getTime();
 }
 
 function bulkDurationLabel(record){
@@ -307,13 +355,13 @@ const BULK_FIELD_OPS = [
     applies:()=>true,
     current:h=>bulkTopicsLabel(h),
     plan:(h,op,value)=>{
-      if(op === 'add' && !(Array.isArray(value) && value.filter(bulkCleanTopic).length))return {ok:false,error:'pick a topic to add'};
-      if(op === 'remove' && !(Array.isArray(value) && value.filter(bulkCleanTopic).length))return {ok:false,error:'pick a topic to remove'};
+      if(op === 'add' && !(Array.isArray(value) && value.filter(cleanTopic).length))return {ok:false,error:'pick a topic to add'};
+      if(op === 'remove' && !(Array.isArray(value) && value.filter(cleanTopic).length))return {ok:false,error:'pick a topic to remove'};
       return {ok:true};
     },
     apply:(h,op,value)=>bulkApplyTopics(h,op,value),
     changeLabel:(h,op,value)=>{
-      const names = (Array.isArray(value) ? value : []).filter(bulkCleanTopic).map(t=>`“${t}”`).join(', ');
+      const names = (Array.isArray(value) ? value : []).filter(cleanTopic).map(t=>`“${t}”`).join(', ');
       if(op === 'add')return `Add topic ${names}`;
       if(op === 'remove')return `Remove topic ${names}`;
       if(op === 'replace')return `Replace topics with ${names || 'none'}`;
@@ -365,7 +413,7 @@ const BULK_FIELD_OPS = [
     valueKind:'emoji',
     applies:()=>true,
     current:h=>bulkEmojiLabel(h),
-    plan:(h,op,value)=>({ok:Boolean(cleanMark(value)) ,error:'type or pick an emoji'}),
+    plan:(h,op,value)=>cleanMark(value) ? {ok:true} : {ok:false,error:'type or pick an emoji'},
     apply:(h,op,value)=>{h.emoji = cleanMark(value);return ['emoji'];},
     changeLabel:(h,op,value)=>`Emoji → ${cleanMark(value) || 'default'}`
   },
@@ -427,7 +475,7 @@ const BULK_FIELD_OPS = [
     plan:(h,op,value)=>{
       if(op === 'clear')return {ok:true};
       const minutes = Number(value);
-      if(!Number.isFinite(minutes) || minutes < 0 || minutes > 720)return {ok:false,error:'gap must be 0–720 minutes'};
+      if(value == null || !Number.isFinite(minutes) || minutes < 0 || minutes > 720)return {ok:false,error:'gap must be 0–720 minutes'};
       return {ok:true};
     },
     apply:(h,op,value)=>{
@@ -451,19 +499,13 @@ const BULK_FIELD_OPS = [
       return {ok:true};
     },
     apply:(h,op,value)=>{
-      const times = Math.max(1,Math.round(Number(value.times)));
-      const days = Math.max(1,Math.round(Number(value.days)));
-      h.target = times / days;
-      if(isOpportunityHabit(h))h.target = Math.max(1,days / times);
+      const target = targetFromRhythmParts(value.times,value.days);
+      h.target = isOpportunityHabit(h) ? Math.ceil(target) : target;
       return ['target'];
     },
     changeLabel:(h,op,value)=>{
-      const times = Math.max(1,Math.round(Number(value.times)));
-      const days = Math.max(1,Math.round(Number(value.days)));
-      if(isOpportunityHabit(h))return `Repeat → at most once every ${Math.max(1,Math.round(days / times))} days`;
-      if(times === 1 && days === 1)return 'Repeat → daily';
-      if(times === 1)return `Repeat → every ${days} days`;
-      return `Repeat → ${times}× every ${days} days`;
+      const target = targetFromRhythmParts(value.times,value.days);
+      return `Repeat → ${bulkRhythmLabel({...h,target})}`;
     }
   },
   {
@@ -471,17 +513,22 @@ const BULK_FIELD_OPS = [
     hint:'Opportunity habits are planned only when their conditions hold.',
     choices:[BULK_KEEP,{key:'routine',label:'Plan regularly'},{key:'opportunity',label:'When conditions fit'}],
     valueKind:'none',
-    applies:h=>(h.type === 'keepup' || h.type === 'reduce') && !bulkAppointmentOwned(h),
-    blockedReason:h=>bulkAppointmentOwned(h) ? 'owned by its event schedule' : h.type === 'task' ? 'one-off tasks have no rhythm' : '',
+    applies:h=>h.type === 'keepup' && !bulkAppointmentOwned(h),
+    blockedReason:h=>bulkAppointmentOwned(h) ? 'owned by its event schedule' : 'build habits only',
     current:h=>isOpportunityHabit(h) ? 'when conditions fit' : 'regularly',
     plan:(h,op,value)=>{
       if(op !== 'opportunity')return {ok:true};
-      const hasTrigger = (Array.isArray(h.locationIds) && h.locationIds.length > 0)
-        || weatherHabitHasActiveGuidance(h,sortSettings || loadSortSettings());
-      if(!hasTrigger)return {ok:false,error:'needs a place or weather guidance as its trigger'};
+      if(!bulkOpportunityTrigger(h))return {ok:false,error:'needs a place or weather guidance as its trigger'};
       return {ok:true};
     },
-    apply:(h,op)=>{h.repeatMode = op === 'opportunity' ? 'opportunity' : 'routine';return ['repeatMode'];},
+    apply:(h,op)=>{
+      h.repeatMode = op === 'opportunity' ? 'opportunity' : 'routine';
+      if(op === 'opportunity'){
+        h.planByDate = null;
+        h.conditionTrigger = bulkOpportunityTrigger(h);
+      }
+      return ['repeatMode','planByDate','conditionTrigger'];
+    },
     changeLabel:(h,op)=>`Repeat → ${op === 'opportunity' ? 'when conditions fit' : 'regularly'}`
   },
   {
@@ -490,7 +537,7 @@ const BULK_FIELD_OPS = [
     choices:bulkKeepSet({key:'clear',label:'Clear'}),
     valueKind:'date',
     applies:h=>h.type === 'task' && !bulkAppointmentOwned(h),
-    blockedReason:h=>'owned by its event schedule',
+    blockedReason:h=>bulkAppointmentOwned(h) ? 'owned by its event schedule' : 'tasks only',
     current:h=>bulkDueLabel(h),
     plan:(h,op,value)=>{
       if(op === 'clear')return {ok:true};
@@ -510,10 +557,9 @@ const BULK_FIELD_OPS = [
       const ts = parseDateInput(value);
       const day = dayStart(ts);
       // A fixed start time keeps its wall-clock minutes on the moved day.
-      const minutes = h.eventTime != null && h.dueDate != null
-        ? Math.round((h.eventTime - dayStart(h.dueDate)) / 60000) : null;
+      const clock = h.eventTime != null ? bulkTaskClock(h.eventTime) : '';
       h.dueDate = day;
-      h.eventTime = minutes != null && minutes >= 0 && minutes < 1440 ? day + minutes * 60000 : null;
+      h.eventTime = clock ? bulkTaskTime(day,clock) : null;
       h.hardDue = h.delayAllowanceDays === 0;
       return fields;
     },
@@ -525,8 +571,8 @@ const BULK_FIELD_OPS = [
     choices:bulkKeepSet({key:'clear',label:'Clear'}),
     valueKind:'time',
     applies:h=>h.type === 'task' && !bulkAppointmentOwned(h) && h.dueDate != null,
-    blockedReason:h=>bulkAppointmentOwned(h) ? 'owned by its event schedule' : h.dueDate == null ? 'needs a due date first' : '',
-    current:h=>h.eventTime != null ? minutesToTimeInput(Math.round((h.eventTime - dayStart(h.eventTime)) / 60000)) : 'no time',
+    blockedReason:h=>bulkAppointmentOwned(h) ? 'owned by its event schedule' : h.type !== 'task' ? 'tasks only' : 'needs a due date first',
+    current:h=>h.eventTime != null ? bulkTaskClock(h.eventTime) : 'no time',
     plan:(h,op,value)=>{
       if(op === 'clear')return {ok:true};
       const minutes = timeInputToMinutes(value);
@@ -536,8 +582,7 @@ const BULK_FIELD_OPS = [
     apply:(h,op,value)=>{
       const fields = ['eventTime','hardDue'];
       if(op === 'clear'){h.eventTime = null;return fields;}
-      const minutes = timeInputToMinutes(value);
-      h.eventTime = dayStart(h.dueDate) + minutes * 60000;
+      h.eventTime = bulkTaskTime(h.dueDate,value);
       return fields;
     },
     changeLabel:(h,op,value)=>op === 'clear' ? 'Clear start time' : `Start time → ${value}`
@@ -547,13 +592,13 @@ const BULK_FIELD_OPS = [
     hint:'Days a task may be planned before its due date.',
     choices:bulkKeepSet(),
     valueKind:'number',
-    numberMin:0,numberMax:60,
+    numberMin:0,numberMax:60,numberUnit:'days',
     applies:h=>!bulkAppointmentOwned(h),
     blockedReason:()=>'owned by its event schedule',
     current:h=>bulkMinutesLabel(h.earlyWindowDays).replace(' min',' days'),
     plan:(h,op,value)=>{
       const days = Number(value);
-      if(!Number.isFinite(days) || days < 0 || days > 60)return {ok:false,error:'early window must be 0–60 days'};
+      if(value == null || !Number.isFinite(days) || days < 0 || days > 60)return {ok:false,error:'early window must be 0–60 days'};
       return {ok:true};
     },
     apply:(h,op,value)=>{h.earlyWindowDays = clampFlexibility(value);h.flexibilityDays = h.earlyWindowDays;return ['earlyWindowDays','flexibilityDays'];},
@@ -564,13 +609,13 @@ const BULK_FIELD_OPS = [
     hint:'Days after the due date a task may still be planned.',
     choices:bulkKeepSet(),
     valueKind:'number',
-    numberMin:0,numberMax:60,
+    numberMin:0,numberMax:60,numberUnit:'days',
     applies:h=>h.type === 'task' && !bulkAppointmentOwned(h),
     blockedReason:h=>'tasks only',
     current:h=>(h.delayAllowanceDays || 0) + ' days',
     plan:(h,op,value)=>{
       const days = Number(value);
-      if(!Number.isFinite(days) || days < 0 || days > 60)return {ok:false,error:'delay allowance must be 0–60 days'};
+      if(value == null || !Number.isFinite(days) || days < 0 || days > 60)return {ok:false,error:'delay allowance must be 0–60 days'};
       return {ok:true};
     },
     apply:(h,op,value)=>{
@@ -590,7 +635,7 @@ const BULK_FIELD_OPS = [
     current:h=>bulkWeekdayLabel(h.allowedWeekdays),
     plan:()=>({ok:true}),
     apply:(h,op,value)=>bulkApplyWeekdays(h,'allowedWeekdays',op,value),
-    changeLabel:(h,op,value)=>op === 'clear' ? 'Allowed weekdays → every day' : `Allowed weekdays → ${bulkWeekdayLabel(bulkApplyWeekdays(bulkClone(h),'replace',value))}`
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Allowed weekdays → every day' : `Allowed weekdays → ${bulkWeekdayLabel(value)}`
   },
   {
     id:'preferredWeekdays',group:'Availability',label:'Preferred weekdays',
@@ -602,7 +647,7 @@ const BULK_FIELD_OPS = [
     current:h=>bulkWeekdayLabel(h.preferredWeekdays),
     plan:()=>({ok:true}),
     apply:(h,op,value)=>bulkApplyWeekdays(h,'preferredWeekdays',op,value),
-    changeLabel:(h,op,value)=>op === 'clear' ? 'Preferred weekdays → none' : `Preferred weekdays → ${bulkWeekdayLabel(bulkApplyWeekdays(bulkClone(h),'replace',value))}`
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Preferred weekdays → none' : `Preferred weekdays → ${bulkWeekdayLabel(value)}`
   },
   {
     id:'allowedMonthDays',group:'Availability',label:'Allowed month days',
@@ -614,7 +659,7 @@ const BULK_FIELD_OPS = [
     current:h=>bulkMonthDayLabel(h.allowedMonthDays),
     plan:()=>({ok:true}),
     apply:(h,op,value)=>bulkApplyMonthDays(h,'allowedMonthDays',op,value),
-    changeLabel:(h,op,value)=>op === 'clear' ? 'Allowed month days → any date' : `Allowed month days → ${bulkMonthDayLabel(bulkApplyMonthDays(bulkClone(h),'replace',value))}`
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Allowed month days → any date' : `Allowed month days → ${bulkMonthDayLabel(value)}`
   },
   {
     id:'preferredMonthDays',group:'Availability',label:'Preferred month days',
@@ -626,7 +671,7 @@ const BULK_FIELD_OPS = [
     current:h=>bulkMonthDayLabel(h.preferredMonthDays),
     plan:()=>({ok:true}),
     apply:(h,op,value)=>bulkApplyMonthDays(h,'preferredMonthDays',op,value),
-    changeLabel:(h,op,value)=>op === 'clear' ? 'Preferred month days → none' : `Preferred month days → ${bulkMonthDayLabel(bulkApplyMonthDays(bulkClone(h),'replace',value))}`
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Preferred month days → none' : `Preferred month days → ${bulkMonthDayLabel(value)}`
   },
   {
     id:'allowedOrdinals',group:'Availability',label:'Allowed monthly weekdays',
@@ -638,7 +683,7 @@ const BULK_FIELD_OPS = [
     current:h=>bulkOrdinalLabel(h.allowedOrdinalWeekdays),
     plan:()=>({ok:true}),
     apply:(h,op,value)=>bulkApplyOrdinals(h,'allowedOrdinalWeekdays',op,value),
-    changeLabel:(h,op,value)=>op === 'clear' ? 'Allowed monthly weekdays → none' : `Allowed monthly weekdays → ${bulkOrdinalLabel(bulkApplyOrdinals(bulkClone(h),'replace',value))}`
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Allowed monthly weekdays → none' : `Allowed monthly weekdays → ${bulkOrdinalLabel(value)}`
   },
   {
     id:'preferredOrdinals',group:'Availability',label:'Preferred monthly weekdays',
@@ -650,7 +695,7 @@ const BULK_FIELD_OPS = [
     current:h=>bulkOrdinalLabel(h.preferredOrdinalWeekdays),
     plan:()=>({ok:true}),
     apply:(h,op,value)=>bulkApplyOrdinals(h,'preferredOrdinalWeekdays',op,value),
-    changeLabel:(h,op,value)=>op === 'clear' ? 'Preferred monthly weekdays → none' : `Preferred monthly weekdays → ${bulkOrdinalLabel(bulkApplyOrdinals(bulkClone(h),'replace',value))}`
+    changeLabel:(h,op,value)=>op === 'clear' ? 'Preferred monthly weekdays → none' : `Preferred monthly weekdays → ${bulkOrdinalLabel(value)}`
   },
   {
     id:'allowedTime',group:'Availability',label:'Allowed time window',
@@ -734,11 +779,7 @@ const BULK_FIELD_OPS = [
     plan:(h,op,value)=>{
       const ids = (Array.isArray(value) ? value : []).map(bulkCleanPlaceId).filter(Boolean);
       if((op === 'add' || op === 'remove' || op === 'replace') && !ids.length)return {ok:false,error:'pick a place'};
-      if(op === 'remove'){
-        const drop = new Set(ids);
-        const remaining = (Array.isArray(h.locationIds) ? h.locationIds : []).filter(id=>!drop.has(id));
-        if(!remaining.length && isOpportunityHabit(h) && !weatherHabitHasActiveGuidance(h,sortSettings || loadSortSettings()))return {ok:false,error:'an opportunity item needs a place or weather trigger'};
-      }
+      if(ids.some(id=>!locationById(id)))return {ok:false,error:'pick a saved place'};
       const warnings = [];
       if(op === 'anywhere' && Array.isArray(h.scheduleOptions) && h.scheduleOptions.some(row=>row.locationId))warnings.push('options pinned to places still apply');
       return {ok:true,warnings};
@@ -757,8 +798,10 @@ const BULK_FIELD_OPS = [
     hint:'How much the planner should prefer one of the item’s places.',
     choices:[BULK_KEEP,{key:'set',label:'Set'}],
     valueKind:'placepref',
-    applies:h=>Array.isArray(h.locationIds) && h.locationIds.length > 0 && !bulkAppointmentOwned(h),
-    blockedReason:h=>'needs a place on the item',
+    applies:(h,data,value)=>!bulkAppointmentOwned(h) && (value?.locationId
+      ? habitPrefLocationIds(h).includes(value.locationId) : habitPrefLocationIds(h).length > 0),
+    blockedReason:(h,value)=>bulkAppointmentOwned(h) ? 'owned by its event schedule'
+      : value?.locationId ? 'does not use the selected place' : 'needs a place on the item',
     current:h=>{
       const prefs = h.locationPrefs && typeof h.locationPrefs === 'object' ? h.locationPrefs : {};
       const entries = Object.entries(prefs);
@@ -777,6 +820,7 @@ const BULK_FIELD_OPS = [
       const prefs = h.locationPrefs && typeof h.locationPrefs === 'object' ? {...h.locationPrefs} : {};
       prefs[id] = value.level;
       h.locationPrefs = prefs;
+      h.preferredLocationId = primaryPreferredLocationId(prefs,habitPrefLocationIds(h));
       return ['locationPrefs','preferredLocationId'];
     },
     changeLabel:(h,op,value)=>`Place preference → ${(typeof locationOptions === 'function' ? locationOptions() : []).find(loc=>loc.id === bulkCleanPlaceId(value && value.locationId))?.name || ''} ${value && value.level}`
@@ -792,7 +836,7 @@ const BULK_FIELD_OPS = [
     plan:(h,op,value)=>{
       const mode = value && value.mode;
       if(!['inherit','none','profile'].includes(mode))return {ok:false,error:'pick weather guidance'};
-      if(mode === 'profile' && !(value && value.id))return {ok:false,error:'pick a saved profile'};
+      if(mode === 'profile' && !sortSettings?.weatherProfiles?.some(profile=>profile.id === value.id))return {ok:false,error:'pick a saved profile'};
       return {ok:true};
     },
     apply:(h,op,value)=>{
@@ -816,7 +860,7 @@ const BULK_FIELD_OPS = [
     current:h=>h.weatherLocationId ? ((typeof locationOptions === 'function' ? locationOptions() : []).find(loc=>loc.id === h.weatherLocationId)?.name || h.weatherLocationId) : 'home city',
     plan:(h,op,value)=>{
       if(op === 'clear')return {ok:true};
-      if(!bulkCleanPlaceId(value))return {ok:false,error:'pick a place'};
+      if(!locationById(bulkCleanPlaceId(value)))return {ok:false,error:'pick a saved place'};
       return {ok:true};
     },
     apply:(h,op,value)=>{
@@ -862,7 +906,7 @@ const BULK_FIELD_OPS = [
     plan:(h,op,value)=>{
       if(op === 'clear')return {ok:true};
       const minutes = Number(value);
-      if(!Number.isFinite(minutes) || minutes < 0 || minutes > 10080)return {ok:false,error:'minutes must be 0–10080'};
+      if(value == null || !Number.isFinite(minutes) || minutes < 0 || minutes > 10080)return {ok:false,error:'minutes must be 0–10080'};
       return {ok:true};
     },
     apply:(h,op,value)=>{
@@ -966,63 +1010,6 @@ function bulkGroupOrder(){
   return groups;
 }
 
-function bulkRecordDiffers(a,b){
-  return JSON.stringify(a) !== JSON.stringify(b);
-}
-
-// Apply one planned change to a live record. Returns the undo entry:
-// {hid, changes:[{field, before, after}]}. Only fields the op actually
-// flipped are captured; untouched settings are never listed.
-function bulkApplyChange(record,opDesc,op,value,data){
-  const beforeFields = {};
-  const probe = bulkClone(record);
-  const touched = opDesc.apply(probe,op,value,data) || [];
-  const changes = [];
-  for(const field of touched){
-    if(bulkSameValue(record[field],probe[field]))continue;
-    beforeFields[field] = bulkClone(record[field]);
-    changes.push({field,before:bulkClone(record[field]),after:bulkClone(probe[field])});
-  }
-  for(const change of changes)record[change.field] = change.after;
-  if(!changes.length)return null;
-  return {hid:record.hid,changes};
-}
-
-// Per-item validation across the whole plan. Returns {errors, warnings} with
-// {hid, name, message} entries. Scheduling pressure is a warning, never an
-// error: a crowded agenda does not stop an item from saving.
-function bulkValidatePlan(records,plan,data){
-  const errors = [];
-  const warnings = [];
-  for(const entry of plan){
-    const record = records.find(item=>item.hid === entry.hid);
-    if(!record)continue;
-    for(const part of entry.changes){
-      const opDesc = bulkOpById(part.id);
-      if(!opDesc || part.op === 'keep')continue;
-      const result = opDesc.plan(record,part.op,part.value,data);
-      if(result && result.error)errors.push({hid:entry.hid,name:record.name,message:`${opDesc.label}: ${result.error}`});
-      for(const warning of (result && result.warnings) || [])warnings.push({hid:entry.hid,name:record.name,message:`${opDesc.label}: ${warning}`});
-    }
-  }
-  return {errors,warnings};
-}
-
-// One reviewed change plan entry per item: {hid, changes:[{id, op, value}]}.
-function bulkBuildPlan(records,ops,data){
-  const plan = [];
-  for(const record of records){
-    const changes = [];
-    for(const pending of ops){
-      const opDesc = bulkOpById(pending.id);
-      if(!opDesc || !opDesc.applies(record,data))continue;
-      changes.push({id:pending.id,op:pending.op,value:pending.value});
-    }
-    plan.push({hid:record.hid,name:record.name,changes});
-  }
-  return plan;
-}
-
 // Fields each op may touch, for staleness detection between review and apply.
 function bulkOpTouchedFields(opDesc){
   const probe = bulkClone({hid:'probe',type:'keepup',priority:2,topics:[],locationIds:[],locationPrefs:{},anywhereAllowed:true,weatherProfileMode:'inherit',earlyWindowDays:0,delayAllowanceDays:0,durationMinutes:20});
@@ -1053,36 +1040,6 @@ function bulkSampleValue(opDesc,op){
     case 'place':return 'x';
     default:return null;
   }
-}
-
-// Snapshot the fields a set of planned ops touches, per hid. Used to detect
-// concurrent edits between review and apply.
-function bulkPlanSignature(records,plan,data){
-  const signatures = {};
-  for(const entry of plan){
-    const record = records.find(item=>item.hid === entry.hid);
-    if(!record)continue;
-    const fields = new Set();
-    for(const part of entry.changes){
-      const opDesc = bulkOpById(part.id);
-      if(opDesc)for(const field of bulkOpTouchedFields(opDesc))fields.add(field);
-    }
-    const snapshot = {};
-    for(const field of fields)snapshot[field] = bulkClone(record[field]);
-    signatures[entry.hid] = snapshot;
-  }
-  return signatures;
-}
-
-function bulkSignatureMatches(records,signatures){
-  for(const [hid,snapshot] of Object.entries(signatures)){
-    const record = records.find(item=>item.hid === hid);
-    if(!record)return false;
-    for(const [field,value] of Object.entries(snapshot)){
-      if(!bulkSameValue(record[field],value))return false;
-    }
-  }
-  return true;
 }
 
 // Whether any other record points at this hid through order links or

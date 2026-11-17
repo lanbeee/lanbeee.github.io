@@ -278,10 +278,7 @@ function removeLocation(index){
   updateSortSetting({locations,travel},{renderNow:false});
   const {data,changed} = reconcileLocations(load(),{...sortSettings,locations,travel});
   if(changed)save(data);
-  if(typeof homeLocationFilter !== 'undefined' && homeLocationFilter === removed.id)homeLocationFilter = 'all';
-  if(typeof overviewLocationFilter !== 'undefined' && overviewLocationFilter === removed.id)overviewLocationFilter = 'all';
-  // Shared filters: a deleted place is stale on both surfaces at once.
-  if(typeof setSharedFilter === 'function' && (homeLocationFilter === 'all' || overviewLocationFilter === 'all'))setSharedFilter('location','all');
+  if(homeLocationFilter === removed.id || overviewLocationFilter === removed.id)setSharedFilter('location','all');
   renderLocationControls();
   refreshOpenViews();
 }
