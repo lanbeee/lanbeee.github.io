@@ -939,8 +939,7 @@ function takeFilterClick(event, pairs){
 // library never turns the top of Home into an endless horizontal chip rail.
 // `precomputedIndices` (optional): render() shares its visibleIndices() pass —
 // the option counts don't depend on the search query, so don't re-sort for them.
-// Reduced filter bar: no dimensions to filter by (or minimal mode), but bulk
-// edit must stay reachable in both.
+// Reduced filter bar: keep bulk edit reachable when no filter dimensions exist.
 function homeBulkEditBarHtml(){
   return `<button type="button" class="home-filter-trigger bulk-edit-trigger" data-open-bulk-edit="1" aria-label="bulk edit items">
     <i class="ti ti-checks" aria-hidden="true"></i>
@@ -961,13 +960,7 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   const summary = $('home-filter-summary');
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(minimal){
-    if(!data.length){
-      renderHomeTagFilterEmpty(wrap,groups);
-      return;
-    }
-    wrap.innerHTML = homeBulkEditBarHtml();
-    wrap.hidden = false;
-    if(groups)groups.innerHTML = '';
+    renderHomeTagFilterEmpty(wrap,groups);
     return;
   }
   const registry = locationOptions();

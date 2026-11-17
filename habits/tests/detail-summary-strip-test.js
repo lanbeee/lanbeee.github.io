@@ -153,7 +153,7 @@ async function runSuite(engine,label,profile){
     },['Gym','Zuhr','Consumed Anchor','Preferred Only','Far Apart','Fixed Start','Overnight','Full Day','Deleted Anchor','Rotating','Sparse','Every Other Day','X Per Week','Monthly','Twice Daily','Plans Only','Less Coffee','No Screens','Pay Rent','Team Sync','Brand New','Heavy']);
 
     const strip = html => {
-      const windowBlock = html.match(/<button type="button" class="detail-window"[\s\S]*?<\/button>/)?.[0] || null;
+      const windowBlock = html.match(/<div class="detail-window"[\s\S]*?<\/div>\s*<\/div>/)?.[0] || null;
       return {
         html,
         activity:html.includes('data-summary-history'),
@@ -356,7 +356,8 @@ async function runSuite(engine,label,profile){
       try{
         openDetail(i);
         document.querySelector('[data-summary-field="allowedWeekdays"]').click();
-        document.querySelector('.detail-window[data-summary-field]').click();
+        document.querySelector('.detail-window-track[data-summary-field]').click();
+        document.querySelector('.detail-window-line[data-summary-field="preferredWindow"]').click();
         document.querySelector('[data-summary-field="places"]').click();
         document.querySelector('[data-summary-history]').click();
         closeSheet('detail-sheet');
@@ -369,6 +370,7 @@ async function runSuite(engine,label,profile){
     check('strips and chips route to their existing editors',()=>{
       assert.ok(routing.reveal.includes('allowedWeekdays'),'week chip opens weekday editor');
       assert.ok(routing.reveal.includes('allowedWindow'),'window strip opens window editor');
+      assert.ok(routing.reveal.includes('preferredWindow'),'preferred caption opens preferred hours directly');
       assert.ok(routing.reveal.includes('places'),'place chip opens places editor');
       assert.ok(routing.nav.includes('calendar'),'activity row opens the history tab');
     });

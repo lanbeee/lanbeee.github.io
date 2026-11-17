@@ -30,9 +30,7 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     ]);
     await page.waitForSelector('#list .swipe-row[data-hid="swipe-main"] .swipe-actions-left .swipe-action');
     await page.evaluate(()=>waitForHomeAgendaRender());
-    // The assistant ships enabled; pin it off so the tray assertions below keep
-    // the four-action layout. The shipped five-action tray is covered in the
-    // assistant section.
+    // Verify the same swipe layout with the assistant disabled and enabled.
     await page.evaluate(()=>patchLocalAssistant({localAssistant:false}));
     const client = await context.newCDPSession(page);
     const row = hid=>page.locator(`#list .swipe-row[data-hid="${hid}"]`).first();
@@ -59,7 +57,6 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
       .evaluateAll(buttons=>buttons.filter(b=>!b.closest('[hidden]')).map(b=>b.dataset.action));
     async function activate(hid,dir,action){
       await swipe(hid,dir);
-      if(action === 'assistant')await page.screenshot({path:'test-results/swipe-assistant.png'});
       await row(hid).locator(`.swipe-action[data-action="${action}"]`).click();
     }
     assert.deepEqual(await actions('swipe-main','left'),['timer','plan','activity','open-link']);
@@ -67,7 +64,7 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     assert.deepEqual(await actions('swipe-main','right'),['snooze','pin','nuke']);
     assert.deepEqual(await actions('swipe-sample','left'),['timer','plan','activity','open-link','keep','swipe-more']);
     assert.deepEqual(await visibleActions('swipe-sample','left'),['timer','plan','activity','swipe-more'],'five actions keep three plus More');
-    assert.deepEqual(await actions('swipe-zero','left'),['activity']);
+    assert.deepEqual(await actions('swipe-zero','left'),['plan','activity'],'stop habits can log past activity');
     assert.equal(await page.locator('.swipe-action[data-action="log"],.swipe-action[data-action="edit"],.swipe-action[data-action="share"]').count(),0);
     assert.equal(await row('swipe-main').locator('.swipe-actions').evaluateAll(p=>p.every(a=>a.inert)),true);
     await row('swipe-main').locator('.swipe-action').first().evaluate(button=>button.focus());
@@ -86,7 +83,10 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     const logsBefore = await page.evaluate(()=>load()[0].logs);
     await page.evaluate(()=>document.querySelector('[data-hid="swipe-main"]').dataset.dayBase=String(dayStart(Date.now())+86400000));
     await activate('swipe-main',1,'plan');
-    assert.equal(await page.locator('#day-log-date').inputValue(),'2026-10-13','agenda day seeds the form');
+    assert.equal(await row('swipe-main').locator('[data-action="plan"]').getAttribute('aria-label'),'plan or log');
+    assert.equal(await page.locator('#day-entry-date').inputValue(),'2026-10-13','agenda day seeds the chooser');
+    await page.locator('#day-logs-plan').click();
+    assert.equal(await page.locator('#day-log-date').inputValue(),'2026-10-13','plan form retains the chosen day');
     assert.deepEqual(await page.evaluate(()=>load()[0].logs),logsBefore,'opening writes nothing');
     await page.locator('#day-log-date').fill('2026-10-11');
     assert.equal(await page.locator('#day-log-add').isDisabled(),true,'past dates cannot be planned');
@@ -107,7 +107,8 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     await page.evaluate(()=>{closeDayLogsSheet();closeSheet('detail-sheet');
       document.querySelector('[data-hid="swipe-main"]').dataset.dayBase=String(dayStart(Date.now())-86400000);});
     await activate('swipe-main',1,'plan');
-    assert.equal(await page.locator('#day-log-date').inputValue(),'2026-10-12','past card defaults to today');
+    assert.equal(await page.locator('#day-entry-date').inputValue(),'2026-10-11','past card retains its day for logging');
+    assert.equal(await page.locator('#day-logs-plan').count(),0,'past days offer logs only');
     await page.locator('#day-logs-close').click();
     assert.deepEqual(await page.evaluate(()=>load()[0].logs),logsBefore,'cancelling writes nothing');
     await activate('swipe-main',-1,'pin');
@@ -232,38 +233,28 @@ const {baseHabit,waitForAssistant} = require('./helpers/planner-test-helpers');
     assert.equal(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),true,'card tap still opens detail');
 
     await waitForAssistant(page);
-    assert.equal(await page.locator('#list [data-action="assistant"]').count(),0,'assistant swipe is absent while disabled');
-    await page.evaluate(()=>{
-      closeSheet('detail-sheet');
-      patchLocalAssistant({localAssistant:true,localAssistantProvider:'auto'});
-      window.swipeAssistantCalls=[];
-      assistantComplete=async req=>{
-        swipeAssistantCalls.push(req.step);
-        return {message:{tool_calls:req.messages.some(m=>m.role==='tool') ? [] : [
-          {function:{name:'draft_item',arguments:{rhythm:'3 times a week'}}}
-        ]}};
-      };
-    });
-    assert.equal(await row('swipe-main').locator('[data-action="assistant"]').count(),1,'enabling adds the shortcut to mounted cards');
-    assert.deepEqual(await visibleActions('swipe-main','left'),['assistant','timer','plan','swipe-more'],'shipped tray keeps three actions plus More');
-    const savedBeforeAssistant = await page.evaluate(()=>JSON.stringify(load()));
-    await activate('swipe-main',1,'assistant');
-    await page.waitForFunction(()=>document.querySelector('#assistant-sheet').classList.contains('open'));
-    assert.equal(await row('swipe-main').getAttribute('data-swipe-open'),null,'opening the assistant closes the swipe');
-    assert.equal(await page.locator('#assistant-focus-name').textContent(),'Read','swipe focuses the selected item');
-    assert.deepEqual(await page.evaluate(()=>swipeAssistantCalls),[],'opening costs no model call');
-    assert.equal(await page.evaluate(()=>_assistantSession.draft.hid),'swipe-main','focus retains the saved identity');
-    await page.evaluate(()=>sendAssistantMessage('make it 3 times a week'));
-    assert.equal(await page.evaluate(()=>swipeAssistantCalls[0]),'extract','focused request starts at extract');
-    assert.deepEqual(await page.evaluate(()=>({hid:_assistantSession.draft.hid,times:_assistantSession.draft.timesPerPeriod,days:_assistantSession.draft.periodDays})),
-      {hid:'swipe-main',times:3,days:7},'pronoun frequency change previews the selected item');
-    assert.equal(await page.evaluate(()=>_assistantSession.debug.find(e=>e.t==='turn').entry),'home','home entry provenance survives the empty composer');
-    assert.equal(await page.evaluate(()=>JSON.stringify(load())),savedBeforeAssistant,'opening and drafting do not save');
-    await page.evaluate(()=>{closeAssistantSheet();updateSortSetting({minimalMode:true},{renderNow:false});render();});
-    assert.equal(await row('swipe-main').locator('[data-action="assistant"]').count(),1,'minimal cards keep the assistant shortcut');
-    await page.evaluate(()=>patchLocalAssistant({localAssistant:false}));
-    assert.equal(await page.locator('#list [data-action="assistant"]').count(),0,'disabling removes the shortcut immediately');
+    await page.evaluate(()=>{closeSheet('detail-sheet');patchLocalAssistant({localAssistant:true,localAssistantProvider:'needle'});render();});
+    assert.equal(await page.locator('#list [data-action="assistant"]').count(),0,'AI editing stays in Summary, outside the swipe tray');
+    await page.evaluate(()=>{setMinimalMode(true);render();});
+    assert.equal(await page.locator('#list [data-action="assistant"]').count(),0,'minimal swipe has no AI shortcut either');
+    const beforeLog = await page.evaluate(()=>load()[0].logs.length);
+    await activate('swipe-main',1,'plan');
+    await page.locator('#day-entry-date').fill('2026-10-10');
+    await page.locator('#day-entry-date').dispatchEvent('change');
+    assert.equal(await page.locator('#day-logs-plan').count(),0,'past days cannot create plans');
+    await page.locator('#day-logs-log').click();
+    await page.locator('#day-logs-back-list').click();
+    assert.equal(await page.locator('#day-entry-date').inputValue(),'2026-10-10','Back keeps the chooser and selected day');
+    await page.locator('#day-logs-log').click();
+    await page.locator('#day-log-entry-time').fill('09:15');
+    await page.locator('#day-log-entry-save').click();
+    assert.equal(await page.evaluate(()=>load()[0].logs.length),beforeLog+1,'past log saved once');
+    assert.equal(await page.locator('#day-entry-date').inputValue(),'2026-10-10','saving returns to the chooser');
+    assert.equal(await page.evaluate(()=>load()[0].logs.map(logTime).some(ts=>new Date(ts).toISOString()==='2026-10-10T13:15:00.000Z')),true,'past log uses the selected day and time');
+    await page.locator('#action-undo').click();
+    assert.equal(await page.evaluate(()=>load()[0].logs.length),beforeLog,'past entry supports undo');
+    await page.locator('#day-logs-close').click();
     assert.deepEqual(errors,[]);
-    console.log('PASS swipe layouts, More overflow, planning/undo, primary links, Stop, Quiet, focus and native strip scrolling');
+    console.log('PASS swipe layouts, More overflow, planning/undo, past logs, primary links, Stop, Quiet and native strip scrolling');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1006,17 +1006,19 @@ function dayRowMeta(row){
   return [head,tail].filter(Boolean).join(' · ');
 }
 
+// Set for the swipe chooser and retained through its plan/log subforms.
 let dayLogsPlanDateEditable = false;
 
-// HYBRID: the swipe entry point reuses the scoped plan form with a date picker.
+// HYBRID: the swipe entry point offers plans and past logs for one item.
 function openSwipePlan(i,dayBase){
-  if(!dayLogsHabitPlannable(load()[i]))return;
+  const h = load()[i];
+  if(!dayLogsHabitPlannable(h) && !dayLogsHabitLoggable(h))return;
   resetDayLogsStep();
   dayLogsScopeIndex = i;
   dayLogsItemIndex = i;
-  dayLogsStep = 'add';
+  dayLogsStep = 'item';
   dayLogsPlanDateEditable = true;
-  const key = Number.isFinite(dayBase) && dayBase >= dayStart(Date.now())
+  const key = Number.isFinite(dayBase) && dayBase > 0
     ? dateKey(dayBase) : todayIso();
   renderDayLogs(key);
   openSheet('day-logs-sheet');
@@ -1234,7 +1236,9 @@ function renderDayLogsItemStep(key){
     actions.push(actionMarkup(`data-open-day-item="${idx}"`,'ti-external-link','Open item','View details, history, and schedule','primary'));
   }
   if(!dayLogsMoving && dayLogsCanLog(key) && dayLogsHabitLoggable(h)){
-    actions.push(actionMarkup(`data-log-day-item="${idx}" data-log-day="${key}"`,'ti-check','Log for this day','Mark it done on this day',dayLogsScoped() ? 'primary' : ''));
+    actions.push(dayLogsPlanDateEditable
+      ? actionMarkup('id="day-logs-log"','ti-check','Log activity','Record what you did on this day, with an optional time','primary')
+      : actionMarkup(`data-log-day-item="${idx}" data-log-day="${key}"`,'ti-check','Log for this day','Mark it done on this day',dayLogsScoped() ? 'primary' : ''));
   }
   if(plannedCount && !dayLogsMoving){
     actions.push(actionMarkup(`data-move-plan="${idx}" data-plan-day="${key}"`,'ti-calendar-forward','Move plan','Choose a different day'));
@@ -1267,11 +1271,22 @@ function renderDayLogsItemStep(key){
         <span class="overview-meta">${escapeHtml(habitTypeLabel(h.type))}</span>
       </div>
       <p class="day-item-cue">${escapeHtml(typeof cardCue === 'function' ? cardCue(h) : '')}</p>
+      ${dayLogsPlanDateEditable ? `<label class="field-label" for="day-entry-date">Date</label><input type="date" id="day-entry-date" class="plan-date-input" value="${key}" /><p class="field-hint">Choose a past day to log activity, or today or later to plan.</p>` : ''}
       ${emptyNote}
       ${moveBlock}
       ${actions.length ? `<div class="day-item-actions">${actions.join('')}</div>` : ''}
     </div>`;
 
+  if(dayLogsPlanDateEditable){
+    $('day-entry-date')?.addEventListener('input',event=>{
+      const valid = Boolean(event.target.value && event.target.validity.valid);
+      $('day-logs-body').querySelectorAll('.day-item-action').forEach(button=>{button.disabled = !valid;});
+    });
+    $('day-entry-date')?.addEventListener('change',event=>{
+      if(event.target.value && event.target.validity.valid)renderDayLogs(event.target.value);
+    });
+    $('day-logs-title').textContent = 'Plan or log';
+  }
   if(dayLogsScoped()){
     $('day-logs-footer').innerHTML = `
       <button class="btn primary" type="button" id="day-logs-done">done</button>`;
@@ -1499,7 +1514,6 @@ function clearDayAvailabilityOverride(){
 
 // HYBRID: navigate day-sheet steps
 function setDayLogsStep(step,itemIndex = null){
-  if(step !== 'add')dayLogsPlanDateEditable = false;
   dayLogsStep = step;
   dayLogsItemIndex = itemIndex;
   if(step !== 'item')dayLogsMoving = false;

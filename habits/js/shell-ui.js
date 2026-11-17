@@ -478,6 +478,9 @@ function updateKeyboardLift(){
     const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
     if(style.getPropertyValue('--assistant-viewport-top') !== `${top}px`)style.setProperty('--assistant-viewport-top', `${top}px`);
   }else if(style.getPropertyValue('--assistant-viewport-top') !== '0px')style.setProperty('--assistant-viewport-top','0px');
+  const bulkTop = bulkEditOpen && needsLift && !nativeResized
+    ? Math.max(0,Math.min(window.visualViewport.offsetTop,layoutHeight - window.visualViewport.height)) : 0;
+  if(style.getPropertyValue('--bulk-viewport-top') !== `${bulkTop}px`)style.setProperty('--bulk-viewport-top',`${bulkTop}px`);
   // Detail's composer uses the same visible rectangle. Safari pans the
   // viewport to reveal a focused dock; anchoring only its bottom loses the
   // item header above the visible screen.
@@ -539,14 +542,14 @@ function keepFocusedInputVisible(){
   const active = document.activeElement;
   // These fields live in a dock which already follows the keyboard. Scrolling
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
-  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input'))return;
+  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input,#bulk-search,#bulk-settings-search'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
   let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll');
   if(!host)return;
   // Minimal detail sections share the Settings scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
   if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-minimal-settings') || host;
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body'))return;
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
   const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'

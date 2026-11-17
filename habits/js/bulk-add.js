@@ -16,7 +16,7 @@ function bulkBatchActive(){
 }
 
 function openBulkBatchFlow(){
-  if(bulkBatchMode)return;
+  if(bulkBatchMode || (typeof isMinimalMode === 'function' && isMinimalMode()))return;
   bulkBatchMode = true;
   bulkUnfinishedChoice = null;
   updateBulkBatchChrome();

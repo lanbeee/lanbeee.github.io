@@ -85,7 +85,9 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
             }));
             $('detail-summary-chat').hidden=false;
             const page=getSheetInner('detail-sheet').querySelector('.detail-summary-page');
-            const scroller=detailIsSingleView()?page.closest('.detail-pager'):page;
+            // Summary scrolls inside its own pane in both modes; the pager
+            // moves horizontally between Summary and Settings.
+            const scroller=page;
             const target=thread.firstElementChild;
             scroller.scrollTop=100;
             const reading=summaryTestDrag(target,0,-40);

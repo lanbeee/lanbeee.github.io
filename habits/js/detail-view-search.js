@@ -400,6 +400,7 @@ function revealDetailSearchEntry(entry){
     // Reveal only its section for this visit, without changing the preference.
     target.closest('.detail-page').hidden = false;
     for(let p=target.closest('.detail-full-only');p;p=p.parentElement.closest('.detail-full-only'))p.classList.add('detail-field-revealed');
+    if(target.closest('#detail-schedule-preferred'))$('detail-schedule-view-seg')?.classList.add('detail-field-revealed');
   }
   const preferred = target.closest('#detail-schedule-preferred') || entry.label === 'Place preferences';
   if(target.closest('[data-detail-nav="availability"]'))setScheduleView(preferred ? 'preferred' : 'allowed');

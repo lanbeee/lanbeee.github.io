@@ -1,10 +1,10 @@
 // Mode changes must retain drafts and hidden scheduling policy.
 const assert = require('node:assert/strict');
-const {chromium} = require('playwright');
+const {chromium,webkit} = require('playwright');
 const {baseHabit} = require('./helpers/planner-test-helpers');
 
 (async()=>{
-  const browser = await chromium.launch();
+  const browser = await (process.env.TEST_BROWSER === 'webkit' ? webkit : chromium).launch();
   try{
     const context = await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'});
     await context.clock.setFixedTime(new Date('2026-10-11T08:00:00-04:00'));
@@ -20,6 +20,7 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     await page.locator('#launch-screen').waitFor({state:'hidden'});
     await page.evaluate(h=>{save([h]);openDetail(0);},baseHabit({
       hid:'minimal-fixture',name:'Reading',durationMinutes:30,
+      createdAt:Date.parse('2026-09-01T12:00:00-04:00'),lastLog:Date.parse('2026-10-09T12:00:00-04:00'),logs:[Date.parse('2026-10-09T12:00:00-04:00')],
       allowedWeekdays:[1],allowedTimeStart:540,allowedTimeEnd:1020,
       allowedMonthDays:[1,15],preferredWeekdays:[3],preferredTimeStart:600,preferredTimeEnd:660,
       priority:1,earlyWindowDays:2,delayAllowanceDays:1,
@@ -99,6 +100,41 @@ const {baseHabit} = require('./helpers/planner-test-helpers');
     assert.ok(await page.locator('#ting-due-date').isVisible(),'minimal task retains deadline');
     await page.locator('#do-cancel').click();
     assert.equal(await page.evaluate(()=>load().length),1,'mode switching never saves a draft');
+    // Summary links reveal advanced controls without changing Minimal Mode or data.
+    const beforeNavigation = await page.evaluate(()=>load());
+    await page.evaluate(()=>openDetail(0));
+    const fields = await page.locator('#detail-summary [data-summary-field]').evaluateAll(nodes=>[...new Set(nodes.map(el=>el.dataset.summaryField))]);
+    assert.ok(fields.includes('priority'),'advanced saved settings remain discoverable in Summary');
+    for(const field of fields){
+      await page.evaluate(()=>scrollDetailToNav('summary','instant'));
+      await page.locator(`#detail-summary [data-summary-field="${field}"]`).first().click();
+      await page.waitForTimeout(60);
+      const target = await page.evaluate(field=>{
+        const item=detailSummaryRecord(),session=assistantFocusSummarySession(item);
+        const el=getSheetInner('detail-sheet').querySelector(detailSummaryFieldSelector(field,session));
+        return {visible:!!el?.getClientRects().length,mode:isMinimalMode(),view:detailMinimalView()};
+      },field);
+      assert.equal(target.visible,true,`${field} reveals its editor`);
+      assert.equal(target.mode,true,'navigation preserves Minimal Mode');
+      assert.equal(target.view,'settings','navigation switches to Settings');
+    }
+    await page.evaluate(()=>scrollDetailToNav('summary','instant'));
+    await page.locator('[data-summary-history]').click();
+    assert.equal(await page.locator('#detail-calendar').isVisible(),true,'activity reveals the hidden calendar');
+    await page.locator('#detail-calendar [data-entry-day]').first().click();
+    await page.waitForFunction(()=>$('day-logs-sheet').classList.contains('open'));
+    assert.equal(await page.locator('#day-logs-sheet').evaluate(el=>el.classList.contains('open')),true,'revealed calendar can open a day');
+    await page.evaluate(()=>{closeDayLogsSheet();closeDetail();openDetail(0);});
+    assert.equal(await page.locator('.detail-calendar-page').isVisible(),false,'temporary calendar reveal ends on the next visit');
+    assert.deepEqual(await page.evaluate(()=>load()),beforeNavigation,'summary navigation never saves settings or logs');
+    await page.evaluate(()=>{closeDetail();const items=load();items[0].planByDate=parseDateInput('2026-12-01');save(items);openDetail(0);});
+    const withPlanBy=await page.evaluate(()=>load());
+    await page.locator('[data-summary-field="planByDate"]').click();
+    assert.equal(await page.locator('#detail-calendar [data-entry-day="2026-12-01"]').isVisible(),true,'plan-by opens the calendar at its saved date');
+    await page.evaluate(()=>scrollDetailToNav('summary','instant'));
+    await page.locator('[data-summary-history]').click();
+    assert.equal(await page.locator('#detail-calendar [data-entry-day="2026-10-11"]').isVisible(),true,'activity returns to recent days');
+    assert.deepEqual(await page.evaluate(()=>load()),withPlanBy,'opening the plan-by editor keeps the saved date');
     assert.deepEqual(errors,[]);
     console.log('PASS minimal basics, retained hidden policy, Settings exit and unsaved Add/Details drafts');
   }finally{await browser.close();}

@@ -1929,23 +1929,18 @@ function render(opts){
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
     const activityAction = event ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
-    const importedEvent = Boolean(h && ['device','pdf','ics','gcal','msgraph'].includes(h.source));
-    const localEvent = Boolean(event && typeof isLocalAppointment === 'function' && isLocalAppointment(h) && !importedEvent);
-    const assistantAction = sortSettings.localAssistant && !importedEvent && !synced && (!event || localEvent)
-      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="edit ${escapeHtml(h.name)}"><i class="ti ti-sparkles" aria-hidden="true"></i>edit</button>`
-      : '';
-    const planAction = dayLogsHabitPlannable(h)
-      ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
+    const planAction = dayLogsHabitPlannable(h) || dayLogsHabitLoggable(h)
+      ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan or log"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>plan or log</span></button>`
       : '';
     const primaryLink = habitPrimaryLink(h);
     const linkAction = !minimal && primaryLink
       ? `<button class="swipe-action sa-open" data-action="open-link" aria-label="${primaryLink.kind === 'phone' ? 'call' : 'open'} ${escapeHtml(linkLabel(primaryLink))}"><i class="ti ${linkIconClass(primaryLink)}" aria-hidden="true"></i>${primaryLink.kind === 'phone' ? 'call' : 'open'}</button>`
       : '';
     const leftSwipeHtml = packSwipeActions(event
-      ? [assistantAction, linkAction]
+      ? [linkAction]
       : minimal
-        ? [assistantAction, timerRunning ? timerAction : (h.sample ? keepAction : planAction), activityAction]
-        : [assistantAction, timerAction, planAction, activityAction, linkAction, keepAction]);
+        ? [timerRunning ? timerAction : (h.sample ? keepAction : planAction), activityAction]
+        : [timerAction, planAction, activityAction, linkAction, keepAction]);
     const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
       && nativeReminderAnyOn(`item:${h.hid}`);
     const reminderAction = reminderOn
@@ -2454,21 +2449,6 @@ function render(opts){
       const row = btn.closest('.swipe-row');
       const idx = +row.dataset.realIdx;
       closeAllSwipes();
-      if(btn.dataset.action === 'assistant' && sortSettings.localAssistantProvider === 'needle'){
-        const item = load()[idx];
-        const local = item && isLocalAppointment(item);
-        openDetail(idx);
-        void openDetailAssistant('',{occurrenceDate:local ? row.dataset.scheduledDay || '' : ''});
-      }else if(btn.dataset.action === 'assistant' && typeof tingsLoadAssistant === 'function'){
-        const hid = row.dataset.hid;
-        void tingsLoadAssistant().then(()=>{
-          if(typeof assistantOpenForItem === 'function'){
-            const item = load()[idx];
-            const local = item && typeof isLocalAppointment === 'function' && isLocalAppointment(item);
-            assistantOpenForItem(hid,'home', local ? {occurrenceDate:row.dataset.scheduledDay || ''} : null);
-          }
-        });
-      }
       if(btn.dataset.action === 'plan')openSwipePlan(idx,Number(row.dataset.dayBase));
       if(btn.dataset.action === 'open-link'){
         const link = habitPrimaryLink(load()[idx]);

@@ -3,9 +3,9 @@
 // applicability, review counts, staleness re-inspection, and guarded
 // field-level undo that preserves later activity.
 const assert = require('node:assert/strict');
-const {chromium} = require('playwright');
+const {chromium,webkit} = require('playwright');
 (async()=>{
-  const browser = await chromium.launch();
+  const browser = await (process.env.TEST_BROWSER === 'webkit' ? webkit : chromium).launch();
   try{
     const context = await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block',timezoneId:'America/New_York'});
     await context.clock.setFixedTime(new Date('2026-11-01T12:00:00-04:00'));
@@ -13,6 +13,9 @@ const {chromium} = require('playwright');
     const errors = [];
     page.on('pageerror',error=>errors.push(error.message));
     await page.addInitScript(()=>{
+      const viewport = new EventTarget();
+      Object.assign(viewport,{width:390,height:844,offsetTop:0,offsetLeft:0,scale:1});
+      Object.defineProperty(window,'visualViewport',{value:viewport,configurable:true});
       localStorage.clear();
       localStorage.setItem('tings_coach_essentials_v2','done');
       localStorage.setItem('tings_coach_install_v2','done');
@@ -54,10 +57,43 @@ const {chromium} = require('playwright');
     assert.ok((await lockedRow.first().textContent()).includes('managed by your phone calendar'),'device item explains why');
     assert.equal(await page.locator('.bulk-row.locked input').count(),0,'device item has no checkbox');
 
+    assert.equal(await page.locator('#bulk-picker-filters').getAttribute('open'),null,'filters start collapsed so results lead');
+    const openFilters = async()=>{
+      if(await page.locator('#bulk-picker-filters').getAttribute('open') === null)await page.locator('#bulk-filter-summary').click();
+    };
+    // Search, results and the next action share the space above the keyboard.
+    await page.locator('#bulk-search').focus();
+    await page.evaluate(()=>{visualViewport.height=477;visualViewport.offsetTop=24;visualViewport.dispatchEvent(new Event('resize'));});
+    await page.waitForTimeout(100);
+    const geometry = await page.evaluate(()=>{
+      const rect=id=>$(id).getBoundingClientRect();
+      return {search:rect('bulk-search').toJSON(),action:rect('bulk-edit-continue').toJSON(),rows:rect('bulk-rows').toJSON(),head:rect('bulk-edit-title').toJSON()};
+    });
+    assert.ok(geometry.head.top>=24,'sheet header stays inside the panned viewport');
+    assert.ok(geometry.search.top>=24 && geometry.search.bottom<=501,'search stays above the keyboard');
+    assert.ok(geometry.action.bottom<=501,'next action stays above the keyboard');
+    assert.ok(geometry.rows.top<geometry.search.top-52,'matching rows stay visible above search');
+    await page.screenshot({path:'test-results/bulk-search-keyboard.png'});
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('#bulk-search').evaluate(el=>el===document.activeElement),false,'Done dismisses search focus');
+    await page.evaluate(()=>{visualViewport.height=844;visualViewport.offsetTop=0;visualViewport.dispatchEvent(new Event('resize'));});
+    await page.waitForTimeout(80);
+    // Android can resize the WebView and briefly report a second IME shrink.
+    await page.evaluate(()=>{window.bulkNativeBefore=window.TingsNative;window.TingsNative={isNative:true,platform:'android'};updateKeyboardLift();});
+    await page.setViewportSize({width:390,height:477});
+    await page.evaluate(()=>{visualViewport.height=190;visualViewport.dispatchEvent(new Event('resize'));});
+    await page.waitForTimeout(80);
+    assert.equal(await page.locator('#bulk-edit-continue').evaluate(el=>el.getBoundingClientRect().bottom<=477),true,'Android action fits the resized layout once');
+    assert.ok(await page.locator('.bulk-edit-scroll').evaluate(el=>el.clientHeight>100),'Android retains result space instead of applying the keyboard shrink twice');
+    await page.setViewportSize({width:390,height:844});
+    await page.evaluate(()=>{window.TingsNative=window.bulkNativeBefore;delete window.bulkNativeBefore;visualViewport.height=844;visualViewport.dispatchEvent(new Event('resize'));});
+    await page.waitForTimeout(80);
     // Completed and snoozed items are hidden until explicitly shown.
+    await openFilters();
     await page.locator('#bulk-show-completed').click();
     await page.waitForTimeout(150);
     assert.ok((await page.locator('#bulk-rows').textContent()).includes('Filed taxes'),'completed visible after toggle');
+    await openFilters();
     await page.locator('#bulk-show-snoozed').click();
     await page.waitForTimeout(150);
     assert.ok((await page.locator('#bulk-rows').textContent()).includes('Snoozed gym'),'snoozed visible after toggle');
@@ -71,11 +107,13 @@ const {chromium} = require('playwright');
     await page.locator('#bulk-search').fill('');
     await page.waitForTimeout(150);
     assert.equal(await page.locator('#bulk-count').textContent(),'1 selected','selection survives clearing search');
+    await openFilters();
     await page.locator('[data-bulk-filter="type"][data-bulk-filter-value="task"]').click();
     await page.waitForTimeout(150);
     assert.ok((await page.locator('#bulk-rows').textContent()).includes('Inbox zero'),'type filter works in the picker');
     await page.locator('[data-bulk-check]').first().check();
     await page.waitForTimeout(120);
+    await openFilters();
     await page.locator('[data-bulk-filter="type"][data-bulk-filter-value="all"]').click();
     await page.waitForTimeout(150);
     assert.equal(await page.locator('#bulk-count').textContent(),'2 selected','selection retained across filter changes');
@@ -85,6 +123,7 @@ const {chromium} = require('playwright');
     await page.waitForTimeout(150);
     const allCount = await page.evaluate(()=>bulkSelected.size);
     assert.ok(allCount >= 6,'select all results adds shown items');
+    await openFilters();
     await page.locator('#bulk-show-completed').click();
     await page.waitForTimeout(150);
     const outsideText = await page.locator('#bulk-outside-count').textContent();
@@ -107,12 +146,8 @@ const {chromium} = require('playwright');
     await page.locator('#bulk-edit-continue').click();
     await page.waitForTimeout(250);
     const before = await page.evaluate(()=>load().find(h=>h.name==='Read'));
-    await page.locator('#bulk-review-continue').click();
-    await page.waitForTimeout(250);
-    assert.equal(await page.locator('#bulk-review-summary').textContent(),'1 selected · 0 will change','keep unchanged applies nothing');
-    assert.equal(await page.locator('#bulk-apply').isDisabled(),true,'apply disabled without changes');
-    await page.locator('#bulk-edit-back').click();
-    await page.waitForTimeout(150);
+    assert.equal(await page.locator('#bulk-review-continue').isDisabled(),true,'choose a change before reviewing');
+    assert.deepEqual(await page.evaluate(()=>load().find(h=>h.name==='Read')),before,'keep unchanged applies nothing');
 
     const openGroup = async(name)=>{
       await page.evaluate(group=>{
@@ -309,12 +344,17 @@ const {chromium} = require('playwright');
     await page.locator('#home-filter-sheet [data-open-bulk-edit]').click();
     await page.waitForTimeout(200);
     assert.equal(await page.evaluate(()=>bulkFilters.type),'task','picker copied Home filters on open');
+    await openFilters();
     await page.locator('[data-bulk-filter="type"][data-bulk-filter-value="all"]').click();
     await page.waitForTimeout(100);
     await page.locator('#bulk-edit-close').click();
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(()=>homeTypeFilter),'task','changing picker filters left Home filters alone');
 
+    await page.evaluate(()=>setMinimalMode(true));
+    assert.equal(await page.locator('[data-open-bulk-edit]:visible').count(),0,'bulk edit stays out of minimal mode');
+    await page.evaluate(()=>openBulkEditPicker());
+    assert.equal(await page.locator('#bulk-edit-sheet').evaluate(el=>el.classList.contains('open')),false,'minimal mode cannot open the bulk picker');
     assert.deepEqual(errors,[]);
     console.log('PASS bulk edit: picker, selection persistence, explicit ops, applicability, review, staleness, guarded undo, close guard');
   }finally{await browser.close();}

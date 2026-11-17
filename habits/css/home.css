@@ -372,6 +372,7 @@ html{overscroll-behavior-y:none;}
 .swipe-action i{font-size:20px;}
 .swipe-action small{font-size:10px;font-weight:600;line-height:1;opacity:0.9;}
 .sa-plan,.sa-activity,.sa-keep,.sa-open,.sa-assistant{background:transparent;color:var(--teal-text);}
+.swipe-action.sa-plan span{max-width:60px;white-space:normal;line-height:1.15;text-align:center;}
 .sa-pin{background:transparent;color:var(--purple-text);}
 .sa-reminder{background:transparent;color:var(--amber-text);}
 .sa-snooze{background:transparent;color:var(--text2);}

@@ -39,7 +39,7 @@ function detailSummaryPill(chip,session){
   const ambiguous = /^(?:on|off|yes|no|none|enabled|disabled)$/i.test(value.trim());
   const text = !value ? (label || 'setting') : ambiguous && label ? `${label} · ${value}` : value;
   const body = `<span class="focus-field-text">${escapeHtml(text)}</span>`;
-  if(!assistantFocusDetailSelector(chip.id,session))return `<span class="assistant-chip">${body}</span>`;
+  if(!detailSummaryFieldSelector(chip.id,session))return `<span class="assistant-chip">${body}</span>`;
   return `<button type="button" class="assistant-chip focus-field" data-summary-field="${escapeHtml(chip.id)}" aria-label="${escapeHtml(`Open ${label || 'setting'}: ${value}`)}">${body}<i class="ti ti-chevron-right" aria-hidden="true"></i></button>`;
 }
 
@@ -547,24 +547,24 @@ function detailSummaryWindowStrip(item,facts,items,session){
       : 'at saved places';
     const first = locationWins.wins[0];
     const last = locationWins.wins[locationWins.wins.length - 1];
-    lines.push(`<span class="detail-window-line"><i class="detail-swatch allowed" aria-hidden="true"></i>${escapeHtml(where)} ${escapeHtml(detailSummaryTimeLabel(first.start))}–${escapeHtml(detailSummaryTimeLabel(last.end))}</span>`);
+    lines.push(`<button type="button" class="detail-window-line" data-summary-field="places"><i class="detail-swatch allowed" aria-hidden="true"></i>${escapeHtml(where)} ${escapeHtml(detailSummaryTimeLabel(first.start))}–${escapeHtml(detailSummaryTimeLabel(last.end))}</button>`);
   }
   if(allowed && allowedClocks){
     const rule = detailSummaryCompactRule(
       detailSummaryWindowRule(item,'allowedTimeStart',fixedStart,items),
       detailSummaryWindowRule(item,'allowedTimeEnd',fixedStart,items));
-    lines.push(`<span class="detail-window-line"><i class="detail-swatch allowed" aria-hidden="true"></i>${fixedStart ? 'fixed start' : 'allowed'} ${escapeHtml(detailSummaryTimeLabel(allowedClocks.rawStart))}–${escapeHtml(detailSummaryTimeLabel(allowedClocks.rawEnd))}${rule ? ` <span class="detail-window-rule">· ${escapeHtml(rule)}</span>` : ''}</span>`);
+    lines.push(`<button type="button" class="detail-window-line" data-summary-field="allowedWindow"><i class="detail-swatch allowed" aria-hidden="true"></i>${fixedStart ? 'fixed start' : 'allowed'} ${escapeHtml(detailSummaryTimeLabel(allowedClocks.rawStart))}–${escapeHtml(detailSummaryTimeLabel(allowedClocks.rawEnd))}${rule ? ` <span class="detail-window-rule">· ${escapeHtml(rule)}</span>` : ''}</button>`);
   }
   if(preferred){
     const rule = detailSummaryCompactRule(
       detailSummaryWindowRule(item,'preferredTimeStart',false,items),
       detailSummaryWindowRule(item,'preferredTimeEnd',false,items));
-    lines.push(`<span class="detail-window-line"><i class="detail-swatch preferred" aria-hidden="true"></i>preferred ${escapeHtml(detailSummaryTimeLabel(preferred.rawStart))}–${escapeHtml(detailSummaryTimeLabel(preferred.rawEnd))}${rule ? ` <span class="detail-window-rule">· ${escapeHtml(rule)}</span>` : ''}</span>`);
+    lines.push(`<button type="button" class="detail-window-line" data-summary-field="preferredWindow"><i class="detail-swatch preferred" aria-hidden="true"></i>preferred ${escapeHtml(detailSummaryTimeLabel(preferred.rawStart))}–${escapeHtml(detailSummaryTimeLabel(preferred.rawEnd))}${rule ? ` <span class="detail-window-rule">· ${escapeHtml(rule)}</span>` : ''}</button>`);
   }
   if(facts.timedPlansToday.length){
     const next = facts.timedPlansToday.find(ts=>ts >= facts.now) ?? facts.timedPlansToday[0];
     const planMin = (next - facts.dayBase) / 60000;
-    lines.push(`<span class="detail-window-line"><i class="detail-swatch plan" aria-hidden="true"></i>planned ${escapeHtml(detailSummaryTimeLabel(planMin))}${facts.timedPlansToday.length > 1 ? ` +${facts.timedPlansToday.length - 1} more` : ''}</span>`);
+    lines.push(`<button type="button" class="detail-window-line" data-summary-history><i class="detail-swatch plan" aria-hidden="true"></i>planned ${escapeHtml(detailSummaryTimeLabel(planMin))}${facts.timedPlansToday.length > 1 ? ` +${facts.timedPlansToday.length - 1} more` : ''}</button>`);
   }
   const ariaBits = [];
   if(locationWins){
@@ -583,11 +583,13 @@ function detailSummaryWindowStrip(item,facts,items,session){
   if(waking && (viewStart > 0 || viewEnd < 1440))ariaBits.push(`Timeline ${scaleLabel(viewStart)} to ${scaleLabel(viewEnd)}`);
   const field = locationWins ? 'places' : allowed ? 'allowedWindow' : 'preferredWindow';
   const openText = locationWins ? 'Opens the places editor.' : 'Opens the time window editor.';
-  return {html:`<button type="button" class="detail-window" data-summary-field="${field}" aria-label="${escapeHtml(`${ariaBits.join('. ')}. ${openText}`)}" title="${escapeHtml(ariaBits.join('. '))}">
+  return {html:`<div class="detail-window" role="group" aria-label="Time windows">
+    <button type="button" class="detail-window-track" data-summary-field="${field}" aria-label="${escapeHtml(`${ariaBits.join('. ')}. ${openText}`)}" title="${escapeHtml(ariaBits.join('. '))}">
     <span class="detail-track" aria-hidden="true">${bands.join('')}${ticks.join('')}</span>
     <span class="detail-track-scale" aria-hidden="true"><span>${escapeHtml(scaleLabel(viewStart))}</span><span>${escapeHtml(scaleLabel(viewEnd))}</span></span>
-    <span class="detail-window-caption" aria-hidden="true">${lines.join('')}</span>
-  </button>`,replaces};
+    </button>
+    <div class="detail-window-caption">${lines.join('')}</div>
+  </div>`,replaces};
 }
 
 // One row per option: days → time → place stay together. Dynamic endpoints
@@ -642,7 +644,7 @@ function detailSummaryPlaceChips(item,facts,session){
     ? normalizeLocationPrefs(item.locationPrefs,ids,item.preferredLocationId) : {};
   const prefDots = {high:'●●',little:'●',avoid:'⊘'};
   const prefWords = {high:'preferred',little:'slightly preferred',avoid:'marked avoid (still allowed)'};
-  const canOpen = id => typeof assistantFocusDetailSelector === 'function' && assistantFocusDetailSelector(id,session);
+  const canOpen = id => detailSummaryFieldSelector(id,session);
   const chips = ids.map(id=>{
     const name = facts.placeName(id);
     const level = prefs[id];
@@ -1209,8 +1211,33 @@ function detailSummaryUserBubble(text,session){
   bubble.innerHTML = `<p class="assistant-user-line">${tag}${parsed.rest ? ` <span class="assistant-user-detail">${escapeHtml(parsed.rest)}</span>` : ''}</p>`;
 }
 
+function detailSummaryFieldSelector(field,session){
+  if(field === 'name')return '#detail-habit-message';
+  if(field === 'planByDate')return '#detail-calendar';
+  return assistantFocusDetailSelector(field,session);
+}
+
+function detailSummaryOpenHistory(){
+  if(detailStripOffset !== 0){
+    detailStripOffset = 0;
+    const item = detailSummaryRecord();
+    if(item)renderCalendar(item);
+  }
+  const calendar = getSheetInner('detail-sheet')?.querySelector('#detail-calendar');
+  if(calendar)revealDetailSearchEntry({target:calendar,label:'Activity',revealHidden:true,focus:false});
+}
+
 function detailSummaryReveal(field,session,focus = true){
-  const selector = assistantFocusDetailSelector(field,session);
+  if(field === 'planByDate'){
+    const item = detailSummaryRecord();
+    const date = item && habitPlanByDate(item);
+    if(Number.isFinite(date)){
+      const {start,days} = detailStripWindow();
+      detailStripOffset += Math.floor((date - start) / (days * 86400000));
+      renderCalendar(item);
+    }
+  }
+  const selector = detailSummaryFieldSelector(field,session);
   const control = selector && getSheetInner('detail-sheet')?.querySelector(selector);
   if(control)revealDetailSearchEntry({target:control,label:assistantFocusField(field)?.label || '',revealHidden:true,focus});
 }
@@ -1353,7 +1380,7 @@ $('detail-summary').addEventListener('click',event=>{
   if(!item)return;
   if(!pill){
     if(event.target.closest('[data-summary-history]') && typeof scrollDetailToNav === 'function'){
-      scrollDetailToNav('calendar','smooth');
+      detailSummaryOpenHistory();
     }
     return;
   }

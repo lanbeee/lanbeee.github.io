@@ -50,6 +50,11 @@ function bulkSelectedRecords(data){
 }
 
 function openBulkEditPicker(copyHome){
+  if(typeof isMinimalMode === 'function' && isMinimalMode())return;
+  $('bulk-edit-sheet').querySelector('.bulk-edit-scroll').scrollTop = 0;
+  $('bulk-picker-filters').open = false;
+  $('bulk-edit-confirm').hidden = true;
+  $('bulk-settings-search').value = '';
   bulkStep = 'pick';
   bulkSelected = new Set();
   bulkPending = [];
@@ -98,7 +103,16 @@ function closeBulkEditSheet(){
 }
 
 function setBulkStep(step){
+  const changed = bulkStep !== step;
+  if(changed && $('bulk-edit-sheet').contains(document.activeElement))document.activeElement.blur();
   bulkStep = step;
+  $('bulk-search').hidden = step !== 'pick';
+  $('bulk-settings-search').hidden = step !== 'change';
+  $('bulk-step-hint').textContent = step === 'pick' ? '1 of 3 · Select the items to edit together.'
+    : step === 'change' ? `2 of 3 · Choose changes for ${bulkSelected.size} items. Other settings stay as they are.`
+    : '3 of 3 · Check the changes before applying.';
+  if(changed)$('bulk-edit-sheet').querySelector('.bulk-edit-scroll').scrollTop = 0;
+  if(typeof scheduleKeyboardLayout === 'function')scheduleKeyboardLayout();
   const steps = {pick:'bulk-edit-pick',change:'bulk-edit-change',review:'bulk-edit-review'};
   for(const [key,id] of Object.entries(steps)){
     const el = $(id);
@@ -218,6 +232,10 @@ function renderBulkPicker(){
     </div></li>`).join('');
   const empty = $('bulk-empty');
   if(empty)empty.hidden = Boolean(shown.length || locked.length);
+  $('bulk-result-count').textContent = ` · ${shown.length} result${shown.length === 1 ? '' : 's'}${locked.length ? ` · ${locked.length} managed by calendar` : ''}`;
+  const filterCount = ['type','priority','topic','location'].filter(key=>bulkFilters[key] !== 'all').length
+    + Number(bulkFilters.snoozed) + Number(bulkFilters.completed);
+  $('bulk-filter-summary').textContent = filterCount ? `Filter items · ${filterCount} active` : 'Filter items';
   // Counts: selection is retained across filter changes; report what the
   // current results do not show.
   const shownIds = new Set(shown.map(h=>h.hid));
@@ -434,8 +452,7 @@ function renderBulkEditStep(){
     parts.push(section(group,ops,query !== ''));
   }
   host.innerHTML = parts.join('') || '<p class="field-hint">No settings match.</p>';
-  const cont = $('bulk-review-continue');
-  if(cont)cont.textContent = 'review changes';
+  syncBulkReviewAction();
 }
 
 function bulkPendingFor(id){
@@ -444,7 +461,18 @@ function bulkPendingFor(id){
   return bulkEnsurePending(opDesc);
 }
 
+function syncBulkReviewAction(){
+  const count = bulkPending.filter(p=>p.op !== 'keep').length;
+  const button = $('bulk-review-continue');
+  const label = count ? `Review ${count} change${count === 1 ? '' : 's'}` : 'Choose a change to continue';
+  button.disabled = count === 0;
+  // WebKit can cancel the pending click when an input's blur rewrites its
+  // destination button, even if the text is identical.
+  if(button.textContent !== label)button.textContent = label;
+}
+
 function bulkRefreshApplies(id){
+  syncBulkReviewAction();
   const opDesc = bulkOpById(id);
   if(!opDesc)return;
   const pending = bulkPending.find(p=>p.id === id);
@@ -701,9 +729,19 @@ $('bulk-edit-back')?.addEventListener('click',()=>{
 $('bulk-edit-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeBulkEditSheet();
 });
+for(const id of ['bulk-search','bulk-settings-search']){
+  $(id)?.addEventListener('focus',()=>{
+    if(id === 'bulk-search')$('bulk-picker-filters').open = false;
+    $('bulk-edit-sheet').querySelector('.bulk-edit-scroll').scrollTop = 0;
+  });
+  $(id)?.addEventListener('keydown',event=>{
+    if(event.key === 'Enter'){event.preventDefault();event.target.blur();}
+  });
+}
 $('bulk-search')?.addEventListener('input',e=>{
   bulkFilters.search = e.target.value;
   renderBulkPicker();
+  $('bulk-edit-sheet').querySelector('.bulk-edit-scroll').scrollTop = 0;
 });
 $('bulk-filter-groups')?.addEventListener('click',e=>{
   const chip = e.target.closest('[data-bulk-filter]');
@@ -749,7 +787,6 @@ $('bulk-clear-selection')?.addEventListener('click',()=>{
 });
 $('bulk-edit-continue')?.addEventListener('click',()=>{
   if(!bulkSelected.size)return;
-  bulkPending = [];
   setBulkStep('change');
   renderBulkEditStep();
 });

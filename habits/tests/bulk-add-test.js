@@ -225,22 +225,18 @@ const {chromium} = require('playwright');
     assert.ok(single,'single-item add persisted');
     await page.evaluate(()=>closeDetail());
 
-    // ── Minimal mode: batch flow reachable, chrome intact ──
+    // Minimal mode offers the ordinary single-item form only.
     await page.evaluate(()=>setMinimalMode(true));
     await page.locator('#open-add').click();
-    assert.ok(await page.locator('#add-batch-entry').isVisible(),'add several visible in minimal mode');
-    await page.locator('#add-batch-entry').click();
-    assert.ok(await page.locator('#do-batch-next').isVisible(),'add & next visible in minimal mode');
+    assert.equal(await page.locator('#add-batch-entry').isVisible(),false,'bulk add stays out of minimal mode');
+    await page.evaluate(()=>openBulkBatchFlow());
+    assert.equal(await page.evaluate(()=>bulkBatchActive()),false,'hidden bulk flow cannot be started');
+    assert.ok(await page.locator('#do-save').isVisible(),'single-item save remains available');
     await page.locator('#ting-message').fill('Minimal item');
-    await page.locator('#do-batch-next').click();
-    assert.equal(await page.locator('#add-batch-status').textContent(),'1 item in batch · review');
-    await page.locator('#add-batch-status').click();
-    await page.waitForTimeout(150);
-    assert.ok(await page.locator('#bulk-batch-sheet').evaluate(el=>el.classList.contains('open')),'review opens in minimal mode');
-    await page.locator('#bulk-batch-add').click();
+    await page.locator('#do-save').click();
     await page.waitForTimeout(250);
-    assert.equal(await page.evaluate(()=>load().some(h=>h.name === 'Minimal item')),true,'minimal batch committed');
-    await page.evaluate(()=>setMinimalMode(false));
+    assert.equal(await page.evaluate(()=>load().some(h=>h.name === 'Minimal item')),true,'minimal single item committed');
+    await page.evaluate(()=>{closeDetail();setMinimalMode(false);});
 
     // Narrow phone: footer controls stay visible and inside the sheet.
     await page.evaluate(()=>{ // free capacity headroom for the queue below
