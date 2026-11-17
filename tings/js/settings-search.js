@@ -13,7 +13,7 @@ const SETTINGS_SEARCH_ALIASES = {
   'settings-reminders-body':'notification alert notify push banner ping sound tone chime calm warm deep gentle audio',
   soundEffects:'mute audio chime volume',
   'settings-cleanup-body':'retention history delete purge logs',
-  'settings-calendar-body':'meeting event pdf import ics ical outlook google apple',
+  'settings-calendar-body':'meeting event pdf import ics ical outlook google apple duplicates reconcile hidden restore',
   'calendar-ics-from':'ics import range start date',
   'calendar-ics-to':'ics import range end date through',
   'calendar-pdf-input':'pdf file choose import attachment',

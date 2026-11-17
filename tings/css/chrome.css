@@ -60,6 +60,8 @@
   flex:1 1 0;width:auto;min-width:0;max-width:min(190px,100%);margin-left:auto;
 }
 .topbar .home-filter-trigger{position:relative;margin-left:auto;}
+/* Wide layouts own global chrome via the app-bar: current place and the
+   shared filters button live there, so the phone topbar stays hidden. */
 body[data-pane-count="2"] .topbar,
 body[data-pane-count="3"] .topbar{
   display:none;
@@ -164,6 +166,28 @@ body[data-pane-count="3"] #app-bar[hidden]{
 .app-bar-actions{
   display:flex;align-items:center;gap:8px;flex-shrink:0;
   margin-left:auto;
+}
+/* Wide-layout planning chrome: current place + the shared filters button.
+   The phone topbar keeps its own pair; the app-bar never shows on pane 1. */
+.app-bar .app-bar-place,
+.app-bar .app-bar-filters{
+  border:0;background:transparent;box-shadow:none;height:40px;flex:0 1 auto;
+}
+.app-bar .app-bar-place{
+  max-width:210px;padding:4px 6px;border-radius:12px;
+}
+.app-bar .app-bar-filters{padding:0 12px;border-radius:12px;font-size:12px;}
+.app-bar .app-bar-place[hidden],
+.app-bar .app-bar-filters[hidden],
+.app-bar .app-bar-filters b[hidden]{display:none;}
+body.minimal-mode .app-bar-place,
+body.minimal-mode .app-bar-filters,
+body.replica-display-mode .app-bar-place,
+body.replica-display-mode .app-bar-filters{display:none;}
+/* Search mode: just the field — planning chrome steps aside like the rest. */
+.app-bar-search.is-open ~ .app-bar-actions #app-bar-place,
+.app-bar-search.is-open ~ .app-bar-actions #app-bar-filters{
+  display:none;
 }
 .app-bar-add{
   background:var(--teal-icon);color:var(--teal-bg);border-color:var(--teal-icon);

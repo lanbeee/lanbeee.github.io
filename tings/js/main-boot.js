@@ -365,17 +365,12 @@ $('bar-open-add')?.addEventListener('click',()=>{
   openSheet('add-sheet');
   $('ting-message').focus({preventScroll:true});
 });
-$('bar-open-overview')?.addEventListener('click',()=>{
-  if(!load().length)return;
-  closeSearch();
-  overviewMonthOffset = 0;
-  overviewRecentOffset = 0;
-  clearOverviewFilters();
-  overviewRangeFilter = 'recent';
-  overviewListPane = 'plan';
-  renderOverview();
-  openSheet('overview-sheet');
+$('bar-open-overview')?.addEventListener('click',()=>openRememberedCalendar());
+// Wide-layout chrome: current place and the shared filters live in the app-bar.
+$('app-bar-place')?.addEventListener('click',()=>{
+  if(typeof openPresencePicker === 'function')openPresencePicker();
 });
+$('app-bar-filters')?.addEventListener('click',()=>openSheet('home-filter-sheet'));
 $('bar-open-about')?.addEventListener('click',()=>{
   if(typeof openSettingsSheet === 'function')openSettingsSheet();
 });
@@ -1776,31 +1771,25 @@ window.addEventListener('resize',scheduleKeyboardLayout,{passive:true});
 document.addEventListener('focusin',()=>scheduleKeyboardLayout(false));
 document.addEventListener('focusout',()=>scheduleKeyboardLayout(false));
 
-$('detail-save').addEventListener('click',()=>{
-  const data = load();
-  const creating = detailIdx === null && detailUnsavedCreate;
-  if(detailIdx === null && !creating)return;
-  const h = creating ? detailUnsavedCreate : data[detailIdx];
-  if(!h)return;
-  if(isDeviceCalendarTask(h)){saveDeviceCalendarDetail(h);return;}
-  if(isLocalAppointment(h)){saveLocalAppointmentDetail(data,h);return;}
+// Validate the open detail editor and apply its values onto a record.
+// Shared by the save button and the batch draft editor ("save to batch").
+// Returns true when the record is ready to persist; false means a problem
+// was already surfaced (toast, validity report, or inline hint). The record
+// is mutated in place; nothing here touches storage.
+function applyDetailTuneToRecord(h,data){
   if(typeof validateHabitScheduleOptionModes === 'function'
-    && !validateHabitScheduleOptionModes())return;
-  if(!validateFixedStartTimes())return;
+    && !validateHabitScheduleOptionModes())return false;
+  if(!validateFixedStartTimes())return false;
   const current = currentDetailTune();
-  if(!syncDetailConditionHint())return;
-  if(!current.name){$('detail-habit-message').focus();return;}
+  if(!syncDetailConditionHint())return false;
+  if(!current.name){$('detail-habit-message').focus();return false;}
   h.scheduleLinks = normalizeScheduleLinks(current.scheduleLinks,h.hid);
   if(typeof validateScheduleLinkGraph === 'function'){
     const linkValidation = validateScheduleLinkGraph(data);
     if(!linkValidation.ok){
       showToast(linkValidation.message);
-      return;
+      return false;
     }
-  }
-  // Cancel scheduled push for the pre-edit state (sig may change after edit).
-  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && h.type === 'task'){
-    cancelPush(reminderSignature(h));
   }
   h.name = current.name.slice(0,60);
   h.type = current.type;
@@ -1889,17 +1878,17 @@ $('detail-save').addEventListener('click',()=>{
     || (h[f + 'Anchor2'] === 'habit' && !h[f + 'AnchorHabitId2'])
   )){
     showToast('pick a habit for the dynamic time');
-    return;
+    return false;
   }
   // Block: fixed secondary without a clock time.
   if(habitAnchorFields.some(f => h[f + 'Anchor2'] === 'fixed' && h[f + 'FixedMin2'] == null)){
     showToast('pick a clock time to compare with');
-    return;
+    return false;
   }
   // Block: later/earlier-of without a second anchor.
   if(habitAnchorFields.some(f => cleanTimeCombine(current[f + 'Combine']) && !h[f + 'Anchor2'])){
     showToast('pick a time to compare with');
-    return;
+    return false;
   }
   // Block: dynamic prayer anchors need coords to resolve against. Prefer the
   // habit's own places; "anywhere" habits use the home city (or fall back to
@@ -1911,7 +1900,7 @@ $('detail-save').addEventListener('click',()=>{
     const registry = normalizeLocationRegistry(s.locations);
     if(!hasCity && !registry.length){
       showToast('set your city to use relative times');
-      return;
+      return false;
     }
   }
   // Block: habit-anchor cycles (A starts after B, B starts after A) would
@@ -1920,7 +1909,7 @@ $('detail-save').addEventListener('click',()=>{
     const cycle = detectHabitAnchorCycle(h.hid, {[h.hid]:h});
     if(cycle && cycle.length){
       showToast('cycle: ' + cycle.filter(Boolean).join(' → '));
-      return;
+      return false;
     }
   }
   h.durationMinutes = current.durationMinutes;
@@ -1949,6 +1938,28 @@ $('detail-save').addEventListener('click',()=>{
   h.hardDue = h.type === 'task' && h.dueDate !== null && h.delayAllowanceDays === 0;
   if(!h.createdAt)h.createdAt = Date.now();
   h.lastLog = latestActualLog(h.logs);
+  return true;
+}
+
+$('detail-save').addEventListener('click',()=>{
+  // Batch drafts are edited in memory: "save to batch" writes only the
+  // queued record, never localStorage.
+  if(typeof bulkDraftEditActive === 'function' && bulkDraftEditActive()){
+    bulkCommitQueuedDraft();
+    return;
+  }
+  const data = load();
+  const creating = detailIdx === null && detailUnsavedCreate;
+  if(detailIdx === null && !creating)return;
+  const h = creating ? detailUnsavedCreate : data[detailIdx];
+  if(!h)return;
+  if(isDeviceCalendarTask(h)){saveDeviceCalendarDetail(h);return;}
+  if(isLocalAppointment(h)){saveLocalAppointmentDetail(data,h);return;}
+  if(!applyDetailTuneToRecord(h,data))return;
+  // Cancel scheduled push for the pre-edit state (sig may change after edit).
+  if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && h.type === 'task'){
+    cancelPush(reminderSignature(h));
+  }
   if(creating){
     if(data.length >= (typeof MAX_TINGS === 'number' ? MAX_TINGS : 300)){
       if(typeof showToast === 'function')showToast(`${typeof MAX_TINGS === 'number' ? MAX_TINGS : 300} habits max`);
@@ -2028,6 +2039,8 @@ $('detail-delete-no').addEventListener('click',()=>{
 $('detail-delete-yes').addEventListener('click',()=>{
   if(detailIdx === null)return;
   const idx = detailIdx;
+  const item = load()[idx];
+  if(isDeviceCalendarTask(item)){setCalendarIgnored(item,'occurrence');return;}
   closeDetail();
   doNuke(idx);
 });

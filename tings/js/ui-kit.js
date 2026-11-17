@@ -39,9 +39,12 @@ function uiLeaveBtnHtml({id, aria, body}){
   return `<button type="button" class="info-btn leave-btn" data-tip="${id}" aria-label="${aria}"><i class="ti ti-cloud-up" aria-hidden="true"></i></button><div class="info-tooltip leave-tooltip" id="${id}" role="tooltip" hidden>${body}</div>`;
 }
 
-function uiFilterSheetHtml({wrapId, extraClass, titleId, title, summaryId, closeId, closeAria, groupsId, resetId, doneId}){
+function uiFilterSheetHtml({wrapId, extraClass, titleId, title, summaryId, closeId, closeAria, groupsId, resetId, doneId, bulkEdit}){
   const sheetCls = extraClass ? ` ${extraClass}` : '';
-  return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Pick when it’s due, what it is, or where it belongs.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div><button type="button" class="filter-settings-link" data-filter-settings><i class="ti ti-settings" aria-hidden="true"></i><span>app settings</span></button></div></div>`;
+  // The Home filters sheet carries the bulk-edit entry; the calendar twin does not.
+  // Both links share one centered row so bulk edit costs no extra vertical space.
+  const bulkBtn = bulkEdit ? `<button type="button" class="filter-settings-link bulk-edit-link" data-open-bulk-edit><i class="ti ti-checks" aria-hidden="true"></i><span>bulk edit</span></button>` : '';
+  return `<div class="sheet-wrap" id="${wrapId}"><div class="sheet home-filter-sheet${sheetCls}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="home-filter-sheet-head"><div><p class="sheet-title" id="${titleId}">${title}</p><p class="about-copy" id="${summaryId}">Pick when it’s due, what it is, or where it belongs.</p></div><button type="button" class="icon-btn home-filter-close" id="${closeId}" aria-label="${closeAria}"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="home-filter-groups" id="${groupsId}"></div><div class="btn-row home-filter-sheet-actions"><button class="btn" type="button" id="${resetId}">reset</button><button class="btn primary" type="button" id="${doneId}">show results</button></div><div class="filter-links-row">${bulkBtn}<button type="button" class="filter-settings-link" data-filter-settings><i class="ti ti-settings" aria-hidden="true"></i><span>app settings</span></button></div></div></div>`;
 }
 
 // PURE: plain-language word for an offset direction. The button keeps
@@ -383,7 +386,8 @@ function mountUiKit(){
     filterHost.outerHTML = uiFilterSheetHtml({
       wrapId:'home-filter-sheet', titleId:'home-filter-title', title:'filter home',
       summaryId:'home-filter-summary', closeId:'home-filter-close', closeAria:'close filters',
-      groupsId:'home-filter-groups', resetId:'home-filter-reset', doneId:'home-filter-done'
+      groupsId:'home-filter-groups', resetId:'home-filter-reset', doneId:'home-filter-done',
+      bulkEdit:true
     }) + uiFilterSheetHtml({
       wrapId:'calendar-filter-sheet', extraClass:'calendar-filter-sheet',
       titleId:'calendar-filter-title', title:'filter calendar',

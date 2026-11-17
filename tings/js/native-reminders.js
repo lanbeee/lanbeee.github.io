@@ -1354,7 +1354,7 @@ async function nativeConsumeCatchupRoute(){
     const {route}=await api.consumeRoute();if(!['daily','weekly'].includes(route))return;
     for(const sheet of document.querySelectorAll('.sheet-wrap.open'))closeSheet(sheet.id);
     closeSearch();window.scrollTo({top:0,behavior:'instant'});
-    if(route==='weekly'){overviewMonthOffset=0;overviewRecentOffset=0;clearOverviewFilters();overviewRangeFilter='recent';overviewListPane='plan';renderOverview();openSheet('overview-sheet');}
+    if(route==='weekly'){overviewMonthOffset=0;overviewRecentOffset=0;if(typeof clearSharedFilters==='function')clearSharedFilters();else clearOverviewFilters();overviewRangeFilter='recent';overviewListPane='plan';renderOverview();if(typeof syncSharedFilterSurfaces==='function')syncSharedFilterSurfaces('calendar');openSheet('overview-sheet');}
     else render();
   }catch(error){console.warn('Catchup navigation failed',error);}
 }

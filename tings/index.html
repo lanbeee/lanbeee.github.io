@@ -43,12 +43,14 @@
 <link rel="stylesheet" href="./css/sheets.css" />
 <link rel="stylesheet" href="./css/detail.css" />
 <link rel="stylesheet" href="./css/stats-calendar.css" />
+<link rel="stylesheet" href="./css/week-view.css" />
 <link rel="stylesheet" href="./css/forms.css" />
 <link rel="stylesheet" href="./css/planning.css" />
 <link rel="stylesheet" href="./css/locations.css" />
 <link rel="stylesheet" href="./css/controls.css" />
 <link rel="stylesheet" href="./css/settings.css" />
 <link rel="stylesheet" href="./css/filters.css" />
+<link rel="stylesheet" href="./css/bulk-items.css" />
 <link rel="stylesheet" href="./css/actions.css" />
 <link rel="stylesheet" href="./css/overlays.css" />
 <link rel="stylesheet" href="./css/assistant.css" />
@@ -87,6 +89,16 @@
       </button>
     </div>
     <div class="app-bar-actions">
+      <button type="button" class="topic-filter presence-filter app-bar-place" id="app-bar-place" aria-label="change today’s starting place" hidden>
+        <span class="presence-icon"><i class="ti ti-current-location" aria-hidden="true"></i><i class="presence-signal" aria-hidden="true"></i></span>
+        <span class="presence-copy"><small>Current Place</small><b id="app-bar-place-name">set place</b></span>
+        <i class="ti ti-chevron-down presence-chevron" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="home-filter-trigger app-bar-filters" id="app-bar-filters" aria-label="open filters" hidden>
+        <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
+        <span>Filters</span>
+        <b hidden>0</b>
+      </button>
       <button class="icon-btn" id="bar-open-overview" aria-label="calendar">
         <i class="ti ti-calendar-month" aria-hidden="true"></i>
       </button>
@@ -292,9 +304,22 @@
       </div>
       <button type="button" class="minimal-mode-note" id="add-regular-mode" aria-label="open minimal mode in settings">More options in <span>settings</span></button>
       <p class="field-hint add-next-step">You can adjust days, hours and other details after adding.</p>
+      <div class="reset-confirm" id="add-batch-confirm" hidden>
+        <p id="add-batch-confirm-label">Discard queued items?</p>
+        <div class="btn-row">
+          <button class="btn primary" id="add-batch-confirm-no" type="button">keep editing</button>
+          <button class="btn" id="add-batch-confirm-yes" type="button">discard</button>
+        </div>
+      </div>
+      </div>
+      <div class="add-batch-bar" id="add-batch-bar" hidden>
+        <button type="button" class="bulk-batch-chip" id="add-batch-status" hidden>0 items in batch · review</button>
+        <p class="field-hint" id="add-batch-hint" hidden>Settings carry forward to the next item.</p>
       </div>
       <div class="btn-row add-actions">
+        <button class="btn" id="add-batch-entry" type="button">add several</button>
         <button class="btn primary" id="do-save">add habit</button>
+        <button class="btn primary" id="do-batch-next" type="button">add &amp; next</button>
         <button class="btn" id="do-cancel">cancel</button>
       </div>
     </div>
@@ -899,9 +924,12 @@
           <p class="sheet-title">Calendar</p>
           <p class="overview-page-sub">See what is planned, what needs attention, and where there is room.</p>
         </div>
+        <div class="overview-head-actions">
+        <button class="overview-week-switch" id="open-week-view" type="button" aria-label="open the week view"><i class="ti ti-calendar-week" aria-hidden="true"></i><span>Week view</span></button>
         <button type="button" class="icon-btn overview-page-close" id="overview-head-close" aria-label="close calendar">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
+        </div>
       </div>
       <div class="overview-toolbar" id="overview-filter" aria-label="calendar view and filters"></div>
       <div class="overview-insight" id="overview-insight" hidden></div>
@@ -914,7 +942,7 @@
             <div class="month-nav">
             <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
             <span class="trend-copy" id="overview-calendar-label"></span>
-            <button class="mini-text-btn overview-today-btn" id="overview-today" type="button">today</button>
+            <button class="mini-text-btn" id="overview-today" type="button">today</button>
             <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
             </div>
           </div>
@@ -928,6 +956,65 @@
       <div class="btn-row overview-actions">
         <button class="btn primary" id="overview-close">done</button>
       </div>
+    </div>
+  </div>
+
+  <!-- week sheet: readable elastic week, with an opt-in time grid -->
+  <div class="sheet-wrap" id="week-sheet">
+    <div class="sheet week-view-sheet" role="dialog" aria-modal="true" aria-label="week agenda">
+      <div class="wv-head">
+        <button type="button" class="icon-btn wv-display-options" id="week-view-display-options" aria-label="calendar options: view, days, colors and filters" aria-expanded="false" aria-controls="week-view-options"><i class="ti ti-menu-2" aria-hidden="true"></i></button>
+        <button type="button" class="wv-today-cal" id="week-view-today" aria-label="jump to today"><span class="wv-today-cal-dow" aria-hidden="true"></span><span class="wv-today-cal-day" aria-hidden="true"></span></button>
+        <div class="wv-title">
+          <button type="button" id="week-view-label" class="wv-title-label" aria-expanded="false" aria-controls="week-view-month"><span id="week-view-label-text"></span><i class="ti ti-chevron-down" aria-hidden="true"></i></button>
+          <small id="week-view-sub"></small>
+        </div>
+        <button type="button" class="icon-btn wv-switch" id="week-view-overview" aria-label="open month view" title="Month view"><i class="ti ti-calendar-month" aria-hidden="true"></i></button>
+        <button type="button" class="mini-text-btn wv-create" id="week-view-create" aria-label="add a task"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
+        <button type="button" class="icon-btn" id="week-view-close" aria-label="close week view"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="wv-month" id="week-view-month" role="group" aria-label="choose a date" hidden>
+        <div class="wv-month-nav">
+          <button type="button" class="mini-nav" id="week-view-month-prev" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+          <span id="week-view-month-label" aria-live="polite"></span>
+          <button type="button" class="mini-text-btn" id="week-view-month-today">Today</button>
+          <button type="button" class="mini-nav" id="week-view-month-next" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        </div>
+        <div class="wv-month-grid" id="week-view-month-grid"></div>
+        <p class="wv-month-note" id="week-view-month-note"></p>
+      </div>
+      <div class="wv-options-backdrop" id="week-view-options-backdrop" hidden></div>
+      <div class="wv-options" id="week-view-options" role="dialog" aria-modal="true" aria-labelledby="week-view-options-title" hidden>
+        <div class="wv-options-head"><h2 id="week-view-options-title">Calendar options</h2><button type="button" class="icon-btn" id="week-view-options-close" aria-label="close calendar options"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+        <div class="wv-option-section" role="group" aria-labelledby="week-view-layout-title">
+          <h3 id="week-view-layout-title">View</h3>
+          <div class="wv-choice-grid wv-view-switch">
+            <button type="button" id="week-view-list" data-wv-mode="list" aria-pressed="true"><i class="ti ti-list" aria-hidden="true"></i>Agenda</button>
+            <button type="button" id="week-view-mode" data-wv-mode="grid" aria-pressed="false"><i class="ti ti-calendar-week" aria-hidden="true"></i>Grid</button>
+          </div>
+        </div>
+        <div class="wv-option-section" role="group" aria-labelledby="week-view-days-title">
+          <h3 id="week-view-days-title">Date range</h3>
+          <div class="wv-choice-grid" id="week-view-days"></div>
+        </div>
+        <div class="wv-option-section" role="group" aria-labelledby="week-view-color-title">
+          <h3 id="week-view-color-title">Color by</h3>
+          <div class="wv-choice-grid" id="week-view-color">
+            <button type="button" data-wv-color="topic" aria-pressed="true">Topic</button><button type="button" data-wv-color="location" aria-pressed="false">Location</button><button type="button" data-wv-color="type" aria-pressed="false">Type</button><button type="button" data-wv-color="when" aria-pressed="false">When due</button><button type="button" data-wv-color="priority" aria-pressed="false">Priority</button>
+          </div>
+          <div class="wv-legend" id="week-view-legend" hidden></div>
+        </div>
+        <div class="wv-option-section" id="week-view-zoom" role="group" aria-labelledby="week-view-zoom-title" hidden>
+          <h3 id="week-view-zoom-title">Grid zoom</h3>
+          <div class="wv-zoom"><button type="button" id="week-view-zoom-out" aria-label="zoom out"><i class="ti ti-minus" aria-hidden="true"></i></button><output id="week-view-zoom-label" aria-live="polite"></output><button type="button" id="week-view-zoom-in" aria-label="zoom in"><i class="ti ti-plus" aria-hidden="true"></i></button></div>
+        </div>
+        <div class="wv-options-filter-head"><h3>Filters</h3><button type="button" class="mini-text-btn" id="week-view-filters-reset">Reset</button></div>
+        <div id="week-view-filter-groups"></div>
+        <p class="wv-options-note">Busy time is always shown. Display changes don’t move your plan.</p>
+      </div>
+      <div class="wv-markers" id="week-view-markers"></div>
+      <div class="wv-status" id="week-view-status" role="status" aria-live="polite"></div>
+      <div class="wv-body" id="week-view-body"></div>
     </div>
   </div>
 
@@ -2093,6 +2180,93 @@
     </div>
   </div>
 
+  <!-- bulk add: review queued items before one save -->
+  <div class="sheet-wrap" id="bulk-batch-sheet">
+    <div class="sheet bulk-batch-sheet" role="dialog" aria-modal="true" aria-labelledby="bulk-batch-title">
+      <div class="home-filter-sheet-head">
+        <div>
+          <p class="sheet-title" id="bulk-batch-title">review batch</p>
+          <p class="about-copy">Nothing is saved until you add the batch.</p>
+        </div>
+        <button type="button" class="icon-btn bulk-batch-close" id="bulk-batch-close" aria-label="back to the add form"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="bulk-batch-scroll">
+        <div class="reset-confirm" id="bulk-batch-offer" hidden>
+          <p id="bulk-batch-offer-name">This item is not in the batch yet.</p>
+          <div class="btn-row">
+            <button type="button" class="btn primary" id="bulk-batch-offer-add">add to batch</button>
+            <button type="button" class="btn" id="bulk-batch-offer-skip">leave it out</button>
+          </div>
+        </div>
+        <ul class="bulk-batch-rows" id="bulk-batch-rows"></ul>
+        <p class="field-hint bulk-batch-error" id="bulk-batch-error" role="alert" hidden></p>
+      </div>
+      <div class="btn-row bulk-batch-actions">
+        <button type="button" class="btn" id="bulk-batch-back">keep editing</button>
+        <button type="button" class="btn primary" id="bulk-batch-add">Add items</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- bulk edit: pick items, choose changes, review, apply -->
+  <div class="sheet-wrap" id="bulk-edit-sheet">
+    <div class="sheet bulk-edit-sheet" role="dialog" aria-modal="true" aria-labelledby="bulk-edit-title">
+      <div class="home-filter-sheet-head">
+        <div class="bulk-edit-head-nav">
+          <button type="button" class="icon-btn bulk-edit-back" id="bulk-edit-back" aria-label="back" hidden><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+          <p class="sheet-title" id="bulk-edit-title">bulk edit</p>
+        </div>
+        <button type="button" class="icon-btn bulk-edit-close" id="bulk-edit-close" aria-label="close bulk edit"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="bulk-edit-scroll">
+        <div class="reset-confirm" id="bulk-edit-confirm" hidden>
+          <p id="bulk-edit-confirm-label">Discard this bulk edit?</p>
+          <div class="btn-row">
+            <button type="button" class="btn primary" id="bulk-edit-confirm-no">keep editing</button>
+            <button type="button" class="btn" id="bulk-edit-confirm-yes">discard</button>
+          </div>
+        </div>
+        <div id="bulk-edit-pick">
+          <details class="bulk-picker-filters" id="bulk-picker-filters"><summary id="bulk-filter-summary">Filter items</summary>
+          <div id="bulk-filter-groups" class="bulk-filter-groups"></div>
+          <div class="bulk-visibility-row">
+            <button type="button" class="setting-toggle compact-toggle" id="bulk-show-snoozed" aria-pressed="false"><span>show snoozed</span><span class="switch-ui" aria-hidden="true"></span></button>
+            <button type="button" class="setting-toggle compact-toggle" id="bulk-show-completed" aria-pressed="false"><span>show completed</span><span class="switch-ui" aria-hidden="true"></span></button>
+          </div>
+          </details>
+          <p class="bulk-count-row" role="status"><strong id="bulk-count">0 selected</strong> <span class="field-hint" id="bulk-result-count"></span><span class="field-hint" id="bulk-outside-count" hidden></span></p>
+          <div class="btn-row bulk-select-row">
+            <button type="button" class="mini-text-btn" id="bulk-select-all">Select all results (0)</button>
+            <button type="button" class="mini-text-btn" id="bulk-clear-selection">Clear selection</button>
+          </div>
+          <ul class="bulk-rows" id="bulk-rows"></ul>
+          <p class="field-hint" id="bulk-empty" hidden>Nothing matches. Try another search or clear the filters.</p>
+        </div>
+        <div id="bulk-edit-change" hidden>
+          <div id="bulk-edit-rows"></div>
+        </div>
+        <div id="bulk-edit-review" hidden>
+          <p class="bulk-review-summary" id="bulk-review-summary">0 selected · 0 will change</p>
+          <ul class="bulk-review-lines" id="bulk-review-lines"></ul>
+          <div class="bulk-review-items" id="bulk-review-items"></div>
+          <ul class="bulk-review-problems" id="bulk-review-problems" role="alert" hidden></ul>
+          <p class="field-hint bulk-review-notice" id="bulk-review-notice" hidden></p>
+          <button type="button" class="btn" id="bulk-review-confirm" hidden>checked — ready to apply</button>
+        </div>
+      </div>
+      <div class="bulk-search-dock" id="bulk-search-dock">
+        <p class="field-hint" id="bulk-step-hint">1 of 3 · Select the items to edit together.</p>
+        <input type="search" id="bulk-search" class="bulk-search-input" placeholder="Search items" aria-label="Search items" autocomplete="off" enterkeyhint="done" />
+        <input type="search" id="bulk-settings-search" class="bulk-search-input" placeholder="Search settings" aria-label="Search settings" autocomplete="off" enterkeyhint="done" hidden />
+      </div>
+      <div class="btn-row bulk-edit-actions" id="bulk-edit-actions">
+        <button type="button" class="btn primary" id="bulk-edit-continue">Edit 0 items</button>
+        <button type="button" class="btn primary" id="bulk-review-continue" hidden>review changes</button>
+        <button type="button" class="btn primary" id="bulk-apply" hidden>Apply</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <div class="agenda-pair-approval agenda-pair-scanner" id="agenda-pair-scanner" role="dialog" aria-modal="true" aria-labelledby="agenda-pair-scanner-title" hidden>
@@ -2196,6 +2370,7 @@
 <script src="./js/detail-view-search.js" defer></script>
 <script src="./js/detail-view-summary.js" defer></script>
 <script src="./js/overview-view.js" defer></script>
+<script src="./js/overview-week.js" defer></script>
 <script src="./js/today-view-fits.js" defer></script>
 <script src="./js/today-view-reservations.js" defer></script>
 <script src="./js/agenda-fast-graph.js" defer></script>
@@ -2229,6 +2404,9 @@
 <script src="./js/main-input.js" defer></script>
 <script src="./js/feedback-form.js" defer></script>
 <script src="./js/main-runtime.js" defer></script>
+<script src="./js/item-mutations.js" defer></script>
+<script src="./js/bulk-add.js" defer></script>
+<script src="./js/bulk-edit.js" defer></script>
 <script src="./js/display-mode.js" defer></script>
 <script src="./js/sw-register.js" defer></script>
 <!-- The experimental assistant loads after the core controller has rendered. -->

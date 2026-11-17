@@ -940,17 +940,34 @@ $('settings-clear-data-yes')?.addEventListener('click',()=>{
   if(typeof clearAllLocalTingsData === 'function') clearAllLocalTingsData();
 });
 
-$('open-overview').addEventListener('click',()=>{
-  if(!load().length)return;
+const CALENDAR_VIEW_KEY = 'tings_calendar_view_v1';
+function rememberCalendarView(view){
+  try{localStorage.setItem(CALENDAR_VIEW_KEY,view);}catch(_err){}
+}
+function openCalendarOverview(options = {}){
+  const month = options.range === 'month';
+  const selected = month && appointmentDateKey(options.dayKey)
+    ? new Date(`${options.dayKey}T12:00:00`) : new Date();
+  const now = new Date();
+  rememberCalendarView(month ? 'month' : 'overview');
+  if($('week-sheet')?.classList.contains('open'))closeSheet('week-sheet');
   closeSearch();
-  overviewMonthOffset = 0;
+  overviewMonthOffset = (selected.getFullYear() - now.getFullYear()) * 12 + selected.getMonth() - now.getMonth();
   overviewRecentOffset = 0;
-  clearOverviewFilters();
-  overviewRangeFilter = 'recent';
+  // Shared filters: opening the calendar keeps the selection — it is the same
+  // state Home is showing. Resetting happens through the reset controls.
+  overviewRangeFilter = month ? 'month' : 'recent';
   overviewListPane = 'plan';
   renderOverview();
   openSheet('overview-sheet');
-});
+}
+function openRememberedCalendar(){
+  let view = 'overview';
+  try{view = localStorage.getItem(CALENDAR_VIEW_KEY) || view;}catch(_err){}
+  if(view === 'week' && typeof openWeekView === 'function')openWeekView();
+  else openCalendarOverview({range:view === 'month' ? 'month' : 'recent'});
+}
+$('open-overview').addEventListener('click',openRememberedCalendar);
 bindOverviewScrollGuards();
 $('overview-close').addEventListener('click',()=>closeSheet('overview-sheet'));
 $('overview-head-close')?.addEventListener('click',()=>closeSheet('overview-sheet'));
@@ -974,6 +991,12 @@ $('overview-today')?.addEventListener('click',()=>{
   dayLogsKey = null;
   renderOverview();
 });
+// Week grid over the planner week (overview-week.js). Available from both the
+// phone sheet and the desktop pane since the button lives in the month nav.
+$('open-week-view')?.addEventListener('click',()=>{
+  if(isScrollGuarded($('open-week-view')))return;
+  if(typeof openWeekView === 'function')openWeekView();
+});
 $('overview-filter')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
   if(e.target.closest('[data-open-overview-filters]')){
@@ -981,14 +1004,15 @@ $('overview-filter')?.addEventListener('click',e=>{
     return;
   }
   if(takeFilterClick(e, [
-    ['data-clear-overview-topic', ()=>{ overviewTopicFilter = 'all'; }],
-    ['data-clear-overview-location', ()=>{ overviewLocationFilter = 'all'; }],
-    ['data-clear-overview-type', ()=>{ overviewTypeFilter = 'all'; }],
-    ['data-clear-overview-when', ()=>{ overviewWhenFilter = 'all'; }],
-    ['data-clear-overview-priority', ()=>{ overviewPriorityFilter = 'all'; }]
+    ['data-clear-overview-topic', ()=>{ setSharedFilter('topic','all'); }],
+    ['data-clear-overview-location', ()=>{ setSharedFilter('location','all'); }],
+    ['data-clear-overview-type', ()=>{ setSharedFilter('type','all'); }],
+    ['data-clear-overview-when', ()=>{ setSharedFilter('when','all'); }],
+    ['data-clear-overview-priority', ()=>{ setSharedFilter('priority','all'); }]
   ])){
     dayLogsKey = null;
     renderOverview();
+    syncSharedFilterSurfaces('calendar');
     return;
   }
   const rangeBtn = e.target.closest('[data-overview-range]');
@@ -1003,23 +1027,25 @@ $('overview-filter')?.addEventListener('click',e=>{
 });
 $('calendar-filter-groups')?.addEventListener('click',e=>{
   const hit = takeFilterClick(e, [
-    ['data-overview-topic', value=>{ overviewTopicFilter = value; }],
-    ['data-overview-location', value=>{ overviewLocationFilter = value; }],
-    ['data-overview-type', value=>{ overviewTypeFilter = value; }],
-    ['data-overview-when', value=>{ overviewWhenFilter = value; }],
-    ['data-overview-priority', value=>{ overviewPriorityFilter = value; }]
+    ['data-overview-topic', value=>{ setSharedFilter('topic',value); }],
+    ['data-overview-location', value=>{ setSharedFilter('location',value); }],
+    ['data-overview-type', value=>{ setSharedFilter('type',value); }],
+    ['data-overview-when', value=>{ setSharedFilter('when',value); }],
+    ['data-overview-priority', value=>{ setSharedFilter('priority',value); }]
   ]);
   if(!hit)return;
   dayLogsKey = null;
   renderOverview();
+  syncSharedFilterSurfaces('calendar');
 });
 const closeCalendarFilters = ()=>closeSheet('calendar-filter-sheet');
 $('calendar-filter-close')?.addEventListener('click',closeCalendarFilters);
 $('calendar-filter-done')?.addEventListener('click',closeCalendarFilters);
 $('calendar-filter-reset')?.addEventListener('click',()=>{
-  clearOverviewFilters();
+  clearSharedFilters();
   dayLogsKey = null;
   renderOverview();
+  syncSharedFilterSurfaces('calendar');
 });
 $('calendar-filter-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeCalendarFilters();
@@ -1053,9 +1079,15 @@ function applyHomeFilterChange(){
   // planner defers the full list render to its worker-backed path.
   if(typeof renderHomeTagFilter === 'function')renderHomeTagFilter(load());
   render();
+  if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
 }
 
 $('home-tag-filter')?.addEventListener('click',e=>{
+  if(e.target.closest('[data-open-bulk-edit]')){
+    // Reduced bar (minimal mode, or no filter dimensions): no Home filters to copy.
+    if(typeof openBulkEditPicker === 'function')openBulkEditPicker(false);
+    return;
+  }
   if(e.target.closest('[data-open-home-filters]')){
     openSheet('home-filter-sheet');
     return;
@@ -1065,33 +1097,45 @@ $('home-tag-filter')?.addEventListener('click',e=>{
     return;
   }
   if(takeFilterClick(e, [
-    ['data-clear-home-topic', ()=>{ homeTopicFilter = 'all'; }],
-    ['data-clear-home-location', ()=>{ homeLocationFilter = 'all'; }],
-    ['data-clear-home-type', ()=>{ homeTypeFilter = 'all'; }],
-    ['data-clear-home-when', ()=>{ homeWhenFilter = 'all'; }],
-    ['data-clear-home-priority', ()=>{ homePriorityFilter = 'all'; }]
+    ['data-clear-home-topic', ()=>{ setSharedFilter('topic','all'); }],
+    ['data-clear-home-location', ()=>{ setSharedFilter('location','all'); }],
+    ['data-clear-home-type', ()=>{ setSharedFilter('type','all'); }],
+    ['data-clear-home-when', ()=>{ setSharedFilter('when','all'); }],
+    ['data-clear-home-priority', ()=>{ setSharedFilter('priority','all'); }]
   ])){
     applyHomeFilterChange();
+    syncSharedFilterSurfaces('home');
   }
 });
 $('home-filter-groups')?.addEventListener('click',e=>{
   const hit = takeFilterClick(e, [
-    ['data-home-topic', value=>{ homeTopicFilter = value; }],
-    ['data-home-location', value=>{ homeLocationFilter = value; }],
-    ['data-home-type', value=>{ homeTypeFilter = value; }],
-    ['data-home-when', value=>{ homeWhenFilter = value; }],
-    ['data-home-priority', value=>{ homePriorityFilter = value; }]
+    ['data-home-topic', value=>{ setSharedFilter('topic',value); }],
+    ['data-home-location', value=>{ setSharedFilter('location',value); }],
+    ['data-home-type', value=>{ setSharedFilter('type',value); }],
+    ['data-home-when', value=>{ setSharedFilter('when',value); }],
+    ['data-home-priority', value=>{ setSharedFilter('priority',value); }]
   ]);
-  if(hit)applyHomeFilterChange();
+  if(hit){
+    applyHomeFilterChange();
+    syncSharedFilterSurfaces('home');
+  }
 });
 $('home-filter-reset')?.addEventListener('click',()=>{
-  clearHomeFilters();
+  clearSharedFilters();
   applyHomeFilterChange();
+  syncSharedFilterSurfaces('home');
 });
 $('home-filter-close')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));
 $('home-filter-done')?.addEventListener('click',()=>closeSheet('home-filter-sheet'));
 $('home-filter-sheet')?.addEventListener('click',e=>{
   if(e.target === e.currentTarget)closeSheet('home-filter-sheet');
+});
+// Bulk edit opens from the filters sheet, seeding the picker with the filters
+// Home is showing. Picker filters live separately from Home's afterwards.
+$('home-filter-sheet')?.addEventListener('click',e=>{
+  if(!e.target.closest('[data-open-bulk-edit]'))return;
+  closeSheet('home-filter-sheet');
+  if(typeof openBulkEditPicker === 'function')openBulkEditPicker(true);
 });
 document.querySelectorAll('[data-filter-settings]').forEach(button=>{
   button.addEventListener('click',()=>{

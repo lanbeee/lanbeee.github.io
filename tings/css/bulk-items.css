@@ -1,0 +1,195 @@
+/* Bulk add / bulk edit sheets. Scoped to the bulk sheet ids and the batch
+   bar inside the add sheet. Token-based so dark mode and palettes apply. */
+
+/* ── Batch mode inside the add sheet ─────────────────────────────────── */
+#do-batch-next{display:none;}
+#add-sheet.bulk-add-mode #do-save,
+#add-sheet.bulk-add-mode #add-batch-entry{display:none;}
+#add-sheet.bulk-add-mode #do-batch-next{display:flex;}
+#add-sheet.bulk-add-mode .add-batch-bar{display:block;}
+
+.add-batch-bar{
+  display:none;
+  flex-direction:column;gap:6px;
+  padding:10px 18px calc(10px + var(--content-safe-bottom));
+  border-top:1px solid var(--border);
+  background:var(--bg);
+}
+.add-batch-bar .bulk-batch-chip{
+  align-self:flex-start;
+  display:inline-flex;align-items:center;gap:6px;
+  min-height:44px;padding:6px 14px;
+  border-radius:999px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);
+  font-size:0.9rem;font-weight:600;
+}
+.add-batch-bar .bulk-batch-chip.on,
+.add-batch-bar .bulk-batch-chip:active{border-color:var(--accent,#4a9d8e);}
+
+/* Bulk controls are part of the full interface. An in-progress batch can finish. */
+body.minimal-mode #add-batch-entry,
+body.minimal-mode [data-open-bulk-edit]{display:none !important;}
+.bulk-edit-trigger{margin-left:auto;}
+
+/* Discard confirm shares the standard reset-confirm styling; nudge it above
+   the footer so Back/Escape users see it without scrolling. */
+#add-sheet .reset-confirm{margin-top:14px;}
+
+/* ── Bulk sheets shared chrome ───────────────────────────────────────── */
+#bulk-batch-sheet,#bulk-edit-sheet{z-index:105;}
+#bulk-edit-sheet{
+  bottom:auto;top:var(--bulk-viewport-top,0px);
+  height:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--bulk-viewport-top,0px));
+}
+body:is([data-pane-count="2"],[data-pane-count="3"]) #bulk-edit-sheet{
+  top:max(var(--bulk-viewport-top,0px),var(--desktop-chrome-top,0px));
+  height:calc(min(100dvh,var(--keyboard-viewport-bottom,100dvh)) - max(var(--bulk-viewport-top,0px),var(--desktop-chrome-top,0px)));
+}
+#bulk-edit-sheet .bulk-edit-sheet{
+  height:min(760px,100%);max-height:100%;
+  padding-bottom:calc(12px + var(--keyboard-dock-safe-bottom,max(0px,calc(var(--content-safe-bottom) - var(--keyboard-lift,0px)))));
+}
+.bulk-search-dock{flex:0 0 auto;border-top:1px solid var(--border);margin-top:8px;padding-top:8px;}
+.bulk-search-dock .field-hint{margin:0 0 6px;}
+.bulk-search-dock .bulk-search-input{margin-top:0;}
+.bulk-picker-filters{border-bottom:1px solid var(--border);padding-bottom:8px;}
+.bulk-picker-filters > summary{min-height:44px;cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;}
+.bulk-picker-filters > summary::after{content:'▾';margin-left:auto;}
+.bulk-picker-filters[open] > summary::after{content:'▴';}
+.bulk-picker-filters > summary::-webkit-details-marker{display:none;}
+.bulk-count-row #bulk-outside-count{display:block;}
+.bulk-select-row{justify-content:space-between;}
+
+.bulk-batch-sheet,.bulk-edit-sheet{
+  display:flex;flex-direction:column;
+  max-height:calc(100dvh - var(--content-safe-top) - 24px);
+  padding-top:20px;overflow:hidden;
+}
+.bulk-batch-scroll,.bulk-edit-scroll{
+  flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;
+  margin:0 -6px;padding:0 6px;
+}
+.bulk-batch-actions,.bulk-edit-actions{
+  flex:0 0 auto;margin:10px -2px 0;padding-top:2px;
+}
+.bulk-edit-head-nav{display:flex;align-items:center;gap:8px;min-width:0;}
+.bulk-edit-head-nav .sheet-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* ── Bulk add review rows ────────────────────────────────────────────── */
+.bulk-batch-rows,.bulk-rows{list-style:none;margin:10px 0 0;padding:0;}
+.bulk-batch-row{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;
+  padding:10px 8px;border-bottom:1px solid var(--border);
+}
+.bulk-batch-row-main{display:flex;align-items:center;gap:10px;min-width:0;}
+.bulk-batch-row-emoji,.bulk-row-emoji{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;flex:0 0 36px;
+  border-radius:10px;font-size:1.15rem;
+  background:var(--card-bg,var(--bg-2,#2a2a2a));
+}
+.bulk-batch-row-copy,.bulk-row-copy{display:flex;flex-direction:column;min-width:0;}
+.bulk-batch-row-copy strong,.bulk-row-copy strong{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46ch;
+}
+.bulk-batch-row-copy small,.bulk-row-copy small{color:var(--text-2,var(--muted,#9a9a9a));}
+.bulk-batch-warn{color:var(--warn,#c98a2d) !important;}
+.bulk-batch-row-actions{display:flex;gap:2px;flex-wrap:wrap;}
+.bulk-batch-row-actions .mini-text-btn{min-height:44px;}
+.bulk-batch-dup-row .bulk-batch-name-edit{width:100%;display:flex;flex-direction:column;gap:8px;}
+.bulk-batch-name-edit input{
+  width:100%;min-height:44px;padding:8px 12px;
+  border-radius:10px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);
+}
+.bulk-batch-error{color:var(--danger,#c96a5a);}
+
+/* ── Picker ──────────────────────────────────────────────────────────── */
+.bulk-search-input{
+  width:100%;min-height:44px;margin-top:10px;padding:8px 14px;
+  border-radius:12px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);
+}
+.bulk-filter-groups{margin-top:6px;}
+.bulk-filter-group{margin-top:10px;}
+.bulk-filter-chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;}
+.bulk-filter-chip{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:44px;padding:4px 14px;border-radius:999px;
+  border:1px solid var(--border);background:var(--bg);color:var(--text);
+  font-size:0.88rem;
+}
+.bulk-filter-chip.on{border-color:var(--accent,#4a9d8e);background:var(--accent-soft,rgba(74,157,142,0.16));}
+.bulk-visibility-row{display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;}
+.bulk-count-row{margin:12px 0 0;font-size:0.95rem;}
+.bulk-row{
+  display:flex;align-items:center;gap:10px;
+  padding:6px 8px;border-bottom:1px solid var(--border);
+  min-height:52px;cursor:pointer;
+}
+.bulk-row input[type="checkbox"]{
+  width:22px;height:22px;flex:0 0 22px;accent-color:var(--accent,#4a9d8e);
+}
+.bulk-row.on .bulk-row-copy strong{color:var(--accent,#4a9d8e);}
+.bulk-row.locked{opacity:0.55;cursor:default;}
+.bulk-row-badges{display:flex;gap:6px;margin-left:auto;}
+.bulk-row-badges small{
+  padding:2px 8px;border-radius:999px;border:1px solid var(--border);
+  color:var(--text-2,var(--muted,#9a9a9a));font-size:0.75rem;white-space:nowrap;
+}
+.bulk-select-row{margin-top:10px;gap:14px;}
+.bulk-select-row .mini-text-btn{min-height:44px;}
+
+/* ── Change editor ───────────────────────────────────────────────────── */
+.bulk-group{border:1px solid var(--border);border-radius:14px;margin-top:12px;background:var(--bg);}
+.bulk-group > summary{
+  list-style:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;
+  min-height:48px;padding:10px 14px;font-weight:600;
+}
+.bulk-group > summary::after{content:'▸';color:var(--text-2,var(--muted,#9a9a9a));}
+.bulk-group[open] > summary::after{content:'▾';}
+.bulk-group > summary::-webkit-details-marker{display:none;}
+.bulk-group-common .bulk-op-row:first-child{border-top:none;}
+.bulk-op-row{padding:12px 4px;border-top:1px solid var(--border);}
+.bulk-group .bulk-op-row{padding-left:14px;padding-right:14px;}
+.bulk-group .bulk-op-row:first-child{border-top:none;}
+.bulk-op-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.bulk-op-label{display:flex;flex-direction:column;min-width:0;}
+.bulk-op-label small{color:var(--text-2,var(--muted,#9a9a9a));}
+.bulk-op-select{flex:0 0 auto;max-width:52%;}
+.bulk-op-context{margin:6px 0 0;color:var(--text-2,var(--muted,#9a9a9a));font-size:0.82rem;}
+.bulk-op-value{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.bulk-op-value[hidden]{display:none;}
+.bulk-op-applies{margin:6px 0 0;font-size:0.8rem;color:var(--text-2,var(--muted,#9a9a9a));}
+.bulk-window{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.bulk-chip-wrap{width:100%;}
+.bulk-topic-add{display:flex;gap:8px;margin-top:8px;}
+.bulk-topic-add input{
+  flex:1 1 auto;min-height:40px;padding:6px 12px;
+  border-radius:10px;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);
+}
+
+/* ── Review ──────────────────────────────────────────────────────────── */
+.bulk-review-summary{margin:12px 0 0;font-weight:600;}
+.bulk-review-lines{margin:10px 0 0;padding-left:20px;}
+.bulk-review-lines li{margin-top:4px;}
+.bulk-review-items{margin-top:12px;}
+.bulk-review-item{border:1px solid var(--border);border-radius:12px;margin-top:8px;}
+.bulk-review-item > summary{
+  list-style:none;cursor:pointer;padding:10px 14px;min-height:44px;
+  display:flex;align-items:center;font-weight:600;
+}
+.bulk-review-item > summary::-webkit-details-marker{display:none;}
+.bulk-review-item > summary::before{content:'▸ ';color:var(--text-2,var(--muted,#9a9a9a));}
+.bulk-review-item[open] > summary::before{content:'▾ ';}
+.bulk-review-item ul{margin:0;padding:6px 14px 12px 30px;}
+.bulk-review-item li{margin-top:4px;}
+.bulk-review-problems{margin:12px 0 0;padding-left:20px;}
+.bulk-problem-error{color:var(--danger,#c96a5a);}
+.bulk-problem-warn{color:var(--warn,#c98a2d);}
+.bulk-review-notice{margin-top:10px;}
+#bulk-review-confirm{margin-top:10px;width:100%;}

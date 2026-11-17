@@ -39,10 +39,9 @@ function parseBackup(raw){
 function restoreBackup(raw){
   const parsed = parseBackup(raw);
   if(!parsed.ok)return parsed;
-  const trimmed = parsed.habits.slice(0,MAX_TINGS);
-  if(!save(trimmed))return {ok:false,reason:'Could not save that backup on this device.'};
+  if(!save(parsed.habits))return {ok:false,reason:'Could not save that backup on this device.'};
   if(parsed.settings)saveSortSettings(parsed.settings);
-  return {ok:true,count:trimmed.length};
+  return {ok:true,count:parsed.habits.length};
 }
 
 function clearAllLocalTingsData(){

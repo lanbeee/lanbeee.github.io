@@ -251,8 +251,49 @@ function plannerDayExpectation(data,day,rendered = false){
   };
 }
 
+// One sync week build per planner fingerprint. Home paints several times
+// around sheet open/close and background planner responses; the projection
+// only changes when planner-relevant data changes, so repeated calls return
+// the recorded map instead of re-running the greedy pack (measured at ~1s of
+// main-thread freeze per run on a real week — two runs fired during a single
+// calendar open). buildWeekAgenda is deterministic for identical inputs.
+let _expectationMapMemo = null;
+function cloneExpectationEntry(entry){
+  return {
+    ...entry,
+    hids:[...(entry.hids || [])],
+    renderedHids:[...(entry.renderedHids || [])],
+    occurrences:[...(entry.occurrences || [])].map(row=>({...row}))
+  };
+}
+function peekPlannerExpectationMap(data,settings,numDays = 7,withOccurrences = false){
+  const fingerprint = missedPlannerFingerprint(data,settings);
+  if(_expectationMapMemo
+    && _expectationMapMemo.fingerprint === fingerprint
+    && _expectationMapMemo.settings === settings
+    && _expectationMapMemo.numDays === numDays
+    && _expectationMapMemo.withOccurrences === withOccurrences
+    // The fingerprint covers data + settings but not the clock. A map built
+    // yesterday projects yesterday's "today"; across midnight it must rebuild
+    // even though nothing else changed.
+    && _expectationMapMemo.day === todayIso()){
+    const cached = _expectationMapMemo.map;
+    // Callers stitch entries into their own objects; hand out copies so the
+    // shared cache can never be mutated mid-render.
+    const copy = {};
+    for(const [key,entry] of Object.entries(cached)){
+      copy[key] = withOccurrences ? cloneExpectationEntry(entry) : [...entry];
+    }
+    return copy;
+  }
+  return null;
+}
+
 function computePlannerExpectationMap(data,settings,numDays = 7,withOccurrences = false){
   if(typeof buildWeekAgenda !== 'function')return {};
+  const warm = peekPlannerExpectationMap(data,settings,numDays,withOccurrences);
+  if(warm)return warm;
+  const fingerprint = missedPlannerFingerprint(data,settings);
   // This runs during home paint when the missed-item fingerprint changes.
   // Skip the Fast week-graph search: it can rebuild the horizon dozens of
   // times and freeze scrolling/taps. Hid-per-day expectations only need the
@@ -264,7 +305,131 @@ function computePlannerExpectationMap(data,settings,numDays = 7,withOccurrences 
     const entry = plannerDayExpectation(data,day);
     out[key] = withOccurrences ? entry : entry.hids;
   }
+  _expectationMapMemo = {fingerprint,settings,numDays,withOccurrences,day:todayIso(),map:out};
   return out;
+}
+
+// Off-main projection. The greedy week build costs ~1s of main-thread time on
+// a real week, which froze whatever the user was doing next (opening the
+// calendar being the reported case). The planner worker solves the exact same
+// buildWeekAgenda call (same opts, identical inputs → identical plan); when it
+// lands the result is recorded into the snapshot, the memo is warmed, and home
+// repaints so the missed pill reflects the full union. While it is in flight,
+// renders paint from the recorded snapshot and the mounted week — what the
+// pill already read before this build existed.
+let _projectionAsync = null;
+let _projectionDeferFailures = 0;
+let _projectionChainDepth = 0;
+let _projectionWanted = false;         // a render needs a projection: suppress the pill
+let _projectionKickTimer = null;       // idle-scheduled worker kick (never during paint)
+function projectionMapFromWeek(data,week){
+  const out = {};
+  for(const day of week.days || []){
+    const key = day.dayKey || dateKey(day.dayBase);
+    out[key] = plannerDayExpectation(data,day);
+  }
+  return out;
+}
+// The kick is deliberately off the paint: a cached render must not post to the
+// worker synchronously (cold-paint budget), so the request waits for idle.
+function schedulePlannerProjectionKick(data,settings,fingerprint){
+  if(_projectionKickTimer)return;
+  const run = ()=>{
+    _projectionKickTimer = null;
+    if(!_projectionWanted)return;
+    const live = typeof load === 'function' ? load() : data;
+    const liveSettings = sortSettings || (typeof loadSortSettings === 'function' ? loadSortSettings() : settings);
+    ensurePlannerProjectionAsync(live,liveSettings,missedPlannerFingerprint(live,liveSettings),[])
+      .catch(()=>{});
+  };
+  if(typeof requestIdleCallback === 'function'){
+    _projectionKickTimer = requestIdleCallback(run,{timeout:400});
+  }else{
+    _projectionKickTimer = setTimeout(run,120);
+  }
+}
+function ensurePlannerProjectionAsync(data,settings,fingerprint,todayHids){
+  if(_projectionAsync && _projectionAsync.fingerprint === fingerprint)return _projectionAsync.promise;
+  const chainDepth = _projectionChainDepth;
+  const promise = buildWeekAgendaOffMain(data,settings,7,'fast',{greedy:true,nowTs:Date.now()})
+    .then(week=>{
+      if(_projectionAsync && _projectionAsync.fingerprint === fingerprint)_projectionAsync = null;
+      const live = typeof load === 'function' ? load() : data;
+      const liveFp = missedPlannerFingerprint(live,settings);
+      if(liveFp !== fingerprint){
+        // Inputs moved mid-solve (auto chunk-plan writes during boot, a log,
+        // an edit). A stale projection must not be recorded over fresh data —
+        // re-solve against the new inputs so the pill still converges.
+        if(chainDepth < 5){
+          _projectionChainDepth = chainDepth + 1;
+          ensurePlannerProjectionAsync(live,settings,liveFp,[]).catch(()=>{});
+        }
+        return null;
+      }
+      _projectionChainDepth = 0;
+      _projectionWanted = false;
+      if(typeof rehydrateAgendaWeekHabits === 'function')rehydrateAgendaWeekHabits(week,live);
+      const map = projectionMapFromWeek(live,week);
+      // Same override the synchronous path applies: the mounted week's
+      // rendered days win over the greedy projection (today merges).
+      const now = Date.now();
+      const today = dateKey(now);
+      const rendered = typeof renderedPlannerExpectationMap === 'function'
+        ? renderedPlannerExpectationMap(live,now,true) : {};
+      for(const [day,entry] of Object.entries(rendered)){
+        if(day === today && map[day]){
+          const prior = map[day];
+          map[day] = {hids:[...new Set([...prior.hids,...entry.hids])],
+            renderedHids:entry.renderedHids,
+            occurrences:normalizeSuggestedOccurrences([...prior.occurrences,...entry.occurrences])};
+        }else{
+          map[day] = entry;
+        }
+      }
+      _expectationMapMemo = {fingerprint,settings,numDays:7,withOccurrences:true,day:todayIso(),map};
+      // Record exactly what the synchronous path recorded, then repaint only
+      // the missed pill with the render context that is already mounted. A
+      // full render() here would re-plan with different opts and destructively
+      // rebuild home behind an identical background solve.
+      if(typeof recordTodaySuggested === 'function'){
+        const tomorrow = dateKey(now + 86400000);
+        recordTodaySuggested(live,todayHids || [],now,map[tomorrow]?.hids || [],fingerprint,map);
+      }
+      repaintDroppedPillAfterProjection();
+      return map;
+    })
+    .catch(err=>{
+      if(_projectionAsync && _projectionAsync.fingerprint === fingerprint)_projectionAsync = null;
+      _projectionWanted = false;
+      // Persistent worker trouble falls back to the historical sync build.
+      _projectionDeferFailures += 1;
+      // The render that deferred is currently showing no pill at all. Repaint
+      // the mounted pill now: while deferrals remain this re-kicks (bounded by
+      // _projectionDeferFailures < 3); once exhausted, attachDroppedIndicator
+      // takes the historical synchronous branch and the pill comes back.
+      repaintDroppedPillAfterProjection();
+      throw err;
+    });
+  _projectionAsync = {fingerprint,promise};
+  return promise;
+}
+
+// The header/list pair from the last dropped-indicator paint, so the async
+// landing can repaint the pill in the mounted render's own context.
+let _droppedPillHost = null;
+function repaintDroppedPillAfterProjection(){
+  const host = _droppedPillHost;
+  if(!host || !host.header.isConnected)return;
+  host.header.querySelectorAll('.dropped-pill').forEach(el=>el.remove());
+  attachDroppedIndicator(host.header,host.list,host.todayHids);
+}
+
+// True while an off-main projection is still converging (kicked or waiting
+// for idle). The missed pill stays unpainted for those renders: painting the
+// interim (rendered-week) answer would flicker wrong counts until the worker
+// lands and repaints.
+function plannerProjectionPending(){
+  return _projectionWanted || Boolean(_projectionAsync);
 }
 
 function renderedPlannerExpectationMap(data,now = Date.now(),withOccurrences = false){
@@ -334,7 +499,11 @@ function laterDayPlannedHids(data,projectionHids){
 
 // Same list as the today-header "N missed" pill. The assistant reads this
 // instead of inventing its own overdue sweep.
-function collectDroppedItems(data, settings, todayHids, now = Date.now()){
+// The missed list for today. Data-API callers (assistant, day sheets, tests)
+// get the historical synchronous projection; the home paint passes
+// {defer:true} so a stale projection solves on the planner worker instead of
+// freezing the frame for ~1s on a real week.
+function collectDroppedItems(data, settings, todayHids, now = Date.now(), opts = {}){
   data = Array.isArray(data) ? data : (typeof load === 'function' ? load() : []);
   settings = settings || sortSettings;
   todayHids = Array.isArray(todayHids) ? todayHids : [];
@@ -352,9 +521,32 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
     || currentExpectation.fingerprint !== fingerprint
     || !tomorrowExpectation
     || tomorrowExpectation.fingerprint !== fingerprint;
-  const projectionByDay = needsProjection
-    ? computePlannerExpectationMap(data, settings, 7, true)
-    : {};
+  let projectionByDay = {};
+  let projectionStillOffMain = false;
+  if(needsProjection){
+    // A warm memo (previous build or an async landing) satisfies the
+    // projection without a rebuild.
+    const warm = peekPlannerExpectationMap(data,settings,7,true);
+    if(warm){
+      projectionByDay = warm;
+      _projectionWanted = false;
+    }else if(opts.defer && typeof buildWeekAgendaOffMain === 'function' && _projectionDeferFailures < 3){
+      // The greedy build costs ~1s on the main thread — enough to freeze
+      // whatever the user taps next. Solve it on the planner worker instead,
+      // kicked at idle so the paint itself posts nothing. This pass paints
+      // from the recorded snapshot plus the mounted week (the merge below
+      // fills projectionByDay with rendered data); the landing records the
+      // union and repaints the missed pill in this render's own context.
+      _projectionWanted = true;
+      schedulePlannerProjectionKick(data,settings,fingerprint);
+      projectionStillOffMain = true;
+    }else{
+      projectionByDay = computePlannerExpectationMap(data,settings,7,true);
+      _projectionWanted = false;
+    }
+  }else{
+    _projectionWanted = false;
+  }
   const renderedProjection = renderedPlannerExpectationMap(data, now, true);
   for(const [day,entry] of Object.entries(renderedProjection)){
     if(day === today && projectionByDay[day]){
@@ -370,8 +562,13 @@ function collectDroppedItems(data, settings, todayHids, now = Date.now()){
   const projectionHids = hasProjectionUpdate ? projectionByDay[tomorrow]?.hids || [] : null;
   if(typeof recordTodaySuggested === 'function'){
     snap = recordTodaySuggested(
-      data, todayHids, now, projectionHids, fingerprint,
-      hasProjectionUpdate ? projectionByDay : null
+      data, todayHids, now,
+      // While the projection is still solving off-main, record nothing
+      // projection-shaped: stamping the rendered-only merge with the current
+      // fingerprint would mark needsProjection done, block every retry, and a
+      // failing worker could then leave the pill hidden until the data moved.
+      projectionStillOffMain ? null : projectionHids, fingerprint,
+      projectionStillOffMain ? null : (hasProjectionUpdate ? projectionByDay : null)
     );
   }
 
@@ -466,10 +663,16 @@ function collectUnplacedAgendaItems(data, settings, missedRows, now = Date.now()
 
 function attachDroppedIndicator(header,list,todayHids){
   _slippedTodayHids = Array.isArray(todayHids) ? todayHids.slice() : [];
+  _droppedPillHost = {header,list,todayHids:_slippedTodayHids};
   const data = load();
   const dropped = typeof collectDroppedItems === 'function'
-    ? collectDroppedItems(data, sortSettings, _slippedTodayHids)
+    ? collectDroppedItems(data, sortSettings, _slippedTodayHids, Date.now(), {defer:true})
     : [];
+  // collectDroppedItems kicks the off-main projection when the recorded one
+  // is stale. While it is still solving, this pass only has the interim
+  // (rendered-week) answer — skip the pill rather than flicker a wrong
+  // count; the landing records the union and re-renders the settled one.
+  if(typeof plannerProjectionPending === 'function' && plannerProjectionPending())return;
   const {visible, hidden} = partitionDroppedItems(dropped);
   const unplaced = collectUnplacedAgendaItems(data, sortSettings, dropped);
   if(!visible.length && !hidden.length && !unplaced.length)return;
@@ -1543,6 +1746,7 @@ function render(opts){
   const visible = visibleIndices(data);
   const indices = filteredVisibleIndices(data,visible);
   renderHomeTagFilter(data,visible);
+  if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
   if(!indices.length){
     empty.style.display = 'block';
     if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
@@ -1555,12 +1759,14 @@ function render(opts){
     }else if(filterLabel){
       empty.innerHTML = `nothing matches ${escapeHtml(filterLabel)}<br><span class="empty-sub">tap to clear filters</span>`;
       empty.onclick = ()=>{
-        if(typeof clearHomeFilters === 'function')clearHomeFilters();
+        if(typeof clearSharedFilters === 'function')clearSharedFilters();
+        else if(typeof clearHomeFilters === 'function')clearHomeFilters();
         else{
           homeTopicFilter = 'all';
           homeLocationFilter = 'all';
         }
         render();
+        if(typeof syncSharedFilterSurfaces === 'function')syncSharedFilterSurfaces('home');
       };
     }else if(data.length && !sortSettings.showSnoozed && !visible.length && data.some(h=>h.snoozedUntil && Date.now() < h.snoozedUntil)){
       empty.innerHTML = 'hidden for now<br><span class="empty-sub">tap to show</span>';
@@ -1726,23 +1932,18 @@ function render(opts){
       ? `<button class="swipe-action sa-keep" data-action="keep" aria-label="keep sample"><i class="ti ti-check" aria-hidden="true"></i>keep</button>`
       : '';
     const activityAction = event ? '' : `<button class="swipe-action sa-activity" data-action="activity" aria-label="history"><i class="ti ti-history" aria-hidden="true"></i>history</button>`;
-    const importedEvent = Boolean(h && ['device','pdf','ics','gcal','msgraph'].includes(h.source));
-    const localEvent = Boolean(event && typeof isLocalAppointment === 'function' && isLocalAppointment(h) && !importedEvent);
-    const assistantAction = sortSettings.localAssistant && !importedEvent && !synced && (!event || localEvent)
-      ? `<button class="swipe-action sa-assistant" data-action="assistant" aria-label="edit ${escapeHtml(h.name)}"><i class="ti ti-sparkles" aria-hidden="true"></i>edit</button>`
-      : '';
-    const planAction = dayLogsHabitPlannable(h)
-      ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan"><i class="ti ti-calendar-plus" aria-hidden="true"></i>plan</button>`
+    const planAction = dayLogsHabitPlannable(h) || dayLogsHabitLoggable(h)
+      ? `<button class="swipe-action sa-plan" data-action="plan" aria-label="plan or log"><i class="ti ti-calendar-plus" aria-hidden="true"></i><span>plan or log</span></button>`
       : '';
     const primaryLink = habitPrimaryLink(h);
     const linkAction = !minimal && primaryLink
       ? `<button class="swipe-action sa-open" data-action="open-link" aria-label="${primaryLink.kind === 'phone' ? 'call' : 'open'} ${escapeHtml(linkLabel(primaryLink))}"><i class="ti ${linkIconClass(primaryLink)}" aria-hidden="true"></i>${primaryLink.kind === 'phone' ? 'call' : 'open'}</button>`
       : '';
     const leftSwipeHtml = packSwipeActions(event
-      ? [assistantAction, linkAction]
+      ? [linkAction]
       : minimal
-        ? [assistantAction, timerRunning ? timerAction : (h.sample ? keepAction : planAction), activityAction]
-        : [assistantAction, timerAction, planAction, activityAction, linkAction, keepAction]);
+        ? [timerRunning ? timerAction : (h.sample ? keepAction : planAction), activityAction]
+        : [timerAction, planAction, activityAction, linkAction, keepAction]);
     const reminderOn = !minimal && window.TingsNative?.isNative && typeof nativeReminderAnyOn === 'function'
       && nativeReminderAnyOn(`item:${h.hid}`);
     const reminderAction = reminderOn
@@ -2251,21 +2452,6 @@ function render(opts){
       const row = btn.closest('.swipe-row');
       const idx = +row.dataset.realIdx;
       closeAllSwipes();
-      if(btn.dataset.action === 'assistant' && sortSettings.localAssistantProvider === 'needle'){
-        const item = load()[idx];
-        const local = item && isLocalAppointment(item);
-        openDetail(idx);
-        void openDetailAssistant('',{occurrenceDate:local ? row.dataset.scheduledDay || '' : ''});
-      }else if(btn.dataset.action === 'assistant' && typeof tingsLoadAssistant === 'function'){
-        const hid = row.dataset.hid;
-        void tingsLoadAssistant().then(()=>{
-          if(typeof assistantOpenForItem === 'function'){
-            const item = load()[idx];
-            const local = item && typeof isLocalAppointment === 'function' && isLocalAppointment(item);
-            assistantOpenForItem(hid,'home', local ? {occurrenceDate:row.dataset.scheduledDay || ''} : null);
-          }
-        });
-      }
       if(btn.dataset.action === 'plan')openSwipePlan(idx,Number(row.dataset.dayBase));
       if(btn.dataset.action === 'open-link'){
         const link = habitPrimaryLink(load()[idx]);

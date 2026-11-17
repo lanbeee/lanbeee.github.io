@@ -526,6 +526,39 @@ function clearOverviewFilters(){
   overviewPriorityFilter = 'all';
 }
 
+// SHARED FILTERS: Home and the calendar read one selection. Both variable sets
+// stay (per-surface match semantics differ via `treatAnywhere`), but every user
+// mutation writes both sides through here so the two surfaces never drift.
+function setSharedFilter(kind,value){
+  if(kind === 'topic'){ homeTopicFilter = overviewTopicFilter = value; return; }
+  if(kind === 'location'){ homeLocationFilter = overviewLocationFilter = value; return; }
+  if(kind === 'type'){ homeTypeFilter = overviewTypeFilter = value; return; }
+  if(kind === 'when'){ homeWhenFilter = overviewWhenFilter = value; return; }
+  if(kind === 'priority'){ homePriorityFilter = overviewPriorityFilter = value; }
+}
+// Either surface's reset clears the shared selection.
+function clearSharedFilters(){
+  clearHomeFilters();
+  clearOverviewFilters();
+}
+// Cross-surface refresh for shared filter edits. Handlers re-render their own
+// surface; this refreshes the other one. `changed` names the surface the edit
+// came from ('both' when the caller renders neither, e.g. the week view).
+function syncSharedFilterSurfaces(changed){
+  if(changed !== 'home'){
+    if(typeof applyHomeFilterChange === 'function')applyHomeFilterChange();
+  }
+  if(changed !== 'calendar'){
+    dayLogsKey = null;
+    // The calendar rebuilds from the shared state whenever it opens, so a full
+    // render only pays off while it is actually on screen (wide panes, or the
+    // phone calendar sheet is open).
+    const paneVisible = document.querySelector('.pane-overview')?.getBoundingClientRect().width > 0;
+    const sheetOpen = document.getElementById('overview-sheet')?.classList.contains('open');
+    if((paneVisible || sheetOpen) && typeof renderOverview === 'function')renderOverview();
+  }
+}
+
 function settleFixedFilter(current, catalog){
   if(!current || current === 'all')return 'all';
   return catalog.some(row=>row.key === current) ? current : 'all';
@@ -939,6 +972,20 @@ function takeFilterClick(event, pairs){
 // library never turns the top of Home into an endless horizontal chip rail.
 // `precomputedIndices` (optional): render() shares its visibleIndices() pass —
 // the option counts don't depend on the search query, so don't re-sort for them.
+// Reduced filter bar: keep bulk edit reachable when no filter dimensions exist.
+function homeBulkEditBarHtml(){
+  return `<button type="button" class="home-filter-trigger bulk-edit-trigger" data-open-bulk-edit="1" aria-label="bulk edit items">
+    <i class="ti ti-checks" aria-hidden="true"></i>
+    <span>Bulk edit</span>
+  </button>`;
+}
+
+function renderHomeTagFilterEmpty(wrap,groups){
+  wrap.innerHTML = '';
+  wrap.hidden = true;
+  if(groups)groups.innerHTML = '';
+}
+
 function renderHomeTagFilter(data,precomputedIndices = null){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
@@ -946,9 +993,7 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   const summary = $('home-filter-summary');
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(minimal){
-    wrap.innerHTML = '';
-    wrap.hidden = true;
-    if(groups)groups.innerHTML = '';
+    renderHomeTagFilterEmpty(wrap,groups);
     return;
   }
   const registry = locationOptions();
@@ -964,8 +1009,9 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   let topicChoices = hasTopics ? homeTopicChoices(data) : [];
   let locChoices = hasLocs ? homeLocationChoices(data) : [];
   // Reset stale place/topic filters so a deleted choice cannot hide everything.
-  if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))homeTopicFilter = 'all';
-  if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))homeLocationFilter = 'all';
+  // Both surfaces read the same data, so a stale key is stale everywhere.
+  if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))setSharedFilter('topic','all');
+  if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))setSharedFilter('location','all');
   if(hasTopics)topicChoices = orderFilterChoices(topicChoices, homeTopicFilter);
   if(hasLocs)locChoices = orderFilterChoices(locChoices, homeLocationFilter);
   const baseIndices = precomputedIndices || visibleIndices(data,sortSettings);
@@ -976,8 +1022,12 @@ function renderHomeTagFilter(data,precomputedIndices = null){
     prefix:'home-filter', attrPrefix:'home', items, selection, topicChoices, locationChoices:locChoices
   });
   if(!view.groupsHtml && !hasPresence){
-    wrap.innerHTML = '';
-    wrap.hidden = true;
+    if(!items.length){
+      renderHomeTagFilterEmpty(wrap,groups);
+      return;
+    }
+    wrap.innerHTML = homeBulkEditBarHtml();
+    wrap.hidden = false;
     if(groups)groups.innerHTML = '';
     return;
   }
@@ -1019,6 +1069,51 @@ function renderHomeTagFilter(data,precomputedIndices = null){
       : 'Pick when it’s due, what it is, or where it belongs.';
   }
   if(groups)groups.innerHTML = view.groupsHtml;
+}
+
+// RENDER: keep the wide-layout app-bar chrome in step with the shared filter
+// state and presence. Phone panes never show the app-bar, so this only paints
+// the tablet/desktop controls. Call after any render of the shared state.
+function syncAppBarChrome(){
+  const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
+  const filtersBtn = document.getElementById('app-bar-filters');
+  if(filtersBtn){
+    const selection = homeFilterSelection();
+    const activeCount = ['topic','location','type','when','priority'].filter(kind=>selection[kind] && selection[kind] !== 'all').length;
+    filtersBtn.hidden = minimal;
+    filtersBtn.classList.toggle('has-active',activeCount > 0);
+    filtersBtn.setAttribute('aria-label',`open filters${activeCount ? `, ${activeCount} active` : ''}`);
+    const badge = filtersBtn.querySelector('b');
+    if(badge){
+      badge.hidden = !activeCount;
+      badge.textContent = String(activeCount);
+    }
+  }
+  const placeBtn = document.getElementById('app-bar-place');
+  if(!placeBtn)return;
+  if(minimal || typeof locationOptions !== 'function' || typeof locationPresence !== 'function'){
+    placeBtn.hidden = true;
+    return;
+  }
+  const registry = locationOptions();
+  const usedLocSet = new Set(load().flatMap(h=>normalizeLocationIds(h.locationIds,registry)));
+  if(!registry.length || !usedLocSet.size){
+    placeBtn.hidden = true;
+    return;
+  }
+  const presence = locationPresence(registry);
+  const anchor = typeof currentLocationId === 'function' ? currentLocationId() : null;
+  const anchorLoc = anchor ? locationById(anchor,registry) : null;
+  let label = 'set place';
+  let kind = presence.kind || 'away';
+  if(presence.kind === 'at')label = `at ${presence.name}`;
+  else if(presence.kind === 'near')label = `near ${presence.name}`;
+  else if(anchorLoc){ label = `at ${anchorLoc.name}`; kind = 'at'; }
+  const gpsClass = presence.gps && presence.kind === 'at' ? 'gps-matched' : '';
+  placeBtn.hidden = false;
+  placeBtn.className = `topic-filter presence-filter app-bar-place ${kind} ${gpsClass}`.trim();
+  const name = document.getElementById('app-bar-place-name');
+  if(name)name.textContent = label;
 }
 
 // PURE: build weekday and month-day chips
@@ -1338,8 +1433,10 @@ function removeTopic(topic){
     const tune = currentDetailTune();
     renderTagChips('detail-topic-chips',tune.topics,[]);
   }
-  if(typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key){
-    homeTopicFilter = 'all';
+  if((typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key)
+    || (typeof overviewTopicFilter !== 'undefined' && overviewTopicFilter !== 'all' && overviewTopicFilter.toLowerCase() === key)){
+    // Shared filters: the deleted topic is stale on both surfaces.
+    setSharedFilter('topic','all');
   }
   refreshOpenViews();
 }

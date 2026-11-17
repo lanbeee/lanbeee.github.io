@@ -5,8 +5,10 @@
 //   - RENDER functions become React form components.
 //   - HANDLER functions become onPress/onChange callbacks that update the Zustand settings store.
 
-// HANDLER: cancel add sheet and reset form
+// HANDLER: cancel add sheet and reset form. A batch with queued items asks
+// first — Back, Escape, backdrop and cancel all share this guard.
 function cancelAdd(){
+  if(typeof bulkHandleCancelAdd === 'function' && bulkHandleCancelAdd())return;
   closeSheet('add-sheet');
   applyAddDefaults();
 }
@@ -193,6 +195,8 @@ function switchAddType(type){
 
 // Reset only for a fresh add/cancel. Branch changes retain each in-flight draft.
 function applyAddDefaults(){
+  // A fresh open (or completed/discard flow) always leaves batch mode.
+  if(typeof exitBulkBatchMode === 'function')exitBulkBatchMode();
   resetAppointmentShortcut();
   document.querySelector('.add-content').scrollTop = 0;
   const settings = loadSortSettings();

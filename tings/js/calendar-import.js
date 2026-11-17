@@ -241,10 +241,15 @@ function calendarCreditMinutesByDay(events){
     const start = Number(ev.start);
     const end = Number(ev.end);
     if(!Number.isFinite(start) || !Number.isFinite(end) || end <= start)return;
-    const key = typeof dateKey === 'function' ? dateKey(start) : null;
-    if(!key)return;
-    if(!byDay.has(key))byDay.set(key, []);
-    byDay.get(key).push({start, end});
+    let cursor = start;
+    while(cursor < end){
+      const key = dateKey(cursor), next = offsetCalendarDay(cursor,1);
+      const boundary = dayStart(next);
+      if(!Number.isFinite(boundary) || boundary <= cursor)break;
+      if(!byDay.has(key))byDay.set(key, []);
+      byDay.get(key).push({start:cursor, end:Math.min(end,boundary)});
+      cursor = boundary;
+    }
   });
   const out = [];
   byDay.forEach((intervals, dayKey)=>{
@@ -387,6 +392,10 @@ function applyCalendarImport(incoming, options = {}){
   );
   let added = 0, updated = 0, skipped = filtered.skippedAllDay;
   filtered.events.forEach(ev=>{
+    if(source === 'ics' && typeof ev.uid === 'string' && data.some(h=>`tings-${encodeURIComponent(h.hid)}@local` === ev.uid)){
+      skipped += 1;
+      return;
+    }
     const mapped = mapEventToTask(ev, source);
     const existing = byExternal.get(mapped.externalId);
     if(!existing){
@@ -431,7 +440,7 @@ function applyCalendarImport(incoming, options = {}){
   // Merge meeting credit across providers; overlapping copies count once.
   const credit = rebuildCalendarCredits(data,creditHabitId);
 
-  if(typeof save === 'function')save(data);
+  if(typeof save === 'function' && !save(data))throw new Error('Could not save calendar import on this device.');
   return {
     added,
     updated,
@@ -609,8 +618,72 @@ function setCalendarIgnored(h,scope){
 }
 function restoreCalendarIgnored(entry){
   const settings=loadSortSettings();saveSortSettings({...settings,calendarIgnores:(settings.calendarIgnores || []).filter(r=>r.scope!==entry.scope || r.id!==entry.id)});sortSettings=loadSortSettings();
-  const data=load();rebuildCalendarCredits(data,sortSettings.calendarCreditHabitId);save(data);renderIgnoredCalendarItems();refreshOpenViews();
+  const data=load();rebuildCalendarCredits(data,sortSettings.calendarCreditHabitId);save(data);renderIgnoredCalendarItems();renderCalendarDuplicateReview();refreshOpenViews();
   if(typeof queueNativeReminders==='function')queueNativeReminders();
+}
+
+// Suggestions require the same title and exact interval; never hide anything
+// until the user chooses a copy. Separate identities are needed for hiding.
+function calendarDuplicateGroups(data,settings){
+  const groups=new Map();
+  for(const h of data){
+    if(!h || isCalendarIgnored(h,settings) || !Number.isFinite(h.eventTime) || !isFixedTimedTask(h))continue;
+    const id=calendarIgnoreIdentity(h,'item'),name=String(h.name || '').trim().toLowerCase().replace(/\s+/g,' ');
+    if(!id || !name)continue;
+    const end=h.calendarEnd || h.eventTime+clampDuration(h.durationMinutes)*60000;
+    const key=JSON.stringify([name,h.eventTime,end]);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(h);
+  }
+  return [...groups.values()].filter(group=>group.length>1 && new Set(group.map(h=>h.hid)).size===group.length);
+}
+function reconcileCalendarDuplicateGroup(keepHid,reviewedHids){
+  const current=loadSortSettings(),data=load();
+  const group=calendarDuplicateGroups(data,current).find(items=>items.some(h=>h.hid===keepHid));
+  if(!group || group.length!==reviewedHids.length || group.some(h=>!reviewedHids.includes(h.hid))){
+    renderCalendarDuplicateReview();
+    showToast('Events changed. Review the matches again.');
+    return false;
+  }
+  const entries=[...(current.calendarIgnores || [])];
+  for(const other of group){
+    if(other.hid===keepHid)continue;
+    const id=calendarIgnoreIdentity(other,'item');
+    if(!entries.some(e=>e.scope==='item' && e.id===id))entries.push({scope:'item',id,name:`${other.name} (${calendarDuplicateSourceName(other)})`});
+  }
+  try{saveSortSettings({...current,calendarIgnores:entries});}
+  catch(error){showToast('Could not save your choice. Try again.');return false;}
+  sortSettings=loadSortSettings();
+  rebuildCalendarCredits(data,sortSettings.calendarCreditHabitId,{preserveBefore:dayStart(Date.now())});
+  const saved=save(data);
+  renderIgnoredCalendarItems();renderCalendarDuplicateReview();refreshOpenViews();
+  if(typeof queueNativeReminders==='function')queueNativeReminders();
+  showToast(saved ? 'Other copies hidden. Restore them in calendar settings.' : 'Copies hidden. Calendar credit could not be saved.');
+  return true;
+}
+function calendarDuplicateSourceName(h){
+  return {device:'Phone calendar',ics:'ICS import',pdf:'PDF import',gcal:'Google calendar',msgraph:'Outlook calendar'}[h.source] || 'Tings';
+}
+function renderCalendarDuplicateReview(){
+  const host=$('settings-calendar-body');if(!host)return;
+  $('calendar-duplicate-review')?.remove();
+  const settings=loadSortSettings(),groups=calendarDuplicateGroups(load(),settings);
+  const section=document.createElement('details');section.id='calendar-duplicate-review';
+  const summary=document.createElement('summary');summary.textContent=`Review possible duplicates (${groups.length})`;section.append(summary);
+  const hint=document.createElement('p');hint.className='field-hint';hint.textContent='Matches have the same name, start and end. Choose the copy to keep; other copies are hidden in Tings and can be restored below.';section.append(hint);
+  if(!groups.length){const empty=document.createElement('p');empty.className='field-hint';empty.textContent='No matching events found.';section.append(empty);}
+  const sourceName=calendarDuplicateSourceName;
+  for(const group of groups){
+    const box=document.createElement('div');box.className='planning-field';
+    const title=document.createElement('strong');title.textContent=`${group[0].name} · ${new Date(group[0].eventTime).toLocaleString()}–${new Date(group[0].calendarEnd || group[0].eventTime+clampDuration(group[0].durationMinutes)*60000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;box.append(title);
+    for(const [index,h] of group.entries()){
+      const button=document.createElement('button');button.type='button';button.className='btn';button.textContent=`Keep ${sourceName(h)} copy${group.filter(item=>sourceName(item)===sourceName(h)).length>1 ? ` ${index+1}` : ''}`;
+      button.addEventListener('click',()=>reconcileCalendarDuplicateGroup(h.hid,group.map(item=>item.hid)));
+      box.append(button);
+    }
+    section.append(box);
+  }
+  host.append(section);
 }
 function renderIgnoredCalendarItems(){
   const host=$('settings-calendar-body');if(!host)return;

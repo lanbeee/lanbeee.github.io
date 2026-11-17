@@ -417,6 +417,9 @@ function doNuke(i, opts){
     }
   }
   data.splice(i,1);
+  if(removed.externalId && typeof rebuildCalendarCredits === 'function'){
+    rebuildCalendarCredits(data,loadSortSettings().calendarCreditHabitId,{preserveBefore:dayStart(Date.now())});
+  }
   if(typeof pruneOrderConstraintsForHabit === 'function'){
     pruneOrderConstraintsForHabit(removed,[],Date.now());
   }
@@ -442,7 +445,8 @@ function updateKeyboardLift(){
   const settingsOpen = $('settings-sheet')?.classList.contains('open');
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   const feedbackOpen = $('feedback-sheet')?.classList.contains('open');
-  const needsLift = (addOpen || settingsOpen || feedbackOpen || ((!paneTierActive() || detailMounted)
+  const bulkEditOpen = $('bulk-edit-sheet')?.classList.contains('open');
+  const needsLift = (addOpen || settingsOpen || feedbackOpen || bulkEditOpen || ((!paneTierActive() || detailMounted)
     && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
@@ -474,6 +478,9 @@ function updateKeyboardLift(){
     const top = needsLift && !nativeResized ? Math.max(0,window.visualViewport.offsetTop) : 0;
     if(style.getPropertyValue('--assistant-viewport-top') !== `${top}px`)style.setProperty('--assistant-viewport-top', `${top}px`);
   }else if(style.getPropertyValue('--assistant-viewport-top') !== '0px')style.setProperty('--assistant-viewport-top','0px');
+  const bulkTop = bulkEditOpen && needsLift && !nativeResized
+    ? Math.max(0,Math.min(window.visualViewport.offsetTop,layoutHeight - window.visualViewport.height)) : 0;
+  if(style.getPropertyValue('--bulk-viewport-top') !== `${bulkTop}px`)style.setProperty('--bulk-viewport-top',`${bulkTop}px`);
   // Detail's composer uses the same visible rectangle. Safari pans the
   // viewport to reveal a focused dock; anchoring only its bottom loses the
   // item header above the visible screen.
@@ -535,21 +542,21 @@ function keepFocusedInputVisible(){
   const active = document.activeElement;
   // These fields live in a dock which already follows the keyboard. Scrolling
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
-  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input'))return;
+  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input,#bulk-search,#bulk-settings-search'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll');
   if(!host)return;
   // Minimal detail sections share the Settings scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
   if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-minimal-settings') || host;
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body'))return;
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll'))return;
   const rect = active.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
   const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
     && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01
     ? {offsetTop:0,height:document.documentElement.clientHeight} : window.visualViewport;
   const top = Math.max(bounds.top,viewport?.offsetTop || 0) + 8;
-  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet,.feedback-sheet')?.querySelector('.sheet-search-dock,.add-actions,.feedback-actions');
+  const footer = active.closest('.detail-sheet,.add-sheet,.settings-sheet,.feedback-sheet,.bulk-edit-sheet,.bulk-batch-sheet')?.querySelector('.sheet-search-dock,.add-actions,.feedback-actions,.bulk-edit-actions,.bulk-batch-actions');
   const footerTop = footer?.getClientRects().length ? footer.getBoundingClientRect().top : Infinity;
   const bottom = Math.min(bounds.bottom,footerTop,(viewport?.offsetTop || 0) + (viewport?.height || innerHeight)) - 8;
   if(rect.top >= top && rect.bottom <= bottom)return;
@@ -590,7 +597,7 @@ function ensureSheetExit(id){
     const row = button.parentElement;
     if(row.classList.contains('btn-row') && [...row.children].every(child=>child.classList.contains('sheet-exit-redundant')))row.hidden = true;
   });
-  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head,.feedback-head');
+  const head = target.closest('.about-hero,.overview-page-head,.context-sheet-head,.capacity-sheet-head,.day-logs-head,.assistant-head,.home-filter-sheet-head,.utility-sheet-head,.sample-habits-head,.feedback-head,.wv-head');
   if(head){
     head.classList.add('sheet-exit-head');
     return;
@@ -651,6 +658,9 @@ function appBackPlan(){
     || Number(b.dataset.backSequence || 0) - Number(a.dataset.backSequence || 0));
   const id = sheets[0]?.id || getPane()?.dataset.activeSheet;
   if(id){
+    if(id === 'week-sheet' && visible($('week-view-options-close'))){
+      return plan('week-options', click($('week-view-options-close')));
+    }
     if(id === 'detail-sheet'){
       if(visible($('detail-custom-app-cancel')))return plan('detail-app', click($('detail-custom-app-cancel')));
       if(visible($('detail-mark-menu')) && typeof setDetailMarkMenuOpen === 'function'){
@@ -1184,6 +1194,9 @@ function openSheet(id,opts = {}){
     mountInPane(id);
     return;
   }
+  // Detail may already live in a desktop pane when a calendar modal opens.
+  // Reparent that same surface before showing its modal drill-down.
+  if(id === 'detail-sheet' && !shouldMountInPane(id) && getPane()?.dataset.activeSheet === id)unmountPane();
   $(id).classList.add('open');
   // The desktop bar stays usable while a modal is open. A sheet opened from
   // it has to paint above the one already on screen. Phone keeps the
@@ -1248,6 +1261,7 @@ document.addEventListener('click',e=>{
 
 // RENDER: closes a sheet or unmounts its pane
 function closeSheet(id){
+  if(id === 'day-logs-sheet')delete $(id).dataset.hideAgenda;
   sheetEnterMotions.get($(id))?.cancel();
   if(id === 'detail-sheet' && typeof cancelDetailNavigationMotion === 'function')cancelDetailNavigationMotion();
   rememberBrowserPageScroll();
@@ -1287,7 +1301,7 @@ function openDetailFromDayLogs(idx){
 
 // PURE: checks if a sheet id is full-page
 function isFullPageSheet(id){
-  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet';
+  return id === 'detail-sheet' || id === 'about-sheet' || id === 'privacy-sheet' || id === 'overview-sheet' || id === 'week-sheet' || id === 'settings-sheet' || id === 'sample-habits-sheet' || id === 'assistant-sheet' || id === 'feedback-sheet';
 }
 
 // PURE: checks if a sheet id mounts into the pane
@@ -1295,7 +1309,8 @@ function shouldMountInPane(id) {
   // Only the detail sheet is mounted into a pane. The overview lives in its
   // own permanent .pane-overview slot on wide tiers; about/settings stay as
   // centered modals.
-  return id === 'detail-sheet';
+  // A calendar drill-down must cover its modal rather than mount behind it.
+  return id === 'detail-sheet' && !$('week-sheet')?.classList.contains('open');
 }
 
 // iOS ignores overflow locking for the document pan used to reveal an input.
@@ -1323,7 +1338,7 @@ function syncDetailIOSPageLock(detailOpen,modalOpen){
 // RENDER: toggles full-page chrome and locks every modal's background scroll.
 function updateFullPageState(){
   syncBrowserBack();
-  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
+  const fullPageOpen = ['detail-sheet','about-sheet','privacy-sheet','overview-sheet','week-sheet','settings-sheet','sample-habits-sheet','assistant-sheet','feedback-sheet'].some(id=>$(id).classList.contains('open'));
   const modalOpen = Boolean(document.querySelector('.sheet-wrap.open'));
   document.documentElement.classList.toggle('modal-open',modalOpen);
   document.body.classList.toggle('fullpage-open',fullPageOpen);
@@ -1594,6 +1609,7 @@ function refreshOpenViews(opts){
   }
   if($('overview-sheet').classList.contains('open') || paneTierActive())renderOverview();
   if(dayLogsKey && $('day-logs-sheet').classList.contains('open'))renderDayLogs(dayLogsKey);
+  if(typeof weekSheetOpen === 'function' && weekSheetOpen())renderWeekView();
   if(typeof checkReminders === 'function')checkReminders();
 }
 
@@ -2203,12 +2219,12 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape' || e.defaultPrevented) return;
   const plan = appBackPlan();
-  if(plan?.signature.startsWith('detail')){
+  if(plan && (plan.signature.startsWith('detail') || /^sheet:(block-edit-sheet|travel-edit-sheet):/.test(plan.signature))){
     e.preventDefault();
     plan.run();
     return;
   }
-  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet'];
+  const modalIds = ['add-sheet','privacy-sheet','about-sheet','settings-sheet','sample-habits-sheet','overview-sheet','week-sheet','home-filter-sheet','calendar-filter-sheet','snooze-sheet','activity-sheet','day-capacity-sheet','day-logs-sheet','slipped-sheet','free-time-sheet','weather-context-sheet','assistant-sheet','feedback-sheet','bulk-batch-sheet','bulk-edit-sheet'];
   const openModals = modalIds
     .map((id,index)=>({id,index,el:$(id)}))
     .filter(item=>item.el?.classList.contains('open'))
@@ -2223,6 +2239,7 @@ document.addEventListener('keydown',e=>{
     const id = top.id;
     if (id === 'add-sheet' && typeof cancelAdd === 'function') cancelAdd();
     else if (id === 'overview-sheet') closeSheet('overview-sheet');
+    else if (id === 'week-sheet') closeSheet('week-sheet');
     else if (id === 'settings-sheet') closeSettingsSheet();
     else if (id === 'about-sheet') closeSheet('about-sheet');
     else if (id === 'privacy-sheet') closeSheet('privacy-sheet');
@@ -2238,6 +2255,8 @@ document.addEventListener('keydown',e=>{
     else if (id === 'weather-context-sheet') closeSheet('weather-context-sheet');
     else if (id === 'assistant-sheet' && typeof closeAssistantSheet === 'function') closeAssistantSheet();
     else if (id === 'feedback-sheet') closeSheet('feedback-sheet');
+    else if (id === 'bulk-batch-sheet') closeSheet('bulk-batch-sheet');
+    else if (id === 'bulk-edit-sheet' && typeof closeBulkEditSheet === 'function') closeBulkEditSheet();
     return;
   }
   const pane = getPane();

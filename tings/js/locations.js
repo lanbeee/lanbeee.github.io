@@ -1251,6 +1251,9 @@ function setAutoLocationId(id){
 function renderPresencePickerBody(){
   const wrap = $('presence-picker-chips');
   if(!wrap)return;
+  // The picker can run without a home render in its wake (wide-layout app-bar
+  // chip), so keep the bar chrome in step on every body render.
+  if(typeof syncAppBarChrome === 'function')syncAppBarChrome();
   const registry = locationsForDisplay((sortSettings || loadSortSettings()).locations);
   const current = currentLocationId();
   const presence = locationPresence(registry);

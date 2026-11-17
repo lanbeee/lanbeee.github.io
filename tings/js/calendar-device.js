@@ -11,7 +11,7 @@ function deviceCalendarPreferences({ensureSourceId=false}={}){
       localStorage.setItem(DEVICE_CALENDARS_KEY,JSON.stringify(p));
     }
     return {adoptLegacy:typeof replicaEnrollmentActive==='function' ? !replicaEnrollmentActive() : p.adoptLegacy !== false,sourceId:/^[0-9a-f]{16}$/.test(p.sourceId || '') ? p.sourceId : '',enabled:p.enabled === true,calendarIds:Array.isArray(p.calendarIds)
-      ? [...new Set(p.calendarIds.filter(id=>typeof id === 'string' && /^\d{1,20}$/.test(id)))] : [],updatedAt:Number(p.updatedAt) || 0};
+      ? [...new Set(p.calendarIds.filter(id=>typeof id === 'string' && id.length > 0 && id.length <= 256))] : [],updatedAt:Number(p.updatedAt) || 0};
   }catch{return {enabled:false,calendarIds:[],updatedAt:0,sourceId:'',adoptLegacy:false};}
 }
 function deviceCalendarHabitId(externalId,sourceId){
@@ -93,7 +93,7 @@ function syncDeviceCalendarDetail(h){
   sheet.querySelector('[data-detail-nav="identity"]').hidden=false;
   sheet.querySelector('[data-detail-nav="availability"]').hidden=synced || isEventItem(h);
   for(const id of ['detail-name','detail-habit-message'])$(id).disabled=synced;
-  $('detail-delete').disabled=synced;$('detail-mark-edit-emoji').disabled=false;
+  $('detail-delete').disabled=false;$('detail-mark-edit-emoji').disabled=false;
   let hint=$('detail-device-calendar-hint');
   if(!hint){hint=document.createElement('p');hint.id='detail-device-calendar-hint';hint.className='field-hint';sheet.querySelector('.detail-page-nav').before(hint);}
   hint.textContent='Title, time and links come from your phone calendar. Your icon and reminders are saved here.';
@@ -164,7 +164,7 @@ function applyDeviceCalendarSnapshot(snapshot,options={}){
   const settings=loadSortSettings();
   const result=reconcileDeviceCalendarSnapshot(load(),snapshot,{allDayMode:settings.calendarAllDayMode,
     creditHabitId:settings.calendarCreditHabitId,...options});
-  if(result.changed)save(result.data);
+  if(result.changed && !save(result.data))throw new Error('Could not save calendar refresh on this device.');
   return result;
 }
 

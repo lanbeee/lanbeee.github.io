@@ -1047,6 +1047,67 @@ function executeUndo(){
     if(typeof renderHomePresentationOnly === 'function')renderHomePresentationOnly();
     return;
   }
+  // Batch undo never restores a whole storage snapshot: bulk-edit restores
+  // only the fields that batch changed (skipping ones edited since), and
+  // bulk-add removes only untouched new items.
+  if(pendingAction.type === 'bulk-edit'){
+    const data = load();
+    const conflicts = [];
+    let touchedAny = false;
+    for(const entry of pendingAction.changes || []){
+      const item = data.find(h=>h.hid === entry.hid);
+      if(!item)continue;
+      let touched = false;
+      for(const change of entry.changes || []){
+        if(typeof bulkSameValue === 'function' ? bulkSameValue(item[change.field],change.after) : JSON.stringify(item[change.field]) === JSON.stringify(change.after)){
+          item[change.field] = bulkClone(change.before);
+          touched = true;
+        }else conflicts.push(item);
+      }
+      if(touched)touchedAny = true;
+    }
+    if(!touchedAny){
+      hideActionToast();
+      showToast('nothing to undo — kept the newer edits');
+      return;
+    }
+    if(save(data)){
+      hideActionToast();
+      showToast(conflicts.length ? `undone · kept ${conflicts.length} newer edit${conflicts.length === 1 ? '' : 's'}` : 'undone');
+      refreshOpenViews();
+    }
+    return;
+  }
+  if(pendingAction.type === 'bulk-add'){
+    const data = load();
+    const hids = new Set(pendingAction.hids || []);
+    let keptCount = 0;
+    // Stop timers aimed at batch items before indexes shift.
+    if(typeof habitTimer !== 'undefined' && habitTimer && hids.has(data[habitTimer.idx]?.hid)){
+      if(typeof clearHabitTimerSilent === 'function')clearHabitTimerSilent();
+    }
+    if(typeof valueLogIdx !== 'undefined' && valueLogIdx != null && hids.has(data[valueLogIdx]?.hid))valueLogIdx = null;
+    for(let i = data.length - 1;i >= 0;i--){
+      const h = data[i];
+      if(!h || !hids.has(h.hid))continue;
+      // Items that gained activity or references survive with an explanation.
+      if((h.logs || []).length > 0 || (typeof bulkHidReferenced === 'function' && bulkHidReferenced(data,h.hid))){
+        keptCount += 1;
+        continue;
+      }
+      if(typeof cancelPush === 'function' && typeof reminderSignature === 'function' && h.type === 'task'){
+        cancelPush(reminderSignature(h));
+      }
+      data.splice(i,1);
+    }
+    if(save(data)){
+      hideActionToast();
+      showToast(keptCount ? `undone · kept ${keptCount} with new activity` : 'undone');
+      if(typeof updateSortSampleCount === 'function')updateSortSampleCount();
+      refreshOpenViews();
+    }
+    return;
+  }
   const refreshBlockedPresentation = pendingAction.type === 'restore-blocked'
     || pendingAction.type === 'restore-block-adjust';
   const data = load();
@@ -1072,6 +1133,9 @@ function executeUndo(){
   if(pendingAction.type === 'delete'){
     const {idx,habit} = pendingAction;
     data.splice(Math.min(idx,data.length),0,habit);
+    if(habit.externalId && typeof rebuildCalendarCredits === 'function'){
+      rebuildCalendarCredits(data,loadSortSettings().calendarCreditHabitId,{preserveBefore:dayStart(Date.now())});
+    }
   }
   if(pendingAction.type === 'delete-many'){
     const items = (pendingAction.items || []).slice().sort((a,b) => a.idx - b.idx);

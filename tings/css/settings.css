@@ -376,6 +376,10 @@ button.setting-toggle{
   font-size:12.5px;line-height:1.35;color:var(--text);
 }
 .calendar-pdf-list li span{color:var(--text2);font-size:12px;}
+#calendar-duplicate-review{margin:14px 0;}
+#calendar-duplicate-review summary{cursor:pointer;font-weight:650;}
+#calendar-duplicate-review .planning-field{padding:12px 0;border-top:1px solid var(--border);min-width:0;overflow-wrap:anywhere;}
+#calendar-duplicate-review .btn{width:100%;white-space:normal;}
 .calendar-pdf-item{
   min-width:0;flex:1;width:100%;box-sizing:border-box;
 }

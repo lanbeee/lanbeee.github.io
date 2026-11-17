@@ -1,4 +1,4 @@
-const CACHE = 'tings-v893';
+const CACHE = 'tings-v953';
 const MAPS_CACHE = 'tings-maps-v3';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -56,12 +56,14 @@ const PRECACHE = [
   './css/sheets.css',
   './css/detail.css',
   './css/stats-calendar.css',
+  './css/week-view.css',
   './css/forms.css',
   './css/planning.css',
   './css/locations.css',
   './css/controls.css',
   './css/settings.css',
   './css/filters.css',
+  './css/bulk-items.css',
   './css/actions.css',
   './css/overlays.css',
   './css/assistant.css',
@@ -120,6 +122,7 @@ const PRECACHE = [
   './js/detail-view-search.js',
   './js/detail-view-summary.js',
   './js/overview-view.js',
+  './js/overview-week.js',
   './js/today-view-fits.js',
   './js/today-view-reservations.js',
   './js/agenda-fast-graph.js',
@@ -176,6 +179,9 @@ const PRECACHE = [
   './js/main-input.js',
   './js/feedback-form.js',
   './js/main-runtime.js',
+  './js/item-mutations.js',
+  './js/bulk-add.js',
+  './js/bulk-edit.js',
   './js/sw-register.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

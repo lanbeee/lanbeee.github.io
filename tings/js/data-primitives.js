@@ -635,15 +635,16 @@ function ordinalWeekdaySummary(rules){
 }
 
 function normalizeCalendarIgnores(value){
-  return (Array.isArray(value)?value:[]).filter(r=>r && ['occurrence','series'].includes(r.scope) && typeof r.id==='string' && r.id.length>0)
+  return (Array.isArray(value)?value:[]).filter(r=>r && ['occurrence','series','item'].includes(r.scope) && typeof r.id==='string' && r.id.length>0)
     .map(r=>({scope:r.scope,id:r.id.slice(0,512),name:String(r.name || 'calendar item').slice(0,60)})).slice(0,10000);
 }
 function calendarIgnoreIdentity(h,scope='occurrence'){
+  if(scope==='item')return h?.hid ? `item:${h.hid}` : '';
   if(!h?.source || !h.externalId)return '';
   return scope==='series' ? (h.calendarSeriesId || '') : `${h.source}:${h.externalId}`;
 }
 function isCalendarIgnored(h,settings){
-  if(!h?.source || !h.externalId)return false;
+  if(!h)return false;
   const prefs=settings || (typeof sortSettings!=='undefined' ? sortSettings : null) || Storage.read('tings_app_settings_v2') || {};
   return (prefs.calendarIgnores || []).some(r=>r.id===calendarIgnoreIdentity(h,r.scope));
 }

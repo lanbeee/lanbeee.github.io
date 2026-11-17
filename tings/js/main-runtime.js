@@ -545,9 +545,10 @@ $('detail-shared-display')?.addEventListener('keydown',event=>{
 });
 bindCompactNumber('detail-min-chunk',clampMinChunk,{maxLength:3});
 bindCompactNumber('detail-min-gap',clampMinGapMinutes,{maxLength:3});
-function openDayLogsAfterCalendarGesture(key,{refreshOverview = false} = {}){
+function openDayLogsAfterCalendarGesture(key,{refreshOverview = false,hideAgenda = false} = {}){
   if(!key)return;
   dayLogsKey = key;
+  $('day-logs-sheet').dataset.hideAgenda = hideAgenda ? '1' : '0';
   resetDayLogsStep(); // clears habit scope — overview shows all matching items
   if(refreshOverview)renderOverview();
   renderDayLogs(key);
@@ -610,8 +611,11 @@ $('day-logs-sheet').addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('#day-logs-home')){
+    // Home means leaving every calendar surface — the day sheet, the week
+    // calendar when it opened from there, and the overview.
     closeDayLogsSheet({refreshOverview:false});
     closeSheet('overview-sheet');
+    closeSheet('week-sheet');
     return;
   }
 

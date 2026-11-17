@@ -612,6 +612,9 @@ function setScheduleView(view){
 
 // HYBRID: resets detail state and closes sheet
 function closeDetail(){
+  // A batch draft edit must restore the save button and its chrome on every
+  // close path (backdrop, cancel, Escape, system Back).
+  if(typeof bulkDraftEditActive === 'function' && bulkDraftEditActive())cancelBulkDraftEdit();
   const inner = getSheetInner('detail-sheet');
   if(inner?.contains(document.activeElement))document.activeElement.blur();
   inner?.classList.remove('detail-editing','detail-field-editing','detail-keyboard-open','tune-dirty');

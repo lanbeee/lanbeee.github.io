@@ -132,6 +132,8 @@ function renderLocalAppointmentDetail(h){
   host.addEventListener('input',()=>setDetailDirty(true));host.addEventListener('change',()=>setDetailDirty(true));
   const changeException=reset=>{
     const key=$('detail-appt-occurrence').value;
+    // Occurrence patches need the saved record; queued drafts edit the series only.
+    if(detailIdx === null){showToast('save the event first');return;}
     if(!appointmentOccursOn(h,key)){showToast('choose a date in this schedule');return;}
     const data=load(),item=data[detailIdx],patch={...item.appointment.exceptions[key]};
     if(reset){for(const field of ['startMinute','durationMinutes','emoji','emojiBgColor'])delete patch[field];}
@@ -190,7 +192,7 @@ function renderEventDetailUi(h){
   const completion=$('detail-shared-display').querySelector('[data-shared-display-mode="complete"]');
   completion.hidden=event;completion.disabled=event;
   if(event && sharedDisplayModeForHabit(h)==='complete')setDetailSharedDisplayMode('view');
-  $('detail-delete-question').textContent=`Remove this ${event?'event':h.type==='task'?'task':'habit'}?`;
+  $('detail-delete-question').textContent=synced ? 'Hide this event in Tings? You can restore it in calendar settings.' : `Remove this ${event?'event':h.type==='task'?'task':'habit'}?`;
   $('detail-name-disclosure').querySelector('summary').textContent=event?'name':'name & type';
   $('detail-priority-disclosure').querySelector('summary').textContent='topics';
   $('detail-emoji').setAttribute('aria-label',event?'event emoji, optional':'habit emoji, optional');
