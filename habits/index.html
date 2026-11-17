@@ -953,13 +953,13 @@
   <div class="sheet-wrap" id="week-sheet">
     <div class="sheet week-view-sheet" role="dialog" aria-modal="true" aria-label="week agenda">
       <div class="wv-head">
+        <button type="button" class="icon-btn wv-display-options" id="week-view-display-options" aria-label="calendar options: view, days, colors and filters" aria-expanded="false" aria-controls="week-view-options"><i class="ti ti-menu-2" aria-hidden="true"></i></button>
         <button type="button" class="wv-today-cal" id="week-view-today" aria-label="jump to today"><span class="wv-today-cal-dow" aria-hidden="true"></span><span class="wv-today-cal-day" aria-hidden="true"></span></button>
         <div class="wv-title">
           <button type="button" id="week-view-label" class="wv-title-label" aria-expanded="false" aria-controls="week-view-month"><span id="week-view-label-text"></span><i class="ti ti-chevron-down" aria-hidden="true"></i></button>
           <small id="week-view-sub"></small>
         </div>
-        <button type="button" class="icon-btn wv-switch" id="week-view-overview" aria-label="open calendar overview" title="Calendar overview"><i class="ti ti-calendar-month" aria-hidden="true"></i></button>
-        <button type="button" class="icon-btn wv-display-options" id="week-view-display-options" aria-label="display options: view, days, colors and zoom" aria-expanded="false" aria-controls="week-view-options"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>
+        <button type="button" class="icon-btn wv-switch" id="week-view-overview" aria-label="open month view" title="Month view"><i class="ti ti-calendar-month" aria-hidden="true"></i></button>
         <button type="button" class="mini-text-btn wv-create" id="week-view-create" aria-label="add a task"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
         <button type="button" class="icon-btn" id="week-view-close" aria-label="close week view"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
@@ -973,19 +973,35 @@
         <div class="wv-month-grid" id="week-view-month-grid"></div>
         <p class="wv-month-note" id="week-view-month-note"></p>
       </div>
-      <div class="wv-options" id="week-view-options" hidden>
-        <div class="wv-view-switch" role="group" aria-label="calendar view">
-          <button type="button" id="week-view-list" data-wv-mode="list" aria-pressed="true">Agenda</button>
-          <button type="button" id="week-view-mode" data-wv-mode="grid" aria-pressed="false">Grid</button>
+      <div class="wv-options-backdrop" id="week-view-options-backdrop" hidden></div>
+      <div class="wv-options" id="week-view-options" role="dialog" aria-modal="true" aria-labelledby="week-view-options-title" hidden>
+        <div class="wv-options-head"><h2 id="week-view-options-title">Calendar options</h2><button type="button" class="icon-btn" id="week-view-options-close" aria-label="close calendar options"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+        <div class="wv-option-section" role="group" aria-labelledby="week-view-layout-title">
+          <h3 id="week-view-layout-title">View</h3>
+          <div class="wv-choice-grid wv-view-switch">
+            <button type="button" id="week-view-list" data-wv-mode="list" aria-pressed="true"><i class="ti ti-list" aria-hidden="true"></i>Agenda</button>
+            <button type="button" id="week-view-mode" data-wv-mode="grid" aria-pressed="false"><i class="ti ti-calendar-week" aria-hidden="true"></i>Grid</button>
+          </div>
         </div>
-        <label class="wv-select-label"><span class="sr-only">Days visible</span><select id="week-view-days" aria-label="days visible"></select></label>
-        <label class="wv-color-label">Color by <select id="week-view-color" aria-label="color by"><option value="topic">Topic</option><option value="location">Location</option><option value="type">Type</option><option value="when">When due</option><option value="priority">Priority</option></select></label>
-        <button type="button" class="mini-text-btn" id="week-view-filters"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> Filters</button>
-        <div class="wv-zoom" id="week-view-zoom" role="group" aria-label="grid zoom" hidden>
-          <button type="button" id="week-view-zoom-out" aria-label="zoom out"><i class="ti ti-minus" aria-hidden="true"></i></button><output id="week-view-zoom-label" aria-live="polite"></output><button type="button" id="week-view-zoom-in" aria-label="zoom in"><i class="ti ti-plus" aria-hidden="true"></i></button>
+        <div class="wv-option-section" role="group" aria-labelledby="week-view-days-title">
+          <h3 id="week-view-days-title">Date range</h3>
+          <div class="wv-choice-grid" id="week-view-days"></div>
         </div>
+        <div class="wv-option-section" role="group" aria-labelledby="week-view-color-title">
+          <h3 id="week-view-color-title">Color by</h3>
+          <div class="wv-choice-grid" id="week-view-color">
+            <button type="button" data-wv-color="topic" aria-pressed="true">Topic</button><button type="button" data-wv-color="location" aria-pressed="false">Location</button><button type="button" data-wv-color="type" aria-pressed="false">Type</button><button type="button" data-wv-color="when" aria-pressed="false">When due</button><button type="button" data-wv-color="priority" aria-pressed="false">Priority</button>
+          </div>
+          <div class="wv-legend" id="week-view-legend" hidden></div>
+        </div>
+        <div class="wv-option-section" id="week-view-zoom" role="group" aria-labelledby="week-view-zoom-title" hidden>
+          <h3 id="week-view-zoom-title">Grid zoom</h3>
+          <div class="wv-zoom"><button type="button" id="week-view-zoom-out" aria-label="zoom out"><i class="ti ti-minus" aria-hidden="true"></i></button><output id="week-view-zoom-label" aria-live="polite"></output><button type="button" id="week-view-zoom-in" aria-label="zoom in"><i class="ti ti-plus" aria-hidden="true"></i></button></div>
+        </div>
+        <div class="wv-options-filter-head"><h3>Filters</h3><button type="button" class="mini-text-btn" id="week-view-filters-reset">Reset</button></div>
+        <div id="week-view-filter-groups"></div>
+        <p class="wv-options-note">Busy time is always shown. Display changes don’t move your plan.</p>
       </div>
-      <div class="wv-legend" id="week-view-legend" hidden></div>
       <div class="wv-markers" id="week-view-markers"></div>
       <div class="wv-status" id="week-view-status" role="status" aria-live="polite"></div>
       <div class="wv-body" id="week-view-body"></div>

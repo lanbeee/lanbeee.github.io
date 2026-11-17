@@ -303,6 +303,16 @@ function assert(cond,msg){
       check('shared scale does not depend on column order',Array.from({length:25},(_,hour)=>hour*60).every(minute=>axis.timeToY(minute) === reverseAxis.timeToY(minute)));
       const emptyAxis = weekViewSharedTimeAxis([{events:[],busy:[],travel:[]}]);
       check('empty multi-day axis stays usable',emptyAxis.height > 0 && Number.isFinite(emptyAxis.yToTime(50)));
+      const denseRows = Array.from({length:14},(_,d)=>({
+        events:Array.from({length:30},(_,i)=>({id:`dense-${d}-${i}`,topMin:300+i*24+d,botMin:320+i*24+d})),
+        busy:[{id:`sleep-${d}`,topMin:0,botMin:300},{id:`night-${d}`,topMin:1200,botMin:1440}],travel:[]
+      }));
+      const denseAxis = weekViewSharedTimeAxis(denseRows);
+      check('a dense fortnight keeps every short event readable',denseRows.every(rows=>rows.events.every(ev=>denseAxis.timeToY(ev.botMin)-denseAxis.timeToY(ev.topMin) >= 51.99)));
+      check('a dense clock remains invertible at fractional minutes',Array.from({length:2880},(_,i)=>i/2).every(minute=>Math.abs(denseAxis.yToTime(denseAxis.timeToY(minute))-minute)<0.001));
+      const duplicateAxis = weekViewSharedTimeAxis([...denseRows,...denseRows]);
+      check('overlapping duplicate rows do not expand the shared clock',Array.from({length:1441},(_,minute)=>minute).every(minute=>Math.abs(denseAxis.timeToY(minute)-duplicateAxis.timeToY(minute))<0.001));
+      check('clock inverse clamps outside the day',denseAxis.yToTime(-100) === 0 && denseAxis.yToTime(denseAxis.height+100) === 1440);
       for(const [year,month,date,hours] of [[2026,2,8,23],[2026,10,1,25]]){
         const base = new Date(year,month,date).getTime();
         const end = new Date(year,month,date+1).getTime();

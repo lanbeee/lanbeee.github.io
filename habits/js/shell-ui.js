@@ -652,6 +652,9 @@ function appBackPlan(){
     || Number(b.dataset.backSequence || 0) - Number(a.dataset.backSequence || 0));
   const id = sheets[0]?.id || getPane()?.dataset.activeSheet;
   if(id){
+    if(id === 'week-sheet' && visible($('week-view-options-close'))){
+      return plan('week-options', click($('week-view-options-close')));
+    }
     if(id === 'detail-sheet'){
       if(visible($('detail-custom-app-cancel')))return plan('detail-app', click($('detail-custom-app-cancel')));
       if(visible($('detail-mark-menu')) && typeof setDetailMarkMenuOpen === 'function'){

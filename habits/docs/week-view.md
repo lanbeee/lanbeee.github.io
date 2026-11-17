@@ -7,8 +7,12 @@ labeled Preview because earlier completions can change its placements.
 
 ## Display
 
-Phones offer one, two, or three equally wide days. Wide screens also offer a
-seven-day week. That count is how many days fit on screen. The days themselves
+All screens offer one, two, or three equally wide days, or a seven-day Week.
+The sidebar also offers Month, opening the shared monthly overview at the
+month being viewed and retaining the active filters. The calendar button
+remembers Month when reopened. On desktop, the week calendar fills the browser
+window, including the area normally occupied by the app bar.
+That day count is how many days fit on screen. The days themselves
 sit in one horizontal strip, so the user can scroll freely across them. When
 that scroll settles, the strip lines up on a day, so a column is not left cut
 in half. Today through thirteen days ahead are in that strip when it opens.
@@ -19,8 +23,8 @@ the current day and scrolls to the current time. Left and right keys move one
 day. A touch drag locks to one axis: it either pans the day strip or scrolls
 the clock, never both, so a diagonal swipe cannot slide the days while
 scrolling time. When a horizontal drag settles, the strip eases onto
-the nearest day, and only then do the date title and the highlighted day
-header move. Background
+the nearest day, and only then does the date title update. Columns are not
+highlighted; today is identified by its date and the current-time line. Background
 preview updates wait for touch and momentum scrolling to settle before replacing
 the board, so a late worker reply cannot interrupt a swipe.
 
@@ -38,11 +42,11 @@ short summary. A single day can also show free time, or that the day is tight.
 A seven-day week stays compact.
 Grid uses a proportional 24-hour clock and starts at 150% zoom. The Agenda/Grid
 switch, the day count, color, filters, and grid zoom all live in the display
-options panel; changing zoom or switching layouts keeps the time at the
+sidebar; changing zoom or switching layouts keeps the time at the
 center of the usable viewport stable, accounting for the sticky date header.
-Grid and agenda blocks carry faint hour marks inside them, so a long block
-still shows where its hours fall; the marks sit behind text and emoji, so
-nothing is struck through.
+Hour lines sit behind cards in both layouts. The left clock labels use 13px
+text and a wider gutter for readability. Lines are painted as shared backgrounds
+rather than individual elements per hour and day.
 At the start or end of the clock, normal scroll limits still apply.
 
 The date title opens a floating month picker without reducing schedule space.
@@ -51,7 +55,7 @@ change month. Escape closes the picker and returns focus to its title. Choosing
 a date returns focus there too. Outside the planning horizon, recurring
 appointments still respect date exceptions and continue across midnight.
 
-Display options also include Color by: topic, location, type, when due, or
+The sidebar also includes Color by: topic, location, type, when due, or
 priority. Type, timing, and priority use the same classifiers as Filters. When
 due is relative to today. Topic and location use the first saved value; items
 without one use a neutral group. The legend explains the current grouping.
@@ -73,7 +77,7 @@ Filters remain shared with the calendar overview. Busy time remains visible.
 | Date header | Open day details and actions without repeating the agenda shown in the calendar. |
 | Empty space in Grid or a multi-day Agenda | Stage a new task at that date and time, rounded to the nearest 15 minutes. Save remains explicit and opens the new task’s schedule, following the existing add flow. |
 | Add | Stage a new task on the selected day, with its start time left open. |
-| Display options | Reveal the Agenda/Grid switch, day count, color, filter, and grid zoom controls without using schedule space while closed. |
+| Calendar options (menu) | Open an overlay sidebar without rebuilding or resizing the clock. Tap a view, day count, color, or filter directly to apply it and return to the calendar. Zoom stays open for repeated adjustments. Escape, system Back, the close button, and the backdrop dismiss the sidebar and restore menu focus. |
 | Today (mini calendar in the header) | Return to the current day and scroll to the current time. The button always shows today's date. |
 
 Closing an editor returns to the same calendar, date selection, scroll position,

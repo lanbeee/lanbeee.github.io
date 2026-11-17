@@ -944,14 +944,18 @@ const CALENDAR_VIEW_KEY = 'tings_calendar_view_v1';
 function rememberCalendarView(view){
   try{localStorage.setItem(CALENDAR_VIEW_KEY,view);}catch(_err){}
 }
-function openCalendarOverview(){
-  rememberCalendarView('overview');
+function openCalendarOverview(options = {}){
+  const month = options.range === 'month';
+  const selected = month && appointmentDateKey(options.dayKey)
+    ? new Date(`${options.dayKey}T12:00:00`) : new Date();
+  const now = new Date();
+  rememberCalendarView(month ? 'month' : 'overview');
   if($('week-sheet')?.classList.contains('open'))closeSheet('week-sheet');
   closeSearch();
-  overviewMonthOffset = 0;
+  overviewMonthOffset = (selected.getFullYear() - now.getFullYear()) * 12 + selected.getMonth() - now.getMonth();
   overviewRecentOffset = 0;
-  clearOverviewFilters();
-  overviewRangeFilter = 'recent';
+  if(!options.preserveFilters)clearOverviewFilters();
+  overviewRangeFilter = month ? 'month' : 'recent';
   overviewListPane = 'plan';
   renderOverview();
   openSheet('overview-sheet');
@@ -960,7 +964,7 @@ function openRememberedCalendar(){
   let view = 'overview';
   try{view = localStorage.getItem(CALENDAR_VIEW_KEY) || view;}catch(_err){}
   if(view === 'week' && typeof openWeekView === 'function')openWeekView();
-  else openCalendarOverview();
+  else openCalendarOverview({range:view === 'month' ? 'month' : 'recent'});
 }
 $('open-overview').addEventListener('click',openRememberedCalendar);
 bindOverviewScrollGuards();
