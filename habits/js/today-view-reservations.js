@@ -95,7 +95,7 @@ function tryPlaceOnDay(state,fill,opts = {}){
       const fitForOption = tryPlaceOnDay(state,variant,opts);
       if(fitForOption)optionFits.push(fitForOption);
     }
-    return optionFits.length ? pickBestScoredFit(optionFits,fill,state,opts) : null;
+    return pickBestScoredFit(optionFits,fill,state,{...opts,compareScheduleOptions:true});
   }
   const hasForcedLocation = hasLocationProperty
     && fill.locationId !== undefined

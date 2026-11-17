@@ -7,13 +7,8 @@
 // choice, keeping a full-duration occurrence inside the valid Home window.
 // Fixed appointments and compatible due work stay intact.
 //
-// This suite pins the DESIRED behavior. Where the current checkout disagrees
-// the case still runs, prints the selected rows plus solve provenance, and
-// the process exits nonzero at the end. Known baseline gap on this checkout:
-// Fast keeps Home on light days because pickBestScoredFit ranks the
-// travel-bearing coreScore before the full preference score, so a saved
-// commute always beats a strong away preference (GLPK's option weights do
-// compare the full fit score and already take the away row).
+// The matrix runs every case, prints selected rows and solve provenance for
+// failures, and exits nonzero if either engine fails a case.
 //
 //   HABITS_URL=http://127.0.0.1:4181/ node tests/alternative-time-place-context-test.js
 const {
@@ -564,6 +559,16 @@ function checkScheduled(chk,plan,hid,startMin,endMin,locId = 'home',day = 0){
       data:[studyHabit()],settings:travelSettings({homeTutor:150}),now:at(480),numDays:1,
       expect(plan,chk){
         expectOccurrence(chk,plan,STUDY_HID,{option:'general',place:'home',window:[at(780),at(1050)],duration:45});
+      }
+    });
+
+    await runCase(page,{label:'B3 long trip and later start prefer Home before an evening commitment',
+      data:[studyHabit(),homeAppt('appt-b3',1020,1050)],
+      settings:travelSettings({homeTutor:60}),now:at(480),numDays:1,
+      expect(plan,chk){
+        expectOccurrence(chk,plan,STUDY_HID,{option:'general',place:'home',window:[at(780),at(1050)],duration:45});
+        checkScheduled(chk,plan,'appt-b3',1020,1050);
+        chk(dayRows(plan).every(row=>row.kind !== 'travel'),'staying Home needs no travel',dumpPlan(plan));
       }
     });
 

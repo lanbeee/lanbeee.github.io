@@ -2867,12 +2867,13 @@ function pickBestScoredFit(fits,fill,state,opts = {}){
       orderPenalty:orderConstraintPenalty(fill,fit,state)
     };
     const score = scoreAgendaPlacement(terms,weights);
-    // Weather guidance outranks ordinary ASAP/preference and scarce-window
-    // overlap. Travel remains a core route signal, but is minute-scaled above
-    // so it cannot overpower the later full-score clock comparison by a 60×
-    // unit mismatch. Use the full score only when that core ties.
+    // Choosing a different schedule row trades its preference against travel
+    // and waiting for its start. Within a row, keep ordinary preferences and
+    // ASAP in the tiebreak alongside scarce-window overlap.
     const coreScore = scoreAgendaPlacement({
-      ...terms,asapDelayMin:0,preferencePenalty:0,scarceOverlapMs:0
+      ...terms,scarceOverlapMs:0,
+      asapDelayMin:opts.compareScheduleOptions ? terms.asapDelayMin : 0,
+      preferencePenalty:opts.compareScheduleOptions ? prefPen : 0
     },weights);
     fit.score = score;
     fit.coreScore = coreScore;
