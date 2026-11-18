@@ -1052,30 +1052,54 @@ function executeUndo(){
   // bulk-add removes only untouched new items.
   if(pendingAction.type === 'bulk-edit'){
     const data = load();
-    const conflicts = [];
-    let touchedAny = false;
-    for(const entry of pendingAction.changes || []){
+    let conflicts = 0;
+    let recordTouched = false;
+    let reminderTouched = false;
+    let snoozeChanged = false;
+    const entries = pendingAction.changes || [];
+    const enabled = pendingAction.reminderEnabled;
+    const prefs = entries.some(entry=>entry.reminders) ? nativeReminderPreferences() : null;
+    // A newer reminder may rely on the switch the batch turned on.
+    const restoreEnabled = enabled && prefs?.enabled === enabled.after && bulkSameValue(prefs.items,enabled.appliedItems);
+    if(restoreEnabled){
+      prefs.enabled = enabled.before;
+      reminderTouched = true;
+    }else if(enabled)conflicts += 1;
+    for(const entry of entries){
       const item = data.find(h=>h.hid === entry.hid);
-      if(!item)continue;
-      let touched = false;
-      for(const change of entry.changes || []){
-        if(typeof bulkSameValue === 'function' ? bulkSameValue(item[change.field],change.after) : JSON.stringify(item[change.field]) === JSON.stringify(change.after)){
-          item[change.field] = bulkClone(change.before);
-          touched = true;
-        }else conflicts.push(item);
+      if(item){
+        for(const change of entry.changes || []){
+          if(bulkSameValue(item[change.field],change.after)){
+            item[change.field] = bulkClone(change.before);
+            recordTouched = true;
+            if(change.field === 'snoozedUntil')snoozeChanged = true;
+          }else conflicts += 1;
+        }
       }
-      if(touched)touchedAny = true;
+      if(item && entry.reminders && prefs){
+        const owner = `item:${entry.hid}`;
+        const {before,after} = entry.reminders;
+        const result = bulkUndoReminderFields(prefs.items[owner],before,after);
+        conflicts += result.conflicts;
+        if(!result.changed)continue;
+        if(before == null && !Object.keys(result.value).length)delete prefs.items[owner];
+        else prefs.items[owner] = result.value;
+        reminderTouched = true;
+      }
     }
-    if(!touchedAny){
+    if(!recordTouched && !reminderTouched){
       hideActionToast();
       showToast('nothing to undo — kept the newer edits');
       return;
     }
-    if(save(data)){
-      hideActionToast();
-      showToast(conflicts.length ? `undone · kept ${conflicts.length} newer edit${conflicts.length === 1 ? '' : 's'}` : 'undone');
-      refreshOpenViews();
+    if(!bulkSaveWithReminders(recordTouched ? data : null,reminderTouched ? prefs : null)){
+      showToast('could not undo — try again');
+      return;
     }
+    hideActionToast();
+    showToast(conflicts ? `undone · kept ${conflicts} newer edit${conflicts === 1 ? '' : 's'}` : 'undone');
+    refreshOpenViews();
+    if(snoozeChanged)renderHomePresentationOnly();
     return;
   }
   if(pendingAction.type === 'bulk-add'){
