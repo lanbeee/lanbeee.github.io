@@ -8,6 +8,7 @@ labeled Preview because earlier completions can change its placements.
 ## Display
 
 All screens offer one, two, or three equally wide days, or a seven-day Week.
+Phones default to three days and desktop defaults to Week.
 The sidebar also offers Month, opening the shared monthly overview at the
 month being viewed and retaining the active filters. The calendar button
 remembers Month when reopened. On desktop, the week calendar fills the browser

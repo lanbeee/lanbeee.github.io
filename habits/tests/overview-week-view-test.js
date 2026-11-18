@@ -105,29 +105,24 @@ async function chooseOption(page,selector){
     assert(await page.locator('.week-view-sheet > .sheet-exit').count() === 0,'close remains in the calendar header');
     assert(await page.locator('#week-view-options').isHidden(),'display options use no space until opened');
     assert(await page.locator('#week-view-chips').count() === 0,'no duplicate date strip');
+    assert(await page.locator('#week-view-body').getAttribute('data-days') === (width >= 1100 ? '7' : '3'),'fresh preferences show three phone days or a full desktop week');
     const fit = await page.evaluate(()=>{
       const sheet = document.querySelector('.week-view-sheet');
-      const title = document.querySelector('#week-view-label');
+      const title = document.querySelector('#week-view-label-text');
       return {overflow:sheet.scrollWidth > sheet.clientWidth + 1,truncated:title.scrollWidth > title.clientWidth + 1,body:document.querySelector('#week-view-body').clientHeight,sheet:sheet.clientHeight};
     });
     assert(!fit.overflow && !fit.truncated,'controls and complete date title fit');
     assert(fit.body / fit.sheet > 0.7,'schedule gets over 70% of the sheet');
     assert(await page.evaluate(()=>document.activeElement.id === 'week-view-close'),'dialog receives focus');
-    const filtersButton = page.locator('#week-view-filters');
-    assert(await filtersButton.isVisible(),'Filters is visible on the week view');
-    await filtersButton.click();
-    assert(await page.evaluate(()=>{
-      const title = document.querySelector('#week-view-filter-title');
-      const header = document.querySelector('.wv-options-head').getBoundingClientRect();
-      const panel = document.querySelector('#week-view-options').getBoundingClientRect();
-      const box = title.getBoundingClientRect();
-      return document.activeElement === title && box.top >= header.bottom && box.bottom <= panel.bottom;
-    }),'Filters opens the drawer at the visible filter controls');
-    await page.locator('[data-wvfilter-type="task"]').click();
+    assert(await page.locator('#week-view-filters').count() === 0,'there is no standalone Filters button');
+    const taskFilter = page.locator('#week-view-options [data-wvfilter-type="task"]');
+    assert(await taskFilter.isHidden(),'filters are hidden when Calendar options is closed');
+    await setOptionsOpen(page,true);
+    await taskFilter.click();
     assert(await page.evaluate(()=>homeTypeFilter === 'task' && overviewTypeFilter === 'task'),'week filters apply to Home and calendar');
-    assert(await filtersButton.getAttribute('aria-label') === 'Filters, 1 active','week filter shortcut shows the active count');
-    assert(await page.evaluate(()=>document.activeElement.id === 'week-view-filters'),'closing the drawer restores focus to Filters');
-    await filtersButton.click();
+    assert(await page.evaluate(()=>document.activeElement.id === 'week-view-display-options'),'applying a filter returns focus to Calendar options');
+    await setOptionsOpen(page,true);
+    assert(await taskFilter.getAttribute('aria-pressed') === 'true' && await page.locator('#week-view-filter-title').textContent() === 'Filters (1)','the sidebar shows the selection and active count');
     await page.locator('#week-view-filters-reset').click();
     assert(await page.evaluate(()=>homeTypeFilter === 'all' && overviewTypeFilter === 'all'),'week reset clears the shared selection');
     if(width >= 1100){
@@ -181,6 +176,16 @@ async function chooseOption(page,selector){
       return tag && line && Math.abs(parseFloat(tag.style.top) - parseFloat(line.style.top)) < 1;
     });
     assert(nowAligned,'the current-time gutter label follows the compressed agenda clock');
+
+    if(width === 320){
+      const title = await page.evaluate(()=>{
+        weekViewGoToDay(`${new Date().getFullYear() - 1}-09-30`);
+        const label = document.querySelector('#week-view-label-text');
+        return {text:label.textContent,fits:label.scrollWidth <= label.clientWidth + 1 && label.scrollHeight <= label.clientHeight + 1};
+      });
+      assert(title.fits && title.text.includes('Sep') && title.text.includes('Oct'),'cross-month date ranges fit on a small phone');
+      await page.click('#week-view-today');
+    }
 
     await setOptionsOpen(page,true);
     await chooseOption(page,'[data-wv-days="3"]');
@@ -461,9 +466,14 @@ async function chooseOption(page,selector){
       });
       await page.waitForFunction(day=>weekViewDaySel !== day,before);
       assert(await page.evaluate(()=>weekViewDaySel) !== before,'horizontal scroll moves to the next day');
+      // Use the proportional clock so the gesture has room to scroll at any
+      // time of day, even when Agenda compresses the fixture to one screen.
+      await chooseOption(page,'#week-view-mode');
       const beforeTouch = await page.evaluate(()=>weekViewDaySel);
       // A late worker reply must not replace the scroller during a gesture.
-      await page.evaluate(()=>setTimeout(weekViewRequestRefresh,80));
+      await page.evaluate(()=>document.querySelector('#week-view-body').addEventListener('touchstart',()=>{
+        setTimeout(weekViewRequestRefresh,80);
+      },{once:true,passive:true}));
       await cdpSwipe(client,300,400,60,400);
       await page.waitForTimeout(500);
       assert(await page.evaluate(()=>weekViewDaySel) !== beforeTouch,'a real touch swipe survives a background calendar refresh');
@@ -534,6 +544,7 @@ async function chooseOption(page,selector){
       const edgeAfter = await readScroll();
       assert(edgeAfter.sl === edgeBefore && edgeAfter.st === 0,'a diagonal at the clock edge never slides the strip');
       assert(await page.locator('#add-sheet.open').count() === 0,'scroll/swipe never creates a draft');
+      await chooseOption(page,'#week-view-list');
     }
     await chooseOption(page,`[data-wv-days="${width > 600 ? 7 : 3}"]`);
     if(width === 390){
