@@ -20,9 +20,9 @@ const {chromium, BASE, baseHabit, plannerSettings} = require('./helpers/planner-
         durationMinutes:15,allowedTimeStart:510,allowedTimeEnd:540,
         preferredTimeStart:525,preferredTimeEnd:540})
     ];
-    const results = await page.evaluate(({habits,settings})=>{
+    const results = await page.evaluate(async ({habits,settings})=>{
       const RealDate = Date;
-      const now = new RealDate(2026,10,17,8).getTime();
+      let now = new RealDate(2026,10,17,8).getTime();
       const firstDay = dayStart(now);
       const secondDay = offsetCalendarDay(firstDay,1);
       const clock = (day,minute)=>day + minute * 60000;
@@ -72,6 +72,74 @@ const {chromium, BASE, baseHabit, plannerSettings} = require('./helpers/planner-
         const repair = trial();
         const strict = trial({strict:true});
         const unavailable = trial({unavailable:true});
+        const dated = habits.map((h,i)=>i === 1 || i === 2 ? {...h,dueDate:secondDay} : h);
+        const agenda = (rows,date)=>({dayBase:date,plannedAt:now,timeline:rows.map(([i,start,minutes])=>({
+          kind:'fill',i,start:clock(date,start),end:clock(date,start + minutes),locationId:null,
+          chunkIndex:i === 0 ? 0 : null,
+          occurrenceKey:i === 0 ? null : `${habits[i].hid}:${dateKey(date)}:general`
+        }))});
+        const incumbent = {days:[agenda(repair.before,firstDay),agenda([],secondDay)]};
+        const relocated = {days:[agenda(repair.source,firstDay),agenda(repair.target,secondDay)]};
+        const late = {days:[relocated.days[0],agenda([],secondDay),
+          agenda(repair.target,offsetCalendarDay(secondDay,1))]};
+        const lost = {days:[relocated.days[0],agenda([],secondDay)]};
+        const shortened = {days:[relocated.days[0],agenda(repair.target.map(([i,start,minutes])=>
+          [i,start,minutes - 1]),secondDay)]};
+        const wrongWeekday = dated.map((h,i)=>i === 1 ? {...h,allowedWeekdays:[new Date(firstDay).getDay()]} : h);
+        const previousTry = now;
+        now = clock(firstDay,512);
+        const shiftsActive = {days:[agenda(repair.source.map(([i,start,minutes])=>
+          [i,i === 4 ? start + 1 : start,minutes]),firstDay),relocated.days[1]]};
+        const publication = {
+          accepts:homeAgendaRefinementIsBetter(incumbent,relocated,dated,settings),
+          rejectsLate:!homeAgendaRefinementIsBetter(incumbent,late,dated,settings),
+          rejectsLost:!homeAgendaRefinementIsBetter(incumbent,lost,dated,settings),
+          rejectsShortened:!homeAgendaRefinementIsBetter(incumbent,shortened,dated,settings),
+          rejectsWrongWeekday:!homeAgendaRefinementIsBetter(incumbent,relocated,wrongWeekday,settings),
+          preservesActive:!homeAgendaRefinementIsBetter(incumbent,shiftsActive,dated,settings)
+        };
+        const progress = {
+          dirty:_optimizerHomeRefinementTrackedDirty,pass:_optimizerHomeRefinementPass,
+          done:_optimizerHomeRefinementDoneKey,proven:_optimizerHomeProvenDayKeys
+        };
+        try{
+          resetHomeAgendaRefinementProgress('test');
+          _optimizerHomeRefinementPass = 3;
+          resetHomeAgendaRefinementProgress('test',{before:relocated,after:relocated,data:dated});
+          publication.sameCoverageKeepsProgress = _optimizerHomeRefinementPass === 3;
+          resetHomeAgendaRefinementProgress('test',{before:relocated,after:incumbent,data:dated});
+          publication.lostHoursRestartRefinement = _optimizerHomeRefinementPass === 0;
+          _optimizerHomeRefinementPass = 3;
+          const transfersHours = {days:[{
+            ...relocated.days[0],timeline:relocated.days[0].timeline.map(row=>
+              row.i === 0 ? {...row,i:dated.length} : row)
+          },relocated.days[1]]};
+          resetHomeAgendaRefinementProgress('test',{
+            before:relocated,after:transfersHours,data:[...dated,{...dated[0],hid:'other-work'}]
+          });
+          publication.lostHoursPerHabitRestartRefinement = _optimizerHomeRefinementPass === 0;
+        }finally{
+          _optimizerHomeRefinementTrackedDirty = progress.dirty;
+          _optimizerHomeRefinementPass = progress.pass;
+          _optimizerHomeRefinementDoneKey = progress.done;
+          _optimizerHomeProvenDayKeys = progress.proven;
+        }
+        let publishedRepair = null;
+        if(!agendaPlannerForcedFast()){
+          const refined = await buildWeekAgendaAsync(dated,settings,2,{
+            refine:true,memoDays:memoDaysFromWeek(incumbent)
+          });
+          publishedRepair = {
+            anchored:refined.plannerDiagnostics?.incumbentHoursRepair === true,
+            accepted:homeAgendaRefinementIsBetter(incumbent,refined,dated,settings),
+            source:refined.days[0].timeline.filter(row=>row.kind === 'fill').map(row=>[
+              row.i,(row.start-firstDay)/60000,(row.end-row.start)/60000
+            ]),
+            rehomed:refined.days[1].timeline.filter(row=>row.kind === 'fill' && [1,2].includes(row.i))
+              .map(row=>row.i).sort()
+          };
+        }
+        now = previousTry;
         saveOrderConstraintsForDrop(firstDay,[{
           beforeHid:'anchor',afterHid:'first',adjacency:'sometime'
         }]);
@@ -85,7 +153,7 @@ const {chromium, BASE, baseHabit, plannerSettings} = require('./helpers/planner-
         });
         const before = week([futureFill(1,540,15)]);
         const after = week([futureFill(0,540,80),futureFill(1,620,15)]);
-        return {repair,strict,unavailable,linked,
+        return {repair,strict,unavailable,linked,publication,publishedRepair,
           futureRefinement:homeAgendaRefinementIsBetter(before,after,habits,settings)};
       }finally{
         endPlannerSolveCaches();
@@ -102,7 +170,14 @@ const {chromium, BASE, baseHabit, plannerSettings} = require('./helpers/planner-
       assert.deepEqual(control.target,[]);
     }
     assert.equal(results.futureRefinement,true);
-    console.log('Two blockers move together without changing anchors. Deadlines, links and missing destinations prevent a move. Future P0 gains qualify for refinement.');
+    assert.ok(Object.values(results.publication).every(Boolean),JSON.stringify(results.publication));
+    if(results.publishedRepair){
+      assert.equal(results.publishedRepair.anchored,true);
+      assert.equal(results.publishedRepair.accepted,true);
+      assert.deepEqual(results.publishedRepair.source,results.repair.source);
+      assert.deepEqual(results.publishedRepair.rehomed,[1,2]);
+    }
+    console.log('Hours repair retains imminent and active anchors and publishes legal deferrals. Deadlines, links and missing destinations prevent a move.');
   }finally{
     await browser.close();
   }

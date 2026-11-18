@@ -3358,15 +3358,18 @@ function dropSubjectsWithFailedSameDayPartners(state,candidates,byHid,settings){
   if(rebuilt)applyPlacementState(state,rebuilt);
 }
 
+const AGENDA_REFINEMENT_IMMINENT_MS = 5 * 60000;
+
 // Protect daily work by reopening one short reservation and a bounded set of
 // flexible blockers. Keep the rest of the incumbent at its established clocks
 // and venues. Commit only when every displaced occurrence has a legal home.
-function repairWeekPlacedHours(candidates,dayStates,settings,{deep = false} = {}){
+function repairWeekPlacedHours(candidates,dayStates,settings,{deep = false,protectIncumbent = false} = {}){
   if(!dayStates.length)return 0;
   const byIndex = new Map(candidates.map(c=>[c.i,c]));
   const scoreOpts = {settings,allowNetwork:false,weights:resolveAgendaScoreWeights(settings)};
   const doing = getDoingNow();
   const now = Date.now();
+  const lockBefore = now + AGENDA_REFINEMENT_IMMINENT_MS;
   let sourceTrials = deep ? 44 : 16;
   let targetTrials = deep ? 72 : 32;
   let moves = 0;
@@ -3376,7 +3379,8 @@ function repairWeekPlacedHours(candidates,dayStates,settings,{deep = false} = {}
       .flatMap(edge=>[edge.beforeHid,edge.afterHid]))
   ]));
   const locked = (entry,state)=>(state.isTodayDay
-    && ((doing && doing.hid === entry.fill.h.hid) || entry.fit.placeStart < now))
+    && ((doing && doing.hid === entry.fill.h.hid) || entry.fit.placeStart < now
+      || (protectIncumbent && entry.fit.placeStart <= lockBefore)))
     || weatherLockedPlacement(entry.fill,state,settings);
 
   const reconcile = (trial,prior,retained)=>{
@@ -3488,6 +3492,7 @@ function repairWeekPlacedHours(candidates,dayStates,settings,{deep = false} = {}
       const blockers = state.fills.filter(entry=>{
         const c = byIndex.get(entry.fill.i);
         if(!c || c.priority < work.priority || counts.get(c.i) !== 1
+          || (protectIncumbent && c.priority === 0)
           || linked.has(c.h.hid) || locked(entry,state) || mustPlaceCriticalOccurrence(c))return false;
         if(c.h.type !== 'task' && rhythmFillsEveryEligibleDay(c.h))return false;
         if(!windows.some(win=>entry.fit.placeEnd > win.start

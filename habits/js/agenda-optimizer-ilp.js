@@ -2793,6 +2793,55 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
 
 let _plannerWeekDayMemo = {dirtyKey:'',todayBase:0,days:null};
 
+// A full solve can improve the objective while needlessly moving an imminent
+// row. Restore the mounted week as a separate draft for the shared hours
+// repair. New placements use live slots; only retained rows keep old clocks.
+function repairIncumbentWeekHours(data,candidates,dayStates,settings,memoDays){
+  if(memoDays?.length !== dayStates.length)return null;
+  const now = Date.now();
+  const drafts = [];
+  const byIndex = new Map(candidates.map(c=>[c.i,c]));
+  for(const [offset,live] of dayStates.entries()){
+    const prior = memoDays[offset];
+    if(prior.dayBase !== live.dayBase || !Array.isArray(prior.timeline))return null;
+    const day = live.isTodayDay && prior.plannedAt >= live.dayBase && prior.plannedAt < now
+      ? buildDayAgenda(data,settings,live.dayBase,{weekMode:true,now:prior.plannedAt})
+      : {...live.day,agendaItems:[]};
+    const state = createDayPlacementState(day,settings,{now,weekMode:true});
+    const scheduled = prior.timeline.filter(row=>row.kind === 'scheduled');
+    if(scheduled.length !== state.rows.length || scheduled.some(row=>!state.rows.some(fixed=>
+      fixed.i === row.i && fixed.start === row.start && fixed.end === row.end
+      && fixed.locationId === row.locationId)))return null;
+    const committed = prior.timeline.filter(row=>row.kind === 'fill');
+    for(const row of committed){
+      const h = data[row.i];
+      const slot = state.slots.find(s=>s.start <= row.start && row.end <= s.end);
+      if(!h || (row.hid && row.hid !== h.hid) || !slot || !(row.end > row.start)
+        || (live.isTodayDay && row.end <= now))return null;
+      const duration = (row.end - row.start) / 60000;
+      const placeKey = row.chunkIndex == null ? row.occurrenceKey || row.i : `${row.i}:${row.chunkIndex}`;
+      const fill = {
+        h,i:row.i,priority:effectivePriority(h),scarcity:byIndex.get(row.i)?.scarcity,
+        locationId:row.locationId,occurrenceKey:row.occurrenceKey,chunkIndex:row.chunkIndex,
+        chunkMinutes:h.breakable ? duration : null
+      };
+      const fit = {placeStart:row.start,placeEnd:row.end,slotStart:slot.start,
+        locId:row.locationId,prevLocId:state.prevLocId,edge:{seconds:0},travelMin:0,
+        durMin:duration,placeKey,scheduleOptionId:row.scheduleOptionId};
+      commitPlacement(state,fill,fit);
+    }
+    reconcileCommittedTravel(state);
+    if(!state._committedRoutePlan || state.usedMinutes > state.totalMinutes + 1e-6
+      || state.fills.some(({fit},i)=>fit.placeStart !== committed[i].start || fit.placeEnd !== committed[i].end
+        || fit.locId !== committed[i].locationId))return null;
+    state.slots = live.slots;
+    syncDayAgendaItemsFromFills(state);
+    drafts.push(state);
+  }
+  const moves = repairWeekPlacedHours(candidates,drafts,settings,{deep:true,protectIncumbent:true});
+  return moves > 0 ? drafts : null;
+}
+
 async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   if(typeof replayAgendaClockWeek==='function'){
     const replay=replayAgendaClockWeek(data,settings,numDays,opts);
@@ -2959,13 +3008,14 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
   }
   for(const c of candidates)c.scarcity = scarcityScore(c,dayStates);
 
-  const solveStates = reuseFarDays ? dayStates.slice(0,1) : dayStates;
   plannerPerfMark('planner-exact-solve-start');
   const solveStarted = (typeof performance !== 'undefined' && performance.now)
     ? performance.now() : Date.now();
-  const solveSummary = await assignWeekCandidatesOptimized(
-    candidates,solveStates,settings,{...opts,memoFutureBreakableMinutes}
-  );
+  const repaired = opts.refine && !reuseFarDays
+    ? repairIncumbentWeekHours(data,candidates,dayStates,settings,opts.memoDays) : null;
+  const solveStates = repaired || (reuseFarDays ? dayStates.slice(0,1) : dayStates);
+  const solveSummary = repaired ? {ok:true,plannerSolveStatus:'feasible'}
+    : await assignWeekCandidatesOptimized(candidates,solveStates,settings,{...opts,memoFutureBreakableMinutes});
   const solveDurationMs = Math.max(0,((typeof performance !== 'undefined' && performance.now)
     ? performance.now() : Date.now()) - solveStarted);
   plannerPerfMark('planner-exact-solve-end');
@@ -2986,9 +3036,9 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
       ).length,0);
     }
   } : null;
-  placeAdditionalSameDayOccurrences(candidates,solveStates,settings,additionalOpts);
+  if(!repaired)placeAdditionalSameDayOccurrences(candidates,solveStates,settings,additionalOpts);
   annotateAgendaOccurrenceKeys(candidates,solveStates);
-  placeOpportunityItems(data,solveStates,settings,candidates,
+  if(!repaired)placeOpportunityItems(data,solveStates,settings,candidates,
     reuseFarDays ? _plannerWeekDayMemo.days.slice(1) : []);
 
   let totalTravelSeconds = 0;
@@ -3006,7 +3056,12 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
         continue;
       }
     }
-    const state = dayStates[d];
+    const state = repaired ? repaired[d] : dayStates[d];
+    if(repaired){
+      day.agendaItems = state.day.agendaItems;
+      day.plannedAt = state.day.plannedAt;
+      day.totalMinutes = state.totalMinutes;
+    }
     day.timeline = finalizePlacementRows(state);
     day.usedMinutes = state.usedMinutes;
     day.remainingMinutes = Math.max(0,(Number(day.totalMinutes) || 0) - state.usedMinutes);
@@ -3027,6 +3082,7 @@ async function buildWeekAgendaAsync(data,settings,numDays = 7,opts = {}){
     plannerDiagnostics:{
       solveDurationMs:Math.round(solveDurationMs),
       requestedRefinement:Boolean(opts.refine),
+      ...(repaired ? {incumbentHoursRepair:true} : {}),
       refinePass:Math.max(0,Math.round(Number(opts.refinePass) || 0)),
       daySolves:solveSummary.daySolves || []
     }
