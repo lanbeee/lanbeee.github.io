@@ -198,12 +198,13 @@ function homeAgendaPlanSignature(week,data = (typeof load === 'function' ? load(
 // P0/pinned rows already visible anywhere in the week may never vanish, and
 // total week work may not shrink. Today's displayed work stays today; an
 // in-progress or imminent row may only be extended,
-// never moved, truncated, or dropped. Today's P0 breakable minutes then
-// outrank today's raw minutes; travel is only a final tiebreak.
+// never moved, truncated, or dropped. Protect today's work first, then
+// prefer more P0 breakable minutes across the week before comparing travel.
 function homeAgendaRefinementQuality(week,data,settings){
   const days = week && Array.isArray(week.days) ? week.days : [];
   const required = new Map();
   let p0BreakableMinutes = 0;
+  let weekP0BreakableMinutes = 0;
   let totalFillMinutes = 0;
   let weekTotalFillMinutes = 0;
   let overdueMinutes = 0;
@@ -233,7 +234,10 @@ function homeAgendaRefinementQuality(week,data,settings){
       }
       const priority = typeof effectivePriority === 'function'
         ? effectivePriority(h) : Math.max(0,Math.min(5,Number(h.priority) || 2));
-      if(dayOffset === 0 && priority === 0 && h.breakable)p0BreakableMinutes += minutes;
+      if(priority === 0 && h.breakable){
+        weekP0BreakableMinutes += minutes;
+        if(dayOffset === 0)p0BreakableMinutes += minutes;
+      }
       const pinned = typeof isWeekPinnedToday === 'function'
         ? isWeekPinnedToday(h,settings || {}) : false;
       if((priority === 0 && !h.breakable) || pinned || (dayOffset === 0 && !h.breakable)){
@@ -256,7 +260,7 @@ function homeAgendaRefinementQuality(week,data,settings){
     }
   }
   return {
-    required,p0BreakableMinutes,totalFillMinutes,weekTotalFillMinutes,
+    required,p0BreakableMinutes,weekP0BreakableMinutes,totalFillMinutes,weekTotalFillMinutes,
     overdueMinutes,travelSeconds,activeRows,todayMinutes
   };
 }
@@ -294,6 +298,9 @@ function homeAgendaRefinementIsBetter(baseline,candidate,data,settings){
   }
   if(Math.abs(after.overdueMinutes - before.overdueMinutes) > 0.01){
     return after.overdueMinutes > before.overdueMinutes;
+  }
+  if(Math.abs(after.weekP0BreakableMinutes - before.weekP0BreakableMinutes) > 0.01){
+    return after.weekP0BreakableMinutes > before.weekP0BreakableMinutes;
   }
   if(Math.abs(after.travelSeconds - before.travelSeconds) > 0.5){
     return after.travelSeconds < before.travelSeconds;
@@ -842,9 +849,9 @@ function optimizerHomeStateKey(data){
   return homePlannerStateKey(data);
 }
 
-// v6 refreshes agendas for conditional repetitions and their repeat limits.
-const HOME_AGENDA_CACHE_VERSION = 6;
-const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v6';
+// v7 replans cached weeks with the clock-preserving breakable repair.
+const HOME_AGENDA_CACHE_VERSION = 7;
+const HOME_AGENDA_CACHE_KEY = 'tings_home_agenda_cache_v7';
 const HOME_AGENDA_CACHE_FRESH_MS = 10 * 60 * 1000;
 // A usable unplanned list is better than making a slow phone look frozen.
 // The worker keeps running and replaces this fallback with the planned week.
@@ -1150,6 +1157,7 @@ try{
   localStorage.removeItem('tings_home_agenda_cache_v3');
   localStorage.removeItem('tings_home_agenda_cache_v4');
   localStorage.removeItem('tings_home_agenda_cache_v5');
+  localStorage.removeItem('tings_home_agenda_cache_v6');
 }catch(_){}
 
 function showHomeAgendaLoading(){

@@ -28,6 +28,7 @@ at-location-before-home-bounce-test.js	planner	once
 blocked-group-test.js	data	once
 breakable-continuous-e2e.js	planner	once
 breakable-crown-e2e.js	planner	once
+breakable-hours-repair-test.js	planner	page-both
 breakable-partial-log-e2e.js	planner	once
 breakable-task-travel-test.js	planner	once
 meeting-travel-conflict-test.js	planner	once

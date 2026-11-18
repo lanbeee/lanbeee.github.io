@@ -2747,9 +2747,7 @@ async function assignWeekCandidatesOptimized(candidates,dayStates,settings,solve
   // Week-holistic hours repair: move can-wait items off short daily breakables.
   if(typeof repairWeekPlacedHours === 'function'){
     total += repairWeekPlacedHours(candidates,dayStates,settings,{
-      deep:Boolean(solveOptions.refine),
-      maxContiguityTrials:solveOptions.refine ? 28 : 0,
-      maxContiguityVictims:3
+      deep:Boolean(solveOptions.refine)
     });
   }
   if(typeof pullStrictDueMovablesForward === 'function'){

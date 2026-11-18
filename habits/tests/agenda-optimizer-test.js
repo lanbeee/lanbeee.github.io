@@ -1305,7 +1305,11 @@ function base(props) {
       });
       const sourceDay = {
         dayBase,weekday:new Date(dayBase).getDay(),isToday:true,totalMinutes:240,
-        slots:[{start:at(dayBase,9 * 60),end:at(dayBase,13 * 60)}],
+        slots:[
+          {start:at(dayBase,9 * 60),end:at(dayBase,10 * 60)},
+          {start:at(dayBase,11 * 60),end:at(dayBase,12 * 60)},
+          {start:at(dayBase,12 * 60 + 30),end:at(dayBase,13 * 60)}
+        ],
         scheduled:[fixed('Fixed A',10 * 60,60),fixed('Fixed B',12 * 60,30)],
         agendaItems:[]
       };
@@ -1339,9 +1343,7 @@ function base(props) {
       commit(source,candidates[2],11 * 60 + 30,30);
       syncDayAgendaItemsFromFills(source);
       const before = placedBreakableMinutes(source,0);
-      const moved = repairWeekPlacedHours(candidates,[source,target],settings,{
-        deep:true,maxContiguityTrials:12,maxContiguityVictims:3
-      });
+      const moved = repairWeekPlacedHours(candidates,[source,target],settings,{deep:true});
       const taskMinutes = [source,target].reduce((sum,state)=>sum
         + state.fills.filter(entry=>entry.fill.i === 1 || entry.fill.i === 2)
           .reduce((s,entry)=>s + entry.fit.durMin,0),0);
@@ -1350,6 +1352,8 @@ function base(props) {
         after:placedBreakableMinutes(source,0),
         taskMinutes,
         moved,
+        overlapsAppointment:source.fills.some(({fit})=>source.rows.some(row=>
+          row.kind === 'scheduled' && fit.placeStart < row.end && row.start < fit.placeEnd)),
         sourceRows:source.fills.map(entry=>({i:entry.fill.i,start:entry.fit.placeStart,end:entry.fit.placeEnd})),
         targetRows:target.fills.map(entry=>({i:entry.fill.i,start:entry.fit.placeStart,end:entry.fit.placeEnd}))
       };
@@ -1364,6 +1368,8 @@ function base(props) {
     JSON.stringify(contiguityRepair));
   check('deep refinement preserves both movable blockers somewhere in the week',
     contiguityRepair.taskMinutes === 60,JSON.stringify(contiguityRepair));
+  check('the reclaimed chunks stay clear of fixed appointments',
+    !contiguityRepair.overlapsAppointment,JSON.stringify(contiguityRepair));
 
   // Fallback path: force timeout / broken glpk should not throw — heuristic still works.
   console.log('\n[Optimizer] heuristic fallback still works with optimizer flag');
