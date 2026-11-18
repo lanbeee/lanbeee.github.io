@@ -665,6 +665,13 @@ function normalizeLocationHours(raw){
   }
   return {allowedTimeStart:start,allowedTimeEnd:end,preferredTimeStart:prefStart,preferredTimeEnd:prefEnd,closedDays,hoursByDay};
 }
+// PURE: normalize a place-type slug ("fitness_centre", "supermarket"). OSM
+// tags map onto letters/digits/underscores only; anything else drops.
+function normalizePlaceType(value){
+  const slug = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g,'_').replace(/^_+|_+$/g,'');
+  return slug.slice(0,32);
+}
+
 // PURE: coerce the raw locations array into the canonical registry. Invalid
 // entries (no id, no name, bad coords) are dropped; duplicates by id collapse.
 function normalizeLocationRegistry(value){
@@ -685,6 +692,7 @@ function normalizeLocationRegistry(value){
     const radius = Number(raw.radiusM);
     const address = String(raw.address || '').trim().slice(0,120);
     const emoji = String(raw.emoji || '').slice(0,4);
+    const placeType = normalizePlaceType(raw.placeType);
     const weatherProfileId = cleanWeatherProfileRef(raw.weatherProfileId) || null;
     out.push({
       id,
@@ -694,6 +702,7 @@ function normalizeLocationRegistry(value){
       lng:Math.round(lng * 1e6) / 1e6,
       radiusM:Number.isFinite(radius) ? Math.max(10,Math.min(5000,radius)) : DEFAULT_LOCATION_RADIUS_M,
       emoji,
+      placeType,
       weatherProfileId,
       ...normalizeLocationHours(raw)
     });

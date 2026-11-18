@@ -1593,7 +1593,9 @@
       }
       // Moving the footer above the rail shrinks the scroller. Keep the whole
       // highlighted field in that remaining area when the keyboard/size changes.
-      const scroller = editor?.querySelector('.settings-stack') || editor || content;
+      // The location picker scrolls inside .picker-content; the sheet itself
+      // is overflow:hidden, so scroll there, not on the sheet.
+      const scroller = editor?.querySelector('.settings-stack') || editor?.querySelector('.picker-content') || editor || content;
       const fieldTarget = typing && stage === 'eConditions' ? document.activeElement : target;
       if(fieldTarget && fieldTarget !== scroller && scroller?.contains(fieldTarget)){
         const bounds = scroller.getBoundingClientRect();

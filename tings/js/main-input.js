@@ -309,7 +309,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=38';
+    script.src = './onboarding/coach.js?v=39';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -663,15 +663,23 @@ $('blocked-time-list')?.addEventListener('click',e=>{
 // ── Locations (settings sheet) ──
 $('loc-open-picker')?.addEventListener('click',()=>openLocationPicker());
 $('picker-search-btn')?.addEventListener('click',searchPickerLocations);
-$('picker-search')?.addEventListener('keydown',e=>{ if(e.key === 'Enter'){ e.preventDefault(); searchPickerLocations(); } });
+$('picker-search')?.addEventListener('keydown',e=>{ if(e.key === 'Enter' && !e.isComposing){ e.preventDefault(); searchPickerLocations(); } });
+$('picker-search')?.addEventListener('input',handlePickerSearchInput);
+$('picker-search')?.addEventListener('focus',showPickerRecents);
+$('picker-search-back')?.addEventListener('click',()=>leavePickerSearch({focusMap:true}));
 document.querySelector('.picker-search-scope')?.addEventListener('click',e=>{
   const btn = e.target.closest('[data-picker-scope]');
   if(btn)setPickerSearchScope(btn.dataset.pickerScope);
 });
 $('picker-results')?.addEventListener('click',e=>{
   const btn = e.target.closest('[data-picker-result]');
-  if(btn)pickPickerResult(parseInt(btn.dataset.pickerResult,10));
+  if(!btn)return;
+  if(btn.dataset.pickerKind === 'recent')pickRecentResult(parseInt(btn.dataset.pickerResult,10));
+  else pickPickerResult(parseInt(btn.dataset.pickerResult,10));
 });
+$('picker-zoom-in')?.addEventListener('click',()=>pickerZoom(1));
+$('picker-zoom-out')?.addEventListener('click',()=>pickerZoom(-1));
+$('picker-open-maps')?.addEventListener('click',openPickerPlaceInMaps);
 $('picker-gps')?.addEventListener('click',centerPickerOnGps);
 $('picker-layer-street')?.addEventListener('click',()=>setPickerBaseLayer('street'));
 $('picker-layer-satellite')?.addEventListener('click',()=>setPickerBaseLayer('satellite',{persist:true}));
@@ -679,7 +687,7 @@ $('picker-apply-coords')?.addEventListener('click',applyPickerCoordsInputs);
 $('picker-save')?.addEventListener('click',saveLocationPicker);
 $('picker-cancel')?.addEventListener('click',closeLocationPicker);
 $('location-picker-sheet')?.addEventListener('click',e=>{
-  if(e.target === e.currentTarget)closeLocationPicker();
+  if(e.target === e.currentTarget && !sheetBackdropArmed('location-picker-sheet'))closeLocationPicker();
 });
 $('location-list')?.addEventListener('change',e=>{
   const name = e.target.closest('[data-loc-name]');

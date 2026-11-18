@@ -446,7 +446,9 @@ function updateKeyboardLift(){
   const searchOpen = document.querySelector('.bottom-nav')?.classList.contains('search-open');
   const feedbackOpen = $('feedback-sheet')?.classList.contains('open');
   const bulkEditOpen = $('bulk-edit-sheet')?.classList.contains('open');
-  const needsLift = (addOpen || settingsOpen || feedbackOpen || bulkEditOpen || ((!paneTierActive() || detailMounted)
+  const picker = $('location-picker-sheet');
+  const pickerOpen = picker?.classList.contains('open');
+  const needsLift = (pickerOpen || addOpen || settingsOpen || feedbackOpen || bulkEditOpen || ((!paneTierActive() || detailMounted)
     && (assistantOpen || detailOpen || searchOpen))) && window.visualViewport;
   // innerHeight, dvh and visualViewport can update on different IME frames.
   // Use the actual CSS layout height and a single visible bottom coordinate;
@@ -468,6 +470,10 @@ function updateKeyboardLift(){
   const visibleBottom = needsLift && !nativeResized
     ? Math.min(layoutHeight,window.visualViewport.height + window.visualViewport.offsetTop) : layoutHeight;
   const keyboard = Math.max(0,layoutHeight - visibleBottom);
+  if(pickerOpen){
+    const imeHeight = nativeResized ? nativeKeyboardRestHeight - layoutHeight : layoutHeight - (window.visualViewport?.height || layoutHeight);
+    picker.classList.toggle('kb-visible',picker.classList.contains('kb-open') && imeHeight > 80);
+  }
   const style = document.documentElement.style;
   // Safari can pan the visual viewport as well as shrink it for the IME.
   // Keep the whole assistant in that visible rectangle, including its header.
@@ -481,6 +487,9 @@ function updateKeyboardLift(){
   const bulkTop = bulkEditOpen && needsLift && !nativeResized
     ? Math.max(0,Math.min(window.visualViewport.offsetTop,layoutHeight - window.visualViewport.height)) : 0;
   if(style.getPropertyValue('--bulk-viewport-top') !== `${bulkTop}px`)style.setProperty('--bulk-viewport-top',`${bulkTop}px`);
+  const pickerTop = pickerOpen && needsLift && !nativeResized
+    ? Math.max(0,Math.min(window.visualViewport.offsetTop,layoutHeight - window.visualViewport.height)) : 0;
+  if(style.getPropertyValue('--picker-viewport-top') !== `${pickerTop}px`)style.setProperty('--picker-viewport-top',`${pickerTop}px`);
   // Detail's composer uses the same visible rectangle. Safari pans the
   // viewport to reveal a focused dock; anchoring only its bottom loses the
   // item header above the visible screen.
@@ -542,15 +551,16 @@ function keepFocusedInputVisible(){
   const active = document.activeElement;
   // These fields live in a dock which already follows the keyboard. Scrolling
   // their ancestors fights the browser's keyboard pan and the Home scroll reset.
-  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input,#bulk-search,#bulk-settings-search'))return;
+  if(!active || active.matches('#habit-search,#detail-search-input,#detail-ask-input,#settings-search-input,#assistant-input,#bulk-search,#bulk-settings-search,#picker-search'))return;
   if(!active.matches('input,textarea,[contenteditable="true"]'))return;
-  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll');
+  let host = active.closest('.detail-sheet .detail-page,.add-content,.assistant-sheet,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll,.picker-content');
   if(!host)return;
   // Minimal detail sections share the Settings scroll, rather than scrolling
   // independently. Reveal the field in the element that can actually move.
   if(host.matches('.detail-page') && detailIsSingleView())host = host.closest('.detail-minimal-settings') || host;
-  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll'))return;
-  const rect = active.getBoundingClientRect();
+  if(paneTierActive() && !active.closest('.detail-sheet .detail-page,.add-content,.settings-stack,.feedback-body,.bulk-edit-scroll,.bulk-batch-scroll,.picker-content'))return;
+  const target = active.closest('.picker-coords-row') || active;
+  const rect = target.getBoundingClientRect();
   const bounds = host.getBoundingClientRect();
   const viewport = window.TingsNative?.isNative && window.TingsNative.platform === 'android'
     && Math.abs((window.visualViewport?.scale || 1) - 1) < 0.01
@@ -658,6 +668,9 @@ function appBackPlan(){
     || Number(b.dataset.backSequence || 0) - Number(a.dataset.backSequence || 0));
   const id = sheets[0]?.id || getPane()?.dataset.activeSheet;
   if(id){
+    if(id === 'location-picker-sheet' && visible($('picker-search-back'))){
+      return plan('picker-search', click($('picker-search-back')));
+    }
     if(id === 'week-sheet' && visible($('week-view-options-close'))){
       return plan('week-options', click($('week-view-options-close')));
     }
@@ -1279,7 +1292,7 @@ function closeSheet(id){
   $(id).style.zIndex = '';
   updateFullPageState();
   if(isFullPageSheet(id))suppressBottomNav(450);
-  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet')updateKeyboardLift();
+  if(id === 'add-sheet' || id === 'assistant-sheet' || id === 'detail-sheet' || id === 'location-picker-sheet')updateKeyboardLift();
 }
 
 // HYBRID: opens a day drill-down item in detail without leaving the day sheet
@@ -2219,7 +2232,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   if (e.key !== 'Escape' || e.defaultPrevented) return;
   const plan = appBackPlan();
-  if(plan && (plan.signature.startsWith('detail') || /^sheet:(block-edit-sheet|travel-edit-sheet|presence-picker-sheet):/.test(plan.signature))){
+  if(plan && (plan.signature.startsWith('detail') || plan.signature === 'picker-search' || /^sheet:(location-picker-sheet|block-edit-sheet|travel-edit-sheet|presence-picker-sheet):/.test(plan.signature))){
     e.preventDefault();
     plan.run();
     return;

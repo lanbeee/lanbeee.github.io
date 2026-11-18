@@ -1346,7 +1346,7 @@ function weekViewEnsureHorizonWeek(data,gen){
 
 // ─────────────────────────────────────────────────────────────────────────
 // RENDER. One normalized model drives both layouts, with a single clock across
-// visible columns. Phones show 1–3 days; wide screens also offer seven.
+// visible columns. Phones default to three days and desktop defaults to seven.
 // ─────────────────────────────────────────────────────────────────────────
 let _weekViewCtx = new Map();          // element id → original row for actions
 let _weekViewDirtyKey = '';
@@ -1362,7 +1362,7 @@ let _weekViewOpenGaps = new Set();   // expanded long-gap ids, while the sheet i
 let _weekViewDetailLayout = null;    // selected day's elastic layout, for the now line
 let _weekViewColumnLayouts = new Map();
 let _weekViewRenderedDay = '';
-let _weekViewPhoneDays = 1;
+let _weekViewPhoneDays = 3;
 let _weekViewWideDays = 7;
 let _weekViewZoom = 144;
 let _weekViewColor = 'topic';
@@ -1371,7 +1371,6 @@ let _weekViewReturnFocus = null;
 let _weekViewOpener = null;
 let _weekViewWindowStart = 0;
 let _weekViewOptionsOpen = false;
-let _weekViewOptionsOpener = null;
 let _weekViewFiltersHtml = '';
 let _weekViewAnchor = 0;
 let _weekViewSpan = WEEK_VIEW_HORIZON;
@@ -1705,24 +1704,16 @@ function weekViewSyncModeButton(){
   const minimal = isMinimalMode();
   const selection = overviewFilterSelection();
   const activeCount = ['topic','location','type','when','priority'].filter(kind=>selection[kind] !== 'all').length;
-  const filters = $('week-view-filters');
-  filters.hidden = minimal;
-  filters.classList.toggle('has-active',activeCount > 0);
-  filters.setAttribute('aria-expanded',String(_weekViewOptionsOpen));
-  filters.setAttribute('aria-label',activeCount ? `Filters, ${activeCount} active` : 'Filters');
-  const badge = filters.querySelector('b');
-  badge.hidden = !activeCount;
-  badge.textContent = String(activeCount);
   $('week-view-filter-section').hidden = minimal;
+  $('week-view-filter-title').textContent = activeCount ? `Filters (${activeCount})` : 'Filters';
   $('week-view-filters-reset').disabled = !activeCount;
 }
 
 // Opening a menu must not rebuild the clock or replace a native scroller.
 // The panel overlays the calendar; each choice applies immediately.
-function weekViewSetOptionsOpen(open,restoreFocus = true,opener = $('week-view-display-options')){
+function weekViewSetOptionsOpen(open,restoreFocus = true){
   _weekViewOptionsOpen = open;
   if(open){
-    _weekViewOptionsOpener = opener;
     _weekViewMonthOpen = false;
     weekViewRenderMonth();
     weekViewRenderOptionsContent();
@@ -1735,14 +1726,8 @@ function weekViewSetOptionsOpen(open,restoreFocus = true,opener = $('week-view-d
   });
   if(open){
     panel.scrollTop = 0;
-    if(opener.id === 'week-view-filters'){
-      $('week-view-filter-section').scrollIntoView({block:'start'});
-      $('week-view-filter-title').focus({preventScroll:true});
-    }else $('week-view-options-close').focus({preventScroll:true});
-  }else{
-    if(restoreFocus)_weekViewOptionsOpener?.focus({preventScroll:true});
-    _weekViewOptionsOpener = null;
-  }
+    $('week-view-options-close').focus({preventScroll:true});
+  }else if(restoreFocus)$('week-view-display-options').focus({preventScroll:true});
 }
 
 function weekViewRenderOptionsContent(data = load()){
@@ -2159,7 +2144,7 @@ function weekViewActivate(event){
   if(target.closest('#week-view-month-today')){weekViewGoToday();return;}
   const monthDay = target.closest('[data-wv-month-day]');
   if(monthDay){weekViewGoToDay(monthDay.dataset.wvMonthDay);return;}
-  if(target.closest('select,.wv-zoom,#week-view-create,#week-view-display-options,#week-view-filters,#week-view-overview,.wv-nav,#week-view-close'))return;
+  if(target.closest('select,.wv-zoom,#week-view-create,#week-view-display-options,#week-view-overview,.wv-nav,#week-view-close'))return;
   const mode = target.closest('[data-wv-mode]');
   if(mode){weekViewSetMode(mode.dataset.wvMode);return;}
   const retry = target.closest('[data-wv-retry]');
@@ -2434,7 +2419,7 @@ function bindWeekView(){
   // The sheet container is the persistent surface — chips, day heads, the
   // marker strip, and the grid are re-rendered inside it on every pass.
   const sheetInner = sheet.querySelector('.week-view-sheet');
-  bindTap(sheetInner,weekViewActivate,{ignoreSelector:'#week-view-options,#week-view-options-backdrop,#week-view-create,#week-view-display-options,#week-view-filters,#week-view-overview,.wv-nav,#week-view-close,.wv-gutter,.wv-hour'});
+  bindTap(sheetInner,weekViewActivate,{ignoreSelector:'#week-view-options,#week-view-options-backdrop,#week-view-create,#week-view-display-options,#week-view-overview,.wv-nav,#week-view-close,.wv-gutter,.wv-hour'});
   sheetInner.addEventListener('click',event=>{
     if(!_weekViewMonthOpen || event.target.closest('#week-view-month,#week-view-label'))return;
     _weekViewMonthOpen = false;
@@ -2484,9 +2469,7 @@ function bindWeekView(){
   const openMonth = ()=>openCalendarOverview({range:'month',dayKey:weekViewDaySel});
   $('week-view-overview')?.addEventListener('click',openMonth);
   $('week-view-today')?.addEventListener('click',()=>weekViewGoToday());
-  ['week-view-display-options','week-view-filters'].forEach(id=>{
-    $(id).addEventListener('click',event=>weekViewSetOptionsOpen(true,true,event.currentTarget));
-  });
+  $('week-view-display-options').addEventListener('click',()=>weekViewSetOptionsOpen(true));
   $('week-view-options-close').addEventListener('click',()=>weekViewSetOptionsOpen(false));
   $('week-view-options-backdrop').addEventListener('click',()=>weekViewSetOptionsOpen(false));
   $('week-view-options').addEventListener('click',event=>{

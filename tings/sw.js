@@ -1,5 +1,8 @@
-const CACHE = 'tings-v956';
+const CACHE = 'tings-v967';
 const MAPS_CACHE = 'tings-maps-v3';
+// Map tiles accumulate forever in a cache-first cache; this is the ceiling
+// where the oldest tiles get dropped (bounded, insertion-order eviction).
+const MAPS_CACHE_TILE_LIMIT = 900;
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 const MAPS_ORIGINS = [
@@ -34,6 +37,21 @@ function isShareWorkerRequest(req){
 
 function isAgendaDisplayPath(pathname){
   return /\/agenda-display\.html$/.test(pathname || '');
+}
+
+function isMapTileRequest(request){
+  return /^https:\/\/(?:(?:[abc]\.)?tile\.openstreetmap\.org\/|server\.arcgisonline\.com\/ArcGIS\/rest\/services\/[^/]+\/MapServer\/tile\/)/i.test(request.url);
+}
+
+// Trim only tiles, preserving the other map and geocoding entries in this cache.
+let mapsCachePuts = 0;
+async function cacheMapResponse(cache, request, response){
+  await cache.put(request,response);
+  if(!isMapTileRequest(request) || mapsCachePuts++ % 64 !== 0)return;
+  const tiles = (await cache.keys()).filter(isMapTileRequest);
+  if(tiles.length <= MAPS_CACHE_TILE_LIMIT)return;
+  const excess = tiles.length - Math.floor(MAPS_CACHE_TILE_LIMIT * 0.75);
+  await Promise.all(tiles.slice(0,excess).map(tile=>cache.delete(tile)));
 }
 
 const PRECACHE = [
@@ -337,7 +355,9 @@ self.addEventListener('fetch', event => {
       if (hit) return hit;
       try {
         const res = await fetch(req);
-        if (res && res.ok) mapsCache.put(req, res.clone());
+        if (res && res.ok) {
+          event.waitUntil(cacheMapResponse(mapsCache,req,res.clone()).catch(()=>{}));
+        }
         return res;
       } catch {
         return hit || new Response('', { status: 504, statusText: 'Gateway Timeout' });

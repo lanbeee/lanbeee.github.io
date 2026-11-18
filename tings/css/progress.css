@@ -118,11 +118,6 @@
   .location-remove-btn span{display:none;}
   .location-meta{align-items:stretch;flex-direction:column;}
   .location-pin-btn{width:100%;justify-content:center;}
-  .picker-search-row{grid-template-columns:minmax(0,1fr) 78px;gap:6px;}
-  .picker-search-row .btn{min-width:0;padding-left:8px;padding-right:8px;}
-  .picker-map{height:min(32dvh,190px);min-height:150px;}
-  .picker-map-actions{gap:6px;}
-  .picker-map-actions .btn{padding-left:7px;padding-right:7px;font-size:12px;}
 }
 
 @media (max-height:680px){
@@ -133,8 +128,6 @@
   .about-block{padding-top:8px;padding-bottom:8px;}
   .about-label{font-size:12px;}
   .about-summary,.about-collapse-body p{font-size:11.5px;line-height:1.28;}
-  .picker-map{height:min(30dvh,190px);min-height:150px;}
-  .location-picker-sheet .about-copy{margin-bottom:8px;}
 }
 
 /* A portrait phone's keyboard changes viewport height, not the size of its
