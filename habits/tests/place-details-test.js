@@ -91,6 +91,7 @@ async function openPicker(page){
     seasonal: parseOsmOpeningHours('Apr-Sep Mo-Su 08:00-20:00'),
     openEnd: parseOsmOpeningHours('Mo-Su 06:00+'),
     holiday: parseOsmOpeningHours('Mo-Fr 09:00-17:00; PH off'),
+    holidayComment: parseOsmOpeningHours('Mo-Th 00:00-24:00; Fr 00:00-21:00; Sa,Su 07:00-19:00; PH "See Website"'),
     list: parseOsmOpeningHours('Mo,We,Fr 11:00-16:00'),
     midnight: parseOsmOpeningHours('Fr-Sa 22:00-02:00')
   }));
@@ -105,7 +106,11 @@ async function openPicker(page){
   assert(parsed.always.ok && parsed.always.defaultStart === 0 && parsed.always.defaultEnd === 1439 && !parsed.always.hoursByDay,
     '24/7 -> always open');
   assert(!parsed.seasonal.ok, 'seasonal rules are not guessed');
-  assert(!parsed.openEnd.ok && !parsed.holiday.ok && !parsed.midnight.ok, 'unrepresentable hours do not become planner constraints');
+  assert(!parsed.openEnd.ok && !parsed.midnight.ok, 'unrepresentable hours do not become planner constraints');
+  assert(parsed.holiday.ok && parsed.holiday.defaultStart === 540 && parsed.holiday.defaultEnd === 1020,
+    'PH annotation is skipped, weekly hours survive ("PH off")');
+  assert(parsed.holidayComment.ok && parsed.holidayComment.defaultStart === 0 && parsed.holidayComment.defaultEnd === 1439,
+    'holiday comment rules are skipped, weekly hours survive ("PH \\"See Website\\"")');
   assert(parsed.list.ok && parsed.list.closedDays.join() === '0,2,4,6', 'weekday lists preserve the closed days');
 
   // ── B. pick a Nominatim hit that carries type + hours ──

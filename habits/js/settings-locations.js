@@ -1009,11 +1009,33 @@ function pickPickerResult(idx){
 function refreshPickerPlaceDetails(){
   const pin = pickerCurrentHit;
   if(!pin || !pin.osmType || !pin.osmId || pin.openingHours)return;
-  const pending = lookupOsmPlaceDetails(pin).then(details=>{
-    if(pickerCurrentHit !== pin || !details)return;
-    if(details.placeType)pin.placeType = details.placeType;
-    if(details.openingHours)pin.openingHours = details.openingHours;
+  // Same-pin check by position, not object identity: a pick's pan fires
+  // moveend, and syncPickerPinToMapCenter stores a spread copy of the hit,
+  // so the pin object may legitimately differ while staying the same place.
+  const samePin = () => {
+    const cur = pickerCurrentHit;
+    if(!cur || !Number.isFinite(cur.lat) || !Number.isFinite(cur.lng))return false;
+    return haversineMetres(cur.lat,cur.lng,pin.lat,pin.lng) <= 120;
+  };
+  const applyDetails = details => {
+    if(!details || !samePin())return;
+    const cur = pickerCurrentHit;
+    if(details.placeType)cur.placeType = details.placeType;
+    if(details.openingHours)cur.openingHours = details.openingHours;
     renderPickerPlaceFacts();
+  };
+  const pending = lookupOsmPlaceDetails(pin).then(details=>{
+    applyDetails(details);
+    if(details)return;
+    // Nominatim's usage policy throttles the second lookup of a fast
+    // pick-pick flow (1 req/s); one spaced retry keeps details filling in
+    // practice without doubling traffic on the common path.
+    setTimeout(()=>{
+      if(!samePin() || pickerCurrentHit.openingHours)return;
+      const retry = lookupOsmPlaceDetails(pin).then(applyDetails)
+        .finally(()=>{ if(pickerDetailsPending === retry)pickerDetailsPending = null; });
+      pickerDetailsPending = retry;
+    },1100);
   }).finally(()=>{ if(pickerDetailsPending === pending)pickerDetailsPending = null; });
   pickerDetailsPending = pending;
 }

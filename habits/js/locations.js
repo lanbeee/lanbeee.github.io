@@ -949,12 +949,18 @@ async function lookupOsmPlaceDetails(hit){
 
 // The planner supports one continuous window per day. Parse weekly rules
 // that fit that model, including weekday lists and explicitly closed days.
+// Time specs stay strict — split shifts, open-ended and overnight spans are
+// not approximated into planner constraints. Holiday/seasonal/comment rules
+// ("PH off", "PH \"See Website\"", "SH off", month ranges) carry no weekly
+// hours, though — skip them instead of failing the string: real chains tag
+// those constantly and the venue's weekly rules are still usable.
 function parseOsmOpeningHours(value){
   const raw = String(value || '').trim();
   const invalid = {ok:false};
   if(raw === '24/7')return {ok:true,hoursByDay:null,closedDays:[],defaultStart:0,defaultEnd:1439};
   const weekdays = ['su','mo','tu','we','th','fr','sa'];
   const dayPattern = /^(su|mo|tu|we|th|fr|sa)(?:-(su|mo|tu|we|th|fr|sa))?$/;
+  const skipPattern = /(^|\s)(ph|sh|vh)\b|^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|\bweek\b|sunrise|sunset|dawn|dusk|"/;
   const hoursByDay = {};
   const time = token=>{
     const [hour,minute] = token.split(':').map(Number);
@@ -962,13 +968,18 @@ function parseOsmOpeningHours(value){
     return hour * 60 + minute;
   };
   for(const rule of raw.toLowerCase().split(';')){
-    const match = /^([a-z,-]+)\s+(closed|off|(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2}))$/.exec(rule.trim());
-    if(!match)return invalid;
-    const [,dayList,,startToken,endToken] = match;
+    const trimmed = rule.trim();
+    if(!trimmed || skipPattern.test(trimmed))continue;
+    const space = trimmed.indexOf(' ');
+    if(space < 0)return invalid;
+    const dayList = trimmed.slice(0,space);
+    const timeSpec = trimmed.slice(space + 1).trim();
     let hours = null;
-    if(startToken){
-      const start = time(startToken);
-      const end = time(endToken);
+    if(!/^(closed|off)$/.test(timeSpec)){
+      const m = /^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/.exec(timeSpec);
+      if(!m)return invalid;
+      const start = time(m[1]);
+      const end = time(m[2]);
       if(!(start < end))return invalid;
       hours = {start,end:Math.min(end,1439)};
       if(hours.start === hours.end)return invalid;
