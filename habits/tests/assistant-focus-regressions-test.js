@@ -89,7 +89,7 @@ function assert(ok, message){
             appointmentRepeat:'weekly',appointmentStartDate:'2026-11-09',appointmentWeekdays:'Monday',appointmentUntil:'2026-12-01',appointmentStartMinute:'9am',
             exceptionTime:'10am',exceptionDuration:'30 minutes',exceptionEmoji:'🌟',exceptionColor:'blue',exceptionCancelled:'cancel',exceptionReset:'reset',
             reminderDue:'notification',reminderDueDays:'1',reminderDueTime:'9am',reminderSecond:'alarm',reminderSecondLead:'1440',reminderDnd:'yes',reminderStart:'alarm',reminderEnd:'off',reminderTravelStart:'notification',reminderTravelEnd:'off',reminderMissed:'notification',
-            reminderTravelLead:'15',reminderStartLead:'15',reminderMissedLead:'15',reminderReset:'reset'};
+            reminderTravelLead:'15',reminderStartLead:'15',reminderMissedLead:'15',reminderReset:'reset',reminderSound:'warm'};
           const failed=ASSISTANT_FOCUS_FIELDS.flatMap(field=>{
             const value=values[field.id], parsed=value && assistantFocusNormalize(field.id,value,s);
             if(field.id==='name')return parsed && !parsed.ok ? [] : [{field:field.id,value,parsed}];
@@ -130,6 +130,22 @@ function assert(ok, message){
             return saved.durationMinutes===30 && saved.priority===5 && undo.ok && after.durationMinutes===45 && after.priority===5 && after.emoji==='✅';
           });
         }],
+        ['event sound changes apply only to the selected date', async()=>page.evaluate(async()=>{
+          const t=focusTest,native=window.TingsNative;t.seed();
+          window.TingsNative={isNative:true,platform:'ios',notifications:{}};
+          try{
+            const day='2026-11-09',owner='item:event';
+            const prefs={version:4,enabled:false,items:{[owner]:{sound:'warm',dates:{[day]:{start:'off'}}}}};
+            localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY,JSON.stringify(prefs));
+            const event=t.open('event');
+            assistantFocusSetScope(event,'occurrence',day);
+            if(!assistantFocusCorrect(event,'reminderSound','gentle').ok)return false;
+            await t.commit(event);
+            const saved=nativeReminderPreferences().items[owner];
+            return saved.sound==='warm' && saved.dates[day].sound==='gentle' && saved.dates[day].start==='off'
+              && nativeReminderPreferences().enabled===false;
+          }finally{window.TingsNative=native;}
+        })],
         ['same-field conflict requires review instead of overwriting', async()=>page.evaluate(async()=>{
           const t=focusTest;
           for(const minutes of [30,45]){

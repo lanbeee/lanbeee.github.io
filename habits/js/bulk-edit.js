@@ -11,6 +11,8 @@ let bulkReview = null; // computed review {perItem, opLines, errors, warnings, c
 let bulkReviewConfirmed = false; // re-inspection gate after staleness
 let bulkStaleNotice = false;
 let bulkSettingsQuery = '';
+let bulkSoundPicker = null;
+let bulkSoundCatalogRequest = 0;
 
 const BULK_PRIORITY_WORDS = ['critical','high','normal','flexible','low','someday'];
 
@@ -300,6 +302,10 @@ function bulkDefaultValue(opDesc,op,records){
     case 'place':return '';
     case 'choice':return bulkLeadDefault(opDesc.leadPreset);
     case 'dueReminder':return {days:0,time:'09:00'};
+    case 'sound':{
+      const ids = new Set(records.filter(h=>opDesc.applies(h)).map(h=>nativeReminderSoundId(bulkReminderChoice(h)) || 'inherit'));
+      return ids.size === 1 ? [...ids][0] : 'inherit';
+    }
     case 'datetime':{
       const when = new Date();
       when.setDate(when.getDate() + 1);
@@ -395,6 +401,21 @@ function bulkValueControlHtml(opDesc,pending,data){
     case 'choice':{
       const options = bulkLeadOptions(opDesc.leadPreset);
       return `<select class="mini-select" aria-label="${escapeHtml(opDesc.label)}" data-bulk-field="${id}" data-bulk-kind="choice">${options.map(([key,label])=>`<option value="${key}"${String(value) === String(key) ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>`;
+    }
+    case 'sound':{
+      const api = window.TingsNative?.sounds;
+      const disabled = bulkSoundPicker ? ' disabled' : '';
+      const pickers = [
+        typeof api?.addPick === 'function' ? `<button type="button" class="mini-text-btn" data-bulk-sound-pick="phone"${disabled}>Choose phone sound</button>` : '',
+        typeof api?.addFile === 'function' ? `<button type="button" class="mini-text-btn" data-bulk-sound-pick="file"${disabled}>Choose audio file</button>` : ''
+      ].join('');
+      const selected = String(value || 'inherit');
+      // The phone catalog arrives after the row paints. Keep a saved custom
+      // tone selected instead of falling back to the first option.
+      const choices = bulkSoundCatalog.some(choice=>choice.id === selected)
+        ? bulkSoundCatalog
+        : bulkSoundCatalog.concat([{id:selected,name:bulkSoundLabel(selected)}]);
+      return `<select class="mini-select" aria-label="notification sound" data-bulk-field="${id}" data-bulk-kind="sound">${choices.map(choice=>`<option value="${escapeHtml(choice.id)}"${selected === choice.id ? ' selected' : ''}>${escapeHtml(choice.name)}</option>`).join('')}</select>${pickers ? `<div class="settings-actions">${pickers}</div>` : ''}`;
     }
     case 'dueReminder':{
       const days = value && value.days != null ? String(value.days) : '0';
@@ -496,6 +517,37 @@ function renderBulkEditStep(){
   }
   host.innerHTML = parts.join('') || '<p class="field-hint">No settings match.</p>';
   syncBulkReviewAction();
+  void bulkRefreshSoundCatalog(host);
+}
+
+async function bulkRefreshSoundCatalog(host,savedState){
+  const api = window.TingsNative?.sounds;
+  if(!host?.querySelector('[data-bulk-kind="sound"]'))return;
+  const request = ++bulkSoundCatalogRequest;
+  let state;
+  try{state = savedState || await api?.status?.();}
+  catch{return;}
+  if(request !== bulkSoundCatalogRequest || !host.isConnected || !state)return;
+  const choices = [{id:'inherit',name:state.effectiveName ? `Use the default (${state.effectiveName})` : 'Use the default'}];
+  for(const choice of state.choices || []){
+    if(nativeReminderItemSoundChoice(choice) && !choices.some(existing=>existing.id === choice.id))choices.push({id:choice.id,name:choice.name || choice.id});
+  }
+  const select = host.querySelector('[data-bulk-kind="sound"]');
+  const pending = bulkPending.find(step=>step.id === 'reminderSound');
+  const wanted = pending && pending.op !== 'keep' && pending.value != null && pending.value !== ''
+    ? String(pending.value) : (select ? select.value : '');
+  if(wanted && !choices.some(choice=>choice.id === wanted)){
+    choices.push({id:wanted,name:String(wanted).startsWith('lib:') ? 'Custom sound' : wanted});
+  }
+  bulkSetSoundCatalog(choices);
+  if(!select)return;
+  select.replaceChildren(...choices.map(choice=>{
+    const option = document.createElement('option');
+    option.value = choice.id;
+    option.textContent = choice.name;
+    return option;
+  }));
+  if(choices.some(choice=>choice.id === wanted))select.value = wanted;
 }
 
 function bulkPendingFor(id){
@@ -578,6 +630,8 @@ function bulkReadControlValue(opDesc,host){
       return host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="place"]`)?.value || '';
     case 'choice':
       return Number(host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="choice"]`)?.value);
+    case 'sound':
+      return host.querySelector(`[data-bulk-field="${opDesc.id}"][data-bulk-kind="sound"]`)?.value || 'inherit';
     case 'dueReminder':
       return {
         days:Number(host.querySelector('[data-bulk-due-part="days"]')?.value),
@@ -1085,6 +1139,32 @@ $('bulk-edit-rows')?.addEventListener('click',e=>{
     if(opDesc && Array.isArray(pending.value))pending.value = [...pending.value,topic];
     if(input)input.value = '';
     renderBulkEditStep();
+    return;
+  }
+  const soundPick = e.target.closest('[data-bulk-sound-pick]');
+  if(soundPick){
+    const api = window.TingsNative?.sounds;
+    const action = soundPick.dataset.bulkSoundPick === 'file' ? api?.addFile : api?.addPick;
+    if(typeof action !== 'function' || bulkSoundPicker)return;
+    const pending = bulkPending.find(step=>step.id === 'reminderSound');
+    if(pending?.op !== 'set')return;
+    const draft = bulkPending;
+    const previous = pending.value;
+    bulkSoundPicker = pending;
+    const setPickerDisabled = disabled=>$('bulk-edit-rows').querySelectorAll('[data-bulk-sound-pick]').forEach(button=>button.disabled = disabled);
+    setPickerDisabled(true);
+    void (async()=>{
+      try{
+        if(typeof api.stopPreview === 'function')await api.stopPreview();
+        const saved = await action();
+        if(!saved?.savedId || !nativeReminderSoundKnown(saved.savedId))return;
+        if(bulkPending === draft && bulkStep === 'change' && pending.op === 'set' && pending.value === previous){
+          pending.value = saved.savedId;
+        }
+        await bulkRefreshSoundCatalog($('bulk-edit-rows'),saved);
+      }catch(error){showToast(error.message || 'Could not change notification sound.',5000);}
+      finally{bulkSoundPicker = null;setPickerDisabled(false);}
+    })();
     return;
   }
   const addOrdinal = e.target.closest('[data-bulk-add-ordinal]');

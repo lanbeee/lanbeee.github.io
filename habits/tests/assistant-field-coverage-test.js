@@ -206,6 +206,9 @@ const cases=[
   ['reminderTravelLead','Remind me 15 minutes before departure',15,{native:true}],
   ['reminderStartLead','Remind me 15 minutes before start',15,{native:true,kind:'event'}],
   ['reminderMissedLead','Set missed warning lead to 15 minutes',15,{native:true}],
+  ['reminderSound','Set the notification sound to Warm','warm',{id:'sound-warm',native:true,selectAll:true}],
+  ['reminderSound','Use the default notification sound',null,{id:'sound-default',native:true,selectAll:true,reminderSeed:{sound:'warm'}}],
+  ['reminderSound','Set the notification sound to Kitchen','lib:kitchen01',{id:'sound-kitchen',native:true,selectAll:true,sounds:[{id:'lib:kitchen01',name:'Kitchen'}]}],
   ['reminderReset','Reset reminders to defaults',true,{native:true,reminderSeed:{start:'alarm',end:'notification',travelLeadMinutes:60,dates:{'2026-11-09':{start:'notification'}}}}],
   ['frequency','I want to do this every third day',1,{id:'language-frequency-third',extra:{periodDays:3},seed:{name:'Sample: go for a walk',durationMinutes:20},record:{name:'Sample: go for a walk',durationMinutes:20}}],
   ['frequency','Repeat every 3rd day',1,{id:'language-frequency-digit-ordinal',extra:{periodDays:3}}],
@@ -667,6 +670,7 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
       }};
       window.coverageSeed=test=>{
         window.TingsNative={isNative:Boolean(test.native),quiet:{status:async()=>({granted:true})},notifications:{permissions:async()=>({display:'granted'}),exactAlarmPermission:async()=>({exact_alarm:'granted'})}};
+        if(test.sounds)window.TingsNative.sounds={status:async()=>({selected:'calm',choices:test.sounds,effectiveName:'Calm'})};
         window.reconcileNativeQuiet=async()=>{};window.reconcileNativeReminders=async()=>{};window.reconcileNativeRemindersNow=async()=>{};window.refreshOpenViews=()=>{};
         localStorage.removeItem(ASSISTANT_FOCUS_REMINDER_KEY);
         if(test.reminderSeed)localStorage.setItem(ASSISTANT_FOCUS_REMINDER_KEY,JSON.stringify({version:4,enabled:true,items:{'item:target':test.reminderSeed}}));
@@ -731,11 +735,13 @@ function assert(ok,msg){if(!ok)throw Error(msg);passed++;console.log(`  ok: ${ms
         const persisted=commit?.ok&&JSON.stringify(r)===JSON.stringify(expectedSaved)&&JSON.stringify(saved.logs)===JSON.stringify(JSON.parse(before)[0].logs)
           &&persistedKeys.every(key=>JSON.stringify(saved[key])===JSON.stringify(expectedSaved[key]));
         const occurrenceOK=test.scope!=='occurrence'||(JSON.stringify(saved?.appointment?.exceptions['2026-11-09']||null)===JSON.stringify(r.appointment.exceptions['2026-11-09']||null)&&saved?.durationMinutes===30&&saved?.appointment.startMinute===540);
-        const reminderKeys={reminderDue:'due',reminderDueDays:'dueDaysBefore',reminderDueTime:'dueMinute',reminderSecond:'startSecond',reminderSecondLead:'secondStartLeadMinutes',reminderDnd:'dnd',reminderStart:'start',reminderEnd:'end',reminderTravelStart:'travelStart',reminderTravelEnd:'travelEnd',reminderMissed:'missed',reminderTravelLead:'travelLeadMinutes',reminderStartLead:'startLeadMinutes',reminderMissedLead:'missedLeadMinutes'};
+        const reminderKeys={reminderDue:'due',reminderDueDays:'dueDaysBefore',reminderDueTime:'dueMinute',reminderSecond:'startSecond',reminderSecondLead:'secondStartLeadMinutes',reminderDnd:'dnd',reminderStart:'start',reminderEnd:'end',reminderTravelStart:'travelStart',reminderTravelEnd:'travelEnd',reminderMissed:'missed',reminderTravelLead:'travelLeadMinutes',reminderStartLead:'startLeadMinutes',reminderMissedLead:'missedLeadMinutes',reminderSound:'sound'};
         const reminders=JSON.parse(localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY)||'null')?.items?.['item:target'];
         const remindersOK=!test.native||(test.field==='reminderReset'
-          ?reminders&&Object.values(reminderKeys).filter(key=>key!=='dnd').every(key=>!Object.hasOwn(reminders,key))&&JSON.stringify(reminders.dates)===JSON.stringify(test.reminderSeed.dates)
-          :reminders?.[reminderKeys[test.field]]===test.value);
+          ?reminders&&Object.values(reminderKeys).filter(key=>key!=='dnd'&&key!=='sound').every(key=>!Object.hasOwn(reminders,key))&&JSON.stringify(reminders.dates)===JSON.stringify(test.reminderSeed.dates)
+          :test.field==='reminderSound'&&test.value==null
+            ?reminders&&reminders.sound==null
+            :reminders?.[reminderKeys[test.field]]===test.value);
         return {matched,recordOK,advancedOK,extras,unchanged,ready,commit,persisted,occurrenceOK,reminders,remindersOK,clarification,history,changes:s.changes,unresolved:s.unresolved,pending:s.pendingFamilies,record:r,saved,trace:s.trace,jobs:s.jobs.map(j=>({id:j.id,status:j.status,spans:j.spans,error:j.error}))};
       },test);
       results.push({...test,...result});fs.writeFileSync(report,JSON.stringify(results,null,2));

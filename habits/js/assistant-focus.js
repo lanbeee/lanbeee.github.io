@@ -9,6 +9,58 @@ const ASSISTANT_FOCUS_REMINDER_EDGES = {reminderStart:'start', reminderSecond:'s
 const ASSISTANT_FOCUS_REMINDER_TIMING = {reminderStartLead:'startLeadMinutes', reminderSecondLead:'secondStartLeadMinutes', reminderDueDays:'dueDaysBefore', reminderDueTime:'dueMinute', reminderTravelLead:'travelLeadMinutes', reminderMissedLead:'missedLeadMinutes'};
 const ASSISTANT_FOCUS_MISSED_LEADS = [5, 15];
 const ASSISTANT_FOCUS_REMINDER_MODES = ['off', 'notification', 'alarm'];
+const ASSISTANT_FOCUS_SOUND_BUILTINS = [
+  {id:'inherit',name:'Use the default'},
+  {id:'default',name:'Phone default'},
+  {id:'calm',name:'Calm'},
+  {id:'warm',name:'Warm'},
+  {id:'deep',name:'Deep'},
+  {id:'gentle',name:'Gentle'},
+  {id:'silent',name:'Silent'}
+];
+var assistantFocusSoundChoices = ASSISTANT_FOCUS_SOUND_BUILTINS.slice();
+
+function assistantFocusSoundCatalog(){
+  return assistantFocusSoundChoices && assistantFocusSoundChoices.length ? assistantFocusSoundChoices : ASSISTANT_FOCUS_SOUND_BUILTINS;
+}
+
+async function assistantFocusLoadSounds(){
+  const api = window.TingsNative && window.TingsNative.sounds;
+  if(!api || typeof api.status !== 'function'){
+    assistantFocusSoundChoices = ASSISTANT_FOCUS_SOUND_BUILTINS.slice();
+    return;
+  }
+  try{
+    const state = await api.status();
+    const choices = ASSISTANT_FOCUS_SOUND_BUILTINS.slice();
+    for(const choice of state && state.choices || []){
+      if(!choice || !choice.id || choice.id === 'inherit')continue;
+      if(!nativeReminderItemSoundChoice(choice))continue;
+      if(!choices.some(row => row.id === choice.id))choices.push({id:choice.id, name:choice.name || choice.id});
+    }
+    assistantFocusSoundChoices = choices;
+  }catch(_){
+    assistantFocusSoundChoices = ASSISTANT_FOCUS_SOUND_BUILTINS.slice();
+  }
+}
+
+function assistantFocusParseSound(text){
+  const lower = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/[.!]$/,'');
+  if(!lower)return null;
+  if(lower === 'inherit')return '';
+  const choices = assistantFocusSoundCatalog();
+  const exact = choices.find(choice=>choice.id.toLowerCase() === lower);
+  if(exact)return exact.id;
+  const value = lower.replace(/^(?:set|change|switch) (?:the )?(?:(?:notification|reminder|alert) )?(?:sound|tone) to /,'')
+    .replace(/^(?:use|pick|choose) /,'');
+  const named = choices.filter(choice=>String(choice.name || '').trim().toLowerCase() === value);
+  if(named.length === 1)return named[0].id === 'inherit' ? '' : named[0].id;
+  if(/^(?:the )?(?:phone|system|device) default(?: (?:notification )?sound)?$/.test(value))return 'default';
+  if(/^(?:the default|(?:the )?default (?:notification )?sound)$/.test(value))return '';
+  if(/^no (?:notification )?sound$/.test(value))return 'silent';
+  if(/^(?:the )?(?:calm|warm|deep|gentle|silent) (?:sound|tone|chime)$/.test(value))return value.replace(/^the /,'').split(' ')[0];
+  return null;
+}
 let _assistantFocusEpoch = 1;
 
 function assistantFocusClone(value){
@@ -606,6 +658,11 @@ function assistantFocusNormalize(fieldId, raw, session){
     const minute=assistantParseClock(text);
     return minute==null ? fail('Use a clock time such as 9am or 09:00.') : {ok:true,op:'set',value:minute};
   }
+  if(fieldId === 'reminderSound'){
+    const id = assistantFocusParseSound(text);
+    if(id == null)return fail('Choose the default, the phone default, Calm, Warm, Deep, Gentle, Silent, or a saved sound.');
+    return id ? {ok:true, op:'set', value:id} : {ok:true, op:'clear', value:null};
+  }
   if(ASSISTANT_FOCUS_REMINDER_EDGES[fieldId]){
     const allOff=typeof assistantFieldAllRemindersOff==='function'&&assistantFieldAllRemindersOff(text);
     if(!allOff&&!/\bno reminders?\b/i.test(text)&&/\b(?:not|never|don.t|without)\b/i.test(text))return fail('Choose off, notification, or ringing alarm.');
@@ -822,6 +879,9 @@ function assistantFocusQuestionPicker(session, question){
     let values = enums[field.id];
     if(booleans.includes(field.id))values = ['yes','no'];
     if(/^reminder(?:Start|Second|Due|End|TravelStart|TravelEnd|Missed)$/.test(field.id))values = ASSISTANT_FOCUS_REMINDER_MODES;
+    if(field.id === 'reminderSound'){
+      options = assistantFocusSoundCatalog().map(choice => ({id:choice.id === '' ? 'inherit' : choice.id, label:choice.name}));
+    }
     if(field.id === 'reminderMissedLead')values = ASSISTANT_FOCUS_MISSED_LEADS.map(String);
     else if(['reminderStartLead','reminderSecondLead'].includes(field.id))values = ASSISTANT_FOCUS_EVENT_LEADS.map(String);
     else if(field.id === 'reminderTravelLead')values = ASSISTANT_FOCUS_LEADS.map(String);
@@ -1350,6 +1410,12 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
     const edge = ASSISTANT_FOCUS_REMINDER_EDGES;
     const lead = ASSISTANT_FOCUS_REMINDER_TIMING;
     if(fieldId === 'reminderDnd')return choice.dnd ? 'DND during session' : 'DND off';
+    if(fieldId === 'reminderSound'){
+      const id = nativeReminderSoundId(staged && Object.hasOwn(patch.patch,'sound') && !patch.patch.sound && date ? owner : choice);
+      if(!id)return 'the default';
+      const found = assistantFocusSoundCatalog().find(row => row.id === id);
+      return found && found.name || id;
+    }
     if(edge[fieldId])return {off:'off', notification:'notification', alarm:'ringing alarm'}[choice[edge[fieldId]] || 'off'];
     if(fieldId==='reminderDueDays')return (choice.dueDaysBefore || 0)===0 ? 'on the due date' : `${choice.dueDaysBefore} day${choice.dueDaysBefore===1?'':'s'} before due`;
     if(fieldId==='reminderDueTime')return assistantClockLabel(choice.dueMinute ?? 540);
@@ -1706,7 +1772,7 @@ function assistantFocusDetailSelector(field, session){
     if(!window.TingsNative?.isNative)return null;
     const edges = ASSISTANT_FOCUS_REMINDER_EDGES;
     if(edges[field])return `#detail-native-reminders [data-reminder-edge="${edges[field]}"]`;
-    return ({reminderDnd:'#detail-native-reminders [aria-label="DND during session"]', reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderSecondLead:'#detail-native-reminders [aria-label="second event reminder timing"]', reminderDueDays:'#detail-native-reminders [aria-label$="due date reminder day"]', reminderDueTime:'#detail-native-reminders [aria-label$="due date reminder time"]', reminderReset:'#detail-native-reminders'})[field] || null;
+    return ({reminderDnd:'#detail-native-reminders [aria-label="DND during session"]', reminderSound:'#detail-native-reminders [data-reminder-sound]', reminderTravelLead:'#detail-native-reminders [data-reminder-lead]', reminderMissedLead:'#detail-native-reminders [data-reminder-missed-lead]', reminderStartLead:'#detail-native-reminders [aria-label="event reminder timing"]', reminderSecondLead:'#detail-native-reminders [aria-label="second event reminder timing"]', reminderDueDays:'#detail-native-reminders [aria-label$="due date reminder day"]', reminderDueTime:'#detail-native-reminders [aria-label$="due date reminder time"]', reminderReset:'#detail-native-reminders'})[field] || null;
   }
   if(session.kind === 'event'){
     const event = {
@@ -1968,6 +2034,7 @@ function assistantFocusItemSummary(item,seedLookups = null){
     if(field.family === 'reminders'){
       if(!native)return;
       const value = text(field.id);
+      if(field.id === 'reminderSound' && (!value || value === 'the default'))return;
       if(value !== 'off' && value !== 'DND off')add(custom, field.id, field.label, value);
       return;
     }
@@ -2160,7 +2227,7 @@ function assistantFocusPreflight(session, record){
   }
   if(session.changes.some(change => String(change.field).startsWith('reminder'))){
     if(!(typeof window !== 'undefined' && window.TingsNative && window.TingsNative.isNative)){
-      return {ok:false, error:'Phone reminders are available in the Android app. Nothing was saved, and the draft is still here.'};
+      return {ok:false, error:'Phone reminders are available in the mobile app. Nothing was saved, and the draft is still here.'};
     }
     const due=assistantFocusReminderPatch(session).patch.due;
     if(record.type==='task' && ['notification','alarm'].includes(due) && !Number.isFinite(record.dueDate)){
@@ -2184,13 +2251,14 @@ function assistantFocusReminderPatch(session){
     if(lead[change.field])patch[lead[change.field]] = change.value;
     if(change.field === 'reminderReset')reset = true;
     if(change.field === 'reminderDnd')patch.dnd = change.value === true;
+    if(change.field === 'reminderSound')patch.sound = change.op === 'clear' || change.value == null || change.value === '' ? '' : change.value;
   });
   return {patch, reset};
 }
 
 async function assistantFocusReminderPermission(patch){
   const api = window.TingsNative && window.TingsNative.notifications;
-  if(!api)return {ok:false, error:'Phone reminders are available in the Android app. Nothing was saved.'};
+  if(!api)return {ok:false, error:'Phone reminders are available in the mobile app. Nothing was saved.'};
   if(Object.hasOwn(patch.patch||{},'dnd')){
     const quiet=window.TingsNative?.quiet;
     if(!quiet)return {ok:false,error:'Do Not Disturb is not available on this device. Nothing was saved.'};
@@ -2218,28 +2286,37 @@ async function assistantFocusReminderPermission(patch){
 
 function assistantFocusWriteReminders(session, hid){
   const staged = assistantFocusReminderPatch(session);
-  if(!Object.keys(staged.patch).length && !staged.reset)return;
+  const sound = Object.hasOwn(staged.patch, 'sound') ? staged.patch.sound : undefined;
+  if(sound !== undefined)delete staged.patch.sound;
+  if(!Object.keys(staged.patch).length && !staged.reset && sound === undefined)return;
   const raw = localStorage.getItem(ASSISTANT_FOCUS_REMINDER_KEY);
   const prefs = raw ? JSON.parse(raw) : {version:4, enabled:false, items:{}};
   if(!prefs.items || typeof prefs.items !== 'object')prefs.items = {};
   const owner = `item:${hid}`;
   const choice = Object.assign({}, prefs.items[owner]);
   const date = session.eventScope === 'occurrence' ? session.occurrenceDate : '';
-  const overrides = [...Object.values(ASSISTANT_FOCUS_REMINDER_EDGES),...Object.values(ASSISTANT_FOCUS_REMINDER_TIMING)];
-  if(staged.reset && date){
+  const overrides = [...Object.values(ASSISTANT_FOCUS_REMINDER_EDGES),...Object.values(ASSISTANT_FOCUS_REMINDER_TIMING),'sound'];
+  if(date){
     const dates = Object.assign({}, choice.dates);
     const entry = Object.assign({}, dates[date]);
-    overrides.forEach(key => delete entry[key]);
+    if(staged.reset)overrides.forEach(key => delete entry[key]);
     Object.assign(entry, staged.patch);
+    if(sound !== undefined){
+      if(sound)entry.sound = sound;
+      else delete entry.sound;
+    }
     if(Object.keys(entry).length)dates[date] = entry;
     else delete dates[date];
-    choice.dates = dates;
-  }else if(staged.reset){
-    overrides.forEach(key => delete choice[key]);
+    if(Object.keys(dates).length)choice.dates = dates;
+    else delete choice.dates;
+  }else{
+    if(staged.reset)overrides.forEach(key => delete choice[key]);
     Object.assign(choice, staged.patch);
-  }else if(date){
-    choice.dates = Object.assign({}, choice.dates, {[date]:Object.assign({}, choice.dates && choice.dates[date], staged.patch)});
-  }else Object.assign(choice, staged.patch);
+    if(sound !== undefined){
+      if(sound)choice.sound = sound;
+      else delete choice.sound;
+    }
+  }
   if(Object.values(staged.patch).some(mode => mode === 'notification' || mode === 'alarm'))prefs.enabled = true;
   prefs.items[owner] = choice;
   prefs.version = 4;

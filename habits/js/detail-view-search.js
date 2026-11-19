@@ -224,7 +224,7 @@ function detailSearchEntries(){
     return parts.join(' ');
   };
   // Reminder edges are div.native-reminder-row; the DND control is a label.
-  inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row, #detail-native-reminders label, #detail-native-reminders .native-reminder-row').forEach(row=>{
+  inner.querySelectorAll('.habit-option-row, .schedule-link-editor, .link-row, #detail-native-reminders label, #detail-native-reminders .native-reminder-row, #detail-native-reminders .native-reminder-sound').forEach(row=>{
     // Hidden template and editor rows stay out of the index; conditional
     // catalog fields above deliberately remain searchable for their
     // prerequisite guidance.
@@ -238,7 +238,9 @@ function detailSearchEntries(){
       const edgeTitle = typeof NATIVE_REMINDER_EDGES !== 'undefined'
         ? NATIVE_REMINDER_EDGES.find(([key])=>key === edge)?.[1] : '';
       label = edgeTitle && edgeTitle !== face ? `${edgeTitle} (${face})` : (edgeTitle || face);
-      aliases = 'phone reminder notification ringing alarm';
+      aliases = row.matches('.native-reminder-sound')
+        ? 'notification sound tone chime ringtone audio custom phone sound'
+        : 'phone reminder notification ringing alarm';
       if(edge === 'missed')aliases += ' before missed drop cutoff warning estimate';
       if(row.querySelector('[data-reminder-lead]'))aliases += ' travel departure lead time minutes';
     }else if(row.matches('.schedule-link-editor')){

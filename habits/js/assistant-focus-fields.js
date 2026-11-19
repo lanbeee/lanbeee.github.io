@@ -71,6 +71,7 @@ const ASSISTANT_FIELD_SIGNALS = {
   durationMinutes:new RegExp(`(?<!\\w)(?:(?:for\\s+)?${assistantSpokenQuantitySource()}|for\\s+\\w+\\s+(?:minutes?|hours?)|double (?:it|the duration)|duration|long|twice as long)\\b`,'i'),
   tapStartsSession:/\b(?:start with a tap|tap to start|(?:tap|tapping|touch)[^;]*\b(?:start|ses?sion|timer)|start\w*[^,;]*\b(?:tap|tapping|touch))\b/i,
   reminderDnd:/\bdnd\b|\bdo not disturb\b|\b(?:silenc\w*|mut\w*) (?:my |the )?phone\b|\bphone\b[^,;]*\b(?:quiet|mute)\b/i,
+  reminderSound:/\b(?:notification|reminder|alert) sounds?\b|\b(?:ringtone|chime)\b|\b(?:set|change|use|pick|choose)\b[^,;]{0,48}\b(?:sound|tone)\b|\b(?:sound|tone) (?:to|of)\b|\b(?:calm|warm|deep|gentle)\b[^,;]{0,24}\b(?:sound|tone|chime)\b|^(?:use|pick|choose) (?:calm|warm|deep|gentle|silent)[.!]?$/i,
   breakable:/\b(?:split(?:ting|table)?|breakable|unbreakable|continuous|uninterrupted|chunks?|several sittings|separate pieces|break[^,;]*into smaller sessions)\b/i,
   minChunkMinutes:/\b(?:minimum chunk|shortest session|(?:minimum|smallest) (?:block|time per piece)|minimum block size|pieces shorter than|chunks?\b[^,;]*\b(?:minimum|at least|minutes?|hours?)|(?:pieces|chunks?)\s+minimum|\d+[- ]minute chunks?)\b/i,
   minGapMinutes:new RegExp(`(?<!\\w)(?:(?:${assistantSpokenQuantitySource()})\\s+gap|gap|apart|between (?:two |the )?sessions|spacing|separate (?:any )?(?:two |the )?sessions|rest between (?:blocks|sessions))\\b`,'i'),
@@ -133,6 +134,7 @@ const ASSISTANT_FIELD_HINTS = {
   autoMarkMinutes:'Logged time needed to automatically mark the item complete. Exclude session length, timer stopping and frequency.',
   tapStartsSession:'Whether tapping the item starts a session instead of immediately logging completion.',
   reminderDnd:'Whether Do Not Disturb silences the phone during this item’s session. Not a reminder or a session duration.',
+  reminderSound:'This item’s notification tone: the default, phone default, Calm, Warm, Deep, Gentle, Silent, or a saved sound name. Ringing alarms keep the phone alarm tone. Not whether a reminder is on.',
   trackValue:'Whether each completion records a number or measurement, rather than just a checkmark.',
   allowedWindow:'Required allowed hours, preserving before/after, anchors and offsets. Exclude preferences.',
   preferredWindow:'Preferred hours, not a required restriction.',
@@ -521,6 +523,8 @@ function assistantFieldRelevant(def, text){
   if(!literal&&ASSISTANT_FIELD_SIGNALS.tapStartsSession.test(text)&&['dueTime','appointmentStartMinute','allowedWindow','durationMinutes','reminderStart','timerAutoStopMinutes'].includes(def.id))return false;
   if(!literal&&ASSISTANT_FIELD_SIGNALS.reminderDnd.test(text)&&def.id!=='reminderDnd')return false;
   if(def.id==='reminderDnd'&&!ASSISTANT_FIELD_SIGNALS.reminderDnd.test(text))return false;
+  if(def.id!=='reminderSound'&&String(def.id).startsWith('reminder')&&ASSISTANT_FIELD_SIGNALS.reminderSound.test(text)
+    &&!/\b(?:start|end|due|deadline|leave|arriv|depart|missed|drop|second|before|lead)\b/i.test(text))return false;
   if(def.id==='repeatMode'&&ASSISTANT_FIELD_SIGNALS.conditionTrigger.test(text)&&! /\b(?:use|switch|make|mode|recurrence)\b/i.test(text))return false;
   if(def.id==='frequency'&&ASSISTANT_FIELD_SIGNALS.repeatMode.test(text)&&!assistantParseRhythm(text))return false;
   if(def.id==='weatherRules'&&ASSISTANT_FIELD_SIGNALS.weatherProfile.test(text)
@@ -1206,9 +1210,10 @@ const ASSISTANT_GUIDE_NEAR={
   dueTime:['dueDate','allowedWindow'],
   allowedWindow:['preferredWindow','allowedTimeFixedStart'],
   preferredWindow:['allowedWindow','preferredWeekdays'],
-  reminderStart:['reminderEnd','reminderDnd'],
-  reminderEnd:['reminderStart','reminderDnd'],
-  reminderDnd:['reminderStart','tapStartsSession'],
+  reminderStart:['reminderEnd','reminderSound','reminderDnd'],
+  reminderEnd:['reminderStart','reminderSound','reminderDnd'],
+  reminderSound:['reminderStart','reminderDnd'],
+  reminderDnd:['reminderStart','reminderSound','tapStartsSession'],
   tapStartsSession:['reminderDnd','autoMarkMinutes'],
   places:['locationPrefs','anywhereAllowed'],
   weatherProfile:['weatherRules','showWeather'],
@@ -1283,6 +1288,7 @@ const ASSISTANT_GUIDE_HELP={
   exceptionCancelled:['Skip or restore this occurrence of the event.','Skip this date'],
   exceptionReset:['Remove this date’s overrides and use the series settings.','Use the usual values for this date'],
   reminderDnd:['Silence the phone during this item’s session. Requires Android access.','Stop silencing my phone'],
+  reminderSound:['Tone for this item’s notifications. The default follows Settings. Saved phone sounds can be named too.','Use Warm'],
   reminderDue:['How to be reminded about this task’s deadline.','Set the due-date reminder to notification'],
   reminderDueDays:['Which day to send the deadline alert.','Remind me 1 day before the due date'],
   reminderDueTime:['Local clock time for the deadline alert.','Set the due-date reminder time to 9am'],
@@ -2810,6 +2816,7 @@ async function assistantFieldSchedule(state,extract,opts){
 
 async function assistantFocusRunFieldTurn(session,text,opts){
   opts=opts||{};
+  if(!opts.resume && typeof assistantFocusLoadSounds === 'function')await assistantFocusLoadSounds();
   const extract=opts.extract||assistantFocusLiveExtract;
   let state=session._fieldState;
   if(!opts.resume){

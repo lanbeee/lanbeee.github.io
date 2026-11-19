@@ -373,6 +373,29 @@ function bulkReminderModeName(mode){
   return mode === 'alarm' ? 'alarm' : mode === 'notification' ? 'notification' : 'off';
 }
 
+// Names for the notification-sound picker. The editor replaces this with the
+// phone's live list, including saved custom files, when that list is available.
+var bulkSoundCatalog = [
+  {id:'inherit',name:'Use the default'},
+  {id:'default',name:'Phone default'},
+  {id:'calm',name:'Calm'},
+  {id:'warm',name:'Warm'},
+  {id:'deep',name:'Deep'},
+  {id:'gentle',name:'Gentle'},
+  {id:'silent',name:'Silent'}
+];
+
+function bulkSetSoundCatalog(choices){
+  if(Array.isArray(choices) && choices.length)bulkSoundCatalog = choices;
+}
+
+function bulkSoundLabel(id){
+  if(!id || id === 'inherit')return 'the default';
+  const found = bulkSoundCatalog.find(choice=>choice.id === id);
+  if(found && found.id !== 'inherit')return found.name;
+  return String(id).startsWith('lib:') ? 'Custom sound' : 'the default';
+}
+
 function bulkReminderEdgesFor(record){
   if(!record || record.type === 'zero')return [];
   if(typeof isEventItem === 'function' && isEventItem(record))return ['start','startSecond','end'];
@@ -446,16 +469,17 @@ function bulkWhen(value){
   return bulkTaskClock(timestamp) === value.time ? timestamp : null;
 }
 
-function bulkWriteReminder(record,patch){
+function bulkWriteReminder(record,patch,removeKeys){
   if(!bulkReminderStage || !record)return ['@reminder'];
   const owner = bulkReminderOwnerKey(record);
   const choice = {...(bulkReminderStage.items[owner] || {})};
+  const keys = new Set([...(removeKeys || []),...Object.keys(patch || {})]);
   if(choice.dates){
     const dates = {...choice.dates};
     for(const day of Object.keys(dates)){
       const entry = {...dates[day]};
       let dirty = false;
-      for(const key of Object.keys(patch)){
+      for(const key of keys){
         if(Object.prototype.hasOwnProperty.call(entry,key)){delete entry[key];dirty = true;}
       }
       if(!dirty)continue;
@@ -465,7 +489,8 @@ function bulkWriteReminder(record,patch){
     if(Object.keys(dates).length)choice.dates = dates;
     else delete choice.dates;
   }
-  Object.assign(choice,patch);
+  Object.assign(choice,patch || {});
+  for(const key of removeKeys || [])delete choice[key];
   bulkReminderStage.items[owner] = choice;
   return ['@reminder'];
 }
@@ -539,6 +564,7 @@ function bulkReminderEffect(record,keys,prefs = bulkReminderStage || bulkLiveRem
     else if(key === 'missedLeadMinutes')effect[key] = bulkEffectiveLead(choice,key,'missed');
     else if(key === 'dueDaysBefore')effect[key] = bulkEffectiveLead(choice,key,'dueDays');
     else if(key === 'dueMinute')effect[key] = bulkEffectiveLead(choice,key,'dueMinute');
+    else if(key === 'sound')effect.sound = (typeof nativeReminderSoundId === 'function' ? nativeReminderSoundId(choice) : '') || null;
     else effect[key] = choice[key] ?? null;
   }
   const overrides = {};
@@ -646,6 +672,20 @@ function bulkReminderCatalog(){
     bulkReminderLeadOp('reminderTravelLead','Departure lead','travelLeadMinutes','travel','travelStart','How early the departure reminder arrives.'),
     bulkReminderModeOp('reminderMissed','If it may not fit','missed','A warning before the item drops off the agenda. Uses exact timing.'),
     bulkReminderLeadOp('reminderMissedLead','Drop-warning lead','missedLeadMinutes','missed','missed','How early the drop warning arrives.'),
+    {
+      id:'reminderSound',group:'Reminders',label:'Notification sound',nativeOnly:true,store:'reminders',
+      hint:'Tone for this item’s notifications. The default follows Settings. Saved phone sounds and audio files are listed too, and a new one chosen here is used for every selected item. Ringing alarms keep the phone’s alarm tone. Saved on this phone.',
+      choices:bulkKeepSet([{key:'clear',label:'Use the default'}]),
+      valueKind:'sound',
+      valueless:['clear'],
+      applies:h=>Boolean(h) && h.type !== 'zero',
+      blockedReason:h=>!h || h.type === 'zero' ? 'stop items have no phone reminders' : 'not available for this item',
+      reminderKeys:()=>['sound'],
+      current:(h,phase)=>bulkSoundLabel(nativeReminderSoundId(bulkReminderChoice(h,phase))),
+      plan:(h,op,value)=>op === 'clear' || !value || value === 'inherit' || nativeReminderSoundKnown(value) ? {ok:true} : {ok:false,error:'pick a notification sound'},
+      apply:(h,op,value)=>op === 'clear' || !value || value === 'inherit' ? bulkWriteReminder(h,{},['sound']) : bulkWriteReminder(h,{sound:value}),
+      changeLabel:(h,op,value)=>op === 'clear' || !value || value === 'inherit' ? 'Notification sound → the default' : `Notification sound → ${bulkSoundLabel(value)}`
+    },
     {
       id:'reminderDnd',group:'Reminders',label:'Silence the phone',nativeOnly:true,requiresQuiet:true,store:'reminders',
       hint:'Do Not Disturb while this session is in progress. Needs Do Not Disturb access on this phone.',
@@ -1463,6 +1503,7 @@ function bulkSampleValue(opDesc,op){
     case 'choice':return bulkLeadDefault(opDesc.leadPreset);
     case 'dueReminder':return {days:0,time:'09:00'};
     case 'datetime':return {date:'2026-01-02',time:'09:00'};
+    case 'sound':return 'calm';
     default:return null;
   }
 }

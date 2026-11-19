@@ -123,6 +123,16 @@ alarm is a delivery mode, not Do Not Disturb. The setting preserves reminder
 delivery modes, global reminder enablement, and other items. It participates in
 the same review, Save and undo flow.
 
+On Android and iOS, each item can use its own notification sound. “Use Warm” or “set the
+notification sound to Calm” stores that tone for the open item. “Use the default
+notification sound” clears it so the item follows Settings. Phone default,
+Silent, and, on Android, a saved sound name are accepted the same way.
+When editing one date of a repeating event, a sound choice applies to that
+date. Clearing it restores the event’s usual sound.
+Choosing the sound does not turn reminders on and does not change the phone-wide
+default. Ringing alarms keep the phone’s alarm tone. The browser has no sound
+control, so the field stays out of the catalog there.
+
 The composer offers up to six setting names for the open item. They follow
 the draft, or the last request when the box is empty. Tapping a name places it
 as a tag in the message and does not send; tapping it again removes the tag and

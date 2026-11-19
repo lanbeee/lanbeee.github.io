@@ -5,7 +5,9 @@
 #do-batch-next{display:none;}
 #add-sheet.bulk-add-mode #do-save,
 #add-sheet.bulk-add-mode #add-batch-entry{display:none;}
-#add-sheet.bulk-add-mode #do-batch-next{display:flex;}
+/* display:block, not flex: a flex button left-aligns its label because the
+   centered look comes from the UA's text-align:center on default buttons. */
+#add-sheet.bulk-add-mode #do-batch-next{display:block;}
 #add-sheet.bulk-add-mode .add-batch-bar{display:block;}
 
 .add-batch-bar{

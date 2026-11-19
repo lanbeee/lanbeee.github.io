@@ -66,6 +66,7 @@ const {chromium,webkit} = require('playwright');
     await openBulk(['Walk']);
     assert.equal(await page.locator('[data-bulk-op="reminderStart"]').count(),0,'the PWA hides phone reminders');
     assert.equal(await page.locator('[data-bulk-op="reminderDnd"]').count(),0,'the PWA hides Do Not Disturb');
+    assert.equal(await page.locator('[data-bulk-op="reminderSound"]').count(),0,'the PWA hides notification sounds');
     assert.equal(await page.locator('[data-bulk-op="planBy"]').count(),1,'plan-by stays available in the PWA');
     assert.equal(await page.locator('[data-bulk-op="conditionTrigger"]').count(),1);
     assert.equal(await page.locator('[data-bulk-op="snooze"]').count(),1);
@@ -114,6 +115,8 @@ const {chromium,webkit} = require('playwright');
     await set('reminderMissed','alarm');
     await lead('reminderMissedLead',5);
     await set('reminderDnd','on');
+    const sound = await set('reminderSound','set');
+    await sound.locator('[data-bulk-kind="sound"]').selectOption('calm');
     assert.deepEqual(edited.sort(),await page.evaluate(()=>BULK_FIELD_OPS.filter(op=>op.nativeOnly).map(op=>op.id).sort()),'every phone-reminder field exercised');
 
     const missed = await page.locator('[data-bulk-applies="reminderMissed"]').innerText();
@@ -132,6 +135,7 @@ const {chromium,webkit} = require('playwright');
     assert.match(review,/1 needs a due date/);
     assert.match(review,/If it may not fit → alarm: 3 items/);
     assert.match(review,/Silence the phone → on: 4 items/);
+    assert.match(review,/Notification sound → Calm: 5 items/);
     assert.match(await page.locator('#bulk-review-items').textContent(),/replaces overrides on 1 date/);
     assert.equal(await page.locator('.bulk-problem-error').count(),0);
     assert.equal(await page.locator('#bulk-review-summary').innerText(),'6 selected · 5 will change');
@@ -143,10 +147,10 @@ const {chromium,webkit} = require('playwright');
     assert.equal(saved.enabled,true,'turning a reminder on enables phone reminders');
     assert.deepEqual(saved.items['item:walk'],{
       start:'alarm',end:'alarm',travelStart:'notification',travelEnd:'off',travelLeadMinutes:15,
-      missed:'alarm',missedLeadMinutes:5,dnd:true
+      missed:'alarm',missedLeadMinutes:5,dnd:true,sound:'calm'
     },'a one-date exception is replaced by the bulk choice');
     assert.deepEqual(saved.items['item:meet'],{
-      start:'alarm',startSecond:'alarm',end:'alarm',startLeadMinutes:60,secondStartLeadMinutes:30
+      start:'alarm',startSecond:'alarm',end:'alarm',startLeadMinutes:60,secondStartLeadMinutes:30,sound:'calm'
     },'an event keeps start and end reminders only');
     assert.equal(saved.items['item:pay'].due,'alarm');
     assert.equal(saved.items['item:pay'].dueDaysBefore,1);
@@ -266,6 +270,32 @@ const {chromium,webkit} = require('playwright');
     await page.locator('#bulk-apply').click();
     await page.locator('#bulk-edit-sheet.open').waitFor({state:'hidden'});
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:keep'].start),'off','turning off one edge skips permission checks for a different alarm');
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:keep'].end),'alarm');
+
+    await page.evaluate(()=>{
+      const choices = [{id:'gentle',name:'Gentle'}];
+      TingsNative.sounds = {
+        status:async()=>({choices,effectiveName:'Gentle'}),
+        addFile:()=>new Promise(resolve=>{window.resolveSoundPicker = ()=>{
+          choices.push({id:'lib:kitchen01',name:'Kitchen'});
+          resolve({choices,effectiveName:'Gentle',savedId:'lib:kitchen01'});
+        };})
+      };
+    });
+    await openBulk(['Keep']);
+    const soundOnly = await set('reminderSound','set');
+    assert.equal(await soundOnly.locator('[data-bulk-sound-pick="phone"]').count(),0,'the picker follows the platform capabilities');
+    await soundOnly.locator('[data-bulk-sound-pick="file"]').click();
+    await page.waitForFunction(()=>typeof window.resolveSoundPicker === 'function');
+    await soundOnly.locator('[data-bulk-kind="sound"]').selectOption('gentle');
+    await page.locator('#bulk-review-continue').click();
+    await page.evaluate(()=>window.resolveSoundPicker());
+    await page.waitForFunction(()=>bulkSoundPicker === null);
+    assert.equal(await page.evaluate(()=>bulkPending.find(step=>step.id==='reminderSound').value),'gentle','a late picker result leaves the reviewed draft intact');
+    assert.match(await page.locator('#bulk-review-lines').innerText(),/Notification sound → Gentle: 1 item/);
+    await page.locator('#bulk-apply').click();
+    await page.locator('#bulk-edit-sheet.open').waitFor({state:'hidden'});
+    assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:keep'].sound),'gentle','a sound change does not need a new notification permission');
     assert.equal(await page.evaluate(()=>nativeReminderPreferences().items['item:keep'].end),'alarm');
 
     const rollback = await page.evaluate(()=>{
