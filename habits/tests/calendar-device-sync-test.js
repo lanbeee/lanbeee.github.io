@@ -108,6 +108,46 @@ const assert=require('node:assert/strict');
     assert.equal(integration.cancelled,false);assert.equal(integration.reset,'📞');
     assert.equal(integration.stored.items['item:device:7:80:3'],undefined,'inheritance never becomes a saved override');
     assert.equal(integration.mirrorStyle,true);assert.equal(integration.mirrorSeries.start,'alarm');
+    const restore=await page.evaluate(()=>{
+      localStorage.clear();sortSettings=loadSortSettings();
+      const from=dayStart(Date.now()),start=Date.now()+2*3600000,to=from+14*86400000;
+      const event={id:'device:7:restored',calendarId:'7',subject:'Restored phone meeting',start,end:start+3600000};
+      const snapshot={complete:true,calendarIds:['7'],from,to,events:[event]};
+      const sourceId='11'.repeat(8),freshId='22'.repeat(8);
+      localStorage.setItem(DEVICE_CALENDARS_KEY,JSON.stringify({enabled:true,calendarIds:['7'],sourceId}));
+      const options={sourceId:freshId,adoptLegacy:true};
+      const first=applyDeviceCalendarSnapshot(snapshot).data[0];
+      const backup={...buildBackup(),habits:load()};localStorage.clear();
+      restoreBackup(backup);
+      const recovered=applyDeviceCalendarSnapshot({...snapshot,events:[event,{...event}]},options);
+      const afterRefetch=applyDeviceCalendarSnapshot(snapshot,options);
+      const empty=applyDeviceCalendarSnapshot({...snapshot,events:[]},options);
+      // The same provider ID on a different phone isn't enough to claim a row.
+      restoreBackup(backup);
+      const unrelated=applyDeviceCalendarSnapshot({...snapshot,events:[{...event,subject:'Different account meeting'}]},options);
+      return {sameId:recovered.data[0].hid===first.hid,count:recovered.data.length,claimed:recovered.data[0].calendarDeviceId===freshId,
+        repeated:afterRefetch.changed,cancelled:empty.data.length,unrelated:unrelated.data.length};
+    });
+    assert.deepEqual(restore,{sameId:true,count:1,claimed:true,repeated:false,cancelled:0,unrelated:2},'a fresh connection reuses the restored occurrence only when the current phone confirms it');
+    const freshBackup=await page.evaluate(()=>{
+      localStorage.clear();sortSettings=loadSortSettings();
+      const from=dayStart(Date.now()),start=from+2*86400000,end=start+3600000;
+      const event={id:'device:7:old',calendarId:'7',subject:'Phone meeting',start,end};
+      const snapshot={complete:true,calendarIds:['7'],from,to:from+14*86400000,events:[event]};
+      applyDeviceCalendarSnapshot(snapshot,{sourceId:'11'.repeat(8)});
+      save([...load(),{hid:'history',name:'Past meeting',type:'task',source:'device',externalId:'device:7:history',eventTime:from-7200000,calendarEnd:from-3600000}]);
+      const fileEvent={id:'ics:retained',subject:'File meeting',start,end};
+      applyCalendarImport([fileEvent],{source:'ics'});
+      const backup=JSON.stringify(buildBackup());localStorage.clear();
+      restoreBackup(backup);
+      const restored=load().map(h=>h.externalId);
+      const moved={...event,id:'device:7:new',start:start+3600000,end:end+3600000};
+      const sync=()=>applyDeviceCalendarSnapshot({...snapshot,events:[moved]},{sourceId:'22'.repeat(8)});
+      sync();sync();applyCalendarImport([fileEvent],{source:'ics'});
+      return {restored,afterRefresh:load().map(h=>h.externalId)};
+    });
+    assert.deepEqual(freshBackup,{restored:['device:7:history','ics:retained'],afterRefresh:['device:7:history','ics:retained','device:7:new']},
+      'a JSON restore followed by sync and file re-import keeps history and has only one copy, even if phone IDs and times changed');
     // Real controls with a synthetic native bridge; never read a phone calendar.
     await page.evaluate(()=>{
       localStorage.clear();window.calendarCalls={permissions:0,reads:0};

@@ -38,7 +38,7 @@ const assert=require('node:assert/strict');
     const groups=calendarDuplicateGroups(load(),loadSortSettings());
     const kept=reconcileCalendarDuplicateGroup('phone-a',['phone-a','phone-b']);
     const visible=load().filter(h=>!isCalendarIgnored(h)).map(h=>h.hid);
-    const backup=buildBackup();restoreBackup(backup);sortSettings=loadSortSettings();
+    const backup={...buildBackup(),habits:load()};restoreBackup(backup);sortSettings=loadSortSettings();
     const restoredVisible=load().filter(h=>!isCalendarIgnored(h)).map(h=>h.hid);
     restoreCalendarIgnored(loadSortSettings().calendarIgnores[0]);
     const data=load();data.find(h=>h.hid==='phone-b').eventTime+=60000;save(data);
@@ -55,6 +55,35 @@ const assert=require('node:assert/strict');
   assert.deepEqual(edgeCases.restoredVisible,edgeCases.visible,'reconciliation survives backup restore');
   assert.equal(edgeCases.stale,false);assert.equal(edgeCases.staleIgnores,0,'stale review cannot hide changed events');
   assert.equal(edgeCases.localHidden,true);assert.equal(edgeCases.localIgnored,true);
+  const fallback=await page.evaluate(()=>{
+    localStorage.clear();sortSettings=loadSortSettings();
+    const start=Date.now()+86400000,end=start+3600000;
+    const event={name:'Restored meeting',type:'task',eventTime:start,durationMinutes:60,calendarStart:start,calendarEnd:end};
+    const ics={...event,hid:'file',source:'ics',externalId:'ics:restore'};
+    const phone={...event,hid:'phone',source:'device',externalId:'device:7:22',calendarId:'7',calendarSeriesId:'device:7:series'};
+    const visible=()=>load().filter(h=>!isCalendarIgnored(h)).map(h=>h.hid);
+    save([ics,phone]);reconcileCalendarDuplicateGroup(phone.hid,[ics.hid,phone.hid]);
+    const backup={...buildBackup(),habits:load()},kept=visible();
+    restoreBackup({...backup,habits:[ics]});sortSettings=loadSortSettings();
+    const afterRestore=visible();
+    restoreBackup({...backup,habits:[ics,{...phone,eventTime:start+60000,calendarEnd:end+60000}]});sortSettings=loadSortSettings();
+    const afterMove=visible();
+    const rules=[{scope:'item',id:'item:file',name:ics.name},{scope:'series',id:phone.calendarSeriesId,name:phone.name}];
+    restoreBackup({...backup,settings:{...backup.settings,calendarIgnores:rules}});sortSettings=loadSortSettings();
+    const legacyHides=visible();
+    restoreBackup({...backup,settings:{...backup.settings,calendarIgnores:rules}},{keepCalendarHides:false});sortSettings=loadSortSettings();
+    return {kept,afterRestore,afterMove,legacyHides,withoutManualHides:visible()};
+  });
+  assert.deepEqual(fallback,{
+    kept:['phone'],afterRestore:['file'],afterMove:['file','phone'],legacyHides:['file'],withoutManualHides:['phone']
+  },'a duplicate hide cannot suppress the remaining copy after restore, move or a manual series hide');
+  await page.evaluate(()=>{
+    const settings=loadSortSettings(),phone=load().find(h=>h.source==='device');
+    saveSortSettings({...settings,calendarIgnores:[{scope:'occurrence',id:calendarIgnoreIdentity(phone),name:phone.name},{scope:'series',id:phone.calendarSeriesId,name:phone.name}]});
+    sortSettings=loadSortSettings();renderIgnoredCalendarItems();
+  });
+  await page.getByRole('button',{name:'Show all hidden events',exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>loadSortSettings().calendarIgnores),[],'users can reset old date and series hides together');
   console.log('Calendar duplicate review passed.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -110,13 +110,21 @@ function assert(cond, msg){
   });
   const importPayload = JSON.stringify({
     app:'tings', version:1, exportedAt:Date.now(),
-    habits:[{name:'imp-1',type:'task'},{name:'imp-2',type:'keepup'}],
-    settings:{}
+    habits:[{name:'imp-1',type:'task'},{name:'imp-2',type:'keepup'},
+      {name:'Saved phone meeting',type:'task',source:'device',externalId:'device:7:20',eventTime:Date.now()+86400000}],
+    settings:{calendarIgnores:[{scope:'series',id:'device:7:20',name:'Hidden meetings'}]}
   });
   await page.locator('#backup-file-input').setInputFiles({
     name:'import.json', mimeType:'application/json', buffer:Buffer.from(importPayload,'utf-8')
   });
   await page.locator('#backup-import-confirm').waitFor({ state:'visible' });
+  const keepCalendarHides=page.getByLabel('Keep events and series hidden as they were in the backup');
+  assert(await keepCalendarHides.isVisible() && !await keepCalendarHides.isChecked(), 'restore offers to keep manual hides, unchecked by default');
+  const keepPhone=page.getByLabel('Restore saved phone calendar copies', {exact:false});
+  assert(await keepPhone.isVisible() && !await keepPhone.isChecked(), 'old phone calendar copies are off by default');
+  await keepPhone.check();
+  assert(/with\s+3\b/i.test(await page.locator('#backup-import-summary').textContent()), 'opting in includes the phone copy in the restore count');
+  await keepPhone.uncheck();
   const summary = await page.locator('#backup-import-summary').textContent();
   if(!/replace\s+1\s+habit\b/i.test(summary || '') || !/with\s+2\b/i.test(summary || ''))
     throw new Error(`import summary did not show counts: ${summary}`);
@@ -131,6 +139,7 @@ function assert(cond, msg){
   assert(afterConfirm.length === 2, 'confirm imported 2 habits');
   assert(afterConfirm.some(h => h.name === 'imp-1'), 'confirm wrote imp-1');
   assert(!afterConfirm.some(h => h.name === 'current'), 'confirm removed the previous data');
+  assert(await page.evaluate(()=>loadSortSettings().calendarIgnores.length===0), 'backup restore leaves old date and series hides off by default');
 
   // ── 8. cancel does not touch data ──
   await page.evaluate(()=>{

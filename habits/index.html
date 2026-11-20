@@ -1237,7 +1237,7 @@
           </div>
         </section>
         <section class="settings-block">
-          <div data-settings-help-title="backup" data-settings-help-id="settings-backup-help" data-settings-help-label="settings-label"><p>Everything is saved on this device. Export a backup before clearing browser data or moving to a new phone. In the Android app, exports save to Downloads and open a share sheet.</p></div>
+          <div data-settings-help-title="backup" data-settings-help-id="settings-backup-help" data-settings-help-label="settings-label"><p>Export a backup before clearing browser data or moving to a new phone. After restoring, reconnect phone calendar sync to get today’s and upcoming phone events. Earlier phone calendar history and events imported from files are included in the backup.</p><p>In the Android app, exports save to Downloads and open a share sheet.</p></div>
           <p class="field-hint">Keep a backup to restore or move your data. <button type="button" class="mini-text-btn" id="open-privacy-from-settings">privacy</button></p>
           <div class="btn-row">
             <button class="btn primary" id="backup-export" type="button">export backup</button>
@@ -1247,6 +1247,8 @@
           <p class="field-hint sample-count" id="backup-status"></p>
           <div class="reset-confirm" id="backup-import-confirm" hidden>
             <p id="backup-import-summary">Replace everything on this device with this backup?</p>
+            <label class="calendar-device-option" hidden><input type="checkbox" id="backup-keep-phone-calendar" /> Restore saved phone calendar copies for today and later. Leave unchecked if you’ll reconnect your calendar.</label>
+            <label class="calendar-device-option" hidden><input type="checkbox" id="backup-keep-calendar-hides" /> Keep events and series hidden as they were in the backup</label>
             <div class="btn-row">
               <button class="btn primary" id="backup-import-yes">replace</button>
               <button class="btn" id="backup-import-no">cancel</button>

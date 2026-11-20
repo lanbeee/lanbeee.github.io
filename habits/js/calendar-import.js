@@ -339,8 +339,9 @@ function stripCalendarCreditLogs(habits, onlyHid){
   return stripped;
 }
 
-function calendarImportedEvents(data){
-  return data.filter(h=>!isCalendarIgnored(h) && h?.externalId && ['pdf','ics','msgraph','gcal','device'].includes(h.source) && h.type === 'task' && Number.isFinite(h.eventTime))
+function calendarImportedEvents(data,settings){
+  const byId=new Map(data.map(h=>[h.hid,h]));
+  return data.filter(h=>h?.externalId && ['pdf','ics','msgraph','gcal','device'].includes(h.source) && h.type === 'task' && Number.isFinite(h.eventTime) && !isCalendarIgnored(h,settings,byId))
     .map(h=>({start:h.eventTime,end:h.calendarEnd || h.eventTime + clampDuration(h.durationMinutes)*60000}));
 }
 function rebuildCalendarCredits(data,creditHabitId,options={}){
@@ -350,7 +351,7 @@ function rebuildCalendarCredits(data,creditHabitId,options={}){
   const historical=options.preserveBefore && habit ? normalizeLogs(habit.logs)
     .filter(log=>isCalendarCreditLog(log) && logTime(log)<options.preserveBefore) : [];
   stripCalendarCreditLogs(data);
-  const result=creditHabitId ? applyCalendarCreditLogs(data,calendarImportedEvents(data),creditHabitId) : {credited:0,habitName:null};
+  const result=creditHabitId ? applyCalendarCreditLogs(data,calendarImportedEvents(data,options.settings),creditHabitId) : {credited:0,habitName:null};
   if(historical.length){
     const days=new Set(historical.map(log=>dateKey(logTime(log))));
     habit.logs=normalizeLogs([...habit.logs.filter(log=>!isCalendarCreditLog(log) || !days.has(dateKey(logTime(log)))),...historical]);
@@ -617,7 +618,9 @@ function setCalendarIgnored(h,scope){
   showActionToast(scope==='series'?'All dates hidden':'This date hidden',{type:'calendar-ignore',entry,openAction:false});
 }
 function restoreCalendarIgnored(entry){
-  const settings=loadSortSettings();saveSortSettings({...settings,calendarIgnores:(settings.calendarIgnores || []).filter(r=>r.scope!==entry.scope || r.id!==entry.id)});sortSettings=loadSortSettings();
+  const settings=loadSortSettings();
+  const calendarIgnores=entry ? (settings.calendarIgnores || []).filter(r=>r.scope!==entry.scope || r.id!==entry.id) : [];
+  saveSortSettings({...settings,calendarIgnores});sortSettings=loadSortSettings();
   const data=load();rebuildCalendarCredits(data,sortSettings.calendarCreditHabitId);save(data);renderIgnoredCalendarItems();renderCalendarDuplicateReview();refreshOpenViews();
   if(typeof queueNativeReminders==='function')queueNativeReminders();
 }
@@ -625,13 +628,10 @@ function restoreCalendarIgnored(entry){
 // Suggestions require the same title and exact interval; never hide anything
 // until the user chooses a copy. Separate identities are needed for hiding.
 function calendarDuplicateGroups(data,settings){
-  const groups=new Map();
+  const groups=new Map(),byId=new Map(data.map(h=>[h.hid,h]));
   for(const h of data){
-    if(!h || isCalendarIgnored(h,settings) || !Number.isFinite(h.eventTime) || !isFixedTimedTask(h))continue;
-    const id=calendarIgnoreIdentity(h,'item'),name=String(h.name || '').trim().toLowerCase().replace(/\s+/g,' ');
-    if(!id || !name)continue;
-    const end=h.calendarEnd || h.eventTime+clampDuration(h.durationMinutes)*60000;
-    const key=JSON.stringify([name,h.eventTime,end]);
+    const key=calendarDuplicateKey(h);
+    if(!key || !h.hid || isCalendarIgnored(h,settings,byId))continue;
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(h);
   }
@@ -645,11 +645,12 @@ function reconcileCalendarDuplicateGroup(keepHid,reviewedHids){
     showToast('Events changed. Review the matches again.');
     return false;
   }
-  const entries=[...(current.calendarIgnores || [])];
+  const reviewedIds=new Set(group.map(h=>calendarIgnoreIdentity(h,'item')));
+  const entries=(current.calendarIgnores || []).filter(e=>e.scope!=='item' || !reviewedIds.has(e.id));
   for(const other of group){
     if(other.hid===keepHid)continue;
     const id=calendarIgnoreIdentity(other,'item');
-    if(!entries.some(e=>e.scope==='item' && e.id===id))entries.push({scope:'item',id,name:`${other.name} (${calendarDuplicateSourceName(other)})`});
+    entries.push({scope:'item',id,keepHid,name:`${other.name} (${calendarDuplicateSourceName(other)})`});
   }
   try{saveSortSettings({...current,calendarIgnores:entries});}
   catch(error){showToast('Could not save your choice. Try again.');return false;}
@@ -666,16 +667,22 @@ function calendarDuplicateSourceName(h){
 }
 function renderCalendarDuplicateReview(){
   const host=$('settings-calendar-body');if(!host)return;
-  $('calendar-duplicate-review')?.remove();
+  const previous=$('calendar-duplicate-review');
   const settings=loadSortSettings(),groups=calendarDuplicateGroups(load(),settings);
-  const section=document.createElement('details');section.id='calendar-duplicate-review';
+  const section=document.createElement('details');section.id='calendar-duplicate-review';section.open=previous?.open===true;
   const summary=document.createElement('summary');summary.textContent=`Review possible duplicates (${groups.length})`;section.append(summary);
-  const hint=document.createElement('p');hint.className='field-hint';hint.textContent='Matches have the same name, start and end. Choose the copy to keep; other copies are hidden in Tings and can be restored below.';section.append(hint);
+  const hint=document.createElement('p');hint.className='field-hint';hint.textContent='Matches have the same name, start and end. Other copies stay hidden while the copy you keep is available at that time.';section.append(hint);
   if(!groups.length){const empty=document.createElement('p');empty.className='field-hint';empty.textContent='No matching events found.';section.append(empty);}
-  const sourceName=calendarDuplicateSourceName;
+  const phone=typeof deviceCalendarPreferences==='function' ? deviceCalendarPreferences() : null;
+  const sourceName=h=>h.source==='device' && phone?.enabled && phone.sourceId
+    ? (h.calendarDeviceId===phone.sourceId ? 'current phone sync' : 'other phone calendar')
+    : calendarDuplicateSourceName(h);
   for(const group of groups){
     const box=document.createElement('div');box.className='planning-field';
-    const title=document.createElement('strong');title.textContent=`${group[0].name} · ${new Date(group[0].eventTime).toLocaleString()}–${new Date(group[0].calendarEnd || group[0].eventTime+clampDuration(group[0].durationMinutes)*60000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;box.append(title);
+    const h=group[0],title=document.createElement('strong');
+    const when=h.eventTime==null ? `${new Date(h.calendarStart).toLocaleDateString()} · all day`
+      : `${new Date(h.eventTime).toLocaleString()}–${new Date(h.calendarEnd || h.eventTime+clampDuration(h.durationMinutes)*60000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`;
+    title.textContent=`${h.name} · ${when}`;box.append(title);
     for(const [index,h] of group.entries()){
       const button=document.createElement('button');button.type='button';button.className='btn';button.textContent=`Keep ${sourceName(h)} copy${group.filter(item=>sourceName(item)===sourceName(h)).length>1 ? ` ${index+1}` : ''}`;
       button.addEventListener('click',()=>reconcileCalendarDuplicateGroup(h.hid,group.map(item=>item.hid)));
@@ -683,15 +690,24 @@ function renderCalendarDuplicateReview(){
     }
     section.append(box);
   }
-  host.append(section);
+  if(previous)previous.replaceWith(section);else host.append(section);
 }
 function renderIgnoredCalendarItems(){
   const host=$('settings-calendar-body');if(!host)return;
   $('calendar-ignored-list')?.remove();
-  const entries=loadSortSettings().calendarIgnores || [];
+  const settings=loadSortSettings(),data=load(),byId=new Map(data.map(h=>[h.hid,h]));
+  const entries=(settings.calendarIgnores || []).filter(entry=>{
+    if(entry.scope!=='item')return true;
+    const h=byId.get(entry.id.slice('item:'.length));
+    return h && isCalendarIgnored(h,settings,byId);
+  });
   if(!entries.length)return;
   const section=document.createElement('div');section.id='calendar-ignored-list';
   const title=document.createElement('p');title.className='settings-sublabel';title.textContent='Hidden from Tings';section.append(title);
+  if(entries.length>1){
+    const showAll=document.createElement('button');showAll.type='button';showAll.className='mini-text-btn';showAll.textContent='Show all hidden events';
+    showAll.addEventListener('click',()=>restoreCalendarIgnored());section.append(showAll);
+  }
   for(const entry of entries){
     const row=document.createElement('div');row.className='planning-field';
     const label=document.createElement('span');label.textContent=`${entry.name} · ${entry.scope==='series'?'all dates':'this date'}`;

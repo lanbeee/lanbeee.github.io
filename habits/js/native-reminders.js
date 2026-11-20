@@ -902,7 +902,7 @@ function scheduleNativeAgendaForecast(week,data,settings,prefs,revision){
 }
 function nativeBackgroundSnapshot(){
   const storage = {};
-  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
+  for(const key of [KEY,SORT_SETTINGS_KEY,...PLANNER_WORKER_STORAGE_KEYS,MISSED_HIDDEN_KEY,WEATHER_CACHE_KEY,RESTORED_DEVICE_CALENDAR_KEY,'tings_device_calendars_v1','tings_device_calendar_styles_v1']){
     const value = localStorage.getItem(key);if(value != null)storage[key] = value;
   }
   // Last-refresh display text is not a planner input.
