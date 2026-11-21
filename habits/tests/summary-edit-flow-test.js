@@ -14,6 +14,7 @@ const live = Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PA
       localStorage.setItem('tings_app_settings_v2',JSON.stringify({minimalMode:false,localAssistant:true,localAssistantProvider:'needle',showWeekOnHome:false}));
       localStorage.setItem('tings_coach_install_v2','done');localStorage.setItem('tings_coach_essentials_v2','done');
     });
+    await page.clock.setFixedTime(new Date('2026-11-16T12:00:00-05:00'));
     await page.goto(BASE);await waitForAssistant(page);
     await page.locator('#launch-screen').waitFor({state:'hidden'});
     await page.evaluate(h=>save([h,{...h,hid:'read',name:'Read'},
@@ -26,7 +27,7 @@ const live = Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PA
       await page.waitForFunction(()=>detailSummaryOnScreen());
     };
     await open('gym');
-    assert.match(await page.locator('#detail-summary').innerText(),/Download the assistant/);
+    await page.locator('#detail-summary-setup [data-needle-download]').waitFor({state:'visible'});
     if(live){await page.evaluate(()=>assistantNeedleDownload());await page.waitForFunction(()=>assistantNeedleCanSend());}
     else await page.evaluate(()=>{
       assistantNeedleCanSend=()=>true;

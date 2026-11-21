@@ -62,7 +62,7 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
         assert.ok(await page.locator('#detail-summary [data-summary-field="allowedWeekdays"]').count());
         for(const width of [320,390]){
           await page.setViewportSize({width,height:844});
-          assert.equal(await page.locator('#detail-summary > .focus-note').evaluate(el=>{
+          assert.equal(await page.locator('.detail-summary-entry p').evaluate(el=>{
             const range=document.createRange();range.selectNodeContents(el);
             return range.getClientRects().length;
           }),1,`Summary hint fits one line at ${width}px`);
@@ -143,7 +143,7 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
             assert.equal(frame.header.height,baseline.height,`${context}: header retains its size`);
             assert.ok(Math.abs(frame.dock.bottom-(height+offsetTop))<=1,`${context}: dock meets keyboard once: ${JSON.stringify(frame.dock)}`);
             assert.ok(frame.input.top>=frame.header.bottom,`${context}: composer clears header`);
-            assert.ok(frame.send.top>=frame.input.top && frame.send.bottom<=height+offsetTop,`${context}: next action is visible`);
+            assert.ok(frame.send.top>=frame.input.bottom-1 && frame.send.bottom<=height+offsetTop,`${context}: next action is visible`);
             assert.equal(frame.focus,'detail-ask-input',`${context}: focus survives viewport changes`);
             assert.equal(frame.text,'Make this 40 minutes');
             assert.equal(frame.scrolls,0,`${context}: focus never triggers a delayed conversation jump`);
@@ -166,6 +166,7 @@ const {BASE,baseHabit,waitForAssistant} = require('./helpers/planner-test-helper
           await page.evaluate(()=>{detailSummaryScrollToEnd=summaryScrollToEnd;$('detail-ask-input').value='';syncDetailSummaryDock();});
           // Empty focus opens no extra guide layer, including on dismissal.
           await page.locator('#detail-ask-input').tap();
+          await page.waitForFunction(()=>$('detail-ask-input').getBoundingClientRect().height >= 72);
           const empty=await sample(530);
           assert.equal(await page.locator('#detail-ask-guides').isVisible(),false,'empty focus does not open a suggestions card');
           await page.locator('#detail-ask-input').blur();

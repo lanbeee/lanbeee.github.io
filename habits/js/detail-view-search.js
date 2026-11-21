@@ -279,7 +279,6 @@ function syncDetailSearchAssistant(h){
   const label = enabled ? 'Find or change a setting' : 'Find a setting';
   $('detail-search-input').placeholder = label;
   $('detail-search-input').setAttribute('aria-label',label);
-  $('detail-search-toggle').querySelector('span').textContent = enabled ? 'find or change' : 'find in details';
   $('detail-search-ask').hidden = !enabled || !$('detail-search-input').value.trim();
   $('detail-search-ask-label').textContent = 'Ask assistant';
 }
@@ -346,7 +345,7 @@ function renderDetailSearch(){
   $('detail-search-status').textContent = !tokens.length
     ? (assistant ? 'Find a setting or describe a change.' : 'Browse settings, or search by name.')
     : ranked.length ? `${ranked.length} ${ranked.length === 1 ? 'match' : 'matches'}`
-    : assistant ? ''
+    : assistant ? 'No matching settings. Try another word or ask the assistant.'
     : 'No matching settings. Try “duration”, “weather”, “reminder” or “days”.';
   $('detail-search-clear').hidden = !$('detail-search-input').value;
 }
@@ -384,7 +383,7 @@ function setDetailSearchOpen(open,focus = true){
     if(focus)$('detail-search-input').focus({preventScroll:true});
   }else if(focus){
     $('detail-search-input').blur();
-    $('detail-search-toggle').focus({preventScroll:true});
+    toggle.focus({preventScroll:true});
   }
   if(typeof syncDetailSummaryDock === 'function')syncDetailSummaryDock();
 }

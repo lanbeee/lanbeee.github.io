@@ -179,7 +179,7 @@ async function runSuite(engine,label,profile){
 
     // ── Gym: full grouped layout ──
     check('gym groups in stable order',()=>{
-      assert.deepEqual(views['Gym'].groupLabels,['Activity','Schedule','When & where','Places']);
+      assert.deepEqual(views['Gym'].groupLabels,['Schedule','When & where','Places','Activity']);
     });
     check('header subtext: cue + last done; pills stay bare',()=>{
       assert.match(grab['Gym'].sub,/^Due tomorrow · last done /);

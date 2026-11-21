@@ -744,14 +744,10 @@ function renderDetailSummaryOverview(held = null,items = null){
   const facts = detailSummaryFacts(item,items);
   const parts = [];
   const activity = detailSummaryActivityRow(item,facts);
-  if(activity)parts.push(activity);
   for(const group of detailSummaryGroups(item,summary,facts,items)){
     parts.push(detailSummaryGroupRow(group.label,group.body));
   }
-  const hint = !detailSummaryAskReady() ? 'Tap a setting to edit.'
-    : detailSummaryCanSend() ? 'Tap a setting or describe a change.'
-    : 'Download the assistant to describe changes.';
-  parts.push(`<p class="focus-note">${hint}</p>`);
+  if(activity)parts.push(activity);
   host.innerHTML = parts.join('');
 }
 
@@ -935,11 +931,23 @@ function renderDetailSummary(held = null,items = null){
   syncDetailSummaryDock();
 }
 
+const detailComposerSizesToContent = CSS.supports('field-sizing','content');
 function detailSummaryResizeComposer(){
   const input = $('detail-ask-input');
-  if(!input)return;
+  if(!input || detailComposerSizesToContent)return;
   input.style.height = 'auto';
   input.style.height = `${Math.min(Math.max(input.scrollHeight,44),124)}px`;
+}
+
+// Older WebViews need to remeasure wrapped lines when Search or Send changes
+// the space available. Height-only notifications are our own resize.
+if(!detailComposerSizesToContent){
+  let lastWidth = 0;
+  new ResizeObserver(([entry])=>{
+    const width = entry.contentRect.width;
+    if(width !== lastWidth && width > 0)detailSummaryResizeComposer();
+    lastWidth = width;
+  }).observe($('detail-ask-input'));
 }
 
 // The composer holds "Label: value" as a setting tag plus the typed value.
@@ -995,24 +1003,29 @@ function syncDetailSummaryDock(){
   const ask = $('detail-ask');
   if(!inner || !ask)return;
   const ready = detailSummaryAskReady();
-  const show = ready && detailSummaryOnScreen();
+  const onSummary = detailSummaryOnScreen();
+  const canSend = detailSummaryCanSend();
+  const show = ready && onSummary && (canSend || Boolean(detailSummaryDraft()));
+  inner.classList.toggle('detail-summary-active',onSummary);
   inner.classList.toggle('detail-ask-on',show);
   ask.hidden = !show;
   if(!inner.classList.contains('detail-search-open'))$('detail-cool').setAttribute('aria-label',show && detailSummaryDraft() ? 'clear change' : 'close details');
   ask.classList.toggle('is-busy',detailSummary.busy);
   const input = $('detail-ask-input');
   const dirty = inner.classList.contains('tune-dirty');
-  const canSend = detailSummaryCanSend();
+  const askEntry = $('detail-summary-ask');
+  askEntry.hidden = !onSummary || sortSettings.localAssistantProvider === 'needle' || !detailAssistantAvailable();
+  askEntry.disabled = dirty;
   input.disabled = detailSummary.busy || dirty;
   input.placeholder = detailSummary.busy ? 'Assistant is reading…'
     : dirty ? 'Save or cancel first'
     : !canSend ? 'Download the assistant first'
     : detailSummaryTagName() ? 'Type the new value'
-    : 'Describe a change';
+    : 'Ask assistant';
   $('detail-ask-tag-remove').disabled = input.disabled;
   $('detail-ask-send').disabled = input.disabled || !canSend || !detailSummaryDraft().trim();
   if(!show && document.activeElement === input)input.blur();
-  $('detail-summary-setup').hidden = !ready;
+  $('detail-summary-setup').hidden = !ready || canSend;
   const feedback = $('detail-summary-feedback');
   feedback.hidden = !detailSummary.feedback || typeof feedbackFormConfigured !== 'function' || !feedbackFormConfigured();
   feedback.disabled = detailSummary.busy;
@@ -1374,6 +1387,8 @@ function detailSummaryStart(instruction = '',opts = {}){
   return true;
 }
 
+$('detail-summary-ask').addEventListener('click',()=>void openDetailAssistant());
+
 $('detail-summary').addEventListener('click',event=>{
   const pill = event.target.closest('[data-summary-field]');
   const item = detailSummaryRecord();
@@ -1385,7 +1400,7 @@ $('detail-summary').addEventListener('click',event=>{
     return;
   }
   if(typeof assistantFocusSummarySession !== 'function')return;
-  detailSummaryReveal(pill.dataset.summaryField,assistantFocusSummarySession(item),false);
+  detailSummaryReveal(pill.dataset.summaryField,assistantFocusSummarySession(item),event.detail === 0);
 });
 detailSummaryThread().addEventListener('input',event=>assistantFocusPickerFilter(event.target));
 detailSummaryThread().addEventListener('click',event=>{
@@ -1440,10 +1455,11 @@ $('detail-ask-guides').addEventListener('click',event=>{
 function syncDetailSummaryTyping(keyboardVisible){
   const inner = getSheetInner('detail-sheet');
   if(!inner)return;
+  const wasTyping = inner.classList.contains('detail-ask-typing');
+  const active = document.activeElement;
   const typing = inner.classList.contains('detail-ask-on')
-    && (document.activeElement === $('detail-ask-input')
-      || (inner.classList.contains('detail-ask-typing') && keyboardVisible));
-  if(inner.classList.contains('detail-ask-typing') === typing)return;
+    && (active === $('detail-ask-input') || (wasTyping && (keyboardVisible || $('detail-ask').contains(active))));
+  if(wasTyping === typing)return;
   inner.classList.toggle('detail-ask-typing',typing);
   detailSummaryResizeComposer();
   renderDetailSummaryGuides();

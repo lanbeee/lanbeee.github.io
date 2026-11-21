@@ -389,6 +389,14 @@ body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none 
 /* Summary pane: saved settings as pills, then this item's Needle conversation. */
 .detail-sheet .detail-page.detail-summary-page{display:flex;flex-direction:column;gap:12px;}
 .detail-summary-page > *{flex-shrink:0;}
+.detail-summary-entry{display:grid;gap:6px;}
+.detail-summary-entry h3,.detail-summary-entry p{margin:0;}
+.detail-summary-entry h3{font-size:16px;}
+.detail-summary-entry p{font-size:13px;color:var(--text2);}
+/* Keep the single search entry legible beside the Summary composer on phones. */
+body .detail-sheet.detail-summary-active #detail-search-toggle{width:auto;flex:0 0 auto;padding:0 10px;gap:5px;}
+body .detail-sheet.detail-summary-active #detail-search-toggle span{display:inline;}
+#detail-summary-ask[hidden]{display:none;}
 .detail-summary{display:flex;flex-direction:column;gap:6px;}
 .detail-summary .assistant-chip-row{margin:0;gap:10px 6px;}
 .detail-summary .assistant-chip{position:relative;font-size:12px;padding:3px 9px;}
@@ -494,7 +502,7 @@ body .minimal-detail .detail-full-only:not(.detail-field-revealed){display:none 
 .detail-ask.is-busy .detail-ask-mark{animation:detail-ask-pulse 1.1s ease-in-out infinite;}
 @keyframes detail-ask-pulse{50%{opacity:.35;transform:scale(.88);}}
 body .detail-ask textarea{
-  flex:1 1 auto;min-width:0;height:44px;max-height:124px;margin:0;padding:12px 8px 12px 0;
+  flex:1 1 auto;min-width:0;height:44px;max-height:124px;margin:0;padding:12px 8px 12px 0;min-height:44px;
   border:0;border-radius:0;background:transparent;color:var(--text);
   font:inherit;font-size:16px;line-height:20px;resize:none;overflow-y:auto;
   -webkit-appearance:none;appearance:none;
@@ -538,6 +546,36 @@ body[data-pane-count="1"] .detail-sheet.detail-ask-on > .sheet-search-dock{width
 .detail-ask-tag{flex:0 1 auto;max-width:min(60%,13rem);height:26px;margin:0 0 9px 8px;padding:0 2px 0 8px;}
 .detail-ask:has(.detail-ask-tag:not([hidden])) .detail-ask-mark{display:none;}
 .detail-ask:has(.detail-ask-tag:not([hidden])) textarea{padding-left:6px;}
+/* The active editor owns the row. Its actions sit below the draft so long
+   text, setting tags and the Send button never compete for writing width. */
+body .detail-sheet.detail-ask-typing > .sheet-search-dock > .detail-actions{
+  display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;
+  gap:0 8px;padding:5px 6px 6px;border-radius:18px;background:var(--field-bg);
+  box-shadow:inset 0 0 0 1px var(--teal-icon);
+}
+.detail-ask-typing .detail-ask:not([hidden]){display:contents;}
+.detail-ask-typing .detail-ask-mark{display:none;}
+.detail-ask-typing .detail-ask-tag{grid-area:1/1/2/-1;justify-self:start;max-width:100%;margin:5px 6px 0;}
+body .detail-ask-typing .detail-ask textarea{
+  grid-area:2/1/3/-1;width:100%;min-height:72px;padding:8px 8px 12px;line-height:22px;
+}
+.detail-ask-typing .detail-search-control{grid-area:3/1;justify-self:start;}
+.detail-ask-typing #detail-cool{grid-area:3/3;}
+.detail-ask-send span{display:none;}
+.detail-ask-typing .detail-ask-send{
+  grid-area:3/2;width:auto;min-height:44px;gap:5px;margin:0;padding:0 13px;border-radius:22px;
+  font:inherit;font-size:14px;font-weight:600;
+}
+.detail-ask-typing .detail-ask-send span{display:inline;}
+@supports (field-sizing:content){
+  body .detail-ask textarea{field-sizing:content;height:auto;}
+}
+@media (prefers-reduced-motion:no-preference){
+  .detail-sheet.detail-ask-on .detail-actions{transition:background-color .16s ease,box-shadow .16s ease;}
+  @supports (field-sizing:content){
+    body .detail-ask textarea{transition:min-height .16s ease-out;}
+  }
+}
 /* Summary has one in-flow composer, rather than a floating second card over
    the conversation. The pager gives it real space as the keyboard opens. */
 body[data-pane-count="1"] .detail-sheet.detail-ask-on{

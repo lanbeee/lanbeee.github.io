@@ -37,6 +37,15 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
       await page.locator('#detail-search-input').fill(text);
     };
     const reads=()=>page.evaluate(()=>entryReads.length);
+    assert.equal(await page.locator('#detail-summary-ask').isVisible(),false,'the composer is the single Needle entry');
+    await page.locator('#detail-ask-input').click();
+    await page.waitForFunction(()=>document.activeElement === $('detail-ask-input'));
+    assert.equal(await reads(),0,'opening Ask keeps the request under user control');
+    await page.locator('#detail-search-toggle').click();
+    assert.ok(await page.locator('#detail-search-results button').count() > 0,'browse lists settings before typing');
+    await page.locator('#detail-cool').click();
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'detail-search-toggle','closing browse returns to the Summary action');
+    await page.locator('#detail-search-toggle').click();
     await search('duration');
     assert.equal(await reads(),0,'typing and search never run inference');
     assert.ok(await page.locator('#detail-search-ask').isVisible(),'explicit Ask is available even with matching settings');
@@ -119,11 +128,14 @@ const {chromium,BASE,baseHabit,waitForAssistant} = require('./helpers/planner-te
     await page.locator('#detail-search-clear').click();
     assert.equal(await page.locator('#detail-search-ask').isVisible(),false,'empty query has no Ask action');
 
+    await page.locator('#detail-cool').click();
     // Without downloaded assets the instruction waits in the Summary composer.
     await page.evaluate(()=>{
       assistantNeedleCanSend=()=>false;
       openDetail(0);
     });
+    assert.ok(await page.locator('#detail-summary-setup [data-needle-download]').isVisible(),'setup offers the download directly');
+    assert.equal(await page.locator('#detail-ask').isVisible(),false,'an empty composer waits until the assistant is ready');
     const longInstruction='Set duration to 35 minutes. '+ 'Keep the other settings unchanged. '.repeat(8);
     await search(longInstruction);await page.locator('#detail-search-ask').click();
     await page.waitForFunction(()=>!detailAssistantOpening);

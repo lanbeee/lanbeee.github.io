@@ -440,6 +440,10 @@
       </div>
       <div class="detail-pager" aria-label="habit details">
         <section class="detail-page detail-section tune-section detail-summary-page" data-detail-nav="summary">
+          <div class="detail-summary-entry">
+            <h3>Item settings</h3>
+            <p>Tap a value to edit it.</p>
+          </div>
           <div class="detail-summary" id="detail-summary"></div>
           <div id="detail-summary-setup" hidden>
             <div class="assistant-needle-panel" data-needle-panel hidden>
@@ -892,13 +896,14 @@
         </div>
         <div class="detail-actions" id="detail-cool-row">
           <div class="detail-search-control">
-            <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>find in details</span></button>
+            <button type="button" id="detail-search-toggle" class="sheet-search-toggle" aria-label="search detail settings" aria-expanded="false" aria-controls="detail-search-panel"><svg class="detail-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg><span>Search</span></button>
             <div class="detail-search-field" hidden>
               <label class="sr-only" for="detail-search-input">Search within this item’s details</label>
               <input type="search" id="detail-search-input" placeholder="Find a setting" autocomplete="off" maxlength="12000" enterkeyhint="search" aria-describedby="detail-search-status" />
               <button type="button" id="detail-search-clear" class="sheet-search-clear" aria-label="clear detail search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
           </div>
+          <button type="button" class="btn" id="detail-summary-ask" hidden>Ask assistant</button>
           <div class="detail-ask" id="detail-ask" hidden>
             <label class="sr-only" for="detail-ask-input">Describe a change for the assistant</label>
             <i class="ti ti-sparkles detail-ask-mark" aria-hidden="true"></i>
@@ -906,8 +911,8 @@
               <span class="assistant-mention-label" id="detail-ask-tag-label"></span>
               <button type="button" class="assistant-mention-remove" id="detail-ask-tag-remove" aria-label="Remove setting"><i class="ti ti-x" aria-hidden="true"></i></button>
             </span>
-            <textarea id="detail-ask-input" rows="1" maxlength="12000" placeholder="Describe a change" autocomplete="off" enterkeyhint="send"></textarea>
-            <button type="button" id="detail-ask-send" class="detail-ask-send" aria-label="send to assistant" disabled><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
+            <textarea id="detail-ask-input" rows="1" maxlength="12000" placeholder="Ask assistant" autocomplete="off" enterkeyhint="send"></textarea>
+            <button type="button" id="detail-ask-send" class="detail-ask-send" aria-label="send to assistant" disabled><span>Send</span><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
           </div>
           <button type="button" class="detail-head-btn" id="detail-cool" aria-label="close details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>

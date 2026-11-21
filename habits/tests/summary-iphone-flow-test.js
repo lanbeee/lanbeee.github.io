@@ -49,7 +49,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       ...Array.from({length:18},(_,i)=>({...h,type:'zero',hid:`background-${i}`,name:`Background ${i}`}))]);render();},baseHabit({hid:'gym',name:'Gym workout',durationMinutes:60,priority:1,allowedWeekdays:[1,3,5],allowedTimeStart:1020,allowedTimeEnd:1260,minGapMinutes:20}));
     await page.locator('#list .ting-name').filter({hasText:'Gym workout'}).first().tap();
     await page.waitForFunction(()=>detailSummaryOnScreen());
-    assert.match(await page.locator('#detail-summary').innerText(),/Download the assistant/);
+    await page.locator('#detail-summary-setup [data-needle-download]').waitFor({state:'visible'});
     if(live){
       await page.locator('#detail-summary-setup [data-needle-download]').tap();
       await page.waitForFunction(()=>assistantNeedleCanSend(),null,{timeout:180000});
@@ -152,16 +152,16 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.waitForFunction(()=>detailSummaryOnScreen());
       // Every pill shares this navigation path. Exercise each one repeatedly,
       // waiting through the delayed reveal and verifying the selected page.
-      const pills=await page.evaluate(()=>[...document.querySelectorAll('#detail-summary [data-summary-field]')].map(button=>{
+      const pills=await page.evaluate(()=>[...document.querySelectorAll('#detail-summary [data-summary-field]')].map((button,index)=>{
         const field=button.dataset.summaryField;
         const selector=assistantFocusDetailSelector(field,assistantFocusSummarySession(detailSummaryRecord()));
         const target=selector && document.querySelector(selector);
-        return {field,selector,nav:target?.closest('.detail-page')?.dataset.detailNav};
+        return {field,index,selector,nav:target?.closest('.detail-page')?.dataset.detailNav};
       }));
       await page.evaluate(()=>detailSearchHitTarget?.classList.remove('detail-search-hit'));
       for(let attempt=0;attempt<3;attempt++)for(const pill of pills){
         assert.ok(pill.nav,`${pill.field} has a destination`);
-        await page.locator(`#detail-summary [data-summary-field="${pill.field}"]`).tap();
+        await page.locator('#detail-summary [data-summary-field]').nth(pill.index).tap();
         await page.waitForFunction(()=>Boolean(document.querySelector('.detail-search-hit')));
         await page.waitForTimeout(150);
         assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':pill.nav,`${pill.field} stays on its destination on attempt ${attempt+1}`);
@@ -200,7 +200,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.waitForFunction(()=>detailSummaryOnScreen());
       await page.evaluate(()=>Promise.all(document.getAnimations()
         .filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))));
-      const idleHeight=await page.locator('.detail-bottom-bar').evaluate(el=>el.getBoundingClientRect().height);
+      const idleInput=await input.boundingBox();
       await page.evaluate(()=>{summaryFocusEvents=[];});
       await input.tap();
       const focus=await page.evaluate(()=>summaryFocusEvents);
@@ -232,7 +232,11 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       assert.equal(await input.evaluate(el=>getComputedStyle(el).transform),'none','restored focus leaves no extra layer or transform');
       assert.equal(await page.locator('#detail-ask-guides').isVisible(),false,'empty focus shows no new suggestions layer');
-      assert.equal(await page.locator('.detail-bottom-bar').evaluate(el=>el.getBoundingClientRect().height),idleHeight,'empty focus keeps the same composer height');
+      await page.waitForFunction(idle=>{
+        const rect=$('detail-ask-input').getBoundingClientRect();
+        const row=$('detail-cool-row').getBoundingClientRect();
+        return rect.height>=72 && rect.width>idle.width && rect.width>=row.width-16;
+      },idleInput);
       await keyboard(true,32);await snapshot(`${mode}-02-keyboard`);
       await input.fill('Please make this change\nwith a longer message\nthat fills several lines\nwhile I review the item\nand decide what to send.');
       await snapshot(`${mode}-02b-multiline`);
@@ -254,7 +258,7 @@ const live=Boolean(process.env.NEEDLE_MODEL_PATH && process.env.NEEDLE_WASM_PATH
       // Keep Undo available while the all-pill audit runs past its timeout.
       await page.evaluate(()=>clearTimeout(actionToastTimer));
       for(const pill of pills){
-        await page.locator(`#detail-summary [data-summary-field="${pill.field}"]`).tap();
+        await page.locator('#detail-summary [data-summary-field]').nth(pill.index).tap();
         await page.waitForTimeout(250);
         assert.equal(await page.evaluate(()=>detailIsSingleView()?detailMinimalView():detailCurrentNav()),minimal?'settings':pill.nav,
           `${pill.field} stays open after saving an assistant change`);
