@@ -48,7 +48,7 @@ function check(ok,label){
     await page.locator('#ting-due-date').fill('2026-10-09');
     await page.locator('#ting-duration').fill('60');
     await page.locator('#type-seg [data-v="keepup"]').click();
-    check(await page.locator('#ting-duration').inputValue() === '30' && await page.locator('#ting-completion-mode').inputValue() === 'manual','habit branch retains independent effort');
+    check(await page.locator('#ting-duration').inputValue() === '60' && await page.locator('#ting-completion-mode').inputValue() === 'manual','edited effort carries across types while untouched completion keeps habit default');
     await page.locator('#ting-times').fill('3');
     await page.locator('#type-seg [data-v="task"]').click();
     check(await page.locator('#ting-due-date').inputValue() === '2026-10-09' && await page.locator('#ting-duration').inputValue() === '60','switching branches restores task edits');

@@ -98,6 +98,8 @@ const assert=require('node:assert/strict');
   await page.fill('#add-appt-date','2026-10-22');await page.fill('#add-appt-time','13:00');await page.fill('#ting-duration','50');
   await page.click('#do-save');
   assert.equal(await page.evaluate(()=>load().at(-1).appointment.startMinute),780);
+  assert.equal(await page.evaluate(()=>detailCurrentNav()),'summary','newly added event opens on Summary');
+  await page.evaluate(()=>scrollDetailToNav('schedule','instant'));
   assert.equal(await page.locator('#detail-appt-rule').isVisible(),true);
   await page.screenshot({path:'test-results/local-appointment-editor.png',fullPage:true});
   await page.evaluate(()=>{closeDetail();applyAddDefaults();openSheet('add-sheet');});

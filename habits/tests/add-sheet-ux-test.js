@@ -21,7 +21,17 @@ const {chromium} = require('playwright');
     assert.equal(await page.locator('#add-open-defaults').isVisible(),false);
     assert.ok(await page.locator('#ting-duration').isVisible(),'session duration is a core field');
     assert.equal(await page.locator('#do-save').textContent(),'add habit');
+    const batchPlacement = await page.evaluate(()=>({
+      inHead:Boolean(document.getElementById('add-batch-entry')?.closest('.add-sheet-head')),
+      inFooter:Boolean(document.getElementById('add-batch-entry')?.closest('.add-actions'))
+    }));
+    assert.equal(batchPlacement.inHead && !batchPlacement.inFooter,true,'add several sits quietly in the header instead of the primary footer');
     await page.locator('#ting-message').fill('Read a book');
+    await page.locator('#add-batch-entry').click();
+    assert.equal(await page.locator('#add-batch-exit').isVisible(),true,'empty batch offers a one-tap return to single-item add');
+    await page.locator('#add-batch-exit').click();
+    assert.equal(await page.locator('#do-save').isVisible(),true,'returning from empty batch restores single-item save');
+    assert.equal(await page.locator('#ting-message').inputValue(),'Read a book','returning from empty batch preserves typed inputs');
     await page.locator('#ting-message').press('Enter');
     assert.equal(await page.evaluate(()=>load().length),0,'keyboard Done finishes the field without creating an unfinished item');
     assert.ok(await page.locator('#ting-message').isVisible());
@@ -46,6 +56,12 @@ const {chromium} = require('playwright');
     assert.equal(await page.locator('#ting-due-date').inputValue(),'2026-11-01','tomorrow handles month and DST boundaries');
     await page.locator('#ting-due-time').fill('09:30');
     assert.ok(await page.evaluate(()=>readAddRecord().eventTime !== null),'fixed start is saved as an appointment');
+    assert.equal(await page.locator('#ting-due-time-clear').isVisible(),true,'clear button appears when a start time is set');
+    await page.locator('#ting-due-time-clear').click();
+    assert.equal(await page.locator('#ting-due-time').inputValue(),'','clear removes start time');
+    assert.equal(await page.locator('#ting-due-date').inputValue(),'2026-11-01','clearing start time keeps the due date');
+    assert.equal(await page.locator('#ting-due-time-clear').isVisible(),false,'clear button hides when start time is blank');
+    await page.locator('#ting-due-time').fill('09:30');
     await page.locator('[data-add-due="none"]').click();
     assert.equal(await page.locator('#ting-due-time').inputValue(),'');
     assert.ok(await page.locator('#ting-due-time').isDisabled());
@@ -76,6 +92,7 @@ const {chromium} = require('playwright');
     assert.equal(await page.locator('#ting-duration').inputValue(),'25');
     await page.evaluate(()=>setMinimalMode(false));
     await page.locator('#do-save').click();
+    assert.equal(await page.evaluate(()=>detailCurrentNav()),'summary','newly added item opens on the Summary tab');
     const saved = await page.evaluate(()=>load().find(item=>item.name === 'Read a book'));
     assert.equal(saved.target,10/3);
     assert.equal(saved.durationMinutes,25);

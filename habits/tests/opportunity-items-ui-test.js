@@ -35,7 +35,9 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   assert(order.conditions<order.duration,'repeat limit, conditions, then duration');
   await page.locator('#type-seg [data-v="task"]').click();
   assert(!await page.locator('#add-conditions').isVisible(),'task form contains no conditional setup');
-  assert.equal(await page.locator('#ting-weather-profile').inputValue(),'','task retains its own weather draft');
+  assert.equal(await page.locator('#ting-weather-profile').inputValue(),'dry','explicit weather choice carries to task');
+  await page.locator('#type-seg [data-v="event"]').click();
+  assert(!await page.locator('#add-sheet').evaluate(el=>el.classList.contains('opportunity-mode')),'switching from conditional habit to event clears opportunity mode');
   await page.locator('#type-seg [data-v="keepup"]').click();
   assert(await page.locator('#add-conditions').isVisible(),'habit draft restores conditional layout');
   assert.equal(await page.locator('#ting-weather-profile').inputValue(),'dry','habit weather choice survives type switching');
@@ -52,6 +54,8 @@ const {chromium,BASE,waitForAssistant}=require('./helpers/planner-test-helpers')
   await page.setViewportSize({width:390,height:844});
   await page.locator('#do-save').click();
   assert.equal(await page.evaluate(()=>load()[0].repeatMode),'opportunity');
+  assert.equal(await page.evaluate(()=>detailCurrentNav()),'summary','newly added conditional habit opens on Summary');
+  await page.locator('.detail-page-tab[aria-label="conditions"]').click();
   assert.equal(await page.locator('#detail-repeat-mode').inputValue(),'opportunity');
   await page.evaluate(()=>{$('detail-weather-disclosure').open=true;});
   assert(await page.locator('#detail-weather-profile').isVisible(),'weather remains editable in detail');

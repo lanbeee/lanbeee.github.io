@@ -275,10 +275,10 @@ async function assertAttr(page, selector, attr, expected, msg){
   const taskName = `${runId} task`;
   const tomorrow = new Date(Date.now() + 86400000);
   await addTestHabit(page, taskName, 'task', { dueDate: dateInput(tomorrow) });
-  // Tasks land on Schedule, where due/scheduled controls now live.
+  // Newly added items land on Summary, where search and the assistant live.
   await page.waitForTimeout(250);
   const taskDefaultPane = (await page.locator('.detail-page-tab.on').textContent()).trim();
-  if(taskDefaultPane !== 'due & start')throw new Error(`tasks should open on Schedule, got ${taskDefaultPane}`);
+  if(taskDefaultPane !== 'summary')throw new Error(`tasks should open on Summary, got ${taskDefaultPane}`);
   await scrollDetailToSchedule(page, 1);
   await page.waitForTimeout(200);
 
