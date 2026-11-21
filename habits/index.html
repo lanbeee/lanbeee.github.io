@@ -1172,9 +1172,141 @@
         <button type="button" class="icon-btn" id="settings-open-about" aria-label="help, samples, and privacy"><i class="ti ti-help" aria-hidden="true"></i></button>
       </div>
       <div class="settings-stack">
+        <h2 class="settings-group-head">Home &amp; appearance</h2>
         <section class="settings-block">
           <span class="settings-label">display</span>
           <div class="settings-grid" data-ui-toggles="display"></div>
+        </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-appearance-head" data-collapse-target="settings-appearance-body" aria-expanded="false" aria-controls="settings-appearance-body">
+            <span class="settings-label">appearance</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-appearance-body" hidden>
+            <div class="settings-grid" data-ui-toggles="appearance"></div>
+            <span class="settings-sublabel">color palette</span>
+            <div class="palette-picker" id="color-palette-picker" role="group" aria-label="color palette">
+              <button type="button" class="palette-option" data-palette-value="default" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>default</button>
+              <button type="button" class="palette-option" data-palette-value="neutral" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>neutral</button>
+              <button type="button" class="palette-option" data-palette-value="sage" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sage</button>
+              <button type="button" class="palette-option" data-palette-value="sky" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sky</button>
+              <button type="button" class="palette-option" data-palette-value="lavender" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>lavender</button>
+              <button type="button" class="palette-option" data-palette-value="sand" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sand</button>
+            </div>
+            <span class="settings-sublabel">font size</span>
+            <div class="seg compact-seg" id="font-scale-seg" role="group" aria-label="font size">
+              <button type="button" class="seg-opt" data-seg-value="small">small</button>
+              <button type="button" class="seg-opt" data-seg-value="medium">medium</button>
+              <button type="button" class="seg-opt" data-seg-value="large">large</button>
+            </div>
+            <span class="settings-sublabel">theme</span>
+            <div class="seg compact-seg" id="theme-mode-seg" role="group" aria-label="theme">
+              <button type="button" class="seg-opt" data-seg-value="light">light</button>
+              <button type="button" class="seg-opt" data-seg-value="dark">dark</button>
+              <button type="button" class="seg-opt" data-seg-value="system">system</button>
+            </div>
+            <div class="settings-minimal-only" id="settings-card-appearance">
+              <span class="settings-sublabel">on each card</span>
+              <div class="settings-grid" data-ui-toggles="appearanceCards"></div>
+            </div>
+            <button class="setting-toggle setting-switch settings-full-only" type="button" id="settings-replica-chrome" aria-pressed="true">
+              <span>
+                <b>display bar</b>
+                <small>Clock, sync, and lock on this paired screen.</small>
+              </span>
+              <span class="switch-ui" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible settings-full-only">
+          <button type="button" class="settings-collapse-head" id="settings-cards-head" data-collapse-target="settings-cards-body" aria-expanded="false" aria-controls="settings-cards-body">
+            <span class="settings-label">what shows on each item</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-cards-body" hidden>
+            <span class="settings-sublabel settings-full-only">item details</span>
+            <div class="seg settings-full-only" id="card-detail-seg" role="group" aria-label="item detail level">
+              <button type="button" class="seg-opt" data-card-detail="simple" aria-pressed="false">simple</button>
+              <button type="button" class="seg-opt" data-card-detail="detailed" aria-pressed="false">detailed</button>
+              <button type="button" class="seg-opt" data-card-detail="custom" aria-pressed="false">custom</button>
+            </div>
+            <p class="field-hint settings-full-only" id="card-detail-hint" aria-live="polite"></p>
+            <div id="card-detail-custom" class="settings-full-only" hidden>
+              <div class="settings-grid" data-ui-toggles="cardDetails"></div>
+            </div>
+            <div class="settings-grid" data-ui-toggles="cards"></div>
+            <span class="settings-sublabel settings-full-only">scheduled time on items</span>
+            <div class="seg settings-full-only" id="agenda-time-seg" role="group" aria-label="how scheduled times appear on items">
+              <button type="button" class="seg-opt" data-seg-value="time">show time</button>
+              <button type="button" class="seg-opt" data-seg-value="icon">symbol only</button>
+              <button type="button" class="seg-opt" data-seg-value="hide">hide</button>
+            </div>
+            <p class="field-hint settings-full-only">Choose how the agenda time appears on each item.</p>
+            <div class="settings-grid" data-ui-toggles="cardsAfterTime"></div>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible">
+          <button type="button" class="settings-collapse-head" id="settings-reminders-head" data-collapse-target="settings-reminders-body" aria-expanded="false" aria-controls="settings-reminders-body">
+            <span class="settings-label">reminders</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-reminders-body" hidden>
+            <p class="field-hint">Heads-ups for dated tasks and events.</p>
+            <div class="settings-grid" data-ui-toggles="reminders"></div>
+            <div data-settings-help-title="notification delivery &amp; privacy" data-settings-help-id="settings-notifications-help"><p class="field-hint">The in-app banner works without notification permission. System alerts are best effort and may use the encrypted push relay when available. Detailed text is optional; leave it off to keep system alerts generic.</p></div>
+          </div>
+        </section>
+        <h2 class="settings-group-head settings-full-only">Calendar &amp; planning</h2>
+        <section class="settings-block settings-collapsible settings-full-only">
+          <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
+            <span class="settings-label">calendars</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-calendar-body" hidden>
+            <button type="button" class="btn" id="refresh-agenda" data-refresh-agenda>Refresh</button>
+            <div id="calendar-device-controls" hidden></div>
+            <p class="field-hint">Import a Google, Apple or Outlook calendar export (.ics), or a calendar PDF. Choose the .ics file inside Google's export ZIP.</p>
+            <p class="field-hint">ICS import dates (including recurring events). Times appear in this device's time zone. Imported copies stay on this device; re-import to add or update meetings.</p>
+            <label class="settings-sublabel" for="calendar-ics-from">ICS from</label>
+            <input type="date" id="calendar-ics-from" class="settings-select" />
+            <label class="settings-sublabel" for="calendar-ics-to">ICS through</label>
+            <input type="date" id="calendar-ics-to" class="settings-select" />
+            <div class="btn-row calendar-pdf-pick-row">
+              <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose ICS or PDF</label>
+              <button class="btn" id="calendar-pdf-clear" type="button">remove PDF meetings</button>
+              <button class="btn" id="calendar-ics-clear" type="button">remove ICS meetings</button>
+            </div>
+            <!-- Not [hidden]: iOS Safari ignores programmatic .click() on display:none / hidden file inputs. -->
+            <input type="file" id="calendar-pdf-input" class="file-input-native" accept="text/calendar,.ics,application/pdf,.pdf" />
+            <div data-settings-help-title="count meeting time toward" data-settings-help-for="calendar-credit-habit" data-settings-help-id="settings-calendar-credit-help"><p>Choose a build or limit habit with daily hours, such as Work. Overlapping meetings count once. The habit is allowed to split across sessions so it can fit around meetings.</p></div>
+            <select id="calendar-credit-habit" class="settings-select">
+              <option value="">none</option>
+            </select>
+            <p class="field-hint" id="calendar-credit-hint">Phone, ICS and PDF meetings count. Events you add in Tings do not.</p>
+            <label class="settings-sublabel" for="calendar-allday-mode">all-day events</label>
+            <select id="calendar-allday-mode" class="settings-select">
+              <option value="skip">skip</option>
+              <option value="tasks">show as a task on that day</option>
+            </select>
+            <p class="field-hint">All-day tasks don’t count toward meeting time.</p>
+            <div id="calendar-pdf-preview" class="calendar-pdf-preview" hidden></div>
+            <div class="btn-row" id="calendar-pdf-actions" hidden>
+              <button class="btn primary" id="calendar-pdf-import" type="button">import meetings</button>
+              <button class="btn" id="calendar-pdf-cancel" type="button">cancel</button>
+            </div>
+            <p class="field-hint sample-count" id="calendar-pdf-status" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible settings-full-only">
+          <button type="button" class="settings-collapse-head" id="settings-blocked-head" data-collapse-target="settings-blocked-body" aria-expanded="false" aria-controls="settings-blocked-body">
+            <span class="settings-label">busy times</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-blocked-body" hidden>
+            <p class="field-hint">Reserve regular time for sleep, meals, work, or travel.</p>
+            <div class="blocked-time-list" id="blocked-time-list"></div>
+            <button class="btn" id="blocked-time-add" type="button">add busy time</button>
+          </div>
         </section>
         <section class="settings-block settings-collapsible settings-full-only">
           <div class="settings-collapse-row">
@@ -1225,104 +1357,36 @@
             <div data-settings-help-title="forecast sources &amp; privacy" data-settings-help-id="settings-weather-privacy-help"><p class="field-hint weather-attribution">Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, adapted for scheduling (<a href="https://open-meteo.com/en/license" target="_blank" rel="noopener">CC BY 4.0</a>). Air quality: CAMS ENSEMBLE via Open-Meteo. Home-city coordinates, and any far-away saved-place pin needed on the plan, are sent only to retrieve forecasts. Places near home reuse the home-city forecast. Live GPS is not sent. No API key or account is used.</p></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
-          <button type="button" class="settings-collapse-head" id="settings-reminders-head" data-collapse-target="settings-reminders-body" aria-expanded="false" aria-controls="settings-reminders-body">
-            <span class="settings-label">reminders</span>
+        <section class="settings-block settings-collapsible settings-full-only">
+          <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
+            <span class="settings-label">relative times</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
-          <div class="settings-collapse-body" id="settings-reminders-body" hidden>
-            <p class="field-hint">Heads-ups for dated tasks and events.</p>
-            <div class="settings-grid" data-ui-toggles="reminders"></div>
-            <div data-settings-help-title="notification delivery &amp; privacy" data-settings-help-id="settings-notifications-help"><p class="field-hint">The in-app banner works without notification permission. System alerts are best effort and may use the encrypted push relay when available. Detailed text is optional; leave it off to keep system alerts generic.</p></div>
-          </div>
-        </section>
-        <section class="settings-block">
-          <div data-settings-help-title="backup" data-settings-help-id="settings-backup-help" data-settings-help-label="settings-label"><p>Export a backup before clearing browser data or moving to a new phone. After restoring, reconnect phone calendar sync to get today’s and upcoming phone events. Earlier phone calendar history and events imported from files are included in the backup.</p><p>In the Android app, exports save to Downloads and open a share sheet.</p></div>
-          <p class="field-hint">Keep a backup to restore or move your data. <button type="button" class="mini-text-btn" id="open-privacy-from-settings">privacy</button></p>
-          <div class="btn-row">
-            <button class="btn primary" id="backup-export" type="button">export backup</button>
-            <button class="btn" id="backup-import" type="button">import backup</button>
-          </div>
-          <input type="file" id="backup-file-input" accept="application/json,.json" hidden />
-          <p class="field-hint sample-count" id="backup-status"></p>
-          <div class="reset-confirm" id="backup-import-confirm" hidden>
-            <p id="backup-import-summary">Replace everything on this device with this backup?</p>
-            <label class="calendar-device-option" hidden><input type="checkbox" id="backup-keep-phone-calendar" /> Restore saved phone calendar copies for today and later. Leave unchecked if you’ll reconnect your calendar.</label>
-            <label class="calendar-device-option" hidden><input type="checkbox" id="backup-keep-calendar-hides" /> Keep events and series hidden as they were in the backup</label>
-            <div class="btn-row">
-              <button class="btn primary" id="backup-import-yes">replace</button>
-              <button class="btn" id="backup-import-no">cancel</button>
+          <div class="settings-collapse-body" id="settings-prayer-body" hidden>
+            <p class="field-hint">Daily times follow your city, set under Locations.</p>
+            <div class="settings-grid" data-ui-toggles="prayer"></div>
+            <div id="settings-prayer-calculation" hidden>
+              <span class="settings-sublabel">calculation method</span>
+              <select id="setting-prayer-method" class="mini-select"></select>
+              <p class="field-hint">For prayer tracking, choose the calculation convention you follow.</p>
+              <span class="settings-sublabel">Asr school (madhab)</span>
+              <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
+                <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
+                <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
+              </div>
             </div>
           </div>
         </section>
         <section class="settings-block settings-collapsible settings-full-only">
-          <button type="button" class="settings-collapse-head" id="settings-cleanup-head" data-collapse-target="settings-cleanup-body" aria-expanded="false" aria-controls="settings-cleanup-body">
-            <span class="settings-label">cleanup</span>
+          <button type="button" class="settings-collapse-head" id="settings-advanced-head" data-collapse-target="settings-advanced-body" aria-expanded="false" aria-controls="settings-advanced-body">
+            <span class="settings-label">advanced</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
-          <div class="settings-collapse-body" id="settings-cleanup-body" hidden>
-            <div data-settings-help-title="automatic cleanup" data-settings-help-id="settings-cleanup-help"><p class="field-hint">About once a month when you open the app, old completed tasks and extra habit history are removed automatically. You will see a notice when that runs.</p></div>
-            <span class="settings-sublabel">delete completed tasks after</span>
-            <div class="seg compact-seg" id="completed-task-retention-seg" role="group" aria-label="completed task retention">
-              <button type="button" class="seg-opt" data-seg-value="2">2 days</button>
-              <button type="button" class="seg-opt" data-seg-value="3">3 days</button>
-              <button type="button" class="seg-opt" data-seg-value="7">7 days</button>
-            </div>
-            <span class="settings-sublabel">habit history</span>
-            <div class="seg compact-seg" id="habit-log-keep-seg" role="group" aria-label="habit log keep count">
-              <button type="button" class="seg-opt" data-seg-value="12">12</button>
-              <button type="button" class="seg-opt" data-seg-value="30">30</button>
-              <button type="button" class="seg-opt" data-seg-value="60">60</button>
-              <button type="button" class="seg-opt" data-seg-value="0">off</button>
-            </div>
-            <p class="field-hint">Entries kept per habit; off keeps all history.</p>
-            <div class="btn-row">
-              <button class="btn" id="retention-clean-now" type="button">clean now</button>
-            </div>
-            <p class="field-hint sample-count" id="retention-cleanup-status"></p>
+          <div class="settings-collapse-body" id="settings-advanced-body" hidden>
+            <div class="settings-grid" data-ui-toggles="advanced"></div>
           </div>
         </section>
-        <div class="settings-group-head settings-full-only">schedule &amp; places</div>
-        <section class="settings-block settings-collapsible settings-full-only">
-          <button type="button" class="settings-collapse-head" id="settings-calendar-head" data-collapse-target="settings-calendar-body" aria-expanded="false" aria-controls="settings-calendar-body">
-            <span class="settings-label">calendars</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-calendar-body" hidden>
-            <button type="button" class="btn" id="refresh-agenda" data-refresh-agenda>Refresh</button>
-            <div id="calendar-device-controls" hidden></div>
-            <p class="field-hint">Import a Google, Apple or Outlook calendar export (.ics), or a calendar PDF. Choose the .ics file inside Google's export ZIP.</p>
-            <p class="field-hint">ICS import dates (including recurring events). Times appear in this device's time zone. Imported copies stay on this device; re-import to add or update meetings.</p>
-            <label class="settings-sublabel" for="calendar-ics-from">ICS from</label>
-            <input type="date" id="calendar-ics-from" class="settings-select" />
-            <label class="settings-sublabel" for="calendar-ics-to">ICS through</label>
-            <input type="date" id="calendar-ics-to" class="settings-select" />
-            <div class="btn-row calendar-pdf-pick-row">
-              <label class="btn primary calendar-pdf-pick-label" for="calendar-pdf-input">choose ICS or PDF</label>
-              <button class="btn" id="calendar-pdf-clear" type="button">remove PDF meetings</button>
-              <button class="btn" id="calendar-ics-clear" type="button">remove ICS meetings</button>
-            </div>
-            <!-- Not [hidden]: iOS Safari ignores programmatic .click() on display:none / hidden file inputs. -->
-            <input type="file" id="calendar-pdf-input" class="file-input-native" accept="text/calendar,.ics,application/pdf,.pdf" />
-            <div data-settings-help-title="count meeting time toward" data-settings-help-for="calendar-credit-habit" data-settings-help-id="settings-calendar-credit-help"><p>Choose a build or limit habit with daily hours, such as Work. Overlapping meetings count once. The habit is allowed to split across sessions so it can fit around meetings.</p></div>
-            <select id="calendar-credit-habit" class="settings-select">
-              <option value="">none</option>
-            </select>
-            <p class="field-hint" id="calendar-credit-hint">Phone, ICS and PDF meetings count. Events you add in Tings do not.</p>
-            <label class="settings-sublabel" for="calendar-allday-mode">all-day events</label>
-            <select id="calendar-allday-mode" class="settings-select">
-              <option value="skip">skip</option>
-              <option value="tasks">show as a task on that day</option>
-            </select>
-            <p class="field-hint">All-day tasks don’t count toward meeting time.</p>
-            <div id="calendar-pdf-preview" class="calendar-pdf-preview" hidden></div>
-            <div class="btn-row" id="calendar-pdf-actions" hidden>
-              <button class="btn primary" id="calendar-pdf-import" type="button">import meetings</button>
-              <button class="btn" id="calendar-pdf-cancel" type="button">cancel</button>
-            </div>
-            <p class="field-hint sample-count" id="calendar-pdf-status" role="status" aria-live="polite"></p>
-          </div>
-        </section>
+        <h2 class="settings-group-head settings-full-only">Topics, places &amp; defaults</h2>
         <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-topics-head" data-collapse-target="settings-topics-body" aria-expanded="false" aria-controls="settings-topics-body">
             <span class="settings-label">topics</span>
@@ -1383,45 +1447,6 @@
           </div>
         </section>
         <section class="settings-block settings-collapsible settings-full-only">
-          <button type="button" class="settings-collapse-head" id="settings-blocked-head" data-collapse-target="settings-blocked-body" aria-expanded="false" aria-controls="settings-blocked-body">
-            <span class="settings-label">busy times</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-blocked-body" hidden>
-            <p class="field-hint">Reserve regular time for sleep, meals, work, or travel.</p>
-            <div class="blocked-time-list" id="blocked-time-list"></div>
-            <button class="btn" id="blocked-time-add" type="button">add busy time</button>
-          </div>
-        </section>
-        <div class="settings-group-head">look &amp; new items</div>
-        <section class="settings-block settings-collapsible settings-full-only">
-          <button type="button" class="settings-collapse-head" id="settings-cards-head" data-collapse-target="settings-cards-body" aria-expanded="false" aria-controls="settings-cards-body">
-            <span class="settings-label">what shows on each item</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-cards-body" hidden>
-            <span class="settings-sublabel settings-full-only">item details</span>
-            <div class="seg settings-full-only" id="card-detail-seg" role="group" aria-label="item detail level">
-              <button type="button" class="seg-opt" data-card-detail="simple" aria-pressed="false">simple</button>
-              <button type="button" class="seg-opt" data-card-detail="detailed" aria-pressed="false">detailed</button>
-              <button type="button" class="seg-opt" data-card-detail="custom" aria-pressed="false">custom</button>
-            </div>
-            <p class="field-hint settings-full-only" id="card-detail-hint" aria-live="polite"></p>
-            <div id="card-detail-custom" class="settings-full-only" hidden>
-              <div class="settings-grid" data-ui-toggles="cardDetails"></div>
-            </div>
-            <div class="settings-grid" data-ui-toggles="cards"></div>
-            <span class="settings-sublabel settings-full-only">scheduled time on items</span>
-            <div class="seg settings-full-only" id="agenda-time-seg" role="group" aria-label="how scheduled times appear on items">
-              <button type="button" class="seg-opt" data-seg-value="time">show time</button>
-              <button type="button" class="seg-opt" data-seg-value="icon">symbol only</button>
-              <button type="button" class="seg-opt" data-seg-value="hide">hide</button>
-            </div>
-            <p class="field-hint settings-full-only">Choose how the agenda time appears on each item.</p>
-            <div class="settings-grid" data-ui-toggles="cardsAfterTime"></div>
-          </div>
-        </section>
-        <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-defaults-head" data-collapse-target="settings-defaults-body" aria-expanded="false" aria-controls="settings-defaults-body">
             <span class="settings-label">new habit &amp; task defaults</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -1479,152 +1504,7 @@
             <div class="topic-chip-row" id="default-topics-chips"></div>
           </div>
         </section>
-        <section class="settings-block settings-collapsible">
-          <button type="button" class="settings-collapse-head" id="settings-appearance-head" data-collapse-target="settings-appearance-body" aria-expanded="false" aria-controls="settings-appearance-body">
-            <span class="settings-label">appearance</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-appearance-body" hidden>
-            <div class="settings-grid" data-ui-toggles="appearance"></div>
-            <span class="settings-sublabel">color palette</span>
-            <div class="palette-picker" id="color-palette-picker" role="group" aria-label="color palette">
-              <button type="button" class="palette-option" data-palette-value="default" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>default</button>
-              <button type="button" class="palette-option" data-palette-value="neutral" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>neutral</button>
-              <button type="button" class="palette-option" data-palette-value="sage" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sage</button>
-              <button type="button" class="palette-option" data-palette-value="sky" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sky</button>
-              <button type="button" class="palette-option" data-palette-value="lavender" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>lavender</button>
-              <button type="button" class="palette-option" data-palette-value="sand" aria-pressed="false"><span class="palette-swatch" aria-hidden="true"></span>sand</button>
-            </div>
-            <span class="settings-sublabel">font size</span>
-            <div class="seg compact-seg" id="font-scale-seg" role="group" aria-label="font size">
-              <button type="button" class="seg-opt" data-seg-value="small">small</button>
-              <button type="button" class="seg-opt" data-seg-value="medium">medium</button>
-              <button type="button" class="seg-opt" data-seg-value="large">large</button>
-            </div>
-            <span class="settings-sublabel">theme</span>
-            <div class="seg compact-seg" id="theme-mode-seg" role="group" aria-label="theme">
-              <button type="button" class="seg-opt" data-seg-value="light">light</button>
-              <button type="button" class="seg-opt" data-seg-value="dark">dark</button>
-              <button type="button" class="seg-opt" data-seg-value="system">system</button>
-            </div>
-            <div class="settings-minimal-only" id="settings-card-appearance">
-              <span class="settings-sublabel">on each card</span>
-              <div class="settings-grid" data-ui-toggles="appearanceCards"></div>
-            </div>
-            <button class="setting-toggle setting-switch settings-full-only" type="button" id="settings-replica-chrome" aria-pressed="true">
-              <span>
-                <b>display bar</b>
-                <small>Clock, sync, and lock on this paired screen.</small>
-              </span>
-              <span class="switch-ui" aria-hidden="true"></span>
-            </button>
-          </div>
-        </section>
-        <div class="settings-group-head settings-full-only">more</div>
-        <section class="settings-block settings-collapsible settings-full-only">
-          <div class="settings-collapse-row">
-            <button type="button" class="settings-collapse-head" id="settings-agenda-head" data-collapse-target="settings-agenda-body" aria-expanded="false" aria-controls="settings-agenda-body">
-              <span class="settings-label">shared display</span>
-              <i class="ti ti-chevron-down" aria-hidden="true"></i>
-            </button>
-            <span data-ui-leave="agenda"></span>
-          </div>
-          <div class="settings-collapse-body" id="settings-agenda-body" hidden>
-            <p class="field-hint">Connect a personal clone or a glance display.</p>
-            <p class="field-hint">To use this device as your personal clone, <a id="settings-agenda-join" href="./agenda-display.html">pair this device</a>. Scan its QR from your main device. Existing items here are replaced by the paired library; export a backup first if needed.</p>
-            <div data-settings-help-title="pairing &amp; sync" data-settings-help-id="settings-sharing-help"><p class="field-hint">Pair at most two screens: one full-app display (personal clone or shared items) and one glance display. Personal clone copies every task and habit so either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages. Glance display shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower frame. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it. Approving a second screen does not sign the other out.</p></div>
-            <div id="settings-agenda-empty">
-              <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
-            </div>
-            <div id="settings-agenda-active" hidden>
-              <span class="settings-sublabel">feed title</span>
-              <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Shared display" autocomplete="off" />
-              <p class="field-hint" id="settings-agenda-status"></p>
-              <span class="settings-sublabel">sync style for the next display</span>
-              <select id="settings-agenda-sync-mode" class="mini-select">
-                <option value="clone">personal clone</option>
-                <option value="selected">shared items only</option>
-                <option value="glance">glance display</option>
-              </select>
-              <p class="field-hint" id="settings-agenda-sync-hint">Sync all items, history, and planner settings between devices.</p>
-              <span class="settings-sublabel">display reauthorization</span>
-              <select id="settings-agenda-reauth" class="mini-select">
-                <option value="30">every 30 days</option>
-                <option value="7">every 7 days</option>
-              </select>
-              <p class="field-hint">Scan a new QR when display access expires.</p>
-              <span class="settings-sublabel" id="settings-agenda-scope-label">glance-view compatibility</span>
-              <div class="btn-row">
-                <select id="settings-agenda-scope-mode" class="mini-select">
-                  <option value="count">next activities</option>
-                  <option value="hours">hours ahead</option>
-                </select>
-                <input id="settings-agenda-scope-value" class="settings-text-input" type="number" min="1" max="50" step="1" value="20" aria-label="agenda publish scope value" />
-              </div>
-              <p class="field-hint" id="settings-agenda-scope-hint">Older display builds receive at most 50 upcoming rows, never beyond tomorrow.</p>
-              <span class="settings-sublabel">signed-in displays</span>
-              <div id="settings-agenda-devices"></div>
-              <p class="field-hint" id="settings-agenda-devices-empty">No display is signed in yet. Scan a QR to add one.</p>
-              <span class="settings-sublabel">pair a display</span>
-              <p class="field-hint">Open <a href="https://lanbeee.github.io/habits/agenda-display.html" target="_blank" rel="noopener">Tings display</a> on the other screen, then scan its QR here.</p>
-              <div data-settings-help-title="pairing instructions" data-settings-help-id="settings-pairing-help"><p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR adds a second screen and does not sign the other out. Requests work once and expire after 30 seconds.</p></div>
-              <div class="btn-row" style="flex-wrap:wrap">
-                <button type="button" class="btn primary" id="settings-agenda-scan-qr"><i class="ti ti-scan" aria-hidden="true"></i> scan display QR</button>
-                <button type="button" class="btn" id="settings-agenda-publish">sync now</button>
-                <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke feed</button>
-              </div>
-            </div>
-          </div>
-        </section>
-        <section class="settings-block settings-collapsible settings-full-only">
-          <button type="button" class="settings-collapse-head" id="settings-prayer-head" data-collapse-target="settings-prayer-body" aria-expanded="false" aria-controls="settings-prayer-body">
-            <span class="settings-label">relative times</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-prayer-body" hidden>
-            <p class="field-hint">Daily times follow your city, set under Locations.</p>
-            <div class="settings-grid" data-ui-toggles="prayer"></div>
-            <div id="settings-prayer-calculation" hidden>
-              <span class="settings-sublabel">calculation method</span>
-              <select id="setting-prayer-method" class="mini-select"></select>
-              <p class="field-hint">For prayer tracking, choose the calculation convention you follow.</p>
-              <span class="settings-sublabel">Asr school (madhab)</span>
-              <div class="seg compact-seg" id="prayer-madhab-seg" role="group" aria-label="madhab">
-                <button type="button" class="seg-opt" data-prayer-madhab="shafi">Shafi (standard)</button>
-                <button type="button" class="seg-opt" data-prayer-madhab="hanafi">Hanafi (later Asr)</button>
-              </div>
-            </div>
-          </div>
-        </section>
-        <section class="settings-block settings-collapsible settings-full-only">
-          <button type="button" class="settings-collapse-head" id="settings-advanced-head" data-collapse-target="settings-advanced-body" aria-expanded="false" aria-controls="settings-advanced-body">
-            <span class="settings-label">advanced</span>
-            <i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-advanced-body" hidden>
-            <div class="settings-grid" data-ui-toggles="advanced"></div>
-          </div>
-        </section>
-        <section id="settings-android-assistant" class="settings-block settings-collapsible" hidden>
-          <button type="button" class="settings-collapse-head" id="settings-android-assistant-head" data-collapse-target="settings-android-assistant-body" aria-expanded="false" aria-controls="settings-android-assistant-body">
-            <span class="settings-label">Android assistant</span><i class="ti ti-chevron-down" aria-hidden="true"></i>
-          </button>
-          <div class="settings-collapse-body" id="settings-android-assistant-body" hidden>
-            <div class="settings-toggle-row">
-              <button class="setting-toggle setting-switch" type="button" id="setting-android-assistant" aria-pressed="false">
-                <span><b>allow Android assistant access</b><small>Read your plan; review changes before saving.</small></span>
-                <span class="switch-ui" aria-hidden="true"></span>
-              </button>
-              <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-android-assistant-help" aria-label="about Android assistant access" aria-expanded="false" aria-controls="settings-android-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="settings-help-body" id="settings-android-assistant-help" hidden>
-                <p>An authorized Android assistant can read your tasks, schedule, weather and settings through Tings tools. Changes open a preview for you to confirm. Answers are shared with the assistant you use. No Ollama setup is needed. Open Tings once and unlock your phone to use these tools.</p>
-                <p>Gemini access to AppFunctions is currently limited by Google’s early-access rollout. Enabling this setting does not connect Tings to Gemini by itself. While waiting, long-press the Tings icon for today’s plan or add a task, or share text to Tings to review it as a task.</p>
-              </div>
-            </div>
-            <p class="field-hint" id="android-assistant-status" role="status" aria-live="polite">Unlock your phone to use these tools.</p>
-            <button class="btn" type="button" id="android-assistant-review" hidden>review pending request</button>
-          </div>
-        </section>
+        <h2 class="settings-group-head settings-connections-heading">Assistants &amp; shared displays</h2>
         <section class="settings-block settings-collapsible settings-full-only">
           <button type="button" class="settings-collapse-head" id="settings-assistant-head" data-collapse-target="settings-assistant-body" aria-expanded="false" aria-controls="settings-assistant-body">
             <span class="settings-label">local assistant</span>
@@ -1640,7 +1520,7 @@
                 <span class="switch-ui" aria-hidden="true"></span>
               </button>
               <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-local-assistant-help" aria-label="about the local assistant" aria-expanded="false" aria-controls="settings-local-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
-              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Download the assistant once to use it on this device, including offline. No account or server is needed. Downloads start only when you choose download. Your requests stay on this device and changes wait for your confirmation. Off by default. You can also use your existing Ollama or LM Studio server.</p><p>Every request is interpreted by the local model, Needle 3 (Apache License 2.0). Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
+              <div class="settings-help-body" id="settings-local-assistant-help" hidden><p>Download the assistant once to use it on this device, including offline. No account or server is needed. Downloads start only when you choose download. With Needle 3, your requests stay on this device. You review proposed changes before applying them. You can also use your existing Ollama or LM Studio server.</p><p>Every request is interpreted by the local model, Needle 3 (Apache License 2.0). Tings then validates tool arguments and reads or changes app data deterministically.</p></div>
             </div>
             <details class="settings-disclosure" id="assistant-setup-guide">
               <summary>setup instructions</summary>
@@ -1709,6 +1589,128 @@
                 </button>
               </details>
             </div>
+          </div>
+        </section>
+        <section id="settings-android-assistant" class="settings-block settings-collapsible" hidden>
+          <button type="button" class="settings-collapse-head" id="settings-android-assistant-head" data-collapse-target="settings-android-assistant-body" aria-expanded="false" aria-controls="settings-android-assistant-body">
+            <span class="settings-label">Android assistant</span><i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-android-assistant-body" hidden>
+            <div class="settings-toggle-row">
+              <button class="setting-toggle setting-switch" type="button" id="setting-android-assistant" aria-pressed="false">
+                <span><b>allow Android assistant access</b><small>Read your plan; review changes before saving.</small></span>
+                <span class="switch-ui" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="info-btn settings-info-btn" data-settings-help-target="settings-android-assistant-help" aria-label="about Android assistant access" aria-expanded="false" aria-controls="settings-android-assistant-help"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+              <div class="settings-help-body" id="settings-android-assistant-help" hidden>
+                <p>An authorized Android assistant can read your tasks, schedule, weather and settings through Tings tools. Changes open a preview for you to confirm. Answers are shared with the assistant you use. No Ollama setup is needed. Open Tings once and unlock your phone to use these tools.</p>
+                <p>Gemini access to AppFunctions is currently limited by Google’s early-access rollout. Enabling this setting does not connect Tings to Gemini by itself. While waiting, long-press the Tings icon for today’s plan or add a task, or share text to Tings to review it as a task.</p>
+              </div>
+            </div>
+            <p class="field-hint" id="android-assistant-status" role="status" aria-live="polite">Unlock your phone to use these tools.</p>
+            <button class="btn" type="button" id="android-assistant-review" hidden>review pending request</button>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible settings-full-only">
+          <div class="settings-collapse-row">
+            <button type="button" class="settings-collapse-head" id="settings-agenda-head" data-collapse-target="settings-agenda-body" aria-expanded="false" aria-controls="settings-agenda-body">
+              <span class="settings-label">shared display</span>
+              <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            </button>
+            <span data-ui-leave="agenda"></span>
+          </div>
+          <div class="settings-collapse-body" id="settings-agenda-body" hidden>
+            <p class="field-hint">Connect a personal clone or a glance display.</p>
+            <p class="field-hint">To use this device as your personal clone, <a id="settings-agenda-join" href="./agenda-display.html">pair this device</a>. Scan its QR from your main device. Existing items here are replaced by the paired library; export a backup first if needed.</p>
+            <div data-settings-help-title="pairing &amp; sync" data-settings-help-id="settings-sharing-help"><p class="field-hint">Pair at most two screens: one full-app display (personal clone or shared items) and one glance display. Personal clone copies every task and habit so either device can add, edit, complete, or remove them. Shared items only copies items allowed from their detail pages. Glance display shows a read-across-the-room agenda it can mark done, which is the right choice for an older or slower frame. Pairing is QR-only: scan the display from this app, type its separate 8-digit code, and explicitly approve it. Approving a second screen does not sign the other out.</p></div>
+            <div id="settings-agenda-empty">
+              <button type="button" class="btn primary" id="settings-agenda-create">create display feed</button>
+            </div>
+            <div id="settings-agenda-active" hidden>
+              <span class="settings-sublabel">feed title</span>
+              <input id="settings-agenda-title" class="settings-text-input" type="text" maxlength="80" placeholder="Shared display" autocomplete="off" />
+              <p class="field-hint" id="settings-agenda-status"></p>
+              <span class="settings-sublabel">sync style for the next display</span>
+              <select id="settings-agenda-sync-mode" class="mini-select">
+                <option value="clone">personal clone</option>
+                <option value="selected">shared items only</option>
+                <option value="glance">glance display</option>
+              </select>
+              <p class="field-hint" id="settings-agenda-sync-hint">Sync all items, history, and planner settings between devices.</p>
+              <span class="settings-sublabel">display reauthorization</span>
+              <select id="settings-agenda-reauth" class="mini-select">
+                <option value="30">every 30 days</option>
+                <option value="7">every 7 days</option>
+              </select>
+              <p class="field-hint">Scan a new QR when display access expires.</p>
+              <span class="settings-sublabel" id="settings-agenda-scope-label">glance-view compatibility</span>
+              <div class="btn-row">
+                <select id="settings-agenda-scope-mode" class="mini-select">
+                  <option value="count">next activities</option>
+                  <option value="hours">hours ahead</option>
+                </select>
+                <input id="settings-agenda-scope-value" class="settings-text-input" type="number" min="1" max="50" step="1" value="20" aria-label="agenda publish scope value" />
+              </div>
+              <p class="field-hint" id="settings-agenda-scope-hint">Older display builds receive at most 50 upcoming rows, never beyond tomorrow.</p>
+              <span class="settings-sublabel">signed-in displays</span>
+              <div id="settings-agenda-devices"></div>
+              <p class="field-hint" id="settings-agenda-devices-empty">No display is signed in yet. Scan a QR to add one.</p>
+              <span class="settings-sublabel">pair a display</span>
+              <p class="field-hint">Open <a href="https://lanbeee.github.io/habits/agenda-display.html" target="_blank" rel="noopener">Tings display</a> on the other screen, then scan its QR here.</p>
+              <div data-settings-help-title="pairing instructions" data-settings-help-id="settings-pairing-help"><p class="field-hint">On the display, open <code>https://lanbeee.github.io/habits/agenda-display.html</code>. That address is shared; each device gets its own credential when you scan its QR. Keep Tings open on this phone, tap the button below, and scan from inside Tings—not with the phone’s Camera app. Then type the separate code visible on the display. Approving this QR adds a second screen and does not sign the other out. Requests work once and expire after 30 seconds.</p></div>
+              <div class="btn-row" style="flex-wrap:wrap">
+                <button type="button" class="btn primary" id="settings-agenda-scan-qr"><i class="ti ti-scan" aria-hidden="true"></i> scan display QR</button>
+                <button type="button" class="btn" id="settings-agenda-publish">sync now</button>
+                <button type="button" class="btn danger-soft" id="settings-agenda-revoke">revoke feed</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <h2 class="settings-group-head">Data &amp; backup</h2>
+        <section class="settings-block">
+          <div data-settings-help-title="backup" data-settings-help-id="settings-backup-help" data-settings-help-label="settings-label"><p>Export a backup before clearing browser data or moving to a new phone. After restoring, reconnect phone calendar sync to get today’s and upcoming phone events. Earlier phone calendar history and events imported from files are included in the backup.</p><p>In the Android app, exports save to Downloads and open a share sheet.</p></div>
+          <p class="field-hint">Keep a backup to restore or move your data. <button type="button" class="mini-text-btn" id="open-privacy-from-settings">privacy</button></p>
+          <div class="btn-row">
+            <button class="btn primary" id="backup-export" type="button">export backup</button>
+            <button class="btn" id="backup-import" type="button">import backup</button>
+          </div>
+          <input type="file" id="backup-file-input" accept="application/json,.json" hidden />
+          <p class="field-hint sample-count" id="backup-status"></p>
+          <div class="reset-confirm" id="backup-import-confirm" hidden>
+            <p id="backup-import-summary">Replace everything on this device with this backup?</p>
+            <label class="calendar-device-option" hidden><input type="checkbox" id="backup-keep-phone-calendar" /> Restore saved phone calendar copies for today and later. Leave unchecked if you’ll reconnect your calendar.</label>
+            <label class="calendar-device-option" hidden><input type="checkbox" id="backup-keep-calendar-hides" /> Keep events and series hidden as they were in the backup</label>
+            <div class="btn-row">
+              <button class="btn primary" id="backup-import-yes">replace</button>
+              <button class="btn" id="backup-import-no">cancel</button>
+            </div>
+          </div>
+        </section>
+        <section class="settings-block settings-collapsible settings-full-only">
+          <button type="button" class="settings-collapse-head" id="settings-cleanup-head" data-collapse-target="settings-cleanup-body" aria-expanded="false" aria-controls="settings-cleanup-body">
+            <span class="settings-label">cleanup</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="settings-collapse-body" id="settings-cleanup-body" hidden>
+            <div data-settings-help-title="automatic cleanup" data-settings-help-id="settings-cleanup-help"><p class="field-hint">About once a month when you open the app, old completed tasks and extra habit history are removed automatically. You will see a notice when that runs.</p></div>
+            <span class="settings-sublabel">delete completed tasks after</span>
+            <div class="seg compact-seg" id="completed-task-retention-seg" role="group" aria-label="completed task retention">
+              <button type="button" class="seg-opt" data-seg-value="2">2 days</button>
+              <button type="button" class="seg-opt" data-seg-value="3">3 days</button>
+              <button type="button" class="seg-opt" data-seg-value="7">7 days</button>
+            </div>
+            <span class="settings-sublabel">habit history</span>
+            <div class="seg compact-seg" id="habit-log-keep-seg" role="group" aria-label="habit log keep count">
+              <button type="button" class="seg-opt" data-seg-value="12">12</button>
+              <button type="button" class="seg-opt" data-seg-value="30">30</button>
+              <button type="button" class="seg-opt" data-seg-value="60">60</button>
+              <button type="button" class="seg-opt" data-seg-value="0">off</button>
+            </div>
+            <p class="field-hint">Entries kept per habit; off keeps all history.</p>
+            <div class="btn-row">
+              <button class="btn" id="retention-clean-now" type="button">clean now</button>
+            </div>
+            <p class="field-hint sample-count" id="retention-cleanup-status"></p>
           </div>
         </section>
         <section class="settings-block settings-danger">

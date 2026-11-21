@@ -107,6 +107,7 @@ async function launchBrowser(){
     return {
       ok:item.ok && commit.ok,
       summary:item.ok ? assistantDraftSummary(item.draft, settings) : item.error,
+      prayerSummary:item.ok ? assistantDraftSummary(item.draft, {...settings, prayerIslamicNames:true}) : item.error,
       start:habit && habit.allowedTimeStartAnchor,
       end:habit && habit.allowedTimeEndAnchor,
       duration:habit && habit.durationMinutes,
@@ -118,7 +119,8 @@ async function launchBrowser(){
   assert(saved.ok && saved.type === 'task', 'commit saves a task');
   assert(saved.start === 'maghrib' && saved.end === 'sunrise', 'sunset window becomes maghrib → sunrise');
   assert(saved.duration === 45 && saved.weather === 'dry-1' && saved.place === 'home-1', 'duration, weather, and place land on the habit');
-  assert(/Evening walk/.test(saved.summary) && /Maghrib/i.test(saved.summary), 'preview summary uses Tings language');
+  assert(saved.summary.includes('Sunset → Sunrise'), 'preview uses generic relative times by default');
+  assert(saved.prayerSummary.includes('Maghrib (sunset) → Sunrise'), 'preview uses Islamic names when enabled');
 
   console.log('\n[D] guided repair then preview');
   const turn = await page.evaluate(async () => {

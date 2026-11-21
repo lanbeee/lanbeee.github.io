@@ -20,6 +20,37 @@ function assert(ok, message){
     await page.goto(BASE, {waitUntil:'load'});
     await waitForAssistant(page);
     await page.evaluate(()=>{const turn=assistantFocusTurn;assistantFocusTurn=(session,text,opts)=>turn(session,text,{familyExtract:true,...opts});});
+    const relativeTimes = await page.evaluate(()=>{
+      const item = normalize([{
+        hid:'relative-times', name:'Walk', type:'keepup', target:7, durationMinutes:30, logs:[],
+        allowedTimeStartAnchor:'maghrib', allowedTimeStartOffsetMin:15,
+        allowedTimeEndAnchor:'midnight', allowedTimeEndCombine:'earlier', allowedTimeEndAnchor2:'isha',
+        preferredTimeStartAnchor:'isha',
+        scheduleOptions:[{weekdays:[1], startAnchor:'fajr', endAnchor:'sunrise'}]
+      }])[0];
+      const settings = sortSettings;
+      try{
+        return [false, true].map(prayerIslamicNames=>{
+          sortSettings = {...settings, prayerIslamicNames};
+          const summary = assistantFocusItemSummary(item);
+          return {
+            allowed:summary.custom.find(row => row.id === 'allowedWindow')?.text,
+            preferred:summary.custom.find(row => row.id === 'preferredWindow')?.text,
+            option:assistantFocusFormatValue('scheduleOptions', item, summary.session)
+          };
+        });
+      }finally{
+        sortSettings = settings;
+      }
+    });
+    const [genericTimes, prayerTimes] = relativeTimes;
+    assert(genericTimes.allowed === 'Sunset + 15 min to Night midpoint (earlier of Night)'
+      && genericTimes.preferred === 'Night to open' && genericTimes.option.includes('Dawn–Sunrise'),
+      `Needle uses generic labels for relative times when off (${JSON.stringify(genericTimes)})`);
+    assert(prayerTimes.allowed === 'Maghrib (sunset) + 15 min to Islamic midnight (earlier of Isha)'
+      && prayerTimes.preferred === 'Isha to open' && prayerTimes.option.includes('Fajr–Sunrise'),
+      `Needle uses Islamic labels when enabled (${JSON.stringify(prayerTimes)})`);
+
     const gym = await page.evaluate(async()=>{
       save([{
         hid:'gym', name:'Gym', type:'keepup', target:7, durationMinutes:45,

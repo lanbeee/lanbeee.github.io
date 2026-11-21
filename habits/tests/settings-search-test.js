@@ -43,6 +43,7 @@ const {chromium} = require('playwright');
     await expectHit('wipe','clear all data');
     await expectHit('sunrise','relative times');
     await expectHit('qwen','local assistant');
+    await expectHit('needle 3','local assistant');
     await expectHit('place','locations');
     assert.deepEqual(await labelsFor('night'),['appearance']);
     assert.deepEqual(await labelsFor('mute'),['gentle sounds']);

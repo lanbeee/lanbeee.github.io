@@ -1052,6 +1052,7 @@ $('ting-tag-chips')?.addEventListener('click',e=>{
     // Preserve every other chip choice made before opening the map picker.
     if(typeof openLocationPicker === 'function'){
       openLocationPicker({
+        name:e.target.closest('.tag-row').querySelector('.tag-search').value.trim().slice(0,48),
         onCreated:id=>{
           const wrap = 'ting-tag-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];
@@ -1082,6 +1083,7 @@ $('detail-place-chips')?.addEventListener('click',e=>{
     // Open the place picker; on save, auto-select the new place on this habit.
     if(typeof openLocationPicker === 'function'){
       openLocationPicker({
+        name:e.target.closest('.tag-row').querySelector('.tag-search').value.trim().slice(0,48),
         onCreated:id=>{
           const wrap = 'detail-place-chips';
           const selected = [...new Set([...selectedLocationIdsFrom(wrap),id])];

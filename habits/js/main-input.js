@@ -309,7 +309,7 @@ function loadTingsCoach(){
       return;
     }
     script = document.createElement('script');
-    script.src = './onboarding/coach.js?v=39';
+    script.src = './onboarding/coach.js?v=40';
     script.defer = true;
     script.dataset.tingsCoach = '1';
     script.addEventListener('load',()=>{
@@ -809,7 +809,10 @@ $('default-places-chips').addEventListener('click',e=>{
   if(e.target.closest('.tag-row')?._sg)return;
   const profile = currentDefaultProfile();
   if(e.target.closest('[data-location-add]')){
-    openLocationPicker({onCreated:id=>updateDefaultProfile({locationIds:[...new Set([...profile.locationIds,id])],anywhereAllowed:false})});
+    openLocationPicker({
+      name:e.target.closest('.tag-row').querySelector('.tag-search').value.trim().slice(0,48),
+      onCreated:id=>updateDefaultProfile({locationIds:[...new Set([...profile.locationIds,id])],anywhereAllowed:false})
+    });
     return;
   }
   if(e.target.closest('[data-anywhere]')){

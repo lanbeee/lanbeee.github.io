@@ -42,7 +42,7 @@ function assistantNormalizeEndpoint(raw){
     }
   }else if(kind === 'anchor'){
     const anchor = assistantCleanAnchor(raw.anchor);
-    if(!anchor)return {error:'anchor must be fajr, sunrise, dhuhr, asr, maghrib, or isha (sunset means maghrib)'};
+    if(!anchor)return {error:'choose a valid relative time for the window'};
     const offset = Number.isFinite(Number(raw.offsetMin)) ? Math.round(Number(raw.offsetMin)) : 0;
     const clamped = typeof normalizePrayerOffset === 'function' ? normalizePrayerOffset(offset) : offset;
     end = {kind:'anchor', anchor, offsetMin:clamped};
@@ -2630,48 +2630,46 @@ function assistantWeatherCount(word){
   return Number.isFinite(n) ? n : null;
 }
 
-function assistantWeatherAnchorMinutes(word, offsetMin, dayBase, settings){
-  const anchor = typeof assistantCleanAnchor === 'function' ? assistantCleanAnchor(word) : null;
-  if(!anchor || typeof resolvePrayerExprMinutes !== 'function')return null;
+function assistantWeatherAnchorMoment(word, offsetMin, label, dayBase, settings){
+  const anchor = assistantCleanAnchor(word);
+  const name = prayerDisplayName(anchor, settings).replace(/ \(sunset\)$/, '').toLowerCase();
+  const displayLabel = label.replace(new RegExp('\\b' + word + '(?=[.\\s]*$)', 'i'), name);
   const lat = Number(settings && settings.homeCityLat);
   const lng = Number(settings && settings.homeCityLng);
-  if(!Number.isFinite(lat) || !Number.isFinite(lng))return null;
-  const minutes = resolvePrayerExprMinutes({latitude:lat, longitude:lng}, anchor, offsetMin, dayBase, 0);
-  if(!Number.isFinite(minutes) || minutes < 0 || minutes >= 1440)return null;
-  return Math.round(minutes);
+  const minutes = anchor && Number.isFinite(lat) && Number.isFinite(lng)
+    ? resolvePrayerExprMinutes({latitude:lat, longitude:lng}, anchor, offsetMin, dayBase, 0)
+    : null;
+  return {minutes:Number.isFinite(minutes) && minutes >= 0 && minutes < 1440 ? Math.round(minutes) : null, label:displayLabel};
 }
 
 // A clock, or a prayer/sun offset such as "1 hour before sunset".
-function assistantWeatherMomentMinutes(value, dayBase, settings){
-  const s = assistantNormText(value).replace(/\./g, '').replace(/^(?:about|around|at)\s+/, '');
-  if(!s)return null;
-  if(s === 'noon' || s === 'midday' || s === 'midnight')return assistantParseClock(s);
+function assistantWeatherMoment(value, dayBase, settings){
+  const label = String(value ?? '').trim();
+  const s = assistantNormText(label).replace(/\./g, '').replace(/^(?:about|around|at)\s+/, '');
   const anchors = 'sunset|sunrise|dawn|dusk|fajr|dhuhr|zuhr|asr|maghrib|maghreb|isha';
   const counts = 'a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\\d+(?:\\.\\d+)?';
   const offset = s.match(new RegExp('^(?:(' + counts + ')\\s+)?(hours?|hrs?|minutes?|mins?)\\s+(before|after)\\s+(' + anchors + ')$'));
   if(offset){
     const count = assistantWeatherCount(offset[1]);
-    if(count == null)return null;
+    if(count == null)return {minutes:null, label};
     let minutes = /^h/.test(offset[2]) ? Math.round(count * 60) : Math.round(count);
     if(offset[3] === 'before')minutes = -minutes;
-    return assistantWeatherAnchorMinutes(offset[4], minutes, dayBase, settings);
+    return assistantWeatherAnchorMoment(offset[4], minutes, label, dayBase, settings);
   }
   const side = s.match(new RegExp('^(before|after)\\s+(' + anchors + ')$'));
-  if(side)return assistantWeatherAnchorMinutes(side[2], 0, dayBase, settings);
+  if(side)return assistantWeatherAnchorMoment(side[2], 0, label, dayBase, settings);
   const bare = s.match(new RegExp('^(' + anchors + ')$'));
-  if(bare)return assistantWeatherAnchorMinutes(bare[1], 0, dayBase, settings);
-  return typeof assistantParseClock === 'function' ? assistantParseClock(s) : null;
+  if(bare)return assistantWeatherAnchorMoment(bare[1], 0, label, dayBase, settings);
+  return {minutes:assistantParseClock(s), label};
 }
 
 function assistantWeatherSpan(args, dayBase, settings, options){
-  const startGiven = args && args.start != null && String(args.start).trim() !== '';
-  const endGiven = args && args.end != null && String(args.end).trim() !== '';
-  const startParsed = startGiven ? assistantWeatherMomentMinutes(args.start, dayBase, settings) : null;
-  const endParsed = endGiven ? assistantWeatherMomentMinutes(args.end, dayBase, settings) : null;
-  if(startGiven && startParsed == null)return {error:`I could not resolve "${String(args.start).trim()}". Use a clock like 5pm, or sunset with an offset such as 1 hour before sunset.`};
-  if(endGiven && endParsed == null)return {error:`I could not resolve "${String(args.end).trim()}". Use a clock like 6pm, or sunset.`};
-  let startMin = startParsed;
-  let endMin = endParsed;
+  const start = assistantWeatherMoment(args?.start, dayBase, settings);
+  const end = assistantWeatherMoment(args?.end, dayBase, settings);
+  if(start.label && start.minutes == null)return {error:`I could not resolve "${start.label}". Use a clock like 5pm, or sunset with an offset such as 1 hour before sunset.`};
+  if(end.label && end.minutes == null)return {error:`I could not resolve "${end.label}". Use a clock like 6pm, or sunset.`};
+  let startMin = start.minutes;
+  let endMin = end.minutes;
   if(startMin == null && endMin == null){
     if(!(options && options.allowWholeDay))return null;
     startMin = 0;
@@ -2965,9 +2963,8 @@ function assistantAnswerWeatherHours(args, context, dayBase, dayLabel){
 }
 
 function assistantWeatherPoint(value, dayBase, settings){
-  if(value == null || String(value).trim() === '')return null;
-  const label = String(value).trim();
-  const minutes = assistantWeatherMomentMinutes(label, dayBase, settings);
+  const {minutes, label} = assistantWeatherMoment(value, dayBase, settings);
+  if(!label)return null;
   if(minutes == null){
     return {error:`I could not resolve "${label}". Use a clock like 5pm, or sunset with an offset such as 1 hour before sunset. Sunset needs a home city.`};
   }
@@ -4806,7 +4803,7 @@ function assistantExecuteTool(name, args, session, context){
   return {ok:false, error:`unknown tool ${name}`};
 }
 
-function assistantEndpointSummary(end){
+function assistantEndpointSummary(end, settings){
   if(!end || end.kind === 'unset')return 'any';
   let primary;
   if(end.kind === 'clock')primary = end.clock;
@@ -4820,8 +4817,7 @@ function assistantEndpointSummary(end){
       primary = `${abs}m ${rel} ${name}`;
     }
   }else{
-    const labels = typeof PRAYER_ANCHOR_LABELS !== 'undefined' ? PRAYER_ANCHOR_LABELS : {};
-    const label = labels[end.anchor] || end.anchor;
+    const label = prayerDisplayName(end.anchor, settings);
     const off = end.offsetMin || 0;
     if(!off)primary = label;
     else{
@@ -4832,7 +4828,7 @@ function assistantEndpointSummary(end){
   }
   if(end.combine && end.second){
     const word = end.combine === 'earlier' ? 'earlier of' : 'later of';
-    const second = assistantEndpointSummary(Object.assign({}, end.second, {combine:null, second:null}));
+    const second = assistantEndpointSummary(Object.assign({}, end.second, {combine:null, second:null}), settings);
     return `${word} ${primary} · ${second}`;
   }
   return primary;
@@ -4963,7 +4959,7 @@ function assistantDraftSummary(draft, settings){
       else if(Number.isFinite(Number(draft.lat)))parts.push('pinned');
       else parts.push('needs address');
     }else if(draft.kind === 'busy' && draft.window){
-      parts.push(`${assistantEndpointSummary(draft.window.start)} → ${assistantEndpointSummary(draft.window.end)}`);
+      parts.push(`${assistantEndpointSummary(draft.window.start, settings)} → ${assistantEndpointSummary(draft.window.end, settings)}`);
     }
     return parts.filter(Boolean).join(' · ');
   }
@@ -4993,7 +4989,7 @@ function assistantDraftSummary(draft, settings){
     parts.push(draft.dueTime ? `${key} ${draft.dueTime}` : key);
   }
   if(draft.window && (draft.window.start.kind !== 'unset' || draft.window.end.kind !== 'unset')){
-    parts.push(`${assistantEndpointSummary(draft.window.start)} → ${assistantEndpointSummary(draft.window.end)}`);
+    parts.push(`${assistantEndpointSummary(draft.window.start, settings)} → ${assistantEndpointSummary(draft.window.end, settings)}`);
   }
   if(draft.weather){
     if(draft.weather.mode === 'none')parts.push('no weather');

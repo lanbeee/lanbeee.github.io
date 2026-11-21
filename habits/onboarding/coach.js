@@ -234,9 +234,9 @@
     // One real item and the everyday controls; deeper practice lives in chapters.
     const stages = interactive ? [
       'eIntro','eAdd','eName','eKind',addKind() === 'task' ? 'eTask' : 'eRhythm','eSave',
-      'eDetailEffort','eHomeCard','eLog','eHomeGroups','eCalendar','eOverview',
+      'eDetailEffort','eHomeCard','eSwipes','eAssistant','eLog','eHomeGroups','eCalendar','eOverview',
       'eAbout','eMinimal'
-    ] : ['eIntro','eAddInfo','eHomeCard','eHomeGroups','eCalendar','eOverview','eAbout','eMinimal'];
+    ] : ['eIntro','eAddInfo','eHomeCard','eSwipes','eAssistant','eHomeGroups','eCalendar','eOverview','eAbout','eMinimal'];
     if(interactive && addUsesConditions())stages.splice(stages.indexOf('eSave'),0,'eConditions');
     return calendarStepApplies() ? stages : stages.filter(item=>item !== 'eCalendar');
   }
@@ -368,8 +368,23 @@
     if(stage === 'eHomeCard')return {
       progress:p,title:'This is its card',
       copy:'Tap the colored icon to log or finish it. Tap the rest of the card to change its details.',
-      target:[`.ting-card[data-real="${trackedIndex()}"]`,'.ting-card','#list','#empty'],action:'Next',next:interactive ? 'eLog' : 'eHomeGroups'
+      target:[`.ting-card[data-real="${trackedIndex()}"]`,'.ting-card','#list','#empty'],action:'Next',next:'eSwipes'
     };
+    if(stage === 'eSwipes')return {
+      progress:p,title:'Quick actions on a card',
+      copy:'Swipe right on a habit or task to see its history. Swipe left to snooze or remove it. Tap the action you want.',
+      target:[`.ting-card[data-real="${trackedIndex()}"]`,'.ting-card','#list'],action:'Next',next:'eAssistant',back:'eHomeCard'
+    };
+    if(stage === 'eAssistant'){
+      const launch = firstTarget(['#open-assistant','#bar-open-assistant']);
+      return {
+        progress:p,title:'Ask Tings Assistant',
+        copy:launch
+          ? 'Open Ask Tings and try “What’s on my schedule today?” Download Needle 3 once to ask questions offline on this device.'
+          : 'In full Settings, open Local assistant to set up Needle 3. After a one-time download, you can ask “What’s on my schedule today?” offline.',
+        target:launch ? [`#${launch.id}`] : [],action:'Next',next:interactive ? 'eLog' : 'eHomeGroups',back:'eSwipes'
+      };
+    }
     if(stage === 'eLog'){
       const idx = trackedIndex();
       const item = habits()[idx];
@@ -381,7 +396,7 @@
           ? 'Tap the icon to finish this task. If that was a mistake, you can undo.'
           : 'Tap the icon to log it for today. If that was a mistake, you can undo.',
         target:[`[data-pulse="${idx}"]`,'.ting-card [data-pulse]'],hint:`Tap to ${label}`,locked:true,
-        later:'I’ll log later',next:'eHomeGroups',back:'eHomeCard'
+        later:'I’ll log later',next:'eHomeGroups',back:'eAssistant'
       };
     }
     if(stage === 'eHomeGroups')return {
@@ -390,7 +405,7 @@
       target:['.section-header','#list'],
       action:calendarBtn ? 'Show calendar' : 'Next',
       next:calendarBtn ? 'eCalendar' : 'eOverview',
-      back:interactive ? 'eLog' : 'eHomeCard'
+      back:interactive ? 'eLog' : 'eAssistant'
     };
     if(stage === 'eCalendar')return {
       progress:p,title:'See other days too',copy:'Tap Calendar to look back at past days, or ahead at what’s coming.',

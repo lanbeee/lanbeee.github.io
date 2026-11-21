@@ -1301,7 +1301,7 @@ function assistantFocusFormatEndpoint(end, data){
   if(!end || end.kind === 'unset')return 'open';
   let label = '';
   if(end.kind === 'clock')label = typeof assistantFriendlyClock === 'function' ? assistantFriendlyClock(end.minutes) : String(end.minutes);
-  else if(end.kind === 'anchor')label = end.anchor;
+  else if(end.kind === 'anchor')label = prayerDisplayName(end.anchor);
   else if(end.kind === 'habit'){
     const match = (data || []).find(item => item && item.hid === end.habitId);
     label = match && match.name || end.habitName || 'another item';
@@ -1432,8 +1432,9 @@ function assistantFocusFormatValue(fieldId, record, session, staged, lookups = {
 function assistantFocusFormatOption(option){
   if(!option)return '';
   const days = assistantFocusFormatWeekdays(option.weekdays || []);
-  const start = option.start != null && typeof assistantFriendlyClock === 'function' ? assistantFriendlyClock(option.start) : (option.startAnchor || 'start');
-  const end = option.end != null && typeof assistantFriendlyClock === 'function' ? assistantFriendlyClock(option.end) : (option.endAnchor || 'end');
+  const window = habitScheduleOptionAllowedTimeFields(option);
+  const start = assistantFocusFormatEndpoint(assistantEndpointFromHabit(window, 'start'));
+  const end = assistantFocusFormatEndpoint(assistantEndpointFromHabit(window, 'end'));
   return `${option.sameDayMode || 'alternative'}: ${days}, ${start}–${end}${option.locationId ? `, place ${option.locationId}` : ''}`;
 }
 

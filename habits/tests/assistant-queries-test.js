@@ -951,7 +951,12 @@ async function launchBrowser(){
     const item = assistantAnswerWeather({query:'item', name:'Badminton', date:'today', start:'5pm'}, assistantBuildContext());
     const compared = assistantAnswerWeather({query:'compare', date:'today', start:'5pm', compareStart:'7pm', name:'Badminton'}, assistantBuildContext());
     const sunsetMin = resolvePrayerExprMinutes({latitude:40.7, longitude:-74}, 'maghrib', -60, base, 0);
-    const sunset = assistantAnswerWeather({query:'compare', date:'today', start:'5pm', compareStart:'1 hour before sunset'}, assistantBuildContext());
+    const relativeQuery = {query:'compare', date:'today', start:'5pm', compareStart:'1 hour before maghrib'};
+    const relativeContext = assistantBuildContext();
+    const sunset = assistantAnswerWeather(relativeQuery, relativeContext);
+    const maghrib = assistantAnswerWeather(relativeQuery, {
+      ...relativeContext, settings:{...relativeContext.settings, prayerIslamicNames:true}
+    });
     const longWindow = assistantAnswerWeather({query:'window', date:'today', start:'5pm', end:'11pm'}, assistantBuildContext());
     const replies = [
       {message:{thinking:'rank the wind', tool_calls:[{function:{name:'answer_weather', arguments:{
@@ -976,6 +981,7 @@ async function launchBrowser(){
       sunsetMin,
       sunsetClock:Number.isFinite(sunsetMin) ? assistantFriendlyClock(sunsetMin) : '',
       sunset:sunset.text,
+      maghrib:maghrib.text,
       longWindow:longWindow.text,
       turn:{type:turn.type, text:turn.text, llmCalls:turn.session && turn.session.llmCalls}
     };
@@ -990,9 +996,10 @@ async function launchBrowser(){
     `unplanned habit is scored after 5pm: ${weatherDetail.item}`);
   assert(/7pm is the better fit/i.test(weatherDetail.compared) && /Badminton/.test(weatherDetail.compared) && /90%/.test(weatherDetail.compared),
     `5pm vs 7pm uses the habit profile: ${weatherDetail.compared}`);
-  assert(weatherDetail.sunsetClock && weatherDetail.sunset.includes(weatherDetail.sunsetClock)
-    && !/could not resolve/i.test(weatherDetail.sunset),
-    `one hour before sunset resolves (${weatherDetail.sunsetClock}): ${weatherDetail.sunset}`);
+  assert(weatherDetail.sunsetClock && weatherDetail.sunset.includes(`${weatherDetail.sunsetClock} (1 hour before sunset)`),
+    `weather comparison displays sunset when Islamic names are off: ${weatherDetail.sunset}`);
+  assert(weatherDetail.maghrib.includes(`${weatherDetail.sunsetClock} (1 hour before maghrib)`),
+    `weather comparison displays Maghrib when Islamic names are on: ${weatherDetail.maghrib}`);
   assert(/Lowest wind is 7pm/i.test(weatherDetail.longWindow),
     `a long window also reports the wind extreme: ${weatherDetail.longWindow}`);
   assert(weatherDetail.turn.type === 'say' && weatherDetail.turn.llmCalls === 2

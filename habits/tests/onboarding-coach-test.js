@@ -149,7 +149,9 @@ async function phoneQuickStart(browser,width,height,task,minimal = false){
   await stage(page,'eDetailEffort');
   assert(await page.locator('#add-sheet .add-sheet[data-coach-space]').count() === 0,'leaving the form removes coach layout space');
   await primary(page,'eDetailEffort','eHomeCard');
-  await primary(page,'eHomeCard','eLog');
+  await primary(page,'eHomeCard','eSwipes');
+  await primary(page,'eSwipes','eAssistant');
+  await primary(page,'eAssistant','eLog');
   await page.evaluate(()=>waitForHomeAgendaRender());
   await page.waitForSelector('#tings-coach[data-coach-stage="eLog"][data-locked="true"]');
   await page.locator('[data-coach-later]').click();
@@ -377,7 +379,7 @@ async function nativeKeyboardQuickStart(browser){
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
   const essentialsBar = await progressBar(page);
-  assert(essentialsBar.now === 1 && essentialsBar.max === 14,'staying in the tab chains into the full essentials tour');
+  assert(essentialsBar.now === 1 && essentialsBar.max === 16,'staying in the tab chains into the full essentials tour');
 
   await primary(page,'eIntro','eAdd');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','required action steps lock interaction to the highlighted target');
@@ -422,7 +424,9 @@ async function nativeKeyboardQuickStart(browser){
   assert(await page.locator('#detail-sheet').evaluate(el=>el.classList.contains('open')),'coach follows the saved Ting into its real detail screen');
 
   await primary(page,'eDetailEffort','eHomeCard');
-  await primary(page,'eHomeCard','eLog');
+  await primary(page,'eHomeCard','eSwipes');
+  await primary(page,'eSwipes','eAssistant');
+  await primary(page,'eAssistant','eLog');
   await page.evaluate(()=>waitForHomeAgendaRender());
   await page.waitForSelector('#tings-coach[data-coach-stage="eLog"][data-locked="true"]');
   assert(await page.locator('#tings-coach').getAttribute('data-locked') === 'true','logging practice is a required action');
@@ -704,7 +708,7 @@ async function nativeKeyboardQuickStart(browser){
   await page.locator('[data-coach-later]').click();
   await stage(page,'eIntro');
   const replayBar = await progressBar(page);
-  assert(replayBar.now === 1 && replayBar.max === 8,'staying in the tab chains into the quick start replay');
+  assert(replayBar.now === 1 && replayBar.max === 10,'staying in the tab chains into the quick start replay');
   await page.evaluate(()=>window.TingsCoach.stop());
 
   // Live gesture upgrade: Chrome often fires beforeinstallprompt a beat
@@ -898,10 +902,12 @@ async function nativeKeyboardQuickStart(browser){
   await desk.evaluate(()=>window.startTingsCoach('essentials',{force:true}));
   await stage(desk,'eIntro');
   const deskReplayBar = await progressBar(desk);
-  assert(deskReplayBar.max === 7,'desktop quick start replay drops the calendar-open step from its count');
+  assert(deskReplayBar.max === 9,'desktop quick start replay drops the calendar-open step from its count');
   await primary(desk,'eIntro','eAddInfo');
   await primary(desk,'eAddInfo','eHomeCard');
-  await primary(desk,'eHomeCard','eHomeGroups');
+  await primary(desk,'eHomeCard','eSwipes');
+  await primary(desk,'eSwipes','eAssistant');
+  await primary(desk,'eAssistant','eHomeGroups');
   await primary(desk,'eHomeGroups','eOverview');
   assert(await desk.locator('#tings-coach[data-coach-stage="eOverview"]').count() === 1,'desktop replay jumps straight to the always-open calendar pane');
   await desk.evaluate(()=>window.TingsCoach.stop());
