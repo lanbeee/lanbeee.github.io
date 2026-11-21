@@ -51,7 +51,7 @@ body.minimal-mode [data-open-bulk-edit]{display:none !important;}
 #add-sheet .reset-confirm{margin-top:14px;}
 
 /* ── Bulk sheets shared chrome ───────────────────────────────────────── */
-#bulk-batch-sheet,#bulk-edit-sheet{z-index:105;}
+#bulk-batch-sheet,#bulk-edit-sheet{z-index:109;}
 #bulk-edit-sheet{
   bottom:auto;top:var(--bulk-viewport-top,0px);
   height:calc(min(100%,var(--keyboard-viewport-bottom,100dvh)) - var(--bulk-viewport-top,0px));

@@ -524,7 +524,6 @@ body[data-pane-count="3"] .week-view-sheet{
 .is-aligned-grid .wv-list .wv-nowline i{left:-3px;background:var(--red-icon);}
 .wv-event:hover{filter:brightness(0.97);}
 .wv-options button:focus-visible,.wv-options select:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
-body:has(#week-sheet.open) #add-sheet{z-index:115;}
 @media (max-width:599px){
   .week-view-sheet{padding-top:calc(12px + var(--content-safe-top));--wv-gutter:26px;--wv-col-gap:2px;}
   /* Pull the calendar board toward the screen edges: the hour rail sits ~4px
@@ -808,7 +807,7 @@ body[data-pane-count="2"] .week-view-sheet,body[data-pane-count="3"] .week-view-
 .wv-options .home-filter-group{gap:8px;}
 .wv-options .home-filter-group-head small{display:none;}
 .wv-options .home-filter-option-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
-.wv-options .home-filter-option{grid-template-columns:minmax(0,1fr) 14px;gap:4px;min-height:44px;padding:8px;}
+.wv-options .home-filter-option{grid-template-columns:minmax(0,1fr) 18px;gap:6px;min-height:44px;padding:8px;}
 .wv-options .home-filter-option-icon{display:none;}
 .wv-options .home-filter-option b{font-size:12px;white-space:normal;display:block;line-height:1.25;}
 .wv-options-note{margin:0;color:var(--text3);font-size:12px;line-height:1.5;}

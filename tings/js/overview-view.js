@@ -36,16 +36,18 @@ function matchesOverviewTopic(h,topic){
 }
 
 function overviewLocationChoices(data){
-  const choices = homeLocationChoices(data);
+  const choices = locationFilterChoices(data, {treatAnywhere:false});
   return choices.some(choice=>choice.key !== 'all' && choice.key !== '__none__') ? choices : [];
 }
 
 function settleCalendarFilterChoices(library){
-  if(overviewTopicFilter !== 'all' && !overviewTopicChoices(library).some(choice=>choice.key === overviewTopicFilter)){
-    setSharedFilter('topic','all');
+  const nextTopic = pruneFilterValue(overviewTopicFilter, overviewTopicChoices(library), {caseInsensitive:true});
+  if(!filterValuesEqual(nextTopic, overviewTopicFilter)){
+    setSharedFilter('topic', nextTopic);
   }
-  if(overviewLocationFilter !== 'all' && !overviewLocationChoices(library).some(choice=>choice.key === overviewLocationFilter)){
-    setSharedFilter('location','all');
+  const nextLoc = pruneFilterValue(overviewLocationFilter, overviewLocationChoices(library));
+  if(!filterValuesEqual(nextLoc, overviewLocationFilter)){
+    setSharedFilter('location', nextLoc);
   }
 }
 
@@ -53,8 +55,8 @@ function matchesOverviewLocation(h,id){
   return matchesLocationFilter(h,id);
 }
 
-// PURE: habit passes the calendar filters. Place and topic stay single-choice;
-// when, type, and priority use the same groups as home.
+// PURE: habit passes the calendar filters. All filter groups share multi-select
+// OR-within-group, AND-across-group semantics with Home.
 function matchesOverviewFilters(h){
   return !isCalendarIgnored(h) && matchesFilterSelection(h, overviewFilterSelection());
 }
@@ -70,24 +72,22 @@ const OVERVIEW_RANGES = [
   {key:'all',label:'all time'}
 ];
 
-// HYBRID: compact view switcher + active filter summary. The full place/topic
-// library lives in a dedicated sheet so the calendar header never becomes a
-// long horizontal rail.
+// HYBRID: compact view switcher + active filter summary. The full filter
+// library lives in a dedicated full-page sheet so the calendar header stays clean.
 function renderOverviewFilters(data,library){
   const wrap = $('overview-filter');
   if(!wrap)return;
-  const groups = $('calendar-filter-groups');
-  const summary = $('calendar-filter-summary');
   if(!OVERVIEW_RANGES.some(r=>r.key === overviewRangeFilter))overviewRangeFilter = 'recent';
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   // The shared selection can refer to items excluded from the calendar.
   // Keep those choices available while computing counts from calendar items.
-  const topicChoices = minimal ? [] : orderFilterChoices(overviewTopicChoices(library), overviewTopicFilter);
-  const locChoices = minimal ? [] : orderFilterChoices(overviewLocationChoices(library), overviewLocationFilter);
+  const topicChoices = minimal ? [] : orderFilterChoices(overviewTopicChoices(library));
+  const locChoices = minimal ? [] : orderFilterChoices(overviewLocationChoices(library));
   const selection = overviewFilterSelection();
   syncOverviewFilterSelection(selection);
-  const view = minimal ? {groupsHtml:'', chipsHtml:'', activeCount:0} : libraryFilterView({
-    prefix:'calendar-filter', attrPrefix:'overview', items:data, selection, topicChoices, locationChoices:locChoices
+  const view = minimal ? {groupsHtml:'', chipsHtml:'', sheetChipsHtml:'', activeCount:0, matchedCount:0, totalCount:0, hasAnyGroup:false} : libraryFilterView({
+    prefix:'calendar-filter', attrPrefix:'overview', items:data, selection, topicChoices, locationChoices:locChoices,
+    searchQuery:filterSheetQuery('calendar-filter')
   });
   const activeCount = view.activeCount;
   const rangeHtml = OVERVIEW_RANGES.map(r=>`
@@ -96,7 +96,7 @@ function renderOverviewFilters(data,library){
   wrap.hidden = false;
   wrap.innerHTML = `
     <div class="overview-range-seg" role="group" aria-label="calendar period">${rangeHtml}</div>
-    ${!minimal && view.groupsHtml ? `<div class="overview-filter-summary-row">
+    ${!minimal && view.hasAnyGroup ? `<div class="overview-filter-summary-row">
       <div class="overview-active-filters" aria-label="active calendar filters">
         ${view.chipsHtml}
         ${!activeCount ? '<span>Showing every item</span>' : ''}
@@ -106,19 +106,21 @@ function renderOverviewFilters(data,library){
       </button>
     </div>` : ''}`;
 
-  if(summary){
-    summary.textContent = activeCount
-      ? `${activeCount} on · the calendar updates as you tap`
-      : 'Pick when it’s due, what it is, or where it belongs.';
-  }
-  if(groups)groups.innerHTML = view.groupsHtml;
+  syncFilterSheetChrome({prefix:'calendar-filter', view, surfaceLabel:'calendar'});
 }
 
 // PURE: scheduled / due / plan-by markers for a habit (not yet in logs)
 function habitPlanMarkers(h){
   const markers = [];
+  if(typeof isLocalAppointment === 'function' && isLocalAppointment(h)){
+    if(h.appointment?.repeat === 'once' && typeof appointmentOccurrence === 'function'){
+      const occ = appointmentOccurrence(h,h.appointment.startDate);
+      if(occ)markers.push({ts:occ.start,kind:'scheduled',tone:'plan',planned:true,timed:true});
+    }
+    return markers;
+  }
   if(isTimedTask(h) && h.lastLog === null && h.eventTime != null){
-    markers.push({ts:h.eventTime,kind:'scheduled',tone:'plan',planned:true});
+    markers.push({ts:h.eventTime,kind:'scheduled',tone:'plan',planned:true,timed:true});
   }else if(h.type === 'task' && h.eventTime === null && h.dueDate !== null && h.lastLog === null){
     markers.push({ts:h.dueDate,kind:h.hardDue ? 'deadline' : 'due',tone:'plan',planned:true});
   }
@@ -128,9 +130,26 @@ function habitPlanMarkers(h){
   return markers;
 }
 
+// PURE: collect recurring local-appointment occurrences inside [startTs, endTs)
+function collectAppointmentMarkersInRange(h,startTs,endTs){
+  if(typeof isLocalAppointment !== 'function' || !isLocalAppointment(h))return [];
+  if(h.appointment?.repeat === 'once' || typeof appointmentOccurrence !== 'function')return [];
+  if(!Number.isFinite(startTs) || !Number.isFinite(endTs) || endTs <= startTs)return [];
+  const markers = [];
+  const maxDays = Math.min(62,Math.ceil((endTs - startTs) / 86400000));
+  for(let i = 0;i < maxDays;i += 1){
+    const dayTs = startTs + i * 86400000;
+    if(dayTs >= endTs)break;
+    const key = dateKey(dayTs);
+    const occ = appointmentOccurrence(h,key);
+    if(occ)markers.push({ts:occ.start,kind:'scheduled',tone:'plan',planned:true,timed:true});
+  }
+  return markers;
+}
+
 // Tallies every log/marker that passes `included(ts)` into a per-day map.
 // PURE: tallies per-day log entries and totals
-function buildDayTally(data,included){
+function buildDayTally(data,included,rangeBounds = null){
   const map = new Map();
   let total = 0;
   let actual = 0;
@@ -153,11 +172,17 @@ function buildDayTally(data,included){
       const isPlan = isPlanLog(log);
       const key = dateKey(ts);
       const tone = isPlan ? 'plan' : toneByDay.get(key) || entryTone(h.type);
-      addEntry(ts,{name:h.name,type:h.type,tone,planned:isPlan,kind:isPlan ? 'plan' : 'actual'});
+      const timed = isPlan && typeof planTimed === 'function' ? planTimed(log) : false;
+      addEntry(ts,{hid:h.hid,name:h.name,type:h.type,tone,planned:isPlan,kind:isPlan ? 'plan' : 'actual',ts,timed});
     });
     habitPlanMarkers(h).forEach(marker=>{
-      addEntry(marker.ts,{name:h.name,type:h.type,tone:marker.tone,planned:true,kind:marker.kind,scheduled:true});
+      addEntry(marker.ts,{hid:h.hid,name:h.name,type:h.type,tone:marker.tone,planned:true,kind:marker.kind,scheduled:true,ts:marker.ts,timed:Boolean(marker.timed)});
     });
+    if(rangeBounds){
+      collectAppointmentMarkersInRange(h,rangeBounds.startTs,rangeBounds.endTs).forEach(marker=>{
+        addEntry(marker.ts,{hid:h.hid,name:h.name,type:h.type,tone:marker.tone,planned:true,kind:marker.kind,scheduled:true,ts:marker.ts,timed:true});
+      });
+    }
   });
   return {map,total,actual,planned,toneCounts};
 }
@@ -180,12 +205,15 @@ function cellMarkup(key,date,entries,extraSpans = '',opts = {}){
   const dots = tones.map(tone=>`<span class="cal-dot ${tone}"></span>`).join('');
   const more = entries.length > tones.length ? `<span class="cal-more">${entries.length}</span>` : '';
   const density = calDensityClass(entries.length);
-  const future = key > todayIso();
+  const today = todayIso();
+  const future = key > today;
+  const past = key < today;
   const cls = [
     entries.length ? 'has-entry' : '',
     density,
     future ? 'future' : '',
-    key === todayIso() ? 'today' : '',
+    past ? 'past' : '',
+    key === today ? 'today' : '',
     key === dayLogsKey ? 'selected' : '',
     'pickable'
   ].filter(Boolean).join(' ');
@@ -193,28 +221,42 @@ function cellMarkup(key,date,entries,extraSpans = '',opts = {}){
   const eligible = opts.eligible instanceof Set && !entries.length && opts.eligible.has(key) ? 'eligible' : '';
   const dateLabel = date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
   const itemLabel = entries.length ? `, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}` : ', no items';
-  return `<button type="button" class="cal-day ${cls}${eligible ? ` ${eligible}` : ''}" ${dayAttr}="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}</span>${more}</button>`;
+  return `<button type="button" class="cal-day ${cls}${eligible ? ` ${eligible}` : ''}" ${dayAttr}="${key}" aria-label="${escapeHtml(dateLabel + itemLabel)}">${extraSpans}<span class="cal-dots">${dots}${more}</span></button>`;
+}
+
+// PURE: merge agenda placements into a day tally without duplicating entries
+function mergeAgendaIntoTally(tally,agendaByDay,startTs,endTs){
+  let added = 0;
+  if(!(agendaByDay instanceof Map))return added;
+  agendaByDay.forEach((items,key)=>{
+    const ts = new Date(`${key}T12:00:00`).getTime();
+    if(ts < startTs || ts >= endTs)return;
+    if(!tally.map.has(key))tally.map.set(key,[]);
+    const entries = tally.map.get(key);
+    items.forEach(item=>{
+      const existing = entries.find(e=>(e.hid && item.hid ? e.hid === item.hid : e.name === item.name) && (e.kind === 'agenda' || !e.planned || e.kind === 'scheduled'));
+      if(existing){
+        if(!existing.timed && item.timed && item.ts != null){
+          existing.ts = item.ts;
+          existing.timed = true;
+        }
+        return;
+      }
+      entries.push(item);
+      tally.planned += 1;
+      tally.total += 1;
+      tally.toneCounts.plan = (tally.toneCounts.plan || 0) + 1;
+      added += 1;
+    });
+  });
+  return added;
 }
 
 // PURE: build an N-day strip's tally + cell HTML starting at startTs.
 function dayStripMarkup(data,startTs,days,{agendaByDay = null,entryDay = false,eligible = null} = {}){
   const end = startTs + days * 86400000;
-  const tally = buildDayTally(data,ts=>ts >= startTs && ts < end);
-  if(agendaByDay instanceof Map){
-    agendaByDay.forEach((items,key)=>{
-      const ts = new Date(`${key}T12:00:00`).getTime();
-      if(ts < startTs || ts >= end)return;
-      if(!tally.map.has(key))tally.map.set(key,[]);
-      const entries = tally.map.get(key);
-      items.forEach(item=>{
-        if(entries.some(e=>e.name === item.name && (e.kind === 'agenda' || !e.planned)))return;
-        entries.push(item);
-        tally.planned += 1;
-        tally.total += 1;
-        tally.toneCounts.plan = (tally.toneCounts.plan || 0) + 1;
-      });
-    });
-  }
+  const tally = buildDayTally(data,ts=>ts >= startTs && ts < end,{startTs,endTs:end});
+  mergeAgendaIntoTally(tally,agendaByDay,startTs,end);
   const html = Array.from({length:days},(_,i)=>{
     const ts = startTs + i * 86400000;
     const date = new Date(ts);
@@ -308,11 +350,17 @@ function overviewDayAgendaPending(dayKey){
   return _overviewWeekFillInflightKey === dirty && _overviewWeekFillCoverDays > 0;
 }
 
+let _overviewListExpanded = false;
+let _overviewMonthCache = null;
+
 // PURE: week-agenda placements keyed by day, read from a packed week. Shared
-// by the overview strip and the detail sheet's per-habit strip.
+// by the overview strip, month view, and the detail sheet's per-habit strip.
 function weekAgendaByDay(week,data){
   const byDay = new Map();
   if(!week || !Array.isArray(week.days))return byDay;
+  const allowed = Array.isArray(data)
+    ? new Set(data.map(h=>h && (h.hid || h.name)).filter(Boolean))
+    : null;
   week.days.forEach(day=>{
     const key = dateKey(day.dayBase);
     const rows = (day.homeDisplayedTimeline && day.homeDisplayedTimeline.length)
@@ -320,16 +368,20 @@ function weekAgendaByDay(week,data){
       : (day.timeline || []);
     const items = [];
     const seen = new Set();
-    const pushHabit = (h,kind)=>{
-      if(!h || isCalendarIgnored(h) || seen.has(h.hid || h.name))return;
-      seen.add(h.hid || h.name);
-      items.push({name:h.name,type:h.type,tone:'agenda',planned:true,kind:kind || 'agenda'});
+    const pushHabit = (h,kind,startTs = null)=>{
+      if(!h || isCalendarIgnored(h))return;
+      const id = h.hid || h.name;
+      if(allowed && !allowed.has(id))return;
+      if(seen.has(id))return;
+      seen.add(id);
+      const timed = Number.isFinite(Number(startTs));
+      items.push({hid:h.hid,name:h.name,type:h.type,tone:'agenda',planned:true,kind:kind || 'agenda',ts:timed ? Number(startTs) : null,timed});
     };
     rows.forEach(row=>{
       if(row.kind !== 'fill' && row.kind !== 'scheduled')return;
-      pushHabit(row.h || data[row.i], row.kind === 'scheduled' ? 'scheduled' : 'agenda');
+      pushHabit(row.h || data[row.i], row.kind === 'scheduled' ? 'scheduled' : 'agenda', row.start);
     });
-    (day.agendaItems || []).forEach(item=>pushHabit(item.h,'agenda'));
+    (day.agendaItems || []).forEach(item=>pushHabit(item.h,'agenda',null));
     if(items.length)byDay.set(key,items);
   });
   return byDay;
@@ -343,40 +395,85 @@ function overviewAgendaByDay(data){
   return weekAgendaByDay(cachedOverviewWeek(data),data);
 }
 
-// RENDER: most-active habits (month / all-time)
-function renderOverviewLists(data,countForHabit,scopeNote = ''){
-  hideOverviewStretchChrome();
+// PURE: relative date label for overview list rows
+function overviewRowDayLabel(key){
+  const today = todayIso();
+  if(key === today)return 'Today';
+  const base = dayStart(Date.now());
+  if(key === dateKey(base + 86400000))return 'Tomorrow';
+  if(key === dateKey(base - 86400000))return 'Yesterday';
+  return new Date(`${key}T12:00:00`).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+}
+
+// PURE: concise meta string for an overview stretch/month row
+function overviewRowMetaText(key,entry,label){
+  const dayText = overviewRowDayLabel(key);
+  if(entry && entry.timed && Number.isFinite(Number(entry.ts))){
+    const clock = overviewDayAgendaClock(entry.ts);
+    if(clock)return `${dayText} · ${clock}`;
+  }
+  return label ? `${dayText} · ${label}` : dayText;
+}
+
+// RENDER: most-active habits (month / all-time), plus month upcoming items
+function renderOverviewLists(data,countForHabit,scopeNote = '',options = {}){
+  hideOverviewStretchChrome(Boolean(options.hasAgenda));
   const list = $('overview-list');
   if(!list)return;
   if(typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode)){
     list.innerHTML = '';
     return;
   }
-  const indices=new Map(load().map((h,index)=>[h.hid,index]));
-  const rows = data.map(h=>({h,index:indices.get(h.hid),count:countForHabit(h),c:habitColors(h)}))
+  const upcoming = Array.isArray(options.upcoming) ? options.upcoming : [];
+  _overviewMonthCache = {data,countForHabit,scopeNote,options};
+  const allItems = load();
+  const indices = new Map(allItems.map((h,index)=>[h.hid || h.name,index]));
+  const rows = data.map(h=>({h,index:indices.get(h.hid || h.name),count:countForHabit(h),c:habitColors(h)}))
     .filter(item=>item.count > 0).sort((a,b)=>b.count - a.count).slice(0,5);
 
-  if(!rows.length){
-    list.innerHTML = '<div class="overview-item"><span class="overview-name">quiet stretch</span><span class="overview-meta">no entries yet</span></div>';
+  const sections = [];
+  if(upcoming.length){
+    const limit = _overviewListExpanded ? upcoming.length : 4;
+    const upHtml = upcoming.slice(0,limit).map(({key,entry,label})=>{
+      const h = data.find(item=>(entry.hid && item.hid === entry.hid) || item.name === entry.name);
+      const c = h ? habitColors(h) : colors(null,null,entry.type);
+      const idx = h ? indices.get(h.hid || h.name) : undefined;
+      const actionAttr = Number.isInteger(idx) ? `data-open-overview-item="${idx}"` : `data-log-day="${escapeHtml(key)}"`;
+      return `<button type="button" class="overview-item overview-link-row" ${actionAttr}>
+        <span class="overview-name">${h ? iconHtml(h,c) : ''}${escapeHtml(entry.name)}</span>
+        <span class="overview-meta">${escapeHtml(overviewRowMetaText(key,entry,label))}</span>
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>`;
+    }).join('');
+    const expandHtml = upcoming.length > 4
+      ? `<button type="button" class="overview-more-btn" data-overview-expand="1">${_overviewListExpanded ? 'Show fewer' : `Show all ${upcoming.length}`}</button>`
+      : '';
+    sections.push(`<p class="overview-section-title">coming up${options.monthLabel ? ` · ${escapeHtml(options.monthLabel)}` : ''}</p>${upHtml}${expandHtml}`);
+  }
+  if(rows.length){
+    sections.push(`<p class="overview-section-title">most active${scopeNote}</p>${rows.map(({h,index,count,c})=>`
+      <button type="button" class="overview-item overview-link-row" data-open-overview-item="${index}">
+        <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
+        <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>
+    `).join('')}`);
+  }
+  if(!sections.length){
+    list.innerHTML = '<div class="overview-item"><span class="overview-name">quiet stretch</span><span class="overview-meta">tap a day above to plan</span></div>';
     return;
   }
-  list.innerHTML = `<p class="overview-section-title">most active${scopeNote}</p>${rows.map(({h,index,count,c})=>`
-    <button type="button" class="overview-item overview-link-row" data-open-overview-item="${index}">
-      <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
-      <span class="overview-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span>
-      <i class="ti ti-chevron-right" aria-hidden="true"></i>
-    </button>
-  `).join('')}`;
+  list.innerHTML = sections.join('');
 }
 
 // HYBRID: hide around-today insight + pane chrome (month / all-time)
-function hideOverviewStretchChrome(){
+function hideOverviewStretchChrome(hasAgenda = false){
   _overviewStretchCache = null;
   const insight = $('overview-insight');
   const panes = $('overview-pane-filter');
   if(insight){insight.hidden = true;insight.innerHTML = '';}
   if(panes){panes.hidden = true;panes.innerHTML = '';}
-  syncOverviewLegend(false);
+  syncOverviewLegend(false,hasAgenda);
 }
 
 // PURE: short duration label for insight chips
@@ -421,9 +518,21 @@ function overviewWeekCapacity(data){
   }
   const days = week.days.map(day=>{
     const key = dateKey(day.dayBase);
-    const timeline = day.homeDisplayedTimeline || day.timeline || [];
-    const load = timeline.filter(row=>row.kind === 'fill' || row.kind === 'scheduled').length
-      + (day.agendaItems ? day.agendaItems.length : 0);
+    const timeline = (day.homeDisplayedTimeline && day.homeDisplayedTimeline.length)
+      ? day.homeDisplayedTimeline
+      : (day.timeline || []);
+    const seenLoad = new Set();
+    timeline.forEach(row=>{
+      if(row.kind !== 'fill' && row.kind !== 'scheduled')return;
+      const h = row.h || (row.i != null ? data[row.i] : null);
+      const id = h?.hid || h?.name || (row.i != null ? `i:${row.i}` : '');
+      if(id)seenLoad.add(id);
+    });
+    (day.agendaItems || []).forEach(item=>{
+      const id = item.h?.hid || item.h?.name || '';
+      if(id)seenLoad.add(id);
+    });
+    const load = seenLoad.size;
     const total = Math.max(0,Math.round(Number(day.totalMinutes) || 0));
     const used = Math.max(0,Math.round(Number(day.usedMinutes) || 0));
     const open = day.remainingMinutes != null
@@ -447,19 +556,61 @@ function buildOverviewStretchLists(data,tally,start,end){
   const past = [];
   const seenAhead = new Set();
   const seenCare = new Set();
+  const byId = new Map(data.map(h=>[h.hid || h.name,h]));
 
+  // 1. Overdue tasks/deadlines & past-due plan-by markers (highest priority for care)
+  data.forEach(h=>{
+    const id = h.hid || h.name;
+    habitPlanMarkers(h).forEach(marker=>{
+      const key = dateKey(marker.ts);
+      if(key >= today || key < dateKey(start))return;
+      if(seenCare.has(id))return;
+      seenCare.add(id);
+      const label = marker.kind === 'deadline' ? 'past deadline'
+        : marker.kind === 'planBy' ? 'past plan-by'
+        : 'overdue';
+      care.push({
+        key,
+        entry:{hid:h.hid,name:h.name,type:h.type,tone:'miss',planned:true,kind:marker.kind},
+        label
+      });
+    });
+  });
+
+  // 2. Active habits currently overdue today (not snoozed, not opportunity)
+  data.forEach(h=>{
+    const id = h.hid || h.name;
+    if(seenCare.has(id))return;
+    if(h.type !== 'keepup' || h.lastLog === null)return;
+    if(typeof isSnoozed === 'function' && isSnoozed(h))return;
+    if(typeof isOpportunityHabit === 'function' && isOpportunityHabit(h))return;
+    const elapsed = typeof daysSince === 'function' ? daysSince(h.lastLog) : null;
+    const target = typeof effectiveTarget === 'function' ? effectiveTarget(h,sortSettings) : Number(h.target || 0);
+    if(elapsed != null && target > 0 && elapsed > target){
+      const over = Math.max(1,Math.floor(elapsed - target));
+      seenCare.add(id);
+      care.push({
+        key:today,
+        entry:{hid:h.hid,name:h.name,type:h.type,tone:'miss',planned:false,kind:'overdue'},
+        label:`${over}d overdue`
+      });
+    }
+  });
+
+  // 3. Tally entries: coming up (today+), recent zero slips (care), and recent activity (past)
   tally.map.forEach((entries,key)=>{
     entries.forEach(entry=>{
-      const id = entry.name;
+      const id = entry.hid || entry.name;
       if(key >= today){
         if(entry.planned && !seenAhead.has(id)){
           seenAhead.add(id);
           ahead.push({key,entry,label:dayMarkerKindLabel(entry.kind) || overviewToneLabel(entry.tone) || 'planned'});
         }
       }else{
-        if((entry.tone === 'miss' || entry.kind === 'deadline') && !entry.planned && !seenCare.has(id)){
+        const h = byId.get(id);
+        if(h && h.type === 'zero' && !entry.planned && !seenCare.has(id)){
           seenCare.add(id);
-          care.push({key,entry,label:'behind'});
+          care.push({key,entry,label:'slipped'});
         }
         if(!entry.planned){
           past.push({key,entry,label:overviewToneLabel(entry.tone) || 'done'});
@@ -468,21 +619,7 @@ function buildOverviewStretchLists(data,tally,start,end){
     });
   });
 
-  data.forEach(h=>{
-    habitPlanMarkers(h).forEach(marker=>{
-      const key = dateKey(marker.ts);
-      if(key >= today || key < dateKey(start))return;
-      if(seenCare.has(h.name))return;
-      seenCare.add(h.name);
-      care.push({
-        key,
-        entry:{name:h.name,type:h.type,tone:'miss',planned:true,kind:marker.kind},
-        label:dayMarkerKindLabel(marker.kind) || 'due'
-      });
-    });
-  });
-
-  ahead.sort((a,b)=>a.key.localeCompare(b.key) || a.entry.name.localeCompare(b.entry.name));
+  ahead.sort((a,b)=>a.key.localeCompare(b.key) || (Number(a.entry.ts) || 0) - (Number(b.entry.ts) || 0) || a.entry.name.localeCompare(b.entry.name));
   care.sort((a,b)=>b.key.localeCompare(a.key) || a.entry.name.localeCompare(b.entry.name));
   past.sort((a,b)=>b.key.localeCompare(a.key) || a.entry.name.localeCompare(b.entry.name));
   return {ahead,care,past:past.slice(0,12)};
@@ -518,26 +655,33 @@ function renderOverviewInsight(capacity,options={}){
   }
   wrap.hidden = false;
   const openLabel = overviewMinutesLabel(capacity.openTotal);
+  const isTight = d => Boolean(d && (d.open <= 60 || (d.total > 0 && d.open / d.total <= 0.2)));
   const cues = [];
   if(capacity.lightest && capacity.lightest.open > 0){
-    cues.push(`${overviewDayChipLabel(capacity.lightest.key)} lightest (${overviewMinutesLabel(capacity.lightest.open)})`);
+    cues.push(`${overviewDayChipLabel(capacity.lightest.key)} most open (${overviewMinutesLabel(capacity.lightest.open)})`);
   }
-  if(capacity.tomorrow){
-    if(capacity.tomorrow.open <= 30 || capacity.tomorrow.load >= 4){
-      cues.push('tomorrow packed');
-    }else if(capacity.tomorrow.open >= 120 && capacity.tomorrow.load <= 1){
-      cues.push('tomorrow open');
+  if(capacity.tomorrow && capacity.tomorrow.key !== capacity.lightest?.key){
+    if(isTight(capacity.tomorrow)){
+      cues.push(`tomorrow tight (${overviewMinutesLabel(capacity.tomorrow.open)})`);
+    }else if(capacity.tomorrow.load > 0){
+      cues.push(`tomorrow ${overviewMinutesLabel(capacity.tomorrow.open)} open · ${capacity.tomorrow.load} ${capacity.tomorrow.load === 1 ? 'item' : 'items'}`);
     }else{
       cues.push(`tomorrow ${overviewMinutesLabel(capacity.tomorrow.open)} open`);
     }
   }else if(capacity.busiest && capacity.busiest.key !== capacity.lightest?.key && capacity.busiest.open < capacity.lightest?.open){
-    cues.push(`${overviewDayChipLabel(capacity.busiest.key)} busier`);
+    cues.push(`${overviewDayChipLabel(capacity.busiest.key)} busiest (${overviewMinutesLabel(capacity.busiest.open)} open)`);
   }
+  const highlightBest = Boolean(
+    capacity.lightest && capacity.lightest.open > 0
+    && capacity.busiest && capacity.lightest.open > capacity.busiest.open
+  );
   const chips = chipModels.filter(item=>!weatherOnly || item.weather).map(({day,weather})=>{
     const tone = day.open >= 120 ? 'open' : day.open <= 30 ? 'tight' : 'mid';
+    const best = !weatherOnly && highlightBest && day.key === capacity.lightest.key ? ' is-best' : '';
     const weatherLabel=weather ? weather.match(/title="([^"]*)"/)?.[1] || '' : '';
-    const title=[weatherOnly?'':`${overviewMinutesLabel(day.open)} open`,weatherLabel].filter(Boolean).join(' · ');
-    return `<button type="button" class="overview-open-chip ${tone}${weatherOnly?' weather-only':''}" data-log-day="${escapeHtml(day.key)}" title="${escapeHtml(title)}">
+    const loadLabel = !weatherOnly && day.load ? `${day.load} ${day.load === 1 ? 'item' : 'items'}` : '';
+    const title=[weatherOnly?'':`${overviewMinutesLabel(day.open)} open`,loadLabel,weatherLabel].filter(Boolean).join(' · ');
+    return `<button type="button" class="overview-open-chip ${tone}${best}${weatherOnly?' weather-only':''}" data-log-day="${escapeHtml(day.key)}" title="${escapeHtml(title)}">
       <span class="overview-open-day">${escapeHtml(overviewDayChipLabel(day.key,true))}</span>
       ${weather}
       ${weatherOnly?'':`<b>${escapeHtml(overviewMinutesLabel(day.open))}</b>`}
@@ -578,18 +722,28 @@ function renderOverviewPaneFilter(cache){
 
 // RENDER: one stretch pane at a time
 function renderOverviewStretchPane(data,cache,capacity){
-  const fmtDay = key => new Date(`${key}T12:00:00`).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
-  const rowHtml = (rows,emptyName,emptyMeta,limit = 4) => rows.length
-    ? rows.slice(0,limit).map(({key,entry,label})=>{
-      const h = data.find(item=>item.name === entry.name);
+  const indices = new Map(load().map((h,index)=>[h.hid || h.name,index]));
+  const rowHtml = (rows,emptyName,emptyMeta,limit = 4) => {
+    if(!rows.length){
+      return `<div class="overview-item"><span class="overview-name">${escapeHtml(emptyName)}</span><span class="overview-meta">${escapeHtml(emptyMeta)}</span></div>`;
+    }
+    const visible = _overviewListExpanded ? rows : rows.slice(0,limit);
+    const itemsHtml = visible.map(({key,entry,label})=>{
+      const h = data.find(item=>(entry.hid && item.hid === entry.hid) || item.name === entry.name);
       const c = h ? habitColors(h) : colors(null,null,entry.type);
-      return `<button type="button" class="overview-item overview-link-row" data-log-day="${escapeHtml(key)}">
+      const idx = h ? indices.get(h.hid || h.name) : undefined;
+      const actionAttr = Number.isInteger(idx) ? `data-open-overview-item="${idx}"` : `data-log-day="${escapeHtml(key)}"`;
+      return `<button type="button" class="overview-item overview-link-row" ${actionAttr}>
         <span class="overview-name">${h ? iconHtml(h,c) : ''}${escapeHtml(entry.name)}</span>
-        <span class="overview-meta">${escapeHtml(label)} · ${escapeHtml(fmtDay(key))}</span>
+        <span class="overview-meta">${escapeHtml(overviewRowMetaText(key,entry,label))}</span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>`;
-    }).join('')
-    : `<div class="overview-item"><span class="overview-name">${escapeHtml(emptyName)}</span><span class="overview-meta">${escapeHtml(emptyMeta)}</span></div>`;
+    }).join('');
+    const expandHtml = rows.length > limit
+      ? `<button type="button" class="overview-more-btn" data-overview-expand="1">${_overviewListExpanded ? 'Show fewer' : `Show all ${rows.length}`}</button>`
+      : '';
+    return `${itemsHtml}${expandHtml}`;
+  };
 
   if(overviewListPane === 'care'){
     $('overview-list').innerHTML = `<p class="overview-section-title">needs attention</p>${rowHtml(cache.care,'all clear','nothing needs attention')}`;
@@ -600,15 +754,7 @@ function renderOverviewStretchPane(data,cache,capacity){
     return;
   }
 
-  // coming up — tip + short list
-  let tip = '';
-  if(capacity?.lightest && capacity.lightest.open > 0){
-    tip = `<div class="overview-plan-tip">
-      <span>best day to plan</span>
-      <button type="button" class="mini-text-btn" data-log-day="${escapeHtml(capacity.lightest.key)}">${escapeHtml(overviewDayChipLabel(capacity.lightest.key))} · ${escapeHtml(overviewMinutesLabel(capacity.lightest.open))} open</button>
-    </div>`;
-  }
-  $('overview-list').innerHTML = `${tip}<p class="overview-section-title">coming up</p>${rowHtml(cache.ahead,'nothing coming up','plan a light day above',4)}`;
+  $('overview-list').innerHTML = `<p class="overview-section-title">coming up</p>${rowHtml(cache.ahead,'nothing coming up','tap any day above to plan',4)}`;
 }
 
 // PURE: pick default pane — coming up, unless empty and attention has items
@@ -634,6 +780,7 @@ function renderOverviewStretchLists(data,tally,start,end){
   const lists = buildOverviewStretchLists(data,tally,start,end);
   overviewListPane = pickOverviewListPane(lists);
   _overviewStretchCache = {data,tally,start,end,capacity,lists};
+  _overviewMonthCache = null;
   renderOverviewInsight(capacity);
   renderOverviewPaneFilter(lists);
   renderOverviewStretchPane(data,lists,capacity);
@@ -641,7 +788,7 @@ function renderOverviewStretchLists(data,tally,start,end){
 }
 
 // RENDER: compact legend on around-today; fuller key on month browse
-function syncOverviewLegend(aroundToday){
+function syncOverviewLegend(aroundToday,hasAgenda = false){
   const legend = $('overview-legend');
   if(!legend)return;
   if(aroundToday){
@@ -656,7 +803,8 @@ function syncOverviewLegend(aroundToday){
       <span><b class="hit"></b>done</span>
       <span><b class="warn"></b>almost</span>
       <span><b class="miss"></b>behind</span>
-      <span><b class="plan"></b>planned</span>`;
+      <span><b class="plan"></b>planned</span>${hasAgenda ? `
+      <span><b class="agenda"></b>on agenda</span>` : ''}`;
   }
 }
 
@@ -664,6 +812,7 @@ function syncOverviewLegend(aroundToday){
 function setOverviewListPane(pane){
   if(!['plan','care','past'].includes(pane))return;
   overviewListPane = pane;
+  _overviewListExpanded = false;
   const cache = _overviewStretchCache;
   if(!cache){
     renderOverview();
@@ -671,6 +820,21 @@ function setOverviewListPane(pane){
   }
   renderOverviewPaneFilter(cache.lists);
   renderOverviewStretchPane(cache.data,cache.lists,cache.capacity);
+}
+
+// HYBRID: expand/collapse the active overview list without rebuilding the grid
+function toggleOverviewListExpanded(){
+  _overviewListExpanded = !_overviewListExpanded;
+  if(_overviewStretchCache){
+    renderOverviewStretchPane(_overviewStretchCache.data,_overviewStretchCache.lists,_overviewStretchCache.capacity);
+  }else if(_overviewMonthCache){
+    renderOverviewLists(_overviewMonthCache.data,_overviewMonthCache.countForHabit,_overviewMonthCache.scopeNote,_overviewMonthCache.options);
+  }
+}
+
+// HYBRID: reset list expansion on explicit navigation or filter change
+function resetOverviewListExpanded(){
+  _overviewListExpanded = false;
 }
 
 // RENDER: toggles month nav buttons and label
@@ -718,7 +882,7 @@ function renderOverviewRecent(data){
   grid.innerHTML = cells;
   const kicker = $('overview-calendar-kicker');
   const hint = $('overview-calendar-hint');
-  if(kicker)kicker.textContent = 'Past 7 · next 6';
+  if(kicker)kicker.textContent = overviewRecentOffset === 0 ? 'Past 7 · next 6' : '2-week view';
   if(hint)hint.textContent = 'Tap any day to review it or add a plan.';
 
   renderOverviewStretchLists(data,tally,start,end);
@@ -737,10 +901,13 @@ function recentRangeLabel(start,end,aroundToday = overviewRecentOffset === 0){
 // RENDER: month grid; all-time mode keeps month browsing but lists use full history
 function renderOverviewMonth(data,allTime){
   const frame = monthFrame(overviewMonthOffset);
+  const startTs = frame.first.getTime();
+  const endTs = frame.last.getTime() + 86400000;
   const gridTally = buildDayTally(data,ts=>{
     const d = new Date(ts);
     return d.getFullYear() === frame.year && d.getMonth() === frame.month;
-  });
+  },{startTs,endTs});
+  const agendaAdded = mergeAgendaIntoTally(gridTally,weekAgendaByDay(cachedOverviewWeek(data),data),startTs,endTs);
   setOverviewMonthNav(true,frame.label);
 
   const heads = ['s','m','t','w','t','f','s'].map(day=>`<div class="cal-head">${day}</div>`);
@@ -756,7 +923,7 @@ function renderOverviewMonth(data,allTime){
   grid.innerHTML = [...heads,...blanks,...days].join('');
   const kicker = $('overview-calendar-kicker');
   const hint = $('overview-calendar-hint');
-  if(kicker)kicker.textContent = allTime ? 'Browse history' : 'Month view';
+  if(kicker)kicker.textContent = allTime ? 'All-time history' : 'Tap any day';
   if(hint)hint.textContent = allTime ? 'Browse any month; the list below ranks all-time activity.' : 'Tap any day to see what happened or what is planned.';
 
   const countForHabit = allTime
@@ -765,7 +932,27 @@ function renderOverviewMonth(data,allTime){
       const d = new Date(ts);
       return d.getFullYear() === frame.year && d.getMonth() === frame.month;
     }).length;
-  renderOverviewLists(data,countForHabit,allTime ? ' · all time' : '');
+  const monthUpcoming = [];
+  if(!allTime){
+    const today = todayIso();
+    const seen = new Set();
+    gridTally.map.forEach((entries,key)=>{
+      if(key < today)return;
+      entries.forEach(entry=>{
+        if(!entry.planned)return;
+        const dedupeKey = `${key}|${entry.hid || entry.name}`;
+        if(seen.has(dedupeKey))return;
+        seen.add(dedupeKey);
+        monthUpcoming.push({key,entry,label:dayMarkerKindLabel(entry.kind) || overviewToneLabel(entry.tone) || 'planned'});
+      });
+    });
+    monthUpcoming.sort((a,b)=>a.key.localeCompare(b.key) || (Number(a.entry.ts) || 0) - (Number(b.entry.ts) || 0) || a.entry.name.localeCompare(b.entry.name));
+  }
+  renderOverviewLists(data,countForHabit,allTime ? ' · all time' : '',{
+    upcoming:monthUpcoming,
+    monthLabel:frame.label,
+    hasAgenda:agendaAdded > 0
+  });
 }
 
 // PURE: kind label for day-sheet / list meta (plain language)
@@ -803,15 +990,34 @@ function collectDayLogRows(key){
     }
     const entries = normalizeLogs(h.logs).filter(log=>dateKey(logTime(log)) === key);
     const scheduled = [];
-    habitPlanMarkers(h).forEach(marker=>{
-      if(dateKey(marker.ts) === key)scheduled.push(marker.kind);
-    });
+    let eventStart = null;
+    let eventDuration = null;
+    if(typeof isLocalAppointment === 'function' && isLocalAppointment(h) && typeof appointmentOccurrence === 'function'){
+      const occ = appointmentOccurrence(h,key);
+      if(occ){
+        scheduled.push('scheduled');
+        eventStart = occ.start;
+        eventDuration = occ.durationMinutes;
+      }
+    }else{
+      habitPlanMarkers(h).forEach(marker=>{
+        if(dateKey(marker.ts) === key){
+          scheduled.push(marker.kind);
+          if(marker.timed){
+            eventStart = marker.ts;
+            eventDuration = h.durationMinutes || null;
+          }
+        }
+      });
+    }
     if(!entries.length && !scheduled.length && !scoped)return;
     rows.push({
       h,
       index:i,
       entries,
       scheduled,
+      eventStart,
+      eventDuration,
       c:habitColors(h)
     });
   });
@@ -828,7 +1034,10 @@ function splitDayLogJournal(rows){
     const actualLogs = (row.entries || []).filter(log=>!isPlanLog(log));
     const scheduled = row.scheduled || [];
     if(scheduled.length || planLogs.length){
-      planned.push({h:row.h,index:row.index,c:row.c,entries:planLogs,scheduled});
+      planned.push({
+        h:row.h,index:row.index,c:row.c,entries:planLogs,scheduled,
+        eventStart:row.eventStart,eventDuration:row.eventDuration
+      });
     }
     if(actualLogs.length){
       activity.push({h:row.h,index:row.index,c:row.c,entries:actualLogs,scheduled:[]});
@@ -983,7 +1192,14 @@ function dayRowMeta(row){
   const plannedCount = planned.length;
   const actualCount = row.entries.length - plannedCount;
   const parts = [];
+  if(row.eventStart != null){
+    const clock = overviewDayAgendaClock(row.eventStart);
+    const dur = row.eventDuration ? overviewMinutesLabel(row.eventDuration) : '';
+    const timedLabel = [clock,dur].filter(Boolean).join(' · ');
+    if(timedLabel)parts.push(timedLabel);
+  }
   row.scheduled.forEach(kind=>{
+    if(kind === 'scheduled' && row.eventStart != null)return;
     const label = dayMarkerKindLabel(kind);
     if(label)parts.push(label);
   });
@@ -1004,8 +1220,9 @@ function dayRowMeta(row){
     }
   }
   if(actualCount)parts.push(`${actualCount} done`);
-  const cue = typeof cardCue === 'function' ? cardCue(row.h) : '';
-  const type = habitTypeLabel(row.h.type);
+  const isEvent = typeof isEventItem === 'function' && isEventItem(row.h);
+  const cue = !isEvent && typeof cardCue === 'function' ? cardCue(row.h) : '';
+  const type = isEvent ? 'event' : habitTypeLabel(row.h.type);
   const head = [type,cue].filter(Boolean).join(' · ');
   const tail = parts.filter(Boolean).join(' · ');
   return [head,tail].filter(Boolean).join(' · ');
@@ -1105,6 +1322,8 @@ function renderDayLogs(key){
   }
   const back = $('day-logs-back');
   if(back)back.hidden = dayLogsScoped() ? true : dayLogsStep === 'list';
+  const dayNav = $('day-logs-day-nav');
+  if(dayNav)dayNav.hidden = dayLogsScoped() || dayLogsStep !== 'list';
 
   if(dayLogsStep === 'add')renderDayLogsAddStep(key);
   else if(dayLogsStep === 'log')renderDayLogsLogStep(key);
@@ -1148,9 +1367,16 @@ function renderDayLogsListStep(key){
   // "this day is open" — the visible plan disproves it.
   const agendaHidden = $('day-logs-sheet').dataset.hideAgenda === '1';
   $('day-logs-title').textContent = new Date(ts).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
-  $('day-logs-sub').textContent = (hasJournal || hasAgendaRows)
+  const openMins = showAgenda && !overviewIsMinimal()
+    ? (weatherDay && weatherDay.remainingMinutes != null
+      ? Math.max(0,Math.round(Number(weatherDay.remainingMinutes) || 0))
+      : (typeof effectiveAvailabilityMinutes === 'function' ? effectiveAvailabilityMinutes(key,sortSettings) : null))
+    : null;
+  const openCue = openMins != null ? `${overviewMinutesLabel(openMins)} open` : '';
+  const subHint = (hasJournal || hasAgendaRows)
     ? 'tap an item for actions'
-    : (agendaHidden ? '' : (pastDay ? 'Nothing logged yet' : 'Nothing planned or completed yet'));
+    : (agendaHidden ? '' : (pastDay ? 'Nothing logged yet' : 'Nothing planned yet'));
+  $('day-logs-sub').textContent = [openCue,subHint].filter(Boolean).join(' · ');
 
   const sections = `${weatherHtml}${agendaHtml}${plannedHtml}${activityHtml}`;
   const listHtml = sections || (agendaHidden ? '' : `<div class="day-empty-state">
@@ -1158,15 +1384,20 @@ function renderDayLogsListStep(key){
     <b>This day is open</b>
     <small>${dayLogsCanPlan(key)
       ? (dayLogsCanLog(key)
-        ? 'Add a plan, check a time, log something you did, or change how much time this day has.'
-        : 'Add a plan, or check whether a time can be made open.')
+        ? 'Add a plan, create a new item, check open hours, or log something you did.'
+        : 'Add a plan, create a new item, or check whether a time can be made open.')
       : 'Log a missed day, check a time, or change how much time this day had.'}</small>
   </div>`);
   $('day-logs-body').innerHTML = `${listHtml}
     <div class="day-quick-actions" aria-label="day actions">
       ${dayLogsCanPlan(key) ? `<button type="button" class="day-quick-action primary" id="day-logs-plan">
         <i class="ti ti-calendar-plus" aria-hidden="true"></i>
-        <span><b>Plan something</b><small>Put an item on this day. You can add a time.</small></span>
+        <span><b>Plan something</b><small>Put an existing item on this day</small></span>
+        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="day-quick-action" id="day-logs-new-item">
+        <i class="ti ti-plus" aria-hidden="true"></i>
+        <span><b>Create new item</b><small>Add a new task or event for this day</small></span>
         <i class="ti ti-chevron-right" aria-hidden="true"></i>
       </button>` : ''}
       <button type="button" class="day-quick-action" id="day-logs-open-hours">
@@ -1273,7 +1504,7 @@ function renderDayLogsItemStep(key){
     <div class="day-item-card">
       <div class="overview-item day-item-summary">
         <span class="overview-name">${iconHtml(h,c)} ${escapeHtml(h.name)}</span>
-        <span class="overview-meta">${escapeHtml(habitTypeLabel(h.type))}</span>
+        <span class="overview-meta">${escapeHtml(typeof isEventItem === 'function' && isEventItem(h) ? 'event' : habitTypeLabel(h.type))}</span>
       </div>
       <p class="day-item-cue">${escapeHtml(typeof cardCue === 'function' ? cardCue(h) : '')}</p>
       ${dayLogsPlanDateEditable ? `<label class="field-label" for="day-entry-date">Date</label><input type="date" id="day-entry-date" class="plan-date-input" value="${key}" /><p class="field-hint">Choose a past day to log activity, or today or later to plan.</p>` : ''}
@@ -1523,6 +1754,34 @@ function setDayLogsStep(step,itemIndex = null){
   dayLogsItemIndex = itemIndex;
   if(step !== 'item')dayLogsMoving = false;
   if(dayLogsKey)renderDayLogs(dayLogsKey);
+}
+
+// HYBRID: step the open unscoped day sheet to an adjacent day
+function stepDayLogsKey(deltaDays){
+  if(!dayLogsKey || dayLogsScoped() || dayLogsStep !== 'list')return;
+  const ts = new Date(`${dayLogsKey}T12:00:00`).getTime();
+  if(!Number.isFinite(ts))return;
+  const nextKey = dateKey(ts + deltaDays * 86400000);
+  dayLogsKey = nextKey;
+  renderDayLogs(nextKey);
+  if(($('overview-sheet')?.classList.contains('open') || (typeof paneTierActive === 'function' && paneTierActive())) && typeof renderOverview === 'function'){
+    renderOverview();
+  }
+}
+
+// HYBRID: open the Add sheet cleanly from Calendar Overview (optionally pre-filled with a date)
+function openAddForCalendarDay(dayKey = ''){
+  if(typeof closeSearch === 'function')closeSearch();
+  if(typeof applyAddDefaults === 'function')applyAddDefaults();
+  if(dayKey && typeof switchAddType === 'function'){
+    switchAddType('task');
+    const due = $('ting-due-date');
+    if(due)due.value = dayKey;
+    if(typeof syncTaskDueUi === 'function')syncTaskDueUi();
+    if(typeof refreshAddAvailability === 'function')refreshAddAvailability();
+  }
+  if(typeof openSheet === 'function')openSheet('add-sheet');
+  $('ting-message')?.focus({preventScroll:true});
 }
 
 // HYBRID: close day sheet and clear scope

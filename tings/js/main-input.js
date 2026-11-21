@@ -969,6 +969,7 @@ function openCalendarOverview(options = {}){
   // state Home is showing. Resetting happens through the reset controls.
   overviewRangeFilter = month ? 'month' : 'recent';
   overviewListPane = 'plan';
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
   openSheet('overview-sheet');
 }
@@ -988,18 +989,21 @@ $('overview-prev-month').addEventListener('click',()=>{
   if(isScrollGuarded($('overview-prev-month')))return;
   if(overviewRangeFilter === 'recent')overviewRecentOffset -= (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset -= 1;
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
 });
 $('overview-next-month').addEventListener('click',()=>{
   if(isScrollGuarded($('overview-next-month')))return;
   if(overviewRangeFilter === 'recent')overviewRecentOffset += (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset += 1;
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
 });
 $('overview-today')?.addEventListener('click',()=>{
   overviewMonthOffset = 0;
   overviewRecentOffset = 0;
   dayLogsKey = null;
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
 });
 // Week grid over the planner week (overview-week.js). Available from both the
@@ -1008,19 +1012,29 @@ $('open-week-view')?.addEventListener('click',()=>{
   if(isScrollGuarded($('open-week-view')))return;
   if(typeof openWeekView === 'function')openWeekView();
 });
+$('overview-create')?.addEventListener('click',()=>{
+  if(isScrollGuarded($('overview-create')))return;
+  if(typeof openAddForCalendarDay === 'function')openAddForCalendarDay();
+});
 $('overview-filter')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
   if(e.target.closest('[data-open-overview-filters]')){
+    const groups = $('calendar-filter-groups');
+    if(groups)groups.scrollTop = 0;
     openSheet('calendar-filter-sheet');
     return;
   }
-  if(takeFilterClick(e, [
-    ['data-clear-overview-topic', ()=>{ setSharedFilter('topic','all'); }],
-    ['data-clear-overview-location', ()=>{ setSharedFilter('location','all'); }],
-    ['data-clear-overview-type', ()=>{ setSharedFilter('type','all'); }],
-    ['data-clear-overview-when', ()=>{ setSharedFilter('when','all'); }],
-    ['data-clear-overview-priority', ()=>{ setSharedFilter('priority','all'); }]
-  ])){
+  if(e.target.closest('[data-clear-overview-all]')){
+    clearSharedFilters();
+    dayLogsKey = null;
+    renderOverview();
+    syncSharedFilterSurfaces('calendar');
+    return;
+  }
+  if(takeFilterClick(e, FILTER_DIMENSIONS.map(kind=>[
+    `data-clear-overview-${kind}`,
+    val=>{ removeSharedFilter(kind, val); }
+  ]))){
     dayLogsKey = null;
     renderOverview();
     syncSharedFilterSurfaces('calendar');
@@ -1029,25 +1043,57 @@ $('overview-filter')?.addEventListener('click',e=>{
   const rangeBtn = e.target.closest('[data-overview-range]');
   if(rangeBtn){
     overviewRangeFilter = rangeBtn.dataset.overviewRange || 'recent';
+    rememberCalendarView(overviewRangeFilter === 'month' ? 'month' : 'overview');
     overviewMonthOffset = 0;
     overviewRecentOffset = 0;
     overviewListPane = 'plan';
     dayLogsKey = null;
+    if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
     renderOverview();
   }
 });
+$('calendar-filter-active')?.addEventListener('click',e=>{
+  if(takeFilterClick(e, FILTER_DIMENSIONS.map(kind=>[
+    `data-sheet-clear-overview-${kind}`,
+    val=>{ removeSharedFilter(kind, val); }
+  ]))){
+    dayLogsKey = null;
+    renderOverview();
+    syncSharedFilterSurfaces('calendar');
+  }
+});
 $('calendar-filter-groups')?.addEventListener('click',e=>{
-  const hit = takeFilterClick(e, [
-    ['data-overview-topic', value=>{ setSharedFilter('topic',value); }],
-    ['data-overview-location', value=>{ setSharedFilter('location',value); }],
-    ['data-overview-type', value=>{ setSharedFilter('type',value); }],
-    ['data-overview-when', value=>{ setSharedFilter('when',value); }],
-    ['data-overview-priority', value=>{ setSharedFilter('priority',value); }]
-  ]);
+  const clearSearch = e.target.closest('[data-clear-filter-search]');
+  if(clearSearch){
+    setFilterSheetQuery('calendar-filter', '');
+    renderOverview();
+    return;
+  }
+  const clearGroup = e.target.closest('[data-clear-overview-group]');
+  if(clearGroup){
+    setSharedFilter(clearGroup.dataset.clearOverviewGroup, 'all');
+    dayLogsKey = null;
+    renderOverview();
+    syncSharedFilterSurfaces('calendar');
+    return;
+  }
+  const hit = takeFilterClick(e, FILTER_DIMENSIONS.map(kind=>[
+    `data-overview-${kind}`,
+    value=>{ toggleSharedFilter(kind, value); }
+  ]));
   if(!hit)return;
   dayLogsKey = null;
   renderOverview();
   syncSharedFilterSurfaces('calendar');
+});
+$('calendar-filter-search')?.addEventListener('input',e=>{
+  setFilterSheetQuery('calendar-filter', e.target.value);
+  renderOverview();
+});
+$('calendar-filter-search-clear')?.addEventListener('click',()=>{
+  setFilterSheetQuery('calendar-filter', '');
+  renderOverview();
+  $('calendar-filter-search')?.focus();
 });
 const closeCalendarFilters = ()=>closeSheet('calendar-filter-sheet');
 $('calendar-filter-close')?.addEventListener('click',closeCalendarFilters);
@@ -1075,6 +1121,10 @@ $('overview-insight')?.addEventListener('click',e=>{
 });
 $('overview-list')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
+  if(e.target.closest('[data-overview-expand]')){
+    if(typeof toggleOverviewListExpanded === 'function')toggleOverviewListExpanded();
+    return;
+  }
   const itemBtn = e.target.closest('[data-open-overview-item]');
   if(itemBtn){
     const idx = parseInt(itemBtn.dataset.openOverviewItem,10);
@@ -1100,6 +1150,8 @@ $('home-tag-filter')?.addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-open-home-filters]')){
+    const groups = $('home-filter-groups');
+    if(groups)groups.scrollTop = 0;
     openSheet('home-filter-sheet');
     return;
   }
@@ -1107,29 +1159,60 @@ $('home-tag-filter')?.addEventListener('click',e=>{
     openPresencePicker();
     return;
   }
-  if(takeFilterClick(e, [
-    ['data-clear-home-topic', ()=>{ setSharedFilter('topic','all'); }],
-    ['data-clear-home-location', ()=>{ setSharedFilter('location','all'); }],
-    ['data-clear-home-type', ()=>{ setSharedFilter('type','all'); }],
-    ['data-clear-home-when', ()=>{ setSharedFilter('when','all'); }],
-    ['data-clear-home-priority', ()=>{ setSharedFilter('priority','all'); }]
-  ])){
+  if(e.target.closest('[data-clear-home-all]')){
+    clearSharedFilters();
+    applyHomeFilterChange();
+    syncSharedFilterSurfaces('home');
+    return;
+  }
+  if(takeFilterClick(e, FILTER_DIMENSIONS.map(kind=>[
+    `data-clear-home-${kind}`,
+    val=>{ removeSharedFilter(kind, val); }
+  ]))){
+    applyHomeFilterChange();
+    syncSharedFilterSurfaces('home');
+  }
+});
+$('home-filter-active')?.addEventListener('click',e=>{
+  if(takeFilterClick(e, FILTER_DIMENSIONS.map(kind=>[
+    `data-sheet-clear-home-${kind}`,
+    val=>{ removeSharedFilter(kind, val); }
+  ]))){
     applyHomeFilterChange();
     syncSharedFilterSurfaces('home');
   }
 });
 $('home-filter-groups')?.addEventListener('click',e=>{
-  const hit = takeFilterClick(e, [
-    ['data-home-topic', value=>{ setSharedFilter('topic',value); }],
-    ['data-home-location', value=>{ setSharedFilter('location',value); }],
-    ['data-home-type', value=>{ setSharedFilter('type',value); }],
-    ['data-home-when', value=>{ setSharedFilter('when',value); }],
-    ['data-home-priority', value=>{ setSharedFilter('priority',value); }]
-  ]);
+  const clearSearch = e.target.closest('[data-clear-filter-search]');
+  if(clearSearch){
+    setFilterSheetQuery('home-filter', '');
+    renderHomeTagFilter(load());
+    return;
+  }
+  const clearGroup = e.target.closest('[data-clear-home-group]');
+  if(clearGroup){
+    setSharedFilter(clearGroup.dataset.clearHomeGroup, 'all');
+    applyHomeFilterChange();
+    syncSharedFilterSurfaces('home');
+    return;
+  }
+  const hit = takeFilterClick(e, FILTER_DIMENSIONS.map(kind=>[
+    `data-home-${kind}`,
+    value=>{ toggleSharedFilter(kind, value); }
+  ]));
   if(hit){
     applyHomeFilterChange();
     syncSharedFilterSurfaces('home');
   }
+});
+$('home-filter-search')?.addEventListener('input',e=>{
+  setFilterSheetQuery('home-filter', e.target.value);
+  renderHomeTagFilter(load());
+});
+$('home-filter-search-clear')?.addEventListener('click',()=>{
+  setFilterSheetQuery('home-filter', '');
+  renderHomeTagFilter(load());
+  $('home-filter-search')?.focus();
 });
 $('home-filter-reset')?.addEventListener('click',()=>{
   clearSharedFilters();

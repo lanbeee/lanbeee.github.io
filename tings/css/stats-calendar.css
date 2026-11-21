@@ -197,21 +197,22 @@
 .cal-day.warn{background:var(--amber-bg);color:var(--amber-text);}
 .cal-day.miss{background:var(--red-bg);color:var(--red-text);}
 .rich-month-grid .cal-day{
-  height:var(--cal-cell-h,36px);flex-direction:column;gap:2px;font-size:10px;
+  height:var(--cal-cell-h,38px);flex-direction:column;gap:2px;font-size:10px;
 }
 .rich-month-grid .cal-day.has-entry{color:var(--text);}
-.month-grid.strip-grid{--cal-cell-h:48px;}
+.month-grid.strip-grid{--cal-cell-h:52px;}
 .strip-grid .strip-wd{font-size:8.5px;color:var(--text3);text-transform:uppercase;font-weight:700;letter-spacing:0.02em;}
-.cal-day.today .strip-wd{color:var(--text2);}
-.strip-grid .strip-num{font-size:12px;font-weight:600;}
-.cal-dots{display:flex;gap:2px;align-items:center;justify-content:center;min-height:5px;}
-.cal-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);}
+.cal-day.today .strip-wd{color:var(--purple-text);}
+.strip-grid .strip-num{font-size:12.5px;font-weight:650;line-height:1.1;}
+.cal-dots{display:inline-flex;gap:2.5px;align-items:center;justify-content:center;min-height:10px;line-height:1;}
+.cal-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);flex:0 0 auto;}
 .cal-dot.hit{background:var(--teal-icon);}
 .cal-dot.warn{background:var(--amber-icon);}
 .cal-dot.miss{background:var(--red-icon);}
 .cal-dot.plan{background:transparent;box-shadow:inset 0 0 0 1.3px var(--purple-icon);}
 .cal-dot.agenda{background:transparent;box-shadow:inset 0 0 0 1.3px var(--blue-icon);}
-.cal-more{font-size:9px;color:var(--text3);line-height:1;}
+.cal-more{font-size:8.5px;font-weight:700;color:var(--text3);line-height:1;margin-left:1px;}
+.cal-day.selected .cal-more{color:color-mix(in srgb,var(--bg) 82%,transparent);}
 .calendar-legend{
   display:flex;align-items:center;justify-content:center;gap:9px;flex-wrap:wrap;
   color:var(--text3);font-size:10.5px;font-weight:650;margin-top:10px;
@@ -223,6 +224,7 @@
 .calendar-legend b.miss{background:var(--red-icon);}
 .calendar-legend b.plan{background:transparent;box-shadow:inset 0 0 0 1.3px var(--purple-icon);}
 .calendar-legend b.agenda{background:transparent;box-shadow:inset 0 0 0 1.3px var(--blue-icon);}
+.rich-month-grid .cal-day.past:not(.has-entry):not(.selected){opacity:0.78;}
 .rich-month-grid .cal-day.future:not(.has-entry){opacity:0.92;}
 .rich-month-grid.strip-grid .cal-day.future.has-entry{
   background:color-mix(in srgb,var(--blue-bg) 22%,var(--bg));

@@ -430,10 +430,112 @@ function cardLocationId(h,agendaRow){
 
 // PURE: shared topic/place filter choice lists used by home and calendar.
 
-// PURE: "all" first, then the active choice, then A–Z, with the none/anywhere
-// bucket last. Chip rows use the same selected-then-alpha rule.
-function orderFilterChoices(choices, selectedKey){
-  const rank = choice => choice.key === 'all' ? 0 : choice.key === '__none__' ? 3 : choice.key === selectedKey ? 1 : 2;
+// PURE: multi-select filter value primitives. A filter dimension stores 'all'
+// when unset, a single string key when 1 value is active, or an array of 2+
+// unique keys when multiple values are selected (OR within a group, AND across
+// groups). Keeping 0/1 values as strings preserves external test/caller contracts.
+const FILTER_DIMENSIONS = ['when','type','priority','location','topic','duration','trait'];
+const FILTER_PRIORITY_LEGACY = {
+  important:['p0','p1'],
+  normal:['p2'],
+  wait:['p3','p4','p5']
+};
+
+function filterSelectedKeys(value){
+  if(!value || value === 'all')return [];
+  const raw = Array.isArray(value) ? value : [value];
+  const out = [];
+  const seen = new Set();
+  for(const item of raw){
+    const s = String(item || '').trim();
+    if(!s || s === 'all')continue;
+    if(seen.has(s))continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+function packFilterKeys(keys){
+  const clean = filterSelectedKeys(keys);
+  if(!clean.length)return 'all';
+  if(clean.length === 1)return clean[0];
+  return clean;
+}
+
+function cloneFilterValue(value){
+  return Array.isArray(value) ? value.slice() : (value || 'all');
+}
+
+function filterValuesEqual(a, b){
+  const ka = filterSelectedKeys(a);
+  const kb = filterSelectedKeys(b);
+  if(ka.length !== kb.length)return false;
+  for(let i = 0; i < ka.length; i += 1)if(ka[i] !== kb[i])return false;
+  return true;
+}
+
+function filterHasKey(value, key, {caseInsensitive = false} = {}){
+  const keys = filterSelectedKeys(value);
+  if(!key || key === 'all')return keys.length === 0;
+  if(!caseInsensitive)return keys.includes(key);
+  const needle = String(key).toLowerCase();
+  return keys.some(k=>k.toLowerCase() === needle);
+}
+
+function toggleFilterValue(current, key, {caseInsensitive = false} = {}){
+  if(!key || key === 'all')return 'all';
+  const keys = filterSelectedKeys(current);
+  const needle = caseInsensitive ? String(key).toLowerCase() : String(key);
+  const idx = keys.findIndex(k=>(caseInsensitive ? k.toLowerCase() : k) === needle);
+  if(idx >= 0){
+    const next = keys.slice(0, idx).concat(keys.slice(idx + 1));
+    return packFilterKeys(next);
+  }
+  return packFilterKeys([...keys, String(key)]);
+}
+
+function removeFilterValue(current, key, {caseInsensitive = false} = {}){
+  if(!key || key === '1' || key === 'all')return 'all';
+  const keys = filterSelectedKeys(current);
+  const needle = caseInsensitive ? String(key).toLowerCase() : String(key);
+  return packFilterKeys(keys.filter(k=>(caseInsensitive ? k.toLowerCase() : k) !== needle));
+}
+
+function pruneFilterValue(current, choices, {caseInsensitive = false} = {}){
+  const keys = filterSelectedKeys(current);
+  if(!keys.length)return 'all';
+  const valid = new Map();
+  (choices || []).forEach(c=>{
+    if(!c || !c.key || c.key === 'all')return;
+    valid.set(caseInsensitive ? c.key.toLowerCase() : c.key, c.key);
+  });
+  const kept = [];
+  for(const k of keys){
+    const lookup = caseInsensitive ? k.toLowerCase() : k;
+    if(valid.has(lookup))kept.push(valid.get(lookup));
+  }
+  return packFilterKeys(kept);
+}
+
+function filterValueSignature(value){
+  const keys = filterSelectedKeys(value);
+  if(!keys.length)return 'all';
+  return keys.slice().sort().join(',');
+}
+
+function countActiveFilters(selection){
+  if(!selection)return 0;
+  let total = 0;
+  for(const dim of FILTER_DIMENSIONS)total += filterSelectedKeys(selection[dim]).length;
+  return total;
+}
+
+// PURE: "all" first, then stable A–Z order, with the none/anywhere bucket last.
+// Stable ordering prevents choices from jumping under the user's finger when
+// toggling multiple selections in a row.
+function orderFilterChoices(choices){
+  const rank = choice => choice.key === 'all' ? 0 : choice.key === '__none__' ? 2 : 1;
   return choices.slice().sort((a,b)=>{
     const d = rank(a) - rank(b);
     if(d)return d;
@@ -448,10 +550,14 @@ function topicFilterChoices(data){
 }
 
 function matchesTopicFilter(h,topic){
-  if(!topic || topic === 'all')return true;
+  const keys = filterSelectedKeys(topic);
+  if(!keys.length)return true;
   const topics = normalizeTopics(h.topics);
-  if(topic === '__none__')return !topics.length;
-  return topics.some(item=>item.toLowerCase() === topic.toLowerCase());
+  return keys.some(key=>{
+    if(key === '__none__')return !topics.length;
+    const low = key.toLowerCase();
+    return topics.some(item=>item.toLowerCase() === low);
+  });
 }
 
 function locationFilterChoices(data,{treatAnywhere = false} = {}){
@@ -467,10 +573,14 @@ function locationFilterChoices(data,{treatAnywhere = false} = {}){
 }
 
 function matchesLocationFilter(h,id,{treatAnywhere = false} = {}){
-  if(!id || id === 'all')return true;
-  const ids = normalizeLocationIds(h.locationIds);
-  if(id === '__none__')return (treatAnywhere && Boolean(h.anywhereAllowed)) || !ids.length;
-  return ids.includes(id);
+  const keys = filterSelectedKeys(id);
+  if(!keys.length)return true;
+  const registry = typeof locationOptions === 'function' ? locationOptions() : null;
+  const ids = normalizeLocationIds(h.locationIds, registry);
+  return keys.some(key=>{
+    if(key === '__none__')return (treatAnywhere && Boolean(h.anywhereAllowed)) || !ids.length;
+    return ids.includes(key);
+  });
 }
 
 function homeLocationChoices(data){
@@ -481,9 +591,10 @@ function matchesHomeLocation(h,id){
   return matchesLocationFilter(h,id,{treatAnywhere:true});
 }
 
-// One choice per group. Groups combine. Day counts match the cards: 0 is today,
-// 1 is tomorrow. "Today or tomorrow" and "Next 7 days" use that count for a
-// task due date, an event, a plan-by date, and days left in a habit rhythm.
+// Multi-select within each group (OR), intersection across groups (AND).
+// Day counts match the cards: 0 is today, 1 is tomorrow. "Today or tomorrow"
+// and "Next 7 days" use that count for a task due date, an event, a plan-by
+// date, and days left in a habit rhythm.
 const FILTER_DATED_SOON_DAYS = 7;
 const FILTER_RHYTHM_SOON_DAYS = 3;
 const FILTER_TODAY_OR_TOMORROW_DAYS = 1;
@@ -495,7 +606,8 @@ const FILTER_WHEN_CHOICES = [
   {key:'overdue7', label:'7+ days overdue', icon:'ti-alert-triangle', title:'Behind by 7 days or more'},
   {key:'overdue30', label:'30+ days overdue', icon:'ti-calendar-exclamation', title:'Behind by 30 days or more'},
   {key:'soon', label:'Coming up', icon:'ti-calendar-week', title:'Due in the next few days'},
-  {key:'later', label:'Not due yet', icon:'ti-calendar-off', title:'On track, someday, or no deadline'}
+  {key:'later', label:'Not due yet', icon:'ti-calendar-off', title:'On track, someday, or no deadline'},
+  {key:'undated', label:'No deadline', icon:'ti-calendar-question', title:'Tasks without a due date, optional habits, or stop items'}
 ];
 const FILTER_TYPE_CHOICES = [
   {key:'habit', label:'Habit', icon:'ti-heart'},
@@ -505,17 +617,47 @@ const FILTER_TYPE_CHOICES = [
   {key:'event', label:'Event', icon:'ti-calendar-time'}
 ];
 const FILTER_PRIORITY_CHOICES = [
-  {key:'important', label:'Important', icon:'ti-flag-filled', title:'Critical and high'},
-  {key:'normal', label:'Normal', icon:'ti-flag', title:'Normal priority'},
-  {key:'wait', label:'Can wait', icon:'ti-hourglass', title:'Flexible, low, and someday'}
+  {key:'p0', label:'P0 · Critical', icon:'ti-flag-filled', title:'Critical priority (P0)'},
+  {key:'p1', label:'P1 · High', icon:'ti-flag-filled', title:'High priority (P1)'},
+  {key:'p2', label:'P2 · Normal', icon:'ti-flag', title:'Normal priority (P2)'},
+  {key:'p3', label:'P3 · Flexible', icon:'ti-flag', title:'Flexible priority (P3)'},
+  {key:'p4', label:'P4 · Low', icon:'ti-flag', title:'Low priority (P4)'},
+  {key:'p5', label:'P5 · Someday', icon:'ti-hourglass', title:'Someday priority (P5)'}
+];
+const FILTER_DURATION_CHOICES = [
+  {key:'quick', label:'Quick (≤15m)', icon:'ti-bolt', title:'15 minutes or less'},
+  {key:'short', label:'Short (16–30m)', icon:'ti-clock-hour-2', title:'16 to 30 minutes'},
+  {key:'medium', label:'Medium (31–60m)', icon:'ti-clock-hour-4', title:'31 to 60 minutes'},
+  {key:'long', label:'Long (60m+)', icon:'ti-hourglass-high', title:'Over an hour'}
+];
+const FILTER_TRAIT_CHOICES = [
+  {key:'pinned', label:'Pinned', icon:'ti-pin', title:'Pinned to the top of Home'},
+  {key:'timed', label:'Fixed time', icon:'ti-clock-check', title:'Scheduled at a specific time'},
+  {key:'breakable', label:'Splittable', icon:'ti-scissors', title:'Can be split across sessions'},
+  {key:'opportunity', label:'Optional', icon:'ti-sparkles', title:'Do whenever the opportunity comes up'},
+  {key:'windowed', label:'Day/time rules', icon:'ti-calendar-cog', title:'Restricted to specific days or time windows'},
+  {key:'linked', label:'Has links', icon:'ti-link', title:'Has attached links or shortcuts'},
+  {key:'weather', label:'Weather rule', icon:'ti-cloud-rain', title:'Uses a custom weather rule'},
+  {key:'snoozed', label:'Snoozed', icon:'ti-zzz', title:'Currently snoozed'}
 ];
 const FILTER_WHEN_RANK = {overdue:0, today:1, soon:2, later:3};
 const FILTER_KIND_ICON = {
-  when:'ti-calendar', type:'ti-layout-grid', priority:'ti-flag', location:'ti-map-pin', topic:'ti-tag'
+  when:'ti-calendar', type:'ti-layout-grid', priority:'ti-flag', location:'ti-map-pin', topic:'ti-tag',
+  duration:'ti-clock', trait:'ti-sparkles'
 };
 const FILTER_GROUP_LABEL_ID = {
-  when:'when', type:'type', priority:'priority', location:'places', topic:'topics'
+  when:'when', type:'type', priority:'priority', location:'places', topic:'topics',
+  duration:'duration', trait:'details'
 };
+const _filterSheetQueries = {'home-filter':'', 'calendar-filter':''};
+
+function filterSheetQuery(prefix){
+  return String(_filterSheetQueries[prefix] || '');
+}
+
+function setFilterSheetQuery(prefix, value){
+  _filterSheetQueries[prefix] = String(value || '');
+}
 
 function clearHomeFilters(){
   homeTopicFilter = 'all';
@@ -523,6 +665,8 @@ function clearHomeFilters(){
   homeTypeFilter = 'all';
   homeWhenFilter = 'all';
   homePriorityFilter = 'all';
+  homeDurationFilter = 'all';
+  homeTraitFilter = 'all';
 }
 
 function clearOverviewFilters(){
@@ -531,18 +675,45 @@ function clearOverviewFilters(){
   overviewTypeFilter = 'all';
   overviewWhenFilter = 'all';
   overviewPriorityFilter = 'all';
+  overviewDurationFilter = 'all';
+  overviewTraitFilter = 'all';
+}
+
+function sharedFilterValue(kind){
+  if(kind === 'topic')return homeTopicFilter;
+  if(kind === 'location')return homeLocationFilter;
+  if(kind === 'type')return homeTypeFilter;
+  if(kind === 'when')return homeWhenFilter;
+  if(kind === 'priority')return homePriorityFilter;
+  if(kind === 'duration')return homeDurationFilter;
+  if(kind === 'trait')return homeTraitFilter;
+  return 'all';
 }
 
 // SHARED FILTERS: Home and the calendar read one selection. Both variable sets
 // stay (per-surface match semantics differ via `treatAnywhere`), but every user
 // mutation writes both sides through here so the two surfaces never drift.
 function setSharedFilter(kind,value){
-  if(kind === 'topic'){ homeTopicFilter = overviewTopicFilter = value; return; }
-  if(kind === 'location'){ homeLocationFilter = overviewLocationFilter = value; return; }
-  if(kind === 'type'){ homeTypeFilter = overviewTypeFilter = value; return; }
-  if(kind === 'when'){ homeWhenFilter = overviewWhenFilter = value; return; }
-  if(kind === 'priority'){ homePriorityFilter = overviewPriorityFilter = value; }
+  const packed = packFilterKeys(value);
+  if(kind === 'topic'){ homeTopicFilter = overviewTopicFilter = packed; return; }
+  if(kind === 'location'){ homeLocationFilter = overviewLocationFilter = packed; return; }
+  if(kind === 'type'){ homeTypeFilter = overviewTypeFilter = packed; return; }
+  if(kind === 'when'){ homeWhenFilter = overviewWhenFilter = packed; return; }
+  if(kind === 'priority'){ homePriorityFilter = overviewPriorityFilter = packed; return; }
+  if(kind === 'duration'){ homeDurationFilter = overviewDurationFilter = packed; return; }
+  if(kind === 'trait'){ homeTraitFilter = overviewTraitFilter = packed; }
 }
+
+function toggleSharedFilter(kind,key){
+  const ci = kind === 'topic';
+  setSharedFilter(kind, toggleFilterValue(sharedFilterValue(kind), key, {caseInsensitive:ci}));
+}
+
+function removeSharedFilter(kind,key){
+  const ci = kind === 'topic';
+  setSharedFilter(kind, removeFilterValue(sharedFilterValue(kind), key, {caseInsensitive:ci}));
+}
+
 // Either surface's reset clears the shared selection.
 function clearSharedFilters(){
   clearHomeFilters();
@@ -566,9 +737,21 @@ function syncSharedFilterSurfaces(changed){
   }
 }
 
-function settleFixedFilter(current, catalog){
-  if(!current || current === 'all')return 'all';
-  return catalog.some(row=>row.key === current) ? current : 'all';
+function expandPriorityKeys(value){
+  const out = [];
+  for(const key of filterSelectedKeys(value)){
+    if(FILTER_PRIORITY_LEGACY[key])out.push(...FILTER_PRIORITY_LEGACY[key]);
+    else if(/^[0-5]$/.test(key))out.push(`p${key}`);
+    else out.push(key);
+  }
+  return out;
+}
+
+function settleFixedFilter(current, catalog, {expandLegacyPriority = false} = {}){
+  const keys = expandLegacyPriority ? expandPriorityKeys(current) : filterSelectedKeys(current);
+  if(!keys.length)return 'all';
+  const allowed = new Set(catalog.map(row=>row.key));
+  return packFilterKeys(keys.filter(key=>allowed.has(key)));
 }
 
 function itemFilterKind(h){
@@ -748,28 +931,85 @@ function matchesDueWithin(h, days){
 
 function itemFilterPriority(h){
   const rank = typeof effectivePriority === 'function' ? effectivePriority(h) : 2;
-  if(rank <= 1)return 'important';
-  if(rank >= 3)return 'wait';
-  return 'normal';
+  const clamped = typeof clampPriority === 'function' ? clampPriority(rank) : Math.max(0, Math.min(5, Number(rank) || 2));
+  return `p${clamped}`;
 }
 
-function matchesTypeFilter(h, key){
-  if(!key || key === 'all')return true;
-  return itemFilterKind(h) === key;
+function itemFilterDuration(h){
+  if(!h || h.type === 'zero')return null;
+  const dur = Number(h.durationMinutes);
+  if(!Number.isFinite(dur) || dur <= 0)return null;
+  if(dur <= 15)return 'quick';
+  if(dur <= 30)return 'short';
+  if(dur <= 60)return 'medium';
+  return 'long';
 }
 
-function matchesWhenFilter(h, key){
-  if(!key || key === 'all')return true;
+function itemHasDayOrTimeRules(h){
+  if(!h)return false;
+  if(Array.isArray(h.allowedWeekdays) && h.allowedWeekdays.length > 0 && h.allowedWeekdays.length < 7)return true;
+  if(Array.isArray(h.allowedMonthDays) && h.allowedMonthDays.length > 0)return true;
+  if(h.allowedTimeStart != null || h.allowedTimeEnd != null)return true;
+  if(h.allowedTimeStartAnchor || h.allowedTimeEndAnchor)return true;
+  return false;
+}
+
+function itemMatchesTrait(h, key){
+  if(!h || !key)return false;
+  if(key === 'pinned')return Boolean(h.pinned);
+  if(key === 'timed'){
+    return (typeof isFixedAppointment === 'function' && isFixedAppointment(h))
+      || (typeof isTimedTask === 'function' && isTimedTask(h));
+  }
+  if(key === 'breakable')return Boolean(h.breakable);
+  if(key === 'opportunity')return typeof isOpportunityHabit === 'function' && isOpportunityHabit(h);
+  if(key === 'windowed')return itemHasDayOrTimeRules(h);
+  if(key === 'linked')return Array.isArray(h.links) && h.links.length > 0;
+  if(key === 'weather')return h.weatherProfileMode === 'profile' || Boolean(h.weatherProfileId);
+  if(key === 'snoozed')return Boolean(h.snoozedUntil && Date.now() < h.snoozedUntil);
+  return false;
+}
+
+function matchesTypeFilter(h, value){
+  const keys = filterSelectedKeys(value);
+  if(!keys.length)return true;
+  const kind = itemFilterKind(h);
+  return keys.includes(kind);
+}
+
+function matchesWhenSingle(h, key){
   if(key === 'overdue7')return itemOverdueDays(h) >= 7;
   if(key === 'overdue30')return itemOverdueDays(h) >= 30;
   if(key === 'soon48')return matchesDueWithin(h, FILTER_TODAY_OR_TOMORROW_DAYS);
   if(key === 'soon7')return matchesDueWithin(h, FILTER_DATED_SOON_DAYS);
+  if(key === 'undated')return itemDueInDays(h) == null && itemOverdueDays(h) === 0;
   return itemFilterStatus(h) === key;
 }
 
-function matchesPriorityFilter(h, key){
-  if(!key || key === 'all')return true;
-  return itemFilterPriority(h) === key;
+function matchesWhenFilter(h, value){
+  const keys = filterSelectedKeys(value);
+  if(!keys.length)return true;
+  return keys.some(key=>matchesWhenSingle(h, key));
+}
+
+function matchesPriorityFilter(h, value){
+  const keys = expandPriorityKeys(value);
+  if(!keys.length)return true;
+  const prio = itemFilterPriority(h);
+  return keys.includes(prio);
+}
+
+function matchesDurationFilter(h, value){
+  const keys = filterSelectedKeys(value);
+  if(!keys.length)return true;
+  const bucket = itemFilterDuration(h);
+  return bucket != null && keys.includes(bucket);
+}
+
+function matchesTraitFilter(h, value){
+  const keys = filterSelectedKeys(value);
+  if(!keys.length)return true;
+  return keys.some(key=>itemMatchesTrait(h, key));
 }
 
 function matchesFilterSelection(h, sel){
@@ -782,27 +1022,33 @@ function matchesFilterSelection(h, sel){
     && locationOk
     && matchesTypeFilter(h, sel.type)
     && matchesWhenFilter(h, sel.when)
-    && matchesPriorityFilter(h, sel.priority);
+    && matchesPriorityFilter(h, sel.priority)
+    && matchesDurationFilter(h, sel.duration)
+    && matchesTraitFilter(h, sel.trait);
 }
 
 function homeFilterSelection(){
   return {
-    topic: homeTopicFilter || 'all',
-    location: homeLocationFilter || 'all',
+    topic: packFilterKeys(homeTopicFilter),
+    location: packFilterKeys(homeLocationFilter),
     type: settleFixedFilter(homeTypeFilter, FILTER_TYPE_CHOICES),
     when: settleFixedFilter(homeWhenFilter, FILTER_WHEN_CHOICES),
-    priority: settleFixedFilter(homePriorityFilter, FILTER_PRIORITY_CHOICES),
+    priority: settleFixedFilter(homePriorityFilter, FILTER_PRIORITY_CHOICES, {expandLegacyPriority:true}),
+    duration: settleFixedFilter(homeDurationFilter, FILTER_DURATION_CHOICES),
+    trait: settleFixedFilter(homeTraitFilter, FILTER_TRAIT_CHOICES),
     treatAnywhere: true
   };
 }
 
 function overviewFilterSelection(){
   return {
-    topic: overviewTopicFilter || 'all',
-    location: overviewLocationFilter || 'all',
+    topic: packFilterKeys(overviewTopicFilter),
+    location: packFilterKeys(overviewLocationFilter),
     type: settleFixedFilter(overviewTypeFilter, FILTER_TYPE_CHOICES),
     when: settleFixedFilter(overviewWhenFilter, FILTER_WHEN_CHOICES),
-    priority: settleFixedFilter(overviewPriorityFilter, FILTER_PRIORITY_CHOICES),
+    priority: settleFixedFilter(overviewPriorityFilter, FILTER_PRIORITY_CHOICES, {expandLegacyPriority:true}),
+    duration: settleFixedFilter(overviewDurationFilter, FILTER_DURATION_CHOICES),
+    trait: settleFixedFilter(overviewTraitFilter, FILTER_TRAIT_CHOICES),
     treatAnywhere: false
   };
 }
@@ -811,12 +1057,16 @@ function syncHomeFilterSelection(selection){
   homeTypeFilter = selection.type;
   homeWhenFilter = selection.when;
   homePriorityFilter = selection.priority;
+  homeDurationFilter = selection.duration;
+  homeTraitFilter = selection.trait;
 }
 
 function syncOverviewFilterSelection(selection){
   overviewTypeFilter = selection.type;
   overviewWhenFilter = selection.when;
   overviewPriorityFilter = selection.priority;
+  overviewDurationFilter = selection.duration;
+  overviewTraitFilter = selection.trait;
 }
 
 function matchesHomeFilters(h){
@@ -827,6 +1077,8 @@ function collectFilterPresence(items){
   const types = new Set();
   const whens = new Set();
   const priorities = new Set();
+  const durations = new Set();
+  const traits = new Set();
   let underWeek = false;
   let weekOrMore = false;
   let underMonth = false;
@@ -835,6 +1087,8 @@ function collectFilterPresence(items){
   let beyond48 = false;
   let within7 = false;
   let beyond7 = false;
+  let hasUndated = false;
+  let hasDated = false;
   (items || []).forEach(h=>{
     if(!h)return;
     types.add(itemFilterKind(h));
@@ -849,7 +1103,14 @@ function collectFilterPresence(items){
     else beyond48 = true;
     if(due != null && due <= FILTER_DATED_SOON_DAYS)within7 = true;
     else beyond7 = true;
+    if(due == null && late === 0)hasUndated = true;
+    else hasDated = true;
     priorities.add(itemFilterPriority(h));
+    const dur = itemFilterDuration(h);
+    if(dur)durations.add(dur);
+    for(const row of FILTER_TRAIT_CHOICES){
+      if(itemMatchesTrait(h, row.key))traits.add(row.key);
+    }
   });
   // A longer range is its own choice only when it separates some items from
   // the rest. Otherwise it would repeat Overdue, or select everything.
@@ -857,13 +1118,18 @@ function collectFilterPresence(items){
   if(monthOrMore && underMonth)whens.add('overdue30');
   if(within48 && beyond48)whens.add('soon48');
   if(within7 && beyond7)whens.add('soon7');
-  return {types, whens, priorities};
+  if(hasUndated && hasDated)whens.add('undated');
+  return {types, whens, priorities, durations, traits};
 }
 
-function fixedFilterChoices(catalog, present, allLabel, selected){
-  const selectedRow = selected && selected !== 'all' ? catalog.find(row=>row.key === selected) : null;
-  if(present.size < 2 && !selectedRow)return [];
-  const rows = catalog.filter(row=>present.has(row.key) || row.key === selected);
+function fixedFilterChoices(catalog, present, allLabel, selected, {showAllOptions = false, minPresent = 2, hasItems = false} = {}){
+  const selectedKeys = new Set(filterSelectedKeys(selected));
+  if(showAllOptions){
+    if(!hasItems && !selectedKeys.size)return [];
+    return [{key:'all', label:allLabel}, ...catalog];
+  }
+  if(present.size < minPresent && !selectedKeys.size)return [];
+  const rows = catalog.filter(row=>present.has(row.key) || selectedKeys.has(row.key));
   if(!rows.length)return [];
   return [{key:'all', label:allLabel}, ...rows];
 }
@@ -879,86 +1145,191 @@ function filterOptionCount(items, selection, dimension, key){
   return (items || []).filter(h=>matchesFilterSelection(h, next)).length;
 }
 
-function filterGroupHtml({prefix, attrPrefix, kind, title, hint, choices, selected, items, selection}){
+function filterChoiceMatchesQuery(choice, kind, groupTitle, query){
+  if(!query)return true;
+  const hay = `${filterChoiceLabel(choice, kind)} ${choice.title || ''} ${choice.key || ''} ${groupTitle || ''}`.toLowerCase();
+  return hay.includes(query);
+}
+
+function filterGroupHtml({prefix, attrPrefix, kind, title, hint, choices, selected, items, selection, searchQuery = ''}){
   if(!choices || choices.length < 2)return '';
-  const options = choices.map(choice=>{
-    const on = choice.key === selected;
+  const ci = kind === 'topic';
+  const selectedKeys = filterSelectedKeys(selected);
+  const query = String(searchQuery || '').trim().toLowerCase();
+  const visibleChoices = query
+    ? choices.filter(choice=>choice.key !== 'all' && filterChoiceMatchesQuery(choice, kind, title, query))
+    : choices;
+  if(!visibleChoices.length)return '';
+  const options = visibleChoices.map(choice=>{
+    const on = choice.key === 'all'
+      ? selectedKeys.length === 0
+      : filterHasKey(selected, choice.key, {caseInsensitive:ci});
     const count = filterOptionCount(items, selection, kind, choice.key);
     const icon = choice.key === 'all' ? (FILTER_KIND_ICON[kind] || 'ti-point') : (choice.icon || FILTER_KIND_ICON[kind] || 'ti-point');
     const label = filterChoiceLabel(choice, kind);
     const titleAttr = choice.title ? ` title="${escapeHtml(choice.title)}"` : '';
-    const extra = `${choice.key === 'all' ? ' is-all' : ''}${filterChoiceIsOverdue(choice.key) ? ' is-overdue' : ''}${choice.key === 'important' ? ' is-important' : ''}`;
+    const prioCls = kind === 'priority' && choice.key !== 'all' ? ` is-${choice.key}` : '';
+    const zeroCls = choice.key !== 'all' && count === 0 && !on ? ' is-zero' : '';
+    const extra = `${choice.key === 'all' ? ' is-all' : ''}${filterChoiceIsOverdue(choice.key) ? ' is-overdue' : ''}${prioCls}${zeroCls}`;
     return `<button type="button" class="home-filter-option ${kind}${extra}${on ? ' on' : ''}" data-${attrPrefix}-${kind}="${escapeHtml(choice.key)}" aria-pressed="${on}"${titleAttr}>
       <i class="ti ${icon} home-filter-option-icon" aria-hidden="true"></i>
       <span><b>${escapeHtml(label)}</b><small>${count} ${count === 1 ? 'item' : 'items'}</small></span>
-      <i class="ti ti-check home-filter-check" aria-hidden="true"></i>
+      <span class="home-filter-check-box" aria-hidden="true"><i class="ti ti-check home-filter-check"></i></span>
     </button>`;
   }).join('');
-  const aside = hint || `${Math.max(0, choices.length - 1)} options`;
+  const aside = selectedKeys.length
+    ? `<span class="home-filter-group-active">${selectedKeys.length} selected</span><button type="button" class="home-filter-group-clear" data-clear-${attrPrefix}-group="${kind}">Clear</button>`
+    : `<small>${escapeHtml(hint || `${Math.max(0, choices.length - 1)} options`)}</small>`;
   const labelId = `${prefix}-${FILTER_GROUP_LABEL_ID[kind] || kind}-label`;
   return `<section class="home-filter-group" aria-labelledby="${labelId}">
-    <div class="home-filter-group-head"><span id="${labelId}">${escapeHtml(title)}</span><small>${escapeHtml(aside)}</small></div>
+    <div class="home-filter-group-head"><span id="${labelId}">${escapeHtml(title)}</span><div class="home-filter-group-meta">${aside}</div></div>
     <div class="home-filter-option-grid">${options}</div>
   </section>`;
 }
 
-function filterActiveChipHtml({chipClass, label, icon, clearAttr}){
-  return `<button type="button" class="home-active-filter ${chipClass}" ${clearAttr}="1" aria-label="clear ${escapeHtml(label)} filter"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>`;
+function filterActiveChipHtml({chipClass, label, icon, clearAttr, clearVal, baseClass = 'home-active-filter'}){
+  return `<button type="button" class="${baseClass} ${chipClass}" ${clearAttr}="${escapeHtml(clearVal || '1')}" aria-label="clear ${escapeHtml(label)} filter"><i class="ti ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span><i class="ti ti-x" aria-hidden="true"></i></button>`;
 }
 
-function libraryFilterView({prefix, attrPrefix, items, selection, topicChoices, locationChoices}){
-  const presence = collectFilterPresence(items);
-  const whenChoices = fixedFilterChoices(FILTER_WHEN_CHOICES, presence.whens, 'Any time', selection.when);
-  const typeChoices = fixedFilterChoices(FILTER_TYPE_CHOICES, presence.types, 'All types', selection.type);
-  const priorityChoices = fixedFilterChoices(FILTER_PRIORITY_CHOICES, presence.priorities, 'Any priority', selection.priority);
-  const typeHint = typeChoices.filter(row=>row.key !== 'all').map(row=>row.label.toLowerCase()).join(', ');
+function libraryFilterView({prefix, attrPrefix, items, selection, topicChoices, locationChoices, searchQuery = ''}){
+  const list = items || [];
+  const hasItems = list.length > 0;
+  const presence = collectFilterPresence(list);
+  const whenChoices = fixedFilterChoices(FILTER_WHEN_CHOICES, presence.whens, 'Any time', selection.when, {hasItems});
+  const typeChoices = fixedFilterChoices(FILTER_TYPE_CHOICES, presence.types, 'All types', selection.type, {showAllOptions:true, hasItems});
+  const priorityChoices = fixedFilterChoices(FILTER_PRIORITY_CHOICES, presence.priorities, 'Any priority', selection.priority, {showAllOptions:true, hasItems});
+  const durationChoices = fixedFilterChoices(FILTER_DURATION_CHOICES, presence.durations, 'Any length', selection.duration, {hasItems});
+  const traitChoices = fixedFilterChoices(FILTER_TRAIT_CHOICES, presence.traits, 'Any details', selection.trait, {minPresent:1, hasItems});
   const groups = [
-    {kind:'when', title:'When', hint:'overdue, today or tomorrow, or a week', choices:whenChoices, chip:'when-filter', icon:'ti-alert-circle'},
-    {kind:'type', title:'Type', hint:typeHint, choices:typeChoices, chip:'type-filter', icon:'ti-heart'},
-    {kind:'priority', title:'Priority', hint:'critical and high are important', choices:priorityChoices, chip:'priority-filter', icon:'ti-flag'},
-    {kind:'location', title:'Place', hint:'', choices:locationChoices, chip:'location-filter', icon:'ti-map-pin'},
-    {kind:'topic', title:'Topic', hint:'', choices:topicChoices, chip:'topic-active', icon:'ti-tag'}
+    {kind:'when', title:'When', hint:'overdue, today, coming up, or no deadline', choices:whenChoices, chip:'when-filter', icon:'ti-alert-circle'},
+    {kind:'type', title:'Type', hint:'select one or more types', choices:typeChoices, chip:'type-filter', icon:'ti-heart'},
+    {kind:'priority', title:'Priority', hint:'P0 critical through P5 someday', choices:priorityChoices, chip:'priority-filter', icon:'ti-flag'},
+    {kind:'location', title:'Place', hint:'select one or more places', choices:locationChoices, chip:'location-filter', icon:'ti-map-pin'},
+    {kind:'topic', title:'Topic', hint:'select one or more topics', choices:topicChoices, chip:'topic-active', icon:'ti-tag'},
+    {kind:'duration', title:'Length', hint:'session duration', choices:durationChoices, chip:'duration-filter', icon:'ti-clock'},
+    {kind:'trait', title:'Details', hint:'pinned, fixed time, splittable, and more', choices:traitChoices, chip:'trait-filter', icon:'ti-sparkles'}
   ];
   const chips = [];
+  const sheetChips = [];
   groups.forEach(group=>{
-    const selected = selection[group.kind];
-    if(!selected || selected === 'all')return;
-    const choice = (group.choices || []).find(row=>row.key === selected);
-    if(!choice)return;
-    const chipClass = group.kind === 'when' && filterChoiceIsOverdue(selected) ? 'when-filter is-overdue'
-      : group.kind === 'priority' && selected === 'important' ? 'priority-filter is-important'
-      : group.chip;
-    const icon = choice.icon || group.icon;
-    chips.push(filterActiveChipHtml({
-      chipClass,
-      label:filterChoiceLabel(choice, group.kind),
-      icon,
-      clearAttr:`data-clear-${attrPrefix}-${group.kind}`
-    }));
+    const keys = filterSelectedKeys(selection[group.kind]);
+    if(!keys.length)return;
+    const ci = group.kind === 'topic';
+    keys.forEach(key=>{
+      const choice = (group.choices || []).find(row=>ci ? row.key.toLowerCase() === key.toLowerCase() : row.key === key);
+      if(!choice)return;
+      const chipClass = group.kind === 'when' && filterChoiceIsOverdue(choice.key) ? 'when-filter is-overdue'
+        : group.kind === 'priority' ? `priority-filter is-${choice.key}`
+        : group.chip;
+      const icon = choice.icon || group.icon;
+      const label = filterChoiceLabel(choice, group.kind);
+      chips.push(filterActiveChipHtml({
+        chipClass,
+        label,
+        icon,
+        clearAttr:`data-clear-${attrPrefix}-${group.kind}`,
+        clearVal:choice.key
+      }));
+      sheetChips.push(filterActiveChipHtml({
+        chipClass,
+        label,
+        icon,
+        clearAttr:`data-sheet-clear-${attrPrefix}-${group.kind}`,
+        clearVal:choice.key,
+        baseClass:'home-filter-sheet-chip'
+      }));
+    });
   });
-  const groupsHtml = groups.map(group=>filterGroupHtml({
+  const hasAnyGroup = groups.some(group=>group.choices && group.choices.length >= 2);
+  const rawQuery = String(searchQuery || '').trim();
+  const groupHtmlList = groups.map(group=>filterGroupHtml({
     prefix, attrPrefix, kind:group.kind, title:group.title, hint:group.hint,
-    choices:group.choices, selected:selection[group.kind] || 'all', items, selection
-  })).join('');
-  return {groupsHtml, chipsHtml:chips.join(''), activeCount:chips.length};
+    choices:group.choices, selected:selection[group.kind] || 'all', items:list, selection, searchQuery:rawQuery
+  })).filter(Boolean);
+  const groupsHtml = groupHtmlList.length
+    ? groupHtmlList.join('')
+    : (rawQuery && hasAnyGroup
+      ? `<div class="home-filter-search-empty"><i class="ti ti-search-off" aria-hidden="true"></i><p>No filter matches “${escapeHtml(rawQuery)}”</p><button type="button" class="btn" data-clear-filter-search="${escapeHtml(prefix)}">Clear search</button></div>`
+      : '');
+  const matchedCount = list.filter(h=>matchesFilterSelection(h, selection)).length;
+  const clearAllHtml = chips.length >= 3
+    ? `<button type="button" class="home-clear-all-filters" data-clear-${attrPrefix}-all="1">Clear all</button>`
+    : '';
+  return {
+    groupsHtml,
+    chipsHtml:chips.join('') + clearAllHtml,
+    sheetChipsHtml:sheetChips.join(''),
+    activeCount:chips.length,
+    matchedCount,
+    totalCount:list.length,
+    hasAnyGroup
+  };
+}
+
+function syncFilterSheetChrome({prefix, view, surfaceLabel}){
+  const groups = $(`${prefix}-groups`);
+  const summary = $(`${prefix}-summary`);
+  const activeBar = $(`${prefix}-active`);
+  const doneBtn = $(`${prefix}-done`);
+  const resetBtn = $(`${prefix}-reset`);
+  const searchInput = $(`${prefix}-search`);
+  const searchClear = $(`${prefix}-search-clear`);
+  const query = filterSheetQuery(prefix);
+  if(searchInput && searchInput.value !== query)searchInput.value = query;
+  if(searchClear)searchClear.hidden = !query.trim();
+  if(summary){
+    if(view.activeCount){
+      summary.textContent = `${view.activeCount} active · ${view.matchedCount} of ${view.totalCount} ${view.totalCount === 1 ? 'item' : 'items'}`;
+    }else{
+      summary.textContent = `${view.totalCount} ${view.totalCount === 1 ? 'item' : 'items'} · select multiple in any group`;
+    }
+  }
+  if(activeBar){
+    activeBar.hidden = !view.activeCount;
+    activeBar.innerHTML = view.activeCount ? view.sheetChipsHtml : '';
+  }
+  if(doneBtn){
+    if(!view.activeCount){
+      doneBtn.textContent = view.totalCount ? `Show all (${view.totalCount})` : 'Show results';
+    }else if(view.matchedCount === 0){
+      doneBtn.textContent = 'No matching items';
+    }else{
+      doneBtn.textContent = `Show ${view.matchedCount} ${view.matchedCount === 1 ? 'item' : 'items'}`;
+    }
+  }
+  if(resetBtn){
+    resetBtn.disabled = view.activeCount === 0;
+    resetBtn.textContent = view.activeCount ? `Reset (${view.activeCount})` : 'Reset';
+  }
+  if(groups){
+    const prevScroll = groups.scrollTop;
+    groups.innerHTML = view.groupsHtml;
+    groups.scrollTop = prevScroll;
+  }
 }
 
 function describeActiveHomeFilters(){
   const parts = [];
-  const when = FILTER_WHEN_CHOICES.find(row=>row.key === homeWhenFilter);
-  if(when)parts.push(when.label);
-  const type = FILTER_TYPE_CHOICES.find(row=>row.key === homeTypeFilter);
-  if(type)parts.push(type.label);
-  const priority = FILTER_PRIORITY_CHOICES.find(row=>row.key === homePriorityFilter);
-  if(priority)parts.push(priority.label);
-  if(homeLocationFilter && homeLocationFilter !== 'all'){
-    if(homeLocationFilter === '__none__')parts.push('anywhere');
-    else{
-      const loc = typeof locationById === 'function' ? locationById(homeLocationFilter) : null;
-      parts.push(loc ? loc.name : homeLocationFilter);
-    }
-  }
-  if(homeTopicFilter && homeTopicFilter !== 'all')parts.push(homeTopicFilter === '__none__' ? 'no topic' : homeTopicFilter);
+  const labelFor = (catalog, value)=>{
+    const labels = filterSelectedKeys(value).map(k=>{
+      const row = catalog.find(r=>r.key === k);
+      return row ? row.label : null;
+    }).filter(Boolean);
+    if(labels.length)parts.push(labels.join(', '));
+  };
+  labelFor(FILTER_WHEN_CHOICES, homeWhenFilter);
+  labelFor(FILTER_TYPE_CHOICES, homeTypeFilter);
+  labelFor(FILTER_PRIORITY_CHOICES, expandPriorityKeys(homePriorityFilter));
+  const locLabels = filterSelectedKeys(homeLocationFilter).map(id=>{
+    if(id === '__none__')return 'anywhere';
+    const loc = typeof locationById === 'function' ? locationById(id) : null;
+    return loc ? loc.name : id;
+  });
+  if(locLabels.length)parts.push(locLabels.join(', '));
+  const topicLabels = filterSelectedKeys(homeTopicFilter).map(t=>t === '__none__' ? 'no topic' : t);
+  if(topicLabels.length)parts.push(topicLabels.join(', '));
+  labelFor(FILTER_DURATION_CHOICES, homeDurationFilter);
+  labelFor(FILTER_TRAIT_CHOICES, homeTraitFilter);
   return parts.join(' · ');
 }
 
@@ -974,7 +1345,7 @@ function takeFilterClick(event, pairs){
   return false;
 }
 
-// HYBRID: compact home context bar + the full on-demand filter sheet. The bar
+// HYBRID: compact home context bar + the full-page on-demand filter sheet. The bar
 // only exposes current presence and active filters, so a large topic/location
 // library never turns the top of Home into an endless horizontal chip rail.
 // `precomputedIndices` (optional): render() shares its visibleIndices() pass —
@@ -997,7 +1368,6 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   const wrap = $('home-tag-filter');
   if(!wrap)return;
   const groups = $('home-filter-groups');
-  const summary = $('home-filter-summary');
   const minimal = typeof isMinimalMode === 'function' ? isMinimalMode() : Boolean(sortSettings?.minimalMode);
   if(minimal){
     renderHomeTagFilterEmpty(wrap,groups);
@@ -1015,20 +1385,23 @@ function renderHomeTagFilter(data,precomputedIndices = null){
   const hasPresence = registry.length > 0 && hasLocs;
   let topicChoices = hasTopics ? homeTopicChoices(data) : [];
   let locChoices = hasLocs ? homeLocationChoices(data) : [];
-  // Reset stale place/topic filters so a deleted choice cannot hide everything.
-  // Both surfaces read the same data, so a stale key is stale everywhere.
-  if(!hasTopics || !topicChoices.some(c=>c.key === homeTopicFilter))setSharedFilter('topic','all');
-  if(!hasLocs || !locChoices.some(c=>c.key === homeLocationFilter))setSharedFilter('location','all');
-  if(hasTopics)topicChoices = orderFilterChoices(topicChoices, homeTopicFilter);
-  if(hasLocs)locChoices = orderFilterChoices(locChoices, homeLocationFilter);
+  // Prune stale place/topic keys so a deleted choice cannot hide everything,
+  // while preserving other still-valid multi-select choices.
+  const nextTopic = hasTopics ? pruneFilterValue(homeTopicFilter, topicChoices, {caseInsensitive:true}) : 'all';
+  if(!filterValuesEqual(nextTopic, homeTopicFilter))setSharedFilter('topic', nextTopic);
+  const nextLoc = hasLocs ? pruneFilterValue(homeLocationFilter, locChoices) : 'all';
+  if(!filterValuesEqual(nextLoc, homeLocationFilter))setSharedFilter('location', nextLoc);
+  if(hasTopics)topicChoices = orderFilterChoices(topicChoices);
+  if(hasLocs)locChoices = orderFilterChoices(locChoices);
   const baseIndices = precomputedIndices || visibleIndices(data,sortSettings);
   const items = baseIndices.map(i=>data[i]).filter(Boolean);
   const selection = homeFilterSelection();
   syncHomeFilterSelection(selection);
   const view = libraryFilterView({
-    prefix:'home-filter', attrPrefix:'home', items, selection, topicChoices, locationChoices:locChoices
+    prefix:'home-filter', attrPrefix:'home', items, selection, topicChoices, locationChoices:locChoices,
+    searchQuery:filterSheetQuery('home-filter')
   });
-  if(!view.groupsHtml && !hasPresence){
+  if(!view.hasAnyGroup && !hasPresence){
     if(!items.length){
       renderHomeTagFilterEmpty(wrap,groups);
       return;
@@ -1070,12 +1443,7 @@ function renderHomeTagFilter(data,precomputedIndices = null){
       ${activeCount ? `<b>${activeCount}</b>` : ''}
     </button>`;
 
-  if(summary){
-    summary.textContent = activeCount
-      ? `${activeCount} on · the list updates as you tap`
-      : 'Pick when it’s due, what it is, or where it belongs.';
-  }
-  if(groups)groups.innerHTML = view.groupsHtml;
+  syncFilterSheetChrome({prefix:'home-filter', view, surfaceLabel:'list'});
 }
 
 // RENDER: keep the wide-layout app-bar chrome in step with the shared filter
@@ -1086,7 +1454,7 @@ function syncAppBarChrome(){
   const filtersBtn = document.getElementById('app-bar-filters');
   if(filtersBtn){
     const selection = homeFilterSelection();
-    const activeCount = ['topic','location','type','when','priority'].filter(kind=>selection[kind] && selection[kind] !== 'all').length;
+    const activeCount = countActiveFilters(selection);
     filtersBtn.hidden = minimal;
     filtersBtn.classList.toggle('has-active',activeCount > 0);
     filtersBtn.setAttribute('aria-label',`open filters${activeCount ? `, ${activeCount} active` : ''}`);
@@ -1460,10 +1828,10 @@ function removeTopic(topic){
     const tune = currentDetailTune();
     renderTagChips('detail-topic-chips',tune.topics,[]);
   }
-  if((typeof homeTopicFilter !== 'undefined' && homeTopicFilter !== 'all' && homeTopicFilter.toLowerCase() === key)
-    || (typeof overviewTopicFilter !== 'undefined' && overviewTopicFilter !== 'all' && overviewTopicFilter.toLowerCase() === key)){
-    // Shared filters: the deleted topic is stale on both surfaces.
-    setSharedFilter('topic','all');
+  if((typeof homeTopicFilter !== 'undefined' && filterHasKey(homeTopicFilter, key, {caseInsensitive:true}))
+    || (typeof overviewTopicFilter !== 'undefined' && filterHasKey(overviewTopicFilter, key, {caseInsensitive:true}))){
+    // Shared filters: remove only the deleted topic, preserving other selections.
+    removeSharedFilter('topic', key);
   }
   refreshOpenViews();
 }

@@ -370,7 +370,11 @@ $('bar-open-overview')?.addEventListener('click',()=>openRememberedCalendar());
 $('app-bar-place')?.addEventListener('click',()=>{
   if(typeof openPresencePicker === 'function')openPresencePicker();
 });
-$('app-bar-filters')?.addEventListener('click',()=>openSheet('home-filter-sheet'));
+$('app-bar-filters')?.addEventListener('click',()=>{
+  const groups = $('home-filter-groups');
+  if(groups)groups.scrollTop = 0;
+  openSheet('home-filter-sheet');
+});
 $('bar-open-about')?.addEventListener('click',()=>{
   if(typeof openSettingsSheet === 'function')openSettingsSheet();
 });
@@ -553,6 +557,9 @@ $('do-save').addEventListener('click',()=>{
   if(save(data)){
     cancelAdd();
     render();
+    if(typeof renderOverview === 'function' && ($('overview-sheet')?.classList.contains('open') || (typeof paneTierActive === 'function' && paneTierActive()))){
+      renderOverview();
+    }
     openDetail(data.length - 1);
     if((record.weatherProfileMode !== 'none' || record.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
   }

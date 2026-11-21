@@ -1,4 +1,5 @@
 let _stuckHeadersRaf = false;
+let _overviewSyncedWeekRef = null;
 function updateStuckSectionHeaders(){
   _stuckHeadersRaf = false;
   const headers=[...document.querySelectorAll('.section-header')];
@@ -2495,6 +2496,22 @@ function render(opts){
     });
   });
   if(typeof renderWeekOnHome === 'function')renderWeekOnHome();
+  if(typeof renderOverview === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)
+    && _homeRenderedWeek !== _overviewSyncedWeekRef){
+    const paneEl = document.querySelector('.pane-overview');
+    const overviewSheetEl = document.getElementById('overview-sheet');
+    const filterSheetOpen = Boolean(document.getElementById('calendar-filter-sheet')?.classList.contains('open'));
+    const overviewVisible = (paneEl && paneEl.getBoundingClientRect().width > 0)
+      || Boolean(overviewSheetEl && overviewSheetEl.classList.contains('open'));
+    if(overviewVisible && !filterSheetOpen && !document.querySelector('.overview-sheet.scrolling, .pane-overview.scrolling')){
+      _overviewSyncedWeekRef = _homeRenderedWeek;
+      const scroller = paneEl && paneEl.getBoundingClientRect().width > 0
+        ? paneEl : document.querySelector('#overview-sheet .overview-sheet');
+      const prevTop = scroller ? scroller.scrollTop : 0;
+      renderOverview();
+      if(scroller && prevTop)scroller.scrollTop = prevTop;
+    }
+  }
   if(typeof queueNativeReminders === 'function')queueNativeReminders();
   if(typeof scheduleHouseholdAgendaPublish === 'function' && _homeRenderedWeek && Array.isArray(_homeRenderedWeek.days)){
     scheduleHouseholdAgendaPublish(_homeRenderedWeek);

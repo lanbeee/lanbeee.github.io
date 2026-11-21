@@ -439,6 +439,8 @@ body.minimal-mode #pane-detail .minimal-detail.opportunity-mode #detail-weather-
 .appointment-editor .planning-field { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
 .appointment-editor input,.appointment-editor select { max-width:100%; }
 .appointment-editor .schedule-chip-row { flex-wrap:wrap; }
+.appointment-editor [id$="-weekly"] { display:grid; gap:10px; }
+.appointment-editor [id$="-weekly"][hidden] { display:none; }
 .add-sheet .appointment-editor { margin:18px 0; gap:14px; }
 .add-sheet .appointment-editor .planning-field { color:var(--text); font-size:13px; font-weight:650; }
 .add-sheet .appointment-editor input,.add-sheet .appointment-editor select { width:100%; min-height:44px; font-weight:400; }

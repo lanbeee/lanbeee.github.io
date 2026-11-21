@@ -259,6 +259,9 @@ function bulkCommitBatch(){
   closeSheet('add-sheet');
   applyAddDefaults();
   render();
+  if(typeof renderOverview === 'function' && ($('overview-sheet')?.classList.contains('open') || (typeof paneTierActive === 'function' && paneTierActive()))){
+    renderOverview();
+  }
   if(usesWeather && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
 }
 

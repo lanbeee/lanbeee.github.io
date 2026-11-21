@@ -86,7 +86,8 @@ function weekViewTopicTokenMap(settings){
 function weekViewColorGroup(h,topicMap,settings){
   if(_weekViewColor === 'priority'){
     const key = itemFilterPriority(h);
-    return {key,label:{important:'Important',normal:'Normal',wait:'Can wait'}[key],token:{important:'red',normal:'blue',wait:'slate'}[key]};
+    const label = (FILTER_PRIORITY_CHOICES.find(choice=>choice.key === key) || {}).label || key;
+    return {key,label,token:{p0:'red',p1:'amber',p2:'teal',p3:'green',p4:'purple',p5:'slate'}[key] || 'slate'};
   }
   if(_weekViewColor === 'type'){
     const key = itemFilterKind(h);
@@ -1703,7 +1704,7 @@ function weekViewSyncModeButton(){
   $('week-view-zoom-in').disabled = _weekViewZoom === WEEK_VIEW_ZOOM_STEPS[WEEK_VIEW_ZOOM_STEPS.length-1];
   const minimal = isMinimalMode();
   const selection = overviewFilterSelection();
-  const activeCount = ['topic','location','type','when','priority'].filter(kind=>selection[kind] !== 'all').length;
+  const activeCount = countActiveFilters(selection);
   $('week-view-filter-section').hidden = minimal;
   $('week-view-filter-title').textContent = activeCount ? `Filters (${activeCount})` : 'Filters';
   $('week-view-filters-reset').disabled = !activeCount;
@@ -2467,7 +2468,8 @@ function bindWeekView(){
   });
   $('week-view-close')?.addEventListener('click',()=>closeSheet('week-sheet'));
   const openMonth = ()=>openCalendarOverview({range:'month',dayKey:weekViewDaySel});
-  $('week-view-overview')?.addEventListener('click',openMonth);
+  const openOverview = ()=>openCalendarOverview({range:'recent'});
+  $('week-view-overview')?.addEventListener('click',openOverview);
   $('week-view-today')?.addEventListener('click',()=>weekViewGoToday());
   $('week-view-display-options').addEventListener('click',()=>weekViewSetOptionsOpen(true));
   $('week-view-options-close').addEventListener('click',()=>weekViewSetOptionsOpen(false));
@@ -2496,9 +2498,14 @@ function bindWeekView(){
       weekViewSavePreferences();
       renderWeekView();
     }else if(filter){
-      for(const kind of ['topic','location','type','when','priority']){
-        const value = filter.getAttribute(`data-wvfilter-${kind}`);
-        if(value !== null)setSharedFilter(kind,value);
+      const clearGroup = filter.getAttribute('data-clear-wvfilter-group');
+      if(clearGroup){
+        setSharedFilter(clearGroup, 'all');
+      }else{
+        for(const kind of FILTER_DIMENSIONS){
+          const value = filter.getAttribute(`data-wvfilter-${kind}`);
+          if(value !== null)toggleSharedFilter(kind, value);
+        }
       }
       dayLogsKey = null;
       renderWeekView();

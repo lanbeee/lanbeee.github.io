@@ -18,9 +18,11 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap{
 /* Locking Home scroll unsticks its day header. Calendar must cover that
    change on its first frame, like the phone detail page. */
 body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
-/* Stacking tiers so a drilled-in detail sheet always paints above the page
-   sheet it was opened from (overview/today), while transient modals that can
-   open from detail (snooze/activity) and the day drill-down stay on top. */
+/* Stacking tiers so add and drilled-in detail sheets always paint above the
+   calendar sheets they opened from (overview 100, week 105), while batch
+   review (109), detail (110), settings (115), and transient modals (120+) stay
+   strictly ordered above them. */
+#add-sheet{z-index:107;}
 #detail-sheet{z-index:110;}
 #settings-sheet{z-index:115;}
 /* Help, samples, and privacy open from Settings and stay above that page. */
@@ -48,7 +50,7 @@ body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
   will-change:transform,opacity;
 }
 .sheet-wrap.open .sheet{transform:translateY(0) scale(1);opacity:1;}
-#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet{
+#add-sheet,#about-sheet,#privacy-sheet,#detail-sheet,#overview-sheet,#settings-sheet,#sample-habits-sheet,#assistant-sheet,#home-filter-sheet,#calendar-filter-sheet{
   align-items:stretch;background:rgba(0,0,0,0.18);padding-top:0;
 }
 body[data-pane-count="2"] #add-sheet,
@@ -66,13 +68,17 @@ body[data-pane-count="3"] #settings-sheet,
 body[data-pane-count="2"] #sample-habits-sheet,
 body[data-pane-count="3"] #sample-habits-sheet,
 body[data-pane-count="2"] #assistant-sheet,
-body[data-pane-count="3"] #assistant-sheet{
+body[data-pane-count="3"] #assistant-sheet,
+body[data-pane-count="2"] #home-filter-sheet,
+body[data-pane-count="3"] #home-filter-sheet,
+body[data-pane-count="2"] #calendar-filter-sheet,
+body[data-pane-count="3"] #calendar-filter-sheet{
   align-items:center;
   justify-content:center;
   background:rgba(0,0,0,0.36);
   padding:24px;
 }
-.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet,.assistant-sheet{
+.add-sheet,.about-sheet,.privacy-sheet,.detail-sheet,.overview-sheet,.settings-sheet,.sample-habits-sheet,.assistant-sheet,.home-filter-sheet{
   border-radius:0;min-height:100dvh;max-height:100dvh;
   padding-top:calc(22px + var(--content-safe-top));
   padding-bottom:calc(var(--nav-bottom) + var(--nav-height) + 34px + var(--content-safe-bottom));
@@ -133,7 +139,8 @@ body[data-pane-count="3"] #assistant-sheet{
 .sheet-wrap.open .overview-sheet,
 .sheet-wrap.open .settings-sheet,
 .sheet-wrap.open .sample-habits-sheet,
-.sheet-wrap.open .assistant-sheet{transform:none;opacity:1;}
+.sheet-wrap.open .assistant-sheet,
+.sheet-wrap.open .home-filter-sheet{transform:none;opacity:1;}
 
 body[data-pane-count="2"] .sheet-wrap,
 body[data-pane-count="3"] .sheet-wrap{
@@ -159,13 +166,15 @@ body[data-pane-count="2"] .overview-sheet,
 body[data-pane-count="2"] .settings-sheet,
 body[data-pane-count="2"] .sample-habits-sheet,
 body[data-pane-count="2"] .assistant-sheet,
+body[data-pane-count="2"] .home-filter-sheet,
 body[data-pane-count="3"] .add-sheet,
 body[data-pane-count="3"] .about-sheet,
 body[data-pane-count="3"] .detail-sheet,
 body[data-pane-count="3"] .overview-sheet,
 body[data-pane-count="3"] .settings-sheet,
 body[data-pane-count="3"] .sample-habits-sheet,
-body[data-pane-count="3"] .assistant-sheet{
+body[data-pane-count="3"] .assistant-sheet,
+body[data-pane-count="3"] .home-filter-sheet{
   min-height:0;
   max-height:calc(100dvh - var(--desktop-chrome-top,0px) - 48px);
   padding-top:24px;
@@ -271,7 +280,7 @@ body[data-pane-count="3"] .sample-habits-sheet .sample-habits-actions{
    header. This opaque cover sits on the (fixed) wrap — it never scrolls —
    spans exactly the sheet's top padding band, paints under the z-65 sticky
    headers, and at rest only covers padding. */
-body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#overview-sheet,#sample-habits-sheet,#assistant-sheet).open::before{
+body[data-pane-count="1"] :is(#add-sheet,#about-sheet,#privacy-sheet,#overview-sheet,#sample-habits-sheet,#assistant-sheet,#home-filter-sheet,#calendar-filter-sheet).open::before{
   content:'';position:absolute;top:0;left:0;right:0;
   height:calc(22px + var(--content-safe-top));
   background:var(--bg);z-index:64;pointer-events:none;

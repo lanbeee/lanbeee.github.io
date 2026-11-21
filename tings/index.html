@@ -929,12 +929,11 @@
     <div class="sheet overview-sheet">
       <div class="overview-page-head">
         <div class="overview-page-title">
-          <span class="overview-eyebrow">your time</span>
           <p class="sheet-title">Calendar</p>
-          <p class="overview-page-sub">See what is planned, what needs attention, and where there is room.</p>
         </div>
         <div class="overview-head-actions">
-        <button class="overview-week-switch" id="open-week-view" type="button" aria-label="open the week view"><i class="ti ti-calendar-week" aria-hidden="true"></i><span>Week view</span></button>
+        <button class="overview-week-switch" id="open-week-view" type="button" aria-label="open the week view"><i class="ti ti-calendar-week" aria-hidden="true"></i><span>Week</span></button>
+        <button class="mini-text-btn overview-create-btn" id="overview-create" type="button" aria-label="add an item"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
         <button type="button" class="icon-btn overview-page-close" id="overview-head-close" aria-label="close calendar">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
@@ -943,17 +942,14 @@
       <div class="overview-toolbar" id="overview-filter" aria-label="calendar view and filters"></div>
       <div class="overview-insight" id="overview-insight" hidden></div>
       <div class="month-card overview-card">
-          <div class="section-top">
-            <div class="overview-calendar-copy">
-              <span class="section-label" id="overview-calendar-kicker">days</span>
-              <small id="overview-calendar-hint">Tap a day to see its plans and activity.</small>
-            </div>
+          <div class="section-top overview-card-head">
             <div class="month-nav">
             <button class="mini-nav" id="overview-prev-month" aria-label="previous month"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
             <span class="trend-copy" id="overview-calendar-label"></span>
-            <button class="mini-text-btn" id="overview-today" type="button">today</button>
+            <button class="mini-text-btn overview-today-btn" id="overview-today" type="button">today</button>
             <button class="mini-nav" id="overview-next-month" aria-label="next month"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
             </div>
+            <span class="section-label" id="overview-calendar-kicker">Past 7 · next 6</span>
           </div>
         <div class="month-grid rich-month-grid" id="overview-calendar"></div>
         <div data-ui-legend="overview"></div>
@@ -978,7 +974,7 @@
           <button type="button" id="week-view-label" class="wv-title-label" aria-expanded="false" aria-controls="week-view-month"><span id="week-view-label-text"></span><i class="ti ti-chevron-down" aria-hidden="true"></i></button>
           <small id="week-view-sub"></small>
         </div>
-        <button type="button" class="icon-btn wv-switch" id="week-view-overview" aria-label="open month view" title="Month view"><i class="ti ti-calendar-month" aria-hidden="true"></i></button>
+        <button type="button" class="icon-btn wv-switch" id="week-view-overview" aria-label="open calendar overview" title="Calendar overview"><i class="ti ti-calendar-month" aria-hidden="true"></i></button>
         <button type="button" class="mini-text-btn wv-create" id="week-view-create" aria-label="add a task"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
         <button type="button" class="icon-btn" id="week-view-close" aria-label="close week view"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
@@ -1958,6 +1954,10 @@
         <div class="day-logs-head-text">
           <p class="sheet-name" id="day-logs-title"></p>
           <p class="sheet-sub" id="day-logs-sub"></p>
+        </div>
+        <div class="day-logs-day-nav" id="day-logs-day-nav" hidden>
+          <button type="button" class="mini-nav" id="day-logs-prev" aria-label="previous day"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+          <button type="button" class="mini-nav" id="day-logs-next" aria-label="next day"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
         </div>
         <button type="button" class="mini-nav day-logs-close" id="day-logs-close" aria-label="close day"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
