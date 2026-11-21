@@ -969,6 +969,7 @@ function openCalendarOverview(options = {}){
   // state Home is showing. Resetting happens through the reset controls.
   overviewRangeFilter = month ? 'month' : 'recent';
   overviewListPane = 'plan';
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
   openSheet('overview-sheet');
 }
@@ -988,18 +989,21 @@ $('overview-prev-month').addEventListener('click',()=>{
   if(isScrollGuarded($('overview-prev-month')))return;
   if(overviewRangeFilter === 'recent')overviewRecentOffset -= (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset -= 1;
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
 });
 $('overview-next-month').addEventListener('click',()=>{
   if(isScrollGuarded($('overview-next-month')))return;
   if(overviewRangeFilter === 'recent')overviewRecentOffset += (typeof OVERVIEW_RECENT_DAYS === 'number' ? OVERVIEW_RECENT_DAYS : 14);
   else overviewMonthOffset += 1;
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
 });
 $('overview-today')?.addEventListener('click',()=>{
   overviewMonthOffset = 0;
   overviewRecentOffset = 0;
   dayLogsKey = null;
+  if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
   renderOverview();
 });
 // Week grid over the planner week (overview-week.js). Available from both the
@@ -1007,6 +1011,10 @@ $('overview-today')?.addEventListener('click',()=>{
 $('open-week-view')?.addEventListener('click',()=>{
   if(isScrollGuarded($('open-week-view')))return;
   if(typeof openWeekView === 'function')openWeekView();
+});
+$('overview-create')?.addEventListener('click',()=>{
+  if(isScrollGuarded($('overview-create')))return;
+  if(typeof openAddForCalendarDay === 'function')openAddForCalendarDay();
 });
 $('overview-filter')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
@@ -1029,10 +1037,12 @@ $('overview-filter')?.addEventListener('click',e=>{
   const rangeBtn = e.target.closest('[data-overview-range]');
   if(rangeBtn){
     overviewRangeFilter = rangeBtn.dataset.overviewRange || 'recent';
+    rememberCalendarView(overviewRangeFilter === 'month' ? 'month' : 'overview');
     overviewMonthOffset = 0;
     overviewRecentOffset = 0;
     overviewListPane = 'plan';
     dayLogsKey = null;
+    if(typeof resetOverviewListExpanded === 'function')resetOverviewListExpanded();
     renderOverview();
   }
 });
@@ -1075,6 +1085,10 @@ $('overview-insight')?.addEventListener('click',e=>{
 });
 $('overview-list')?.addEventListener('click',e=>{
   if(isScrollGuarded(e.target))return;
+  if(e.target.closest('[data-overview-expand]')){
+    if(typeof toggleOverviewListExpanded === 'function')toggleOverviewListExpanded();
+    return;
+  }
   const itemBtn = e.target.closest('[data-open-overview-item]');
   if(itemBtn){
     const idx = parseInt(itemBtn.dataset.openOverviewItem,10);

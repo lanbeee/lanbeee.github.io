@@ -524,7 +524,6 @@ body[data-pane-count="3"] .week-view-sheet{
 .is-aligned-grid .wv-list .wv-nowline i{left:-3px;background:var(--red-icon);}
 .wv-event:hover{filter:brightness(0.97);}
 .wv-options button:focus-visible,.wv-options select:focus-visible{outline:2px solid var(--teal-icon);outline-offset:2px;}
-body:has(#week-sheet.open) #add-sheet{z-index:115;}
 @media (max-width:599px){
   .week-view-sheet{padding-top:calc(12px + var(--content-safe-top));--wv-gutter:26px;--wv-col-gap:2px;}
   /* Pull the calendar board toward the screen edges: the hour rail sits ~4px

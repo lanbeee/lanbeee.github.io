@@ -585,6 +585,272 @@ function seedScript(){
   assert(/Scope Beta/i.test(dayAgenda.itemTitle), 'item options are for the tapped habit');
   assert(dayAgenda.afterTapCalls === 0, 'opening item options does not sync-plan a week');
 
+  // ── E. Calendar overview refinements: events, month upcoming, expand, day nav, create ──
+  console.log('\n[E] calendar overview refinements');
+  const refined = await page.evaluate(() => {
+    const now = Date.now();
+    const base = dayStart(now);
+    const keyAt = (n) => dateKey(base + n * 86400000);
+    const data = load();
+    // Add a one-off local appointment, a weekly local appointment, a habit already done today
+    // (with an older wide gap that must NOT trigger a false attention alarm), an overdue habit,
+    // and extra upcoming tasks to exercise the Show all toggle.
+    const nextWd = new Date(base + 3 * 86400000).getDay();
+    data.push(
+      {
+        name:'Dentist Event', type:'task', target:null, logs:[], emoji:'🦷',
+        topics:['qa'], locationIds:[], durationMinutes:60, priority:1,
+        appointment:{ repeat:'once', startDate:keyAt(3), startMinute:14*60, weekdays:[], ordinalWeekdays:[], until:'', exceptions:{} },
+        eventTime:null, dueDate:null, hardDue:false, createdAt:now - 5*86400000, lastLog:null
+      },
+      {
+        name:'Weekly Sync', type:'task', target:null, logs:[], emoji:'🗓️',
+        topics:['qa'], locationIds:[], durationMinutes:30, priority:2,
+        appointment:{ repeat:'weekly', startDate:keyAt(-7), startMinute:11*60, weekdays:[nextWd], ordinalWeekdays:[], until:'', exceptions:{} },
+        eventTime:null, dueDate:null, hardDue:false, createdAt:now - 10*86400000, lastLog:null
+      },
+      {
+        name:'Already Caught Up', type:'keepup', target:1,
+        logs:[base - 5*86400000, base + 9*3600000], emoji:'✅',
+        topics:['qa'], locationIds:[], durationMinutes:15, priority:2,
+        createdAt:now - 10*86400000, lastLog:base + 9*3600000
+      },
+      {
+        name:'Really Overdue', type:'keepup', target:2,
+        logs:[base - 6*86400000], emoji:'🪴',
+        topics:['qa'], locationIds:[], durationMinutes:15, priority:2,
+        createdAt:now - 10*86400000, lastLog:base - 6*86400000
+      },
+      {
+        name:'Extra Task A', type:'task', target:null, logs:[], emoji:'📝',
+        topics:['qa'], locationIds:[], durationMinutes:15, priority:2,
+        dueDate:base + 4*86400000, hardDue:false, eventTime:null, createdAt:now - 2*86400000, lastLog:null
+      },
+      {
+        name:'Extra Task B', type:'task', target:null, logs:[], emoji:'📌',
+        topics:['qa'], locationIds:[], durationMinutes:15, priority:2,
+        dueDate:base + 5*86400000, hardDue:false, eventTime:null, createdAt:now - 2*86400000, lastLog:null
+      }
+    );
+    save(data);
+
+    // Non-contradictory week capacity: tomorrow has 23h open AND 4 items -> must NOT say "tomorrow packed"
+    _homeRenderedWeek = {
+      days: Array.from({length:7}, (_, i) => ({
+        dayBase: base + i * 86400000,
+        isToday: i === 0,
+        totalMinutes: 1440,
+        usedMinutes: i === 1 ? 60 : 300,
+        remainingMinutes: i === 1 ? 1380 : 1140,
+        timeline: i === 1 ? [0,1,2,3].map(idx => ({ kind:'fill', i:idx, h:data[idx], start:base + 86400000 + (9+idx)*3600000, end:base + 86400000 + (9.5+idx)*3600000 })) : [],
+        agendaItems: i === 1 ? [0,1,2,3].map(idx => ({ h:data[idx] })) : []
+      }))
+    };
+
+    overviewRangeFilter = 'recent';
+    overviewRecentOffset = 0;
+    overviewMonthOffset = 0;
+    overviewListPane = 'plan';
+    renderOverview();
+
+    const insightText = document.getElementById('overview-insight')?.innerText || '';
+    const cap = overviewWeekCapacity(load());
+    const tomorrowLoad = cap.tomorrow ? cap.tomorrow.load : -1;
+
+    // Expand coming up list
+    const initialCount = document.querySelectorAll('#overview-list .overview-item').length;
+    const expandBtn = document.querySelector('#overview-list [data-overview-expand]');
+    const hasExpand = !!expandBtn;
+    if(expandBtn)expandBtn.click();
+    const expandedCount = document.querySelectorAll('#overview-list .overview-item').length;
+    const expandedText = document.getElementById('overview-list')?.innerText || '';
+
+    // Check attention pane: Really Overdue present, Already Caught Up absent
+    setOverviewListPane('care');
+    const careText = document.getElementById('overview-list')?.innerText || '';
+
+    // Check Month view shows local appointments and coming up section
+    overviewRangeFilter = 'month';
+    overviewMonthOffset = 0;
+    renderOverview();
+    const monthEventCell = document.querySelector(`#overview-calendar [data-log-day="${keyAt(3)}"]`);
+    const monthListText = document.getElementById('overview-list')?.innerText || '';
+
+    // Check day sheet for day+3 lists Dentist Event + Weekly Sync with event meta
+    resetDayLogsStep();
+    renderDayLogs(keyAt(3));
+    const day3Text = document.getElementById('day-logs-body')?.innerText || '';
+    const dayNavVisible = !document.getElementById('day-logs-day-nav')?.hidden;
+    const daySubText = document.getElementById('day-logs-sub')?.textContent || '';
+    const hasNewItemBtn = !!document.getElementById('day-logs-new-item');
+
+    // Step next day via day stepper
+    stepDayLogsKey(1);
+    const steppedKey = dayLogsKey;
+
+    // Open Add sheet pre-filled for day+4 via Create new item
+    document.getElementById('day-logs-new-item')?.click();
+    const addOpen = document.getElementById('add-sheet')?.classList.contains('open') || false;
+    const prefilledDue = document.getElementById('ting-due-date')?.value || '';
+    if(addOpen && typeof closeSheet === 'function')closeSheet('add-sheet');
+
+    return {
+      insightText,
+      tomorrowLoad,
+      initialCount,
+      hasExpand,
+      expandedCount,
+      hasDentistInComingUp: expandedText.includes('Dentist Event'),
+      hasWeeklyInComingUp: expandedText.includes('Weekly Sync'),
+      careHasOverdue: careText.includes('Really Overdue'),
+      careHasCaughtUp: careText.includes('Already Caught Up'),
+      monthEventLit: monthEventCell?.classList.contains('has-entry') || false,
+      monthHasComingUp: /coming up/i.test(monthListText),
+      day3HasDentist: day3Text.includes('Dentist Event'),
+      day3HasEventTime: /2PM|2:00/i.test(day3Text),
+      dayNavVisible,
+      daySubHasOpen: /open/i.test(daySubText),
+      hasNewItemBtn,
+      steppedCorrectly: steppedKey === keyAt(4),
+      addOpen,
+      prefilledDue,
+      expectedDue: keyAt(4),
+    };
+  });
+  console.log(refined);
+  assert(refined.tomorrowLoad === 4, 'week capacity deduplicates timeline + agendaItems load');
+  assert(!/packed/i.test(refined.insightText), 'week insight does not call a 23h-open day packed');
+  assert(refined.initialCount === 4 && refined.hasExpand && refined.expandedCount > 4, 'coming-up list caps at 4 and expands on demand');
+  assert(refined.hasDentistInComingUp && refined.hasWeeklyInComingUp, 'one-off and weekly local appointments appear in coming up');
+  assert(refined.careHasOverdue && !refined.careHasCaughtUp, 'attention surfaces overdue items without false alarms for habits done today');
+  assert(refined.monthEventLit && refined.monthHasComingUp, 'month view highlights local appointments and shows coming up');
+  assert(refined.day3HasDentist && refined.day3HasEventTime, 'day sheet shows local appointments with clock time');
+  assert(refined.dayNavVisible && refined.daySubHasOpen && refined.hasNewItemBtn, 'day sheet shows day stepper, open time, and Create new item');
+  assert(refined.steppedCorrectly, 'day stepper advances to the next day');
+  assert(refined.addOpen && refined.prefilledDue === refined.expectedDue, 'Create new item opens Add sheet pre-filled with the tapped date');
+
+  // Switching back to 2 weeks from month updates remembered calendar view
+  const rememberCheck = await page.evaluate(() => {
+    openCalendarOverview({range:'month'});
+    const afterMonth = localStorage.getItem(CALENDAR_VIEW_KEY);
+    document.querySelector('#overview-filter [data-overview-range="recent"]')?.click();
+    const afterRecent = localStorage.getItem(CALENDAR_VIEW_KEY);
+    closeSheet('overview-sheet');
+    openRememberedCalendar();
+    const reopenedRange = overviewRangeFilter;
+    if(typeof openWeekView === 'function'){
+      openWeekView();
+      document.getElementById('week-view-overview')?.click();
+    }
+    const fromWeekRange = overviewRangeFilter;
+    return { afterMonth, afterRecent, reopenedRange, fromWeekRange };
+  });
+  assert(rememberCheck.afterMonth === 'month', 'month view remembers month');
+  assert(rememberCheck.afterRecent === 'overview' && rememberCheck.reopenedRange === 'recent', 'switching back to 2 weeks updates remembered calendar view');
+  assert(rememberCheck.fromWeekRange === 'recent', 'week header calendar switch returns to 2-week overview');
+
+  // Tapping an item in Coming up opens that item's detail sheet, not the day menu
+  const comingUpTap = await page.evaluate(() => {
+    overviewRangeFilter = 'recent';
+    overviewRecentOffset = 0;
+    overviewListPane = 'plan';
+    renderOverview();
+    openSheet('overview-sheet');
+    if(typeof closeSheet === 'function'){
+      closeSheet('detail-sheet');
+      closeSheet('day-logs-sheet');
+    }
+    const row = document.querySelector('#overview-list .overview-link-row');
+    const rowName = row?.querySelector('.overview-name')?.textContent.trim() || '';
+    const hasOpenAttr = row?.hasAttribute('data-open-overview-item') || false;
+    if(row)row.click();
+    return {
+      hasOpenAttr,
+      detailOpen: document.getElementById('detail-sheet')?.classList.contains('open') || false,
+      dayLogsOpen: document.getElementById('day-logs-sheet')?.classList.contains('open') || false,
+      rowName,
+      detailName: document.getElementById('detail-name')?.textContent.trim() || ''
+    };
+  });
+  assert(comingUpTap.hasOpenAttr && comingUpTap.detailOpen && !comingUpTap.dayLogsOpen, 'tapping a coming-up row opens the item detail sheet instead of the day menu');
+  assert(comingUpTap.detailName && comingUpTap.rowName.includes(comingUpTap.detailName), 'coming-up row opens the matching item');
+
+  // Layering & end-to-end Add flow from Calendar Overview (phone stacking)
+  const addStacking = await page.evaluate(() => {
+    const zOf = id => parseInt(getComputedStyle(document.getElementById(id)).zIndex, 10) || 0;
+    const hitIn = id => {
+      const el = document.getElementById(id);
+      if(!el)return false;
+      const hit = document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2));
+      return Boolean(hit && el.contains(hit));
+    };
+    if(typeof closeSheet === 'function'){
+      closeSheet('detail-sheet');
+      closeSheet('day-logs-sheet');
+      closeSheet('add-sheet');
+      closeSheet('bulk-batch-sheet');
+    }
+    openCalendarOverview({range:'recent'});
+    document.getElementById('overview-create')?.click();
+    const addOpenFromHead = document.getElementById('add-sheet')?.classList.contains('open') || false;
+    const addHitTop = hitIn('add-sheet');
+    const zOrder = {
+      overview: zOf('overview-sheet'),
+      week: zOf('week-sheet'),
+      add: zOf('add-sheet'),
+      bulk: zOf('bulk-batch-sheet'),
+      detail: zOf('detail-sheet'),
+      settings: zOf('settings-sheet'),
+      dayLogs: zOf('day-logs-sheet')
+    };
+    // Back should close Add sheet first, leaving Overview open
+    if(typeof handleAppBack === 'function')handleAppBack();
+    const afterBackAddClosed = !document.getElementById('add-sheet')?.classList.contains('open');
+    const afterBackOverviewOpen = document.getElementById('overview-sheet')?.classList.contains('open') || false;
+
+    // Open Add from day sheet (Create new item), verify visual topmost layer, save item, verify immediate overview update + detail on top
+    const d3 = dateKey(dayStart(Date.now()) + 3 * 86400000);
+    resetDayLogsStep();
+    renderDayLogs(d3);
+    openSheet('day-logs-sheet');
+    document.getElementById('day-logs-new-item')?.click();
+    const dayAddHitTop = hitIn('add-sheet');
+    document.getElementById('ting-message').value = 'Fresh Calendar Task';
+    document.getElementById('do-save')?.click();
+    const afterSaveAddClosed = !document.getElementById('add-sheet')?.classList.contains('open');
+    const afterSaveDetailTop = document.getElementById('detail-sheet')?.classList.contains('open') && hitIn('detail-sheet');
+    if(typeof closeSheet === 'function')closeSheet('detail-sheet');
+    // Expand coming up if needed and check the new item appears immediately in overview
+    const expandBtn = document.querySelector('#overview-list [data-overview-expand]');
+    if(expandBtn)expandBtn.click();
+    const overviewHasNew = (document.getElementById('overview-list')?.innerText || '').includes('Fresh Calendar Task');
+    return {
+      addOpenFromHead,
+      addHitTop,
+      zOrder,
+      afterBackAddClosed,
+      afterBackOverviewOpen,
+      dayAddHitTop,
+      afterSaveAddClosed,
+      afterSaveDetailTop,
+      overviewHasNew
+    };
+  });
+  console.log('addStacking:', addStacking);
+  assert(addStacking.addOpenFromHead && addStacking.addHitTop, '+ Add in Calendar Overview paints Add sheet above Overview sheet');
+  assert(
+    addStacking.zOrder.overview < addStacking.zOrder.week
+    && addStacking.zOrder.week < addStacking.zOrder.add
+    && addStacking.zOrder.add < addStacking.zOrder.bulk
+    && addStacking.zOrder.bulk < addStacking.zOrder.detail
+    && addStacking.zOrder.detail < addStacking.zOrder.settings
+    && addStacking.zOrder.settings < addStacking.zOrder.dayLogs,
+    'sheet z-index tiers stay strictly ordered (overview < week < add < bulk < detail < settings < day-logs)'
+  );
+  assert(addStacking.afterBackAddClosed && addStacking.afterBackOverviewOpen, 'Back closes Add sheet without dismissing Calendar Overview underneath');
+  assert(addStacking.dayAddHitTop && addStacking.afterSaveAddClosed && addStacking.afterSaveDetailTop, 'Create new item paints Add on top, saves cleanly, and opens Detail on top');
+  assert(addStacking.overviewHasNew, 'newly added item appears immediately in Calendar Overview');
+
   if(pageErrors.length){
     console.error('page errors:', pageErrors.join('\n'));
     assert(false, 'no page errors');

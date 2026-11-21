@@ -587,9 +587,24 @@ $('day-logs-sheet').addEventListener('click',e=>{
     setDayLogsStep('list');
     return;
   }
+  if(e.target.closest('#day-logs-prev')){
+    if(typeof stepDayLogsKey === 'function')stepDayLogsKey(-1);
+    return;
+  }
+  if(e.target.closest('#day-logs-next')){
+    if(typeof stepDayLogsKey === 'function')stepDayLogsKey(1);
+    return;
+  }
   if(e.target.closest('#day-logs-plan')){
     if(!dayLogsCanPlan(dayLogsKey))return;
     setDayLogsStep('add');
+    return;
+  }
+  if(e.target.closest('#day-logs-new-item')){
+    if(!dayLogsCanPlan(dayLogsKey))return;
+    const targetDay = dayLogsKey;
+    closeDayLogsSheet({refreshOverview:false});
+    if(typeof openAddForCalendarDay === 'function')openAddForCalendarDay(targetDay);
     return;
   }
   if(e.target.closest('#day-logs-open-hours')){

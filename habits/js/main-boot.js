@@ -553,6 +553,9 @@ $('do-save').addEventListener('click',()=>{
   if(save(data)){
     cancelAdd();
     render();
+    if(typeof renderOverview === 'function' && ($('overview-sheet')?.classList.contains('open') || (typeof paneTierActive === 'function' && paneTierActive()))){
+      renderOverview();
+    }
     openDetail(data.length - 1);
     if((record.weatherProfileMode !== 'none' || record.showWeather) && typeof refreshWeatherForecast === 'function')void refreshWeatherForecast();
   }

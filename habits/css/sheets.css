@@ -18,9 +18,11 @@ body:is([data-pane-count="2"],[data-pane-count="3"]) .sheet-wrap{
 /* Locking Home scroll unsticks its day header. Calendar must cover that
    change on its first frame, like the phone detail page. */
 body[data-pane-count="1"] #overview-sheet{background:var(--bg);transition:none;}
-/* Stacking tiers so a drilled-in detail sheet always paints above the page
-   sheet it was opened from (overview/today), while transient modals that can
-   open from detail (snooze/activity) and the day drill-down stay on top. */
+/* Stacking tiers so add and drilled-in detail sheets always paint above the
+   calendar sheets they opened from (overview 100, week 105), while batch
+   review (109), detail (110), settings (115), and transient modals (120+) stay
+   strictly ordered above them. */
+#add-sheet{z-index:107;}
 #detail-sheet{z-index:110;}
 #settings-sheet{z-index:115;}
 /* Help, samples, and privacy open from Settings and stay above that page. */

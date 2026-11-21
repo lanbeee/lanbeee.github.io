@@ -2467,7 +2467,8 @@ function bindWeekView(){
   });
   $('week-view-close')?.addEventListener('click',()=>closeSheet('week-sheet'));
   const openMonth = ()=>openCalendarOverview({range:'month',dayKey:weekViewDaySel});
-  $('week-view-overview')?.addEventListener('click',openMonth);
+  const openOverview = ()=>openCalendarOverview({range:'recent'});
+  $('week-view-overview')?.addEventListener('click',openOverview);
   $('week-view-today')?.addEventListener('click',()=>weekViewGoToday());
   $('week-view-display-options').addEventListener('click',()=>weekViewSetOptionsOpen(true));
   $('week-view-options-close').addEventListener('click',()=>weekViewSetOptionsOpen(false));
